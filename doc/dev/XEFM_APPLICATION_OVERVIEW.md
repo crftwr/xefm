@@ -2,7 +2,7 @@
 
 ## Current Version: 0.99
 
-XeFM (Terminal File Manager) is a sophisticated terminal-based file manager built with Python's curses library. It provides a dual-pane interface with comprehensive file operations, cloud storage integration, and extensive customization capabilities.
+XeFM is a sophisticated dual-pane file manager that runs both as a native desktop app (Windows, macOS) and in the terminal (Windows, macOS, Linux), rendering through the external [PuiKit](https://github.com/crftwr/puikit) framework. It provides comprehensive file operations, cloud storage integration, and extensive customization capabilities.
 
 ## Core Architecture
 

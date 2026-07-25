@@ -22,12 +22,12 @@
 
 ## Getting Started
 
-XeFM (Terminal File Manager) is a powerful dual-pane file manager for the terminal that provides efficient file management with cloud storage integration, advanced search capabilities, and extensive customization options.
+XeFM is a powerful dual-pane file manager that runs both as a native desktop app (Windows, macOS) and in the terminal (Windows, macOS, Linux). It provides efficient file management with cloud storage integration, advanced search capabilities, and extensive customization options.
 
 ### What Makes XeFM Special
 
 - **Dual-pane interface** for efficient file operations between directories
-- **Dual-mode operation** - Run in terminal or as native desktop app (macOS)
+- **Desktop *and* terminal** - the same app as a native window on Windows/macOS or as a TUI on Windows/macOS/Linux
 - **AWS S3 integration** for seamless cloud storage management
 - **Advanced search** with content search and filtering
 - **Extensible** with external programs and custom key bindings

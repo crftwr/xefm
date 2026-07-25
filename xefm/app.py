@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""XeFM on PuiKit — dual-pane file manager.
+"""XeFM — a dual-pane file manager for the desktop and the terminal.
 
-XeFM runs on PuiKit. It keeps the storage-agnostic business
-logic unchanged — ``xefm.path.Path`` for listing, ``PaneManager`` /
-``FileListManager`` for pane state, and ``xefm.config``'s keymap (ported to the
-PuiKit keyboard contract) — and renders through a custom ``FilePane`` widget
-hosted in a PuiKit ``Panel`` layout, on curses + macOS.
+One widget model, realized per backend by PuiKit: a native desktop window on
+Windows and macOS, a curses TUI on Windows, macOS and Linux, or a browser tab.
+Pick with ``--backend``; nothing above the backend seam branches on it.
+
+The storage-agnostic core is backend-independent — ``xefm.path.Path`` for
+listing (local, S3, SFTP, archives), ``PaneManager`` / ``FileListManager`` for
+pane state, ``xefm.config``'s keymap — and the view renders through a custom
+``FilePane`` widget hosted in a PuiKit ``Panel`` layout.
 
 Navigation (cursor, pane switch, arrow-key focus, descend / go up), selection,
 sort, hidden-file toggle, filename filter and incremental search, the built-in
@@ -14,9 +17,10 @@ jump-to-path dialogs are all wired — as are file operations (copy / move /
 delete, threaded with progress and per-conflict resolution via ``xefm.task``),
 archive browsing, and remote storage (S3 / SFTP).
 
-    python -m xefm                       # TUI (curses)
-    python -m xefm --backend gui         # macOS GUI
-    python -m xefm --left ./src --right ./test
+    python -m xefm                       # terminal (curses) — the default
+    python -m xefm --backend gui         # native desktop window (Windows/macOS)
+    python -m xefm --backend web         # browser tab
+    python -m xefm --left ./xefm --right ./test
 """
 
 import argparse
@@ -4258,7 +4262,7 @@ class XeFMApp:
         About dialog's content; its cosmetic Matrix-rain background is answered
         now by the theme's arriving-text effect, not a background animation)."""
         from xefm.const import VERSION, GITHUB_URL
-        return (f"XeFM on PuiKit — Terminal File Manager\n"
+        return (f"XeFM — a dual-pane file manager for desktop and terminal\n"
                 f"Version {VERSION}\n\n"
                 f"{GITHUB_URL}")
 
@@ -4502,18 +4506,41 @@ _BACKENDS = {"tui": "tui", "curses": "tui", "gui": "gui", "macos": "gui",
              "web": "web", "webbrowser": "web", "browser": "web"}
 
 
+#: ``--help`` blurb. Deliberately *not* ``__doc__``: the module docstring is
+#: written for readers of the source (RST markup, architecture notes), and
+#: argparse would reflow the whole thing into an unreadable wall of text.
+_CLI_DESCRIPTION = """\
+XeFM — a dual-pane file manager for the desktop and the terminal.
+
+The same app runs as a native desktop window on Windows and macOS, as a curses
+TUI on Windows, macOS and Linux, or in a browser tab. Choose with --backend.
+"""
+
+_CLI_EPILOG = """\
+examples:
+  xefm                            terminal (curses) — the default
+  xefm --backend gui              native desktop window (Windows/macOS)
+  xefm --backend web              browser tab
+  xefm --left ~/projects --right ~/downloads
+
+Project home: https://github.com/shimomut/xefm
+"""
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Build the command-line parser. Factored out of ``main`` so the entry
     point's argument contract (``--version``, ``--help``, the pane flags) can be
     unit-tested without launching the app."""
     parser = argparse.ArgumentParser(
         prog="xefm",
-        description=__doc__,
-        epilog="Project home: https://github.com/shimomut/xefm",
+        description=_CLI_DESCRIPTION,
+        epilog=_CLI_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-v", "--version", action="version",
                         version=f"XeFM {_VERSION}")
-    parser.add_argument("--backend", default="tui", help="tui (curses) | gui (macOS)")
+    parser.add_argument("--backend", default="tui",
+                        help="tui (curses, the default) | gui (native desktop, Windows/macOS) | web (browser tab)")
     # ``default=None`` lets us tell an explicit ``--left .`` from no flag: an
     # explicitly given directory wins over the one saved from the last session.
     parser.add_argument("--left", default=None, help="left pane startup directory")

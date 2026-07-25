@@ -1,4 +1,4 @@
-# XeFM - TUI File Manager
+# XeFM — a dual-pane file manager for the desktop and the terminal
 
 A powerful file manager that runs as a native desktop application on **Windows and macOS**, and in the terminal on **all platforms — Windows, macOS, and Linux**. Navigate your filesystem with keyboard shortcuts in a clean, intuitive dual-pane interface with comprehensive file operations, rich built-in viewers, themeable visual effects, and professional-grade features.
 

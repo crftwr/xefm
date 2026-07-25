@@ -1,6 +1,6 @@
 # XeFM macOS Application Bundle
 
-This directory contains the build system for creating a native macOS application bundle for XeFM (Terminal File Manager). The bundle embeds a Python interpreter and provides a polished native macOS experience with full Dock integration.
+This directory contains the build system for creating a native macOS application bundle for XeFM. The bundle embeds a Python interpreter and provides a polished native macOS experience with full Dock integration.
 
 ## Architecture
 

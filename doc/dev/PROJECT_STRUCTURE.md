@@ -2,7 +2,7 @@
 
 ## Overview
 
-XeFM (Terminal File Manager) is organized so that the file-manager application,
+XeFM is organized so that the file-manager application,
 its tests, and its documentation stay cleanly separated. The rendering/UI
 toolkit is not vendored in this repo — XeFM depends on the external
 [PuiKit](https://github.com/crftwr/puikit) framework.

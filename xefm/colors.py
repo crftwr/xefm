@@ -1,5 +1,5 @@
 """
-Color definitions and initialization for XeFM (Terminal File Manager)
+Color definitions and initialization for XeFM
 """
 from typing import Tuple, Optional
 

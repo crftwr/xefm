@@ -1,6 +1,6 @@
 //
 //  XeFMAppDelegate.m
-//  XeFM - Terminal File Manager
+//  XeFM - a dual-pane file manager for desktop and terminal
 //
 //  Application delegate implementation for XeFM macOS app bundle.
 //  Handles Python embedding, window lifecycle, and Dock integration.

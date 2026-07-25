@@ -34,7 +34,7 @@ PIP := $(PYTHON) -m pip
 PUIKIT_DIR ?=
 
 help:
-	@echo "XeFM - Terminal File Manager"
+	@echo "XeFM - a dual-pane file manager for the desktop and the terminal"
 	@echo ""
 	@echo "Using Python: $(PYTHON)"
 	@echo "(run 'make venv' first if .venv does not exist)"

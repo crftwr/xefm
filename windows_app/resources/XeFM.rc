@@ -28,7 +28,7 @@ BEGIN
         BLOCK "040904b0"   /* U.S. English, Unicode (1200) */
         BEGIN
             VALUE "CompanyName",      "XeFM"
-            VALUE "FileDescription",  "XeFM - TUI File Manager"
+            VALUE "FileDescription",  "XeFM - dual-pane file manager"
             VALUE "FileVersion",      XEFM_VER_STR
             VALUE "InternalName",     "XeFM"
             VALUE "LegalCopyright",   "XeFM contributors"

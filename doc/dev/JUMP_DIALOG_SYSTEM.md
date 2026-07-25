@@ -357,4 +357,4 @@ The Jump Dialog System significantly enhances XeFM's navigation capabilities by 
 - **Great UX**: Intuitive keyboard-driven interface with context awareness
 - **Robust Implementation**: Comprehensive testing and error handling
 
-This system follows XeFM's design principles of being fast, reliable, and user-friendly while maintaining the terminal-based workflow that makes XeFM efficient for power users. The hidden files integration ensures consistent behavior across all navigation methods in the application.
+This system follows XeFM's design principles of being fast, reliable, and user-friendly while maintaining the keyboard-driven workflow that makes XeFM efficient for power users. The hidden files integration ensures consistent behavior across all navigation methods in the application.

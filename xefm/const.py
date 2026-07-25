@@ -11,7 +11,7 @@ from xefm import __version__ as VERSION  # noqa: F401  (re-exported as a constan
 
 # Application metadata
 APP_NAME = "XeFM"
-APP_DESCRIPTION = "A terminal-based file manager"
+APP_DESCRIPTION = "A dual-pane file manager for the desktop and the terminal"
 GITHUB_URL = "https://github.com/shimomut/xefm"
 
 # Display constants

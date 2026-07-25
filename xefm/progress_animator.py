@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TUI File Manager - Progress Animator Component
+XeFM - Progress Animator Component
 Provides animated progress indicators for various operations
 """
 

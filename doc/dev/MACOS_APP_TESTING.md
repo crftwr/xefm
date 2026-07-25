@@ -32,7 +32,7 @@ Essential tests to verify basic functionality:
 **Expected Results:**
 - XeFM icon appears in the Dock
 - XeFM window opens showing file manager interface
-- Window title shows "XeFM - Terminal File Manager"
+- Window title shows "XeFM"
 - File listing displays correctly
 - No error dialogs appear
 

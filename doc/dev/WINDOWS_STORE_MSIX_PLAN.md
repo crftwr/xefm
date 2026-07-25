@@ -332,7 +332,7 @@ can redirect writes at runtime — but prefer fixing paths in code over shipping
 
 ## 8. Command-line installation (the primary consumption path)
 
-XeFM is a terminal file manager — most of its audience installs software from a
+XeFM's audience skews to developers — most of them install software from a
 shell, not by clicking through the Store GUI. The good news is that a single
 Store MSIX submission (§4–6) gives you a **first-class `winget` install line for
 free**, and that is arguably the biggest end-user payoff of this whole effort.

@@ -15,7 +15,7 @@ def generate_help_content():
     help_lines = []
     
     # Title and version info
-    help_lines.append(f"XeFM {VERSION} - Terminal File Manager")
+    help_lines.append(f"XeFM {VERSION} - a dual-pane file manager for desktop and terminal")
     help_lines.append(f"GitHub: {GITHUB_URL}")
     help_lines.append("")
     

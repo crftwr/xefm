@@ -125,7 +125,7 @@ function Invoke-Install {
         $sc.TargetPath = $exePath
         $sc.WorkingDirectory = $InstallDir
         $sc.IconLocation = "$exePath,0"
-        $sc.Description = 'XeFM - TUI File Manager'
+        $sc.Description = 'XeFM - a dual-pane file manager for desktop and terminal'
         $sc.Save()
         Info "Created Start Menu shortcut: $lnkPath"
     } catch {
