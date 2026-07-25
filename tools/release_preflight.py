@@ -1,11 +1,16 @@
 """Fail-fast checks run before `make release` mutates anything.
 
-The release recipe does irreversible things (pushes a tag, uploads to PyPI —
-a PyPI version can never be reused). This script runs FIRST and refuses the
-release unless every precondition holds, so a dirty tree, a stale checkout, a
-duplicate version, or a missing/unauthenticated `gh` fails loudly *before* any
-commit, tag, upload, or push happens. It collects all problems and reports them
-together rather than stopping at the first.
+The release recipe does irreversible things: it pushes a tag and opens the
+GitHub Release that the publish steps (`make publish-pypi`, `make
+macos-dmg-upload`, `make windows-app-zip-upload`) then upload into. This script
+runs FIRST and refuses the release unless every precondition holds, so a dirty
+tree, a stale checkout, a duplicate version, or a missing/unauthenticated `gh`
+fails loudly *before* any commit, tag or push happens. It collects all problems
+and reports them together rather than stopping at the first.
+
+The PyPI upload is no longer part of the release recipe, so its own
+irreversibility (a PyPI version can never be reused) is guarded by
+`make publish-pypi` instead — it requires HEAD to sit on the release tag.
 
 Warnings (printed, non-fatal) cover the one thing a checkout can't decide for
 you: whether the PuiKit build this release depends on is actually published.

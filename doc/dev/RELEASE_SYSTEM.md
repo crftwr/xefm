@@ -1,30 +1,55 @@
 # Release System
 
-How a XeFM version gets cut: one command, `make release VERSION=x.y.z`, run from
-a clean `main` checkout. It mirrors PuiKit's release flow (`../puikit/Makefile`),
-so the two repos release the same way.
-
-## What it produces
-
-Three artifacts that all name the same version and cannot drift apart:
-
-1. **A git tag** `vX.Y.Z` (annotated), pushed to `origin`.
-2. **A PyPI release** — sdist + wheel uploaded with twine.
-3. **A GitHub Release** at that tag, with `dist/*` attached and auto-generated notes.
-
-The macOS `.app`/`.dmg` and the Windows bundle are **not** built by `make release`
-— they only build on their own platform. Produce them there and attach them to
-the release afterwards, one target per platform:
+A release is **cut once, then published one artifact at a time**. Cutting is a
+single command; each artifact is a separate command, because the three artifacts
+build on three different machines and no one machine can produce them all.
 
 ```bash
-make macos-dmg-upload         # on macOS:  builds the DMG if needed, then uploads it
-make windows-app-zip-upload   # on Windows: builds XeFM-<ver>-win64.zip, then uploads it
+make release VERSION=x.y.z    # 1. any machine: bump, tag, push, open the GitHub Release
+make publish-pypi             # 2. any machine: sdist + wheel -> PyPI
+make macos-dmg-upload         # 3. on macOS:    XeFM-<ver>-macos.dmg -> Release
+make windows-app-zip-upload   # 4. on Windows:  XeFM-<ver>-win64.zip -> Release
+make release-status           #    what has landed so far
 ```
 
-Both refuse to run unless the GitHub Release for the current `__version__`
-already exists, and both pass `--clobber`, so re-uploading a rebuilt artifact
-supersedes the previous one instead of erroring. Override the target release
-with `VERSION=x.y.z`.
+Steps 2–4 are **peers**: independent, re-runnable, and runnable in any order,
+minutes or days after the tag was cut. Each one builds its artifact if it is
+missing, checks that the GitHub Release for this version exists, then uploads.
+Only step 1 takes a `VERSION=`; the rest read `xefm/__init__.py`'s
+`__version__`, so they target the release the checkout is on — pass
+`VERSION=x.y.z` to override (e.g. re-uploading an asset for an older tag).
+
+## What a finished release looks like
+
+Four artifacts that all name the same version and cannot drift apart:
+
+1. **A git tag** `vX.Y.Z` (annotated), pushed to `origin` — step 1.
+2. **A GitHub Release** at that tag with auto-generated notes — step 1, then
+   steps 2–4 attach their artifacts to it.
+3. **A PyPI release** — sdist + wheel uploaded with twine, and the same two
+   files attached to the GitHub Release — step 2.
+4. **The desktop bundles** — `XeFM-<ver>-macos.dmg` and `XeFM-<ver>-win64.zip`
+   attached to the GitHub Release — steps 3 and 4.
+
+All three publish steps pass `--clobber`, so re-uploading a rebuilt artifact
+supersedes the previous one instead of erroring, and all three share one guard
+(`check_release_exists` in the Makefile) so they cannot drift into checking
+different preconditions.
+
+### Why PyPI is a separate step
+
+It used to be part of `make release`. It is not, for the same reason the macOS
+and Windows uploads never were: cutting a tag and publishing an artifact are
+different acts with different toolchains and credentials, and each is worth
+re-running on its own. Splitting them also means a failed PyPI upload no longer
+leaves a half-cut release behind — the tag and the GitHub Release are already
+final, and only step 2 needs retrying.
+
+The split gives up one guarantee that the monolithic recipe had for free: that
+the uploaded build matched the tag. `publish-pypi` restores it explicitly by
+refusing to run unless `HEAD` sits exactly on `vX.Y.Z` (`make release` leaves
+the checkout there; publishing an older release means checking its tag out
+first). A PyPI version can never be re-uploaded, so this one is a hard error.
 
 The **unsigned `.msix` is never uploaded to a release**. Windows will not
 install an unsigned MSIX, so that artifact exists solely as a Microsoft Store
@@ -54,11 +79,12 @@ would mean also attaching a second, version-less copy of each asset
 
 ## Prerequisites
 
-| Requirement | Why |
-|-------------|-----|
-| `[pypi]` API token in `~/.pypirc` | twine uploads without prompting |
-| `gh` installed and authenticated (`gh auth login`) | creates the GitHub Release |
-| Clean `main`, up to date with `origin` | the release commits, tags and pushes |
+| Requirement | Needed by | Why |
+|-------------|-----------|-----|
+| Clean `main`, up to date with `origin` | step 1 | the release commits, tags and pushes |
+| `gh` installed and authenticated (`gh auth login`) | steps 1–4 | creates the GitHub Release, then uploads into it |
+| `[pypi]` API token in `~/.pypirc` | step 2 | twine uploads without prompting |
+| Apple Developer ID + notarytool profile | step 3 | see [MACOS_APP_BUILD_SYSTEM.md](MACOS_APP_BUILD_SYSTEM.md) |
 
 `build` and `twine` are installed into `.venv` on demand by `make build`; they
 are release-time tooling and deliberately stay out of `requirements.txt`.
@@ -81,7 +107,7 @@ version.
 
 ## Step order
 
-`make release VERSION=x.y.z` runs, in this order:
+### Step 1 — `make release VERSION=x.y.z`
 
 1. `tools/release_preflight.py` — all checks below, **before any mutation**
 2. `pytest test` — the suite must pass before anything is built
@@ -89,12 +115,32 @@ version.
 4. `git commit` (stages `xefm/__init__.py` only) + `git tag -a vX.Y.Z`
 5. `make build` — cleans `dist/`, builds sdist + wheel, `twine check`
 6. `git push` + `git push origin vX.Y.Z`
-7. `twine upload dist/*`
-8. `gh release create vX.Y.Z dist/* --generate-notes --verify-tag`
+7. `gh release create vX.Y.Z --generate-notes --verify-tag`
 
-Preflight runs first precisely because steps 6–8 are irreversible: a PyPI
-version can never be re-uploaded, and a pushed tag is public. A failed
-precondition therefore aborts with nothing committed, tagged or published.
+Step 5 publishes nothing; it is a **gate**. It proves the distributions build
+and pass `twine check` while the tag is still local and retractable, and it
+leaves `dist/` populated so step 2 of the pipeline has nothing left to build.
+
+Preflight runs first precisely because steps 6–7 are irreversible: a pushed tag
+is public. A failed precondition therefore aborts with nothing committed or
+tagged.
+
+### Step 2 — `make publish-pypi`
+
+1. Builds `dist/xefm-<ver>.tar.gz` + `.whl` **only if missing** — after
+   `make release` they already exist and are published as-is.
+2. Guards: the GitHub Release exists, the tag exists locally, and `HEAD` is at
+   that tag.
+3. `twine upload` of the two files, named explicitly rather than as `dist/*`,
+   so a stale artifact from an older version can never be swept in.
+4. `gh release upload --clobber` attaches the same two files to the release.
+
+### Steps 3 and 4 — the desktop bundles
+
+`make macos-dmg-upload` / `make windows-app-zip-upload`, on their own platform.
+Each builds its artifact if missing (an existing one is never rebuilt — that
+would re-run notarization), checks the release exists, and uploads with
+`--clobber`.
 
 ## Preflight checks
 
@@ -116,27 +162,37 @@ It also prints a **non-fatal warning** when PuiKit is installed editable from
 (`requirements.txt` pins `puikit>=1.0`), so if XeFM has come to rely on
 unreleased PuiKit changes, release PuiKit first.
 
-## Related targets
+## Target reference
 
-| Target | Use |
-|--------|-----|
-| `make build` | sdist + wheel into `dist/`, plus `twine check` |
-| `make publish-testpypi` | dry run against TestPyPI (needs a `[testpypi]` token) |
-| `make publish-pypi` | upload only, without the tag/GitHub-Release steps |
-| `make macos-dmg-upload` | attach the macOS DMG to the release (macOS only) |
-| `make windows-app-zip-upload` | attach the Windows portable zip to the release (Windows only) |
+| Target | Pipeline step | Use |
+|--------|---------------|-----|
+| `make release VERSION=x.y.z` | 1 | bump, commit, tag, push, create the GitHub Release |
+| `make publish-pypi` | 2 | sdist + wheel → PyPI, and attached to the release |
+| `make macos-dmg-upload` | 3 | attach the macOS DMG to the release (macOS only) |
+| `make windows-app-zip-upload` | 4 | attach the Windows portable zip to the release (Windows only) |
+| `make release-status` | — | list the release's assets and whether PyPI has the version |
+| `make build` | — | sdist + wheel into `dist/`, plus `twine check` |
+| `make publish-testpypi` | — | rehearsal against TestPyPI (needs a `[testpypi]` token) |
 
 `make publish-testpypi` is the safe rehearsal: it exercises the same build and
-upload path, and a bad TestPyPI version costs nothing.
+upload path, needs neither a tag nor a GitHub Release, and a bad TestPyPI
+version costs nothing.
 
-## If a release fails partway
+## If a step fails partway
 
 Preflight makes this unlikely, but the recovery order matters — the steps get
 progressively harder to undo:
 
-- **Before step 6** — nothing is public. `git reset --hard HEAD~1` and
-  `git tag -d vX.Y.Z`.
-- **After the tag push, before the upload** — either re-run the remaining steps
-  by hand, or delete the remote tag (`git push --delete origin vX.Y.Z`) and start over.
-- **After `twine upload`** — that version is permanently taken on PyPI. Do not
-  try to reuse it: bump to the next patch version and release again.
+- **Inside step 1, before its `git push`** — nothing is public.
+  `git reset --hard HEAD~1` and `git tag -d vX.Y.Z`.
+- **Inside step 1, after the tag push** — either finish the remaining commands
+  by hand, or delete the remote tag (`git push --delete origin vX.Y.Z`) and
+  start over.
+- **Steps 2–4** — each is independently re-runnable, so a failure there costs
+  only that step. Fix the cause and run the same target again; `--clobber`
+  makes a repeated GitHub upload harmless.
+- **After `publish-pypi` reaches `twine upload`** — that version is permanently
+  taken on PyPI. Do not try to reuse it: bump to the next patch version and cut
+  a new release. (A failure *after* twine but before the GitHub attach is safe
+  to re-run: twine will refuse the duplicate, so re-run
+  `gh release upload vX.Y.Z dist/xefm-<ver>* --clobber` by hand instead.)
