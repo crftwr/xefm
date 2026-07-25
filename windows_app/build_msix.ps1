@@ -18,9 +18,15 @@
     self-signed path here is purely to exercise the package on the dev box.
 
 .NOTES
-    Identity defaults are PLACEHOLDERS — replace -IdentityName / -Publisher /
-    -PublisherDisplayName with Partner Center "Product identity" values before any
-    real submission (see WINDOWS_STORE_MSIX_PLAN.md 2a).
+    Identity comes from the gitignored windows_app\store.env (copy
+    store.env.example and fill in Partner Center's "Product identity" values —
+    see WINDOWS_STORE_MSIX_PLAN.md 2a), or from an explicit -IdentityName /
+    -Publisher / -PublisherDisplayName, which wins over the file. Without either
+    the build falls back to a XeFM.Prototype identity that sideloads fine but
+    cannot be submitted, and warns that it did so.
+
+    The package version defaults to xefm/__init__.py's __version__ plus the
+    Store-reserved ".0" revision (1.0.1 -> 1.0.1.0); override with -Version.
 #>
 [CmdletBinding()]
 param(
@@ -30,10 +36,14 @@ param(
     # Makefile does). Evaluated here it comes back empty, yielding '\build\XeFM'.
     [string]$PayloadSource,
     [string]$OutDir,
-    [string]$Version              = "1.0.0.0",           # major != 0, revision = 0 (Store rule)
-    [string]$IdentityName         = "XeFM.Prototype",     # Partner Center: Package/Identity/Name
-    [string]$Publisher            = "CN=XeFM Prototype Dev", # Partner Center: Publisher (CN=...)
-    [string]$PublisherDisplayName = "XeFM Prototype",
+    # Defaults (below, in the body) to xefm/__init__.py's __version__ + ".0" --
+    # the Store wants major != 0 and revision = 0.
+    [string]$Version,
+    # Partner Center "Product identity" values. All three default (below, in the
+    # body) to windows_app\store.env if present, else to prototype placeholders.
+    [string]$IdentityName,                                # Package/Identity/Name
+    [string]$Publisher,                                   # Publisher (CN=...)
+    [string]$PublisherDisplayName,                        # Package/Properties/PublisherDisplayName
     [string]$Arch                 = "x64",
     [switch]$Sign,                                        # self-sign for local install test
     [switch]$SkipAssets,                                  # reuse existing resources\Assets
@@ -48,8 +58,71 @@ $ErrorActionPreference = "Stop"
 # Resolve the script directory reliably (body scope), then fill path defaults.
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
+$projectRoot = Split-Path -Parent $ScriptDir
 if (-not $PayloadSource) { $PayloadSource = Join-Path $ScriptDir 'build\XeFM' }
 if (-not $OutDir)        { $OutDir        = Join-Path $ScriptDir 'build' }
+
+# Resolve the package version from xefm/__init__.py's __version__ -- the single
+# source of truth build.ps1 already reads -- plus the Store-reserved ".0"
+# revision, so a source version of 1.0.1 packages as 1.0.1.0. Deriving it (rather
+# than hardcoding) keeps the package version from drifting behind the app version
+# it contains, which matters because every submission needs a strictly higher
+# package version than the last (WINDOWS_STORE_MSIX_PLAN.md 2b).
+#
+# Deterministic, so the separate -Install / -Uninstall invocations that follow a
+# pack all compute the same $msix path.
+if (-not $Version) {
+    $xefmInit = Join-Path $projectRoot 'xefm/__init__.py'
+    $m = Select-String -Path $xefmInit -Pattern '__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if (-not $m) { throw "Could not read __version__ from $xefmInit; pass -Version explicitly." }
+    $Version = "$($m.Matches[0].Groups[1].Value).0"
+}
+# Validated here because makeappx reports a malformed version as an opaque
+# manifest schema error. A non-numeric source version (a '1.0.1rc1'-style
+# pre-release, which cannot map onto MSIX's 4 numeric parts) needs an explicit
+# -Version.
+if ($Version -notmatch '^[1-9][0-9]*\.[0-9]+\.[0-9]+\.0$') {
+    throw ("Invalid MSIX package version '$Version': the Store requires " +
+           "major.minor.build.revision with major >= 1 and revision = 0 " +
+           "(see doc/dev/WINDOWS_STORE_MSIX_PLAN.md 2b).")
+}
+
+# Local Store identity configuration (optional, gitignored) -- same pattern as
+# macos_app/signing.env, and non-secret for the same reason: all three values are
+# readable from any shipped package. They are kept out of git because they are
+# per-Partner-Center-account, so a fork/clone must supply its own.
+#
+# Precedence, highest first: an explicit -IdentityName/-Publisher/... argument,
+# then store.env, then the prototype placeholder (which cannot be submitted).
+$storeEnv = Join-Path $ScriptDir 'store.env'
+$storeCfg = @{}
+if (Test-Path $storeEnv) {
+    Write-Host "[INFO] Loading Store identity from $storeEnv"
+    foreach ($line in Get-Content $storeEnv) {
+        # KEY=VALUE; '#' comments and blank lines do not match, quotes are trimmed.
+        if ($line -match '^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$') {
+            $storeCfg[$Matches[1]] = $Matches[2].Trim('"').Trim("'")
+        }
+    }
+}
+foreach ($d in @(
+    @{ Param = 'IdentityName';         Key = 'XEFM_MSIX_IDENTITY_NAME';          Fallback = 'XeFM.Prototype' },
+    @{ Param = 'Publisher';            Key = 'XEFM_MSIX_PUBLISHER';              Fallback = 'CN=XeFM Prototype Dev' },
+    @{ Param = 'PublisherDisplayName'; Key = 'XEFM_MSIX_PUBLISHER_DISPLAY_NAME'; Fallback = 'XeFM Prototype' }
+)) {
+    if ($PSBoundParameters.ContainsKey($d.Param)) { continue }   # explicit argument wins
+    $value = if ($storeCfg.ContainsKey($d.Key)) { $storeCfg[$d.Key] } else { $d.Fallback }
+    Set-Variable -Name $d.Param -Value $value
+}
+# Loud, because a prototype-identity package packs and installs locally just fine
+# and is only rejected once uploaded -- after the slow pack and a Partner Center
+# round trip.
+if ($IdentityName -eq 'XeFM.Prototype') {
+    Write-Host ("[WARNING] Using the PROTOTYPE identity '$IdentityName' -- fine for local " +
+                "testing, but Partner Center will reject it. Copy store.env.example to " +
+                "store.env and fill in your Product identity values.") -ForegroundColor Yellow
+}
+Write-Host "[INFO] Package identity: $IdentityName  ($Publisher)"
 
 # Artifact paths shared by build + install actions.
 $msix    = "$OutDir\XeFM-$Version-$Arch.msix"
@@ -199,7 +272,6 @@ if (-not $SkipAssets) {
     Write-Host "[INFO] Generating Store tile assets..."
     # Use the venv's interpreter (has Pillow) rather than a bare 'python', since
     # 'make' does not activate the venv — same approach as build.ps1.
-    $projectRoot = Split-Path -Parent $ScriptDir
     $venvPy = Join-Path $projectRoot '.venv\Scripts\python.exe'
     if (-not (Test-Path $venvPy)) { throw ".venv not found at $venvPy. Run 'make venv' first." }
     $env:PYTHONPATH = "$ScriptDir;$projectRoot\src"

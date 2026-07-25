@@ -34,6 +34,9 @@ env/
 # Local macOS signing config (non-secret, but per-machine; use signing.env.example)
 macos_app/signing.env
 
+# Local MSIX Store identity (non-secret, but per-account; use store.env.example)
+windows_app/store.env
+
 # IDE
 .vscode/
 .idea/
