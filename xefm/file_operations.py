@@ -583,6 +583,14 @@ _CONFLICT_ACTIONS = (
     ("cancel", "Cancel"),
 )
 
+#: The dialog's default action: initially focused *and* drawn as the accent
+#: "primary" button. The two must name the same button — an accent fill reads as
+#: "this is what Enter does", so putting it on a button Enter would not press is
+#: a lie about the default. Skip is the safe resolution, matching the app's other
+#: destructive confirms (Delete, archive overwrite), where the accent sits on the
+#: harmless choice rather than the one that destroys data.
+_DEFAULT_CONFLICT_ACTION = "skip"
+
 
 def _conflict_prompt(name: str, index: int, total: int, z: int):
     """Return a ``show_fn(panel, deliver)`` for ``Task.ask``: it pushes a
@@ -599,8 +607,10 @@ class ConflictDialog(FocusContainer, Widget):
     """Per-conflict resolution modal: names the colliding file (``i of N``), a row
     of actions (Overwrite / Skip / Keep both / Cancel), and an "apply to all
     remaining" checkbox. Reports ``(action, apply_to_all)`` through ``on_result``.
-    Keyboard: ``o/s/k/c`` shortcuts, ``a``/Space toggles the checkbox, Tab moves
-    focus, Enter activates the focused button, Esc cancels."""
+    Keyboard: ``o/s/k/c`` shortcuts, ``a``/Space toggles the checkbox, Tab and
+    Left/Right move focus (Left/Right along the button row, as in a regular
+    message box; Up/Down hop between the row and the checkbox), Enter activates
+    the focused button, Esc cancels."""
 
     focusable = True
     focus_stop_when_empty = True
@@ -617,11 +627,16 @@ class ConflictDialog(FocusContainer, Widget):
         self._msg = MarkdownView(f"{_code(name)} already exists in the destination.")
         self._checkbox = Checkbox("Apply to all remaining", checked=False)
         self._buttons = [
-            Button(label, variant=("primary" if action == "overwrite" else "secondary"),
+            Button(label,
+                   variant=("primary" if action == _DEFAULT_CONFLICT_ACTION else "secondary"),
                    on_click=(lambda a=action: self._resolve(a)))
             for action, label in _CONFLICT_ACTIONS
         ]
-        self._focused: Any = self._buttons[1]  # default focus = Skip (safe)
+        default = next(i for i, (action, _l) in enumerate(_CONFLICT_ACTIONS)
+                       if action == _DEFAULT_CONFLICT_ACTION)
+        self._focused: Any = self._buttons[default]
+        #: The button focus returns to when Down leaves the checkbox row.
+        self._last_button: Any = self._buttons[default]
         self._child_rects: list[tuple[Any, tuple[float, float, float, float]]] = []
 
     # --- focus ---------------------------------------------------------------
@@ -704,6 +719,12 @@ class ConflictDialog(FocusContainer, Widget):
         elif key == "tab":
             move_focus(self, -1 if "shift" in event.modifiers else 1, wrap=True)
             self._render()
+        elif key in ("left", "right"):
+            self._move_in_row(1 if key == "right" else -1)
+            self._render()
+        elif key in ("up", "down"):
+            self._hop_row()
+            self._render()
         elif key == "enter":
             if self._focused is self._checkbox:
                 self._checkbox.toggle()
@@ -718,6 +739,27 @@ class ConflictDialog(FocusContainer, Widget):
                 if char == action[0]:  # o / s / k / c
                     self._resolve(action)
                     return
+
+    def _move_in_row(self, step: int) -> None:
+        """Left/Right walk the button row, wrapping at its ends — the traversal a
+        regular message box gives its buttons. From the checkbox they step into
+        the row from the matching edge (Right → first, Left → last)."""
+        if self._focused is self._checkbox:
+            self._focused = self._buttons[0 if step > 0 else -1]
+        else:
+            i = self._buttons.index(self._focused)
+            self._focused = self._buttons[(i + step) % len(self._buttons)]
+        self._last_button = self._focused
+
+    def _hop_row(self) -> None:
+        """Up/Down move between the two rows the dialog actually has — the button
+        row and the checkbox above it — returning to the button that last held
+        focus, so a round trip does not lose your place."""
+        if self._focused is self._checkbox:
+            self._focused = self._last_button
+        else:
+            self._last_button = self._focused
+            self._focused = self._checkbox
 
     def _on_mouse(self, event: Event) -> None:
         if event.x is None:

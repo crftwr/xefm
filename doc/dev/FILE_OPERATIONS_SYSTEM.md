@@ -90,7 +90,9 @@ For copy/move, `_resolve` prompts per collision through the task's UI bridge —
 | Keep both | `k` | write to a fresh `name (N)` (via `_unique_dest`) |
 | Cancel | `c` / `Esc` | raise `Cancelled` — abort the whole operation |
 
-`a` / Space toggles apply-to-all, Tab moves focus, Enter activates the focused button. When apply-to-all is checked, the chosen action is reused for every remaining collision without prompting.
+`a` / Space toggles apply-to-all, Tab moves focus, Enter activates the focused button. Left/Right walk the button row (wrapping at its ends, as `MessageBox` does); Up/Down hop between the row and the checkbox above it, returning to the button last focused. When apply-to-all is checked, the chosen action is reused for every remaining collision without prompting.
+
+**Skip is the default** (`_DEFAULT_CONFLICT_ACTION`): it starts focused *and* wears the accent `primary` fill, while the other three are `secondary`. The two must name the same button — the accent reads as "this is what Enter does", so it belongs on the safe resolution, matching the app's other destructive confirms (Delete, archive overwrite), which put the accent on Cancel.
 
 ## Duplicate
 

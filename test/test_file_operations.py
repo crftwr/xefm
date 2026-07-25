@@ -364,6 +364,43 @@ def test_conflict_dialog_renders_message_checkbox_and_buttons():
         assert label in text
 
 
+def test_conflict_dialog_accent_button_is_the_focused_default():
+    """The accent ("primary") fill marks the button Enter presses, so exactly one
+    button wears it and it is the one focus starts on — the safe Skip, matching
+    the app's other destructive confirms."""
+    from xefm.file_operations import ConflictDialog
+    dlg = ConflictDialog("a.txt", 1, 1, on_result=lambda a: None)
+    primary = [b for b in dlg._buttons if b.variant == "primary"]
+    assert [b.label for b in primary] == ["Skip"]
+    assert dlg._focused is primary[0]
+
+
+def test_conflict_dialog_arrow_keys_move_focus():
+    """Left/Right walk the button row (wrapping) like a regular message box;
+    Up/Down hop to the checkbox and back to the button left behind."""
+    from xefm.file_operations import ConflictDialog
+    dlg = ConflictDialog("a.txt", 1, 1, on_result=lambda a: None)
+
+    def key(name):
+        dlg.handle_event(Event(EventType.KEY, key=name, char=None, modifiers=set()))
+
+    key("left")
+    assert dlg._focused.label == "Overwrite"
+    key("left")                                   # wraps to the row's end
+    assert dlg._focused.label == "Cancel"
+    key("right")
+    assert dlg._focused.label == "Overwrite"
+
+    key("up")                                     # into the checkbox row
+    assert dlg._focused is dlg._checkbox
+    key("down")                                   # back where we left off
+    assert dlg._focused.label == "Overwrite"
+
+    key("up")
+    key("right")                                  # from the checkbox, into the row
+    assert dlg._focused.label == "Overwrite"
+
+
 def test_op_errors_body_and_none():
     from xefm.file_operations import format_op_errors
     assert format_op_errors("Copy", {"errors": []}) is None
