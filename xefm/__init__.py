@@ -23,6 +23,5 @@ business logic.
 #: Don't reintroduce a copy: prose docs point here instead of restating the
 #: number, and the bundle builders accept a ``VERSION`` override for one-off
 #: builds without editing anything.
-__version__ = "1.0.0"
-
+__version__ = "1.0.1"
 __author__ = "Tomonori Shimomura"
