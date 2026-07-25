@@ -26,6 +26,8 @@ from puikit import Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 from puikit.widgets.base import Widget
 
+from xefm._config import Config as DefaultConfig
+from xefm.config import config_manager
 from xefm.image_viewer import (IMAGE_SUFFIXES, MAX_ZOOM, MIN_ZOOM, PAN_STEP,
                               ZOOM_STEP, ImageViewer, is_image_file,
                               show_image_viewer)
@@ -60,7 +62,32 @@ def _png(path, w, h):
 
 
 def _key(key=None, char=None):
+    """A KEY event shaped the way a real backend delivers it.
+
+    PuiKit's keyboard contract (puikit/docs/keyboard_contract.md §3) says a
+    letter press carries ``key`` = the lowercase letter *as well as* the typed
+    glyph in ``char``; punctuation and digits carry ``key`` = ``char`` = the
+    produced glyph. XeFM's keymap follows that split — letters are matched on
+    ``key``, punctuation on ``char`` — so a char-only "n" is an event no backend
+    ever sends and no letter binding can match. Each test passes the half it
+    means; the other half is filled in here.
+    """
+    if key is None and char is not None:
+        key = char.lower()
     return Event(type=EventType.KEY, key=key, char=char)
+
+
+@pytest.fixture(autouse=True)
+def shipped_config(monkeypatch):
+    """Resolve key bindings from xefm/_config.py, not from ~/.xefm/config.py.
+
+    The viewer matches its keys through the *active* configuration, which is the
+    developer's own file when one exists — so without this, whether ``n`` steps
+    to the next image would depend on whose machine the suite runs on. Pinning
+    the shipped template keeps these tests a check on XeFM's defaults.
+    """
+    monkeypatch.setattr(config_manager, "config", DefaultConfig())
+    monkeypatch.setattr(config_manager, "_key_bindings", None)
 
 
 @pytest.fixture

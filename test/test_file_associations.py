@@ -5,7 +5,23 @@ Run with: python -m pytest test/test_file_associations.py -v
 """
 
 
-from xefm.config import get_file_associations, get_program_for_file, has_action_for_file
+import pytest
+
+from xefm._config import Config as DefaultConfig
+from xefm.config import (config_manager, get_file_associations,
+                         get_program_for_file, has_action_for_file)
+
+
+@pytest.fixture(autouse=True)
+def shipped_config(monkeypatch):
+    """Assert against the shipped defaults, not against ~/.xefm/config.py.
+
+    These lookups read the *active* configuration, which is the developer's own
+    file whenever one exists — so without this the suite (and the `make release`
+    gate that runs it) would pass or fail depending on whose machine it ran on.
+    Pinning the template keeps these tests a check on xefm/_config.py.
+    """
+    monkeypatch.setattr(config_manager, "config", DefaultConfig())
 
 
 def test_get_file_associations():
@@ -29,11 +45,15 @@ def test_pattern_matching():
     assert command_upper == command, "Pattern matching should be case-insensitive"
     print("✓ Case-insensitive matching works")
     
-    # Test image files
-    jpg_command = get_program_for_file('photo.jpg', 'view')
+    # Test image files. 'view' is deliberately unset for images in the default
+    # config so V opens XeFM's own image viewer instead of handing the file to
+    # Preview; 'open' still routes to the OS app.
+    jpg_command = get_program_for_file('photo.jpg', 'open')
     assert jpg_command is not None, "Should find program for JPG files"
-    print(f"✓ JPG view command: {jpg_command}")
-    
+    assert get_program_for_file('photo.jpg', 'view') is None, \
+        "JPG view stays with the built-in image viewer"
+    print(f"✓ JPG open command: {jpg_command}")
+
     # Test video files
     mp4_command = get_program_for_file('video.mp4', 'open')
     assert mp4_command is not None, "Should find program for MP4 files"
@@ -42,23 +62,20 @@ def test_pattern_matching():
 
 def test_multiple_actions():
     """Test that same file can have different programs for different actions"""
-    # For image files, open and view should use Preview, edit should use different program
+    # For image files: open hands off to Preview, edit to an image editor, and
+    # view is None so the built-in viewer takes it.
     open_cmd = get_program_for_file('image.jpg', 'open')
     view_cmd = get_program_for_file('image.jpg', 'view')
     edit_cmd = get_program_for_file('image.jpg', 'edit')
-    
+
     assert open_cmd is not None, "Should have open command for JPG"
-    assert view_cmd is not None, "Should have view command for JPG"
     assert edit_cmd is not None, "Should have edit command for JPG"
-    
-    # Open and view should be the same for images (Preview)
-    assert open_cmd == view_cmd, "Open and view should use same program for images"
-    
+    assert view_cmd is None, "JPG view is None so XeFM's own image viewer handles it"
+
     # Edit should be different (image editor)
     assert edit_cmd != open_cmd, "Edit should use different program than open/view"
-    
+
     print(f"✓ JPG open: {open_cmd}")
-    print(f"✓ JPG view: {view_cmd}")
     print(f"✓ JPG edit: {edit_cmd}")
 
 
