@@ -123,7 +123,12 @@ should not be launched non-interactively (they block).
 - `make run` / `make run-gui` — run XeFM (terminal / native)
 - `make test` / `make test-quick` — run tests
 - `make macos-app` / `make windows-app` — build platform packages
-- `make clean` — clean temporary artifacts
+- `make clean` — every rebuildable artifact, by running `clean-python`,
+  `clean-macos` and `clean-windows`. It keeps `.venv/` and
+  `windows_app/.cache/`, since restoring those needs the network, and names both
+  when it finishes — remove them with `make clean-venv` / `make clean-windows-cache`.
+  The gitignored config files (`Makefile.local`, `*/signing.env`, `*/store.env`)
+  are never cleaned by anything.
 
 ## Dependencies
 

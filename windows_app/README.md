@@ -17,7 +17,7 @@ make windows-app                 # or: powershell -ExecutionPolicy Bypass -File 
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 1.0.0 -Zip
 
 # clean
-make clean-windows-app
+make clean-windows
 ```
 
 Output: `windows_app\build\XeFM\` (the self-contained folder) and, with `-Zip`,

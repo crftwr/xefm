@@ -106,7 +106,7 @@ make uninstall-macos-dmg
 
 ```bash
 # Clean all build artifacts
-make clean-macos-app
+make clean-macos
 
 # Or remove manually
 rm -rf macos_app/build

@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos-app macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-app clean-windows-app windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config venv clean-venv check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config venv clean-venv check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -48,7 +48,9 @@ help:
 	@echo "  run-web        - Run XeFM in a web browser (web backend)"
 	@echo "  test           - Run all tests"
 	@echo "  test-quick     - Run quick verification tests"
-	@echo "  clean          - Clean up temporary files"
+	@echo "  clean          - Remove every rebuildable artifact (keeps .venv + the"
+	@echo "                   Windows download cache; it names both when it finishes)"
+	@echo "  clean-python   - Just the source tree: build/, dist/, egg-info, pyc, pytest"
 	@echo "  install        - Install XeFM"
 	@echo "  uninstall      - Uninstall XeFM"
 	@echo "  dev-install    - Install in development mode"
@@ -79,7 +81,7 @@ help:
 	@echo ""
 	@echo "macOS App Bundle:"
 	@echo "  macos-app           - Build native macOS application bundle"
-	@echo "  clean-macos-app     - Clean macOS app build artifacts"
+	@echo "  clean-macos         - Remove macos_app/build/ (the .app AND the DMG)"
 	@echo "  macos-refresh-icon  - Refresh macOS icon cache (after icon changes)"
 	@echo "  macos-dmg           - Create DMG installer for distribution"
 	@echo "  install-macos-dmg   - Install XeFM.app from that DMG to /Applications"
@@ -88,7 +90,8 @@ help:
 	@echo ""
 	@echo "Windows App Bundle:"
 	@echo "  windows-app            - Build self-contained Windows application bundle"
-	@echo "  clean-windows-app      - Clean Windows app build artifacts"
+	@echo "  clean-windows          - Remove windows_app/build/ (bundle, zip, .msix) + tiles"
+	@echo "  clean-windows-cache    - Remove the downloaded CPython embeddable zips"
 	@echo "  windows-zip            - Build the bundle and zip it for distribution"
 	@echo "  install-windows-zip    - Install from that zip to %LOCALAPPDATA%\\\\Programs\\\\XeFM"
 	@echo "                           (WINDOWS_INSTALL_DIR=... to install elsewhere)"
@@ -234,13 +237,65 @@ test-quick: check-venv
 	@cd test && PYTHONPATH=.. $(PYTHON) test_delete_feature.py
 	@cd test && PYTHONPATH=.. $(PYTHON) test_integration.py
 
-clean:
-	@echo "Cleaning up..."
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	@find . -type f -name "*.pyo" -delete 2>/dev/null || true
-	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
-	@rm -rf build/ dist/ 2>/dev/null || true
+# --- Cleaning -----------------------------------------------------------------
+# One clean target per AREA of the tree, plus `clean` to sweep the disposable
+# ones together:
+#
+#   clean-python        the source tree      build/, dist/, *.egg-info,
+#                                            __pycache__/*.pyc, .pytest_cache/,
+#                                            .coverage
+#   clean-macos         macos_app/build/     the .app AND the DMG
+#   clean-windows       windows_app/         build/ (bundle, zip, .msix, certs)
+#                                            + the generated MSIX tiles
+#   clean-venv          .venv/               EXCLUDED from `clean`
+#   clean-windows-cache windows_app/.cache/  EXCLUDED from `clean`
+#
+# `clean` runs the first three: everything they remove is rebuilt from the
+# checkout by a plain `make`. The last two are excluded because restoring them
+# needs the NETWORK — a venv install and a ~10MB CPython download — so losing
+# them to a routine clean would be a nasty surprise. `clean` prints both, so
+# "everything" is one command away and never a silent omission.
+#
+# Grouping is by area rather than one-cleaner-per-producing-target: splitting
+# out .pytest_cache or the MSIX tiles as their own targets was more precision
+# than anyone needs, and made the target list harder to read than the tree it
+# describes.
+#
+# Hence clean-macos / clean-windows rather than clean-macos-app /
+# clean-windows-app: they are NOT the inverse of macos-app / windows-app. Each
+# platform's build/ holds the output of every target for that platform, so
+# clean-macos also takes the DMG that macos-dmg wrote, and clean-windows also
+# takes the zip and the .msix. Naming them after the app bundle claimed a
+# symmetry that does not exist.
+#
+# Never cleaned by anything: Makefile.local, macos_app/signing.env and
+# windows_app/store.env are gitignored *configuration*, not artifacts — losing
+# them to a stray clean would cost real setup work.
+clean: clean-python clean-macos clean-windows
+	@echo ""
+	@echo "Cleaned. Kept (each needs the network to restore — remove explicitly):"
+	@echo "  .venv/                -> make clean-venv"
+	@echo "  windows_app/.cache/   -> make clean-windows-cache"
+
+# Everything the Python toolchain leaves in the source tree: the sdist/wheel
+# outputs `make build` writes, bytecode caches, and what pytest leaves behind.
+# (.coverage is gitignored but nothing here writes it — it appears when you run
+# pytest-cov by hand, so it is removed if present rather than assumed.)
+#
+# The prunes are the point of the find calls: .venv's caches belong to
+# clean-venv, and the built bundles ship *deliberately* pre-compiled bytecode
+# (macos_app/build.sh and build.ps1 both compile ahead of time, and the Windows
+# launcher runs with write_bytecode = 0), so sweeping those would quietly
+# degrade a finished artifact rather than clean anything.
+clean-python:
+	@echo "Cleaning Python build, bytecode and test artifacts..."
+	@rm -rf build/ dist/ .pytest_cache .coverage
+	@find . -path ./.venv -prune -o -type d -name "*.egg-info" -prune -exec rm -rf {} + 2>/dev/null || true
+	@find . \( -path ./.venv -o -path ./macos_app/build -o -path ./windows_app/build \) -prune -o \
+		-type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
+	@find . \( -path ./.venv -o -path ./macos_app/build -o -path ./windows_app/build \) -prune -o \
+		-type f \( -name "*.pyc" -o -name "*.pyo" \) -delete 2>/dev/null || true
+	@echo "Python artifacts removed"
 
 install: check-venv install-puikit
 	@echo "Installing XeFM..."
@@ -500,10 +555,13 @@ macos-app:
 	@echo "Building macOS application bundle..."
 	@cd macos_app && ./build.sh
 
-clean-macos-app:
-	@echo "Cleaning macOS app build artifacts..."
+# Everything macos_app/build/ holds, which is more than `macos-app` wrote: the
+# .app and its compiled executable, plus the DMG from macos-dmg and any mount
+# point install-macos-dmg left. Hence clean-macos, not clean-macos-app.
+clean-macos:
+	@echo "Cleaning macOS build artifacts (.app, executable, DMG)..."
 	@rm -rf macos_app/build/
-	@echo "Build artifacts removed"
+	@echo "macOS build artifacts removed"
 
 # --- App icons --------------------------------------------------------------
 # The SVG masters in tools/icon/ are the single source of truth. Rendering needs
@@ -550,7 +608,7 @@ macos-dmg: macos-app
 MACOS_DMG := macos_app/build/XeFM-$(XEFM_VERSION)-macos.dmg
 
 # File target so `release-macos-dmg` builds the DMG on demand when it is missing
-# (e.g. after 'make clean-macos-app') instead of failing at the upload. An
+# (e.g. after 'make clean-macos') instead of failing at the upload. An
 # existing DMG is NOT rebuilt, so re-uploading stays fast and never re-runs
 # notarization; run 'make macos-dmg' to force a fresh one.
 $(MACOS_DMG):
@@ -617,7 +675,7 @@ install-macos-dmg: $(MACOS_DMG)
 
 # Removes what install-macos-dmg put there — the app bundle only, never the
 # containing directory. No DMG prerequisite on purpose: uninstalling must work
-# after 'make clean-macos-app', when building a DMG just to delete an app would
+# after 'make clean-macos', when building a DMG just to delete an app would
 # be absurd. Set the same MACOS_INSTALL_DIR you installed with.
 #
 # An absent install is reported, not an error: re-running an uninstall should
@@ -642,7 +700,7 @@ uninstall-macos-dmg:
 
 # The built bundle's launcher; its presence marks a complete bundle. Targets
 # that only *consume* the bundle (install, msix) depend on this file target so it
-# is built on demand if missing (e.g. after 'make clean-windows-app') instead of
+# is built on demand if missing (e.g. after 'make clean-windows') instead of
 # failing deep inside a packaging script.
 #
 # It also rebuilds when any bundled input is newer, which is what stops a
@@ -695,7 +753,7 @@ windows-zip:
 WINDOWS_ZIP := windows_app/build/XeFM-$(XEFM_VERSION)-win64.zip
 
 # File target so the upload builds the zip on demand when it is missing (e.g.
-# after 'make clean-windows-app') instead of failing at the upload. An existing
+# after 'make clean-windows') instead of failing at the upload. An existing
 # zip is NOT rebuilt; run 'make windows-zip' to force a fresh one.
 $(WINDOWS_ZIP):
 	@echo "Windows zip not found at $@; building it first..."
@@ -744,9 +802,27 @@ uninstall-windows-zip:
 	@powershell -ExecutionPolicy Bypass -File windows_app/install_zip.ps1 \
 		-Uninstall $(if $(WINDOWS_INSTALL_DIR),-InstallDir "$(WINDOWS_INSTALL_DIR)")
 
-clean-windows-app:
-	@echo "Cleaning Windows app build artifacts..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Clean
+# Everything the Windows build machinery generates: build/ (the bundle, the zip,
+# the .msix, its staging dir and the throwaway .pfx/.cer) plus resources/Assets/,
+# the Store tiles make_store_assets.py renders from the committed PNG masters —
+# the one thing the MSIX build writes outside build/. Removing the tiles is also
+# how you force regeneration, since build_msix.ps1 -SkipAssets reuses them.
+#
+# Plain rm rather than `build.ps1 -Clean`, which does exactly `Remove-Item
+# -Recurse -Force build`: identical effect, but no PowerShell, so this works on
+# any OS and `make clean` does not fail on macOS or Linux.
+clean-windows:
+	@echo "Cleaning Windows build artifacts (bundle, zip, .msix, certs, tiles)..."
+	@rm -rf windows_app/build windows_app/resources/Assets
+	@echo "Windows build artifacts removed"
+
+# The CPython embeddable zips build.ps1 downloads on the first build, kept so
+# later builds do not re-download ~10MB. Excluded from `clean` for that reason:
+# cleaning a build should never cost you a download.
+clean-windows-cache:
+	@echo "Removing windows_app/.cache/ (downloaded CPython embeddable zips)..."
+	@rm -rf windows_app/.cache
+	@echo "Download cache removed; the next Windows build will re-download"
 
 # --- MSIX (Microsoft Store / winget) packaging, PROTOTYPE ------------------
 # Wraps the built bundle into an .msix; builds the bundle first if it is missing.
@@ -782,3 +858,4 @@ install-windows-msix: $(WINDOWS_APP_BUNDLE)
 uninstall-windows-msix:
 	@echo "Removing installed MSIX package and throwaway cert..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Uninstall
+

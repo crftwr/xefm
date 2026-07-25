@@ -33,7 +33,7 @@ Targets are named `<verb>-<artifact>`, and the verb says how far the thing goes:
 | `install-` | your machine | `install-macos-dmg` | `install-windows-zip` | `install-windows-msix` | — |
 | `uninstall-` | your machine | `uninstall-macos-dmg` | `uninstall-windows-zip` | `uninstall-windows-msix` | — |
 | `release-` | the public | `release-macos-dmg` | `release-windows-zip` | never | `release-whl` |
-| `clean-` | your build dir | `clean-macos-app` | `clean-windows-app` | (same) | — |
+| `clean-` | your build dir | `clean-macos` | `clean-windows` | (same) | — |
 
 Each names its **artifact**, not its platform's app bundle, so the rows line up:
 `macos-dmg`, `windows-zip` and `windows-msix` are siblings, and each takes
@@ -45,8 +45,8 @@ never be a download (see below), so there is nothing to publish.
 
 Every `uninstall-*` target is idempotent — removing something that was never
 installed reports that and succeeds — and none of them depend on the artifact
-they installed from, so uninstalling still works after `make clean-macos-app` or
-`make clean-windows-app` has removed the build directory. Pass whichever
+they installed from, so uninstalling still works after `make clean-macos` or
+`make clean-windows` has removed the build directory. Pass whichever
 `MACOS_INSTALL_DIR` / `WINDOWS_INSTALL_DIR` you installed with.
 
 The `install-*` targets deliberately install **from the distributable artifact**
