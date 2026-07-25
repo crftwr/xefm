@@ -1,0 +1,147 @@
+"""Fail-fast checks run before `make release` mutates anything.
+
+The release recipe does irreversible things (pushes a tag, uploads to PyPI —
+a PyPI version can never be reused). This script runs FIRST and refuses the
+release unless every precondition holds, so a dirty tree, a stale checkout, a
+duplicate version, or a missing/unauthenticated `gh` fails loudly *before* any
+commit, tag, upload, or push happens. It collects all problems and reports them
+together rather than stopping at the first.
+
+Warnings (printed, non-fatal) cover the one thing a checkout can't decide for
+you: whether the PuiKit build this release depends on is actually published.
+
+Usage: release_preflight.py <new-version>
+"""
+
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+from _version_source import INIT, read_version
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+
+# X.Y.Z core, with an optional PEP 440-ish pre/post/dev suffix (e.g. 1.2.0rc1).
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[.-]?(?:a|b|rc|alpha|beta|post|dev)\d+)?$")
+
+
+def git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], capture_output=True, text=True, cwd=REPO_ROOT)
+
+
+def core(version: str) -> tuple[int, int, int]:
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)", version)
+    return tuple(int(g) for g in m.groups()) if m else (0, 0, 0)
+
+
+def editable_puikit() -> str | None:
+    """Return the checkout path if PuiKit is installed editable, else None.
+
+    XeFM's Makefile installs PuiKit editable from PUIKIT_DIR for co-development,
+    but the sdist/wheel this release builds depends on the *published* PuiKit
+    (``puikit>=1.0`` in requirements.txt). If XeFM has come to rely on unreleased
+    PuiKit changes, the release would install for nobody but you.
+    """
+    try:
+        import importlib.metadata as md
+
+        raw = md.distribution("puikit").read_text("direct_url.json")
+    except Exception:
+        return None
+    if not raw:
+        return None
+    info = json.loads(raw)
+    return info.get("url") if info.get("dir_info", {}).get("editable") else None
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print("usage: release_preflight.py <new-version>", file=sys.stderr)
+        return 2
+    new = sys.argv[1]
+    problems: list[str] = []
+    warnings: list[str] = []
+
+    # 1. Version string is well-formed.
+    if not VERSION_RE.match(new):
+        problems.append(f"VERSION '{new}' is not X.Y.Z (optionally +rc1/.post1/…)")
+
+    # 2. New version is strictly ahead of the current one (no re-release / rollback).
+    #    Read from the single source of truth, xefm/__init__.py's __version__.
+    current = read_version()
+    if new == current:
+        problems.append(f"VERSION {new} equals the current version in {INIT.name}")
+    elif core(new) < core(current):
+        problems.append(f"VERSION {new} is older than the current {current}")
+
+    # 2b. pyproject.toml still DERIVES the version rather than hardcoding it.
+    #     A static [project].version would silently win over __version__ at build
+    #     time, so the wheel could ship a different number than `xefm --version`
+    #     reports and than the macOS/Windows bundles embed.
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    if "version" in pyproject.get("project", {}):
+        problems.append(
+            "pyproject.toml has a static [project].version — it must stay in "
+            'dynamic = ["version"] so the build derives xefm.__version__'
+        )
+    elif "version" not in pyproject.get("project", {}).get("dynamic", []):
+        problems.append('pyproject.toml no longer declares dynamic = ["version"]')
+
+    # 3. On the main branch.
+    branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if branch != "main":
+        problems.append(f"on branch '{branch}', not 'main'")
+
+    # 4. Working tree is clean.
+    if git("status", "--porcelain").stdout.strip():
+        problems.append("working tree is dirty — commit or stash first")
+
+    # 5. The tag does not already exist.
+    if git("tag", "--list", f"v{new}").stdout.strip():
+        problems.append(f"tag v{new} already exists")
+
+    # 6. Local main is not behind its upstream (a non-fast-forward push would
+    #    otherwise fail mid-release). Skipped cleanly if there is no upstream.
+    git("fetch", "--quiet")
+    upstream = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream.returncode == 0:
+        behind = git("rev-list", "--count", "HEAD..@{u}").stdout.strip()
+        if behind and behind != "0":
+            problems.append(
+                f"local branch is {behind} commit(s) behind {upstream.stdout.strip()} — pull first"
+            )
+
+    # 7. gh is installed and authenticated (this release creates a GitHub Release).
+    if shutil.which("gh") is None:
+        problems.append("`gh` not found — install it (`brew install gh`) and run `gh auth login`")
+    elif subprocess.run(["gh", "auth", "status"], capture_output=True).returncode != 0:
+        problems.append("`gh` is not authenticated — run `gh auth login`")
+
+    # 8. Non-fatal: PuiKit is a separate repo with its own release cycle.
+    puikit_dir = editable_puikit()
+    if puikit_dir:
+        warnings.append(
+            f"PuiKit is installed editable from {puikit_dir}; the release depends on the "
+            "PyPI build (requirements.txt pins puikit>=1.0). Release PuiKit first if XeFM "
+            "needs unreleased changes from it."
+        )
+
+    if problems:
+        print("Release preflight failed:", file=sys.stderr)
+        for p in problems:
+            print(f"  ✗ {p}", file=sys.stderr)
+        return 1
+
+    for w in warnings:
+        print(f"  ! {w}")
+    print(f"Preflight OK: {current} -> {new} on {branch}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

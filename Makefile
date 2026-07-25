@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg windows-app windows-app-clean windows-app-zip windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg windows-app windows-app-clean windows-app-zip windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -56,6 +56,12 @@ help:
 	@echo "  lint           - Run code linting"
 	@echo "  format         - Format code"
 	@echo ""
+	@echo "Packaging / release:"
+	@echo "  build          - Build the sdist + wheel into dist/ (installs build/twine as needed)"
+	@echo "  publish-testpypi - Upload dist/* to TestPyPI (needs a [testpypi] token in ~/.pypirc)"
+	@echo "  publish-pypi     - Upload dist/* to PyPI (needs a [pypi] token in ~/.pypirc)"
+	@echo "  release VERSION=x.y.z - One-command release: bump, tag, build, PyPI, GitHub Release"
+	@echo ""
 	@echo "  PuiKit installs from PyPI by default. To develop against a local"
 	@echo "  editable checkout, set PUIKIT_DIR (Makefile.local / env / CLI),"
 	@echo "  e.g. PUIKIT_DIR=../puikit."
@@ -85,6 +91,7 @@ help:
 	@echo "  make macos-app                  # Build macOS app bundle"
 	@echo "  make macos-app-install          # Install to /Applications"
 	@echo "  make macos-dmg                  # Create DMG installer"
+	@echo "  make release VERSION=1.0.1      # Cut a release (tag + PyPI + GitHub Release)"
 
 venv:
 	@if [ -d .venv ]; then \
@@ -263,6 +270,66 @@ format: check-venv
 demo: check-venv
 	@echo "Running XeFM demo..."
 	@cd test && $(PYTHON) demo_delete_feature.py
+
+# ============================================================================
+# Packaging / Release Targets
+# ============================================================================
+# `build` and `twine` are release-time tooling, not needed to run or develop
+# XeFM, so they are installed on demand here rather than sitting in
+# requirements.txt. Invoked as `python -m ...` (not the venv's console scripts)
+# so the same recipe works on Windows, where those scripts live in Scripts/ and
+# end in .exe.
+
+build: check-venv
+	@echo "Building sdist + wheel..."
+	@$(PIP) install --quiet build twine
+	@rm -rf dist build xefm.egg-info
+	@$(PYTHON) -m build
+	@$(PYTHON) -m twine check dist/*
+
+publish-testpypi: build
+	@$(PYTHON) -m twine upload -r testpypi dist/*
+
+publish-pypi: build
+	@$(PYTHON) -m twine upload dist/*
+
+# One-command release. Usage: make release VERSION=1.0.1
+#
+# The version's single source of truth is xefm/__init__.py's __version__;
+# pyproject.toml derives it (dynamic version = attr), `xefm --version` re-exports
+# it, and the macOS/Windows bundle builders extract that same literal.
+# bump_version.py rewrites that one line, which is why the commit below stages
+# __init__.py rather than pyproject.toml.
+#
+# Runs entirely on your machine and ties the three release artifacts together so
+# they can't drift: the git tag, the PyPI upload, and the GitHub Release all
+# name the same version. release_preflight.py runs FIRST and aborts before any
+# mutation if the tree is dirty, the version is stale, the tag exists, or `gh`
+# is missing/unauthenticated — so a failed precondition never leaves a
+# half-published release. The test suite must pass before anything is built.
+# `make build` cleans dist/ and re-checks the artifacts each run.
+#
+# The macOS .app/.dmg and Windows bundle are NOT built here (they only build on
+# their own platform). Produce them with `make macos-dmg` / `make windows-app-zip`
+# on each machine and attach them afterwards with `gh release upload vX.Y.Z <file>`.
+#
+# Prereqs: a [pypi] token in ~/.pypirc and an authenticated `gh` (gh auth login).
+release: check-venv
+	@test -n "$(VERSION)" || { echo "ERROR: set VERSION, e.g. make release VERSION=1.0.1"; exit 1; }
+	$(PYTHON) tools/release_preflight.py "$(VERSION)"
+	@# Gates on pytest directly rather than on `make test`: that target tolerates a
+	@# missing pytest (`|| echo ...`) and would let an unrun suite pass silently.
+	$(PYTHON) -m pytest test
+	$(PYTHON) tools/bump_version.py "$(VERSION)"
+	git add xefm/__init__.py
+	git commit -m "Releasing $(VERSION)"
+	git tag -a v$(VERSION) -m "$(VERSION)"
+	$(MAKE) build
+	git push
+	git push origin v$(VERSION)
+	$(PYTHON) -m twine upload dist/*
+	gh release create v$(VERSION) dist/* --title "v$(VERSION)" --generate-notes --verify-tag
+	@echo "Released $(VERSION): git tag + PyPI + GitHub Release ✓"
 
 # ============================================================================
 # macOS App Bundle Targets
