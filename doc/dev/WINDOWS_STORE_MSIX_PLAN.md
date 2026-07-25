@@ -2,7 +2,7 @@
 
 **Status:** PARTIALLY IMPLEMENTED. Written 2026-07-20. The local MSIX tooling now
 exists — `windows_app/build_msix.ps1` (self-signed prototype), `make_store_assets.py`,
-and the `windows-app-msix{,-install,-uninstall}` Makefile targets — and Step 1
+and the `windows-msix{,-install,-uninstall}` Makefile targets — and Step 1
 (relocating `XeFM-error.log` to `~/.xefm/`) is done in `launcher.c`. What remains is
 the manual Partner Center Store submission.
 
@@ -270,7 +270,7 @@ Once the manual flow succeeds end-to-end, fold it into `windows_app/build.ps1` a
 a `-Msix` switch (mirroring how macOS's `create_dmg.sh` extends the app build):
 generate assets → emit manifest (identity values via parameters / a gitignored
 `windows_app\store.env`, same pattern as `macos_app\signing.env`) → `makeappx pack`.
-Add a `windows-app-msix` Makefile target. Keep identity values **out of git**.
+Add a `windows-msix` Makefile target. Keep identity values **out of git**.
 
 ---
 

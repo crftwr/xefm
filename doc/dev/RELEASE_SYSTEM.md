@@ -1,55 +1,74 @@
 # Release System
 
-A release is **cut once, then published one artifact at a time**. Cutting is a
-single command; each artifact is a separate command, because the three artifacts
-build on three different machines and no one machine can produce them all.
+Releasing is **one target per artifact**. There is no single release command,
+because the artifacts build on three different platforms and no one machine can
+produce them all.
 
 ```bash
-make release VERSION=x.y.z    # 1. any machine: bump, tag, push, open the GitHub Release
-make publish-pypi             # 2. any machine: sdist + wheel -> PyPI
-make macos-dmg-upload         # 3. on macOS:    XeFM-<ver>-macos.dmg -> Release
-make windows-app-zip-upload   # 4. on Windows:  XeFM-<ver>-win64.zip -> Release
-make release-status           #    what has landed so far
+make tag VERSION=x.y.z     # any machine: bump __version__, commit, tag, push
+make release-github        # any machine: open the GitHub Release at that tag
+make release-whl           # any machine: sdist + wheel -> PyPI (+ the Release)
+make release-macos-dmg     # on macOS:    XeFM-<ver>-macos.dmg  -> the Release
+make release-windows-zip   # on Windows:  XeFM-<ver>-win64.zip  -> the Release
+make release-status        #              what has landed so far
 ```
 
-Steps 2–4 are **peers**: independent, re-runnable, and runnable in any order,
-minutes or days after the tag was cut. Each one builds its artifact if it is
-missing, checks that the GitHub Release for this version exists, then uploads.
-Only step 1 takes a `VERSION=`; the rest read `xefm/__init__.py`'s
-`__version__`, so they target the release the checkout is on — pass
-`VERSION=x.y.z` to override (e.g. re-uploading an asset for an older tag).
+Order matters exactly twice: `tag` first (everything else names the tag it
+creates), then `release-github` (the three `release-<artifact>` targets upload
+into the Release it opens). Those three are **peers** — independent,
+re-runnable, and runnable in any order, minutes or days later. Each builds its
+artifact if it is missing, re-checks its preconditions, then uploads.
+
+Only `tag` takes a `VERSION=`. The rest read `xefm/__init__.py`'s `__version__`,
+so they act on the release the checkout is on — pass `VERSION=x.y.z` to override
+(e.g. re-uploading an asset for an older tag).
+
+## Target naming
+
+Two prefixes, and the split between them is the whole design:
+
+- **`release-*` publishes.** Each one takes an artifact that already exists (or
+  builds it), and puts it somewhere public. These are the pipeline.
+- **Everything else is local.** `make macos-dmg`, `make windows-zip` and
+  `make build` produce artifacts and publish nothing, so you can run them as
+  often as you like. Each names its artifact, not its platform's app bundle:
+  `macos-dmg` / `windows-zip` are siblings, and `release-macos-dmg` /
+  `release-windows-zip` are the matching publish steps.
+
+`make publish-testpypi` is deliberately outside the `release-*` family: it needs
+neither a tag nor a GitHub Release and publishes nothing permanent.
 
 ## What a finished release looks like
 
 Four artifacts that all name the same version and cannot drift apart:
 
-1. **A git tag** `vX.Y.Z` (annotated), pushed to `origin` — step 1.
-2. **A GitHub Release** at that tag with auto-generated notes — step 1, then
-   steps 2–4 attach their artifacts to it.
+1. **A git tag** `vX.Y.Z` (annotated), pushed to `origin` — `tag`.
+2. **A GitHub Release** at that tag with auto-generated notes — `release-github`,
+   which the three `release-<artifact>` targets then attach to.
 3. **A PyPI release** — sdist + wheel uploaded with twine, and the same two
-   files attached to the GitHub Release — step 2.
+   files attached to the GitHub Release — `release-whl`.
 4. **The desktop bundles** — `XeFM-<ver>-macos.dmg` and `XeFM-<ver>-win64.zip`
-   attached to the GitHub Release — steps 3 and 4.
+   attached to the GitHub Release — `release-macos-dmg` / `release-windows-zip`.
 
-All three publish steps pass `--clobber`, so re-uploading a rebuilt artifact
+All three artifact targets pass `--clobber`, so re-uploading a rebuilt artifact
 supersedes the previous one instead of erroring, and all three share one guard
 (`check_release_exists` in the Makefile) so they cannot drift into checking
-different preconditions.
+different preconditions. `release-github` is idempotent too: an existing Release
+is reported and left alone rather than erroring.
 
-### Why PyPI is a separate step
+### Why tagging and publishing are separate
 
-It used to be part of `make release`. It is not, for the same reason the macOS
-and Windows uploads never were: cutting a tag and publishing an artifact are
-different acts with different toolchains and credentials, and each is worth
-re-running on its own. Splitting them also means a failed PyPI upload no longer
-leaves a half-cut release behind — the tag and the GitHub Release are already
-final, and only step 2 needs retrying.
+They were one command once. Splitting them follows the shape of the work: a tag
+is git state, and each artifact is a different toolchain with different
+credentials on a different machine. `make tag` needs no `gh` and no PyPI token;
+`release-whl` needs both. A failure in any publish step now costs only that
+step — the tag and the Release stay final, and you re-run the one target.
 
-The split gives up one guarantee that the monolithic recipe had for free: that
-the uploaded build matched the tag. `publish-pypi` restores it explicitly by
-refusing to run unless `HEAD` sits exactly on `vX.Y.Z` (`make release` leaves
-the checkout there; publishing an older release means checking its tag out
-first). A PyPI version can never be re-uploaded, so this one is a hard error.
+The split gives up one guarantee the monolith had for free: that the uploaded
+build matched the tag. `release-whl` restores it explicitly by refusing to run
+unless `HEAD` sits exactly on `vX.Y.Z` (`make tag` leaves the checkout there;
+publishing an older release means checking its tag out first). A PyPI version
+can never be re-uploaded, so that one is a hard error.
 
 The **unsigned `.msix` is never uploaded to a release**. Windows will not
 install an unsigned MSIX, so that artifact exists solely as a Microsoft Store
@@ -81,10 +100,15 @@ would mean also attaching a second, version-less copy of each asset
 
 | Requirement | Needed by | Why |
 |-------------|-----------|-----|
-| Clean `main`, up to date with `origin` | step 1 | the release commits, tags and pushes |
-| `gh` installed and authenticated (`gh auth login`) | steps 1–4 | creates the GitHub Release, then uploads into it |
-| `[pypi]` API token in `~/.pypirc` | step 2 | twine uploads without prompting |
-| Apple Developer ID + notarytool profile | step 3 | see [MACOS_APP_BUILD_SYSTEM.md](MACOS_APP_BUILD_SYSTEM.md) |
+| Clean `main`, up to date with `origin` | `tag` | it commits, tags and pushes |
+| `gh` installed and authenticated (`gh auth login`) | every `release-*` | opens the Release, then uploads into it |
+| `[pypi]` API token in `~/.pypirc` | `release-whl` | twine uploads without prompting |
+| Apple Developer ID + notarytool profile | `release-macos-dmg` | see [MACOS_APP_BUILD_SYSTEM.md](MACOS_APP_BUILD_SYSTEM.md) |
+
+`make tag` needs none of the publishing credentials — it is pure git and version
+work. Preflight still *warns* when `gh` is missing or unauthenticated, since
+every target after `tag` needs it and finding out before the tag is public is
+cheaper than after, but it will not block the tag.
 
 `build` and `twine` are installed into `.venv` on demand by `make build`; they
 are release-time tooling and deliberately stay out of `requirements.txt`.
@@ -105,9 +129,9 @@ literal lives). It reads the literal statically — no `import xefm` — so the
 release tooling never needs XeFM's runtime dependencies just to learn the
 version.
 
-## Step order
+## What each target does
 
-### Step 1 — `make release VERSION=x.y.z`
+### `make tag VERSION=x.y.z`
 
 1. `tools/release_preflight.py` — all checks below, **before any mutation**
 2. `pytest test` — the suite must pass before anything is built
@@ -115,32 +139,39 @@ version.
 4. `git commit` (stages `xefm/__init__.py` only) + `git tag -a vX.Y.Z`
 5. `make build` — cleans `dist/`, builds sdist + wheel, `twine check`
 6. `git push` + `git push origin vX.Y.Z`
-7. `gh release create vX.Y.Z --generate-notes --verify-tag`
 
 Step 5 publishes nothing; it is a **gate**. It proves the distributions build
 and pass `twine check` while the tag is still local and retractable, and it
-leaves `dist/` populated so step 2 of the pipeline has nothing left to build.
+leaves `dist/` populated so `release-whl` has nothing left to build.
 
-Preflight runs first precisely because steps 6–7 are irreversible: a pushed tag
-is public. A failed precondition therefore aborts with nothing committed or
-tagged.
+Preflight runs first precisely because step 6 is irreversible: a pushed tag is
+public. A failed precondition therefore aborts with nothing committed or tagged.
 
-### Step 2 — `make publish-pypi`
+### `make release-github`
+
+Checks `gh` is usable and the tag is **on `origin`** (`--verify-tag` will not
+invent a tag GitHub does not have, which is why `tag` pushes it), then
+`gh release create vX.Y.Z --generate-notes --verify-tag`. If the Release already
+exists it says so and changes nothing, so re-running the pipeline is free.
+
+### `make release-whl`
 
 1. Builds `dist/xefm-<ver>.tar.gz` + `.whl` **only if missing** — after
-   `make release` they already exist and are published as-is.
+   `make tag` they already exist and are published as-is.
 2. Guards: the GitHub Release exists, the tag exists locally, and `HEAD` is at
    that tag.
 3. `twine upload` of the two files, named explicitly rather than as `dist/*`,
    so a stale artifact from an older version can never be swept in.
-4. `gh release upload --clobber` attaches the same two files to the release.
+4. `gh release upload --clobber` attaches the same two files to the Release.
 
-### Steps 3 and 4 — the desktop bundles
+The name is for the headline artifact; the sdist rides along in the same step.
 
-`make macos-dmg-upload` / `make windows-app-zip-upload`, on their own platform.
-Each builds its artifact if missing (an existing one is never rebuilt — that
-would re-run notarization), checks the release exists, and uploads with
-`--clobber`.
+### `make release-macos-dmg` / `make release-windows-zip`
+
+On their own platform. Each builds its artifact if missing (an existing one is
+never rebuilt — that would re-run notarization), checks the Release exists, and
+uploads with `--clobber`. To force a fresh artifact first, run `make macos-dmg`
+or `make windows-zip`.
 
 ## Preflight checks
 
@@ -155,24 +186,30 @@ together rather than stopping at the first:
 - on branch `main`, working tree clean
 - tag `vX.Y.Z` does not already exist
 - local branch is not behind its upstream (a non-fast-forward push mid-release)
-- `gh` is installed and authenticated
 
-It also prints a **non-fatal warning** when PuiKit is installed editable from
-`PUIKIT_DIR`: the release depends on the *published* PuiKit
-(`requirements.txt` pins `puikit>=1.0`), so if XeFM has come to rely on
-unreleased PuiKit changes, release PuiKit first.
+It also prints **non-fatal warnings** for the two things a checkout cannot
+decide for you:
+
+- PuiKit is installed editable from `PUIKIT_DIR` — the release depends on the
+  *published* PuiKit (`requirements.txt` pins `puikit>=1.0`), so if XeFM has
+  come to rely on unreleased PuiKit changes, release PuiKit first.
+- `gh` is missing or unauthenticated — `make tag` does not need it, but every
+  target after it does.
 
 ## Target reference
 
-| Target | Pipeline step | Use |
-|--------|---------------|-----|
-| `make release VERSION=x.y.z` | 1 | bump, commit, tag, push, create the GitHub Release |
-| `make publish-pypi` | 2 | sdist + wheel → PyPI, and attached to the release |
-| `make macos-dmg-upload` | 3 | attach the macOS DMG to the release (macOS only) |
-| `make windows-app-zip-upload` | 4 | attach the Windows portable zip to the release (Windows only) |
-| `make release-status` | — | list the release's assets and whether PyPI has the version |
+| Target | Publishes | Use |
+|--------|-----------|-----|
+| `make tag VERSION=x.y.z` | the tag | bump `__version__`, commit, tag, push |
+| `make release-github` | the Release | open the GitHub Release at that tag |
+| `make release-whl` | PyPI + Release | sdist + wheel → PyPI, and attached to the Release |
+| `make release-macos-dmg` | Release | attach the macOS DMG (macOS only) |
+| `make release-windows-zip` | Release | attach the Windows portable zip (Windows only) |
+| `make release-status` | — | list the Release's assets and whether PyPI has the version |
 | `make build` | — | sdist + wheel into `dist/`, plus `twine check` |
-| `make publish-testpypi` | — | rehearsal against TestPyPI (needs a `[testpypi]` token) |
+| `make macos-dmg` | — | build the DMG locally (macOS only) |
+| `make windows-zip` | — | build the portable zip locally (Windows only) |
+| `make publish-testpypi` | TestPyPI | rehearsal (needs a `[testpypi]` token) |
 
 `make publish-testpypi` is the safe rehearsal: it exercises the same build and
 upload path, needs neither a tag nor a GitHub Release, and a bad TestPyPI
@@ -183,16 +220,17 @@ version costs nothing.
 Preflight makes this unlikely, but the recovery order matters — the steps get
 progressively harder to undo:
 
-- **Inside step 1, before its `git push`** — nothing is public.
+- **Inside `tag`, before its `git push`** — nothing is public.
   `git reset --hard HEAD~1` and `git tag -d vX.Y.Z`.
-- **Inside step 1, after the tag push** — either finish the remaining commands
-  by hand, or delete the remote tag (`git push --delete origin vX.Y.Z`) and
-  start over.
-- **Steps 2–4** — each is independently re-runnable, so a failure there costs
-  only that step. Fix the cause and run the same target again; `--clobber`
-  makes a repeated GitHub upload harmless.
-- **After `publish-pypi` reaches `twine upload`** — that version is permanently
+- **Inside `tag`, after the tag push** — the tag is public. Either carry on
+  (nothing is wrong with a tag that has no Release yet), or delete the remote
+  tag (`git push --delete origin vX.Y.Z`) and start over.
+- **Any `release-*` target** — each is independently re-runnable, so a failure
+  costs only that target. Fix the cause and run the same one again; `--clobber`
+  makes a repeated GitHub upload harmless, and `release-github` no-ops on an
+  existing Release.
+- **After `release-whl` reaches `twine upload`** — that version is permanently
   taken on PyPI. Do not try to reuse it: bump to the next patch version and cut
   a new release. (A failure *after* twine but before the GitHub attach is safe
-  to re-run: twine will refuse the duplicate, so re-run
-  `gh release upload vX.Y.Z dist/xefm-<ver>* --clobber` by hand instead.)
+  to fix by hand: twine would refuse the duplicate, so run
+  `gh release upload vX.Y.Z dist/xefm-<ver>* --clobber` instead of the target.)

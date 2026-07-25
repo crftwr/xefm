@@ -211,7 +211,7 @@ powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Clean
 
 # or via make (Git-Bash):
 make windows-app
-make windows-app-zip
+make windows-zip
 make windows-app-clean
 ```
 

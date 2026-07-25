@@ -17,7 +17,7 @@ def shipped_config(monkeypatch):
     """Assert against the shipped defaults, not against ~/.xefm/config.py.
 
     These lookups read the *active* configuration, which is the developer's own
-    file whenever one exists — so without this the suite (and the `make release`
+    file whenever one exists — so without this the suite (and the `make tag`
     gate that runs it) would pass or fail depending on whose machine it ran on.
     Pinning the template keeps these tests a check on xefm/_config.py.
     """

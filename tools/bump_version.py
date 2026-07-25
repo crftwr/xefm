@@ -1,6 +1,6 @@
 """Rewrite the `__version__ = "..."` literal in xefm/__init__.py.
 
-Used by `make release VERSION=x.y.z`. That literal is the single source of
+Used by `make tag VERSION=x.y.z`. That literal is the single source of
 truth for the version: pyproject.toml derives it via setuptools' dynamic
 ``version = { attr = "xefm.__version__" }``, ``xefm --version`` re-exports it,
 and the macOS/Windows bundle builders extract it — so bumping this one line

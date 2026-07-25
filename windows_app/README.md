@@ -32,7 +32,7 @@ Run it:
 ## Distributing it
 
 ```powershell
-make windows-app-zip-upload      # build the zip if needed + attach it to the GitHub Release
+make release-windows-zip         # build the zip if needed + attach it to the GitHub Release
 ```
 
 The zip is the artifact end users download. It is **unsigned** until the
@@ -40,7 +40,7 @@ Microsoft Store listing goes live, so it triggers Windows' Mark-of-the-Web /
 SmartScreen prompt once; the user-facing workaround lives in
 [`../doc/DESKTOP_MODE_GUIDE.md`](../doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip).
 
-Do **not** publish the unsigned `.msix` from `make windows-app-msix` — Windows
+Do **not** publish the unsigned `.msix` from `make windows-msix` — Windows
 refuses to install an unsigned package, so it is only ever a Partner Center
 submission artifact (Microsoft signs it during certification).
 

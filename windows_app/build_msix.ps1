@@ -228,8 +228,8 @@ if ($Uninstall) {
 # Action: -Install — trust the cert (elevates) then install per-user.
 # ===========================================================================
 if ($Install) {
-    if (-not (Test-Path $msix)) { throw "Package not found: $msix. Run 'make windows-app-msix' first." }
-    if (-not (Test-Path $cer))  { throw "Signing cert not found: $cer. Run 'make windows-app-msix' first." }
+    if (-not (Test-Path $msix)) { throw "Package not found: $msix. Run 'make windows-msix' first." }
+    if (-not (Test-Path $cer))  { throw "Signing cert not found: $cer. Run 'make windows-msix' first." }
 
     # Step 1: trust the self-signed cert (machine-wide store => needs admin).
     if (Test-IsAdmin) {
@@ -249,7 +249,7 @@ if ($Install) {
     $pkg = Get-AppxPackage -Name $IdentityName -ErrorAction SilentlyContinue
     if (-not $pkg) { throw "Install did not complete (package '$IdentityName' not found afterward)." }
     Write-Host "[OK] Installed $($pkg.PackageFullName)" -ForegroundColor Green
-    Write-Host "Launch 'XeFM' from the Start menu. Remove with: make windows-app-msix-uninstall"
+    Write-Host "Launch 'XeFM' from the Start menu. Remove with: make windows-msix-uninstall"
     return
 }
 
@@ -394,7 +394,7 @@ Move-Item -Force $msixTmp $msix
 Write-Host "[OK] Built $msix"
 if ($Sign) {
     Write-Host "[OK] Signed $msix"
-    Write-Host "Install locally with:  make windows-app-msix-install" -ForegroundColor Yellow
+    Write-Host "Install locally with:  make windows-msix-install" -ForegroundColor Yellow
 }
 
 Write-Host ""

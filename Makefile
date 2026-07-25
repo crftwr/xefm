@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release release-status icons icons-check macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg macos-dmg-upload windows-app windows-app-clean windows-app-zip windows-app-zip-upload windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg windows-app windows-app-clean windows-zip windows-app-install windows-msix windows-msix-install windows-msix-uninstall install-config venv venv-clean check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -56,15 +56,16 @@ help:
 	@echo "  lint           - Run code linting"
 	@echo "  format         - Format code"
 	@echo ""
-	@echo "Release pipeline (cut once, then one publish step per artifact):"
-	@echo "  1. release VERSION=x.y.z - Bump __version__, tag, push, create the GitHub Release"
-	@echo "  2. publish-pypi          - Build if needed, upload sdist + wheel to PyPI"
-	@echo "  3. macos-dmg-upload      - (on macOS)   attach the DMG to the release"
-	@echo "  4. windows-app-zip-upload- (on Windows) attach the portable zip to the release"
-	@echo "     release-status        - Show which artifacts have landed so far"
+	@echo "Release (one target per artifact; run in this order):"
+	@echo "  tag VERSION=x.y.z  - Bump __version__, commit, tag, push (no publishing)"
+	@echo "  release-github     - Open the GitHub Release at that tag"
+	@echo "  release-whl        - Upload sdist + wheel to PyPI, and to the Release"
+	@echo "  release-macos-dmg  - (on macOS)   attach XeFM-<ver>-macos.dmg to the Release"
+	@echo "  release-windows-zip- (on Windows) attach XeFM-<ver>-win64.zip to the Release"
+	@echo "  release-status     - Show which artifacts have landed so far"
 	@echo ""
-	@echo "  Steps 2-4 are independent and re-runnable, in any order, on their own"
-	@echo "  machine. Supporting targets:"
+	@echo "  The three release-<artifact> targets are independent and re-runnable,"
+	@echo "  in any order, on their own machine. Supporting targets:"
 	@echo "  build            - Build the sdist + wheel into dist/ (installs build/twine as needed)"
 	@echo "  publish-testpypi - Rehearsal: upload dist/* to TestPyPI ([testpypi] token in ~/.pypirc)"
 	@echo ""
@@ -77,23 +78,23 @@ help:
 	@echo "  icons-check       - Verify the committed icon assets match the SVG masters"
 	@echo ""
 	@echo "macOS App Bundle:"
-	@echo "  macos-app         - Build native macOS application bundle"
-	@echo "  macos-app-clean   - Clean macOS app build artifacts"
-	@echo "  macos-app-install - Install XeFM.app to Applications folder"
+	@echo "  macos-app          - Build native macOS application bundle"
+	@echo "  macos-app-clean    - Clean macOS app build artifacts"
+	@echo "  macos-app-install  - Install XeFM.app to Applications folder"
 	@echo "  macos-refresh-icon - Refresh macOS icon cache (after icon changes)"
-	@echo "  macos-dmg         - Create DMG installer for distribution"
-	@echo "  macos-dmg-upload  - Attach the DMG to the GitHub Release for this version"
+	@echo "  macos-dmg          - Create DMG installer for distribution"
+	@echo "                       (publish it with 'make release-macos-dmg')"
 	@echo ""
 	@echo "Windows App Bundle:"
-	@echo "  windows-app         - Build self-contained Windows application bundle"
-	@echo "  windows-app-clean   - Clean Windows app build artifacts"
-	@echo "  windows-app-zip     - Build the bundle and zip it for distribution"
-	@echo "  windows-app-zip-upload - Attach that zip to the GitHub Release for this version"
-	@echo "  windows-app-install - Install the built bundle to Program Files (elevates via UAC)"
-	@echo "  windows-app-msix          - Package the bundle as an unsigned MSIX (Store submission;"
-	@echo "                              SIGN=1 to self-sign for local testing instead)"
-	@echo "  windows-app-msix-install  - Pack + self-sign, trust cert (elevates), install per-user"
-	@echo "  windows-app-msix-uninstall- Remove the MSIX package + throwaway signing cert"
+	@echo "  windows-app            - Build self-contained Windows application bundle"
+	@echo "  windows-app-clean      - Clean Windows app build artifacts"
+	@echo "  windows-app-install    - Install the built bundle to Program Files (elevates via UAC)"
+	@echo "  windows-zip            - Build the bundle and zip it for distribution"
+	@echo "                           (publish it with 'make release-windows-zip')"
+	@echo "  windows-msix           - Package the bundle as an unsigned MSIX (Store submission;"
+	@echo "                           SIGN=1 to self-sign for local testing instead)"
+	@echo "  windows-msix-install   - Pack + self-sign, trust cert (elevates), install per-user"
+	@echo "  windows-msix-uninstall - Remove the MSIX package + throwaway signing cert"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run                        # Run XeFM in the terminal"
@@ -104,10 +105,11 @@ help:
 	@echo "  make macos-app                  # Build macOS app bundle"
 	@echo "  make macos-app-install          # Install to /Applications"
 	@echo "  make macos-dmg                  # Create DMG installer"
-	@echo "  make macos-dmg-upload           # Upload that DMG to the GitHub Release"
-	@echo "  make windows-app-zip-upload     # Upload the Windows zip to the GitHub Release"
-	@echo "  make release VERSION=1.0.1      # Cut a release (bump + tag + GitHub Release)"
-	@echo "  make publish-pypi               # Publish that release's sdist + wheel to PyPI"
+	@echo "  make tag VERSION=1.0.1          # Bump the version, commit, tag and push"
+	@echo "  make release-github             # Open the GitHub Release for that tag"
+	@echo "  make release-whl                # Publish its sdist + wheel to PyPI"
+	@echo "  make release-macos-dmg          # Upload the DMG to the GitHub Release"
+	@echo "  make release-windows-zip        # Upload the Windows zip to the GitHub Release"
 
 venv:
 	@if [ -d .venv ]; then \
@@ -290,44 +292,114 @@ demo: check-venv
 # ============================================================================
 # Packaging / Release Targets
 # ============================================================================
-# A release is CUT once, then PUBLISHED in one independent step per artifact:
+# Releasing is one target per artifact, each independently runnable:
 #
-#   1. make release VERSION=x.y.z    any machine  bump __version__, tag, push,
-#                                                 create the GitHub Release
-#   2. make publish-pypi             any machine  sdist + wheel -> PyPI
-#   3. make macos-dmg-upload         macOS        XeFM-<ver>-macos.dmg -> Release
-#   4. make windows-app-zip-upload   Windows      XeFM-<ver>-win64.zip -> Release
+#   make tag VERSION=x.y.z     any machine  bump __version__, commit, tag, push
+#   make release-github        any machine  open the GitHub Release at that tag
+#   make release-whl           any machine  sdist + wheel -> PyPI (+ the Release)
+#   make release-macos-dmg     macOS        XeFM-<ver>-macos.dmg  -> the Release
+#   make release-windows-zip   Windows      XeFM-<ver>-win64.zip  -> the Release
+#   make release-status        any machine  what has landed so far
 #
-# Steps 2-4 are peers, deliberately: the three artifacts build on three
-# different machines, so none of them can be part of step 1. Each one builds
-# its artifact if it is missing, checks that the GitHub Release for this
-# version exists, then uploads — so they run in any order, on their own
-# machine, minutes or days after the tag was cut, and re-run safely.
+# Order matters only twice: `tag` first (everything else names the tag it
+# creates), then `release-github` (the three release-<artifact> targets upload
+# into the Release it opens). Those three are peers — they run in any order, on
+# their own machine, minutes or days later, because the artifacts build on
+# three different platforms and no one machine can produce them all. Each one
+# builds its artifact if it is missing, re-checks the preconditions, and
+# uploads with --clobber, so re-running any of them is safe.
 #
 # The version's single source of truth is xefm/__init__.py's __version__;
 # pyproject.toml derives it (dynamic version = attr), `xefm --version`
 # re-exports it, and the macOS/Windows bundle builders extract that same
-# literal. XEFM_VERSION below reads it the same way, so every publish step
-# targets the release the checkout is actually on. Override with VERSION=x.y.z
-# to target a different release (e.g. re-uploading an asset for an older tag).
+# literal. XEFM_VERSION below reads it the same way, so every release-* target
+# acts on the release the checkout is actually on — only `tag` takes a
+# VERSION=. Override it on the others to target a different release (e.g.
+# re-uploading an asset for an older tag).
 XEFM_VERSION := $(if $(VERSION),$(VERSION),$(shell sed -nE 's/^__version__[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' xefm/__init__.py 2>/dev/null | head -1))
 
-# Guard shared by every publish step: `gh` usable and the GitHub Release for
-# this version already created by `make release`. Kept as one variable so the
-# PyPI, macOS and Windows steps cannot drift into checking different things.
-# Used with $(call ...) inside a recipe; expands to a multi-line shell test.
-define check_release_exists
+# Guards shared by the release-* targets, kept in one place so they cannot
+# drift into checking different things. Used as $(call ...) inside a recipe;
+# each expands to a single multi-line shell test.
+#
+# check_gh:             a resolvable version and a usable `gh`.
+# check_release_exists: the above, plus the GitHub Release to upload into.
+define check_gh
 test -n "$(XEFM_VERSION)" || { echo "ERROR: could not determine version; pass VERSION=x.y.z"; exit 1; }; \
 command -v gh >/dev/null 2>&1 || { echo "ERROR: 'gh' not found. Install the GitHub CLI first."; exit 1; }; \
-gh auth status >/dev/null 2>&1 || { echo "ERROR: 'gh' is not authenticated. Run 'gh auth login'."; exit 1; }; \
+gh auth status >/dev/null 2>&1 || { echo "ERROR: 'gh' is not authenticated. Run 'gh auth login'."; exit 1; }
+endef
+
+define check_release_exists
+$(check_gh); \
 gh release view v$(XEFM_VERSION) >/dev/null 2>&1 || { \
 	echo "ERROR: GitHub Release v$(XEFM_VERSION) does not exist."; \
-	echo "       Cut it first with 'make release VERSION=$(XEFM_VERSION)'."; \
+	echo "       Open it first with 'make release-github'."; \
 	exit 1; \
 }
 endef
 
-# --- Step 2 artifact: the Python distributions ------------------------------
+# --- tag: the one target that changes the version ---------------------------
+# Usage: make tag VERSION=1.0.1
+#
+# Pure version + git work: bump __version__, commit, tag, push. It publishes
+# nothing and needs no `gh` and no PyPI token — the release-* targets do the
+# publishing, each with its own toolchain and credentials.
+#
+# bump_version.py rewrites the single __version__ line, which is why the commit
+# stages __init__.py rather than pyproject.toml.
+#
+# release_preflight.py runs FIRST and aborts before any mutation if the tree is
+# dirty, the version is stale, or the tag exists — so a failed precondition
+# never leaves a half-cut release. The test suite must pass before anything is
+# built.
+#
+# `make build` runs before the pushes purely as a gate: it proves the sdist and
+# wheel build and pass `twine check` while the tag is still local and
+# retractable. It also leaves dist/ ready for `make release-whl`.
+tag: check-venv
+	@test -n "$(VERSION)" || { echo "ERROR: set VERSION, e.g. make tag VERSION=1.0.1"; exit 1; }
+	$(PYTHON) tools/release_preflight.py "$(VERSION)"
+	@# Gates on pytest directly rather than on `make test`: that target tolerates a
+	@# missing pytest (`|| echo ...`) and would let an unrun suite pass silently.
+	$(PYTHON) -m pytest test
+	$(PYTHON) tools/bump_version.py "$(VERSION)"
+	git add xefm/__init__.py
+	git commit -m "Releasing $(VERSION)"
+	git tag -a v$(VERSION) -m "$(VERSION)"
+	$(MAKE) build
+	git push
+	git push origin v$(VERSION)
+	@echo ""
+	@echo "Tagged $(VERSION): commit + tag v$(VERSION), both pushed ✓"
+	@echo "Next:"
+	@echo "  make release-github          # open the GitHub Release at v$(VERSION)"
+	@echo "  make release-whl             # here:       sdist + wheel -> PyPI"
+	@echo "  make release-macos-dmg       # on macOS:   XeFM-$(VERSION)-macos.dmg"
+	@echo "  make release-windows-zip     # on Windows: XeFM-$(VERSION)-win64.zip"
+
+# --- release-github: open the Release the artifacts upload into -------------
+# Reads the version from the checkout, so the usual path is `make tag` then
+# `make release-github` with no arguments. --verify-tag refuses to invent a tag
+# GitHub does not already have, which is why `tag` pushes it first.
+#
+# Idempotent on purpose: an existing Release is reported and left alone rather
+# than erroring, so re-running the pipeline from the top costs nothing.
+release-github:
+	@$(call check_gh)
+	@git ls-remote --exit-code --tags origin "v$(XEFM_VERSION)" >/dev/null 2>&1 || { \
+		echo "ERROR: tag v$(XEFM_VERSION) is not on origin."; \
+		echo "       Push it with 'make tag VERSION=$(XEFM_VERSION)' (or 'git push origin v$(XEFM_VERSION)')."; \
+		exit 1; \
+	}
+	@if gh release view v$(XEFM_VERSION) >/dev/null 2>&1; then \
+		echo "GitHub Release v$(XEFM_VERSION) already exists; leaving it as is."; \
+	else \
+		gh release create v$(XEFM_VERSION) --title "v$(XEFM_VERSION)" --generate-notes --verify-tag && \
+		echo "Opened GitHub Release v$(XEFM_VERSION) ✓"; \
+	fi
+
+# --- The Python distributions -----------------------------------------------
 # `build` and `twine` are release-time tooling, not needed to run or develop
 # XeFM, so they are installed on demand here rather than sitting in
 # requirements.txt. Invoked as `python -m ...` (not the venv's console scripts)
@@ -341,10 +413,11 @@ build: check-venv
 	@$(PYTHON) -m build
 	@$(PYTHON) -m twine check dist/*
 
-# The safe rehearsal for publish-pypi: same build and upload path, but a bad
-# TestPyPI version costs nothing. Depends on `build` (not on the file targets
-# below) so it always exercises a fresh build, and needs neither a tag nor a
-# GitHub Release — it is a pre-release smoke test, not part of the pipeline.
+# The safe rehearsal for release-whl: same build and upload path, but a bad
+# TestPyPI version costs nothing. Deliberately NOT named release-* — it needs
+# neither a tag nor a GitHub Release and publishes nothing permanent, so it is
+# a pre-release smoke test rather than a step of the pipeline. Depends on
+# `build` (not on the file target below) so it always builds fresh.
 publish-testpypi: build
 	@$(PYTHON) -m twine upload -r testpypi dist/*
 
@@ -355,9 +428,9 @@ publish-testpypi: build
 PYPI_SDIST := dist/xefm-$(XEFM_VERSION).tar.gz
 PYPI_WHEEL := dist/xefm-$(XEFM_VERSION)-py3-none-any.whl
 
-# File target so publish-pypi builds the distributions on demand when they are
-# missing (e.g. after `make clean`), the same way macos-dmg-upload and
-# windows-app-zip-upload build their artifacts. `make build` wipes dist/ and
+# File target so release-whl builds the distributions on demand when they are
+# missing (e.g. after `make clean`), the same way release-macos-dmg and
+# release-windows-zip build their artifacts. `make build` wipes dist/ and
 # writes both files, so the sdist alone is enough of a prerequisite to trigger
 # it; the recipe below then asserts the wheel landed too. Existing artifacts are
 # NOT rebuilt — publishing the exact bytes that were verified is the point.
@@ -365,25 +438,24 @@ $(PYPI_SDIST):
 	@echo "Python distributions for $(XEFM_VERSION) not found; building them first..."
 	@$(MAKE) build
 
-# --- Step 2 of the pipeline: publish the Python distributions ---------------
-# Kept out of `release` for the same reason the macOS and Windows uploads are:
-# cutting a tag and publishing an artifact are separate acts, each with its own
-# toolchain and credentials, and each worth re-running on its own.
+# --- release-whl: publish the Python distributions --------------------------
+# Uploads BOTH the sdist and the wheel — the target is named for the headline
+# artifact, not the whole payload.
 #
 # A PyPI version can never be re-uploaded, so this refuses to publish a build
-# that is not the tagged one: HEAD must sit exactly on vX.Y.Z. `make release`
-# leaves the checkout there, so the usual path is `make release` then
-# `make publish-pypi`; publishing an older release means checking out its tag
-# first. The monolithic release recipe guaranteed that by construction — this
-# check is what keeps the guarantee now that the steps are independent.
+# that is not the tagged one: HEAD must sit exactly on vX.Y.Z. `make tag`
+# leaves the checkout there, so the usual path is `make tag` then
+# `make release-whl`; publishing an older release means checking out its tag
+# first. When tagging and publishing were one recipe that held by construction
+# — this check is what keeps it true now that they are separate targets.
 #
-# Also attaches the sdist + wheel to the GitHub Release, so the release page
-# lists all four artifacts. --clobber replaces same-named assets on a re-run.
+# Also attaches both files to the GitHub Release, so the release page lists
+# every artifact. --clobber replaces same-named assets on a re-run.
 # Prereqs: a [pypi] token in ~/.pypirc and an authenticated `gh`.
-publish-pypi: $(PYPI_SDIST)
+release-whl: $(PYPI_SDIST)
 	@$(call check_release_exists)
 	@git rev-parse -q --verify "v$(XEFM_VERSION)^{commit}" >/dev/null || { \
-		echo "ERROR: tag v$(XEFM_VERSION) not found locally. Cut it with 'make release VERSION=$(XEFM_VERSION)' or fetch it."; \
+		echo "ERROR: tag v$(XEFM_VERSION) not found locally. Cut it with 'make tag VERSION=$(XEFM_VERSION)' or fetch it."; \
 		exit 1; \
 	}
 	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse "v$(XEFM_VERSION)^{commit}")" || { \
@@ -402,52 +474,9 @@ publish-pypi: $(PYPI_SDIST)
 	gh release upload v$(XEFM_VERSION) "$(PYPI_SDIST)" "$(PYPI_WHEEL)" --clobber
 	@echo "Published $(XEFM_VERSION) to PyPI and attached both distributions to release v$(XEFM_VERSION) ✓"
 
-# --- Step 1 of the pipeline: cut the release --------------------------------
-# Usage: make release VERSION=1.0.1
-#
-# Does the version work and nothing else publishable: bump __version__, commit,
-# tag, push, and open the GitHub Release the three artifact steps upload into.
-# No artifact is published here — see the pipeline overview at the top of this
-# section for why (they build on three different machines, PyPI included).
-#
-# bump_version.py rewrites the single __version__ line, which is why the commit
-# stages __init__.py rather than pyproject.toml.
-#
-# release_preflight.py runs FIRST and aborts before any mutation if the tree is
-# dirty, the version is stale, the tag exists, or `gh` is missing/
-# unauthenticated — so a failed precondition never leaves a half-cut release.
-# The test suite must pass before anything is built.
-#
-# `make build` runs before the pushes purely as a gate: it proves the sdist and
-# wheel build and pass `twine check` while the tag is still local and
-# retractable. It also leaves dist/ ready for `make publish-pypi`.
-#
-# Prereq: an authenticated `gh` (gh auth login). The PyPI token is only needed
-# by publish-pypi, not here.
-release: check-venv
-	@test -n "$(VERSION)" || { echo "ERROR: set VERSION, e.g. make release VERSION=1.0.1"; exit 1; }
-	$(PYTHON) tools/release_preflight.py "$(VERSION)"
-	@# Gates on pytest directly rather than on `make test`: that target tolerates a
-	@# missing pytest (`|| echo ...`) and would let an unrun suite pass silently.
-	$(PYTHON) -m pytest test
-	$(PYTHON) tools/bump_version.py "$(VERSION)"
-	git add xefm/__init__.py
-	git commit -m "Releasing $(VERSION)"
-	git tag -a v$(VERSION) -m "$(VERSION)"
-	$(MAKE) build
-	git push
-	git push origin v$(VERSION)
-	gh release create v$(VERSION) --title "v$(VERSION)" --generate-notes --verify-tag
-	@echo ""
-	@echo "Cut $(VERSION): commit + tag v$(VERSION) + GitHub Release ✓"
-	@echo "Now publish the artifacts — independent, re-runnable, any order:"
-	@echo "  make publish-pypi             # here:       sdist + wheel -> PyPI"
-	@echo "  make macos-dmg-upload         # on macOS:   XeFM-$(VERSION)-macos.dmg"
-	@echo "  make windows-app-zip-upload   # on Windows: XeFM-$(VERSION)-win64.zip"
-	@echo "  make release-status           # what is attached to the release so far"
-
-# Read-only progress check for a release in flight: the pipeline spans three
-# machines, so this is the one place to see which artifacts have landed.
+# --- release-status: read-only progress check -------------------------------
+# The pipeline spans three machines, so this is the one place to see which
+# artifacts have landed for the version the checkout is on.
 release-status:
 	@test -n "$(XEFM_VERSION)" || { echo "ERROR: could not determine version; pass VERSION=x.y.z"; exit 1; }
 	@echo "Release v$(XEFM_VERSION):"
@@ -455,7 +484,7 @@ release-status:
 	@# {{.size}} would print sizes as 8.8917854e+07.
 	@gh release view v$(XEFM_VERSION) --json assets \
 		--template '{{range .assets}}  GitHub asset: {{.name}}{{"\n"}}{{end}}' \
-		2>/dev/null || echo "  (no GitHub Release yet — 'make release VERSION=$(XEFM_VERSION)')"
+		2>/dev/null || echo "  (no GitHub Release yet — run 'make release-github')"
 	@$(PYTHON) -c "import json,urllib.request as u; \
 		v='$(XEFM_VERSION)'; \
 		d=json.load(u.urlopen('https://pypi.org/pypi/xefm/json')); \
@@ -538,16 +567,16 @@ macos-dmg: macos-app
 	@cd macos_app && ./create_dmg.sh
 	@echo "DMG installer created successfully"
 
-# --- Step 3 of the pipeline: publish the macOS DMG --------------------------
+# --- release-macos-dmg: publish the macOS DMG -------------------------------
 # create_dmg.sh derives the DMG's filename from the same xefm/__init__.py
 # literal XEFM_VERSION reads (defined in the Packaging / Release section), so
 # the two always agree without a second place to bump.
 #
 # Filename mirrors create_dmg.sh's own naming (XeFM-<version>-macos.dmg), the
-# same platform-suffixed shape as WINDOWS_APP_ZIP below.
+# same platform-suffixed shape as WINDOWS_ZIP below.
 MACOS_DMG := macos_app/build/XeFM-$(XEFM_VERSION)-macos.dmg
 
-# File target so `macos-dmg-upload` builds the DMG on demand when it is missing
+# File target so `release-macos-dmg` builds the DMG on demand when it is missing
 # (e.g. after 'make macos-app-clean') instead of failing at the upload. An
 # existing DMG is NOT rebuilt, so re-uploading stays fast and never re-runs
 # notarization; run 'make macos-dmg' to force a fresh one.
@@ -555,15 +584,14 @@ $(MACOS_DMG):
 	@echo "DMG not found at $@; building it first..."
 	@$(MAKE) macos-dmg
 
-# Attach the signed/notarized DMG to the existing GitHub Release for this
-# version. Kept separate from `macos-dmg` on purpose: building a DMG is a local
-# operation you may do many times, uploading publishes it. The release must
-# already exist (`make release VERSION=x.y.z` creates it) — this only adds the
-# macOS asset, which `release` can't do since the .app/.dmg build on macOS only.
-# --clobber replaces an asset of the same name, so re-uploading a rebuilt DMG
-# supersedes the previous one rather than erroring.
+# Attach the signed/notarized DMG to the GitHub Release for this version. Kept
+# separate from `macos-dmg` on purpose: building a DMG is a local operation you
+# may do many times, uploading publishes it. The Release must already exist
+# ('make release-github') — this only adds the macOS asset, which no other
+# machine can build. --clobber replaces an asset of the same name, so
+# re-uploading a rebuilt DMG supersedes the previous one rather than erroring.
 # Prereq: an authenticated `gh` (gh auth login).
-macos-dmg-upload: $(MACOS_DMG)
+release-macos-dmg: $(MACOS_DMG)
 	@$(call check_release_exists)
 	@echo "Uploading $(MACOS_DMG) to GitHub Release v$(XEFM_VERSION)..."
 	gh release upload v$(XEFM_VERSION) "$(MACOS_DMG)" --clobber
@@ -611,11 +639,12 @@ windows-app:
 	@echo "Building Windows application bundle..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
 
-windows-app-zip:
+# Named for the artifact it produces, matching macos-dmg on the macOS side.
+windows-zip:
 	@echo "Building Windows application bundle (+ zip)..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Zip
 
-# --- Step 4 of the pipeline: publish the Windows portable zip ---------------
+# --- release-windows-zip: publish the Windows portable zip ------------------
 # The portable zip is the artifact end users can actually install today: it is
 # unsigned, but a zip carries no signature requirement, so Windows only shows
 # the Mark-of-the-Web / SmartScreen prompt documented in
@@ -626,26 +655,26 @@ windows-app-zip:
 #
 # Filename mirrors build.ps1's own naming (XeFM-<version>-win64.zip), derived
 # from the same version literal as XEFM_VERSION above, so the two cannot drift.
-WINDOWS_APP_ZIP := windows_app/build/XeFM-$(XEFM_VERSION)-win64.zip
+WINDOWS_ZIP := windows_app/build/XeFM-$(XEFM_VERSION)-win64.zip
 
 # File target so the upload builds the zip on demand when it is missing (e.g.
 # after 'make windows-app-clean') instead of failing at the upload. An existing
-# zip is NOT rebuilt; run 'make windows-app-zip' to force a fresh one.
-$(WINDOWS_APP_ZIP):
+# zip is NOT rebuilt; run 'make windows-zip' to force a fresh one.
+$(WINDOWS_ZIP):
 	@echo "Windows zip not found at $@; building it first..."
-	@$(MAKE) windows-app-zip
+	@$(MAKE) windows-zip
 
-# Attach the portable zip to the existing GitHub Release for this version.
-# Kept separate from 'windows-app-zip' on purpose: building is local, uploading
-# publishes. The release must already exist ('make release VERSION=x.y.z').
-# --clobber replaces an asset of the same name, so re-uploading a rebuilt zip
-# supersedes the previous one rather than erroring.
+# Attach the portable zip to the GitHub Release for this version. Kept separate
+# from 'windows-zip' on purpose: building is local, uploading publishes. The
+# Release must already exist ('make release-github'). --clobber replaces an
+# asset of the same name, so re-uploading a rebuilt zip supersedes the previous
+# one rather than erroring.
 # Prereq: an authenticated `gh` (gh auth login).
-windows-app-zip-upload: $(WINDOWS_APP_ZIP)
+release-windows-zip: $(WINDOWS_ZIP)
 	@$(call check_release_exists)
-	@echo "Uploading $(WINDOWS_APP_ZIP) to GitHub Release v$(XEFM_VERSION)..."
-	gh release upload v$(XEFM_VERSION) "$(WINDOWS_APP_ZIP)" --clobber
-	@echo "Uploaded $(notdir $(WINDOWS_APP_ZIP)) to release v$(XEFM_VERSION) ✓"
+	@echo "Uploading $(WINDOWS_ZIP) to GitHub Release v$(XEFM_VERSION)..."
+	gh release upload v$(XEFM_VERSION) "$(WINDOWS_ZIP)" --clobber
+	@echo "Uploaded $(notdir $(WINDOWS_ZIP)) to release v$(XEFM_VERSION) ✓"
 
 windows-app-clean:
 	@echo "Cleaning Windows app build artifacts..."
@@ -664,23 +693,23 @@ windows-app-install: $(WINDOWS_APP_BUNDLE)
 # re-signs the package during certification, which is what makes Store signing
 # free and warning-free (doc/dev/WINDOWS_STORE_MSIX_PLAN.md 0, 5). Self-signing
 # is only useful for sideloading on the dev box, so it is opt-in via SIGN=1 --
-# and 'windows-app-msix-install' below passes it for you.
+# and 'windows-msix-install' below passes it for you.
 #
 # Note the identity values are still Partner Center placeholders; a real
 # submission also needs -IdentityName / -Publisher / -PublisherDisplayName
 # (see WINDOWS_STORE_MSIX_PLAN.md 2a).
-windows-app-msix: $(WINDOWS_APP_BUNDLE)
+windows-msix: $(WINDOWS_APP_BUNDLE)
 	@echo "Packaging Windows app as MSIX$(if $(SIGN), (self-signed, local testing), (unsigned, Store submission))..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 $(if $(SIGN),-Sign)
 
 # Trust the self-signed cert (self-elevates via UAC) then install per-user.
 #
 # Always re-packs with -Sign first rather than reusing whatever .msix is on
-# disk: both this and 'windows-app-msix' write the same
+# disk: both this and 'windows-msix' write the same
 # build\XeFM-<version>-x64.msix, so an unsigned pack may have overwritten a
 # signed one. Add-AppxPackage cannot install an unsigned package, so packing
 # here is what guarantees the artifact it installs is actually signed.
-windows-app-msix-install: $(WINDOWS_APP_BUNDLE)
+windows-msix-install: $(WINDOWS_APP_BUNDLE)
 	@echo "Packaging + self-signing MSIX for local install..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Sign
 	@echo "Installing MSIX package locally..."
@@ -688,6 +717,6 @@ windows-app-msix-install: $(WINDOWS_APP_BUNDLE)
 
 # Removes the package (per-user) and the throwaway signing cert; untrusting the
 # machine-store cert self-elevates via UAC.
-windows-app-msix-uninstall:
+windows-msix-uninstall:
 	@echo "Removing installed MSIX package and throwaway cert..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Uninstall

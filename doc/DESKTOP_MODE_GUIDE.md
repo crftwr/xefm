@@ -112,7 +112,7 @@ below — until the listing goes live, the zip on GitHub Releases is unsigned.
 To remove it: delete the extracted folder (and `%USERPROFILE%\.xefm\` if you also
 want the settings gone).
 
-**Why not an `.msix`?** The repository can build one (`make windows-app-msix`),
+**Why not an `.msix`?** The repository can build one (`make windows-msix`),
 but an MSIX must be signed before Windows will install it, and the unsigned
 build exists only as a Microsoft Store submission artifact — Microsoft signs it
 during certification. So a downloadable `.msix` would simply refuse to install;

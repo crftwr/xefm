@@ -1,19 +1,19 @@
-"""Fail-fast checks run before `make release` mutates anything.
+"""Fail-fast checks run before `make tag` mutates anything.
 
-The release recipe does irreversible things: it pushes a tag and opens the
-GitHub Release that the publish steps (`make publish-pypi`, `make
-macos-dmg-upload`, `make windows-app-zip-upload`) then upload into. This script
-runs FIRST and refuses the release unless every precondition holds, so a dirty
-tree, a stale checkout, a duplicate version, or a missing/unauthenticated `gh`
+`make tag` does one irreversible thing: it pushes a tag that every later
+release-* target names. This script runs FIRST and refuses to tag unless every
+precondition holds, so a dirty tree, a stale checkout or a duplicate version
 fails loudly *before* any commit, tag or push happens. It collects all problems
 and reports them together rather than stopping at the first.
 
-The PyPI upload is no longer part of the release recipe, so its own
-irreversibility (a PyPI version can never be reused) is guarded by
-`make publish-pypi` instead — it requires HEAD to sit on the release tag.
+Publishing is not checked here — each release-* target guards its own upload.
+In particular the PyPI upload's irreversibility (a version can never be reused)
+is guarded by `make release-whl`, which requires HEAD to sit on the release tag.
 
-Warnings (printed, non-fatal) cover the one thing a checkout can't decide for
-you: whether the PuiKit build this release depends on is actually published.
+Warnings (printed, non-fatal) cover what a checkout can't decide for you:
+whether the PuiKit build this release depends on is actually published, and
+whether `gh` — needed by every target after this one, but not by `make tag`
+itself — is ready to go.
 
 Usage: release_preflight.py <new-version>
 """
@@ -121,11 +121,17 @@ def main() -> int:
                 f"local branch is {behind} commit(s) behind {upstream.stdout.strip()} — pull first"
             )
 
-    # 7. gh is installed and authenticated (this release creates a GitHub Release).
+    # 7. Non-fatal: `gh` is usable. `make tag` is pure git + version work and does
+    #    not touch GitHub, so a missing `gh` must not block it — but every target
+    #    that follows (release-github and the three release-<artifact> ones) needs
+    #    it, so surfacing it here saves finding out after the tag is public.
     if shutil.which("gh") is None:
-        problems.append("`gh` not found — install it (`brew install gh`) and run `gh auth login`")
+        warnings.append(
+            "`gh` not found — install it (`brew install gh`) and run `gh auth login` "
+            "before `make release-github`"
+        )
     elif subprocess.run(["gh", "auth", "status"], capture_output=True).returncode != 0:
-        problems.append("`gh` is not authenticated — run `gh auth login`")
+        warnings.append("`gh` is not authenticated — run `gh auth login` before `make release-github`")
 
     # 8. Non-fatal: PuiKit is a separate repo with its own release cycle.
     puikit_dir = editable_puikit()
