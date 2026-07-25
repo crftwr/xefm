@@ -7,7 +7,7 @@ name = "xefm"
 description = "XeFM — a dual-pane file manager for the desktop and the terminal"
 readme = "README.md"
 license = "MIT"
-authors = [{ name = "Tomonori Shimomura" }]
+authors = [{ name = "craftware" }]
 requires-python = ">=3.10"
 keywords = ["file manager", "dual-pane", "gui", "desktop", "terminal", "tui", "curses"]
 # version  -> single-sourced from xefm/__init__.py's __version__ (see [tool.setuptools.dynamic]).

@@ -24,4 +24,4 @@ business logic.
 #: number, and the bundle builders accept a ``VERSION`` override for one-off
 #: builds without editing anything.
 __version__ = "1.0.1"
-__author__ = "Tomonori Shimomura"
+__author__ = "craftware"
