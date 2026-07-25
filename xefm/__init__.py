@@ -10,10 +10,19 @@ script both land in ``xefm.app.main``); its siblings hold the storage-agnostic
 business logic.
 """
 
-#: Single source of truth for the version string. Packaging reads it via
-#: pyproject.toml's dynamic ``version`` (``attr = "xefm.__version__"``), the
-#: macOS/Windows bundle builders sed it out of this file, and ``xefm.app`` /
-#: ``xefm.const`` re-export it rather than duplicating the literal.
-__version__ = "0.99"
+#: Single source of truth for the version string -- the ONLY place the literal
+#: appears in this repo. Bumping the version means editing this line and nothing
+#: else; every consumer derives it:
+#:
+#:   * pyproject.toml     -- dynamic ``version`` (``attr = "xefm.__version__"``)
+#:   * xefm.app / .const  -- re-export it (``--version`` output)
+#:   * macos_app/build.sh, macos_app/create_dmg.sh -- ``sed`` this literal out
+#:   * windows_app/build.ps1 -- ``Select-String`` this literal out (-> XeFM.rc)
+#:   * test/test_argparse_integration.py -- imports it, asserts no literal
+#:
+#: Don't reintroduce a copy: prose docs point here instead of restating the
+#: number, and the bundle builders accept a ``VERSION`` override for one-off
+#: builds without editing anything.
+__version__ = "1.0.0"
 
 __author__ = "Tomonori Shimomura"

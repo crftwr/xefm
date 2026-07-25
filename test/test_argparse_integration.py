@@ -9,6 +9,8 @@ import sys
 import unittest
 from pathlib import Path
 
+from xefm import __version__
+
 class TestArgparseIntegration(unittest.TestCase):
     """Integration tests for command line argument parsing"""
 
@@ -34,9 +36,11 @@ class TestArgparseIntegration(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         output = result.stdout.strip()
 
-        # Should contain app name and version
+        # Should contain app name and version. Asserted against the single
+        # source of truth (xefm/__init__.py's __version__) rather than a
+        # literal, so a version bump never needs an edit here.
         self.assertIn('XeFM', output)
-        self.assertIn('0.99', output)
+        self.assertIn(__version__, output)
         
         # Should be a single line
         lines = output.split('\n')

@@ -1,6 +1,11 @@
 # XeFM Application Overview
 
-## Current Version: 0.99
+## Current Version
+
+The version is single-sourced from `xefm/__init__.py`'s `__version__`; run
+`python3 -m xefm --version` to see it. Everything else — packaging metadata, the
+macOS/Windows bundle versions, the DMG/ZIP filenames — derives from that literal,
+so this document deliberately doesn't restate the number.
 
 XeFM (*Xenolith File Manager*) is a sophisticated dual-pane file manager that runs both as a native desktop app (Windows, macOS) and in the terminal (Windows, macOS, Linux), rendering through the external [PuiKit](https://github.com/crftwr/puikit) framework. It provides comprehensive file operations, cloud storage integration, and extensive customization capabilities.
 
@@ -264,4 +269,4 @@ XeFM includes comprehensive color support with multiple color schemes.
 - **Color Schemes**: Customizable appearance system
 - **Progress System**: Extensible progress tracking
 
-This overview provides a comprehensive understanding of XeFM's current architecture, capabilities, and design principles as of version 0.99.
+This overview provides a comprehensive understanding of XeFM's current architecture, capabilities, and design principles.

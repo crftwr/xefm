@@ -100,13 +100,12 @@ MSIX package versions are 4-part `a.b.c.d` with rules the Store enforces:
 - The **first section cannot be 0**, and
 - The **last section (revision) must be `0`** — the Store reserves it.
 
-🔴 **XeFM impact:** `xefm/__init__.py`'s `__version__` is currently `0.99`. `0.99.0.0` is
-**invalid** for the Store (major = 0). Decide one of:
-- **(recommended) Ship the Store package as `1.0.0.0`** and treat "on the Store"
-  as the 1.0 milestone, keeping `__version__` as the source string mapped to the
-  first three sections once it reaches ≥ 1.0; or
-- Decouple the MSIX package version from `__version__` (a separate `-MsixVersion`
-  build parameter that always emits `major≥1 … .0`).
+✅ **XeFM impact:** `xefm/__init__.py`'s `__version__` is `1.0.0`, so the Store
+package version is that string plus a `0` revision — `1.0.0.0`, satisfying both
+rules (major ≥ 1, revision 0). The 3-part source format maps onto the first three
+sections one-for-one, with the build appending the reserved `0`. (If the source version
+ever needs to diverge from the package version, decouple them with a separate
+`-MsixVersion` build parameter that always emits `major≥1 … .0`.)
 
 Each Store submission needs a **strictly higher** package version than the last.
 
@@ -307,7 +306,7 @@ can redirect writes at runtime — but prefer fixing paths in code over shipping
 
 1. Fix write locations in code (Step 1) — this is independent and can land now.
 2. Reserve app name in Partner Center → capture identity values (§2a).
-3. Decide the version scheme (§2b) — likely bump to `1.0.0.0`.
+3. ~~Decide the version scheme (§2b)~~ — settled: `__version__` is `1.0.0`, packaged as `1.0.0.0`.
 4. Generate assets (Step 2) + author manifest (Step 3).
 5. `makeappx pack` (Step 4) → self-signed local install (Step 5) → run §5 checklist.
 6. Fix whatever the checklist surfaces; repeat 4–5.

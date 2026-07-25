@@ -25,8 +25,15 @@ DMG_TEMP_DIR="${BUILD_DIR}/dmg_temp"
 DMG_NAME="XeFM"
 VOLUME_NAME="XeFM Installer"
 
-# Version number (can be overridden by environment variable)
-VERSION="${VERSION:-0.99}"
+# Version number (can be overridden by environment variable). Used only as the
+# fallback when the built Info.plist can't be read -- see
+# extract_version_from_plist below. Defaults to the single source of truth:
+# xefm/__init__.py's __version__ literal (same extraction build.sh uses), so a
+# version bump never needs an edit here.
+if [ -z "${VERSION:-}" ]; then
+    VERSION="$(sed -nE 's/^__version__[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "${PROJECT_ROOT}/xefm/__init__.py" | head -1)"
+    VERSION="${VERSION:-0.0.0}"
+fi
 
 # Code signing / notarization (optional; same variables as build.sh).
 # CODESIGN_IDENTITY signs the finished DMG; NOTARY_PROFILE (a notarytool

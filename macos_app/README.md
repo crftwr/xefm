@@ -266,7 +266,7 @@ XeFM.app/
     │                           # - Bundle identifier: com.xefm.app
     │                           # - Bundle name: XeFM
     │                           # - Executable name: XeFM
-    │                           # - Version: 0.99
+    │                           # - Version: {version} (from xefm/__init__.py)
     │                           # - Icon file: XeFM.icns
     │                           # - Minimum macOS: 10.13
     │
