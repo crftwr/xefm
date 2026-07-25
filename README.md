@@ -91,9 +91,22 @@ xefm
 
 [pipx](https://pipx.pypa.io) and [uv](https://docs.astral.sh/uv/) keep XeFM in
 its own environment while putting the `xefm` command on your PATH — the right
-shape for an application. Upgrade later with `pipx upgrade xefm` (`uv tool
-upgrade xefm`, `pip install --upgrade xefm`), or run `uvx xefm` to try it once
-without installing anything.
+shape for an application. Or run `uvx xefm` to try it once without installing
+anything.
+
+**Upgrading and uninstalling use the tool you installed with**, so pick the row
+you started from:
+
+| Installed with | Upgrade | Uninstall |
+|----------------|---------|-----------|
+| `pipx install xefm` | `pipx upgrade xefm` | `pipx uninstall xefm` |
+| `uv tool install xefm` | `uv tool upgrade xefm` | `uv tool uninstall xefm` |
+| `pip install xefm` | `pip install --upgrade xefm` | `pip uninstall xefm` |
+
+These are not interchangeable: each tool only knows about what it installed
+itself. `uv tool upgrade xefm` on a pipx- or pip-installed copy fails with
+`` `xefm` is not installed ``, and `uvx xefm` installs nothing at all, so there
+is never anything for it to upgrade.
 
 Python 3.10 or later is the only prerequisite. This is the install to use for
 SSH sessions, remote servers, Linux, and terminal-centric workflows — and the
@@ -355,6 +368,7 @@ xefm/
 - Ensure Python 3.10+ is installed
 - `xefm: command not found` after `pip install xefm` — the console script landed in an environment that is not on your PATH; `pipx install xefm` or `uv tool install xefm` handle that for you (or run it as `python3 -m xefm`)
 - `error: externally-managed-environment` from pip — [PEP 668](https://peps.python.org/pep-0668/) is protecting a system Python (Homebrew, Debian/Ubuntu); use pipx, uv, or a virtualenv
+- `` `xefm` is not installed `` from `uv tool upgrade xefm` — uv only manages what `uv tool install` put there, so this means pipx or pip owns your copy (or `uvx` ran it without installing). Upgrade with the tool you installed with — see the table in [Terminal app](#terminal-app-windows-macos-linux)
 - Check terminal compatibility with curses library (terminal mode)
 
 **Desktop Mode Issues:**
