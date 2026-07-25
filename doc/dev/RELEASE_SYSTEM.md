@@ -13,18 +13,44 @@ Three artifacts that all name the same version and cannot drift apart:
 3. **A GitHub Release** at that tag, with `dist/*` attached and auto-generated notes.
 
 The macOS `.app`/`.dmg` and the Windows bundle are **not** built by `make release`
-— they only build on their own platform. Produce them there and attach them
-afterwards:
+— they only build on their own platform. Produce them there and attach them to
+the release afterwards, one target per platform:
 
 ```bash
-make macos-dmg                                    # on macOS
-make windows-app-zip                              # on Windows
-gh release upload v1.0.1 macos_app/build/XeFM-1.0.1.dmg
+make macos-dmg-upload         # on macOS:  builds the DMG if needed, then uploads it
+make windows-app-zip-upload   # on Windows: builds XeFM-<ver>-win64.zip, then uploads it
 ```
+
+Both refuse to run unless the GitHub Release for the current `__version__`
+already exists, and both pass `--clobber`, so re-uploading a rebuilt artifact
+supersedes the previous one instead of erroring. Override the target release
+with `VERSION=x.y.z`.
+
+The **unsigned `.msix` is never uploaded to a release**. Windows will not
+install an unsigned MSIX, so that artifact exists solely as a Microsoft Store
+submission (Microsoft signs it during certification). The portable zip is the
+form end users can actually run — see
+[DESKTOP_MODE_GUIDE.md](../DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package)
+for the Mark-of-the-Web / SmartScreen instructions that go with it.
 
 See [MACOS_APP_BUILD_SYSTEM.md](MACOS_APP_BUILD_SYSTEM.md) and
 [WINDOWS_APP_BUILD_SYSTEM.md](WINDOWS_APP_BUILD_SYSTEM.md) for signing and
 notarization, which the bundles need and the PyPI artifacts do not.
+
+## Linking to the latest release
+
+`https://github.com/crftwr/xefm/releases/latest` always redirects to the newest
+release that is neither a draft nor a pre-release, so documentation can link to
+it once and never touch it again. That is what the README and the Desktop Mode
+Guide use.
+
+GitHub also serves `…/releases/latest/download/<asset-name>` as a direct
+download, but only for an asset whose **name does not change between releases**.
+XeFM's bundle filenames embed the version (`XeFM-1.0.1.dmg`,
+`XeFM-1.0.1-win64.zip`), so that form does not apply — a permanent direct link
+would mean also attaching a second, version-less copy of each asset
+(`XeFM-macOS.dmg`, `XeFM-Windows-x64.zip`) on every release. The plain
+`/releases/latest` page link avoids that duplication and is what the docs use.
 
 ## Prerequisites
 
@@ -97,6 +123,8 @@ unreleased PuiKit changes, release PuiKit first.
 | `make build` | sdist + wheel into `dist/`, plus `twine check` |
 | `make publish-testpypi` | dry run against TestPyPI (needs a `[testpypi]` token) |
 | `make publish-pypi` | upload only, without the tag/GitHub-Release steps |
+| `make macos-dmg-upload` | attach the macOS DMG to the release (macOS only) |
+| `make windows-app-zip-upload` | attach the Windows portable zip to the release (Windows only) |
 
 `make publish-testpypi` is the safe rehearsal: it exercises the same build and
 upload path, and a bad TestPyPI version costs nothing.

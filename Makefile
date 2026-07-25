@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release icons icons-check macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg macos-dmg-upload windows-app windows-app-clean windows-app-zip windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release icons icons-check macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg macos-dmg-upload windows-app windows-app-clean windows-app-zip windows-app-zip-upload windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -82,6 +82,7 @@ help:
 	@echo "  windows-app         - Build self-contained Windows application bundle"
 	@echo "  windows-app-clean   - Clean Windows app build artifacts"
 	@echo "  windows-app-zip     - Build the bundle and zip it for distribution"
+	@echo "  windows-app-zip-upload - Attach that zip to the GitHub Release for this version"
 	@echo "  windows-app-install - Install the built bundle to Program Files (elevates via UAC)"
 	@echo "  windows-app-msix          - Package the bundle as an unsigned MSIX (Store submission;"
 	@echo "                              SIGN=1 to self-sign for local testing instead)"
@@ -98,6 +99,7 @@ help:
 	@echo "  make macos-app-install          # Install to /Applications"
 	@echo "  make macos-dmg                  # Create DMG installer"
 	@echo "  make macos-dmg-upload           # Upload that DMG to the GitHub Release"
+	@echo "  make windows-app-zip-upload     # Upload the Windows zip to the GitHub Release"
 	@echo "  make release VERSION=1.0.1      # Cut a release (tag + PyPI + GitHub Release)"
 
 venv:
@@ -497,6 +499,45 @@ windows-app:
 windows-app-zip:
 	@echo "Building Windows application bundle (+ zip)..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Zip
+
+# --- Publishing the Windows bundle to a GitHub Release ----------------------
+# The portable zip is the artifact end users can actually install today: it is
+# unsigned, but a zip carries no signature requirement, so Windows only shows
+# the Mark-of-the-Web / SmartScreen prompt documented in
+# doc/DESKTOP_MODE_GUIDE.md. The .msix is deliberately NOT published here --
+# Add-AppxPackage refuses an unsigned package, so the unsigned .msix is only
+# useful as a Partner Center submission (Microsoft re-signs it during
+# certification), never as a download.
+#
+# Filename mirrors build.ps1's own naming (XeFM-<version>-win64.zip), derived
+# from the same version literal as XEFM_VERSION above, so the two cannot drift.
+WINDOWS_APP_ZIP := windows_app/build/XeFM-$(XEFM_VERSION)-win64.zip
+
+# File target so the upload builds the zip on demand when it is missing (e.g.
+# after 'make windows-app-clean') instead of failing at the upload. An existing
+# zip is NOT rebuilt; run 'make windows-app-zip' to force a fresh one.
+$(WINDOWS_APP_ZIP):
+	@echo "Windows zip not found at $@; building it first..."
+	@$(MAKE) windows-app-zip
+
+# Attach the portable zip to the existing GitHub Release for this version.
+# Kept separate from 'windows-app-zip' on purpose: building is local, uploading
+# publishes. The release must already exist ('make release VERSION=x.y.z').
+# --clobber replaces an asset of the same name, so re-uploading a rebuilt zip
+# supersedes the previous one rather than erroring.
+# Prereq: an authenticated `gh` (gh auth login).
+windows-app-zip-upload: $(WINDOWS_APP_ZIP)
+	@test -n "$(XEFM_VERSION)" || { echo "ERROR: could not determine version; pass VERSION=x.y.z"; exit 1; }
+	@command -v gh >/dev/null 2>&1 || { echo "ERROR: 'gh' not found. Install the GitHub CLI first."; exit 1; }
+	@gh auth status >/dev/null 2>&1 || { echo "ERROR: 'gh' is not authenticated. Run 'gh auth login'."; exit 1; }
+	@gh release view v$(XEFM_VERSION) >/dev/null 2>&1 || { \
+		echo "ERROR: GitHub Release v$(XEFM_VERSION) does not exist."; \
+		echo "       Cut it first with 'make release VERSION=$(XEFM_VERSION)'."; \
+		exit 1; \
+	}
+	@echo "Uploading $(WINDOWS_APP_ZIP) to GitHub Release v$(XEFM_VERSION)..."
+	gh release upload v$(XEFM_VERSION) "$(WINDOWS_APP_ZIP)" --clobber
+	@echo "Uploaded $(notdir $(WINDOWS_APP_ZIP)) to release v$(XEFM_VERSION) ✓"
 
 windows-app-clean:
 	@echo "Cleaning Windows app build artifacts..."

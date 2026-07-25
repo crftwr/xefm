@@ -51,7 +51,7 @@ palette with a recommended *screen effect*:
 Select any of them from **View → Theme** or by cycling with `T`.
 
 The screen effect is composited over the whole frame and is only rendered by the
-**GUI backend** (`python3 -m xefm --backend gui` on macOS/Windows) — a terminal shows the
+**desktop app** (macOS/Windows) — a terminal shows the
 palette alone. The effect turns on when
 you switch to the theme and off when you switch away. You can add your own themes
 (with or without an effect) via the `THEMES` dict in `~/.xefm/config.py`; see
@@ -112,8 +112,8 @@ Animations are drawn in **your theme's own colours** — the line colour comes f
 the theme foreground and the backdrop from the theme background — so a scene stays
 on-palette whichever theme (or custom palette) you use.
 
-> **GUI backend only.** Animations need real pixels. They are rendered by the
-> desktop backend (`python3 -m xefm --backend gui` on macOS/Windows). In a terminal there
+> **Desktop mode only.** Animations need real pixels. They are rendered by the
+> desktop backend, on macOS/Windows. In a terminal there
 > are no sub-cell pixels to draw into, so the setting is silently ignored and you
 > simply get the theme's plain background colour.
 
@@ -139,7 +139,7 @@ That is what lets them be dense, use real colour gradients rather than a single
 flat line colour, and cost almost nothing while XeFM sits idle — the graphics card
 advances the scene behind the UI without XeFM having to redraw the interface.
 
-They need **desktop mode** (`python3 -m xefm --backend gui`), on macOS or Windows. In a
+They need **desktop mode**, on macOS or Windows. In a
 terminal there are no pixels to draw into, so the `animation` key is ignored and
 you get the plain theme background. The same is true on the rare desktop setup
 with no usable GPU shader support.

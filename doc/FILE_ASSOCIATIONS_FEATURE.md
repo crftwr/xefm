@@ -130,7 +130,7 @@ the backend you are running, not of the program you configured:
 | Mode | What happens when a program launches |
 |---|---|
 | Terminal (`--backend tui`) | XeFM suspends, the program owns the terminal, XeFM restores and repaints when it exits |
-| Desktop (`--backend gui`) | There is no terminal to hand over, so the program is detached and XeFM stays responsive |
+| Desktop mode | There is no terminal to hand over, so the program is detached and XeFM stays responsive |
 
 So `'view': ['less']` simply works in terminal mode — no flag needed:
 

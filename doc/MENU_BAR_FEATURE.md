@@ -10,7 +10,7 @@ rebind a key in `~/.xefm/config.py`, the menu updates to match.
 
 ## Platform Support
 
-- **macOS desktop mode** (`python3 -m xefm --backend gui`): a native `NSMenu` menu bar.
+- **macOS desktop mode**: a native `NSMenu` menu bar.
 - **Terminal mode**: an in-window menu strip along the top row.
 
 The menu structure and shortcuts are the same in both.
@@ -19,10 +19,10 @@ The menu structure and shortcuts are the same in both.
 
 ### Launching Desktop Mode
 
-```bash
-# Launch XeFM as a native macOS window
-python3 -m xefm --backend gui
-```
+Open the installed **XeFM** app from Launchpad or Spotlight — see the
+[Desktop Mode Guide](DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package).
+(During XeFM development, `python3 -m xefm --backend gui` opens the same window
+from a checkout.)
 
 ### Using the Menu Bar
 
@@ -138,8 +138,8 @@ Open **View → Theme ▸** and pick one, or press `T` to cycle to the next them
 ## Troubleshooting
 
 ### Menu bar not visible
-Make sure you launched desktop mode (`python3 -m xefm --backend gui`). In terminal
-mode the menu is the strip along the top row.
+Make sure you are running XeFM in desktop mode. In terminal mode the menu is the
+strip along the top row.
 
 ### A menu item is grayed out
 The action isn't available in the current context (e.g. Copy with no selection,

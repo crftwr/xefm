@@ -37,33 +37,44 @@ XeFM (*Xenolith File Manager*) is a powerful dual-pane file manager that runs bo
 
 ## Installation
 
+**Desktop app (Windows, macOS).** Download the `.dmg` or the `-win64.zip` from
+the [latest release](https://github.com/crftwr/xefm/releases/latest) and install
+it like any other application — Python is bundled in. This is the recommended
+way to run XeFM on the desktop; see the
+[Desktop Mode Guide](DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package).
+
+**Terminal app (Windows, macOS, Linux).** From PyPI:
+
 ```bash
 pipx install xefm     # or:  uv tool install xefm,  or:  pip install xefm
 xefm
 ```
 
 Python 3.10 or later is all you need; every dependency, including the
-platform-specific ones, comes with it. Desktop mode is the same install run as
-`xefm --backend gui`, on Windows 10+ and macOS 10.13+.
+platform-specific ones, comes with it.
 
-The **[README](../README.md#installation)** covers the rest — upgrading,
-running without installing (`uvx xefm`), and working from a source checkout.
+The two installs coexist and share `~/.xefm/`. The
+**[README](../README.md#installation)** covers the rest — upgrading, running
+without installing (`uvx xefm`), and working from a source checkout.
 
 **First run:** arrow keys navigate, `Tab` switches panes, `?` opens help, `Q`
 quits.
 
 ---
 
-## Desktop Mode (macOS)
+## Desktop Mode (Windows, macOS)
 
-XeFM can run as a native macOS desktop application with GPU acceleration, providing a modern windowed experience while maintaining the same keyboard-driven interface.
+XeFM can run as a native desktop application with GPU acceleration, providing a modern windowed experience while maintaining the same keyboard-driven interface.
 
 ### Quick Start
 
-```bash
-# Run in desktop mode (native window)
-xefm --backend gui
-```
+Install the desktop package (see [Installation](#installation)) and open **XeFM**
+from Launchpad / Spotlight on macOS, or the Start menu on Windows.
+
+Running `xefm --backend gui` from a terminal opens the same window, but that is
+the *development* path — it gives the wrong app icon and, on macOS, attributes
+file permissions to your terminal rather than to XeFM. See
+[Why not `xefm --backend gui`?](DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui).
 
 ### Features
 
@@ -502,10 +513,13 @@ PROGRAMS = [
 
 ## Command Line Options
 
+These apply to the terminal install and to source checkouts. The desktop
+packages take no command-line arguments — their launcher starts the native
+backend directly.
+
 ### Basic Usage
 ```bash
 python3 -m xefm                    # Terminal (curses) mode — the default
-python3 -m xefm --backend gui      # Native macOS window (requires PyObjC)
 python3 -m xefm --left ~/projects  # Set the left pane's startup directory
 python3 -m xefm --right ~/docs     # Set the right pane's startup directory
 ```
@@ -515,12 +529,16 @@ python3 -m xefm --right ~/docs     # Set the right pane's startup directory
 
 ```bash
 python3 -m xefm --backend tui      # Terminal / curses (alias: --backend curses) — default
-python3 -m xefm --backend gui      # Native macOS window (alias: --backend macos)
+python3 -m xefm --backend gui      # Native window (aliases: --backend macos / windows)
 ```
+
+`--backend gui` is the development path for desktop mode; for everyday use
+install the desktop package instead
+([why](DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui)).
 
 ### All Options
 ```bash
---backend {tui,curses,gui,macos}  # Rendering backend (default: tui)
+--backend {tui,curses,gui,macos,windows}  # Rendering backend (default: tui)
 --left DIR                        # Left pane startup directory
 --right DIR                       # Right pane startup directory
 --version                         # Show version and exit
@@ -529,7 +547,7 @@ python3 -m xefm --backend gui      # Native macOS window (alias: --backend macos
 
 ### Combined Options
 ```bash
-# macOS GUI with custom startup directories
+# Desktop window with custom startup directories (from a checkout)
 python3 -m xefm --backend gui --left ~/projects --right ~/docs
 ```
 

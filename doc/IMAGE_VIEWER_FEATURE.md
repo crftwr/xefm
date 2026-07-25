@@ -63,8 +63,7 @@ your terminal speaks:
 | iTerm2, mintty | iTerm2 inline images |
 | foot, contour, mlterm, xterm (`-ti vt340`) | sixel |
 
-In the **desktop app** (`--backend gui`) images always render, whatever your
-terminal.
+In the **desktop app** images always render, whatever your terminal.
 
 In a terminal without any of these protocols — Terminal.app and the VS Code
 terminal, notably — the viewer shows a card with the format, dimensions and

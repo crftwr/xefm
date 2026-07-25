@@ -8,19 +8,119 @@ XeFM can run as a native desktop application on Windows and macOS with GPU accel
 
 ### Getting There
 
-Desktop mode is a flag on the ordinary install (see the
-**[README](../README.md#installation)**) — there is nothing separate to add,
-and no `[macos]` extra to ask for:
+**Install the desktop package.** That is the supported way to run XeFM as a
+desktop app: a native `.app` (macOS) or a self-contained `XeFM.exe` folder
+(Windows), with Python bundled in — no Python install of your own required. Both
+are published on the
+**[latest GitHub release](https://github.com/crftwr/xefm/releases/latest)**;
+[the next section](#installing-the-desktop-app-package) walks through it.
+
+Then launch it the way you launch any other application — Launchpad, Spotlight
+or the Dock on macOS; the Start menu or a pinned taskbar shortcut on Windows.
+
+#### Why not `xefm --backend gui`?
+
+The `--backend gui` flag opens the same window from a terminal. It exists
+because it is how XeFM is *developed* — it is a poor way to actually **use**
+XeFM, for three reasons:
+
+- **macOS permissions break.** A GUI launched from a terminal is a child of that
+  terminal, so macOS attributes every privacy request to it. Access to Desktop,
+  Documents, Downloads, iCloud Drive or removable volumes is granted (or denied)
+  to *Terminal.app* / *iTerm*, not to XeFM — prompts name the wrong app, and
+  file operations can fail with permission errors that no XeFM setting fixes.
+  The installed `.app` has its own bundle identity, so it asks for, and keeps,
+  its own permissions.
+- **The application icon is wrong**, on both platforms. Without an app bundle
+  (macOS) or the bundled launcher executable (Windows), the Dock, taskbar and
+  Cmd/Alt-Tab switcher show the Python interpreter's generic icon and name
+  instead of XeFM's.
+- **It is inconvenient.** You need a terminal open for as long as XeFM runs,
+  closing that terminal can take the window with it, and there is nothing to
+  click in Spotlight, Launchpad or the Start menu.
+
+`--backend gui` stays the right tool when you are working on XeFM itself from a
+source checkout, where rebuilding the app bundle on every edit would be far too
+slow:
 
 ```bash
-xefm --backend gui           # installed
-python3 -m xefm --backend gui  # from a checkout
+python3 -m xefm --backend gui   # from a checkout
+make run-gui                    # the same thing, through .venv
 ```
 
-Alternatively, run XeFM as a packaged desktop app: a self-contained `XeFM.exe`
-folder (Windows) or native `.app` (macOS), Python bundled in, so no Python
-install of your own is required. These are **not yet uploaded to GitHub
-Releases**; build one locally with `make windows-app` or `make macos-app`.
+### Installing the desktop app package
+
+Every stable release attaches ready-to-run desktop packages. The link above
+always resolves to the newest stable release, so it never needs updating:
+
+| Platform | Asset | Signed? |
+|---|---|---|
+| macOS 10.13+ (Intel & Apple Silicon) | `XeFM-<version>.dmg` | Yes — Apple Developer ID |
+| Windows 10/11 x64 | `XeFM-<version>-win64.zip` | Not yet — Microsoft Store submission in certification |
+
+You can also link straight to a specific release, e.g.
+`https://github.com/crftwr/xefm/releases/tag/v1.0.1`.
+
+#### macOS — the DMG
+
+1. Download `XeFM-<version>.dmg` from the release page.
+2. Double-click it and drag **XeFM** onto the *Applications* shortcut.
+3. Eject the disk image and launch **XeFM** from Launchpad or Spotlight.
+
+The app is signed with the author's Apple Developer ID, so Gatekeeper opens it
+normally. If macOS ever refuses with *"XeFM cannot be opened because the
+developer cannot be verified"* — which happens when the quarantine attribute
+survives an unusual download path — right-click the app in *Applications* and
+choose **Open**, then confirm. That whitelists it permanently.
+
+To remove it: drag `XeFM.app` to the Trash. Settings live in `~/.xefm/` and can
+be deleted separately.
+
+#### Windows — the portable zip
+
+The Windows package is a **portable folder**, not an installer: unzip it and run
+`XeFM.exe`. There is no MSI, nothing is written to the registry, and no admin
+rights are needed.
+
+XeFM is currently in certification for the **Microsoft Store**. Store packages
+are signed by Microsoft during certification, which is what removes the warning
+below — until the listing goes live, the zip on GitHub Releases is unsigned.
+
+1. **Unblock the zip first.** Right-click the downloaded
+   `XeFM-<version>-win64.zip` → **Properties** → tick **Unblock** at the bottom
+   of the *General* tab → **OK**.
+
+   Windows tags internet downloads with a *Mark of the Web*, and extracting a
+   tagged zip copies that tag onto every file inside. Unblocking the zip *before*
+   extracting clears all of them in one step. From PowerShell, the equivalent is:
+
+   ```powershell
+   Unblock-File .\XeFM-<version>-win64.zip
+   ```
+
+2. **Extract** the `XeFM` folder somewhere convenient:
+   - `%LOCALAPPDATA%\Programs\XeFM` — per-user, no elevation required
+   - `C:\Program Files\XeFM` — all users, needs administrator rights
+
+3. **Run `XeFM.exe`.** If step 1 was skipped, SmartScreen shows *"Windows
+   protected your PC"*. Click **More info**, then **Run anyway**. The prompt
+   appears once per downloaded copy, not on every launch.
+
+4. *Optional:* right-click `XeFM.exe` → **Pin to Start** / **Create shortcut** for
+   quicker access.
+
+To remove it: delete the extracted folder (and `%USERPROFILE%\.xefm\` if you also
+want the settings gone).
+
+**Why not an `.msix`?** The repository can build one (`make windows-app-msix`),
+but an MSIX must be signed before Windows will install it, and the unsigned
+build exists only as a Microsoft Store submission artifact — Microsoft signs it
+during certification. So a downloadable `.msix` would simply refuse to install;
+the portable zip is the installable form until the Store listing is live.
+
+**Prefer not to run an unsigned binary?** Wait for the Microsoft Store listing —
+Store packages are signed by Microsoft — or install from PyPI
+(`pipx install xefm`) and use XeFM in terminal mode until then.
 
 ### First Launch
 
@@ -59,9 +159,14 @@ When you launch XeFM in desktop mode:
 
 ### Choosing the backend
 
-There is no configuration-file default for the backend — it is selected only by
-the `--backend` flag, and terminal mode is the default. To launch in desktop
-mode, pass `--backend gui` (alias `macos`) each time, or wrap it in a shell alias.
+The installed desktop package always starts in desktop mode — its launcher
+selects the native backend, so there is nothing to pass and nothing to configure.
+
+The `--backend` flag only matters when you run XeFM from a Python install or a
+source checkout. There it defaults to terminal mode, and there is no
+configuration-file key to change that; desktop mode is `--backend gui` (aliases
+`macos` / `windows`), with the caveats in
+[Why not `xefm --backend gui`?](#why-not-xefm---backend-gui) above.
 
 ### Customizing Appearance
 
@@ -105,27 +210,33 @@ To check installed fonts, open `Font Book.app` and filter by "Fixed Width" (mono
 
 ### Launching Desktop Mode
 
+Open **XeFM** from Launchpad, Spotlight or the Dock (macOS), or from the Start
+menu / a pinned shortcut (Windows). The installed package needs no flags.
+
+From a source checkout, during development, `--backend` picks the renderer:
+
 ```bash
 # Terminal mode (the default)
 python3 -m xefm
 
-# Desktop mode — chosen with --backend
+# Desktop mode — development only, see "Why not xefm --backend gui?"
 python3 -m xefm --backend gui
 ```
 
 ### Switching Between Modes
 
-You can easily switch between terminal and desktop modes:
+Terminal mode comes from the PyPI install (`pipx install xefm`) or a source
+checkout — the desktop package is a self-contained application and does not put
+an `xefm` command on your PATH, so the two installs coexist rather than replace
+each other:
 
 ```bash
-# Terminal mode
-python3 -m xefm --backend curses
-
-# Desktop mode
-python3 -m xefm --backend gui
+xefm                        # terminal mode
+xefm --backend curses       # the same thing, stated explicitly
 ```
 
-All your settings, favorites, and history are shared between modes.
+All your settings, favorites, and history live in `~/.xefm/` and are shared
+between the desktop app and terminal mode.
 
 
 ### Keyboard Shortcuts
@@ -297,7 +408,7 @@ See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
 ### When to Use Desktop Mode
 
 **Recommended for**:
-- Daily use on macOS
+- Daily use on Windows and macOS
 - Better visual experience
 - Smoother performance
 - Customized fonts and colors
@@ -308,7 +419,7 @@ See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
 **Recommended for**:
 - SSH sessions
 - Remote servers
-- Non-macOS systems
+- Linux, where there is no desktop backend
 - Minimal dependencies
 - Integration with terminal workflows
 
@@ -319,49 +430,41 @@ See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
 - Use terminal mode for remote work
 - Keep both options available
 
-**Choosing per run**:
-```bash
-python3 -m xefm                 # terminal mode (default)
-python3 -m xefm --backend gui   # desktop mode
-```
-Tip: wrap the desktop command in a shell alias if you use it often (there is no
-config-file default for the backend).
+**Choosing per run**: open the installed **XeFM** app for desktop mode, and run
+`xefm` in a terminal for terminal mode. The two coexist and share `~/.xefm/`, so
+there is nothing to switch — pick whichever fits the task.
 
 ## Advanced Topics
 
-### Custom Launch Scripts
-
-Create a launcher script for easy access:
-
-```bash
-#!/bin/bash
-# ~/bin/xefm-desktop
-
-PYTHONPATH=/path/to/xefm python3 -m xefm --backend gui "$@"
-```
-
-Make it executable:
-```bash
-chmod +x ~/bin/xefm-desktop
-```
-
-Now you can run:
-```bash
-xefm-desktop --left ~/projects --right ~/documents
-```
-
 ### Integration with macOS
 
-**Dock Integration**:
-- Desktop mode appears in Dock when running
-- Can right-click for options
-- Shows in Cmd+Tab app switcher
+Installing `XeFM.app` is what makes the desktop integration work — all of it
+follows from the app bundle, and none of it needs a launcher script or an
+Automator wrapper:
 
-**Spotlight Integration**:
-- Create an Automator application
-- Add "Run Shell Script" action
-- Use: `PYTHONPATH=/path/to/xefm python3 -m xefm --backend gui`
-- Save as "XeFM" in Applications folder
+- **Dock**: a proper XeFM icon, right-click options, *Keep in Dock*
+- **Cmd+Tab**: XeFM appears under its own name and icon
+- **Spotlight / Launchpad**: searchable as "XeFM", launches with one keystroke
+- **Privacy permissions**: requests for Desktop / Documents / Downloads and Full
+  Disk Access are attributed to XeFM itself, and are granted once in
+  *System Settings → Privacy & Security*
+
+Older versions of this guide suggested wrapping `python3 -m xefm --backend gui`
+in a shell script or an Automator application to get a Dock and Spotlight entry.
+Don't — that is exactly the setup that produces the generic Python icon and
+misattributed permission prompts described in
+[Why not `xefm --backend gui`?](#why-not-xefm---backend-gui). Install the `.app`
+instead.
+
+### Startup directories
+
+The packaged apps take no command-line arguments — their launchers start XeFM
+with the native backend and nothing else, so `--left` / `--right` are available
+only when running from the command line.
+
+You rarely need them there: each pane's directory is saved to `~/.xefm/state.db`
+on exit and restored on the next launch, so the desktop app reopens where you
+left off. For jumping elsewhere, use the favorites dialog (`J`).
 
 ## Getting Help
 

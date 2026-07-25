@@ -22,8 +22,67 @@ XeFM — short for *Xenolith File Manager* — is a powerful file manager that r
 
 ### Installation
 
+Pick the install that matches how you want to run XeFM:
+
+| | Get it from | Gives you |
+|---|---|---|
+| **Desktop app** — Windows, macOS | the [latest release](https://github.com/crftwr/xefm/releases/latest) | A real installed application: own icon, Dock / Start-menu entry, own file permissions. No Python needed. |
+| **Terminal app** — Windows, macOS, Linux | [PyPI](https://pypi.org/project/xefm/) | The `xefm` command in any terminal, including over SSH. Needs Python 3.10+. |
+
+The two coexist and share their settings in `~/.xefm/` — installing both is a
+perfectly normal setup.
+
+### Desktop app (Windows, macOS)
+
+Download from the **[latest release](https://github.com/crftwr/xefm/releases/latest)**
+— these packages bundle their own Python, so there is nothing else to install:
+
+| Platform | Asset | Install |
+|---|---|---|
+| **macOS** 10.13+ | `XeFM-<version>.dmg` | Open the DMG and drag **XeFM** to *Applications*. Signed with the author's Apple Developer ID. |
+| **Windows** 10/11 x64 | `XeFM-<version>-win64.zip` | Portable folder: unblock the zip, extract anywhere, run `XeFM.exe`. **Not code-signed yet** — SmartScreen warns once, see below. |
+
+Then launch it like any other app — Launchpad or Spotlight on macOS, the Start
+menu on Windows.
+
+> **Use the package, not `--backend gui`.** XeFM can open the same window from a
+> terminal, but that path is for developing XeFM, not for using it: on macOS the
+> file-access permissions get attributed to your *terminal* instead of to XeFM,
+> both platforms show the Python interpreter's icon in the Dock / taskbar, and
+> you need a terminal window open the whole time. The installed app has none of
+> those problems. See
+> [Why not `xefm --backend gui`?](doc/DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui).
+
+XeFM is also awaiting certification on the **Microsoft Store**. Once it is live
+the Store becomes the recommended Windows install — one click, automatic
+updates, and no SmartScreen prompt.
+
+#### Windows: unblocking the unsigned zip
+
+Code signing for Windows comes with the Store submission, which is still in
+certification. Until then the zip is unsigned, and Windows marks anything
+downloaded from the internet:
+
+1. Right-click the downloaded zip → **Properties** → tick **Unblock** → **OK**.
+   Doing this *before* extracting clears the mark on every extracted file at once.
+2. Extract the `XeFM` folder wherever you like — for example
+   `%LOCALAPPDATA%\Programs\XeFM` (no admin rights needed).
+3. Run `XeFM.exe`. If you skipped step 1, SmartScreen shows *"Windows protected
+   your PC"* — click **More info** → **Run anyway**. It asks only once per
+   download.
+
+The bundle is self-contained and writes nothing outside its own folder and
+`%USERPROFILE%\.xefm\`, so uninstalling is deleting the folder. Would rather not
+run an unsigned binary at all? Wait for the Store listing, or use the terminal
+app below.
+
+Full details, including macOS Gatekeeper notes, are in the
+**[Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package)**.
+
+### Terminal app (Windows, macOS, Linux)
+
 XeFM is on [PyPI](https://pypi.org/project/xefm/). Install it as a tool and run
-it — Windows, macOS, or Linux, no checkout and no virtualenv to manage:
+it — no checkout and no virtualenv to manage:
 
 ```bash
 pipx install xefm     # or:  uv tool install xefm,  or:  pip install xefm
@@ -36,10 +95,11 @@ shape for an application. Upgrade later with `pipx upgrade xefm` (`uv tool
 upgrade xefm`, `pip install --upgrade xefm`), or run `uvx xefm` to try it once
 without installing anything.
 
-Python 3.10 or later is the only prerequisite. Desktop mode needs nothing extra:
-`xefm --backend gui` opens a native window on Windows 10+ and macOS 10.13+. (A
-self-contained app package with Python bundled in is **not yet uploaded to GitHub
-Releases**.)
+Python 3.10 or later is the only prerequisite. This is the install to use for
+SSH sessions, remote servers, Linux, and terminal-centric workflows — and the
+only one available on Linux.
+
+### From source
 
 Working on XeFM itself? Use a checkout instead:
 
@@ -184,7 +244,7 @@ The default config also includes a **Phosphor** sample theme — a monochrome ph
 
 ### Visual effects (desktop mode)
 
-In desktop mode (`--backend gui`), a theme can carry visual effects that the GPU renders behind and over the interface. Terminal mode simply shows the theme's colors and ignores these.
+In desktop mode, a theme can carry visual effects that the GPU renders behind and over the interface. Terminal mode simply shows the theme's colors and ignores these.
 
 - **Background animations** — a slow, on-palette scene drawn behind the panes, rendered as a GPU fragment shader: `starfield`, `rain`, `hologram`, `wave`, `grid`, `constellation`, and `datastream`.
 - **Screen post-effects** — a full-frame CRT / phosphor look composited over the UI: bloom, glow, scanlines, vignette, and drop shadows.
@@ -206,7 +266,7 @@ Type `exit` to return to XeFM.
 
 ## Advanced Features
 
-- **Native Desktop App:** Run in a real window on Windows and macOS (`--backend gui`) with GPU rendering, or in any terminal — same keyboard-driven interface
+- **Native Desktop App:** Run in a real window on Windows and macOS with GPU rendering, or in any terminal — same keyboard-driven interface
 - **Archive Virtual Directories:** Browse ZIP, TAR, and compressed archives as if they were directories - navigate, search, view files, and copy contents without extraction
 - **SFTP Support:** Access remote servers via SSH with full file operations, search, and optimized performance through connection multiplexing and bulk operations
 - **AWS S3 Support:** Navigate and manage S3 buckets with seamless local/remote operations
@@ -221,18 +281,19 @@ For detailed information on all features, see the [User Guide](doc/XEFM_USER_GUI
 
 ## Command Line Options
 
+These apply to the terminal install (`pipx install xefm`) and to source
+checkouts. The desktop packages take no arguments — their launcher starts the
+native backend directly.
+
 ```bash
 # Run in terminal mode (default)
 xefm
 
-# Run in desktop mode (native window on Windows or macOS)
-xefm --backend gui
-
 # Specify startup directories
 xefm --left /path/to/projects --right /path/to/documents
 
-# Combined usage - desktop mode with custom directories
-xefm --backend gui --left ./src --right ./test
+# Run in desktop mode — for XeFM development; install the desktop package instead
+xefm --backend gui
 
 # Help and version
 xefm --help
@@ -250,7 +311,7 @@ source checkout, where no `xefm` console command is installed.
 XeFM supports two rendering backends, chosen with `--backend`:
 
 - **Terminal Mode** (`--backend tui`, alias `curses`): traditional terminal interface, works on all platforms (**Windows, macOS, Linux**) — the default
-- **Desktop Mode** (`--backend gui`): native desktop window on **Windows** (Direct2D/DirectWrite) or **macOS** (CoreGraphics, via PyObjC). The `gui` alias resolves to the right backend for the current platform; `windows` / `macos` name them explicitly.
+- **Desktop Mode** (`--backend gui`): native desktop window on **Windows** (Direct2D/DirectWrite) or **macOS** (CoreGraphics, via PyObjC). The `gui` alias resolves to the right backend for the current platform; `windows` / `macos` name them explicitly. **For everyday desktop use install the [desktop package](#desktop-app-windows-macos) instead** — this flag is the development path, and comes with the [caveats](doc/DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui) of running a GUI out of a terminal.
 
 Desktop mode provides:
 - Native window with resizing and full-screen support
@@ -298,6 +359,9 @@ xefm/
 
 **Desktop Mode Issues:**
 - Desktop mode runs on Windows and macOS; on other platforms use terminal mode
+- Generic Python icon in the Dock / taskbar, or macOS permission prompts naming your terminal instead of XeFM — symptoms of launching with `--backend gui`; install the [desktop package](#desktop-app-windows-macos) instead
+- *"Windows protected your PC"* when launching the downloaded `XeFM.exe` — the zip is not code-signed yet (Microsoft Store submission pending); click **More info** → **Run anyway**, or unblock the zip before extracting ([details](doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip))
+- *"XeFM cannot be opened because the developer cannot be verified"* on macOS — right-click `XeFM.app` in *Applications* and choose **Open**, then confirm once
 - On macOS, if PyObjC is missing XeFM automatically falls back to terminal mode
 - Check console output for backend initialization messages
 - See [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed setup

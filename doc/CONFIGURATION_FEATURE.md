@@ -67,8 +67,8 @@ as a `Config warning:`.
 
 ### Fonts (GUI / desktop mode only)
 
-These apply when running on the native macOS backend (`python3 -m xefm --backend gui`);
-the terminal backend uses your terminal's font and ignores them.
+These apply in desktop mode (the native macOS / Windows backend); the terminal
+backend uses your terminal's font and ignores them.
 
 ```python
 UI_FONT_NAME  = None   # proportional face for names/labels (None = bundled/OS default)
