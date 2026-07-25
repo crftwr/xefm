@@ -44,7 +44,7 @@ Releases**.)
 Working on XeFM itself? Use a checkout instead:
 
 ```bash
-git clone https://github.com/shimomut/xefm.git
+git clone https://github.com/crftwr/xefm.git
 cd xefm
 make venv        # creates .venv with every dependency
 make run         # launch XeFM through it, no activation needed
@@ -319,8 +319,8 @@ For detailed troubleshooting, see the [User Guide](doc/XEFM_USER_GUIDE.md#troubl
 
 Have questions, suggestions, or found a bug? Get in touch:
 
-- **GitHub Repository**: [https://github.com/shimomut/xefm](https://github.com/shimomut/xefm)
-- **GitHub Issues**: [Report bugs or request features](https://github.com/shimomut/xefm/issues)
+- **GitHub Repository**: [https://github.com/crftwr/xefm](https://github.com/crftwr/xefm)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/crftwr/xefm/issues)
 - **PyPI**: [pypi.org/project/xefm](https://pypi.org/project/xefm/) — released versions (`pipx install xefm`)
 - **Author's X (Twitter)**: [@smmrtmnr](https://x.com/smmrtmnr)
 

@@ -138,7 +138,7 @@ If XeFM fails to launch:
 2. Ensure you're running macOS 10.13 or later
 3. Try reinstalling by dragging XeFM.app to Trash and reinstalling
 
-For more information, visit: https://github.com/shimomut/xefm
+For more information, visit: https://github.com/crftwr/xefm
 
 EOF
     fi

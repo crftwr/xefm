@@ -83,4 +83,4 @@ If this policy changes, the updated version will be published at this address an
 ## Contact
 
 Questions about this policy can be raised as an issue at
-<https://github.com/shimomut/xefm/issues>, or sent to craftware@gmail.com.
+<https://github.com/crftwr/xefm/issues>, or sent to craftware@gmail.com.

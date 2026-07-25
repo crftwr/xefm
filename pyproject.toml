@@ -36,9 +36,9 @@ classifiers = [
 xefm = "xefm.app:main"
 
 [project.urls]
-Homepage = "https://github.com/shimomut/xefm"
-Repository = "https://github.com/shimomut/xefm"
-Issues = "https://github.com/shimomut/xefm/issues"
+Homepage = "https://github.com/crftwr/xefm"
+Repository = "https://github.com/crftwr/xefm"
+Issues = "https://github.com/crftwr/xefm/issues"
 
 # Flat layout, matching PuiKit's own repo: the whole application is the ``xefm``
 # package at the repo root — ``xefm.app`` is the entry module (FileManager +

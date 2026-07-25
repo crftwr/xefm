@@ -12,7 +12,7 @@ from xefm import __version__ as VERSION  # noqa: F401  (re-exported as a constan
 # Application metadata
 APP_NAME = "XeFM"
 APP_DESCRIPTION = "A dual-pane file manager for the desktop and the terminal"
-GITHUB_URL = "https://github.com/shimomut/xefm"
+GITHUB_URL = "https://github.com/crftwr/xefm"
 
 # Display constants
 DEFAULT_LOG_HEIGHT_RATIO = 0.25  # Log pane takes 1/4 of screen

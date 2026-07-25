@@ -62,7 +62,7 @@ class TestArgparseIntegration(unittest.TestCase):
         self.assertIn('-v, --version', help_text)
         
         # Check for URL
-        self.assertIn('github.com/shimomut/xefm', help_text)
+        self.assertIn('github.com/crftwr/xefm', help_text)
     
     def test_error_handling_for_unknown_args(self):
         """Test error handling for various unknown arguments"""

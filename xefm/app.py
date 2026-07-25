@@ -4523,7 +4523,7 @@ examples:
   xefm --backend web              browser tab
   xefm --left ~/projects --right ~/downloads
 
-Project home: https://github.com/shimomut/xefm
+Project home: https://github.com/crftwr/xefm
 """
 
 
