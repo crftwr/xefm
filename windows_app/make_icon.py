@@ -2,12 +2,17 @@
 """
 Generate ``XeFM.ico`` for the Windows launcher's embedded icon resource.
 
+This is a *fallback*. ``windows_app/resources/XeFM.ico`` is committed -- regenerated
+from the SVG masters by ``tools/make_icons.py``, which renders each size natively --
+and ``build.ps1`` uses that committed file when it is present. This script only runs
+when it is missing.
+
 Preference order:
-  1. If Pillow is available, convert the macOS icon ``macos_app/resources/XeFM.icns``
-     (or a ``--source`` PNG/ICNS) into a proper multi-size ``.ico``.
+  1. If Pillow is available, convert the committed master
+     ``windows_app/resources/XeFM-1024.png`` (or a ``--source`` PNG/ICNS) into a
+     proper multi-size ``.ico``.
   2. Otherwise, emit a simple solid-color placeholder ``.ico`` with the pure-Python
-     writer below, so ``rc.exe`` always has an icon to embed. Drop a hand-authored
-     ``XeFM.ico`` into ``windows_app/resources/`` to override.
+     writer below, so ``rc.exe`` always has an icon to embed.
 
 Usage:
     python make_icon.py --out <path>\\XeFM.ico [--source <path>\\icon.png|.icns]
@@ -25,10 +30,24 @@ _ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 _FILL = (38, 132, 128)
 _BORDER = (90, 200, 190)
 
-# Corner-rounding radius as a fraction of the icon size, applied when the source
-# has no transparency of its own (macOS .icns files are full-bleed squares that
-# the OS masks into a squircle). ~0.225 approximates the macOS Big Sur radius.
+# Corner-rounding radius as a fraction of the icon size, applied only when the source
+# is a full-bleed opaque square. ~0.225 approximates the macOS Big Sur radius.
 _CORNER_RADIUS_FRAC = 0.225
+
+
+def _has_rounded_corners(img) -> bool:
+    """
+    True if the source already carries its own rounded-corner alpha.
+
+    The SVG masters draw the rounded tile themselves, so their corner pixels are
+    transparent; masking such a source again would shave a sliver off the artwork
+    (the mask radius is wider than the art's). Older full-bleed sources -- an opaque
+    ``.icns`` square -- still need the mask, so probe a corner and decide.
+    """
+    w, h = img.size
+    # Sample just inside the corner; the very edge pixel can be antialiased either way.
+    probe = max(1, round(min(w, h) * 0.01))
+    return img.convert("RGBA").getpixel((probe, probe))[3] < 128
 
 
 def _apply_rounded_mask(img, size):
@@ -55,6 +74,19 @@ def _apply_rounded_mask(img, size):
     return scaled
 
 
+def render_tile(img, size):
+    """
+    Scale ``img`` to ``size`` x ``size`` RGBA, rounding the corners only if the
+    source does not already have them. Shared with ``make_store_assets.py`` so the
+    launcher icon and the Store tiles stay visually identical.
+    """
+    from PIL import Image
+
+    if _has_rounded_corners(img):
+        return img.resize((size, size), Image.LANCZOS).convert("RGBA")
+    return _apply_rounded_mask(img, size)
+
+
 def _try_pillow(source: Path, out: Path) -> bool:
     try:
         from PIL import Image  # type: ignore
@@ -66,7 +98,7 @@ def _try_pillow(source: Path, out: Path) -> bool:
         # Master at the largest ICO size, with rounded-corner transparency; the
         # ICO encoder derives every smaller size by resizing this master, so the
         # corners (and the alpha channel) stay proportional across sizes.
-        master = _apply_rounded_mask(img, 256)
+        master = render_tile(img, 256)
         sizes = [(s, s) for s in _ICO_SIZES]
         master.save(out, format="ICO", sizes=sizes)
         print(f"[INFO] Wrote {out} from {source} via Pillow "
@@ -75,6 +107,28 @@ def _try_pillow(source: Path, out: Path) -> bool:
     except Exception as exc:  # noqa: BLE001
         print(f"[WARNING] Pillow conversion of {source} failed: {exc}")
         return False
+
+
+def default_source(small: bool = False) -> Path:
+    """
+    The raster master to derive Windows art from.
+
+    ``tools/make_icons.py`` renders both masters from the SVG artwork and commits them:
+    ``XeFM-1024.png`` (detailed) and ``XeFM-small-256.png`` (simplified, for art that
+    would turn to mush below ~64px). The macOS ``.icns`` is the legacy fallback for
+    checkouts predating them. Shared with ``make_store_assets.py``.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    res = repo_root / "windows_app" / "resources"
+    candidates = [res / "XeFM-small-256.png"] if small else []
+    candidates += [
+        res / "XeFM-1024.png",
+        repo_root / "macos_app" / "resources" / "XeFM.icns",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _write_placeholder_ico(out: Path, size: int = 32) -> None:
@@ -129,15 +183,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate XeFM.ico")
     parser.add_argument("--out", required=True, help="output .ico path")
     parser.add_argument("--source", default=None,
-                        help="source image (.png/.icns); defaults to macos_app/resources/XeFM.icns")
+                        help="source image (.png/.icns); defaults to windows_app/resources/XeFM-1024.png")
     args = parser.parse_args()
 
     out = Path(args.out).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    # Resolve a default source relative to the repo (this file lives in windows_app/).
-    repo_root = Path(__file__).resolve().parent.parent
-    source = Path(args.source).resolve() if args.source else (repo_root / "macos_app" / "resources" / "XeFM.icns")
+    source = Path(args.source).resolve() if args.source else default_source()
 
     if source.exists() and _try_pillow(source, out):
         return 0

@@ -1,158 +1,92 @@
 # XeFM Application Icon
 
-## Current Icon
+## Source of truth
 
-The current `XeFM.icns` file is a placeholder icon created automatically. It features:
-- Blue gradient background
-- "XeFM" text in white
-- "File Manager" subtitle
-- Rounded rectangle border
+`XeFM.icns` in this directory is **generated** — do not hand-edit or overwrite it.
+The icon is authored as SVG, and every platform asset is rendered from it:
 
-## Replacing the Icon
+| Master | Used at |
+|--------|---------|
+| `tools/icon/xefm-icon.svg` | 128px and up — full detail: dual panes, `XeFM` wordmark badge with corner brackets, faint starfield |
+| `tools/icon/xefm-icon-small.svg` | 64px and below — simplified: thicker rows, larger `Xe` badge, no starfield |
 
-To replace the placeholder icon with your custom icon:
+Two masters exist because the detailed art collapses into noise at 16–32px. The
+generator picks the right one per output size, so the icon stays legible from the
+Finder list view up to the 1024px Quick Look preview.
 
-### Option 1: Replace the .icns file directly
-
-If you already have a `.icns` file:
+## Regenerating
 
 ```bash
-# Replace the icon file
-cp your_custom_icon.icns macos_app/resources/XeFM.icns
-
-# Rebuild the app
-cd macos_app
-./build.sh
+make icons          # rewrite every asset from the SVG masters
+make icons-check    # verify the committed assets are still in sync (exit 1 if not)
 ```
 
-### Option 2: Create .icns from PNG
+Both run `tools/make_icons.py`, which rasterizes through AppKit's native SVG support
+(macOS 13+) into an sRGB, premultiplied-alpha bitmap context. **This is macOS-only** —
+which is why all outputs are committed: the Windows build consumes them without
+needing a rasterizer of its own.
 
-If you have a PNG file (1024x1024 recommended):
+Outputs:
+
+| File | Contents |
+|------|----------|
+| `macos_app/resources/XeFM.icns` | all 10 iconset slots, 16px → 1024px |
+| `windows_app/resources/XeFM.ico` | 16, 24, 32, 48, 64, 128, 256 — each rendered natively, not downscaled |
+| `windows_app/resources/XeFM-1024.png` | detailed raster master for MSIX Store tiles >64px |
+| `windows_app/resources/XeFM-small-256.png` | simplified raster master for MSIX Store tiles ≤64px |
+
+Rendering is deterministic, so `--check` compares bytes and is safe to run in CI.
+
+After regenerating, rebuild the bundle and clear the icon cache if Finder or the Dock
+still shows the old art:
 
 ```bash
-# Create iconset directory
-mkdir XeFM.iconset
-
-# Generate all required sizes
-sips -z 16 16     your_icon.png --out XeFM.iconset/icon_16x16.png
-sips -z 32 32     your_icon.png --out XeFM.iconset/icon_16x16@2x.png
-sips -z 32 32     your_icon.png --out XeFM.iconset/icon_32x32.png
-sips -z 64 64     your_icon.png --out XeFM.iconset/icon_32x32@2x.png
-sips -z 128 128   your_icon.png --out XeFM.iconset/icon_128x128.png
-sips -z 256 256   your_icon.png --out XeFM.iconset/icon_128x128@2x.png
-sips -z 256 256   your_icon.png --out XeFM.iconset/icon_256x256.png
-sips -z 512 512   your_icon.png --out XeFM.iconset/icon_256x256@2x.png
-sips -z 512 512   your_icon.png --out XeFM.iconset/icon_512x512.png
-sips -z 1024 1024 your_icon.png --out XeFM.iconset/icon_512x512@2x.png
-
-# Convert to .icns
-iconutil -c icns XeFM.iconset -o macos_app/resources/XeFM.icns
-
-# Clean up
-rm -rf XeFM.iconset
-
-# Rebuild the app
-cd macos_app
-./build.sh
+make macos-app
+make macos-refresh-icon
 ```
 
-### Option 3: Use a design tool
+## Design notes
 
-Create your icon using:
-- **Sketch** - Export as .icns directly
-- **Figma** - Export as PNG, then convert using Option 2
-- **Adobe Illustrator** - Export as PNG, then convert using Option 2
-- **Icon Composer** (Xcode) - Import PNG and export as .icns
+The artwork draws its own rounded tile (a 200×200 viewBox with `rx="40"`, i.e. a 20%
+corner radius) and is rendered **full-bleed**: the tile fills the whole canvas, with
+transparency only outside the corners.
 
-## Icon Design Guidelines
+That matters downstream. `windows_app/make_icon.py` applies a rounded-corner mask when
+its source is a full-bleed *opaque* square (the shape the old placeholder `.icns` had),
+and skips it when the source already carries corner transparency — otherwise the mask's
+wider 22.5% radius would shave a sliver off the artwork. `render_tile()` there makes
+that call by probing a corner pixel's alpha, and `make_store_assets.py` shares it so the
+launcher icon and the Store tiles match exactly.
 
-For best results, follow Apple's icon design guidelines:
+If you want the icon to sit at the size Apple's Human Interface Guidelines specify for
+macOS (an 824×824 tile centered in a 1024×1024 canvas, so it lines up with system icons
+in the Dock rather than reading slightly oversized), that inset would go in
+`tools/make_icons.py` — and only on the macOS path, since Windows icons are expected to
+be full-bleed.
 
-### Size and Format
-- Base size: 1024x1024 pixels
-- Format: PNG with transparency (before conversion to .icns)
-- Color space: sRGB
-
-### Visual Design
-- Use a simple, recognizable design
-- Avoid text (except for app name/initials if needed)
-- Use a consistent color palette
-- Consider both light and dark mode appearances
-- Test at small sizes (16x16, 32x32) to ensure clarity
-
-### macOS Style
-- Rounded corners (typically 180px radius for 1024x1024)
-- Subtle shadows and gradients
-- 3D depth (optional, but common in macOS icons)
-- Consistent with macOS Big Sur+ design language
-
-## Icon Resources
-
-- **Apple Human Interface Guidelines**: https://developer.apple.com/design/human-interface-guidelines/app-icons
-- **SF Symbols**: https://developer.apple.com/sf-symbols/ (for inspiration)
-- **Icon templates**: Search for "macOS icon template" for Sketch/Figma templates
-
-## Verifying the Icon
-
-After rebuilding, verify the icon appears correctly:
+## Verifying
 
 ```bash
-# Open the app
-open macos_app/build/XeFM.app
+# Inspect the generated .icns
+sips -g pixelWidth -g pixelHeight -g hasAlpha -g space macos_app/resources/XeFM.icns
 
-# Check in Finder
+# Confirm the bundle picked it up
+ls -lh macos_app/build/XeFM.app/Contents/Resources/XeFM.icns
+grep -A 1 "CFBundleIconFile" macos_app/build/XeFM.app/Contents/Info.plist
+
+# Look at it
 open macos_app/build/
-
-# Check in Dock (after launching)
-# The icon should appear in the Dock when the app is running
 ```
 
 ## Troubleshooting
 
-### Icon doesn't appear after rebuild
+**Icon doesn't change after a rebuild** — macOS caches aggressively. Run
+`make macos-refresh-icon` (touches the bundle, clears
+`/Library/Caches/com.apple.iconservices.store`, restarts Dock and Finder). Quit and
+relaunch the app if it was running.
 
-1. Clear icon cache using the make target:
-   ```bash
-   make macos-refresh-icon
-   ```
+**`make icons` fails with "AppKit could not load ..."** — the SVG rasterizer needs
+macOS 13 or newer. Check `sw_vers`.
 
-2. Or manually clear icon cache:
-   ```bash
-   sudo rm -rf /Library/Caches/com.apple.iconservices.store
-   killall Dock
-   killall Finder
-   ```
-
-3. Verify icon is in bundle:
-   ```bash
-   ls -lh macos_app/build/XeFM.app/Contents/Resources/XeFM.icns
-   ```
-
-2. Check Info.plist references the icon:
-   ```bash
-   grep -A 1 "CFBundleIconFile" macos_app/build/XeFM.app/Contents/Info.plist
-   ```
-
-### Icon looks blurry
-
-- Ensure your source image is at least 1024x1024 pixels
-- Use PNG format with transparency
-- Avoid JPEG (lossy compression)
-- Check that all icon sizes were generated correctly
-
-### Icon has wrong colors
-
-- Verify color space is sRGB
-- Check that transparency is preserved
-- Test in both light and dark mode
-
-## Current Placeholder Details
-
-The placeholder icon was generated using:
-- Python PIL (Pillow) library
-- Blue gradient background (RGB: 30,60,100 to 30,60,255)
-- Helvetica font for text
-- 1024x1024 base resolution
-- All standard macOS icon sizes (16x16 through 512x512@2x)
-
-Location: `macos_app/resources/XeFM.icns`
+**Colors look off** — the generator tags output sRGB explicitly. If you re-render by
+some other route, make sure you are not baking in the display's wide-gamut profile.

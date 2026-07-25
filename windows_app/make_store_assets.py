@@ -3,10 +3,10 @@
 Generate the MSIX / Microsoft Store tile assets (PNG) for the XeFM package.
 
 The Store manifest references PNG tiles (not the launcher's ``.ico``). This emits
-the minimum useful set from the shared macOS icon ``macos_app/resources/XeFM.icns``
-(or a ``--source`` PNG/ICNS), reusing the same rounded-corner masking as
-``make_icon.py`` so XeFM's Windows presence (exe icon + Store tiles) stays visually
-consistent.
+the minimum useful set from the committed raster master
+``windows_app/resources/XeFM-1024.png`` (or a ``--source`` PNG/ICNS), reusing
+``make_icon.py``'s tile rendering so XeFM's Windows presence (exe icon + Store tiles)
+stays visually consistent.
 
 Emitted into ``--out-dir`` (default ``windows_app/resources/Assets``):
     StoreLogo.png                 50x50    <Properties><Logo>
@@ -25,8 +25,8 @@ import argparse
 import sys
 from pathlib import Path
 
-# Reuse the rounded-corner mask used for the launcher .ico so tiles match it.
-from make_icon import _apply_rounded_mask  # noqa: E402
+# Reuse the launcher .ico's tile rendering so tiles match it.
+from make_icon import default_source, render_tile  # noqa: E402
 
 # name -> (width, height); square tiles pass width for both.
 _SQUARE_TILES = {
@@ -39,10 +39,9 @@ _SCALE_200 = {"Square44x44Logo.png", "Square150x150Logo.png"}
 
 _WIDE_TILE = ("Wide310x150Logo.png", 310, 150)
 
-
-def _rounded(img, size):
-    """size x size RGBA with rounded-corner alpha (shared with make_icon)."""
-    return _apply_rounded_mask(img, size)
+# At or below this tile size the simplified master is used: the detailed art's wordmark
+# and pane rows are unreadable at 44-50px. Matches tools/make_icons.py's threshold.
+_SIMPLE_MAX_PX = 64
 
 
 def _scale_name(name: str, scale: int) -> str:
@@ -54,7 +53,7 @@ def _scale_name(name: str, scale: int) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate XeFM Store tile assets")
     parser.add_argument("--source", default=None,
-                        help="source image (.png/.icns); defaults to macos_app/resources/XeFM.icns")
+                        help="source image (.png/.icns); defaults to windows_app/resources/XeFM-1024.png")
     parser.add_argument("--out-dir", default=None,
                         help="output dir; defaults to windows_app/resources/Assets")
     args = parser.parse_args()
@@ -68,36 +67,45 @@ def main() -> int:
 
     from PIL import Image
 
-    repo_root = Path(__file__).resolve().parent.parent
-    source = (Path(args.source).resolve() if args.source
-              else repo_root / "macos_app" / "resources" / "XeFM.icns")
     out_dir = (Path(args.out_dir).resolve() if args.out_dir
                else Path(__file__).resolve().parent / "resources" / "Assets")
 
-    if not source.exists():
-        print(f"[ERROR] Source icon not found: {source}")
-        return 1
+    # An explicit --source overrides both masters; otherwise each tile picks the one
+    # matching its size.
+    override = Path(args.source).resolve() if args.source else None
+    sources = {
+        False: override or default_source(),
+        True: override or default_source(small=True),
+    }
+    for source in set(sources.values()):
+        if not source.exists():
+            print(f"[ERROR] Source icon not found: {source}")
+            return 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    img = Image.open(source).convert("RGBA")
+    images = {small: Image.open(path).convert("RGBA") for small, path in sources.items()}
+
+    def tile(size):
+        """Render at ``size``, from whichever master suits that size."""
+        return render_tile(images[size <= _SIMPLE_MAX_PX], size)
 
     count = 0
     # Square tiles (+ optional scale-200).
     for name, size in _SQUARE_TILES.items():
-        _rounded(img, size).save(out_dir / name, format="PNG")
+        tile(size).save(out_dir / name, format="PNG")
         print(f"[INFO] Wrote {out_dir / name} ({size}x{size})")
         count += 1
         if name in _SCALE_200:
             big = size * 2
             scaled_name = _scale_name(name, 200)
-            _rounded(img, big).save(out_dir / scaled_name, format="PNG")
+            tile(big).save(out_dir / scaled_name, format="PNG")
             print(f"[INFO] Wrote {out_dir / scaled_name} ({big}x{big})")
             count += 1
 
     # Wide tile: the square logo (height-fit) centered on a transparent canvas.
     wide_name, ww, wh = _WIDE_TILE
     canvas = Image.new("RGBA", (ww, wh), (0, 0, 0, 0))
-    logo = _rounded(img, wh)
+    logo = tile(wh)
     canvas.alpha_composite(logo, ((ww - wh) // 2, 0))
     canvas.save(out_dir / wide_name, format="PNG")
     print(f"[INFO] Wrote {out_dir / wide_name} ({ww}x{wh})")

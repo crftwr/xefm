@@ -341,27 +341,29 @@ XeFM.app/
 
 ### Changing the Application Icon
 
-1. Create or obtain a `.icns` file (macOS icon format)
-2. Place it at `macos_app/resources/XeFM.icns`
-3. Rebuild the app with `./build.sh`
+`macos_app/resources/XeFM.icns` is **generated**, not hand-maintained. The source of
+truth is the SVG artwork in `tools/icon/`:
 
-**Creating an .icns file:**
+| Master | Used for |
+|--------|----------|
+| `tools/icon/xefm-icon.svg` | 128px and up — full detail (dual panes, `XeFM` wordmark) |
+| `tools/icon/xefm-icon-small.svg` | 64px and below — simplified (thicker rows, `Xe` badge) |
+
+Edit the SVG(s), then regenerate every platform's assets in one step:
 
 ```bash
-# From a PNG file (1024x1024 recommended)
-mkdir XeFM.iconset
-sips -z 16 16     icon.png --out XeFM.iconset/icon_16x16.png
-sips -z 32 32     icon.png --out XeFM.iconset/icon_16x16@2x.png
-sips -z 32 32     icon.png --out XeFM.iconset/icon_32x32.png
-sips -z 64 64     icon.png --out XeFM.iconset/icon_32x32@2x.png
-sips -z 128 128   icon.png --out XeFM.iconset/icon_128x128.png
-sips -z 256 256   icon.png --out XeFM.iconset/icon_128x128@2x.png
-sips -z 256 256   icon.png --out XeFM.iconset/icon_256x256.png
-sips -z 512 512   icon.png --out XeFM.iconset/icon_256x256@2x.png
-sips -z 512 512   icon.png --out XeFM.iconset/icon_512x512.png
-sips -z 1024 1024 icon.png --out XeFM.iconset/icon_512x512@2x.png
-iconutil -c icns XeFM.iconset
+make icons              # rewrites XeFM.icns, XeFM.ico and the Windows PNG masters
+make icons-check        # CI-style check: are the committed assets still in sync?
 ```
+
+Then rebuild and, if Finder or the Dock still shows the old art, clear the cache:
+
+```bash
+make macos-app
+make macos-refresh-icon
+```
+
+See `macos_app/resources/ICON_README.md` for the full pipeline and design notes.
 
 ### Updating Python Version
 

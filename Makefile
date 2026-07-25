@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg macos-dmg-upload windows-app windows-app-clean windows-app-zip windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release icons icons-check macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg macos-dmg-upload windows-app windows-app-clean windows-app-zip windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -65,6 +65,10 @@ help:
 	@echo "  PuiKit installs from PyPI by default. To develop against a local"
 	@echo "  editable checkout, set PUIKIT_DIR (Makefile.local / env / CLI),"
 	@echo "  e.g. PUIKIT_DIR=../puikit."
+	@echo ""
+	@echo "App Icons (macOS-only; the generated assets are committed):"
+	@echo "  icons             - Regenerate icon assets from tools/icon/*.svg"
+	@echo "  icons-check       - Verify the committed icon assets match the SVG masters"
 	@echo ""
 	@echo "macOS App Bundle:"
 	@echo "  macos-app         - Build native macOS application bundle"
@@ -374,6 +378,19 @@ macos-app-install:
 			exit 1; \
 			;; \
 	esac
+
+# --- App icons --------------------------------------------------------------
+# The SVG masters in tools/icon/ are the single source of truth. Rendering needs
+# AppKit's SVG support, so these targets are macOS-only - the resulting .icns/.ico/
+# .png assets are committed, and the Windows build consumes them as-is.
+
+icons: check-venv
+	@echo "Regenerating icon assets from tools/icon/*.svg..."
+	@$(PYTHON) tools/make_icons.py
+	@echo "Done. Run 'make macos-refresh-icon' to see the new icon in Finder/Dock."
+
+icons-check: check-venv
+	@$(PYTHON) tools/make_icons.py --check
 
 macos-refresh-icon:
 	@echo "Refreshing macOS icon cache..."
