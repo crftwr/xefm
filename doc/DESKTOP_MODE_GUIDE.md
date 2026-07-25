@@ -2,43 +2,30 @@
 
 ## Overview
 
-XeFM can run as a native macOS desktop application with GPU acceleration, providing a modern windowed experience while maintaining the same powerful keyboard-driven interface you know from terminal mode.
+XeFM can run as a native desktop application on Windows and macOS with GPU acceleration, providing a modern windowed experience while maintaining the same powerful keyboard-driven interface you know from terminal mode.
 
 ## Quick Start
 
-### Installation
+### Getting There
 
-**Option 1: Direct installation**
+Desktop mode is a flag on the ordinary install (see the
+**[README](../README.md#installation)**) — there is nothing separate to add,
+and no `[macos]` extra to ask for:
+
 ```bash
-# Install PyObjC (one-time setup)
-pip install pyobjc
-
-# Run in desktop mode
-python3 -m xefm --backend gui
+xefm --backend gui           # installed
+python3 -m xefm --backend gui  # from a checkout
 ```
 
-**Option 2: Install with extras**
-```bash
-# Install XeFM with macOS desktop mode support
-pip install -e .[macos]
-
-# Run in desktop mode
-python3 -m xefm --backend gui
-```
-
-**Option 3: From PyPI (when published)**
-```bash
-# Install with macOS support
-pip install xefm[macos]
-
-# Run in desktop mode
-xefm --backend gui
-```
+Alternatively, run XeFM as a packaged desktop app: a self-contained `XeFM.exe`
+folder (Windows) or native `.app` (macOS), Python bundled in, so no Python
+install of your own is required. These are **not yet uploaded to GitHub
+Releases**; build one locally with `make windows-app` or `make macos-app`.
 
 ### First Launch
 
 When you launch XeFM in desktop mode:
-1. A native macOS window appears
+1. A native window appears
 2. The interface looks identical to terminal mode
 3. All keyboard shortcuts work the same way
 4. You can resize the window or go full-screen
@@ -178,28 +165,20 @@ See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
 **Problem**: Desktop mode doesn't launch or falls back to terminal mode.
 
 **Solutions**:
-1. Verify you're on macOS:
+1. Verify you're on Windows or macOS — Linux has no desktop backend:
    ```bash
-   uname -s  # Should show "Darwin"
+   uname -s  # macOS shows "Darwin"
    ```
 
-2. Install PyObjC:
+2. On macOS, check that PyObjC survived the install (it ships with XeFM, so a
+   failure here means a broken environment — reinstall XeFM):
    ```bash
-   # Option 1: Direct installation
-   pip install pyobjc
-   
-   # Option 2: Install with extras
-   pip install -e .[macos]
+   python3 -c "import objc; print('PyObjC OK')"
    ```
 
-3. Verify installation:
+3. Check Python version:
    ```bash
-   python3 -c "import objc; print('PyObjC installed successfully')"
-   ```
-
-4. Check Python version:
-   ```bash
-   python3 --version  # Should be 3.9 or higher
+   python3 --version  # Should be 3.10 or higher
    ```
 
 ### Window Doesn't Appear
@@ -301,8 +280,8 @@ See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
 
 | Feature | Terminal Mode | Desktop Mode |
 |---------|--------------|--------------|
-| **Platform** | All (macOS, Linux, Windows) | macOS only |
-| **Dependencies** | Python + curses | Python + PyObjC |
+| **Platform** | All (macOS, Linux, Windows) | Windows and macOS |
+| **Dependencies** | Python + curses | Python (+ PyObjC on macOS, installed for you) |
 | **Window** | Terminal window | Native desktop window |
 | **Rendering** | Terminal-based | GPU-accelerated |
 | **Performance** | Good | Excellent (60 FPS) |

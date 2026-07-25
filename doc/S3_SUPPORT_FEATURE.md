@@ -17,15 +17,10 @@ XeFM provides native AWS S3 integration, allowing you to browse, navigate, and m
 
 ## Prerequisites
 
-### Required Dependencies
-
-Install boto3 for AWS S3 support:
-
-```bash
-pip install boto3
-```
-
 ### AWS Credentials
+
+S3 support is built in — `boto3` ships with XeFM, so credentials are the only
+thing to set up.
 
 Configure AWS credentials using one of these methods:
 

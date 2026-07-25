@@ -22,51 +22,36 @@ XeFM — short for *Xenolith File Manager* — is a powerful file manager that r
 
 ### Installation
 
-> **Want the desktop app?** The easiest way to run XeFM in desktop mode is to
-> download and install a prebuilt application package — a self-contained
-> `XeFM.exe` folder on Windows or a native `.app` on macOS, with Python and every
-> dependency bundled in (no source checkout, no virtualenv). These packages are
-> **not yet uploaded to GitHub Releases** — until then, use the from-source setup
-> below (which also covers terminal mode on Windows, macOS, and Linux).
+XeFM is on [PyPI](https://pypi.org/project/xefm/). Install it as a tool and run
+it — Windows, macOS, or Linux, no checkout and no virtualenv to manage:
 
-1. Install Python 3.10 or later. On macOS, Homebrew is the easiest route:
-   ```bash
-   brew install python@3.14
-   ```
-2. Clone XeFM:
-   ```bash
-   git clone https://github.com/shimomut/xefm.git
-   cd xefm
-   ```
-3. Create the environment and run:
-   ```bash
-   make venv        # creates .venv using the newest python3 in PATH
-   make run         # launch XeFM
-   ```
+```bash
+pipx install xefm     # or:  uv tool install xefm,  or:  pip install xefm
+xefm
+```
 
-   `make venv` creates and populates `.venv/`, and every other `make` target runs
-   through that interpreter — so you never need to activate it yourself.
+[pipx](https://pipx.pypa.io) and [uv](https://docs.astral.sh/uv/) keep XeFM in
+its own environment while putting the `xefm` command on your PATH — the right
+shape for an application. Upgrade later with `pipx upgrade xefm` (`uv tool
+upgrade xefm`, `pip install --upgrade xefm`), or run `uvx xefm` to try it once
+without installing anything.
 
-   Prefer to manage the environment yourself? Create and activate a virtualenv
-   first, then install the dependencies:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate         # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   python3 -m xefm
-   ```
+Python 3.10 or later is the only prerequisite. Desktop mode needs nothing extra:
+`xefm --backend gui` opens a native window on Windows 10+ and macOS 10.13+. (A
+self-contained app package with Python bundled in is **not yet uploaded to GitHub
+Releases**.)
 
-   No `pip install` of XeFM itself is needed to run from a checkout: `python3 -m`
-   puts the working directory on the import path, and the `xefm` package sits at
-   the repo root. Run `pip install -e .` only if you want the `xefm` command
-   available from other directories.
+Working on XeFM itself? Use a checkout instead:
 
-   **Desktop Mode** runs on Windows and macOS. The Windows GUI backend is pure
-   Python and needs nothing extra; the macOS one uses PyObjC, installed
-   automatically by `requirements.txt`. Just pick the backend:
-   ```bash
-   python3 -m xefm --backend gui   # native desktop window on Windows or macOS
-   ```
+```bash
+git clone https://github.com/shimomut/xefm.git
+cd xefm
+make venv        # creates .venv with every dependency
+make run         # launch XeFM through it, no activation needed
+```
+
+`make help` lists the rest — editable install, PuiKit co-development, and the
+macOS / Windows app bundles.
 
 ### Essential Controls
 - **Navigate:** `↑↓` to move up/down, `←→` to switch panes/navigate directories
@@ -165,8 +150,6 @@ A powerful text viewer with syntax highlighting for 20+ file formats.
 - Line numbers, horizontal scrolling, line wrapping (`W`), and in-file search
 - Multiple encoding support (UTF-8, Latin-1, CP1252)
 
-**Enhanced highlighting:** `pygments` (installed via `requirements.txt`) enables full syntax support.
-
 ### Rich viewers — Markdown, JSON, CSV/TSV
 
 For structured files, the viewer offers a *rendered* view in addition to the raw text. Press `M` inside the viewer to toggle between the formatted and raw views.
@@ -185,8 +168,6 @@ A modal image viewer with zoom, pan, and prev/next navigation through the siblin
 - Supports PNG, JPEG, GIF, BMP, WebP, TIFF, ICO, and more (via Pillow)
 - Renders inline in graphics-capable terminals (iTerm2, kitty, sixel) and in desktop mode; falls back to a metadata card (format / dimensions / size) elsewhere
 - Zoom with `+` / `-`, pan with the arrow keys or a mouse drag, step through images with prev/next
-
-Image decoding needs `pillow` (installed via `requirements.txt`).
 
 ## Themes & Visual Effects
 
@@ -242,24 +223,27 @@ For detailed information on all features, see the [User Guide](doc/XEFM_USER_GUI
 
 ```bash
 # Run in terminal mode (default)
-python3 -m xefm
+xefm
 
 # Run in desktop mode (native window on Windows or macOS)
-python3 -m xefm --backend gui
+xefm --backend gui
 
 # Specify startup directories
-python3 -m xefm --left /path/to/projects --right /path/to/documents
+xefm --left /path/to/projects --right /path/to/documents
 
 # Combined usage - desktop mode with custom directories
-python3 -m xefm --backend gui --left ./src --right ./test
+xefm --backend gui --left ./src --right ./test
 
 # Help and version
-python3 -m xefm --help
-python3 -m xefm --version
+xefm --help
+xefm --version
 ```
 
 The full flag set is just `--backend {tui,curses,gui,macos,windows}`, `--left DIR`,
 `--right DIR`, `--version`, and `--help`.
+
+Every line above also works as `python3 -m xefm …` when you are running from a
+source checkout, where no `xefm` console command is installed.
 
 ### Backend Selection
 
@@ -275,81 +259,6 @@ Desktop mode provides:
 - Better color accuracy with true RGB colors, plus GPU-rendered theme background animations and screen effects
 
 See the [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed desktop mode configuration.
-
-## Installation
-
-### Requirements
-
-**Terminal Mode** (all platforms — Windows, macOS, Linux):
-- Python 3.10+ with curses library (built-in on macOS/Linux, 3.14 supported)
-- Windows: `pip install windows-curses` (installed automatically via `requirements.txt`)
-- Terminal with curses support (Linux is terminal-mode only — desktop mode is Windows/macOS)
-
-**Desktop Mode** (Windows or macOS):
-- Python 3.10+ (3.14 supported)
-- Windows: 10 or later — the GUI backend is pure Python (Direct2D/DirectWrite), no extra dependency to install
-- macOS: 10.13 (High Sierra) or later — PyObjC (installed automatically via `requirements.txt`)
-
-### Dependencies
-
-`requirements.txt` is the single source of truth and is installed in one shot:
-```bash
-pip install -r requirements.txt
-```
-It pulls in:
-- `puikit` — the UI / rendering layer behind both the desktop and terminal modes
-- `pygments` — enhanced syntax highlighting (20+ file formats)
-- `pillow` — the built-in image viewer (decode / crop / scale; also enables inline terminal images)
-- `boto3` — AWS S3 support (cloud storage operations)
-- `watchdog` — automatic directory-listing reload on file changes
-- `pyobjc` — macOS desktop mode (selected automatically on macOS)
-- `windows-curses` — terminal-mode curses support on Windows (selected automatically on Windows)
-
-The last two use environment markers, so the platform-specific dependency for the
-machine you are on is installed for you. There is no `[macos]` extra to request.
-(The Windows desktop backend itself is pure Python and needs no build step.)
-
-### Installation Options
-
-#### Option 1: Run Directly (No Installation)
-```bash
-# Create and activate a virtualenv
-python3 -m venv .venv
-source .venv/bin/activate         # Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run from the repo root — `python3 -m` puts it on the import path, and the
-# `xefm` package lives there, so nothing else needs installing.
-
-# Terminal mode (all platforms)
-python3 -m xefm
-
-# Desktop mode (native window on Windows or macOS)
-python3 -m xefm --backend gui
-```
-
-#### Option 2: Install as Package
-```bash
-# Install from source directory
-cd xefm
-pip install .
-
-# Run from anywhere (installs a `xefm` console command)
-xefm                # Terminal mode
-xefm --backend gui  # Desktop mode (Windows / macOS)
-```
-
-#### Option 3: Development Installation
-```bash
-# Install in editable mode (changes reflected immediately)
-cd xefm
-pip install -e .
-
-# Run from anywhere
-xefm
-```
 
 ## Configuration
 
@@ -383,8 +292,9 @@ xefm/
 
 **Installation Issues:**
 - Ensure Python 3.10+ is installed
+- `xefm: command not found` after `pip install xefm` — the console script landed in an environment that is not on your PATH; `pipx install xefm` or `uv tool install xefm` handle that for you (or run it as `python3 -m xefm`)
+- `error: externally-managed-environment` from pip — [PEP 668](https://peps.python.org/pep-0668/) is protecting a system Python (Homebrew, Debian/Ubuntu); use pipx, uv, or a virtualenv
 - Check terminal compatibility with curses library (terminal mode)
-- PyObjC (desktop mode) installs automatically on macOS via `pip install -r requirements.txt`
 
 **Desktop Mode Issues:**
 - Desktop mode runs on Windows and macOS; on other platforms use terminal mode
@@ -393,7 +303,6 @@ xefm/
 - See [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed setup
 
 **Performance Issues:**
-- Install `pygments` for better text viewer performance
 - Check available memory for large directory operations
 - First access to large archives may be slow while structure is cached
 - Desktop mode provides better performance with GPU acceleration
@@ -412,6 +321,7 @@ Have questions, suggestions, or found a bug? Get in touch:
 
 - **GitHub Repository**: [https://github.com/shimomut/xefm](https://github.com/shimomut/xefm)
 - **GitHub Issues**: [Report bugs or request features](https://github.com/shimomut/xefm/issues)
+- **PyPI**: [pypi.org/project/xefm](https://pypi.org/project/xefm/) — released versions (`pipx install xefm`)
 - **Author's X (Twitter)**: [@smmrtmnr](https://x.com/smmrtmnr)
 
 We welcome feedback and contributions to make XeFM even better!

@@ -118,17 +118,13 @@ When `boto3` is installed and AWS credentials are configured, the drives dialog
 also lists every S3 bucket your credentials can reach. Select a bucket and press
 **Enter** to browse it in the current pane like any other filesystem.
 
-To enable S3 listing:
+To enable S3 listing, configure AWS credentials with any of: AWS CLI
+(`aws configure`), the `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` environment
+variables, or an `~/.aws/credentials` file.
 
-1. Install boto3: `pip install boto3`
-2. Configure AWS credentials with any of: AWS CLI (`aws configure`), the
-   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` environment variables, or an
-   `~/.aws/credentials` file
-
-If buckets do not appear, verify boto3 is installed (`pip list | grep boto3`),
-that credentials work (`aws s3 ls`), network connectivity, and your IAM
-permissions for `ListBuckets`. A "boto3 not available" or "No credentials
-configured" message points at the corresponding step above.
+If buckets do not appear, check that credentials work (`aws s3 ls`), network
+connectivity, and your IAM permissions for `ListBuckets`. A "No credentials
+configured" message points at the step above.
 
 ## Choosing between them
 

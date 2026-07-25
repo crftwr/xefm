@@ -37,160 +37,20 @@ XeFM (*Xenolith File Manager*) is a powerful dual-pane file manager that runs bo
 
 ## Installation
 
-### System Requirements
-
-#### Terminal Mode Requirements (All Platforms)
-- **Python 3.9+**: Core language requirement (3.11+ recommended, 3.13 supported)
-- **Terminal**: Any terminal with curses support
-- **Operating System**: macOS, Linux, or Windows
-- **Windows**: `windows-curses` package (automatically installed via setup.py)
-
-#### Desktop Mode Requirements (macOS Only)
-- **Python 3.9+**: Core language requirement (3.11+ recommended, 3.13 supported)
-- **macOS**: 10.13 (High Sierra) or later
-- **PyObjC**: Install with `pip install pyobjc-framework-Cocoa`
-
-#### Recommended Setup
-- **Python 3.11+**: For best performance and compatibility (3.13 fully supported)
-- **Modern Terminal**: Terminal.app (macOS), GNOME Terminal (Linux), Windows Terminal (Windows)
-- **UTF-8 Support**: For proper character display
-
-### Installation Methods
-
-#### Method 1: Direct Run (Recommended for Testing)
 ```bash
-# Clone or download XeFM
-git clone https://github.com/shimomut/xefm.git
-cd xefm
-
-# Run directly in terminal mode
-python3 -m xefm
-
-# Run in desktop mode (macOS only)
-python3 -m xefm --backend gui
+pipx install xefm     # or:  uv tool install xefm,  or:  pip install xefm
+xefm
 ```
 
-#### Method 2: Package Installation
-```bash
-# Install from source directory
-cd xefm
-python3 setup.py install
+Python 3.10 or later is all you need; every dependency, including the
+platform-specific ones, comes with it. Desktop mode is the same install run as
+`xefm --backend gui`, on Windows 10+ and macOS 10.13+.
 
-# Run installed version
-xefm                # Terminal mode
-xefm --backend gui      # Desktop mode (macOS only)
-```
+The **[README](../README.md#installation)** covers the rest — upgrading,
+running without installing (`uvx xefm`), and working from a source checkout.
 
-#### Method 3: Development Installation
-```bash
-# Install in editable mode (changes reflected immediately)
-cd xefm
-pip install -e .
-
-# Run from anywhere
-xefm                # Terminal mode
-xefm --backend gui      # Desktop mode (macOS only)
-```
-
-### Optional Dependencies
-
-#### Enhanced Syntax Highlighting
-```bash
-pip install pygments
-```
-**Benefits**: 
-- Syntax highlighting for 20+ file formats
-- Better code viewing experience
-- Automatic file type detection
-
-#### AWS S3 Support
-```bash
-pip install boto3
-```
-**Benefits**:
-- Navigate S3 buckets with s3:// URIs
-- Full file operations on S3 objects
-- Seamless local/cloud integration
-
-**Setup AWS Credentials**:
-```bash
-# Option 1: AWS CLI
-aws configure
-
-# Option 2: Environment variables
-export AWS_ACCESS_KEY_ID=your_key
-export AWS_SECRET_ACCESS_KEY=your_secret
-export AWS_DEFAULT_REGION=us-west-2
-
-# Option 3: IAM roles (for EC2 instances)
-# No additional setup required
-```
-
-#### Desktop Mode (macOS Only)
-```bash
-pip install pyobjc-framework-Cocoa
-```
-**Benefits**:
-- Native macOS application window
-- GPU-accelerated rendering at 60 FPS
-- Resizable window with full-screen support
-- True RGB colors with better accuracy
-- Customizable fonts and window size
-
-### Platform-Specific Setup
-
-#### macOS
-```bash
-# Ensure Python 3 is installed
-python3 --version
-
-# Install optional dependencies
-pip3 install pygments boto3
-
-# Run XeFM
-python3 -m xefm
-```
-
-#### Linux
-```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install python3 python3-pip
-
-# Install optional dependencies
-pip3 install pygments boto3
-
-# Run XeFM
-python3 -m xefm
-```
-
-#### Windows
-```bash
-# Install windows-curses (required for Windows)
-pip install windows-curses
-
-# Install optional dependencies
-pip install pygments boto3
-
-# Run XeFM
-python -m xefm
-```
-
-**Note**: The `windows-curses` package is automatically installed when using `python setup.py install` on Windows systems.
-
-### Verification
-
-#### Test Basic Functionality
-```bash
-# Run XeFM
-python3 -m xefm
-
-# Test basic navigation
-# - Use arrow keys to navigate
-# - Press Tab to switch panes
-# - Press ? for help
-# - Press q to quit
-```
+**First run:** arrow keys navigate, `Tab` switches panes, `?` opens help, `Q`
+quits.
 
 ---
 
@@ -201,11 +61,8 @@ XeFM can run as a native macOS desktop application with GPU acceleration, provid
 ### Quick Start
 
 ```bash
-# Install PyObjC (one-time setup)
-pip install pyobjc-framework-Cocoa
-
-# Run in desktop mode (native macOS window)
-python3 -m xefm --backend gui
+# Run in desktop mode (native window)
+xefm --backend gui
 ```
 
 ### Features
@@ -249,10 +106,9 @@ The backend is chosen only by the `--backend` flag; there is no configuration-fi
 preference. The default is terminal mode:
 
 - `--backend tui` (alias `curses`) — terminal / curses, the default
-- `--backend gui` (alias `macos`) — native macOS window (requires PyObjC)
+- `--backend gui` — native window on Windows (alias `windows`) or macOS (alias `macos`)
 
-If you request `--backend gui` without PyObjC installed, startup fails with an
-error — install it (`pip install pyobjc-framework-Cocoa`) or run in terminal mode.
+On Linux there is no desktop backend; use terminal mode.
 
 ### Keyboard Shortcuts
 
@@ -271,9 +127,8 @@ Desktop mode provides excellent performance:
 ### Troubleshooting Desktop Mode
 
 **Desktop mode doesn't start:**
-- Verify you're on macOS (desktop mode is macOS-only)
-- Install PyObjC: `pip install pyobjc-framework-Cocoa`
-- Check Python version (3.9+ required)
+- Verify you're on Windows or macOS (Linux is terminal-mode only)
+- Check Python version (3.10+ required)
 
 **Window doesn't appear:**
 - Check console output for error messages
@@ -481,9 +336,10 @@ XeFM provides native AWS S3 integration for seamless cloud storage management. F
 
 ### Quick Start
 
-1. Install boto3: `pip install boto3`
-2. Configure AWS credentials (AWS CLI, environment variables, or IAM roles)
-3. Navigate to S3 buckets using s3:// URIs
+1. Configure AWS credentials — `aws configure`, the `AWS_ACCESS_KEY_ID` /
+   `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` environment variables, or an
+   IAM role (nothing to set up on EC2)
+2. Navigate to S3 buckets using s3:// URIs
 
 ### S3 Navigation
 ```bash
@@ -685,10 +541,9 @@ Startup directories set with `--left`/`--right` override any saved pane history 
 
 ### Common Issues
 
-#### Desktop mode not starting (macOS)
-- Verify PyObjC is installed: `pip install pyobjc-framework-Cocoa`
-- Check Python version: `python3 --version` (3.9+ required)
-- Try terminal mode first: `python3 -m xefm`
+#### Desktop mode not starting (Windows / macOS)
+- Check Python version: `python3 --version` (3.10+ required)
+- Try terminal mode first: `xefm`
 - Check console output for error messages
 
 #### Desktop mode on non-macOS systems

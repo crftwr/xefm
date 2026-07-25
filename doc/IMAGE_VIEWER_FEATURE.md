@@ -84,14 +84,9 @@ PUIKIT_TERM_GRAPHICS=sixel xefm    # force sixel
 
 ## Requirements
 
-The image viewer needs [Pillow](https://python-pillow.org/):
-
-```bash
-pip install pillow          # or: pip install -r requirements.txt
-```
-
-Without it the viewer still opens and still navigates, but shows the metadata
-card instead of the picture.
+Decoding is done by [Pillow](https://python-pillow.org/), which ships with XeFM.
+If it is somehow missing, the viewer still opens and still navigates, but shows
+the metadata card instead of the picture.
 
 ## Remote and archived images
 
