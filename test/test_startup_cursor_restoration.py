@@ -1,19 +1,19 @@
 """
-Test suite for cursor position restoration on TFM startup
+Test suite for cursor position restoration on XeFM startup
 
-Tests that cursor positions are properly restored when TFM starts up,
+Tests that cursor positions are properly restored when XeFM starts up,
 not just when navigating between directories.
 
-Run with: PYTHONPATH=.:src pytest test/test_startup_cursor_restoration.py -v
+Run with: python -m pytest test/test_startup_cursor_restoration.py -v
 """
 
 import tempfile
 import time
 from pathlib import Path
 
-from tfm_state_manager import TFMStateManager
-from tfm_pane_manager import PaneManager
-from _config import Config
+from xefm.state_manager import XeFMStateManager
+from xefm.pane_manager import PaneManager
+from xefm._config import Config
 
 
 class MockStdscr:
@@ -125,7 +125,7 @@ def test_startup_cursor_restoration_basic():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_startup_basic")
+        state_manager = XeFMStateManager("test_startup_basic")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -157,7 +157,7 @@ def test_startup_cursor_restoration_basic():
         # === Session 2: Test startup restoration ===
         print("\n--- Session 2: Testing startup restoration ---")
         
-        state_manager2 = TFMStateManager("test_startup_basic_2")
+        state_manager2 = XeFMStateManager("test_startup_basic_2")
         state_manager2.db_path = db_path
         
         fm2 = MockFileManager(config, left_dir, right_dir, state_manager2)
@@ -212,7 +212,7 @@ def test_startup_restoration_with_missing_files():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_missing_files")
+        state_manager = XeFMStateManager("test_missing_files")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -235,7 +235,7 @@ def test_startup_restoration_with_missing_files():
         print("Removed file2.py")
         
         # === Session 2: Test restoration with missing file ===
-        state_manager2 = TFMStateManager("test_missing_files_2")
+        state_manager2 = XeFMStateManager("test_missing_files_2")
         state_manager2.db_path = db_path
         
         fm2 = MockFileManager(config, test_dir, test_dir, state_manager2)
@@ -273,7 +273,7 @@ def test_startup_restoration_with_empty_directories():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_empty_dirs")
+        state_manager = XeFMStateManager("test_empty_dirs")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -326,7 +326,7 @@ def test_startup_restoration_separate_panes():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_separate_startup")
+        state_manager = XeFMStateManager("test_separate_startup")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -353,7 +353,7 @@ def test_startup_restoration_separate_panes():
         state_manager.cleanup_session()
         
         # === Session 2: Test separate restoration ===
-        state_manager2 = TFMStateManager("test_separate_startup_2")
+        state_manager2 = XeFMStateManager("test_separate_startup_2")
         state_manager2.db_path = db_path
         
         fm2 = MockFileManager(config, left_dir, right_dir, state_manager2)
@@ -400,7 +400,7 @@ def test_startup_restoration_scroll_adjustment():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_scroll_startup")
+        state_manager = XeFMStateManager("test_scroll_startup")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -420,7 +420,7 @@ def test_startup_restoration_scroll_adjustment():
         state_manager.cleanup_session()
         
         # === Session 2: Test restoration with scroll adjustment ===
-        state_manager2 = TFMStateManager("test_scroll_startup_2")
+        state_manager2 = XeFMStateManager("test_scroll_startup_2")
         state_manager2.db_path = db_path
         
         fm2 = MockFileManager(config, test_dir, test_dir, state_manager2)
@@ -463,7 +463,7 @@ def run_all_tests():
         print("=" * 60)
         print("✓ All startup cursor restoration tests passed!")
         print("\nKey features verified:")
-        print("  • Cursor positions restored on TFM startup")
+        print("  • Cursor positions restored on XeFM startup")
         print("  • Separate pane histories restored independently")
         print("  • Graceful handling of missing files")
         print("  • Proper scroll position adjustment")

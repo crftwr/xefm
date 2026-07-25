@@ -3,19 +3,19 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.tfm.app</string>
+    <string>com.xefm.app</string>
     
     <key>CFBundleName</key>
-    <string>TFM</string>
+    <string>XeFM</string>
     
     <key>CFBundleDisplayName</key>
     <string>Terminal File Manager</string>
     
     <key>CFBundleExecutable</key>
-    <string>TFM</string>
+    <string>XeFM</string>
     
     <key>CFBundleIconFile</key>
-    <string>TFM.icns</string>
+    <string>XeFM.icns</string>
     
     <key>CFBundleVersion</key>
     <string>{{VERSION}}</string>
@@ -36,7 +36,7 @@
     <true/>
     
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2025 TFM Developer</string>
+    <string>Copyright © 2025 XeFM Developer</string>
     
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>

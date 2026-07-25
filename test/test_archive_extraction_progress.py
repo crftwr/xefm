@@ -1,7 +1,7 @@
 """
 Test archive extraction progress tracking
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_extraction_progress.py -v
+Run with: python -m pytest test/test_archive_extraction_progress.py -v
 """
 
 import tempfile
@@ -10,7 +10,7 @@ import tarfile
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
 class MockFileManager:

@@ -8,16 +8,16 @@ list is now built by ``_flatten(node, out)`` (respecting each node's
 (uses only the node), so a bare view instance is enough — covering the same
 behaviour the old suite did, minus the removed ``node_index_map`` concept.
 
-Run with: PYTHONPATH=../src pytest test/test_tree_management.py -v
+Run with: PYTHONPATH=.. pytest test/test_tree_management.py -v
 """
 
 import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tfm_directory_diff_viewer import (  # noqa: E402
+from xefm.directory_diff_viewer import (  # noqa: E402
     TreeNode, DifferenceType, DirectoryDiffView,
 )
 

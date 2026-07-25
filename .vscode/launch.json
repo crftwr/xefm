@@ -1,23 +1,25 @@
 {
     // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
+    // Hover to view descriptions of attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "TFM-Terminal",
+            "name": "XeFM-Terminal",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/tfm.py",
+            "module": "xefm",
             "args": ["--backend", "curses"],
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal"
         },
         {
-            "name": "TFM-Desktop",
+            "name": "XeFM-Desktop",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/tfm.py",
+            "module": "xefm",
             "args": ["--backend", "coregraphics"],
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal"
         }
     ]

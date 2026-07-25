@@ -34,7 +34,7 @@ complete and readable).
 
 Usage:
     python tools/generate_third_party_notices.py \
-        --title "TFM" \
+        --title "XeFM" \
         --scan  path/to/app/Resources/python_packages \
         --extra "Python interpreter (Python Software Foundation License)=.../lib/python3.14/LICENSE.txt" \
         --extra "PuiKit (MIT License)=.../puikit/LICENSE" \

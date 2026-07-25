@@ -1,11 +1,11 @@
 # File Operations
 
-TFM's core file operations — copy, move, duplicate, and rename — all share the
+XeFM's core file operations — copy, move, duplicate, and rename — all share the
 same conflict handling and progress display. This document covers how each one
 works and the options you can configure.
 
 For the complete list of key bindings, see the
-[TFM User Guide](TFM_USER_GUIDE.md) or press **?** in TFM.
+[XeFM User Guide](XEFM_USER_GUIDE.md) or press **?** in XeFM.
 
 ## Copy
 
@@ -16,10 +16,10 @@ Copy the selected file(s) to the other pane.
 3. Confirm the destination when prompted.
 
 Directories are copied recursively. If a name already exists at the
-destination, TFM asks how to resolve it (see
+destination, XeFM asks how to resolve it (see
 [Conflict resolution](#conflict-resolution)).
 
-TFM confirms before copying by default. To skip the confirmation:
+XeFM confirms before copying by default. To skip the confirmation:
 
 ```python
 CONFIRM_COPY = False   # default: True
@@ -36,7 +36,7 @@ Move the selected file(s) to the other pane.
 (With nothing selected, **M** instead prompts for a new directory name — see
 [Create File Operations](#create-file-operations).)
 
-TFM confirms before moving by default:
+XeFM confirms before moving by default:
 
 ```python
 CONFIRM_MOVE = False   # default: True
@@ -47,9 +47,9 @@ CONFIRM_MOVE = False   # default: True
 Move works the same whether the source and destination are on your computer or
 on cloud storage such as Amazon S3.
 
-- **Same storage** (local → local, or within one S3 bucket): TFM uses a fast
+- **Same storage** (local → local, or within one S3 bucket): XeFM uses a fast
   rename — the move happens instantly with no data copying.
-- **Different storage** (local → S3, S3 → local, S3 → S3): TFM copies the file
+- **Different storage** (local → S3, S3 → local, S3 → S3): XeFM copies the file
   to the destination, verifies the copy, and only then removes the original.
   Large transfers show progress.
 
@@ -63,7 +63,7 @@ first when setting up a new storage backend.
 
 ## Duplicate
 
-Make an in-place copy of a file or directory — TFM's equivalent of Finder's
+Make an in-place copy of a file or directory — XeFM's equivalent of Finder's
 **Duplicate** (⌘D). The copy lands in the **same directory** as the original,
 automatically renamed so it never collides.
 
@@ -120,7 +120,7 @@ against duplicating a large tree by accident.
 
 ## Conflict resolution
 
-When a copy, move, or archive extraction would overwrite an existing file, TFM
+When a copy, move, or archive extraction would overwrite an existing file, XeFM
 stops and asks what to do instead of silently overwriting. The dialog offers:
 
 - **o — Overwrite**: replace the existing file with the new one.
@@ -140,14 +140,14 @@ than overwriting, which is a safer choice for important files.
 
 ### Multiple conflicts
 
-When several files collide, TFM walks through them one at a time. For each
+When several files collide, XeFM walks through them one at a time. For each
 conflict you can Overwrite, Rename, or Skip that file — or choose **Skip All**
 to skip every remaining conflict at once. Files with no conflict are copied or
 moved automatically. Each conflict is handled individually; there is no
 automatic numbering or pattern-based batch renaming (for that, see
 [Batch Rename](BATCH_RENAME_FEATURE.md)).
 
-Conflict resolution works across every storage type TFM supports (local ↔ S3,
+Conflict resolution works across every storage type XeFM supports (local ↔ S3,
 and so on) and is available whenever the corresponding confirmation setting is
 enabled:
 
@@ -210,4 +210,4 @@ existing name.
 
 - [Batch Rename](BATCH_RENAME_FEATURE.md) — rename many files with regex patterns
 - [Archive](ARCHIVE_FEATURE.md) — create, extract, and browse archives
-- [TFM User Guide](TFM_USER_GUIDE.md) — complete documentation
+- [XeFM User Guide](XEFM_USER_GUIDE.md) — complete documentation

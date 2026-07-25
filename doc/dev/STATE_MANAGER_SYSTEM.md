@@ -1,18 +1,18 @@
-# TFM State Manager System
+# XeFM State Manager System
 
 ## Overview
 
-The TFM State Manager provides persistent application state management using SQLite database. It safely handles multiple TFM instances accessing the same state database and automatically creates the database at `~/.tfm/state.db`.
+The XeFM State Manager provides persistent application state management using SQLite database. It safely handles multiple XeFM instances accessing the same state database and automatically creates the database at `~/.xefm/state.db`.
 
 ## Features
 
 ### Core Capabilities
-- **Persistent State Storage**: Saves application state across TFM sessions
-- **Multi-Instance Safety**: Handles concurrent access from multiple TFM processes
+- **Persistent State Storage**: Saves application state across XeFM sessions
+- **Multi-Instance Safety**: Handles concurrent access from multiple XeFM processes
 - **Automatic Database Creation**: Creates and initializes database automatically
 - **Thread-Safe Operations**: Uses proper locking for concurrent access
 - **Graceful Error Handling**: Continues operation even if state operations fail
-- **Session Management**: Tracks active TFM instances and cleans up stale sessions
+- **Session Management**: Tracks active XeFM instances and cleans up stale sessions
 
 ### State Types Managed
 - **Pane State**: Directory paths, selection, scroll position, sort settings, filters
@@ -20,7 +20,7 @@ The TFM State Manager provides persistent application state management using SQL
 - **Recent Directories**: History of visited directories for quick navigation
 - **Search History**: Previously used search terms for auto-completion
 - **Path Cursor History**: Separate cursor positions for left and right panes
-- **Session Information**: Active TFM instances with heartbeat tracking
+- **Session Information**: Active XeFM instances with heartbeat tracking
 
 ## Architecture
 
@@ -32,7 +32,7 @@ CREATE TABLE app_state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,           -- JSON serialized data
     updated_at REAL NOT NULL,      -- Unix timestamp
-    instance_id TEXT               -- TFM instance identifier
+    instance_id TEXT               -- XeFM instance identifier
 );
 
 -- Session tracking table
@@ -55,10 +55,10 @@ StateManager (Base class)
 ├── Thread-safe operations
 └── Error handling
 
-TFMStateManager (TFM-specific)
+XeFMStateManager (XeFM-specific)
 ├── Inherits from StateManager
 ├── Session management
-├── TFM-specific convenience methods
+├── XeFM-specific convenience methods
 ├── Pane state operations
 ├── Window layout management
 └── History management
@@ -69,7 +69,7 @@ TFMStateManager (TFM-specific)
 ### Basic State Operations
 
 ```python
-from tfm_state_manager import get_state_manager
+from xefm.state_manager import get_state_manager
 
 # Get the global state manager
 state_manager = get_state_manager()
@@ -90,7 +90,7 @@ theme = state_manager.get_state("user_preference", "light_theme")
 pane_info = state_manager.get_state("left_pane")
 ```
 
-### TFM-Specific Operations
+### XeFM-Specific Operations
 
 ```python
 # Save pane state
@@ -150,7 +150,7 @@ state_manager.update_session_heartbeat()
 state_manager.cleanup_session()
 ```
 
-## Integration with TFM
+## Integration with XeFM
 
 ### Initialization
 
@@ -252,7 +252,7 @@ def restore_cursor_position(self, pane_data, display_height):
 
 #### Startup Cursor Restoration
 
-Cursor positions are automatically restored when TFM starts up:
+Cursor positions are automatically restored when XeFM starts up:
 
 ```python
 def restore_startup_cursor_positions(self):
@@ -278,11 +278,11 @@ def restore_startup_cursor_positions(self):
 
 #### Quit Cursor Saving
 
-Cursor positions are automatically saved when TFM quits:
+Cursor positions are automatically saved when XeFM quits:
 
 ```python
 def save_quit_cursor_positions(self):
-    """Save current cursor positions when quitting TFM."""
+    """Save current cursor positions when quitting XeFM."""
     # Save left pane cursor position
     if (self.pane_manager.left_pane['files'] and 
         self.pane_manager.left_pane['selected_index'] < len(self.pane_manager.left_pane['files'])):
@@ -304,15 +304,15 @@ def save_quit_cursor_positions(self):
 - **Configurable Limits**: Maximum entries controlled by `MAX_CURSOR_HISTORY_ENTRIES` in config
 - **LRU Behavior**: Oldest entries are automatically removed when limit is exceeded per pane
 - **No Cross-Contamination**: Navigation in one pane never affects the other pane's history
-- **Startup Restoration**: Cursor positions are automatically restored when TFM starts up
-- **Quit Saving**: Cursor positions are automatically saved when TFM quits
+- **Startup Restoration**: Cursor positions are automatically restored when XeFM starts up
+- **Quit Saving**: Cursor positions are automatically saved when XeFM quits
 - **Backward Compatibility**: Automatically converts old dictionary format to new ordered format
 
 ## Multi-Instance Safety
 
 ### Concurrency Handling
 
-The state manager uses several mechanisms to handle multiple TFM instances safely:
+The state manager uses several mechanisms to handle multiple XeFM instances safely:
 
 1. **WAL Mode**: SQLite Write-Ahead Logging for better concurrency
 2. **Connection Timeouts**: 30-second timeout for database operations
@@ -393,7 +393,7 @@ except Exception as e:
 ## Configuration
 
 ### Database Location
-- **Default**: `~/.tfm/state.db`
+- **Default**: `~/.xefm/state.db`
 - **Custom**: Can be overridden in StateManager constructor
 - **Auto-Creation**: Directory created automatically if needed
 
@@ -409,7 +409,7 @@ except Exception as e:
 
 ### Test Coverage
 - **Unit Tests**: Basic state operations, serialization, error handling
-- **Integration Tests**: TFM-specific operations, multi-instance scenarios
+- **Integration Tests**: XeFM-specific operations, multi-instance scenarios
 - **Concurrency Tests**: Multiple threads accessing same database
 - **Performance Tests**: Large datasets, bulk operations
 - **Error Tests**: Database corruption, permission errors, invalid data
@@ -437,7 +437,7 @@ python test/test_state_integration.py
 ### Migration Support
 - **Schema Versioning**: Handle database schema changes
 - **Data Migration**: Convert old state formats
-- **Backward Compatibility**: Support older TFM versions
+- **Backward Compatibility**: Support older XeFM versions
 
 ## Troubleshooting
 
@@ -448,7 +448,7 @@ python test/test_state_integration.py
    - Solution: Automatic retry with exponential backoff
 
 2. **Permission Denied**
-   - Cannot create `~/.tfm/` directory
+   - Cannot create `~/.xefm/` directory
    - Solution: Check home directory permissions
 
 3. **Serialization Errors**
@@ -471,7 +471,7 @@ sessions = state_manager.get_active_sessions()
 print(f"Active sessions: {len(sessions)}")
 
 # Check database file
-db_path = Path.home() / '.tfm' / 'state.db'
+db_path = Path.home() / '.xefm' / 'state.db'
 print(f"Database exists: {db_path.exists()}")
 print(f"Database size: {db_path.stat().st_size if db_path.exists() else 0} bytes")
 ```
@@ -486,11 +486,11 @@ print(f"Database size: {db_path.stat().st_size if db_path.exists() else 0} bytes
 
 ### Access Control
 - **User-Level**: Each user has their own state database
-- **Process-Level**: Multiple TFM instances share state safely
+- **Process-Level**: Multiple XeFM instances share state safely
 - **No Network Access**: Purely local file-based storage
 
 ## Conclusion
 
-The TFM State Manager provides robust, persistent state management that enhances the user experience by remembering application state across sessions. Its multi-instance safety features ensure reliable operation even when multiple TFM processes are running simultaneously.
+The XeFM State Manager provides robust, persistent state management that enhances the user experience by remembering application state across sessions. Its multi-instance safety features ensure reliable operation even when multiple XeFM processes are running simultaneously.
 
-The system is designed to be transparent to the user - it works automatically in the background, gracefully handling errors and ensuring that TFM continues to function even if state operations fail.
+The system is designed to be transparent to the user - it works automatically in the background, gracefully handling errors and ensuring that XeFM continues to function even if state operations fail.

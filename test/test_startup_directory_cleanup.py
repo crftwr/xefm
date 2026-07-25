@@ -1,10 +1,10 @@
 """
 Test startup directory cleanup integration.
 
-This test verifies that TFM properly cleans up non-existing directories
+This test verifies that XeFM properly cleans up non-existing directories
 from cursor history during the startup process.
 
-Run with: PYTHONPATH=.:src pytest test/test_startup_directory_cleanup.py -v
+Run with: python -m pytest test/test_startup_directory_cleanup.py -v
 """
 
 import tempfile
@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tfm_state_manager import TFMStateManager
+from xefm.state_manager import XeFMStateManager
 
 
 class MockFileManager:
@@ -23,7 +23,7 @@ class MockFileManager:
         
         # Create a temporary state database
         state_db_path = self.temp_dir / "test_state.db"
-        self.state_manager = TFMStateManager()
+        self.state_manager = XeFMStateManager()
         self.state_manager.db_path = state_db_path
         self.state_manager._initialize_database()
         
@@ -129,7 +129,7 @@ def test_startup_directory_cleanup():
         shutil.rmtree(non_existing_dir2)
         
         # Simulate startup process
-        print("\n--- Simulating TFM startup ---")
+        print("\n--- Simulating XeFM startup ---")
         fm.load_application_state()
         
         # Verify cleanup occurred
@@ -185,7 +185,7 @@ def test_startup_with_no_cleanup_needed():
         assert len(right_history_before) == 1
         
         # Simulate startup process
-        print("\n--- Simulating TFM startup (no cleanup needed) ---")
+        print("\n--- Simulating XeFM startup (no cleanup needed) ---")
         fm.load_application_state()
         
         # Verify no entries were removed

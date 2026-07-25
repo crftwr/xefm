@@ -13,9 +13,9 @@ from datetime import datetime
 # Import Path
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from tfm_path import Path
+from xefm.path import Path
 
 
 class MockS3Response:
@@ -33,11 +33,11 @@ class TestS3MultipleReads(unittest.TestCase):
     
     def setUp(self):
         """Clear S3 cache before each test"""
-        from tfm_s3 import get_s3_cache
+        from xefm.s3 import get_s3_cache
         cache = get_s3_cache()
         cache.clear()
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_read_bytes_multiple_times(self, mock_boto3):
         """Test that read_bytes() can be called multiple times"""
         # Create mock S3 client
@@ -72,7 +72,7 @@ class TestS3MultipleReads(unittest.TestCase):
         # Verify get_object was called only once (due to caching)
         self.assertEqual(mock_client.get_object.call_count, 1)
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_read_text_multiple_times(self, mock_boto3):
         """Test that read_text() can be called multiple times"""
         # Create mock S3 client
@@ -107,7 +107,7 @@ class TestS3MultipleReads(unittest.TestCase):
         # Verify get_object was called only once (due to caching)
         self.assertEqual(mock_client.get_object.call_count, 1)
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_open_multiple_times(self, mock_boto3):
         """Test that open() can be called multiple times"""
         # Create mock S3 client
@@ -147,7 +147,7 @@ class TestS3MultipleReads(unittest.TestCase):
         # Verify get_object was called only once (due to caching)
         self.assertEqual(mock_client.get_object.call_count, 1)
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_mixed_read_methods(self, mock_boto3):
         """Test mixing read_bytes(), read_text(), and open()"""
         # Create mock S3 client
@@ -183,7 +183,7 @@ class TestS3MultipleReads(unittest.TestCase):
         # Verify get_object was called only once (due to caching)
         self.assertEqual(mock_client.get_object.call_count, 1)
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_read_after_cache_invalidation(self, mock_boto3):
         """Test that reads work correctly after cache invalidation"""
         # Create mock S3 client

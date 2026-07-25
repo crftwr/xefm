@@ -4,16 +4,16 @@ Test suite for separate pane cursor histories
 Tests that left and right panes maintain completely separate cursor histories
 and do not interfere with each other.
 
-Run with: PYTHONPATH=.:src pytest test/test_separate_pane_histories.py -v
+Run with: python -m pytest test/test_separate_pane_histories.py -v
 """
 
 import tempfile
 import time
 from pathlib import Path
 
-from tfm_state_manager import TFMStateManager
-from tfm_pane_manager import PaneManager
-from _config import Config
+from xefm.state_manager import XeFMStateManager
+from xefm.pane_manager import PaneManager
+from xefm._config import Config
 
 
 class TestConfig(Config):
@@ -28,7 +28,7 @@ def test_separate_pane_histories_basic():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_separate_basic")
+        state_manager = XeFMStateManager("test_separate_basic")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -124,7 +124,7 @@ def test_pane_manager_integration_separate():
         
         # Create state manager and pane manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_pane_separate")
+        state_manager = XeFMStateManager("test_pane_separate")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -226,7 +226,7 @@ def test_pane_history_size_limits():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_size_limits")
+        state_manager = XeFMStateManager("test_size_limits")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -287,7 +287,7 @@ def test_pane_history_persistence():
         
         # === Session 1: Create separate histories ===
         print("--- Session 1: Creating separate histories ---")
-        state_manager1 = TFMStateManager("session1")
+        state_manager1 = XeFMStateManager("session1")
         state_manager1.db_path = db_path
         state_manager1._initialize_database()
         
@@ -323,7 +323,7 @@ def test_pane_history_persistence():
         
         # === Session 2: Verify persistence ===
         print("\n--- Session 2: Verifying persistence ---")
-        state_manager2 = TFMStateManager("session2")
+        state_manager2 = XeFMStateManager("session2")
         state_manager2.db_path = db_path
         
         # Load histories from session 2
@@ -363,7 +363,7 @@ def test_clear_individual_pane_histories():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_clear_individual")
+        state_manager = XeFMStateManager("test_clear_individual")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -426,7 +426,7 @@ def run_all_tests():
         print("  • Left and right panes maintain completely separate histories")
         print("  • No cross-contamination between pane histories")
         print("  • Independent size limits for each pane")
-        print("  • Separate persistence across TFM sessions")
+        print("  • Separate persistence across XeFM sessions")
         print("  • Individual pane history clearing")
         print("  • PaneManager integration with separate histories")
         

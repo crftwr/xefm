@@ -13,12 +13,12 @@ widgets.
 
 | Layer | File | Role |
 |-------|------|------|
-| Logic | `src/tfm_completion.py` | LCP helper, `Completer` protocol, `FilepathCompleter`, `CompletionController` |
-| Widget | `src/tfm_candidate_list.py` | `CandidateListOverlay` + `compute_overlay_rect` |
-| Host | `src/tfm_input_dialog.py` | owns the overlay layer's lifecycle + event routing |
-| Callers | `tfm.py` | pass a `FilepathCompleter` to the five prompts |
+| Logic | `xefm/completion.py` | LCP helper, `Completer` protocol, `FilepathCompleter`, `CompletionController` |
+| Widget | `xefm/candidate_list.py` | `CandidateListOverlay` + `compute_overlay_rect` |
+| Host | `xefm/input_dialog.py` | owns the overlay layer's lifecycle + event routing |
+| Callers | `xefm/app.py` | pass a `FilepathCompleter` to the five prompts |
 
-### `tfm_completion.py` (UI-agnostic — no PuiKit draw code)
+### `xefm/completion.py` (UI-agnostic — no PuiKit draw code)
 
 - `calculate_common_prefix(candidates)` — case-sensitive longest common prefix;
   `[]` → `""`, a single candidate → the whole candidate.
@@ -48,7 +48,7 @@ widgets.
     "no highlight" state is functionally, not just visually, distinct).
   - `apply_index(i)` / `dismiss()` — mouse-selection and Esc.
 
-### `tfm_candidate_list.py` (presentational)
+### `xefm/candidate_list.py` (presentational)
 
 `CandidateListOverlay(Widget)` draws the popup with **no heavy frame**: rows sit
 on a distinct `popup_bg` surface (all a terminal needs to separate them), the
@@ -87,7 +87,7 @@ render pass — so the dialog positions it (in its own `draw`, from measured fie
 geometry) *before* it draws, and it lands correctly the first frame. This is what
 removed the one-frame position jump on GUI.
 
-### InputDialog wiring (`tfm_input_dialog.py`)
+### InputDialog wiring (`xefm/input_dialog.py`)
 
 `show_input(..., completer=...)` enables completion. `InputDialog`:
 
@@ -98,7 +98,7 @@ removed the one-frame position jump on GUI.
   `escape` → close the list first, else cancel; ordinary edits → `on_text_changed`.
   Each of these calls `_sync_overlay()`, which pushes (non-interactive, `z+1`, with
   a placeholder rect) or removes the overlay to match the controller. The app
-  re-renders after every consumed event (`on_event` in `tfm.py`), so the handlers
+  re-renders after every consumed event (`on_event` in `xefm/app.py`), so the handlers
   don't render themselves.
 - `draw` captures the dialog's `screen_rect` and the field's rect, then sets the
   overlay slot's rect via `overlay_geometry` using the *measured* text width before
@@ -118,7 +118,7 @@ your own). Supply any `Completer` — `FilepathCompleter` is one implementation.
 
 ## Tests
 
-`test/test_completion.py` (27 tests, `PYTHONPATH=.:src pytest`): the LCP helper,
+`test/test_completion.py` (27 tests, `python -m pytest`): the LCP helper,
 `FilepathCompleter` against a temp tree (prefix/sep/sorted/case/`~`/absolute/
 missing-dir), and `CompletionController` on a real `TextEdit` (LCP insert, single
 full-completion, narrow/hide, focus wrap, accept consumed-vs-not, apply/dismiss).

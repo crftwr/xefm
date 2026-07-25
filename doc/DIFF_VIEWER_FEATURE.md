@@ -1,22 +1,22 @@
 # Diff Viewer
 
-TFM has two built-in diff viewers: a **file diff** that compares two text files
+XeFM has two built-in diff viewers: a **file diff** that compares two text files
 side by side, and a **directory diff** that compares two directory trees
-recursively. Both open full-window, without leaving TFM.
+recursively. Both open full-window, without leaving XeFM.
 
 ## File diff
 
 ### Selecting & launching
 
 Select exactly **two** files, then press `=`. The two files may live in the
-same pane or one in each pane — TFM gathers the selection from both panes:
+same pane or one in each pane — XeFM gathers the selection from both panes:
 
 1. Put the cursor on a file and press `Space` to select it.
 2. Select the second file the same way (in either pane).
 3. Press `=` to open the side-by-side diff.
 
 Directories in the selection are ignored; if you don't end up with exactly two
-files, TFM tells you (`Select exactly 2 files to compare`). A binary file opens
+files, XeFM tells you (`Select exactly 2 files to compare`). A binary file opens
 but shows a `[Binary file — cannot display as text]` placeholder instead of
 content.
 

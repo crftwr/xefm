@@ -6,8 +6,8 @@ MARKDOWN_VIEWER_IMPLEMENTATION.md`.
 
 Like Markdown, these are **not** new modals. Each is a *body renderer* the
 existing full-window `TextViewer` toggles to in place, plugged in through the
-`tfm_viewer_registry` seam. The two new renderers are PuiKit widgets (renderer /
-widget code lives in PuiKit, not TFM); TFM only wires them into the registry and
+`xefm.viewer_registry` seam. The two new renderers are PuiKit widgets (renderer /
+widget code lives in PuiKit, not XeFM); XeFM only wires them into the registry and
 maps a parse function onto each.
 
 ## PuiKit widgets
@@ -91,7 +91,7 @@ share one column geometry. Rendering:
 
 Both widgets are exported from `puikit/widgets/__init__.py`.
 
-## TFM wiring — `src/tfm_viewer_registry.py`
+## XeFM wiring — `xefm/viewer_registry.py`
 
 Three `register(...)` calls join the existing Markdown one:
 
@@ -114,7 +114,7 @@ register(RichRenderer("Table", _make_table_builder("\t")), ".tsv")
 The PuiKit widget imports are lazy (inside `build`), matching `_build_markdown`,
 so the registry stays cheap to import.
 
-## Robust toggle — `src/tfm_text_viewer.py`
+## Robust toggle — `xefm/text_viewer.py`
 
 `TextViewer._ensure_rich_widget` now wraps the `self._rich.build(...)` call in
 `try/except Exception`: a malformed `.json` / `.csv` (a builder that raises) logs
@@ -131,7 +131,7 @@ any registered renderer.
   alignment, frozen header while the body scrolls, horizontal scroll revealing
   later columns, keyboard cell movement, TSV copy / select-all, and each
   `search_*` method (expand-ancestors, status, navigate/wrap, no-match restore).
-- TFM `test/test_json_viewer.py`, `test/test_table_viewer.py` (parametrized TUI +
+- XeFM `test/test_json_viewer.py`, `test/test_table_viewer.py` (parametrized TUI +
   GUI): the registry mapping; toggle building a `JsonView` / `TableView`; JSONL
   wrapping records in a list; the CSV vs TSV delimiter split; both modes drawing
   without crashing; an empty CSV rendering an empty grid; and a **malformed

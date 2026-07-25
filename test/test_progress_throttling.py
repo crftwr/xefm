@@ -1,12 +1,12 @@
 """
 Test progress manager throttling functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_progress_throttling.py -v
+Run with: python -m pytest test/test_progress_throttling.py -v
 """
 
 import time
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
 def test_progress_throttling():

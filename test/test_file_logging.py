@@ -2,7 +2,7 @@
 """
 Test file logging functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_file_logging.py -v
+Run with: python -m pytest test/test_file_logging.py -v
 """
 
 import unittest
@@ -10,7 +10,7 @@ import tempfile
 import os
 from pathlib import Path
 from unittest.mock import Mock
-from tfm_log_manager import LogManager
+from xefm.log_manager import LogManager
 
 
 class TestFileLogging(unittest.TestCase):

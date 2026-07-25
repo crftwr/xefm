@@ -7,7 +7,7 @@ Tests verify:
 - Memory usage optimization for large archives
 - Hot path optimization in ArchivePathImpl
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_performance.py -v
+Run with: python -m pytest test/test_archive_performance.py -v
 """
 
 import sys
@@ -17,8 +17,8 @@ import zipfile
 import tarfile
 from pathlib import Path as PathlibPath
 
-from tfm_path import Path
-from tfm_archive import ArchiveCache, get_archive_cache, ArchivePathImpl
+from xefm.path import Path
+from xefm.archive import ArchiveCache, get_archive_cache, ArchivePathImpl
 
 
 def create_test_archive(archive_path: PathlibPath, num_files: int = 100, num_dirs: int = 10):

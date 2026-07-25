@@ -2,12 +2,12 @@
 
 The modal text viewer opens ``*.csv`` / ``*.tsv`` files in raw text and toggles
 to a ``TableView`` grid in place, via the ``toggle_view_mode`` action and the
-rich-renderer registry (``tfm_viewer_registry``). The TableView widget's own
+rich-renderer registry (``xefm.viewer_registry``). The TableView widget's own
 behavior (frozen header, scroll, selection, search) is covered in PuiKit's
-test_table_view.py; these check TFM wires it up, including the CSV vs TSV
+test_table_view.py; these check XeFM wires it up, including the CSV vs TSV
 delimiter split.
 
-Run with: PYTHONPATH=.:src pytest test/test_table_viewer.py -v
+Run with: python -m pytest test/test_table_viewer.py -v
 """
 
 import os
@@ -15,14 +15,14 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from puikit import Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 
-from tfm_path import Path
-from tfm_text_viewer import TextViewer, show_text_viewer
-from tfm_viewer_registry import RichRenderer, rich_renderer_for
+from xefm.path import Path
+from xefm.text_viewer import TextViewer, show_text_viewer
+from xefm.viewer_registry import RichRenderer, rich_renderer_for
 
 
 @pytest.fixture(params=[PROFILE_TUI, PROFILE_GUI_DESKTOP], ids=["tui", "gui"])

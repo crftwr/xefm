@@ -1,11 +1,11 @@
-"""TFM's GPU background shaders: the registry, how a theme resolves one, and that
+"""XeFM's GPU background shaders: the registry, how a theme resolves one, and that
 each shader actually compiles and draws.
 
 The compile/draw tests use puikit's offscreen Metal path, so the real fragment
 shader is built by the real Metal compiler with no window involved. They skip
 where Metal is unavailable.
 
-Run with: PYTHONPATH=.:src pytest test/test_background_shaders.py -v
+Run with: python -m pytest test/test_background_shaders.py -v
 """
 
 import re
@@ -31,8 +31,8 @@ except (ImportError, AttributeError):
     HLSL_ENTRY = SHADER_ENTRY
     D3DShaderBackground = None
 
-import tfm
-from tfm_background_shaders import SHADER_KINDS
+from xefm import app as xefm_app
+from xefm.background_shaders import SHADER_KINDS
 
 metal_only = pytest.mark.skipif(not HAVE_METAL, reason="Metal unavailable")
 d3d_only = pytest.mark.skipif(not HAVE_D3D_SHADER, reason="D3D shader support unavailable")
@@ -85,7 +85,7 @@ class Registry(unittest.TestCase):
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
         from generate_shader_glsl import transpile  # noqa: E402
-        import tfm_background_shaders as mod
+        from xefm import background_shaders as mod
         for name in ("WAVE", "RAIN", "STARFIELD", "GRID", "CONSTELLATION",
                      "DATASTREAM", "HOLOGRAM"):
             expected = transpile(getattr(mod, name + "_MSL"))
@@ -128,10 +128,10 @@ class DialectParity(unittest.TestCase):
 
 
 class ThemeResolution(unittest.TestCase):
-    """A theme names a scene; TFM picks the descriptor its renderer needs."""
+    """A theme names a scene; XeFM picks the descriptor its renderer needs."""
 
     def _resolve(self, animation):
-        return tfm._resolve_background(animation, None, color=_INK, backdrop=_BACKDROP)
+        return xefm_app._resolve_background(animation, None, color=_INK, backdrop=_BACKDROP)
 
     def test_a_shader_name_resolves_to_a_shader(self):
         bg = self._resolve("wave")
@@ -139,7 +139,7 @@ class ThemeResolution(unittest.TestCase):
         self.assertEqual(bg.ink, _INK)         # theme fg arrives as the ink uniform
         self.assertEqual(bg.backdrop, _BACKDROP)
 
-    def test_a_non_tfm_name_degrades_to_solid(self):
+    def test_a_non_xefm_name_degrades_to_solid(self):
         # A scene *is* a shader, so a name absent from SHADER_KINDS has nowhere to
         # resolve to and yields no background rather than an error.
         self.assertIsNone(self._resolve("cube"))
@@ -147,7 +147,7 @@ class ThemeResolution(unittest.TestCase):
     def test_tuned_defaults_apply_to_shaders_too(self):
         bg = self._resolve("wave")
         self.assertEqual((bg.speed, bg.opacity),
-                         (tfm._ANIM_DEFAULTS["speed"], tfm._ANIM_DEFAULTS["opacity"]))
+                         (xefm_app._ANIM_DEFAULTS["speed"], xefm_app._ANIM_DEFAULTS["opacity"]))
 
     def test_params_dict_overrides_carry_through(self):
         bg = self._resolve({"type": "wave", "speed": 1.4, "opacity": 0.9})

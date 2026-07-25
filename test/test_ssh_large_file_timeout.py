@@ -7,7 +7,7 @@ handle timeout management internally.
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-from tfm_ssh_connection import SSHConnection
+from xefm.ssh_connection import SSHConnection
 
 
 class TestSSHLargeFileTimeout(unittest.TestCase):
@@ -22,8 +22,8 @@ class TestSSHLargeFileTimeout(unittest.TestCase):
             'Port': '22',
         }
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_write_file_uses_no_timeout(self, mock_exists, mock_popen):
         """Test that write_file uses no timeout."""
         # Setup
@@ -62,8 +62,8 @@ class TestSSHLargeFileTimeout(unittest.TestCase):
                     self.assertIsNone(captured_timeout,
                                     "write_file should use timeout=None")
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_read_file_uses_no_timeout(self, mock_exists, mock_popen):
         """Test that read_file uses no timeout."""
         # Setup

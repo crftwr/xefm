@@ -1,7 +1,7 @@
 """
 Test fine-grained progress tracking for delete operations
 
-Run with: PYTHONPATH=.:src pytest test/test_delete_fine_grained_progress.py -v
+Run with: python -m pytest test/test_delete_fine_grained_progress.py -v
 """
 
 import os
@@ -10,11 +10,11 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
-class MockTFM:
-    """Mock TFM class to test fine-grained delete progress tracking"""
+class MockXeFM:
+    """Mock XeFM class to test fine-grained delete progress tracking"""
     
     def __init__(self):
         self.progress_manager = ProgressManager()
@@ -214,8 +214,8 @@ def test_fine_grained_delete_progress():
         (subdir2 / "file5.txt").write_text("content5")
         (subdir2 / "file6.txt").write_text("content6")
         
-        # Create mock TFM and perform delete
-        tfm = MockTFM()
+        # Create mock XeFM and perform delete
+        xefm = MockXeFM()
         files_to_delete = [test_dir / "file1.txt", test_dir / "subdir1", test_dir / "file7.txt"]
         
         # Count expected total files
@@ -225,21 +225,21 @@ def test_fine_grained_delete_progress():
         # Total = 6 files
         expected_total = 6
         
-        tfm.perform_delete_operation_simplified(files_to_delete)
+        xefm.perform_delete_operation_simplified(files_to_delete)
         
         # Verify progress tracking
-        assert len(tfm.progress_updates) > 0, "Should have progress updates"
+        assert len(xefm.progress_updates) > 0, "Should have progress updates"
         
         # Check that we got updates for individual files
-        final_update = tfm.progress_updates[-1]
+        final_update = xefm.progress_updates[-1]
         assert final_update['total'] == expected_total, f"Expected {expected_total} total files, got {final_update['total']}"
         assert final_update['processed'] == expected_total, f"Expected {expected_total} processed files, got {final_update['processed']}"
         
         # Verify that we got progress updates for files in subdirectories
-        file_names = [update['current_item'] for update in tfm.progress_updates]
+        file_names = [update['current_item'] for update in xefm.progress_updates]
         
         # Debug: print what we got
-        print(f"Progress updates received: {len(tfm.progress_updates)}")
+        print(f"Progress updates received: {len(xefm.progress_updates)}")
         print(f"File names: {file_names}")
         
         # With throttling, we might not see every single file, but we should see the final count is correct
@@ -286,23 +286,23 @@ def test_delete_large_directory():
             (large_dir / f"root_file_{i}.txt").write_text(f"root content {i}")
         
         # Test delete operation
-        tfm = MockTFM()
+        xefm = MockXeFM()
         files_to_delete = [large_dir]
         
         # Expected total: 3 subdirs * 5 files + 3 root files = 18 files
         expected_total = (num_subdirs * files_per_subdir) + 3
         
-        tfm.perform_delete_operation_simplified(files_to_delete)
+        xefm.perform_delete_operation_simplified(files_to_delete)
         
         # With throttling, we won't get updates for every file, but should get some updates
-        assert len(tfm.progress_updates) >= 2, f"Should have at least 2 progress updates (start and end)"
+        assert len(xefm.progress_updates) >= 2, f"Should have at least 2 progress updates (start and end)"
         
-        final_update = tfm.progress_updates[-1]
+        final_update = xefm.progress_updates[-1]
         assert final_update['total'] == expected_total, f"Expected {expected_total} total files"
         assert final_update['processed'] == expected_total, f"Expected {expected_total} processed files"
         
         # Verify we see individual file names in progress
-        file_names = [update['current_item'] for update in tfm.progress_updates]
+        file_names = [update['current_item'] for update in xefm.progress_updates]
         
         # The key thing is that the final totals are correct
         print(f"Final update: {final_update}")
@@ -310,7 +310,7 @@ def test_delete_large_directory():
         assert final_update['processed'] == expected_total, f"Expected {expected_total} processed files"
         
         # Verify we're tracking individual files (not just top-level directories)
-        assert len(tfm.progress_updates) > 1, "Should have multiple progress updates"
+        assert len(xefm.progress_updates) > 1, "Should have multiple progress updates"
         
         # Verify directory was actually deleted
         assert not large_dir.exists()
@@ -339,7 +339,7 @@ def test_delete_mixed_selection():
         (temp_path / "single_file3.txt").write_text("content3")
         
         # Test delete operation with mixed selection
-        tfm = MockTFM()
+        xefm = MockXeFM()
         files_to_delete = [
             temp_path / "single_file1.txt",
             test_dir,  # Directory with 2 files
@@ -350,20 +350,20 @@ def test_delete_mixed_selection():
         # Expected total: 1 + 2 + 1 + 1 = 5 files
         expected_total = 5
         
-        tfm.perform_delete_operation_simplified(files_to_delete)
+        xefm.perform_delete_operation_simplified(files_to_delete)
         
         # With throttling, we get fewer updates but the totals should be correct
-        assert len(tfm.progress_updates) >= 2, f"Should have at least 2 progress updates"
+        assert len(xefm.progress_updates) >= 2, f"Should have at least 2 progress updates"
         
-        final_update = tfm.progress_updates[-1]
+        final_update = xefm.progress_updates[-1]
         assert final_update['total'] == expected_total, f"Expected {expected_total} total files"
         assert final_update['processed'] == expected_total, f"Expected {expected_total} processed files"
         
         # Verify we see both individual files and directory contents
-        file_names = [update['current_item'] for update in tfm.progress_updates]
+        file_names = [update['current_item'] for update in xefm.progress_updates]
         
         # With throttling, we may not see every file, but totals should be correct
-        print(f"Mixed selection progress updates: {len(tfm.progress_updates)}")
+        print(f"Mixed selection progress updates: {len(xefm.progress_updates)}")
         print(f"File names: {file_names}")
         
         # Verify the final totals are correct

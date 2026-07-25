@@ -1,8 +1,8 @@
 # Image Viewer
 
-TFM has a built-in image viewer. Put the cursor on an image and press **V** (or
+XeFM has a built-in image viewer. Put the cursor on an image and press **V** (or
 **Enter**) to open it full-window, with zoom, pan, and navigation to the other
-images in the same directory — without leaving TFM.
+images in the same directory — without leaving XeFM.
 
 ## Opening
 
@@ -54,7 +54,7 @@ filtered version of them. It returns automatically when you close the viewer.
 
 ## Terminal support
 
-Terminals do not all display images. TFM uses whichever inline-image protocol
+Terminals do not all display images. XeFM uses whichever inline-image protocol
 your terminal speaks:
 
 | Terminal | Protocol |
@@ -74,12 +74,12 @@ terminal from the table above, run the desktop app, or press `Cmd-Enter` /
 `open_with_os` to hand the file to your OS image viewer.
 
 You can force or disable the protocol with the `PUIKIT_TERM_GRAPHICS`
-environment variable (`kitty`, `iterm2`, `sixel`, or `none`) — useful when TFM
+environment variable (`kitty`, `iterm2`, `sixel`, or `none`) — useful when XeFM
 guesses wrong, or inside `tmux`/`screen`, which intercept these sequences:
 
 ```bash
-PUIKIT_TERM_GRAPHICS=none tfm     # never try to draw images inline
-PUIKIT_TERM_GRAPHICS=sixel tfm    # force sixel
+PUIKIT_TERM_GRAPHICS=none xefm     # never try to draw images inline
+PUIKIT_TERM_GRAPHICS=sixel xefm    # force sixel
 ```
 
 ## Requirements
@@ -109,7 +109,7 @@ the file to your OS app. To send `V` to an external program too, point the
 FILE_ASSOCIATIONS = [
     {
         'pattern': ['*.jpg', '*.jpeg', '*.png', '*.gif'],
-        'open|view': ['open', '-a', 'Preview'],   # V leaves TFM again
+        'open|view': ['open', '-a', 'Preview'],   # V leaves XeFM again
         'edit': ['open', '-a', 'GIMP'],
     },
 ]
@@ -117,9 +117,9 @@ FILE_ASSOCIATIONS = [
 
 Setting `'view': None` (the default) selects the built-in viewer.
 
-> **Upgrading:** TFM's shipped default used to send `view` to Preview. Your
+> **Upgrading:** XeFM's shipped default used to send `view` to Preview. Your
 > existing config keeps whatever it has — change that entry as above if `V`
-> still opens Preview and you would rather stay in TFM.
+> still opens Preview and you would rather stay in XeFM.
 
 ## Customizing keys
 

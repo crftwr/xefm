@@ -1,8 +1,8 @@
-# TFM - TUI File Manager
+# XeFM - TUI File Manager
 
 A powerful file manager that runs as a native desktop application on **Windows and macOS**, and in the terminal on **all platforms — Windows, macOS, and Linux**. Navigate your filesystem with keyboard shortcuts in a clean, intuitive dual-pane interface with comprehensive file operations, rich built-in viewers, themeable visual effects, and professional-grade features.
 
-![title](doc/images/tfm-page-title.jpg)
+![title](doc/images/xefm-page-title.jpg)
 
 ## Key Features
 
@@ -22,32 +22,32 @@ A powerful file manager that runs as a native desktop application on **Windows a
 
 ### Installation
 
-> **Want the desktop app?** The easiest way to run TFM in desktop mode is to
+> **Want the desktop app?** The easiest way to run XeFM in desktop mode is to
 > download and install a prebuilt application package — a self-contained
-> `TFM.exe` folder on Windows or a native `.app` on macOS, with Python and every
+> `XeFM.exe` folder on Windows or a native `.app` on macOS, with Python and every
 > dependency bundled in (no source checkout, no virtualenv). These packages are
 > **not yet uploaded to GitHub Releases** — until then, use the from-source setup
 > below (which also covers terminal mode on Windows, macOS, and Linux).
 
-TFM's UI runs on **[PuiKit](https://github.com/crftwr/puikit)**, a separate
+XeFM's UI runs on **[PuiKit](https://github.com/crftwr/puikit)**, a separate
 framework that is not yet published to PyPI. The simplest setup checks out PuiKit
-next to TFM and lets the Makefile wire everything into a virtualenv.
+next to XeFM and lets the Makefile wire everything into a virtualenv.
 
 1. Install Python 3.10 or later. On macOS, Homebrew is the easiest route:
    ```bash
    brew install python@3.14
    ```
-2. Clone TFM and PuiKit side by side:
+2. Clone XeFM and PuiKit side by side:
    ```bash
    git clone https://github.com/crftwr/puikit.git
-   git clone https://github.com/shimomut/tfm.git
-   cd tfm
+   git clone https://github.com/shimomut/xefm.git
+   cd xefm
    ```
 3. Create the environment and run (installs base deps **plus PuiKit editable**):
    ```bash
    make venv        # creates .venv using the newest python3 in PATH
                     # expects PuiKit at ../puikit; override with PUIKIT_DIR=/path/to/puikit
-   make run         # launch TFM
+   make run         # launch XeFM
    ```
 
    `make venv` creates and populates `.venv/`, and every other `make` target runs
@@ -60,14 +60,19 @@ next to TFM and lets the Makefile wire everything into a virtualenv.
    source .venv/bin/activate         # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
    pip install -e ../puikit          # PuiKit (editable) — required
-   python3 tfm.py
+   python3 -m xefm
    ```
+
+   No `pip install` of XeFM itself is needed to run from a checkout: `python3 -m`
+   puts the working directory on the import path, and the `xefm` package sits at
+   the repo root. Run `pip install -e .` only if you want the `xefm` command
+   available from other directories.
 
    **Desktop Mode** runs on Windows and macOS. The Windows GUI backend is pure
    Python and needs nothing extra; the macOS one uses PyObjC, installed
    automatically by `requirements.txt`. Just pick the backend:
    ```bash
-   python3 tfm.py --backend gui   # native desktop window on Windows or macOS
+   python3 -m xefm --backend gui   # native desktop window on Windows or macOS
    ```
 
 ### Essential Controls
@@ -83,10 +88,10 @@ Press `?` to open the comprehensive help dialog with all key bindings and featur
 
 ## Documentation
 
-For comprehensive information about TFM's features and usage:
+For comprehensive information about XeFM's features and usage:
 
 ### User Documentation
-- **[Complete User Guide](doc/TFM_USER_GUIDE.md)** - Comprehensive guide covering all features, configuration, and usage
+- **[Complete User Guide](doc/XEFM_USER_GUIDE.md)** - Comprehensive guide covering all features, configuration, and usage
 - **[Configuration](doc/CONFIGURATION_FEATURE.md)** - Complete configuration reference and customization guide
 - **[Desktop Mode](doc/DESKTOP_MODE_GUIDE.md)** - Native Windows / macOS desktop app setup and options
 - **[Color Schemes & Visual Effects](doc/COLOR_SCHEMES_FEATURE.md)** - Themes, themeable GPU background scenes, and screen effects
@@ -104,7 +109,7 @@ For comprehensive information about TFM's features and usage:
 
 ## Key Features Overview
 
-All key bindings are fully customizable through the configuration system. For complete key binding reference, press `?` in TFM or see the [User Guide](doc/TFM_USER_GUIDE.md).
+All key bindings are fully customizable through the configuration system. For complete key binding reference, press `?` in XeFM or see the [User Guide](doc/XEFM_USER_GUIDE.md).
 
 ### Core Operations
 - **Navigation:** Arrow keys, Tab to switch panes, Enter to open directories/files/archives
@@ -118,7 +123,7 @@ All key bindings are fully customizable through the configuration system. For co
 ### Advanced Features
 - **Favorite Directories:** `J` for quick access to bookmarked locations
 - **External Programs:** `X` for custom program integration
-- **Sub-shell Mode:** `Shift-X` to enter shell with TFM environment variables
+- **Sub-shell Mode:** `Shift-X` to enter shell with XeFM environment variables
 - **Themes:** `T` to cycle themes; more display options under `Z` (view options) and `Shift-Z` (settings)
 - **Configuration:** `Shift-Z` for settings menu (`Z` opens view options)
 - **SFTP Support:** Navigate remote servers using `ssh://hostname/path` syntax
@@ -130,7 +135,7 @@ For comprehensive S3 setup and usage, see the **[AWS S3 Support Feature Guide](d
 
 ## Archive Virtual Directory Browsing
 
-TFM lets you browse archive files as if they were regular directories - no extraction needed!
+XeFM lets you browse archive files as if they were regular directories - no extraction needed!
 
 **Supported formats:** `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`
 
@@ -155,7 +160,7 @@ See [Archive Feature](doc/ARCHIVE_FEATURE.md) for complete documentation.
 
 ## Built-in File Viewers
 
-Press `V` (or `Enter`) to view the selected file. TFM picks the right viewer for the file type — all of them work seamlessly on local files, inside archives, and on remote SFTP / S3 paths without extraction or download.
+Press `V` (or `Enter`) to view the selected file. XeFM picks the right viewer for the file type — all of them work seamlessly on local files, inside archives, and on remote SFTP / S3 paths without extraction or download.
 
 ### Text viewer
 
@@ -192,7 +197,7 @@ Image decoding needs `pillow` (installed via `requirements.txt`).
 
 ## Themes & Visual Effects
 
-TFM ships a dozen built-in themes. Press `T` to cycle to the next theme, or pick one from the **View → Theme** menu — your choice is remembered across restarts. Define your own in `~/.tfm/config.py` and they appear in the picker alongside the built-ins.
+XeFM ships a dozen built-in themes. Press `T` to cycle to the next theme, or pick one from the **View → Theme** menu — your choice is remembered across restarts. Define your own in `~/.xefm/config.py` and they appear in the picker alongside the built-ins.
 
 | | | |
 |:---:|:---:|:---:|
@@ -216,14 +221,14 @@ Effects are pure theme data — each is a combination of parameters attached to 
 
 ## Sub-shell Mode
 
-Press `Shift-X` to temporarily suspend TFM and enter a shell with environment variables providing access to current directories and selected files:
+Press `Shift-X` to temporarily suspend XeFM and enter a shell with environment variables providing access to current directories and selected files:
 
-- `TFM_LEFT_DIR`, `TFM_RIGHT_DIR` - Directory paths for each pane
-- `TFM_THIS_DIR`, `TFM_OTHER_DIR` - Current and other pane directories  
-- `TFM_LEFT_SELECTED`, `TFM_RIGHT_SELECTED` - Selected files in each pane
-- `TFM_ACTIVE` - Set to '1' to indicate TFM sub-shell mode
+- `XEFM_LEFT_DIR`, `XEFM_RIGHT_DIR` - Directory paths for each pane
+- `XEFM_THIS_DIR`, `XEFM_OTHER_DIR` - Current and other pane directories  
+- `XEFM_LEFT_SELECTED`, `XEFM_RIGHT_SELECTED` - Selected files in each pane
+- `XEFM_ACTIVE` - Set to '1' to indicate XeFM sub-shell mode
 
-Type `exit` to return to TFM.
+Type `exit` to return to XeFM.
 
 ## Advanced Features
 
@@ -238,26 +243,26 @@ Type `exit` to return to TFM.
 - **Pane Management:** Resizable layout, directory sync, state persistence
 - **External Integration:** VSCode, Beyond Compare, and custom program support
 
-For detailed information on all features, see the [User Guide](doc/TFM_USER_GUIDE.md).
+For detailed information on all features, see the [User Guide](doc/XEFM_USER_GUIDE.md).
 
 ## Command Line Options
 
 ```bash
 # Run in terminal mode (default)
-python3 tfm.py
+python3 -m xefm
 
 # Run in desktop mode (native window on Windows or macOS)
-python3 tfm.py --backend gui
+python3 -m xefm --backend gui
 
 # Specify startup directories
-python3 tfm.py --left /path/to/projects --right /path/to/documents
+python3 -m xefm --left /path/to/projects --right /path/to/documents
 
 # Combined usage - desktop mode with custom directories
-python3 tfm.py --backend gui --left ./src --right ./test
+python3 -m xefm --backend gui --left ./src --right ./test
 
 # Help and version
-python3 tfm.py --help
-python3 tfm.py --version
+python3 -m xefm --help
+python3 -m xefm --version
 ```
 
 The full flag set is just `--backend {tui,curses,gui,macos,windows}`, `--left DIR`,
@@ -265,7 +270,7 @@ The full flag set is just `--backend {tui,curses,gui,macos,windows}`, `--left DI
 
 ### Backend Selection
 
-TFM supports two rendering backends, chosen with `--backend`:
+XeFM supports two rendering backends, chosen with `--backend`:
 
 - **Terminal Mode** (`--backend tui`, alias `curses`): traditional terminal interface, works on all platforms (**Windows, macOS, Linux**) — the default
 - **Desktop Mode** (`--backend gui`): native desktop window on **Windows** (Direct2D/DirectWrite) or **macOS** (CoreGraphics, via PyObjC). The `gui` alias resolves to the right backend for the current platform; `windows` / `macos` name them explicitly.
@@ -283,7 +288,7 @@ See the [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed desktop mod
 ### Requirements
 
 **All modes:**
-- [PuiKit](https://github.com/crftwr/puikit) — TFM's UI framework, installed editable from a sibling `../puikit` checkout (`make venv` / `make install-puikit`). Not on PyPI.
+- [PuiKit](https://github.com/crftwr/puikit) — XeFM's UI framework, installed editable from a sibling `../puikit` checkout (`make venv` / `make install-puikit`). Not on PyPI.
 
 **Terminal Mode** (all platforms — Windows, macOS, Linux):
 - Python 3.10+ with curses library (built-in on macOS/Linux, 3.14 supported)
@@ -297,7 +302,7 @@ See the [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed desktop mod
 
 ### Dependencies
 
-**PuiKit** (required — TFM's UI framework, editable from a sibling checkout):
+**PuiKit** (required — XeFM's UI framework, editable from a sibling checkout):
 ```bash
 pip install -e ../puikit   # or: make install-puikit  (PUIKIT_DIR=../puikit by default)
 ```
@@ -331,32 +336,35 @@ source .venv/bin/activate         # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 pip install -e ../puikit
 
+# Run from the repo root — `python3 -m` puts it on the import path, and the
+# `xefm` package lives there, so nothing else needs installing.
+
 # Terminal mode (all platforms)
-python3 tfm.py
+python3 -m xefm
 
 # Desktop mode (native window on Windows or macOS)
-python3 tfm.py --backend gui
+python3 -m xefm --backend gui
 ```
 
 #### Option 2: Install as Package
 ```bash
 # Install from source directory
-cd tfm
+cd xefm
 
 # PuiKit is required and not on PyPI — install it (editable) first
 pip install -e ../puikit
 
 pip install .
 
-# Run from anywhere (installs a `tfm` console command)
-tfm                # Terminal mode
-tfm --backend gui  # Desktop mode (Windows / macOS)
+# Run from anywhere (installs a `xefm` console command)
+xefm                # Terminal mode
+xefm --backend gui  # Desktop mode (Windows / macOS)
 ```
 
 #### Option 3: Development Installation
 ```bash
 # Install in editable mode (changes reflected immediately)
-cd tfm
+cd xefm
 
 # PuiKit is required and not on PyPI — install it (editable) first
 pip install -e ../puikit
@@ -364,12 +372,12 @@ pip install -e ../puikit
 pip install -e .
 
 # Run from anywhere
-tfm
+xefm
 ```
 
 ## Configuration
 
-TFM is highly configurable through `~/.tfm/config.py`. Access configuration via the Settings menu (`Shift-Z` key) or edit manually.
+XeFM is highly configurable through `~/.xefm/config.py`. Access configuration via the Settings menu (`Shift-Z` key) or edit manually.
 
 **Key areas:**
 - Themes, color schemes, and visual effects (including custom themes)
@@ -378,14 +386,28 @@ TFM is highly configurable through `~/.tfm/config.py`. Access configuration via 
 - Favorite directories and startup paths
 - Performance and behavior settings
 
-For detailed configuration options, see the **[Configuration Feature Guide](doc/CONFIGURATION_FEATURE.md)** and the [User Guide](doc/TFM_USER_GUIDE.md#configuration).
+For detailed configuration options, see the **[Configuration Feature Guide](doc/CONFIGURATION_FEATURE.md)** and the [User Guide](doc/XEFM_USER_GUIDE.md#configuration).
+
+### Upgrading from TFM
+
+XeFM was previously called **TFM**. The rename is a clean break — nothing is read
+from the old locations, so migrate by hand:
+
+| Was | Now |
+|-----|-----|
+| `~/.tfm/` (config, state, `tools/`) | `~/.xefm/` — move the directory, or let XeFM write a fresh `config.py` |
+| `TFM_THIS_DIR`, `TFM_LEFT_SELECTED`, `TFM_BACKEND`, … | `XEFM_*` — update any custom external-program scripts |
+| `tfm_tool()`, `tfm_python` in `config.py` | `xefm_tool()`, `xefm_python` — imported from `xefm.external_programs` |
+| `python3 tfm.py` / the `tfm` command | `python3 -m xefm` / the `xefm` command |
 
 ## Project Structure
 
 ```
-tfm/
-├── tfm.py         # The application (FileManager + top-level UI); runs on PuiKit
-├── src/           # TFM modules imported by tfm.py (tfm_*.py)
+xefm/
+├── xefm/          # The `xefm` package — everything the app ships
+│   ├── app.py     # The application (XeFMApp + top-level UI); runs on PuiKit
+│   ├── __main__.py # `python -m xefm` entry point
+│   ├── *.py       # Business logic, imported as `xefm.config`, `xefm.path`, …
 │   └── tools/     # External programs for end users
 ├── tools/         # Development tools and utilities
 ├── test/          # Test files (1000+ passing tests)
@@ -393,19 +415,19 @@ tfm/
     └── dev/       # Developer documentation
 ```
 
-> TFM's UI framework, **PuiKit**, is **not** in this tree — it lives in its own
+> XeFM's UI framework, **PuiKit**, is **not** in this tree — it lives in its own
 > repository (`../puikit`) and is installed editable into the virtualenv.
 
 ## Troubleshooting
 
 **Installation Issues:**
-- Ensure Python 3.10+ is installed (PuiKit, TFM's UI framework, requires 3.10+)
+- Ensure Python 3.10+ is installed (PuiKit, XeFM's UI framework, requires 3.10+)
 - Check terminal compatibility with curses library (terminal mode)
 - PyObjC (desktop mode) installs automatically on macOS via `pip install -r requirements.txt`
 
 **Desktop Mode Issues:**
 - Desktop mode runs on Windows and macOS; on other platforms use terminal mode
-- On macOS, if PyObjC is missing TFM automatically falls back to terminal mode
+- On macOS, if PyObjC is missing XeFM automatically falls back to terminal mode
 - Check console output for backend initialization messages
 - See [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed setup
 
@@ -421,17 +443,17 @@ tfm/
 - Check supported formats: `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`
 - Archives are read-only - use copy operations to extract files
 
-For detailed troubleshooting, see the [User Guide](doc/TFM_USER_GUIDE.md#troubleshooting).
+For detailed troubleshooting, see the [User Guide](doc/XEFM_USER_GUIDE.md#troubleshooting).
 
 ## Contact Author
 
 Have questions, suggestions, or found a bug? Get in touch:
 
-- **GitHub Repository**: [https://github.com/shimomut/tfm](https://github.com/shimomut/tfm)
-- **GitHub Issues**: [Report bugs or request features](https://github.com/shimomut/tfm/issues)
+- **GitHub Repository**: [https://github.com/shimomut/xefm](https://github.com/shimomut/xefm)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/shimomut/xefm/issues)
 - **Author's X (Twitter)**: [@smmrtmnr](https://x.com/smmrtmnr)
 
-We welcome feedback and contributions to make TFM even better!
+We welcome feedback and contributions to make XeFM even better!
 
 ## License
 
@@ -441,4 +463,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - **Issues:** Create an issue on the project repository
 - **Documentation:** Review files in `doc/` and `doc/dev/` directories
-- **User Guide:** See [TFM_USER_GUIDE.md](doc/TFM_USER_GUIDE.md) for comprehensive information
+- **User Guide:** See [XEFM_USER_GUIDE.md](doc/XEFM_USER_GUIDE.md) for comprehensive information

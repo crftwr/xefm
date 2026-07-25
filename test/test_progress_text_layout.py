@@ -12,10 +12,10 @@ import os
 import unittest
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ttk'))
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
 class TestProgressTextLayout(unittest.TestCase):
@@ -40,7 +40,7 @@ class TestProgressTextLayout(unittest.TestCase):
         self.assertGreater(len(segments), 0)
         
         # Verify essential information is present in first segment
-        from tfm_text_layout import AsIsSegment, FilepathSegment
+        from xefm.text_layout import AsIsSegment, FilepathSegment
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Copying", segments[0].text)
         self.assertIn("destination", segments[0].text)
@@ -60,7 +60,7 @@ class TestProgressTextLayout(unittest.TestCase):
         
         segments = pm.get_progress_segments()
         
-        from tfm_text_layout import AsIsSegment
+        from xefm.text_layout import AsIsSegment
         self.assertGreater(len(segments), 0)
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Moving", segments[0].text)
@@ -77,7 +77,7 @@ class TestProgressTextLayout(unittest.TestCase):
         
         segments = pm.get_progress_segments()
         
-        from tfm_text_layout import AsIsSegment
+        from xefm.text_layout import AsIsSegment
         self.assertGreater(len(segments), 0)
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Deleting", segments[0].text)
@@ -93,7 +93,7 @@ class TestProgressTextLayout(unittest.TestCase):
         
         segments = pm.get_progress_segments()
         
-        from tfm_text_layout import AsIsSegment
+        from xefm.text_layout import AsIsSegment
         self.assertGreater(len(segments), 0)
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Copying", segments[0].text)
@@ -117,7 +117,7 @@ class TestProgressTextLayout(unittest.TestCase):
         self.assertGreater(len(segments), 0)
         
         # Should contain essential info
-        from tfm_text_layout import AsIsSegment, FilepathSegment
+        from xefm.text_layout import AsIsSegment, FilepathSegment
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Copying", segments[0].text)
         self.assertIn("50/100", segments[0].text)
@@ -143,7 +143,7 @@ class TestProgressTextLayout(unittest.TestCase):
         # Should have AllOrNothingSegment for byte progress
         segments = pm.get_progress_segments()
         
-        from tfm_text_layout import AllOrNothingSegment
+        from xefm.text_layout import AllOrNothingSegment
         byte_progress_segments = [seg for seg in segments if isinstance(seg, AllOrNothingSegment)]
         self.assertGreater(len(byte_progress_segments), 0, "Should have byte progress segment")
         
@@ -163,7 +163,7 @@ class TestProgressTextLayout(unittest.TestCase):
         
         segments = pm.get_progress_segments()
         
-        from tfm_text_layout import AsIsSegment
+        from xefm.text_layout import AsIsSegment
         self.assertGreater(len(segments), 0)
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Creating archive", segments[0].text)
@@ -192,7 +192,7 @@ class TestProgressTextLayout(unittest.TestCase):
         
         segments = pm.get_progress_segments()
         
-        from tfm_text_layout import AsIsSegment
+        from xefm.text_layout import AsIsSegment
         self.assertGreater(len(segments), 0)
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Copying", segments[0].text)
@@ -218,7 +218,7 @@ class TestProgressTextLayout(unittest.TestCase):
         self.assertGreater(len(segments), 0)
         
         # Segments should be text segment objects
-        from tfm_text_layout import AsIsSegment, FilepathSegment
+        from xefm.text_layout import AsIsSegment, FilepathSegment
         
         # First segment should be AsIsSegment with operation info
         self.assertIsInstance(segments[0], AsIsSegment)
@@ -248,7 +248,7 @@ class TestProgressTextLayout(unittest.TestCase):
             self.assertTrue(hasattr(seg, 'text'), f"Segment {type(seg).__name__} should have text attribute")
         
         # Essential information should be in segments
-        from tfm_text_layout import AsIsSegment
+        from xefm.text_layout import AsIsSegment
         self.assertIsInstance(segments[0], AsIsSegment)
         self.assertIn("Moving", segments[0].text)
         self.assertIn("25/50", segments[0].text)

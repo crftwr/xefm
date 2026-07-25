@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Generate ``TFM.ico`` for the Windows launcher's embedded icon resource.
+Generate ``XeFM.ico`` for the Windows launcher's embedded icon resource.
 
 Preference order:
-  1. If Pillow is available, convert the macOS icon ``macos_app/resources/TFM.icns``
+  1. If Pillow is available, convert the macOS icon ``macos_app/resources/XeFM.icns``
      (or a ``--source`` PNG/ICNS) into a proper multi-size ``.ico``.
   2. Otherwise, emit a simple solid-color placeholder ``.ico`` with the pure-Python
      writer below, so ``rc.exe`` always has an icon to embed. Drop a hand-authored
-     ``TFM.ico`` into ``windows_app/resources/`` to override.
+     ``XeFM.ico`` into ``windows_app/resources/`` to override.
 
 Usage:
-    python make_icon.py --out <path>\\TFM.ico [--source <path>\\icon.png|.icns]
+    python make_icon.py --out <path>\\XeFM.ico [--source <path>\\icon.png|.icns]
 """
 
 import argparse
@@ -21,7 +21,7 @@ from pathlib import Path
 # Sizes to emit when Pillow can render them.
 _ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
-# Placeholder colors (R, G, B) - a TFM-ish teal with a lighter border.
+# Placeholder colors (R, G, B) - a XeFM-ish teal with a lighter border.
 _FILL = (38, 132, 128)
 _BORDER = (90, 200, 190)
 
@@ -122,14 +122,14 @@ def _write_placeholder_ico(out: Path, size: int = 32) -> None:
     )
     out.write_bytes(icondir + entry + image)
     print(f"[INFO] Wrote placeholder {out} ({w}x{h}). "
-          f"Provide a real windows_app/resources/TFM.ico to override.")
+          f"Provide a real windows_app/resources/XeFM.ico to override.")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate TFM.ico")
+    parser = argparse.ArgumentParser(description="Generate XeFM.ico")
     parser.add_argument("--out", required=True, help="output .ico path")
     parser.add_argument("--source", default=None,
-                        help="source image (.png/.icns); defaults to macos_app/resources/TFM.icns")
+                        help="source image (.png/.icns); defaults to macos_app/resources/XeFM.icns")
     args = parser.parse_args()
 
     out = Path(args.out).resolve()
@@ -137,7 +137,7 @@ def main() -> int:
 
     # Resolve a default source relative to the repo (this file lives in windows_app/).
     repo_root = Path(__file__).resolve().parent.parent
-    source = Path(args.source).resolve() if args.source else (repo_root / "macos_app" / "resources" / "TFM.icns")
+    source = Path(args.source).resolve() if args.source else (repo_root / "macos_app" / "resources" / "XeFM.icns")
 
     if source.exists() and _try_pillow(source, out):
         return 0

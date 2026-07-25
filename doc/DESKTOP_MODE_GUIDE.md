@@ -1,8 +1,8 @@
-# TFM Desktop Mode Guide
+# XeFM Desktop Mode Guide
 
 ## Overview
 
-TFM can run as a native macOS desktop application with GPU acceleration, providing a modern windowed experience while maintaining the same powerful keyboard-driven interface you know from terminal mode.
+XeFM can run as a native macOS desktop application with GPU acceleration, providing a modern windowed experience while maintaining the same powerful keyboard-driven interface you know from terminal mode.
 
 ## Quick Start
 
@@ -14,30 +14,30 @@ TFM can run as a native macOS desktop application with GPU acceleration, providi
 pip install pyobjc
 
 # Run in desktop mode
-python3 tfm.py --backend gui
+python3 -m xefm --backend gui
 ```
 
 **Option 2: Install with extras**
 ```bash
-# Install TFM with macOS desktop mode support
+# Install XeFM with macOS desktop mode support
 pip install -e .[macos]
 
 # Run in desktop mode
-python3 tfm.py --backend gui
+python3 -m xefm --backend gui
 ```
 
 **Option 3: From PyPI (when published)**
 ```bash
 # Install with macOS support
-pip install tfm[macos]
+pip install xefm[macos]
 
 # Run in desktop mode
-tfm --backend gui
+xefm --backend gui
 ```
 
 ### First Launch
 
-When you launch TFM in desktop mode:
+When you launch XeFM in desktop mode:
 1. A native macOS window appears
 2. The interface looks identical to terminal mode
 3. All keyboard shortcuts work the same way
@@ -78,7 +78,7 @@ mode, pass `--backend gui` (alias `macos`) each time, or wrap it in a shell alia
 
 ### Customizing Appearance
 
-Font settings live in `~/.tfm/config.py` (they apply to desktop/GUI mode only):
+Font settings live in `~/.xefm/config.py` (they apply to desktop/GUI mode only):
 
 ```python
 MONO_FONT_NAME = 'Menlo'   # monospaced face for aligned columns (None = bundled default)
@@ -120,10 +120,10 @@ To check installed fonts, open `Font Book.app` and filter by "Fixed Width" (mono
 
 ```bash
 # Terminal mode (the default)
-python3 tfm.py
+python3 -m xefm
 
 # Desktop mode — chosen with --backend
-python3 tfm.py --backend gui
+python3 -m xefm --backend gui
 ```
 
 ### Switching Between Modes
@@ -132,10 +132,10 @@ You can easily switch between terminal and desktop modes:
 
 ```bash
 # Terminal mode
-python3 tfm.py --backend curses
+python3 -m xefm --backend curses
 
 # Desktop mode
-python3 tfm.py --backend gui
+python3 -m xefm --backend gui
 ```
 
 All your settings, favorites, and history are shared between modes.
@@ -153,7 +153,7 @@ All keyboard shortcuts work identically in desktop mode:
 - **Help**: ? (help dialog)
 - **Quit**: Q
 
-See the [User Guide](TFM_USER_GUIDE.md) for the complete keyboard reference.
+See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
 
 ### Window Management
 
@@ -168,7 +168,7 @@ See the [User Guide](TFM_USER_GUIDE.md) for the complete keyboard reference.
 - Exit full-screen the same way
 
 **Multiple Windows**:
-- Currently, TFM supports one window at a time
+- Currently, XeFM supports one window at a time
 - Launch multiple instances for multiple windows
 
 ## Troubleshooting
@@ -208,9 +208,9 @@ See the [User Guide](TFM_USER_GUIDE.md) for the complete keyboard reference.
 
 **Solutions**:
 1. Check console output for error messages
-2. Try terminal mode first to verify TFM works:
+2. Try terminal mode first to verify XeFM works:
    ```bash
-   python3 tfm.py --backend curses
+   python3 -m xefm --backend curses
    ```
 3. Check macOS version (10.13+ required)
 4. Restart your Mac and try again
@@ -250,7 +250,7 @@ See the [User Guide](TFM_USER_GUIDE.md) for the complete keyboard reference.
 **Solutions**:
 1. Check Activity Monitor:
    - Open Activity Monitor
-   - Look for TFM process
+   - Look for XeFM process
    - Check CPU and GPU usage
 
 2. Make the window smaller by resizing it (the size is remembered for next time).
@@ -342,8 +342,8 @@ See the [User Guide](TFM_USER_GUIDE.md) for the complete keyboard reference.
 
 **Choosing per run**:
 ```bash
-python3 tfm.py                 # terminal mode (default)
-python3 tfm.py --backend gui   # desktop mode
+python3 -m xefm                 # terminal mode (default)
+python3 -m xefm --backend gui   # desktop mode
 ```
 Tip: wrap the desktop command in a shell alias if you use it often (there is no
 config-file default for the backend).
@@ -356,19 +356,19 @@ Create a launcher script for easy access:
 
 ```bash
 #!/bin/bash
-# ~/bin/tfm-desktop
+# ~/bin/xefm-desktop
 
-python3 /path/to/tfm/tfm.py --backend gui "$@"
+PYTHONPATH=/path/to/xefm python3 -m xefm --backend gui "$@"
 ```
 
 Make it executable:
 ```bash
-chmod +x ~/bin/tfm-desktop
+chmod +x ~/bin/xefm-desktop
 ```
 
 Now you can run:
 ```bash
-tfm-desktop --left ~/projects --right ~/documents
+xefm-desktop --left ~/projects --right ~/documents
 ```
 
 ### Integration with macOS
@@ -381,8 +381,8 @@ tfm-desktop --left ~/projects --right ~/documents
 **Spotlight Integration**:
 - Create an Automator application
 - Add "Run Shell Script" action
-- Use: `python3 /path/to/tfm/tfm.py --backend gui`
-- Save as "TFM" in Applications folder
+- Use: `PYTHONPATH=/path/to/xefm python3 -m xefm --backend gui`
+- Save as "XeFM" in Applications folder
 
 ## Getting Help
 
@@ -390,7 +390,7 @@ If you encounter issues not covered here:
 
 1. Check console output for error messages
 2. Try terminal mode to isolate desktop-specific issues
-3. Review the [User Guide](TFM_USER_GUIDE.md)
+3. Review the [User Guide](XEFM_USER_GUIDE.md)
 4. Check the [PuiKit framework](https://github.com/crftwr/puikit) for technical details on the UI framework
 5. Report issues on GitHub with:
    - macOS version
@@ -401,7 +401,7 @@ If you encounter issues not covered here:
 
 ## Summary
 
-Desktop mode provides a modern, native macOS experience while maintaining TFM's powerful keyboard-driven interface. With GPU acceleration, true RGB colors, and customizable fonts, it offers an enhanced experience for macOS users while remaining fully compatible with terminal mode.
+Desktop mode provides a modern, native macOS experience while maintaining XeFM's powerful keyboard-driven interface. With GPU acceleration, true RGB colors, and customizable fonts, it offers an enhanced experience for macOS users while remaining fully compatible with terminal mode.
 
 Key benefits:
 - ✅ Native macOS window
@@ -411,4 +411,4 @@ Key benefits:
 - ✅ Identical functionality
 - ✅ Easy switching between modes
 
-Try desktop mode today and experience TFM in a whole new way!
+Try desktop mode today and experience XeFM in a whole new way!

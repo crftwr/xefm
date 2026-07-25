@@ -1,12 +1,12 @@
 """
 Test inverse selection behavior for select_all_files and select_all_items
 
-Run with: PYTHONPATH=.:src pytest test/test_inverse_selection.py -v
+Run with: python -m pytest test/test_inverse_selection.py -v
 """
 
 from pathlib import Path
 
-from tfm_file_list_manager import FileListManager
+from xefm.file_list_manager import FileListManager
 
 
 def test_inverse_files_selection():

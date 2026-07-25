@@ -2,14 +2,14 @@
 Test script for rename conflict resolution feature
 Tests the new "Rename" option in copy/move/extract operations
 
-Run with: PYTHONPATH=.:src pytest test/test_rename_conflict_resolution.py -v
+Run with: python -m pytest test/test_rename_conflict_resolution.py -v
 """
 
 import tempfile
 import shutil
 from pathlib import Path as StdPath
 
-from tfm_path import Path
+from xefm.path import Path
 
 
 def test_copy_rename_conflict():

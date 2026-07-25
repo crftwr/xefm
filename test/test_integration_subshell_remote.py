@@ -4,7 +4,7 @@ Integration test for subshell remote directory fallback.
 This test verifies that the subshell remote fallback feature works correctly
 by testing the actual implementation with mock objects.
 
-Run with: PYTHONPATH=.:src pytest test/test_integration_subshell_remote.py -v
+Run with: python -m pytest test/test_integration_subshell_remote.py -v
 """
 
 import os
@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path as PathlibPath
 
 # Add src directory to path for imports
-src_dir = PathlibPath(__file__).parent.parent / 'src'
+src_dir = PathlibPath(__file__).parent.parent
 
 class MockRemotePath:
     """Mock remote path that simulates S3 or other remote storage"""
@@ -47,7 +47,7 @@ class TestSubshellRemoteIntegration(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         # Import here to avoid import issues
-        from tfm_external_programs import ExternalProgramManager
+        from xefm.external_programs import ExternalProgramManager
         
         self.config = Mock()
         self.log_manager = Mock()
@@ -102,15 +102,15 @@ class TestSubshellRemoteIntegration(unittest.TestCase):
             'selected_index': 0
         }
         
-        tfm_working_dir = '/home/user/tfm'
+        xefm_working_dir = '/home/user/xefm'
         
         # Simulate the logic from the actual implementation
         if remote_pane['path'].is_remote():
-            working_dir = tfm_working_dir  # This would be os.getcwd() in real code
+            working_dir = xefm_working_dir  # This would be os.getcwd() in real code
         else:
             working_dir = str(remote_pane['path'])
         
-        self.assertEqual(working_dir, tfm_working_dir)
+        self.assertEqual(working_dir, xefm_working_dir)
         
         # Test case 2: Local directory should use pane directory
         local_pane = {
@@ -121,7 +121,7 @@ class TestSubshellRemoteIntegration(unittest.TestCase):
         }
         
         if local_pane['path'].is_remote():
-            working_dir = tfm_working_dir
+            working_dir = xefm_working_dir
         else:
             working_dir = str(local_pane['path'])
         
@@ -148,31 +148,31 @@ class TestSubshellRemoteIntegration(unittest.TestCase):
         
         # Simulate environment variable setting (from actual implementation)
         env = os.environ.copy()
-        env['TFM_LEFT_DIR'] = str(left_pane['path'])
-        env['TFM_RIGHT_DIR'] = str(right_pane['path'])
-        env['TFM_THIS_DIR'] = str(right_pane['path'])  # Current pane is remote
-        env['TFM_OTHER_DIR'] = str(left_pane['path'])
-        env['TFM_ACTIVE'] = '1'
+        env['XEFM_LEFT_DIR'] = str(left_pane['path'])
+        env['XEFM_RIGHT_DIR'] = str(right_pane['path'])
+        env['XEFM_THIS_DIR'] = str(right_pane['path'])  # Current pane is remote
+        env['XEFM_OTHER_DIR'] = str(left_pane['path'])
+        env['XEFM_ACTIVE'] = '1'
         
         # Verify environment variables contain actual paths
-        self.assertEqual(env['TFM_LEFT_DIR'], '/home/user/projects')
-        self.assertEqual(env['TFM_RIGHT_DIR'], 's3://data-bucket/files/')
-        self.assertEqual(env['TFM_THIS_DIR'], 's3://data-bucket/files/')
-        self.assertEqual(env['TFM_OTHER_DIR'], '/home/user/projects')
-        self.assertEqual(env['TFM_ACTIVE'], '1')
+        self.assertEqual(env['XEFM_LEFT_DIR'], '/home/user/projects')
+        self.assertEqual(env['XEFM_RIGHT_DIR'], 's3://data-bucket/files/')
+        self.assertEqual(env['XEFM_THIS_DIR'], 's3://data-bucket/files/')
+        self.assertEqual(env['XEFM_OTHER_DIR'], '/home/user/projects')
+        self.assertEqual(env['XEFM_ACTIVE'], '1')
         
         # Working directory selection should be independent of env vars
         current_pane = right_pane  # Remote pane
-        tfm_working_dir = '/home/user/tfm'
+        xefm_working_dir = '/home/user/xefm'
         
         if current_pane['path'].is_remote():
-            working_dir = tfm_working_dir
+            working_dir = xefm_working_dir
         else:
             working_dir = str(current_pane['path'])
         
         # Working directory should be fallback, but env vars should be actual paths
-        self.assertEqual(working_dir, tfm_working_dir)
-        self.assertEqual(env['TFM_THIS_DIR'], 's3://data-bucket/files/')
+        self.assertEqual(working_dir, xefm_working_dir)
+        self.assertEqual(env['XEFM_THIS_DIR'], 's3://data-bucket/files/')
     
     def test_multiple_remote_storage_types(self):
         """Test that the feature works with different remote storage types"""
@@ -183,7 +183,7 @@ class TestSubshellRemoteIntegration(unittest.TestCase):
             MockRemotePath('ftp://server/path/'),
         ]
         
-        tfm_working_dir = '/home/user/tfm'
+        xefm_working_dir = '/home/user/xefm'
         
         for remote_path in storage_types:
             # All remote paths should trigger fallback
@@ -191,12 +191,12 @@ class TestSubshellRemoteIntegration(unittest.TestCase):
             
             # Working directory selection logic
             if remote_path.is_remote():
-                working_dir = tfm_working_dir
+                working_dir = xefm_working_dir
             else:
                 working_dir = str(remote_path)
             
             # Should always use fallback for remote paths
-            self.assertEqual(working_dir, tfm_working_dir)
+            self.assertEqual(working_dir, xefm_working_dir)
     
     def test_edge_cases(self):
         """Test edge cases and boundary conditions"""

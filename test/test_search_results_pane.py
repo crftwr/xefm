@@ -1,5 +1,5 @@
 """
-Search-results (virtual) pane for the PuiKit TfmApp.
+Search-results (virtual) pane for the PuiKit XeFMApp.
 
 Feeding a filename / content search result set into the active pane as a flat,
 virtual listing (``_feed_search_results``) lets every file operation act on the
@@ -20,13 +20,12 @@ import tempfile
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
-from tfm_path import Path  # noqa: E402
-from tfm_file_list_manager import FileListManager  # noqa: E402
-import _config  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
+from xefm.path import Path  # noqa: E402
+from xefm.file_list_manager import FileListManager  # noqa: E402
+from xefm import _config  # noqa: E402
 
 
 class FLMVirtual(unittest.TestCase):
@@ -93,14 +92,14 @@ class FLMVirtual(unittest.TestCase):
 
 
 class AppVirtual(unittest.TestCase):
-    """End-to-end through a headless TfmApp on the memory backend."""
+    """End-to-end through a headless XeFMApp on the memory backend."""
 
     def setUp(self):
         from puikit.backends import create_backend
         self.tmp = tempfile.mkdtemp()
         self.b = create_backend("memory")
         self.b.open()
-        self.app = tfm.TfmApp(self.b, self.tmp, self.tmp,
+        self.app = xefm_app.XeFMApp(self.b, self.tmp, self.tmp,
                               left_provided=True, right_provided=True)
         # These tests exercise pane state, not the filesystem watcher; spinning up
         # a real watchdog observer per test (8 of them) is both unnecessary and

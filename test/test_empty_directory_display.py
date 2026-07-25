@@ -1,7 +1,7 @@
 """
 Test empty directory display functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_empty_directory_display.py -v
+Run with: python -m pytest test/test_empty_directory_display.py -v
 """
 
 import tempfile
@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest.mock import Mock
 
 
-class MockTFM:
-    """Mock TFM class to test empty directory display"""
+class MockXeFM:
+    """Mock XeFM class to test empty directory display"""
     
     def __init__(self):
         self.stdscr = Mock()
@@ -61,7 +61,7 @@ def test_empty_directory_display():
     """Test that empty directories show 'No items to show' message"""
     print("Testing empty directory display...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     # Test empty pane data
     empty_pane = {
@@ -72,12 +72,12 @@ def test_empty_directory_display():
     }
     
     # Draw empty pane
-    tfm.draw_pane(empty_pane, 0, 40, True)
+    xefm.draw_pane(empty_pane, 0, 40, True)
     
     # Verify message was drawn
-    assert len(tfm.drawn_text) == 1, f"Expected 1 message, got {len(tfm.drawn_text)}"
+    assert len(xefm.drawn_text) == 1, f"Expected 1 message, got {len(xefm.drawn_text)}"
     
-    message = tfm.drawn_text[0]
+    message = xefm.drawn_text[0]
     assert message['text'] == "No items to show", f"Expected 'No items to show', got '{message['text']}'"
     assert message['color'] == 'error', f"Expected error color, got '{message['color']}'"
     
@@ -92,7 +92,7 @@ def test_non_empty_directory_display():
     """Test that non-empty directories show files normally"""
     print("\nTesting non-empty directory display...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     # Create mock file paths
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -113,13 +113,13 @@ def test_non_empty_directory_display():
         }
         
         # Draw non-empty pane
-        tfm.draw_pane(non_empty_pane, 0, 40, True)
+        xefm.draw_pane(non_empty_pane, 0, 40, True)
         
         # Verify files were drawn (not the "no items" message)
-        assert len(tfm.drawn_text) == 2, f"Expected 2 files, got {len(tfm.drawn_text)}"
+        assert len(xefm.drawn_text) == 2, f"Expected 2 files, got {len(xefm.drawn_text)}"
         
         # Verify file names are shown
-        file_names = [item['text'] for item in tfm.drawn_text]
+        file_names = [item['text'] for item in xefm.drawn_text]
         assert "file1.txt" in file_names, "Should show file1.txt"
         assert "file2.txt" in file_names, "Should show file2.txt"
         
@@ -133,7 +133,7 @@ def test_message_positioning():
     """Test that the message is positioned correctly in different pane sizes"""
     print("\nTesting message positioning...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     empty_pane = {
         'files': [],
@@ -150,12 +150,12 @@ def test_message_positioning():
     ]
     
     for case in test_cases:
-        tfm.drawn_text = []  # Reset
-        tfm.draw_pane(empty_pane, case['start_x'], case['width'], True)
+        xefm.drawn_text = []  # Reset
+        xefm.draw_pane(empty_pane, case['start_x'], case['width'], True)
         
-        assert len(tfm.drawn_text) == 1, f"Expected 1 message for case {case}"
+        assert len(xefm.drawn_text) == 1, f"Expected 1 message for case {case}"
         
-        message = tfm.drawn_text[0]
+        message = xefm.drawn_text[0]
         expected_x = case['start_x'] + (case['width'] - len("No items to show")) // 2
         
         assert message['x'] == expected_x, f"For case {case}, expected x={expected_x}, got x={message['x']}"
@@ -168,7 +168,7 @@ def test_narrow_pane_handling():
     """Test that narrow panes are handled gracefully"""
     print("\nTesting narrow pane handling...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     empty_pane = {
         'files': [],
@@ -178,17 +178,17 @@ def test_narrow_pane_handling():
     }
     
     # Test very narrow pane (should be skipped due to safety check)
-    tfm.draw_pane(empty_pane, 0, 5, True)
+    xefm.draw_pane(empty_pane, 0, 5, True)
     
     # Should not draw anything due to safety check
-    assert len(tfm.drawn_text) == 0, "Very narrow panes should not draw anything"
+    assert len(xefm.drawn_text) == 0, "Very narrow panes should not draw anything"
     
     # Test minimum viable pane width
-    tfm.drawn_text = []
-    tfm.draw_pane(empty_pane, 0, 20, True)
+    xefm.drawn_text = []
+    xefm.draw_pane(empty_pane, 0, 20, True)
     
     # Should draw the message
-    assert len(tfm.drawn_text) == 1, "Minimum viable pane should draw message"
-    assert tfm.drawn_text[0]['text'] == "No items to show"
+    assert len(xefm.drawn_text) == 1, "Minimum viable pane should draw message"
+    assert xefm.drawn_text[0]['text'] == "No items to show"
     
     print("✅ Narrow pane handling test passed!")

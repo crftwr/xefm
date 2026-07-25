@@ -1,14 +1,14 @@
 """
 Integration test to verify LogCapture works with LogManager
 
-Run with: PYTHONPATH=.:src pytest test/test_logcapture_integration.py -v
+Run with: python -m pytest test/test_logcapture_integration.py -v
 """
 
 import sys
 import logging
 from collections import deque
 
-from tfm_log_manager import LogManager
+from xefm.log_manager import LogManager
 
 
 class MockConfig:
@@ -36,7 +36,7 @@ def test_logmanager_with_logcapture():
     assert sys.stderr.logger is not None
     
     # Verify the stream logger is configured
-    assert log_manager._stream_logger.name == "TFM_STREAM_CAPTURE"
+    assert log_manager._stream_logger.name == "XEFM_STREAM_CAPTURE"
     assert log_manager._stream_logger.level == logging.DEBUG
     assert log_manager._stream_logger.propagate is False
     

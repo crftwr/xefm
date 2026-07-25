@@ -1,0 +1,44 @@
+/*
+ * XeFM.rc - resources compiled into XeFM.exe (icon, manifest, version info).
+ *
+ * "version_generated.h" is written by build.ps1 (from $VERSION / xefm/__init__.py's
+ * __version__) into the build's working directory alongside a copy of this .rc,
+ * XeFM.manifest, and XeFM.ico, so all the relative includes below resolve there.
+ */
+#include <windows.h>
+#include "version_generated.h"
+
+/* Application manifest (RT_MANIFEST, id 1 = the process default manifest). */
+1 RT_MANIFEST "XeFM.manifest"
+
+/* Application icon (id 1 = the icon Explorer shows for the .exe). */
+1 ICON "XeFM.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    XEFM_VER_MAJOR, XEFM_VER_MINOR, XEFM_VER_PATCH, XEFM_VER_BUILD
+ PRODUCTVERSION XEFM_VER_MAJOR, XEFM_VER_MINOR, XEFM_VER_PATCH, XEFM_VER_BUILD
+ FILEFLAGSMASK  0x3fL
+ FILEFLAGS      0x0L
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_APP
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"   /* U.S. English, Unicode (1200) */
+        BEGIN
+            VALUE "CompanyName",      "XeFM"
+            VALUE "FileDescription",  "XeFM - TUI File Manager"
+            VALUE "FileVersion",      XEFM_VER_STR
+            VALUE "InternalName",     "XeFM"
+            VALUE "LegalCopyright",   "XeFM contributors"
+            VALUE "OriginalFilename", "XeFM.exe"
+            VALUE "ProductName",      "XeFM"
+            VALUE "ProductVersion",   XEFM_VER_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

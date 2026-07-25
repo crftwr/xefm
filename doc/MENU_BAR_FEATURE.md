@@ -2,15 +2,15 @@
 
 ## Overview
 
-In desktop (GUI) mode, TFM shows a native menu bar so you can drive the file
-manager with the mouse in addition to the keyboard. The menus mirror TFM's
+In desktop (GUI) mode, XeFM shows a native menu bar so you can drive the file
+manager with the mouse in addition to the keyboard. The menus mirror XeFM's
 keyboard actions: every menu item runs the same action as its key binding, and
 each item's shortcut hint is generated **from the live keymap** — so if you
-rebind a key in `~/.tfm/config.py`, the menu updates to match.
+rebind a key in `~/.xefm/config.py`, the menu updates to match.
 
 ## Platform Support
 
-- **macOS desktop mode** (`tfm.py --backend gui`): a native `NSMenu` menu bar.
+- **macOS desktop mode** (`python3 -m xefm --backend gui`): a native `NSMenu` menu bar.
 - **Terminal mode**: an in-window menu strip along the top row.
 
 The menu structure and shortcuts are the same in both.
@@ -20,8 +20,8 @@ The menu structure and shortcuts are the same in both.
 ### Launching Desktop Mode
 
 ```bash
-# Launch TFM as a native macOS window
-python3 tfm.py --backend gui
+# Launch XeFM as a native macOS window
+python3 -m xefm --backend gui
 ```
 
 ### Using the Menu Bar
@@ -32,7 +32,7 @@ python3 tfm.py --backend gui
 
 ## Available Menus
 
-TFM has four menus: **File**, **Select**, **View**, and **Help**.
+XeFM has four menus: **File**, **Select**, **View**, and **Help**.
 
 ### File Menu
 
@@ -94,7 +94,7 @@ TFM has four menus: **File**, **Select**, **View**, and **Help**.
 | Item | Shortcut |
 |------|----------|
 | Keyboard Shortcuts… | ? |
-| About TFM | — |
+| About XeFM | — |
 
 > Note: `M` is context-sensitive — it creates a new folder when nothing is
 > selected, and moves the selection when files are selected. This is a property
@@ -138,7 +138,7 @@ Open **View → Theme ▸** and pick one, or press `T` to cycle to the next them
 ## Troubleshooting
 
 ### Menu bar not visible
-Make sure you launched desktop mode (`python3 tfm.py --backend gui`). In terminal
+Make sure you launched desktop mode (`python3 -m xefm --backend gui`). In terminal
 mode the menu is the strip along the top row.
 
 ### A menu item is grayed out
@@ -147,7 +147,7 @@ or Parent Directory at the root). Adjust the selection or location and it enable
 
 ### A shortcut doesn't work
 Letter keys are case-sensitive, and the shortcut shown is whatever the action is
-currently bound to in `~/.tfm/config.py`. Check your key bindings if you've
+currently bound to in `~/.xefm/config.py`. Check your key bindings if you've
 customized them.
 
 ## Related Features

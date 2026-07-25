@@ -4,7 +4,7 @@ Test mock storage implementation for extensibility validation.
 This test validates that new storage types can be added without any UI changes
 by implementing a MockPathImpl and verifying it works with all UI components.
 
-Run with: PYTHONPATH=.:src pytest test/test_mock_storage_extensibility.py -v
+Run with: python -m pytest test/test_mock_storage_extensibility.py -v
 """
 
 import os
@@ -12,7 +12,7 @@ import io
 from pathlib import Path as PathlibPath
 from typing import Iterator, List
 
-from tfm_path import PathImpl, Path
+from xefm.path import PathImpl, Path
 
 
 class MockPathImpl(PathImpl):

@@ -4,7 +4,7 @@ Test S3 Caching Optimization
 This test verifies that the S3 caching optimization reduces API calls
 during directory listing and file stat operations.
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_caching_optimization.py -v
+Run with: python -m pytest test/test_s3_caching_optimization.py -v
 """
 
 import time
@@ -13,8 +13,8 @@ from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 
 try:
-    from tfm_path import Path
-    from tfm_s3 import S3PathImpl, get_s3_cache
+    from xefm.path import Path
+    from xefm.s3 import S3PathImpl, get_s3_cache
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print("Skipping S3 caching optimization tests")
@@ -70,7 +70,7 @@ class TestS3CachingOptimization(unittest.TestCase):
         
         self.mock_paginator.paginate.return_value = [self.mock_page]
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_iterdir_caches_stat_info(self, mock_boto3_client):
         """Test that iterdir caches stat information from directory listing"""
         mock_boto3_client.return_value = self.mock_client
@@ -106,7 +106,7 @@ class TestS3CachingOptimization(unittest.TestCase):
         # (The mock client should only have been called for list_objects_v2)
         self.mock_client.head_object.assert_not_called()
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_virtual_directory_stats_uses_cached_data(self, mock_boto3_client):
         """Test that virtual directory stats use cached directory listing data"""
         mock_boto3_client.return_value = self.mock_client
@@ -133,7 +133,7 @@ class TestS3CachingOptimization(unittest.TestCase):
         self.mock_client.list_objects_v2.assert_not_called()
         self.mock_client.get_paginator.assert_not_called()
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_cache_hit_ratio_improvement(self, mock_boto3_client):
         """Test that cache hit ratio improves with optimization"""
         mock_boto3_client.return_value = self.mock_client

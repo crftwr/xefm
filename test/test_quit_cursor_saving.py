@@ -1,19 +1,19 @@
 """
-Test suite for cursor position saving on TFM quit
+Test suite for cursor position saving on XeFM quit
 
-Tests that cursor positions are properly saved when TFM quits,
+Tests that cursor positions are properly saved when XeFM quits,
 ensuring they will be available for restoration on next startup.
 
-Run with: PYTHONPATH=.:src pytest test/test_quit_cursor_saving.py -v
+Run with: python -m pytest test/test_quit_cursor_saving.py -v
 """
 
 import tempfile
 import time
 from pathlib import Path
 
-from tfm_state_manager import TFMStateManager
-from tfm_pane_manager import PaneManager
-from _config import Config
+from xefm.state_manager import XeFMStateManager
+from xefm.pane_manager import PaneManager
+from xefm._config import Config
 
 
 class MockStdscr:
@@ -53,7 +53,7 @@ class MockFileManager:
             ])
     
     def save_quit_cursor_positions(self):
-        """Save current cursor positions when quitting TFM."""
+        """Save current cursor positions when quitting XeFM."""
         saved_positions = []
         try:
             # Save left pane cursor position
@@ -139,7 +139,7 @@ def test_quit_cursor_saving_basic():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_quit_basic")
+        state_manager = XeFMStateManager("test_quit_basic")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -159,7 +159,7 @@ def test_quit_cursor_saving_basic():
         print(f"  Left pane: {left_file} (index 2)")
         print(f"  Right pane: {right_file} (index 1)")
         
-        # Simulate quitting TFM (save application state)
+        # Simulate quitting XeFM (save application state)
         saved_positions = fm.save_application_state()
         
         print(f"Positions saved on quit:")
@@ -199,7 +199,7 @@ def test_quit_saving_with_empty_panes():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_quit_empty")
+        state_manager = XeFMStateManager("test_quit_empty")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -212,7 +212,7 @@ def test_quit_saving_with_empty_panes():
         assert len(fm.pane_manager.left_pane['files']) == 0
         assert len(fm.pane_manager.right_pane['files']) == 0
         
-        # Simulate quitting TFM
+        # Simulate quitting XeFM
         saved_positions = fm.save_application_state()
         
         # Should not save any cursor positions for empty panes
@@ -238,7 +238,7 @@ def test_quit_saving_with_invalid_cursor():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_quit_invalid")
+        state_manager = XeFMStateManager("test_quit_invalid")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -255,7 +255,7 @@ def test_quit_saving_with_invalid_cursor():
         print(f"  Left pane: index 10 (only {len(fm.pane_manager.left_pane['files'])} files)")
         print(f"  Right pane: index 5 (only {len(fm.pane_manager.right_pane['files'])} files)")
         
-        # Simulate quitting TFM
+        # Simulate quitting XeFM
         saved_positions = fm.save_application_state()
         
         # Should not save cursor positions for invalid indices
@@ -293,7 +293,7 @@ def test_quit_saving_integration_with_startup():
         # === Session 1: Work and quit ===
         print("--- Session 1: Working and quitting ---")
         
-        state_manager1 = TFMStateManager("integration_session1")
+        state_manager1 = XeFMStateManager("integration_session1")
         state_manager1.db_path = db_path
         state_manager1._initialize_database()
         
@@ -311,7 +311,7 @@ def test_quit_saving_integration_with_startup():
         print(f"  Left pane: {work_file}")
         print(f"  Right pane: {doc_file}")
         
-        # Quit TFM (save state including cursor positions)
+        # Quit XeFM (save state including cursor positions)
         saved_positions = fm1.save_application_state()
         
         print(f"Saved on quit:")
@@ -321,7 +321,7 @@ def test_quit_saving_integration_with_startup():
         # === Session 2: Startup and verify restoration ===
         print("\n--- Session 2: Startup and restoration ---")
         
-        state_manager2 = TFMStateManager("integration_session2")
+        state_manager2 = XeFMStateManager("integration_session2")
         state_manager2.db_path = db_path
         
         fm2 = MockFileManager(Config(), work_dir, docs_dir, state_manager2)
@@ -387,7 +387,7 @@ def test_quit_saving_separate_pane_histories():
         
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_quit_separate")
+        state_manager = XeFMStateManager("test_quit_separate")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -441,7 +441,7 @@ def run_all_tests():
         print("=" * 60)
         print("✓ All quit cursor saving tests passed!")
         print("\nKey features verified:")
-        print("  • Cursor positions saved automatically on TFM quit")
+        print("  • Cursor positions saved automatically on XeFM quit")
         print("  • Separate pane histories maintained")
         print("  • Empty panes handled gracefully")
         print("  • Invalid cursor positions handled safely")

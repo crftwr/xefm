@@ -2,13 +2,13 @@
 
 ## Overview
 
-TFM provides comprehensive logging functionality that captures application output, error messages, and operational information in a dedicated log pane. The logging system helps you monitor TFM's operations, troubleshoot issues, and understand what the application is doing.
+XeFM provides comprehensive logging functionality that captures application output, error messages, and operational information in a dedicated log pane. The logging system helps you monitor XeFM's operations, troubleshoot issues, and understand what the application is doing.
 
 ## Features
 
 ### Log Pane Display
 
-The log pane appears at the bottom of the TFM interface and displays:
+The log pane appears at the bottom of the XeFM interface and displays:
 
 - **Application Messages**: Information about file operations, searches, and other activities
 - **Program Output**: Output from external programs and scripts
@@ -31,12 +31,12 @@ Messages are color-coded by type:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│              Main TFM Interface                             │
+│              Main XeFM Interface                             │
 │              (File Browser)                                 │
 │                                                             │
 ├─────────────────────────────────────────────────────────────┤
 │ Log Messages:                                               │
-│ 14:23:45 [Main] INFO: TFM started                          │
+│ 14:23:45 [Main] INFO: XeFM started                          │
 │ 14:23:46 [FileOp] INFO: Copying file.txt to backup/        │
 │ 14:23:47 [FileOp] INFO: Copy completed successfully        │
 │ 14:23:48 [STDOUT] Processing complete                      │
@@ -121,7 +121,7 @@ The log pane size is configurable:
 
 ### Message Retention
 
-TFM retains a configurable number of log messages:
+XeFM retains a configurable number of log messages:
 
 - Default: 1000 messages
 - Older messages are automatically removed
@@ -146,13 +146,13 @@ LOG_LEVEL = "INFO"  # or "WARNING", "DEBUG", "ERROR"
 
 ## Copy Log to Clipboard
 
-When running TFM in **desktop mode**, you can copy the log pane contents to the system clipboard — handy for sharing log information with others or saving it for later reference. This feature is not available in terminal mode.
+When running XeFM in **desktop mode**, you can copy the log pane contents to the system clipboard — handy for sharing log information with others or saving it for later reference. This feature is not available in terminal mode.
 
 ### Accessing the Feature
 
 The log clipboard copy commands live in the **Edit** menu:
 
-1. Open TFM in desktop mode.
+1. Open XeFM in desktop mode.
 2. Click the **Edit** menu in the menu bar.
 3. Choose one of the clipboard copy options:
    - **Copy Visible Logs to Clipboard** — copies only the log lines currently visible in the log pane.
@@ -184,7 +184,7 @@ Copied logs preserve the same format shown in the log pane — timestamp (HH:MM:
 
 - **Scroll position matters**: When using "Copy Visible Logs", scroll to the section you want first.
 - **Log pane size**: The visible-logs option copies based on the current log pane height — adjust the log divider if needed.
-- **Maximum logs**: TFM stores a limited number of log messages (default: 1000); very old messages may be discarded.
+- **Maximum logs**: XeFM stores a limited number of log messages (default: 1000); very old messages may be discarded.
 - **Paste anywhere**: Paste the logs into any text editor, email, or document.
 
 There are currently no keyboard shortcuts for these commands; use the Edit menu.
@@ -244,13 +244,13 @@ There are currently no keyboard shortcuts for these commands; use the Edit menu.
 **Solution:**
 - Increase `MAX_LOG_MESSAGES` in config (default: 1000)
 - Set higher log level (WARNING or ERROR)
-- Clear old messages by restarting TFM
+- Clear old messages by restarting XeFM
 
 ## Benefits
 
 ### For Users
 
-- **Immediate Feedback**: See what TFM is doing in real-time
+- **Immediate Feedback**: See what XeFM is doing in real-time
 - **Error Visibility**: Quickly identify and understand errors
 - **Operation History**: Review recent actions and results
 - **Progress Tracking**: Monitor long-running operations
@@ -336,6 +336,6 @@ Messages are color-coded for easy identification:
 
 ## Conclusion
 
-TFM's logging feature provides comprehensive visibility into application operations, helping you monitor activity, troubleshoot issues, and understand what the application is doing. The color-coded, scrollable log pane makes it easy to track operations and identify problems quickly.
+XeFM's logging feature provides comprehensive visibility into application operations, helping you monitor activity, troubleshoot issues, and understand what the application is doing. The color-coded, scrollable log pane makes it easy to track operations and identify problems quickly.
 
 For developer documentation, see `doc/dev/LOGGING_SYSTEM.md`.

@@ -7,7 +7,7 @@ fragment of one. A fragment names nothing and misleads the reader.
 
 import pytest
 
-from tfm_str_format import abbreviate_path
+from xefm.str_format import abbreviate_path
 
 HOME = "/Users/me"
 
@@ -21,7 +21,7 @@ class TestFits:
     """Whatever the budget, the result fits it."""
 
     @pytest.mark.parametrize("path", [
-        "/Users/me/projects/tfm/src/widgets",
+        "/Users/me/projects/xefm/src/widgets",
         "/usr/local/share/man/man1",
         "s3://my-bucket/data/2026/07/reports",
         "ssh://host/var/log/nginx",
@@ -45,7 +45,7 @@ class TestComponentIntegrity:
     """Components are dropped whole, not cut in half."""
 
     def test_surviving_components_are_whole(self):
-        path = "/Users/me/projects/tfm/src/widgets"
+        path = "/Users/me/projects/xefm/src/widgets"
         result = abbreviate_path(path, 20, home=HOME)
         original = set(components_of(path)) | {"~"}
         assert set(components_of(result)) <= original

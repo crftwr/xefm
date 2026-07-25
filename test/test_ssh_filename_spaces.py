@@ -9,7 +9,7 @@ This test verifies that file operations work correctly when filenames contain:
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-from tfm_ssh_connection import SSHConnection
+from xefm.ssh_connection import SSHConnection
 
 
 class TestSSHFilenameSpaces(unittest.TestCase):
@@ -53,8 +53,8 @@ class TestSSHFilenameSpaces(unittest.TestCase):
         # Path with brackets
         self.assertEqual(conn._quote_path('/path/to/file[1].txt'), '"/path/to/file[1].txt"')
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_read_file_with_spaces(self, mock_exists, mock_popen):
         """Test reading a file with spaces in the filename."""
         # Setup mocks
@@ -86,8 +86,8 @@ class TestSSHFilenameSpaces(unittest.TestCase):
             # Check that sftp was called
             self.assertTrue(any('sftp' in str(call) for call in call_args))
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_write_file_with_spaces(self, mock_exists, mock_popen):
         """Test writing a file with spaces in the filename."""
         # Setup mocks
@@ -117,8 +117,8 @@ class TestSSHFilenameSpaces(unittest.TestCase):
             # Check that sftp was called
             self.assertTrue(any('sftp' in str(call) for call in call_args))
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_list_directory_with_spaces(self, mock_exists, mock_popen):
         """Test listing a directory with spaces in the path."""
         # Setup mocks
@@ -148,8 +148,8 @@ class TestSSHFilenameSpaces(unittest.TestCase):
             # Check that sftp was called
             self.assertTrue(any('sftp' in str(call) for call in call_args))
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_delete_file_with_spaces(self, mock_exists, mock_popen):
         """Test deleting a file with spaces in the filename."""
         # Setup mocks
@@ -176,8 +176,8 @@ class TestSSHFilenameSpaces(unittest.TestCase):
             # Check that sftp was called
             self.assertTrue(any('sftp' in str(call) for call in call_args))
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_rename_with_spaces(self, mock_exists, mock_popen):
         """Test renaming files with spaces in the filenames."""
         # Setup mocks
@@ -204,8 +204,8 @@ class TestSSHFilenameSpaces(unittest.TestCase):
             # Check that sftp was called
             self.assertTrue(any('sftp' in str(call) for call in call_args))
     
-    @patch('tfm_ssh_connection.subprocess.Popen')
-    @patch('tfm_ssh_connection.os.path.exists')
+    @patch('xefm.ssh_connection.subprocess.Popen')
+    @patch('xefm.ssh_connection.os.path.exists')
     def test_create_directory_with_spaces(self, mock_exists, mock_popen):
         """Test creating a directory with spaces in the name."""
         # Setup mocks

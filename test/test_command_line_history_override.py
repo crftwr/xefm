@@ -1,7 +1,7 @@
 """
 Test that command line directory arguments prevent history restoration
 
-Run with: PYTHONPATH=.:src pytest test/test_command_line_history_override.py -v
+Run with: python -m pytest test/test_command_line_history_override.py -v
 """
 
 import unittest

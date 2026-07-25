@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Generate the MSIX / Microsoft Store tile assets (PNG) for the TFM package.
+Generate the MSIX / Microsoft Store tile assets (PNG) for the XeFM package.
 
 The Store manifest references PNG tiles (not the launcher's ``.ico``). This emits
-the minimum useful set from the shared macOS icon ``macos_app/resources/TFM.icns``
+the minimum useful set from the shared macOS icon ``macos_app/resources/XeFM.icns``
 (or a ``--source`` PNG/ICNS), reusing the same rounded-corner masking as
-``make_icon.py`` so TFM's Windows presence (exe icon + Store tiles) stays visually
+``make_icon.py`` so XeFM's Windows presence (exe icon + Store tiles) stays visually
 consistent.
 
 Emitted into ``--out-dir`` (default ``windows_app/resources/Assets``):
@@ -52,9 +52,9 @@ def _scale_name(name: str, scale: int) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate TFM Store tile assets")
+    parser = argparse.ArgumentParser(description="Generate XeFM Store tile assets")
     parser.add_argument("--source", default=None,
-                        help="source image (.png/.icns); defaults to macos_app/resources/TFM.icns")
+                        help="source image (.png/.icns); defaults to macos_app/resources/XeFM.icns")
     parser.add_argument("--out-dir", default=None,
                         help="output dir; defaults to windows_app/resources/Assets")
     args = parser.parse_args()
@@ -70,7 +70,7 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parent.parent
     source = (Path(args.source).resolve() if args.source
-              else repo_root / "macos_app" / "resources" / "TFM.icns")
+              else repo_root / "macos_app" / "resources" / "XeFM.icns")
     out_dir = (Path(args.out_dir).resolve() if args.out_dir
                else Path(__file__).resolve().parent / "resources" / "Assets")
 

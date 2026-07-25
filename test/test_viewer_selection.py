@@ -5,7 +5,7 @@ text; in rich (Markdown) mode the viewer forwards mouse + copy to the embedded
 PuiKit ``MarkdownView``, which copies plain text plus rich HTML. See
 doc/TEXT_VIEWER_FEATURE.md and doc/dev/TEXT_VIEWER_SYSTEM.md.
 
-Run with: PYTHONPATH=.:src pytest test/test_viewer_selection.py -v
+Run with: python -m pytest test/test_viewer_selection.py -v
 """
 
 import os
@@ -13,13 +13,13 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from puikit import Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 
-from tfm_path import Path
-from tfm_text_viewer import show_text_viewer
+from xefm.path import Path
+from xefm.text_viewer import show_text_viewer
 
 
 def _key(name=None, char=None, mods=frozenset()):

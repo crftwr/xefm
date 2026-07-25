@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM shows animated progress indicators during long-running operations like searching files. These animations let you know that TFM is working and provide visual feedback during operations.
+XeFM shows animated progress indicators during long-running operations like searching files. These animations let you know that XeFM is working and provide visual feedback during operations.
 
 ## Animation Styles
 
@@ -42,7 +42,7 @@ You can choose from several animation styles:
 
 ## Configuration
 
-Add these settings to your TFM configuration file (`~/.tfm/config.py`):
+Add these settings to your XeFM configuration file (`~/.xefm/config.py`):
 
 ```python
 class Config(DefaultConfig):

@@ -1,8 +1,8 @@
-# TFM S3 Support System
+# XeFM S3 Support System
 
 ## Overview
 
-TFM provides comprehensive AWS S3 support through an extended Path implementation, allowing users to navigate, browse, and manipulate S3 buckets and objects using the same interface as local file operations. The system includes intelligent caching for performance optimization and modular architecture for maintainability.
+XeFM provides comprehensive AWS S3 support through an extended Path implementation, allowing users to navigate, browse, and manipulate S3 buckets and objects using the same interface as local file operations. The system includes intelligent caching for performance optimization and modular architecture for maintainability.
 
 ## Features
 
@@ -63,14 +63,14 @@ The S3 support is implemented using a clean modular architecture:
 
 ```
 src/
-├── tfm_path.py          # Core path implementation (PathImpl, LocalPathImpl, Path)
-├── tfm_s3.py           # S3 implementation (S3PathImpl, S3Cache, utilities)
+├── xefm/path.py          # Core path implementation (PathImpl, LocalPathImpl, Path)
+├── xefm/s3.py           # S3 implementation (S3PathImpl, S3Cache, utilities)
 └── _config.py          # Configuration (includes S3 tools)
 ```
 
 ### Core Components
 
-#### S3PathImpl Class (`src/tfm_s3.py`)
+#### S3PathImpl Class (`xefm/s3.py`)
 - **Purpose**: Implements all PathImpl abstract methods for S3 operations
 - **Key Features**:
   - Full pathlib-compatible interface
@@ -92,14 +92,14 @@ class S3Cache:
     def get_stats(self) -> Dict[str, Any]
 ```
 
-#### Path Factory Pattern (`src/tfm_path.py`)
+#### Path Factory Pattern (`xefm/path.py`)
 ```python
 def _create_implementation(self, path_str: str) -> PathImpl:
     if path_str.startswith('s3://'):
         try:
-            from .tfm_s3 import S3PathImpl  # Dynamic import
+            from .xefm.s3 import S3PathImpl  # Dynamic import
         except ImportError:
-            from tfm_s3 import S3PathImpl   # Fallback for direct execution
+            from xefm.s3 import S3PathImpl   # Fallback for direct execution
         return S3PathImpl(path_str)
     return LocalPathImpl(PathlibPath(path_str))
 ```
@@ -136,7 +136,7 @@ export AWS_DEFAULT_REGION=us-west-2
 
 ### Cache Configuration
 ```python
-from tfm_s3 import configure_s3_cache, get_s3_cache_stats
+from xefm.s3 import configure_s3_cache, get_s3_cache_stats
 
 # Configure cache with custom settings
 configure_s3_cache(ttl=120, max_entries=2000)
@@ -150,7 +150,7 @@ print(f"Cache entries: {stats['total_entries']}")
 
 ### Basic Path Operations
 ```python
-from tfm_path import Path
+from xefm.path import Path
 
 # Create S3 paths
 bucket = Path('s3://my-bucket/')
@@ -202,7 +202,7 @@ for pdf_file in bucket.glob('*.pdf'):
 
 ### Cache Management
 ```python
-from tfm_s3 import clear_s3_cache, get_s3_cache
+from xefm.s3 import clear_s3_cache, get_s3_cache
 
 # Clear all cache entries
 clear_s3_cache()
@@ -216,12 +216,12 @@ cache.invalidate_key('bucket', 'path/to/file.txt')
 cache.invalidate_prefix('bucket', 'path/to/')
 ```
 
-## TFM Integration
+## XeFM Integration
 
 ### Navigation
-- Navigate to S3 buckets in TFM: `s3://bucket-name/`
+- Navigate to S3 buckets in XeFM: `s3://bucket-name/`
 - Browse S3 objects like local directories
-- Use standard TFM navigation keys
+- Use standard XeFM navigation keys
 - Cached directory listings for fast browsing
 
 ### File Operations
@@ -231,13 +231,13 @@ cache.invalidate_prefix('bucket', 'path/to/')
 - All operations benefit from intelligent caching
 
 ### External Programs
-- TFM environment variables work with S3 paths
-- `TFM_THIS_DIR` can be an S3 path: `s3://bucket/folder/`
-- `TFM_THIS_SELECTED` can include S3 objects
+- XeFM environment variables work with S3 paths
+- `XEFM_THIS_DIR` can be an S3 path: `s3://bucket/folder/`
+- `XEFM_THIS_SELECTED` can include S3 objects
 - External scripts can process S3 paths using boto3
 
 ### Search and Filter
-- Search within S3 buckets using TFM's search functionality
+- Search within S3 buckets using XeFM's search functionality
 - Filter S3 objects by name patterns
 - Content search (if objects are text files)
 - Cached search results for improved performance
@@ -290,7 +290,7 @@ s3_path._cached_api_call(
 The entire system is thread-safe:
 - Uses `threading.RLock` for all cache operations
 - Supports concurrent read/write operations
-- Safe for use in multi-threaded TFM environment
+- Safe for use in multi-threaded XeFM environment
 
 ### Error Handling
 - **Credential Errors**: Clear messages when AWS credentials missing
@@ -454,7 +454,7 @@ The modular architecture could enable addition of new storage backends in the fu
 
 ### Directory Rename Restriction
 
-TFM prevents users from renaming directories on S3 storage to avoid confusion and expensive operations. Unlike local file systems where directory renaming is a simple metadata operation, S3 directory renaming would require copying all objects within the directory and then deleting the originals, which can be:
+XeFM prevents users from renaming directories on S3 storage to avoid confusion and expensive operations. Unlike local file systems where directory renaming is a simple metadata operation, S3 directory renaming would require copying all objects within the directory and then deleting the originals, which can be:
 
 - **Expensive**: Each object copy and delete operation incurs S3 API costs
 - **Slow**: Large directories with many objects could take a very long time
@@ -491,7 +491,7 @@ def rename(self, target) -> 'Path':
 
 ### File Editing Capability Indicator
 
-TFM provides a capability indicator for S3 file editing operations through the `supports_file_editing()` method. This allows applications to check whether a storage implementation supports file editing characteristics, without blocking the operations.
+XeFM provides a capability indicator for S3 file editing operations through the `supports_file_editing()` method. This allows applications to check whether a storage implementation supports file editing characteristics, without blocking the operations.
 
 #### Implementation
 ```python
@@ -507,7 +507,7 @@ def supports_file_editing(self) -> bool:
 #### Behavior
 - **All S3 file operations work normally**: `open()`, `write_text()`, `write_bytes()`, etc.
 - **Capability indicator**: Applications can check `path.supports_file_editing()` to understand storage characteristics
-- **FileManager integration**: TFM shows message "Editing S3 files is not supported for now" when launching external editors
+- **FileManager integration**: XeFM shows message "Editing S3 files is not supported for now" when launching external editors
 - **Non-blocking**: The capability is purely informational - operations work regardless
 
 #### Usage Example
@@ -524,7 +524,7 @@ else:
 
 ### Virtual Directory Stats Enhancement
 
-TFM provides meaningful size and timestamp information for S3 virtual directories instead of showing "---" for both values.
+XeFM provides meaningful size and timestamp information for S3 virtual directories instead of showing "---" for both values.
 
 #### Problem Solved
 Virtual directories in S3 (directories that exist only because there are S3 objects with that prefix) previously showed:
@@ -602,7 +602,7 @@ s3://bucket/data/processed/   0B       2024-09-15 09:22:15
 | Repeated directory access | N+1 calls | 0 calls | 100% reduction |
 
 #### S3 Cache TTL Configuration
-**Enhancement**: Made S3 cache TTL configurable through TFM configuration system.
+**Enhancement**: Made S3 cache TTL configurable through XeFM configuration system.
 
 **Configuration**:
 ```python
@@ -670,7 +670,7 @@ def name(self) -> str:
 #### S3 Copy Fix
 **Problem**: Copying files from local filesystem to S3 resulted in "Permission denied" errors.
 
-**Root Cause**: TFM was using `shutil.copy2()` for all copy operations, which only works with local filesystem paths.
+**Root Cause**: XeFM was using `shutil.copy2()` for all copy operations, which only works with local filesystem paths.
 
 **Solution**: 
 - Added new `copy_to()` method to Path class
@@ -704,7 +704,7 @@ def name(self) -> str:
 - Enhanced `exists()` method to check for virtual directories
 - Added `rmtree()` method for recursive S3 directory deletion
 - Added `_delete_objects_batch()` for efficient batch deletion
-- Enhanced TFM directory deletion logic for S3 paths
+- Enhanced XeFM directory deletion logic for S3 paths
 
 ### Virtual Directory Optimizations
 
@@ -754,8 +754,8 @@ def __init__(self, s3_uri: str, metadata: Optional[Dict[str, Any]] = None):
 - **Data Transfer**: Minimal impact (metadata is small)
 
 ## Related Documentation
-<!-- TODO: Create TFM_PATH_ARCHITECTURE.md -->
-<!-- - TFM Path Architecture -->
+<!-- TODO: Create XEFM_PATH_ARCHITECTURE.md -->
+<!-- - XeFM Path Architecture -->
 - External Programs Policy
 - [AWS S3 Documentation](https://docs.aws.amazon.com/s3/)
 - [boto3 Documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)

@@ -13,10 +13,10 @@ import shutil
 from pathlib import Path
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from tfm_file_monitor_observer import FileMonitorObserver, WATCHDOG_AVAILABLE
-from tfm_log_manager import getLogger
+from xefm.file_monitor_observer import FileMonitorObserver, WATCHDOG_AVAILABLE
+from xefm.log_manager import getLogger
 
 
 class TestFileMonitorObserver(unittest.TestCase):

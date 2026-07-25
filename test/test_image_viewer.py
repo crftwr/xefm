@@ -9,7 +9,7 @@ picture can be drawn (a terminal with no inline-image protocol) the viewer falls
 back to a metadata card, checked against the TUI profile. See
 doc/dev/IMAGE_VIEWER_IMPLEMENTATION.md.
 
-Run with: PYTHONPATH=.:src pytest test/test_image_viewer.py -v
+Run with: python -m pytest test/test_image_viewer.py -v
 """
 
 import os
@@ -20,24 +20,23 @@ import zlib
 import pytest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
-sys.path.insert(0, os.path.join(_HERE, ".."))  # the app entry point, tfm.py
+sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from puikit import Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 from puikit.widgets.base import Widget
 
-from tfm_image_viewer import (IMAGE_SUFFIXES, MAX_ZOOM, MIN_ZOOM, PAN_STEP,
+from xefm.image_viewer import (IMAGE_SUFFIXES, MAX_ZOOM, MIN_ZOOM, PAN_STEP,
                               ZOOM_STEP, ImageViewer, is_image_file,
                               show_image_viewer)
-from tfm_path import Path
+from xefm.path import Path
 
 # Imported at module scope, not inside a test: both the repo root and test/ are
 # packages, so once pytest prepends the repo's *parent* to sys.path a later
-# ``import tfm`` would resolve to the repo directory (its __init__.py) instead of
-# the tfm.py app entry. Binding it here, right after the inserts above, gets the
-# entry point -- the same thing test_tfm_app_open_viewer.py relies on.
-import tfm  # noqa: E402
+# ``import xefm`` would resolve to the repo directory (its __init__.py) instead of
+# the xefm/app.py app entry. Binding it here, right after the inserts above, gets the
+# entry point -- the same thing test_xefm_app_open_viewer.py relies on.
+from xefm import app as xefm_app  # noqa: E402
 
 
 def _png(path, w, h):
@@ -66,7 +65,7 @@ def _key(key=None, char=None):
 
 @pytest.fixture
 def images(tmp_path):
-    """Three images (plus a non-image) in one directory, as tfm_path.Paths."""
+    """Three images (plus a non-image) in one directory, as xefm.path.Paths."""
     _png(tmp_path / "a.png", 200, 100)
     _png(tmp_path / "b.png", 40, 40)
     _png(tmp_path / "c.png", 640, 480)
@@ -504,10 +503,10 @@ def test_show_image_viewer_stacks_help_above_itself(images):
 
 
 def _app_open(images, focus, pane_files, backend=None):
-    """Drive TfmApp._open_viewer directly with a synthetic pane, so the routing
+    """Drive XeFMApp._open_viewer directly with a synthetic pane, so the routing
     is tested without depending on the live config's FILE_ASSOCIATIONS (which
     decide only whether an *external* program pre-empts the built-in viewer)."""
-    app = tfm.TfmApp.__new__(tfm.TfmApp)  # no curses / no file monitor
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)  # no curses / no file monitor
     backend = backend or MemoryBackend(width=60, height=20,
                                        capabilities=PROFILE_GUI_DESKTOP)
     panel = Panel(backend)
@@ -536,7 +535,7 @@ def test_open_viewer_passes_only_the_image_siblings(tmp_path, images):
 
 
 def test_open_viewer_routes_non_images_to_the_text_viewer(tmp_path):
-    from tfm_text_viewer import TextViewer
+    from xefm.text_viewer import TextViewer
 
     note = tmp_path / "notes.txt"
     note.write_text("hello")
@@ -567,7 +566,7 @@ def test_post_effect_is_suspended_for_the_image_and_restored_on_close(images):
     from puikit import PostEffect
 
     backend = _EffectBackend()
-    app = tfm.TfmApp.__new__(tfm.TfmApp)
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
     panel = Panel(backend)
     app.panel = panel
     app.backend = backend
@@ -589,7 +588,7 @@ def test_post_effect_is_suspended_for_the_image_and_restored_on_close(images):
 
 def test_post_effect_untouched_when_theme_has_none(images):
     backend = _EffectBackend()
-    app = tfm.TfmApp.__new__(tfm.TfmApp)
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
     panel = Panel(backend)
     app.panel = panel
     app.backend = backend

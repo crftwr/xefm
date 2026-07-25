@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# TFM macOS App Bundle Build Script
+# XeFM macOS App Bundle Build Script
 #
 # This script compiles the Objective-C launcher and creates a complete
-# macOS application bundle for TFM with embedded Python interpreter.
+# macOS application bundle for XeFM with embedded Python interpreter.
 #
 
 set -e  # Exit on error
@@ -38,7 +38,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Build paths
 BUILD_DIR="${SCRIPT_DIR}/build"
-APP_NAME="TFM"
+APP_NAME="XeFM"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 
 # Source paths
@@ -123,16 +123,16 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
 # Notarization (optional; requires CODESIGN_IDENTITY). Set to the name of a
 # notarytool keychain profile to submit the signed .app to Apple's notary
 # service and staple the ticket. Create the profile once with:
-#   xcrun notarytool store-credentials "TFM-Notary" \
+#   xcrun notarytool store-credentials "XeFM-Notary" \
 #       --apple-id you@example.com --team-id TEAMID --password <app-specific-pw>
-# then build with: NOTARY_PROFILE="TFM-Notary"
+# then build with: NOTARY_PROFILE="XeFM-Notary"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
 # Version number (can be overridden by environment variable). Defaults to the
-# single source of truth: tfm.py's _VERSION literal (same string the Windows
-# build reads), so the bundle version never drifts from the app's --version.
+# single source of truth: xefm/__init__.py's __version__ literal (same string
+# the Windows build reads), so the bundle version never drifts from --version.
 if [ -z "${VERSION:-}" ]; then
-    VERSION="$(sed -nE 's/^_VERSION[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "${PROJECT_ROOT}/tfm.py" | head -1)"
+    VERSION="$(sed -nE 's/^__version__[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "${PROJECT_ROOT}/xefm/__init__.py" | head -1)"
     VERSION="${VERSION:-0.0.0}"
 fi
 
@@ -140,7 +140,7 @@ fi
 # Build Script Entry Point
 # ============================================================================
 
-log_info "Starting TFM macOS app bundle build..."
+log_info "Starting XeFM macOS app bundle build..."
 log_info "Project root: ${PROJECT_ROOT}"
 log_info "Build directory: ${BUILD_DIR}"
 log_info "Python version: ${PYTHON_VERSION}"
@@ -154,8 +154,8 @@ log_info "Step 1: Compiling Objective-C source files..."
 # Create build directory if it doesn't exist
 mkdir -p "${BUILD_DIR}"
 
-# Compile main.m and TFMAppDelegate.m
-SOURCES="${SRC_DIR}/main.m ${SRC_DIR}/TFMAppDelegate.m"
+# Compile main.m and XeFMAppDelegate.m
+SOURCES="${SRC_DIR}/main.m ${SRC_DIR}/XeFMAppDelegate.m"
 OUTPUT_EXECUTABLE="${BUILD_DIR}/${APP_NAME}"
 
 log_info "Compiling: ${SOURCES}"
@@ -199,24 +199,22 @@ log_success "Executable copied and permissions set"
 
 log_info "Step 3: Copying resources..."
 
-# Copy TFM Python source.
-# The launcher imports the "tfm" module (Resources/tfm.py); tfm.py adds its
-# sibling src/ to sys.path to find the tfm_* business-logic modules, so the
-# bundle mirrors the repo layout with tfm.py and src/ side by side under
-# Resources/. Remove any stale package dir from older (TTK-era) builds so a
-# leftover Resources/tfm/ directory can't shadow Resources/tfm.py on import.
-log_info "Copying TFM Python source..."
-rm -rf "${RESOURCES_DIR_BUNDLE}/tfm" "${RESOURCES_DIR_BUNDLE}/ttk"
-cp "${PROJECT_ROOT}/tfm.py" "${RESOURCES_DIR_BUNDLE}/tfm.py"
-TFM_SRC_DEST="${RESOURCES_DIR_BUNDLE}/src"
-rm -rf "${TFM_SRC_DEST}"
-mkdir -p "${TFM_SRC_DEST}"
-cp -R "${PROJECT_ROOT}/src/"* "${TFM_SRC_DEST}/"
+# Copy XeFM Python source.
+# XeFM is a single package (xefm/), so the whole directory lands at the
+# Resources root and Resources/ goes on sys.path — the launcher then imports
+# "xefm.app" directly. Remove the stale layouts from older builds (the TTK-era
+# package dir, and the pre-rename tfm.py + src/ pair) so nothing shadows it.
+log_info "Copying XeFM Python source..."
+rm -rf "${RESOURCES_DIR_BUNDLE}/ttk" "${RESOURCES_DIR_BUNDLE}/src" \
+       "${RESOURCES_DIR_BUNDLE}/tfm" "${RESOURCES_DIR_BUNDLE}/tfm.py"
+XEFM_PKG_DEST="${RESOURCES_DIR_BUNDLE}/xefm"
+rm -rf "${XEFM_PKG_DEST}"
+cp -R "${PROJECT_ROOT}/xefm" "${XEFM_PKG_DEST}"
 
-# Pre-compile TFM Python files
-log_info "Pre-compiling TFM Python files..."
-if "${VENV_PYTHON}" -m compileall -q "${RESOURCES_DIR_BUNDLE}/tfm.py" "${TFM_SRC_DEST}"; then
-    log_info "  Compiled TFM Python files"
+# Pre-compile XeFM Python files
+log_info "Pre-compiling XeFM Python files..."
+if "${VENV_PYTHON}" -m compileall -q "${XEFM_PKG_DEST}"; then
+    log_info "  Compiled XeFM Python files"
 else
     log_info "  Warning: Compilation failed"
 fi
@@ -310,7 +308,7 @@ else
 fi
 
 # Copy application icon if it exists
-ICON_SOURCE="${RESOURCES_DIR}/TFM.icns"
+ICON_SOURCE="${RESOURCES_DIR}/XeFM.icns"
 if [ -f "${ICON_SOURCE}" ]; then
     log_info "Copying application icon..."
     cp "${ICON_SOURCE}" "${RESOURCES_DIR_BUNDLE}/"
@@ -604,7 +602,7 @@ else
     if [ -n "${PYTHON_LIB}" ]; then
         PYTHON_LIB_NAME=$(basename "${PYTHON_LIB}")
         
-        # Update the TFM executable to use bundled Python library
+        # Update the XeFM executable to use bundled Python library
         install_name_tool -change \
             "${PYTHON_BASE_PREFIX}/lib/${PYTHON_LIB_NAME}" \
             "@executable_path/../Frameworks/Python.framework/Versions/${PYTHON_VERSION}/lib/${PYTHON_LIB_NAME}" \
@@ -646,7 +644,7 @@ log_info "Step 4b: Vendoring external dynamic libraries (delocate)..."
 
 # The Homebrew framework copy can leave dangling / self-referential symlinks
 # (e.g. Versions/${PYTHON_VERSION}/${PYTHON_VERSION} -> ${PYTHON_VERSION}).
-# They are unused by TFM but trip up delocate's directory walk, so remove any
+# They are unused by XeFM but trip up delocate's directory walk, so remove any
 # broken symlinks first.
 BROKEN_LINKS=$(find "${APP_BUNDLE}" -type l ! -exec test -e {} \; -print 2>/dev/null | wc -l | tr -d ' ')
 if [ "${BROKEN_LINKS}" != "0" ]; then
@@ -753,7 +751,7 @@ else
 fi
 
 if "${VENV_PYTHON}" "${NOTICES_SCRIPT}" \
-        --title "TFM" \
+        --title "XeFM" \
         --scan "${PACKAGES_DEST}" \
         "${NOTICES_EXTRAS[@]}" \
         --output "${NOTICES_OUT}"; then

@@ -3,13 +3,13 @@
 ## Overview
 
 The Text Diff Viewer is a full-window modal side-by-side comparison of two text
-files, integrated into TFM. It is a PuiKit `Widget` (`DiffViewer`, in
-`src/tfm_diff_viewer.py`), pushed over the active panel with
+files, integrated into XeFM. It is a PuiKit `Widget` (`DiffViewer`, in
+`xefm/diff_viewer.py`), pushed over the active panel with
 `show_diff_viewer(panel, path1, path2)`.
 
 ## Architecture
 
-### Current components (`src/tfm_diff_viewer.py`)
+### Current components (`xefm/diff_viewer.py`)
 
 - **`DiffViewer(Widget)`** — the modal viewer. Holds the shared scroll state
   (`top` / `left` / `_view_h`), the computed diff rows, and the incremental-search
@@ -23,16 +23,16 @@ files, integrated into TFM. It is a PuiKit `Widget` (`DiffViewer`, in
 - **`compute_diff(lines1, lines2)`** — a module function (see below) that builds
   the diff model.
 
-The viewer **reuses the text viewer's file machinery** (`tfm_text_viewer`):
+The viewer **reuses the text viewer's file machinery** (`xefm.text_viewer`):
 `_read_lines` for encoding-detected reading + binary sniffing, and `_highlight`
 for pygments syntax colors — so each side keeps its syntax colors with the diff
 tint laid over them. There is no separate file-loading or binary-detection code
 here.
 
-### Integration with TfmApp (`tfm.py`)
+### Integration with XeFMApp (`xefm/app.py`)
 
 **Method: `diff_files()`** — bound to `=` (the `diff_files` action, `EQUAL` in
-`src/_config.py`). It collects the selected files from both panes, validates that
+`xefm/_config.py`). It collects the selected files from both panes, validates that
 exactly two non-directory files are selected, and launches the viewer.
 
 ## File Selection Logic
@@ -157,9 +157,9 @@ themselves are display-only.
 ### Dependencies
 
 - `difflib` — standard-library diff computation
-- `tfm_text_viewer` — reused `_read_lines`, `_highlight`, `_ScrollBody`, the
+- `xefm.text_viewer` — reused `_read_lines`, `_highlight`, `_ScrollBody`, the
   scrollbar / status-bar helpers, and the shared viewer layer hints
-- `tfm_path` — path abstraction for local/remote files
+- `xefm.path` — path abstraction for local/remote files
 - `puikit` — the external UI framework (`Widget`, `Splitter`, backend); the old
   in-repo `ttk` toolkit was removed in the port
 
@@ -173,8 +173,8 @@ themselves are display-only.
 
 ## References
 
-- `src/tfm_diff_viewer.py` — implementation
-- `tfm.py` — `diff_files()` launch
-- `src/_config.py` — the `diff_files` key binding (`=`)
+- `xefm/diff_viewer.py` — implementation
+- `xefm/app.py` — `diff_files()` launch
+- `xefm/_config.py` — the `diff_files` key binding (`=`)
 - `doc/DIFF_VIEWER_FEATURE.md` — user documentation
 - Python difflib: https://docs.python.org/3/library/difflib.html

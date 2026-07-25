@@ -7,9 +7,9 @@ It opens a PuiKit backend and, for every real keypress, shows three things:
   raw        - the Event exactly as the backend produced it
   normalized - that Event after applying the proposed contract (Rule 2: an
                uppercase letter becomes key=<lower> + {"shift"}), which is what
-               TFM's matcher will see once the PuiKit-side changes (§3) land or
+               XeFM's matcher will see once the PuiKit-side changes (§3) land or
                are emulated here
-  action     - the TFM action a small sample keymap binds to it, via the
+  action     - the XeFM action a small sample keymap binds to it, via the
                reference matcher
 
 Use it to confirm what a *real terminal* delivers for Shift / Ctrl / Alt / Cmd
@@ -28,7 +28,7 @@ from puikit import EventType, Style
 from puikit.backends import create_backend
 
 
-# A representative slice of TFM's keymap (doc/dev/PUIKIT_KEYBOARD_CONTRACT.md §3),
+# A representative slice of XeFM's keymap (doc/dev/PUIKIT_KEYBOARD_CONTRACT.md §3),
 # exercising letters, Shift-letters, named keys, punctuation, and GUI-only chords.
 SAMPLE_KEYMAP = {
     "q": "quit",

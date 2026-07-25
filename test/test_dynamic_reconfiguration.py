@@ -1,12 +1,12 @@
 """
 Test dynamic reconfiguration of handlers
 
-Run with: PYTHONPATH=.:src pytest test/test_dynamic_reconfiguration.py -v
+Run with: python -m pytest test/test_dynamic_reconfiguration.py -v
 """
 
 import logging
 
-from tfm_log_manager import LogManager, LoggingConfig
+from xefm.log_manager import LogManager, LoggingConfig
 
 
 class MockConfig:

@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM's key bindings system allows you to customize keyboard shortcuts for all actions in the application. The system supports:
+XeFM's key bindings system allows you to customize keyboard shortcuts for all actions in the application. The system supports:
 
 - **Single-character keys**: Simple keys like 'q', 'a', '?'
 - **KeyCode names**: Special keys like 'ENTER', 'UP', 'PAGE_DOWN'
@@ -125,7 +125,7 @@ list-style bindings keep working unchanged.
 `'required'` (they act on the selection, so they're hidden when nothing is
 selected): `copy_files` (`C`), `move_files` (`M`), `delete_files` (`K` / `DELETE`),
 and `create_archive` (`P`). `create_directory` (`M`) uses `'none'` so it shares
-the `M` key with `move_files` without conflict — TFM picks whichever action fits
+the `M` key with `move_files` without conflict — XeFM picks whichever action fits
 the current selection state. You can add a `'selection'` requirement to any other
 action the same way.
 
@@ -134,7 +134,7 @@ action the same way.
 Here's a complete configuration example:
 
 ```python
-# ~/.tfm/config.py
+# ~/.xefm/config.py
 
 class Config:
     KEY_BINDINGS = {
@@ -237,4 +237,4 @@ KEY_BINDINGS = {
 ## See Also
 
 - [Configuration Feature](CONFIGURATION_FEATURE.md) - General configuration guide
-- [Help Dialog Feature](HELP_DIALOG_FEATURE.md) - Viewing key bindings in TFM
+- [Help Dialog Feature](HELP_DIALOG_FEATURE.md) - Viewing key bindings in XeFM

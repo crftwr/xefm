@@ -2,13 +2,13 @@
 Test file for generalized ProgressAnimator functionality
 Tests the new generalized animation system for various use cases
 
-Run with: PYTHONPATH=.:src pytest test/test_progress_animator_generalized.py -v
+Run with: python -m pytest test/test_progress_animator_generalized.py -v
 """
 
 import time
 
-from tfm_progress_animator import ProgressAnimator, ProgressAnimatorFactory
-from _config import Config
+from xefm.progress_animator import ProgressAnimator, ProgressAnimatorFactory
+from xefm._config import Config
 
 
 class GeneralizedTestConfig(Config):

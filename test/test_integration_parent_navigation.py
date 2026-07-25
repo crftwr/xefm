@@ -2,18 +2,18 @@
 Integration test for parent directory navigation cursor positioning.
 
 This test verifies the complete integration of the parent directory navigation
-feature within the TFM application context.
+feature within the XeFM application context.
 
-Run with: PYTHONPATH=.:src pytest test/test_integration_parent_navigation.py -v
+Run with: python -m pytest test/test_integration_parent_navigation.py -v
 """
 
 import unittest
 import tempfile
 from pathlib import Path
 
-from tfm_path import Path as TFMPath
-from tfm_pane_manager import PaneManager
-from tfm_file_list_manager import FileListManager
+from xefm.path import Path as XeFMPath
+from xefm.pane_manager import PaneManager
+from xefm.file_list_manager import FileListManager
 
 
 class MockConfig:
@@ -60,8 +60,8 @@ class TestIntegrationParentNavigation(unittest.TestCase):
         # Initialize components
         self.pane_manager = PaneManager(
             self.config,
-            TFMPath(self.beta_path),  # Start in beta directory
-            TFMPath(self.temp_dir),
+            XeFMPath(self.beta_path),  # Start in beta directory
+            XeFMPath(self.temp_dir),
             state_manager=None
         )
         self.file_list_manager = FileListManager(self.config)
@@ -133,7 +133,7 @@ class TestIntegrationParentNavigation(unittest.TestCase):
         left_pane = self.pane_manager.left_pane
         
         # Start in alpha directory
-        left_pane['path'] = TFMPath(self.alpha_path)
+        left_pane['path'] = XeFMPath(self.alpha_path)
         self.file_list_manager.refresh_files(left_pane)
         
         # Verify initial state
@@ -170,7 +170,7 @@ class TestIntegrationParentNavigation(unittest.TestCase):
         left_pane = self.pane_manager.left_pane
         
         # Start in the deepest directory
-        left_pane['path'] = TFMPath(deep_path)
+        left_pane['path'] = XeFMPath(deep_path)
         self.file_list_manager.refresh_files(left_pane)
         
         # Navigate up one level (deeper -> deep)

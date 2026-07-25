@@ -1,6 +1,6 @@
 """Headless tests for the PuiKit directory diff viewer.
 
-Run with: PYTHONPATH=.:src pytest test/test_directory_diff_viewer.py -v
+Run with: python -m pytest test/test_directory_diff_viewer.py -v
 
 Covers the backend-agnostic classification/tree logic and the widget's
 navigation + rendering on the MemoryBackend (TUI + GUI profiles); see
@@ -12,15 +12,15 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from puikit import (
     CapabilityProfile, Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI,
 )
 from puikit.backends.memory_backend import MemoryBackend
 
-from tfm_path import Path
-from tfm_directory_diff_viewer import (
+from xefm.path import Path
+from xefm.directory_diff_viewer import (
     DifferenceType,
     DiffEngine,
     DirectoryScanner,
@@ -29,7 +29,7 @@ from tfm_directory_diff_viewer import (
 )
 
 
-import _config
+from xefm import _config
 
 
 def _sync_view(left, right, **kw):
@@ -533,7 +533,7 @@ def test_help_pushes_message_box(backend, trees):
 def test_deferred_build_leaves_files_pending():
     # A tree built without content comparison marks two-sided files PENDING
     # and summarises their directory as PENDING (not yet known).
-    from tfm_directory_diff_viewer import FileInfo
+    from xefm.directory_diff_viewer import FileInfo
 
     def info(rel, is_dir=False):
         return FileInfo(Path("/x/" + rel), rel, is_dir, 0, 0.0, True)

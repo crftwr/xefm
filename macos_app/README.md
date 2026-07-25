@@ -1,6 +1,6 @@
-# TFM macOS Application Bundle
+# XeFM macOS Application Bundle
 
-This directory contains the build system for creating a native macOS application bundle for TFM (Terminal File Manager). The bundle embeds a Python interpreter and provides a polished native macOS experience with full Dock integration.
+This directory contains the build system for creating a native macOS application bundle for XeFM (Terminal File Manager). The bundle embeds a Python interpreter and provides a polished native macOS experience with full Dock integration.
 
 ## Architecture
 
@@ -9,7 +9,7 @@ This directory contains the build system for creating a native macOS application
 The application uses a simple single-process architecture:
 - One process runs the entire application
 - One Python interpreter embedded in the process
-- One TFM window per application instance
+- One XeFM window per application instance
 - Clean user experience with single Dock icon
 
 ## Documentation
@@ -57,15 +57,15 @@ cd macos_app
 ./build.sh
 ```
 
-The built application will be at `macos_app/build/TFM.app`.
+The built application will be at `macos_app/build/XeFM.app`.
 
 ### Testing the App
 
 ```bash
 # Launch the app
-open macos_app/build/TFM.app
+open macos_app/build/XeFM.app
 
-# Or double-click TFM.app in Finder
+# Or double-click XeFM.app in Finder
 
 # Run manual tests (see Testing Guide)
 ```
@@ -81,7 +81,7 @@ cd macos_app
 ./create_dmg.sh
 ```
 
-The DMG will be at `macos_app/build/TFM-{version}.dmg`.
+The DMG will be at `macos_app/build/XeFM-{version}.dmg`.
 
 ### Installing to Applications
 
@@ -90,7 +90,7 @@ The DMG will be at `macos_app/build/TFM-{version}.dmg`.
 make macos-app-install
 
 # Or copy manually
-cp -R macos_app/build/TFM.app /Applications/
+cp -R macos_app/build/XeFM.app /Applications/
 ```
 
 ### Cleaning Build Artifacts
@@ -113,15 +113,15 @@ macos_app/
 ├── test_single_process.sh      # Single-process architecture test
 ├── src/                        # Objective-C source files
 │   ├── main.m                  # Application entry point
-│   ├── TFMAppDelegate.h        # App delegate header
-│   └── TFMAppDelegate.m        # App delegate implementation
+│   ├── XeFMAppDelegate.h        # App delegate header
+│   └── XeFMAppDelegate.m        # App delegate implementation
 ├── resources/                  # Build resources
 │   ├── Info.plist.template     # App metadata template
-│   └── TFM.icns               # Application icon (optional)
+│   └── XeFM.icns               # Application icon (optional)
 └── build/                      # Build output (created by build.sh)
-    ├── TFM                     # Compiled executable
-    ├── TFM.app/               # Complete app bundle
-    └── TFM-{version}.dmg      # DMG installer
+    ├── XeFM                     # Compiled executable
+    ├── XeFM.app/               # Complete app bundle
+    └── XeFM-{version}.dmg      # DMG installer
 ```
 
 ## Build Requirements
@@ -147,7 +147,7 @@ macos_app/
 
 - **Xcode Command Line Tools**: Provides the Cocoa framework (for native macOS UI) and the `clang` compiler (to compile Objective-C code)
 - **Python Framework**: The app embeds Python, so it needs to be installed as a framework (not just a standalone binary)
-- **Python Dependencies**: All packages TFM uses must be bundled into the app for it to be self-contained
+- **Python Dependencies**: All packages XeFM uses must be bundled into the app for it to be self-contained
 
 ## Build Scripts
 
@@ -157,18 +157,18 @@ The main build script that creates the complete app bundle.
 
 **What it does:**
 
-1. **Compiles Objective-C source files** (`main.m`, `TFMAppDelegate.m`)
+1. **Compiles Objective-C source files** (`main.m`, `XeFMAppDelegate.m`)
    - Uses `clang` with Cocoa and Python frameworks
    - Links against embedded Python interpreter
    - Sets up runtime paths for framework loading
 
 2. **Creates bundle structure**
-   - Creates `TFM.app/Contents/MacOS/` for the executable
-   - Creates `TFM.app/Contents/Resources/` for Python code and resources
-   - Creates `TFM.app/Contents/Frameworks/` for Python.framework
+   - Creates `XeFM.app/Contents/MacOS/` for the executable
+   - Creates `XeFM.app/Contents/Resources/` for Python code and resources
+   - Creates `XeFM.app/Contents/Frameworks/` for Python.framework
 
 3. **Copies resources**
-   - Copies TFM Python source from `src/` to `Resources/tfm/`
+   - Copies XeFM Python source from `src/` to `Resources/xefm/`
    - Copies the PuiKit framework (resolved via `import puikit`, typically from `../puikit`) to `Resources/puikit/`
    - Collects Python dependencies to `Resources/python_packages/`
    - Copies application icon (if present)
@@ -227,28 +227,28 @@ it is shared with the Windows build (`windows_app/build.ps1`).
 # Collect dependencies
 python3 ../tools/collect_dependencies.py \
     --requirements ../requirements.txt \
-    --dest build/TFM.app/Contents/Resources/python_packages
+    --dest build/XeFM.app/Contents/Resources/python_packages
 ```
 
 **Note:** This script is called automatically by `build.sh`.
 
 ### create_dmg.sh
 
-Creates a distributable DMG installer containing TFM.app.
+Creates a distributable DMG installer containing XeFM.app.
 
 **What it does:**
 
-1. Verifies TFM.app exists (requires running `build.sh` first)
+1. Verifies XeFM.app exists (requires running `build.sh` first)
 2. Extracts version number from Info.plist
-3. Creates temporary directory with TFM.app
+3. Creates temporary directory with XeFM.app
 4. Creates or copies INSTALL.md documentation
 5. Creates compressed DMG with `hdiutil`
-6. Names DMG as `TFM-{version}.dmg`
+6. Names DMG as `XeFM-{version}.dmg`
 
 **Usage:**
 
 ```bash
-# Create DMG (requires TFM.app to exist)
+# Create DMG (requires XeFM.app to exist)
 ./create_dmg.sh
 
 # Create DMG with custom version
@@ -257,33 +257,33 @@ VERSION=1.0.0 ./create_dmg.sh
 
 ## Bundle Structure
 
-The built `TFM.app` follows the standard macOS application bundle structure:
+The built `XeFM.app` follows the standard macOS application bundle structure:
 
 ```
-TFM.app/
+XeFM.app/
 └── Contents/
     ├── Info.plist              # Application metadata
-    │                           # - Bundle identifier: com.tfm.app
-    │                           # - Bundle name: TFM
-    │                           # - Executable name: TFM
+    │                           # - Bundle identifier: com.xefm.app
+    │                           # - Bundle name: XeFM
+    │                           # - Executable name: XeFM
     │                           # - Version: 0.99
-    │                           # - Icon file: TFM.icns
+    │                           # - Icon file: XeFM.icns
     │                           # - Minimum macOS: 10.13
     │
     ├── MacOS/                  # Executable directory
-    │   └── TFM                 # Objective-C launcher executable
+    │   └── XeFM                 # Objective-C launcher executable
     │                           # - Initializes NSApplication
     │                           # - Embeds Python interpreter
     │                           # - Handles Dock menu
     │                           # - Manages app lifecycle
     │
     ├── Resources/              # Application resources
-    │   ├── TFM.icns           # Application icon (optional)
+    │   ├── XeFM.icns           # Application icon (optional)
     │   │
-    │   ├── tfm/               # TFM Python source code
+    │   ├── xefm/               # XeFM Python source code
     │   │   ├── __init__.py
-    │   │   ├── tfm_main.py    # Main entry point
-    │   │   ├── tfm_*.py       # All TFM modules
+    │   │   ├── xefm_main.py    # Main entry point
+    │   │   ├── xefm_*.py       # All XeFM modules
     │   │   └── ...
     │   │
     │   ├── puikit/            # PuiKit framework
@@ -313,21 +313,21 @@ TFM.app/
 ### Key Components
 
 **Info.plist** - Application metadata that macOS uses to identify and configure the app:
-- Bundle identifier (com.tfm.app)
+- Bundle identifier (com.xefm.app)
 - Display name and version
 - Icon file reference
 - Minimum macOS version
 - High resolution support
 
-**MacOS/TFM** - The Objective-C launcher that:
+**MacOS/XeFM** - The Objective-C launcher that:
 - Creates NSApplication for macOS integration
 - Initializes embedded Python interpreter
 - Configures Python's sys.path
-- Calls TFM's `cli_main()` function
+- Calls XeFM's `cli_main()` function
 - Handles application lifecycle
 
 **Resources/** - All Python code and dependencies:
-- TFM source code (from `src/`)
+- XeFM source code (the `xefm/` package)
 - PuiKit framework (from the installed `puikit` package)
 - Python packages (from site-packages)
 - Application icon
@@ -342,25 +342,25 @@ TFM.app/
 ### Changing the Application Icon
 
 1. Create or obtain a `.icns` file (macOS icon format)
-2. Place it at `macos_app/resources/TFM.icns`
+2. Place it at `macos_app/resources/XeFM.icns`
 3. Rebuild the app with `./build.sh`
 
 **Creating an .icns file:**
 
 ```bash
 # From a PNG file (1024x1024 recommended)
-mkdir TFM.iconset
-sips -z 16 16     icon.png --out TFM.iconset/icon_16x16.png
-sips -z 32 32     icon.png --out TFM.iconset/icon_16x16@2x.png
-sips -z 32 32     icon.png --out TFM.iconset/icon_32x32.png
-sips -z 64 64     icon.png --out TFM.iconset/icon_32x32@2x.png
-sips -z 128 128   icon.png --out TFM.iconset/icon_128x128.png
-sips -z 256 256   icon.png --out TFM.iconset/icon_128x128@2x.png
-sips -z 256 256   icon.png --out TFM.iconset/icon_256x256.png
-sips -z 512 512   icon.png --out TFM.iconset/icon_256x256@2x.png
-sips -z 512 512   icon.png --out TFM.iconset/icon_512x512.png
-sips -z 1024 1024 icon.png --out TFM.iconset/icon_512x512@2x.png
-iconutil -c icns TFM.iconset
+mkdir XeFM.iconset
+sips -z 16 16     icon.png --out XeFM.iconset/icon_16x16.png
+sips -z 32 32     icon.png --out XeFM.iconset/icon_16x16@2x.png
+sips -z 32 32     icon.png --out XeFM.iconset/icon_32x32.png
+sips -z 64 64     icon.png --out XeFM.iconset/icon_32x32@2x.png
+sips -z 128 128   icon.png --out XeFM.iconset/icon_128x128.png
+sips -z 256 256   icon.png --out XeFM.iconset/icon_128x128@2x.png
+sips -z 256 256   icon.png --out XeFM.iconset/icon_256x256.png
+sips -z 512 512   icon.png --out XeFM.iconset/icon_256x256@2x.png
+sips -z 512 512   icon.png --out XeFM.iconset/icon_512x512.png
+sips -z 1024 1024 icon.png --out XeFM.iconset/icon_512x512@2x.png
+iconutil -c icns XeFM.iconset
 ```
 
 ### Updating Python Version
@@ -388,16 +388,16 @@ The Objective-C launcher consists of two files:
 - Sets up application delegate
 - Starts main event loop
 
-**TFMAppDelegate.m** - Application delegate:
+**XeFMAppDelegate.m** - Application delegate:
 - Initializes Python interpreter
 - Configures sys.path
-- Launches TFM windows
+- Launches XeFM windows
 - Handles Dock menu
 - Manages app lifecycle
 
 To modify the launcher:
 
-1. Edit `src/main.m` or `src/TFMAppDelegate.m`
+1. Edit `src/main.m` or `src/XeFMAppDelegate.m`
 2. Rebuild with `./build.sh`
 
 **Common modifications:**
@@ -414,7 +414,7 @@ The bundle identifier uniquely identifies your app to macOS.
 2. Change the `CFBundleIdentifier` value:
    ```xml
    <key>CFBundleIdentifier</key>
-   <string>com.yourcompany.tfm</string>
+   <string>com.yourcompany.xefm</string>
    ```
 3. Rebuild the app
 
@@ -437,20 +437,20 @@ After editing, rebuild with `./build.sh`.
 
 ### Iterative Development
 
-The app bundle is completely separate from development source files. You can continue developing TFM normally:
+The app bundle is completely separate from development source files. You can continue developing XeFM normally:
 
 ```bash
-# Run TFM in terminal mode (no rebuild needed)
-python3 tfm.py
+# Run XeFM in terminal mode (no rebuild needed)
+python3 -m xefm
 
-# Run TFM in desktop mode (no rebuild needed)
-python3 tfm.py --desktop
+# Run XeFM in desktop mode (no rebuild needed)
+python3 -m xefm --desktop
 
 # Make changes to Python source files
-vim src/tfm_main.py
+vim xefm/main.py
 
 # Test changes immediately
-python3 tfm.py --desktop
+python3 -m xefm --desktop
 ```
 
 Only rebuild the app bundle when you want to test the bundled version or create a release.
@@ -461,7 +461,7 @@ After building:
 
 ```bash
 # Test the app
-open build/TFM.app
+open build/XeFM.app
 
 # Test Dock integration
 # 1. Right-click Dock icon
@@ -476,14 +476,14 @@ open build/TFM.app
 
 ### Release Process
 
-1. Update the version (single source of truth is `tfm.py`'s `_VERSION`; the
+1. Update the version (single source of truth is `xefm/__init__.py`'s `__version__`; the
    build reads it automatically)
 2. Export signing credentials — see
    [Code Signing & Notarization](../doc/dev/MACOS_APP_BUILD_SYSTEM.md#code-signing--notarization)
 3. Build + sign + notarize the app: `./build.sh`
 4. Test the app thoroughly (see Testing Guide)
 5. Create + sign + notarize the DMG: `./create_dmg.sh`
-6. Distribute `TFM-{version}.dmg`
+6. Distribute `XeFM-{version}.dmg`
 
 For a quick local build, skip step 2 — the app is unsigned but runnable on your
 own machine.

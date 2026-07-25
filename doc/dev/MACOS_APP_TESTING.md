@@ -1,12 +1,12 @@
-# TFM macOS App - Testing Guide
+# XeFM macOS App - Testing Guide
 
-This guide provides comprehensive testing procedures for the TFM macOS application bundle.
+This guide provides comprehensive testing procedures for the XeFM macOS application bundle.
 
 ## Prerequisites
 
-- TFM.app built successfully (run `cd macos_app && ./build.sh`)
+- XeFM.app built successfully (run `cd macos_app && ./build.sh`)
 - macOS 10.13 or later
-- Application bundle located at: `macos_app/build/TFM.app`
+- Application bundle located at: `macos_app/build/XeFM.app`
 
 ## Quick Test Checklist
 
@@ -19,7 +19,7 @@ Essential tests to verify basic functionality:
 - [ ] File operations complete successfully (view, copy, move, delete)
 - [ ] Application quits cleanly (Q key, Cmd+Q, Dock menu)
 - [ ] Multiple windows work independently
-- [ ] Development mode still works (`python3 tfm.py --backend gui`)
+- [ ] Development mode still works (`python3 -m xefm --backend gui`)
 
 ## Detailed Test Procedures
 
@@ -27,12 +27,12 @@ Essential tests to verify basic functionality:
 
 **Steps:**
 1. Open Terminal and navigate to project directory
-2. Run: `open macos_app/build/TFM.app`
+2. Run: `open macos_app/build/XeFM.app`
 
 **Expected Results:**
-- TFM icon appears in the Dock
-- TFM window opens showing file manager interface
-- Window title shows "TFM - Terminal File Manager"
+- XeFM icon appears in the Dock
+- XeFM window opens showing file manager interface
+- Window title shows "XeFM - Terminal File Manager"
 - File listing displays correctly
 - No error dialogs appear
 
@@ -47,7 +47,7 @@ Essential tests to verify basic functionality:
 ### Test 2: Keyboard Input
 
 **Steps:**
-1. With TFM window focused, test these keys:
+1. With XeFM window focused, test these keys:
    - Arrow keys (↑↓) - Navigate file list
    - Tab - Switch between panes
    - Enter - Open directory or file
@@ -71,7 +71,7 @@ Essential tests to verify basic functionality:
 ### Test 3: Mouse Input
 
 **Steps:**
-1. Launch TFM.app
+1. Launch XeFM.app
 2. Test these mouse actions:
    - Click on different files in the list
    - Click on the other pane
@@ -94,8 +94,8 @@ Essential tests to verify basic functionality:
 ### Test 4: Multi-Window Support
 
 **Steps:**
-1. Launch TFM.app
-2. Right-click on TFM icon in Dock
+1. Launch XeFM.app
+2. Right-click on XeFM icon in Dock
 3. Select "New Window" from menu
 4. Navigate to different directories in each window
 5. Close one window (Cmd+W or click red close button)
@@ -104,7 +104,7 @@ Essential tests to verify basic functionality:
 
 **Expected Results:**
 - Right-click shows Dock menu with "New Window" option
-- Second TFM window opens successfully
+- Second XeFM window opens successfully
 - Both windows operate independently
 - Each window can navigate to different directories
 - Closing one window doesn't affect the other
@@ -121,8 +121,8 @@ Essential tests to verify basic functionality:
 ### Test 5: Dock Integration
 
 **Steps:**
-1. Launch TFM.app
-2. Right-click the TFM icon in Dock
+1. Launch XeFM.app
+2. Right-click the XeFM icon in Dock
 3. Observe the Dock menu
 
 **Expected Results:**
@@ -141,7 +141,7 @@ Essential tests to verify basic functionality:
 ### Test 6: File Operations
 
 **Steps:**
-1. Launch TFM.app and navigate to a test directory
+1. Launch XeFM.app and navigate to a test directory
 2. Test these operations:
    - View a text file (press F3 or V)
    - Copy a file (press F5)
@@ -167,9 +167,9 @@ Essential tests to verify basic functionality:
 ### Test 7: Application Quit
 
 **Steps:**
-1. Launch TFM.app
+1. Launch XeFM.app
 2. Test each quit method:
-   - Press Q key in TFM window
+   - Press Q key in XeFM window
    - Press Cmd+Q
    - Right-click Dock icon and select "Quit"
    - Close all windows
@@ -184,7 +184,7 @@ Essential tests to verify basic functionality:
 
 **Verification:**
 - Application terminates cleanly
-- No zombie processes left running (check with `ps aux | grep TFM`)
+- No zombie processes left running (check with `ps aux | grep XeFM`)
 - No error messages in Console.app
 - Application can be relaunched successfully
 
@@ -195,13 +195,13 @@ Essential tests to verify basic functionality:
 **Warning:** This test temporarily breaks the app bundle. Only perform if you want to verify error handling.
 
 **Steps:**
-1. Quit TFM.app if running
+1. Quit XeFM.app if running
 2. Temporarily rename Python.framework:
    ```bash
-   cd macos_app/build/TFM.app/Contents/Frameworks
+   cd macos_app/build/XeFM.app/Contents/Frameworks
    mv Python.framework Python.framework.backup
    ```
-3. Try to launch TFM.app: `open ../../TFM.app`
+3. Try to launch XeFM.app: `open ../../XeFM.app`
 4. Observe error dialog
 5. Restore Python.framework:
    ```bash
@@ -211,7 +211,7 @@ Essential tests to verify basic functionality:
 **Expected Results:**
 - Error dialog appears with clear message
 - Message mentions Python initialization failure
-- Message suggests possible causes and reinstalling TFM
+- Message suggests possible causes and reinstalling XeFM
 - Application terminates gracefully after clicking OK
 
 **Verification:**
@@ -226,9 +226,9 @@ Essential tests to verify basic functionality:
 
 **Steps:**
 1. Open Terminal and navigate to project directory
-2. Run TFM in terminal mode: `python3 tfm.py`
+2. Run XeFM in terminal mode: `python3 -m xefm`
 3. Quit (press Q)
-4. Run TFM in desktop mode: `python3 tfm.py --backend gui`
+4. Run XeFM in desktop mode: `python3 -m xefm --backend gui`
 5. Quit (press Q)
 
 **Expected Results:**
@@ -250,12 +250,12 @@ Essential tests to verify basic functionality:
 ### Test 10: Performance and Stability
 
 **Steps:**
-1. Launch TFM.app
+1. Launch XeFM.app
 2. Navigate through large directories (1000+ files)
 3. Open and close multiple windows
 4. Perform file operations on large files
 5. Leave app running for extended period
-6. Switch between TFM and other applications
+6. Switch between XeFM and other applications
 
 **Expected Results:**
 - Large directories load quickly
@@ -280,13 +280,13 @@ Essential tests to verify basic functionality:
 
 **Possible Causes:**
 - Missing or corrupted Python.framework
-- Missing TFM source files in Resources
+- Missing XeFM source files in Resources
 - Build script errors
 
 **Solutions:**
 1. Check Console.app for error messages
-2. Verify Python.framework exists: `ls macos_app/build/TFM.app/Contents/Frameworks/`
-3. Verify TFM source files exist: `ls macos_app/build/TFM.app/Contents/Resources/tfm/`
+2. Verify Python.framework exists: `ls macos_app/build/XeFM.app/Contents/Frameworks/`
+3. Verify XeFM source files exist: `ls macos_app/build/XeFM.app/Contents/Resources/xefm/`
 4. Try rebuilding: `cd macos_app && ./build.sh`
 
 ### Window Doesn't Appear
@@ -300,7 +300,7 @@ Essential tests to verify basic functionality:
 1. Check if window is hidden (use Mission Control or Cmd+Tab)
 2. Check Console.app for Python errors
 3. Verify CoreGraphics backend is working
-4. Try development mode: `python3 tfm.py --backend gui`
+4. Try development mode: `python3 -m xefm --backend gui`
 
 ### Keyboard/Mouse Not Working
 
@@ -337,7 +337,7 @@ If you encounter issues during testing:
 ### 1. Check Console.app for Error Logs
 
 ```bash
-# Open Console.app and filter for "TFM" or "Python"
+# Open Console.app and filter for "XeFM" or "Python"
 # Copy relevant error messages
 ```
 
@@ -350,8 +350,8 @@ sw_vers
 # Python version
 python3 --version
 
-# TFM version (check Info.plist)
-plutil -p macos_app/build/TFM.app/Contents/Info.plist | grep CFBundleVersion
+# XeFM version (check Info.plist)
+plutil -p macos_app/build/XeFM.app/Contents/Info.plist | grep CFBundleVersion
 ```
 
 ### 3. Document Steps to Reproduce
@@ -385,7 +385,7 @@ All tests should pass with these results:
 - ✅ Development mode still works
 - ✅ Performance is acceptable
 
-If all tests pass, the TFM macOS application bundle is ready for distribution!
+If all tests pass, the XeFM macOS application bundle is ready for distribution!
 
 ---
 
@@ -397,7 +397,7 @@ After successful testing, prepare for distribution:
 
 ```bash
 # Design icon in .icns format
-# Place at macos_app/resources/TFM.icns
+# Place at macos_app/resources/XeFM.icns
 # Rebuild application
 cd macos_app && ./build.sh
 ```
@@ -423,7 +423,7 @@ make macos-app-install
 
 ### 5. Distribution Options
 
-- Share TFM.app bundle directly
+- Share XeFM.app bundle directly
 - Share DMG installer
 - Submit to Mac App Store (requires additional steps)
 

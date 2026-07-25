@@ -1,21 +1,21 @@
 """
 Test script to verify help content generation
 
-Run with: PYTHONPATH=.:src pytest test/test_help_content.py -v
+Run with: python -m pytest test/test_help_content.py -v
 """
 
 
 
 
-# Add src directory to Python path
-from tfm_const import VERSION, GITHUB_URL
+# Add the repo root to Python path
+from xefm.const import VERSION, GITHUB_URL
 
 def generate_help_content():
     """Generate help content similar to the dialog"""
     help_lines = []
     
     # Title and version info
-    help_lines.append(f"TFM {VERSION} - Terminal File Manager")
+    help_lines.append(f"XeFM {VERSION} - Terminal File Manager")
     help_lines.append(f"GitHub: {GITHUB_URL}")
     help_lines.append("")
     
@@ -76,7 +76,7 @@ def generate_help_content():
     # General controls section
     help_lines.append("=== GENERAL ===")
     help_lines.append("? / h            Show this help")
-    help_lines.append("q / Q            Quit TFM")
+    help_lines.append("q / Q            Quit XeFM")
     help_lines.append("ESC              Cancel current operation")
     help_lines.append("")
     

@@ -4,7 +4,7 @@ Test S3 iterdir Caching Improvement
 This test verifies that the improved iterdir() method properly caches
 complete directory listings and avoids API calls when cache exists.
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_iterdir_caching_improvement.py -v
+Run with: python -m pytest test/test_s3_iterdir_caching_improvement.py -v
 """
 
 import time
@@ -13,8 +13,8 @@ from unittest.mock import Mock, patch, call
 from datetime import datetime
 
 try:
-    from tfm_path import Path
-    from tfm_s3 import S3PathImpl, get_s3_cache
+    from xefm.path import Path
+    from xefm.s3 import S3PathImpl, get_s3_cache
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print("Skipping S3 iterdir caching improvement tests")
@@ -74,7 +74,7 @@ class TestS3IterdirCachingImprovement(unittest.TestCase):
         self.mock_paginator.paginate.return_value = [self.mock_list_response]
         self.mock_client.get_paginator.return_value = self.mock_paginator
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_first_iterdir_makes_api_calls_and_caches_complete_listing(self, mock_boto3_client):
         """Test that first iterdir() call makes API calls and caches complete listing"""
         mock_boto3_client.return_value = self.mock_client
@@ -107,7 +107,7 @@ class TestS3IterdirCachingImprovement(unittest.TestCase):
         self.assertEqual(len(cached_listing['Contents']), 3)
         self.assertEqual(len(cached_listing['CommonPrefixes']), 1)
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_second_iterdir_uses_cache_no_api_calls(self, mock_boto3_client):
         """Test that second iterdir() call uses cache and makes no API calls"""
         mock_boto3_client.return_value = self.mock_client
@@ -133,7 +133,7 @@ class TestS3IterdirCachingImprovement(unittest.TestCase):
         self.mock_paginator.paginate.assert_not_called()
         self.mock_client.list_objects_v2.assert_not_called()
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_cache_stores_complete_aggregated_listing(self, mock_boto3_client):
         """Test that cache stores complete aggregated listing from all pages"""
         mock_boto3_client.return_value = self.mock_client
@@ -179,7 +179,7 @@ class TestS3IterdirCachingImprovement(unittest.TestCase):
         self.assertEqual(len(cached_listing['Contents']), 3)  # All 3 files aggregated
         self.assertEqual(len(cached_listing['CommonPrefixes']), 1)  # 1 directory
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_cached_paths_have_metadata(self, mock_boto3_client):
         """Test that paths from cached listing have proper metadata"""
         mock_boto3_client.return_value = self.mock_client
@@ -200,7 +200,7 @@ class TestS3IterdirCachingImprovement(unittest.TestCase):
             self.assertIsNotNone(file_path._impl._size_cached)
             self.assertIsNotNone(file_path._impl._mtime_cached)
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_performance_improvement_with_cache(self, mock_boto3_client):
         """Test that cached iterdir() is significantly faster"""
         mock_boto3_client.return_value = self.mock_client
@@ -226,7 +226,7 @@ class TestS3IterdirCachingImprovement(unittest.TestCase):
         # due to network latency, but in mocked tests the difference is smaller
         self.assertLess(second_call_time, first_call_time)
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_cache_invalidation_on_write_operations(self, mock_boto3_client):
         """Test that cache is properly invalidated on write operations"""
         mock_boto3_client.return_value = self.mock_client
@@ -283,7 +283,7 @@ class TestS3IterdirCachingImprovement(unittest.TestCase):
         # Different parameters should generate different keys
         self.assertNotEqual(key1, key3)
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_yield_paths_from_cached_listing_helper(self, mock_boto3_client):
         """Test the _yield_paths_from_cached_listing helper method"""
         mock_boto3_client.return_value = self.mock_client

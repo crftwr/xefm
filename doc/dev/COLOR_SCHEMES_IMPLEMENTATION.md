@@ -2,9 +2,9 @@
 
 ## Overview
 
-TFM's colors come from two layers today:
+XeFM's colors come from two layers today:
 
-1. **`src/tfm_colors.py`** — a color-*pair* abstraction: a fixed catalog of
+1. **`xefm/colors.py`** — a color-*pair* abstraction: a fixed catalog of
    named UI color slots, two built-in RGB palettes (`dark` / `light`), and the
    code that initializes those pairs on the active renderer. This is what this
    document describes.
@@ -14,12 +14,12 @@ TFM's colors come from two layers today:
    PuiKit; this doc does not restate its internals.
 
 > The UI runs on PuiKit, not curses. Several docstrings and comments in
-> `tfm_colors.py` still say "TTK renderer" — that naming is vestigial from the
+> `xefm/colors.py` still say "TTK renderer" — that naming is vestigial from the
 > pre-PuiKit port and does not imply a curses-only code path. The renderer
 > passed to `init_colors()` is the active PuiKit backend renderer, which always
 > supports full 24-bit RGB.
 
-## What `tfm_colors.py` provides
+## What `xefm/colors.py` provides
 
 ### Named color-pair constants
 
@@ -63,7 +63,7 @@ Binds every color-pair constant on the renderer:
 
 In the live app `init_colors()` is called to (re)establish the color pairs after
 an external program or sub-shell returns (see
-`src/tfm_external_programs.py`), restoring them after the child process.
+`xefm/external_programs.py`), restoring them after the child process.
 
 ### Accessor helpers
 
@@ -80,8 +80,8 @@ returns a `(color_pair, attributes)` tuple, where `attributes` is a
 - `get_scrollbar_color()`, `get_background_color_pair()`,
   `get_color_with_attrs(color_pair)`
 
-These log/status helpers are the primary live consumers of `tfm_colors`
-(`tfm_log_manager.py`, `tfm_logging_handlers.py`).
+These log/status helpers are the primary live consumers of `xefm.colors`
+(`xefm/log_manager.py`, `xefm/logging_handlers.py`).
 
 ### Scheme management
 
@@ -115,15 +115,15 @@ constant returns; new code should not rely on them.
 
 The palettes the user actually cycles at runtime — the "Next Theme" menu item
 and the `toggle_color_scheme` (`T`) key — are PuiKit `Theme` objects, **not** the
-`dark`/`light` pairs above. In `tfm.py`:
+`dark`/`light` pairs above. In `xefm/app.py`:
 
 - `_THEME_SPECS` is the list of built-in palettes (Dark+, Monokai, Dracula,
   Nord, Solarized, Gruvbox Dark, and more), each a small keyword spec.
 - A helper builds each spec into a PuiKit `Theme` via `derive_theme`, merging any
-  user overrides from `~/.tfm/config.py`.
+  user overrides from `~/.xefm/config.py`.
 - Themes carry app-specific colors and per-theme *effects* in `Theme.extras`
   (post-processing looks like CRT/phosphor, background animations/wallpaper,
-  surface opacity, pane-focus chrome, text-entrance effects), which `TfmApp`
+  surface opacity, pane-focus chrome, text-entrance effects), which `XeFMApp`
   pushes to the backend on theme switch — a GUI backend honors them, a terminal
   ignores them.
 - PuiKit applies **auto-ink** legibility on top: foreground inks are corrected
@@ -132,8 +132,8 @@ and the `toggle_color_scheme` (`T`) key — are PuiKit `Theme` objects, **not** 
 Because that system is owned by PuiKit and is largely theme *data* at a
 framework seam, the authoritative reference is PuiKit's `docs/color_system.md`
 (in the separate PuiKit repo). For how per-theme motion/effects are wired on the
-TFM side, see [MOTION_IMPLEMENTATION.md](MOTION_IMPLEMENTATION.md); the built-in
-palettes themselves live in `_THEME_SPECS` in `tfm.py`.
+XeFM side, see [MOTION_IMPLEMENTATION.md](MOTION_IMPLEMENTATION.md); the built-in
+palettes themselves live in `_THEME_SPECS` in `xefm/app.py`.
 
 ## Diagnostics
 
@@ -143,8 +143,8 @@ debugging.
 
 ## Related Files
 
-- `src/tfm_colors.py` — color-pair constants, `dark`/`light` palettes, `init_colors`, accessors
-- `src/tfm_log_manager.py`, `src/tfm_logging_handlers.py` — live consumers of the log/status colors
-- `src/tfm_external_programs.py` — re-initializes color pairs after a subprocess
-- `tfm.py` — `_THEME_SPECS` and the PuiKit `Theme` wiring (modern theme system)
+- `xefm/colors.py` — color-pair constants, `dark`/`light` palettes, `init_colors`, accessors
+- `xefm/log_manager.py`, `xefm/logging_handlers.py` — live consumers of the log/status colors
+- `xefm/external_programs.py` — re-initializes color pairs after a subprocess
+- `xefm/app.py` — `_THEME_SPECS` and the PuiKit `Theme` wiring (modern theme system)
 - PuiKit `docs/color_system.md` — the modern theme / auto-ink color system

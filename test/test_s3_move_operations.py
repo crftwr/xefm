@@ -4,14 +4,14 @@ Test S3 Move Fix - Verify that S3 file move operations work correctly
 This test verifies that the fix for S3 file moving operations works properly
 by testing the rename method on S3 paths.
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_move_operations.py -v
+Run with: python -m pytest test/test_s3_move_operations.py -v
 """
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from tfm_path import Path
-from tfm_s3 import S3PathImpl
+from xefm.path import Path
+from xefm.s3 import S3PathImpl
 
 
 class TestS3MoveFix(unittest.TestCase):
@@ -34,7 +34,7 @@ class TestS3MoveFix(unittest.TestCase):
         if hasattr(self.dest_path._impl, '_s3_client'):
             self.dest_path._impl._s3_client = self.mock_s3_client
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_s3_rename_method_exists(self, mock_boto3):
         """Test that S3PathImpl has a rename method"""
         # Configure mock
@@ -47,7 +47,7 @@ class TestS3MoveFix(unittest.TestCase):
         self.assertTrue(hasattr(s3_path._impl, 'rename'))
         self.assertTrue(callable(getattr(s3_path._impl, 'rename')))
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_s3_rename_calls_copy_and_delete(self, mock_boto3):
         """Test that S3 rename performs copy and delete operations"""
         # Configure mock
@@ -78,7 +78,7 @@ class TestS3MoveFix(unittest.TestCase):
             # If there's an error, it should be related to the mock setup, not the method existence
             self.fail(f"S3 rename method failed unexpectedly: {e}")
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_s3_path_creation(self, mock_boto3):
         """Test that S3 paths can be created and have the correct implementation"""
         # Configure mock

@@ -9,19 +9,20 @@ This test validates that:
 4. Operations still work correctly with caching enabled
 5. Connection errors trigger fresh checks
 
-Run with: PYTHONPATH=.:src python temp/verify_control_master_optimization.py
+Run with: PYTHONPATH=. python temp/verify_control_master_optimization.py
 """
 
+import os
 import sys
 import time
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict
 
-# Add src to path
-sys.path.insert(0, 'src')
+# Add the repo root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tfm_ssh_connection import SSHConnection, SSHConnectionManager
+from xefm.ssh_connection import SSHConnection, SSHConnectionManager
 
 
 class TestControlMasterOptimization(unittest.TestCase):

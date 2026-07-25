@@ -5,15 +5,15 @@ Performance validation for SFTP bulk stat optimization.
 This script measures the actual performance improvements from caching
 individual file stats during list_directory() operations.
 
-Run with: PYTHONPATH=.:src python temp/test_ssh_bulk_stat_performance.py
+Run with: PYTHONPATH=. python temp/test_ssh_bulk_stat_performance.py
 """
 
 import sys
 import time
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-from tfm_ssh_connection import SSHConnection
-from tfm_ssh_cache import SSHCache
+from xefm.ssh_connection import SSHConnection
+from xefm.ssh_cache import SSHCache
 
 
 class TestBulkStatPerformance(unittest.TestCase):
@@ -29,7 +29,7 @@ class TestBulkStatPerformance(unittest.TestCase):
         }
         
         # Create connection with mocked subprocess
-        with patch('tfm_ssh_connection.subprocess'):
+        with patch('xefm.ssh_connection.subprocess'):
             self.conn = SSHConnection(self.hostname, self.config)
             self.conn._connected = True
             

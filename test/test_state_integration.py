@@ -1,27 +1,27 @@
 """
-Integration test for TFM State Manager with main application
+Integration test for XeFM State Manager with main application
 
-Tests the integration of state management with the main TFM application.
+Tests the integration of state management with the main XeFM application.
 
-Run with: PYTHONPATH=.:src pytest test/test_state_integration.py -v
+Run with: python -m pytest test/test_state_integration.py -v
 """
 
 from pathlib import Path
 import tempfile
 
-from tfm_path import Path
+from xefm.path import Path
 
-from tfm_state_manager import TFMStateManager
+from xefm.state_manager import XeFMStateManager
 
 
 def test_state_manager_integration():
-    """Test basic integration of state manager with TFM-like operations."""
+    """Test basic integration of state manager with XeFM-like operations."""
     print("Testing state manager integration...")
     
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create a test state manager with custom database path
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_integration")
+        state_manager = XeFMStateManager("test_integration")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         state_manager._register_session()  # Explicitly register session for test
@@ -120,7 +120,7 @@ def test_state_persistence():
         db_path = Path(temp_dir) / "persistence_test.db"
         
         # Create first instance and save some state
-        state_manager1 = TFMStateManager("instance1")
+        state_manager1 = XeFMStateManager("instance1")
         state_manager1.db_path = db_path
         state_manager1._initialize_database()
         
@@ -142,7 +142,7 @@ def test_state_persistence():
         state_manager1.cleanup_session()
         
         # Create second instance and verify state persists
-        state_manager2 = TFMStateManager("instance2")
+        state_manager2 = XeFMStateManager("instance2")
         state_manager2.db_path = db_path
         
         # Load state from second instance
@@ -181,14 +181,14 @@ def test_concurrent_state_access():
         errors = []
         
         def worker_instance(instance_id, iterations=20):
-            """Worker function that simulates a TFM instance."""
+            """Worker function that simulates a XeFM instance."""
             try:
-                state_manager = TFMStateManager(f"worker_{instance_id}")
+                state_manager = XeFMStateManager(f"worker_{instance_id}")
                 state_manager.db_path = db_path
                 state_manager._initialize_database()  # Ensure database is initialized
                 
                 for i in range(iterations):
-                    # Simulate typical TFM operations
+                    # Simulate typical XeFM operations
                     pane_data = {
                         'path': f'/worker/{instance_id}/path/{i}',
                         'focused_index': i,
@@ -245,7 +245,7 @@ def test_concurrent_state_access():
 
 def run_integration_tests():
     """Run all integration tests."""
-    print("Running TFM State Manager integration tests...\n")
+    print("Running XeFM State Manager integration tests...\n")
     
     try:
         if not test_state_manager_integration():

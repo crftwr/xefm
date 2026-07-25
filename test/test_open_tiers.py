@@ -1,18 +1,18 @@
 """The two tiers of "open" in FILE_ASSOCIATIONS.
 
-Enter is the casual open: it stays inside TFM, and an ``enter`` rule names a
+Enter is the casual open: it stays inside XeFM, and an ``enter`` rule names a
 built-in *handler*. Cmd/Ctrl-Enter is the deliberate one: ``open`` names an
 external *program*. The two value spaces are different, which is why they have
 separate accessors — routing a handler name through the command accessor would
 quietly turn ``'viewer'`` into the command ``['viewer']``.
 
-Run with: PYTHONPATH=.:src pytest test/test_open_tiers.py -v
+Run with: python -m pytest test/test_open_tiers.py -v
 """
 
 import pytest
 
-import tfm_config
-from tfm_config import (BUILTIN_HANDLERS, get_builtin_handler_for_file,
+import xefm.config
+from xefm.config import (BUILTIN_HANDLERS, get_builtin_handler_for_file,
                         get_program_for_file)
 
 
@@ -24,7 +24,7 @@ class _Config:
 @pytest.fixture
 def associations(monkeypatch):
     def install(entries):
-        monkeypatch.setattr(tfm_config, "get_config", lambda: _Config(entries))
+        monkeypatch.setattr(xefm.config, "get_config", lambda: _Config(entries))
     return install
 
 
@@ -91,7 +91,7 @@ class TestNoTerminalDeclaration:
 
     Whether to suspend follows from the backend: terminal mode hands over the
     tty and waits, desktop mode detaches. A per-entry flag used to exist here
-    and was removed -- it duplicated a decision TFM can already make, and its
+    and was removed -- it duplicated a decision XeFM can already make, and its
     failure mode was bad: forgetting it on `less` corrupts the terminal, while
     the backend rule cannot be forgotten.
     """
@@ -102,7 +102,7 @@ class TestNoTerminalDeclaration:
         associations([{'pattern': '*.log', 'view': ['less'], 'terminal': True}])
         assert get_program_for_file('a.log', 'view') == ['less']
         assert get_program_for_file('a.log', 'terminal') is None
-        assert not tfm_config.has_explicit_association('a.log', 'terminal')
+        assert not xefm.config.has_explicit_association('a.log', 'terminal')
 
     def test_one_entry_can_mix_terminal_and_gui_programs(self, associations):
         """The case the removed flag could not express: `less` to view and a
@@ -116,19 +116,19 @@ class TestNoTerminalDeclaration:
         assert get_program_for_file('a.log', 'edit') == ['code']
 
     def test_the_engine_exposes_no_terminal_query(self):
-        assert not hasattr(tfm_config, 'needs_terminal')
+        assert not hasattr(xefm.config, 'needs_terminal')
 
 
 @pytest.fixture
 def shipped_defaults(monkeypatch):
     """Pin lookups to the shipped _config.py template.
 
-    ``get_config()`` returns the *user's* ~/.tfm/config.py when one exists, so
+    ``get_config()`` returns the *user's* ~/.xefm/config.py when one exists, so
     asserting against it would make these tests pass or fail depending on whose
     machine they run on.
     """
-    import _config
-    monkeypatch.setattr(tfm_config, "get_config", lambda: _config.Config)
+    from xefm import _config
+    monkeypatch.setattr(xefm.config, "get_config", lambda: _config.Config)
 
 
 @pytest.mark.usefixtures("shipped_defaults")
@@ -153,7 +153,7 @@ class TestShippedDefaults:
         extensions, which no list would have caught."""
         assert get_builtin_handler_for_file(filename) == (False, None)
         assert get_program_for_file(filename, 'view') is None
-        assert not tfm_config.has_explicit_association(filename, 'view')
+        assert not xefm.config.has_explicit_association(filename, 'view')
 
     def test_media_files_still_open_externally(self):
         assert get_program_for_file('doc.pdf', 'open') == ['open', '-a', 'Preview']
@@ -162,6 +162,6 @@ class TestShippedDefaults:
 
     def test_no_default_entry_declares_a_terminal_flag(self):
         """The key is gone from the shipped template, not merely unused."""
-        import _config
+        from xefm import _config
         for entry in _config.Config.FILE_ASSOCIATIONS:
             assert 'terminal' not in entry, entry.get('pattern')

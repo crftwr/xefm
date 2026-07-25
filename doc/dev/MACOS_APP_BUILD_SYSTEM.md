@@ -1,8 +1,8 @@
-# TFM macOS App Bundle - Build System
+# XeFM macOS App Bundle - Build System
 
 ## Overview
 
-The TFM macOS application bundle uses a native Objective-C launcher that embeds Python and launches TFM with its CoreGraphics backend. The build system is command-line based (no Xcode IDE required) and uses the project's virtual environment as the single source of truth for all Python components.
+The XeFM macOS application bundle uses a native Objective-C launcher that embeds Python and launches XeFM with its CoreGraphics backend. The build system is command-line based (no Xcode IDE required) and uses the project's virtual environment as the single source of truth for all Python components.
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ cd macos_app
 ./build.sh
 
 # Run the app
-open build/TFM.app
+open build/XeFM.app
 ```
 
 ## Build Philosophy
@@ -66,28 +66,28 @@ All Python components are copied from the venv's base_prefix:
 
 **Python Interpreter:**
 - Source: `${PYTHON_BASE_PREFIX}/bin/python3.13`
-- Destination: `TFM.app/Contents/Frameworks/Python.framework/Versions/3.13/bin/python3.13`
+- Destination: `XeFM.app/Contents/Frameworks/Python.framework/Versions/3.13/bin/python3.13`
 - Symlink created: `python3 -> python3.13`
 
 **Python Shared Library:**
 - Source: `${PYTHON_BASE_PREFIX}/lib/libpython3.13.dylib`
-- Destination: `TFM.app/Contents/Frameworks/Python.framework/Versions/3.13/lib/libpython3.13.dylib`
+- Destination: `XeFM.app/Contents/Frameworks/Python.framework/Versions/3.13/lib/libpython3.13.dylib`
 
 **Python Standard Libraries:**
 - Source: `${PYTHON_BASE_PREFIX}/lib/python3.13/`
-- Destination: `TFM.app/Contents/Frameworks/Python.framework/Versions/3.13/lib/python3.13/`
+- Destination: `XeFM.app/Contents/Frameworks/Python.framework/Versions/3.13/lib/python3.13/`
 
 **Third-Party Packages:**
 - Source: `${PROJECT_ROOT}/.venv/lib/python3.13/site-packages/`
-- Destination: `TFM.app/Contents/Resources/python_packages/`
+- Destination: `XeFM.app/Contents/Resources/python_packages/`
 
-**TFM Source:**
+**XeFM Source:**
 - Source: `${PROJECT_ROOT}/src/`
-- Destination: `TFM.app/Contents/Resources/tfm/`
+- Destination: `XeFM.app/Contents/Resources/xefm/`
 
 **PuiKit Framework:**
 - Source: the installed PuiKit package, located via `import puikit` in the venv (its checkout is typically `../puikit`; honours any `PUIKIT_DIR` override used at install)
-- Destination: `TFM.app/Contents/Resources/puikit/`
+- Destination: `XeFM.app/Contents/Resources/puikit/`
 - Bundled fonts (`puikit/fonts/`) are fetched into the source tree before copying so Core Text can register them at runtime
 
 ### 4. Framework Structure
@@ -95,7 +95,7 @@ All Python components are copied from the venv's base_prefix:
 The build script creates a Python.framework-like structure:
 
 ```
-TFM.app/Contents/Frameworks/Python.framework/
+XeFM.app/Contents/Frameworks/Python.framework/
   Versions/
     3.13/                    # Version-specific directory (auto-detected)
       Python                 # Shared library (framework style only)
@@ -133,8 +133,8 @@ The build script optimizes the bundle size by:
 All Python source files are pre-compiled to bytecode for faster startup:
 
 ```bash
-# Pre-compile TFM source
-python3 -m compileall -q "${TFM_DEST}"
+# Pre-compile XeFM source
+python3 -m compileall -q "${XEFM_DEST}"
 
 # Pre-compile PuiKit framework
 python3 -m compileall -q "${PUIKIT_DEST}"
@@ -152,13 +152,13 @@ python3 -m compileall -q -f "${STDLIB_PATH}"
 
 ### 7. Install Name Updates
 
-The build script updates the TFM executable to use the bundled Python:
+The build script updates the XeFM executable to use the bundled Python:
 
 ```bash
 install_name_tool -change \
     "${PYTHON_BASE_PREFIX}/lib/libpython3.13.dylib" \
     "@executable_path/../Frameworks/Python.framework/Versions/3.13/lib/libpython3.13.dylib" \
-    "${MACOS_DIR}/TFM"
+    "${MACOS_DIR}/XeFM"
 ```
 
 ## System Independence
@@ -196,17 +196,17 @@ The bundled Python has one external library dependency:
 
 ## External Program Support
 
-The `tfm_python` variable in `src/tfm_external_programs.py` automatically detects app bundle execution and uses the bundled Python:
+The `xefm_python` variable in `xefm/external_programs.py` automatically detects app bundle execution and uses the bundled Python:
 
 ```python
 if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
     # Running from macOS app bundle - use bundled python3
     bundle_path = sys.executable.rsplit('.app/Contents/MacOS', 1)[0] + '.app'
-    tfm_python = os.path.join(bundle_path, 'Contents', 'Frameworks', 
+    xefm_python = os.path.join(bundle_path, 'Contents', 'Frameworks', 
                                'Python.framework', 'bin', 'python3')
 else:
     # Normal execution - use current Python interpreter
-    tfm_python = sys.executable
+    xefm_python = sys.executable
 ```
 
 This ensures external programs (like preview scripts) use the bundled Python when running from the app bundle.
@@ -288,7 +288,7 @@ security find-identity -v -p codesigning
 # Store notary credentials in the keychain as a reusable profile.
 # The password is an app-specific password from https://account.apple.com
 # (Sign-In and Security > App-Specific Passwords), NOT your Apple ID password.
-xcrun notarytool store-credentials "TFM-Notary" \
+xcrun notarytool store-credentials "XeFM-Notary" \
     --apple-id you@example.com \
     --team-id TEAMID \
     --password <app-specific-password>
@@ -298,7 +298,7 @@ xcrun notarytool store-credentials "TFM-Notary" \
 
 ```bash
 export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-export NOTARY_PROFILE="TFM-Notary"
+export NOTARY_PROFILE="XeFM-Notary"
 
 ./build.sh        # Step 6 signs the .app; Step 7 notarizes & staples it
 ./create_dmg.sh   # signs, notarizes & staples the DMG
@@ -316,7 +316,7 @@ signing an outer container first would invalidate the inner signatures:
 2. The embedded interpreter executables (`bin/pythonX.Y`)
 3. `Python.framework` (framework build path only; the standard-Python path ships
    `libpythonX.Y.dylib`, already signed in step 1)
-4. The main executable (`Contents/MacOS/TFM`)
+4. The main executable (`Contents/MacOS/XeFM`)
 5. The `.app` bundle last — the outermost seal over everything above
 
 It then verifies strictly with `codesign --verify --deep --strict`.
@@ -352,14 +352,14 @@ the DMG means a downloaded installer opens without warnings even offline.
 
 ```bash
 # Signature is valid under strict (Gatekeeper-style) rules
-codesign --verify --deep --strict --verbose=2 build/TFM.app
+codesign --verify --deep --strict --verbose=2 build/XeFM.app
 
 # Gatekeeper will accept it (only passes once notarized)
-spctl -a -vvv --type exec build/TFM.app
+spctl -a -vvv --type exec build/XeFM.app
 
 # Notarization tickets are stapled
-xcrun stapler validate build/TFM.app
-xcrun stapler validate build/TFM-<version>.dmg
+xcrun stapler validate build/XeFM.app
+xcrun stapler validate build/XeFM-<version>.dmg
 ```
 
 ### Troubleshooting notarization
@@ -368,7 +368,7 @@ If `notarytool submit` reports `Invalid`, fetch the per-issue log — it names t
 exact binary and reason (unsigned, missing timestamp, missing Hardened Runtime):
 
 ```bash
-xcrun notarytool log <submission-id> --keychain-profile "TFM-Notary"
+xcrun notarytool log <submission-id> --keychain-profile "XeFM-Notary"
 ```
 
 Common causes: a Mach-O the inside-out sign loop missed (add it to Step 6), a
@@ -447,7 +447,7 @@ Framework-level symlinks (`Python.framework/bin`, `Python.framework/lib`) point 
 
 ### Install Name Tool
 
-The `install_name_tool` command updates dynamic library references in the TFM executable. This is necessary because:
+The `install_name_tool` command updates dynamic library references in the XeFM executable. This is necessary because:
 1. Python shared library path is hardcoded at compile time
 2. We need to redirect to bundled Python instead of system Python
 3. `@executable_path` makes paths relative to the executable location
@@ -457,10 +457,10 @@ The `install_name_tool` command updates dynamic library references in the TFM ex
 - `macos_app/build.sh` - Main build script
 - `tools/collect_dependencies.py` - Dependency collection script (shared with the Windows build)
 - `macos_app/src/main.m` - Objective-C entry point
-- `macos_app/src/TFMAppDelegate.m` - Application delegate
+- `macos_app/src/XeFMAppDelegate.m` - Application delegate
 - `macos_app/create_dmg.sh` - DMG packaging, signing, and notarization
 - `macos_app/resources/Info.plist.template` - Bundle metadata template
 - `macos_app/resources/entitlements.plist` - Hardened Runtime entitlements for signing
 - `macos_app/resources/sitecustomize.py` - Disables user site-packages
-- `src/tfm_external_programs.py` - Defines `tfm_python` variable
+- `xefm/external_programs.py` - Defines `xefm_python` variable
 - `Makefile` - Build system integration

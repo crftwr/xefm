@@ -1,12 +1,12 @@
 """
-Test file for integration of extended key bindings with TFM main functionality.
+Test file for integration of extended key bindings with XeFM main functionality.
 
-Run with: PYTHONPATH=.:src pytest test/test_main_integration.py -v
+Run with: python -m pytest test/test_main_integration.py -v
 """
 
 import unittest
 from unittest.mock import Mock, patch
-from _config import Config
+from xefm._config import Config
 
 
 class MockFileManager:
@@ -29,7 +29,7 @@ class MockFileManager:
             key_char = chr(key)
             current_pane = self.get_current_pane()
             has_selection = len(current_pane['selected_files']) > 0
-            from tfm_config import is_key_bound_to_with_selection
+            from xefm.config import is_key_bound_to_with_selection
             return is_key_bound_to_with_selection(key_char, action, has_selection)
         return False
     
@@ -37,13 +37,13 @@ class MockFileManager:
         """Check if a key matches a configured action (original method without selection awareness)."""
         if 32 <= key <= 126:  # Printable ASCII
             key_char = chr(key)
-            from tfm_config import is_key_bound_to
+            from xefm.config import is_key_bound_to
             return is_key_bound_to(key_char, action)
         return False
 
 
 class TestMainIntegration(unittest.TestCase):
-    """Test the integration of extended key bindings with main TFM functionality."""
+    """Test the integration of extended key bindings with main XeFM functionality."""
     
     def setUp(self):
         """Set up test fixtures."""

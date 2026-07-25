@@ -7,15 +7,15 @@ Tests:
 3. Configuration loading with desktop settings
 4. Configuration reload / persistence
 
-Run with: PYTHONPATH=.:src pytest test/test_config_backend_settings.py -v
+Run with: python -m pytest test/test_config_backend_settings.py -v
 """
 
 from pathlib import Path
 import tempfile
 import shutil
 
-from tfm_config import ConfigManager
-from _config import Config  # the default config template (was tfm_config.DefaultConfig)
+from xefm.config import ConfigManager
+from xefm._config import Config  # the default config template (was xefm.config.DefaultConfig)
 
 
 def test_default_desktop_config():
@@ -110,7 +110,7 @@ def test_config_loading_with_desktop_settings():
     """Test that configuration loading works with desktop settings"""
     # Create a temporary config directory
     temp_dir = tempfile.mkdtemp()
-    config_dir = Path(temp_dir) / '.tfm'
+    config_dir = Path(temp_dir) / '.xefm'
     config_file = config_dir / 'config.py'
 
     try:
@@ -173,7 +173,7 @@ def test_config_reload_persistence():
     """Test that configuration changes can be saved and reloaded"""
     # Create a temporary config directory
     temp_dir = tempfile.mkdtemp()
-    config_dir = Path(temp_dir) / '.tfm'
+    config_dir = Path(temp_dir) / '.xefm'
     config_file = config_dir / 'config.py'
 
     try:

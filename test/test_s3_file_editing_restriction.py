@@ -1,13 +1,13 @@
 """
 Test S3 file editing capability indicator
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_file_editing_restriction.py -v
+Run with: python -m pytest test/test_s3_file_editing_restriction.py -v
 """
 
 import unittest
 from unittest.mock import Mock, patch
 
-from tfm_s3 import S3PathImpl
+from xefm.s3 import S3PathImpl
 
 
 class TestS3FileEditingCapability(unittest.TestCase):
@@ -21,8 +21,8 @@ class TestS3FileEditingCapability(unittest.TestCase):
         self.mock_boto3.client.return_value = self.mock_client
         
         # Create S3PathImpl instance
-        with patch('tfm_s3.boto3', self.mock_boto3):
-            with patch('tfm_s3.HAS_BOTO3', True):
+        with patch('xefm.s3.boto3', self.mock_boto3):
+            with patch('xefm.s3.HAS_BOTO3', True):
                 self.s3_path = S3PathImpl('s3://test-bucket/test-file.txt')
     
     def test_supports_file_editing_returns_false(self):
@@ -36,7 +36,7 @@ class TestS3FileEditingCapability(unittest.TestCase):
             file_obj = self.s3_path.open('w')
             self.assertIsNotNone(file_obj)
             # Should be S3WriteFile instance
-            from tfm_s3 import S3WriteFile
+            from xefm.s3 import S3WriteFile
             self.assertIsInstance(file_obj, S3WriteFile)
         except Exception as e:
             self.fail(f"Write mode should work: {e}")
@@ -48,7 +48,7 @@ class TestS3FileEditingCapability(unittest.TestCase):
             file_obj = self.s3_path.open('a')
             self.assertIsNotNone(file_obj)
             # Should be S3WriteFile instance
-            from tfm_s3 import S3WriteFile
+            from xefm.s3 import S3WriteFile
             self.assertIsInstance(file_obj, S3WriteFile)
         except Exception as e:
             self.fail(f"Append mode should work: {e}")

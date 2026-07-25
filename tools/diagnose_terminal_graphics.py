@@ -3,7 +3,7 @@
 
 Run this INSIDE the terminal you are testing (iTerm2, kitty, WezTerm, ...):
 
-    PYTHONPATH=.:src python tools/diagnose_terminal_graphics.py
+    PYTHONPATH=. python tools/diagnose_terminal_graphics.py
 
 It is NOT a TUI — it just prints environment/detection info, then emits one test
 image several different ways, each under a numbered "TEST N" banner. After it
@@ -16,13 +16,13 @@ break:
                              emulator setting is off).
 * TEST 1-3 show but 5 does not -> the cursor save/restore or positioning the
                              real backend adds is the culprit.
-* Everything shows here but TFM still doesn't -> the protocol is fine; the break
+* Everything shows here but XeFM still doesn't -> the protocol is fine; the break
                              is in the curses integration (run with the debug
                              env var below and send the log).
 
 Runtime trace for the *real* app (complements this script):
 
-    PUIKIT_TERM_GRAPHICS_DEBUG=/tmp/tg.log PYTHONPATH=.:src python tfm.py
+    PUIKIT_TERM_GRAPHICS_DEBUG=/tmp/tg.log PYTHONPATH=. python -m xefm
 
 open an image, quit, and send /tmp/tg.log.
 """
@@ -33,7 +33,7 @@ import os
 import sys
 
 # Make puikit + PIL importable whether run from the repo root or elsewhere.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 def line(text=""):
@@ -128,13 +128,13 @@ if tg is not None:
     emit("TEST 6  encoder + cursor-move + DECSC/DECRC (as present() writes it)",
          "\x1b7" + "\x1b[12;3H" + tg.encode(tg.ITERM2, image, png, 20, 10) + "\x1b8")
 
-# TEST 7 is the important one: TFM runs in the ALTERNATE screen buffer (curses
+# TEST 7 is the important one: XeFM runs in the ALTERNATE screen buffer (curses
 # initscr enables it). Some terminals render inline images differently there —
 # this is the single most likely reason images work in a plain shell but not in
 # the TUI. It is interactive (enters the alt screen and waits) so it only runs on
 # a real terminal.
 if tg is not None and sys.stdin.isatty():
-    banner("TEST 7  ALTERNATE screen buffer — the closest match to how TFM runs")
+    banner("TEST 7  ALTERNATE screen buffer — the closest match to how XeFM runs")
     line("About to enter the alternate screen (like a full-screen TUI) and draw")
     line("an image there. Watch whether it appears. Press Enter to start.")
     try:
@@ -160,9 +160,9 @@ if tg is not None and sys.stdin.isatty():
         line()
         line("Back to the normal screen. If TESTs 1-6 showed an image but TEST 7")
         line("(alt screen) did NOT, that is the bug: iTerm2 is not rendering our")
-        line("inline images in the alternate screen buffer TFM uses.")
+        line("inline images in the alternate screen buffer XeFM uses.")
 
 banner("Done")
 line("Report which TEST numbers rendered an image — especially TEST 7 (alt")
 line("screen) vs the earlier ones. For the real app, run it with")
-line("PUIKIT_TERM_GRAPHICS_DEBUG=/tmp/tg.log python tfm.py and send that file.")
+line("PUIKIT_TERM_GRAPHICS_DEBUG=/tmp/tg.log python -m xefm and send that file.")

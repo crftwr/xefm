@@ -1,4 +1,4 @@
-# Python 3.10+ required (PuiKit, TFM's UI framework, requires 3.10+)
+# Python 3.10+ required (PuiKit, XeFM's UI framework, requires 3.10+)
 # pygments for syntax highlighting (will fallback gracefully if not available)
 # boto3 for AWS S3 support
 # watchdog for automatic file list reloading
@@ -7,10 +7,10 @@
 #
 # Backend/platform deps (pyobjc on macOS, windows-curses on Windows, numpy on
 # Windows) are PuiKit's own requirements and resolve transitively via the puikit
-# pin below, so TFM does not list them here. pillow is listed because TFM's
+# pin below, so XeFM does not list them here. pillow is listed because XeFM's
 # image viewer imports PIL directly, independent of PuiKit.
 
-# PuiKit is TFM's UI/rendering framework (the TUI/GUI backend layer), published
+# PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
 puikit>=1.0

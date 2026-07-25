@@ -2,11 +2,11 @@
 
 The modal text viewer opens ``*.md`` files in raw text and toggles to a rendered
 Markdown view in place (PuiKit's ``MarkdownView``), via the ``toggle_view_mode``
-action. The rich-renderer registry (``tfm_viewer_registry``) is the seam future
+action. The rich-renderer registry (``xefm.viewer_registry``) is the seam future
 formatted viewers (JSON, CSV, …) plug into. See
 doc/dev/MARKDOWN_VIEWER_IMPLEMENTATION.md.
 
-Run with: PYTHONPATH=.:src pytest test/test_markdown_viewer.py -v
+Run with: python -m pytest test/test_markdown_viewer.py -v
 """
 
 import os
@@ -14,14 +14,14 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from puikit import Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 
-from tfm_path import Path
-from tfm_text_viewer import TextViewer, show_text_viewer
-from tfm_viewer_registry import RichRenderer, rich_renderer_for
+from xefm.path import Path
+from xefm.text_viewer import TextViewer, show_text_viewer
+from xefm.viewer_registry import RichRenderer, rich_renderer_for
 
 
 # Blocks are blank-line separated (joined with "\n\n") so each stays its own

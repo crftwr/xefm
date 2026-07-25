@@ -1,7 +1,7 @@
 """
 Test script for the move feature implementation
 
-Run with: PYTHONPATH=.:src pytest test/test_move_feature.py -v
+Run with: python -m pytest test/test_move_feature.py -v
 """
 
 import os
@@ -102,7 +102,7 @@ def test_key_binding():
     print("=" * 50)
     
     try:
-        from tfm_config import config_manager
+        from xefm.config import config_manager
         
         # Use the config manager to get key bindings (includes fallback to defaults)
         move_keys = config_manager.get_key_for_action('move_files')
@@ -132,7 +132,7 @@ def test_method_existence():
     
     try:
         # Read the main file to check for method existence
-        main_file = Path(__file__).parent.parent / "src" / "tfm_main.py"
+        main_file = Path(__file__).parent.parent / "xefm" / "app.py"
         with open(main_file, 'r') as f:
             content = f.read()
         

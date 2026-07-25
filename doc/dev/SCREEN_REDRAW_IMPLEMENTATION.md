@@ -4,13 +4,13 @@
 > plumbing referenced below (`ttk/backends/curses_backend.py`, `ttk/renderer.py`)
 > moved to the external **[PuiKit](https://github.com/crftwr/puikit)** framework
 > (`puikit/backends/curses_backend.py`, `puikit/backend.py`), where the API may
-> differ. TFM's redraw-trigger design still applies. See
+> differ. XeFM's redraw-trigger design still applies. See
 > [PROJECT_HISTORY.md](PROJECT_HISTORY.md).
 
 ## Problem
 
-When TFM runs inside a terminal multiplexer (tmux/screen), switching away from
-and back to the TFM window leaves the screen blank or garbled. TFM does not
+When XeFM runs inside a terminal multiplexer (tmux/screen), switching away from
+and back to the XeFM window leaves the screen blank or garbled. XeFM does not
 repaint until some other event forces a redraw.
 
 ### Root cause
@@ -21,7 +21,7 @@ Two independent gaps combined to cause this:
    model of the physical screen and only transmits changed cells on
    `refresh()`. A multiplexer context switch alters the terminal contents
    behind curses' back, so curses still believes the screen is correct and
-   sends nothing. TFM's own UI layer stack adds a second layer of
+   sends nothing. XeFM's own UI layer stack adds a second layer of
    dirty-tracking on top, so even a full re-render would not re-send unchanged
    cells.
 
@@ -75,13 +75,13 @@ next iteration of the main loop redraws everything.
 
 ### 5. Global key routing
 
-`TFMEventCallback.on_key_event()` intercepts the redraw shortcut before routing
+`XeFMEventCallback.on_key_event()` intercepts the redraw shortcut before routing
 to the layer stack, so it works in any context (file list, dialogs, text/diff
 viewers). It honors two triggers:
 
 - A **hardcoded `Ctrl-L`** trigger. This is intentional and permanent: Ctrl-L is
   the universal terminal convention for "redraw the screen", so it always works
-  regardless of configuration (including for users whose `~/.tfm/config.py`
+  regardless of configuration (including for users whose `~/.xefm/config.py`
   predates this action — missing sub-keys of `KEY_BINDINGS` are not auto-merged
   into existing user configs). It cannot be disabled via config by design.
 - The configurable `redraw` action (default `F5` in `_config.py`). Users can
@@ -93,10 +93,10 @@ viewers). It honors two triggers:
 |------|--------|
 | `ttk/backends/curses_backend.py` | Translate Ctrl+letter (1-26) to CONTROL KeyEvents; add `force_repaint()` |
 | `ttk/renderer.py` | Add concrete no-op `force_repaint()` to the ABC |
-| `tfm.py` | Add `UILayerStack.mark_all_dirty()` |
-| `tfm.py` | Add `FileManager.force_redraw()`; route Ctrl-L / `redraw` globally |
-| `src/_config.py` | Add `redraw: ['F5']` default key binding (Ctrl-L is hardcoded separately) |
-| `src/tfm_text_dialog.py` | Document Ctrl-L in the help dialog |
+| `xefm/app.py` | Add `UILayerStack.mark_all_dirty()` |
+| `xefm/app.py` | Add `FileManager.force_redraw()`; route Ctrl-L / `redraw` globally |
+| `xefm/_config.py` | Add `redraw: ['F5']` default key binding (Ctrl-L is hardcoded separately) |
+| `xefm/text_dialog.py` | Document Ctrl-L in the help dialog |
 
 ## Tests
 
@@ -107,5 +107,5 @@ viewers). It honors two triggers:
 - `test/test_redraw_action.py` — `Ctrl-L` resolves to `redraw`; default config
   binding present; `force_redraw()` invalidates the renderer and marks layers
   dirty (including the renderer-error path).
-- `test/test_tfm_main_input_handling.py` — global handler routes both the
+- `test/test_xefm_main_input_handling.py` — global handler routes both the
   hardcoded Ctrl-L fallback and a rebound `redraw` action to `force_redraw()`.

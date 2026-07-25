@@ -5,14 +5,14 @@
 > the "add a new platform backend" walkthrough — describe the old in-repo `ttk`
 > toolkit. That layer is now the external **[PuiKit](https://github.com/crftwr/puikit)**
 > framework (`../puikit`; see its `docs/drag_drop.md` and `puikit/backends/`), where
-> the APIs differ. TFM's application-layer drag-initiation design still applies.
+> the APIs differ. XeFM's application-layer drag-initiation design still applies.
 > See [PROJECT_HISTORY.md](PROJECT_HISTORY.md).
 
 ## Overview
 
-This document provides comprehensive implementation details for TFM's drag-and-drop feature, which enables users to drag files from the file manager to external applications on desktop platforms. The implementation is designed with a platform-agnostic architecture at the TFM level, with platform-specific implementations in the PuiKit backend layer.
+This document provides comprehensive implementation details for XeFM's drag-and-drop feature, which enables users to drag files from the file manager to external applications on desktop platforms. The implementation is designed with a platform-agnostic architecture at the XeFM level, with platform-specific implementations in the PuiKit backend layer.
 
-**Target Audience**: Developers working on TFM, contributors adding platform support, maintainers debugging drag-and-drop issues.
+**Target Audience**: Developers working on XeFM, contributors adding platform support, maintainers debugging drag-and-drop issues.
 
 **Current Platform Support**:
 - ✅ macOS (via CoreGraphics backend)
@@ -28,7 +28,7 @@ The drag-and-drop implementation follows a four-layer architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Layer 1: TFM Application             │
+│                    Layer 1: XeFM Application             │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │         Drag Gesture Detector                    │  │
 │  │  - Tracks mouse button state                     │  │
@@ -81,7 +81,7 @@ The drag-and-drop implementation follows a four-layer architecture:
 
 ### Design Principles
 
-1. **Platform Independence**: TFM code is platform-agnostic; platform-specific logic lives in backends
+1. **Platform Independence**: XeFM code is platform-agnostic; platform-specific logic lives in backends
 2. **Capability Detection**: Backends advertise drag-and-drop support via `supports_drag_and_drop()`
 3. **Graceful Degradation**: Terminal mode (Curses) returns False without errors
 4. **Standard Protocols**: Uses file:// URLs (RFC 8089) for cross-platform compatibility
@@ -532,7 +532,7 @@ def start_drag_session(
 
 ## FileManager Integration
 
-**Module**: `tfm.py`
+**Module**: `xefm/app.py`
 
 **Integration Points**:
 
@@ -601,7 +601,7 @@ def start_drag_session(
 **Event Flow**:
 
 ```
-User Action          → TFM Handler              → Component
+User Action          → XeFM Handler              → Component
 ─────────────────────────────────────────────────────────────
 Mouse button down    → handle_mouse_event()     → gesture_detector.handle_button_down()
 Mouse move           → handle_mouse_event()     → gesture_detector.handle_move()
@@ -773,7 +773,7 @@ Required for:
 - Edge cases with invalid drop targets
 
 **Test Procedure**:
-1. Select files in TFM
+1. Select files in XeFM
 2. Click and drag files
 3. Drop on Finder, text editor, or other app
 4. Verify files appear in target application
@@ -1059,7 +1059,7 @@ Before releasing platform support:
 - [Windows Drag-Drop Reference](https://docs.microsoft.com/en-us/windows/win32/shell/dragdrop)
 - [Linux Drag and Drop](https://www.freedesktop.org/wiki/Specifications/)
 
-### Related TFM Documentation
+### Related XeFM Documentation
 
 - `doc/MOUSE_EVENT_SUPPORT_FEATURE.md` - End-user documentation (Drag-and-Drop section)
 - `doc/MOUSE_EVENT_SUPPORT_FEATURE.md` - Mouse event infrastructure
@@ -1085,4 +1085,4 @@ Before releasing platform support:
 - Drag preview customization
 - Drag operation type hints (copy vs move)
 - Progress feedback for large file operations
-- Drag-and-drop from external apps to TFM (drop target support)
+- Drag-and-drop from external apps to XeFM (drop target support)

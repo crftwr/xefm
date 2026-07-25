@@ -1,7 +1,7 @@
 """
 Test script to verify log scroll direction fix
 
-Run with: PYTHONPATH=.:src pytest test/test_log_scroll_direction.py -v
+Run with: python -m pytest test/test_log_scroll_direction.py -v
 """
 
 import sys
@@ -11,8 +11,8 @@ def test_log_scroll_direction():
     print("Testing log scroll direction logic...")
     
     try:
-        from tfm_log_manager import LogManager
-        from tfm_config import get_config
+        from xefm.log_manager import LogManager
+        from xefm.config import get_config
         
         config = get_config()
         log_manager = LogManager(config)
@@ -74,7 +74,7 @@ def test_scroll_method_comments():
     print("Testing scroll method documentation...")
     
     try:
-        from tfm_log_manager import LogManager
+        from xefm.log_manager import LogManager
         
         # Check that method docstrings mention the correct direction
         scroll_up_doc = LogManager.scroll_log_up.__doc__
@@ -93,7 +93,7 @@ def test_scroll_method_comments():
 def main():
     """Run log scroll direction tests"""
     print("=" * 60)
-    print("TFM Log Scroll Direction Fix Test")
+    print("XeFM Log Scroll Direction Fix Test")
     print("=" * 60)
     
     tests = [

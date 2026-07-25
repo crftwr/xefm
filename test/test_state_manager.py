@@ -1,14 +1,14 @@
 """
-Test suite for TFM State Manager
+Test suite for XeFM State Manager
 
 Tests the persistent state management system including:
 - Basic state operations (get/set/delete)
 - Multi-instance safety
 - Database locking and concurrency
-- TFM-specific state operations
+- XeFM-specific state operations
 - Error handling and recovery
 
-Run with: PYTHONPATH=.:src pytest test/test_state_manager.py -v
+Run with: python -m pytest test/test_state_manager.py -v
 """
 
 import tempfile
@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from tfm_state_manager import StateManager, TFMStateManager
+from xefm.state_manager import StateManager, XeFMStateManager
 
 
 def test_basic_state_operations():
@@ -132,15 +132,15 @@ def test_concurrent_access():
         return
 
 
-def test_tfm_specific_operations():
-    """Test TFM-specific state operations."""
-    print("Testing TFM-specific operations...")
+def test_xefm_specific_operations():
+    """Test XeFM-specific state operations."""
+    print("Testing XeFM-specific operations...")
     
     with tempfile.TemporaryDirectory() as temp_dir:
         db_path = Path(temp_dir) / "test_state.db"
-        tfm_state = TFMStateManager("test_instance")
-        tfm_state.db_path = db_path
-        tfm_state._initialize_database()
+        xefm_state = XeFMStateManager("test_instance")
+        xefm_state.db_path = db_path
+        xefm_state._initialize_database()
         
         # Test pane state
         pane_data = {
@@ -153,8 +153,8 @@ def test_tfm_specific_operations():
             'selected_files': {'/test/file1.txt', '/test/file2.txt'}
         }
         
-        assert tfm_state.save_pane_state("left", pane_data)
-        loaded_state = tfm_state.load_pane_state("left")
+        assert xefm_state.save_pane_state("left", pane_data)
+        loaded_state = xefm_state.load_pane_state("left")
         
         assert loaded_state is not None
         assert loaded_state['path'] == '/test/path'
@@ -163,37 +163,37 @@ def test_tfm_specific_operations():
         assert set(loaded_state['selected_files']) == {'/test/file1.txt', '/test/file2.txt'}
         
         # Test window layout
-        assert tfm_state.save_window_layout(0.6, 0.3)
-        layout = tfm_state.load_window_layout()
+        assert xefm_state.save_window_layout(0.6, 0.3)
+        layout = xefm_state.load_window_layout()
         assert layout is not None
         assert layout['left_pane_ratio'] == 0.6
         assert layout['log_height_ratio'] == 0.3
         
         # Test recent directories
         dirs = ['/home/user', '/tmp', '/var/log']
-        assert tfm_state.save_recent_directories(dirs)
-        loaded_dirs = tfm_state.load_recent_directories()
+        assert xefm_state.save_recent_directories(dirs)
+        loaded_dirs = xefm_state.load_recent_directories()
         assert loaded_dirs == dirs
         
         # Test adding recent directory
-        assert tfm_state.add_recent_directory('/new/path')
-        updated_dirs = tfm_state.load_recent_directories()
+        assert xefm_state.add_recent_directory('/new/path')
+        updated_dirs = xefm_state.load_recent_directories()
         assert updated_dirs[0] == '/new/path'
         assert '/home/user' in updated_dirs
         
         # Test search history
         terms = ['*.py', 'TODO', 'function']
-        assert tfm_state.save_search_history(terms)
-        loaded_terms = tfm_state.load_search_history()
+        assert xefm_state.save_search_history(terms)
+        loaded_terms = xefm_state.load_search_history()
         assert loaded_terms == terms
         
         # Test adding search term
-        assert tfm_state.add_search_term('new_search')
-        updated_terms = tfm_state.load_search_history()
+        assert xefm_state.add_search_term('new_search')
+        updated_terms = xefm_state.load_search_history()
         assert updated_terms[0] == 'new_search'
         assert '*.py' in updated_terms
         
-        print("✓ TFM-specific operations work correctly")
+        print("✓ XeFM-specific operations work correctly")
 
 
 def test_error_handling():
@@ -252,40 +252,40 @@ def test_session_management():
     with tempfile.TemporaryDirectory() as temp_dir:
         db_path = Path(temp_dir) / "test_state.db"
         
-        # Create TFM state manager (registers session)
-        tfm_state = TFMStateManager("test_session_1")
-        tfm_state.db_path = db_path
-        tfm_state._initialize_database()
-        tfm_state._register_session()
+        # Create XeFM state manager (registers session)
+        xefm_state = XeFMStateManager("test_session_1")
+        xefm_state.db_path = db_path
+        xefm_state._initialize_database()
+        xefm_state._register_session()
         
         # Check that session is registered
-        sessions = tfm_state.get_active_sessions()
+        sessions = xefm_state.get_active_sessions()
         assert len(sessions) >= 1
         assert any(s['instance_id'] == 'test_session_1' for s in sessions)
         
         # Update heartbeat
-        tfm_state.update_session_heartbeat()
+        xefm_state.update_session_heartbeat()
         
         # Create another session
-        tfm_state2 = TFMStateManager("test_session_2")
-        tfm_state2.db_path = db_path
-        tfm_state2._register_session()
+        xefm_state2 = XeFMStateManager("test_session_2")
+        xefm_state2.db_path = db_path
+        xefm_state2._register_session()
         
         # Check both sessions are active
-        sessions = tfm_state.get_active_sessions()
+        sessions = xefm_state.get_active_sessions()
         assert len(sessions) >= 2
         
         # Cleanup one session
-        tfm_state.cleanup_session()
+        xefm_state.cleanup_session()
         
         # Check that session was removed
-        sessions = tfm_state2.get_active_sessions()
+        sessions = xefm_state2.get_active_sessions()
         session_ids = [s['instance_id'] for s in sessions]
         assert 'test_session_1' not in session_ids
         assert 'test_session_2' in session_ids
         
         # Cleanup remaining session
-        tfm_state2.cleanup_session()
+        xefm_state2.cleanup_session()
         
         print("✓ Session management works correctly")
 
@@ -324,7 +324,7 @@ def test_performance():
 
 def run_all_tests():
     """Run all tests."""
-    print("Running TFM State Manager tests...\n")
+    print("Running XeFM State Manager tests...\n")
     
     try:
         test_basic_state_operations()
@@ -335,7 +335,7 @@ def run_all_tests():
         else:
             print("✗ Concurrent access test failed")
         
-        test_tfm_specific_operations()
+        test_xefm_specific_operations()
         test_error_handling()
         test_session_management()
         test_performance()

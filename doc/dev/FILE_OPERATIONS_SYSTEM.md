@@ -2,9 +2,9 @@
 
 ## Overview
 
-Copy, move, duplicate, and delete are provided by a single class, `FileOperationService` (`tfm_file_operations.py`). It confirms the operation on the main thread, then runs the actual work as a background **task** (see [Task Framework](TASK_FRAMEWORK_IMPLEMENTATION.md)) whose body is one **linear** function — prepare → resolve conflicts → count → execute, top to bottom. There is no state machine and no separate UI / executor / list-manager split; the earlier four-layer design was removed in the PuiKit port.
+Copy, move, duplicate, and delete are provided by a single class, `FileOperationService` (`xefm/file_operations.py`). It confirms the operation on the main thread, then runs the actual work as a background **task** (see [Task Framework](TASK_FRAMEWORK_IMPLEMENTATION.md)) whose body is one **linear** function — prepare → resolve conflicts → count → execute, top to bottom. There is no state machine and no separate UI / executor / list-manager split; the earlier four-layer design was removed in the PuiKit port.
 
-The same service instance serves any view. `TfmApp` owns one (`self._fileops = FileOperationService(config, self.tasks)`); a full-window modal such as the directory-diff viewer can construct its own and pass a higher `z` so its dialogs stack above itself.
+The same service instance serves any view. `XeFMApp` owns one (`self._fileops = FileOperationService(config, self.tasks)`); a full-window modal such as the directory-diff viewer can construct its own and pass a higher `z` so its dialogs stack above itself.
 
 ## Copy operation — end to end
 
@@ -12,7 +12,7 @@ The same service instance serves any view. `TfmApp` owns one (`self._fileops = F
 sequenceDiagram
     autonumber
     participant U as User
-    participant App as TfmApp
+    participant App as XeFMApp
     participant Svc as FileOperationService
     participant Mgr as TaskManager + ProgressDialog
     participant W as worker thread — _run()
@@ -96,7 +96,7 @@ For copy/move, `_resolve` prompts per collision through the task's UI bridge —
 
 In-place duplication (GitHub issue #192) is a thin `"duplicate"` operation kind layered onto the shared copy engine, plus app wiring for the two entry points. No new copy/rename logic was written — it reuses `_unique_dest()` and the existing threaded task pipeline.
 
-### Engine — `src/tfm_file_operations.py`
+### Engine — `xefm/file_operations.py`
 
 `"duplicate"` is registered alongside `copy`/`move`/`delete`:
 
@@ -116,9 +116,9 @@ Because distinct targets in one directory have distinct names, computing all des
 
 Everything else falls through the copy path: `_count()` walks the plan, `_execute_one()` routes to `_copy_tree()` (the `if kind == "move"` source-delete is skipped, so the original is never removed), and the per-file log line reads "Duplicated" via the verb map `{"move": "Moved", "duplicate": "Duplicated"}.get(kind, "Copied")`.
 
-The confirm prompt in `_start()` gets a duplicate-specific line ("Duplicate **N** item(s) in `<dir>`?") and honors `CONFIRM_DUPLICATE` through the existing `getattr(config, f"CONFIRM_{verb.upper()}", True)` — no special casing needed. `CONFIRM_DUPLICATE = True` lives in `src/_config.py`.
+The confirm prompt in `_start()` gets a duplicate-specific line ("Duplicate **N** item(s) in `<dir>`?") and honors `CONFIRM_DUPLICATE` through the existing `getattr(config, f"CONFIRM_{verb.upper()}", True)` — no special casing needed. `CONFIRM_DUPLICATE = True` lives in `xefm/_config.py`.
 
-### App wiring — `tfm.py`
+### App wiring — `xefm/app.py`
 
 Two entry points, one shared runner:
 
@@ -145,8 +145,8 @@ The same-directory copy relaxation lives in `_transfer()`: when `dest_dir == src
 
 ## Integration
 
-- `TfmApp.__init__` — `self.tasks = TaskManager()`, `self._fileops = FileOperationService(self.config, self.tasks)`.
-- `TfmApp.copy_files()` / `move_files()` / `duplicate_files()` / `delete_files()` gather the active pane's selection and delegate to `self._fileops`, passing an `on_complete` that refreshes panes and logs the summary.
+- `XeFMApp.__init__` — `self.tasks = TaskManager()`, `self._fileops = FileOperationService(self.config, self.tasks)`.
+- `XeFMApp.copy_files()` / `move_files()` / `duplicate_files()` / `delete_files()` gather the active pane's selection and delegate to `self._fileops`, passing an `on_complete` that refreshes panes and logs the summary.
 
 ## References
 

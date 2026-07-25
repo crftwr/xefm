@@ -1,6 +1,6 @@
 # Markdown Viewer
 
-TFM's built-in file viewer can render Markdown files (`*.md`, `*.markdown`) as
+XeFM's built-in file viewer can render Markdown files (`*.md`, `*.markdown`) as
 formatted rich text — headings, **bold** / *italic*, `code`, lists, tables,
 block quotes, links and images — in addition to the usual raw, line-numbered
 text view.
@@ -9,7 +9,7 @@ text view.
 
 Press **V** on a Markdown file (or any text file) to open the viewer. The **raw
 text** view — line numbers, syntax highlighting, incremental search and line
-wrapping — is the starting point, unless you've told TFM you prefer the rendered
+wrapping — is the starting point, unless you've told XeFM you prefer the rendered
 view for this kind of file (see *Remembering your choice* below).
 
 ## Switching to the rendered view
@@ -26,7 +26,7 @@ were in each.
 
 ## Remembering your choice
 
-TFM remembers the view you last chose **per file type** and reopens that type the
+XeFM remembers the view you last chose **per file type** and reopens that type the
 same way next time. Toggle a `.md` file to the rendered view and every `.md` file
 you open afterwards — this session and after a restart — opens rendered; toggle
 one back to raw and `.md` files open raw again. The preference is tracked

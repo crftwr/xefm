@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM provides seamless SFTP (SSH File Transfer Protocol) support, allowing you to browse, search, and manage files on remote servers as if they were local directories. SFTP integration uses SSH multiplexing for optimal performance and supports all standard file operations.
+XeFM provides seamless SFTP (SSH File Transfer Protocol) support, allowing you to browse, search, and manage files on remote servers as if they were local directories. SFTP integration uses SSH multiplexing for optimal performance and supports all standard file operations.
 
 ## Quick Start
 
@@ -37,13 +37,13 @@ ssh://server.example.com:2222/opt/data
 3. Press Enter
 
 **Method 2: Favorite Directories**
-1. Add SFTP paths to favorites in config: `~/.tfm/config.py`
+1. Add SFTP paths to favorites in config: `~/.xefm/config.py`
 2. Press `J` to access favorites
 3. Select your SFTP bookmark
 
 **Method 3: Command Line**
 ```bash
-python3 tfm.py --left ssh://server/path --right ~/local/path
+python3 -m xefm --left ssh://server/path --right ~/local/path
 ```
 
 ## SSH Configuration
@@ -93,7 +93,7 @@ ssh-copy-id user@hostname
 ssh user@hostname
 ```
 
-Once SSH key authentication works, TFM will use it automatically.
+Once SSH key authentication works, XeFM will use it automatically.
 
 ## Features
 
@@ -110,7 +110,7 @@ All standard file operations work on SFTP paths:
 
 ### Cross-Storage Operations
 
-TFM seamlessly handles operations between different storage types:
+XeFM seamlessly handles operations between different storage types:
 
 **Local ↔ SFTP:**
 ```
@@ -153,7 +153,7 @@ test_.*\.py    # Find Python test files
 
 ### Performance Optimizations
 
-TFM includes several optimizations for SFTP operations:
+XeFM includes several optimizations for SFTP operations:
 
 1. **SSH Control Master Multiplexing**
    - Reuses existing SSH connections
@@ -191,7 +191,7 @@ View remote text files with full syntax highlighting:
 
 ### SFTP-Specific Settings
 
-Add to `~/.tfm/config.py`:
+Add to `~/.xefm/config.py`:
 
 ```python
 # SFTP cache TTL for successful results (seconds)
@@ -221,7 +221,7 @@ Access with `j` key.
 
 ### SSH Multiplexing
 
-TFM automatically uses SSH Control Master for connection multiplexing. To verify it's working:
+XeFM automatically uses SSH Control Master for connection multiplexing. To verify it's working:
 
 ```bash
 # Check for control socket
@@ -263,16 +263,16 @@ Press `Shift-X` to enter sub-shell mode with SFTP environment variables:
 
 ```bash
 # Environment variables available:
-echo $TFM_LEFT_DIR    # May be ssh://server/path
-echo $TFM_RIGHT_DIR   # May be local path
-echo $TFM_THIS_DIR    # Current pane (SFTP or local)
+echo $XEFM_LEFT_DIR    # May be ssh://server/path
+echo $XEFM_RIGHT_DIR   # May be local path
+echo $XEFM_THIS_DIR    # Current pane (SFTP or local)
 
 # Use with standard tools:
-scp $TFM_THIS_DIR/file.txt user@other:/path/
-rsync -av $TFM_THIS_DIR/ backup/
+scp $XEFM_THIS_DIR/file.txt user@other:/path/
+rsync -av $XEFM_THIS_DIR/ backup/
 ```
 
-Type `exit` to return to TFM.
+Type `exit` to return to XeFM.
 
 ## Troubleshooting
 
@@ -330,7 +330,7 @@ Solutions:
 Solutions:
 1. Navigate out of and back into the directory to re-list it
 2. Reduce SSH_CACHE_TTL in config
-3. Restart TFM to clear all caches
+3. Restart XeFM to clear all caches
 
 **Problem: Deleted files still showing**
 
@@ -378,15 +378,15 @@ Solution:
 **For permission changes:**
 ```bash
 # Press X to enter sub-shell
-chmod 755 $TFM_THIS_DIR/script.sh
+chmod 755 $XEFM_THIS_DIR/script.sh
 exit
 ```
 
 **For advanced operations:**
 ```bash
 # Use sub-shell with standard tools
-rsync -av --progress $TFM_THIS_DIR/ backup/
-tar czf archive.tar.gz $TFM_THIS_DIR/*
+rsync -av --progress $XEFM_THIS_DIR/ backup/
+tar czf archive.tar.gz $XEFM_THIS_DIR/*
 ```
 
 ## Examples
@@ -436,7 +436,7 @@ tar czf archive.tar.gz $TFM_THIS_DIR/*
 
 ## Related Documentation
 
-- **[User Guide](TFM_USER_GUIDE.md)** - Complete TFM documentation
+- **[User Guide](XEFM_USER_GUIDE.md)** - Complete XeFM documentation
 - **[Configuration](CONFIGURATION_FEATURE.md)** - Configuration options
 - **[AWS S3 Support](S3_SUPPORT_FEATURE.md)** - Cloud storage integration
 - **[Archive Browsing](ARCHIVE_FEATURE.md)** - Archive support

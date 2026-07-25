@@ -1,13 +1,13 @@
 """
 Test Cross-Storage Move Functionality
 
-This test verifies that TFM can move files and directories between different storage systems:
+This test verifies that XeFM can move files and directories between different storage systems:
 - Local to S3
 - S3 to Local  
 - S3 to S3 (different buckets/paths)
 - Local to Local (same storage verification)
 
-Run with: PYTHONPATH=.:src pytest test/test_cross_storage_move.py -v
+Run with: python -m pytest test/test_cross_storage_move.py -v
 """
 
 import os
@@ -15,7 +15,7 @@ import tempfile
 import shutil
 from pathlib import Path as PathlibPath
 
-from tfm_path import Path
+from xefm.path import Path
 
 
 class TestCrossStorageMove:
@@ -28,7 +28,7 @@ class TestCrossStorageMove:
         self.test_dirs = []
 
         # Create temporary directory for local tests
-        self.temp_dir = tempfile.mkdtemp(prefix='tfm_move_test_')
+        self.temp_dir = tempfile.mkdtemp(prefix='xefm_move_test_')
 
         # Create test files and directories
         self._create_test_data()

@@ -4,7 +4,7 @@ Test S3 Cache Fix
 This test verifies that the S3 caching fix properly caches stat information
 from directory listings and avoids 404 errors.
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_cache_operations.py -v
+Run with: python -m pytest test/test_s3_cache_operations.py -v
 """
 
 import time
@@ -13,8 +13,8 @@ from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 
 try:
-    from tfm_path import Path
-    from tfm_s3 import S3PathImpl, get_s3_cache
+    from xefm.path import Path
+    from xefm.s3 import S3PathImpl, get_s3_cache
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print("Skipping S3 cache fix tests")
@@ -67,7 +67,7 @@ class TestS3CacheFix(unittest.TestCase):
         self.mock_paginator.paginate.return_value = [self.mock_list_response]
         self.mock_client.get_paginator.return_value = self.mock_paginator
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_cache_key_consistency(self, mock_boto3_client):
         """Test that cache keys are consistent between iterdir and stat calls"""
         mock_boto3_client.return_value = self.mock_client
@@ -96,7 +96,7 @@ class TestS3CacheFix(unittest.TestCase):
                 self.assertIn('LastModified', cached_head)
                 self.assertGreater(cached_head['ContentLength'], 0)
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_stat_uses_cached_data(self, mock_boto3_client):
         """Test that stat() calls use cached data and don't make API calls"""
         mock_boto3_client.return_value = self.mock_client
@@ -122,7 +122,7 @@ class TestS3CacheFix(unittest.TestCase):
         # Verify no head_object calls were made (should use cached data)
         self.mock_client.head_object.assert_not_called()
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_no_404_errors_with_cache(self, mock_boto3_client):
         """Test that cached data prevents 404 errors from head_object calls"""
         mock_boto3_client.return_value = self.mock_client
@@ -163,7 +163,7 @@ class TestS3CacheFix(unittest.TestCase):
         # Same file should have same key
         self.assertEqual(key1, key3)
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_cache_invalidation_on_write(self, mock_boto3_client):
         """Test that cache is properly invalidated on write operations"""
         mock_boto3_client.return_value = self.mock_client

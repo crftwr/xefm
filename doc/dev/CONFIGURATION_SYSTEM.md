@@ -1,13 +1,13 @@
-# TFM Configuration System
+# XeFM Configuration System
 
-TFM includes a comprehensive configuration system that allows users to customize behavior, key bindings, and appearance through a Python configuration file.
+XeFM includes a comprehensive configuration system that allows users to customize behavior, key bindings, and appearance through a Python configuration file.
 
 ## Configuration File Location
 
-**User Config**: `~/.tfm/config.py`
-**Template File**: `_config.py` (in TFM installation directory)
+**User Config**: `~/.xefm/config.py`
+**Template File**: `_config.py` (in XeFM installation directory)
 
-- **Auto-Creation**: If the config file doesn't exist, TFM automatically creates one from the template on first launch
+- **Auto-Creation**: If the config file doesn't exist, XeFM automatically creates one from the template on first launch
 - **Template-Based**: Default configuration is maintained in a separate `_config.py` template file
 - **Python Format**: Configuration is stored as a Python class for flexibility and validation
 - **User Directory**: User config located in the user's home directory for per-user customization
@@ -19,7 +19,7 @@ TFM includes a comprehensive configuration system that allows users to customize
 
 ```python
 class Config:
-    """User configuration for TFM"""
+    """User configuration for XeFM"""
     
     # Display settings
     SHOW_HIDDEN_FILES = False
@@ -91,12 +91,12 @@ class Config:
 
 ### Comprehensive Key Bindings System
 
-TFM now features a fully configurable key binding system where all keyboard shortcuts can be customized through the configuration file. Each action has a descriptive name and can be assigned multiple keys.
+XeFM now features a fully configurable key binding system where all keyboard shortcuts can be customized through the configuration file. Each action has a descriptive name and can be assigned multiple keys.
 
 ```python
 KEY_BINDINGS = {
     # Application Control
-    'quit': ['q', 'Q'],                    # Exit TFM application
+    'quit': ['q', 'Q'],                    # Exit XeFM application
     'help': ['?'],                         # Show help dialog with all key bindings
     
     # Display & Navigation
@@ -164,11 +164,11 @@ KEY_BINDINGS = {
 - **Descriptive Names**: Each action has a clear, descriptive name
 - **Full Configurability**: All keyboard shortcuts can be customized
 - **Validation**: Invalid key bindings are ignored with warnings
-- **Comprehensive Coverage**: Covers all TFM functionality including pane management
+- **Comprehensive Coverage**: Covers all XeFM functionality including pane management
 
 ### New Pane Adjustment Keys
 
-TFM now includes dedicated keys for adjusting pane boundaries:
+XeFM now includes dedicated keys for adjusting pane boundaries:
 
 - **Horizontal Adjustment**: `[` and `]` keys adjust the boundary between left and right panes
 - **Vertical Adjustment**: `{` and `}` keys adjust the log pane height
@@ -179,21 +179,21 @@ TFM now includes dedicated keys for adjusting pane boundaries:
 
 ### Single Source of Truth
 
-All configuration defaults live in the `Config` class in `src/_config.py`. There is
-**no** second defaults class — the earlier `DefaultConfig` in `tfm_config.py` was
-removed, so there are no longer "two configs" to keep in sync. `src/_config.py`
+All configuration defaults live in the `Config` class in `xefm/_config.py`. There is
+**no** second defaults class — the earlier `DefaultConfig` in `xefm/config.py` was
+removed, so there are no longer "two configs" to keep in sync. `xefm/_config.py`
 serves two roles:
 
-1. **Template** — copied verbatim to `~/.tfm/config.py` on first run.
+1. **Template** — copied verbatim to `~/.xefm/config.py` on first run.
 2. **Default provider** — the source used to fill in any fields a user config is
    missing.
 
 ### Automatic Field Copying
 
-When TFM loads configuration it:
+When XeFM loads configuration it:
 
-1. Loads the user's `~/.tfm/config.py` (if present).
-2. Loads the template `Config` class from `src/_config.py`.
+1. Loads the user's `~/.xefm/config.py` (if present).
+2. Loads the template `Config` class from `xefm/_config.py`.
 3. Copies any missing public fields from the template into the user config.
 4. Returns a complete config with every field present.
 
@@ -205,9 +205,9 @@ config to pick up newly added settings.
 
 ```
 1. ConfigManager.load_config() called
-2. Load template Config class from src/_config.py   (_load_template_config)
-3. Does ~/.tfm/config.py exist?
-   - No  -> create_default_config() copies src/_config.py to ~/.tfm/config.py
+2. Load template Config class from xefm/_config.py   (_load_template_config)
+3. Does ~/.xefm/config.py exist?
+   - No  -> create_default_config() copies xefm/_config.py to ~/.xefm/config.py
    - Yes -> import and instantiate the user's Config
             (on error, fall back to an empty config filled from the template)
 4. _copy_missing_fields(user_config, template_class) backfills any missing
@@ -215,13 +215,13 @@ config to pick up newly added settings.
 5. Return the complete config with all fields present
 ```
 
-### Key Components (`src/tfm_config.py`)
+### Key Components (`xefm/config.py`)
 
 - **`ConfigManager`** — loads, caches, and provides access to config. Key methods:
   `load_config()`, `get_config()`, `reload_config()`, `create_default_config()`,
   `validate_config()`, `get_key_bindings()`.
 - **`_load_template_config()`** — dynamically imports the `Config` class from
-  `src/_config.py` and returns the class (not an instance) for field inspection;
+  `xefm/_config.py` and returns the class (not an instance) for field inspection;
   returns `None` on failure.
 - **`_copy_missing_fields(user_config, template_config_class)`** — copies public
   (non-`_`) attributes present on the template but missing on the user config,
@@ -229,12 +229,12 @@ config to pick up newly added settings.
 - **`KeyBindings`** — key-binding lookup and parsing
   (`find_action_for_event`, `get_keys_for_action`, `format_key_for_display`).
 
-> `validate_config()` builds a merged `Config` from `src/_config.py` internally to
+> `validate_config()` builds a merged `Config` from `xefm/_config.py` internally to
 > check ranges/types — it is a local helper, not a separate defaults class.
 
 ### Adding a New Option
 
-1. Add the field to the `Config` class in `src/_config.py`.
+1. Add the field to the `Config` class in `xefm/_config.py`.
 2. That's it — the field is copied into existing user configs on next launch and
    logged (`Added missing config field: <NAME>`). There is no second class to update.
 
@@ -242,28 +242,28 @@ config to pick up newly added settings.
 
 ### Automatic Loading
 
-1. **Startup Check**: TFM checks for `~/.tfm/config.py` on launch
-2. **Auto-Creation**: Creates the user config from the `src/_config.py` template if the file doesn't exist
-3. **Template-Based**: Uses the single `src/_config.py` template as the source of defaults
-4. **Error Handling**: Fills missing fields from the `src/_config.py` template if the config is incomplete or invalid
+1. **Startup Check**: XeFM checks for `~/.xefm/config.py` on launch
+2. **Auto-Creation**: Creates the user config from the `xefm/_config.py` template if the file doesn't exist
+3. **Template-Based**: Uses the single `xefm/_config.py` template as the source of defaults
+4. **Error Handling**: Fills missing fields from the `xefm/_config.py` template if the config is incomplete or invalid
 5. **Validation**: Validates configuration values and reports errors
 
 ### Configuration API
 
 ```python
-import tfm_config
+from xefm import config
 
 # Get current configuration
-config = tfm_config.get_config()
+config = xefm.config.get_config()
 
 # Reload configuration from file
-tfm_config.reload_config()
+xefm.config.reload_config()
 
 # Check key bindings
-is_bound = tfm_config.is_key_bound_to('q', 'quit')
+is_bound = xefm.config.is_key_bound_to('q', 'quit')
 
 # Get startup paths
-left_path, right_path = tfm_config.get_startup_paths()
+left_path, right_path = xefm.config.get_startup_paths()
 ```
 
 ## Customization Examples
@@ -374,16 +374,16 @@ class Config:
 
 ### Configuration Errors
 
-1. **File Not Found**: Creates the user config from the `src/_config.py` template
-2. **Syntax Errors**: Loads an empty config and fills all fields from the `src/_config.py` template
+1. **File Not Found**: Creates the user config from the `xefm/_config.py` template
+2. **Syntax Errors**: Loads an empty config and fills all fields from the `xefm/_config.py` template
 3. **Missing Config Class**: Fills all fields from the template
 4. **Invalid Values**: Uses template defaults for invalid settings
 5. **Permission Errors**: Reports warning and falls back to template defaults
 
 ### Fallback Behavior
 
-- **Graceful Degradation**: TFM always starts even with config errors
-- **Template Defaults**: Missing or invalid fields are filled from the `src/_config.py` template
+- **Graceful Degradation**: XeFM always starts even with config errors
+- **Template Defaults**: Missing or invalid fields are filled from the `xefm/_config.py` template
 - **Error Logging**: Configuration errors are logged to the log pane
 - **User Notification**: Clear messages about configuration issues
 
@@ -391,7 +391,7 @@ class Config:
 
 ### Configuration Template
 
-TFM uses a template-based configuration system for better maintainability:
+XeFM uses a template-based configuration system for better maintainability:
 
 - **Template File**: `_config.py` contains the default configuration template
 - **Clean Defaults**: Template is maintained separately from user configuration
@@ -418,7 +418,7 @@ The `_config.py` template includes:
 ### Dynamic Configuration
 
 - **Runtime Changes**: Some settings can be changed during runtime
-- **Configuration Reload**: Reload config without restarting TFM
+- **Configuration Reload**: Reload config without restarting XeFM
 - **Validation Feedback**: Real-time validation of configuration changes
 
 ### Future Enhancements
@@ -454,7 +454,7 @@ Here's a complete example configuration file:
 ```python
 #!/usr/bin/env python3
 \"\"\"
-TFM User Configuration - Custom Setup
+XeFM User Configuration - Custom Setup
 \"\"\"
 
 class Config:

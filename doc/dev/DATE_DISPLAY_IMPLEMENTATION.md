@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM shows each file's modification time in the file-list panes. Two pieces
+XeFM shows each file's modification time in the file-list panes. Two pieces
 cooperate:
 
 1. **Formatting** — turning a timestamp into a string, in one of two widths
@@ -14,13 +14,13 @@ cooperate:
 Source of truth:
 
 - Formatting: `FileListManager._format_date` in
-  [`src/tfm_file_list_manager.py`](../../src/tfm_file_list_manager.py).
+  [`xefm/file_list_manager.py`](../../xefm/file_list_manager.py).
 - Column width / show-hide decision: `FilePane._date_width`, `MIN_NAME_W`, and
-  the `show_date` computation in [`src/tfm_file_pane.py`](../../src/tfm_file_pane.py).
+  the `show_date` computation in [`xefm/file_pane.py`](../../xefm/file_pane.py).
 - Format identifiers: `DATE_FORMAT_SHORT` / `DATE_FORMAT_FULL` in
-  [`src/tfm_const.py`](../../src/tfm_const.py).
+  [`xefm/const.py`](../../xefm/const.py).
 - Default setting: `DATE_FORMAT` in the user-config template
-  [`src/_config.py`](../../src/_config.py).
+  [`xefm/_config.py`](../../xefm/_config.py).
 
 ## Formatting
 
@@ -29,7 +29,7 @@ listing caches per entry (`date_str`, alongside `size_str`):
 
 ```python
 def _format_date(self, timestamp):
-    from tfm_const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
+    from xefm.const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
 
     dt = datetime.fromtimestamp(timestamp)
     date_format = self.config.DATE_FORMAT
@@ -61,11 +61,11 @@ dates for international compatibility.
 The format is a config setting, not a runtime toggle:
 
 ```python
-# src/_config.py (copied to ~/.tfm/config.py on first run)
+# xefm/_config.py (copied to ~/.xefm/config.py on first run)
 DATE_FORMAT = 'short'   # 'short' (YY-MM-DD HH:mm) or 'full' (YYYY-MM-DD HH:mm:ss)
 ```
 
-`src/tfm_const.py` provides the type-safe identifiers used in the code:
+`xefm/const.py` provides the type-safe identifiers used in the code:
 
 ```python
 DATE_FORMAT_FULL  = 'full'    # YYYY-MM-DD HH:mm:ss
@@ -78,7 +78,7 @@ The date column sits at the right edge of a pane, after the size column. Columns
 left to right, are: **gutter | basename | ext | size | date**. Whether the date
 column is drawn depends on the space left for the name column — the date is
 dropped before the name is squeezed below a legible minimum. All of this lives in
-`FilePane._render_rows` in [`src/tfm_file_pane.py`](../../src/tfm_file_pane.py).
+`FilePane._render_rows` in [`xefm/file_pane.py`](../../xefm/file_pane.py).
 
 ### Measuring the date width
 

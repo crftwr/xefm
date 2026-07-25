@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-TFM Dependency Collection Script (shared, platform-agnostic)
+XeFM Dependency Collection Script (shared, platform-agnostic)
 
-Collects the *runtime* Python dependencies of TFM into a bundle's packages
+Collects the *runtime* Python dependencies of XeFM into a bundle's packages
 directory. Shared by both bundle builds — ``macos_app/build.sh`` (into
 ``Resources/python_packages``) and ``windows_app/build.ps1`` (into
 ``Lib\\site-packages``); it makes no OS assumptions.
@@ -305,7 +305,7 @@ def collect_dependencies(requirements_file, dest_dir, include_deps_of=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Collect TFM runtime Python dependencies for the app bundle"
+        description="Collect XeFM runtime Python dependencies for the app bundle"
     )
     parser.add_argument("--requirements", default="requirements.txt",
                         help="Path to requirements.txt file")
@@ -320,7 +320,7 @@ def main():
     requirements_file = os.path.abspath(args.requirements)
     dest_dir = os.path.abspath(args.dest)
 
-    log_info("TFM Dependency Collection Script")
+    log_info("XeFM Dependency Collection Script")
     log_info(f"Requirements file: {requirements_file}")
     log_info(f"Destination directory: {dest_dir}")
 

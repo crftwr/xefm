@@ -2,13 +2,13 @@
 Demo: Selection Preservation in Jump Dialog
 Demonstrates that user selection is preserved during filtering and scanning
 
-Run with: PYTHONPATH=.:src pytest test/test_selection_preservation_demo.py -v
+Run with: python -m pytest test/test_selection_preservation_demo.py -v
 """
 
 import tempfile
 import time
 
-from _config import Config
+from xefm._config import Config
 
 def create_test_directories():
     """Create a test directory structure"""

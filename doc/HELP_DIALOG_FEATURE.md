@@ -1,7 +1,7 @@
 # Help Dialog (? Key)
 
-TFM includes a scrollable help dialog listing every key binding and usage tip.
-Press **?** from anywhere in TFM to open it — no special mode or prerequisite.
+XeFM includes a scrollable help dialog listing every key binding and usage tip.
+Press **?** from anywhere in XeFM to open it — no special mode or prerequisite.
 
 ## Usage
 
@@ -40,12 +40,12 @@ KEY_BINDINGS = {
 
 ## About dialog
 
-Separate from the help dialog, the **About** dialog shows TFM's logo, version
+Separate from the help dialog, the **About** dialog shows XeFM's logo, version
 number, and GitHub repository URL over an animated Matrix-style background
 (falling full-width green katakana). Open it from the menu bar in desktop mode:
 
-- **macOS**: TFM → About TFM
-- **Other platforms**: Help → About TFM
+- **macOS**: XeFM → About XeFM
+- **Other platforms**: Help → About XeFM
 
 Close it by pressing any key, clicking, or pressing ESC. The animation runs
 while the dialog is open and adapts to window resizing.

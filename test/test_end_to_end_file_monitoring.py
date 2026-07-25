@@ -10,7 +10,7 @@ including:
 - Runtime toggle: monitoring can be toggled on/off at runtime
 - Error handling: system recovers gracefully from errors
 
-Since we cannot run the interactive TFM application, these tests simulate
+Since we cannot run the interactive XeFM application, these tests simulate
 the complete workflow using mocked components and real filesystem operations.
 """
 
@@ -22,12 +22,12 @@ import queue
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-# Add src to path for imports
+# Add the repo root to path for imports
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tfm_file_monitor_manager import FileMonitorManager
-from tfm_log_manager import getLogger
+from xefm.file_monitor_manager import FileMonitorManager
+from xefm.log_manager import getLogger
 
 
 class MockConfig:

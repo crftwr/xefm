@@ -4,7 +4,7 @@ Test comprehensive error handling for archive virtual directory operations.
 This test file validates that all archive operations handle errors gracefully
 with user-friendly error messages and proper logging.
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_error_handling.py -v
+Run with: python -m pytest test/test_archive_error_handling.py -v
 """
 
 import pytest
@@ -14,13 +14,13 @@ import zipfile
 import tarfile
 from pathlib import Path as PathlibPath
 
-from tfm_archive import (
+from xefm.archive import (
     ArchiveError, ArchiveFormatError, ArchiveCorruptedError,
     ArchiveExtractionError, ArchiveNavigationError,
     ArchivePermissionError, ArchiveDiskSpaceError,
     ZipHandler, TarHandler, ArchiveCache, ArchivePathImpl
 )
-from tfm_path import Path
+from xefm.path import Path
 
 
 class TestArchiveErrorMessages:

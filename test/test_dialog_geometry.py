@@ -1,9 +1,9 @@
-"""Tests for pane-anchored dialog geometry (tfm_dialog_geometry.pane_anchored_box).
+"""Tests for pane-anchored dialog geometry (xefm.dialog_geometry.pane_anchored_box).
 
-Run with: PYTHONPATH=.:src pytest test/test_dialog_geometry.py -v
+Run with: python -m pytest test/test_dialog_geometry.py -v
 """
 
-from tfm_dialog_geometry import pane_anchored_box
+from xefm.dialog_geometry import pane_anchored_box
 
 
 SCREEN = 100.0

@@ -1,15 +1,15 @@
 /*
- * main.m - TFM macOS Application Launcher
+ * main.m - XeFM macOS Application Launcher
  *
- * This is the main entry point for the TFM native macOS application.
+ * This is the main entry point for the XeFM native macOS application.
  * It initializes NSApplication and sets up the application delegate
- * that will handle Python embedding and TFM window creation.
+ * that will handle Python embedding and XeFM window creation.
  *
  * Requirements: 1.1, 14.1
  */
 
 #import <Cocoa/Cocoa.h>
-#import "TFMAppDelegate.h"
+#import "XeFMAppDelegate.h"
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
@@ -19,7 +19,7 @@ int main(int argc, const char * argv[]) {
         
         // Create and set the application delegate
         // The delegate handles application lifecycle events and Python embedding
-        TFMAppDelegate *delegate = [[TFMAppDelegate alloc] init];
+        XeFMAppDelegate *delegate = [[XeFMAppDelegate alloc] init];
         [app setDelegate:delegate];
         
         // Start the main event loop

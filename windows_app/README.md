@@ -1,7 +1,7 @@
-# TFM Windows Application Bundle
+# XeFM Windows Application Bundle
 
-Build system for a self-contained Windows build of TFM: a double-clickable
-`TFM.exe` that launches TFM in PuiKit's native Direct2D/DirectWrite GUI backend,
+Build system for a self-contained Windows build of XeFM: a double-clickable
+`XeFM.exe` that launches XeFM in PuiKit's native Direct2D/DirectWrite GUI backend,
 with an embedded CPython and all dependencies — no system Python required.
 
 It is the Windows counterpart of [`../macos_app/`](../macos_app/). Full design:
@@ -20,13 +20,13 @@ powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 1.0.0 -Z
 make windows-app-clean
 ```
 
-Output: `windows_app\build\TFM\` (the self-contained folder) and, with `-Zip`,
-`windows_app\build\TFM-<version>-win64.zip`.
+Output: `windows_app\build\XeFM\` (the self-contained folder) and, with `-Zip`,
+`windows_app\build\XeFM-<version>-win64.zip`.
 
 Run it:
 
 ```powershell
-& windows_app\build\TFM\TFM.exe
+& windows_app\build\XeFM\XeFM.exe
 ```
 
 ## Requirements
@@ -48,18 +48,18 @@ Run it:
 windows_app/
 ├── README.md
 ├── build.ps1                 # orchestrator (see design doc for the 8 steps)
-├── make_icon.py              # TFM.icns -> TFM.ico (Pillow), else a placeholder
+├── make_icon.py              # XeFM.icns -> XeFM.ico (Pillow), else a placeholder
 ├── src/
-│   └── launcher.c            # the embedded-CPython launcher (-> TFM.exe)
+│   └── launcher.c            # the embedded-CPython launcher (-> XeFM.exe)
 ├── resources/
-│   ├── TFM.manifest          # app manifest (mirrors CPython's python.exe)
-│   ├── TFM.rc                # icon + version resources
-│   └── TFM.ico               # (optional) commit a real icon here to override
+│   ├── XeFM.manifest          # app manifest (mirrors CPython's python.exe)
+│   ├── XeFM.rc                # icon + version resources
+│   └── XeFM.ico               # (optional) commit a real icon here to override
 ├── .cache/                   # downloaded embeddable zips (gitignored)
 └── build/                    # build output (gitignored)
-    ├── TFM/                  # the distributable folder
+    ├── XeFM/                  # the distributable folder
     ├── obj/                  # launcher intermediates
-    └── TFM-<version>-win64.zip
+    └── XeFM-<version>-win64.zip
 ```
 
 Dependency collection and license notices are **not** duplicated here — `build.ps1`
@@ -71,10 +71,10 @@ into the bundle root and fails the build if any bundled component lacks a licens
 ## Notes
 
 - **Icon:** without Pillow the build embeds a placeholder icon. Install Pillow in
-  the venv (`pip install pillow`) to convert `macos_app/resources/TFM.icns`, or
-  drop a hand-authored multi-size `resources/TFM.ico` in to override.
-- **Startup errors:** because `TFM.exe` is a GUI (no-console) app, a fatal error
+  the venv (`pip install pillow`) to convert `macos_app/resources/XeFM.icns`, or
+  drop a hand-authored multi-size `resources/XeFM.ico` in to override.
+- **Startup errors:** because `XeFM.exe` is a GUI (no-console) app, a fatal error
   before the window appears is shown in a message box and written to
-  `TFM-error.log` next to the exe.
-- **DPI:** the bundle is DPI-unaware on purpose (matches the interpreter TFM is
+  `XeFM-error.log` next to the exe.
+- **DPI:** the bundle is DPI-unaware on purpose (matches the interpreter XeFM is
   developed against); see the design doc.

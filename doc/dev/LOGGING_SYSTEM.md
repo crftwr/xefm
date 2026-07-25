@@ -1,11 +1,11 @@
 # Logging System
 
-Developer reference for TFM's unified logging infrastructure. For the user-facing
+Developer reference for XeFM's unified logging infrastructure. For the user-facing
 description of the log pane and its behavior, see [`doc/LOGGING_FEATURE.md`](../LOGGING_FEATURE.md).
 
 ## Overview
 
-TFM logging is built on Python's standard `logging` module. Component code obtains a
+XeFM logging is built on Python's standard `logging` module. Component code obtains a
 named `logging.Logger` and calls the usual level methods; `print()` and
 `sys.stderr.write()` are also captured and routed through the same pipeline. A set of
 custom handlers fan each record out to the visual log pane, the original terminal
@@ -13,9 +13,9 @@ streams, and (optionally) a log file.
 
 The two source modules are:
 
-- `src/tfm_log_manager.py` — `LogManager`, `LogCapture`, `LoggingConfig`, and the
+- `xefm/log_manager.py` — `LogManager`, `LogCapture`, `LoggingConfig`, and the
   module-level `getLogger()` / `set_log_manager()` helpers.
-- `src/tfm_logging_handlers.py` — the `LogPaneHandler`, `StreamOutputHandler`, and
+- `xefm/logging_handlers.py` — the `LogPaneHandler`, `StreamOutputHandler`, and
   `FileLoggingHandler` classes plus the `should_format_record()` helper.
 
 ## Architecture
@@ -30,7 +30,7 @@ flowchart TD
     A1 --> L["logging.Logger<br/>(one per name)"]
     A2 --> C1["LogCapture (STDOUT)"]
     A3 --> C2["LogCapture (STDERR)"]
-    C1 --> S["stream logger<br/>'TFM_STREAM_CAPTURE'"]
+    C1 --> S["stream logger<br/>'XEFM_STREAM_CAPTURE'"]
     C2 --> S
     L --> H
     S --> H
@@ -74,7 +74,7 @@ works before `LogManager` exists — early loggers are held as "pending" and wir
 handlers once `set_log_manager()` runs.
 
 ```python
-from tfm_log_manager import getLogger
+from xefm.log_manager import getLogger
 
 # Module-level:
 logger = getLogger("ModuleName")
@@ -170,7 +170,7 @@ a no-op. `close()` releases the file handle and is called on teardown.
 
 `LogManager` replaces `sys.stdout` / `sys.stderr` with `LogCapture` instances at
 construction. `LogCapture.write()` accumulates text and, on each newline, emits a
-`LogRecord` through a dedicated logger named `TFM_STREAM_CAPTURE`:
+`LogRecord` through a dedicated logger named `XEFM_STREAM_CAPTURE`:
 
 - `STDOUT` -> level `INFO`
 - `STDERR` -> level `WARNING`
@@ -181,7 +181,7 @@ Records are marked `is_stream_capture = True` so handlers render them raw. Level
 
 ## Configuration
 
-`LogManager` is constructed with the TFM app config plus mode flags:
+`LogManager` is constructed with the XeFM app config plus mode flags:
 
 ```python
 LogManager(config, is_desktop_mode=False, log_file=None, no_log_pane=False)
@@ -193,10 +193,10 @@ LogManager(config, is_desktop_mode=False, log_file=None, no_log_pane=False)
 - `log_file` — when set, enables `FileLoggingHandler` at that path.
 - `no_log_pane` — disables `LogPaneHandler`.
 
-Internally these populate a `LoggingConfig` dataclass (defined in `tfm_log_manager.py`):
+Internally these populate a `LoggingConfig` dataclass (defined in `xefm/log_manager.py`):
 
 ```python
-from tfm_log_manager import LoggingConfig
+from xefm.log_manager import LoggingConfig
 import logging
 
 LoggingConfig(
@@ -270,7 +270,7 @@ changed.
 ### Get a logger and log
 
 ```python
-from tfm_log_manager import getLogger
+from xefm.log_manager import getLogger
 logger = getLogger("FileOp")
 
 logger.debug("Debug message")

@@ -1,10 +1,10 @@
-# TFM — Claude Code Instructions
+# XeFM — Claude Code Instructions
 
-TFM is a TUI file manager. The application lives at the repo root (`tfm.py`) plus the `tfm_*` modules in `src/`, with tests in `test/` and docs in `doc/`. Its rendering/UI layer runs on **[PuiKit](https://github.com/crftwr/puikit)** — an external, capability-based framework that runs the same widget code on curses, macOS, and Windows backends. PuiKit is **not vendored** here; it is installed editable from `../puikit` (see `make install-puikit`).
+XeFM is a TUI file manager. It is a single Python package, `xefm/`, at the repo root (flat layout, matching PuiKit's own repo): `xefm/app.py` is the entry module holding the `XeFMApp` shell, and its siblings (`xefm/config.py`, `xefm/path.py`, …) hold the storage-agnostic business logic. Tests live in `test/`, docs in `doc/`. Its rendering/UI layer runs on **[PuiKit](https://github.com/crftwr/puikit)** — an external, capability-based framework that runs the same widget code on curses, macOS, and Windows backends. PuiKit is **not vendored** here; it is installed editable from `../puikit` (see `make install-puikit`).
 
 The pre-PuiKit code — the old in-repo **`ttk`** toolkit and the UI modules bound to it — has been removed; consult git history if you ever need it. Don't reintroduce it or import from it.
 
-Historical Kiro design docs live in `.kiro/specs/<feature>/` — useful as reference for existing features, but not authoritative for current state. Source of truth is the code.
+The app was renamed from **TFM** to **XeFM** (and the flat `tfm_*` modules folded into the `xefm` package); the historical Kiro design docs under `.kiro/` were dropped in the same change. Consult git history if you need either. Source of truth is the code.
 
 ---
 
@@ -19,13 +19,18 @@ Historical Kiro design docs live in `.kiro/specs/<feature>/` — useful as refer
   python script.py
   ```
 
-### PYTHONPATH
+### Import path
 
-Always set `PYTHONPATH=.:src` when running Python scripts or tests — the repo root holds `tfm.py`, `src/` holds the `tfm_*` modules, and PuiKit is resolved through its editable install in `.venv/`. (There is no longer a `ttk` entry on the path — the in-repo toolkit was removed in the PuiKit port.)
+Run everything **from the repo root**. `python -m <mod>` puts the working directory on `sys.path`, so the root-level `xefm` package resolves with no install and no `PYTHONPATH`. PuiKit comes from its editable install in `.venv/`. (There is no `ttk` entry — the in-repo toolkit was removed in the PuiKit port.)
 
 ```bash
-PYTHONPATH=.:src python script.py
-PYTHONPATH=.:src pytest test/test_file.py -v
+python -m pytest test/test_file.py -v     # `-m` puts the repo root on sys.path
+```
+
+Running a script **directly** puts the *script's* directory on the path instead, not the repo root, so those need `PYTHONPATH=.`:
+
+```bash
+PYTHONPATH=. python tools/some_script.py
 ```
 
 ### Git pager
@@ -34,8 +39,8 @@ Use `--no-pager` for any git command that may page output: `diff`, `log`, `show`
 
 ### Don't run TUIs
 
-- **Never execute `tfm.py`** — it launches the interactive file manager (curses / native PuiKit backend) and blocks indefinitely. Read the source instead.
-- Anything importing `curses`, PuiKit backends, or `tfm_*` UI components is blocking. PuiKit demos (`../puikit/demo/*.py`) block too.
+- **Never execute `python -m xefm` (or `xefm/app.py`)** — it launches the interactive file manager (curses / native PuiKit backend) and blocks indefinitely. Read the source instead.
+- Anything importing `curses`, PuiKit backends, or the `xefm` UI modules is blocking. PuiKit demos (`../puikit/demo/*.py`) block too.
 - `test/test_*.py` are safe — run them with `pytest`, not `python` directly.
 - If the user explicitly wants to see the app or a demo, tell them to run it manually rather than starting it yourself.
 - Last-resort timeout wrapper: `python3 tools/timeout.py 5 python <script>`.
@@ -46,17 +51,17 @@ Use `--no-pager` for any git command that may page output: `diff`, `log`, `show`
 
 | File type | Location | Naming |
 |-----------|----------|--------|
-| TFM app entry | repo root | `tfm.py` |
-| TFM source | `src/` | `tfm_*.py` |
-| TFM tests | `test/` | `test_*.py` |
+| XeFM app entry | `xefm/` | `app.py` (plus `__main__.py` for `python -m xefm`) |
+| XeFM source | `xefm/` | `*.py`, imported as `xefm.<module>` |
+| XeFM tests | `test/` | `test_*.py` |
 | Dev tools (internal) | `tools/` | `*.sh`, `*.py` |
-| End-user external programs | `src/tools/` | `*.sh`, `*.py` |
-| TFM end-user docs | `doc/` | `FEATURE_NAME_FEATURE.md` |
-| TFM developer docs | `doc/dev/` | `SYSTEM_NAME_SYSTEM.md`, `FEATURE_NAME_IMPLEMENTATION.md` |
+| End-user external programs | `xefm/tools/` | `*.sh`, `*.py` |
+| XeFM end-user docs | `doc/` | `FEATURE_NAME_FEATURE.md` |
+| XeFM developer docs | `doc/dev/` | `SYSTEM_NAME_SYSTEM.md`, `FEATURE_NAME_IMPLEMENTATION.md` |
 | Temporary files | `temp/` | `temp_*`, `TEMP_*` |
 
-- `tools/` is for internal/dev utilities. `src/tools/` is for end-user-facing external programs (different audience).
-- PuiKit is a separate project (`../puikit`, its own repo). Don't add UI-toolkit / backend / renderer code to TFM — that belongs in PuiKit.
+- `tools/` is for internal/dev utilities. `xefm/tools/` is for end-user-facing external programs (different audience).
+- PuiKit is a separate project (`../puikit`, its own repo). Don't add UI-toolkit / backend / renderer code to XeFM — that belongs in PuiKit.
 - Use `temp/` for any throwaway file produced during development.
 
 ### Documentation policy
@@ -72,10 +77,10 @@ Use `--no-pager` for any git command that may page output: `diff`, `log`, `show`
 
 ### Logging
 
-**All TFM source files MUST use the unified logger.** `print()` is prohibited in production code under `src/`.
+**All XeFM source files MUST use the unified logger.** `print()` is prohibited in production code under `xefm/`.
 
 ```python
-from tfm_log_manager import getLogger
+from xefm.log_manager import getLogger
 
 # Class-based:
 class MyComponent:
@@ -120,7 +125,7 @@ Before adding an import, check whether the module is already imported at the top
 
 ### File permissions
 
-Python files should NOT be executable. Run them via `python3 script.py`, not `./script.py`. Shell scripts in `src/tools/` (end-user external programs) may be executable.
+Python files should NOT be executable. Run them via `python3 script.py`, not `./script.py`. Shell scripts in `xefm/tools/` (end-user external programs) may be executable.
 
 ---
 
@@ -128,4 +133,4 @@ Python files should NOT be executable. Run them via `python3 script.py`, not `./
 
 - Logging system: `doc/dev/LOGGING_SYSTEM.md`
 - Logging feature: `doc/LOGGING_FEATURE.md`
-- Log manager: `src/tfm_log_manager.py`
+- Log manager: `xefm/log_manager.py`

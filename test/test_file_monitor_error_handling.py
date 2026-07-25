@@ -15,13 +15,13 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 import queue
 
-# Add src to path for imports
+# Add the repo root to path for imports
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tfm_file_monitor_manager import FileMonitorManager
-from tfm_file_monitor_observer import FileMonitorObserver
-from tfm_log_manager import getLogger
+from xefm.file_monitor_manager import FileMonitorManager
+from xefm.file_monitor_observer import FileMonitorObserver
+from xefm.log_manager import getLogger
 
 
 class MockConfig:
@@ -119,7 +119,7 @@ class TestReinitialization(unittest.TestCase):
         manager = FileMonitorManager(self.config, self.file_manager)
         
         # Mock FileMonitorObserver to always fail
-        with patch('tfm_file_monitor_manager.FileMonitorObserver') as mock_observer_class:
+        with patch('xefm.file_monitor_manager.FileMonitorObserver') as mock_observer_class:
             mock_observer = Mock()
             mock_observer.start.return_value = False
             mock_observer_class.return_value = mock_observer
@@ -143,7 +143,7 @@ class TestReinitialization(unittest.TestCase):
             return False
         
         # Mock FileMonitorObserver to always fail
-        with patch('tfm_file_monitor_manager.FileMonitorObserver') as mock_observer_class:
+        with patch('xefm.file_monitor_manager.FileMonitorObserver') as mock_observer_class:
             mock_observer = Mock()
             mock_observer.start.side_effect = track_retry
             mock_observer_class.return_value = mock_observer
@@ -269,7 +269,7 @@ class TestErrorLogging(unittest.TestCase):
         manager = FileMonitorManager(self.config, self.file_manager)
         
         # Mock FileMonitorObserver to fail
-        with patch('tfm_file_monitor_manager.FileMonitorObserver') as mock_observer_class:
+        with patch('xefm.file_monitor_manager.FileMonitorObserver') as mock_observer_class:
             mock_observer = Mock()
             mock_observer.start.return_value = False
             mock_observer_class.return_value = mock_observer

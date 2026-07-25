@@ -5,7 +5,7 @@
     <!--
       Hardened Runtime entitlements for the embedded CPython interpreter.
 
-      TFM ships its own Python.framework plus C-extension modules (.so) and
+      XeFM ships its own Python.framework plus C-extension modules (.so) and
       vendored dylibs that we re-sign ourselves rather than being part of the
       main executable's signature. Under the Hardened Runtime (required for
       notarization) those need explicit relief:

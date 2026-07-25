@@ -6,7 +6,7 @@ Tests:
 - Visibility checking for log pane (Requirement 11.3)
 - Message retention limit (Requirement 11.4)
 
-Run with: PYTHONPATH=.:src pytest test/test_performance_optimizations.py -v
+Run with: python -m pytest test/test_performance_optimizations.py -v
 """
 
 import sys
@@ -14,8 +14,8 @@ import logging
 import time
 from collections import deque
 
-from tfm_log_manager import LogManager, LoggingConfig
-from tfm_logging_handlers import LogPaneHandler
+from xefm.log_manager import LogManager, LoggingConfig
+from xefm.logging_handlers import LogPaneHandler
 
 
 def test_level_checking_before_formatting():

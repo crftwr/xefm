@@ -6,7 +6,7 @@ This test verifies:
 - reset_metrics() resets all counters to zero
 - Metrics are properly tracked during rendering
 
-Run with: PYTHONPATH=.:src pytest test/test_performance_metrics.py -v
+Run with: python -m pytest test/test_performance_metrics.py -v
 """
 
 

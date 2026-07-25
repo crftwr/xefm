@@ -1,22 +1,22 @@
-"""Tests for the Compare & Select engine (tfm_compare_selection): the name+type
+"""Tests for the Compare & Select engine (xefm.compare_selection): the name+type
 join, each attribute relation (size / mtime direction / content byte-compare),
 the include-missing (orphan) path, NFC normalization, and the file/dir counts."""
 
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import unicodedata
 
 import pytest
 
-from tfm_compare_selection import (
+from xefm.compare_selection import (
     MTIME_TOLERANCE,
     CompareCriteria,
     compute_compare_selection,
 )
-from tfm_path import Path
+from xefm.path import Path
 
 
 def _P(p):

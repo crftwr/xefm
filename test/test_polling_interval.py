@@ -8,7 +8,7 @@ to the PollingObserver when fallback mode is used.
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-from tfm_log_manager import getLogger
+from xefm.log_manager import getLogger
 
 
 class TestPollingInterval(unittest.TestCase):
@@ -20,11 +20,11 @@ class TestPollingInterval(unittest.TestCase):
         self.test_path = Path("/tmp/test_dir")
         self.callback = Mock()
     
-    @patch('tfm_file_monitor_observer.PollingObserver')
-    @patch('tfm_file_monitor_observer.TFMFileSystemEventHandler')
+    @patch('xefm.file_monitor_observer.PollingObserver')
+    @patch('xefm.file_monitor_observer.XeFMFileSystemEventHandler')
     def test_polling_observer_uses_configured_interval(self, mock_handler, mock_polling_observer):
         """Test that PollingObserver is created with the configured interval."""
-        from tfm_file_monitor_observer import FileMonitorObserver
+        from xefm.file_monitor_observer import FileMonitorObserver
         
         # Create a mock observer instance
         mock_observer_instance = MagicMock()
@@ -52,11 +52,11 @@ class TestPollingInterval(unittest.TestCase):
         # Verify start was successful
         self.assertTrue(result)
     
-    @patch('tfm_file_monitor_observer.PollingObserver')
-    @patch('tfm_file_monitor_observer.TFMFileSystemEventHandler')
+    @patch('xefm.file_monitor_observer.PollingObserver')
+    @patch('xefm.file_monitor_observer.XeFMFileSystemEventHandler')
     def test_default_polling_interval(self, mock_handler, mock_polling_observer):
         """Test that default polling interval is used when not specified."""
-        from tfm_file_monitor_observer import FileMonitorObserver
+        from xefm.file_monitor_observer import FileMonitorObserver
         
         # Create a mock observer instance
         mock_observer_instance = MagicMock()
@@ -83,12 +83,12 @@ class TestPollingInterval(unittest.TestCase):
         # Verify start was successful
         self.assertTrue(result)
     
-    @patch('tfm_file_monitor_observer.Observer')
-    @patch('tfm_file_monitor_observer.PollingObserver')
-    @patch('tfm_file_monitor_observer.TFMFileSystemEventHandler')
+    @patch('xefm.file_monitor_observer.Observer')
+    @patch('xefm.file_monitor_observer.PollingObserver')
+    @patch('xefm.file_monitor_observer.XeFMFileSystemEventHandler')
     def test_fallback_to_polling_uses_interval(self, mock_handler, mock_polling_observer, mock_observer):
         """Test that fallback to polling uses the configured interval."""
-        from tfm_file_monitor_observer import FileMonitorObserver
+        from xefm.file_monitor_observer import FileMonitorObserver
         
         # Make native observer fail
         mock_observer.side_effect = Exception("Native monitoring failed")

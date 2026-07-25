@@ -1,7 +1,7 @@
 """
 Test suite for ArchiveHandler classes
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_handler.py -v
+Run with: python -m pytest test/test_archive_handler.py -v
 """
 
 import tempfile
@@ -10,13 +10,13 @@ import tarfile
 from pathlib import Path as PathlibPath
 import pytest
 
-# Add src to path
-from tfm_archive import (
+# Add the repo root to path
+from xefm.archive import (
     ArchiveHandler, ZipHandler, TarHandler, ArchiveEntry,
     ArchiveError, ArchiveFormatError, ArchiveCorruptedError,
     ArchiveExtractionError, ArchiveNavigationError
 )
-from tfm_path import Path
+from xefm.path import Path
 
 
 class TestZipHandler:
@@ -24,7 +24,7 @@ class TestZipHandler:
     
     def setup_method(self):
         """Create a test ZIP archive"""
-        self.temp_dir = tempfile.mkdtemp(prefix='tfm_test_')
+        self.temp_dir = tempfile.mkdtemp(prefix='xefm_test_')
         self.temp_path = PathlibPath(self.temp_dir)
         
         # Create test ZIP archive
@@ -162,7 +162,7 @@ class TestTarHandler:
     
     def setup_method(self):
         """Create test TAR archives"""
-        self.temp_dir = tempfile.mkdtemp(prefix='tfm_test_')
+        self.temp_dir = tempfile.mkdtemp(prefix='xefm_test_')
         self.temp_path = PathlibPath(self.temp_dir)
         
         # Create test TAR archive
@@ -272,7 +272,7 @@ class TestArchiveErrors:
     
     def setup_method(self):
         """Create test environment"""
-        self.temp_dir = tempfile.mkdtemp(prefix='tfm_test_')
+        self.temp_dir = tempfile.mkdtemp(prefix='xefm_test_')
         self.temp_path = PathlibPath(self.temp_dir)
     
     def teardown_method(self):

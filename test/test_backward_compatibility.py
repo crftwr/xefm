@@ -4,14 +4,14 @@ Test backward compatibility of add_message() routing through logging infrastruct
 This test verifies that the legacy add_message() method correctly routes messages
 through the new logging infrastructure, ensuring consistent handling with logger messages.
 
-Run with: PYTHONPATH=.:src pytest test/test_backward_compatibility.py -v
+Run with: python -m pytest test/test_backward_compatibility.py -v
 """
 
 import sys
 import logging
 from collections import deque
 
-from tfm_log_manager import LogManager, LoggingConfig
+from xefm.log_manager import LogManager, LoggingConfig
 
 
 class MockConfig:
@@ -150,7 +150,7 @@ def test_add_startup_messages_uses_add_message():
     messages = log_manager._log_pane_handler.get_messages()
     
     expected_messages = [
-        "TFM 1.0.0",
+        "XeFM 1.0.0",
         "GitHub: https://github.com/test/repo",
         "TestApp started successfully",
         "Configuration loaded"

@@ -1,6 +1,6 @@
 # Navigation Dialogs
 
-TFM's directory navigation dialogs all share one searchable-list picker: a
+XeFM's directory navigation dialogs all share one searchable-list picker: a
 scrollable list you filter by typing, with the same keys for moving through it
 and choosing an entry. Four keys open four flavors of that picker:
 
@@ -34,7 +34,7 @@ any of them instantly. Only directories that actually exist are shown.
 
 ### Default favorites
 
-TFM ships with these defaults: Home, Documents, Downloads, Desktop, Projects,
+XeFM ships with these defaults: Home, Documents, Downloads, Desktop, Projects,
 Root (`/`), Temp (`/tmp`), and Config (`~/.config`).
 
 Each entry is shown with its resolved path, e.g.:
@@ -47,7 +47,7 @@ Web Server (/var/www)
 
 ### Customizing your favorites
 
-Edit `FAVORITE_DIRECTORIES` in your `~/.tfm/config.py`. Each entry needs a
+Edit `FAVORITE_DIRECTORIES` in your `~/.xefm/config.py`. Each entry needs a
 `name` (what to call it) and a `path` (where it is; `~` expands to your home
 directory):
 
@@ -94,7 +94,7 @@ Press **H** to open a searchable list of directories you have already visited in
 the current pane, and jump back to any of them. Each pane keeps its own history.
 
 The number of remembered entries is set by `MAX_HISTORY_ENTRIES` in
-`~/.tfm/config.py` (default 100).
+`~/.xefm/config.py` (default 100).
 
 ## Drives dialog (D)
 
@@ -103,7 +103,7 @@ Press **D** to open a searchable list of storage locations and jump to one.
 ### Local locations
 
 Common local filesystem locations are detected automatically, including Home
-(`~`), Root (`/`), the directory TFM was started from, and Desktop, Documents,
+(`~`), Root (`/`), the directory XeFM was started from, and Desktop, Documents,
 and Downloads when they exist.
 
 Visual indicators:
@@ -140,4 +140,4 @@ configured" message points at the corresponding step above.
 
 ## See Also
 
-- [S3 Integration](TFM_USER_GUIDE.md#s3-integration) (in User Guide)
+- [S3 Integration](XEFM_USER_GUIDE.md#s3-integration) (in User Guide)

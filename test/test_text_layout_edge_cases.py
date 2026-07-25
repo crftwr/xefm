@@ -15,7 +15,7 @@ Requirements tested: Comprehensive testing
 import pytest
 from unittest.mock import Mock, call
 
-from tfm_text_layout import (
+from xefm.text_layout import (
     draw_text_segments,
     AbbreviationSegment,
     FilepathSegment,

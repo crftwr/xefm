@@ -8,7 +8,7 @@ is operating in fallback (polling) mode.
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
-from tfm_file_monitor_manager import FileMonitorManager
+from xefm.file_monitor_manager import FileMonitorManager
 
 
 def test_is_in_fallback_mode_returns_false_when_disabled():

@@ -5,7 +5,7 @@ Test for external programs PATH fix for macOS app bundle
 
 import unittest
 import sys
-from tfm_external_programs import ensure_common_paths_in_env
+from xefm.external_programs import ensure_common_paths_in_env
 
 
 class TestExternalProgramsPathFix(unittest.TestCase):

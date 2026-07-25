@@ -1,13 +1,13 @@
 """
 Test script for dynamic date column width adjustment
 
-Run with: PYTHONPATH=.:src pytest test/test_date_column_width.py -v
+Run with: python -m pytest test/test_date_column_width.py -v
 """
 
 import sys
 from pathlib import Path as StdPath
 
-from tfm_const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
+from xefm.const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
 
 
 class MockConfig:
@@ -28,7 +28,7 @@ class MockFileManager:
         Returns:
             int: Width in characters for the date column
         """
-        from tfm_const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
+        from xefm.const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
         
         date_format = getattr(self.config, 'DATE_FORMAT', 'short')
         

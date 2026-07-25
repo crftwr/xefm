@@ -1,12 +1,12 @@
 """
 Test that archive progress migration works correctly
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_progress_migration.py -v
+Run with: python -m pytest test/test_archive_progress_migration.py -v
 """
 
 from unittest.mock import Mock, MagicMock
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
 class MockFileManager:

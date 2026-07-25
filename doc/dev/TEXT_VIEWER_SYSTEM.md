@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM includes a comprehensive built-in text file viewer with syntax highlighting, search functionality, and remote file support. The viewer provides a clean, efficient way to view text files from both local and remote storage without leaving the file manager.
+XeFM includes a comprehensive built-in text file viewer with syntax highlighting, search functionality, and remote file support. The viewer provides a clean, efficient way to view text files from both local and remote storage without leaving the file manager.
 
 ## Core Features
 
@@ -35,7 +35,7 @@ TFM includes a comprehensive built-in text file viewer with syntax highlighting,
 - **Match counter**: Shows current match position and total matches
 
 ### ✅ Remote File Support
-- **Unified file access** using tfm_path abstraction layer
+- **Unified file access** using xefm.path abstraction layer
 - **Transparent handling** of different storage backends (local, S3, etc.)
 - **Remote file detection** with scheme display in header
 - **Enhanced error handling** for network and permission issues
@@ -48,7 +48,7 @@ supported. Lexer selection is:
 1. `pygments.lexers.get_lexer_for_filename(path.name)` — pygments' own filename
    matching (handles `Dockerfile`, `Makefile`, `.rst`, and most extensions).
 2. On `ClassNotFound`, a small extension fallback map, `_EXT_LEXERS` in
-   `tfm_text_viewer.py` (`.py`, `.js`, `.ts`, `.json`, `.md`, `.yml`/`.yaml`,
+   `xefm/text_viewer.py` (`.py`, `.js`, `.ts`, `.json`, `.md`, `.yml`/`.yaml`,
    `.xml`, `.html`, `.css`, `.sh`/`.bash`, `.c`/`.cpp`/`.h`/`.hpp`, `.java`,
    `.go`, `.rs`, `.php`, `.rb`, `.sql`, `.ini`/`.cfg`/`.conf`, `.toml`).
 3. Otherwise `TextLexer` (plain, uncolored).
@@ -61,7 +61,7 @@ JSON and CSV also have dedicated *rich* renderers (see
 ## Usage
 
 ### Opening Files
-1. **Navigate** to a text file in TFM
+1. **Navigate** to a text file in XeFM
 2. **Press Enter** to open in text viewer (automatic for text files)
 3. **Press `v`** to explicitly open in text viewer
 4. **Non-text files** will show file info instead
@@ -69,7 +69,7 @@ JSON and CSV also have dedicated *rich* renderers (see
 ### Viewer Controls
 | Key | Action |
 |-----|--------|
-| `q` or `ESC` | Exit viewer and return to TFM |
+| `q` or `ESC` | Exit viewer and return to XeFM |
 | `↑↓` | Scroll up/down |
 | `←→` | Scroll left/right |
 | `Page Up/Down` | Page scrolling |
@@ -106,14 +106,14 @@ The viewer interface provides comprehensive status information:
 ## Remote File Support
 
 ### Unified File Access
-The text viewer uses tfm_path's abstraction layer to support both local and remote files:
+The text viewer uses xefm.path's abstraction layer to support both local and remote files:
 
 - **Transparent handling** of different storage backends
 - **Consistent API** regardless of file location
 - **Automatic detection** of remote files based on URI scheme
 
 ### Supported Remote Storage
-Currently supports any storage backend implemented in the tfm_path system:
+Currently supports any storage backend implemented in the xefm.path system:
 - **Local files**: Standard filesystem access
 - **S3**: AWS S3 buckets (`s3://bucket/key`)
 - **Extensible**: New storage backends can be added by implementing `PathImpl`
@@ -186,9 +186,9 @@ Multi-step approach to identify text files:
 
 #### Remote Files
 - **Caching** - S3 implementation includes built-in caching for metadata and content
-- **Network efficiency** - Uses tfm_path's optimized remote operations
+- **Network efficiency** - Uses xefm.path's optimized remote operations
 - **Minimal data transfer** - Binary detection only reads first 1024 bytes
-- **Streaming support** - Through tfm_path abstraction
+- **Streaming support** - Through xefm.path abstraction
 
 ### Horizontal scrolling
 
@@ -224,7 +224,7 @@ repos:
 - **PuiKit** owns the reusable pieces — the `clipboard_rich` capability
   (`Panel.set_clipboard_rich`) and `MarkdownView`'s own selection + rich-HTML
   copy (documented in `puikit/docs/widget_catalog.md`).
-- **TFM** owns the raw text viewer's own selection, and forwarding mouse/keys to
+- **XeFM** owns the raw text viewer's own selection, and forwarding mouse/keys to
   the embedded `MarkdownView` in rich mode.
 
 **Raw text mode.** `_RawTextSelection` holds a `(line, col)` selection over the
@@ -244,7 +244,7 @@ over `theme.text_selection_bg` (mirroring the search-match overlay
 embedded `MarkdownView`'s coordinate space (`event.translated(-bx0, -by0)`) so
 its own selection and link clicks work through this modal viewer. KEY events
 (including `Cmd`+`C`) are already forwarded in rich mode, so the widget's copy
-path needs no extra wiring. `tfm_viewer_registry._build_markdown` builds the
+path needs no extra wiring. `xefm.viewer_registry._build_markdown` builds the
 file viewer's `MarkdownView` with `selectable=True`; help / message-box
 MarkdownViews build without the flag and stay inert.
 
@@ -269,7 +269,7 @@ pip install pygments
 **With pygments**: Syntax highlighting for any language pygments can lex, using the theme's syntax palette.
 
 ### Remote File Support
-Remote file support is provided through the tfm_path system:
+Remote file support is provided through the xefm.path system:
 - **S3 support**: Requires `boto3` library for AWS S3 access
 - **Other backends**: May require additional libraries depending on implementation
 
@@ -280,8 +280,8 @@ with `show_text_viewer`:
 
 ### Viewing Local Files
 ```python
-from tfm_path import Path
-from tfm_text_viewer import show_text_viewer
+from xefm.path import Path
+from xefm.text_viewer import show_text_viewer
 
 # Local file
 show_text_viewer(panel, Path('/home/user/document.txt'), state_manager=state_manager)
@@ -289,7 +289,7 @@ show_text_viewer(panel, Path('/home/user/document.txt'), state_manager=state_man
 
 ### Viewing Remote Files
 ```python
-# S3 file (same call — tfm_path.Path abstracts the backend)
+# S3 file (same call — xefm.path.Path abstracts the backend)
 show_text_viewer(panel, Path('s3://my-bucket/document.txt'))
 ```
 
@@ -299,7 +299,7 @@ There is no `is_text_file()` predicate to call ahead of time, and no list of
 text extensions — **the viewer decides from the file's bytes as it reads it**:
 
 ```python
-from tfm_text_viewer import looks_binary
+from xefm.text_viewer import looks_binary
 
 looks_binary(path)                    # NUL byte in the first 1024 bytes
 lines, is_error = _read_lines(path)   # placeholder line when binary
@@ -316,7 +316,7 @@ then tries `utf-8`, `latin-1`, `cp1252` for everything else.
 > reorder this, `test/test_binary_file_handling.py` will fail.
 
 Content search needs a cheaper, standalone check and has its own:
-`TfmApp._looks_textual(path)` in `tfm.py`. It differs deliberately — an empty
+`XeFMApp._looks_textual(path)` in `xefm/app.py`. It differs deliberately — an empty
 file is "nothing to grep" (False) but is perfectly viewable (not binary).
 
 The principle: **detect capability from the bytes, configure preference by
@@ -339,7 +339,7 @@ def hello_world():
 #### JSON Data
 ```json
 {
-  "name": "TFM Text Viewer",
+  "name": "XeFM Text Viewer",
   "features": ["syntax highlighting", "line numbers", "remote support"],
   "supported": true
 }
@@ -370,19 +370,19 @@ Error reading file: Connection timeout
 Network error: Unable to connect to S3
 ```
 
-## Integration with TFM
+## Integration with XeFM
 
 ### Seamless Experience
 - **Automatic detection** - Enter key opens text files in viewer, directories navigate normally
-- **Consistent interface** - viewer uses same color scheme and key patterns as TFM
-- **State preservation** - returns to exact same TFM state after viewing
-- **Log integration** - viewer actions logged to TFM's log pane
+- **Consistent interface** - viewer uses same color scheme and key patterns as XeFM
+- **State preservation** - returns to exact same XeFM state after viewing
+- **Log integration** - viewer actions logged to XeFM's log pane
 
 ### Configuration
-The text viewer respects TFM's configuration system:
-- **Key bindings** can be customized in `~/.tfm/config.py`
-- **Color schemes** integrate with TFM's color system
-- **Behavior settings** follow TFM's configuration patterns
+The text viewer respects XeFM's configuration system:
+- **Key bindings** can be customized in `~/.xefm/config.py`
+- **Color schemes** integrate with XeFM's color system
+- **Behavior settings** follow XeFM's configuration patterns
 
 ## Testing
 
@@ -403,7 +403,7 @@ The text viewer respects TFM's configuration system:
 8. **Progress indicators** for slow remote file loading
 
 ### Extension Points
-- New storage backends can be added to tfm_path
+- New storage backends can be added to xefm.path
 - TextViewer automatically supports new backends
 - No changes required to TextViewer code for new storage types
 
@@ -425,7 +425,7 @@ A: This is expected - the viewer loads content progressively for better performa
 
 #### Display Issues
 **Q: Colors look wrong in terminal**
-A: Ensure your terminal supports colors and try different TFM color schemes
+A: Ensure your terminal supports colors and try different XeFM color schemes
 
 #### Remote Files
 **Q: S3 files not accessible**
@@ -442,13 +442,13 @@ logging.basicConfig(level=logging.DEBUG)
 ```
 
 ### Getting Help
-- Check TFM's main help with `?` key
-- Review configuration in `~/.tfm/config.py`
+- Check XeFM's main help with `?` key
+- Review configuration in `~/.xefm/config.py`
 - Check the log pane for error messages
 - Verify file permissions and encoding
 
 ## Conclusion
 
-The TFM Text Viewer System provides a powerful, integrated solution for viewing and examining text files from both local and remote storage without leaving your file management workflow. Whether you're browsing code, checking configuration files, reading documentation, or accessing files from cloud storage, the viewer offers a smooth, efficient experience with professional syntax highlighting and comprehensive search capabilities.
+The XeFM Text Viewer System provides a powerful, integrated solution for viewing and examining text files from both local and remote storage without leaving your file management workflow. Whether you're browsing code, checking configuration files, reading documentation, or accessing files from cloud storage, the viewer offers a smooth, efficient experience with professional syntax highlighting and comprehensive search capabilities.
 
 The system's architecture ensures consistent behavior across all storage types while maintaining high performance and reliability. The unified interface means users can work with local and remote files using the same familiar controls and features.

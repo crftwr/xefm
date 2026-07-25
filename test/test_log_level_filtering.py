@@ -4,13 +4,13 @@ Test log level filtering functionality.
 Tests that log levels are correctly applied to loggers and that
 messages are filtered based on the configured levels.
 
-Run with: PYTHONPATH=.:src pytest test/test_log_level_filtering.py -v
+Run with: python -m pytest test/test_log_level_filtering.py -v
 """
 
 import logging
 from io import StringIO
 
-from tfm_log_manager import LogManager, LoggingConfig
+from xefm.log_manager import LogManager, LoggingConfig
 
 
 class MockConfig:

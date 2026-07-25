@@ -12,7 +12,7 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from tfm_file_monitor_observer import TFMFileSystemEventHandler
+from xefm.file_monitor_observer import XeFMFileSystemEventHandler
 
 
 class TestDirectoryEventDetection(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestDirectoryEventDetection(unittest.TestCase):
     
     def test_directory_creation_detected(self):
         """Test that directory creation in immediate directory is detected"""
-        handler = TFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
+        handler = XeFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
         
         class MockEvent:
             def __init__(self, src_path, is_directory):
@@ -55,7 +55,7 @@ class TestDirectoryEventDetection(unittest.TestCase):
     
     def test_directory_deletion_detected(self):
         """Test that directory deletion in immediate directory is detected"""
-        handler = TFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
+        handler = XeFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
         
         class MockEvent:
             def __init__(self, src_path, is_directory):
@@ -72,7 +72,7 @@ class TestDirectoryEventDetection(unittest.TestCase):
     
     def test_directory_modification_detected(self):
         """Test that directory modification in immediate directory is detected"""
-        handler = TFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
+        handler = XeFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
         
         class MockEvent:
             def __init__(self, src_path, is_directory):
@@ -89,7 +89,7 @@ class TestDirectoryEventDetection(unittest.TestCase):
     
     def test_directory_rename_detected(self):
         """Test that directory rename in immediate directory is detected"""
-        handler = TFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
+        handler = XeFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
         
         class MockEvent:
             def __init__(self, src_path, dest_path, is_directory):
@@ -111,7 +111,7 @@ class TestDirectoryEventDetection(unittest.TestCase):
     
     def test_subdirectory_events_ignored(self):
         """Test that events in subdirectories are ignored"""
-        handler = TFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
+        handler = XeFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
         
         class MockEvent:
             def __init__(self, src_path, is_directory):
@@ -128,7 +128,7 @@ class TestDirectoryEventDetection(unittest.TestCase):
     
     def test_file_and_directory_events_both_detected(self):
         """Test that both file and directory events are detected"""
-        handler = TFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
+        handler = XeFMFileSystemEventHandler(self.event_callback, str(self.temp_path))
         
         class MockEvent:
             def __init__(self, src_path, is_directory):

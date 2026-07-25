@@ -1,8 +1,8 @@
 """
-Integration tests for TFM logging handlers
+Integration tests for XeFM logging handlers
 Verifies all requirements from Task 1
 
-Run with: PYTHONPATH=.:src pytest test/test_logging_handlers_integration.py -v
+Run with: python -m pytest test/test_logging_handlers_integration.py -v
 """
 
 import sys
@@ -10,7 +10,7 @@ import logging
 import threading
 import time
 
-from tfm_logging_handlers import LogPaneHandler, StreamOutputHandler
+from xefm.logging_handlers import LogPaneHandler, StreamOutputHandler
 
 
 

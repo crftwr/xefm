@@ -2,7 +2,7 @@
 Tests for encrypted-zip support (issue #180): password detection, the ZipHandler
 read path, the session password registry, and the UI-facing gate helpers.
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_password.py -v
+Run with: python -m pytest test/test_archive_password.py -v
 
 Python's stdlib ``zipfile`` can *read* ZipCrypto-encrypted archives but cannot
 *write* them, so the encrypted fixture is a tiny pre-built ZipCrypto zip embedded
@@ -17,9 +17,9 @@ from pathlib import Path as PathlibPath
 
 import pytest
 
-from tfm_path import Path
-import tfm_archive as A
-from tfm_archive import (
+from xefm.path import Path
+from xefm import archive as A
+from xefm.archive import (
     ZipHandler,
     ArchivePasswordRequired,
     ArchiveEncryptionUnsupported,

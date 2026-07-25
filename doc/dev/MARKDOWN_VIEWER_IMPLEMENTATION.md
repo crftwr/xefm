@@ -10,7 +10,7 @@ matter of registering a renderer — no new modal, no chrome duplication.
 
 ## Pieces
 
-### `src/tfm_viewer_registry.py` — the extensibility seam
+### `xefm/viewer_registry.py` — the extensibility seam
 
 A tiny registry mapping a file extension to an optional **rich renderer**:
 
@@ -34,7 +34,7 @@ returns a scrollable `puikit.widgets.base.Widget`, then
 `TextViewer` picks it up through the registry and the same **M** toggle drives
 it.
 
-### `src/tfm_text_viewer.py` — raw + rich in one modal
+### `xefm/text_viewer.py` — raw + rich in one modal
 
 `TextViewer` gained a small amount of state and three seams:
 
@@ -43,7 +43,7 @@ it.
   `self.mode` (starts at `self._remembered_view_mode()`, defaulting to `"text"`),
   and `self._rich_widget` (the built widget, lazily created and cached).
 - `_ensure_rich_widget()`: builds (once) and caches the renderer widget, reading
-  the file source via `_read_source(path)` (backend-agnostic `tfm_path.Path`,
+  the file source via `_read_source(path)` (backend-agnostic `xefm.path.Path`,
   same encoding ladder as `_read_lines`) and styling it on the content-surface
   colors captured by the last `draw`. Returns whether a rich widget is available
   (`False` for no renderer or an unreadable source). Shared by the toggle and the
@@ -101,7 +101,7 @@ the `search` key in rich mode.
 matches its own action by name, the same pattern `toggle_wrap` uses for `W`).
 
 Because `ConfigManager._copy_missing_fields` only merges whole **missing
-attributes**, an existing user's `~/.tfm/config.py` — which already has a
+attributes**, an existing user's `~/.xefm/config.py` — which already has a
 `KEY_BINDINGS` dict — will **not** gain the new key automatically. So
 `_view_mode_pressed()` mirrors `_wrap_pressed()`: it matches the
 `toggle_view_mode` action, and, only when that action is unbound (an older
@@ -121,8 +121,8 @@ a type reopens the way it was last viewed:
   including unset, is `"text"`).
 - `_remember_view_mode()` writes the current mode after every explicit toggle.
 
-The `state_manager` is threaded in from `TfmApp` via `show_text_viewer(...,
-state_manager=self.state_manager)` — the same instance TFM uses for theme/pane
+The `state_manager` is threaded in from `XeFMApp` via `show_text_viewer(...,
+state_manager=self.state_manager)` — the same instance XeFM uses for theme/pane
 persistence, mirroring how the `theme` preference is stored. It's **optional**:
 when absent (a bare `TextViewer(path)` or a `show_text_viewer` call with no state
 manager, as in most tests), the key helpers return `None`, so the viewer just

@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM now includes comprehensive support for wide characters, particularly Japanese Zenkaku characters and other Unicode characters that occupy multiple display columns in terminal output. This feature ensures that filenames containing international characters are displayed correctly without breaking the layout.
+XeFM now includes comprehensive support for wide characters, particularly Japanese Zenkaku characters and other Unicode characters that occupy multiple display columns in terminal output. This feature ensures that filenames containing international characters are displayed correctly without breaking the layout.
 
 ## What Are Wide Characters?
 
@@ -18,7 +18,7 @@ Wide characters are Unicode characters that take up 2 display columns in termina
 
 ### Automatic Layout Correction
 
-TFM automatically detects and handles wide characters in:
+XeFM automatically detects and handles wide characters in:
 
 - **File and directory names** in the main panes
 - **Text content** in the built-in text viewer
@@ -38,7 +38,7 @@ TFM automatically detects and handles wide characters in:
 
 ## Configuration
 
-Wide-character handling is **automatic** — TFM measures each glyph's display width
+Wide-character handling is **automatic** — XeFM measures each glyph's display width
 and aligns columns accordingly, with no configuration required. There are no
 `UNICODE_*` settings to tune.
 
@@ -101,7 +101,7 @@ export LC_ALL=en_US.UTF-8
 
 ### Performance Issues
 
-**Problem**: TFM feels slow when displaying directories with many Unicode filenames.
+**Problem**: XeFM feels slow when displaying directories with many Unicode filenames.
 
 **Solutions**:
 1. Display-width calculations are already cached internally — there is nothing to tune
@@ -145,7 +145,7 @@ export LC_ALL=en_US.UTF-8
    touch "中文文件.txt"
    ```
 
-2. Navigate to the directory in TFM
+2. Navigate to the directory in XeFM
 3. Check that:
    - Filenames display correctly
    - Columns are properly aligned
@@ -195,7 +195,7 @@ If you encounter issues with wide character support:
 1. Check the troubleshooting section above
 2. Verify your terminal and locale settings
 3. Test with a known Unicode-capable terminal
-4. Check TFM's log output for Unicode-related warnings
+4. Check XeFM's log output for Unicode-related warnings
 
 For additional support, include the following information when reporting issues:
 

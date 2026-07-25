@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Prototype MSIX packager + local installer for TFM (Store / winget distribution).
+    Prototype MSIX packager + local installer for XeFM (Store / winget distribution).
 
 .DESCRIPTION
-    Wraps the existing windows_app\build\TFM bundle (produced by build.ps1) into an
+    Wraps the existing windows_app\build\XeFM bundle (produced by build.ps1) into an
     installable .msix, following doc/dev/WINDOWS_STORE_MSIX_PLAN.md:
 
       (default)   generate assets -> stage payload + AppxManifest -> makeappx pack
@@ -27,13 +27,13 @@ param(
     # PayloadSource / OutDir default to paths under the script dir, but are filled
     # in below — NOT here — because $PSScriptRoot is not reliably populated in a
     # param default when the script is launched via 'powershell -File' (as the
-    # Makefile does). Evaluated here it comes back empty, yielding '\build\TFM'.
+    # Makefile does). Evaluated here it comes back empty, yielding '\build\XeFM'.
     [string]$PayloadSource,
     [string]$OutDir,
     [string]$Version              = "1.0.0.0",           # major != 0, revision = 0 (Store rule)
-    [string]$IdentityName         = "TFM.Prototype",     # Partner Center: Package/Identity/Name
-    [string]$Publisher            = "CN=TFM Prototype Dev", # Partner Center: Publisher (CN=...)
-    [string]$PublisherDisplayName = "TFM Prototype",
+    [string]$IdentityName         = "XeFM.Prototype",     # Partner Center: Package/Identity/Name
+    [string]$Publisher            = "CN=XeFM Prototype Dev", # Partner Center: Publisher (CN=...)
+    [string]$PublisherDisplayName = "XeFM Prototype",
     [string]$Arch                 = "x64",
     [switch]$Sign,                                        # self-sign for local install test
     [switch]$SkipAssets,                                  # reuse existing resources\Assets
@@ -48,17 +48,17 @@ $ErrorActionPreference = "Stop"
 # Resolve the script directory reliably (body scope), then fill path defaults.
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
-if (-not $PayloadSource) { $PayloadSource = Join-Path $ScriptDir 'build\TFM' }
+if (-not $PayloadSource) { $PayloadSource = Join-Path $ScriptDir 'build\XeFM' }
 if (-not $OutDir)        { $OutDir        = Join-Path $ScriptDir 'build' }
 
 # Artifact paths shared by build + install actions.
-$msix    = "$OutDir\TFM-$Version-$Arch.msix"
+$msix    = "$OutDir\XeFM-$Version-$Arch.msix"
 # Packed/signed here, then renamed to $msix only on full success. Keeps the
 # .msix extension (before .building) because signtool refuses to sign a file
 # whose extension it doesn't recognize as an app package.
-$msixTmp = "$OutDir\TFM-$Version-$Arch.building.msix"
-$pfx     = "$OutDir\TFM-proto-test.pfx"
-$cer     = "$OutDir\TFM-proto-test.cer"
+$msixTmp = "$OutDir\XeFM-$Version-$Arch.building.msix"
+$pfx     = "$OutDir\XeFM-proto-test.pfx"
+$cer     = "$OutDir\XeFM-proto-test.cer"
 $pfxPassword = "prototest"
 
 function Find-SdkTool([string]$name) {
@@ -176,7 +176,7 @@ if ($Install) {
     $pkg = Get-AppxPackage -Name $IdentityName -ErrorAction SilentlyContinue
     if (-not $pkg) { throw "Install did not complete (package '$IdentityName' not found afterward)." }
     Write-Host "[OK] Installed $($pkg.PackageFullName)" -ForegroundColor Green
-    Write-Host "Launch 'TFM' from the Start menu. Remove with: make windows-app-msix-uninstall"
+    Write-Host "Launch 'XeFM' from the Start menu. Remove with: make windows-app-msix-uninstall"
     return
 }
 
@@ -191,7 +191,7 @@ if ($Sign) {
 }
 
 if (-not (Test-Path $PayloadSource))            { throw "Payload source not found: $PayloadSource. Run 'make windows-app' first." }
-if (-not (Test-Path "$PayloadSource\TFM.exe"))  { throw "TFM.exe not found in payload source $PayloadSource. Run 'make windows-app' first." }
+if (-not (Test-Path "$PayloadSource\XeFM.exe"))  { throw "XeFM.exe not found in payload source $PayloadSource. Run 'make windows-app' first." }
 
 # ---- 1. Generate Store tile assets ---------------------------------------
 $assetsSrc = "$ScriptDir\resources\Assets"
@@ -237,7 +237,7 @@ $manifest = @"
     ProcessorArchitecture="$Arch" />
 
   <Properties>
-    <DisplayName>TFM</DisplayName>
+    <DisplayName>XeFM</DisplayName>
     <PublisherDisplayName>$PublisherDisplayName</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -257,11 +257,11 @@ $manifest = @"
   </Capabilities>
 
   <Applications>
-    <Application Id="TFM"
-                 Executable="TFM.exe"
+    <Application Id="XeFM"
+                 Executable="XeFM.exe"
                  EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="TFM"
+        DisplayName="XeFM"
         Description="Dual-pane terminal-style file manager"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
@@ -299,7 +299,7 @@ if ($Sign) {
     Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
         Where-Object { $_.Subject -eq $Publisher } | Remove-Item -Force -ErrorAction SilentlyContinue
     $cert = New-SelfSignedCertificate -Type Custom -CertStoreLocation Cert:\CurrentUser\My `
-        -Subject $Publisher -KeyUsage DigitalSignature -FriendlyName "TFM MSIX prototype" `
+        -Subject $Publisher -KeyUsage DigitalSignature -FriendlyName "XeFM MSIX prototype" `
         -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
     $securePw = ConvertTo-SecureString -String $pfxPassword -Force -AsPlainText
     Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $securePw | Out-Null

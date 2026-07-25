@@ -13,9 +13,9 @@ import os
 
 # Add project directories to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from tfm_ssh_cache import SSHCache
+from xefm.ssh_cache import SSHCache
 import posixpath
 
 

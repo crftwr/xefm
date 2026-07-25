@@ -4,7 +4,7 @@ Test for S3 directory deletion fix
 This test reproduces and verifies the fix for the issue where deleting
 empty S3 directories fails with "No files to delete" error.
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_directory_deletion.py -v
+Run with: python -m pytest test/test_s3_directory_deletion.py -v
 """
 
 import pytest
@@ -13,8 +13,8 @@ import shutil
 from pathlib import Path
 
 try:
-    from tfm_path import Path as TFMPath
-    from tfm_s3 import S3PathImpl
+    from xefm.path import Path as XeFMPath
+    from xefm.s3 import S3PathImpl
     import boto3
     from moto import mock_s3
     HAS_BOTO3 = True
@@ -53,7 +53,7 @@ class TestS3DirectoryDeletionFix:
         s3_client.put_object(Bucket=self.test_bucket, Key='test1/dir3/dir2/file2.txt', Body=b'content2')
         
         # Verify directory exists and has files
-        dir_path = TFMPath(test_dir_path)
+        dir_path = XeFMPath(test_dir_path)
         assert dir_path.is_dir(), "Directory should exist"
         
         files_in_dir = list(dir_path.iterdir())
@@ -103,7 +103,7 @@ class TestS3DirectoryDeletionFix:
         s3_client.put_object(Bucket=self.test_bucket, Key='test1/dir3/dir4/', Body=b'')
         
         # Verify directory exists
-        dir_path = TFMPath(test_dir_path)
+        dir_path = XeFMPath(test_dir_path)
         assert dir_path.is_dir(), "Directory should exist"
         assert dir_path.exists(), "Directory should exist"
         
@@ -151,7 +151,7 @@ class TestS3DirectoryDeletionFix:
         s3_client.put_object(Bucket=self.test_bucket, Key='test1/dir3/dir5/subdir/file4.txt', Body=b'content4')
         
         # Verify directory exists and has contents
-        dir_path = TFMPath(test_dir_path)
+        dir_path = XeFMPath(test_dir_path)
         assert dir_path.is_dir(), "Directory should exist"
         assert dir_path.exists(), "Directory should exist"
         
@@ -214,7 +214,7 @@ class TestS3DirectoryDeletionFix:
         files_to_delete = []
         
         for file_path_str in selected_files:
-            file_path = TFMPath(file_path_str)
+            file_path = XeFMPath(file_path_str)
             print(f"Checking path: {file_path_str}")
             print(f"  exists(): {file_path.exists()}")
             print(f"  is_dir(): {file_path.is_dir()}")

@@ -10,8 +10,8 @@ override), and the text-viewer syntax palette is theme-configurable too.
 
 from types import SimpleNamespace
 
-from tfm_file_pane import MATCH_TINT, _mix
-from tfm_text_viewer import DEFAULT_SYNTAX, _is_light, _match_bg, _syntax_palette
+from xefm.file_pane import MATCH_TINT, _mix
+from xefm.text_viewer import DEFAULT_SYNTAX, _is_light, _match_bg, _syntax_palette
 
 DARK = (30, 30, 38)
 LIGHT = (255, 255, 255)

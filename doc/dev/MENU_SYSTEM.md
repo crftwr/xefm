@@ -1,8 +1,8 @@
-# TFM Menu System
+# XeFM Menu System
 
 ## Overview
 
-TFM builds **one menu model** — a tree of `Menu` / `MenuItem` / `SEPARATOR`
+XeFM builds **one menu model** — a tree of `Menu` / `MenuItem` / `SEPARATOR`
 objects from PuiKit — and hands it to the UI layer. PuiKit decides how that
 single model is *realized* per backend:
 
@@ -12,7 +12,7 @@ single model is *realized* per backend:
 - On every **other** backend (the curses TUI, and the web/memory backends) the
   same model is drawn *in-window* by PuiKit's `MenuBar` and `MenuPopup` widgets.
 
-TFM never branches on the backend. It describes menus as intent (labels,
+XeFM never branches on the backend. It describes menus as intent (labels,
 callbacks, enable/checked predicates) and PuiKit resolves the rest. The menu is
 not a separate command surface either: every item routes into the **same action
 handlers the keymap already calls**, and shortcut hints on the labels are read
@@ -31,7 +31,7 @@ The system spans three layers.
 ### 1. The model — `puikit.menu` (backend-agnostic)
 
 Source: `puikit/menu.py` in the [PuiKit](https://github.com/crftwr/puikit) repo
-(installed editable from `../puikit`). TFM imports it directly:
+(installed editable from `../puikit`). XeFM imports it directly:
 
 ```python
 from puikit.menu import Menu, MenuItem, SEPARATOR
@@ -67,7 +67,7 @@ from puikit.menu import Menu, MenuItem, SEPARATOR
   holds one `MenuItem` per bar entry, each carrying its dropdown as a `submenu`.
 
 The `shortcut` field is a **hint only** — the menu does not bind it. Key
-handling stays in TFM's keymap; the shortcut string just labels the row.
+handling stays in XeFM's keymap; the shortcut string just labels the row.
 
 ### 2. Realization — PuiKit Panel + widgets
 
@@ -104,9 +104,9 @@ The `native_menus` capability is `True` in `PROFILE_GUI_DESKTOP`
 (`puikit/capability.py`) — inherited by the macOS and Windows native backends —
 and `False` for the TUI and web profiles.
 
-### 3. Application layer — `tfm.py`
+### 3. Application layer — `xefm/app.py`
 
-TFM owns the menu *content*. All of it lives in `tfm.py`:
+XeFM owns the menu *content*. All of it lives in `xefm/app.py`:
 
 - **`_build_menu()`** — builds the whole menu tree and returns the top-level
   `Menu`. Each bar entry is a `MenuItem(title, submenu=...)`. Current bar:
@@ -209,15 +209,15 @@ renders natively on macOS/Windows and as a widget row on the TUI.
 
 ## Desktop vs. terminal
 
-Whether TFM is running a native GUI is available via
-`is_desktop_mode()` (`src/tfm_backend_detector.py`), used for launch behavior
+Whether XeFM is running a native GUI is available via
+`is_desktop_mode()` (`xefm/backend_detector.py`), used for launch behavior
 (e.g. detaching vs. suspending child processes). **The menu system itself does
 not consult it** — the OS-bar-vs-in-window decision is made by PuiKit from the
-backend's `native_menus` capability, so TFM stays backend-agnostic.
+backend's `native_menus` capability, so XeFM stays backend-agnostic.
 
 ## Code locations
 
-### TFM (`tfm.py`)
+### XeFM (`xefm/app.py`)
 - `_build_menu()` — the full menu-bar tree (File / Go / Select / View / Tools / Help)
 - `_sort_menu()`, `show_sort_menu()` — sort submenu + `s`-key popup
 - `_theme_menu()` — theme-picker submenu

@@ -1,14 +1,14 @@
 """
-Tests for TFM logging handlers
+Tests for XeFM logging handlers
 
-Run with: PYTHONPATH=.:src pytest test/test_logging_handlers.py -v
+Run with: python -m pytest test/test_logging_handlers.py -v
 """
 
 import logging
 import time
 from datetime import datetime
 
-from tfm_logging_handlers import LogPaneHandler, StreamOutputHandler
+from xefm.logging_handlers import LogPaneHandler, StreamOutputHandler
 
 
 

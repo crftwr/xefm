@@ -1,14 +1,18 @@
-# TFM Project History
+# XeFM Project History
 
 ## Overview
 
-This document chronicles the evolution of TFM (TUI File Manager) from its initial commit to its current state as a cross-platform application framework with multiple backend support.
+This document chronicles the evolution of XeFM (TUI File Manager) from its initial commit to its current state as a cross-platform application framework with multiple backend support.
+
+Throughout most of the period described below the project was named **TFM**; it was
+renamed to **XeFM** in 2026, when the flat `tfm_*` modules were also folded into a
+single `xefm` package. Names here are given in their current form.
 
 **Project Start Date**: September 18, 2025 at 3:53 PM PDT
 
 ## Visual Timeline
 
-!TFM Project Evolution Timeline
+!XeFM Project Evolution Timeline
 
 ---
 
@@ -19,7 +23,7 @@ The project began with rapid development of the fundamental file manager capabil
 
 - Initial commit and project setup
 - Dual-pane file manager with adjustable pane sizes
-- Color system extracted to `tfm_colors.py`
+- Color system extracted to `xefm/colors.py`
 - Log pane with scrolling capability
 - Incremental search (F key)
 - Multi-pattern search support
@@ -80,7 +84,7 @@ Reached production-ready feature completeness for version 0.90:
 - README and screenshots
 - Filename filtering
 - Search dialog (Shift-F)
-- Sub-shell feature with TFM environment variables
+- Sub-shell feature with XeFM environment variables
 - Archive creation and extraction
 - Batch rename with caret positioning
 - **Version 0.90 released**
@@ -217,7 +221,7 @@ The most transformative period in the project's history:
 - **CoreGraphics backend for macOS**
 - TTK demo applications
 - Font rendering and window management
-- **TTK-TFM integration begins** (Dec 12)
+- **TTK-XeFM integration begins** (Dec 12)
 
 **Key Achievement**: Transformation from terminal-only application to cross-platform framework with pluggable backends.
 
@@ -244,14 +248,14 @@ Systematic migration to the new architecture:
 ## The PuiKit Port (2026)
 
 The TTK era established a backend abstraction, but the toolkit still lived **inside**
-the TFM repository. In 2026 TFM's rendering/UI foundation was ported off the in-repo
+the XeFM repository. In 2026 XeFM's rendering/UI foundation was ported off the in-repo
 `ttk` toolkit onto **[PuiKit](https://github.com/crftwr/puikit)** — an external,
 capability-based framework that runs the same widget code on curses, macOS, and
 Windows backends.
 
 - **`ttk` fully removed from `src/`.** The old toolkit and the UI modules bound to
   it were removed (preserved in git history); no `import ttk` remains in the live app.
-- **The app collapsed onto PuiKit widgets.** The shell became a top-level `tfm.py`
+- **The app collapsed onto PuiKit widgets.** The shell became a top-level `xefm/app.py`
   driving dual `FilePane` widgets in a `Splitter(Splitter(left, right), log)`
   layout; dialogs, menus (native `NSMenu` on macOS, in-window strip on curses),
   viewers, and threaded file operations were re-implemented as PuiKit `push_layer`
@@ -266,7 +270,7 @@ vendored. The port is complete; remaining follow-up tasks are tracked as GitHub
 issues.
 
 **Key Achievement**: The UI framework became a reusable, independently-versioned
-project, and TFM became one of its applications rather than its host.
+project, and XeFM became one of its applications rather than its host.
 
 ---
 
@@ -287,7 +291,7 @@ project, and TFM became one of its applications rather than its host.
 
 ## Evolution Pattern
 
-TFM's development followed a distinctive pattern:
+XeFM's development followed a distinctive pattern:
 
 ### Phase 1: Core Foundation (First 24 hours)
 - Complete feature set implemented
@@ -351,7 +355,7 @@ TFM's development followed a distinctive pattern:
 - **Zenkaku support** showed commitment to international users
 
 ### Future Direction
-The TTK migration represents a fundamental shift from a terminal application to a cross-platform framework, positioning TFM for:
+The TTK migration represents a fundamental shift from a terminal application to a cross-platform framework, positioning XeFM for:
 - Native desktop applications
 - Multiple UI backends
 - Broader platform support
@@ -371,7 +375,7 @@ The TTK migration represents a fundamental shift from a terminal application to 
 
 ## Conclusion
 
-TFM evolved from a weekend project into a sophisticated cross-platform file manager framework. The journey demonstrates the value of:
+XeFM evolved from a weekend project into a sophisticated cross-platform file manager framework. The journey demonstrates the value of:
 - Rapid prototyping to validate concepts
 - Continuous refactoring for maintainability
 - Architectural evolution as requirements grow

@@ -1,7 +1,7 @@
 """
 Test ArchiveCache class functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_cache.py -v
+Run with: python -m pytest test/test_archive_cache.py -v
 """
 
 import os
@@ -12,8 +12,8 @@ import tarfile
 import time
 from pathlib import Path as PathlibPath
 
-from tfm_archive import ArchiveCache, ArchiveHandler, ZipHandler, TarHandler
-from tfm_path import Path
+from xefm.archive import ArchiveCache, ArchiveHandler, ZipHandler, TarHandler
+from xefm.path import Path
 
 
 class TestArchiveCache(unittest.TestCase):

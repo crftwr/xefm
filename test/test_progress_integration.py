@@ -1,7 +1,7 @@
 """
-Integration test for the progress system with TFM operations
+Integration test for the progress system with XeFM operations
 
-Run with: PYTHONPATH=.:src pytest test/test_progress_integration.py -v
+Run with: python -m pytest test/test_progress_integration.py -v
 """
 
 import tempfile
@@ -9,11 +9,11 @@ from pathlib import Path
 import shutil
 from unittest.mock import Mock
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
-class MockTFM:
-    """Mock TFM class to test progress integration"""
+class MockXeFM:
+    """Mock XeFM class to test progress integration"""
     
     def __init__(self):
         self.progress_manager = ProgressManager()
@@ -100,18 +100,18 @@ def test_progress_integration():
             test_file.write_text(f"Content of file {i}")
             test_files.append(test_file)
         
-        # Create mock TFM instance
-        tfm = MockTFM()
+        # Create mock XeFM instance
+        xefm = MockXeFM()
         
         # Test copy operation with progress
-        copied_count, error_count = tfm.perform_copy_operation(test_files, dest_dir)
+        copied_count, error_count = xefm.perform_copy_operation(test_files, dest_dir)
         
         # Verify operation completed successfully
         assert copied_count == 5
         assert error_count == 0
         
         # Verify progress manager is no longer active
-        assert not tfm.progress_manager.is_operation_active()
+        assert not xefm.progress_manager.is_operation_active()
         
         # Verify files were actually copied
         for i in range(5):
@@ -126,40 +126,40 @@ def test_progress_display_integration():
     """Test progress display integration"""
     print("Testing progress display integration...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     # Test that progress manager integrates with status display
-    assert not tfm.progress_manager.is_operation_active()
+    assert not xefm.progress_manager.is_operation_active()
     
     # Start an operation
-    tfm.progress_manager.start_operation(
+    xefm.progress_manager.start_operation(
         OperationType.MOVE,
         10,
         "to Archive",
-        tfm._progress_callback
+        xefm._progress_callback
     )
     
     # Verify operation is active
-    assert tfm.progress_manager.is_operation_active()
+    assert xefm.progress_manager.is_operation_active()
     
     # Test progress updates
     for i in range(10):
-        tfm.progress_manager.update_progress(f"file_{i}.txt", i)
+        xefm.progress_manager.update_progress(f"file_{i}.txt", i)
         
         # Verify progress state
-        operation = tfm.progress_manager.get_current_operation()
+        operation = xefm.progress_manager.get_current_operation()
         assert operation['processed_items'] == i
         assert operation['current_item'] == f"file_{i}.txt"
         
         # Test progress text generation
-        progress_text = tfm.progress_manager.get_progress_text(80)
+        progress_text = xefm.progress_manager.get_progress_text(80)
         assert "Moving" in progress_text
         assert f"{i}/10" in progress_text
         assert f"file_{i}.txt" in progress_text
     
     # Finish operation
-    tfm.progress_manager.finish_operation()
-    assert not tfm.progress_manager.is_operation_active()
+    xefm.progress_manager.finish_operation()
+    assert not xefm.progress_manager.is_operation_active()
     
     print("✅ Progress display integration test passed!")
 
@@ -168,7 +168,7 @@ def test_legacy_compatibility():
     """Test that legacy archive progress method still works"""
     print("Testing legacy compatibility...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     # Add the legacy method
     def update_archive_progress(self, current_file, processed, total):
@@ -182,28 +182,28 @@ def test_legacy_compatibility():
         except:
             pass
     
-    # Bind the method to our mock TFM
-    tfm.update_archive_progress = update_archive_progress.__get__(tfm, MockTFM)
+    # Bind the method to our mock XeFM
+    xefm.update_archive_progress = update_archive_progress.__get__(xefm, MockXeFM)
     
     # Start an archive operation
-    tfm.progress_manager.start_operation(
+    xefm.progress_manager.start_operation(
         OperationType.ARCHIVE_CREATE,
         5,
         "ZIP: backup.zip",
-        tfm._progress_callback
+        xefm._progress_callback
     )
     
     # Test legacy method calls
     for i in range(1, 6):
-        tfm.update_archive_progress(f"file_{i}.txt", i, 5)
+        xefm.update_archive_progress(f"file_{i}.txt", i, 5)
         
         # Verify progress was updated
-        operation = tfm.progress_manager.get_current_operation()
+        operation = xefm.progress_manager.get_current_operation()
         assert operation['processed_items'] == i
         assert operation['current_item'] == f"file_{i}.txt"
     
     # Finish operation
-    tfm.progress_manager.finish_operation()
-    assert not tfm.progress_manager.is_operation_active()
+    xefm.progress_manager.finish_operation()
+    assert not xefm.progress_manager.is_operation_active()
     
     print("✅ Legacy compatibility test passed!")

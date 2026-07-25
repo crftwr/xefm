@@ -1,7 +1,7 @@
 """A theme's background (animation / wallpaper) resolves and rides in extras.
 
 Themes may carry a background behind the UI of two content kinds — an ``animation``
-(a shader scene) or a ``wallpaper`` image — else the plain theme color (solid). TFM
+(a shader scene) or a ``wallpaper`` image — else the plain theme color (solid). XeFM
 resolves the theme's choice into a puikit ``Shader`` / ``Wallpaper`` descriptor
 and pushes it on theme switch. The content keys are ``animation`` / ``wallpaper``
 because the ``background`` key is the base *color*; guarding that collision is the
@@ -14,12 +14,11 @@ import types
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
 from puikit.background import Shader, Wallpaper  # noqa: E402
-from tfm_background_shaders import SHADER_KINDS  # noqa: E402
+from xefm.background_shaders import SHADER_KINDS  # noqa: E402
 
 
 _COLOR = (10, 20, 30)
@@ -27,7 +26,7 @@ _BACKDROP = (1, 2, 3)
 
 
 def _resolve(animation=None, wallpaper=None):
-    return tfm._resolve_background(animation, wallpaper, color=_COLOR, backdrop=_BACKDROP)
+    return xefm_app._resolve_background(animation, wallpaper, color=_COLOR, backdrop=_BACKDROP)
 
 
 class ResolveBackground(unittest.TestCase):
@@ -42,8 +41,8 @@ class ResolveBackground(unittest.TestCase):
         self.assertEqual(bg.backdrop, _BACKDROP)  # theme bg filled in
 
     def test_animation_true_is_the_tuned_default(self):
-        # An unnamed animation gets TFM's default scene.
-        self.assertIn(tfm._ANIM_DEFAULT_KIND, SHADER_KINDS)
+        # An unnamed animation gets XeFM's default scene.
+        self.assertIn(xefm_app._ANIM_DEFAULT_KIND, SHADER_KINDS)
         self.assertIsInstance(_resolve(animation=True), Shader)
 
     def test_animation_params_dict(self):
@@ -68,7 +67,7 @@ class ResolveBackground(unittest.TestCase):
         self.assertIsNone(_resolve(wallpaper={"fit": "fill"}))
         # A truthy animation with no type yields the default scene.
         self.assertIsInstance(_resolve(animation=True), Shader)
-        # A name that is not one of TFM's scenes degrades to solid: a scene *is* a
+        # A name that is not one of XeFM's scenes degrades to solid: a scene *is* a
         # shader now, so there is nothing else for it to resolve to.
         self.assertIsNone(_resolve(animation="snow"))
 
@@ -80,11 +79,11 @@ class ThemeCarriesBackground(unittest.TestCase):
                     **extra)
 
     def test_animation_in_extras(self):
-        t = tfm._theme(**self._base(animation="rain"))
+        t = xefm_app._theme(**self._base(animation="rain"))
         self.assertIsInstance(t.extras.get("background"), Shader)
 
     def test_no_background_has_none(self):
-        self.assertIsNone(tfm._theme(**self._base()).extras.get("background"))
+        self.assertIsNone(xefm_app._theme(**self._base()).extras.get("background"))
 
     def test_config_color_and_content_do_not_collide(self):
         # The regression: config 'background' is the base color; 'animation' picks
@@ -94,7 +93,7 @@ class ThemeCarriesBackground(unittest.TestCase):
             "background": (4, 15, 7), "animation": "rain", "opacity": 1.0,
             "foreground": (51, 245, 121), "muted": (33, 138, 74),
             "accent": (60, 235, 122), "surface": (11, 38, 20), "selection": (24, 105, 54)}})
-        themes = dict(tfm._build_theme_list(cfg))
+        themes = dict(xefm_app._build_theme_list(cfg))
         t = themes["Phosphor"]
         self.assertEqual(t.surfaces.get("content"), (4, 15, 7))          # color kept
         self.assertIsInstance(t.extras.get("background"), Shader)          # content kept
@@ -102,7 +101,7 @@ class ThemeCarriesBackground(unittest.TestCase):
     def test_config_wallpaper_key(self):
         cfg = types.SimpleNamespace(THEMES={"Pic": {
             "base": "Dark+", "wallpaper": "~/bg.png"}})
-        t = dict(tfm._build_theme_list(cfg))["Pic"]
+        t = dict(xefm_app._build_theme_list(cfg))["Pic"]
         self.assertIsInstance(t.extras.get("background"), Wallpaper)
 
 

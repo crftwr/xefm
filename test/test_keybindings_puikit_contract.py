@@ -1,6 +1,6 @@
 """Key-binding matching against the PuiKit keyboard contract.
 
-Drives TFM's real default keymap (`_config.py`) through
+Drives XeFM's real default keymap (`_config.py`) through
 ``find_action_for_event`` using **PuiKit** ``Event`` objects shaped exactly as
 the curses/macOS backends now produce them (see
 ``doc/dev/PUIKIT_KEYBOARD_CONTRACT.md``). This is the forward-looking companion
@@ -10,9 +10,9 @@ event path).
 
 import unittest
 
-import _config
+from xefm import _config
 from puikit import Event, EventType
-from tfm_config import KeyBindings
+from xefm.config import KeyBindings
 
 
 def key(name, char=None, mods=()):
@@ -22,7 +22,7 @@ def key(name, char=None, mods=()):
 class TestKeybindingsPuikitContract(unittest.TestCase):
     def setUp(self):
         # Build against the canonical template defaults (_config.py), so the
-        # test is deterministic and independent of any ~/.tfm/config.py.
+        # test is deterministic and independent of any ~/.xefm/config.py.
         self.kb = KeyBindings(_config.Config.KEY_BINDINGS)
 
     def action(self, event, has_selection=False):

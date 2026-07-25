@@ -1,11 +1,11 @@
 """
-Test file associations integration with TFM
+Test file associations integration with XeFM
 
-Run with: PYTHONPATH=.:src pytest test/test_file_associations_integration.py -v
+Run with: python -m pytest test/test_file_associations_integration.py -v
 """
 
 
-from tfm_config import get_program_for_file, has_action_for_file
+from xefm.config import get_program_for_file, has_action_for_file
 
 
 def test_open_action():

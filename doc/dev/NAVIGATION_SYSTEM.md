@@ -1,15 +1,15 @@
-# TFM Navigation System
+# XeFM Navigation System
 
 ## Overview
 
-The TFM Navigation System handles directory traversal, cursor positioning, and navigation state management. This document covers the implementation details of navigation behaviors and optimizations.
+The XeFM Navigation System handles directory traversal, cursor positioning, and navigation state management. This document covers the implementation details of navigation behaviors and optimizations.
 
 ## Core Navigation Components
 
 ### Directory Navigation
 - **Enter Key**: Navigate into directories
 - **Backspace Key**: Navigate to parent directory with intelligent cursor positioning
-- **Path Resolution**: Cross-platform path handling with TFMPath abstraction
+- **Path Resolution**: Cross-platform path handling with XeFMPath abstraction
 
 ### Cursor Management
 - **Position Memory**: Maintains cursor positions across directory changes
@@ -22,7 +22,7 @@ The TFM Navigation System handles directory traversal, cursor positioning, and n
 
 When navigating from a child directory to its parent directory using the Backspace key, the system implements intelligent cursor positioning to improve user experience.
 
-#### Key Changes in `tfm.py`
+#### Key Changes in `xefm/app.py`
 
 ```python
 elif key == curses.KEY_BACKSPACE or key == KEY_BACKSPACE_2 or key == KEY_BACKSPACE_1:  # Backspace - go to parent directory
@@ -128,7 +128,7 @@ The `adjust_scroll_for_selection()` method ensures that when the cursor is posit
 
 ### Storage Support
 - Works with all supported storage types (local filesystem, S3, etc.)
-- Uses TFMPath abstraction for cross-platform compatibility
+- Uses XeFMPath abstraction for cross-platform compatibility
 - Handles different path separators and naming conventions
 
 ### Path Handling
@@ -153,7 +153,7 @@ The navigation system includes comprehensive unit tests in `test/test_parent_dir
 - Works with both left and right panes independently
 
 ### Backward Compatibility
-- Fully backward compatible with existing TFM installations
+- Fully backward compatible with existing XeFM installations
 - No configuration changes required
 - Existing cursor history functionality remains intact
 
@@ -173,6 +173,6 @@ The navigation system includes comprehensive unit tests in `test/test_parent_dir
 ## Related Systems
 
 - **State Manager**: Integrates with state persistence for cursor history
-- **Path System**: Uses TFMPath for cross-platform path operations
+- **Path System**: Uses XeFMPath for cross-platform path operations
 - **Pane Management**: Works with dual-pane interface system
 - **File Operations**: Coordinates with file refresh and display systems

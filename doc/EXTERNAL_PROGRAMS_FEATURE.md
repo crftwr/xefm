@@ -2,7 +2,7 @@
 
 ## Overview
 
-The External Programs feature allows you to execute custom external programs directly from TFM with access to the current file manager state through environment variables. This extends TFM's functionality by integrating with external tools and scripts.
+The External Programs feature allows you to execute custom external programs directly from XeFM with access to the current file manager state through environment variables. This extends XeFM's functionality by integrating with external tools and scripts.
 
 ## Key Bindings
 
@@ -10,7 +10,7 @@ The External Programs feature allows you to execute custom external programs dir
 - **Shift-X**: Enter sub-shell (command line) mode — a separate feature
 
 The programs menu and the sub-shell are two different tools: **X** runs one of
-your configured `PROGRAMS` and returns to TFM, while **Shift-X** drops you into
+your configured `PROGRAMS` and returns to XeFM, while **Shift-X** drops you into
 an interactive shell in the current pane's directory.
 
 ## Configuration
@@ -35,12 +35,12 @@ PROGRAMS = [
 
 ## Environment Variables
 
-When you run external programs, TFM provides information about your current state through environment variables:
+When you run external programs, XeFM provides information about your current state through environment variables:
 
-- `TFM_THIS_DIR`: Current pane directory
-- `TFM_OTHER_DIR`: Other pane directory
-- `TFM_THIS_SELECTED`: Selected files in current pane
-- `TFM_OTHER_SELECTED`: Selected files in other pane
+- `XEFM_THIS_DIR`: Current pane directory
+- `XEFM_OTHER_DIR`: Other pane directory
+- `XEFM_THIS_SELECTED`: Selected files in current pane
+- `XEFM_OTHER_SELECTED`: Selected files in other pane
 
 Your scripts can use these variables to work with your current selection and location.
 
@@ -50,7 +50,7 @@ Your scripts can use these variables to work with your current selection and loc
 2. Use the searchable list to find and select a program
 3. Press Enter to execute the selected program
 4. The program runs in the current pane's directory
-5. Press Enter after the program completes to return to TFM
+5. Press Enter after the program completes to return to XeFM
 
 ## Example Use Cases
 
@@ -76,23 +76,23 @@ Your scripts can use these variables to work with your current selection and loc
 
 ## Creating Custom Scripts
 
-You can create custom scripts that work with TFM's environment variables. For example:
+You can create custom scripts that work with XeFM's environment variables. For example:
 
 ```bash
 #!/bin/bash
 # Simple script that processes selected files
-echo "Working in: $TFM_THIS_DIR"
-echo "Selected files: $TFM_THIS_SELECTED"
+echo "Working in: $XEFM_THIS_DIR"
+echo "Selected files: $XEFM_THIS_SELECTED"
 ```
 
 ## Example integrations
 
-TFM ships with a few ready-made `PROGRAMS` entries that show how to wire a real
+XeFM ships with a few ready-made `PROGRAMS` entries that show how to wire a real
 external tool into the menu. Each is a single recipe pointing at a small helper
-script that reads the `TFM_*` environment variables above. The helpers live in
-TFM's bundled tools directory (`src/tools/`) and are located at run time by
-`tfm_tool('name')`, which searches `~/.tfm/tools/` first and then that bundled
-directory. `tfm_python` is the interpreter TFM is running under.
+script that reads the `XEFM_*` environment variables above. The helpers live in
+XeFM's bundled tools directory (`xefm/tools/`) and are located at run time by
+`xefm_tool('name')`, which searches `~/.xefm/tools/` first and then that bundled
+directory. `xefm_python` is the interpreter XeFM is running under.
 
 ### Beyond Compare
 
@@ -102,21 +102,21 @@ compares the two pane *directories*, the other the two selected *files*:
 ```python
 PROGRAMS = [
     {'name': 'Compare Files (BeyondCompare)',
-     'command': [tfm_python, tfm_tool('bcompare_files.py')],
+     'command': [xefm_python, xefm_tool('bcompare_files.py')],
      'options': {'auto_return': True}},
     {'name': 'Compare Directories (BeyondCompare)',
-     'command': [tfm_python, tfm_tool('bcompare_dirs.py')],
+     'command': [xefm_python, xefm_tool('bcompare_dirs.py')],
      'options': {'auto_return': True}},
 ]
 ```
 
-- `bcompare_dirs.py` launches Beyond Compare on `TFM_LEFT_DIR` and
-  `TFM_RIGHT_DIR` (the left and right pane directories).
+- `bcompare_dirs.py` launches Beyond Compare on `XEFM_LEFT_DIR` and
+  `XEFM_RIGHT_DIR` (the left and right pane directories).
 - `bcompare_files.py` compares the first selected file in each pane, building
-  full paths from `TFM_LEFT_SELECTED` / `TFM_RIGHT_SELECTED` and the pane
+  full paths from `XEFM_LEFT_SELECTED` / `XEFM_RIGHT_SELECTED` and the pane
   directories. If nothing is explicitly selected, the file under each cursor is
   used.
-- `auto_return: True` returns to TFM as soon as Beyond Compare launches, without
+- `auto_return: True` returns to XeFM as soon as Beyond Compare launches, without
   waiting for you to press Enter.
 
 Requires the `bcompare` command on your `PATH` (install Beyond Compare — e.g.
@@ -128,11 +128,11 @@ One entry opens the current directory (and any selected files) in VS Code:
 
 ```python
 {'name': 'Open in VSCode',
- 'command': [tfm_python, tfm_tool('vscode.py')],
+ 'command': [xefm_python, xefm_tool('vscode.py')],
  'options': {'auto_return': True}}
 ```
 
-`vscode.py` reads `TFM_THIS_DIR` and `TFM_THIS_SELECTED`. If the current
+`vscode.py` reads `XEFM_THIS_DIR` and `XEFM_THIS_SELECTED`. If the current
 directory is inside a git repository it walks up to the repository root and
 opens that instead of the subdirectory, then adds any selected regular files
 (directories are skipped; filenames with spaces are handled). Requires the

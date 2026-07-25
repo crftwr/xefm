@@ -1,5 +1,5 @@
 """
-Site customization for bundled TFM Python.
+Site customization for bundled XeFM Python.
 
 This module is automatically imported by Python's site module during startup.
 It disables user site-packages to ensure the bundled app is self-contained.

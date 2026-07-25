@@ -23,14 +23,13 @@ import unittest
 from unittest.mock import patch
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
-import tfm_filter_list_dialog as fld  # noqa: E402
-from tfm_filter_list_dialog import FilterListDialog  # noqa: E402
-from tfm_progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
-from tfm_state_manager import TFMStateManager  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
+from xefm import filter_list_dialog as fld  # noqa: E402
+from xefm.filter_list_dialog import FilterListDialog  # noqa: E402
+from xefm.progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
 
 
@@ -64,10 +63,10 @@ class PathPickersRequestMiddleElide(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.cfgdir = tempfile.mkdtemp()
-        self.sm = TFMStateManager(db_path=os.path.join(self.cfgdir, "state.db"))
+        self.sm = XeFMStateManager(db_path=os.path.join(self.cfgdir, "state.db"))
         self.backend = create_backend("memory")
         self.backend.open()
-        self.app = tfm.TfmApp(self.backend, self.tmp, self.tmp,
+        self.app = xefm_app.XeFMApp(self.backend, self.tmp, self.tmp,
                               left_provided=True, right_provided=True,
                               state_manager=self.sm)
 
@@ -84,15 +83,15 @@ class PathPickersRequestMiddleElide(unittest.TestCase):
 
     def test_history_uses_middle(self):
         self.app._record_history_path("/some/very/long/path/to/a/deep/directory")
-        with patch("tfm.show_filter_list") as show:
+        with patch("xefm.app.show_filter_list") as show:
             self.app.show_history()
         show.assert_called_once()
         self.assertEqual(show.call_args.kwargs.get("elide_where"), "middle")
 
     def test_favorites_uses_middle(self):
-        with patch("tfm.get_favorite_directories",
+        with patch("xefm.app.get_favorite_directories",
                    return_value=[{"name": "Home", "path": "/tmp"}]), \
-             patch("tfm.show_filter_list") as show:
+             patch("xefm.app.show_filter_list") as show:
             self.app.show_favorites()
         show.assert_called_once()
         self.assertEqual(show.call_args.kwargs.get("elide_where"), "middle")
@@ -101,7 +100,7 @@ class PathPickersRequestMiddleElide(unittest.TestCase):
         # Local drives are always present; stub the remote scans out.
         with patch.object(self.app, "_ssh_drives", return_value=[]), \
              patch.object(self.app, "_s3_drives", return_value=[]), \
-             patch("tfm.show_filter_list") as show:
+             patch("xefm.app.show_filter_list") as show:
             self.app.show_drives()
         show.assert_called_once()
         self.assertEqual(show.call_args.kwargs.get("elide_where"), "middle")

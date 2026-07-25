@@ -5,17 +5,17 @@ defines the requested action wins. The subtle part — and the reason this needs
 real coverage — is that a matching entry which does *not* define the action
 must not stop the search: lookup falls through to later entries.
 
-These tests drive the production ``tfm_config.get_program_for_file`` against an
+These tests drive the production ``xefm.config.get_program_for_file`` against an
 injected config. An earlier version of this file reimplemented the matching
 logic locally and asserted nothing, so it passed no matter what production did.
 
-Run with: PYTHONPATH=.:src pytest test/test_priority_matching.py -v
+Run with: python -m pytest test/test_priority_matching.py -v
 """
 
 import pytest
 
-import tfm_config
-from tfm_config import get_program_for_file, has_action_for_file
+import xefm.config
+from xefm.config import get_program_for_file, has_action_for_file
 
 
 class _Config:
@@ -27,7 +27,7 @@ class _Config:
 def associations(monkeypatch):
     """Install a FILE_ASSOCIATIONS list for the duration of one test."""
     def install(entries):
-        monkeypatch.setattr(tfm_config, "get_config", lambda: _Config(entries))
+        monkeypatch.setattr(xefm.config, "get_config", lambda: _Config(entries))
     return install
 
 

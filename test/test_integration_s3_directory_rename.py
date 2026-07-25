@@ -2,16 +2,16 @@
 Integration test for S3 directory rename restriction.
 
 This test verifies that the S3 directory rename restriction works
-correctly in the context of the full TFM application.
+correctly in the context of the full XeFM application.
 
-Run with: PYTHONPATH=.:src pytest test/test_integration_s3_directory_rename.py -v
+Run with: python -m pytest test/test_integration_s3_directory_rename.py -v
 """
 
 import unittest
 from unittest.mock import Mock, patch
 
-from tfm_s3 import S3PathImpl
-from tfm_path import Path
+from xefm.s3 import S3PathImpl
+from xefm.path import Path
 
 
 class TestS3DirectoryRenameIntegration(unittest.TestCase):

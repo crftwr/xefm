@@ -2,14 +2,14 @@
 Test Configuration Completeness
 Verifies that all configuration parameters are properly defined
 
-Run with: PYTHONPATH=.:src pytest test/test_config_completeness.py -v
+Run with: python -m pytest test/test_config_completeness.py -v
 """
 
 from pathlib import Path
 import unittest
 
-from _config import Config
-from _config import Config
+from xefm._config import Config
+from xefm._config import Config
 
 class TestConfigCompleteness(unittest.TestCase):
     """Test that all configuration parameters are properly defined"""

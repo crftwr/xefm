@@ -132,7 +132,7 @@ Shows all directories including hidden ones.
 
 ### Core Components
 
-#### 1. **JumpDialog Class** (`src/tfm_jump_dialog.py`)
+#### 1. **JumpDialog Class** (`xefm/jump_dialog.py`)
 - Main dialog component handling UI and user interaction
 - Manages threading for directory scanning
 - Provides real-time filtering and navigation
@@ -348,7 +348,7 @@ PROGRESS_ANIMATION_SPEED = 0.2
 
 ## Conclusion
 
-The Jump Dialog System significantly enhances TFM's navigation capabilities by providing:
+The Jump Dialog System significantly enhances XeFM's navigation capabilities by providing:
 
 - **Fast Access**: Quick navigation to any directory in the tree
 - **Smart Search**: Intelligent filtering and matching with hidden files support
@@ -357,4 +357,4 @@ The Jump Dialog System significantly enhances TFM's navigation capabilities by p
 - **Great UX**: Intuitive keyboard-driven interface with context awareness
 - **Robust Implementation**: Comprehensive testing and error handling
 
-This system follows TFM's design principles of being fast, reliable, and user-friendly while maintaining the terminal-based workflow that makes TFM efficient for power users. The hidden files integration ensures consistent behavior across all navigation methods in the application.
+This system follows XeFM's design principles of being fast, reliable, and user-friendly while maintaining the terminal-based workflow that makes XeFM efficient for power users. The hidden files integration ensures consistent behavior across all navigation methods in the application.

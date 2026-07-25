@@ -1,13 +1,13 @@
 # Progress Manager System
 
-Module: `src/tfm_progress_manager.py`
+Module: `xefm/progress_manager.py`
 
 `ProgressManager` tracks the state of one long-running file operation and formats
 it for display. It is deliberately small: it holds the current operation's counts
 and current item, drives a `ProgressAnimator` frame, and renders a status line or
 rich text segments. It does **not** own threads, cancellation, priorities, time
-estimates, or persistence — those belong to the task layer (`src/tfm_task.py`)
-and the file-operations worker (`src/tfm_file_operations.py`).
+estimates, or persistence — those belong to the task layer (`xefm/task.py`)
+and the file-operations worker (`xefm/file_operations.py`).
 
 ## Scope
 
@@ -24,7 +24,7 @@ What it does **not** do (handled elsewhere):
 - Threading and the worker loop → `TaskManager` / the file-ops worker.
 - Cancellation → `Task.checkpoint()` / `Task.request_cancel()` raising
   `Cancelled`.
-- Rendering the modal dialog and prompts → `ProgressDialog` (in `tfm_task.py`).
+- Rendering the modal dialog and prompts → `ProgressDialog` (in `xefm/task.py`).
 
 There is no operation priority system, no ETA calculation, and no
 resume/replay — earlier drafts of this document described those, but they are not
@@ -194,8 +194,8 @@ Synchronous mode (used by tests) runs the worker inline with no dialog, and
 ## Related
 
 - [Progress Animation System](PROGRESS_ANIMATION_SYSTEM.md) — the frame engine.
-- `src/tfm_task.py` — `Task` / `TaskManager` / `ProgressDialog` (threading, UI
+- `xefm/task.py` — `Task` / `TaskManager` / `ProgressDialog` (threading, UI
   bridge, rendering).
-- `src/tfm_file_operations.py` — the copy/move/delete worker.
+- `xefm/file_operations.py` — the copy/move/delete worker.
 - `doc/FILE_OPERATIONS_FEATURE.md` — end-user documentation.
 </content>

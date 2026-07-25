@@ -1,7 +1,7 @@
 """
 Test S3 caching functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_caching.py -v
+Run with: python -m pytest test/test_s3_caching.py -v
 """
 
 import unittest
@@ -9,8 +9,8 @@ import time
 from unittest.mock import Mock, patch, MagicMock
 
 try:
-    from tfm_s3 import S3Cache, S3PathImpl, get_s3_cache, configure_s3_cache, clear_s3_cache, get_s3_cache_stats
-    from tfm_path import Path
+    from xefm.s3 import S3Cache, S3PathImpl, get_s3_cache, configure_s3_cache, clear_s3_cache, get_s3_cache_stats
+    from xefm.path import Path
 except ImportError as e:
     print(f"Import error: {e}")
     print("Skipping S3 caching tests - dependencies not available")
@@ -127,7 +127,7 @@ class TestS3PathImplCaching(unittest.TestCase):
         configure_s3_cache(ttl=2, max_entries=100)
         clear_s3_cache()
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_cached_head_object_calls(self, mock_boto3):
         """Test that head_object calls are cached"""
         # Mock S3 client
@@ -161,7 +161,7 @@ class TestS3PathImplCaching(unittest.TestCase):
         self.assertEqual(stat_result.st_size, 1024)
         self.assertEqual(mock_client.head_object.call_count, 1)  # Still no additional calls
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_cache_invalidation_on_write(self, mock_boto3):
         """Test that cache is invalidated after write operations"""
         # Mock S3 client
@@ -193,7 +193,7 @@ class TestS3PathImplCaching(unittest.TestCase):
         s3_path.exists()
         self.assertEqual(mock_client.head_object.call_count, 2)
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_cache_expiration(self, mock_boto3):
         """Test that cached entries expire after TTL"""
         # Mock S3 client

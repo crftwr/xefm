@@ -10,9 +10,9 @@ reference to the §3 change that fixes them: each flips to a real pass exactly
 when that backend change lands, and fails loudly if a future change regresses
 the contract. So this file doubles as a checklist for the PuiKit-side work.
 
-It also includes a small *reference matcher* (the logic TFM's binding parser
+It also includes a small *reference matcher* (the logic XeFM's binding parser
 will use) driven by already-normalized events, proving the contract is
-sufficient to express TFM's tricky bindings (``a`` vs ``Shift-A``, ``?``,
+sufficient to express XeFM's tricky bindings (``a`` vs ``Shift-A``, ``?``,
 ``Shift-SPACE``) regardless of the current backend gaps.
 """
 
@@ -192,9 +192,9 @@ class TestCharKeyEventContract:
 
 
 # --------------------------------------------------------------------------- #
-# Reference matcher — the logic TFM's binding parser will use.
+# Reference matcher — the logic XeFM's binding parser will use.
 # Driven by already-normalized (contract-conformant) events, so it passes today
-# and demonstrates the contract is sufficient for TFM's hard cases.
+# and demonstrates the contract is sufficient for XeFM's hard cases.
 # --------------------------------------------------------------------------- #
 
 def _matches(binding, ev):

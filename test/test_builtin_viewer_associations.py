@@ -1,11 +1,11 @@
 """
 Test that text files use built-in viewer when association is None
 
-Run with: PYTHONPATH=.:src pytest test/test_builtin_viewer_associations.py -v
+Run with: python -m pytest test/test_builtin_viewer_associations.py -v
 """
 
 
-from tfm_config import get_program_for_file, has_action_for_file, has_explicit_association
+from xefm.config import get_program_for_file, has_action_for_file, has_explicit_association
 
 
 def test_text_files_with_none_association():

@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# TFM DMG Installer Creation Script
+# XeFM DMG Installer Creation Script
 #
-# This script creates a distributable DMG installer for TFM.app
+# This script creates a distributable DMG installer for XeFM.app
 #
 
 set -e  # Exit on error
@@ -17,13 +17,13 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Build paths
 BUILD_DIR="${SCRIPT_DIR}/build"
-APP_NAME="TFM"
+APP_NAME="XeFM"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 
 # DMG configuration
 DMG_TEMP_DIR="${BUILD_DIR}/dmg_temp"
-DMG_NAME="TFM"
-VOLUME_NAME="TFM Installer"
+DMG_NAME="XeFM"
+VOLUME_NAME="XeFM Installer"
 
 # Version number (can be overridden by environment variable)
 VERSION="${VERSION:-0.99}"
@@ -65,7 +65,7 @@ log_error() {
 
 check_app_exists() {
     if [ ! -d "${APP_BUNDLE}" ]; then
-        log_error "TFM.app not found at ${APP_BUNDLE}"
+        log_error "XeFM.app not found at ${APP_BUNDLE}"
         log_error "Please run build.sh first to create the app bundle"
         exit 1
     fi
@@ -96,12 +96,12 @@ create_install_doc() {
     else
         log_info "Creating INSTALL.md"
         cat > "${install_md}" << 'EOF'
-# TFM Installation Instructions
+# XeFM Installation Instructions
 
 ## Installation
 
-1. Drag **TFM.app** to your **Applications** folder
-2. Double-click TFM.app to launch
+1. Drag **XeFM.app** to your **Applications** folder
+2. Double-click XeFM.app to launch
 3. If you see a security warning, go to System Preferences > Security & Privacy and click "Open Anyway"
 
 ## Usage
@@ -125,13 +125,13 @@ create_install_doc() {
 
 ## Troubleshooting
 
-If TFM fails to launch:
+If XeFM fails to launch:
 
 1. Check Console.app for error messages
 2. Ensure you're running macOS 10.13 or later
-3. Try reinstalling by dragging TFM.app to Trash and reinstalling
+3. Try reinstalling by dragging XeFM.app to Trash and reinstalling
 
-For more information, visit: https://github.com/shimomut/tfm
+For more information, visit: https://github.com/shimomut/xefm
 
 EOF
     fi
@@ -142,7 +142,7 @@ EOF
 # ============================================================================
 
 main() {
-    log_info "Starting DMG creation for TFM"
+    log_info "Starting DMG creation for XeFM"
     
     # Check prerequisites
     check_app_exists
@@ -165,8 +165,8 @@ main() {
     log_info "Creating temporary DMG directory"
     mkdir -p "${DMG_TEMP_DIR}"
     
-    # Copy TFM.app to DMG directory
-    log_info "Copying TFM.app to DMG directory"
+    # Copy XeFM.app to DMG directory
+    log_info "Copying XeFM.app to DMG directory"
     cp -R "${APP_BUNDLE}" "${DMG_TEMP_DIR}/"
     
     # Create or copy INSTALL.md

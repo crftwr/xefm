@@ -13,15 +13,14 @@ import tempfile
 from pathlib import Path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-from tfm_text_viewer import (  # noqa: E402
+from xefm.text_viewer import (  # noqa: E402
     TextViewer, viewer_pad, draw_status_bar, _header_bg, _content_bg, VIEWER_PAD_PX,
 )
-from tfm_diff_viewer import DiffViewer, _DiffPane  # noqa: E402
-from tfm_directory_diff_viewer import DirectoryDiffView, _GUTTER_W  # noqa: E402
-from tfm_file_pane import CONTENT_PAD_CELLS  # noqa: E402
+from xefm.diff_viewer import DiffViewer, _DiffPane  # noqa: E402
+from xefm.directory_diff_viewer import DirectoryDiffView, _GUTTER_W  # noqa: E402
+from xefm.file_pane import CONTENT_PAD_CELLS  # noqa: E402
 
 PX, PY = VIEWER_PAD_PX / 8, VIEWER_PAD_PX / 16  # inset for an 8x16px base cell
 

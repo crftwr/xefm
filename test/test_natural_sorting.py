@@ -5,7 +5,7 @@ Test natural sorting of filenames with numeric parts.
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
-from tfm_file_list_manager import FileListManager
+from xefm.file_list_manager import FileListManager
 
 
 class TestNaturalSorting:

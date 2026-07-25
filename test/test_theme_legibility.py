@@ -1,4 +1,4 @@
-"""Proof that Layer-3 auto-ink guarantees legibility across all 7 TFM themes.
+"""Proof that Layer-3 auto-ink guarantees legibility across all 7 XeFM themes.
 
 For every place text actually paints (file rows, columns, headers, footers,
 status bar), we take the *intended* semantic ink (accent for directories, text
@@ -29,7 +29,7 @@ from puikit.color import (
 )
 from puikit.theme import derive_theme
 
-# The 7 palettes, mirroring tfm.py THEMES (kept inline so the proof does not
+# The 7 palettes, mirroring xefm/app.py THEMES (kept inline so the proof does not
 # import the whole app). background, foreground, muted, accent, surface, selection.
 PALETTES = {
     "Dark+":           ((30, 30, 30),    (212, 212, 212), (157, 157, 157), (0, 122, 204),   (48, 48, 52),    (10, 105, 178)),
@@ -41,7 +41,7 @@ PALETTES = {
     "Solarized Light": ((253, 246, 227), (88, 110, 117),  (147, 161, 161), (38, 139, 210),  (234, 228, 206), (150, 195, 230)),
 }
 
-SELECT_MIX_ACTIVE = 0.42  # from src/tfm_file_pane.py
+SELECT_MIX_ACTIVE = 0.42  # from xefm/file_pane.py
 
 
 def _mix(a, b, t):
@@ -131,7 +131,7 @@ def test_render_lifts_directory_and_keeps_legible_file():
     exactly as the theme declared it."""
     from puikit import Item, Panel, VSplit
     from puikit.backends.memory_backend import MemoryBackend
-    from tfm_file_pane import FilePane
+    from xefm.file_pane import FilePane
 
     bg, fg, muted, accent, surface, selection = PALETTES["Dark+"]
     # Give the theme a deliberately dim directory color (the accent, invisible at
@@ -184,7 +184,7 @@ def test_selection_fill_override_pins_the_selected_row_bg():
     accent-tinted, legibility-corrected default (which corrects itself invisible)."""
     from puikit import Item, Panel, VSplit
     from puikit.backends.memory_backend import MemoryBackend
-    from tfm_file_pane import FilePane
+    from xefm.file_pane import FilePane
 
     bg, fg, muted, accent, surface, selection = PALETTES["Light+"]
     sel_fill = (70, 100, 58)
@@ -221,9 +221,9 @@ def test_selection_fill_override_pins_the_selected_row_bg():
 
 
 def test_log_message_lifted_on_light_theme():
-    """TFM's own log lines now resolve to ``theme.text`` at draw time (see
+    """XeFM's own log lines now resolve to ``theme.text`` at draw time (see
     ``log_info``), but a widget can still hand the log a fixed RGB style with no
-    theme in reach — e.g. TFM's stderr warning red. Under auto_ink such a fixed,
+    theme in reach — e.g. XeFM's stderr warning red. Under auto_ink such a fixed,
     theme-blind color, laid on the light theme's white content, is lifted to
     legibility on render."""
     from puikit import Item, Panel, Style, VSplit

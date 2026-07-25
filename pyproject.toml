@@ -3,17 +3,14 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# NOTE: the plain "tfm" name is already taken on PyPI, so the distribution is
-# published as "tfm-file-manager". The import module and the installed console
-# command stay "tfm" (see [project.scripts]); only `pip install <name>` differs.
-name = "tfm-file-manager"
-description = "TFM — a dual-pane terminal file manager (TUI) with optional native desktop backends"
+name = "xefm"
+description = "XeFM — a dual-pane terminal file manager (TUI) with optional native desktop backends"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Tomonori Shimomura" }]
 requires-python = ">=3.10"
 keywords = ["file manager", "terminal", "curses", "tui", "dual-pane"]
-# version  -> single-sourced from tfm.py's _VERSION literal (see [tool.setuptools.dynamic]).
+# version  -> single-sourced from xefm/__init__.py's __version__ (see [tool.setuptools.dynamic]).
 # dependencies -> single-sourced from requirements.txt (shared with `make venv`).
 dynamic = ["version", "dependencies"]
 classifiers = [
@@ -34,32 +31,32 @@ classifiers = [
 ]
 
 [project.scripts]
-tfm = "tfm:main"
+xefm = "xefm.app:main"
 
 [project.urls]
-Homepage = "https://github.com/shimomut/tfm"
-Repository = "https://github.com/shimomut/tfm"
-Issues = "https://github.com/shimomut/tfm/issues"
+Homepage = "https://github.com/shimomut/xefm"
+Repository = "https://github.com/shimomut/xefm"
+Issues = "https://github.com/shimomut/xefm/issues"
 
-# The application is the top-level ``tfm.py`` at the repo root; its flat
-# ``tfm_*`` modules live in ``src/`` and ship as the ``tfm_modules`` package dir.
-# ``tfm.py`` puts that dir on sys.path at import time (see its header), so
-# ``from tfm_* import`` resolves once installed.
+# Flat layout, matching PuiKit's own repo: the whole application is the ``xefm``
+# package at the repo root — ``xefm.app`` is the entry module (FileManager +
+# top-level UI) and its siblings are the business-logic modules. ``python -m
+# xefm`` and the ``xefm`` console script both land in ``xefm.app:main``, and
+# because ``-m`` puts the working directory on sys.path, running from a checkout
+# needs no install and no PYTHONPATH.
 #
-# PuiKit, TFM's UI framework, is declared in requirements.txt (``puikit>=1.0``),
+# PuiKit, XeFM's UI framework, is declared in requirements.txt (``puikit>=1.0``),
 # so it flows into the dynamic dependencies below and resolves from PyPI on a
 # normal install. For co-development, ``make venv`` additionally installs it
 # editable from ../puikit, which overrides the PyPI build.
-[tool.setuptools]
-py-modules = ["tfm"]
-packages = ["tfm_modules"]
-package-dir = { tfm_modules = "src" }
+[tool.setuptools.packages.find]
+include = ["xefm*"]
 
 [tool.setuptools.package-data]
-# End-user external programs invoked by TFM (src/tools/*). The ``_config.py``
+# End-user external programs invoked by XeFM (xefm/tools/*). The ``_config.py``
 # template ships automatically as a package .py module.
-tfm_modules = ["tools/*"]
+xefm = ["tools/*"]
 
 [tool.setuptools.dynamic]
-version = { attr = "tfm._VERSION" }
+version = { attr = "xefm.__version__" }
 dependencies = { file = ["requirements.txt"] }

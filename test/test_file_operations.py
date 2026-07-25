@@ -1,20 +1,20 @@
-"""Tests for the shared file-operation engine (tfm_file_operations) and the
-central task system (tfm_task): recursive counting, per-file execution, the
+"""Tests for the shared file-operation engine (xefm.file_operations) and the
+central task system (xefm.task): recursive counting, per-file execution, the
 TTK-style conflict resolution (skip / overwrite / keep-both + apply-to-all),
 cancellation, and the worker↔main-thread UI bridge."""
 
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-import _config
-import tfm_file_operations as F
-from tfm_file_operations import FileOperationService, _unique_dest
-from tfm_path import Path
-from tfm_task import Cancelled, Task, TaskManager
+from xefm import _config
+from xefm import file_operations as F
+from xefm.file_operations import FileOperationService, _unique_dest
+from xefm.path import Path
+from xefm.task import Cancelled, Task, TaskManager
 
 
 def _P(p):
@@ -324,12 +324,12 @@ def test_inner_file_failure_is_skipped_not_fatal(tmp_path, svc):
     assert len(res["errors"]) == 1                        # the broken link
     assert res["errors"][0][0].endswith("broken")
     # Summary shows the per-file failure without sinking the folder.
-    from tfm_file_operations import format_op_summary
+    from xefm.file_operations import format_op_summary
     assert "1 file failed" in format_op_summary("Copy", res)
 
 
 def test_op_summary_wording():
-    from tfm_file_operations import format_op_summary
+    from xefm.file_operations import format_op_summary
     # Flat, all done -> no top-level/total clutter.
     assert format_op_summary(
         "Copy", {"done": 3, "skipped": 0, "failed": 0, "items": 3, "errors": []}
@@ -341,7 +341,7 @@ def test_op_summary_wording():
 
 
 def test_code_wraps_markdown_specials():
-    from tfm_file_operations import _code
+    from xefm.file_operations import _code
     assert _code("photo.png") == "`photo.png`"
     assert _code("a_b*c[1].txt") == "`a_b*c[1].txt`"          # specials kept literal
     assert _code("weird`name") == "``weird`name``"            # longer fence for backtick
@@ -353,7 +353,7 @@ def test_conflict_dialog_renders_message_checkbox_and_buttons():
     fractional grid row), alongside the code-formatted name and all four buttons."""
     backend = MemoryBackend(width=76, height=24, capabilities=PROFILE_GUI_DESKTOP)
     panel = Panel(backend)
-    ConflictDialog = __import__("tfm_file_operations").ConflictDialog
+    from xefm.file_operations import ConflictDialog
     dlg = ConflictDialog("report.final.pdf", 2, 5, on_result=lambda a: None)
     dlg.show(panel)
     panel.render()
@@ -365,7 +365,7 @@ def test_conflict_dialog_renders_message_checkbox_and_buttons():
 
 
 def test_op_errors_body_and_none():
-    from tfm_file_operations import format_op_errors
+    from xefm.file_operations import format_op_errors
     assert format_op_errors("Copy", {"errors": []}) is None
     body = format_op_errors(
         "Copy", {"errors": [("a.txt", "Permission denied"), ("b.txt", "No space")]})

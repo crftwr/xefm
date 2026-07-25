@@ -1,7 +1,7 @@
 # Motion & Pane Focus Chrome — Implementation
 
-How TFM's modal entrance, reduced-motion switch, and per-theme pane focus chrome
-are put together, and — more usefully — *why* they are split between TFM and
+How XeFM's modal entrance, reduced-motion switch, and per-theme pane focus chrome
+are put together, and — more usefully — *why* they are split between XeFM and
 PuiKit the way they are.
 
 User-facing behavior: `doc/COLOR_SCHEMES_FEATURE.md` (Motion & text effects section).
@@ -16,10 +16,10 @@ User-facing behavior: `doc/COLOR_SCHEMES_FEATURE.md` (Motion & text effects sect
 | Reduced-motion switch | `puikit.Backend` / `Panel` | The backend owns the two self-driven motions (shader clock, post-effect roll); the Panel owns transitions |
 | `draw_corner_brackets` | `puikit.DrawContext` | Needs the grid/vector branch, and that branch belongs in the Panel layer, never in an app |
 | Text animation | `puikit/textfx.py` (kinds) + `Panel` (timing/trigger) | Applied at the `draw_text` seam, so every text widget takes part at zero cost — see §5 |
-| Modal entrance hints | `tfm_dialog_geometry.py` | An app-level *choice* (which curve, how long), not a framework capability |
-| Pane frame / dim | `tfm_file_pane.py` + theme data | App-specific chrome, driven entirely by `Theme.extras` |
+| Modal entrance hints | `xefm/dialog_geometry.py` | An app-level *choice* (which curve, how long), not a framework capability |
+| Pane frame / dim | `xefm/file_pane.py` + theme data | App-specific chrome, driven entirely by `Theme.extras` |
 
-The dividing line: PuiKit owns *what is possible and how it degrades*; TFM owns
+The dividing line: PuiKit owns *what is possible and how it degrades*; XeFM owns
 *which of it to use*. A new curve or a new frame shape is a PuiKit change; a
 theme wanting brackets is a data change with no code behind it at all.
 
@@ -84,7 +84,7 @@ growing log, the progressive-search dialog's queue. Silencing it would turn a
 motion preference into a broken app. A decorative self-driven widget instead
 reads `ctx.reduced_motion` and draws its resting frame.
 
-TFM applies the config value in `TfmApp.__init__` *before* the first theme is
+XeFM applies the config value in `XeFMApp.__init__` *before* the first theme is
 applied, so a reduced-motion launch never plays the opening beat even once and
 the theme's background comes up already stopped.
 
@@ -92,7 +92,7 @@ the theme's background comes up already stopped.
 
 ## 4. The modal entrance
 
-`tfm_dialog_geometry.animate_open()` is the single definition, called by all
+`xefm.dialog_geometry.animate_open()` is the single definition, called by all
 eleven modals. Previously each call site spelled out its own
 `{"transition": "fade", "duration_ms": 150}`, which is exactly the kind of thing
 that drifts.
@@ -129,7 +129,7 @@ could not be theme-driven:
   `draw_text` calls, and FilePane would have needed its own;
 - cost was per string. A 50-row FilePane draws ~200 strings, so it meant ~200
   `animate()` calls with 200 coordinated keys per listing;
-- nothing connected it to a theme, so TFM would have written
+- nothing connected it to a theme, so XeFM would have written
   `if theme.extras.get(...)` at every call site.
 
 **What it is now.** Three parts, each answering one requirement:
@@ -188,7 +188,7 @@ overriding the user:
 preference is inert under a theme that opts out, and reduced motion still wins
 over everything.
 
-TFM's `TextViewer` uses this: `{"kind": "scatter", "flash": 0.10}`. Typing suits
+XeFM's `TextViewer` uses this: `{"kind": "scatter", "flash": 0.10}`. Typing suits
 a *line*, where the eye follows one reveal left to right; a full screen has no
 single place to follow, so a left-to-right reveal reads as a slow wipe while
 landing everywhere at once fills the page in the same time.
@@ -254,7 +254,7 @@ knowing this system exists. An explicit `animates_text = True` still wins.
 together and cost one row against the cap.
 
 Counting strings instead was wrong twice, in opposite directions, because the
-strings-per-row ratio varies by an order of magnitude between widgets — TFM's
+strings-per-row ratio varies by an order of magnitude between widgets — XeFM's
 file pane draws about **1.0** strings per row, its syntax-highlighted text viewer
 about **8.7**:
 
@@ -264,7 +264,7 @@ about **8.7**:
   doesn't animate".
 
 With rows as the unit the number means what a reader expects ("the first N rows
-animate, each one step later") and holds for any widget. TFM's Sci-Fi theme now
+animate, each one step later") and holds for any widget. XeFM's Sci-Fi theme now
 paces at `stagger_ms: 8` with `max_rows: 120` — a backstop for a very tall
 window (~1s), not a coverage limit.
 
@@ -283,7 +283,7 @@ status counter every frame. The Panel tracks a set of widget ids drawn last
 frame — no string diffing at all, which is also why it costs nothing per frame.
 
 A wholesale content swap is the case only the app can recognize, so it says so:
-`Panel.animate_text(widget)`, **one call per widget, not per string**. TFM calls
+`Panel.animate_text(widget)`, **one call per widget, not per string**. XeFM calls
 it from `_process_result_queue`, the single point where a new listing lands for
 both the sync and async paths.
 
@@ -312,7 +312,7 @@ share one key and reveal together, and a re-wrap on resize does not renumber it.
 - **State is per widget, not per string** — `{id(widget): start_time}`. A
   200-string pane is one entry.
 - **`stagger_ms` and `max_rows`** live on the effect and are counted in rows —
-  see "Pacing is counted in rows, not strings" above. TFM's Sci-Fi values
+  see "Pacing is counted in rows, not strings" above. XeFM's Sci-Fi values
   (260 ms, 8 ms stagger, 120 rows) are tuned around this firing on *every
   directory change*.
 - **Noise is decorrelated per string.** The junk hash is keyed by character
@@ -322,9 +322,9 @@ share one key and reveal together, and a re-wrap on resize does not renumber it.
 - **Reduced motion** returns `None` from `Panel.text_effect`, so every widget
   honors it with no code of its own.
 
-TFM's `show_about` is deliberately a *plain* `show_message_box` call: under
+XeFM's `show_about` is deliberately a *plain* `show_message_box` call: under
 Sci-Fi the body decodes because the box appeared, under every other theme it
-opens plainly, and no TFM call site knows the effect exists.
+opens plainly, and no XeFM call site knows the effect exists.
 
 ---
 
@@ -343,7 +343,7 @@ the latter is off by one at even sizes, where the two arms end up adjacent and
 fill the row edge to edge, closing the frame into the solid border it exists to
 avoid. A test covers exactly this.
 
-TFM draws it **only on a vector backend**, and the reason is space rather than
+XeFM draws it **only on a vector backend**, and the reason is space rather than
 backend: the frame lives in the sub-cell margin a GUI pane already has
 (`INNER_MARGIN` / `CONTENT_PAD_CELLS`), which is zero on a grid. Every row of
 `FilePane` is a file row, so on a terminal the brackets land *on* the first and
@@ -387,8 +387,8 @@ which is the property that makes this a safe addition to an existing palette set
 
 ### A caveat about the app-level tests
 
-`TfmApp` tests construct a real app, which reads the developer's own
-`~/.tfm/config.py` **and** restores the last-used theme from `~/.tfm/state.db`.
+`XeFMApp` tests construct a real app, which reads the developer's own
+`~/.xefm/config.py` **and** restores the last-used theme from `~/.xefm/state.db`.
 So a machine whose saved theme carries a `text_effect` renders a different first
 frame than one whose does not, and a test asserting on freshly-drawn text can
 pass for one developer and fail for another. This is pre-existing environment

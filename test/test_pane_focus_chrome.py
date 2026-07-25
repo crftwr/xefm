@@ -6,7 +6,7 @@ ink wash over the *resting* one (``extras['pane_dim']``). Only the themes in
 ``OPTED_IN`` below use them; every other theme must render exactly as it did
 before these existed, which is what most of this file checks.
 
-Also covers ``tfm_dialog_geometry.animate_open`` — the one place TFM's modal
+Also covers ``xefm.dialog_geometry.animate_open`` — the one place XeFM's modal
 entrance is defined, so the eleven dialogs that call it cannot drift apart.
 
 Runs headless on the ``memory`` backend, mirroring ``test_post_effect_theme``.
@@ -18,19 +18,18 @@ import unittest
 from pathlib import Path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
-import tfm_dialog_geometry as dg  # noqa: E402
-from tfm_file_pane import (  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
+from xefm import dialog_geometry as dg  # noqa: E402
+from xefm.file_pane import (  # noqa: E402
     PANE_INACTIVE_DIM, FilePane, _dim_ink,
 )
 from puikit import PROFILE_GUI_DESKTOP, PROFILE_TUI, Panel  # noqa: E402
 from puikit.backends.memory_backend import MemoryBackend  # noqa: E402
 from puikit.capability import CapabilityProfile  # noqa: E402
 
-THEMES = dict(tfm.THEMES)
+THEMES = dict(xefm_app.THEMES)
 SCIFI = THEMES["Sci-Fi"]
 DARK = THEMES["Dark+"]
 
@@ -105,7 +104,7 @@ class ThemeOptIn(unittest.TestCase):
     def test_no_other_builtin_theme_opts_in(self):
         # The guarantee that makes this a safe addition: a theme that does not ask
         # for the chrome renders byte-for-byte as it did before the chrome existed.
-        for name, theme in tfm.THEMES:
+        for name, theme in xefm_app.THEMES:
             if name in OPTED_IN:
                 continue
             self.assertIsNone(theme.extras.get("pane_frame"), name)
@@ -113,7 +112,7 @@ class ThemeOptIn(unittest.TestCase):
 
     def test_both_keys_are_user_configurable(self):
         for key in ("pane_frame", "pane_dim", "text_effect"):
-            self.assertIn(key, tfm._THEME_OVERRIDE_MAP)
+            self.assertIn(key, xefm_app._THEME_OVERRIDE_MAP)
 
     def test_scifi_opts_into_the_arriving_text_effect(self):
         from puikit import textfx
@@ -140,14 +139,14 @@ class ThemeOptIn(unittest.TestCase):
         self.assertTrue(cyber.max_rows)
 
     def test_no_other_builtin_theme_animates_text(self):
-        for name, theme in tfm.THEMES:
+        for name, theme in xefm_app.THEMES:
             if name in OPTED_IN:
                 continue
             self.assertIsNone(theme.extras.get("text_effect"), name)
 
     def test_text_viewer_prefers_scatter_with_flash(self):
         from puikit import textfx
-        from tfm_text_viewer import TextViewer
+        from xefm.text_viewer import TextViewer
         variant = TextViewer.text_effect
         merged = textfx.merge(textfx.coerce(SCIFI.extras["text_effect"]), variant)
         self.assertEqual(merged.kind, "scatter")
@@ -167,13 +166,13 @@ class ThemeOptIn(unittest.TestCase):
         self.assertIsNone(textfx.coerce(DARK.extras.get("text_effect")))
 
     def test_theme_builder_passes_text_effect_through(self):
-        t = tfm._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
+        t = xefm_app._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
                        accent=(0, 122, 204), surface=(20, 20, 20),
                        selection=(10, 60, 100), text_effect="typewriter")
         self.assertEqual(t.extras["text_effect"], "typewriter")
 
     def test_theme_builder_passes_them_through(self):
-        t = tfm._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
+        t = xefm_app._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
                        accent=(0, 122, 204), surface=(20, 20, 20),
                        selection=(10, 60, 100),
                        pane_frame={"color": (1, 2, 3)}, pane_dim=0.5)
@@ -181,7 +180,7 @@ class ThemeOptIn(unittest.TestCase):
         self.assertEqual(t.extras["pane_dim"], 0.5)
 
     def test_a_theme_naming_neither_carries_neither(self):
-        t = tfm._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
+        t = xefm_app._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
                        accent=(0, 122, 204), surface=(20, 20, 20),
                        selection=(10, 60, 100))
         self.assertNotIn("pane_frame", t.extras)
@@ -255,7 +254,7 @@ class PaneDim(unittest.TestCase):
     def test_a_float_sets_its_own_strength(self):
         view = FilePane({"files": [], "focused_index": 0, "selected_files": set()})
         view.active = False
-        t = tfm._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
+        t = xefm_app._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
                        accent=(0, 122, 204), surface=(20, 20, 20),
                        selection=(10, 60, 100), pane_dim=0.75)
         self.assertEqual(view._inactive_dim(t), 0.75)
@@ -264,7 +263,7 @@ class PaneDim(unittest.TestCase):
         view = FilePane({"files": [], "focused_index": 0, "selected_files": set()})
         view.active = False
         for given, want in ((5.0, 1.0), (-2.0, 0.0)):
-            t = tfm._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
+            t = xefm_app._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
                            accent=(0, 122, 204), surface=(20, 20, 20),
                            selection=(10, 60, 100), pane_dim=given)
             self.assertEqual(view._inactive_dim(t), want)

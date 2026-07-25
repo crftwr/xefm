@@ -7,7 +7,7 @@ per-frame tick, the result cap bounds the list, and an invalid content-search
 regex surfaces as an error. With no panel attached, ``_ensure_ticking`` falls
 back to settling synchronously (join the worker + drain), so the streaming logic
 is exercised deterministically here without a backend. One end-to-end test drives
-the real dialog through a MemoryBackend + TfmApp to pin down the wiring
+the real dialog through a MemoryBackend + XeFMApp to pin down the wiring
 (``search_iter`` / ``to_label`` / ``on_accept`` / pane anchoring).
 """
 
@@ -20,11 +20,10 @@ import threading
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
-from tfm_progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
+from xefm.progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
 
 
 def _run(dialog, query):
@@ -140,7 +139,7 @@ class ModeSwitch(unittest.TestCase):
 
 
 class AppIntegration(unittest.TestCase):
-    """Drive the real dialog through a MemoryBackend + TfmApp, so the wiring
+    """Drive the real dialog through a MemoryBackend + XeFMApp, so the wiring
     (search_iter/to_label/on_accept + the tick-driven drain) is covered too."""
 
     def setUp(self):
@@ -165,7 +164,7 @@ class AppIntegration(unittest.TestCase):
 
         b = create_backend("memory")
         b.open()
-        app = tfm.TfmApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
+        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
         try:
             app._settle_listings()
             app._open_search("filename")
@@ -198,7 +197,7 @@ class AppIntegration(unittest.TestCase):
 
         b = create_backend("memory")
         b.open()
-        app = tfm.TfmApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
+        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
         try:
             app._settle_listings()
             app._open_search("filename")
@@ -232,7 +231,7 @@ class AppIntegration(unittest.TestCase):
 
         b = create_backend("memory")
         b.open()
-        app = tfm.TfmApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
+        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
         try:
             app._settle_listings()
             app._open_search("filename")

@@ -1,15 +1,15 @@
-"""Rasterize TFM's background scenes to PNGs, to check how one actually looks
+"""Rasterize XeFM's background scenes to PNGs, to check how one actually looks
 without launching the app.
 
-The test suite checks invariants, not aesthetics, and TFM's TUI cannot be launched
+The test suite checks invariants, not aesthetics, and XeFM's TUI cannot be launched
 non-interactively. Every scene is a fragment shader, and ``MetalBackground`` renders
 to an offscreen texture as readily as to a layer — so this compiles the real shader
 with the real Metal compiler and writes exactly what the fragment function puts on
 screen, with no window involved.
 
-    PYTHONPATH=.:src python tools/render_background_animations.py
-    PYTHONPATH=.:src python tools/render_background_animations.py --time 12 --out /tmp
-    PYTHONPATH=.:src python tools/render_background_animations.py --kind starfield --size 1600x1000
+    PYTHONPATH=. python tools/render_background_animations.py
+    PYTHONPATH=. python tools/render_background_animations.py --time 12 --out /tmp
+    PYTHONPATH=. python tools/render_background_animations.py --kind starfield --size 1600x1000
 
 Only the Metal (macOS) dialect can be rendered here. A scene's HLSL twin is compiled
 by the Windows backend and has to be checked there; see the dialect-parity test in
@@ -31,10 +31,10 @@ except ImportError:  # pragma: no cover - developer tool, macOS only
 from puikit.background import Shader
 from puikit.backends._metal import MetalBackground
 
-from tfm_background_shaders import SHADER_KINDS
+from xefm.background_shaders import SHADER_KINDS
 
 #: Theme colors to render against, so a scene is judged on the palette it ships
-#: with rather than an arbitrary one. (foreground, background) per TFM theme.
+#: with rather than an arbitrary one. (foreground, background) per XeFM theme.
 THEMES = {
     "sci-fi": ((200, 224, 245), (16, 30, 50)),
     "phosphor": ((51, 245, 121), (4, 15, 7)),
@@ -92,11 +92,11 @@ def _size(text):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--kind", action="append", choices=sorted(SHADER_KINDS),
-                        help="scene to render (repeatable; default: all of TFM's)")
+                        help="scene to render (repeatable; default: all of XeFM's)")
     parser.add_argument("--size", type=_size, default=(900, 600), help="WxH, default 900x600")
     parser.add_argument("--time", type=float, default=6.0, help="scene time in seconds")
-    parser.add_argument("--speed", type=float, default=0.6, help="speed multiplier (TFM default 0.6)")
-    parser.add_argument("--opacity", type=float, default=0.6, help="scene opacity (TFM default 0.6)")
+    parser.add_argument("--speed", type=float, default=0.6, help="speed multiplier (XeFM default 0.6)")
+    parser.add_argument("--opacity", type=float, default=0.6, help="scene opacity (XeFM default 0.6)")
     parser.add_argument("--theme", choices=sorted(THEMES), help="palette (default: per scene)")
     parser.add_argument("--out", default="temp", help="output directory (default: temp/)")
     args = parser.parse_args()

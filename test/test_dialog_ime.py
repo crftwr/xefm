@@ -13,7 +13,6 @@ import sys
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from puikit import Panel  # noqa: E402
@@ -21,11 +20,11 @@ from puikit.backends import create_backend  # noqa: E402
 from puikit.event import Event, EventType  # noqa: E402
 from puikit.widgets.text_edit import TextEdit  # noqa: E402
 
-from tfm_input_dialog import InputDialog, show_input  # noqa: E402
-from tfm_filter_list_dialog import FilterListDialog, show_filter_list  # noqa: E402
-from tfm_progressive_search_dialog import ProgressiveSearchDialog, show_progressive_search  # noqa: E402
-from tfm_batch_rename_dialog import BatchRenameDialog, show_batch_rename  # noqa: E402
-from tfm_isearch_bar import ISearchBar  # noqa: E402
+from xefm.input_dialog import InputDialog, show_input  # noqa: E402
+from xefm.filter_list_dialog import FilterListDialog, show_filter_list  # noqa: E402
+from xefm.progressive_search_dialog import ProgressiveSearchDialog, show_progressive_search  # noqa: E402
+from xefm.batch_rename_dialog import BatchRenameDialog, show_batch_rename  # noqa: E402
+from xefm.isearch_bar import ISearchBar  # noqa: E402
 
 
 class _Entry:  # the batch-rename dialog reads only .name off each file

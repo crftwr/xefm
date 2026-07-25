@@ -4,16 +4,16 @@ Test for parent directory navigation cursor positioning behavior.
 This test verifies that when navigating to parent directory using Backspace,
 the cursor is positioned on the child directory we just came from.
 
-Run with: PYTHONPATH=.:src pytest test/test_parent_directory_navigation.py -v
+Run with: python -m pytest test/test_parent_directory_navigation.py -v
 """
 
 import unittest
 import tempfile
 from pathlib import Path
 
-from tfm_path import Path as TFMPath
-from tfm_pane_manager import PaneManager
-from tfm_config import get_config
+from xefm.path import Path as XeFMPath
+from xefm.pane_manager import PaneManager
+from xefm.config import get_config
 
 
 class MockConfig:
@@ -61,8 +61,8 @@ class TestParentDirectoryNavigation(unittest.TestCase):
         # Initialize pane manager
         self.pane_manager = PaneManager(
             self.config,
-            TFMPath(self.child2_path),  # Start in child2
-            TFMPath(self.temp_dir),
+            XeFMPath(self.child2_path),  # Start in child2
+            XeFMPath(self.temp_dir),
             state_manager=None
         )
     
@@ -75,10 +75,10 @@ class TestParentDirectoryNavigation(unittest.TestCase):
         """Test that cursor is positioned on child directory after parent navigation"""
         # Set up left pane to be in child2 directory
         left_pane = self.pane_manager.left_pane
-        left_pane['path'] = TFMPath(self.child2_path)
+        left_pane['path'] = XeFMPath(self.child2_path)
         
         # Simulate file refresh (normally done by file_list_manager.refresh_files)
-        left_pane['files'] = [TFMPath(self.child2_path / "subfile.txt")]
+        left_pane['files'] = [XeFMPath(self.child2_path / "subfile.txt")]
         left_pane['focused_index'] = 0
         
         # Simulate the parent directory navigation logic
@@ -94,7 +94,7 @@ class TestParentDirectoryNavigation(unittest.TestCase):
         # Simulate file refresh in parent directory
         parent_files = []
         for item in sorted(Path(self.temp_dir).iterdir()):
-            parent_files.append(TFMPath(item))
+            parent_files.append(XeFMPath(item))
         left_pane['files'] = parent_files
         
         # Find and set cursor to the child directory we came from
@@ -117,10 +117,10 @@ class TestParentDirectoryNavigation(unittest.TestCase):
         """Test parent navigation when child directory no longer exists"""
         # Set up left pane to be in child2 directory
         left_pane = self.pane_manager.left_pane
-        left_pane['path'] = TFMPath(self.child2_path)
+        left_pane['path'] = XeFMPath(self.child2_path)
         
         # Simulate file refresh
-        left_pane['files'] = [TFMPath(self.child2_path / "subfile.txt")]
+        left_pane['files'] = [XeFMPath(self.child2_path / "subfile.txt")]
         left_pane['focused_index'] = 0
         
         # Remember child directory name
@@ -139,7 +139,7 @@ class TestParentDirectoryNavigation(unittest.TestCase):
         # Simulate file refresh in parent directory (child2 no longer exists)
         parent_files = []
         for item in sorted(Path(self.temp_dir).iterdir()):
-            parent_files.append(TFMPath(item))
+            parent_files.append(XeFMPath(item))
         left_pane['files'] = parent_files
         
         # Try to find the child directory (should fail)
@@ -160,7 +160,7 @@ class TestParentDirectoryNavigation(unittest.TestCase):
         """Test parent navigation when already at root directory"""
         # Set up left pane to be at root
         left_pane = self.pane_manager.left_pane
-        root_path = TFMPath("/")
+        root_path = XeFMPath("/")
         left_pane['path'] = root_path
         
         # Check that parent is same as current (at root)

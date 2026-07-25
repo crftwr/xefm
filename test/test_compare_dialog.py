@@ -1,5 +1,5 @@
 """App-integration tests for Compare & Select: drives the real dialog through a
-MemoryBackend + TfmApp so the handler wiring (guards, dialog → criteria → applied
+MemoryBackend + XeFMApp so the handler wiring (guards, dialog → criteria → applied
 selection, replace/preserve, the content task path) and the keyboard model are
 covered. Complements test_compare_selection.py, which unit-tests the pure engine."""
 
@@ -11,11 +11,10 @@ import time
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
-from tfm_compare_dialog import CompareSelectDialog, ConditionRow  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
+from xefm.compare_dialog import CompareSelectDialog, ConditionRow  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
 from puikit.event import Event, EventType  # noqa: E402
 
@@ -52,7 +51,7 @@ class CompareDialogApp(unittest.TestCase):
 
         self.b = create_backend("memory")
         self.b.open()
-        self.app = tfm.TfmApp(self.b, self.left, self.right,
+        self.app = xefm_app.XeFMApp(self.b, self.left, self.right,
                               left_provided=True, right_provided=True)
         # These tests assert on the dialog's *content*, and the app restores
         # whichever theme was last used — which on a developer's machine may be

@@ -6,17 +6,17 @@ The one decision this makes is display handover, and it is answered by the
 * terminal mode — suspend, run, wait, restore (``less`` and ``vim`` need this)
 * desktop mode  — detach, never block the event loop (no tty exists to release)
 
-Exercised against the real ``TfmApp._launch_associated`` bound to a stand-in
+Exercised against the real ``XeFMApp._launch_associated`` bound to a stand-in
 self, so the method under test is production code rather than a restatement of
 it. A per-entry ``'terminal'`` flag used to make this decision; see
 test_open_tiers.py for why it was removed.
 
-Run with: PYTHONPATH=.:src pytest test/test_launch_associated.py -v
+Run with: python -m pytest test/test_launch_associated.py -v
 """
 
 import pytest
 
-import tfm
+from xefm import app as xefm_app
 
 
 class FakeEntry:
@@ -45,13 +45,13 @@ class FakeApp:
     def _run_in_terminal(self, argv, cwd=None):
         self.ran_in_terminal = argv
 
-    launch = tfm.TfmApp._launch_associated
+    launch = xefm_app.XeFMApp._launch_associated
 
 
 @pytest.fixture
 def app(monkeypatch):
     def make(desktop, local=True, popen=None):
-        monkeypatch.setattr(tfm, "is_desktop_mode", lambda: desktop)
+        monkeypatch.setattr(xefm_app, "is_desktop_mode", lambda: desktop)
         FakeApp._current_local = local
         a = FakeApp()
         a.popen_calls = []
@@ -62,7 +62,7 @@ def app(monkeypatch):
                 raise popen
             return object()
 
-        monkeypatch.setattr(tfm.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(xefm_app.subprocess, "Popen", fake_popen)
         return a
     return make
 

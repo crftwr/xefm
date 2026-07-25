@@ -6,7 +6,7 @@ The modal file viewer opens rich-renderable files (``*.md`` today) either raw
 *extension* through the state manager, so a type reopens in the mode last chosen
 for it — and that types with no rich renderer never persist anything.
 
-Run with: PYTHONPATH=.:src pytest test/test_viewer_mode_memory.py -v
+Run with: python -m pytest test/test_viewer_mode_memory.py -v
 """
 
 import os
@@ -14,21 +14,21 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from puikit import Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 
-from tfm_path import Path
-from tfm_state_manager import TFMStateManager
-from tfm_text_viewer import (TextViewer, show_text_viewer,
+from xefm.path import Path
+from xefm.state_manager import XeFMStateManager
+from xefm.text_viewer import (TextViewer, show_text_viewer,
                              _VIEW_MODE_STATE_PREFIX)
 
 
 @pytest.fixture
 def state(tmp_path):
-    # A throwaway on-disk state store (never the real ~/.tfm/state.db).
-    return TFMStateManager("test_viewer_mode", db_path=str(tmp_path / "state.db"))
+    # A throwaway on-disk state store (never the real ~/.xefm/state.db).
+    return XeFMStateManager("test_viewer_mode", db_path=str(tmp_path / "state.db"))
 
 
 @pytest.fixture

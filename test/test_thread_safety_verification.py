@@ -4,14 +4,14 @@ Thread Safety Verification Test
 This test verifies that the thread safety implementation in LogPaneHandler
 works correctly under concurrent access.
 
-Run with: PYTHONPATH=.:src pytest test/test_thread_safety_verification.py -v
+Run with: python -m pytest test/test_thread_safety_verification.py -v
 """
 
 import logging
 import threading
 import time
 
-from tfm_logging_handlers import LogPaneHandler
+from xefm.logging_handlers import LogPaneHandler
 
 
 def test_logpane_handler_concurrent_emit():

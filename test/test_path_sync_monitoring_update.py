@@ -13,7 +13,7 @@ import shutil
 import time
 import queue
 from unittest.mock import Mock, MagicMock, patch
-from tfm_file_monitor_manager import FileMonitorManager
+from xefm.file_monitor_manager import FileMonitorManager
 
 
 class TestPathSyncMonitoringUpdate(unittest.TestCase):

@@ -1,11 +1,11 @@
 """
 Test file extension associations functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_file_associations.py -v
+Run with: python -m pytest test/test_file_associations.py -v
 """
 
 
-from tfm_config import get_file_associations, get_program_for_file, has_action_for_file
+from xefm.config import get_file_associations, get_program_for_file, has_action_for_file
 
 
 def test_get_file_associations():

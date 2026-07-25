@@ -1,7 +1,7 @@
 """
 Test archive sorting support - verifies all sort modes work with archive entries
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_sorting.py -v
+Run with: python -m pytest test/test_archive_sorting.py -v
 """
 
 import tempfile
@@ -9,9 +9,9 @@ import zipfile
 import tarfile
 import time
 from pathlib import Path as PathlibPath
-from tfm_path import Path
-from tfm_file_list_manager import FileListManager
-from tfm_config import get_config
+from xefm.path import Path
+from xefm.file_list_manager import FileListManager
+from xefm.config import get_config
 
 
 def create_test_archive(archive_path, archive_type='zip'):

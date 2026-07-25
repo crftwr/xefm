@@ -2,14 +2,14 @@
 Integration test for S3PathImpl with actual AWS operations
 This test requires AWS credentials to be configured
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_integration.py -v
+Run with: python -m pytest test/test_s3_integration.py -v
 """
 
 import sys
 import os
 
-from tfm_path import Path
-from tfm_s3 import S3PathImpl
+from xefm.path import Path
+from xefm.s3 import S3PathImpl
 
 def test_s3_name_property():
     """Test S3 name property with various key formats"""
@@ -68,7 +68,7 @@ def test_s3_bucket_operations():
     print("\nTesting S3 bucket operations...")
     
     # Use a test bucket - replace with your own bucket name
-    test_bucket = os.environ.get('TFM_TEST_S3_BUCKET', 'tfm-test-bucket-nonexistent')
+    test_bucket = os.environ.get('XEFM_TEST_S3_BUCKET', 'xefm-test-bucket-nonexistent')
     s3_path = Path(f's3://{test_bucket}/')
     
     try:
@@ -97,8 +97,8 @@ def test_s3_file_operations():
     """Test S3 file operations"""
     print("\nTesting S3 file operations...")
     
-    test_bucket = os.environ.get('TFM_TEST_S3_BUCKET', 'tfm-test-bucket-nonexistent')
-    test_file = Path(f's3://{test_bucket}/tfm-test-file.txt')
+    test_bucket = os.environ.get('XEFM_TEST_S3_BUCKET', 'xefm-test-bucket-nonexistent')
+    test_file = Path(f's3://{test_bucket}/xefm-test-file.txt')
     
     try:
         # Test file existence
@@ -106,9 +106,9 @@ def test_s3_file_operations():
         print(f"Test file exists: {exists}")
         
         # Test writing (only if we have a real bucket)
-        if test_bucket != 'tfm-test-bucket-nonexistent':
+        if test_bucket != 'xefm-test-bucket-nonexistent':
             print("Testing file write...")
-            test_content = "Hello from TFM S3 integration test!"
+            test_content = "Hello from XeFM S3 integration test!"
             test_file.write_text(test_content)
             print("✓ File written successfully")
             
@@ -140,7 +140,7 @@ def test_s3_file_operations():
 
 def main():
     """Run all integration tests"""
-    print("TFM S3 Integration Tests")
+    print("XeFM S3 Integration Tests")
     print("=" * 40)
     
     # Check if boto3 is available
@@ -161,7 +161,7 @@ def main():
         print("\nSkipping AWS operations tests due to missing credentials.")
         print("To run full tests:")
         print("1. Configure AWS credentials (aws configure)")
-        print("2. Set TFM_TEST_S3_BUCKET environment variable to a test bucket")
+        print("2. Set XEFM_TEST_S3_BUCKET environment variable to a test bucket")
         print("3. Re-run this test")
         return True
     

@@ -1,10 +1,10 @@
 """
 Test script to verify dialog mode exclusivity
 
-Run with: PYTHONPATH=.:src pytest test/test_dialog_exclusivity.py -v
+Run with: python -m pytest test/test_dialog_exclusivity.py -v
 """
 
-# Add src directory to Python path
+# Add the repo root to Python path
 def test_dialog_exclusivity_logic():
     """Test the logic for dialog mode exclusivity"""
     print("Dialog Mode Exclusivity Test")
@@ -12,7 +12,7 @@ def test_dialog_exclusivity_logic():
     
     # Simulate the key handling logic
     def simulate_key_handling(isearch_mode, quick_choice_mode, info_dialog_mode, key_action):
-        """Simulate the key handling logic from tfm_main.py"""
+        """Simulate the key handling logic from xefm_main.py"""
         
         print(f"\nTest Case:")
         print(f"  isearch_mode: {isearch_mode}")
@@ -20,7 +20,7 @@ def test_dialog_exclusivity_logic():
         print(f"  info_dialog_mode: {info_dialog_mode}")
         print(f"  key_action: {key_action}")
         
-        # Simulate the input handling order from tfm_main.py
+        # Simulate the input handling order from xefm_main.py
         
         # 1. Handle isearch mode input first
         if isearch_mode:

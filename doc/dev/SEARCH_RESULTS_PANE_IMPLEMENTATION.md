@@ -7,15 +7,15 @@ listbox*). The result set spans many directories, and every existing pane
 operation (copy/move, archive, view/diff, delete/rename, sort & filter, info,
 edit, run-command) then acts on it as if it were an ordinary directory.
 
-Source: [`tfm.py`](../../tfm.py) (the app-side wiring),
-[`src/tfm_file_list_manager.py`](../../src/tfm_file_list_manager.py) (the listing
-choke point), [`src/tfm_file_pane.py`](../../src/tfm_file_pane.py) (name-column
+Source: [`xefm/app.py`](../../xefm/app.py) (the app-side wiring),
+[`xefm/file_list_manager.py`](../../xefm/file_list_manager.py) (the listing
+choke point), [`xefm/file_pane.py`](../../xefm/file_pane.py) (name-column
 rendering). Tests: [`test/test_search_results_pane.py`](../../test/test_search_results_pane.py).
 
 The dialog that *produces* these hits — the live, search-as-you-type
 filename/content finder, its cancel-on-keystroke background worker, and its result
 caps — is `ProgressiveSearchDialog` in
-[`src/tfm_progressive_search_dialog.py`](../../src/tfm_progressive_search_dialog.py);
+[`xefm/progressive_search_dialog.py`](../../xefm/progressive_search_dialog.py);
 see that module's docstring for the threading model. This document covers only
 what happens *after* a hit is accepted (feeding the result set into the pane).
 
@@ -40,7 +40,7 @@ its listing may be virtual, not in touching each operation.
 ## The virtual-pane data model
 
 A pane becomes virtual by carrying a `virtual` marker alongside its normal
-fields (set by `TfmApp._feed_search_results`):
+fields (set by `XeFMApp._feed_search_results`):
 
 ```python
 pane["virtual"] = {
@@ -72,13 +72,13 @@ filename-search set leaves it empty.
 ## Single choke point: `FileListManager.refresh_files`
 
 All virtual behavior funnels through `FileListManager.refresh_files`
-([tfm_file_list_manager.py](../../src/tfm_file_list_manager.py)): when
+([xefm/file_list_manager.py](../../xefm/file_list_manager.py)): when
 `pane['virtual']` is set it re-stats the result set (drops vanished paths, prunes
 `meta`), then filters + sorts **in memory** via `compute_listing_from_paths`. So
 sort, filter, and post-operation reconciliation all Just Work, and every existing
 `refresh_files` / `_refresh` caller is unchanged.
 
-`TfmApp._refresh` gained a virtual branch (synchronous re-stat, no re-list). The
+`XeFMApp._refresh` gained a virtual branch (synchronous re-stat, no re-list). The
 subsystems that assumed `files == children of path` each got a virtual guard:
 
 - **Listing / refresh** — a virtual pane must never re-list `pane["path"]` (that

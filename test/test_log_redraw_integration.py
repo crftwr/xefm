@@ -1,7 +1,7 @@
 """
 Integration test for log redraw trigger functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_log_redraw_integration.py -v
+Run with: python -m pytest test/test_log_redraw_integration.py -v
 """
 
 import sys
@@ -13,7 +13,7 @@ class TestLogRedrawIntegration(unittest.TestCase):
     
     def test_main_loop_logic_simulation(self):
         """Test the main loop logic for log redraw triggering"""
-        from tfm_log_manager import LogManager
+        from xefm.log_manager import LogManager
         
         # Mock config
         mock_config = Mock()
@@ -58,7 +58,7 @@ class TestLogRedrawIntegration(unittest.TestCase):
     
     def test_stdout_stderr_integration(self):
         """Test that stdout/stderr output triggers redraw logic"""
-        from tfm_log_manager import LogManager
+        from xefm.log_manager import LogManager
         
         # Mock config
         mock_config = Mock()
@@ -90,7 +90,7 @@ class TestLogRedrawIntegration(unittest.TestCase):
     
     def test_multiple_updates_before_processing(self):
         """Test that multiple updates before processing are handled correctly"""
-        from tfm_log_manager import LogManager
+        from xefm.log_manager import LogManager
         
         # Mock config
         mock_config = Mock()
@@ -124,7 +124,7 @@ class TestLogRedrawIntegration(unittest.TestCase):
     
     def test_redraw_efficiency(self):
         """Test that redraws are only triggered when necessary"""
-        from tfm_log_manager import LogManager
+        from xefm.log_manager import LogManager
         
         # Mock config
         mock_config = Mock()
@@ -170,7 +170,7 @@ class TestLogRedrawIntegration(unittest.TestCase):
     
     def test_startup_message_handling(self):
         """Test that startup messages are handled correctly"""
-        from tfm_log_manager import LogManager
+        from xefm.log_manager import LogManager
         
         # Mock config
         mock_config = Mock()

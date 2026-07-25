@@ -4,14 +4,14 @@ Test for remote path cleanup optimization.
 This test verifies that the cleanup_non_existing_directories() function
 skips existence checks for remote storage paths to improve performance.
 
-Run with: PYTHONPATH=.:src pytest test/test_remote_path_cleanup_optimization.py -v
+Run with: python -m pytest test/test_remote_path_cleanup_optimization.py -v
 """
 
 import time
 from unittest.mock import patch
 
-from tfm_state_manager import TFMStateManager
-from tfm_path import Path
+from xefm.state_manager import XeFMStateManager
+from xefm.path import Path
 
 
 def test_remote_path_cleanup_optimization(tmp_path):
@@ -19,11 +19,11 @@ def test_remote_path_cleanup_optimization(tmp_path):
 
     print("Testing remote path cleanup optimization...")
 
-    # Own database: the bare TFMStateManager() opens the real shared ~/.tfm/state.db,
-    # so cleanup would also walk whatever history another test (or a real TFM
+    # Own database: the bare XeFMStateManager() opens the real shared ~/.xefm/state.db,
+    # so cleanup would also walk whatever history another test (or a real XeFM
     # session) left there and the assertion on which paths were checked would
     # depend on run order.
-    state_manager = TFMStateManager(db_path=str(tmp_path / "state.db"))
+    state_manager = XeFMStateManager(db_path=str(tmp_path / "state.db"))
 
     # Create test history with mix of local and remote paths
     test_history = [
@@ -93,7 +93,7 @@ def test_performance_improvement(tmp_path):
 
     print("\nTesting performance improvement...")
 
-    state_manager = TFMStateManager(db_path=str(tmp_path / "state.db"))
+    state_manager = XeFMStateManager(db_path=str(tmp_path / "state.db"))
 
     # Create history with many remote paths
     large_history = []

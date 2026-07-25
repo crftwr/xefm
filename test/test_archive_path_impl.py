@@ -1,7 +1,7 @@
 """
 Tests for ArchivePathImpl class
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_path_impl.py -v
+Run with: python -m pytest test/test_archive_path_impl.py -v
 """
 
 import tempfile
@@ -9,8 +9,8 @@ import zipfile
 import tarfile
 from pathlib import Path as PathlibPath
 
-from tfm_path import Path
-from tfm_archive import ArchivePathImpl
+from xefm.path import Path
+from xefm.archive import ArchivePathImpl
 
 
 class TestArchivePathImpl:
@@ -19,7 +19,7 @@ class TestArchivePathImpl:
     def setup_method(self):
         """Set up test fixtures"""
         # Create a temporary directory for test files
-        self.temp_dir = tempfile.mkdtemp(prefix='tfm_test_archive_path_')
+        self.temp_dir = tempfile.mkdtemp(prefix='xefm_test_archive_path_')
         self.temp_path = PathlibPath(self.temp_dir)
         
         # Create a test ZIP archive

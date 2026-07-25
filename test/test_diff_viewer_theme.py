@@ -6,7 +6,7 @@ derived from the theme's content background, so a band is dark on a dark theme
 and pastel on a light one — while unchanged lines still never tint.
 """
 
-from tfm_diff_viewer import _diff_bgs, _side_bg
+from xefm.diff_viewer import _diff_bgs, _side_bg
 
 DARK = (30, 30, 30)
 LIGHT = (255, 255, 255)

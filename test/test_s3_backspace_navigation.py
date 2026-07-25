@@ -1,19 +1,19 @@
 """
-Integration test for S3 Backspace key navigation in TFM
+Integration test for S3 Backspace key navigation in XeFM
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_backspace_navigation.py -v
+Run with: python -m pytest test/test_s3_backspace_navigation.py -v
 """
 
-from tfm_path import Path
+from xefm.path import Path
 
 def test_s3_backspace_navigation():
-    """Test that S3 paths work correctly with TFM's Backspace navigation logic"""
+    """Test that S3 paths work correctly with XeFM's Backspace navigation logic"""
     
     print("Testing S3 Backspace navigation integration...")
     
-    # Simulate the exact logic used in tfm_main.py for Backspace key handling
+    # Simulate the exact logic used in xefm_main.py for Backspace key handling
     def can_navigate_to_parent(current_path):
-        """Simulate the condition check in tfm_main.py line 3689"""
+        """Simulate the condition check in xefm_main.py line 3689"""
         return current_path != current_path.parent
     
     # Test cases that should allow navigation (Backspace should work)

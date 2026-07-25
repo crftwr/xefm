@@ -1,8 +1,8 @@
-# TFM AWS S3 Support Feature
+# XeFM AWS S3 Support Feature
 
 ## Overview
 
-TFM provides native AWS S3 integration, allowing you to browse, navigate, and manage files in S3 buckets directly from the terminal interface. S3 paths are treated like local directories, providing a seamless experience for working with cloud storage.
+XeFM provides native AWS S3 integration, allowing you to browse, navigate, and manage files in S3 buckets directly from the terminal interface. S3 paths are treated like local directories, providing a seamless experience for working with cloud storage.
 
 ## Features
 
@@ -57,19 +57,19 @@ Test your AWS credentials:
 aws s3 ls
 ```
 
-If this works, TFM will be able to access S3.
+If this works, XeFM will be able to access S3.
 
 ## Quick Start
 
 ### Accessing S3 Buckets
 
-Start TFM and navigate to an S3 bucket:
+Start XeFM and navigate to an S3 bucket:
 
 ```bash
-tfm s3://my-bucket-name/
+xefm s3://my-bucket-name/
 ```
 
-Or navigate to S3 from within TFM:
+Or navigate to S3 from within XeFM:
 
 1. Press the key for "Jump to Path" (default: `Shift-J`)
 2. Enter: `s3://my-bucket-name/`
@@ -114,21 +114,21 @@ s3://my-bucket/
   └── readme.txt          (object)
 ```
 
-TFM treats prefixes as directories, allowing natural navigation.
+XeFM treats prefixes as directories, allowing natural navigation.
 
 ### Listing Buckets
 
 To see all available buckets:
 
 1. Navigate to `s3://` (root)
-2. TFM lists all buckets you have access to
+2. XeFM lists all buckets you have access to
 3. Select a bucket to browse its contents
 
 ## File Operations
 
 ### Copying Files
 
-TFM copies the selected files from the active pane straight to the **other**
+XeFM copies the selected files from the active pane straight to the **other**
 pane's current directory — there is no separate clipboard/paste step.
 
 #### From S3 to Local
@@ -173,7 +173,7 @@ View S3 file contents:
 
 1. Navigate to the file
 2. Press the view key (`V`)
-3. TFM downloads the file to a temporary location and opens the viewer
+3. XeFM downloads the file to a temporary location and opens the viewer
 
 **Note:** Large files may take time to download.
 
@@ -181,7 +181,7 @@ View S3 file contents:
 
 ### Intelligent Caching
 
-TFM caches S3 API responses to improve performance:
+XeFM caches S3 API responses to improve performance:
 
 - **Directory Listings**: Cached for 60 seconds (default)
 - **File Metadata**: Cached for 60 seconds (default)
@@ -189,7 +189,7 @@ TFM caches S3 API responses to improve performance:
 
 ### Cache Configuration
 
-Configure caching in `~/.tfm/config.py`:
+Configure caching in `~/.xefm/config.py`:
 
 ```python
 # S3 cache TTL in seconds (how long directory listings are cached)
@@ -208,14 +208,14 @@ S3_CACHE_TTL = 60
 Get fresh data:
 
 1. Re-enter the directory (navigate away and back), or wait for `S3_CACHE_TTL` to expire
-2. TFM then fetches fresh data from S3
+2. XeFM then fetches fresh data from S3
 
 ## Limitations and Considerations
 
 ### S3-Specific Limitations
 
 1. **No True Directories**: S3 uses prefixes, not real directories
-2. **No Rename**: S3 doesn't support rename (TFM performs copy + delete)
+2. **No Rename**: S3 doesn't support rename (XeFM performs copy + delete)
 3. **No Edit in Place**: Files must be downloaded, edited, and re-uploaded
 4. **API Rate Limits**: AWS may throttle requests for high-volume operations
 5. **Costs**: S3 operations incur AWS charges (requests and data transfer)
@@ -240,7 +240,7 @@ Required S3 permissions:
 
 ### Cannot Access S3
 
-**Problem:** TFM shows error when accessing S3 paths.
+**Problem:** XeFM shows error when accessing S3 paths.
 
 **Solutions:**
 1. Verify boto3 is installed: `pip list | grep boto3`
@@ -293,7 +293,7 @@ Required S3 permissions:
 
 ### Cross-Region Operations
 
-TFM supports buckets in any AWS region:
+XeFM supports buckets in any AWS region:
 
 ```
 s3://us-east-bucket/file.txt
@@ -305,20 +305,20 @@ s3://eu-west-bucket/file.txt
 ### Large File Handling
 
 For large files:
-- TFM shows progress during downloads
+- XeFM shows progress during downloads
 - Uploads use multipart upload for files >5MB
 - Consider using AWS CLI for very large files (>1GB)
 
 ### Bucket Policies
 
-TFM respects bucket policies:
+XeFM respects bucket policies:
 - Public buckets: Accessible without credentials
 - Private buckets: Require proper IAM permissions
 - Encrypted buckets: Transparent encryption/decryption
 
 ### S3 Storage Classes
 
-TFM works with all S3 storage classes:
+XeFM works with all S3 storage classes:
 - Standard
 - Intelligent-Tiering
 - Glacier (requires restore before access)
@@ -360,7 +360,7 @@ TFM works with all S3 storage classes:
 
 ### Enable/Disable S3 Support
 
-In `~/.tfm/config.py`:
+In `~/.xefm/config.py`:
 
 ```python
 # Enable S3 support
@@ -389,8 +389,8 @@ S3_MULTIPART_CHUNKSIZE = 5 * 1024 * 1024  # 5MB
 ### Example 1: Backup Local Files to S3
 
 ```bash
-# Start TFM
-tfm
+# Start XeFM
+xefm
 
 # Open the local directory in one pane and s3://my-backup-bucket/ in the other
 # Select files in the local pane, then press C to copy them to the S3 pane
@@ -399,8 +399,8 @@ tfm
 ### Example 2: Download S3 Files
 
 ```bash
-# Start TFM with S3 path
-tfm s3://my-bucket/downloads/
+# Start XeFM with S3 path
+xefm s3://my-bucket/downloads/
 
 # Open the S3 directory in one pane and the local destination in the other
 # Select files, then press C to copy them to the local pane
@@ -419,12 +419,12 @@ tfm s3://my-bucket/downloads/
 ## Related Documentation
 
 - [Configuration](CONFIGURATION_FEATURE.md) - S3 configuration options
-- [File Operations](TFM_USER_GUIDE.md) - General file operations
+- [File Operations](XEFM_USER_GUIDE.md) - General file operations
 - [File Operations](FILE_OPERATIONS_FEATURE.md) - Copy/move progress tracking for S3 transfers
 - [External Programs](EXTERNAL_PROGRAMS_FEATURE.md) - Using external tools with S3 files
 
 ## Conclusion
 
-TFM's S3 support provides seamless integration with AWS S3, allowing you to manage cloud storage directly from the terminal. With intelligent caching, virtual directory navigation, and full file operation support, TFM makes working with S3 as natural as working with local files.
+XeFM's S3 support provides seamless integration with AWS S3, allowing you to manage cloud storage directly from the terminal. With intelligent caching, virtual directory navigation, and full file operation support, XeFM makes working with S3 as natural as working with local files.
 
 For optimal performance, ensure proper AWS credentials are configured, use caching effectively, and organize your S3 objects with a clear prefix structure.

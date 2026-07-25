@@ -2,18 +2,18 @@
 
 ## Overview
 
-This document provides technical implementation details for TFM's automatic file list reloading feature. It is intended for developers who need to understand, maintain, or extend the file monitoring system.
+This document provides technical implementation details for XeFM's automatic file list reloading feature. It is intended for developers who need to understand, maintain, or extend the file monitoring system.
 
 ### Purpose
 
-The file monitoring system enables TFM to automatically detect and reflect filesystem changes made by external applications without requiring manual user refresh actions. This keeps the displayed file list synchronized with the actual filesystem state.
+The file monitoring system enables XeFM to automatically detect and reflect filesystem changes made by external applications without requiring manual user refresh actions. This keeps the displayed file list synchronized with the actual filesystem state.
 
 ### Key Components
 
-- **FileMonitorManager** (`src/tfm_file_monitor_manager.py`) - Central coordinator for filesystem monitoring
-- **FileMonitorObserver** (`src/tfm_file_monitor_observer.py`) - Per-directory watcher wrapping watchdog library
-- **TFMFileSystemEventHandler** (`src/tfm_file_monitor_observer.py`) - Event handler for processing watchdog events
-- **FileManager Integration** (`tfm.py`) - Main application integration and reload handling
+- **FileMonitorManager** (`xefm/file_monitor_manager.py`) - Central coordinator for filesystem monitoring
+- **FileMonitorObserver** (`xefm/file_monitor_observer.py`) - Per-directory watcher wrapping watchdog library
+- **XeFMFileSystemEventHandler** (`xefm/file_monitor_observer.py`) - Event handler for processing watchdog events
+- **FileManager Integration** (`xefm/app.py`) - Main application integration and reload handling
 
 ### Dependencies
 
@@ -67,7 +67,7 @@ The file monitoring system enables TFM to automatically detect and reflect files
 
 #### FileMonitorManager
 
-**Location**: `src/tfm_file_monitor_manager.py`
+**Location**: `xefm/file_monitor_manager.py`
 
 **Purpose**: Central coordinator for all filesystem monitoring operations.
 
@@ -100,7 +100,7 @@ self.suppress_until = 0     # Suppression timestamp
 
 #### FileMonitorObserver
 
-**Location**: `src/tfm_file_monitor_observer.py`
+**Location**: `xefm/file_monitor_observer.py`
 
 **Purpose**: Wraps watchdog Observer for a single directory.
 
@@ -127,15 +127,15 @@ def _detect_platform_and_api(self) -> tuple[str, str]:
 - **Polling**: Periodic directory scanning (fallback for unsupported backends)
 
 
-#### TFMFileSystemEventHandler
+#### XeFMFileSystemEventHandler
 
-**Location**: `src/tfm_file_monitor_observer.py`
+**Location**: `xefm/file_monitor_observer.py`
 
 **Purpose**: Processes watchdog events and filters them appropriately.
 
 **Key Responsibilities**:
 - Filters events to only immediate children of watched directory (no subdirectories)
-- Converts watchdog events to TFM event types
+- Converts watchdog events to XeFM event types
 - Handles move operations (move-in as create, move-out as delete)
 - Invokes callback with event type and filename
 
@@ -156,7 +156,7 @@ def _is_immediate_child(self, event_path: str) -> bool:
 
 #### FileManager Integration
 
-**Location**: `tfm.py`
+**Location**: `xefm/app.py`
 
 **Purpose**: Integrates monitoring into main application event loop.
 
@@ -214,9 +214,9 @@ if hasattr(self, 'file_monitor_manager'):
 
 ## Threading Model
 
-### TFM's Event Loop Architecture
+### XeFM's Event Loop Architecture
 
-TFM's main thread runs a blocking event loop that waits for user input:
+XeFM's main thread runs a blocking event loop that waits for user input:
 
 ```python
 # Main thread in FileManager.run()
@@ -302,7 +302,7 @@ def _on_filesystem_change(self, pane_name: str):
 ### Event Detection and Coalescing
 
 ```
-External Change → watchdog → TFMFileSystemEventHandler → FileMonitorManager
+External Change → watchdog → XeFMFileSystemEventHandler → FileMonitorManager
                                                                 │
                                                                 ▼
                                                     ┌───────────────────────┐
@@ -337,7 +337,7 @@ External Change → watchdog → TFMFileSystemEventHandler → FileMonitorManage
 
 2. **Event Handler Processes Event**
    ```python
-   # TFMFileSystemEventHandler
+   # XeFMFileSystemEventHandler
    def on_created(self, event):
        if not self._is_immediate_child(event.src_path):
            return  # Ignore subdirectory events
@@ -397,7 +397,7 @@ External Change → watchdog → TFMFileSystemEventHandler → FileMonitorManage
 
 ### User Context During Reload
 
-When an automatic reload occurs, TFM preserves the user's context to avoid disrupting their workflow:
+When an automatic reload occurs, XeFM preserves the user's context to avoid disrupting their workflow:
 
 1. **Cursor Position**: Stays on the same filename if it still exists
 2. **Scroll Position**: Maintained when possible
@@ -465,7 +465,7 @@ def _handle_reload_request(self, pane_name):
 
 ### Nearest File Algorithm
 
-When the selected file is deleted, TFM positions the cursor on the nearest remaining file by alphabetical order:
+When the selected file is deleted, XeFM positions the cursor on the nearest remaining file by alphabetical order:
 
 1. Build sorted list of filenames
 2. Find insertion point where deleted filename would have been
@@ -641,7 +641,7 @@ if sys.platform == 'win32':
 
 ### Fallback Polling Mode
 
-When native monitoring is unavailable, TFM falls back to periodic polling:
+When native monitoring is unavailable, XeFM falls back to periodic polling:
 
 ```python
 class PollingObserver(BaseObserver):
@@ -674,7 +674,7 @@ class PollingObserver(BaseObserver):
 
 FileMonitorManager decides per-path whether native monitoring, polling, or no
 monitoring applies. The primary signal is the storage scheme reported by the
-TFM `Path` abstraction (`get_scheme()`); string heuristics are a fallback for
+XeFM `Path` abstraction (`get_scheme()`); string heuristics are a fallback for
 plain `str`/`pathlib` paths that don't expose it.
 
 ```python
@@ -719,7 +719,7 @@ cascades through failing polling fallbacks.
 
 ### Configuration Schema
 
-File monitoring configuration is defined in `src/_config.py`:
+File monitoring configuration is defined in `xefm/_config.py`:
 
 ```python
 # File monitoring settings
@@ -732,7 +732,7 @@ FILE_MONITORING_FALLBACK_POLL_INTERVAL_S = 5       # Polling interval for fallba
 
 ### Configuration Validation
 
-Configuration validation is performed in `src/tfm_config.py`:
+Configuration validation is performed in `xefm/config.py`:
 
 ```python
 def validate_config(config):
@@ -767,7 +767,7 @@ def validate_config(config):
 
 ### Runtime Configuration Changes
 
-Monitoring can be toggled at runtime without restarting TFM:
+Monitoring can be toggled at runtime without restarting XeFM:
 
 ```python
 # In FileManager
@@ -869,7 +869,7 @@ def test_property_1_filesystem_event_detection(filenames):
 **Component Tests**:
 - `test/test_file_monitor_manager_lifecycle.py` - Manager lifecycle and state
 - `test/test_file_monitor_manager_reload_posting.py` - Reload queue posting
-- `test/test_tfm_filesystem_event_handler.py` - Event handler filtering
+- `test/test_xefm_filesystem_event_handler.py` - Event handler filtering
 - `test/test_file_monitor_error_handling.py` - Error recovery
 - `test/test_file_monitoring_config.py` - Configuration validation
 - `test/test_polling_interval.py` - Polling mode behavior
@@ -879,22 +879,22 @@ def test_property_1_filesystem_event_detection(filenames):
 
 **All file monitoring tests**:
 ```bash
-PYTHONPATH=.:src pytest test/test_*file_monitor*.py -v
+python -m pytest test/test_*file_monitor*.py -v
 ```
 
 **Property-based tests only**:
 ```bash
-PYTHONPATH=.:src pytest test/ -v -m property_test
+python -m pytest test/ -v -m property_test
 ```
 
 **Specific test file**:
 ```bash
-PYTHONPATH=.:src pytest test/test_end_to_end_file_monitoring.py -v
+python -m pytest test/test_end_to_end_file_monitoring.py -v
 ```
 
 **With coverage**:
 ```bash
-PYTHONPATH=.:src pytest test/test_*file_monitor*.py --cov=src --cov-report=html
+python -m pytest test/test_*file_monitor*.py --cov=xefm --cov-report=html
 ```
 
 
@@ -904,16 +904,16 @@ PYTHONPATH=.:src pytest test/test_*file_monitor*.py --cov=src --cov-report=html
 
 ```
 src/
-├── tfm_file_monitor_manager.py      # Central monitoring coordinator
-├── tfm_file_monitor_observer.py     # Per-directory watcher
-├── tfm.py                       # FileManager integration
+├── xefm/file_monitor_manager.py      # Central monitoring coordinator
+├── xefm/file_monitor_observer.py     # Per-directory watcher
+├── xefm/app.py                       # FileManager integration
 └── _config.py                        # Configuration defaults
 
 test/
 ├── test_end_to_end_file_monitoring.py              # End-to-end workflow tests
 ├── test_file_monitor_manager_lifecycle.py          # Manager lifecycle tests
 ├── test_file_monitor_manager_reload_posting.py     # Reload posting tests
-├── test_tfm_filesystem_event_handler.py            # Event handler tests
+├── test_xefm_filesystem_event_handler.py            # Event handler tests
 ├── test_file_monitor_error_handling.py             # Error recovery tests
 ├── test_file_monitoring_config.py                  # Configuration tests
 ├── test_polling_interval.py                        # Polling mode tests
@@ -960,7 +960,7 @@ doc/
 - `_detect_platform_and_api()` - Detect platform and API
 - `_start_polling_observer()` - Start polling mode observer
 
-#### TFMFileSystemEventHandler
+#### XeFMFileSystemEventHandler
 
 **Public Methods**:
 - `on_created(event)` - Handle file creation
@@ -978,7 +978,7 @@ All file monitoring components use the unified logging system:
 
 - **FileMonitorManager**: Logger name `"FileMonitor"`
 - **FileMonitorObserver**: Uses logger passed from FileMonitorManager
-- **TFMFileSystemEventHandler**: Uses logger passed from FileMonitorObserver
+- **XeFMFileSystemEventHandler**: Uses logger passed from FileMonitorObserver
 
 Example logging:
 ```python
@@ -1006,7 +1006,7 @@ self.logger.error("Failed to start monitoring: Permission denied")
 **File Descriptors** (Linux):
 - One inotify watch per monitored directory
 - System limit: `/proc/sys/fs/inotify/max_user_watches` (default: 8192)
-- TFM uses 2 watches (left + right pane)
+- XeFM uses 2 watches (left + right pane)
 
 ### Optimization Strategies
 
@@ -1051,7 +1051,7 @@ Prevents excessive reloads during high-frequency events:
 Prevents redundant reloads after user-initiated operations:
 
 ```python
-# User creates file → TFM reloads immediately
+# User creates file → XeFM reloads immediately
 # Monitor detects same change → Suppressed for 1 second
 ```
 
@@ -1089,7 +1089,7 @@ FILE_MONITORING_FALLBACK_POLL_INTERVAL_S = 10  # Poll every 10 seconds
 
 ### Logging
 
-All file monitoring operations are logged using TFM's unified logging system (via `getLogger`), so their messages appear in the in-app log pane alongside everything else.
+All file monitoring operations are logged using XeFM's unified logging system (via `getLogger`), so their messages appear in the in-app log pane alongside everything else.
 
 **Key Log Messages**:
 
@@ -1133,7 +1133,7 @@ INFO [FileMonitor] Monitoring mode changed: native -> polling (reason: connectio
 
 #### Issue: High CPU Usage
 
-**Symptoms**: TFM consuming excessive CPU
+**Symptoms**: XeFM consuming excessive CPU
 
 **Diagnosis**:
 1. Check if in polling mode: Look for "Polling mode active" in logs
@@ -1180,7 +1180,7 @@ INFO [FileMonitor] Monitoring mode changed: native -> polling (reason: connectio
 
 **Check monitoring status**:
 ```python
-# In TFM Python console or debug session
+# In XeFM Python console or debug session
 file_monitor_manager.is_monitoring_enabled()
 file_monitor_manager.get_monitoring_mode(Path("/path/to/dir"))
 file_monitor_manager.is_in_fallback_mode()
@@ -1208,7 +1208,7 @@ file_manager.reload_queue.qsize()  # Number of pending reloads
 
 To add support for new filesystem event types:
 
-1. **Update TFMFileSystemEventHandler**:
+1. **Update XeFMFileSystemEventHandler**:
 ```python
 def on_new_event_type(self, event):
     """Handle new event type."""
@@ -1231,7 +1231,7 @@ def _on_filesystem_event(self, pane_name: str, event_type: str, filename: str):
     # ...
 ```
 
-3. **Add tests** for new event type in `test/test_tfm_filesystem_event_handler.py`
+3. **Add tests** for new event type in `test/test_xefm_filesystem_event_handler.py`
 
 ### Adding New Monitoring Backends
 
@@ -1268,9 +1268,9 @@ class NewBackendObserver(FileMonitorObserver):
 
 To add custom event filtering logic:
 
-1. **Extend TFMFileSystemEventHandler**:
+1. **Extend XeFMFileSystemEventHandler**:
 ```python
-class CustomFileSystemEventHandler(TFMFileSystemEventHandler):
+class CustomFileSystemEventHandler(XeFMFileSystemEventHandler):
     """Custom event handler with additional filtering."""
     
     def __init__(self, callback, watched_path, filter_func=None):
@@ -1429,18 +1429,18 @@ If upgrading from a version without file monitoring:
 
 ### Source Files
 
-- **FileMonitorManager**: `src/tfm_file_monitor_manager.py`
-- **FileMonitorObserver**: `src/tfm_file_monitor_observer.py`
-- **FileManager Integration**: `tfm.py`
-- **Configuration**: `src/_config.py`
-- **Configuration Manager**: `src/tfm_config.py`
+- **FileMonitorManager**: `xefm/file_monitor_manager.py`
+- **FileMonitorObserver**: `xefm/file_monitor_observer.py`
+- **FileManager Integration**: `xefm/app.py`
+- **Configuration**: `xefm/_config.py`
+- **Configuration Manager**: `xefm/config.py`
 
 ### Test Files
 
 - **End-to-End Tests**: `test/test_end_to_end_file_monitoring.py`
 - **Manager Lifecycle**: `test/test_file_monitor_manager_lifecycle.py`
 - **Reload Posting**: `test/test_file_monitor_manager_reload_posting.py`
-- **Event Handler**: `test/test_tfm_filesystem_event_handler.py`
+- **Event Handler**: `test/test_xefm_filesystem_event_handler.py`
 - **Error Handling**: `test/test_file_monitor_error_handling.py`
 - **Configuration**: `test/test_file_monitoring_config.py`
 - **Polling Interval**: `test/test_polling_interval.py`
@@ -1464,17 +1464,17 @@ If upgrading from a version without file monitoring:
 - **macOS FSEvents**: https://developer.apple.com/documentation/coreservices/file_system_events
 - **Windows ReadDirectoryChangesW**: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-readdirectorychangesw
 
-### Related TFM Systems
+### Related XeFM Systems
 
 - **Logging System**: `doc/dev/LOGGING_SYSTEM.md`
-- **Configuration System**: `src/tfm_config.py`
-- **File List Manager**: `src/tfm_file_list_manager.py`
-- **Pane Manager**: `src/tfm_pane_manager.py`
+- **Configuration System**: `xefm/config.py`
+- **File List Manager**: `xefm/file_list_manager.py`
+- **Pane Manager**: `xefm/pane_manager.py`
 
 ---
 
 **Document Version**: 1.0  
 **Last Updated**: 2024  
-**Author**: TFM Development Team  
-**Maintained By**: TFM Core Contributors
+**Author**: XeFM Development Team  
+**Maintained By**: XeFM Core Contributors
 

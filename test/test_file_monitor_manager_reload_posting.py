@@ -13,7 +13,7 @@ import time
 import threading
 from pathlib import Path
 from unittest.mock import Mock, patch
-from tfm_file_monitor_manager import FileMonitorManager
+from xefm.file_monitor_manager import FileMonitorManager
 
 
 class TestFileMonitorManagerReloadPosting(unittest.TestCase):
@@ -111,7 +111,7 @@ class TestFileMonitorManagerReloadPosting(unittest.TestCase):
         # Should have exactly num_threads * 5 reload requests
         self.assertEqual(reload_count, num_threads * 5)
     
-    @patch('tfm_file_monitor_manager.getLogger')
+    @patch('xefm.file_monitor_manager.getLogger')
     def test_post_reload_request_logs_message(self, mock_get_logger):
         """Test that _post_reload_request logs reload request"""
         # Create mock logger

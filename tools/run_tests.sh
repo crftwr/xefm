@@ -9,7 +9,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "TFM Test Runner"
+echo "XeFM Test Runner"
 echo "==============="
 echo ""
 
@@ -22,27 +22,27 @@ case "$MODE" in
         echo -e "${GREEN}Running tests in isolated processes (one test per process)${NC}"
         echo "Each test gets 10 second timeout"
         echo ""
-        PYTHONPATH=.:src pytest "$PATTERN" --forked --timeout=10 -v
+        python -m pytest "$PATTERN" --forked --timeout=10 -v
         ;;
     
     parallel)
         echo -e "${GREEN}Running tests in parallel (multiple processes)${NC}"
         echo "Each test gets 10 second timeout"
         echo ""
-        PYTHONPATH=.:src pytest "$PATTERN" -n auto --timeout=10 -v
+        python -m pytest "$PATTERN" -n auto --timeout=10 -v
         ;;
     
     sequential)
         echo -e "${GREEN}Running tests sequentially (single process)${NC}"
         echo "Each test gets 10 second timeout"
         echo ""
-        PYTHONPATH=.:src pytest "$PATTERN" --timeout=10 -v
+        python -m pytest "$PATTERN" --timeout=10 -v
         ;;
     
     quick)
         echo -e "${GREEN}Quick test run (fail fast, no timeout)${NC}"
         echo ""
-        PYTHONPATH=.:src pytest "$PATTERN" -x -v
+        python -m pytest "$PATTERN" -x -v
         ;;
     
     *)

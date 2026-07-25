@@ -241,7 +241,7 @@ main file manager uses:
   `TEXT_DIFF` tool (e.g. `vimdiff`, `code --diff`) on a two-sided local file via
   the backend's suspend/resume.
 - **Diff** (`view_file`, `Enter`) — `_open_file_diff` opens the per-file diff for
-  a two-sided differing file (reusing `tfm_diff_viewer.show_diff_viewer`).
+  a two-sided differing file (reusing `xefm.diff_viewer.show_diff_viewer`).
 
 Each op completes via `_on_op_complete`, which rescans (`_restart_scan`) so
 verdicts re-evaluate (a merged file's `!` flips to `=` live) while
@@ -261,7 +261,7 @@ The Directory Diff Viewer integrates with the main file manager:
 
 ### Progress System
 
-Integrates with TFM's progress system:
+Integrates with XeFM's progress system:
 
 - **Scan Progress**: Reports scanning progress
 - **Comparison Progress**: Reports comparison progress

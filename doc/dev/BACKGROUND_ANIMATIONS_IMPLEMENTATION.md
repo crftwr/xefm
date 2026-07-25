@@ -1,13 +1,13 @@
 # Background Animations Implementation
 
-How TFM's animated backgrounds are defined, registered and drawn, and what to do
+How XeFM's animated backgrounds are defined, registered and drawn, and what to do
 to add one. End-user documentation is in
 [COLOR_SCHEMES_FEATURE.md](../COLOR_SCHEMES_FEATURE.md) (Background animations section).
 
 ## One renderer
 
-Every scene TFM offers is a fragment shader, evaluated per pixel on the GPU. There
-used to be two kinds — a CPU path in `src/tfm_background_animations.py` that returned
+Every scene XeFM offers is a fragment shader, evaluated per pixel on the GPU. There
+used to be two kinds — a CPU path in `xefm/background_animations.py` that returned
 line segments for the backend to stroke, and this one — and the CPU path was retired
 because it lost on every axis that mattered:
 
@@ -25,25 +25,25 @@ regardless of how little the scene itself drew — measured at 0.5ms of scene ag
 advances without marking the view dirty. Idle, that took the wave from ~52% of a core
 to ~4%.
 
-The removed code is in git history if you ever need it (`src/tfm_background_animations.py`,
+The removed code is in git history if you ever need it (`xefm/background_animations.py`,
 `test/test_background_animations.py`). Don't reintroduce it.
 
 ## Where the pieces live
 
 | Concern | Location |
 |---------|----------|
-| Every scene | `src/tfm_background_shaders.py` (TFM) |
+| Every scene | `xefm/background_shaders.py` (XeFM) |
 | Registry | `SHADER_KINDS` in that module |
 | Descriptor | `Shader` in `puikit.background` (PuiKit) |
-| Theme → descriptor resolution | `_resolve_background` in `tfm.py` |
-| Push to the backend on theme switch | `TfmApp._apply_background` in `tfm.py` |
+| Theme → descriptor resolution | `_resolve_background` in `xefm/app.py` |
+| Push to the backend on theme switch | `XeFMApp._apply_background` in `xefm/app.py` |
 | Compiling and drawing (macOS) | `puikit/backends/_metal.py` (PuiKit) |
 | Compiling and drawing (Windows) | `puikit/backends/_d3d_shader.py` (PuiKit) |
 | Compositing the GPU layer | `MacOSBackend._sync_shader_layer` (PuiKit) |
 
-The split is deliberate: **PuiKit owns how a scene is drawn, TFM owns what the scenes
+The split is deliberate: **PuiKit owns how a scene is drawn, XeFM owns what the scenes
 are.** PuiKit ships only reference scenes that exercise its own paths; every
-production scene is TFM's, so adding one touches `src/tfm_background_shaders.py` and
+production scene is XeFM's, so adding one touches `xefm/background_shaders.py` and
 nothing else.
 
 ## The shader contract
@@ -123,10 +123,10 @@ theme-apply time — there is a test that constructs every entry. From there:
 1. A theme names `animation='starfield'` (or a params dict).
 2. `_resolve_background` finds the name in `SHADER_KINDS` and builds a `Shader`,
    filling `ink` from the theme foreground and `backdrop` from the theme background.
-   `_ANIM_DEFAULTS` supplies TFM's tuning (`speed=0.6, opacity=0.6`);
+   `_ANIM_DEFAULTS` supplies XeFM's tuning (`speed=0.6, opacity=0.6`);
    `_ANIM_DEFAULT_KIND` is used when a theme says `animation=True` without a type.
 3. The descriptor rides in `theme.extras['background']`.
-4. `TfmApp._apply_background` pushes it on every theme switch, so switching away
+4. `XeFMApp._apply_background` pushes it on every theme switch, so switching away
    clears it.
 
 A name **not** in `SHADER_KINDS` resolves to `None` — a plain solid background. There
@@ -138,10 +138,10 @@ with no usable shader path) inherits a no-op, so none of this branches on the ba
 
 ## Adding a scene
 
-1. Write `<SCENE>_MSL` and `<SCENE>_HLSL` in `src/tfm_background_shaders.py`.
+1. Write `<SCENE>_MSL` and `<SCENE>_HLSL` in `xefm/background_shaders.py`.
 2. Add both to `SHADER_KINDS`, with `resolution_scale` if the scene can afford it.
 3. Add a row to the table in `doc/COLOR_SCHEMES_FEATURE.md` (Background animations section) and to the theme
-   comment block in `src/_config.py`.
+   comment block in `xefm/_config.py`.
 4. Update the expected set in `test/test_background_shaders.py`. The generic suites
    pick the scene up from `SHADER_KINDS` automatically, so compilation, drawing,
    animating, freezing at `speed=0`, following the ink, staying a backdrop and
@@ -149,12 +149,12 @@ with no usable shader path) inherits a no-op, so none of this branches on the ba
 
 ### Verifying the look
 
-The tests check invariants, not aesthetics, and TFM's TUI cannot be launched
+The tests check invariants, not aesthetics, and XeFM's TUI cannot be launched
 non-interactively. To actually see a frame, rasterize it headlessly:
 
 ```bash
-PYTHONPATH=.:src python tools/render_background_animations.py
-PYTHONPATH=.:src python tools/render_background_animations.py --kind starfield --time 12 --size 1600x1000
+PYTHONPATH=. python tools/render_background_animations.py
+PYTHONPATH=. python tools/render_background_animations.py --kind starfield --time 12 --size 1600x1000
 ```
 
 It writes a PNG per scene (into `temp/` by default) against the theme that scene
@@ -221,9 +221,9 @@ window over half a minute.
 
 ## Idle parking
 
-An animated background is the only thing in TFM that keeps an idle app redrawing
+An animated background is the only thing in XeFM that keeps an idle app redrawing
 indefinitely, so PuiKit stops it when nobody is watching. Lives in `MacOSBackend`, so
-neither TFM nor any scene has to opt in.
+neither XeFM nor any scene has to opt in.
 
 - `_bg_target` asks for full rate while the window holds focus **and** input was
   recent (`_BG_IDLE_TIMEOUT`, 15s); otherwise zero.

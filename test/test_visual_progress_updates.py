@@ -1,7 +1,7 @@
 """
 Test visual progress updates during delete operations
 
-Run with: PYTHONPATH=.:src pytest test/test_visual_progress_updates.py -v
+Run with: python -m pytest test/test_visual_progress_updates.py -v
 """
 
 import os
@@ -10,11 +10,11 @@ import time
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
-class VisualTestTFM:
-    """Test TFM class that simulates visual progress updates"""
+class VisualTestXeFM:
+    """Test XeFM class that simulates visual progress updates"""
     
     def __init__(self):
         self.progress_manager = ProgressManager()
@@ -30,7 +30,7 @@ class VisualTestTFM:
             print(f"Status: {progress_text}")
         
     def _progress_callback(self, progress_data):
-        """Progress callback that simulates the real TFM behavior"""
+        """Progress callback that simulates the real XeFM behavior"""
         if progress_data:
             self.progress_updates.append(progress_data.copy())
         
@@ -189,10 +189,10 @@ def test_visual_progress_updates():
         (test_dir / "file6.txt").write_text("content6")
         
         # Test delete operation
-        tfm = VisualTestTFM()
+        xefm = VisualTestXeFM()
         files_to_delete = [test_dir]
         
-        progress_updates, status_draws = tfm.test_delete_with_visual_progress(files_to_delete)
+        progress_updates, status_draws = xefm.test_delete_with_visual_progress(files_to_delete)
         
         print(f"\nResults:")
         print(f"Progress updates: {progress_updates}")
@@ -204,7 +204,7 @@ def test_visual_progress_updates():
         assert status_draws >= progress_updates, "Should have at least as many status draws as progress updates"
         
         # Verify we see individual files in the status draws
-        status_text = " ".join(tfm.status_draws)
+        status_text = " ".join(xefm.status_draws)
         assert "file1.txt" in status_text or "file2.txt" in status_text, "Should see individual files in status"
         
         print("✅ Visual progress updates test passed!")
@@ -226,11 +226,11 @@ def test_progress_callback_frequency():
             (large_dir / f"file_{i:02d}.txt").write_text(f"content {i}")
         
         # Test delete operation
-        tfm = VisualTestTFM()
+        xefm = VisualTestXeFM()
         files_to_delete = [large_dir]
         
         start_time = time.time()
-        progress_updates, status_draws = tfm.test_delete_with_visual_progress(files_to_delete)
+        progress_updates, status_draws = xefm.test_delete_with_visual_progress(files_to_delete)
         end_time = time.time()
         
         duration = end_time - start_time

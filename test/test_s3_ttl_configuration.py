@@ -3,7 +3,7 @@ Test S3 TTL Configuration
 
 Tests that S3 cache TTL can be configured through the Config class.
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_ttl_configuration.py -v
+Run with: python -m pytest test/test_s3_ttl_configuration.py -v
 """
 
 import sys
@@ -12,8 +12,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 try:
-    from _config import Config
-    from tfm_s3 import get_s3_cache, S3Cache
+    from xefm._config import Config
+    from xefm.s3 import get_s3_cache, S3Cache
     S3_AVAILABLE = True
 except ImportError as e:
     S3_AVAILABLE = False
@@ -32,8 +32,8 @@ class TestS3TTLConfiguration(unittest.TestCase):
     def setUp(self):
         """Set up test environment"""
         # Clear any existing global cache
-        import tfm_s3
-        tfm_s3._s3_cache = None
+        import xefm.s3
+        xefm.s3._s3_cache = None
     
     def test_default_s3_cache_ttl(self):
         """Test that Config has S3_CACHE_TTL set to 60"""
@@ -46,10 +46,10 @@ class TestS3TTLConfiguration(unittest.TestCase):
         mock_config = MagicMock()
         mock_config.S3_CACHE_TTL = 120
         
-        with patch('tfm_config.get_config', return_value=mock_config):
+        with patch('xefm.config.get_config', return_value=mock_config):
             # Clear the global cache to force recreation
-            import tfm_s3
-            tfm_s3._s3_cache = None
+            import xefm.s3
+            xefm.s3._s3_cache = None
             
             cache = get_s3_cache()
             self.assertEqual(cache.default_ttl, 120)
@@ -57,10 +57,10 @@ class TestS3TTLConfiguration(unittest.TestCase):
     def test_s3_cache_fallback_ttl(self):
         """Test that S3Cache falls back to 60 seconds if config is unavailable"""
         # Mock import error for config
-        with patch('tfm_config.get_config', side_effect=ImportError("Config not available")):
+        with patch('xefm.config.get_config', side_effect=ImportError("Config not available")):
             # Clear the global cache to force recreation
-            import tfm_s3
-            tfm_s3._s3_cache = None
+            import xefm.s3
+            xefm.s3._s3_cache = None
             
             cache = get_s3_cache()
             self.assertEqual(cache.default_ttl, 60)
@@ -75,10 +75,10 @@ class TestS3TTLConfiguration(unittest.TestCase):
                 mock_config = MagicMock()
                 mock_config.S3_CACHE_TTL = ttl
                 
-                with patch('tfm_config.get_config', return_value=mock_config):
+                with patch('xefm.config.get_config', return_value=mock_config):
                     # Clear the global cache to force recreation
-                    import tfm_s3
-                    tfm_s3._s3_cache = None
+                    import xefm.s3
+                    xefm.s3._s3_cache = None
                     
                     cache = get_s3_cache()
                     self.assertEqual(cache.default_ttl, ttl)
@@ -89,10 +89,10 @@ class TestS3TTLConfiguration(unittest.TestCase):
         mock_config = MagicMock()
         del mock_config.S3_CACHE_TTL  # Remove the attribute
         
-        with patch('tfm_config.get_config', return_value=mock_config):
+        with patch('xefm.config.get_config', return_value=mock_config):
             # Clear the global cache to force recreation
-            import tfm_s3
-            tfm_s3._s3_cache = None
+            import xefm.s3
+            xefm.s3._s3_cache = None
             
             cache = get_s3_cache()
             self.assertEqual(cache.default_ttl, 60)
@@ -100,8 +100,8 @@ class TestS3TTLConfiguration(unittest.TestCase):
     def test_s3_cache_singleton_behavior(self):
         """Test that get_s3_cache returns the same instance"""
         # Clear the global cache
-        import tfm_s3
-        tfm_s3._s3_cache = None
+        import xefm.s3
+        xefm.s3._s3_cache = None
         
         cache1 = get_s3_cache()
         cache2 = get_s3_cache()

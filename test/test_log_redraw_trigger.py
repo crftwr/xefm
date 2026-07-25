@@ -1,7 +1,7 @@
 """
 Test that log updates trigger redraws
 
-Run with: PYTHONPATH=.:src pytest test/test_log_redraw_trigger.py -v
+Run with: python -m pytest test/test_log_redraw_trigger.py -v
 """
 
 import sys
@@ -10,7 +10,7 @@ import tempfile
 import time
 from unittest.mock import Mock, patch
 
-from tfm_log_manager import LogManager, LogCapture
+from xefm.log_manager import LogManager, LogCapture
 
 class TestLogRedrawTrigger(unittest.TestCase):
     """Test log update detection and redraw triggering"""

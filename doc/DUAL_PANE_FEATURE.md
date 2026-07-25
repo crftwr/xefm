@@ -1,6 +1,6 @@
 # Dual-Pane File Management
 
-TFM shows two directories side by side, which makes copying, moving, and
+XeFM shows two directories side by side, which makes copying, moving, and
 comparing between them far quicker than in a single-pane manager. One pane is
 **active** (highlighted, with the cursor); the other is inactive. Press **Tab**
 to switch which is active.
@@ -48,7 +48,7 @@ These patterns are what the two panes are really for:
 
 Adjust the vertical boundary with **[** (left pane smaller) and **]** (left pane
 larger). The ratio is saved and restored on restart. Set the startup default in
-`~/.tfm/config.py`:
+`~/.xefm/config.py`:
 
 ```python
 DEFAULT_LEFT_PANE_RATIO = 0.5  # 50/50 (default); 0.6 = wider left, 0.4 = wider right
@@ -56,20 +56,20 @@ DEFAULT_LEFT_PANE_RATIO = 0.5  # 50/50 (default); 0.6 = wider left, 0.4 = wider 
 
 ## State persistence
 
-TFM remembers each pane's current directory, cursor position, the pane ratio,
-and which pane was active between sessions, stored in `~/.tfm/state.json`.
+XeFM remembers each pane's current directory, cursor position, the pane ratio,
+and which pane was active between sessions, stored in `~/.xefm/state.json`.
 
 ## Command-line arguments
 
-Set the starting directory for each pane when launching TFM:
+Set the starting directory for each pane when launching XeFM:
 
 ```bash
 # Left pane only
-python3 tfm.py --left /path/to/directory
+python3 -m xefm --left /path/to/directory
 
 # Right pane only
-python3 tfm.py --right /path/to/directory
+python3 -m xefm --right /path/to/directory
 
 # Both panes
-python3 tfm.py --left ~/documents --right ~/downloads
+python3 -m xefm --left ~/documents --right ~/downloads
 ```

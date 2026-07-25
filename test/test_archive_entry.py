@@ -1,7 +1,7 @@
 """
 Tests for ArchiveEntry dataclass
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_entry.py -v
+Run with: python -m pytest test/test_archive_entry.py -v
 """
 
 import os
@@ -11,7 +11,7 @@ import zipfile
 import tarfile
 import tempfile
 
-from tfm_archive import ArchiveEntry
+from xefm.archive import ArchiveEntry
 
 
 def test_archive_entry_creation():

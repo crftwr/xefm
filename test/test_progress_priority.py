@@ -1,12 +1,12 @@
 """
 Test that progress display takes priority over quick choice bar
 
-Run with: PYTHONPATH=.:src pytest test/test_progress_priority.py -v
+Run with: python -m pytest test/test_progress_priority.py -v
 """
 
 from unittest.mock import Mock
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
 class MockQuickChoiceBar:
@@ -19,8 +19,8 @@ class MockQuickChoiceBar:
         self.draw_called = True
 
 
-class MockTFM:
-    """Mock TFM class to test status drawing priority"""
+class MockXeFM:
+    """Mock XeFM class to test status drawing priority"""
     
     def __init__(self):
         self.progress_manager = ProgressManager()
@@ -68,37 +68,37 @@ def test_progress_takes_priority():
     """Test that progress display takes priority over quick choice bar"""
     print("Testing progress display priority...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     # Test 1: Quick choice bar active, no progress
-    tfm.quick_choice_bar.is_active = True
-    tfm.draw_status()
+    xefm.quick_choice_bar.is_active = True
+    xefm.draw_status()
     
-    assert tfm.quick_choice_bar.draw_called, "Quick choice bar should be drawn when no progress active"
-    assert len(tfm.status_draws) == 0, "No progress text should be drawn"
+    assert xefm.quick_choice_bar.draw_called, "Quick choice bar should be drawn when no progress active"
+    assert len(xefm.status_draws) == 0, "No progress text should be drawn"
     
     # Test 2: Both quick choice bar and progress active - progress should win
-    tfm.progress_manager.start_operation(OperationType.DELETE, 10, "", None)
-    tfm.progress_manager.update_progress("test_file.txt", 5)
+    xefm.progress_manager.start_operation(OperationType.DELETE, 10, "", None)
+    xefm.progress_manager.update_progress("test_file.txt", 5)
     
-    tfm.quick_choice_bar.is_active = True  # Still active
-    tfm.draw_status()
+    xefm.quick_choice_bar.is_active = True  # Still active
+    xefm.draw_status()
     
-    assert not tfm.quick_choice_bar.draw_called, "Quick choice bar should NOT be drawn when progress is active"
-    assert len(tfm.status_draws) > 0, "Progress text should be drawn"
+    assert not xefm.quick_choice_bar.draw_called, "Quick choice bar should NOT be drawn when progress is active"
+    assert len(xefm.status_draws) > 0, "Progress text should be drawn"
     
     # Check that progress text contains expected content
-    progress_text = " ".join([draw.split(": ", 1)[1] for draw in tfm.status_draws if ": " in draw])
+    progress_text = " ".join([draw.split(": ", 1)[1] for draw in xefm.status_draws if ": " in draw])
     assert "Deleting" in progress_text, f"Should contain 'Deleting', got: {progress_text}"
     assert "5/10" in progress_text, f"Should contain '5/10', got: {progress_text}"
     assert "test_file.txt" in progress_text, f"Should contain 'test_file.txt', got: {progress_text}"
     
     # Test 3: Progress finished, quick choice bar should work again
-    tfm.progress_manager.finish_operation()
-    tfm.quick_choice_bar.is_active = True
-    tfm.draw_status()
+    xefm.progress_manager.finish_operation()
+    xefm.quick_choice_bar.is_active = True
+    xefm.draw_status()
     
-    assert tfm.quick_choice_bar.draw_called, "Quick choice bar should be drawn again after progress finishes"
+    assert xefm.quick_choice_bar.draw_called, "Quick choice bar should be drawn again after progress finishes"
     
     print("✅ Progress priority test passed!")
 
@@ -107,24 +107,24 @@ def test_progress_without_quick_choice():
     """Test that progress works normally when quick choice bar is not active"""
     print("\nTesting progress without quick choice interference...")
     
-    tfm = MockTFM()
+    xefm = MockXeFM()
     
     # Start progress operation
-    tfm.progress_manager.start_operation(OperationType.COPY, 5, "to Documents", None)
-    tfm.progress_manager.update_progress("document.pdf", 3)
+    xefm.progress_manager.start_operation(OperationType.COPY, 5, "to Documents", None)
+    xefm.progress_manager.update_progress("document.pdf", 3)
     
     # Quick choice bar not active
-    tfm.quick_choice_bar.is_active = False
-    tfm.draw_status()
+    xefm.quick_choice_bar.is_active = False
+    xefm.draw_status()
     
-    assert not tfm.quick_choice_bar.draw_called, "Quick choice bar should not be drawn"
-    assert len(tfm.status_draws) > 0, "Progress text should be drawn"
+    assert not xefm.quick_choice_bar.draw_called, "Quick choice bar should not be drawn"
+    assert len(xefm.status_draws) > 0, "Progress text should be drawn"
     
     # Check progress content
-    progress_text = " ".join([draw.split(": ", 1)[1] for draw in tfm.status_draws if ": " in draw])
+    progress_text = " ".join([draw.split(": ", 1)[1] for draw in xefm.status_draws if ": " in draw])
     assert "Copying" in progress_text, f"Should contain 'Copying', got: {progress_text}"
     assert "3/5" in progress_text, f"Should contain '3/5', got: {progress_text}"
     
-    tfm.progress_manager.finish_operation()
+    xefm.progress_manager.finish_operation()
     
     print("✅ Progress without interference test passed!")

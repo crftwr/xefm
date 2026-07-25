@@ -1,18 +1,18 @@
 """
 Test directory existence check during startup.
 
-This test verifies that TFM checks the existence of directories
+This test verifies that XeFM checks the existence of directories
 before restoring cursor positions and removes non-existing ones
 from the cursor history.
 
-Run with: PYTHONPATH=.:src pytest test/test_directory_existence_check.py -v
+Run with: python -m pytest test/test_directory_existence_check.py -v
 """
 
 from pathlib import Path
 import tempfile
 import shutil
 
-from tfm_state_manager import TFMStateManager
+from xefm.state_manager import XeFMStateManager
 
 
 def test_directory_existence_check():
@@ -31,7 +31,7 @@ def test_directory_existence_check():
         
         # Create a temporary state database
         state_db_path = temp_path / "test_state.db"
-        state_manager = TFMStateManager()
+        state_manager = XeFMStateManager()
         # Override the database path for testing
         state_manager.db_path = state_db_path
         state_manager._initialize_database()
@@ -85,7 +85,7 @@ def test_cleanup_non_existing_directories():
         
         # Create a temporary state database
         state_db_path = temp_path / "test_state.db"
-        state_manager = TFMStateManager()
+        state_manager = XeFMStateManager()
         # Override the database path for testing
         state_manager.db_path = state_db_path
         state_manager._initialize_database()

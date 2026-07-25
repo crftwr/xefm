@@ -1,8 +1,8 @@
-# TFM Dialog System
+# XeFM Dialog System
 
 ## Overview
 
-TFM's dialogs are the modal (and near-modal) overlays the app raises for input,
+XeFM's dialogs are the modal (and near-modal) overlays the app raises for input,
 selection, search, and information display: creating a file, renaming, picking a
 favorite, searching a tree, viewing help, batch-renaming, and so on.
 
@@ -24,21 +24,21 @@ modality, focus, event routing, and drawing.
 
 | Class | Module | Factory | Role |
 |-------|--------|---------|------|
-| `InputDialog` | `tfm_input_dialog.py` | `show_input` | Single-line text prompt (create, rename, jump-to-path, archive name, password) |
-| `FilterListDialog` | `tfm_filter_list_dialog.py` | `show_filter_list` | Filterable list picker (favorites, drives, history, external programs) |
-| `ProgressiveSearchDialog` | `tfm_progressive_search_dialog.py` | `show_progressive_search` | Live search-as-you-type over the filesystem (filename / content) |
-| `TextDialog` | `tfm_text_dialog.py` | `show_text` | Read-only scrollable plain-text viewer |
-| `MarkdownDialog` | `tfm_text_dialog.py` | `show_markdown` | Read-only scrollable rich-text viewer (help, file details) |
-| `BatchRenameDialog` | `tfm_batch_rename_dialog.py` | `show_batch_rename` | Regex batch rename with a live preview |
-| `CompareSelectDialog` | `tfm_compare_dialog.py` | `show_compare_select` | Keyboard-first criteria picker for compare-and-select |
-| `ISearchBar` / `ViewerISearch` | `tfm_isearch_bar.py` | (constructed directly) | Incremental search input pinned in a pane / viewer footer |
-| `CandidateListOverlay` | `tfm_candidate_list.py` | (driven by `InputDialog`) | TAB-completion popup |
+| `InputDialog` | `xefm/input_dialog.py` | `show_input` | Single-line text prompt (create, rename, jump-to-path, archive name, password) |
+| `FilterListDialog` | `xefm/filter_list_dialog.py` | `show_filter_list` | Filterable list picker (favorites, drives, history, external programs) |
+| `ProgressiveSearchDialog` | `xefm/progressive_search_dialog.py` | `show_progressive_search` | Live search-as-you-type over the filesystem (filename / content) |
+| `TextDialog` | `xefm/text_dialog.py` | `show_text` | Read-only scrollable plain-text viewer |
+| `MarkdownDialog` | `xefm/text_dialog.py` | `show_markdown` | Read-only scrollable rich-text viewer (help, file details) |
+| `BatchRenameDialog` | `xefm/batch_rename_dialog.py` | `show_batch_rename` | Regex batch rename with a live preview |
+| `CompareSelectDialog` | `xefm/compare_dialog.py` | `show_compare_select` | Keyboard-first criteria picker for compare-and-select |
+| `ISearchBar` / `ViewerISearch` | `xefm/isearch_bar.py` | (constructed directly) | Incremental search input pinned in a pane / viewer footer |
+| `CandidateListOverlay` | `xefm/candidate_list.py` | (driven by `InputDialog`) | TAB-completion popup |
 
 Two supporting pieces are not dialogs themselves:
 
-- **`tfm_dialog_geometry.py`** — the shared sizing/chrome helpers every modal uses
+- **`xefm/dialog_geometry.py`** — the shared sizing/chrome helpers every modal uses
   (`draw_title_bar`, `pane_anchored_box`, `animate_open`).
-- **`show_message_box`** — a PuiKit widget primitive (from `puikit.widgets`) TFM
+- **`show_message_box`** — a PuiKit widget primitive (from `puikit.widgets`) XeFM
   uses for confirmations, info, and error boxes (Quit, "No favorites configured",
   operation-error summaries). It follows the same layer model but ships with
   PuiKit rather than living in `src/`.
@@ -156,7 +156,7 @@ dialog with live, asynchronous content drives its own repaints through
 falling back to a synchronous settle on a still backend (chiefly tests). The
 entrance animation is handled once by `animate_open`.
 
-## Geometry and shared chrome (`tfm_dialog_geometry.py`)
+## Geometry and shared chrome (`xefm/dialog_geometry.py`)
 
 This module is the single home for a modal's size and chrome, so every dialog
 looks and opens the same way.
@@ -175,7 +175,7 @@ looks and opens the same way.
   it visibly leans over its target pane; an on-screen clamp keeps a margin on each
   side. Callers opt in by passing `region=` to a `show_*` factory (favorites,
   drives, filter, compare, jump anchor over the active pane via
-  `TfmApp._active_pane_region()`).
+  `XeFMApp._active_pane_region()`).
 
 - **`animate_open(panel, widget, duration_ms=OPEN_MS_DIALOG)`** — the one
   app-wide modal entrance: a scale-from-92%-plus-fade "materialize" with an
@@ -201,7 +201,7 @@ edits; Enter accepts (text passed to `on_accept`); Esc or an outside click cance
 - **`password`** — masks the field with a bullet glyph and disables clipboard
   copy/cut of its contents (encrypted-archive password).
 - **`completer`** — enables TAB completion. A `CompletionController` (from
-  `tfm_completion`) mutates the field and tracks candidate state; when several
+  `xefm.completion`) mutates the field and tracks candidate state; when several
   matches remain, a `CandidateListOverlay` is pushed as a separate,
   **non-interactive** layer just below/above the field, navigated with the arrow
   keys. Used for filepath completion in Jump-to-Path.
@@ -293,7 +293,7 @@ picker — and a "Preserve current selection" toggle.
   columns on a grid). The result is reported through `on_result(criteria)`
   (`None` on cancel).
 
-### ISearchBar / ViewerISearch — `tfm_isearch_bar.py`
+### ISearchBar / ViewerISearch — `xefm/isearch_bar.py`
 
 Incremental search is the exception to the centered-modal rule: it must sit exactly
 on the active pane's (or a viewer's) **footer bar** while the list above stays
@@ -306,11 +306,11 @@ across the rest, and a `position/total` match counter pinned to the right.
 `Up`/`Down` walk the match set, `Enter` stops at the current match, `Esc` (or an
 outside click) cancels. The bar owns no search logic — the host supplies callbacks
 (`on_change`, `on_navigate`, `on_submit`, `on_cancel`, `get_status`). See
-`TfmApp.enter_isearch` for the main-window wiring. **`ViewerISearch`** is a small
+`XeFMApp.enter_isearch` for the main-window wiring. **`ViewerISearch`** is a small
 driver that gives the full-window text/diff viewers the same footer-anchored
 incremental search without each re-implementing the plumbing.
 
-### CandidateListOverlay — `tfm_candidate_list.py`
+### CandidateListOverlay — `xefm/candidate_list.py`
 
 The TAB-completion popup for `InputDialog`. It is a small presentational widget
 pushed as its **own non-interactive layer** directly below/above the field being
@@ -324,7 +324,7 @@ scrollbar. Because it is not the event-owning layer, the host forwards clicks th
 fall inside it to `handle_event`, which reports the chosen row through
 `on_activate`.
 
-## Integration with TfmApp
+## Integration with XeFMApp
 
 The app holds a single `self.panel` (a PuiKit `Panel`). An action handler simply
 calls a factory and renders:
@@ -345,7 +345,7 @@ There is no dialog dispatch table, no `handle_input(key)` fan-out, and no
 `_draw_dialogs_if_needed()` in the main loop — the Panel routes events to the top
 layer and draws all layers itself. Incremental search is the one case the app
 manages more directly, because it constructs `ISearchBar` and pins it to a captured
-footer rect rather than centering it (`TfmApp.enter_isearch` and the
+footer rect rather than centering it (`XeFMApp.enter_isearch` and the
 `_isearch_*` callbacks).
 
 ## Testing
@@ -362,7 +362,7 @@ headless backend (no live TUI). Representative files:
 - `test/test_viewer_isearch.py` — the viewer incremental-search driver.
 
 Run them with the project's standard invocation
-(`PYTHONPATH=.:src pytest test/<file> -v`).
+(`python -m pytest test/<file> -v`).
 
 ## Related Documentation
 
@@ -375,5 +375,5 @@ Run them with the project's standard invocation
 - [Text Viewer System](TEXT_VIEWER_SYSTEM.md) and
   [Directory Diff Viewer System](DIRECTORY_DIFF_VIEWER_SYSTEM.md) — full-window
   viewers that reuse `ViewerISearch`.
-- [TFM Application Overview](TFM_APPLICATION_OVERVIEW.md) — overall architecture
+- [XeFM Application Overview](XEFM_APPLICATION_OVERVIEW.md) — overall architecture
   and the Panel/layer model.

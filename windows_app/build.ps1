@@ -1,32 +1,32 @@
 <#
 .SYNOPSIS
-    Build the self-contained TFM Windows application bundle.
+    Build the self-contained XeFM Windows application bundle.
 
 .DESCRIPTION
-    Windows counterpart of macos_app/build.sh. Assembles build\TFM\ containing a
-    compiled C launcher (TFM.exe), an embedded CPython (from the python.org
-    "embeddable" package matching the .venv's version), TFM's own code, PuiKit,
+    Windows counterpart of macos_app/build.sh. Assembles build\XeFM\ containing a
+    compiled C launcher (XeFM.exe), an embedded CPython (from the python.org
+    "embeddable" package matching the .venv's version), XeFM's own code, PuiKit,
     and all third-party dependencies. See doc/dev/WINDOWS_APP_BUILD_SYSTEM.md.
 
 .PARAMETER Version
-    Version string embedded in TFM.exe (e.g. 1.0.0). Defaults to tfm.py's _VERSION.
+    Version string embedded in XeFM.exe (e.g. 1.0.0). Defaults to xefm/__init__.py's __version__.
 
 .PARAMETER PythonEmbedUrl
     Override the embeddable-package download URL (default: python.org, matching
     the venv's exact version).
 
 .PARAMETER Zip
-    Also produce build\TFM-<version>-win64.zip for distribution.
+    Also produce build\XeFM-<version>-win64.zip for distribution.
 
 .PARAMETER Clean
     Remove the build directory and exit.
 
 .PARAMETER Install
-    Install the already-built bundle to -InstallDir (default C:\Program Files\TFM),
+    Install the already-built bundle to -InstallDir (default C:\Program Files\XeFM),
     self-elevating via UAC. Does not build; run the default build first.
 
 .PARAMETER InstallDir
-    Target directory for -Install (default C:\Program Files\TFM).
+    Target directory for -Install (default C:\Program Files\XeFM).
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File windows_app\build.ps1
@@ -40,7 +40,7 @@ param(
     [switch]$Zip,
     [switch]$Clean,
     [switch]$Install,
-    [string]$InstallDir = 'C:\Program Files\TFM'
+    [string]$InstallDir = 'C:\Program Files\XeFM'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,11 +53,11 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 $SrcDir      = Join-Path $ScriptDir 'src'
 $ResDir      = Join-Path $ScriptDir 'resources'
 $BuildDir    = Join-Path $ScriptDir 'build'
-$AppRoot     = Join-Path $BuildDir 'TFM'      # the distributable folder
+$AppRoot     = Join-Path $BuildDir 'XeFM'      # the distributable folder
 $ObjDir      = Join-Path $BuildDir 'obj'      # launcher intermediates
 $CacheDir    = Join-Path $ScriptDir '.cache'  # downloaded embeddable zips
 
-$AppName = 'TFM'
+$AppName = 'XeFM'
 
 function Info    ($m) { Write-Host "[INFO] $m" }
 function Success ($m) { Write-Host "[SUCCESS] $m" -ForegroundColor Green }
@@ -77,7 +77,7 @@ if ($Clean) {
 # result so the outcome is reported in the visible shell.
 # ---------------------------------------------------------------------------
 function Invoke-Install {
-    if (-not (Test-Path (Join-Path $AppRoot 'TFM.exe'))) {
+    if (-not (Test-Path (Join-Path $AppRoot 'XeFM.exe'))) {
         Fail "No built bundle at $AppRoot. Run 'make windows-app' first."
     }
 
@@ -96,7 +96,7 @@ function Invoke-Install {
             Fail "Elevation was declined or failed: $($_.Exception.Message)"
         }
         # Verify from the (unelevated) parent so success/failure is visible here.
-        if (Test-Path (Join-Path $InstallDir 'TFM.exe')) {
+        if (Test-Path (Join-Path $InstallDir 'XeFM.exe')) {
             Success "Installed to $InstallDir"
         } else {
             Fail "Install did not complete (the elevated step failed or was cancelled)."
@@ -105,7 +105,7 @@ function Invoke-Install {
     }
 
     # --- Elevated: do the copy -------------------------------------------------
-    Info "Installing TFM to $InstallDir ..."
+    Info "Installing XeFM to $InstallDir ..."
     if (Test-Path $InstallDir) {
         Info "Removing existing $InstallDir"
         Remove-Item -Recurse -Force $InstallDir
@@ -118,14 +118,14 @@ function Invoke-Install {
     # Start Menu shortcut (all users) for discoverability; non-fatal if it fails.
     try {
         $startMenu = [Environment]::GetFolderPath('CommonPrograms')
-        $lnkPath = Join-Path $startMenu 'TFM.lnk'
-        $exePath = Join-Path $InstallDir 'TFM.exe'
+        $lnkPath = Join-Path $startMenu 'XeFM.lnk'
+        $exePath = Join-Path $InstallDir 'XeFM.exe'
         $shell = New-Object -ComObject WScript.Shell
         $sc = $shell.CreateShortcut($lnkPath)
         $sc.TargetPath = $exePath
         $sc.WorkingDirectory = $InstallDir
         $sc.IconLocation = "$exePath,0"
-        $sc.Description = 'TFM - TUI File Manager'
+        $sc.Description = 'XeFM - TUI File Manager'
         $sc.Save()
         Info "Created Start Menu shortcut: $lnkPath"
     } catch {
@@ -133,7 +133,7 @@ function Invoke-Install {
     }
 
     Success "Installed to $InstallDir"
-    Info "Launch it from the Start Menu (TFM) or run: `"$($exePath)`""
+    Info "Launch it from the Start Menu (XeFM) or run: `"$($exePath)`""
 }
 
 if ($Install) {
@@ -186,8 +186,8 @@ if (-not (Test-Path (Join-Path $PyLibs "python$PyNoDot.lib"))) {
 
 # Resolve the version string to embed.
 if (-not $Version) {
-    $tfmPy = Join-Path $ProjectRoot 'tfm.py'
-    $m = Select-String -Path $tfmPy -Pattern '_VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1
+    $xefmInit = Join-Path $ProjectRoot 'xefm/__init__.py'
+    $m = Select-String -Path $xefmInit -Pattern '__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
     if ($m) { $Version = $m.Matches[0].Groups[1].Value } else { $Version = '0.0.0' }
 }
 Info "Bundle version: $Version"
@@ -261,7 +261,7 @@ if (-not (Test-Path $CachedZip)) {
 }
 
 # The whole embedded CPython goes under runtime\ (keeps the bundle root tidy).
-# TFM.exe delay-loads python3XX.dll from here after adding runtime\ to the DLL
+# XeFM.exe delay-loads python3XX.dll from here after adding runtime\ to the DLL
 # search path - see launcher.c - so nothing from the runtime needs to sit at the
 # root next to the exe.
 $RuntimeDir = Join-Path $AppRoot 'runtime'
@@ -279,9 +279,9 @@ if (-not (Test-Path (Join-Path $RuntimeDir "python$PyNoDot.dll"))) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4: Assemble TFM's own code under app\
+# Step 4: Assemble XeFM's own code under app\
 # ---------------------------------------------------------------------------
-Info 'Step 4: Copying TFM source, PuiKit, and LICENSE...'
+Info 'Step 4: Copying XeFM source, PuiKit, and LICENSE...'
 
 $AppDir = Join-Path $AppRoot 'app'
 New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
@@ -293,8 +293,7 @@ function Copy-Tree ($src, $dst) {
     $global:LASTEXITCODE = 0
 }
 
-Copy-Item (Join-Path $ProjectRoot 'tfm.py') (Join-Path $AppDir 'tfm.py') -Force
-Copy-Tree (Join-Path $ProjectRoot 'src') (Join-Path $AppDir 'src')
+Copy-Tree (Join-Path $ProjectRoot 'xefm') (Join-Path $AppDir 'xefm')
 
 # Resolve PuiKit's real source dir from the venv (installed editable), like
 # macos_app/build.sh does, so PUIKIT_DIR overrides are honoured.
@@ -305,7 +304,7 @@ if ($LASTEXITCODE -ne 0 -or -not $PuikitSrc -or -not (Test-Path $PuikitSrc)) {
 Info "PuiKit source: $PuikitSrc"
 Copy-Tree $PuikitSrc (Join-Path $AppDir 'puikit')
 
-# TFM's own LICENSE goes at the bundle root, alongside THIRD_PARTY_NOTICES.txt.
+# XeFM's own LICENSE goes at the bundle root, alongside THIRD_PARTY_NOTICES.txt.
 if (Test-Path (Join-Path $ProjectRoot 'LICENSE')) {
     Copy-Item (Join-Path $ProjectRoot 'LICENSE') (Join-Path $AppRoot 'LICENSE') -Force
 }
@@ -388,7 +387,7 @@ if (Test-Path $FontsOfl) {
     Fail "Font license OFL.txt not found at $FontsOfl"
 }
 
-$NoticesArgs = @('--title', 'TFM', '--scan', $SitePkgsDest) + $NoticesExtras + @('--output', $NoticesOut)
+$NoticesArgs = @('--title', 'XeFM', '--scan', $SitePkgsDest) + $NoticesExtras + @('--output', $NoticesOut)
 & $VenvPy $NoticesScript @NoticesArgs
 if ($LASTEXITCODE -ne 0) { Fail 'Failed to generate third-party license notices (see errors above).' }
 
@@ -407,21 +406,21 @@ Info 'Step 7: Compiling the launcher...'
 New-Item -ItemType Directory -Force -Path $ObjDir | Out-Null
 
 # Stage .rc + .manifest into the obj dir so the .rc's relative includes resolve.
-Copy-Item (Join-Path $ResDir 'TFM.rc') $ObjDir -Force
-Copy-Item (Join-Path $ResDir 'TFM.manifest') $ObjDir -Force
+Copy-Item (Join-Path $ResDir 'XeFM.rc') $ObjDir -Force
+Copy-Item (Join-Path $ResDir 'XeFM.manifest') $ObjDir -Force
 
-# Generate the .ico (Pillow -> from TFM.icns; else placeholder), preferring a
-# hand-authored resources\TFM.ico if one has been committed.
-$IcoDest = Join-Path $ObjDir 'TFM.ico'
-if (Test-Path (Join-Path $ResDir 'TFM.ico')) {
-    Copy-Item (Join-Path $ResDir 'TFM.ico') $IcoDest -Force
-    Info 'Using committed resources\TFM.ico'
+# Generate the .ico (Pillow -> from XeFM.icns; else placeholder), preferring a
+# hand-authored resources\XeFM.ico if one has been committed.
+$IcoDest = Join-Path $ObjDir 'XeFM.ico'
+if (Test-Path (Join-Path $ResDir 'XeFM.ico')) {
+    Copy-Item (Join-Path $ResDir 'XeFM.ico') $IcoDest -Force
+    Info 'Using committed resources\XeFM.ico'
 } else {
     & $VenvPy (Join-Path $ScriptDir 'make_icon.py') --out $IcoDest
     if ($LASTEXITCODE -ne 0) { Warn 'Icon generation failed; continuing without an icon file may break rc.exe.' }
 }
-# The icon is compiled into TFM.exe as a resource (see TFM.rc) and the window
-# icon loads from there at runtime, so no loose TFM.ico is shipped in the bundle.
+# The icon is compiled into XeFM.exe as a resource (see XeFM.rc) and the window
+# icon loads from there at runtime, so no loose XeFM.ico is shipped in the bundle.
 
 # Generate version_generated.h from $Version (major,minor,patch,build).
 $vparts = @($Version -split '[.\-+]') | Where-Object { $_ -match '^\d+$' }
@@ -429,21 +428,21 @@ while ($vparts.Count -lt 4) { $vparts += '0' }
 $verHeader = @"
 /* Generated by build.ps1 - do not edit. */
 #pragma once
-#define TFM_VER_MAJOR $($vparts[0])
-#define TFM_VER_MINOR $($vparts[1])
-#define TFM_VER_PATCH $($vparts[2])
-#define TFM_VER_BUILD $($vparts[3])
-#define TFM_VER_STR   "$Version"
+#define XEFM_VER_MAJOR $($vparts[0])
+#define XEFM_VER_MINOR $($vparts[1])
+#define XEFM_VER_PATCH $($vparts[2])
+#define XEFM_VER_BUILD $($vparts[3])
+#define XEFM_VER_STR   "$Version"
 "@
 Set-Content -Path (Join-Path $ObjDir 'version_generated.h') -Value $verHeader -Encoding ASCII
 
-# Compile the resource script -> TFM.res
-$ResOut = Join-Path $ObjDir 'TFM.res'
-& rc.exe /nologo /fo $ResOut (Join-Path $ObjDir 'TFM.rc')
+# Compile the resource script -> XeFM.res
+$ResOut = Join-Path $ObjDir 'XeFM.res'
+& rc.exe /nologo /fo $ResOut (Join-Path $ObjDir 'XeFM.rc')
 if ($LASTEXITCODE -ne 0) { Fail 'rc.exe failed.' }
 
-# Compile + link the launcher -> TFM.exe (GUI subsystem, no console).
-# /MT (static CRT) so TFM.exe has no load-time DLL dependency of its own - the
+# Compile + link the launcher -> XeFM.exe (GUI subsystem, no console).
+# /MT (static CRT) so XeFM.exe has no load-time DLL dependency of its own - the
 # whole CPython runtime, CRT included, lives under runtime\. python3XX.dll is
 # delay-loaded (delayimp.lib) so it is not resolved until the launcher has added
 # runtime\ to the DLL search path.
@@ -460,7 +459,7 @@ $clArgs = @(
     '/SUBSYSTEM:WINDOWS',
     "/DELAYLOAD:python$PyNoDot.dll",
     'delayimp.lib',
-    # We embed our own application manifest via TFM.rc (RT_MANIFEST). Suppress
+    # We embed our own application manifest via XeFM.rc (RT_MANIFEST). Suppress
     # the linker's auto-generated manifest so the exe doesn't end up with two
     # conflicting RT_MANIFEST resources (two <assembly> roots => the SxS loader
     # reports "Invalid Xml syntax" and the app fails to start).
@@ -477,7 +476,7 @@ Success "Built $ExeOut"
 # Step 8 (optional): Zip for distribution
 # ---------------------------------------------------------------------------
 if ($Zip) {
-    $ZipOut = Join-Path $BuildDir "TFM-$Version-win64.zip"
+    $ZipOut = Join-Path $BuildDir "XeFM-$Version-win64.zip"
     if (Test-Path $ZipOut) { Remove-Item -Force $ZipOut }
     Info "Creating $ZipOut"
     Compress-Archive -Path $AppRoot -DestinationPath $ZipOut -Force

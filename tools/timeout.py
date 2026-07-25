@@ -6,7 +6,7 @@ Usage:
     python3 tools/timeout.py <seconds> <command> [args...]
     
 Example:
-    python3 tools/timeout.py 5 python tfm.py
+    python3 tools/timeout.py 5 python -m xefm
     
 Exit codes:
     - Command's exit code if it completes within timeout

@@ -13,7 +13,7 @@ import shutil
 import time
 import queue
 from unittest.mock import Mock, MagicMock
-from tfm_file_monitor_manager import FileMonitorManager
+from xefm.file_monitor_manager import FileMonitorManager
 
 
 class TestSharedDirectoryMonitoring(unittest.TestCase):

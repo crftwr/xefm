@@ -2,13 +2,13 @@
 Test script for batch rename conflict resolution
 Tests the one-by-one conflict resolution for multiple files
 
-Run with: PYTHONPATH=.:src pytest test/test_batch_rename_conflicts.py -v
+Run with: python -m pytest test/test_batch_rename_conflicts.py -v
 """
 
 import tempfile
 from pathlib import Path as StdPath
 
-from tfm_path import Path
+from xefm.path import Path
 
 
 def test_multiple_conflicts_scenario():

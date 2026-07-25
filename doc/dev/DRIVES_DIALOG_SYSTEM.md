@@ -1,8 +1,8 @@
-# TFM Drives Dialog System
+# XeFM Drives Dialog System
 
 ## Overview
 
-The Drives Dialog System is a unified interface for selecting and navigating to different storage locations in TFM, including local filesystem directories and remote S3 buckets. This system enhances TFM's navigation capabilities by offering quick access to commonly used storage locations through a clean, consistent interface.
+The Drives Dialog System is a unified interface for selecting and navigating to different storage locations in XeFM, including local filesystem directories and remote S3 buckets. This system enhances XeFM's navigation capabilities by offering quick access to commonly used storage locations through a clean, consistent interface.
 
 ## Features
 
@@ -11,7 +11,7 @@ The Drives Dialog System is a unified interface for selecting and navigating to 
 #### Local Filesystem
 - **Home directory** (🏠) - User's home directory
 - **Root directory** (📁) - System root directory
-- **Current working directory** (📁) - Directory where TFM was launched
+- **Current working directory** (📁) - Directory where XeFM was launched
 - **Common system directories**:
   - Documents, Downloads, Desktop
   - Applications directory (macOS)
@@ -26,7 +26,7 @@ The Drives Dialog System is a unified interface for selecting and navigating to 
 ### User Interface
 
 #### Dialog Layout
-- **Clean, centered dialog** with consistent TFM styling
+- **Clean, centered dialog** with consistent XeFM styling
 - **Visual indicators** with clear icons for different storage types
 - **Real-time filtering** - Type to filter drives by name, path, or description
 - **Progress animation** - Animated loading indicator during S3 bucket scanning
@@ -47,7 +47,7 @@ The Drives Dialog System is a unified interface for selecting and navigating to 
 
 ### Architecture
 
-The Drives Dialog follows TFM's modular dialog architecture with clean separation of concerns:
+The Drives Dialog follows XeFM's modular dialog architecture with clean separation of concerns:
 
 #### Core Components
 
@@ -100,7 +100,7 @@ class DrivesDialogHelpers:
 ```
 
 Static helper methods for:
-- **Navigation integration** with TFM's pane system
+- **Navigation integration** with XeFM's pane system
 - **Drive discovery** for local filesystem
 - **S3 bucket enumeration** with error handling
 
@@ -198,7 +198,7 @@ def _filter_drives(self, filter_text: str) -> List[DriveEntry]:
 - **Real-time updates** as buckets are discovered
 - **Cancellation support** prevents resource leaks
 
-## Integration with TFM
+## Integration with XeFM
 
 ### Main Application Integration
 
@@ -263,7 +263,7 @@ def navigate_to_drive(file_manager, drive_entry: DriveEntry):
 
 ### Key Bindings
 
-Default configuration in `src/_config.py`:
+Default configuration in `xefm/_config.py`:
 
 ```python
 KEY_BINDINGS = {
@@ -274,10 +274,10 @@ KEY_BINDINGS = {
 
 ### Customization Options
 
-The drives dialog respects existing TFM configuration:
-- **Color scheme settings** - Uses TFM's color configuration
+The drives dialog respects existing XeFM configuration:
+- **Color scheme settings** - Uses XeFM's color configuration
 - **Animation preferences** - Respects animation settings
-- **Dialog sizing ratios** - Follows TFM dialog conventions
+- **Dialog sizing ratios** - Follows XeFM dialog conventions
 
 ## Usage Examples
 
@@ -320,7 +320,7 @@ The drives dialog respects existing TFM configuration:
 - Error handling scenarios
 
 #### Integration Tests (`test/test_drives_dialog_integration.py`)
-- TFM component integration
+- XeFM component integration
 - Navigation helpers
 - Pane manager integration
 - Configuration system integration
@@ -353,7 +353,7 @@ The drives dialog respects existing TFM configuration:
 
 All tests pass successfully:
 - ✅ **Unit Tests**: Basic functionality verified
-- ✅ **Integration Tests**: TFM integration working correctly
+- ✅ **Integration Tests**: XeFM integration working correctly
 - ✅ **Demo Script**: Interactive testing successful
 - ✅ **Manual Testing**: Verified with real S3 buckets and local filesystem
 
@@ -371,7 +371,7 @@ All tests pass successfully:
 
 ### Installation Notes
 
-The drives dialog is automatically available when TFM is installed. For S3 functionality:
+The drives dialog is automatically available when XeFM is installed. For S3 functionality:
 
 ```bash
 # Install AWS SDK
@@ -398,7 +398,7 @@ export AWS_DEFAULT_REGION=us-west-2
 - **Extensible**: Easy to add new storage types
 - **Maintainable**: Clean separation of concerns
 - **Testable**: Comprehensive unit test coverage
-- **Consistent**: Follows established TFM patterns
+- **Consistent**: Follows established XeFM patterns
 - **Modular**: Reusable components for other dialogs
 
 ### Technical Benefits
@@ -576,7 +576,7 @@ class DrivesDialog(BaseListDialog):
 class DrivesDialogHelpers:
     @staticmethod
     def navigate_to_drive(file_manager, drive_entry: DriveEntry)
-        """Navigate TFM to the specified drive"""
+        """Navigate XeFM to the specified drive"""
     
     @staticmethod
     def get_local_drives() -> List[DriveEntry]
@@ -589,7 +589,7 @@ class DrivesDialogHelpers:
 
 ## Conclusion
 
-The TFM Drives Dialog System successfully enhances TFM's navigation capabilities by providing a unified, user-friendly interface for accessing both local and remote storage locations. The implementation follows TFM's established patterns, includes comprehensive error handling, and provides a solid foundation for future enhancements.
+The XeFM Drives Dialog System successfully enhances XeFM's navigation capabilities by providing a unified, user-friendly interface for accessing both local and remote storage locations. The implementation follows XeFM's established patterns, includes comprehensive error handling, and provides a solid foundation for future enhancements.
 
 ### Key Achievements
 
@@ -597,14 +597,14 @@ The TFM Drives Dialog System successfully enhances TFM's navigation capabilities
 - ✅ **Thread-safe Background Operations**: Non-blocking S3 bucket discovery
 - ✅ **Real-time Filtering**: Efficient search and navigation
 - ✅ **Comprehensive Error Handling**: Graceful degradation and recovery
-- ✅ **Full TFM Integration**: Seamless integration with existing architecture
+- ✅ **Full XeFM Integration**: Seamless integration with existing architecture
 - ✅ **Complete Test Coverage**: Unit, integration, and demo testing
 - ✅ **User-friendly Interface**: Clear visual indicators and intuitive controls
 
-The system is production-ready and provides immediate value to TFM users who work with both local files and cloud storage, while maintaining the performance and reliability standards expected from TFM.
+The system is production-ready and provides immediate value to XeFM users who work with both local files and cloud storage, while maintaining the performance and reliability standards expected from XeFM.
 
 ## Related Documentation
 
 - [S3 Support System](S3_SUPPORT_SYSTEM.md) - S3 integration details
 - [Dialog System](DIALOG_SYSTEM.md) - General dialog framework
-- [TFM Application Overview](TFM_APPLICATION_OVERVIEW.md) - Overall application architecture
+- [XeFM Application Overview](XEFM_APPLICATION_OVERVIEW.md) - Overall application architecture

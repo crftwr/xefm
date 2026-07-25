@@ -1,14 +1,14 @@
 """
 Test script for flexible date-time formatting in file list panes
 
-Run with: PYTHONPATH=.:src pytest test/test_date_format.py -v
+Run with: python -m pytest test/test_date_format.py -v
 """
 
 from datetime import datetime, timedelta
 from pathlib import Path as StdPath
 
-from tfm_file_list_manager import FileListManager
-from tfm_const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
+from xefm.file_list_manager import FileListManager
+from xefm.const import DATE_FORMAT_FULL, DATE_FORMAT_SHORT
 
 
 class MockConfig:

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The task framework (`tfm_task.py`) runs long operations — file copy/move/delete, archive create/extract, directory-diff content comparison — on a background thread while the UI stays responsive, without letting worker code touch the UI directly.
+The task framework (`xefm/task.py`) runs long operations — file copy/move/delete, archive create/extract, directory-diff content comparison — on a background thread while the UI stays responsive, without letting worker code touch the UI directly.
 
 A **task** is an ordinary `run(task)` function handed to `TaskManager.submit()`. The manager shows a modal `ProgressDialog`, spawns one worker thread, and services the task's UI bridge on each animation tick. From the worker the job body can:
 
@@ -16,7 +16,7 @@ The worker **never** calls into the panel or any widget itself — every UI inte
 
 ```mermaid
 flowchart TB
-    App["TfmApp<br/>TaskManager.submit(task, panel, run=fn, on_done=…)"]
+    App["XeFMApp<br/>TaskManager.submit(task, panel, run=fn, on_done=…)"]
 
     subgraph MAINT["Main thread"]
         direction TB
@@ -80,7 +80,7 @@ PENDING → RUNNING → DONE | CANCELLED | FAILED
 
 ## `TaskManager`
 
-One instance per app (`TfmApp.tasks`). It is the registry of live tasks and the main-thread pump.
+One instance per app (`XeFMApp.tasks`). It is the registry of live tasks and the main-thread pump.
 
 - `active_tasks()` / `has_active()` — which tasks are `PENDING` or `RUNNING` (the app checks this to block conflicting actions).
 - `submit(task, panel, *, run, on_done=None, z=70, background=True)` — run `run(task)`:
@@ -174,9 +174,9 @@ The `run` body resolves conflicts (via `task.ask`), counts work (updating `task.
 
 ## Implementation files
 
-- `src/tfm_task.py` — `Task`, `TaskStatus`, `Cancelled`, `_UiRequest`, `TaskManager`, `ProgressDialog`; the cancellation machinery (`Task._cancel`, `checkpoint()`, `ask()`, `request_cancel()`; `ProgressDialog._confirm_cancel`; `TaskManager._finish`)
-- `src/tfm_progress_manager.py` — `ProgressManager` (the per-task progress model)
-- `src/tfm_file_operations.py` — the first heavy user of the framework (its `_run` / `_resolve` catch `Cancelled` and return a partial summary)
+- `xefm/task.py` — `Task`, `TaskStatus`, `Cancelled`, `_UiRequest`, `TaskManager`, `ProgressDialog`; the cancellation machinery (`Task._cancel`, `checkpoint()`, `ask()`, `request_cancel()`; `ProgressDialog._confirm_cancel`; `TaskManager._finish`)
+- `xefm/progress_manager.py` — `ProgressManager` (the per-task progress model)
+- `xefm/file_operations.py` — the first heavy user of the framework (its `_run` / `_resolve` catch `Cancelled` and return a partial summary)
 
 ## Related documentation
 

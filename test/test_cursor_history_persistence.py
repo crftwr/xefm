@@ -3,15 +3,15 @@ Test suite for cursor history persistence in PaneManager
 
 Tests the integration of PaneManager with StateManager for persistent cursor history.
 
-Run with: PYTHONPATH=.:src pytest test/test_cursor_history_persistence.py -v
+Run with: python -m pytest test/test_cursor_history_persistence.py -v
 """
 
 import tempfile
 from pathlib import Path
 
-from tfm_state_manager import TFMStateManager
-from tfm_pane_manager import PaneManager
-from _config import Config
+from xefm.state_manager import XeFMStateManager
+from xefm.pane_manager import PaneManager
+from xefm._config import Config
 
 
 def test_cursor_history_persistence():
@@ -30,7 +30,7 @@ def test_cursor_history_persistence():
         
         # Create state manager with custom database
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_cursor_history")
+        state_manager = XeFMStateManager("test_cursor_history")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -141,7 +141,7 @@ def test_cursor_history_with_missing_files():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_missing_files")
+        state_manager = XeFMStateManager("test_missing_files")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -187,7 +187,7 @@ def test_cursor_history_size_limit():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_size_limit")
+        state_manager = XeFMStateManager("test_size_limit")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         
@@ -220,7 +220,7 @@ def test_state_manager_convenience_methods():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create state manager
         db_path = Path(temp_dir) / "test_state.db"
-        state_manager = TFMStateManager("test_convenience")
+        state_manager = XeFMStateManager("test_convenience")
         state_manager.db_path = db_path
         state_manager._initialize_database()
         

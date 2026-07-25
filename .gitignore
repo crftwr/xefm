@@ -46,14 +46,14 @@ macos_app/signing.env
 .DS_Store
 Thumbs.db
 
-# TFM specific
+# XeFM specific
 *.tmp
 *.log
 
 # Windows app bundle build artifacts
 windows_app/build/
 windows_app/.cache/
-# Generated MSIX Store tiles (produced by make_store_assets.py from TFM.icns)
+# Generated MSIX Store tiles (produced by make_store_assets.py from XeFM.icns)
 windows_app/resources/Assets/
 
 temp/

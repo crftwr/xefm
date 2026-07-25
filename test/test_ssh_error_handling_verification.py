@@ -11,11 +11,11 @@ Requirements: 6.1, 6.2, 6.3, 6.4
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from unittest.mock import Mock, patch, MagicMock
-from tfm_ssh_connection import SSHConnection, SSHPathNotFoundError, SSHPermissionDeniedError
-from tfm_ssh_cache import SSHCache
+from xefm.ssh_connection import SSHConnection, SSHPathNotFoundError, SSHPermissionDeniedError
+from xefm.ssh_cache import SSHCache
 
 
 def test_list_directory_error_no_stat_cache():

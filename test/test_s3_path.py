@@ -1,11 +1,11 @@
 """
 Test script for S3PathImpl functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_path.py -v
+Run with: python -m pytest test/test_s3_path.py -v
 """
 
 
-from tfm_path import Path
+from xefm.path import Path
 
 def test_s3_path_creation():
     """Test S3 path creation and basic properties"""

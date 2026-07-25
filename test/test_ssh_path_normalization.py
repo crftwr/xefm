@@ -5,17 +5,18 @@ Test for SSH path normalization fix.
 This test verifies that paths with excessive ./ sequences are properly normalized
 before being passed to SFTP commands.
 
-Run with: PYTHONPATH=.:src python3 temp/test_ssh_path_normalization.py
+Run with: python -m pytest test/test_ssh_path_normalization.py -v
 """
 
+import os
 import sys
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-# Add src to path
-sys.path.insert(0, 'src')
+# Add the repo root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tfm_ssh_connection import SSHConnection
+from xefm.ssh_connection import SSHConnection
 
 
 class TestSSHPathNormalization(unittest.TestCase):

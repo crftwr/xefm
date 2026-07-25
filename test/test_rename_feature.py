@@ -1,7 +1,7 @@
 """
-Test script for the rename feature in TFM
+Test script for the rename feature in XeFM
 
-Run with: PYTHONPATH=.:src pytest test/test_rename_feature.py -v
+Run with: python -m pytest test/test_rename_feature.py -v
 """
 
 from pathlib import Path
@@ -103,7 +103,7 @@ def test_key_binding():
     print("\nTesting key binding configuration...")
     
     try:
-        from tfm_config import get_config, is_key_bound_to
+        from xefm.config import get_config, is_key_bound_to
         
         # Test if 'r' and 'R' are bound to rename_file action
         if is_key_bound_to('r', 'rename_file'):

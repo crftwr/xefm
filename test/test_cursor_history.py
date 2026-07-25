@@ -1,7 +1,7 @@
 """
 Test script for cursor position history feature
 
-Run with: PYTHONPATH=.:src pytest test/test_cursor_history.py -v
+Run with: python -m pytest test/test_cursor_history.py -v
 """
 
 from pathlib import Path
@@ -11,7 +11,7 @@ import shutil
 def create_test_structure():
     """Create a test directory structure"""
     # Create temporary directory
-    test_dir = Path(tempfile.mkdtemp(prefix="tfm_cursor_test_"))
+    test_dir = Path(tempfile.mkdtemp(prefix="xefm_cursor_test_"))
     
     # Create subdirectories
     (test_dir / "dir1").mkdir()

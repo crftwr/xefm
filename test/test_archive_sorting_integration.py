@@ -1,14 +1,14 @@
 """
 Integration test for archive sorting - verifies sorting works in FileManager context
 
-Run with: PYTHONPATH=.:src pytest test/test_archive_sorting_integration.py -v
+Run with: python -m pytest test/test_archive_sorting_integration.py -v
 """
 
 import tempfile
 import zipfile
 from pathlib import Path as PathlibPath
-from tfm_path import Path
-from tfm_config import get_config
+from xefm.path import Path
+from xefm.config import get_config
 
 
 def create_test_archive(archive_path):
@@ -64,7 +64,7 @@ def test_pane_sorting_with_archives():
         print(f"Created pane with {len(pane_data['files'])} archive entries")
         
         # Test sorting with different modes
-        from tfm_file_list_manager import FileListManager
+        from xefm.file_list_manager import FileListManager
         config = get_config()
         file_ops = FileListManager(config)
         
@@ -162,7 +162,7 @@ def test_sort_description():
     """Test that sort description works with archive panes"""
     print("\n=== Integration Test: Sort Description ===")
     
-    from tfm_file_list_manager import FileListManager
+    from xefm.file_list_manager import FileListManager
     config = get_config()
     file_ops = FileListManager(config)
     

@@ -1,12 +1,12 @@
-# TFM on the Microsoft Store (MSIX) — Implementation Plan
+# XeFM on the Microsoft Store (MSIX) — Implementation Plan
 
 **Status:** PARTIALLY IMPLEMENTED. Written 2026-07-20. The local MSIX tooling now
 exists — `windows_app/build_msix.ps1` (self-signed prototype), `make_store_assets.py`,
 and the `windows-app-msix{,-install,-uninstall}` Makefile targets — and Step 1
-(relocating `TFM-error.log` to `~/.tfm/`) is done in `launcher.c`. What remains is
+(relocating `XeFM-error.log` to `~/.xefm/`) is done in `launcher.c`. What remains is
 the manual Partner Center Store submission.
 
-**Goal:** distribute TFM through the Microsoft Store as an **MSIX package** so that
+**Goal:** distribute XeFM through the Microsoft Store as an **MSIX package** so that
 code signing is **free and automatic** (the Store re-signs the package after
 certification — no certificate to buy, no SmartScreen warnings) and the developer
 account is now **free** for individuals and companies.
@@ -31,7 +31,7 @@ It builds on the existing Windows bundle produced by
 The free-signing benefit is **specific to the MSIX package path**. If we ever
 submitted a raw MSI/EXE installer instead, Microsoft would *not* re-sign it.
 
-> **Lower-effort fallback if the Store proves too fiddly:** because TFM is open
+> **Lower-effort fallback if the Store proves too fiddly:** because XeFM is open
 > source, [SignPath Foundation](https://signpath.io) offers free OV code signing
 > for qualifying OSS projects, which would let us keep shipping the current
 > `.zip` signed. Worth keeping in the back pocket. This doc pursues the Store
@@ -39,7 +39,7 @@ submitted a raw MSI/EXE installer instead, Microsoft would *not* re-sign it.
 
 ---
 
-## 1. What MSIX changes about how TFM runs (read this first)
+## 1. What MSIX changes about how XeFM runs (read this first)
 
 MSIX is **not** just a different installer format — it changes the app's runtime
 environment, and two of those changes directly affect a file manager that shells
@@ -49,15 +49,15 @@ out and writes logs. Understand these before touching the manifest:
    `C:\Program Files\WindowsApps\<PackageFullName>\`. The app **cannot write into
    its own install folder.** Writes there are silently redirected to a per-user
    virtualized location (or fail, depending on the API).
-   - 🔴 **TFM impact (confirmed):** the launcher's `BOOTSTRAP` Python writes
-     **`TFM-error.log` to `os.path.dirname(sys.executable)`** — i.e. right next to
-     `TFM.exe` (`windows_app/src/launcher.c`, in the `BOOTSTRAP` string, the
+   - 🔴 **XeFM impact (confirmed):** the launcher's `BOOTSTRAP` Python writes
+     **`XeFM-error.log` to `os.path.dirname(sys.executable)`** — i.e. right next to
+     `XeFM.exe` (`windows_app/src/launcher.c`, in the `BOOTSTRAP` string, the
      `base = os.path.dirname(sys.executable)` / `open(os.path.join(base,
-     'TFM-error.log'), ...)` lines). Under MSIX that's the read-only install dir,
+     'XeFM-error.log'), ...)` lines). Under MSIX that's the read-only install dir,
      so the write is redirected into a hard-to-find per-package VFS location (or
      silently fails — it's wrapped in `except: pass`), defeating the diagnostic.
-     **Relocate it** to a user-profile path — `%LOCALAPPDATA%\TFM\` or, to match
-     TFM's existing convention, `~/.tfm/` (see below).
+     **Relocate it** to a user-profile path — `%LOCALAPPDATA%\XeFM\` or, to match
+     XeFM's existing convention, `~/.xefm/` (see below).
    - 🔴 Any `.pyc` written at runtime (`__pycache__` next to bundled `.py`) also
      lands in the read-only tree and gets redirected. The build pre-compiles
      everything, so this should be a no-op — **verify no runtime bytecode writes.**
@@ -67,14 +67,14 @@ out and writes logs. Understand these before touching the manifest:
    *virtualized* view of parts of the registry and file system.
 
 3. **Full trust ≠ sandboxed.** We declare the `runFullTrust` capability, so
-   `TFM.exe` runs **as the user, outside an AppContainer** — normal Win32 file
+   `XeFM.exe` runs **as the user, outside an AppContainer** — normal Win32 file
    access and normal process launching. This is why a file manager is feasible at
    all. `runFullTrust` is a *restricted* capability but is **auto-approved** for
    packaged desktop apps during Store certification (no special request needed).
    The name refers to trust level inside the container — it is **not** UAC
    elevation (MSIX apps install/run per-user, non-elevated).
 
-**Net:** TFM is a full-trust Win32 desktop app, which is exactly the category MSIX
+**Net:** XeFM is a full-trust Win32 desktop app, which is exactly the category MSIX
 + Store supports. The work is packaging + fixing the write-location assumptions.
 
 ---
@@ -88,7 +88,7 @@ Create the free account at <https://storedeveloper.microsoft.com>, then in
 [Partner Center](https://partner.microsoft.com/dashboard) reserve the app name.
 Partner Center then gives you three values that **must be copied verbatim** into
 `AppxManifest.xml` (do not invent them):
-- **Package/Identity/Name** (e.g. `1234PublisherId.TFM`)
+- **Package/Identity/Name** (e.g. `1234PublisherId.XeFM`)
 - **Publisher** (e.g. `CN=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`)
 - **Publisher display name**
 
@@ -100,12 +100,12 @@ MSIX package versions are 4-part `a.b.c.d` with rules the Store enforces:
 - The **first section cannot be 0**, and
 - The **last section (revision) must be `0`** — the Store reserves it.
 
-🔴 **TFM impact:** `tfm.py`'s `_VERSION` is currently `0.99`. `0.99.0.0` is
+🔴 **XeFM impact:** `xefm/__init__.py`'s `__version__` is currently `0.99`. `0.99.0.0` is
 **invalid** for the Store (major = 0). Decide one of:
 - **(recommended) Ship the Store package as `1.0.0.0`** and treat "on the Store"
-  as the 1.0 milestone, keeping `_VERSION` as the source string mapped to the
+  as the 1.0 milestone, keeping `__version__` as the source string mapped to the
   first three sections once it reaches ≥ 1.0; or
-- Decouple the MSIX package version from `_VERSION` (a separate `-MsixVersion`
+- Decouple the MSIX package version from `__version__` (a separate `-MsixVersion`
   build parameter that always emits `major≥1 … .0`).
 
 Each Store submission needs a **strictly higher** package version than the last.
@@ -125,7 +125,7 @@ allowed (Microsoft's own Files app ships on the Store). No expected policy block
   in the *Developer Command Prompt for VS* (same environment `build.ps1` already
   imports via `vswhere`/`VsDevCmd.bat`).
 - **Pillow in the venv** (already used by `make_icon.py`) to generate Store logo
-  PNGs from `macos_app/resources/TFM.icns`.
+  PNGs from `macos_app/resources/XeFM.icns`.
 - Optional: **MSIX Packaging Tool** (Store app) — a GUI alternative to hand-authoring,
   but for a build that already produces a clean self-contained folder, the
   `makeappx pack` route below is more reproducible and CI-friendly.
@@ -136,14 +136,14 @@ allowed (Microsoft's own Files app ships on the Store). No expected policy block
 
 ### Step 1 — Fix the write-location assumptions (code, do this first)
 Independent of packaging, and the highest-risk item:
-- Relocate `TFM-error.log` off `os.path.dirname(sys.executable)` in the
-  `BOOTSTRAP` string in `windows_app/src/launcher.c`. Writing under `~/.tfm/`
-  keeps it consistent with TFM's existing user-state convention (and is the same
-  logic on both platforms); `%LOCALAPPDATA%\TFM\` is the Windows-idiomatic
+- Relocate `XeFM-error.log` off `os.path.dirname(sys.executable)` in the
+  `BOOTSTRAP` string in `windows_app/src/launcher.c`. Writing under `~/.xefm/`
+  keeps it consistent with XeFM's existing user-state convention (and is the same
+  logic on both platforms); `%LOCALAPPDATA%\XeFM\` is the Windows-idiomatic
   alternative. Make sure the directory is created before opening the file.
-- **Good news / lower risk:** TFM's own config, tools, and state already live
-  under **`~/.tfm/`** (`Path.home() / '.tfm'`, e.g. `tfm_external_programs.py`).
-  On Windows that resolves to `%USERPROFILE%\.tfm`, a writable user-profile path
+- **Good news / lower risk:** XeFM's own config, tools, and state already live
+  under **`~/.xefm/`** (`Path.home() / '.xefm'`, e.g. `xefm/external_programs.py`).
+  On Windows that resolves to `%USERPROFILE%\.xefm`, a writable user-profile path
   that **passes through** for full-trust packaged apps — so the main app state is
   MSIX-safe as-is. The error log above is the notable exception.
 - Still audit for any *other* write relative to the executable or current working
@@ -158,7 +158,7 @@ The Store/manifest needs PNG tile assets (not `.ico`). Minimum set (scale-100):
   multiple scale variants (`.scale-200` etc.).
 
 Extend `windows_app/make_icon.py` (already Pillow-based) to emit these from the
-shared `TFM.icns`, into `windows_app/resources/Assets/`.
+shared `XeFM.icns`, into `windows_app/resources/Assets/`.
 
 ### Step 3 — Author `AppxManifest.xml`
 Place at the **root** of the package payload. Template (fill the `‹…›` identity
@@ -174,13 +174,13 @@ values from Step 2a):
 
   <!-- These three come from Partner Center (Product identity). Do not invent. -->
   <Identity
-    Name="‹PublisherId›.TFM"
+    Name="‹PublisherId›.XeFM"
     Publisher="CN=‹your-store-publisher-guid›"
     Version="1.0.0.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>TFM</DisplayName>
+    <DisplayName>XeFM</DisplayName>
     <PublisherDisplayName>‹Publisher display name›</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -201,11 +201,11 @@ values from Step 2a):
   </Capabilities>
 
   <Applications>
-    <Application Id="TFM"
-                 Executable="TFM.exe"
+    <Application Id="XeFM"
+                 Executable="XeFM.exe"
                  EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="TFM"
+        DisplayName="XeFM"
         Description="Dual-pane terminal-style file manager"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
@@ -222,17 +222,17 @@ Notes:
   classic full-trust marker and works down to 1809. (On 2004+ you may instead use
   `uap10:RuntimeBehavior="packagedClassicApp"` + `uap10:TrustLevel="mediumIL"`;
   the EntryPoint form is simpler and broader — prefer it unless there's a reason.)
-- If TFM registers **file associations / "Open with"** on Windows via the
+- If XeFM registers **file associations / "Open with"** on Windows via the
   registry, that won't work packaged (registry is virtualized). Re-declare any
   such association here via `<uap:Extension Category="windows.fileTypeAssociation">`.
   Check whether the Windows build registers anything; if not, skip.
 
 ### Step 4 — Pack with `makeappx`
-Assemble a payload directory = the existing `windows_app\build\TFM\` folder
+Assemble a payload directory = the existing `windows_app\build\XeFM\` folder
 contents **plus** `AppxManifest.xml` and `Assets\` at its root, then:
 
 ```powershell
-makeappx pack /d <payload-dir> /p windows_app\build\TFM-<version>-x64.msix /o
+makeappx pack /d <payload-dir> /p windows_app\build\XeFM-<version>-x64.msix /o
 ```
 
 `makeappx` validates the manifest during packing; fix any schema errors it reports.
@@ -246,11 +246,11 @@ string**, trust that cert, then install:
 # subject MUST match <Identity Publisher="..."> exactly
 New-SelfSignedCertificate -Type Custom -CertStoreLocation Cert:\CurrentUser\My `
   -Subject "CN=‹your-store-publisher-guid›" -KeyUsage DigitalSignature `
-  -FriendlyName "TFM MSIX test" `
+  -FriendlyName "XeFM MSIX test" `
   -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
 # export to PFX, import the .cer into LocalMachine\TrustedPeople (admin), then:
-signtool sign /fd SHA256 /a /f tfm-test.pfx /p <pw> windows_app\build\TFM-<version>-x64.msix
-Add-AppxPackage windows_app\build\TFM-<version>-x64.msix
+signtool sign /fd SHA256 /a /f xefm-test.pfx /p <pw> windows_app\build\XeFM-<version>-x64.msix
+Add-AppxPackage windows_app\build\XeFM-<version>-x64.msix
 ```
 
 Then run the **risk-validation checklist in §5**. When done testing:
@@ -278,7 +278,7 @@ Add a `windows-app-msix` Makefile target. Keep identity values **out of git**.
 ## 5. Risk-validation checklist (the file-manager-specific part)
 
 Run every item from the **locally installed package** (Step 5), because behavior
-differs from running the loose `TFM.exe`. This is where a file manager is most
+differs from running the loose `XeFM.exe`. This is where a file manager is most
 likely to hit MSIX edges:
 
 - [ ] **Error log / all writes** land under `%LOCALAPPDATA%`, not the install dir.
@@ -287,17 +287,17 @@ likely to hit MSIX edges:
       read back correctly under package identity).
 - [ ] **Subshell** (drop-to-shell) launches `cmd`/`powershell` and it sees the
       **real** filesystem and a sane working directory.
-- [ ] **External programs** (F-key tools, `src/tools/*`) launch and receive correct
+- [ ] **External programs** (F-key tools, `xefm/tools/*`) launch and receive correct
       paths/arguments; child processes behave as the user, not sandboxed.
 - [ ] **"Open with OS"** hands files to the correct default apps.
-- [ ] **Drag & drop** in/out of the TFM window works.
+- [ ] **Drag & drop** in/out of the XeFM window works.
 - [ ] **Archive / S3 / SFTP** features that spawn helpers or write temp files work
       (temp dir should resolve to a writable per-user location).
 - [ ] **numpy / native `.pyd`** load correctly from the packaged tree (read-only
       reads are fine; just confirm no load failure).
 - [ ] Startup has **no runtime `.pyc` write** churn (all bytecode pre-compiled).
 
-**If a write-location problem can't be fixed in TFM's own code**, the
+**If a write-location problem can't be fixed in XeFM's own code**, the
 [Package Support Framework (PSF)](https://learn.microsoft.com/en-us/windows/msix/psf/package-support-framework-overview)
 can redirect writes at runtime — but prefer fixing paths in code over shipping PSF.
 
@@ -319,8 +319,8 @@ can redirect writes at runtime — but prefer fixing paths in code over shipping
 ## 7. Open questions to confirm during implementation
 
 - Does the Windows build register any **file associations / context-menu / "Open
-  with TFM"** entries? If yes, they must move into the manifest as extensions.
-- Config/state is already under `~/.tfm/` (MSIX-safe, confirmed). Remaining to
+  with XeFM"** entries? If yes, they must move into the manifest as extensions.
+- Config/state is already under `~/.xefm/` (MSIX-safe, confirmed). Remaining to
   check: any **temp-file / cache** writes (archive extraction, S3/SFTP staging)
   resolve to a writable per-user temp dir, not the install tree.
 - Is a **single-architecture x64** package sufficient, or is an arm64 build wanted
@@ -332,7 +332,7 @@ can redirect writes at runtime — but prefer fixing paths in code over shipping
 
 ## 8. Command-line installation (the primary consumption path)
 
-TFM is a terminal file manager — most of its audience installs software from a
+XeFM is a terminal file manager — most of its audience installs software from a
 shell, not by clicking through the Store GUI. The good news is that a single
 Store MSIX submission (§4–6) gives you a **first-class `winget` install line for
 free**, and that is arguably the biggest end-user payoff of this whole effort.
@@ -346,7 +346,7 @@ winget install --id 9N‹XXXXXXXXXX› --source msstore
 ```
 
 - The `9N…` is the **Store product ID** from the Partner Center listing / Store
-  URL — **not** the manifest `Identity/Name` (`‹PublisherId›.TFM`). They are
+  URL — **not** the manifest `Identity/Name` (`‹PublisherId›.XeFM`). They are
   different identifiers; don't confuse them.
 - First use of the `msstore` source prompts once to accept Microsoft Store terms.
   In CI / unattended installs, pre-agree with:
@@ -361,7 +361,7 @@ You can *also* submit a manifest to
 source-less form works from winget's default repository:
 
 ```powershell
-winget install crftwr.TFM
+winget install crftwr.XeFM
 ```
 
 That manifest can point at **either** the Store package **or** a directly-signed
@@ -370,7 +370,7 @@ Store at all.
 
 ### 8c. Sideloading (`Add-AppxPackage`) — dev/test and enterprise only
 ```powershell
-Add-AppxPackage windows_app\build\TFM-<version>-x64.msix
+Add-AppxPackage windows_app\build\XeFM-<version>-x64.msix
 ```
 
 Direct install of the `.msix`, no winget. Used for the local-test step (§5) and

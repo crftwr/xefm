@@ -1,12 +1,12 @@
 """
 Test the progress manager functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_progress_manager.py -v
+Run with: python -m pytest test/test_progress_manager.py -v
 """
 
 
 from pathlib import Path
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
 def test_progress_manager():

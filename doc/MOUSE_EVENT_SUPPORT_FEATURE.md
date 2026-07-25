@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM supports mouse interaction in both Desktop mode (CoreGraphics backend on macOS) and Terminal mode (curses backend in supported terminals). You can click to move the cursor and switch panes, scroll with the wheel, right-click for a context menu, and — in Desktop mode — drag files out to other applications.
+XeFM supports mouse interaction in both Desktop mode (CoreGraphics backend on macOS) and Terminal mode (curses backend in supported terminals). You can click to move the cursor and switch panes, scroll with the wheel, right-click for a context menu, and — in Desktop mode — drag files out to other applications.
 
 ## Availability
 
@@ -10,18 +10,18 @@ TFM supports mouse interaction in both Desktop mode (CoreGraphics backend on mac
 
 - **Platform**: macOS with CoreGraphics backend
 - **Supported Events**: All mouse events including clicks, movement, scroll wheel, and drag-and-drop
-- **Launch Command**: `python tfm.py --backend gui`
+- **Launch Command**: `python -m xefm --backend gui`
 
 ### Terminal Mode (Limited Support)
 
 - **Platform**: Terminal emulators that support mouse events
 - **Supported Events**: Mouse button clicks (movement, scroll, and drag depend on the terminal)
-- **Launch Command**: `python tfm.py` (default terminal mode)
+- **Launch Command**: `python -m xefm` (default terminal mode)
 - **Compatibility**: Works in most modern terminal emulators (iTerm2, Terminal.app, xterm, etc.)
 
 ### Graceful Degradation
 
-If your terminal doesn't support mouse events, TFM automatically falls back to keyboard-only operation without errors. You can always use the Tab key to switch between panes.
+If your terminal doesn't support mouse events, XeFM automatically falls back to keyboard-only operation without errors. You can always use the Tab key to switch between panes.
 
 ## Clicking
 
@@ -76,7 +76,7 @@ You can scroll through file lists using your mouse wheel or trackpad in both lef
 
 ## Double-Click
 
-TFM detects double-clicks (two clicks on the same row within the system threshold, roughly 0.5s on macOS) in the **Directory Diff Viewer**:
+XeFM detects double-clicks (two clicks on the same row within the system threshold, roughly 0.5s on macOS) in the **Directory Diff Viewer**:
 
 - **Double-click a directory** → expands it if collapsed, collapses it if expanded (same as Enter)
 - **Double-click a file** → opens the file diff viewer to compare contents (same as Enter)
@@ -90,7 +90,7 @@ Double-click detection requires a terminal that reports mouse events (most moder
 
 ## Drag-and-Drop
 
-In Desktop mode you can drag files out of TFM and drop them onto other applications, Finder, or the Dock, using the native operating-system drag-and-drop system.
+In Desktop mode you can drag files out of XeFM and drop them onto other applications, Finder, or the Dock, using the native operating-system drag-and-drop system.
 
 ### How to Use Drag-and-Drop
 
@@ -127,9 +127,9 @@ Drag-and-drop uses native macOS drag modifiers, held while dragging:
 
 The cursor updates automatically based on the modifier and the drop target.
 
-### Dropping Files Into TFM
+### Dropping Files Into XeFM
 
-You can also drop files from another application onto a TFM pane. Dropping onto a directory row targets that directory; dropping on empty space or past the last row targets the pane's current directory.
+You can also drop files from another application onto a XeFM pane. Dropping onto a directory row targets that directory; dropping on empty space or past the last row targets the pane's current directory.
 
 ### Limitations
 
@@ -196,7 +196,7 @@ Basic mouse support, depending on the terminal:
 
 ### Mouse Events During Text Input
 
-When TFM is in a text input mode, mouse events are automatically ignored to prevent accidental disruption of your keyboard-based workflow. This ensures that mouse clicks don't interfere while you're typing.
+When XeFM is in a text input mode, mouse events are automatically ignored to prevent accidental disruption of your keyboard-based workflow. This ensures that mouse clicks don't interfere while you're typing.
 
 #### Input Modes That Block Mouse Events
 
@@ -217,7 +217,7 @@ When TFM is in a text input mode, mouse events are automatically ignored to prev
 
 #### How It Works
 
-- **Automatic Detection**: TFM automatically detects when you're in an input mode
+- **Automatic Detection**: XeFM automatically detects when you're in an input mode
 - **Silent Filtering**: Mouse events are silently ignored (no error messages)
 - **Immediate Resume**: Mouse events work normally as soon as you exit the input mode
 - **Keyboard Always Works**: Keyboard shortcuts continue to function normally
@@ -229,7 +229,7 @@ When TFM is in a text input mode, mouse events are automatically ignored to prev
 **Problem**: Clicking doesn't move the cursor or switch focus in Desktop mode
 
 **Solutions**:
-1. Verify you're running in Desktop mode: `python tfm.py --backend gui`
+1. Verify you're running in Desktop mode: `python -m xefm --backend gui`
 2. Check that the window has focus (click on the window first)
 3. Ensure you're clicking within the pane boundaries (not on the border)
 4. Check the log pane for error messages

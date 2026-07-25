@@ -4,10 +4,10 @@ Two directions, both GUI-only in practice but driven here headlessly:
 
 - **Drag-out** — a left-press over a row that travels past ``DRAG_THRESHOLD``
   starts a native OS file drag. The FilePane detects the gesture and calls
-  ``on_drag``; ``TfmApp._start_drag`` turns that into ``panel.begin_file_drag``
+  ``on_drag``; ``XeFMApp._start_drag`` turns that into ``panel.begin_file_drag``
   with the row (or the whole selection) and skips non-local entries.
 - **Drop-in** — a ``FILE_DROP`` event carrying OS paths is routed to the pane
-  under the pointer; the FilePane calls ``on_drop`` and ``TfmApp._on_drop``
+  under the pointer; the FilePane calls ``on_drop`` and ``XeFMApp._on_drop``
   copies the dropped files into the target directory (a folder row targets that
   folder), refusing read-only / virtual destinations.
 """
@@ -19,12 +19,11 @@ import tempfile
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
-from tfm_path import Path  # noqa: E402
-from tfm_file_pane import FilePane, DRAG_THRESHOLD  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
+from xefm.path import Path  # noqa: E402
+from xefm.file_pane import FilePane, DRAG_THRESHOLD  # noqa: E402
 from puikit.event import Event, EventType  # noqa: E402
 
 
@@ -97,7 +96,7 @@ class FilePaneGesture(unittest.TestCase):
 
 
 class AppDragDrop(unittest.TestCase):
-    """End-to-end through a headless TfmApp on the memory backend."""
+    """End-to-end through a headless XeFMApp on the memory backend."""
 
     def setUp(self):
         from puikit.backends import create_backend
@@ -105,7 +104,7 @@ class AppDragDrop(unittest.TestCase):
         self.dst = tempfile.mkdtemp()
         self.b = create_backend("memory")
         self.b.open()
-        self.app = tfm.TfmApp(self.b, self.src, self.dst,
+        self.app = xefm_app.XeFMApp(self.b, self.src, self.dst,
                               left_provided=True, right_provided=True)
         self.app.file_monitor.stop_monitoring()
         self.app.file_monitor.enabled = False

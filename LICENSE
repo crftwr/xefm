@@ -24,7 +24,7 @@ SOFTWARE.
 THIRD-PARTY SOFTWARE
 ================================================================================
 
-TFM bundles third-party components — including the Python interpreter and
+XeFM bundles third-party components — including the Python interpreter and
 standard library, the PuiKit toolkit, PyObjC, boto3 and its dependencies,
 Pygments, watchdog, and the Noto Sans / Noto Sans Mono fonts.
 

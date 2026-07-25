@@ -1,10 +1,9 @@
 # Extra files to include in the source distribution (the wheel is governed by
-# pyproject.toml's py-modules / packages / package-data). setuptools already
-# ships tfm.py, the src/ package sources, README, LICENSE and pyproject.toml;
-# the lines below add the end-user tools and prune everything not needed to
-# install and run TFM.
+# pyproject.toml's packages / package-data). setuptools already ships the
+# xefm package sources, README, LICENSE and pyproject.toml; the lines below
+# add the end-user tools and prune everything not needed to install and run XeFM.
 include requirements.txt
-recursive-include src/tools *
+recursive-include xefm/tools *
 
 # Development trees and build byproducts — kept out of the sdist.
 prune tools
@@ -14,5 +13,4 @@ prune doc
 prune build
 prune macos_app
 prune windows_app
-prune .kiro
 global-exclude __pycache__ *.py[cod] .DS_Store

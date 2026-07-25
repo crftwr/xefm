@@ -1,7 +1,7 @@
-# TFM Text Viewer Status Bar
+# XeFM Text Viewer Status Bar
 
 ## Overview
-The TFM text viewer includes a comprehensive status bar at the bottom of the screen that provides real-time information about the current file and viewer state.
+The XeFM text viewer includes a comprehensive status bar at the bottom of the screen that provides real-time information about the current file and viewer state.
 
 ## Status Bar Layout
 
@@ -99,8 +99,8 @@ The status bar updates in real-time as you:
 - **Handles narrow terminals** by truncating information gracefully
 - **Right-aligned layout** that adapts to available space
 
-## Integration with TFM
-The status bar uses the same color scheme and design language as the main TFM interface, providing a cohesive user experience throughout the file management workflow.
+## Integration with XeFM
+The status bar uses the same color scheme and design language as the main XeFM interface, providing a cohesive user experience throughout the file management workflow.
 
 ---
 

@@ -1,10 +1,10 @@
-# TFM Application Icon
+# XeFM Application Icon
 
 ## Current Icon
 
-The current `TFM.icns` file is a placeholder icon created automatically. It features:
+The current `XeFM.icns` file is a placeholder icon created automatically. It features:
 - Blue gradient background
-- "TFM" text in white
+- "XeFM" text in white
 - "File Manager" subtitle
 - Rounded rectangle border
 
@@ -18,7 +18,7 @@ If you already have a `.icns` file:
 
 ```bash
 # Replace the icon file
-cp your_custom_icon.icns macos_app/resources/TFM.icns
+cp your_custom_icon.icns macos_app/resources/XeFM.icns
 
 # Rebuild the app
 cd macos_app
@@ -31,25 +31,25 @@ If you have a PNG file (1024x1024 recommended):
 
 ```bash
 # Create iconset directory
-mkdir TFM.iconset
+mkdir XeFM.iconset
 
 # Generate all required sizes
-sips -z 16 16     your_icon.png --out TFM.iconset/icon_16x16.png
-sips -z 32 32     your_icon.png --out TFM.iconset/icon_16x16@2x.png
-sips -z 32 32     your_icon.png --out TFM.iconset/icon_32x32.png
-sips -z 64 64     your_icon.png --out TFM.iconset/icon_32x32@2x.png
-sips -z 128 128   your_icon.png --out TFM.iconset/icon_128x128.png
-sips -z 256 256   your_icon.png --out TFM.iconset/icon_128x128@2x.png
-sips -z 256 256   your_icon.png --out TFM.iconset/icon_256x256.png
-sips -z 512 512   your_icon.png --out TFM.iconset/icon_256x256@2x.png
-sips -z 512 512   your_icon.png --out TFM.iconset/icon_512x512.png
-sips -z 1024 1024 your_icon.png --out TFM.iconset/icon_512x512@2x.png
+sips -z 16 16     your_icon.png --out XeFM.iconset/icon_16x16.png
+sips -z 32 32     your_icon.png --out XeFM.iconset/icon_16x16@2x.png
+sips -z 32 32     your_icon.png --out XeFM.iconset/icon_32x32.png
+sips -z 64 64     your_icon.png --out XeFM.iconset/icon_32x32@2x.png
+sips -z 128 128   your_icon.png --out XeFM.iconset/icon_128x128.png
+sips -z 256 256   your_icon.png --out XeFM.iconset/icon_128x128@2x.png
+sips -z 256 256   your_icon.png --out XeFM.iconset/icon_256x256.png
+sips -z 512 512   your_icon.png --out XeFM.iconset/icon_256x256@2x.png
+sips -z 512 512   your_icon.png --out XeFM.iconset/icon_512x512.png
+sips -z 1024 1024 your_icon.png --out XeFM.iconset/icon_512x512@2x.png
 
 # Convert to .icns
-iconutil -c icns TFM.iconset -o macos_app/resources/TFM.icns
+iconutil -c icns XeFM.iconset -o macos_app/resources/XeFM.icns
 
 # Clean up
-rm -rf TFM.iconset
+rm -rf XeFM.iconset
 
 # Rebuild the app
 cd macos_app
@@ -98,7 +98,7 @@ After rebuilding, verify the icon appears correctly:
 
 ```bash
 # Open the app
-open macos_app/build/TFM.app
+open macos_app/build/XeFM.app
 
 # Check in Finder
 open macos_app/build/
@@ -125,12 +125,12 @@ open macos_app/build/
 
 3. Verify icon is in bundle:
    ```bash
-   ls -lh macos_app/build/TFM.app/Contents/Resources/TFM.icns
+   ls -lh macos_app/build/XeFM.app/Contents/Resources/XeFM.icns
    ```
 
 2. Check Info.plist references the icon:
    ```bash
-   grep -A 1 "CFBundleIconFile" macos_app/build/TFM.app/Contents/Info.plist
+   grep -A 1 "CFBundleIconFile" macos_app/build/XeFM.app/Contents/Info.plist
    ```
 
 ### Icon looks blurry
@@ -155,4 +155,4 @@ The placeholder icon was generated using:
 - 1024x1024 base resolution
 - All standard macOS icon sizes (16x16 through 512x512@2x)
 
-Location: `macos_app/resources/TFM.icns`
+Location: `macos_app/resources/XeFM.icns`

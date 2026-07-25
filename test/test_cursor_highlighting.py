@@ -1,7 +1,7 @@
 """
 Test script for cursor highlighting logic in batch rename functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_cursor_highlighting.py -v
+Run with: python -m pytest test/test_cursor_highlighting.py -v
 """
 
 def test_cursor_highlighting_logic():

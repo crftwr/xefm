@@ -5,7 +5,7 @@ Both viewers reuse the main file manager's ``ISearchBar`` (via
 viewer's line-wrap toggle is the ``toggle_wrap`` action. See
 doc/dev/KEY_BINDINGS_IMPLEMENTATION.md and the viewers' module docstrings.
 
-Run with: PYTHONPATH=.:src pytest test/test_viewer_isearch.py -v
+Run with: python -m pytest test/test_viewer_isearch.py -v
 """
 
 import os
@@ -14,16 +14,16 @@ import tempfile
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from puikit import Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 
-import _config
-from tfm_config import KeyBindings
-from tfm_path import Path
-from tfm_text_viewer import show_text_viewer
-from tfm_diff_viewer import show_diff_viewer
+from xefm import _config
+from xefm.config import KeyBindings
+from xefm.path import Path
+from xefm.text_viewer import show_text_viewer
+from xefm.diff_viewer import show_diff_viewer
 
 
 def _key(name=None, char=None):

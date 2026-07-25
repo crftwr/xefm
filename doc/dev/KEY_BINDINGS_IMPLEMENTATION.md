@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM maps **config key tokens** (`"q"`, `"Shift-Down"`, `"Command-ENTER"`) to
+XeFM maps **config key tokens** (`"q"`, `"Shift-Down"`, `"Command-ENTER"`) to
 **actions**, matching them against PuiKit key events. It supports named keys,
 modifier chords, punctuation and shifted-symbol identities, and per-action
 selection requirements.
@@ -10,19 +10,19 @@ selection requirements.
 The **normative cross-backend keyboard contract** — the `Event(KEY, key, char,
 modifiers)` shape and how each backend (curses / macOS / Windows) normalizes a
 keypress into it — lives in PuiKit: `puikit/docs/keyboard_contract.md`. This
-document covers **TFM's side**: how a config token is parsed and matched against
+document covers **XeFM's side**: how a config token is parsed and matched against
 that contract.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     TFM Application (tfm.py)                 │
+│                     XeFM Application (xefm/app.py)                 │
 └────────────────────────┬────────────────────────────────────┘
                          │ Uses
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│              Public API (tfm_config.py)                      │
+│              Public API (xefm/config.py)                      │
 │  - find_action_for_event(event, has_selection)              │
 │  - get_keys_for_action(action)                              │
 │  - format_key_for_display(key_expr)                         │
@@ -48,7 +48,7 @@ that contract.
 A legacy ttk `KeyEvent` is still accepted transitionally (see
 `_event_identity`), but the model below is the PuiKit one.
 
-## The keyboard contract (TFM's view)
+## The keyboard contract (XeFM's view)
 
 A key event reduces to a triple: `key` (canonical identity), `char` (produced
 glyph or `None`), and `modifiers` (a set of `shift` / `ctrl` / `alt` / `cmd`). A
@@ -86,13 +86,13 @@ two **modes**:
 | `Shift-X` (letter) | `x` + `shift` | `key` + exact mods |
 | `Command-X` / `Alt-X` | `x` + `cmd` / `alt` | `key` + exact mods (curses can't deliver `cmd`; such chords are GUI-only) |
 
-The maps that back this table live at the top of `src/tfm_config.py`:
+The maps that back this table live at the top of `xefm/config.py`:
 `_MODIFIER_ALIASES`, `_NAMED_KEYS`, `_PUNCT_NAMES`, `_SHIFT_SYMBOL`, `_KEY_ALIASES`.
 
 ## KeyBindings class
 
 ### Location
-`src/tfm_config.py`
+`xefm/config.py`
 
 ### Key methods
 
@@ -145,11 +145,11 @@ conventional labels via `_KEY_DISPLAY` (`ENTER` → `Enter`, `UP` → `↑`,
 
 ## Public API functions
 
-Module-level wrappers in `tfm_config.py` delegate to the `ConfigManager`'s cached
+Module-level wrappers in `xefm/config.py` delegate to the `ConfigManager`'s cached
 `KeyBindings` instance:
 
 ```python
-from tfm_config import find_action_for_event, get_keys_for_action, format_key_for_display
+from xefm.config import find_action_for_event, get_keys_for_action, format_key_for_display
 
 action = find_action_for_event(event, has_selection)   # -> 'quit' | None
 keys, sel_req = get_keys_for_action('delete_files')     # -> (['DELETE', 'Command-Backspace'], 'required')
@@ -205,9 +205,9 @@ skipped rather than crashing; a missing `KEY_BINDINGS` config falls back to
 
 ## Testing
 
-- `test/test_keybindings_puikit_contract.py` — TFM's matcher (`_parse_key_expression`
+- `test/test_keybindings_puikit_contract.py` — XeFM's matcher (`_parse_key_expression`
   / `_matches`) against the real keymap.
-- `test/test_puikit_keyboard_contract.py` — the per-backend translation TFM relies
+- `test/test_puikit_keyboard_contract.py` — the per-backend translation XeFM relies
   on (the contract's guarantees hold on each backend).
 
 ## See Also

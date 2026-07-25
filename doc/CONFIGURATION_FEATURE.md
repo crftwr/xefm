@@ -1,47 +1,47 @@
-# TFM Configuration Feature
+# XeFM Configuration Feature
 
 ## Overview
 
-TFM is customized through a Python configuration file. On first run TFM creates it
+XeFM is customized through a Python configuration file. On first run XeFM creates it
 from a template; edit it to change appearance, behavior, key bindings, and
 external-program integration. Every option below is a real attribute of the
-config class — see `src/_config.py` for the authoritative, fully-commented
+config class — see `xefm/_config.py` for the authoritative, fully-commented
 template.
 
 ## Configuration File Location
 
-TFM stores its configuration in:
+XeFM stores its configuration in:
 
 ```
-~/.tfm/config.py
+~/.xefm/config.py
 ```
 
-On first run, TFM creates this file with default settings. You can edit it with
+On first run, XeFM creates this file with default settings. You can edit it with
 any text editor.
 
 ## Quick Start
 
 ```bash
 # View it
-cat ~/.tfm/config.py
+cat ~/.xefm/config.py
 
 # Edit it
-vim ~/.tfm/config.py        # or: nano / code / your editor of choice
+vim ~/.xefm/config.py        # or: nano / code / your editor of choice
 ```
 
-Changes take effect the next time you start TFM.
+Changes take effect the next time you start XeFM.
 
 ## Editing and Reloading Config
 
-You can also edit and apply your config without leaving TFM. Both actions live
+You can also edit and apply your config without leaving XeFM. Both actions live
 under the **Tools** menu (neither is bound to a key by default):
 
-- **Edit Configuration…** opens `~/.tfm/config.py` in your configured
+- **Edit Configuration…** opens `~/.xefm/config.py` in your configured
   `TEXT_EDITOR`, creating it from the template first if needed. With a terminal
-  editor (e.g. `vim`) TFM reloads automatically when you save and quit; with a
-  GUI editor (e.g. VS Code) TFM can't tell when you're done, so save and then run
+  editor (e.g. `vim`) XeFM reloads automatically when you save and quit; with a
+  GUI editor (e.g. VS Code) XeFM can't tell when you're done, so save and then run
   **Reload Configuration**.
-- **Reload Configuration** re-reads `~/.tfm/config.py` from disk and applies it
+- **Reload Configuration** re-reads `~/.xefm/config.py` from disk and applies it
   without opening an editor — handy when you edit the file in a separate window.
 
 To bind either action, add it to `KEY_BINDINGS`:
@@ -57,9 +57,9 @@ Reloading applies **live** to key bindings, file associations, external programs
 favorite directories, confirmation prompts, and the text-editor / diff-tool
 settings. Themes and post-effects, fonts (desktop mode), the pane-split and
 log-height ratios, and file-monitoring intervals are read once at startup and
-only fully apply on the **next launch**. TFM logs a reminder after each reload.
+only fully apply on the **next launch**. XeFM logs a reminder after each reload.
 
-If your edited config has a Python error, TFM logs it and falls back to built-in
+If your edited config has a Python error, XeFM logs it and falls back to built-in
 defaults rather than crashing; out-of-range values are still applied but logged
 as a `Config warning:`.
 
@@ -67,7 +67,7 @@ as a `Config warning:`.
 
 ### Fonts (GUI / desktop mode only)
 
-These apply when running on the native macOS backend (`tfm.py --backend gui`);
+These apply when running on the native macOS backend (`python3 -m xefm --backend gui`);
 the terminal backend uses your terminal's font and ignores them.
 
 ```python
@@ -82,9 +82,9 @@ glyph box. In desktop mode you can also change `FONT_SIZE` live with `Cmd-+` /
 
 ### Themes / colors
 
-TFM ships with built-in themes (Dark+, Monokai, Dracula, Nord, Solarized, Gruvbox
+XeFM ships with built-in themes (Dark+, Monokai, Dracula, Nord, Solarized, Gruvbox
 Dark, Light+, Solarized Light). Switch at runtime via **View → Theme** or the `T`
-key; TFM starts on Dark+ and remembers the last theme across restarts. There is no
+key; XeFM starts on Dark+ and remembers the last theme across restarts. There is no
 `COLOR_SCHEME` string setting — instead you register your own named themes:
 
 ```python
@@ -138,7 +138,7 @@ unaffected. Directories are always listed before files regardless of sort mode.
 
 ```python
 CONFIRM_DELETE          = True   # before deleting files/directories
-CONFIRM_QUIT            = True   # before quitting TFM
+CONFIRM_QUIT            = True   # before quitting XeFM
 CONFIRM_COPY            = True   # before copying
 CONFIRM_MOVE            = True   # before moving
 CONFIRM_EXTRACT_ARCHIVE = True   # before extracting an archive
@@ -307,19 +307,19 @@ TEXT_EDITOR    = 'code'
 ## Troubleshooting
 
 ### Changes don't take effect
-1. Confirm the file path: `~/.tfm/config.py`
+1. Confirm the file path: `~/.xefm/config.py`
 2. Check for Python syntax errors
-3. Restart TFM
+3. Restart XeFM
 
-### TFM fails to start after editing
+### XeFM fails to start after editing
 Likely a syntax error (missing quote/comma/bracket). Restore defaults:
 
 ```bash
-rm ~/.tfm/config.py   # TFM recreates it from the template on next run
+rm ~/.xefm/config.py   # XeFM recreates it from the template on next run
 ```
 
 ### Can't find an option
-Check `src/_config.py` — it is the authoritative, fully-commented list of every
+Check `xefm/_config.py` — it is the authoritative, fully-commented list of every
 available setting.
 
 ## Related Documentation
@@ -331,4 +331,4 @@ available setting.
 - [File Monitoring](FILE_MONITORING_FEATURE.md) - Automatic directory reloading
 - [Key Bindings](KEY_BINDINGS_FEATURE.md) - Key binding configuration
 - [Desktop Mode](DESKTOP_MODE_GUIDE.md) - Desktop mode (macOS)
-- [TFM User Guide](TFM_USER_GUIDE.md) - Complete user guide
+- [XeFM User Guide](XEFM_USER_GUIDE.md) - Complete user guide

@@ -1,7 +1,7 @@
 """
 Test fine-grained progress tracking for file operations
 
-Run with: PYTHONPATH=.:src pytest test/test_fine_grained_progress.py -v
+Run with: python -m pytest test/test_fine_grained_progress.py -v
 """
 
 import os
@@ -10,11 +10,11 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock
 
-from tfm_progress_manager import ProgressManager, OperationType
+from xefm.progress_manager import ProgressManager, OperationType
 
 
-class MockTFM:
-    """Mock TFM class to test fine-grained progress tracking"""
+class MockXeFM:
+    """Mock XeFM class to test fine-grained progress tracking"""
     
     def __init__(self):
         self.progress_manager = ProgressManager()
@@ -189,25 +189,25 @@ def test_fine_grained_copy_progress():
         subdir2.mkdir()
         (subdir2 / "file5.txt").write_text("content5")
         
-        # Create mock TFM and perform copy
-        tfm = MockTFM()
+        # Create mock XeFM and perform copy
+        xefm = MockXeFM()
         files_to_copy = [source_dir / "file1.txt", source_dir / "subdir1", source_dir / "file6.txt"]
         
         # Count expected total files
         expected_total = 5  # file1.txt + (file3.txt, file4.txt, file5.txt from subdir1) + file6.txt
         
-        tfm.perform_copy_operation_simplified(files_to_copy, dest_dir)
+        xefm.perform_copy_operation_simplified(files_to_copy, dest_dir)
         
         # Verify progress tracking
-        assert len(tfm.progress_updates) > 0, "Should have progress updates"
+        assert len(xefm.progress_updates) > 0, "Should have progress updates"
         
         # Check that we got updates for individual files
-        final_update = tfm.progress_updates[-1]
+        final_update = xefm.progress_updates[-1]
         assert final_update['total'] == expected_total, f"Expected {expected_total} total files, got {final_update['total']}"
         assert final_update['processed'] == expected_total, f"Expected {expected_total} processed files, got {final_update['processed']}"
         
         # Verify that we got progress updates for files in subdirectories
-        file_names = [update['current_item'] for update in tfm.progress_updates]
+        file_names = [update['current_item'] for update in xefm.progress_updates]
         
         # Should see individual files from the directory
         assert any("file3.txt" in name for name in file_names), "Should track file3.txt in subdirectory"
@@ -257,22 +257,22 @@ def test_file_counting():
         (dir2 / "file4.txt").write_text("content")
         
         # Test counting
-        tfm = MockTFM()
+        xefm = MockXeFM()
         
         # Count individual files
-        single_file_count = tfm._count_files_recursively([test_dir / "file1.txt"])
+        single_file_count = xefm._count_files_recursively([test_dir / "file1.txt"])
         assert single_file_count == 1, f"Single file should count as 1, got {single_file_count}"
         
         # Count directory
-        dir_count = tfm._count_files_recursively([dir1])
+        dir_count = xefm._count_files_recursively([dir1])
         assert dir_count == 3, f"dir1 should contain 3 files, got {dir_count}"
         
         # Count entire structure
-        total_count = tfm._count_files_recursively([test_dir])
+        total_count = xefm._count_files_recursively([test_dir])
         assert total_count == 5, f"Total should be 5 files, got {total_count}"
         
         # Count mixed selection
-        mixed_count = tfm._count_files_recursively([test_dir / "file1.txt", dir1, test_dir / "file5.txt"])
+        mixed_count = xefm._count_files_recursively([test_dir / "file1.txt", dir1, test_dir / "file5.txt"])
         assert mixed_count == 5, f"Mixed selection should be 5 files, got {mixed_count}"
     
     print("✅ File counting test passed!")
@@ -302,22 +302,22 @@ def test_progress_granularity():
         (source_dir / "single_file.txt").write_text("single content")
         
         # Test copy operation
-        tfm = MockTFM()
+        xefm = MockXeFM()
         files_to_copy = [source_dir / "single_file.txt", large_dir]
         
-        tfm.perform_copy_operation_simplified(files_to_copy, dest_dir)
+        xefm.perform_copy_operation_simplified(files_to_copy, dest_dir)
         
         # Verify we got progress updates for each individual file
         expected_total = num_files + 1  # 20 files in directory + 1 single file
         
-        assert len(tfm.progress_updates) >= expected_total, f"Should have at least {expected_total} progress updates"
+        assert len(xefm.progress_updates) >= expected_total, f"Should have at least {expected_total} progress updates"
         
-        final_update = tfm.progress_updates[-1]
+        final_update = xefm.progress_updates[-1]
         assert final_update['total'] == expected_total, f"Expected {expected_total} total files"
         assert final_update['processed'] == expected_total, f"Expected {expected_total} processed files"
         
         # Verify we see individual file names in progress
-        file_names = [update['current_item'] for update in tfm.progress_updates]
+        file_names = [update['current_item'] for update in xefm.progress_updates]
         assert "single_file.txt" in file_names, "Should see single file in progress"
         
         # Should see some of the numbered files

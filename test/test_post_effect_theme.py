@@ -1,10 +1,10 @@
 """A theme's recommended post effect is pushed to the backend on theme switch.
 
-Themes may carry a ``post_effect`` recommendation (a CRT/phosphor look); TFM
+Themes may carry a ``post_effect`` recommendation (a CRT/phosphor look); XeFM
 applies it to the backend when the theme becomes active and clears it when you
 switch to a theme without one. A terminal backend inherits a no-op, so this
 never branches on the backend. Runs headless on the ``memory`` backend, mirroring
-``test_tfm_app_theme_persistence``.
+``test_xefm_app_theme_persistence``.
 """
 
 import os
@@ -15,11 +15,10 @@ import unittest
 from unittest.mock import patch
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-import tfm  # noqa: E402
-from tfm_state_manager import TFMStateManager  # noqa: E402
+from xefm import app as xefm_app  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit import PostEffect  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
 
@@ -28,37 +27,37 @@ from puikit.backends import create_backend  # noqa: E402
 
 class ResolvePostEffect(unittest.TestCase):
     def test_named_preset(self):
-        self.assertEqual(tfm._resolve_post_effect("crt").name, "crt")
-        self.assertTrue(tfm._resolve_post_effect("crt").roll > 0)
+        self.assertEqual(xefm_app._resolve_post_effect("crt").name, "crt")
+        self.assertTrue(xefm_app._resolve_post_effect("crt").roll > 0)
 
     def test_name_is_case_and_space_insensitive(self):
-        self.assertIsNotNone(tfm._resolve_post_effect("  CRT "))
+        self.assertIsNotNone(xefm_app._resolve_post_effect("  CRT "))
 
     def test_unknown_preset_is_none(self):
-        self.assertIsNone(tfm._resolve_post_effect("crt-tinted"))
+        self.assertIsNone(xefm_app._resolve_post_effect("crt-tinted"))
 
     def test_params_dict(self):
-        e = tfm._resolve_post_effect({"bloom": 0.5, "tint": (1, 2, 3)})
+        e = xefm_app._resolve_post_effect({"bloom": 0.5, "tint": (1, 2, 3)})
         self.assertEqual((e.bloom, e.tint), (0.5, (1, 2, 3)))
 
     def test_passthrough_and_empty(self):
         made = PostEffect(bloom=0.2)
-        self.assertIs(tfm._resolve_post_effect(made), made)
-        self.assertIsNone(tfm._resolve_post_effect(None))
-        self.assertIsNone(tfm._resolve_post_effect(""))
+        self.assertIs(xefm_app._resolve_post_effect(made), made)
+        self.assertIsNone(xefm_app._resolve_post_effect(None))
+        self.assertIsNone(xefm_app._resolve_post_effect(""))
 
     def test_bad_input_degrades_to_none(self):
-        self.assertIsNone(tfm._resolve_post_effect("no-such-preset"))
-        self.assertIsNone(tfm._resolve_post_effect({"totally": "wrong"}))
+        self.assertIsNone(xefm_app._resolve_post_effect("no-such-preset"))
+        self.assertIsNone(xefm_app._resolve_post_effect({"totally": "wrong"}))
 
     def test_theme_carries_effect_in_extras(self):
-        t = tfm._theme(bg=(0, 0, 0), fg=(0, 255, 0), muted=(0, 128, 0),
+        t = xefm_app._theme(bg=(0, 0, 0), fg=(0, 255, 0), muted=(0, 128, 0),
                        accent=(0, 200, 0), surface=(0, 30, 0), selection=(0, 80, 0),
                        post_effect="crt")
         self.assertIsInstance(t.extras.get("post_effect"), PostEffect)
 
     def test_theme_without_effect_has_none(self):
-        t = tfm._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
+        t = xefm_app._theme(bg=(0, 0, 0), fg=(255, 255, 255), muted=(128, 128, 128),
                        accent=(0, 122, 204), surface=(48, 48, 52), selection=(10, 105, 178))
         self.assertIsNone(t.extras.get("post_effect"))
 
@@ -68,7 +67,7 @@ class ResolvePostEffect(unittest.TestCase):
             "post_effect": "crt", "background": (4, 15, 7), "foreground": (51, 245, 121),
             "muted": (33, 138, 74), "accent": (60, 235, 122), "surface": (11, 38, 20),
             "selection": (24, 105, 54)}})
-        themes = dict(tfm._build_theme_list(cfg))
+        themes = dict(xefm_app._build_theme_list(cfg))
         self.assertEqual(themes["Phosphor"].extras["post_effect"].name, "crt")
 
 
@@ -80,7 +79,7 @@ class RetroBuiltinThemes(unittest.TestCase):
     RETRO = ("Sci-Fi", "Segment LCD")
 
     def _by_name(self):
-        return dict(tfm.THEMES)
+        return dict(xefm_app.THEMES)
 
     def test_all_registered_with_a_real_effect(self):
         themes = self._by_name()
@@ -100,7 +99,7 @@ class RetroBuiltinThemes(unittest.TestCase):
         # They are built-ins, so they appear in the runtime list even with an empty
         # user config, and keep their effects.
         import types
-        themes = dict(tfm._build_theme_list(types.SimpleNamespace()))
+        themes = dict(xefm_app._build_theme_list(types.SimpleNamespace()))
         for name in self.RETRO:
             self.assertIsInstance(themes[name].extras.get("post_effect"), PostEffect, name)
 
@@ -128,12 +127,12 @@ class ThemeSwitchAppliesEffect(unittest.TestCase):
         self.right = os.path.join(self.tmp, "r")
         os.makedirs(self.left)
         os.makedirs(self.right)
-        self._patcher = patch.object(tfm, "FileMonitorManager", _FakeMonitor)
+        self._patcher = patch.object(xefm_app, "FileMonitorManager", _FakeMonitor)
         self._patcher.start()
         self.backend = create_backend("memory")
         self.backend.open()
-        sm = TFMStateManager(db_path=os.path.join(self.tmp, "state.db"))
-        self.app = tfm.TfmApp(self.backend, self.left, self.right, state_manager=sm)
+        sm = XeFMStateManager(db_path=os.path.join(self.tmp, "state.db"))
+        self.app = xefm_app.XeFMApp(self.backend, self.left, self.right, state_manager=sm)
         sys.stdout, sys.stderr = self.app._orig_stdout, self.app._orig_stderr
         # Record every effect handed to the backend on theme switch.
         self.pushed = []
@@ -148,7 +147,7 @@ class ThemeSwitchAppliesEffect(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _add_theme(self, name, **kw):
-        self.app.themes.append((name, tfm._theme(
+        self.app.themes.append((name, xefm_app._theme(
             bg=(0, 0, 0), fg=(0, 255, 0), muted=(0, 128, 0), accent=(0, 200, 0),
             surface=(0, 30, 0), selection=(0, 80, 0), **kw)))
         return len(self.app.themes) - 1

@@ -16,13 +16,13 @@ whatever ``_config.py`` happens to ship. The previous version of this file
 hard-coded claims about the default config ("readme.txt opens in less") that
 were already false, and asserted nothing, so it passed regardless.
 
-Run with: PYTHONPATH=.:src pytest test/test_view_file_fallback.py -v
+Run with: python -m pytest test/test_view_file_fallback.py -v
 """
 
 import pytest
 
-import tfm_config
-from tfm_config import (get_program_for_file, has_action_for_file,
+import xefm.config
+from xefm.config import (get_program_for_file, has_action_for_file,
                         has_explicit_association)
 
 
@@ -34,7 +34,7 @@ class _Config:
 @pytest.fixture
 def associations(monkeypatch):
     def install(entries):
-        monkeypatch.setattr(tfm_config, "get_config", lambda: _Config(entries))
+        monkeypatch.setattr(xefm.config, "get_config", lambda: _Config(entries))
     return install
 
 

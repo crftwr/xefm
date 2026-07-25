@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Path Polymorphism System is TFM's core abstraction layer that enables storage-agnostic code throughout the application. By extending the `PathImpl` interface with strategic virtual methods, the system eliminates all storage-specific conditionals from UI and dialog code, making it trivial to add new storage types without modifying existing code.
+The Path Polymorphism System is XeFM's core abstraction layer that enables storage-agnostic code throughout the application. By extending the `PathImpl` interface with strategic virtual methods, the system eliminates all storage-specific conditionals from UI and dialog code, making it trivial to add new storage types without modifying existing code.
 
 ## Architecture
 
@@ -18,12 +18,12 @@ flowchart TB
         FO["FileOperationService"]
     end
 
-    Path["Path — facade (tfm_path)<br/>delegates every call to self._impl"]
-    Impl["PathImpl — abstract base (tfm_path)<br/>Display: get_display_prefix / get_display_title<br/>Content strategy: get_search_strategy · supports_streaming_read · requires_extraction_for_reading<br/>Capability: supports_write_operations · is_remote · supports_directory_rename<br/>Metadata: get_extended_metadata"]
-    Local["LocalPathImpl<br/>tfm_path"]
-    SSH["SSHPathImpl<br/>tfm_ssh"]
-    S3["S3PathImpl<br/>tfm_s3"]
-    Archive["ArchivePathImpl<br/>tfm_archive"]
+    Path["Path — facade (xefm.path)<br/>delegates every call to self._impl"]
+    Impl["PathImpl — abstract base (xefm.path)<br/>Display: get_display_prefix / get_display_title<br/>Content strategy: get_search_strategy · supports_streaming_read · requires_extraction_for_reading<br/>Capability: supports_write_operations · is_remote · supports_directory_rename<br/>Metadata: get_extended_metadata"]
+    Local["LocalPathImpl<br/>xefm.path"]
+    SSH["SSHPathImpl<br/>xefm.ssh"]
+    S3["S3PathImpl<br/>xefm.s3"]
+    Archive["ArchivePathImpl<br/>xefm.archive"]
 
     UI -->|polymorphic methods only| Path
     Path -->|delegates| Impl
@@ -50,7 +50,7 @@ flowchart TB
 
 ### The Facade / Implementation Split
 
-The polymorphism system is built on a three-layer split in `src/tfm_path.py`:
+The polymorphism system is built on a three-layer split in `xefm/path.py`:
 
 - **`PathImpl` (abstract base)** — defines the full `pathlib.Path`-compatible
   interface (`exists`, `is_dir`, `is_file`, `iterdir`, `stat`, …) plus the
@@ -75,22 +75,22 @@ it through `PathlibPath`) for any registered remote scheme.
 The facade preserves 100% compatibility with `pathlib.Path`:
 
 - **Import swap only** — modules migrated from `from pathlib import Path` to
-  `from tfm_path import Path`; call sites were left unchanged.
+  `from xefm.path import Path`; call sites were left unchanged.
 - **Same behavior and performance** — local paths delegate straight to `pathlib.Path`.
 - **Zero breaking changes** — existing local-path code kept working through the migration.
 
 ### Migration History
 
-TFM originally used `pathlib.Path` directly throughout `src/`. To make room for
+XeFM originally used `pathlib.Path` directly throughout `src/`. To make room for
 non-local storage without rewriting call sites, the codebase was migrated to the
 `Path` facade above. All `src/` modules that touch paths were switched to
-`from tfm_path import Path` — including `tfm.py`, `tfm_file_operations.py`,
-`tfm_pane_manager.py`, `tfm_state_manager.py`, `tfm_config.py`,
-`tfm_text_viewer.py`, and the various dialog modules.
+`from xefm.path import Path` — including `xefm/app.py`, `xefm/file_operations.py`,
+`xefm/pane_manager.py`, `xefm/state_manager.py`, `xefm/config.py`,
+`xefm/text_viewer.py`, and the various dialog modules.
 
 What early design notes framed as "future remote storage" now **exists**: the
-archive (`tfm_archive.ArchivePathImpl`), S3 (`tfm_s3.S3PathImpl`), and SSH/SFTP
-(`tfm_ssh.SSHPathImpl`) backends are all implemented and selected automatically by
+archive (`xefm.archive.ArchivePathImpl`), S3 (`xefm.s3.S3PathImpl`), and SSH/SFTP
+(`xefm.ssh.SSHPathImpl`) backends are all implemented and selected automatically by
 `_create_implementation`. Additional schemes (FTP, WebDAV, etc.) can be added the
 same way — see "Adding New Storage Types" below.
 
@@ -338,14 +338,14 @@ for label, value in metadata['details']:
 
 ## Adding New Storage Types
 
-Adding a new storage type to TFM requires zero changes to UI code. Follow these steps:
+Adding a new storage type to XeFM requires zero changes to UI code. Follow these steps:
 
 ### Step 1: Create PathImpl Subclass
 
 Create a new class that inherits from `PathImpl` and implements all abstract methods:
 
 ```python
-from src.tfm_path import PathImpl
+from src.xefm.path import PathImpl
 from typing import Dict, List, Tuple
 
 class CustomPathImpl(PathImpl):
@@ -392,7 +392,7 @@ class CustomPathImpl(PathImpl):
 
 ### Step 2: Register with the Path Factory
 
-Add your scheme to the `Path._create_implementation()` method in `src/tfm_path.py`.
+Add your scheme to the `Path._create_implementation()` method in `xefm/path.py`.
 This instance method is called from `Path.__init__` and selects the implementation
 by URI scheme:
 
@@ -400,7 +400,7 @@ by URI scheme:
 def _create_implementation(self, path_str: str) -> PathImpl:
     """Create the appropriate implementation based on the path string"""
     if path_str.startswith('custom://'):
-        from tfm_custom import CustomPathImpl
+        from xefm_custom import CustomPathImpl
         return CustomPathImpl(path_str)
     if path_str.startswith('archive://'):
         # ... existing archive handling
@@ -577,7 +577,7 @@ metadata = path.get_extended_metadata()
 #### Before (isinstance Checks):
 ```python
 # Bad - checks concrete type
-from src.tfm_archive import ArchivePathImpl
+from src.xefm.archive import ArchivePathImpl
 if isinstance(path._impl, ArchivePathImpl):
     strategy = 'extracted'
 else:
@@ -788,9 +788,9 @@ def verify_pathimpl(impl_class):
 
 ## References
 
-- **Source Code**: `src/tfm_path.py` - PathImpl interface and Path facade
-- **Implementations**: `src/tfm_path.py` (Local), `src/tfm_archive.py` (Archive), `src/tfm_s3.py` (S3), `src/tfm_ssh.py` (SSH/SFTP)
-- **UI Integration**: `src/tfm_text_viewer.py`, `src/tfm_text_dialog.py`, `src/tfm_progressive_search_dialog.py`
+- **Source Code**: `xefm/path.py` - PathImpl interface and Path facade
+- **Implementations**: `xefm/path.py` (Local), `xefm/archive.py` (Archive), `xefm/s3.py` (S3), `xefm/ssh.py` (SSH/SFTP)
+- **UI Integration**: `xefm/text_viewer.py`, `xefm/text_dialog.py`, `xefm/progressive_search_dialog.py`
 - **Tests**: `test/test_virtual_methods_checkpoint.py`, `test/test_info_dialog_refactoring.py`
 - **Design Document**: `.kiro/specs/path-polymorphism-refactoring/design.md`
 - **Requirements**: `.kiro/specs/path-polymorphism-refactoring/requirements.md`

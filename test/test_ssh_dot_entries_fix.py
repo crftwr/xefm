@@ -6,12 +6,12 @@ This test verifies the fix for the bug where . and .. entries were not being
 filtered out, causing rglob to enter infinite loops and return incorrect results.
 """
 
+import os
 import sys
-sys.path.insert(0, 'src')
-sys.path.insert(0, 'ttk')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from tfm_path import Path
+from xefm.path import Path
 import fnmatch
 
 import pytest
@@ -21,7 +21,7 @@ pytest.skip("Requires live SSH host 'Ec2-Dev-Ubuntu24' (developer integration te
 
 def test_iterdir_excludes_dot_entries():
     """Test that iterdir does not return . or .. entries"""
-    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/tfm")
+    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/xefm")
     
     # Get all entries
     entries = list(ssh_path.iterdir())
@@ -41,7 +41,7 @@ def test_iterdir_excludes_dot_entries():
 
 def test_rglob_returns_actual_files():
     """Test that rglob returns actual files, not just dots"""
-    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/tfm")
+    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/xefm")
     
     # Get first 10 items from rglob
     items = []
@@ -67,7 +67,7 @@ def test_rglob_returns_actual_files():
 
 def test_search_for_py_files():
     """Test that searching for *.py files returns results"""
-    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/tfm")
+    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/xefm")
     
     # Simulate search dialog behavior
     pattern = "*.py"
@@ -93,7 +93,7 @@ def test_search_for_py_files():
 
 def test_rglob_no_infinite_loop():
     """Test that rglob doesn't enter infinite loop with . entries"""
-    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/tfm")
+    ssh_path = Path("ssh://Ec2-Dev-Ubuntu24/home/ubuntu/projects/xefm")
     
     # Try to get 100 items - should complete quickly without infinite loop
     items = []

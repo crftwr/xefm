@@ -36,8 +36,8 @@ Where:
 
 File associations are defined in two places:
 
-1. **DefaultConfig** (`src/tfm_config.py`): Default associations
-2. **User Config** (`~/.tfm/config.py`): User-customized associations
+1. **DefaultConfig** (`xefm/config.py`): Default associations
+2. **User Config** (`~/.xefm/config.py`): User-customized associations
 
 User config takes precedence over default config.
 
@@ -113,7 +113,7 @@ it would silently turn the handler name `'viewer'` into the command
 `['viewer']`. Different value spaces need different accessors.
 
 An unrecognised handler name is logged as a warning and reported as
-*unconfigured*, so a typo falls back to TFM's default dispatch rather than
+*unconfigured*, so a typo falls back to XeFM's default dispatch rather than
 silently disabling the Enter key.
 
 #### Display handover is not a config concern
@@ -239,9 +239,9 @@ File associations integrate with the existing configuration system:
 2. **User Config class**: Allows user customization
 3. **ConfigManager**: Handles loading and merging
 
-### Usage in TFM
+### Usage in XeFM
 
-Four handlers in `tfm.py` consult associations, one per action:
+Four handlers in `xefm/app.py` consult associations, one per action:
 
 | Handler | Action | Fallback when unconfigured |
 |---|---|---|
@@ -250,12 +250,12 @@ Four handlers in `tfm.py` consult associations, one per action:
 | `view_file()` | `view` | Built-in viewer |
 | `edit_file()` | `edit` | `TEXT_EDITOR` |
 
-> **History**: these call sites were wired in the pre-PuiKit `tfm_main.py`
+> **History**: these call sites were wired in the pre-PuiKit `xefm_main.py`
 > (commit `f2f60c51`), lost when that file was removed during the port, and
 > restored here. In between, the engine below was complete and correct but had
 > no production callers, so editing `FILE_ASSOCIATIONS` had no observable
 > effect. If association behavior ever appears to "do nothing" again, check
-> that these four handlers still call into `tfm_config` before debugging the
+> that these four handlers still call into `xefm.config` before debugging the
 > matching logic.
 
 All three external actions launch through one helper:
@@ -280,7 +280,7 @@ Two rules it enforces:
 Example integration:
 
 ```python
-from tfm_config import get_program_for_file, has_explicit_association
+from xefm.config import get_program_for_file, has_explicit_association
 
 command = get_program_for_file('document.pdf', 'view')
 if command:
@@ -293,9 +293,9 @@ else:
 
 ## OS-default fallback (`open_with_os`)
 
-`open_with_os()` in `tfm.py` is the deliberate "hand this file to another
+`open_with_os()` in `xefm/app.py` is the deliberate "hand this file to another
 program" action (bound to Cmd/Ctrl-Enter), as opposed to Enter's
-open-inside-TFM. It is **not** association-blind: it consults `FILE_ASSOCIATIONS`
+open-inside-XeFM. It is **not** association-blind: it consults `FILE_ASSOCIATIONS`
 first, exactly like the other three handlers, and only reaches the OS default
 when no rule applies.
 
@@ -338,7 +338,7 @@ operates only on the focused entry:
   portable "select this item" verb).
 
 Default binding is `Alt-Enter` (`Ctrl-Shift-E` on Windows), configured under
-`KEY_BINDINGS` in `src/_config.py`. As with `open_with_os`, the launcher
+`KEY_BINDINGS` in `xefm/_config.py`. As with `open_with_os`, the launcher
 returns immediately, so the renderer is not suspended; errors are logged.
 
 ## Data Structures
@@ -514,8 +514,8 @@ Support environment variable expansion in commands:
 ## Dependencies
 
 - **fnmatch**: Standard library module for pattern matching
-- **tfm_config**: Configuration system
-- **tfm_path**: Path handling utilities
+- **xefm.config**: Configuration system
+- **xefm.path**: Path handling utilities
 
 ## API Reference
 

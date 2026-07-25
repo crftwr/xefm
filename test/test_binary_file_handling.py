@@ -9,13 +9,13 @@ of mojibake instead of one placeholder line.
 The lesson these tests encode: **sniff before decoding**. Any test that only
 checks "a text file reads correctly" would have passed throughout the bug.
 
-Run with: PYTHONPATH=.:src pytest test/test_binary_file_handling.py -v
+Run with: python -m pytest test/test_binary_file_handling.py -v
 """
 
 import pytest
 
-from tfm_path import Path
-from tfm_text_viewer import _read_lines, looks_binary
+from xefm.path import Path
+from xefm.text_viewer import _read_lines, looks_binary
 
 PLACEHOLDER = "[Binary file — cannot display as text]"
 

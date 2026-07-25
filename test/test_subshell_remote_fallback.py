@@ -2,9 +2,9 @@
 Test for subshell remote directory fallback functionality.
 
 This test verifies that when subshell is opened while browsing a remote directory
-(like S3), TFM falls back to using TFM's working directory instead of failing.
+(like S3), XeFM falls back to using XeFM's working directory instead of failing.
 
-Run with: PYTHONPATH=.:src pytest test/test_subshell_remote_fallback.py -v
+Run with: python -m pytest test/test_subshell_remote_fallback.py -v
 """
 
 import os
@@ -14,9 +14,9 @@ from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path as PathlibPath
 
 # Add src directory to path for imports
-src_dir = PathlibPath(__file__).parent.parent / 'src'
-from tfm_external_programs import ExternalProgramManager
-from tfm_path import Path
+src_dir = PathlibPath(__file__).parent.parent
+from xefm.external_programs import ExternalProgramManager
+from xefm.path import Path
 
 
 class MockRemotePath:
@@ -94,11 +94,11 @@ class TestSubshellRemoteFallback(unittest.TestCase):
     @patch('os.getcwd')
     def test_subshell_remote_directory_fallback(self, mock_getcwd, mock_chdir, 
                                                mock_subprocess, mock_initscr, mock_endwin, mock_curs_set):
-        """Test that subshell falls back to TFM working directory when browsing remote directory"""
+        """Test that subshell falls back to XeFM working directory when browsing remote directory"""
         
         # Set up mocks
-        tfm_working_dir = '/home/user/tfm'
-        mock_getcwd.return_value = tfm_working_dir
+        xefm_working_dir = '/home/user/xefm'
+        mock_getcwd.return_value = xefm_working_dir
         
         # Set current pane to remote directory
         self.pane_manager.get_current_pane = Mock(return_value=self.pane_manager.right_pane)
@@ -106,13 +106,13 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         
         # Mock environment and imports
         with patch.dict(os.environ, {'SHELL': '/bin/bash'}, clear=False), \
-             patch('tfm_colors.init_colors'), \
-             patch('tfm_log_manager.LogCapture'):
+             patch('xefm.colors.init_colors'), \
+             patch('xefm.log_manager.LogCapture'):
             # Call enter_subshell_mode
             result = self.external_program_manager.enter_subshell_mode(self.pane_manager)
         
-        # Verify that os.chdir was called with TFM's working directory, not the remote path
-        mock_chdir.assert_called_once_with(tfm_working_dir)
+        # Verify that os.chdir was called with XeFM's working directory, not the remote path
+        mock_chdir.assert_called_once_with(xefm_working_dir)
         
         # Verify subprocess was called with shell
         mock_subprocess.assert_called_once()
@@ -121,9 +121,9 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         
         # Verify environment variables are set correctly
         env = kwargs['env']
-        self.assertEqual(env['TFM_THIS_DIR'], 's3://my-bucket/folder/')
-        self.assertEqual(env['TFM_OTHER_DIR'], '/home/user/local')
-        self.assertEqual(env['TFM_ACTIVE'], '1')
+        self.assertEqual(env['XEFM_THIS_DIR'], 's3://my-bucket/folder/')
+        self.assertEqual(env['XEFM_OTHER_DIR'], '/home/user/local')
+        self.assertEqual(env['XEFM_ACTIVE'], '1')
     
     @patch('curses.curs_set')
     @patch('curses.endwin')
@@ -136,8 +136,8 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         """Test that subshell works normally when browsing local directory"""
         
         # Set up mocks
-        tfm_working_dir = '/home/user/tfm'
-        mock_getcwd.return_value = tfm_working_dir
+        xefm_working_dir = '/home/user/xefm'
+        mock_getcwd.return_value = xefm_working_dir
         
         # Set current pane to local directory
         self.pane_manager.get_current_pane = Mock(return_value=self.pane_manager.left_pane)
@@ -145,12 +145,12 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         
         # Mock environment and imports
         with patch.dict(os.environ, {'SHELL': '/bin/bash'}, clear=False), \
-             patch('tfm_colors.init_colors'), \
-             patch('tfm_log_manager.LogCapture'):
+             patch('xefm.colors.init_colors'), \
+             patch('xefm.log_manager.LogCapture'):
             # Call enter_subshell_mode
             result = self.external_program_manager.enter_subshell_mode(self.pane_manager)
         
-        # Verify that os.chdir was called with the local directory, not TFM's working directory
+        # Verify that os.chdir was called with the local directory, not XeFM's working directory
         mock_chdir.assert_called_once_with('/home/user/local')
         
         # Verify subprocess was called with shell
@@ -160,9 +160,9 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         
         # Verify environment variables are set correctly
         env = kwargs['env']
-        self.assertEqual(env['TFM_THIS_DIR'], '/home/user/local')
-        self.assertEqual(env['TFM_OTHER_DIR'], 's3://my-bucket/folder/')
-        self.assertEqual(env['TFM_ACTIVE'], '1')
+        self.assertEqual(env['XEFM_THIS_DIR'], '/home/user/local')
+        self.assertEqual(env['XEFM_OTHER_DIR'], 's3://my-bucket/folder/')
+        self.assertEqual(env['XEFM_ACTIVE'], '1')
     
     @patch('curses.curs_set')
     @patch('curses.endwin')
@@ -172,11 +172,11 @@ class TestSubshellRemoteFallback(unittest.TestCase):
     @patch('os.getcwd')
     def test_external_program_remote_directory_fallback(self, mock_getcwd, mock_chdir, 
                                                        mock_subprocess, mock_initscr, mock_endwin, mock_curs_set):
-        """Test that external programs fall back to TFM working directory when browsing remote directory"""
+        """Test that external programs fall back to XeFM working directory when browsing remote directory"""
         
         # Set up mocks
-        tfm_working_dir = '/home/user/tfm'
-        mock_getcwd.return_value = tfm_working_dir
+        xefm_working_dir = '/home/user/xefm'
+        mock_getcwd.return_value = xefm_working_dir
         
         # Set current pane to remote directory
         self.pane_manager.get_current_pane = Mock(return_value=self.pane_manager.right_pane)
@@ -190,13 +190,13 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         }
         
         # Mock imports and call execute_external_program
-        with patch('tfm_colors.init_colors'), \
-             patch('tfm_log_manager.LogCapture'), \
+        with patch('xefm.colors.init_colors'), \
+             patch('xefm.log_manager.LogCapture'), \
              patch('builtins.input', return_value=''):
             result = self.external_program_manager.execute_external_program(self.pane_manager, program)
         
-        # Verify that os.chdir was called with TFM's working directory, not the remote path
-        mock_chdir.assert_called_once_with(tfm_working_dir)
+        # Verify that os.chdir was called with XeFM's working directory, not the remote path
+        mock_chdir.assert_called_once_with(xefm_working_dir)
         
         # Verify subprocess was called with the program command
         mock_subprocess.assert_called_once()
@@ -205,9 +205,9 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         
         # Verify environment variables are set correctly
         env = kwargs['env']
-        self.assertEqual(env['TFM_THIS_DIR'], 's3://my-bucket/folder/')
-        self.assertEqual(env['TFM_OTHER_DIR'], '/home/user/local')
-        self.assertEqual(env['TFM_ACTIVE'], '1')
+        self.assertEqual(env['XEFM_THIS_DIR'], 's3://my-bucket/folder/')
+        self.assertEqual(env['XEFM_OTHER_DIR'], '/home/user/local')
+        self.assertEqual(env['XEFM_ACTIVE'], '1')
     
     @patch('curses.curs_set')
     @patch('curses.endwin')
@@ -220,8 +220,8 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         """Test that external programs work normally when browsing local directory"""
         
         # Set up mocks
-        tfm_working_dir = '/home/user/tfm'
-        mock_getcwd.return_value = tfm_working_dir
+        xefm_working_dir = '/home/user/xefm'
+        mock_getcwd.return_value = xefm_working_dir
         
         # Set current pane to local directory
         self.pane_manager.get_current_pane = Mock(return_value=self.pane_manager.left_pane)
@@ -235,12 +235,12 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         }
         
         # Mock imports and call execute_external_program
-        with patch('tfm_colors.init_colors'), \
-             patch('tfm_log_manager.LogCapture'), \
+        with patch('xefm.colors.init_colors'), \
+             patch('xefm.log_manager.LogCapture'), \
              patch('builtins.input', return_value=''):
             result = self.external_program_manager.execute_external_program(self.pane_manager, program)
         
-        # Verify that os.chdir was called with the local directory, not TFM's working directory
+        # Verify that os.chdir was called with the local directory, not XeFM's working directory
         mock_chdir.assert_called_once_with('/home/user/local')
         
         # Verify subprocess was called with the program command
@@ -250,6 +250,6 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         
         # Verify environment variables are set correctly
         env = kwargs['env']
-        self.assertEqual(env['TFM_THIS_DIR'], '/home/user/local')
-        self.assertEqual(env['TFM_OTHER_DIR'], 's3://my-bucket/folder/')
-        self.assertEqual(env['TFM_ACTIVE'], '1')
+        self.assertEqual(env['XEFM_THIS_DIR'], '/home/user/local')
+        self.assertEqual(env['XEFM_OTHER_DIR'], 's3://my-bucket/folder/')
+        self.assertEqual(env['XEFM_ACTIVE'], '1')

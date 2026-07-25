@@ -13,7 +13,7 @@ import queue
 import time
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
-from tfm_file_monitor_manager import FileMonitorManager
+from xefm.file_monitor_manager import FileMonitorManager
 
 
 class TestFileMonitorManagerLifecycle(unittest.TestCase):
@@ -205,9 +205,9 @@ class TestFileMonitorManagerLifecycle(unittest.TestCase):
         self.assertEqual(mode, "native")
 
     def test_detect_remote_path_via_scheme(self):
-        """A TFM Path whose scheme is not 'file' disables monitoring (issue #181).
+        """A XeFM Path whose scheme is not 'file' disables monitoring (issue #181).
 
-        This is the real-world case: an S3 pane holds a tfm_path.Path whose
+        This is the real-world case: an S3 pane holds a xefm.path.Path whose
         str() is 's3://bucket/', and detection must key off get_scheme() rather
         than fragile string prefixes."""
         remote_path = Mock()

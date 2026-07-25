@@ -2,17 +2,17 @@
 
 ## Overview
 
-The File Extension Associations feature allows you to configure which programs TFM uses to open, view, and edit different types of files based on their extensions. This provides a flexible way to customize how TFM handles various file types.
+The File Extension Associations feature allows you to configure which programs XeFM uses to open, view, and edit different types of files based on their extensions. This provides a flexible way to customize how XeFM handles various file types.
 
 ## Quick Start
 
 ### What is it?
 
-File associations let you configure which programs TFM uses to open, view, and edit different file types. For example, you can use Preview for viewing images but Photoshop for editing them.
+File associations let you configure which programs XeFM uses to open, view, and edit different file types. For example, you can use Preview for viewing images but Photoshop for editing them.
 
 ### Basic Example
 
-Add this to your `~/.tfm/config.py`:
+Add this to your `~/.xefm/config.py`:
 
 ```python
 FILE_ASSOCIATIONS = [
@@ -41,7 +41,7 @@ FILE_ASSOCIATIONS = [
 
 ## Configuration
 
-File associations are configured in your `~/.tfm/config.py` file using the `FILE_ASSOCIATIONS` list.
+File associations are configured in your `~/.xefm/config.py` file using the `FILE_ASSOCIATIONS` list.
 
 ### Compact Format Structure
 
@@ -67,7 +67,7 @@ Each file pattern can configure up to four actions:
 
 | Action | Key | What it does | Value |
 |---|---|---|---|
-| **enter** | `Enter` | Casual open — handled **inside TFM** | A built-in handler name |
+| **enter** | `Enter` | Casual open — handled **inside XeFM** | A built-in handler name |
 | **open** | `Cmd/Ctrl-Enter` | Deliberate open — hands off to another app | A command |
 | **view** | `V` | View the file | A command |
 | **edit** | `E` | Edit the file | A command |
@@ -76,13 +76,13 @@ Each file pattern can configure up to four actions:
 
 `Enter` and `Cmd/Ctrl-Enter` are deliberately different gestures:
 
-- **`Enter` never leaves TFM.** It enters directories, browses archives, and
+- **`Enter` never leaves XeFM.** It enters directories, browses archives, and
   opens files in the built-in viewer. It is safe to lean on — it will not
   launch an application or steal focus.
 - **`Cmd/Ctrl-Enter` hands the file to a real application.** Use it when you
   actually want Preview, an IDE, or the OS default app.
 
-Because the `enter` tier stays inside TFM, its value names a **built-in
+Because the `enter` tier stays inside XeFM, its value names a **built-in
 handler** rather than a program to launch:
 
 | Value | Effect |
@@ -90,7 +90,7 @@ handler** rather than a program to launch:
 | `'viewer'` | Open in the built-in text/markdown viewer |
 | `'navigate'` | Browse the file as an archive (useful for `*.jar`, `*.whl`) |
 | `None` | Do nothing |
-| *(no rule)* | TFM's default: enter directories and archives, view files |
+| *(no rule)* | XeFM's default: enter directories and archives, view files |
 
 ```python
 {
@@ -124,13 +124,13 @@ Programs can be specified in two formats:
 
 ### Terminal Programs
 
-**You do not declare this.** Whether TFM hands over the display is a property of
+**You do not declare this.** Whether XeFM hands over the display is a property of
 the backend you are running, not of the program you configured:
 
 | Mode | What happens when a program launches |
 |---|---|
-| Terminal (`--backend tui`) | TFM suspends, the program owns the terminal, TFM restores and repaints when it exits |
-| Desktop (`--backend gui`) | There is no terminal to hand over, so the program is detached and TFM stays responsive |
+| Terminal (`--backend tui`) | XeFM suspends, the program owns the terminal, XeFM restores and repaints when it exits |
+| Desktop (`--backend gui`) | There is no terminal to hand over, so the program is detached and XeFM stays responsive |
 
 So `'view': ['less']` simply works in terminal mode — no flag needed:
 
@@ -145,10 +145,10 @@ So `'view': ['less']` simply works in terminal mode — no flag needed:
 The practical consequence is the same one that governs `TEXT_EDITOR`: **pick
 programs that suit the mode you run in.** A terminal program configured while
 running in desktop mode has no terminal to draw on and will not appear; a GUI
-launcher used in terminal mode works, with a brief repaint as TFM resumes.
+launcher used in terminal mode works, with a brief repaint as XeFM resumes.
 
 > Earlier drafts of this feature had a per-entry `'terminal': True` flag. It was
-> removed: it duplicated a decision TFM can already make, could not express one
+> removed: it duplicated a decision XeFM can already make, could not express one
 > entry mixing a terminal viewer with a GUI editor, and failed unsafely —
 > forgetting it on `less` corrupted the terminal. A leftover `terminal` key in a
 > hand-written config is ignored.
@@ -229,7 +229,7 @@ FILE_ASSOCIATIONS entries are checked in order from top to bottom. This allows y
 
 ### How It Works
 
-When TFM needs to find a program for a file and action:
+When XeFM needs to find a program for a file and action:
 
 1. **Check each entry** in FILE_ASSOCIATIONS from top to bottom
 2. **For each entry**:
@@ -300,9 +300,9 @@ FILE_ASSOCIATIONS = [
 2. **Document Your Intent**: Add comments to explain why entries are ordered
 3. **Test Your Configuration**: Verify that files match the expected patterns
 
-## Usage in TFM
+## Usage in XeFM
 
-Once configured, TFM will use these associations when you:
+Once configured, XeFM will use these associations when you:
 
 1. Select a file and choose an action (open, view, or edit)
 2. Use keyboard shortcuts for file operations
@@ -310,7 +310,7 @@ Once configured, TFM will use these associations when you:
 
 ### Key Bindings
 
-#### Enter - Open Inside TFM
+#### Enter - Open Inside XeFM
 Enter uses the **enter** action. It never launches an external program.
 
 **Behavior**:
@@ -320,7 +320,7 @@ Enter uses the **enter** action. It never launches an external program.
 3. `'viewer'` opens the built-in viewer; `'navigate'` browses the file as an
    archive; `None` does nothing
 4. With no rule, opens the built-in viewer
-5. Unless TFM has no built-in way to show the file — a PNG, say — in which case
+5. Unless XeFM has no built-in way to show the file — a PNG, say — in which case
    it logs a warning naming the key bound to `open_with_os`, rather than
    opening a viewer on content it cannot render
 
@@ -341,7 +341,7 @@ Cmd-Enter (Ctrl-Enter on Windows) uses the **open** action.
 4. Otherwise falls back to the OS default app (`open` / `xdg-open` / `start`)
 
 #### V Key - View File
-When you press V on a file, TFM uses the **view** action from file associations.
+When you press V on a file, XeFM uses the **view** action from file associations.
 
 **Behavior**:
 1. Checks file associations for 'view' action
@@ -353,7 +353,7 @@ Remote and in-archive files always use the built-in viewer — an external
 program has no path on disk it could open.
 
 #### E Key - Edit File
-When you press E on a file, TFM uses the **edit** action from file associations.
+When you press E on a file, XeFM uses the **edit** action from file associations.
 
 **Behavior**:
 1. Checks file associations for 'edit' action
@@ -411,23 +411,23 @@ Local files only; remote and in-archive paths are skipped.
 - Press V on `readme.txt` → Opens in built-in text viewer (with syntax highlighting)
 - Press E on `readme.txt` → Opens in vim
 
-**Note**: Omitting the `view` action allows TFM to use the built-in text viewer for text files, which provides syntax highlighting and is optimized for viewing code and text files.
+**Note**: Omitting the `view` action allows XeFM to use the built-in text viewer for text files, which provides syntax highlighting and is optimized for viewing code and text files.
 
 ### Fallback Behavior
 
 If a file has no configured association:
 
 1. **Enter key**: Falls back to the built-in viewer for text files; for a file
-   TFM has no built-in way to render (an image, say) it logs a warning naming
+   XeFM has no built-in way to render (an image, say) it logs a warning naming
    the key that opens the file externally, rather than showing garbage
 2. **V key**: Opens the built-in text viewer, which reads the bytes — text is
    shown with syntax highlighting, a binary shows a placeholder
 3. **E key**: Falls back to the `TEXT_EDITOR` config setting
 
-### How TFM decides a file is text
+### How XeFM decides a file is text
 
-**TFM detects text by reading the bytes, not by looking at the extension.**
-There is deliberately no list of "text extensions" anywhere in TFM: such a list
+**XeFM detects text by reading the bytes, not by looking at the extension.**
+There is deliberately no list of "text extensions" anywhere in XeFM: such a list
 is wrong for files with no extension (`Makefile`, `README`), an unknown one, or
 a misleading one — and inspecting the content gets all three right for free.
 
@@ -439,7 +439,7 @@ The built-in viewer decides like this:
    shown
 3. **Otherwise** fall back to `latin-1` with replacement characters
 
-The rule of thumb across TFM is **detect capability from the bytes; configure
+The rule of thumb across XeFM is **detect capability from the bytes; configure
 preference by extension.** Extensions decide *which application you prefer* —
 never whether a file is readable as text.
 
@@ -470,7 +470,7 @@ later, more general entry might otherwise supply a command.
 
 ## Open Externally and Reveal in File Manager
 
-Beyond the configurable actions above, TFM has two fixed gestures that hand a
+Beyond the configurable actions above, XeFM has two fixed gestures that hand a
 file to the operating system.
 
 ### Open externally — the OS default app
@@ -479,7 +479,7 @@ file to the operating system.
 the **open** action.
 
 This is the deliberate-open tier described under
-[Cmd/Ctrl-Enter](#cmdctrl-enter---open-externally): TFM first looks for an
+[Cmd/Ctrl-Enter](#cmdctrl-enter---open-externally): XeFM first looks for an
 `open` command in your associations, and if there is none (and it is not
 explicitly `None`) it falls back to the OS default application — `open` on
 macOS, `xdg-open` on Linux, `start` on Windows. Selected files are opened; if
@@ -598,7 +598,7 @@ elif platform.system() == 'Linux':
 
 ## Default Associations
 
-TFM comes with default file associations for common file types:
+XeFM comes with default file associations for common file types:
 
 - **Images**: JPG, JPEG, PNG, GIF
 - **Videos**: MP4, MOV, AVI
@@ -628,7 +628,7 @@ You can override any of these defaults in your configuration file.
 
 ### Program not found
 
-If TFM can't find the program:
+If XeFM can't find the program:
 - Check that the program is installed
 - Verify the command name is correct
 - Use the full path to the executable if needed
@@ -666,4 +666,4 @@ python3 test/test_file_associations.py
 ## Related Documentation
 
 - Implementation details: `doc/dev/FILE_ASSOCIATIONS_IMPLEMENTATION.md`
-- TFM User Guide: `doc/TFM_USER_GUIDE.md`
+- XeFM User Guide: `doc/XEFM_USER_GUIDE.md`

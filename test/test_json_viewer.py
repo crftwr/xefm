@@ -3,11 +3,11 @@
 The modal text viewer opens ``*.json`` / ``*.jsonl`` / ``*.ndjson`` files in raw
 text and toggles to a collapsible ``JsonView`` tree in place, via the
 ``toggle_view_mode`` action and the rich-renderer registry
-(``tfm_viewer_registry``). The JsonView widget's own behavior (expand/collapse,
-search, copy) is covered in PuiKit's test_json_view.py; these check TFM wires it
+(``xefm.viewer_registry``). The JsonView widget's own behavior (expand/collapse,
+search, copy) is covered in PuiKit's test_json_view.py; these check XeFM wires it
 up and degrades gracefully on malformed JSON.
 
-Run with: PYTHONPATH=.:src pytest test/test_json_viewer.py -v
+Run with: python -m pytest test/test_json_viewer.py -v
 """
 
 import os
@@ -15,14 +15,14 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from puikit import Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
 from puikit.backends.memory_backend import MemoryBackend
 
-from tfm_path import Path
-from tfm_text_viewer import TextViewer, show_text_viewer
-from tfm_viewer_registry import RichRenderer, rich_renderer_for
+from xefm.path import Path
+from xefm.text_viewer import TextViewer, show_text_viewer
+from xefm.viewer_registry import RichRenderer, rich_renderer_for
 
 
 def _key(name=None, char=None):
@@ -37,7 +37,7 @@ def backend(request):
 @pytest.fixture
 def json_file(tmp_path):
     p = tmp_path / "data.json"
-    p.write_text('{"name": "tfm", "tags": ["tui", "files"], "nested": {"n": 42}}')
+    p.write_text('{"name": "xefm", "tags": ["tui", "files"], "nested": {"n": 42}}')
     return Path(str(p))
 
 

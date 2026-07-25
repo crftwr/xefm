@@ -1,7 +1,7 @@
 """
-Test script for new confirmation options in TFM configuration system
+Test script for new confirmation options in XeFM configuration system
 
-Run with: PYTHONPATH=.:src pytest test/test_confirmation_options.py -v
+Run with: python -m pytest test/test_confirmation_options.py -v
 """
 
 
@@ -10,7 +10,7 @@ def test_confirmation_config_options():
     print("Testing confirmation configuration options...")
     
     try:
-        from _config import Config, get_config
+        from xefm._config import Config, get_config
         
         # Test that new confirmation options exist in DefaultConfig
         assert hasattr(DefaultConfig, 'CONFIRM_COPY'), "CONFIRM_COPY not found in DefaultConfig"
@@ -50,7 +50,7 @@ def test_template_config_file():
     print("Testing template configuration file...")
     
     try:
-        template_file = Path(__file__).parent.parent / 'src' / '_config.py'
+        template_file = Path(__file__).parent.parent / 'xefm' / '_config.py'
         
         if not template_file.exists():
             print(f"✗ Template config file not found: {template_file}")
@@ -77,7 +77,7 @@ def test_confirmation_usage():
     print("Testing confirmation option usage pattern...")
     
     try:
-        from tfm_config import get_config
+        from xefm.config import get_config
         
         config = get_config()
         
@@ -102,7 +102,7 @@ def test_confirmation_usage():
 def main():
     """Run all confirmation option tests"""
     print("=" * 60)
-    print("TFM Confirmation Options Test")
+    print("XeFM Confirmation Options Test")
     print("=" * 60)
     
     tests = [

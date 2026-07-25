@@ -13,10 +13,10 @@ from pathlib import Path
 class TestSSHDefaultDirectory(unittest.TestCase):
     """Test SSH default directory detection and usage"""
     
-    @patch('tfm_ssh_connection.subprocess')
+    @patch('xefm.ssh_connection.subprocess')
     def test_connection_captures_default_directory(self, mock_subprocess):
         """Test that connection captures pwd output as default directory"""
-        from tfm_ssh_connection import SSHConnection
+        from xefm.ssh_connection import SSHConnection
         
         # Mock the subprocess calls
         mock_process = Mock()
@@ -40,10 +40,10 @@ class TestSSHDefaultDirectory(unittest.TestCase):
             # Verify default directory was captured
             self.assertEqual(conn.default_directory, '/home/testuser')
     
-    @patch('tfm_ssh_connection.subprocess')
+    @patch('xefm.ssh_connection.subprocess')
     def test_connection_fallback_to_root(self, mock_subprocess):
         """Test that connection falls back to root if pwd parsing fails"""
-        from tfm_ssh_connection import SSHConnection
+        from xefm.ssh_connection import SSHConnection
         
         # Mock the subprocess calls with unparseable output
         mock_process = Mock()
@@ -69,12 +69,12 @@ class TestSSHDefaultDirectory(unittest.TestCase):
     
     @unittest.skip(
         "White-box test of legacy DrivesDialogHelpers.navigate_to_drive, which "
-        "the PuiKit port does not have (no tfm_drives_dialog module). Retarget at "
+        "the PuiKit port does not have (no xefm.drives_dialog module). Retarget at "
         "the new drives UI if/when it lands."
     )
     def test_drives_dialog_ssh_handling(self):
         """Test that drives dialog has SSH handling code"""
-        from src.tfm_drives_dialog import DrivesDialogHelpers
+        from src.xefm.drives_dialog import DrivesDialogHelpers
         import inspect
         
         # Get the source code of navigate_to_drive

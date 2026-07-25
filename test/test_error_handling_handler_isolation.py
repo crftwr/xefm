@@ -1,21 +1,21 @@
 """
 Test error handling - handler failure isolation (Task 12.1)
 
-This test verifies that TFM's logging handlers properly isolate their own
+This test verifies that XeFM's logging handlers properly isolate their own
 failures and continue operating even when internal errors occur.
 
 Requirements tested:
 - 12.1: When a log handler fails, THE System SHALL continue operating with remaining handlers
 - 12.5: When an error occurs in logging, THE System SHALL attempt to log the error using a fallback mechanism
 
-Run with: PYTHONPATH=.:src pytest test/test_error_handling_handler_isolation.py -v
+Run with: python -m pytest test/test_error_handling_handler_isolation.py -v
 """
 
 import sys
 import io
 import logging
 
-from tfm_logging_handlers import LogPaneHandler, StreamOutputHandler
+from xefm.logging_handlers import LogPaneHandler, StreamOutputHandler
 
 
 def test_logpane_handler_error_isolation():

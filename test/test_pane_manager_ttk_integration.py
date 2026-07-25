@@ -1,10 +1,10 @@
 """
-Test PaneManager integration with TTK-based TFM system.
+Test PaneManager integration with TTK-based XeFM system.
 
 This test verifies that PaneManager works correctly with the TTK-migrated
-tfm_main.py and that all pane management functionality is intact.
+xefm_main.py and that all pane management functionality is intact.
 
-Run with: PYTHONPATH=.:src pytest test/test_pane_manager_ttk_integration.py -v
+Run with: python -m pytest test/test_pane_manager_ttk_integration.py -v
 """
 
 import unittest
@@ -12,10 +12,10 @@ import tempfile
 import shutil
 from pathlib import Path
 
-# Import TFM components
-from tfm_path import Path as TFMPath
-from tfm_pane_manager import PaneManager
-from tfm_config import get_config
+# Import XeFM components
+from xefm.path import Path as XeFMPath
+from xefm.pane_manager import PaneManager
+from xefm.config import get_config
 
 
 class TestPaneManagerTTKIntegration(unittest.TestCase):
@@ -44,8 +44,8 @@ class TestPaneManagerTTKIntegration(unittest.TestCase):
         # Create PaneManager instance
         self.pane_manager = PaneManager(
             self.config,
-            TFMPath(str(self.left_dir)),
-            TFMPath(str(self.right_dir))
+            XeFMPath(str(self.left_dir)),
+            XeFMPath(str(self.right_dir))
         )
     
     def tearDown(self):
@@ -122,9 +122,9 @@ class TestPaneManagerTTKIntegration(unittest.TestCase):
         
         # Add some test files to pane
         pane['files'] = [
-            TFMPath(str(self.left_dir / "file1.txt")),
-            TFMPath(str(self.left_dir / "file2.txt")),
-            TFMPath(str(self.left_dir / "subdir")),
+            XeFMPath(str(self.left_dir / "file1.txt")),
+            XeFMPath(str(self.left_dir / "file2.txt")),
+            XeFMPath(str(self.left_dir / "subdir")),
         ]
         
         dir_count, file_count = self.pane_manager.count_files_and_dirs(pane)
@@ -135,8 +135,8 @@ class TestPaneManagerTTKIntegration(unittest.TestCase):
     def test_sync_current_to_other(self):
         """Test syncing current pane to other pane's directory"""
         # Set different paths
-        self.pane_manager.left_pane['path'] = TFMPath(str(self.left_dir))
-        self.pane_manager.right_pane['path'] = TFMPath(str(self.right_dir))
+        self.pane_manager.left_pane['path'] = XeFMPath(str(self.left_dir))
+        self.pane_manager.right_pane['path'] = XeFMPath(str(self.right_dir))
         self.pane_manager.active_pane = 'left'
         
         # Sync left to right's directory
@@ -151,8 +151,8 @@ class TestPaneManagerTTKIntegration(unittest.TestCase):
     def test_sync_other_to_current(self):
         """Test syncing other pane to current pane's directory"""
         # Set different paths
-        self.pane_manager.left_pane['path'] = TFMPath(str(self.left_dir))
-        self.pane_manager.right_pane['path'] = TFMPath(str(self.right_dir))
+        self.pane_manager.left_pane['path'] = XeFMPath(str(self.left_dir))
+        self.pane_manager.right_pane['path'] = XeFMPath(str(self.right_dir))
         self.pane_manager.active_pane = 'left'
         
         # Sync right to left's directory
@@ -172,12 +172,12 @@ class TestPaneManagerTTKIntegration(unittest.TestCase):
         (self.right_dir / common_file).touch()
         
         self.pane_manager.left_pane['files'] = [
-            TFMPath(str(self.left_dir / "file1.txt")),
-            TFMPath(str(self.left_dir / common_file)),
+            XeFMPath(str(self.left_dir / "file1.txt")),
+            XeFMPath(str(self.left_dir / common_file)),
         ]
         self.pane_manager.right_pane['files'] = [
-            TFMPath(str(self.right_dir / common_file)),
-            TFMPath(str(self.right_dir / "file3.txt")),
+            XeFMPath(str(self.right_dir / common_file)),
+            XeFMPath(str(self.right_dir / "file3.txt")),
         ]
         
         # Set right pane cursor to common file
@@ -198,12 +198,12 @@ class TestPaneManagerTTKIntegration(unittest.TestCase):
         (self.right_dir / common_file).touch()
         
         self.pane_manager.left_pane['files'] = [
-            TFMPath(str(self.left_dir / "file1.txt")),
-            TFMPath(str(self.left_dir / common_file)),
+            XeFMPath(str(self.left_dir / "file1.txt")),
+            XeFMPath(str(self.left_dir / common_file)),
         ]
         self.pane_manager.right_pane['files'] = [
-            TFMPath(str(self.right_dir / common_file)),
-            TFMPath(str(self.right_dir / "file3.txt")),
+            XeFMPath(str(self.right_dir / common_file)),
+            XeFMPath(str(self.right_dir / "file3.txt")),
         ]
         
         # Set left pane cursor to common file
@@ -284,8 +284,8 @@ class TestPaneManagerWithoutStateManager(unittest.TestCase):
         # Create PaneManager without state manager
         self.pane_manager = PaneManager(
             config,
-            TFMPath(str(self.left_dir)),
-            TFMPath(str(self.right_dir)),
+            XeFMPath(str(self.left_dir)),
+            XeFMPath(str(self.right_dir)),
             state_manager=None
         )
     
@@ -296,7 +296,7 @@ class TestPaneManagerWithoutStateManager(unittest.TestCase):
     def test_save_cursor_position_without_state_manager(self):
         """Test that save_cursor_position doesn't crash without state manager"""
         pane = self.pane_manager.left_pane
-        pane['files'] = [TFMPath(str(self.left_dir / "file1.txt"))]
+        pane['files'] = [XeFMPath(str(self.left_dir / "file1.txt"))]
         pane['focused_index'] = 0
         
         # Should not crash

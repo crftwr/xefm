@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFM's text prompts complete file and directory paths as you type. Press **TAB** in
+XeFM's text prompts complete file and directory paths as you type. Press **TAB** in
 any path or name prompt to fill in the rest of a name, or to pop up a list of the
 matching entries when several are possible. It works like shell path completion:
 the first TAB fills in as much as is unambiguous, and a second TAB (or continued

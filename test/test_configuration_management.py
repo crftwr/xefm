@@ -1,12 +1,12 @@
 """
 Test configuration management for LogManager
 
-Run with: PYTHONPATH=.:src pytest test/test_configuration_management.py -v
+Run with: python -m pytest test/test_configuration_management.py -v
 """
 
 import logging
 
-from tfm_log_manager import LogManager, LoggingConfig
+from xefm.log_manager import LogManager, LoggingConfig
 
 
 class MockConfig:

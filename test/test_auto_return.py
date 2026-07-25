@@ -1,11 +1,11 @@
 """
 Test script to verify the auto_return option functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_auto_return.py -v
+Run with: python -m pytest test/test_auto_return.py -v
 """
 
 
-from tfm_config import get_programs
+from xefm.config import get_programs
 
 def test_options_parsing():
     """Test that program options are properly parsed"""
@@ -44,7 +44,7 @@ def create_test_program():
     """Create a simple test program to demonstrate auto_return"""
     test_script = """#!/bin/bash
 echo "Test program running..."
-echo "This program will auto-return to TFM"
+echo "This program will auto-return to XeFM"
 sleep 2
 echo "Test program completed"
 """
@@ -60,8 +60,8 @@ echo "Test program completed"
         {'name': 'Test Auto Return', 'command': ['./test_program.sh'], 'options': {'auto_return': True}},"""
     
     print("To test auto_return functionality:")
-    print("1. Add this to your ~/.tfm/config.py PROGRAMS list:")
+    print("1. Add this to your ~/.xefm/config.py PROGRAMS list:")
     print(config_addition)
-    print("2. Start TFM and press 'x'")
+    print("2. Start XeFM and press 'x'")
     print("3. Select 'Test Auto Return'")
-    print("4. The program should run and automatically return to TFM")
+    print("4. The program should run and automatically return to XeFM")

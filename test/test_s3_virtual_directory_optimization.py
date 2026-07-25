@@ -4,7 +4,7 @@ Test S3 Virtual Directory Optimization
 This test verifies that S3PathImpl instances store metadata as properties
 to avoid API calls for is_dir(), is_file(), and stat() methods.
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_virtual_directory_optimization.py -v
+Run with: python -m pytest test/test_s3_virtual_directory_optimization.py -v
 """
 
 import time
@@ -13,8 +13,8 @@ from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 
 try:
-    from tfm_path import Path
-    from tfm_s3 import S3PathImpl, get_s3_cache
+    from xefm.path import Path
+    from xefm.s3 import S3PathImpl, get_s3_cache
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print("Skipping S3 virtual directory optimization tests")
@@ -107,7 +107,7 @@ class TestS3VirtualDirectoryOptimization(unittest.TestCase):
         self.assertEqual(path._impl._is_file_cached, True)
         self.assertEqual(path._impl._size_cached, 1024)
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_is_dir_uses_cached_metadata(self, mock_boto3_client):
         """Test that is_dir() uses cached metadata without API calls"""
         mock_boto3_client.return_value = self.mock_client
@@ -136,7 +136,7 @@ class TestS3VirtualDirectoryOptimization(unittest.TestCase):
         self.mock_client.list_objects_v2.assert_not_called()
         self.mock_client.head_object.assert_not_called()
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_is_file_uses_cached_metadata(self, mock_boto3_client):
         """Test that is_file() uses cached metadata without API calls"""
         mock_boto3_client.return_value = self.mock_client
@@ -165,7 +165,7 @@ class TestS3VirtualDirectoryOptimization(unittest.TestCase):
         self.mock_client.list_objects_v2.assert_not_called()
         self.mock_client.head_object.assert_not_called()
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_stat_uses_cached_metadata(self, mock_boto3_client):
         """Test that stat() uses cached metadata without API calls"""
         mock_boto3_client.return_value = self.mock_client
@@ -205,7 +205,7 @@ class TestS3VirtualDirectoryOptimization(unittest.TestCase):
         list_calls = self.mock_client.list_objects_v2.call_count
         self.assertLessEqual(list_calls, 1)  # At most 1 call for virtual directory stats
     
-    @patch('tfm_s3.boto3.client')
+    @patch('xefm.s3.boto3.client')
     def test_virtual_directory_no_head_object_calls(self, mock_boto3_client):
         """Test that virtual directories don't make head_object calls"""
         mock_boto3_client.return_value = self.mock_client

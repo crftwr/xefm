@@ -1,6 +1,6 @@
 # JSON and CSV Viewers
 
-TFM's built-in file viewer can render **JSON / JSON Lines** files as a
+XeFM's built-in file viewer can render **JSON / JSON Lines** files as a
 collapsible tree and **CSV / TSV** files as an aligned table, in addition to the
 usual raw, line-numbered text view. They work exactly like the [Markdown
 viewer](MARKDOWN_VIEWER_FEATURE.md): press **V** to open a file, then **M** to
@@ -56,7 +56,7 @@ body rows zebra-striped for separation.
 ## Shared behavior
 
 - **The M toggle and per-type memory.** The rich view is reached with **M**, the
-  same key the Markdown viewer uses. TFM remembers the view you last chose *per
+  same key the Markdown viewer uses. XeFM remembers the view you last chose *per
   file type* and reopens that type the same way next time — toggle one `.json`
   file to the tree and every `.json` opens as a tree afterward, this session and
   after a restart. The header's top-right shows the current view's name (*JSON* /

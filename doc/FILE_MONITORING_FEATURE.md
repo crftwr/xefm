@@ -2,13 +2,13 @@
 
 ## Overview
 
-TFM automatically detects and displays changes made to files by external applications. When another program creates, deletes, modifies, or renames files in the directory you're viewing, TFM updates the file list automatically—no manual refresh needed.
+XeFM automatically detects and displays changes made to files by external applications. When another program creates, deletes, modifies, or renames files in the directory you're viewing, XeFM updates the file list automatically—no manual refresh needed.
 
 This feature keeps your view synchronized with the actual filesystem state, preventing confusion and potential errors from working with outdated information.
 
 ## How It Works
 
-TFM monitors both the left and right pane directories simultaneously. When an external application makes changes:
+XeFM monitors both the left and right pane directories simultaneously. When an external application makes changes:
 
 - **New files appear automatically** when created by other programs
 - **Deleted files disappear** from the list immediately
@@ -21,17 +21,17 @@ Your cursor position and selection are preserved during automatic updates, so yo
 
 ### Enabling or Disabling Monitoring
 
-Automatic file monitoring is enabled by default. To change this setting, edit your TFM configuration file (`~/.tfm/config.py`) and set the constant on the `Config` class:
+Automatic file monitoring is enabled by default. To change this setting, edit your XeFM configuration file (`~/.xefm/config.py`) and set the constant on the `Config` class:
 
 ```python
 FILE_MONITORING_ENABLED = True
 ```
 
-Set `FILE_MONITORING_ENABLED` to `False` to disable automatic monitoring. When disabled, TFM only updates the file list after you perform actions like navigating directories or manually refreshing.
+Set `FILE_MONITORING_ENABLED` to `False` to disable automatic monitoring. When disabled, XeFM only updates the file list after you perform actions like navigating directories or manually refreshing.
 
 ### Advanced Configuration Options
 
-Most users won't need to adjust these settings, but they're available in `~/.tfm/config.py` for fine-tuning:
+Most users won't need to adjust these settings, but they're available in `~/.xefm/config.py` for fine-tuning:
 
 ```python
 FILE_MONITORING_ENABLED = True                # Enable/disable automatic reloading
@@ -49,7 +49,7 @@ FILE_MONITORING_FALLBACK_POLL_INTERVAL_S = 5  # Polling interval for fallback mo
 
 ## Runtime Toggle
 
-You can enable or disable monitoring while TFM is running without restarting the application. Use the monitoring toggle command (check your key bindings) to switch monitoring on or off instantly.
+You can enable or disable monitoring while XeFM is running without restarting the application. Use the monitoring toggle command (check your key bindings) to switch monitoring on or off instantly.
 
 When you disable monitoring at runtime:
 - Automatic updates stop immediately
@@ -58,11 +58,11 @@ When you disable monitoring at runtime:
 
 ## Monitoring Modes
 
-TFM uses different monitoring strategies depending on your storage type:
+XeFM uses different monitoring strategies depending on your storage type:
 
 ### Native Mode (Preferred)
 
-For local filesystems, TFM uses efficient operating system APIs:
+For local filesystems, XeFM uses efficient operating system APIs:
 - **Linux**: inotify
 - **macOS**: FSEvents  
 - **Windows**: ReadDirectoryChangesW
@@ -71,11 +71,11 @@ Native mode provides instant change detection with minimal resource usage (typic
 
 ### Fallback Mode (Polling)
 
-When native monitoring isn't available on a **local** path, TFM automatically switches to polling mode. This happens with:
+When native monitoring isn't available on a **local** path, XeFM automatically switches to polling mode. This happens with:
 - **Network mounts** without change notification support
 - **Local filesystems** whose native change-notification API is unavailable
 
-In fallback mode, TFM checks for changes every 5 seconds (configurable). While less responsive than native mode, it ensures monitoring works everywhere on local storage.
+In fallback mode, XeFM checks for changes every 5 seconds (configurable). While less responsive than native mode, it ensures monitoring works everywhere on local storage.
 
 ### Remote and Cloud Backends (Monitoring Disabled)
 
@@ -84,18 +84,18 @@ Automatic monitoring only works on paths that live in the local filesystem. For 
 - **Remote filesystems** over SSH/SFTP
 - **Archives** browsed in place
 
-For these locations the file list does not refresh automatically; refresh manually (re-enter the directory) to see changes. TFM skips monitoring for them silently instead of reporting errors.
+For these locations the file list does not refresh automatically; refresh manually (re-enter the directory) to see changes. XeFM skips monitoring for them silently instead of reporting errors.
 
 ### Fallback Mode Indicator
 
-When TFM operates in fallback mode due to storage limitations or errors, a status indicator appears in the interface. This lets you know that:
+When XeFM operates in fallback mode due to storage limitations or errors, a status indicator appears in the interface. This lets you know that:
 - Monitoring is active but using polling instead of native APIs
 - Updates may take a few seconds to appear
 - The feature is working correctly for your storage type
 
 ## What Gets Monitored
 
-TFM monitors **only the immediate files and directories** in the current view. Changes in subdirectories don't trigger updates to the parent directory list—you'll see those changes when you navigate into the subdirectory.
+XeFM monitors **only the immediate files and directories** in the current view. Changes in subdirectories don't trigger updates to the parent directory list—you'll see those changes when you navigate into the subdirectory.
 
 Both panes are monitored independently:
 - Changes in the left pane only update the left pane
@@ -104,7 +104,7 @@ Both panes are monitored independently:
 
 ## Cursor and Selection Behavior
 
-During automatic updates, TFM preserves your context:
+During automatic updates, XeFM preserves your context:
 
 **If the selected file still exists:**
 - Your cursor stays on the same file
@@ -123,7 +123,7 @@ During automatic updates, TFM preserves your context:
 **Check if monitoring is enabled:**
 1. Verify `FILE_MONITORING_ENABLED` is `True` in your configuration
 2. Try toggling monitoring off and on at runtime
-3. Restart TFM to reload configuration
+3. Restart XeFM to reload configuration
 
 **Check for fallback mode indicator:**
 - If you see the fallback mode indicator, monitoring is working but using polling
@@ -135,18 +135,18 @@ During automatic updates, TFM preserves your context:
 - The file list won't refresh on its own; re-enter the directory to pick up changes
 
 **Check the log file:**
-- TFM logs monitoring activity with the "FileMonitor" component name
+- XeFM logs monitoring activity with the "FileMonitor" component name
 - Look for initialization messages indicating monitoring mode
 - Check for error messages that might explain issues
 
 ### Monitoring Not Working on Network Drives
 
-Network drives and remote filesystems often don't support native change notifications. TFM automatically detects this and switches to fallback polling mode. You should see the fallback mode indicator, and changes will appear within a few seconds.
+Network drives and remote filesystems often don't support native change notifications. XeFM automatically detects this and switches to fallback polling mode. You should see the fallback mode indicator, and changes will appear within a few seconds.
 
 If monitoring doesn't work at all on a network drive:
 1. Check that you have read permissions for the directory
 2. Verify the network connection is stable
-3. Check TFM logs for error messages
+3. Check XeFM logs for error messages
 4. Consider increasing `FILE_MONITORING_FALLBACK_POLL_INTERVAL_S` if the network is slow
 
 ### Too Many Updates / UI Feels Sluggish
@@ -164,9 +164,9 @@ If you're working in a directory with very frequent changes (e.g., a build outpu
 
 ### Monitoring Stops Working After Errors
 
-TFM includes automatic error recovery:
-- If monitoring fails, TFM attempts to reinitialize (up to 3 times)
-- If reinitialization fails, TFM switches to fallback polling mode
+XeFM includes automatic error recovery:
+- If monitoring fails, XeFM attempts to reinitialize (up to 3 times)
+- If reinitialization fails, XeFM switches to fallback polling mode
 - If polling also fails, monitoring is disabled for that directory
 
 Check the log file for error messages. Common issues:
@@ -177,7 +177,7 @@ Check the log file for error messages. Common issues:
 To recover:
 1. Navigate to a different directory and back
 2. Toggle monitoring off and on
-3. Restart TFM
+3. Restart XeFM
 4. Check system limits (Linux: `cat /proc/sys/fs/inotify/max_user_watches`)
 
 ### Increasing Watch Limits (Linux)
@@ -217,7 +217,7 @@ You might want to disable automatic monitoring if:
 - You prefer manual control over when the file list updates
 - You're working in a directory with constant high-frequency changes
 
-Disabling monitoring doesn't affect TFM's core functionality—file lists still update after your actions like navigating, copying, or deleting files.
+Disabling monitoring doesn't affect XeFM's core functionality—file lists still update after your actions like navigating, copying, or deleting files.
 
 ## Related Features
 
@@ -229,13 +229,13 @@ Disabling monitoring doesn't affect TFM's core functionality—file lists still 
 
 For developers and advanced users interested in implementation details, see:
 - `doc/dev/FILE_MONITORING_IMPLEMENTATION.md` - Architecture and implementation
-- `src/tfm_file_monitor_manager.py` - Main monitoring coordinator
-- `src/tfm_file_monitor_observer.py` - Per-directory monitoring
+- `xefm/file_monitor_manager.py` - Main monitoring coordinator
+- `xefm/file_monitor_observer.py` - Per-directory monitoring
 
 ## Feedback and Issues
 
 If you encounter issues with automatic file monitoring:
 1. Check the troubleshooting section above
-2. Review TFM logs for error messages
+2. Review XeFM logs for error messages
 3. Try disabling and re-enabling monitoring
 4. Report persistent issues with log excerpts and reproduction steps

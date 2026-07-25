@@ -1,6 +1,6 @@
 # Archives
 
-TFM works with archive files as a first-class feature: you can **create**
+XeFM works with archive files as a first-class feature: you can **create**
 archives from selected files, **extract** them, and **browse** their contents
 in place — navigating into an archive as if it were a regular directory, without
 unpacking it to disk first.
@@ -9,7 +9,7 @@ Supported formats: **ZIP** (`.zip`), **TAR** (`.tar`), and compressed TAR
 (`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`).
 
 For the complete list of key bindings, see the
-[TFM User Guide](TFM_USER_GUIDE.md) or press **?** in TFM.
+[XeFM User Guide](XEFM_USER_GUIDE.md) or press **?** in XeFM.
 
 ## Creating an archive
 
@@ -20,7 +20,7 @@ For the complete list of key bindings, see the
    e.g. `.zip` or `.tar.gz`) and confirm.
 
 The archive is created in the other pane. Directories are added recursively.
-TFM confirms before creating by default:
+XeFM confirms before creating by default:
 
 ```python
 CONFIRM_ARCHIVE_CREATE = False   # default: True
@@ -33,8 +33,8 @@ CONFIRM_ARCHIVE_CREATE = False   # default: True
 3. Confirm the destination.
 
 The archive is extracted into a subdirectory (named after the archive) in the
-other pane. If that directory already exists, TFM asks whether to overwrite,
-rename the extraction directory, or cancel. TFM confirms before extracting by
+other pane. If that directory already exists, XeFM asks whether to overwrite,
+rename the extraction directory, or cancel. XeFM confirms before extracting by
 default:
 
 ```python
@@ -70,7 +70,7 @@ deeper, then **Backspace** twice to return to the filesystem.
 
 ### Viewing files inside an archive
 
-Put the cursor on a file and press **V**. TFM extracts it to a temporary
+Put the cursor on a file and press **V**. XeFM extracts it to a temporary
 location, shows it in the built-in viewer (the title shows the full archive
 path), and cleans up the temporary file automatically when you close the viewer.
 
@@ -85,7 +85,7 @@ Copying is how you extract individual files or folders from a browsed archive.
 
 Selected files are extracted to the destination; a selected directory is
 extracted recursively with its full structure. The destination can be a local
-directory or S3 — TFM extracts and uploads directly. (Archive → archive is not
+directory or S3 — XeFM extracts and uploads directly. (Archive → archive is not
 supported, since archives are read-only.)
 
 ### File details
@@ -96,7 +96,7 @@ internal path within the archive.
 
 ### Sorting
 
-Sort the archive listing with the same quick-sort keys used everywhere in TFM:
+Sort the archive listing with the same quick-sort keys used everywhere in XeFM:
 
 | Key | Sort by |
 |-----|---------|
@@ -110,7 +110,7 @@ Directories are always listed first, regardless of sort mode.
 ### Searching inside an archive
 
 While browsing an archive, press **Shift-F** to open the filename search dialog.
-Enter a pattern (wildcards like `*.txt` work) and TFM lists matching files with
+Enter a pattern (wildcards like `*.txt` work) and XeFM lists matching files with
 their full paths inside the archive. Press **ENTER** on a result to jump to it.
 The search covers the current archive only, starting from your current location
 and descending recursively. Large archives show a progress indicator while the
@@ -118,26 +118,26 @@ search runs.
 
 ### Dual-pane and archives
 
-Archive browsing works with TFM's two panes: browse an archive in one pane while
+Archive browsing works with XeFM's two panes: browse an archive in one pane while
 a regular directory (or a different archive) is shown in the other, and copy
 files between them. **O** / **Shift-O** sync directories between panes and work
 with archives too.
 
 ## Password-protected archives
 
-TFM can extract and browse **password-protected ZIP** archives. When a password
-is needed, TFM prompts for it in a masked field — typed characters show as `•`,
+XeFM can extract and browse **password-protected ZIP** archives. When a password
+is needed, XeFM prompts for it in a masked field — typed characters show as `•`,
 and the value can't be copied or cut from the field.
 
 ### Extracting a password-protected ZIP
 
 1. Put the cursor on the encrypted `.zip` file and press **U** (Extract Archive).
 2. Confirm the destination as usual.
-3. TFM detects that the archive is encrypted and asks for its password.
+3. XeFM detects that the archive is encrypted and asks for its password.
 4. Enter the password and press **Enter**. The archive extracts into a
    subdirectory in the other pane.
 
-If the password is wrong, TFM says so and asks again — nothing is written to
+If the password is wrong, XeFM says so and asks again — nothing is written to
 disk until the password is confirmed correct, so a wrong password never leaves a
 half-extracted folder behind. Press **Esc** to cancel.
 
@@ -146,7 +146,7 @@ half-extracted folder behind. Press **Esc** to cancel.
 1. Press **ENTER** on the `.zip` file to browse it. The file list is readable
    without a password.
 2. Open a file inside it (**ENTER**, or **V** to view).
-3. TFM asks for the archive's password the first time you open a file from it.
+3. XeFM asks for the archive's password the first time you open a file from it.
 4. Enter the password. The file opens in the built-in viewer.
 
 The password is remembered for the rest of the session, so you're only asked
@@ -159,7 +159,7 @@ share the remembered password.
   `zip -e`, most OS "compress with password" tools, and many archivers) is fully
   supported.
 - **AES encryption** (WinZip AES / `7z -mem=AES256`) is **not** supported — the
-  Python runtime TFM builds on can't decrypt it. TFM detects this and shows a
+  Python runtime XeFM builds on can't decrypt it. XeFM detects this and shows a
   clear "AES-encrypted zips are not supported" message instead of a cryptic
   error.
 
@@ -172,7 +172,7 @@ archive as UTF-8 bytes (plain ASCII passwords always work).
 
 When you browse an archive in place, its contents are **read-only**. You can
 copy files out, view them, browse, and search — but you cannot delete, move, or
-copy files *into* a browsed archive; TFM shows an explanatory message if you
+copy files *into* a browsed archive; XeFM shows an explanatory message if you
 try. To change an archive's contents, extract it (**U**), edit the files, and
 create a new archive (**P**).
 
@@ -195,4 +195,4 @@ Other notes:
 ## See Also
 
 - [File Operations](FILE_OPERATIONS_FEATURE.md) — copy, move, and progress display
-- [TFM User Guide](TFM_USER_GUIDE.md) — complete documentation
+- [XeFM User Guide](XEFM_USER_GUIDE.md) — complete documentation

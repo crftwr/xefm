@@ -1,11 +1,11 @@
 """Test Shift+Space key binding for selecting and moving up.
 
-Run with: PYTHONPATH=.:src pytest test/test_shift_space_selection.py -v
+Run with: python -m pytest test/test_shift_space_selection.py -v
 """
 
 import pytest
 from pathlib import Path
-from tfm_file_list_manager import FileListManager
+from xefm.file_list_manager import FileListManager
 
 
 class MockConfig:

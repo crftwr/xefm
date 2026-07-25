@@ -13,9 +13,9 @@ from pathlib import Path
 import tempfile
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from tfm_ssh_connection import SSHConnection
+from xefm.ssh_connection import SSHConnection
 
 
 class TestSSHSocketPath(unittest.TestCase):
@@ -38,8 +38,8 @@ class TestSSHSocketPath(unittest.TestCase):
         home_dir = str(Path.home())
         self.assertIn(home_dir, conn._control_path)
         
-        # Verify it's in .tfm/ssh_sockets
-        self.assertIn('.tfm', conn._control_path)
+        # Verify it's in .xefm/ssh_sockets
+        self.assertIn('.xefm', conn._control_path)
         self.assertIn('ssh_sockets', conn._control_path)
     
     def test_socket_directory_created(self):
@@ -56,7 +56,7 @@ class TestSSHSocketPath(unittest.TestCase):
         self.assertTrue(socket_dir.is_dir())
         
         # Verify it's the expected directory
-        expected_dir = Path.home() / '.tfm' / 'ssh_sockets'
+        expected_dir = Path.home() / '.xefm' / 'ssh_sockets'
         self.assertEqual(socket_dir, expected_dir)
     
     def test_socket_path_format(self):
@@ -65,16 +65,16 @@ class TestSSHSocketPath(unittest.TestCase):
         config = {'HostName': 'test-host'}
         conn = SSHConnection('test-host', config)
         
-        # Verify path format: ~/.tfm/ssh_sockets/tfm-ssh-{hash}-{pid}
+        # Verify path format: ~/.xefm/ssh_sockets/xefm-ssh-{hash}-{pid}
         socket_path = Path(conn._control_path)
         
-        # Check filename starts with tfm-ssh-
-        self.assertTrue(socket_path.name.startswith('tfm-ssh-'))
+        # Check filename starts with xefm-ssh-
+        self.assertTrue(socket_path.name.startswith('xefm-ssh-'))
         
-        # Check format: tfm-ssh-{hash}-{pid}
+        # Check format: xefm-ssh-{hash}-{pid}
         parts = socket_path.name.split('-')
-        self.assertEqual(len(parts), 4)  # ['tfm', 'ssh', '{hash}', '{pid}']
-        self.assertEqual(parts[0], 'tfm')
+        self.assertEqual(len(parts), 4)  # ['xefm', 'ssh', '{hash}', '{pid}']
+        self.assertEqual(parts[0], 'xefm')
         self.assertEqual(parts[1], 'ssh')
         
         # Check hash is 8 characters (MD5 truncated)
@@ -133,7 +133,7 @@ class TestSSHSocketPath(unittest.TestCase):
         self.assertLess(len(conn._control_path), 104)
         
         # Verify hash keeps it short
-        # Format: tfm-ssh-{8-char-hash}-{pid}
+        # Format: xefm-ssh-{8-char-hash}-{pid}
         socket_name = Path(conn._control_path).name
         # PID can be up to 7 digits, so max length is: 8 + 8 + 7 + 2 = 25
         self.assertLess(len(socket_name), 30)

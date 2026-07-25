@@ -2,7 +2,7 @@
 """Tests for format_size utility function."""
 
 import pytest
-from tfm_str_format import format_size
+from xefm.str_format import format_size
 
 
 class TestFormatSize:

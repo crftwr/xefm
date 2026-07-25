@@ -1,9 +1,9 @@
 # Text Viewer
 
-TFM has a built-in text viewer for source code, config files, logs, and any
+XeFM has a built-in text viewer for source code, config files, logs, and any
 other UTF-8 (or Latin-1 / CP1252) text. Put the cursor on a file and press `V`
 (or `Enter` on a file with no other `enter` rule) to open it full-window,
-without leaving TFM. Binary files are detected and show a short placeholder
+without leaving XeFM. Binary files are detected and show a short placeholder
 instead of mojibake.
 
 For file types with a richer renderer — Markdown especially — the viewer can
@@ -66,7 +66,7 @@ line.
 
 Whether the copy reaches your **system** clipboard depends on the terminal
 supporting the OSC 52 clipboard escape (most modern terminals do). The copy
-always works for pasting back inside TFM regardless.
+always works for pasting back inside XeFM regardless.
 
 ### Rich copy from the Markdown view
 

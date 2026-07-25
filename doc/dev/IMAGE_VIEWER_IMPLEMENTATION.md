@@ -1,6 +1,6 @@
 # Image Viewer — Implementation
 
-The built-in image viewer (`src/tfm_image_viewer.py`) is the fourth full-window
+The built-in image viewer (`xefm/image_viewer.py`) is the fourth full-window
 modal viewer, after text / file diff / directory diff. This note covers the
 parts that are not obvious from the source: where zoom and pan actually happen,
 how a terminal ends up drawing pixels at all, and which pieces landed in PuiKit
@@ -19,8 +19,8 @@ Rendering is PuiKit's job (per `CLAUDE.md`), so the work divides:
 | PuiKit | `backends/_terminal_graphics.py` — kitty / iTerm2 / sixel |
 | PuiKit | `CursesBackend` phase-3 image emission; `images` capability |
 | PuiKit | `DrawContext.images` — lets a widget pick a richer fallback |
-| TFM | `tfm_image_viewer.py` — the modal, state, keys, chrome, navigation |
-| TFM | dispatch in `tfm.py`, bindings + associations in `_config.py` |
+| XeFM | `xefm/image_viewer.py` — the modal, state, keys, chrome, navigation |
+| XeFM | dispatch in `xefm/app.py`, bindings + associations in `_config.py` |
 
 ## Zoom and pan are geometry, not pixels
 
@@ -141,7 +141,7 @@ corner (`test_pan_at_an_edge_keeps_filling_the_client_area`).
 On a CRT / Pip-Boy theme the post-effect is a full-view Core Image content
 filter (see `MacOSBackend._apply_post_effect`), so it would tint the image and
 lay scanlines over it — the picture would not be shown faithfully. Per-region
-exemption is not feasible with a whole-layer filter, so `TfmApp._open_viewer`
+exemption is not feasible with a whole-layer filter, so `XeFMApp._open_viewer`
 **suspends** the effect (`set_post_effect(None)`) when it opens a picture and
 restores it on close through the viewer's `on_close` hook
 (`_restore_post_effect`). It is a no-op for themes without an effect and on
@@ -151,7 +151,7 @@ viewer is up and a plain save/restore is safe.
 
 ## Images in a terminal
 
-A character grid has no pixels, and TFM's curses backend has a hard **256
+A character grid has no pixels, and XeFM's curses backend has a hard **256
 color-pair ceiling** (`CursesBackend._color_pair`), so the half-block-mosaic
 approach is a non-starter: a 60×30 image region wants ~1800 distinct (fg, bg)
 pairs and would degrade to nearest-pair mush while starving the rest of the UI.
@@ -206,8 +206,8 @@ widget code renders pictures on curses and GUI alike.
 
 ### Escapes must reach the real terminal, not a redirected `sys.stdout`
 
-The first reason images never appeared in iTerm2: **TFM replaces `sys.stdout`**
-with a `LogCapture` shim (`tfm_log_manager`) that routes writes to its log pane
+The first reason images never appeared in iTerm2: **XeFM replaces `sys.stdout`**
+with a `LogCapture` shim (`xefm.log_manager`) that routes writes to its log pane
 and *never forwards them to the tty*. An image escape has no newline, so the
 shim's line-buffer holds it forever — the picture simply never renders (and the
 same swallowing hit kitty, sixel, OSC 52 clipboard, and OSC 22 pointer).
@@ -253,7 +253,7 @@ to the source (`test_sixel_round_trips_to_the_original_pixels`).
 
 ## Pillow
 
-Pillow is a **hard** dependency of the TFM viewer's picture rendering and an
+Pillow is a **hard** dependency of the XeFM viewer's picture rendering and an
 **optional** one for PuiKit:
 
 - It crops (`src`), scales to the target's pixel box, and re-encodes to the wire
@@ -281,11 +281,11 @@ there is no picture, and prev/next where there are no siblings.
 
 ## Navigation and the sibling list
 
-`TfmApp._open_viewer` filters the pane's `files` through `is_image_file` and
+`XeFMApp._open_viewer` filters the pane's `files` through `is_image_file` and
 hands the result plus the index to `show_image_viewer`. Two deliberate choices:
 
 - **`pane["files"]`, not a fresh listing.** It is already sorted and filtered by
-  `tfm_file_list_manager` — the single choke point — so the viewer walks exactly
+  `xefm.file_list_manager` — the single choke point — so the viewer walks exactly
   what the user sees, in their order.
 - **A snapshot, not a live reference.** The file monitor mutates `pane["files"]`
   in place on refresh, which would shift the index under an open viewer.
@@ -301,14 +301,14 @@ open the next file on an arbitrary corner of it.
 ## Non-local images
 
 `draw_image` and Pillow both take a filesystem path, which an S3 / SSH /
-in-archive `tfm_path.Path` does not have. `_resolve()` materializes those via
+in-archive `xefm.path.Path` does not have. `_resolve()` materializes those via
 `read_bytes()` into a temp file for the life of the viewer, released on
 navigation and on close. Failures are recorded in `_error` and shown on the card
 rather than raised — one corrupt file should not make a directory unbrowsable.
 
 ## Dispatch and config
 
-- `tfm.py` routes on `is_image_file` in `_open_viewer`, and the binary guard in
+- `xefm/app.py` routes on `is_image_file` in `_open_viewer`, and the binary guard in
   `_enter_file` now exempts images (they *are* binary, but there is finally
   something that renders them). That guard's comment had predicted this seam.
 - `_config.py` gains an `image_*` binding block. `-` and `_` intentionally share
@@ -338,11 +338,11 @@ On the PuiKit side, `tests/test_terminal_graphics.py` and the additions to
 and the sixel round-trip.
 
 ```bash
-PYTHONPATH=.:src pytest test/test_image_viewer.py -v
+python -m pytest test/test_image_viewer.py -v
 (cd ../puikit && pytest tests/test_terminal_graphics.py tests/test_image_widgets.py -v)
 ```
 
-Note that `test/test_image_viewer.py` binds `import tfm` at module scope. Both
+Note that `test/test_image_viewer.py` binds `import xefm` at module scope. Both
 the repo root and `test/` are packages, so once pytest prepends the repo's
-*parent* to `sys.path`, a later `import tfm` resolves to the repo directory's
-`__init__.py` instead of the `tfm.py` app entry.
+*parent* to `sys.path`, a later `import xefm` resolves to the repo directory's
+`__init__.py` instead of the `xefm/app.py` app entry.

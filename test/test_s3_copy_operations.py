@@ -1,14 +1,14 @@
 """
 Test S3 Copy Fix - Verify that copying from local filesystem to S3 works correctly
 
-Run with: PYTHONPATH=.:src pytest test/test_s3_copy_operations.py -v
+Run with: python -m pytest test/test_s3_copy_operations.py -v
 """
 
 import tempfile
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from tfm_path import Path
+from xefm.path import Path
 
 
 class TestS3CopyFix(unittest.TestCase):
@@ -28,7 +28,7 @@ class TestS3CopyFix(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_local_to_s3_copy(self, mock_boto3):
         """Test copying a local file to S3"""
         # Mock S3 client
@@ -59,7 +59,7 @@ class TestS3CopyFix(unittest.TestCase):
         except ImportError:
             self.skipTest("boto3 not available for S3 testing")
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_s3_to_local_copy(self, mock_boto3):
         """Test copying an S3 file to local filesystem"""
         # Mock S3 client and response
@@ -145,7 +145,7 @@ class TestS3CopyFix(unittest.TestCase):
 class TestS3CopyIntegration(unittest.TestCase):
     """Integration tests for S3 copy functionality"""
     
-    @patch('tfm_s3.boto3')
+    @patch('xefm.s3.boto3')
     def test_copy_method_exists(self, mock_boto3):
         """Test that the copy_to method exists and is callable"""
         # Mock boto3 to avoid import errors

@@ -1,10 +1,10 @@
 """
 Test color system migration to TTK
 
-Run with: PYTHONPATH=.:src pytest test/test_colors_ttk_migration.py -v
+Run with: python -m pytest test/test_colors_ttk_migration.py -v
 """
 
-from tfm_colors import (
+from xefm.colors import (
     init_colors,
     get_file_color,
     get_header_color,

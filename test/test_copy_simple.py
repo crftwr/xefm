@@ -1,12 +1,12 @@
 """
 Simple test for copy functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_copy_simple.py -v
+Run with: python -m pytest test/test_copy_simple.py -v
 """
 
 import tempfile
 
-from tfm_path import Path
+from xefm.path import Path
 
 def test_copy_method_exists():
     """Test that the copy_to method exists"""

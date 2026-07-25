@@ -10,13 +10,13 @@ Two new keymap actions, registered unbound (`[]`) in `_config.py`'s
 - `edit_config`
 - `reload_config`
 
-They are dispatched in `TfmApp.dispatch` (both `return False` — they render
+They are dispatched in `XeFMApp.dispatch` (both `return False` — they render
 themselves) and exposed as **Tools** menu items in `_build_menu`.
 
-## `TfmApp.edit_config()` — `tfm.py`
+## `XeFMApp.edit_config()` — `xefm/app.py`
 
 1. Resolves the config path from the shared `config_manager.config_file`
-   singleton (`~/.tfm/config.py`).
+   singleton (`~/.xefm/config.py`).
 2. If the file does not exist, creates it from the template via
    `config_manager.create_default_config()`; aborts (with a log message) if that
    fails.
@@ -24,15 +24,15 @@ themselves) and exposed as **Tools** menu items in `_build_menu`.
    `_run_in_terminal(...)` helper — the same `backend.suspended()` hand-off used
    by `edit_file` / `subshell`.
 4. On return, reloads **only in terminal mode**. Gated on `is_desktop_mode()`
-   (`tfm_backend_detector`): a terminal editor (e.g. `vim`) blocks until quit,
+   (`xefm.backend_detector`): a terminal editor (e.g. `vim`) blocks until quit,
    so reloading on return is correct; a GUI editor (e.g. VS Code, the desktop
    `TEXT_EDITOR` default) opens in its own window and `subprocess.run` returns
    immediately — before anything is saved — so an auto-reload would run against
    the unedited file. In GUI mode we instead log a hint to use
    Tools ▸ Reload Configuration and render. `is_desktop_mode()` reads the
-   `TFM_BACKEND` env var published by `main()`, so it's reliable at runtime.
+   `XEFM_BACKEND` env var published by `main()`, so it's reliable at runtime.
 
-## `TfmApp.reload_config()` — `tfm.py`
+## `XeFMApp.reload_config()` — `xefm/app.py`
 
 Best-effort live reload:
 
@@ -62,14 +62,14 @@ consumed **once at construction** — theme/colors and post effects (`panel.them
 apply on next launch. The reload log line states this explicitly rather than
 silently doing nothing.
 
-Module-level helpers in `tfm_config.py` (`get_program_for_file`,
+Module-level helpers in `xefm/config.py` (`get_program_for_file`,
 `get_favorite_directories`, `get_keys_for_action`, …) go through the
 `config_manager` singleton, which `reload_config()` updates, so they need no
 repointing.
 
 ## Tests
 
-`test/test_tfm_app_config_reload.py` (memory backend, `subprocess.run` mocked):
+`test/test_xefm_app_config_reload.py` (memory backend, `subprocess.run` mocked):
 
 - `edit_config` launches the editor on the config path; in terminal mode it
   reloads on return, in GUI mode (`is_desktop_mode` patched True) it does **not**

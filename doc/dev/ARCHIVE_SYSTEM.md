@@ -1,12 +1,12 @@
 # Archive System
 
-Canonical developer reference for TFM's archive support. Two independent paths:
+Canonical developer reference for XeFM's archive support. Two independent paths:
 
 - **Read / browse** — treat an archive as a virtual directory you can navigate,
-  view, and copy out of, without extracting. Implemented in `src/tfm_archive.py`
+  view, and copy out of, without extracting. Implemented in `xefm/archive.py`
   (`ArchivePathImpl` + handlers + cache), plugged into the `Path` abstraction.
 - **Create / extract** — build a new archive from a selection, or unpack one to a
-  directory. Implemented in `tfm.py` (the `TfmApp` create/extract methods), using
+  directory. Implemented in `xefm/app.py` (the `XeFMApp` create/extract methods), using
   the stdlib `zipfile` / `tarfile` modules directly.
 
 Source of truth is the code; this document summarizes structure and intent, not
@@ -16,7 +16,7 @@ every line.
 
 ## 1. Read / browse path (virtual directory)
 
-Browsing an archive works because `tfm_archive.py` implements the `PathImpl`
+Browsing an archive works because `xefm/archive.py` implements the `PathImpl`
 interface, so archive contents flow through the same `Path` machinery as local
 and S3 paths.
 
@@ -31,7 +31,7 @@ archive:///home/user/data.zip#folder/file.txt   (a file inside)
 ```
 
 The `#` separates the archive file path from the internal path. `Path()` detects
-the `archive://` scheme and constructs an `ArchivePathImpl` (`tfm_path.py`).
+the `archive://` scheme and constructs an `ArchivePathImpl` (`xefm/path.py`).
 
 ### ArchiveEntry
 
@@ -107,7 +107,7 @@ memoizes `name` / `parts`; a `_metadata['entry']` slot caches the resolved
 
 ### Navigation integration
 
-`tfm.py` handles entering an archive: when the cursor is on a recognized archive
+`xefm/app.py` handles entering an archive: when the cursor is on a recognized archive
 file and Enter is pressed, it remembers the cursor and sets the pane path to
 `Path(f"archive://{entry.absolute()}#")`. Because `ArchivePathImpl.parent` of the
 archive root is the archive file's containing directory, "up" exits the archive
@@ -132,13 +132,13 @@ Archives are never modified while open.
 
 ## 2. Create / extract path
 
-Creation and extraction are **not** in `tfm_archive.py` — they live on `TfmApp`
-in `tfm.py` and operate on local filesystem paths using the stdlib directly.
+Creation and extraction are **not** in `xefm/archive.py` — they live on `XeFMApp`
+in `xefm/app.py` and operate on local filesystem paths using the stdlib directly.
 There is no separate `ArchiveOperations`/`ArchiveUI` class.
 
 ### Format detection
 
-Class data on `TfmApp`:
+Class data on `XeFMApp`:
 
 - `_ARCHIVE_EXTS` — recognized extensions → format label, longest-suffix-first so
   `.tar.gz` wins over `.tar`. Covers `.zip`, `.tar`, `.tar.gz`/`.tgz`,
@@ -198,7 +198,7 @@ only legacy **ZipCrypto**; **WinZip AES** (compression method 99) cannot be
 decrypted and is detected and refused with a clear message. No third-party
 dependency (`pyzipper` etc.) is used.
 
-### Password registry (`tfm_archive.py`)
+### Password registry (`xefm/archive.py`)
 
 A module-level dict keyed by the archive file's absolute path, guarded by a lock,
 holding passwords for the session (in-memory only, nothing persisted):
@@ -231,7 +231,7 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
 - `try_archive_password(path, password)` — verify (UTF-8 encoded) and, on success,
   remember it; returns a bool.
 
-### Flows (`tfm.py`)
+### Flows (`xefm/app.py`)
 
 - **Extract** — `extract_archive` classifies the ZIP: `'aes'` stops with a
   message; `'zipcrypto'` prompts for a password; otherwise extracts directly. The
@@ -247,7 +247,7 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
 
 ### Masked input (PuiKit)
 
-The password prompt is a masked field. `src/tfm_input_dialog.py`'s
+The password prompt is a masked field. `xefm/input_dialog.py`'s
 `show_input(..., password=True)` forwards `mask="•"` to PuiKit's `TextEdit`, whose
 masking is length-preserving (cursor/selection/hit-test still map onto the real
 buffer) and disables copy/cut so plaintext never reaches the clipboard. The
@@ -258,7 +258,7 @@ widget itself lives in the PuiKit repo (`puikit/widgets/text_edit.py`).
 ## Configuration
 
 ```python
-# src/_config.py
+# xefm/_config.py
 ARCHIVE_CACHE_MAX_OPEN = 5      # max archives kept open by the browse cache
 ARCHIVE_CACHE_TTL      = 300    # cache TTL in seconds
 CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
@@ -275,14 +275,14 @@ CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
 - `test/test_archive_password.py` — classification, verification, the registry,
   the `ZipHandler` read path, and the gate helpers (hermetic base64 ZipCrypto
   fixture).
-- `test/test_tfm_app_archive_password.py` — `_extract_archive` and the extract UI
+- `test/test_xefm_app_archive_password.py` — `_extract_archive` and the extract UI
   flow (prompt, wrong-then-right retry, AES refusal, plain zip), and
   `_ensure_archive_password`.
 
 ## References
 
-- Read/browse: `src/tfm_archive.py`; `Path` factory in `src/tfm_path.py`.
-- Create/extract: `TfmApp` in `tfm.py`.
-- Similar virtual filesystem: `src/tfm_s3.py`.
+- Read/browse: `xefm/archive.py`; `Path` factory in `xefm/path.py`.
+- Create/extract: `XeFMApp` in `xefm/app.py`.
+- Similar virtual filesystem: `xefm/s3.py`.
 </content>
 </invoke>

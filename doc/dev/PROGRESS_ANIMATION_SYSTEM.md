@@ -1,9 +1,9 @@
 # Progress Animation System
 
-Module: `src/tfm_progress_animator.py`
+Module: `xefm/progress_animator.py`
 
 A small, generalized engine for animated progress indicators (spinners and
-progress-bar-style effects) used wherever TFM needs "something is happening"
+progress-bar-style effects) used wherever XeFM needs "something is happening"
 feedback — search, and, through `ProgressManager`, file operations. It is a pure
 frame generator: it computes which glyph to show based on elapsed time. Rendering
 and threading live in the callers.
@@ -64,7 +64,7 @@ Static builders:
 ## Usage
 
 ```python
-from tfm_progress_animator import ProgressAnimator, ProgressAnimatorFactory
+from xefm.progress_animator import ProgressAnimator, ProgressAnimatorFactory
 
 search_animator = ProgressAnimatorFactory.create_search_animator(config)
 status = search_animator.get_status_text("Searching", "42 found", is_active=True)
@@ -74,7 +74,7 @@ animator.set_pattern('wave')   # change at runtime
 animator.set_speed(0.1)
 ```
 
-`ProgressManager` (`src/tfm_progress_manager.py`) constructs its own
+`ProgressManager` (`xefm/progress_manager.py`) constructs its own
 `ProgressAnimator` with `pattern_override='spinner'`, `speed_override=0.08` and
 calls `get_current_frame()` while formatting operation status — see
 [Progress Manager System](PROGRESS_MANAGER_SYSTEM.md).

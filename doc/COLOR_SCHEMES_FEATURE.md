@@ -2,10 +2,10 @@
 
 ## Overview
 
-TFM ships a range of **themes** — palettes that look good in different terminal
+XeFM ships a range of **themes** — palettes that look good in different terminal
 environments, plus a few richer "screen" themes that pair a palette with a screen
 effect and a moving background on the GUI backend. You switch between them at run
-time; TFM remembers the last one you chose.
+time; XeFM remembers the last one you chose.
 
 This page covers the themes themselves, the animated backgrounds a theme can draw
 behind the panes, and the motion (dialogs, text effects, pane-focus cues) that a
@@ -14,7 +14,7 @@ of it.
 
 ## Available themes
 
-TFM starts on **Dark+** and includes a set of standard palettes:
+XeFM starts on **Dark+** and includes a set of standard palettes:
 
 - **Dark+** (default) — dark backgrounds with bright colored text; yellow
   directories, green executables. Easy on the eyes in low light.
@@ -25,7 +25,7 @@ TFM starts on **Dark+** and includes a set of standard palettes:
 
 ### Retro themes with screen effects
 
-Beyond the standard palettes, TFM ships four **screen** themes, each pairing a
+Beyond the standard palettes, XeFM ships four **screen** themes, each pairing a
 palette with a recommended *screen effect*:
 
 - **Sci-Fi** — a tactical-HUD look: soft cyan-white text on a deep navy, cool cyan
@@ -51,10 +51,10 @@ palette with a recommended *screen effect*:
 Select any of them from **View → Theme** or by cycling with `T`.
 
 The screen effect is composited over the whole frame and is only rendered by the
-**GUI backend** (`tfm.py --backend gui` on macOS/Windows) — a terminal shows the
+**GUI backend** (`python3 -m xefm --backend gui` on macOS/Windows) — a terminal shows the
 palette alone. The effect turns on when
 you switch to the theme and off when you switch away. You can add your own themes
-(with or without an effect) via the `THEMES` dict in `~/.tfm/config.py`; see
+(with or without an effect) via the `THEMES` dict in `~/.xefm/config.py`; see
 [Configuration](CONFIGURATION_FEATURE.md).
 
 ## What Gets Colored
@@ -71,15 +71,15 @@ Every theme changes:
 
 ### Switch Themes
 
-Press `T` to cycle through the available themes while TFM is running, or pick one
+Press `T` to cycle through the available themes while XeFM is running, or pick one
 directly from **View → Theme**. The change happens immediately.
 
 ### Default Theme
 
-TFM starts on the **Dark+** theme and remembers whichever theme you last switched
+XeFM starts on the **Dark+** theme and remembers whichever theme you last switched
 to (with `T`, or **View → Theme**) across restarts — there is no single
 default-scheme setting. To add or customize themes, use the `THEMES` dict in
-`~/.tfm/config.py` (see [Configuration](CONFIGURATION_FEATURE.md)).
+`~/.xefm/config.py` (see [Configuration](CONFIGURATION_FEATURE.md)).
 
 ### Change the Theme Key
 
@@ -94,7 +94,7 @@ KEY_BINDINGS = {
 
 ## Terminal Compatibility
 
-TFM automatically detects what your terminal supports:
+XeFM automatically detects what your terminal supports:
 
 - **Modern Terminals**: Get full 24-bit colors (millions of colors)
 - **Older Terminals**: Get basic 8 or 16 colors (still looks good)
@@ -113,7 +113,7 @@ the theme foreground and the backdrop from the theme background — so a scene s
 on-palette whichever theme (or custom palette) you use.
 
 > **GUI backend only.** Animations need real pixels. They are rendered by the
-> desktop backend (`tfm.py --backend gui` on macOS/Windows). In a terminal there
+> desktop backend (`python3 -m xefm --backend gui` on macOS/Windows). In a terminal there
 > are no sub-cell pixels to draw into, so the setting is silently ignored and you
 > simply get the theme's plain background colour.
 
@@ -136,10 +136,10 @@ reference scene for the rendering path rather than as a finished look.
 
 Every scene is a **GPU shader**, computed for each pixel on the graphics card.
 That is what lets them be dense, use real colour gradients rather than a single
-flat line colour, and cost almost nothing while TFM sits idle — the graphics card
-advances the scene behind the UI without TFM having to redraw the interface.
+flat line colour, and cost almost nothing while XeFM sits idle — the graphics card
+advances the scene behind the UI without XeFM having to redraw the interface.
 
-They need **desktop mode** (`tfm.py --backend gui`), on macOS or Windows. In a
+They need **desktop mode** (`python3 -m xefm --backend gui`), on macOS or Windows. In a
 terminal there are no pixels to draw into, so the `animation` key is ignored and
 you get the plain theme background. The same is true on the rare desktop setup
 with no usable GPU shader support.
@@ -151,7 +151,7 @@ the starfield, **Cyber** with the hologram and **Shinagawa** with the wave; sele
 one from **View → Theme** or cycle themes with `T`.
 
 To use one in your own theme, add an `animation` key to a theme in the `THEMES`
-dict in `~/.tfm/config.py`:
+dict in `~/.xefm/config.py`:
 
 ```python
 THEMES = {
@@ -182,18 +182,18 @@ make the interface unreadable.
 An animation that ran forever would keep your machine busy — and drain the
 battery — while you were reading something else. So it doesn't:
 
-- After about 15 seconds without input, or as soon as TFM loses focus, the
+- After about 15 seconds without input, or as soon as XeFM loses focus, the
   animation **very gradually slows to a stop**, taking a further 40 seconds or so
   to wind down. The slowing is deliberately too gentle to notice — an abrupt halt
   would catch the eye as much as the movement does.
 - The scene stays on screen, frozen, rather than disappearing.
 - The moment you press a key or move the mouse, it **eases back up to speed**.
-- It resumes from exactly where it stopped. Leave TFM alone for an hour and the
+- It resumes from exactly where it stopped. Leave XeFM alone for an hour and the
   wave picks up where you left it, instead of jumping to wherever it "would have"
   been.
 
 There is nothing to configure and no interruption to what you're doing — while
-parked, TFM uses no more power than it would with a plain background.
+parked, XeFM uses no more power than it would with a plain background.
 
 #### Tuning speed and strength
 
@@ -206,7 +206,7 @@ Give `animation` a dict instead of a name to adjust it:
 | Key | Meaning |
 |-----|---------|
 | `type` | Which animation (see the table above). |
-| `speed` | Motion-rate multiplier. `1.0` is the tuned look; TFM's default is `0.6`. `0` freezes the scene. |
+| `speed` | Motion-rate multiplier. `1.0` is the tuned look; XeFM's default is `0.6`. `0` freezes the scene. |
 | `opacity` | How strongly the scene itself is drawn, 0–1. Not to be confused with the theme-level `opacity`, which is about the UI on top of it. |
 | `color` | The colour the scene is built on, if you want something other than the theme foreground. Scenes anchor their own colouring on it rather than using it flat, so a scene with a gradient shifts with it instead of losing the gradient. |
 
@@ -223,7 +223,7 @@ both `wallpaper` and `animation` uses the wallpaper.
 
 ## Motion & text effects
 
-TFM animates a few things on a GUI backend — dialogs arriving, the Sci-Fi theme's
+XeFM animates a few things on a GUI backend — dialogs arriving, the Sci-Fi theme's
 starfield drifting behind the UI — and marks which file pane has focus. This
 section covers what you see and how to change it.
 
@@ -324,7 +324,7 @@ Sci-Fi theme turns them on by default:
 - **Corner brackets** frame the focused pane (GUI only — see below).
 - The **resting pane's text recedes** slightly toward the pane background.
 
-Filenames in the resting pane stay readable: the wash is applied before TFM's
+Filenames in the resting pane stay readable: the wash is applied before XeFM's
 legibility pass, which lifts any color pushed under the contrast floor back over
 it. A theme cannot configure its resting pane into illegibility.
 
@@ -386,11 +386,11 @@ full screen repaint.
 ### Colors Don't Change When Pressing 'T'
 - Make sure your terminal supports colors
 - Check that colors are enabled in your configuration
-- Try restarting TFM
+- Try restarting XeFM
 
 ### Colors Look Wrong
 - Your terminal might not support full RGB colors (this is normal)
-- TFM automatically uses simpler colors that work in your terminal
+- XeFM automatically uses simpler colors that work in your terminal
 - Try a different terminal if you want more colors
 
 ### Colors Are Too Bright/Dark
@@ -408,13 +408,13 @@ full screen repaint.
 
 ## Getting More Information
 
-- **In TFM**: Press `?` for help, which lists the `T` key
-- **Log messages**: TFM shows what type of colors your terminal supports
+- **In XeFM**: Press `?` for help, which lists the `T` key
+- **Log messages**: XeFM shows what type of colors your terminal supports
 
-The theme feature makes TFM look good in any terminal environment!
+The theme feature makes XeFM look good in any terminal environment!
 
 ## See also
 
-- [Configuration](CONFIGURATION_FEATURE.md) — where `~/.tfm/config.py` lives and how themes are defined
+- [Configuration](CONFIGURATION_FEATURE.md) — where `~/.xefm/config.py` lives and how themes are defined
 - [Desktop Mode Guide](DESKTOP_MODE_GUIDE.md) — running the GUI backend that renders effects and animated backgrounds
 - [Developer notes](dev/BACKGROUND_ANIMATIONS_IMPLEMENTATION.md) — how an animated scene is defined and how to add one

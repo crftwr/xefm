@@ -1,10 +1,10 @@
-# TFM Project Structure
+# XeFM Project Structure
 
 ## Overview
 
-TFM (Terminal File Manager) is organized so that the file-manager application,
+XeFM (Terminal File Manager) is organized so that the file-manager application,
 its tests, and its documentation stay cleanly separated. Since the **PuiKit
-port**, the rendering/UI toolkit is no longer vendored in this repo — TFM depends
+port**, the rendering/UI toolkit is no longer vendored in this repo — XeFM depends
 on the external [PuiKit](https://github.com/crftwr/puikit) framework, and the old
 in-repo `ttk` toolkit (plus the UI modules bound to it) was removed after the
 port (preserved in git history).
@@ -12,9 +12,12 @@ port (preserved in git history).
 ## Directory Structure
 
 ```
-tfm/
-├── tfm.py                  # The application: FileManager + top-level UI (runs on PuiKit)
-├── src/                    # TFM modules imported by tfm.py (tfm_*.py)
+xefm/
+├── xefm/                   # The `xefm` package — everything the app ships
+│   ├── app.py              # The application: XeFMApp + top-level UI (runs on PuiKit)
+│   ├── __main__.py         # `python -m xefm` entry point
+│   ├── tools/              # End-user external programs (shipped as package data)
+│   └── *.py                # Business logic, imported as `xefm.<module>`
 ├── test/                   # Unit / integration tests (test_*.py), run with pytest
 ├── doc/                    # End-user docs (*_FEATURE.md, guides)
 │   └── dev/                # Developer docs (*_IMPLEMENTATION.md, *_SYSTEM.md, plans)
@@ -22,8 +25,7 @@ tfm/
 ├── macos_app/              # macOS .app packaging (see MACOS_APP_BUILD_SYSTEM.md)
 ├── windows_app/            # Windows packaging (see WINDOWS_APP_BUILD_SYSTEM.md)
 ├── temp/                   # Throwaway work-in-progress files
-├── .kiro/                  # Historical Kiro design specs (reference, not authoritative)
-├── setup.py                # Package setup for pip installation
+├── pyproject.toml          # Packaging metadata (flat layout, `xefm` console script)
 ├── Makefile                # Build automation (run, test, venv, install-puikit, macos-app, ...)
 ├── requirements.txt        # Python dependencies
 └── README.md               # Project overview and user guide
@@ -33,74 +35,74 @@ PuiKit itself lives in its **own repository** (`../puikit`) and is installed
 editable into `.venv/` via `make install-puikit` (`PUIKIT_DIR ?= ../puikit`). It
 is not part of this tree.
 
-## Application (`tfm.py` + `src/`)
+## Application (`xefm/`)
 
-The application entry point and the top-level UI (the `FileManager` shell, the
-dual `FilePane` layout, menus, and the main loop) live in **`tfm.py`** at the
-repo root. It imports PuiKit (`from puikit import ...`) and the `tfm_*` modules
-in `src/`. The `src/` modules, grouped by concern:
+The application entry point and the top-level UI (the `XeFMApp` shell, the
+dual `FilePane` layout, menus, and the main loop) live in **`xefm/app.py`**.
+It imports PuiKit (`from puikit import ...`) and its sibling modules
+(`from xefm.config import ...`). Those siblings, grouped by concern:
 
 ### Configuration & appearance
-- **`tfm_config.py`** — configuration system and user settings
-- **`tfm_const.py`** — application constants and key definitions
-- **`_config.py`** — default user-config template (copied to `~/.tfm/config.py`)
-- **`tfm_colors.py`** — color schemes and theme colors
+- **`xefm/config.py`** — configuration system and user settings
+- **`xefm/const.py`** — application constants and key definitions
+- **`xefm/_config.py`** — default user-config template (copied to `~/.xefm/config.py`)
+- **`xefm/colors.py`** — color schemes and theme colors
 
 ### Path & storage system
-- **`tfm_path.py`** — extended `Path` supporting local, S3, and SSH/SFTP paths
-- **`tfm_s3.py`** — AWS S3 integration with pathlib compatibility
-- **`tfm_ssh.py`**, **`tfm_ssh_connection.py`**, **`tfm_ssh_config.py`**, **`tfm_ssh_cache.py`** — SSH/SFTP backend and connection/config caching
-- **`tfm_archive.py`** — archive creation/extraction and archive virtual directories
+- **`xefm/path.py`** — extended `Path` supporting local, S3, and SSH/SFTP paths
+- **`xefm/s3.py`** — AWS S3 integration with pathlib compatibility
+- **`xefm/ssh.py`**, **`xefm/ssh_connection.py`**, **`xefm/ssh_config.py`**, **`xefm/ssh_cache.py`** — SSH/SFTP backend and connection/config caching
+- **`xefm/archive.py`** — archive creation/extraction and archive virtual directories
 
 ### Panes & file listing
-- **`tfm_file_pane.py`** — a single file pane widget (PuiKit `Widget`)
-- **`tfm_pane_manager.py`** — dual-pane management and navigation
-- **`tfm_file_list_manager.py`** — directory listing, sorting, filtering
+- **`xefm/file_pane.py`** — a single file pane widget (PuiKit `Widget`)
+- **`xefm/pane_manager.py`** — dual-pane management and navigation
+- **`xefm/file_list_manager.py`** — directory listing, sorting, filtering
 
 ### File operations, tasks & progress
-- **`tfm_file_operations.py`** — copy / move / delete / rename operations
-- **`tfm_task.py`** — central `Task` / `TaskManager` and worker for threaded operations
-- **`tfm_progress_manager.py`** — progress tracking for long operations
-- **`tfm_progress_animator.py`** — configurable progress animation
+- **`xefm/file_operations.py`** — copy / move / delete / rename operations
+- **`xefm/task.py`** — central `Task` / `TaskManager` and worker for threaded operations
+- **`xefm/progress_manager.py`** — progress tracking for long operations
+- **`xefm/progress_animator.py`** — configurable progress animation
 
 ### File monitoring
-- **`tfm_file_monitor_manager.py`**, **`tfm_file_monitor_observer.py`** — watchdog-based auto-reload of directory listings
+- **`xefm/file_monitor_manager.py`**, **`xefm/file_monitor_observer.py`** — watchdog-based auto-reload of directory listings
 
 ### Dialogs & bars
-- **`tfm_input_dialog.py`** — single-line input (rename / mkdir / create)
-- **`tfm_text_dialog.py`** — scrollable text / message dialogs
-- **`tfm_filter_list_dialog.py`** — searchable list picker (favorites / drives / programs / jump)
-- **`tfm_batch_rename_dialog.py`** — batch rename with regex
-- **`tfm_progressive_search_dialog.py`** — filename / content search dialog
-- **`tfm_isearch_bar.py`** — incremental-search bar
-- **`tfm_compare_dialog.py`**, **`tfm_compare_selection.py`** — compare-and-select
-- **`tfm_dialog_geometry.py`** — shared dialog sizing/anchoring helpers
+- **`xefm/input_dialog.py`** — single-line input (rename / mkdir / create)
+- **`xefm/text_dialog.py`** — scrollable text / message dialogs
+- **`xefm/filter_list_dialog.py`** — searchable list picker (favorites / drives / programs / jump)
+- **`xefm/batch_rename_dialog.py`** — batch rename with regex
+- **`xefm/progressive_search_dialog.py`** — filename / content search dialog
+- **`xefm/isearch_bar.py`** — incremental-search bar
+- **`xefm/compare_dialog.py`**, **`xefm/compare_selection.py`** — compare-and-select
+- **`xefm/dialog_geometry.py`** — shared dialog sizing/anchoring helpers
 
 ### Viewers
-- **`tfm_text_viewer.py`** — text viewer with pygments highlighting and isearch
-- **`tfm_diff_viewer.py`** — file diff viewer
-- **`tfm_directory_diff_viewer.py`** — directory diff viewer
-- **`tfm_text_layout.py`** — text measurement / wrapping / layout helpers
+- **`xefm/text_viewer.py`** — text viewer with pygments highlighting and isearch
+- **`xefm/diff_viewer.py`** — file diff viewer
+- **`xefm/directory_diff_viewer.py`** — directory diff viewer
+- **`xefm/text_layout.py`** — text measurement / wrapping / layout helpers
 
 ### Logging
-- **`tfm_log_manager.py`** — unified logger (`getLogger`) with in-app log pane
-- **`tfm_logging_handlers.py`** — logging handlers (in-app log pane, remote)
+- **`xefm/log_manager.py`** — unified logger (`getLogger`) with in-app log pane
+- **`xefm/logging_handlers.py`** — logging handlers (in-app log pane, remote)
 
 ### Backend, state & misc
-- **`tfm_backend_detector.py`** — selects the PuiKit backend (terminal vs. native)
-- **`tfm_state_manager.py`** — application state persistence and restoration
-- **`tfm_str_format.py`** — string / size / date formatting helpers
-- **`src/tools/`** — end-user-facing external programs (preview, diff wrappers, ...)
+- **`xefm/backend_detector.py`** — selects the PuiKit backend (terminal vs. native)
+- **`xefm/state_manager.py`** — application state persistence and restoration
+- **`xefm/str_format.py`** — string / size / date formatting helpers
+- **`xefm/tools/`** — end-user-facing external programs (preview, diff wrappers, ...)
 
 ## Tests (`test/`)
 
 Unit and integration tests, discovered by pytest as `test_*.py`. Run them with
-`src` (and the repo root, for the few tests that `import tfm`) on the path;
+`src` (and the repo root, for the few tests that `import xefm`) on the path;
 PuiKit is resolved through its editable install:
 
 ```bash
-PYTHONPATH=.:src pytest test/                       # all
-PYTHONPATH=.:src pytest test/test_tfm_path.py -v    # one file
+python -m pytest test/                       # all
+python -m pytest test/test_xefm_path.py -v    # one file
 ```
 
 `make test` runs the suite; `make test-quick` runs a fast subset. Interactive
@@ -115,13 +117,13 @@ should not be launched non-interactively (they block).
 
 ## Entry Points
 
-- **`python tfm.py`** / **`make run`** — launch the file manager
-- **`tfm`** console script — created on `pip install` (see `setup.py`)
+- **`python -m xefm`** / **`make run`** — launch the file manager
+- **`xefm`** console script — created on `pip install` (see `setup.py`)
 
 ## Build System (Makefile targets)
 
 - `make venv` / `make install-puikit` — create the venv and install PuiKit editable from `../puikit`
-- `make run` / `make run-gui` — run TFM (terminal / native)
+- `make run` / `make run-gui` — run XeFM (terminal / native)
 - `make test` / `make test-quick` — run tests
 - `make macos-app` / `make windows-app` — build platform packages
 - `make clean` — clean temporary artifacts
@@ -139,5 +141,5 @@ should not be launched non-interactively (they block).
 
 ## Configuration
 
-- User config at `~/.tfm/config.py`, created from `src/_config.py`
-- Defaults / constants / colors in `src/tfm_config.py`, `src/tfm_const.py`, `src/tfm_colors.py`
+- User config at `~/.xefm/config.py`, created from `xefm/_config.py`
+- Defaults / constants / colors in `xefm/config.py`, `xefm/const.py`, `xefm/colors.py`

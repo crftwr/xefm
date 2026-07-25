@@ -1,4 +1,4 @@
-"""Unit tests for the reusable TAB-completion engine (``tfm_completion``).
+"""Unit tests for the reusable TAB-completion engine (``xefm.completion``).
 
 Covers the three pieces independently of any UI: the longest-common-prefix
 helper, the filesystem ``FilepathCompleter`` (against a real temp tree), and the
@@ -11,12 +11,11 @@ import sys
 import pytest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "src"))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from puikit.widgets.text_edit import TextEdit  # noqa: E402
 
-from tfm_completion import (  # noqa: E402
+from xefm.completion import (  # noqa: E402
     CompletionController,
     FilepathCompleter,
     calculate_common_prefix,

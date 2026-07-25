@@ -2,13 +2,13 @@
 
 ## Overview
 
-The Subshell System allows users to temporarily suspend the TFM interface and enter a shell environment with pre-configured environment variables that provide access to the current state of both file panes and selected files. The system includes intelligent remote directory fallback for seamless operation with both local and remote storage.
+The Subshell System allows users to temporarily suspend the XeFM interface and enter a shell environment with pre-configured environment variables that provide access to the current state of both file panes and selected files. The system includes intelligent remote directory fallback for seamless operation with both local and remote storage.
 
 ## Core Features
 
 ### ✅ **Shell Environment Access**
-- **Temporary suspension** of TFM interface for shell operations
-- **Pre-configured environment variables** with current TFM state
+- **Temporary suspension** of XeFM interface for shell operations
+- **Pre-configured environment variables** with current XeFM state
 - **Automatic shell detection** using user's preferred shell
 - **Working directory management** with remote fallback support
 
@@ -27,8 +27,8 @@ The Subshell System allows users to temporarily suspend the TFM interface and en
 ## Activation
 
 - **Key binding**: `x` or `X`
-- **Action**: Suspends TFM curses interface and starts a new shell session
-- **Visual indicator**: Shell prompt includes `[TFM]` label for easy identification
+- **Action**: Suspends XeFM curses interface and starts a new shell session
+- **Visual indicator**: Shell prompt includes `[XeFM]` label for easy identification
 - **Working directory**: Automatically set to appropriate directory (with remote fallback)
 
 ## Environment Variables
@@ -36,32 +36,32 @@ The Subshell System allows users to temporarily suspend the TFM interface and en
 When entering subshell mode, the following environment variables are automatically set:
 
 ### Directory Variables
-- `TFM_LEFT_DIR`: Absolute path of the left file pane directory
-- `TFM_RIGHT_DIR`: Absolute path of the right file pane directory  
-- `TFM_THIS_DIR`: Absolute path of the currently focused pane directory
-- `TFM_OTHER_DIR`: Absolute path of the non-focused pane directory
+- `XEFM_LEFT_DIR`: Absolute path of the left file pane directory
+- `XEFM_RIGHT_DIR`: Absolute path of the right file pane directory  
+- `XEFM_THIS_DIR`: Absolute path of the currently focused pane directory
+- `XEFM_OTHER_DIR`: Absolute path of the non-focused pane directory
 
 ### Selected Files Variables
-- `TFM_LEFT_SELECTED`: Space-separated list of shell-quoted file names in the left pane
-- `TFM_RIGHT_SELECTED`: Space-separated list of shell-quoted file names in the right pane
-- `TFM_THIS_SELECTED`: Space-separated list of shell-quoted file names in the focused pane
-- `TFM_OTHER_SELECTED`: Space-separated list of shell-quoted file names in the non-focused pane
+- `XEFM_LEFT_SELECTED`: Space-separated list of shell-quoted file names in the left pane
+- `XEFM_RIGHT_SELECTED`: Space-separated list of shell-quoted file names in the right pane
+- `XEFM_THIS_SELECTED`: Space-separated list of shell-quoted file names in the focused pane
+- `XEFM_OTHER_SELECTED`: Space-separated list of shell-quoted file names in the non-focused pane
 
 ### Control Variables
-- `TFM_ACTIVE`: Set to `"1"` when in TFM sub-shell mode (used for shell prompt customization)
+- `XEFM_ACTIVE`: Set to `"1"` when in XeFM sub-shell mode (used for shell prompt customization)
 
 ### Selection Behavior
 
-The selected files variables (`TFM_*_SELECTED`) follow this logic:
+The selected files variables (`XEFM_*_SELECTED`) follow this logic:
 
 1. **If files are explicitly selected**: Contains the names of all selected files
 2. **If no files are selected**: Contains the name of the file at the current cursor position
 3. **If directory is empty**: Contains an empty string
 
 **Example scenarios:**
-- **Multiple files selected**: `TFM_THIS_SELECTED="file1.txt file2.py 'file with spaces.md'"`
-- **No selection, cursor on file**: `TFM_THIS_SELECTED="'current file.txt'"`
-- **Empty directory**: `TFM_THIS_SELECTED=""`
+- **Multiple files selected**: `XEFM_THIS_SELECTED="file1.txt file2.py 'file with spaces.md'"`
+- **No selection, cursor on file**: `XEFM_THIS_SELECTED="'current file.txt'"`
+- **Empty directory**: `XEFM_THIS_SELECTED=""`
 
 ## Remote Directory Fallback
 
@@ -79,9 +79,9 @@ The system implements intelligent working directory selection:
 #### Local Directories
 ```bash
 # Normal behavior - uses pane directory
-TFM Sub-shell Mode
+XeFM Sub-shell Mode
 ==================================================
-TFM_THIS_DIR:      /home/user/documents
+XEFM_THIS_DIR:      /home/user/documents
 Working Directory: /home/user/documents
 ==================================================
 ```
@@ -89,13 +89,13 @@ Working Directory: /home/user/documents
 #### Remote Directories
 ```bash
 # Fallback behavior with user notification
-TFM Sub-shell Mode
+XeFM Sub-shell Mode
 ==================================================
-TFM_THIS_DIR:      s3://my-bucket/folder/
-Working Directory: /home/user/tfm
+XEFM_THIS_DIR:      s3://my-bucket/folder/
+Working Directory: /home/user/xefm
 ==================================================
 Note: Current pane is browsing remote directory: s3://my-bucket/folder/
-Subshell working directory set to TFM's directory: /home/user/tfm
+Subshell working directory set to XeFM's directory: /home/user/xefm
 ```
 
 ### Implementation Logic
@@ -103,9 +103,9 @@ Subshell working directory set to TFM's directory: /home/user/tfm
 ```python
 # Determine working directory for subshell
 if current_pane['path'].is_remote():
-    working_dir = os.getcwd()  # TFM's working directory
+    working_dir = os.getcwd()  # XeFM's working directory
     print(f"Note: Current pane is browsing remote directory: {current_pane['path']}")
-    print(f"Working directory set to TFM's directory: {working_dir}")
+    print(f"Working directory set to XeFM's directory: {working_dir}")
 else:
     working_dir = str(current_pane['path'])  # Use pane directory normally
 
@@ -117,7 +117,7 @@ os.chdir(working_dir)
 
 ### Automatic Shell Quoting
 
-TFM automatically quotes all filenames using shell-safe quoting (via Python's `shlex.quote()`):
+XeFM automatically quotes all filenames using shell-safe quoting (via Python's `shlex.quote()`):
 
 - **Filenames with spaces** are quoted: `'My Document.txt'`
 - **Filenames with special characters** are escaped: `'file$with&special.txt'`
@@ -127,20 +127,20 @@ TFM automatically quotes all filenames using shell-safe quoting (via Python's `s
 
 ```bash
 # ✅ Works directly with any filenames, including spaces and special characters
-cd "$TFM_THIS_DIR"
-ls -la $TFM_THIS_SELECTED
-cp $TFM_THIS_SELECTED "$TFM_OTHER_DIR/"
-tar -czf backup.tar.gz $TFM_THIS_SELECTED
+cd "$XEFM_THIS_DIR"
+ls -la $XEFM_THIS_SELECTED
+cp $XEFM_THIS_SELECTED "$XEFM_OTHER_DIR/"
+tar -czf backup.tar.gz $XEFM_THIS_SELECTED
 ```
 
 ### Examples of Automatic Quoting
 
 ```bash
 # If you have files: "My Document.txt", "file with spaces.py", "normal.txt"
-# TFM_THIS_SELECTED becomes: 'My Document.txt' 'file with spaces.py' normal.txt
+# XEFM_THIS_SELECTED becomes: 'My Document.txt' 'file with spaces.py' normal.txt
 
 # This now works perfectly:
-ls -la $TFM_THIS_SELECTED
+ls -la $XEFM_THIS_SELECTED
 # Expands to: ls -la 'My Document.txt' 'file with spaces.py' normal.txt
 ```
 
@@ -150,83 +150,83 @@ ls -la $TFM_THIS_SELECTED
 
 ```bash
 # List files in both panes
-ls -la "$TFM_LEFT_DIR" "$TFM_RIGHT_DIR"
+ls -la "$XEFM_LEFT_DIR" "$XEFM_RIGHT_DIR"
 
 # Compare directory sizes
-du -sh "$TFM_LEFT_DIR" "$TFM_RIGHT_DIR"
+du -sh "$XEFM_LEFT_DIR" "$XEFM_RIGHT_DIR"
 
 # Find files in both directories
-find "$TFM_LEFT_DIR" "$TFM_RIGHT_DIR" -name "*.py"
+find "$XEFM_LEFT_DIR" "$XEFM_RIGHT_DIR" -name "*.py"
 
 # List selected files directly (works with spaces!)
-ls -la $TFM_THIS_SELECTED
+ls -la $XEFM_THIS_SELECTED
 ```
 
 ### Working with Selected Files
 
 ```bash
 # ✅ List selected files (works with spaces and special characters!)
-cd "$TFM_THIS_DIR"
-ls -la $TFM_THIS_SELECTED
+cd "$XEFM_THIS_DIR"
+ls -la $XEFM_THIS_SELECTED
 
 # ✅ Copy selected files to other pane
-cd "$TFM_THIS_DIR"
-cp $TFM_THIS_SELECTED "$TFM_OTHER_DIR/"
+cd "$XEFM_THIS_DIR"
+cp $XEFM_THIS_SELECTED "$XEFM_OTHER_DIR/"
 
 # ✅ Archive selected files
-cd "$TFM_THIS_DIR"
-tar -czf selected_files.tar.gz $TFM_THIS_SELECTED
+cd "$XEFM_THIS_DIR"
+tar -czf selected_files.tar.gz $XEFM_THIS_SELECTED
 
 # ✅ Show file information
-cd "$TFM_THIS_DIR"
-file $TFM_THIS_SELECTED
+cd "$XEFM_THIS_DIR"
+file $XEFM_THIS_SELECTED
 
 # ✅ Process files with any command
-cd "$TFM_THIS_DIR"
-wc -l $TFM_THIS_SELECTED  # Count lines in selected files
+cd "$XEFM_THIS_DIR"
+wc -l $XEFM_THIS_SELECTED  # Count lines in selected files
 ```
 
 ### Remote Directory Operations
 
 #### S3 File Management
 ```bash
-# While browsing s3://my-bucket/logs/ in TFM
-$ aws s3 ls $TFM_THIS_DIR
-$ aws s3 cp $TFM_THIS_DIR/error.log .
-$ aws s3 sync $TFM_THIS_DIR ./backup/
+# While browsing s3://my-bucket/logs/ in XeFM
+$ aws s3 ls $XEFM_THIS_DIR
+$ aws s3 cp $XEFM_THIS_DIR/error.log .
+$ aws s3 sync $XEFM_THIS_DIR ./backup/
 ```
 
 #### Remote Development Workflow
 ```bash
 # While browsing s3://code-bucket/projects/
 $ git clone https://github.com/user/repo.git
-$ aws s3 cp $TFM_THIS_DIR/config.json ./repo/
+$ aws s3 cp $XEFM_THIS_DIR/config.json ./repo/
 $ cd repo && make build
 ```
 
 #### Data Processing
 ```bash
 # While browsing s3://data-bucket/datasets/
-$ python analyze.py --input $TFM_THIS_DIR
-$ aws s3 cp results.csv $TFM_THIS_DIR/processed/
+$ python analyze.py --input $XEFM_THIS_DIR
+$ aws s3 cp results.csv $XEFM_THIS_DIR/processed/
 ```
 
 ### Advanced Operations
 
 ```bash
 # Sync directories (copy newer files)
-rsync -av "$TFM_THIS_DIR/" "$TFM_OTHER_DIR/"
+rsync -av "$XEFM_THIS_DIR/" "$XEFM_OTHER_DIR/"
 
 # Compare selected files between panes
-for file in $TFM_THIS_SELECTED; do
-    if [ -f "$TFM_OTHER_DIR/$file" ]; then
-        diff "$TFM_THIS_DIR/$file" "$TFM_OTHER_DIR/$file"
+for file in $XEFM_THIS_SELECTED; do
+    if [ -f "$XEFM_OTHER_DIR/$file" ]; then
+        diff "$XEFM_THIS_DIR/$file" "$XEFM_OTHER_DIR/$file"
     fi
 done
 
 # Batch rename selected files
-for file in $TFM_THIS_SELECTED; do
-    mv "$TFM_THIS_DIR/$file" "$TFM_THIS_DIR/backup_$file"
+for file in $XEFM_THIS_SELECTED; do
+    mv "$XEFM_THIS_DIR/$file" "$XEFM_THIS_DIR/backup_$file"
 done
 ```
 
@@ -234,10 +234,10 @@ done
 
 ```bash
 # For more complex per-file operations, you can still use loops
-for file in $TFM_THIS_SELECTED; do
+for file in $XEFM_THIS_SELECTED; do
     echo "Processing: $file"  # $file is already properly quoted
     # Use the quoted filename directly
-    cp "$TFM_THIS_DIR"/$file "$TFM_OTHER_DIR"/
+    cp "$XEFM_THIS_DIR"/$file "$XEFM_OTHER_DIR"/
 done
 ```
 
@@ -250,23 +250,23 @@ done
 
 ### Working Directory Management
 - **Local directories**: Working directory set to the currently focused pane's directory
-- **Remote directories**: Working directory set to TFM's working directory with user notification
+- **Remote directories**: Working directory set to XeFM's working directory with user notification
 - **Environment variables**: Always contain actual pane paths regardless of working directory
 
 ## Shell Prompt Customization
 
 ### Why Manual Configuration is Needed
 
-Shell configuration files (like `.zshrc` and `.bashrc`) are loaded after TFM sets environment variables, which overwrites any prompt modifications TFM makes. The solution is to modify your shell configuration to check for the `TFM_ACTIVE` environment variable.
+Shell configuration files (like `.zshrc` and `.bashrc`) are loaded after XeFM sets environment variables, which overwrites any prompt modifications XeFM makes. The solution is to modify your shell configuration to check for the `XEFM_ACTIVE` environment variable.
 
 ### Zsh Configuration
 
 Add this to your `~/.zshrc` file:
 
 ```bash
-# TFM sub-shell prompt modification
-if [[ -n "$TFM_ACTIVE" ]]; then
-    PROMPT="[TFM] $PROMPT"
+# XeFM sub-shell prompt modification
+if [[ -n "$XEFM_ACTIVE" ]]; then
+    PROMPT="[XeFM] $PROMPT"
 fi
 ```
 
@@ -275,9 +275,9 @@ fi
 Add this to your `~/.bashrc` file:
 
 ```bash
-# TFM sub-shell prompt modification
-if [[ -n "$TFM_ACTIVE" ]]; then
-    PS1="[TFM] $PS1"
+# XeFM sub-shell prompt modification
+if [[ -n "$XEFM_ACTIVE" ]]; then
+    PS1="[XeFM] $PS1"
 fi
 ```
 
@@ -285,25 +285,25 @@ fi
 
 #### Zsh Advanced Example
 ```bash
-# Advanced TFM prompt customization for zsh
-if [[ -n "$TFM_ACTIVE" ]]; then
-    # Add colored [TFM] label
-    PROMPT="%F{yellow}[TFM]%f $PROMPT"
+# Advanced XeFM prompt customization for zsh
+if [[ -n "$XEFM_ACTIVE" ]]; then
+    # Add colored [XeFM] label
+    PROMPT="%F{yellow}[XeFM]%f $PROMPT"
     
     # Or modify the right prompt
-    RPROMPT="$RPROMPT %F{red}(TFM)%f"
+    RPROMPT="$RPROMPT %F{red}(XeFM)%f"
 fi
 ```
 
 #### Bash Advanced Example
 ```bash
-# Advanced TFM prompt customization for bash
-if [[ -n "$TFM_ACTIVE" ]]; then
-    # Add colored [TFM] label
-    PS1="\[\033[1;33m\][TFM]\[\033[0m\] $PS1"
+# Advanced XeFM prompt customization for bash
+if [[ -n "$XEFM_ACTIVE" ]]; then
+    # Add colored [XeFM] label
+    PS1="\[\033[1;33m\][XeFM]\[\033[0m\] $PS1"
     
-    # Or create a completely custom TFM prompt
-    PS1="\[\033[1;33m\][TFM]\[\033[0m\] \[\033[1;32m\]\u@\h\[\033[0m\]:\[\033[1;34m\]\w\[\033[0m\]\$ "
+    # Or create a completely custom XeFM prompt
+    PS1="\[\033[1;33m\][XeFM]\[\033[0m\] \[\033[1;32m\]\u@\h\[\033[0m\]:\[\033[1;34m\]\w\[\033[0m\]\$ "
 fi
 ```
 
@@ -318,25 +318,25 @@ fi
    # For bash  
    source ~/.bashrc
    ```
-3. **Test with TFM**:
-   - Start TFM and press `x` to enter sub-shell mode
-   - Your prompt should now display the `[TFM]` label
-   - Type `exit` to return to TFM
+3. **Test with XeFM**:
+   - Start XeFM and press `x` to enter sub-shell mode
+   - Your prompt should now display the `[XeFM]` label
+   - Type `exit` to return to XeFM
 
 ### Shell Compatibility
 
 | Shell | Config File | Variable | Example |
 |-------|-------------|----------|---------|
-| zsh | `~/.zshrc` | `PROMPT` | `[TFM] %n@%m:%~%# ` |
-| bash | `~/.bashrc` | `PS1` | `[TFM] \u@\h:\w\$ ` |
+| zsh | `~/.zshrc` | `PROMPT` | `[XeFM] %n@%m:%~%# ` |
+| bash | `~/.bashrc` | `PS1` | `[XeFM] \u@\h:\w\$ ` |
 | fish | `~/.config/fish/config.fish` | Custom function | See fish documentation |
 
-## Returning to TFM
+## Returning to XeFM
 
-To return to TFM from sub-shell mode:
+To return to XeFM from sub-shell mode:
 - Type `exit` in the shell
 - Press `Ctrl+D` (EOF) in the shell
-- The TFM interface will be restored automatically
+- The XeFM interface will be restored automatically
 
 ## Configuration
 
@@ -354,12 +354,12 @@ KEY_BINDINGS = {
 ### Curses Management
 - The curses interface is properly suspended using `curses.endwin()`
 - Terminal is restored to normal mode for shell interaction
-- Curses is reinitialized when returning to TFM
+- Curses is reinitialized when returning to XeFM
 
 ### Environment Preservation
 - Original stdout/stderr are temporarily restored
 - Log capture is suspended during shell session
-- All TFM state is preserved and restored
+- All XeFM state is preserved and restored
 - Environment variables are properly passed using `subprocess.run()`
 
 ### Path Handling
@@ -382,16 +382,16 @@ local_path.is_remote() # Returns False
 ### Error Handling
 - If the shell fails to start, an error message is displayed
 - The curses interface is properly restored even if errors occur
-- Log messages are captured when returning to TFM
+- Log messages are captured when returning to XeFM
 - Graceful handling of permission errors and inaccessible directories
 
 ## Benefits
 
 ### Functionality Benefits
 - **Batch Operations**: Perform complex operations on selected files using shell tools
-- **System Integration**: Use system commands with TFM's file selection
+- **System Integration**: Use system commands with XeFM's file selection
 - **Remote Storage Support**: Work with remote directories seamlessly
-- **Scripting**: Write and execute scripts that operate on TFM's current state
+- **Scripting**: Write and execute scripts that operate on XeFM's current state
 
 ### User Experience Benefits
 - **Reliability**: Subshell works consistently with both local and remote directories
@@ -401,7 +401,7 @@ local_path.is_remote() # Returns False
 
 ### Technical Benefits
 - **Advanced File Management**: Use specialized tools like `rsync`, `find`, `grep`, etc.
-- **Development Workflow**: Integrate TFM with development tools and build systems
+- **Development Workflow**: Integrate XeFM with development tools and build systems
 - **No Loss of Functionality**: Remote directory access maintained via environment variables
 - **Backward Compatibility**: Existing scripts continue to work normally
 
@@ -428,10 +428,10 @@ python3 test/test_subshell_remote_fallback.py
 
 ### Local File Management
 1. **Batch Operations**: Complex operations on selected files using shell tools
-2. **System Integration**: Use system commands with TFM's file selection
-3. **Scripting**: Write and execute scripts that operate on TFM's current state
+2. **System Integration**: Use system commands with XeFM's file selection
+3. **Scripting**: Write and execute scripts that operate on XeFM's current state
 4. **Advanced File Management**: Use specialized tools like `rsync`, `find`, `grep`
-5. **Development Workflow**: Integrate TFM with development tools and build systems
+5. **Development Workflow**: Integrate XeFM with development tools and build systems
 
 ### Remote Storage Operations
 1. **Cloud File Management**: Work with S3, Azure, GCP storage
@@ -445,31 +445,31 @@ python3 test/test_subshell_remote_fallback.py
 ### Common Issues
 
 #### Prompt Configuration
-**Prompt not showing [TFM] label:**
+**Prompt not showing [XeFM] label:**
 1. Verify the configuration is added to the correct file
 2. Make sure the syntax is correct for your shell
-3. Test by manually setting `TFM_ACTIVE=1` and starting a new shell
-4. Check if other prompt modifications in your config are overriding the TFM setting
+3. Test by manually setting `XEFM_ACTIVE=1` and starting a new shell
+4. Check if other prompt modifications in your config are overriding the XeFM setting
 
 #### Remote Directory Issues
-**"Permission denied" errors**: Ensure TFM has write access to its working directory
-**Environment variables not set**: Verify external programs are launched through TFM
+**"Permission denied" errors**: Ensure XeFM has write access to its working directory
+**Environment variables not set**: Verify external programs are launched through XeFM
 **Remote paths not accessible**: Check cloud CLI configuration (AWS CLI, etc.)
 
 #### File Handling
-**Filenames with spaces**: TFM automatically quotes all filenames - use `$TFM_THIS_SELECTED` directly
-**Configuration conflicts**: Place TFM configuration after other prompt modifications in config file
+**Filenames with spaces**: XeFM automatically quotes all filenames - use `$XEFM_THIS_SELECTED` directly
+**Configuration conflicts**: Place XeFM configuration after other prompt modifications in config file
 
 ### Debug Information
 
-When remote fallback occurs, TFM provides clear information:
+When remote fallback occurs, XeFM provides clear information:
 - Current remote directory being browsed
 - Fallback working directory being used
 - Reason for the fallback
 
 ## Security Considerations
 
-- Environment variables contain file paths and names from TFM
+- Environment variables contain file paths and names from XeFM
 - Selected file names are passed as space-separated strings with automatic quoting
 - Users should be cautious with file names containing special characters
 - Standard shell quoting and escaping practices apply
@@ -486,4 +486,4 @@ When remote fallback occurs, TFM provides clear information:
 
 ## Conclusion
 
-The Subshell System provides a powerful bridge between TFM's file management capabilities and the full power of the shell environment. With intelligent remote directory fallback, automatic file quoting, and comprehensive environment variable support, it enables seamless operation across local and remote storage systems while maintaining the flexibility and power that makes TFM an effective file management tool.
+The Subshell System provides a powerful bridge between XeFM's file management capabilities and the full power of the shell environment. With intelligent remote directory fallback, automatic file quoting, and comprehensive environment variable support, it enables seamless operation across local and remote storage systems while maintaining the flexibility and power that makes XeFM an effective file management tool.

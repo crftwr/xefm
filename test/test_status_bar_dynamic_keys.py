@@ -5,7 +5,7 @@ Test that status bar help message uses dynamic key bindings from config.
 
 import unittest
 from unittest.mock import MagicMock, patch
-from tfm_config import get_keys_for_action, format_key_for_display
+from xefm.config import get_keys_for_action, format_key_for_display
 
 
 class TestStatusBarDynamicKeys(unittest.TestCase):

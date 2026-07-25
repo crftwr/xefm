@@ -1,7 +1,7 @@
 """
 Test script for cursor movement in batch rename functionality
 
-Run with: PYTHONPATH=.:src pytest test/test_cursor_movement.py -v
+Run with: python -m pytest test/test_cursor_movement.py -v
 """
 
 def test_cursor_operations():

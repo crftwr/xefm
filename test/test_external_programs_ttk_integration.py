@@ -1,15 +1,15 @@
 """
-Test TTK integration for tfm_external_programs.py
+Test TTK integration for xefm/external_programs.py
 
-Run with: PYTHONPATH=.:src pytest test/test_external_programs_ttk_integration.py -v
+Run with: python -m pytest test/test_external_programs_ttk_integration.py -v
 """
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 import os
 
-from tfm_external_programs import ExternalProgramManager, tfm_tool, quote_filenames_with_double_quotes, get_selected_or_cursor_files
-from tfm_path import Path
+from xefm.external_programs import ExternalProgramManager, xefm_tool, quote_filenames_with_double_quotes, get_selected_or_cursor_files
+from xefm.path import Path
 
 
 class TestExternalProgramsTTKIntegration(unittest.TestCase):
@@ -37,10 +37,10 @@ class TestExternalProgramsTTKIntegration(unittest.TestCase):
         self.assertEqual(self.manager.renderer, self.mock_renderer)
     
     @patch('builtins.input', return_value='')
-    @patch('tfm_external_programs.subprocess.run')
-    @patch('tfm_external_programs.os.chdir')
-    @patch('tfm_colors.init_colors')
-    @patch('tfm_log_manager.LogCapture')
+    @patch('xefm.external_programs.subprocess.run')
+    @patch('xefm.external_programs.os.chdir')
+    @patch('xefm.colors.init_colors')
+    @patch('xefm.log_manager.LogCapture')
     def test_execute_external_program_uses_renderer(self, mock_log_capture, mock_init_colors, mock_chdir, mock_subprocess, mock_input):
         """Test that execute_external_program uses renderer API"""
         # Set up mock pane manager
@@ -83,10 +83,10 @@ class TestExternalProgramsTTKIntegration(unittest.TestCase):
         mock_init_colors.assert_called_once_with(self.mock_renderer)
     
     @patch('builtins.input', return_value='')
-    @patch('tfm_external_programs.subprocess.run')
-    @patch('tfm_external_programs.os.chdir')
-    @patch('tfm_colors.init_colors')
-    @patch('tfm_log_manager.LogCapture')
+    @patch('xefm.external_programs.subprocess.run')
+    @patch('xefm.external_programs.os.chdir')
+    @patch('xefm.colors.init_colors')
+    @patch('xefm.log_manager.LogCapture')
     def test_enter_subshell_mode_uses_renderer(self, mock_log_capture, mock_init_colors, mock_chdir, mock_subprocess, mock_input):
         """Test that enter_subshell_mode uses renderer API"""
         # Set up mock pane manager
@@ -123,10 +123,10 @@ class TestExternalProgramsTTKIntegration(unittest.TestCase):
     
     def test_no_curses_imports(self):
         """Test that the module doesn't import curses"""
-        import tfm_external_programs
+        import xefm.external_programs
         
         # Check that curses is not in the module's namespace
-        self.assertNotIn('curses', dir(tfm_external_programs))
+        self.assertNotIn('curses', dir(xefm.external_programs))
 
 
 class TestHelperFunctions(unittest.TestCase):
@@ -163,8 +163,8 @@ class TestHelperFunctions(unittest.TestCase):
         result = get_selected_or_cursor_files(pane_data)
         self.assertEqual(result, ['file2.txt'])
     
-    def test_tfm_tool_function(self):
-        """Test tfm_tool function returns tool path"""
+    def test_xefm_tool_function(self):
+        """Test xefm_tool function returns tool path"""
         # This is a basic test - the function will return the tool name if not found
-        result = tfm_tool('nonexistent_tool.sh')
+        result = xefm_tool('nonexistent_tool.sh')
         self.assertEqual(result, 'nonexistent_tool.sh')
