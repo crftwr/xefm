@@ -29,24 +29,18 @@ A powerful file manager that runs as a native desktop application on **Windows a
 > **not yet uploaded to GitHub Releases** — until then, use the from-source setup
 > below (which also covers terminal mode on Windows, macOS, and Linux).
 
-XeFM's UI runs on **[PuiKit](https://github.com/crftwr/puikit)**, a separate
-framework that is not yet published to PyPI. The simplest setup checks out PuiKit
-next to XeFM and lets the Makefile wire everything into a virtualenv.
-
 1. Install Python 3.10 or later. On macOS, Homebrew is the easiest route:
    ```bash
    brew install python@3.14
    ```
-2. Clone XeFM and PuiKit side by side:
+2. Clone XeFM:
    ```bash
-   git clone https://github.com/crftwr/puikit.git
    git clone https://github.com/shimomut/xefm.git
    cd xefm
    ```
-3. Create the environment and run (installs base deps **plus PuiKit editable**):
+3. Create the environment and run:
    ```bash
    make venv        # creates .venv using the newest python3 in PATH
-                    # expects PuiKit at ../puikit; override with PUIKIT_DIR=/path/to/puikit
    make run         # launch XeFM
    ```
 
@@ -54,12 +48,11 @@ next to XeFM and lets the Makefile wire everything into a virtualenv.
    through that interpreter — so you never need to activate it yourself.
 
    Prefer to manage the environment yourself? Create and activate a virtualenv
-   first, then install the dependencies and PuiKit manually:
+   first, then install the dependencies:
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate         # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
-   pip install -e ../puikit          # PuiKit (editable) — required
    python3 -m xefm
    ```
 
@@ -287,9 +280,6 @@ See the [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed desktop mod
 
 ### Requirements
 
-**All modes:**
-- [PuiKit](https://github.com/crftwr/puikit) — XeFM's UI framework, installed editable from a sibling `../puikit` checkout (`make venv` / `make install-puikit`). Not on PyPI.
-
 **Terminal Mode** (all platforms — Windows, macOS, Linux):
 - Python 3.10+ with curses library (built-in on macOS/Linux, 3.14 supported)
 - Windows: `pip install windows-curses` (installed automatically via `requirements.txt`)
@@ -302,17 +292,12 @@ See the [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed desktop mod
 
 ### Dependencies
 
-**PuiKit** (required — XeFM's UI framework, editable from a sibling checkout):
-```bash
-pip install -e ../puikit   # or: make install-puikit  (PUIKIT_DIR=../puikit by default)
-```
-
-**Base dependencies** — `requirements.txt` is the single source of truth and is
-installed in one shot:
+`requirements.txt` is the single source of truth and is installed in one shot:
 ```bash
 pip install -r requirements.txt
 ```
 It pulls in:
+- `puikit` — the UI / rendering layer behind both the desktop and terminal modes
 - `pygments` — enhanced syntax highlighting (20+ file formats)
 - `pillow` — the built-in image viewer (decode / crop / scale; also enables inline terminal images)
 - `boto3` — AWS S3 support (cloud storage operations)
@@ -332,9 +317,8 @@ machine you are on is installed for you. There is no `[macos]` extra to request.
 python3 -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
 
-# Install dependencies + PuiKit (editable, from a sibling ../puikit checkout)
+# Install dependencies
 pip install -r requirements.txt
-pip install -e ../puikit
 
 # Run from the repo root — `python3 -m` puts it on the import path, and the
 # `xefm` package lives there, so nothing else needs installing.
@@ -350,10 +334,6 @@ python3 -m xefm --backend gui
 ```bash
 # Install from source directory
 cd xefm
-
-# PuiKit is required and not on PyPI — install it (editable) first
-pip install -e ../puikit
-
 pip install .
 
 # Run from anywhere (installs a `xefm` console command)
@@ -365,10 +345,6 @@ xefm --backend gui  # Desktop mode (Windows / macOS)
 ```bash
 # Install in editable mode (changes reflected immediately)
 cd xefm
-
-# PuiKit is required and not on PyPI — install it (editable) first
-pip install -e ../puikit
-
 pip install -e .
 
 # Run from anywhere
@@ -393,7 +369,7 @@ For detailed configuration options, see the **[Configuration Feature Guide](doc/
 ```
 xefm/
 ├── xefm/          # The `xefm` package — everything the app ships
-│   ├── app.py     # The application (XeFMApp + top-level UI); runs on PuiKit
+│   ├── app.py     # The application (XeFMApp + top-level UI)
 │   ├── __main__.py # `python -m xefm` entry point
 │   ├── *.py       # Business logic, imported as `xefm.config`, `xefm.path`, …
 │   └── tools/     # External programs for end users
@@ -403,13 +379,10 @@ xefm/
     └── dev/       # Developer documentation
 ```
 
-> XeFM's UI framework, **PuiKit**, is **not** in this tree — it lives in its own
-> repository (`../puikit`) and is installed editable into the virtualenv.
-
 ## Troubleshooting
 
 **Installation Issues:**
-- Ensure Python 3.10+ is installed (PuiKit, XeFM's UI framework, requires 3.10+)
+- Ensure Python 3.10+ is installed
 - Check terminal compatibility with curses library (terminal mode)
 - PyObjC (desktop mode) installs automatically on macOS via `pip install -r requirements.txt`
 

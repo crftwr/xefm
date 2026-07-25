@@ -391,8 +391,7 @@ If you encounter issues not covered here:
 1. Check console output for error messages
 2. Try terminal mode to isolate desktop-specific issues
 3. Review the [User Guide](XEFM_USER_GUIDE.md)
-4. Check the [PuiKit framework](https://github.com/crftwr/puikit) for technical details on the UI framework
-5. Report issues on GitHub with:
+4. Report issues on GitHub with:
    - macOS version
    - Python version
    - PyObjC version

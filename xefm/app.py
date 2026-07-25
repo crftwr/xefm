@@ -1075,7 +1075,7 @@ class XeFMApp:
             ),
         )
         # (the theme + picker list were resolved above, before the menu / widgets)
-        self.log_info(f"XeFM on PuiKit — {self.pm.left_pane['path']}")
+        self.log_info(f"XeFM — {self.pm.left_pane['path']}")
         # Files are listed now, so the saved cursor filenames can be matched.
         self._restore_cursor_positions()
 
@@ -4246,7 +4246,7 @@ class XeFMApp:
         (Key(s) / Action), so bindings align in a real column and the section
         titles stand out."""
         from xefm.const import VERSION
-        lines = [f"# XeFM on PuiKit", f"Version {VERSION}", ""]
+        lines = ["# XeFM", f"Version {VERSION}", ""]
         for title, entries in self._HELP_SECTIONS:
             lines += [f"## {title}", "", "| Key(s) | Action |", "| --- | --- |"]
             for action, desc in entries:

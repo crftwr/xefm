@@ -183,15 +183,15 @@ check-venv:
 PUIKIT_DIRS := $(if $(LEFT),--left $(LEFT)) $(if $(RIGHT),--right $(RIGHT))
 
 run: check-venv
-	@echo "Running XeFM on PuiKit (terminal)..."
+	@echo "Running XeFM (terminal)..."
 	@$(PYTHON) -m xefm $(PUIKIT_DIRS)
 
 run-gui: check-venv
-	@echo "Running XeFM on PuiKit (macOS GUI)..."
+	@echo "Running XeFM (macOS GUI)..."
 	@$(PYTHON) -m xefm --backend gui $(PUIKIT_DIRS)
 
 run-web: check-venv
-	@echo "Running XeFM on PuiKit (web backend — opens a browser tab)..."
+	@echo "Running XeFM (web backend — opens a browser tab)..."
 	@$(PYTHON) -m xefm --backend web $(PUIKIT_DIRS)
 
 # Run from the repo root so ``python -m pytest`` puts it on sys.path and the
