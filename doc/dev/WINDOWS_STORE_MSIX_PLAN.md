@@ -2,7 +2,8 @@
 
 **Status:** PARTIALLY IMPLEMENTED. Written 2026-07-20. The local MSIX tooling now
 exists — `windows_app/build_msix.ps1` (self-signed prototype), `make_store_assets.py`,
-and the `windows-msix{,-install,-uninstall}` Makefile targets — and Step 1
+and the `windows-msix` / `install-windows-msix` / `uninstall-windows-msix`
+Makefile targets — and Step 1
 (relocating `XeFM-error.log` to `~/.xefm/`) is done in `launcher.c`. What remains is
 the manual Partner Center Store submission.
 

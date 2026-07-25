@@ -86,12 +86,15 @@ The DMG will be at `macos_app/build/XeFM-{version}-macos.dmg`.
 ### Installing to Applications
 
 ```bash
-# Install to /Applications
-make macos-app-install
+make install-macos-dmg                             # from the DMG (what users download)
+make install-macos-dmg MACOS_INSTALL_DIR=~/Applications   # per-user instead
 
-# Or copy manually
-cp -R macos_app/build/XeFM.app /Applications/
+cp -R macos_app/build/XeFM.app /Applications/      # or straight from the build dir
 ```
+
+`make install-macos-dmg` builds the DMG if it is missing, mounts it, and copies
+the `XeFM.app` inside — so it exercises the signed, stapled artifact rather than
+the raw build output.
 
 ### Cleaning Build Artifacts
 

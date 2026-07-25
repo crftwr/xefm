@@ -237,11 +237,11 @@ make macos-app
 # Clean build artifacts
 make macos-app-clean
 
-# Install to /Applications
-make macos-app-install
-
 # Create DMG installer
 make macos-dmg
+
+# Install to /Applications from that DMG (MACOS_INSTALL_DIR= to install elsewhere)
+make install-macos-dmg
 ```
 
 ## Code Signing & Notarization

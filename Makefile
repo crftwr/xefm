@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg windows-app windows-app-clean windows-zip windows-app-install windows-msix windows-msix-install windows-msix-uninstall install-config venv venv-clean check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app macos-app-clean macos-refresh-icon macos-dmg install-macos-dmg windows-app windows-app-clean windows-zip install-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config venv venv-clean check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -80,21 +80,21 @@ help:
 	@echo "macOS App Bundle:"
 	@echo "  macos-app          - Build native macOS application bundle"
 	@echo "  macos-app-clean    - Clean macOS app build artifacts"
-	@echo "  macos-app-install  - Install XeFM.app to Applications folder"
 	@echo "  macos-refresh-icon - Refresh macOS icon cache (after icon changes)"
 	@echo "  macos-dmg          - Create DMG installer for distribution"
-	@echo "                       (publish it with 'make release-macos-dmg')"
+	@echo "  install-macos-dmg  - Install XeFM.app from that DMG to /Applications"
+	@echo "                       (MACOS_INSTALL_DIR=~/Applications to install per-user)"
 	@echo ""
 	@echo "Windows App Bundle:"
 	@echo "  windows-app            - Build self-contained Windows application bundle"
 	@echo "  windows-app-clean      - Clean Windows app build artifacts"
-	@echo "  windows-app-install    - Install the built bundle to Program Files (elevates via UAC)"
 	@echo "  windows-zip            - Build the bundle and zip it for distribution"
-	@echo "                           (publish it with 'make release-windows-zip')"
+	@echo "  install-windows-zip    - Install from that zip to %LOCALAPPDATA%\\\\Programs\\\\XeFM"
+	@echo "                           (WINDOWS_INSTALL_DIR=... to install elsewhere)"
 	@echo "  windows-msix           - Package the bundle as an unsigned MSIX (Store submission;"
 	@echo "                           SIGN=1 to self-sign for local testing instead)"
-	@echo "  windows-msix-install   - Pack + self-sign, trust cert (elevates), install per-user"
-	@echo "  windows-msix-uninstall - Remove the MSIX package + throwaway signing cert"
+	@echo "  install-windows-msix   - Pack + self-sign, trust cert (elevates), install per-user"
+	@echo "  uninstall-windows-msix - Remove the MSIX package + throwaway signing cert"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run                        # Run XeFM in the terminal"
@@ -103,7 +103,6 @@ help:
 	@echo "  make run LEFT=./xefm RIGHT=./doc # Run with custom startup directories"
 	@echo "  make install-config             # Install/update user config file"
 	@echo "  make macos-app                  # Build macOS app bundle"
-	@echo "  make macos-app-install          # Install to /Applications"
 	@echo "  make macos-dmg                  # Create DMG installer"
 	@echo "  make tag VERSION=1.0.1          # Bump the version, commit, tag and push"
 	@echo "  make release-github             # Open the GitHub Release for that tag"
@@ -504,34 +503,6 @@ macos-app-clean:
 	@rm -rf macos_app/build/
 	@echo "Build artifacts removed"
 
-macos-app-install:
-	@echo "Installing XeFM.app to Applications..."
-	@if [ ! -d "macos_app/build/XeFM.app" ]; then \
-		echo "Error: XeFM.app not found. Run 'make macos-app' first."; \
-		exit 1; \
-	fi
-	@echo "Choose installation location:"
-	@echo "  1) /Applications (system-wide, requires sudo)"
-	@echo "  2) ~/Applications (user-only)"
-	@read -p "Enter choice [1-2]: " choice; \
-	case $$choice in \
-		1) \
-			echo "Installing to /Applications..."; \
-			sudo cp -R macos_app/build/XeFM.app /Applications/; \
-			echo "XeFM.app installed to /Applications"; \
-			;; \
-		2) \
-			echo "Installing to ~/Applications..."; \
-			mkdir -p ~/Applications; \
-			cp -R macos_app/build/XeFM.app ~/Applications/; \
-			echo "XeFM.app installed to ~/Applications"; \
-			;; \
-		*) \
-			echo "Invalid choice. Installation cancelled."; \
-			exit 1; \
-			;; \
-	esac
-
 # --- App icons --------------------------------------------------------------
 # The SVG masters in tools/icon/ are the single source of truth. Rendering needs
 # AppKit's SVG support, so these targets are macOS-only - the resulting .icns/.ico/
@@ -596,6 +567,51 @@ release-macos-dmg: $(MACOS_DMG)
 	@echo "Uploading $(MACOS_DMG) to GitHub Release v$(XEFM_VERSION)..."
 	gh release upload v$(XEFM_VERSION) "$(MACOS_DMG)" --clobber
 	@echo "Uploaded $(notdir $(MACOS_DMG)) to release v$(XEFM_VERSION) ✓"
+
+# --- install-macos-dmg: install what we actually ship ------------------------
+# Installs from the DMG rather than from macos_app/build/XeFM.app on purpose:
+# the DMG is the exact bytes a user downloads, signed and stapled as a
+# container, so a packaging, signing or notarization mistake surfaces here
+# instead of after the release. Builds the DMG first if it is missing.
+#
+# /Applications is group-writable by admin users, so no sudo is needed; the
+# writability check below says so plainly when it is not.
+# Override the destination with MACOS_INSTALL_DIR=~/Applications.
+MACOS_INSTALL_DIR ?= /Applications
+
+# zsh does not expand the tilde in `make MACOS_INSTALL_DIR=~/Applications`
+# (that needs magic_equal_subst, off by default), so it arrives here intact and
+# would fail the existence check below with a confusing message. `override` is
+# required: a command-line assignment otherwise wins over this one.
+override MACOS_INSTALL_DIR := $(patsubst ~/%,$(HOME)/%,$(MACOS_INSTALL_DIR))
+
+# Mounted inside macos_app/build/ (gitignored, and where create_dmg.sh already
+# stages) rather than /Volumes, so a stale mount point can never collide with a
+# DMG the user opened in Finder.
+MACOS_DMG_MOUNT := macos_app/build/dmg_mount
+
+install-macos-dmg: $(MACOS_DMG)
+	@test -d "$(MACOS_INSTALL_DIR)" || { echo "ERROR: $(MACOS_INSTALL_DIR) does not exist."; exit 1; }
+	@test -w "$(MACOS_INSTALL_DIR)" || { \
+		echo "ERROR: $(MACOS_INSTALL_DIR) is not writable."; \
+		echo "       Re-run under sudo, or install per-user with MACOS_INSTALL_DIR=~/Applications."; \
+		exit 1; \
+	}
+	@rm -rf "$(MACOS_DMG_MOUNT)"
+	@mkdir -p "$(MACOS_DMG_MOUNT)"
+	@echo "Mounting $(notdir $(MACOS_DMG))..."
+	@# One shell line so the trap that unmounts survives to the end, however the
+	@# copy turns out — an orphaned mount would break every later run.
+	@hdiutil attach "$(MACOS_DMG)" -nobrowse -readonly -quiet -mountpoint "$(MACOS_DMG_MOUNT)" || { \
+		echo "ERROR: could not mount $(MACOS_DMG)"; rmdir "$(MACOS_DMG_MOUNT)" 2>/dev/null; exit 1; \
+	}; \
+	trap 'hdiutil detach "$(MACOS_DMG_MOUNT)" -quiet >/dev/null 2>&1' EXIT; \
+	test -d "$(MACOS_DMG_MOUNT)/XeFM.app" || { echo "ERROR: XeFM.app not found inside the DMG"; exit 1; }; \
+	echo "Installing XeFM.app to $(MACOS_INSTALL_DIR)..."; \
+	rm -rf "$(MACOS_INSTALL_DIR)/XeFM.app"; \
+	cp -R "$(MACOS_DMG_MOUNT)/XeFM.app" "$(MACOS_INSTALL_DIR)/"
+	@rmdir "$(MACOS_DMG_MOUNT)" 2>/dev/null || true
+	@echo "Installed $(MACOS_INSTALL_DIR)/XeFM.app ✓"
 
 # ============================================================================
 # Windows App Bundle Targets
@@ -676,15 +692,31 @@ release-windows-zip: $(WINDOWS_ZIP)
 	gh release upload v$(XEFM_VERSION) "$(WINDOWS_ZIP)" --clobber
 	@echo "Uploaded $(notdir $(WINDOWS_ZIP)) to release v$(XEFM_VERSION) ✓"
 
+# --- install-windows-zip: install what we actually ship ---------------------
+# The counterpart of install-macos-dmg: expands the portable zip a user would
+# download, rather than copying windows_app/build/XeFM/, so a truncated or
+# incomplete zip is caught here instead of by the first person to download it.
+# Builds the zip first if it is missing.
+#
+# Per-user by default (%LOCALAPPDATA%\Programs\XeFM), so no UAC prompt and no
+# elevated shell — the same "no password needed" story /Applications gives on
+# macOS. Override with WINDOWS_INSTALL_DIR='C:\Program Files\XeFM', which does
+# need an elevated shell.
+#
+# The expand/replace/verify logic lives in install_zip.ps1 rather than inline
+# here: an inline -Command would have to survive both make's and sh's expansion
+# before PowerShell sees it, and every bare $var in it would be eaten by the
+# shell. Same reason every other Windows target delegates to a .ps1.
+WINDOWS_INSTALL_DIR ?=
+
+install-windows-zip: $(WINDOWS_ZIP)
+	@echo "Installing XeFM from $(notdir $(WINDOWS_ZIP))..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/install_zip.ps1 \
+		-Zip "$(WINDOWS_ZIP)" $(if $(WINDOWS_INSTALL_DIR),-InstallDir "$(WINDOWS_INSTALL_DIR)")
+
 windows-app-clean:
 	@echo "Cleaning Windows app build artifacts..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Clean
-
-# Install the built bundle to Program Files (override dir with INSTALLDIR=...).
-# Self-elevates via UAC; builds the bundle first if it is missing.
-windows-app-install: $(WINDOWS_APP_BUNDLE)
-	@echo "Installing Windows application bundle..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Install $(if $(INSTALLDIR),-InstallDir "$(INSTALLDIR)")
 
 # --- MSIX (Microsoft Store / winget) packaging, PROTOTYPE ------------------
 # Wraps the built bundle into an .msix; builds the bundle first if it is missing.
@@ -693,7 +725,7 @@ windows-app-install: $(WINDOWS_APP_BUNDLE)
 # re-signs the package during certification, which is what makes Store signing
 # free and warning-free (doc/dev/WINDOWS_STORE_MSIX_PLAN.md 0, 5). Self-signing
 # is only useful for sideloading on the dev box, so it is opt-in via SIGN=1 --
-# and 'windows-msix-install' below passes it for you.
+# and 'install-windows-msix' below passes it for you.
 #
 # Note the identity values are still Partner Center placeholders; a real
 # submission also needs -IdentityName / -Publisher / -PublisherDisplayName
@@ -709,7 +741,7 @@ windows-msix: $(WINDOWS_APP_BUNDLE)
 # build\XeFM-<version>-x64.msix, so an unsigned pack may have overwritten a
 # signed one. Add-AppxPackage cannot install an unsigned package, so packing
 # here is what guarantees the artifact it installs is actually signed.
-windows-msix-install: $(WINDOWS_APP_BUNDLE)
+install-windows-msix: $(WINDOWS_APP_BUNDLE)
 	@echo "Packaging + self-signing MSIX for local install..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Sign
 	@echo "Installing MSIX package locally..."
@@ -717,6 +749,6 @@ windows-msix-install: $(WINDOWS_APP_BUNDLE)
 
 # Removes the package (per-user) and the throwaway signing cert; untrusting the
 # machine-store cert self-elevates via UAC.
-windows-msix-uninstall:
+uninstall-windows-msix:
 	@echo "Removing installed MSIX package and throwaway cert..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Uninstall

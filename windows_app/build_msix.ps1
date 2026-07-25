@@ -249,7 +249,7 @@ if ($Install) {
     $pkg = Get-AppxPackage -Name $IdentityName -ErrorAction SilentlyContinue
     if (-not $pkg) { throw "Install did not complete (package '$IdentityName' not found afterward)." }
     Write-Host "[OK] Installed $($pkg.PackageFullName)" -ForegroundColor Green
-    Write-Host "Launch 'XeFM' from the Start menu. Remove with: make windows-msix-uninstall"
+    Write-Host "Launch 'XeFM' from the Start menu. Remove with: make uninstall-windows-msix"
     return
 }
 
@@ -394,7 +394,7 @@ Move-Item -Force $msixTmp $msix
 Write-Host "[OK] Built $msix"
 if ($Sign) {
     Write-Host "[OK] Signed $msix"
-    Write-Host "Install locally with:  make windows-msix-install" -ForegroundColor Yellow
+    Write-Host "Install locally with:  make install-windows-msix" -ForegroundColor Yellow
 }
 
 Write-Host ""

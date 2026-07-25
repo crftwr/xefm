@@ -29,6 +29,21 @@ Run it:
 & windows_app\build\XeFM\XeFM.exe
 ```
 
+## Installing it
+
+```powershell
+make install-windows-zip     # -> %LOCALAPPDATA%\Programs\XeFM (no UAC prompt)
+
+# machine-wide instead; needs an elevated shell
+make install-windows-zip WINDOWS_INSTALL_DIR='C:\Program Files\XeFM'
+```
+
+Builds the zip if it is missing, then expands it — so it installs the exact
+artifact users download rather than copying `build\XeFM\`, which is what makes an
+incomplete archive show up here. Any existing install is removed first, so a file
+a later build stopped shipping cannot survive the upgrade. `install_zip.ps1` does
+the work and can be run directly.
+
 ## Distributing it
 
 ```powershell

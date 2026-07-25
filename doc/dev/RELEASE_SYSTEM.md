@@ -25,15 +25,31 @@ so they act on the release the checkout is on — pass `VERSION=x.y.z` to overri
 
 ## Target naming
 
-Two prefixes, and the split between them is the whole design:
+Targets are named `<verb>-<artifact>`, and the verb says how far the thing goes:
 
-- **`release-*` publishes.** Each one takes an artifact that already exists (or
-  builds it), and puts it somewhere public. These are the pipeline.
-- **Everything else is local.** `make macos-dmg`, `make windows-zip` and
-  `make build` produce artifacts and publish nothing, so you can run them as
-  often as you like. Each names its artifact, not its platform's app bundle:
-  `macos-dmg` / `windows-zip` are siblings, and `release-macos-dmg` /
-  `release-windows-zip` are the matching publish steps.
+| Verb | Reach | macOS | Windows | Windows Store | Python |
+|------|-------|-------|---------|---------------|--------|
+| *(none)* — build | your build dir | `macos-dmg` | `windows-zip` | `windows-msix` | `build` |
+| `install-` | your machine | `install-macos-dmg` | `install-windows-zip` | `install-windows-msix` | — |
+| `uninstall-` | your machine | — | — | `uninstall-windows-msix` | — |
+| `release-` | the public | `release-macos-dmg` | `release-windows-zip` | never | `release-whl` |
+
+Each names its **artifact**, not its platform's app bundle, so the rows line up:
+`macos-dmg`, `windows-zip` and `windows-msix` are siblings, and each takes
+whichever verbs make sense for it. Only the `release-*` row is the pipeline; the
+others publish nothing and can be run as often as you like.
+
+The gaps are meaningful rather than missing work. The MSIX has no `release-`
+because an unsigned MSIX can never be a download (see below). The DMG and zip
+have no `uninstall-` because removing them is deleting a folder, whereas an
+installed MSIX also leaves a per-user package registration and a throwaway
+signing cert behind.
+
+The `install-*` targets deliberately install **from the distributable artifact**
+— `install-macos-dmg` mounts the DMG, `install-windows-zip` expands the zip —
+rather than copying the build directory. That makes them a real check on the
+thing users download: a packaging, signing or truncation problem surfaces on
+your machine instead of on theirs.
 
 `make publish-testpypi` is deliberately outside the `release-*` family: it needs
 neither a tag nor a GitHub Release and publishes nothing permanent.
@@ -209,6 +225,8 @@ decide for you:
 | `make build` | — | sdist + wheel into `dist/`, plus `twine check` |
 | `make macos-dmg` | — | build the DMG locally (macOS only) |
 | `make windows-zip` | — | build the portable zip locally (Windows only) |
+| `make install-macos-dmg` | — | install this machine's copy from the DMG (macOS only) |
+| `make install-windows-zip` | — | install this machine's copy from the zip (Windows only) |
 | `make publish-testpypi` | TestPyPI | rehearsal (needs a `[testpypi]` token) |
 
 `make publish-testpypi` is the safe rehearsal: it exercises the same build and

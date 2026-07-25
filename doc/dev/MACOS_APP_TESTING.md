@@ -418,8 +418,11 @@ make macos-dmg
 ### 4. Install to Applications (Optional)
 
 ```bash
-make macos-app-install
+make install-macos-dmg
 ```
+
+Installs the `XeFM.app` from inside the DMG, so this doubles as a check that the
+DMG itself is well-formed.
 
 ### 5. Distribution Options
 
