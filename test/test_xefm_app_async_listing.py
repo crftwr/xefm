@@ -7,12 +7,20 @@ single-flight generation guard so a superseded navigation's result is dropped,
 and a deferred "Loading…" indicator (_pump_loading_indicator) that only reveals
 itself once a listing has been pending past the delay — so fast navs never flash.
 
+Everything that re-lists goes through it, not just navigation (issue #203):
+``_relist`` re-lists a pane in place (sort, filter, post-operation reload) with
+the cursor untouched, ``_refresh`` adds the reset a directory change needs, and
+``_start_initial_listings`` runs the two startup listings the same way — deferred
+to the end of ``__init__``, because the worker path does not exist before it.
+
 Run with: python -m pytest test/test_xefm_app_async_listing.py -v
 """
 
 import os
 import queue
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 
@@ -37,10 +45,13 @@ class StubFLM:
         self._result = {"ok": True, "files": list(files),
                         "file_info": {str(f): {} for f in files}}
         self.compute_calls = 0
+        self.last_filter = None
+        self.refreshed = []
 
     def compute_listing(self, path, *, filter_pattern=None, sort_mode="name",
                         sort_reverse=False):
         self.compute_calls += 1
+        self.last_filter = filter_pattern
         return self._result
 
     def apply_listing(self, pane, result):
@@ -50,6 +61,20 @@ class StubFLM:
             pane["focused_index"] = min(pane["focused_index"], len(pane["files"]) - 1)
         else:
             pane["focused_index"] = 0
+
+    # --- the synchronous halves _relist / _apply_filter still lean on ---------
+
+    def refresh_files(self, pane):
+        """Only a virtual pane reaches this now — recorded so a test can prove a
+        directory pane never does."""
+        self.refreshed.append(pane)
+        self.apply_listing(pane, self._result)
+
+    def set_filter(self, pane, pattern):
+        pane["filter_pattern"] = pattern
+        pane["focused_index"] = 0
+        pane["scroll_offset"] = 0
+        pane["selected_files"].clear()
 
 
 def _pane(path):
@@ -169,6 +194,178 @@ class SingleFlight(unittest.TestCase):
         self.assertTrue(app._process_result_queue())
         self.assertEqual(left["files"], ["first"])  # StubFLM returns the same list
         self.assertFalse(left["loading"])
+
+
+class RelistKeepsThePaneInPlace(unittest.TestCase):
+    """``_relist`` re-lists the *same* directory off the UI thread; ``_refresh``
+    is that plus the cursor reset and history record a navigation needs."""
+
+    def test_relist_lists_on_a_worker_and_leaves_the_cursor_alone(self):
+        left = _pane(FakePath("/mnt/slow"))
+        left["focused_index"], left["scroll_offset"] = 2, 1
+        app = _app(left, _pane(FakePath("/tmp")), ["a", "b", "c", "d"])
+        app._relist(left)
+        # Nothing was read on this thread, and the cursor did not move: this is
+        # the same directory, not a navigation.
+        self.assertTrue(left["loading"])
+        self.assertEqual(left["files"], [])
+        self.assertEqual(left["focused_index"], 2)
+        self.assertEqual(left["scroll_offset"], 1)
+        self.assertTrue(_drain_next(app))
+        self.assertEqual(left["files"], ["a", "b", "c", "d"])
+        self.assertEqual(left["focused_index"], 2)
+        self.assertEqual(left["scroll_offset"], 1)
+        self.assertEqual(app.flm.refreshed, [])  # never the synchronous path
+
+    def test_refresh_resets_the_cursor_and_records_history(self):
+        left = _pane(FakePath("/dir/new"))
+        left["focused_index"], left["scroll_offset"] = 3, 2
+        app = _app(left, _pane(FakePath("/tmp")), ["a", "b"])
+        app._history = []
+        app._refresh(left)
+        self.assertEqual(left["focused_index"], 0)
+        self.assertEqual(left["scroll_offset"], 0)
+        self.assertEqual(app._history, ["/dir/new"])
+        self.assertTrue(_drain_next(app))
+
+    def test_virtual_pane_rebuilds_in_memory_with_no_worker(self):
+        # A search-results feed has no directory to read: it must not be listed.
+        left = _pane(FakePath("/dir"))
+        left["virtual"] = {"kind": "search", "results": []}
+        app = _app(left, _pane(FakePath("/tmp")), ["a"])
+        ran = []
+        app._relist(left, on_ready=ran.append)
+        self.assertEqual(app.flm.compute_calls, 0)
+        self.assertEqual(app.flm.refreshed, [left])
+        self.assertEqual(ran, [left])  # on_ready fires synchronously
+        self.assertTrue(app._result_queue.empty())
+
+
+class FilterAppliesAsynchronously(unittest.TestCase):
+    def test_the_knobs_land_at_once_but_the_count_waits_for_the_listing(self):
+        left = _pane(FakePath("/mnt/slow"))
+        left["focused_index"], left["scroll_offset"] = 4, 2
+        left["selected_files"].add("/mnt/slow/x")
+        app = _app(left, _pane(FakePath("/tmp")), ["a.py", "b.py"])
+        counts = []
+        app._apply_filter(left, "*.py", on_count=counts.append)
+        # Filter state is pane state — immediate. The item count is a property of
+        # the listing, so it only exists once that lands.
+        self.assertEqual(left["filter_pattern"], "*.py")
+        self.assertEqual(left["focused_index"], 0)
+        self.assertEqual(left["scroll_offset"], 0)
+        self.assertEqual(left["selected_files"], set())
+        self.assertEqual(counts, [])
+        self.assertTrue(_drain_next(app))
+        self.assertEqual(counts, [2])
+        self.assertEqual(app.flm.last_filter, "*.py")  # the worker saw the new one
+
+    def test_clearing_needs_no_count_callback(self):
+        left = _pane(FakePath("/mnt/slow"))
+        left["filter_pattern"] = "*.py"
+        app = _app(left, _pane(FakePath("/tmp")), ["a", "b"])
+        app._apply_filter(left, "")
+        self.assertEqual(left["filter_pattern"], "")
+        self.assertTrue(_drain_next(app))
+        self.assertEqual(left["files"], ["a", "b"])
+
+
+class StartupListsAsynchronously(unittest.TestCase):
+    def test_both_panes_list_on_workers_carrying_the_cursor_hook(self):
+        left, right = _pane(FakePath("/l")), _pane(FakePath("/r"))
+        app = _app(left, right, ["a", "b"])
+        restored = []
+        app._restore_remembered_cursor = restored.append
+        app._start_initial_listings()
+        self.assertTrue(left["loading"])
+        self.assertTrue(right["loading"])
+        self.assertEqual(left["files"], [])
+        app._settle_listings()
+        self.assertEqual(left["files"], ["a", "b"])
+        self.assertEqual(right["files"], ["a", "b"])
+        # The saved cursor is matched by filename, so it can only be placed once
+        # the files are in — it rides the listing rather than running inline.
+        self.assertEqual(restored, [left, right])
+
+
+class _RealAppBase(unittest.TestCase):
+    """A headless XeFMApp on the memory backend over a real temp directory."""
+
+    def setUp(self):
+        from xefm.state_manager import XeFMStateManager
+        from puikit.backends import create_backend
+        self.tmp = tempfile.mkdtemp()
+        self.cfgdir = tempfile.mkdtemp()
+        for n in ("a.txt", "b.txt", "c.txt"):
+            open(os.path.join(self.tmp, n), "w").close()
+        self.sm = XeFMStateManager(db_path=os.path.join(self.cfgdir, "state.db"))
+        self.backend = create_backend("memory")
+        self.backend.open()
+
+    def tearDown(self):
+        try:
+            self.app.file_monitor.stop_monitoring()
+        except Exception:
+            pass
+        try:
+            self.backend.close()
+            if hasattr(self.sm, "close"):
+                self.sm.close()
+        except Exception:
+            pass
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.cfgdir, ignore_errors=True)
+
+    def _build(self):
+        self.app = xefm_app.XeFMApp(self.backend, self.tmp, self.tmp,
+                                    left_provided=True, right_provided=True,
+                                    state_manager=self.sm)
+        return self.app
+
+
+class StartupOnARealApp(_RealAppBase):
+    """End-to-end: constructing XeFMApp reads no directory on the calling
+    thread, and the remembered cursor still lands once the listings do."""
+
+    def test_construction_does_not_block_on_the_directory(self):
+        app = self._build()
+        # Launch does not wait for iterdir/stat — both panes are still loading.
+        self.assertTrue(app.pm.left_pane["loading"])
+        self.assertTrue(app.pm.right_pane["loading"])
+        app._settle_listings()
+        self.assertEqual([f.name for f in app.pm.left_pane["files"]],
+                         ["a.txt", "b.txt", "c.txt"])
+        self.assertFalse(app.pm.left_pane["loading"])
+
+    def test_remembered_cursor_still_lands_after_the_listing(self):
+        # Resolve the directory the way the app does, so the saved key matches.
+        directory = str(xefm_app.Path(self.tmp).resolve())
+        self.sm.save_pane_cursor_position("left", directory, "b.txt")
+        app = self._build()
+        app._settle_listings()
+        pane = app.pm.left_pane
+        self.assertEqual(pane["files"][pane["focused_index"]].name, "b.txt")
+
+
+class SortOnARealApp(_RealAppBase):
+    def test_quick_sort_relists_off_the_ui_thread(self):
+        app = self._build()
+        app._settle_listings()
+        app.dispatch("quick_sort_size")
+        # The re-sort is a fresh listing on a worker, not an inline re-read.
+        self.assertTrue(app.pm.left_pane["loading"])
+        app._settle_listings()
+        self.assertEqual(app.pm.left_pane["sort_mode"], "size")
+        self.assertEqual(len(app.pm.left_pane["files"]), 3)
+
+    def test_toggle_reverse_relists_off_the_ui_thread(self):
+        app = self._build()
+        app._settle_listings()
+        app._toggle_reverse()
+        self.assertTrue(app.pm.left_pane["loading"])
+        app._settle_listings()
+        self.assertEqual([f.name for f in app.pm.left_pane["files"]],
+                         ["c.txt", "b.txt", "a.txt"])
 
 
 if __name__ == "__main__":

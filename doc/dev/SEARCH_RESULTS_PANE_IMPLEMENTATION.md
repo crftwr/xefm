@@ -78,11 +78,13 @@ All virtual behavior funnels through `FileListManager.refresh_files`
 sort, filter, and post-operation reconciliation all Just Work, and every existing
 `refresh_files` / `_refresh` caller is unchanged.
 
-`XeFMApp._refresh` gained a virtual branch (synchronous re-stat, no re-list). The
+`XeFMApp._relist` — the shared re-listing entry point that `_refresh` also goes
+through, see [ASYNC_LISTING_SYSTEM.md](ASYNC_LISTING_SYSTEM.md) — gained a
+virtual branch (synchronous in-memory re-stat, no directory read, no worker). The
 subsystems that assumed `files == children of path` each got a virtual guard:
 
 - **Listing / refresh** — a virtual pane must never re-list `pane["path"]` (that
-  would destroy the result set); `_refresh` re-stats the surviving result paths
+  would destroy the result set); `_relist` re-stats the surviving result paths
   and re-applies the in-memory sort/filter instead.
 - **File monitoring** — the reload pump (`_handle_reload_request`) skips virtual
   panes; there is no single directory to watch, so monitoring is suspended and
@@ -108,12 +110,12 @@ operation consumes that and works **unchanged**.
 | View / Diff / Edit | Read the focused / selected `Path`(s) directly. |
 | Delete / Rename / batch-rename | Use `entry.parent / name`; post-op re-stat drops or re-points affected entries. |
 | Info / details | For a content hit, appends the matched **line number** (+ text) from `virtual["meta"]`. |
-| Sort / Filter | Re-sort / re-filter the in-memory `results` (via `refresh_files` → `compute_listing_from_paths`), not a directory re-list. The existing sort/filter actions just set the knobs and call `_refresh`; no new key bindings. |
+| Sort / Filter | Re-sort / re-filter the in-memory `results` (via `refresh_files` → `compute_listing_from_paths`), not a directory re-list. The existing sort/filter actions just set the knobs and call `_relist`; no new key bindings. |
 | Compare & Select (`W`) | Works with a results view on **either** side — the engine joins two feeds of `Path`s by name, and a virtual pane's rows are real paths. Both feeds are the panes' *displayed* listings (sorted + filtered). Since a result set spans directories, the other side can hold several same-named candidates; an entry is selected when **any** of them satisfies the relations (a directory listing has unique names, so this generalization is a no-op there). Selecting keeps the pane virtual. |
 | Run-command | Passes **absolute paths** with `cwd` = search root (bare names with `cwd=pane["path"]` would not resolve for scattered files). |
 
 **Post-operation reconciliation.** A virtual pane can't re-list, so after a
-mutating op `_refresh` re-stats each `Path` in `results` (dropping vanished ones,
+mutating op `_relist` re-stats each `Path` in `results` (dropping vanished ones,
 re-pointing renamed ones), re-applies sort + filter, and clamps `focused_index` /
 `selected_files` to the survivors.
 

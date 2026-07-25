@@ -71,6 +71,7 @@ class MonitoringTestBase(unittest.TestCase):
             left_provided=True, right_provided=True,
             state_manager=self.sm,
         )
+        self.app._settle_listings()  # startup lists on workers; wait for it
 
     def tearDown(self):
         self._patcher.stop()

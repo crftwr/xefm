@@ -41,6 +41,7 @@ class FileDetailsSymlink(unittest.TestCase):
         self.app = xefm_app.XeFMApp(self.backend, self.tmp, self.tmp,
                               left_provided=True, right_provided=True,
                               state_manager=self.sm)
+        self.app._settle_listings()  # startup lists on workers; wait for it
 
         # Capture the markdown the dialog would render instead of showing it.
         self._captured = []

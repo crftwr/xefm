@@ -9,7 +9,7 @@ the whole PuiKit UI.
 
 The hooks under test:
   * ``XeFMApp._restore_layout_and_paths`` - window layout + pane dir/sort/filter
-  * ``XeFMApp._restore_cursor_positions``  - cursor moved to the remembered file
+  * ``XeFMApp._restore_remembered_cursor`` - cursor moved to the remembered file
   * ``XeFMApp._save_application_state``     - the inverse, persisted on quit
 """
 
@@ -170,7 +170,7 @@ class RestoreCursor(StatePersistenceTestBase):
                          for n in ("a.txt", "b.txt", "c.txt")]
         self.sm.save_pane_cursor_position("left", directory, "b.txt")
 
-        app._restore_cursor_positions()
+        app._restore_remembered_cursor(pane)
 
         self.assertEqual(pane["focused_index"], 1)
 
@@ -180,7 +180,7 @@ class RestoreCursor(StatePersistenceTestBase):
         directory = str(pane["path"])
         pane["files"] = [Path(os.path.join(directory, n)) for n in ("a.txt", "b.txt")]
 
-        app._restore_cursor_positions()
+        app._restore_remembered_cursor(pane)
 
         self.assertEqual(pane["focused_index"], 0)
 
@@ -262,7 +262,7 @@ class SaveApplicationState(StatePersistenceTestBase):
         pane = restored.pm.left_pane
         directory = str(pane["path"])
         pane["files"] = [Path(os.path.join(directory, n)) for n in ("x", "y", "z")]
-        restored._restore_cursor_positions()
+        restored._restore_remembered_cursor(pane)
 
         self.assertEqual(pane["files"][pane["focused_index"]].name, "y")
 

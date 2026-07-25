@@ -33,6 +33,7 @@ class EditSubshellBase(unittest.TestCase):
         self.backend.open()
         self.app = xefm_app.XeFMApp(self.backend, self.tmp, self.tmp,
                               left_provided=True, right_provided=True)
+        self.app._settle_listings()  # startup lists on workers; wait for it
 
     def tearDown(self):
         try:
@@ -50,13 +51,16 @@ class EditSubshellBase(unittest.TestCase):
 class EditFile(EditSubshellBase):
     def test_launches_editor_on_focused_file(self):
         self._focus("note.txt")
+        # The pane path is resolve()'d at startup (e.g. /var -> /private/var on
+        # macOS), so compare against the actual focused entry, not self.file.
+        # Read before the call: returning re-lists both panes on workers, which
+        # empties them until the results land.
+        entry = self.app._focused_entry()
         with patch("subprocess.run") as run:
             self.app.edit_file()
         run.assert_called_once()
         argv = run.call_args.args[0]
-        # The pane path is resolve()'d at startup (e.g. /var -> /private/var on
-        # macOS), so compare against the actual focused entry, not self.file.
-        self.assertEqual(argv[-1], str(self.app._focused_entry()))
+        self.assertEqual(argv[-1], str(entry))
         self.assertIn(self.app.config.TEXT_EDITOR.split()[0], argv[0])
 
     def test_hands_terminal_over_via_suspended(self):
@@ -76,6 +80,7 @@ class EditFile(EditSubshellBase):
             open(os.path.join(self.tmp, "created.txt"), "w").close()
         with patch("subprocess.run", side_effect=fake_run):
             self.app.edit_file()
+        self.app._settle_listings()  # the post-edit re-list runs on a worker
         names = [f.name for f in self.app.pm.left_pane["files"]]
         self.assertIn("created.txt", names)
 

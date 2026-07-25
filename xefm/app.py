@@ -927,10 +927,13 @@ class XeFMApp:
                               file_list_manager=self.flm)
         # Restore saved window layout and pane paths/sort/filter *before* the
         # splitters are built (they read ``pm.left_pane_ratio`` /
-        # ``_panes_fraction``) and before the first refresh lists a directory.
+        # ``_panes_fraction``) and before anything lists a directory — the
+        # listing reads the restored path, sort and filter.
         self._restore_layout_and_paths()
-        self.flm.refresh_files(self.pm.left_pane)
-        self.flm.refresh_files(self.pm.right_pane)
+        # The first listings are NOT started here: like every other listing they
+        # run on a worker thread, and that needs the panel, the result queue and
+        # the pump — none of which exist yet. See ``_start_initial_listings``,
+        # kicked at the end of __init__.
         #: Recent-directory history for the History picker — a bounded, in-order
         #: list of visited paths, recorded on every directory change (see
         #: ``_record_history_path``) and persisted across restarts (#220).
@@ -1076,8 +1079,6 @@ class XeFMApp:
         )
         # (the theme + picker list were resolved above, before the menu / widgets)
         self.log_info(f"XeFM — {self.pm.left_pane['path']}")
-        # Files are listed now, so the saved cursor filenames can be matched.
-        self._restore_cursor_positions()
 
         # Filesystem monitoring: observer threads post pane names to
         # ``reload_queue``; the main thread drains it via an animation tick (and
@@ -1123,6 +1124,23 @@ class XeFMApp:
         self._orig_stderr = sys.stderr
         sys.stdout = _StreamToLog("STDOUT", self._log_queue, on_write=self._wake_pump)
         sys.stderr = _StreamToLog("STDERR", self._log_queue, on_write=self._wake_pump)
+
+        # Everything the listing path needs is up: read the two directories.
+        self._start_initial_listings()
+
+    def _start_initial_listings(self) -> None:
+        """Kick off the two startup listings, on worker threads like every other
+        listing — so launching into a slow mount, a spun-down disk or a remote
+        (S3/SSH) startup directory brings the window up immediately instead of
+        freezing before the first frame.
+
+        Deferred to the very end of ``__init__`` because ``_list_pane`` needs the
+        panel, the result queue and the pump, all of which are built after the
+        panes. The saved cursor is matched *by filename*, so it can only be placed
+        once the files are in — it rides along as each pane's ``on_ready`` rather
+        than running inline as it did when startup listed synchronously."""
+        for name in ("left", "right"):
+            self._list_pane(name, on_ready=self._restore_remembered_cursor)
 
     def _pane_column(self, name: str, view: FilePane) -> LayoutView:
         # A LayoutView wraps the header/list/footer sub-layout as a single widget
@@ -1209,15 +1227,6 @@ class XeFMApp:
             return max(1, int(h) - 4)
         except Exception:
             return 20
-
-    def _restore_cursor_positions(self) -> None:
-        """Move each pane's cursor to the file remembered for its directory."""
-        try:
-            display_height = self._display_height()
-            self.pm.restore_cursor_position(self.pm.left_pane, display_height)
-            self.pm.restore_cursor_position(self.pm.right_pane, display_height)
-        except Exception:
-            pass
 
     def _remember_cursor(self, pane: dict) -> None:
         """Persist the cursor position of the directory ``pane`` currently shows so
@@ -1659,27 +1668,58 @@ class XeFMApp:
         self._sync_active()
         self.active_pane()["focused_index"] = index
 
-    def _refresh(self, pane: dict, *, on_ready=None) -> None:
-        """Re-list ``pane`` after a directory change: reset the cursor, record
-        history, and (re)list — synchronously for a local path, on a worker for a
-        remote one (see ``_list_pane``). ``on_ready(pane)`` runs once the files
-        are in place, for callers that then place the cursor by name.
+    def _relist(self, pane: dict, *, on_ready=None) -> None:
+        """Re-list ``pane`` **in place** — same directory, cursor and scroll left
+        alone — on a worker thread (see ``_list_pane``), so a sort change, a
+        filter change or a post-operation reload never blocks the UI on a slow
+        mount. ``on_ready(pane)`` runs once the files are in place, on the UI
+        thread; anything that reads the new listing (an item count, a cursor
+        placed by name) belongs there, because ``pane['files']`` is empty from
+        here until the result lands.
 
         For a **virtual pane** (a search-results feed) there is no directory to
-        re-list: rebuild the flat listing from the result set in place (re-stat
-        survivors, re-sort, re-filter — see ``FileListManager.refresh_files``),
-        preserving the cursor rather than resetting it, and fire ``on_ready``
-        synchronously. This is the post-op reconciliation path — every existing
-        ``self._refresh(pane)`` call site keeps working after a mutating op."""
+        read: rebuild the flat listing from the result set in memory (re-stat
+        survivors, re-sort, re-filter — see ``FileListManager.refresh_files``)
+        and fire ``on_ready`` synchronously.
+
+        This is the "no directory change" sibling of :meth:`_refresh`, which adds
+        the cursor reset and the history record a navigation needs."""
         if pane.get("virtual"):
             self.flm.refresh_files(pane)
             if on_ready is not None:
                 on_ready(pane)
             return
-        pane["focused_index"] = 0
-        pane["scroll_offset"] = 0
-        self._record_history_path(str(pane["path"]))
         self._list_pane(self._pane_name_of(pane), on_ready=on_ready)
+
+    def _refresh(self, pane: dict, *, on_ready=None) -> None:
+        """Re-list ``pane`` after a directory change: reset the cursor, record
+        history, and (re)list on a worker thread (see :meth:`_relist`).
+        ``on_ready(pane)`` runs once the files are in place, for callers that then
+        place the cursor by name.
+
+        A **virtual pane** (a search-results feed) is rebuilt from its result set
+        rather than re-listed, and keeps its cursor rather than resetting it —
+        there is no directory here to have navigated to. This is the post-op
+        reconciliation path — every existing ``self._refresh(pane)`` call site
+        keeps working after a mutating op."""
+        if not pane.get("virtual"):
+            pane["focused_index"] = 0
+            pane["scroll_offset"] = 0
+            self._record_history_path(str(pane["path"]))
+        self._relist(pane, on_ready=on_ready)
+
+    def _apply_filter(self, pane: dict, pattern: str, *, on_count=None) -> None:
+        """Set ``pane``'s filename filter and re-list it off the UI thread — the
+        async counterpart of ``FileListManager.apply_filter`` (which stays as the
+        synchronous API for non-UI callers).
+
+        ``on_count(n)`` runs once the filtered listing is in place, with the
+        number of visible items. A caller that reports the count must go through
+        it: the count does not exist until the listing lands, so reading
+        ``pane['files']`` straight after this call sees an empty pane."""
+        self.flm.set_filter(pane, pattern)
+        on_ready = None if on_count is None else (lambda p: on_count(len(p["files"])))
+        self._relist(pane, on_ready=on_ready)
 
     def _seed_history(self) -> None:
         """Populate the recent-directory history from the persisted
@@ -1784,7 +1824,7 @@ class XeFMApp:
             return False  # the menu popup drives its own redraw
         elif action == "clear_filter":
             if pane["filter_pattern"]:
-                self.flm.apply_filter(pane, "")
+                self._apply_filter(pane, "")
                 self.log_info("Filter cleared")
             else:
                 self.log_info("No filter to clear")
@@ -2221,8 +2261,8 @@ class XeFMApp:
             self.log_info(f"Command not found: {argv[0]}")
         except Exception as exc:
             self.log_info(f"Command failed: {exc}")
-        self.flm.refresh_files(self.pm.left_pane)
-        self.flm.refresh_files(self.pm.right_pane)
+        self._relist(self.pm.left_pane)
+        self._relist(self.pm.right_pane)
         self.panel.render()
 
     def _launch_associated(self, entry, command: list) -> bool:
@@ -2611,20 +2651,20 @@ class XeFMApp:
             pane["sort_reverse"] = not pane["sort_reverse"]
         else:
             pane["sort_mode"] = mode
-        self.flm.refresh_files(pane)
+        self._relist(pane)
         self.log_info(f"Sort: {self.flm.get_sort_description(pane)}")
 
     def _set_sort(self, mode: str) -> None:
         pane = self.active_pane()
         pane["sort_mode"] = mode
-        self.flm.refresh_files(pane)
+        self._relist(pane)
         self.log_info(f"Sort: {self.flm.get_sort_description(pane)}")
         self.panel.render()
 
     def _toggle_reverse(self) -> None:
         pane = self.active_pane()
         pane["sort_reverse"] = not pane["sort_reverse"]
-        self.flm.refresh_files(pane)
+        self._relist(pane)
         self.log_info(f"Sort: {self.flm.get_sort_description(pane)}")
         self.panel.render()
 
@@ -3553,9 +3593,9 @@ class XeFMApp:
             return True
 
         def on_complete(result: dict) -> None:
-            self.flm.refresh_files(dst_pane)
+            self._relist(dst_pane)
             if kind == "move":
-                self.flm.refresh_files(src_pane)
+                self._relist(src_pane)
             src_pane["selected_files"].clear()
             self.log_info(format_op_summary(verb, result))
             self._report_op_failures(verb, result)
@@ -3719,7 +3759,7 @@ class XeFMApp:
                     self.log_info(f"Archive creation failed: {exc}")
                 else:
                     self.log_info(f"Created {name} ({added} file(s)) in {dest_dir}")
-                self.flm.refresh_files(self.pm.get_inactive_pane())
+                self._relist(self.pm.get_inactive_pane())
                 self.panel.render()
 
             if archive_path.exists():
@@ -3777,7 +3817,7 @@ class XeFMApp:
                 self.log_info(f"Extraction failed: {exc}")
             else:
                 self.log_info(f"Extracted {entry.name} → {target.name}/ ({count} entries)")
-            self.flm.refresh_files(self.pm.get_inactive_pane())
+            self._relist(self.pm.get_inactive_pane())
             self.panel.render()
 
         def do_extract(pwd: bytes | None) -> None:
@@ -3796,7 +3836,7 @@ class XeFMApp:
                 # slips through, report it clearly rather than as a raw traceback.
                 self.log_info(
                     f"Cannot extract {entry.name}: AES-encrypted zips are not supported")
-                self.flm.refresh_files(self.pm.get_inactive_pane())
+                self._relist(self.pm.get_inactive_pane())
                 self.panel.render()
                 return
             except Exception as exc:  # noqa: BLE001 — reported to the user
@@ -3872,11 +3912,14 @@ class XeFMApp:
 
         def apply(pattern: str) -> None:
             pattern = pattern.strip()
-            count = self.flm.apply_filter(pane, pattern)
             if pattern:
                 self._record_filter_pattern(pattern)
-                self.log_info(f"Filter '{pattern}': {count} item(s)")
+                # The item count only exists once the (async) listing lands, so
+                # the summary is logged from there — and redrawn by the same pump.
+                self._apply_filter(pane, pattern, on_count=lambda count:
+                                   self.log_info(f"Filter '{pattern}': {count} item(s)"))
             else:
+                self._apply_filter(pane, pattern)
                 self.log_info("Filter cleared")
             self.panel.render()
 
@@ -4411,7 +4454,7 @@ class XeFMApp:
             return
 
         def on_complete(result: dict) -> None:
-            self.flm.refresh_files(pane)
+            self._relist(pane)
             self.log_info(format_op_summary("Copy", result))
             self._report_op_failures("Copy", result)
             self.panel.render()

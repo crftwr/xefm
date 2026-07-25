@@ -587,31 +587,47 @@ class FileListManager:
         
         return matches
     
-    def apply_filter(self, pane_data, pattern):
-        """Apply filename filter pattern to the specified pane.
-        
-        This method sets the filter pattern and refreshes the file list to
-        show only files matching the pattern. Directories are always shown.
-        
+    def set_filter(self, pane_data, pattern):
+        """Set a pane's filename filter and reset the view state a filter change
+        invalidates — **without** re-reading the directory.
+
+        Split out of :meth:`apply_filter` for the same reason ``compute_listing``
+        is split out of ``refresh_files``: a caller that re-lists on a worker
+        thread still gets the pane-state half in one place, so "what a filter
+        change resets" is defined once. See ``XeFMApp._apply_filter``.
+
         Args:
             pane_data: Dictionary containing pane state
             pattern: Filename pattern (e.g., "*.txt", "test*")
                     Empty string clears the filter
-        
-        Updates:
-            - pane_data['filter_pattern']: Current filter pattern
-            - pane_data['files']: Filtered file list (via refresh_files)
         """
         pane_data['filter_pattern'] = pattern
-        
+
         # Reset selection and scroll when filter changes
         pane_data['focused_index'] = 0
         pane_data['scroll_offset'] = 0
         pane_data['selected_files'].clear()  # Clear selections when filter changes
-        
+
+    def apply_filter(self, pane_data, pattern):
+        """Apply filename filter pattern to the specified pane, synchronously.
+
+        This method sets the filter pattern and refreshes the file list to
+        show only files matching the pattern. Directories are always shown.
+
+        Args:
+            pane_data: Dictionary containing pane state
+            pattern: Filename pattern (e.g., "*.txt", "test*")
+                    Empty string clears the filter
+
+        Updates:
+            - pane_data['filter_pattern']: Current filter pattern
+            - pane_data['files']: Filtered file list (via refresh_files)
+        """
+        self.set_filter(pane_data, pattern)
+
         # Refresh files with new filter
         self.refresh_files(pane_data)
-        
+
         return len(pane_data['files'])
     
     def clear_filter(self, pane_data):

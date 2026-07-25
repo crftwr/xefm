@@ -66,7 +66,7 @@ def _extract_app(entry, dest_dir, *, confirm=False):
     app._focused_entry = lambda: entry
     app.pm = types.SimpleNamespace(get_inactive_pane=lambda: {"path": dest_dir})
     app.refreshes = []
-    app.flm = types.SimpleNamespace(refresh_files=lambda pane: app.refreshes.append(pane))
+    app._relist = lambda pane, **kw: app.refreshes.append(pane)
     app.config = types.SimpleNamespace(CONFIRM_EXTRACT_ARCHIVE=confirm)
     return app
 
