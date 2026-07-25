@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm.compare_dialog import CompareSelectDialog, ConditionRow  # noqa: E402
+from xefm.path import Path  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
 from puikit.event import Event, EventType  # noqa: E402
 
@@ -59,6 +60,11 @@ class CompareDialogApp(unittest.TestCase):
         # freshly-drawn dialog's first frame is mid-animation rather than final.
         # Force the effect off: it is not what this file is about.
         self.app.panel.set_text_effect(False)
+        # Nothing here needs the filesystem watcher, and a real watchdog observer
+        # per test is flaky under the xdist/PyObjC runner (see
+        # test_search_results_pane.py). Stop it and keep it off.
+        self.app.file_monitor.stop_monitoring()
+        self.app.file_monitor.enabled = False
         self.app._settle_listings()
 
     def tearDown(self):
@@ -161,6 +167,50 @@ class CompareDialogApp(unittest.TestCase):
             self.b.run_animation_ticks()
             time.sleep(0.01)
         self.b.run_animation_ticks()
+        self.assertEqual(self._selected_names(), {"newer.txt"})
+
+    # --- virtual (search-results) panes --------------------------------------
+
+    def test_compare_from_virtual_pane(self):
+        """A search-results pane compares like any other listing — its rows are
+        real paths, joined by name to the other pane — and stays virtual."""
+        sub = os.path.join(self.left, "sub")
+        os.mkdir(sub)
+        _write(sub, "newer.txt", b"CCCC", mtime=9000.0)   # scattered hit, newer
+        self.app._feed_search_results(
+            "filename",
+            [Path(os.path.join(self.left, "same.txt")),
+             Path(os.path.join(sub, "newer.txt"))],
+            Path(self.left), "txt")
+        pane = self.app.active_pane()
+        self.assertIsNotNone(pane["virtual"])
+
+        dlg = self._open()                    # no longer blocked
+        _enable(dlg._mtime, "newer")
+        dlg._accept()
+        self.assertEqual(pane["selected_files"], {os.path.join(sub, "newer.txt")})
+        self.assertIsNotNone(pane["virtual"])  # comparing doesn't leave the results
+
+    def test_compare_against_virtual_other_pane(self):
+        """Results on the *other* side: the active directory listing is joined to
+        the scattered result set, and a name carrying several candidates matches
+        when any of them satisfies the relation."""
+        one, two = os.path.join(self.right, "one"), os.path.join(self.right, "two")
+        os.mkdir(one); os.mkdir(two)
+        _write(one, "newer.txt", b"AAAA", mtime=9000.0)   # newer than the left copy
+        _write(two, "newer.txt", b"AAAA", mtime=1000.0)   # older than the left copy
+
+        self.app.pm.switch_pane()             # feed the results into the right pane
+        self.app._feed_search_results(
+            "filename",
+            [Path(os.path.join(one, "newer.txt")), Path(os.path.join(two, "newer.txt"))],
+            Path(self.right), "newer.txt")
+        self.assertIsNotNone(self.app.active_pane()["virtual"])
+        self.app.pm.switch_pane()             # back to the left directory listing
+
+        dlg = self._open()
+        _enable(dlg._mtime, "newer")          # left copy is newer than two/newer.txt
+        dlg._accept()
         self.assertEqual(self._selected_names(), {"newer.txt"})
 
     # --- keyboard model (no Tab, no buttons) ---------------------------------

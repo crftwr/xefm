@@ -109,6 +109,7 @@ operation consumes that and works **unchanged**.
 | Delete / Rename / batch-rename | Use `entry.parent / name`; post-op re-stat drops or re-points affected entries. |
 | Info / details | For a content hit, appends the matched **line number** (+ text) from `virtual["meta"]`. |
 | Sort / Filter | Re-sort / re-filter the in-memory `results` (via `refresh_files` → `compute_listing_from_paths`), not a directory re-list. The existing sort/filter actions just set the knobs and call `_refresh`; no new key bindings. |
+| Compare & Select (`W`) | Works with a results view on **either** side — the engine joins two feeds of `Path`s by name, and a virtual pane's rows are real paths. Both feeds are the panes' *displayed* listings (sorted + filtered). Since a result set spans directories, the other side can hold several same-named candidates; an entry is selected when **any** of them satisfies the relations (a directory listing has unique names, so this generalization is a no-op there). Selecting keeps the pane virtual. |
 | Run-command | Passes **absolute paths** with `cwd` = search root (bare names with `cwd=pane["path"]` would not resolve for scattered files). |
 
 **Post-operation reconciliation.** A virtual pane can't re-list, so after a

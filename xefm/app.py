@@ -4076,14 +4076,16 @@ class XeFMApp:
 
     def compare_selection(self) -> None:
         """W: open the Compare & Select dialog, then mark items in the active pane
-        by comparing each with the same-named item in the other pane. Blocked when
-        either pane is a virtual (search-results) view — there's no real listing to
-        compare against."""
+        by comparing each with the same-named item in the other pane.
+
+        Either side may be a virtual (search-results) pane: its rows are real
+        ``Path``s, so the engine's name join applies to them exactly as it does to
+        a directory listing — the compared feed is the pane's *displayed* listing
+        (sorted + filtered) on both sides. A result set spans directories, so the
+        other side may hold several same-named candidates; the engine selects an
+        entry when any of them matches."""
         pane = self.active_pane()
         other = self.pm.get_inactive_pane()
-        if pane.get("virtual") or other.get("virtual"):
-            self.log_info("Compare & select needs two real directories")
-            return
         if not pane["files"]:
             self.log_info("No items to compare")
             return

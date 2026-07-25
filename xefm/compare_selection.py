@@ -8,6 +8,13 @@ only when ``include_missing`` is set. This module is pure and headless — the d
 (``xefm.compare_dialog``) builds a :class:`CompareCriteria`, and the app folds the
 returned path set into ``pane['selected_files']``.
 
+Both feeds are just iterables of path-like entries, so either side may be a
+**virtual (search-results) listing** as well as a directory listing. A result set
+spans directories, so the other side can hold several entries sharing a basename:
+they are all kept as candidates and an entry matches when **any** candidate
+satisfies the relations (order-independent — a directory listing has unique names,
+so this is a no-op there).
+
 The relations subsume the legacy three-way menu and add direction:
 
 - ``size``    — ``any`` / ``equal`` / ``differs``   (ignored for directories)
@@ -85,17 +92,21 @@ def compute_compare_selection(
     """Select entries in ``current_files`` by comparing each with its counterpart
     in ``other_files`` under ``criteria``. Returns a :class:`CompareResult`.
 
-    ``current_files`` / ``other_files`` are ``xefm.path.Path``-like entries. Names
-    are NFC-normalized and joined with type (file vs dir), so a file never matches
-    a same-named directory. Entries whose ``stat`` fails are skipped.
+    ``current_files`` / ``other_files`` are ``xefm.path.Path``-like entries — a
+    directory listing or a virtual (search-results) set, either side. Names are
+    NFC-normalized and joined with type (file vs dir), so a file never matches a
+    same-named directory. When the other side holds several entries with the same
+    name (only possible for a result set spanning directories), the entry is
+    selected if **any** of them satisfies the relations. Entries whose ``stat``
+    fails are skipped.
 
     ``checkpoint`` is called between entries and between content chunks (a worker
     raises from it to cancel); ``on_advance(entry)`` is called once per current
     entry, before it is compared, for progress reporting."""
-    other_by_key: dict[tuple[str, bool], object] = {}
+    other_by_key: dict[tuple[str, bool], list] = {}
     for p in other_files:
         try:
-            other_by_key[(_norm(p.name), p.is_dir())] = p
+            other_by_key.setdefault((_norm(p.name), p.is_dir()), []).append(p)
         except OSError:
             continue
 
@@ -109,23 +120,30 @@ def compute_compare_selection(
         except OSError:
             continue
 
-        other = other_by_key.get((_norm(cur.name), cur_is_dir))
-        if other is None:
+        candidates = other_by_key.get((_norm(cur.name), cur_is_dir))
+        if not candidates:
             if criteria.include_missing:
                 _add(result, cur, cur_is_dir)
             continue
 
-        try:
-            if _matches(cur, other, cur_is_dir, criteria, checkpoint):
-                _add(result, cur, cur_is_dir)
-        except OSError:
-            continue
+        for other in candidates:
+            try:
+                if _matches(cur, other, cur_is_dir, criteria, checkpoint):
+                    _add(result, cur, cur_is_dir)
+                    break
+            except OSError:
+                continue
 
     return result
 
 
 def _add(result: CompareResult, entry, is_dir: bool) -> None:
-    result.paths.add(str(entry))
+    """Record ``entry`` as selected, once — a virtual feed can repeat a path, and
+    the file/dir counts must stay in step with the (deduplicating) path set."""
+    key = str(entry)
+    if key in result.paths:
+        return
+    result.paths.add(key)
     if is_dir:
         result.dirs += 1
     else:

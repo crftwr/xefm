@@ -171,6 +171,71 @@ def test_nfc_normalization_of_names(tmp_path):
     assert _run(left, right, CompareCriteria()).paths == {str(left / nfc)}
 
 
+# --- virtual (search-results) feeds ------------------------------------------
+
+def test_scattered_current_feed_joins_by_name(tmp_path):
+    """A search-results feed on the current side: entries live in different
+    directories and are joined to the other pane by basename, like any listing."""
+    right = tmp_path / "R"; right.mkdir()
+    one, two = tmp_path / "one", tmp_path / "two"
+    one.mkdir(); two.mkdir()
+    _write(one / "hit.txt"); _write(two / "miss.txt")
+    _write(right / "hit.txt")
+
+    res = compute_compare_selection([_P(one / "hit.txt"), _P(two / "miss.txt")],
+                                    _entries(right), CompareCriteria())
+    assert res.paths == {str(one / "hit.txt")}
+
+
+def test_any_same_named_candidate_matches(tmp_path):
+    """The other side may be a result set holding several entries with the same
+    name; the current entry is selected when *any* of them satisfies the relation,
+    so the answer doesn't depend on the feed order."""
+    cur = tmp_path / "C"; cur.mkdir()
+    one, two = tmp_path / "one", tmp_path / "two"
+    one.mkdir(); two.mkdir()
+    _write(cur / "x.txt", mtime=3000.0)
+    _write(one / "x.txt", mtime=1000.0)   # older than the current entry
+    _write(two / "x.txt", mtime=5000.0)   # newer than the current entry
+    others = [_P(one / "x.txt"), _P(two / "x.txt")]
+
+    # Matches through the older candidate...
+    assert compute_compare_selection(
+        _entries(cur), others, CompareCriteria(mtime="newer")).paths == {str(cur / "x.txt")}
+    # ...and through the newer one, whichever order they arrive in.
+    assert compute_compare_selection(
+        _entries(cur), list(reversed(others)),
+        CompareCriteria(mtime="older")).paths == {str(cur / "x.txt")}
+
+
+def test_candidates_present_but_none_match(tmp_path):
+    """Same-named candidates exist, so the entry is not an orphan — it simply
+    fails the relation against every one of them."""
+    cur = tmp_path / "C"; cur.mkdir()
+    one, two = tmp_path / "one", tmp_path / "two"
+    one.mkdir(); two.mkdir()
+    _write(cur / "x.txt", mtime=3000.0)
+    _write(one / "x.txt", mtime=4000.0)
+    _write(two / "x.txt", mtime=5000.0)
+    others = [_P(one / "x.txt"), _P(two / "x.txt")]
+
+    for criteria in (CompareCriteria(mtime="newer"),
+                     CompareCriteria(mtime="newer", include_missing=True)):
+        assert compute_compare_selection(_entries(cur), others, criteria).paths == set()
+
+
+def test_repeated_current_entry_counted_once(tmp_path):
+    """A feed may repeat a path; the counts stay in step with the path set."""
+    left, right = tmp_path / "L", tmp_path / "R"
+    left.mkdir(); right.mkdir()
+    _write(left / "a.txt"); _write(right / "a.txt")
+    entry = _P(left / "a.txt")
+
+    res = compute_compare_selection([entry, entry], _entries(right), CompareCriteria())
+    assert res.total == 1
+    assert (res.files, res.dirs) == (1, 0)
+
+
 def test_needs_content_flag():
     assert not CompareCriteria().needs_content
     assert not CompareCriteria(size="equal", mtime="newer").needs_content
