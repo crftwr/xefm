@@ -37,7 +37,7 @@ XeFM (*Xenolith File Manager*) is a powerful dual-pane file manager that runs bo
 
 ## Installation
 
-**Desktop app (Windows, macOS).** Download the `.dmg` or the `-win64.zip` from
+**Desktop app (Windows, macOS).** Download the `-macos.dmg` or the `-win64.zip` from
 the [latest release](https://github.com/crftwr/xefm/releases/latest) and install
 it like any other application — Python is bundled in. This is the recommended
 way to run XeFM on the desktop; see the

@@ -156,7 +156,9 @@ main() {
     
     # Extract version
     VERSION=$(extract_version_from_plist)
-    DMG_FILENAME="${DMG_NAME}-${VERSION}.dmg"
+    # Platform suffix keeps release assets self-describing and matches the
+    # Windows bundle's naming (XeFM-<version>-win64.zip from build.ps1).
+    DMG_FILENAME="${DMG_NAME}-${VERSION}-macos.dmg"
     DMG_PATH="${BUILD_DIR}/${DMG_FILENAME}"
     
     log_info "Creating DMG: ${DMG_FILENAME}"

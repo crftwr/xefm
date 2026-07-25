@@ -81,7 +81,7 @@ cd macos_app
 ./create_dmg.sh
 ```
 
-The DMG will be at `macos_app/build/XeFM-{version}.dmg`.
+The DMG will be at `macos_app/build/XeFM-{version}-macos.dmg`.
 
 ### Installing to Applications
 
@@ -121,7 +121,7 @@ macos_app/
 └── build/                      # Build output (created by build.sh)
     ├── XeFM                     # Compiled executable
     ├── XeFM.app/               # Complete app bundle
-    └── XeFM-{version}.dmg      # DMG installer
+    └── XeFM-{version}-macos.dmg  # DMG installer
 ```
 
 ## Build Requirements
@@ -243,7 +243,7 @@ Creates a distributable DMG installer containing XeFM.app.
 3. Creates temporary directory with XeFM.app
 4. Creates or copies INSTALL.md documentation
 5. Creates compressed DMG with `hdiutil`
-6. Names DMG as `XeFM-{version}.dmg`
+6. Names DMG as `XeFM-{version}-macos.dmg`
 
 **Usage:**
 
@@ -485,7 +485,7 @@ open build/XeFM.app
 3. Build + sign + notarize the app: `./build.sh`
 4. Test the app thoroughly (see Testing Guide)
 5. Create + sign + notarize the DMG: `./create_dmg.sh`
-6. Distribute `XeFM-{version}.dmg`
+6. Distribute `XeFM-{version}-macos.dmg`
 
 For a quick local build, skip step 2 — the app is unsigned but runnable on your
 own machine.

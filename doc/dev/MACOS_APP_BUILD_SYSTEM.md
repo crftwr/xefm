@@ -359,7 +359,7 @@ spctl -a -vvv --type exec build/XeFM.app
 
 # Notarization tickets are stapled
 xcrun stapler validate build/XeFM.app
-xcrun stapler validate build/XeFM-<version>.dmg
+xcrun stapler validate build/XeFM-<version>-macos.dmg
 ```
 
 ### Troubleshooting notarization

@@ -423,7 +423,9 @@ macos-dmg: macos-app
 # way, so the two always agree without a second place to bump. Override with
 # VERSION=x.y.z to target a different release.
 XEFM_VERSION := $(if $(VERSION),$(VERSION),$(shell sed -nE 's/^__version__[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' xefm/__init__.py 2>/dev/null | head -1))
-MACOS_DMG := macos_app/build/XeFM-$(XEFM_VERSION).dmg
+# Filename mirrors create_dmg.sh's own naming (XeFM-<version>-macos.dmg), the
+# same platform-suffixed shape as WINDOWS_APP_ZIP below.
+MACOS_DMG := macos_app/build/XeFM-$(XEFM_VERSION)-macos.dmg
 
 # File target so `macos-dmg-upload` builds the DMG on demand when it is missing
 # (e.g. after 'make macos-app-clean') instead of failing at the upload. An

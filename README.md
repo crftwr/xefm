@@ -39,7 +39,7 @@ Download from the **[latest release](https://github.com/crftwr/xefm/releases/lat
 
 | Platform | Asset | Install |
 |---|---|---|
-| **macOS** 10.13+ | `XeFM-<version>.dmg` | Open the DMG and drag **XeFM** to *Applications*. Signed with the author's Apple Developer ID. |
+| **macOS** 10.13+ | `XeFM-<version>-macos.dmg` | Open the DMG and drag **XeFM** to *Applications*. Signed with the author's Apple Developer ID. |
 | **Windows** 10/11 x64 | `XeFM-<version>-win64.zip` | Portable folder: unblock the zip, extract anywhere, run `XeFM.exe`. **Not code-signed yet** — SmartScreen warns once, see below. |
 
 Then launch it like any other app — Launchpad or Spotlight on macOS, the Start

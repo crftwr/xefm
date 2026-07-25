@@ -46,7 +46,7 @@ Guide use.
 
 GitHub also serves `…/releases/latest/download/<asset-name>` as a direct
 download, but only for an asset whose **name does not change between releases**.
-XeFM's bundle filenames embed the version (`XeFM-1.0.1.dmg`,
+XeFM's bundle filenames embed the version (`XeFM-1.0.1-macos.dmg`,
 `XeFM-1.0.1-win64.zip`), so that form does not apply — a permanent direct link
 would mean also attaching a second, version-less copy of each asset
 (`XeFM-macOS.dmg`, `XeFM-Windows-x64.zip`) on every release. The plain

@@ -55,7 +55,7 @@ always resolves to the newest stable release, so it never needs updating:
 
 | Platform | Asset | Signed? |
 |---|---|---|
-| macOS 10.13+ (Intel & Apple Silicon) | `XeFM-<version>.dmg` | Yes — Apple Developer ID |
+| macOS 10.13+ (Intel & Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
 | Windows 10/11 x64 | `XeFM-<version>-win64.zip` | Not yet — Microsoft Store submission in certification |
 
 You can also link straight to a specific release, e.g.
@@ -63,7 +63,7 @@ You can also link straight to a specific release, e.g.
 
 #### macOS — the DMG
 
-1. Download `XeFM-<version>.dmg` from the release page.
+1. Download `XeFM-<version>-macos.dmg` from the release page.
 2. Double-click it and drag **XeFM** onto the *Applications* shortcut.
 3. Eject the disk image and launch **XeFM** from Launchpad or Spotlight.
 
