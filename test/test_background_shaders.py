@@ -62,6 +62,18 @@ class Registry(unittest.TestCase):
         for kind, params in SHADER_KINDS.items():
             self.assertIn(SHADER_ENTRY, params["source"], kind)
 
+    def test_every_scene_dissolves_when_idle(self):
+        # The backend parks an animated background after ~a minute of no input.
+        # What it comes to rest *as* is the scene's call, and every scene XeFM ships
+        # is nothing but motion — rain falling, stars streaming, a corridor being
+        # flown through — so the frame a freeze would leave behind is not a picture
+        # of anything, just wherever the objects happened to be. They fade out
+        # instead. A scene composed to be looked at still may say "freeze"; it would
+        # be the first, so this asserts the current answer rather than a rule.
+        for kind, params in SHADER_KINDS.items():
+            self.assertEqual(params.get("idle"), "fade", kind)
+            self.assertTrue(Shader(**params).fades_when_idle, kind)
+
     def test_every_scene_ships_an_hlsl_translation(self):
         # A shader is the one backend-specific part of a background: macOS compiles
         # ``source`` (MSL), Windows compiles ``source_hlsl`` (HLSL). A scene missing
@@ -235,6 +247,22 @@ class Compilation(unittest.TestCase):
             self.assertGreater(near_backdrop, (len(px) // 4) * 0.5,
                                f"{kind} covers more than half the window")
 
+    def test_every_shader_vanishes_at_zero_fade(self):
+        # What makes the idle fade-out work, and the one thing it needs from the
+        # scenes: the backend dissolves a parked scene by scaling the opacity
+        # uniform to zero, so at zero every scene must leave the *bare backdrop* —
+        # not a dimmed version of itself. A scene that added its colour rather than
+        # mixing over the backdrop would park on a visible ghost.
+        for kind in SHADER_KINDS:
+            renderer = MetalBackground()
+            self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
+            px = MetalBackground.texture_pixels(
+                renderer.render_to_texture(160, 100, 2.0, 0.0))
+            off = [i for i in range(0, len(px), 4)
+                   if any(abs(a - b) > 1 for a, b in
+                          zip((px[i + 2], px[i + 1], px[i]), _BACKDROP))]
+            self.assertEqual(off, [], f"{kind} still shows at zero fade")
+
 
 @d3d_only
 class CompilationD3D(unittest.TestCase):
@@ -277,6 +305,17 @@ class CompilationD3D(unittest.TestCase):
                        zip((px[i + 2], px[i + 1], px[i]), _BACKDROP)))
             self.assertGreater(near_backdrop, (len(px) // 4) * 0.5,
                                f"{kind} covers more than half the window")
+        renderer.close()
+
+    def test_every_shader_vanishes_at_zero_fade(self):
+        renderer = D3DShaderBackground()
+        for kind in SHADER_KINDS:
+            self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
+            px = renderer.render_pixels(160, 100, 2.0, 0.0)   # see the Metal twin
+            off = [i for i in range(0, len(px), 4)
+                   if any(abs(a - b) > 1 for a, b in
+                          zip((px[i + 2], px[i + 1], px[i]), _BACKDROP))]
+            self.assertEqual(off, [], f"{kind} still shows at zero fade")
         renderer.close()
 
 

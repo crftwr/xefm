@@ -114,8 +114,14 @@ could reach this pixel":
 ## Registration and resolution
 
 ```python
-SHADER_KINDS = {"starfield": {"source": STARFIELD_MSL, "source_hlsl": STARFIELD_HLSL}, ...}
+SHADER_KINDS = {"starfield": {"source": STARFIELD_MSL, "source_hlsl": STARFIELD_HLSL,
+                              "source_glsl": STARFIELD_GLSL, "idle": "fade"}, ...}
 ```
+
+The keys here are the fields that belong to the *scene* rather than the theme — the
+three dialects, `resolution_scale`, and `idle` (see [What it parks
+as](#what-it-parks-as-shaderidle)). A theme can override `speed`, `opacity` and
+`color`; it cannot override these.
 
 The dict is splatted straight into `Shader(...)`, so a stray key is a `TypeError` at
 theme-apply time — there is a test that constructs every entry. From there:
@@ -139,13 +145,16 @@ with no usable shader path) inherits a no-op, so none of this branches on the ba
 ## Adding a scene
 
 1. Write `<SCENE>_MSL` and `<SCENE>_HLSL` in `xefm/background_shaders.py`.
-2. Add both to `SHADER_KINDS`, with `resolution_scale` if the scene can afford it.
+2. Add both to `SHADER_KINDS`, with `resolution_scale` if the scene can afford it and
+   an `idle` mode — `"fade"` unless the scene is composed to be looked at when still.
 3. Add a row to the table in `doc/COLOR_SCHEMES_FEATURE.md` (Background animations section) and to the theme
    comment block in `xefm/_config.py`.
 4. Update the expected set in `test/test_background_shaders.py`. The generic suites
    pick the scene up from `SHADER_KINDS` automatically, so compilation, drawing,
-   animating, freezing at `speed=0`, following the ink, staying a backdrop and
-   dialect parity all come for free.
+   animating, freezing at `speed=0`, following the ink, staying a backdrop,
+   vanishing at zero fade and dialect parity all come for free. A scene that means to
+   `"freeze"` has to relax `test_every_scene_dissolves_when_idle`, which asserts the
+   current answer (all seven fade) rather than a rule.
 
 ### Verifying the look
 
@@ -222,11 +231,12 @@ window over half a minute.
 ## Idle parking
 
 An animated background is the only thing in XeFM that keeps an idle app redrawing
-indefinitely, so PuiKit stops it when nobody is watching. Lives in `MacOSBackend`, so
-neither XeFM nor any scene has to opt in.
+indefinitely, so PuiKit stops it when nobody is watching. Lives in `MacOSBackend` (and
+its Windows twin), so neither XeFM nor any scene has to opt in.
 
-- `_bg_target` asks for full rate while the window holds focus **and** input was
-  recent (`_BG_IDLE_TIMEOUT`, 15s); otherwise zero.
+- `_bg_user_active` is the one definition of "being used": the window holds focus
+  **and** input was recent (`_BG_IDLE_TIMEOUT`, 15s). Both ramps below key off it.
+- `_bg_target` asks for full rate while the app is being used, otherwise zero.
 - `_background_tick` eases `_bg_rate` toward that target — `_BG_RAMP_DOWN` (40s)
   falling, `_BG_RAMP_UP` (15s) rising — through `_smoothstep`, so the *change in
   speed* is gradual at both ends. Measured: at most **0.17%** change in speed per
@@ -236,8 +246,8 @@ neither XeFM nor any scene has to opt in.
   from last input to parked. Parking is deferred, not skipped.
 - At zero the tick returns `False`, unregistering itself, which lets
   `_ensure_animation_timer` drop the frame timer to the 10Hz idle rate — where the
-  actual power saving comes from. The last frame stays on screen; the shader's layer
-  keeps its drawable.
+  actual power saving comes from. The last frame drawn stays on screen; the shader's
+  layer keeps its drawable.
 - `_dispatch` calls `_ensure_background_ticker` on every input.
 
 **The clock is the subtle part.** `_bg_clock` counts *animated* time — it advances by
@@ -249,6 +259,61 @@ This is why a scene must take its motion from the `time` uniform and nothing els
 `_smoothstep` and `_approach` are module-level pure functions specifically so the ramp
 is exactly testable, and `tests/test_background_idle.py` drives the whole park/resume
 lifecycle against a fake clock — no window, no waiting.
+
+### What it parks *as*: `Shader.idle`
+
+Stopping is only half the question; the other half is what is left on screen, and that
+is the scene's call, declared per entry in `SHADER_KINDS`:
+
+| `idle` | Rest state | For |
+|--------|-----------|-----|
+| `"freeze"` (puikit default) | holds the last frame | a scene whose frames are composed images |
+| `"fade"` | dissolves to the theme background | a scene that *is* motion |
+
+**Every XeFM scene says `"fade"`.** They are all pure motion — rain only falls, stars
+only stream, the corridor is only flown down — so a frozen frame is not a picture of
+anything, just wherever the objects were when the ramp ran out, held indefinitely. It
+reads as a hang, not a rest state. Fading resolves to a colour the palette already
+contains. A future scene composed to be looked at still (a skyline, a horizon) should
+say `"freeze"`, which is why this is a per-scene field and not a global.
+
+The mechanics are one more ramp beside the rate:
+
+- `_bg_fade` eases toward `_bg_fade_target` over the same spans the rate uses.
+- **A dissolving scene does not also decelerate.** `_bg_dissolves` picks between two
+  rate rules: a freezing scene rides the coast-down ramp, because the ramp is how it
+  *arrives* at the frame it will hold; a dissolving scene holds `_bg_rate = 1.0` and
+  simply goes. Slowing it as well puts a visible deceleration on screen for the whole
+  40s of the fade — which is exactly the "it has stopped" reading the fade exists to
+  avoid. Once `_bg_fade` reaches 0 the rate drops outright rather than coasting:
+  nothing is left on screen to witness the change, and a 40s coast on an invisible
+  scene is pure battery. Resume is the same asymmetry in reverse — the rate snaps back
+  to full at zero opacity, where it cannot be seen, and only the fade-in reads.
+- The eased fade multiplies the descriptor's `opacity` on its way into the uniform
+  (`_metal._uniforms`, `_d3d_shader._write_uniforms`). Nothing in the shaders changes:
+  every scene already ends on `mix(backdrop, rgb, coverage * opacity)`, so a fade of 0
+  *is* the bare backdrop. `test_every_shader_vanishes_at_zero_fade` holds every scene
+  to that — a scene that added its colour instead of mixing over the backdrop would
+  park on a visible ghost.
+- The tick now renders **before** it decides to park, because the frame left on screen
+  has to be the settled one. Parking a frame early would strand a fading scene at
+  whatever it was one frame short of gone. For the same reason a *withheld* final
+  frame (the compositor can refuse a drawable while occluded or mid-resize) is
+  retried rather than parked on — bounded by `_BG_PARK_RETRIES`, since a window that
+  can never present must not hold the frame timer open on the strength of one lost
+  frame.
+- **Reduced motion does not fade**, however a scene is marked. It is not idleness —
+  the user is still there — and a slow dissolve is exactly the motion the setting asks
+  to be rid of, so its rest state stays the still frame. That divergence is the whole
+  reason `_bg_fade` is a separate variable rather than a reuse of `_bg_rate`.
+- The web backend runs the scene from `requestAnimationFrame` with no idle logic of
+  its own, so nothing there parks and nothing there fades; `idle` is inert on web.
+
+To see a stage of the dissolve without waiting out the real 55s, render one:
+
+```bash
+PYTHONPATH=. python tools/render_background_animations.py --kind rain --fade 0.3
+```
 
 ## Compositing
 

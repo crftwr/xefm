@@ -47,12 +47,16 @@ SCENE_THEME = {"starfield": "sci-fi", "rain": "phosphor",
                "wave": "sci-fi"}
 
 
-def render(kind, width, height, t, *, speed, opacity, theme, path):
+def render(kind, width, height, t, *, speed, opacity, theme, path, fade=1.0):
     """Draw one frame of ``kind`` to a PNG at ``path``; returns the lit-pixel share.
 
     The share is a rough density read — how much of the frame the scene actually
     covers. These sit behind a working file manager, so a scene that lights most of
     the window is a scene that will fight the filenames on top of it.
+
+    ``fade`` is where the scene is along the idle dissolve the backend runs when the
+    app is parked (1 = in use, 0 = fully gone). Rendering a mid-fade frame is the
+    only way to see that stage without waiting out the real ~55s ramp.
     """
     fg, bg = THEMES[theme]
     renderer = MetalBackground()
@@ -62,7 +66,8 @@ def render(kind, width, height, t, *, speed, opacity, theme, path):
                     **SHADER_KINDS[kind])
     if not renderer.set_shader(shader):
         raise SystemExit(f"shader {kind!r} failed to compile:\n{renderer.error}")
-    bgra = MetalBackground.texture_pixels(renderer.render_to_texture(width, height, t))
+    bgra = MetalBackground.texture_pixels(
+        renderer.render_to_texture(width, height, t, fade))
 
     lit = sum(1 for i in range(0, len(bgra), 4)
               if max(abs(bgra[i + 2] - bg[0]), abs(bgra[i + 1] - bg[1]),
@@ -97,6 +102,8 @@ def main():
     parser.add_argument("--time", type=float, default=6.0, help="scene time in seconds")
     parser.add_argument("--speed", type=float, default=0.6, help="speed multiplier (XeFM default 0.6)")
     parser.add_argument("--opacity", type=float, default=0.6, help="scene opacity (XeFM default 0.6)")
+    parser.add_argument("--fade", type=float, default=1.0,
+                        help="where along the idle dissolve to render, 1=in use, 0=parked")
     parser.add_argument("--theme", choices=sorted(THEMES), help="palette (default: per scene)")
     parser.add_argument("--out", default="temp", help="output directory (default: temp/)")
     args = parser.parse_args()
@@ -108,7 +115,7 @@ def main():
         path = os.path.join(args.out, f"bg_{kind}.png")
         theme = args.theme or SCENE_THEME.get(kind, "dark")
         lit = render(kind, width, height, args.time, speed=args.speed,
-                     opacity=args.opacity, theme=theme, path=path)
+                     opacity=args.opacity, theme=theme, path=path, fade=args.fade)
         print(f"{kind:14s} {lit:5.1f}% lit  {theme:9s} -> {path}")
 
 

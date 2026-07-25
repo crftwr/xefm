@@ -177,20 +177,30 @@ becomes visible through them.
 Text, outlines and dialog boxes always stay opaque, so lowering `opacity` does not
 make the interface unreadable.
 
-#### It stops when you're not using it
+#### It fades away when you're not using it
 
 An animation that ran forever would keep your machine busy — and drain the
 battery — while you were reading something else. So it doesn't:
 
 - After about 15 seconds without input, or as soon as XeFM loses focus, the
-  animation **very gradually slows to a stop**, taking a further 40 seconds or so
-  to wind down. The slowing is deliberately too gentle to notice — an abrupt halt
-  would catch the eye as much as the movement does.
-- The scene stays on screen, frozen, rather than disappearing.
-- The moment you press a key or move the mouse, it **eases back up to speed**.
+  animation **very gradually fades out**, taking a further 40 seconds or so to
+  disappear. The fade is deliberately too gentle to notice — an abrupt cut would
+  catch the eye as much as the movement does.
+- It keeps moving at its normal speed the whole time it fades. It does not slow
+  down as well: a scene visibly winding down *and* fading reads as two things going
+  wrong at once, and the point of fading is that you never see it stop.
+- What you are left with is the plain theme background. Every scene XeFM ships is
+  pure motion — falling rain, streaming stars, a corridor being flown down — and a
+  scene like that has no frame worth stopping on: freeze one and you get the drops
+  and stars stranded wherever they happened to be, which reads as XeFM having hung
+  rather than settled. Dissolving away leaves something the palette already has.
+- The moment you press a key or move the mouse, it **eases back in**.
 - It resumes from exactly where it stopped. Leave XeFM alone for an hour and the
   wave picks up where you left it, instead of jumping to wherever it "would have"
   been.
+
+If your system's **reduce motion** setting is on, the scene stops but *stays* —
+the fade would itself be motion, and you are still at the machine.
 
 There is nothing to configure and no interruption to what you're doing — while
 parked, XeFM uses no more power than it would with a plain background.

@@ -3761,28 +3761,48 @@ vec4 puikit_bg_fragment(vec2 pos) {
 #: one; 0.75 renders them visibly crisper for a little over twice the cost. Every
 #: other scene here is thin bright lines, where halving the scale and upscaling would
 #: trade away the crispness that is the point of drawing them.
+#:
+#: ``idle`` is per scene for the same reason: only the scene knows what it should
+#: come to rest *as* when the backend parks it after ~a minute of no input (see
+#: puikit's ``Shader.idle``). ``"freeze"``, the default, holds the last frame —
+#: right for a scene whose every frame is a composed image. **Every scene here says
+#: ``"fade"``**, because every scene here is nothing *but* motion: rain that is only
+#: falling, stars that are only streaming, a corridor that is only being flown
+#: through. Stop one and the frame left behind is not a picture of anything — it is
+#: wherever the drops, stars or rails happened to be, held indefinitely, which reads
+#: as the file manager having hung rather than settled. Dissolving to the theme
+#: background instead resolves to something the palette already contains. A future
+#: scene composed to be looked at still (a lit skyline, a horizon) should say
+#: ``"freeze"`` and this comment should stop saying "every".
 SHADER_KINDS: dict[str, dict] = {
-    "wave": {"source": WAVE_MSL, "source_hlsl": WAVE_HLSL, "source_glsl": WAVE_GLSL, "resolution_scale": 0.5},
+    "wave": {"source": WAVE_MSL, "source_hlsl": WAVE_HLSL, "source_glsl": WAVE_GLSL,
+             "resolution_scale": 0.5, "idle": "fade"},
     # Rain renders at full resolution: it is thin bright lines, and at half scale the
     # upscale makes them crawl and shimmer. It can afford to — a pixel tests three
     # columns and most exit before touching a drop.
-    "rain": {"source": RAIN_MSL, "source_hlsl": RAIN_HLSL, "source_glsl": RAIN_GLSL},
+    "rain": {"source": RAIN_MSL, "source_hlsl": RAIN_HLSL, "source_glsl": RAIN_GLSL,
+             "idle": "fade"},
     # Also full resolution: streaks are thin and near-white at the head, and halving
     # the scale turns them into crawling smudges.
-    "starfield": {"source": STARFIELD_MSL, "source_hlsl": STARFIELD_HLSL, "source_glsl": STARFIELD_GLSL},
+    "starfield": {"source": STARFIELD_MSL, "source_hlsl": STARFIELD_HLSL,
+                  "source_glsl": STARFIELD_GLSL, "idle": "fade"},
     # The corridor is all thin straight lines, and its whole gain over the segment
     # version is derivative-filtered width. Rendering at half scale and upscaling
     # would throw exactly that away.
-    "grid": {"source": GRID_MSL, "source_hlsl": GRID_HLSL, "source_glsl": GRID_GLSL},
+    "grid": {"source": GRID_MSL, "source_hlsl": GRID_HLSL, "source_glsl": GRID_GLSL,
+             "idle": "fade"},
     # Dots and hairline edges, so again full resolution.
-    "constellation": {"source": CONSTELLATION_MSL, "source_hlsl": CONSTELLATION_HLSL, "source_glsl": CONSTELLATION_GLSL},
+    "constellation": {"source": CONSTELLATION_MSL, "source_hlsl": CONSTELLATION_HLSL,
+                      "source_glsl": CONSTELLATION_GLSL, "idle": "fade"},
     # Thin dashes with crisp leading edges, and the far layers' rows are only a few
     # pixels apart — halving the scale would merge them into a band.
-    "datastream": {"source": DATASTREAM_MSL, "source_hlsl": DATASTREAM_HLSL, "source_glsl": DATASTREAM_GLSL},
+    "datastream": {"source": DATASTREAM_MSL, "source_hlsl": DATASTREAM_HLSL,
+                   "source_glsl": DATASTREAM_GLSL, "idle": "fade"},
     # Hairline rules, 1px panel outlines and blocks a couple of pixels tall, all of
     # which the upscale from a half-scale render would smear into mush. It is also
     # the scene that most wants the resolution: its far planes fade out exactly where
     # a pixel stops resolving a row, so rendering at half scale would throw away
     # depth, not just sharpness.
-    "hologram": {"source": HOLOGRAM_MSL, "source_hlsl": HOLOGRAM_HLSL, "source_glsl": HOLOGRAM_GLSL},
+    "hologram": {"source": HOLOGRAM_MSL, "source_hlsl": HOLOGRAM_HLSL,
+                 "source_glsl": HOLOGRAM_GLSL, "idle": "fade"},
 }
