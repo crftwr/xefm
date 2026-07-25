@@ -2,7 +2,7 @@
 
 ## Current Version: 0.99
 
-XeFM is a sophisticated dual-pane file manager that runs both as a native desktop app (Windows, macOS) and in the terminal (Windows, macOS, Linux), rendering through the external [PuiKit](https://github.com/crftwr/puikit) framework. It provides comprehensive file operations, cloud storage integration, and extensive customization capabilities.
+XeFM (*Xenolith File Manager*) is a sophisticated dual-pane file manager that runs both as a native desktop app (Windows, macOS) and in the terminal (Windows, macOS, Linux), rendering through the external [PuiKit](https://github.com/crftwr/puikit) framework. It provides comprehensive file operations, cloud storage integration, and extensive customization capabilities.
 
 ## Core Architecture
 

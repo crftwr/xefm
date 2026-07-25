@@ -22,7 +22,7 @@
 
 ## Getting Started
 
-XeFM is a powerful dual-pane file manager that runs both as a native desktop app (Windows, macOS) and in the terminal (Windows, macOS, Linux). It provides efficient file management with cloud storage integration, advanced search capabilities, and extensive customization options.
+XeFM (*Xenolith File Manager*) is a powerful dual-pane file manager that runs both as a native desktop app (Windows, macOS) and in the terminal (Windows, macOS, Linux). It provides efficient file management with cloud storage integration, advanced search capabilities, and extensive customization options.
 
 ### What Makes XeFM Special
 
