@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg windows-app windows-app-clean windows-app-zip windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi publish-pypi release macos-app macos-app-clean macos-app-install macos-refresh-icon macos-dmg macos-dmg-upload windows-app windows-app-clean windows-app-zip windows-app-install windows-app-msix windows-app-msix-install windows-app-msix-uninstall install-config venv venv-clean check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -72,6 +72,7 @@ help:
 	@echo "  macos-app-install - Install XeFM.app to Applications folder"
 	@echo "  macos-refresh-icon - Refresh macOS icon cache (after icon changes)"
 	@echo "  macos-dmg         - Create DMG installer for distribution"
+	@echo "  macos-dmg-upload  - Attach the DMG to the GitHub Release for this version"
 	@echo ""
 	@echo "Windows App Bundle:"
 	@echo "  windows-app         - Build self-contained Windows application bundle"
@@ -91,6 +92,7 @@ help:
 	@echo "  make macos-app                  # Build macOS app bundle"
 	@echo "  make macos-app-install          # Install to /Applications"
 	@echo "  make macos-dmg                  # Create DMG installer"
+	@echo "  make macos-dmg-upload           # Upload that DMG to the GitHub Release"
 	@echo "  make release VERSION=1.0.1      # Cut a release (tag + PyPI + GitHub Release)"
 
 venv:
@@ -311,7 +313,8 @@ publish-pypi: build
 #
 # The macOS .app/.dmg and Windows bundle are NOT built here (they only build on
 # their own platform). Produce them with `make macos-dmg` / `make windows-app-zip`
-# on each machine and attach them afterwards with `gh release upload vX.Y.Z <file>`.
+# on each machine and attach them afterwards: `make macos-dmg-upload` for the
+# DMG, `gh release upload vX.Y.Z <file>` for the Windows zip.
 #
 # Prereqs: a [pypi] token in ~/.pypirc and an authenticated `gh` (gh auth login).
 release: check-venv
@@ -393,6 +396,43 @@ macos-dmg: macos-app
 	@echo "Creating DMG installer..."
 	@cd macos_app && ./create_dmg.sh
 	@echo "DMG installer created successfully"
+
+# --- Publishing the DMG to a GitHub Release --------------------------------
+# The version literal in xefm/__init__.py is the single source of truth (see the
+# `release` target); create_dmg.sh derives the DMG's filename from it the same
+# way, so the two always agree without a second place to bump. Override with
+# VERSION=x.y.z to target a different release.
+XEFM_VERSION := $(if $(VERSION),$(VERSION),$(shell sed -nE 's/^__version__[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' xefm/__init__.py 2>/dev/null | head -1))
+MACOS_DMG := macos_app/build/XeFM-$(XEFM_VERSION).dmg
+
+# File target so `macos-dmg-upload` builds the DMG on demand when it is missing
+# (e.g. after 'make macos-app-clean') instead of failing at the upload. An
+# existing DMG is NOT rebuilt, so re-uploading stays fast and never re-runs
+# notarization; run 'make macos-dmg' to force a fresh one.
+$(MACOS_DMG):
+	@echo "DMG not found at $@; building it first..."
+	@$(MAKE) macos-dmg
+
+# Attach the signed/notarized DMG to the existing GitHub Release for this
+# version. Kept separate from `macos-dmg` on purpose: building a DMG is a local
+# operation you may do many times, uploading publishes it. The release must
+# already exist (`make release VERSION=x.y.z` creates it) — this only adds the
+# macOS asset, which `release` can't do since the .app/.dmg build on macOS only.
+# --clobber replaces an asset of the same name, so re-uploading a rebuilt DMG
+# supersedes the previous one rather than erroring.
+# Prereq: an authenticated `gh` (gh auth login).
+macos-dmg-upload: $(MACOS_DMG)
+	@test -n "$(XEFM_VERSION)" || { echo "ERROR: could not determine version; pass VERSION=x.y.z"; exit 1; }
+	@command -v gh >/dev/null 2>&1 || { echo "ERROR: 'gh' not found. Install the GitHub CLI first."; exit 1; }
+	@gh auth status >/dev/null 2>&1 || { echo "ERROR: 'gh' is not authenticated. Run 'gh auth login'."; exit 1; }
+	@gh release view v$(XEFM_VERSION) >/dev/null 2>&1 || { \
+		echo "ERROR: GitHub Release v$(XEFM_VERSION) does not exist."; \
+		echo "       Cut it first with 'make release VERSION=$(XEFM_VERSION)'."; \
+		exit 1; \
+	}
+	@echo "Uploading $(MACOS_DMG) to GitHub Release v$(XEFM_VERSION)..."
+	gh release upload v$(XEFM_VERSION) "$(MACOS_DMG)" --clobber
+	@echo "Uploaded $(notdir $(MACOS_DMG)) to release v$(XEFM_VERSION) ✓"
 
 # ============================================================================
 # Windows App Bundle Targets
