@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app macos-app-clean macos-refresh-icon macos-dmg install-macos-dmg windows-app windows-app-clean windows-zip install-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config venv venv-clean check-venv install-puikit
+.PHONY: help run run-gui run-web test test-quick clean install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos-app macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-app clean-windows-app windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config venv clean-venv check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -41,7 +41,7 @@ help:
 	@echo ""
 	@echo "Available commands:"
 	@echo "  venv           - Create .venv using the latest python3 in PATH and install deps"
-	@echo "  venv-clean     - Remove the .venv directory"
+	@echo "  clean-venv     - Remove the .venv directory"
 	@echo "  install-puikit - (Re)install PuiKit: editable if PUIKIT_DIR set, else from PyPI"
 	@echo "  run            - Run XeFM (terminal); LEFT=/RIGHT= set startup dirs"
 	@echo "  run-gui        - Run XeFM in a native macOS GUI window"
@@ -78,19 +78,21 @@ help:
 	@echo "  icons-check       - Verify the committed icon assets match the SVG masters"
 	@echo ""
 	@echo "macOS App Bundle:"
-	@echo "  macos-app          - Build native macOS application bundle"
-	@echo "  macos-app-clean    - Clean macOS app build artifacts"
-	@echo "  macos-refresh-icon - Refresh macOS icon cache (after icon changes)"
-	@echo "  macos-dmg          - Create DMG installer for distribution"
-	@echo "  install-macos-dmg  - Install XeFM.app from that DMG to /Applications"
-	@echo "                       (MACOS_INSTALL_DIR=~/Applications to install per-user)"
+	@echo "  macos-app           - Build native macOS application bundle"
+	@echo "  clean-macos-app     - Clean macOS app build artifacts"
+	@echo "  macos-refresh-icon  - Refresh macOS icon cache (after icon changes)"
+	@echo "  macos-dmg           - Create DMG installer for distribution"
+	@echo "  install-macos-dmg   - Install XeFM.app from that DMG to /Applications"
+	@echo "                        (MACOS_INSTALL_DIR=~/Applications to install per-user)"
+	@echo "  uninstall-macos-dmg - Remove that installed XeFM.app"
 	@echo ""
 	@echo "Windows App Bundle:"
 	@echo "  windows-app            - Build self-contained Windows application bundle"
-	@echo "  windows-app-clean      - Clean Windows app build artifacts"
+	@echo "  clean-windows-app      - Clean Windows app build artifacts"
 	@echo "  windows-zip            - Build the bundle and zip it for distribution"
 	@echo "  install-windows-zip    - Install from that zip to %LOCALAPPDATA%\\\\Programs\\\\XeFM"
 	@echo "                           (WINDOWS_INSTALL_DIR=... to install elsewhere)"
+	@echo "  uninstall-windows-zip  - Remove that installed bundle"
 	@echo "  windows-msix           - Package the bundle as an unsigned MSIX (Store submission;"
 	@echo "                           SIGN=1 to self-sign for local testing instead)"
 	@echo "  install-windows-msix   - Pack + self-sign, trust cert (elevates), install per-user"
@@ -112,7 +114,7 @@ help:
 
 venv:
 	@if [ -d .venv ]; then \
-		echo ".venv already exists. Run 'make venv-clean' first to recreate it."; \
+		echo ".venv already exists. Run 'make clean-venv' first to recreate it."; \
 		exit 1; \
 	fi
 ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S))$(findstring CYGWIN,$(UNAME_S)))
@@ -187,7 +189,7 @@ install-puikit: check-venv
 		fi; \
 	fi
 
-venv-clean:
+clean-venv:
 	@echo "Removing .venv..."
 	@rm -rf .venv
 	@echo ".venv removed"
@@ -498,7 +500,7 @@ macos-app:
 	@echo "Building macOS application bundle..."
 	@cd macos_app && ./build.sh
 
-macos-app-clean:
+clean-macos-app:
 	@echo "Cleaning macOS app build artifacts..."
 	@rm -rf macos_app/build/
 	@echo "Build artifacts removed"
@@ -548,7 +550,7 @@ macos-dmg: macos-app
 MACOS_DMG := macos_app/build/XeFM-$(XEFM_VERSION)-macos.dmg
 
 # File target so `release-macos-dmg` builds the DMG on demand when it is missing
-# (e.g. after 'make macos-app-clean') instead of failing at the upload. An
+# (e.g. after 'make clean-macos-app') instead of failing at the upload. An
 # existing DMG is NOT rebuilt, so re-uploading stays fast and never re-runs
 # notarization; run 'make macos-dmg' to force a fresh one.
 $(MACOS_DMG):
@@ -613,6 +615,25 @@ install-macos-dmg: $(MACOS_DMG)
 	@rmdir "$(MACOS_DMG_MOUNT)" 2>/dev/null || true
 	@echo "Installed $(MACOS_INSTALL_DIR)/XeFM.app ✓"
 
+# Removes what install-macos-dmg put there — the app bundle only, never the
+# containing directory. No DMG prerequisite on purpose: uninstalling must work
+# after 'make clean-macos-app', when building a DMG just to delete an app would
+# be absurd. Set the same MACOS_INSTALL_DIR you installed with.
+#
+# An absent install is reported, not an error: re-running an uninstall should
+# converge on "not installed" rather than fail the second time.
+uninstall-macos-dmg:
+	@if [ ! -e "$(MACOS_INSTALL_DIR)/XeFM.app" ]; then \
+		echo "Not installed: $(MACOS_INSTALL_DIR)/XeFM.app"; \
+	elif [ ! -w "$(MACOS_INSTALL_DIR)" ]; then \
+		echo "ERROR: $(MACOS_INSTALL_DIR) is not writable."; \
+		echo "       Re-run under sudo, or pass the MACOS_INSTALL_DIR you installed with."; \
+		exit 1; \
+	else \
+		rm -rf "$(MACOS_INSTALL_DIR)/XeFM.app"; \
+		echo "Removed $(MACOS_INSTALL_DIR)/XeFM.app ✓"; \
+	fi
+
 # ============================================================================
 # Windows App Bundle Targets
 # ============================================================================
@@ -621,7 +642,7 @@ install-macos-dmg: $(MACOS_DMG)
 
 # The built bundle's launcher; its presence marks a complete bundle. Targets
 # that only *consume* the bundle (install, msix) depend on this file target so it
-# is built on demand if missing (e.g. after 'make windows-app-clean') instead of
+# is built on demand if missing (e.g. after 'make clean-windows-app') instead of
 # failing deep inside a packaging script.
 #
 # It also rebuilds when any bundled input is newer, which is what stops a
@@ -674,7 +695,7 @@ windows-zip:
 WINDOWS_ZIP := windows_app/build/XeFM-$(XEFM_VERSION)-win64.zip
 
 # File target so the upload builds the zip on demand when it is missing (e.g.
-# after 'make windows-app-clean') instead of failing at the upload. An existing
+# after 'make clean-windows-app') instead of failing at the upload. An existing
 # zip is NOT rebuilt; run 'make windows-zip' to force a fresh one.
 $(WINDOWS_ZIP):
 	@echo "Windows zip not found at $@; building it first..."
@@ -714,7 +735,16 @@ install-windows-zip: $(WINDOWS_ZIP)
 	@powershell -ExecutionPolicy Bypass -File windows_app/install_zip.ps1 \
 		-Zip "$(WINDOWS_ZIP)" $(if $(WINDOWS_INSTALL_DIR),-InstallDir "$(WINDOWS_INSTALL_DIR)")
 
-windows-app-clean:
+# Removes what install-windows-zip put there. No zip prerequisite on purpose —
+# same reason as uninstall-macos-dmg: deleting an install must not depend on
+# being able to rebuild the artifact it came from. install_zip.ps1 -Uninstall
+# resolves the default location the same way the install did, so the two cannot
+# disagree about what to remove. Set the same WINDOWS_INSTALL_DIR you used.
+uninstall-windows-zip:
+	@powershell -ExecutionPolicy Bypass -File windows_app/install_zip.ps1 \
+		-Uninstall $(if $(WINDOWS_INSTALL_DIR),-InstallDir "$(WINDOWS_INSTALL_DIR)")
+
+clean-windows-app:
 	@echo "Cleaning Windows app build artifacts..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Clean
 

@@ -31,19 +31,23 @@ Targets are named `<verb>-<artifact>`, and the verb says how far the thing goes:
 |------|-------|-------|---------|---------------|--------|
 | *(none)* — build | your build dir | `macos-dmg` | `windows-zip` | `windows-msix` | `build` |
 | `install-` | your machine | `install-macos-dmg` | `install-windows-zip` | `install-windows-msix` | — |
-| `uninstall-` | your machine | — | — | `uninstall-windows-msix` | — |
+| `uninstall-` | your machine | `uninstall-macos-dmg` | `uninstall-windows-zip` | `uninstall-windows-msix` | — |
 | `release-` | the public | `release-macos-dmg` | `release-windows-zip` | never | `release-whl` |
+| `clean-` | your build dir | `clean-macos-app` | `clean-windows-app` | (same) | — |
 
 Each names its **artifact**, not its platform's app bundle, so the rows line up:
 `macos-dmg`, `windows-zip` and `windows-msix` are siblings, and each takes
 whichever verbs make sense for it. Only the `release-*` row is the pipeline; the
 others publish nothing and can be run as often as you like.
 
-The gaps are meaningful rather than missing work. The MSIX has no `release-`
-because an unsigned MSIX can never be a download (see below). The DMG and zip
-have no `uninstall-` because removing them is deleting a folder, whereas an
-installed MSIX also leaves a per-user package registration and a throwaway
-signing cert behind.
+The one deliberate gap is the MSIX's missing `release-`: an unsigned MSIX can
+never be a download (see below), so there is nothing to publish.
+
+Every `uninstall-*` target is idempotent — removing something that was never
+installed reports that and succeeds — and none of them depend on the artifact
+they installed from, so uninstalling still works after `make clean-macos-app` or
+`make clean-windows-app` has removed the build directory. Pass whichever
+`MACOS_INSTALL_DIR` / `WINDOWS_INSTALL_DIR` you installed with.
 
 The `install-*` targets deliberately install **from the distributable artifact**
 — `install-macos-dmg` mounts the DMG, `install-windows-zip` expands the zip —
@@ -227,6 +231,8 @@ decide for you:
 | `make windows-zip` | — | build the portable zip locally (Windows only) |
 | `make install-macos-dmg` | — | install this machine's copy from the DMG (macOS only) |
 | `make install-windows-zip` | — | install this machine's copy from the zip (Windows only) |
+| `make uninstall-macos-dmg` | — | remove that installed `XeFM.app` (macOS only) |
+| `make uninstall-windows-zip` | — | remove that installed bundle (Windows only) |
 | `make publish-testpypi` | TestPyPI | rehearsal (needs a `[testpypi]` token) |
 
 `make publish-testpypi` is the safe rehearsal: it exercises the same build and

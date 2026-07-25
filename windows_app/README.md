@@ -17,7 +17,7 @@ make windows-app                 # or: powershell -ExecutionPolicy Bypass -File 
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 1.0.0 -Zip
 
 # clean
-make windows-app-clean
+make clean-windows-app
 ```
 
 Output: `windows_app\build\XeFM\` (the self-contained folder) and, with `-Zip`,
@@ -36,6 +36,9 @@ make install-windows-zip     # -> %LOCALAPPDATA%\Programs\XeFM (no UAC prompt)
 
 # machine-wide instead; needs an elevated shell
 make install-windows-zip WINDOWS_INSTALL_DIR='C:\Program Files\XeFM'
+
+# remove it again (same WINDOWS_INSTALL_DIR you installed with)
+make uninstall-windows-zip
 ```
 
 Builds the zip if it is missing, then expands it — so it installs the exact

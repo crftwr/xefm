@@ -235,7 +235,7 @@ The build system integrates with the project Makefile:
 make macos-app
 
 # Clean build artifacts
-make macos-app-clean
+make clean-macos-app
 
 # Create DMG installer
 make macos-dmg

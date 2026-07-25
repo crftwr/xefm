@@ -217,7 +217,7 @@ if ($Uninstall) {
         }
     }
 
-    # 4. Delete the throwaway cert files (they also go with 'make windows-app-clean').
+    # 4. Delete the throwaway cert files (they also go with 'make clean-windows-app').
     foreach ($file in @($pfx, $cer)) {
         if (Test-Path $file) { Remove-Item -Force $file; Write-Host "[OK] Deleted $file" }
     }

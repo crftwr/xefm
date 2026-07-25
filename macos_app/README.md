@@ -96,11 +96,17 @@ cp -R macos_app/build/XeFM.app /Applications/      # or straight from the build 
 the `XeFM.app` inside — so it exercises the signed, stapled artifact rather than
 the raw build output.
 
+To remove it again, with the same `MACOS_INSTALL_DIR` you installed with:
+
+```bash
+make uninstall-macos-dmg
+```
+
 ### Cleaning Build Artifacts
 
 ```bash
 # Clean all build artifacts
-make macos-app-clean
+make clean-macos-app
 
 # Or remove manually
 rm -rf macos_app/build

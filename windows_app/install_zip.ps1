@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Install XeFM on this machine from the portable distribution zip.
+    Install (or uninstall) XeFM on this machine from the portable distribution zip.
 
 .DESCRIPTION
     The Windows counterpart of `make install-macos-dmg`: it installs the exact
@@ -9,12 +9,17 @@
     directly. Expanding the real zip is what catches a truncated or incomplete
     archive here, instead of leaving it for the first person to download it.
 
+      (default)   expand the zip into -InstallDir, replacing any existing install
+      -Uninstall  remove -InstallDir; needs no zip at all
+
     Per-user by default (%LOCALAPPDATA%\Programs\XeFM), so no UAC prompt and no
     elevated shell is needed. Pass -InstallDir 'C:\Program Files\XeFM' for a
     machine-wide install, which does require an elevated shell.
 
-    Invoked by `make install-windows-zip`, which builds the zip first if it is
-    missing and passes WINDOWS_INSTALL_DIR through as -InstallDir.
+    Invoked by `make install-windows-zip` (which builds the zip first if it is
+    missing) and `make uninstall-windows-zip`, both passing WINDOWS_INSTALL_DIR
+    through as -InstallDir. Install and uninstall share this one script so they
+    cannot disagree about where the default install lives.
 
 .NOTES
     The zip holds a single XeFM\ folder at its root (build.ps1 compresses the
@@ -33,7 +38,8 @@ param(
     # 'powershell -File' — the form the Makefile uses — so it is resolved below.
     [string]$Zip,
     # Defaults (in the body) to %LOCALAPPDATA%\Programs\XeFM.
-    [string]$InstallDir
+    [string]$InstallDir,
+    [switch]$Uninstall                                    # remove the install, no zip needed
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,6 +51,31 @@ function Fail    ($m) { Write-Host "[ERROR] $m" -ForegroundColor Red; exit 1 }
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $projectRoot = Split-Path -Parent $ScriptDir
+
+# Resolved before anything else so -Uninstall never needs a zip: deleting an
+# install must work long after the build directory is gone.
+if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\XeFM' }
+
+function Remove-Install {
+    try {
+        Remove-Item -Recurse -Force $InstallDir
+    } catch {
+        Fail ("Could not remove $InstallDir : $($_.Exception.Message)`n" +
+              "Close XeFM if it is running, or re-run from an elevated shell for a machine-wide install.")
+    }
+}
+
+if ($Uninstall) {
+    # An absent install is reported, not an error: re-running an uninstall should
+    # converge on "not installed" rather than fail the second time.
+    if (-not (Test-Path $InstallDir)) {
+        Info "Not installed: $InstallDir"
+        exit 0
+    }
+    Remove-Install
+    Success "Removed $InstallDir"
+    exit 0
+}
 
 # Resolve the zip from xefm/__init__.py's __version__ — the same single source of
 # truth build.ps1 names the zip after — so the default cannot drift from what the
@@ -61,17 +92,11 @@ if (-not (Test-Path $Zip)) {
     Fail "Zip not found: $Zip`nBuild it first with 'make windows-zip'."
 }
 
-if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\XeFM' }
 $parent = Split-Path $InstallDir -Parent
 
 if (Test-Path $InstallDir) {
     Info "Removing existing $InstallDir"
-    try {
-        Remove-Item -Recurse -Force $InstallDir
-    } catch {
-        Fail ("Could not remove $InstallDir : $($_.Exception.Message)`n" +
-              "Close XeFM if it is running, or re-run from an elevated shell for a machine-wide install.")
-    }
+    Remove-Install
 }
 
 New-Item -ItemType Directory -Force -Path $parent | Out-Null
