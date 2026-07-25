@@ -1,7 +1,7 @@
 """
-Test color system migration to TTK
+Test the color system
 
-Run with: python -m pytest test/test_colors_ttk_migration.py -v
+Run with: python -m pytest test/test_colors.py -v
 """
 
 from xefm.colors import (
@@ -29,7 +29,7 @@ from xefm.colors import (
 
 
 class MockRenderer:
-    """Mock TTK renderer for testing"""
+    """Mock renderer for testing"""
     
     def __init__(self):
         self.color_pairs = {}

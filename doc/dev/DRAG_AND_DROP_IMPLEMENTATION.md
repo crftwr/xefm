@@ -1,12 +1,11 @@
 # Drag-and-Drop Implementation Guide
 
-> **⚠️ Partly historical (pre-PuiKit port).** The backend-layer specifics below —
-> `ttk/...` paths, the `TtkBackend` base class, the C++ CoreGraphics renderer, and
-> the "add a new platform backend" walkthrough — describe the old in-repo `ttk`
-> toolkit. That layer is now the external **[PuiKit](https://github.com/crftwr/puikit)**
-> framework (`../puikit`; see its `docs/drag_drop.md` and `puikit/backends/`), where
-> the APIs differ. XeFM's application-layer drag-initiation design still applies.
-> See [PROJECT_HISTORY.md](PROJECT_HISTORY.md).
+> **Note.** The backend-layer specifics below — the platform backend base class,
+> the CoreGraphics renderer, and the "add a new platform backend" walkthrough —
+> live in the external **[PuiKit](https://github.com/crftwr/puikit)** framework
+> (`../puikit`; see its `docs/drag_drop.md` and `puikit/backends/`), where the
+> APIs differ from what is sketched here. XeFM's application-layer
+> drag-initiation design still applies.
 
 ## Overview
 
@@ -53,7 +52,7 @@ The drag-and-drop implementation follows a four-layer architecture:
 └─────────────────────────┼────────────────────────────────┘
                           │
 ┌─────────────────────────┼────────────────────────────────┐
-│              Layer 2: TTK Backend Interface             │
+│            Layer 2: PuiKit Backend Interface             │
 │  - Platform-agnostic API                                │
 │  - Capability detection                                 │
 │  - Callback registration                                │
@@ -62,7 +61,7 @@ The drag-and-drop implementation follows a four-layer architecture:
 ┌─────────────────────────┼────────────────────────────────┐
 │         Layer 3: Platform-Specific Backend              │
 │  ┌──────────────────────┴───────────────────────────┐  │
-│  │      CoreGraphics Backend (macOS)                │  │
+│  │      macOS Backend                               │  │
 │  │  - Initiates native drag session                 │  │
 │  │  - Provides file URLs to Pasteboard              │  │
 │  │  - Handles drag image creation                   │  │
@@ -254,281 +253,16 @@ def _cleanup(self) -> None:
 
 ### 4. Backend Interface
 
-**Module**: `ttk/renderer.py` (base class)
+The drag *source* itself is PuiKit's, not XeFM's. XeFM issues one intent —
+`panel.begin_file_drag(paths, event, operations=..., on_complete=...)` — and
+PuiKit resolves it per backend: a real OS drag session where the
+`os_drag_drop` capability is present, and a clipboard fallback everywhere else
+(notably the curses TUI, which cannot be an OS drag source at all).
 
-**Purpose**: Defines platform-agnostic interface for drag-and-drop operations.
-
-**Interface Methods**:
-
-```python
-def supports_drag_and_drop(self) -> bool:
-    """
-    Query whether this backend supports drag-and-drop.
-    
-    Returns:
-        True if drag-and-drop is available, False otherwise.
-    
-    Platform Support:
-        - CoreGraphics (macOS): True
-        - Curses (terminal): False
-        - Future Windows: True
-        - Future Linux: True
-    """
-    return False  # Default: not supported
-
-def start_drag_session(
-    self,
-    file_urls: List[str],
-    drag_image_text: str
-) -> bool:
-    """
-    Start a native drag-and-drop session.
-    
-    Args:
-        file_urls: List of file:// URLs (RFC 8089 format)
-        drag_image_text: Text to display in drag image
-    
-    Returns:
-        True if drag started successfully, False otherwise.
-    
-    Platform Behavior:
-        - macOS: Calls C++ extension to create NSDraggingSession
-        - Windows: Would call IDropSource/IDataObject COM interfaces
-        - Linux: Would use X11/Wayland drag-drop protocols
-        - Curses: Returns False immediately
-    """
-    raise NotImplementedError
-
-def set_drag_completion_callback(self, callback: Callable) -> None:
-    """
-    Set callback for drag completion/cancellation.
-    
-    Args:
-        callback: Function(completed: bool) called when drag ends
-    
-    Callback Timing:
-        - Called after OS reports drag outcome
-        - Called before internal cleanup
-        - Must not raise exceptions (logged if it does)
-    """
-    self.drag_completion_callback = callback
-```
-
-**Design Rationale**:
-- File URLs use RFC 8089 standard for cross-platform compatibility
-- Drag image text is simple string (backends handle rendering)
-- Boolean return indicates immediate success/failure (not drag outcome)
-- Callback provides asynchronous notification of drag outcome
-
-## Platform-Specific Implementations
-
-### macOS (CoreGraphics Backend)
-
-**Module**: `ttk/backends/coregraphics_backend.py` (Python) + `ttk/backends/coregraphics_render.cpp` (C++)
-
-**Implementation Overview**:
-
-The macOS implementation uses Objective-C APIs via a C++ extension:
-
-1. **Python Layer** (`coregraphics_backend.py`):
-   - Implements `supports_drag_and_drop()` → returns `True`
-   - Implements `start_drag_session()` → calls C++ extension
-   - Provides `_on_drag_completed()` and `_on_drag_cancelled()` callbacks
-
-2. **C++ Extension** (`coregraphics_render.cpp`):
-   - Receives file URLs and drag image text from Python
-   - Creates `NSPasteboard` with `NSFilenamesPboardType`
-   - Converts file:// URLs to `NSURL` objects
-   - Creates `NSDraggingItem` for each file
-   - Generates drag image using `NSImage` with text overlay
-   - Begins `NSDraggingSession` with `NSDraggingSourceOperationCopy`
-   - Registers drag completion delegate
-   - Calls Python callbacks on completion/cancellation
-
-**Native API Flow**:
-
-```objc
-// 1. Create pasteboard and add file URLs
-NSPasteboard *pasteboard = [NSPasteboard pasteboardWithName:NSDragPboard];
-[pasteboard declareTypes:@[NSFilenamesPboardType] owner:nil];
-[pasteboard setPropertyList:filePaths forType:NSFilenamesPboardType];
-
-// 2. Create dragging items
-NSMutableArray *draggingItems = [NSMutableArray array];
-for (NSURL *fileURL in fileURLs) {
-    NSDraggingItem *item = [[NSDraggingItem alloc] 
-        initWithPasteboardWriter:fileURL];
-    [draggingItems addObject:item];
-}
-
-// 3. Create drag image
-NSImage *dragImage = /* create image with text */;
-
-// 4. Begin dragging session
-[view beginDraggingSessionWithItems:draggingItems
-                              event:mouseEvent
-                             source:self];
-
-// 5. Implement NSDraggingSource delegate methods
-- (void)draggingSession:(NSDraggingSession *)session 
-           endedAtPoint:(NSPoint)screenPoint 
-              operation:(NSDraggingOperation)operation {
-    if (operation != NSDragOperationNone) {
-        // Drag completed successfully
-        call_python_callback(true);
-    } else {
-        // Drag was cancelled
-        call_python_callback(false);
-    }
-}
-```
-
-**Key Implementation Details**:
-- Uses `NSFilenamesPboardType` for maximum compatibility with macOS apps
-- Drag image is simple text overlay (filename or "N files")
-- Supports standard macOS drag modifiers via operation mask:
-  - Sets `NSDragOperationCopy | NSDragOperationMove` on the dragging session
-  - macOS automatically shows appropriate cursor based on modifier keys:
-    - No modifier or Option (⌥): Copy cursor (green + icon)
-    - Command (⌘): Move cursor (no + icon)
-  - Operation mask set for both local and non-local drags
-- Drag operation type determined by drop target and modifier keys
-- Completion callback invoked from Objective-C delegate method
-- Animation back to start position on cancel/fail enabled
-
-**Limitations**:
-- Requires desktop mode (window with NSView)
-- Cannot drag from terminal mode
-- File URLs must be local (no network paths)
-
-### Terminal Mode (Curses Backend)
-
-**Module**: `ttk/backends/curses_backend.py`
-
-**Implementation Overview**:
-
-The Curses backend provides graceful degradation:
-
-```python
-def supports_drag_and_drop(self) -> bool:
-    """Curses backend does not support drag-and-drop."""
-    return False
-
-def start_drag_session(
-    self,
-    file_urls: List[str],
-    drag_image_text: str
-) -> bool:
-    """Drag-and-drop not supported in terminal mode."""
-    self.logger.info("Drag-and-drop not supported in terminal mode")
-    return False
-```
-
-**Design Rationale**:
-- Terminal emulators don't support native drag-and-drop
-- Returning False prevents drag initiation without errors
-- Logging provides debugging information
-- No user-visible error message (expected limitation)
-
-### Future: Windows Backend
-
-**Planned Module**: `ttk/backends/windows_backend.py` (Python) + C++ extension
-
-**Implementation Strategy**:
-
-1. **COM Interface Implementation**:
-   - Implement `IDropSource` interface for drag source
-   - Implement `IDataObject` interface for data transfer
-   - Use `CF_HDROP` clipboard format for file paths
-
-2. **File Path Conversion**:
-   - Convert file:// URLs to Windows paths
-   - Handle UNC paths (\\server\share\file)
-   - Handle drive letters (C:\path\to\file)
-
-3. **Drag Initiation**:
-   ```cpp
-   // Create IDataObject with file paths
-   IDataObject *dataObject = CreateDataObject(filePaths);
-   
-   // Create IDropSource implementation
-   IDropSource *dropSource = new MyDropSource();
-   
-   // Start drag operation
-   DWORD effect;
-   HRESULT hr = DoDragDrop(
-       dataObject,
-       dropSource,
-       DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK,
-       &effect
-   );
-   
-   // Check result
-   if (hr == DRAGDROP_S_DROP) {
-       // Drag completed
-       call_python_callback(true);
-   } else {
-       // Drag cancelled
-       call_python_callback(false);
-   }
-   ```
-
-4. **Drag Image**:
-   - Use `IDropTargetHelper` for drag image
-   - Create bitmap with text overlay
-   - Register with drag-drop helper
-
-**Reference Documentation**:
-- [IDropSource Interface](https://docs.microsoft.com/en-us/windows/win32/api/oleidl/nn-oleidl-idropsource)
-- [IDataObject Interface](https://docs.microsoft.com/en-us/windows/win32/api/objidl/nn-objidl-idataobject)
-- [DoDragDrop Function](https://docs.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-dodragdrop)
-
-### Future: Linux Backend
-
-**Planned Module**: `ttk/backends/x11_backend.py` or `ttk/backends/wayland_backend.py`
-
-**Implementation Strategy**:
-
-**For X11**:
-1. **XDnD Protocol**:
-   - Implement X Drag and Drop (XDnD) protocol
-   - Use `text/uri-list` MIME type for file URLs
-   - File URLs already in correct format (file://)
-
-2. **Drag Initiation**:
-   ```python
-   # Set XdndAware property on window
-   XChangeProperty(display, window, XdndAware, ...)
-   
-   # On drag start, send XdndEnter message
-   # On drag move, send XdndPosition message
-   # On drop, send XdndDrop message
-   ```
-
-**For Wayland**:
-1. **Data Device Protocol**:
-   - Use `wl_data_device` interface
-   - Offer `text/uri-list` MIME type
-   - File URLs already in correct format
-
-2. **Drag Initiation**:
-   ```python
-   # Create data source
-   data_source = data_device_manager.create_data_source()
-   data_source.offer('text/uri-list')
-   
-   # Start drag
-   data_device.start_drag(
-       source=data_source,
-       origin=surface,
-       icon=drag_icon,
-       serial=serial
-   )
-   ```
-
-**Reference Documentation**:
-- [XDnD Protocol Specification](https://www.freedesktop.org/wiki/Specifications/XDND/)
-- [Wayland Data Device Protocol](https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_data_device)
+The interface, its capability gating, the per-platform implementations and the
+"add a new platform backend" walkthrough all live in the PuiKit repo — see its
+`docs/drag_drop.md` and `puikit/backends/`. XeFM never branches on the backend,
+so nothing below depends on which one is active.
 
 ## FileManager Integration
 
@@ -753,16 +487,6 @@ def test_payload_contains_selected_files_in_order(selected_files, tmp_path):
 - Error recovery paths
 - Multiple drag operations in sequence
 
-### Backend Tests
-
-**Location**: `ttk/test/test_*_drag_and_drop.py`
-
-**Coverage**:
-- Capability detection (`supports_drag_and_drop()`)
-- Drag session initiation
-- Callback invocation
-- Platform-specific behavior
-
 ### Manual Testing
 
 Required for:
@@ -777,158 +501,6 @@ Required for:
 2. Click and drag files
 3. Drop on Finder, text editor, or other app
 4. Verify files appear in target application
-
-## Adding Platform Support
-
-### Step-by-Step Guide
-
-To add drag-and-drop support for a new platform:
-
-**1. Create Backend Module**
-
-Create `ttk/backends/your_platform_backend.py`:
-
-```python
-from ttk.renderer import TtkBackend
-from typing import List, Callable
-
-class YourPlatformBackend(TtkBackend):
-    """Your platform backend with drag-and-drop support."""
-    
-    def supports_drag_and_drop(self) -> bool:
-        """Your platform supports drag-and-drop."""
-        return True
-    
-    def start_drag_session(
-        self,
-        file_urls: List[str],
-        drag_image_text: str
-    ) -> bool:
-        """Start native drag session on your platform."""
-        try:
-            # Convert file:// URLs to platform-specific paths
-            native_paths = self._convert_urls_to_paths(file_urls)
-            
-            # Call platform-specific drag API
-            success = self._native_start_drag(native_paths, drag_image_text)
-            
-            return success
-        except Exception as e:
-            self.logger.error(f"Failed to start drag: {e}")
-            return False
-    
-    def _on_drag_completed(self) -> None:
-        """Called when drag completes."""
-        if hasattr(self, 'drag_completion_callback'):
-            self.drag_completion_callback(completed=True)
-    
-    def _on_drag_cancelled(self) -> None:
-        """Called when drag is cancelled."""
-        if hasattr(self, 'drag_completion_callback'):
-            self.drag_completion_callback(completed=False)
-```
-
-**2. Implement Native Drag API**
-
-Create C++ extension or use ctypes/cffi to call native APIs:
-
-- **Windows**: Implement IDropSource/IDataObject COM interfaces
-- **Linux X11**: Implement XDnD protocol
-- **Linux Wayland**: Use wl_data_device interface
-
-**3. Handle File URL Conversion**
-
-Convert RFC 8089 file:// URLs to platform-specific format:
-
-```python
-def _convert_urls_to_paths(self, urls: List[str]) -> List[str]:
-    """Convert file:// URLs to platform paths."""
-    paths = []
-    for url in urls:
-        # Remove file:// prefix
-        if url.startswith("file://"):
-            path = url[7:]  # Remove "file://"
-        else:
-            path = url
-        
-        # URL-decode
-        path = unquote(path)
-        
-        # Platform-specific conversion
-        # Windows: Convert /C:/path to C:\path
-        # Linux: Use as-is
-        native_path = self._to_native_path(path)
-        paths.append(native_path)
-    
-    return paths
-```
-
-**4. Create Drag Image**
-
-Generate platform-specific drag image:
-
-- **Windows**: Create bitmap with text using GDI+
-- **Linux**: Create pixmap with text using Cairo
-- **macOS**: Already implemented with NSImage
-
-**5. Register Completion Callbacks**
-
-Ensure platform drag API calls Python callbacks:
-
-```python
-# In native code (pseudocode):
-def on_drag_end(success):
-    if success:
-        python_backend._on_drag_completed()
-    else:
-        python_backend._on_drag_cancelled()
-```
-
-**6. Add Tests**
-
-Create `ttk/test/test_your_platform_drag_and_drop.py`:
-
-```python
-def test_supports_drag_and_drop():
-    """Backend reports drag-and-drop support."""
-    backend = YourPlatformBackend()
-    assert backend.supports_drag_and_drop() == True
-
-def test_start_drag_session():
-    """Backend can start drag session."""
-    backend = YourPlatformBackend()
-    urls = ["file:///path/to/file.txt"]
-    success = backend.start_drag_session(urls, "file.txt")
-    assert success == True
-```
-
-**7. Update Documentation**
-
-Update this document with platform-specific details:
-- Native API usage
-- File path format
-- Drag image implementation
-- Known limitations
-
-### Platform-Specific Considerations
-
-**Windows**:
-- Use `CF_HDROP` clipboard format for file paths
-- Handle UNC paths (\\server\share\file)
-- Handle drive letters (C:\path\to\file)
-- Use `IDropTargetHelper` for drag image
-
-**Linux X11**:
-- Use `text/uri-list` MIME type
-- File URLs already in correct format
-- Implement XDnD protocol messages
-- Handle multiple X11 displays
-
-**Linux Wayland**:
-- Use `wl_data_device` interface
-- File URLs already in correct format
-- Handle compositor-specific behavior
-- Test with multiple compositors (GNOME, KDE, Sway)
 
 ## Debugging
 

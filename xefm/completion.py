@@ -3,7 +3,7 @@
 This module is intentionally **UI-agnostic** — it holds no PuiKit drawing code and
 carries no dialog dependency, so the same logic drives completion anywhere a
 single-line field is edited (see :class:`xefm.input_dialog.InputDialog`, and any
-future consumer). It is the port of the pre-PuiKit ``ttk`` completion logic
+future consumer). It carries the completion logic
 (``SingleLineTextEdit`` + ``FilepathCompleter``, commit ``b8e4719``) onto the
 current widgets, keeping the proven behaviour and the Kiro spec
 (``.kiro/specs/tab-completion/``).

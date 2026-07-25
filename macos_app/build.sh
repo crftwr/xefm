@@ -202,11 +202,8 @@ log_info "Step 3: Copying resources..."
 # Copy XeFM Python source.
 # XeFM is a single package (xefm/), so the whole directory lands at the
 # Resources root and Resources/ goes on sys.path — the launcher then imports
-# "xefm.app" directly. Remove the stale layouts from older builds (the TTK-era
-# package dir, and the pre-rename tfm.py + src/ pair) so nothing shadows it.
-log_info "Copying XeFM Python source..."
-rm -rf "${RESOURCES_DIR_BUNDLE}/ttk" "${RESOURCES_DIR_BUNDLE}/src" \
-       "${RESOURCES_DIR_BUNDLE}/tfm" "${RESOURCES_DIR_BUNDLE}/tfm.py"
+# "xefm.app" directly.
+log_info "Copying XeFM Python source"
 XEFM_PKG_DEST="${RESOURCES_DIR_BUNDLE}/xefm"
 rm -rf "${XEFM_PKG_DEST}"
 cp -R "${PROJECT_ROOT}/xefm" "${XEFM_PKG_DEST}"
@@ -220,7 +217,7 @@ else
 fi
 
 # Copy PuiKit library.
-# PuiKit replaces the old TTK toolkit. It is a pure-Python package (its macOS
+# PuiKit is a pure-Python package (its macOS
 # GUI backend renders through PyObjC/Quartz - there is no compiled extension to
 # bundle) installed editable into the venv from a sibling checkout. Resolve its
 # real source directory from the venv interpreter so this works regardless of

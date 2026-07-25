@@ -287,7 +287,7 @@ class FileOperationService:
     def _resolve(self, task: Task, targets: list, dest_dir: Path, z: int,
                  panel: Any) -> tuple[list, int]:
         """Detect top-level conflicts and resolve each, file-by-file, through the
-        task's UI bridge (TTK flow). Returns ``(plan, skipped)`` where plan is a
+        task's UI bridge. Returns ``(plan, skipped)`` where plan is a
         list of ``(target, dest_base, overwrite)`` for the survivors."""
         conflicts = [t for t in targets if (dest_dir / t.name).exists()]
         total = len(conflicts)

@@ -82,9 +82,6 @@ COLOR_MATRIX_DIM = 40          # Dim green for Matrix tail (dimmest)
 # Current color scheme
 current_color_scheme = 'dark'
 
-# Fallback mode state - when True, forces use of fallback colors even if RGB is supported
-force_fallback_colors = False
-
 # Default background and foreground colors for the current scheme
 default_background_color = None
 default_foreground_color = None
@@ -384,16 +381,12 @@ def get_current_rgb_colors():
     """Get RGB colors for the current color scheme"""
     return COLOR_SCHEMES.get(current_color_scheme, COLOR_SCHEMES['dark'])
 
-# Note: Fallback color schemes are no longer needed with TTK
-# TTK always supports full RGB colors, so these are kept only for
-# backward compatibility during migration and will be removed later
-
 def init_colors(renderer, color_scheme=None):
     """
-    Initialize all color pairs for the application using TTK renderer.
+    Initialize all color pairs for the application.
     
     Args:
-        renderer: TTK Renderer instance
+        renderer: Renderer instance
         color_scheme: Optional color scheme name ('dark' or 'light')
     """
     global current_color_scheme, default_background_color, default_foreground_color
@@ -402,10 +395,9 @@ def init_colors(renderer, color_scheme=None):
     if color_scheme:
         current_color_scheme = color_scheme
     
-    # Set fullcolor mode based on force_fallback_colors flag
-    # When force_fallback_colors is True, disable fullcolor mode to use 8/16 color approximation
+    # Full RGB throughout; the renderer approximates on 8/16-color terminals.
     if hasattr(renderer, 'set_fullcolor_mode'):
-        renderer.set_fullcolor_mode(not force_fallback_colors)
+        renderer.set_fullcolor_mode(True)
     
     # Clear color cache to allow reinitialization with new colors
     # This is essential for color scheme switching to work properly
@@ -456,7 +448,7 @@ def init_colors(renderer, color_scheme=None):
     default_background_color = default_bg
     default_foreground_color = default_fg
     
-    # Initialize color pairs using TTK renderer
+    # Initialize color pairs
     # Note: Color pair 0 is reserved for default colors
     
     # File type colors (normal)
@@ -618,25 +610,6 @@ def get_boundary_color():
     """
     return COLOR_BOUNDARY, TextAttribute.NORMAL
 
-def get_color_capabilities():
-    """
-    Get information about terminal color capabilities.
-    
-    Note: This function is deprecated and will be removed in a future version.
-    TTK handles color capabilities internally.
-    """
-    # Return basic info - TTK handles color capabilities
-    info = {
-        'colors': 256,  # TTK supports full RGB
-        'color_pairs': 256,
-        'can_change_color': True,  # TTK always supports RGB
-    }
-    return info
-
-def get_rgb_color_info():
-    """Get information about defined RGB colors"""
-    return get_current_rgb_colors()
-
 def get_available_color_schemes():
     """Get list of available color schemes"""
     return list(COLOR_SCHEMES.keys())
@@ -663,89 +636,6 @@ def toggle_color_scheme():
     # Note: init_colors() should be called separately in the application
     return new_scheme
 
-def toggle_fallback_mode():
-    """Toggle fallback color mode on/off"""
-    global force_fallback_colors
-    force_fallback_colors = not force_fallback_colors
-    # Note: init_colors() should be called separately in the application
-    return force_fallback_colors
-
-def is_fallback_mode():
-    """Check if fallback color mode is enabled"""
-    return force_fallback_colors
-
-def set_fallback_mode(enabled):
-    """Set fallback color mode state"""
-    global force_fallback_colors
-    force_fallback_colors = enabled
-    return force_fallback_colors
-
-def print_current_color_scheme():
-    """Print current color scheme information"""
-    print(f"Current color scheme: {current_color_scheme}")
-    
-    # Get current scheme colors
-    rgb_colors = get_current_rgb_colors()
-    
-    print(f"Available schemes: {', '.join(get_available_color_schemes())}")
-    print(f"RGB colors defined: {len(rgb_colors)} colors")
-    
-    # Show a few key colors as examples
-    key_colors = ['DIRECTORY_FG', 'EXECUTABLE_FG', 'REGULAR_FILE_FG']
-    print(f"Key colors in {current_color_scheme} scheme:")
-    for color_name in key_colors:
-        if color_name in rgb_colors:
-            rgb = rgb_colors[color_name]['rgb']
-            print(f"  {color_name}: RGB{rgb}")
-
-def print_all_color_schemes():
-    """Print information about all available color schemes"""
-    print("XeFM Color Schemes:")
-    print("=" * 40)
-    
-    for scheme_name in get_available_color_schemes():
-        print(f"\n{scheme_name.upper()} SCHEME:")
-        print("-" * 20)
-        
-        scheme_colors = COLOR_SCHEMES[scheme_name]
-        key_colors = ['DIRECTORY_FG', 'EXECUTABLE_FG', 'REGULAR_FILE_FG']
-        
-        for color_name in key_colors:
-            if color_name in scheme_colors:
-                rgb = scheme_colors[color_name]['rgb']
-                print(f"  {color_name:15}: RGB{rgb}")
-    
-    print(f"\nCurrent active scheme: {current_color_scheme}")
-
-def print_color_support_info():
-    """
-    Print information about terminal color support.
-    
-    Note: This function is deprecated. TTK always supports full RGB colors.
-    """
-    print("Terminal Color Support:")
-    print(f"  Colors available: 256 (full RGB)")
-    print(f"  Color pairs: 256")
-    print(f"  RGB support: Yes (TTK)")
-    print(f"  Current scheme: {current_color_scheme}")
-    print(f"  Status: Using RGB colors via TTK")
-
-def check_default_colors_support():
-    """
-    Check if terminal supports default color changes.
-    
-    Note: This function is deprecated. TTK always supports default colors.
-    """
-    return True  # TTK always supports default colors
-
-def get_default_background_color():
-    """Get the default background color for the current scheme"""
-    return default_background_color
-
-def get_default_foreground_color():
-    """Get the default foreground color for the current scheme"""
-    return default_foreground_color
-
 def get_background_color_pair():
     """
     Get a color pair that can be used for background areas.
@@ -754,71 +644,6 @@ def get_background_color_pair():
         Tuple[int, int]: (color_pair, attributes)
     """
     return COLOR_BACKGROUND, TextAttribute.NORMAL
-
-def apply_background_to_window(renderer, height, width):
-    """
-    Apply the color scheme background using TTK renderer.
-    
-    Args:
-        renderer: TTK Renderer instance
-        height: Window height in characters
-        width: Window width in characters
-    
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    try:
-        if default_background_color is not None:
-            color_pair, attributes = get_background_color_pair()
-            
-            # Fill the window with spaces using the background color
-            for y in range(height):
-                try:
-                    renderer.draw_text(y, 0, ' ' * width, color_pair=color_pair, attributes=attributes)
-                except Exception:
-                    pass  # Ignore errors at screen edges
-            
-            return True
-    except Exception as e:
-        print(f"Warning: Could not apply background: {e}")
-    return False
-
-def define_rgb_color(renderer, color_num, red, green, blue):
-    """
-    Define a custom RGB color using TTK renderer.
-    
-    Note: This function is deprecated. Use renderer.init_color_pair() directly.
-    
-    Args:
-        renderer: TTK Renderer instance
-        color_num: Color number to define (usually 8-255)
-        red: Red component (0-255)
-        green: Green component (0-255) 
-        blue: Blue component (0-255)
-    
-    Returns:
-        True if successful, False if not supported
-    """
-    try:
-        # TTK always supports RGB colors
-        # This is a no-op since colors are defined via init_color_pair
-        return True
-    except Exception:
-        return False
-
-def add_custom_rgb_color(name, color_num, rgb_tuple):
-    """
-    Add a new custom RGB color to the constants
-    
-    Args:
-        name: Name for the color (e.g., 'MY_CUSTOM_COLOR')
-        color_num: Color number to use (should be unique)
-        rgb_tuple: (red, green, blue) tuple with values 0-255
-    """
-    RGB_COLORS[name] = {
-        'color_num': color_num,
-        'rgb': rgb_tuple
-    }
 
 def get_log_color(source):
     """
@@ -905,7 +730,7 @@ def get_color_with_attrs(color_pair):
     Convert a color pair constant to (color_pair, attributes) tuple.
     
     This is a helper function for components that store color pair constants
-    and need to convert them to the TTK API format.
+    and need to convert them to the renderer API format.
     
     Args:
         color_pair: Color pair constant (e.g., COLOR_REGULAR_FILE)

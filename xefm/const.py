@@ -2,10 +2,9 @@
 """
 XeFM - Constants and Configuration
 
-Note: Most key codes are now handled by TTK's KeyCode enum (ttk.input_event.KeyCode).
-Standard keys like ENTER, TAB, ESCAPE, arrow keys, function keys, etc. should use
-KeyCode values. Only terminal-specific key codes that aren't standardized in TTK
-are defined here.
+Note: standard keys (ENTER, TAB, ESCAPE, arrows, function keys, ...) come from
+PuiKit's keyboard contract as canonical key names. Only values that contract does
+not cover are defined here.
 """
 
 from xefm import __version__ as VERSION  # noqa: F401  (re-exported as a constant)

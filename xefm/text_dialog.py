@@ -1,7 +1,7 @@
 """Modal scrollable-info viewers for the PuiKit port.
 
 The read-only counterparts to the input / filter dialogs: a centered modal that
-shows a title and a scrollable body. They are the PuiKit equivalent of ttk XeFM's
+shows a title and a scrollable body. They cover XeFM's
 ``InfoDialog`` (help, file details, …).
 
 Two flavors share the same modal chrome (box, title, hint line, drop shadow,

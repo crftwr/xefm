@@ -1,6 +1,6 @@
 """ProgressiveSearchDialog — a live, search-as-you-type file/content finder.
 
-This is the PuiKit port of XeFM/ttk's ``SearchDialog``: a single modal that
+The search dialog: a single modal that
 combines a **query field** with a **streaming results list**, with no separate
 prompt step. Typing re-runs the search on every keystroke; results stream in
 from a background worker thread while the UI stays responsive.
@@ -23,7 +23,7 @@ Threading model (mirrors the port's async pane listing):
   settled synchronously: the worker is joined and the queue drained in one shot.
 
 ``Tab`` switches between ``filename`` and ``content`` search in place and re-runs
-against the same root — the ttk behavior. Enter accepts the selected row via
+against the same root. Enter accepts the selected row via
 ``on_accept(mode, value)``; Esc (or an outside click) cancels and stops the
 worker. Push it with :func:`show_progressive_search`.
 """

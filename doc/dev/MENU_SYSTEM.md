@@ -18,12 +18,6 @@ not a separate command surface either: every item routes into the **same action
 handlers the keymap already calls**, and shortcut hints on the labels are read
 back out of the live keymap so they track user rebindings.
 
-This document describes the current PuiKit-based system. The earlier curses-era
-`ttk` menu design (a `MenuManager` class, string item-id constants, a
-`MenuEvent` type, and a `set_menu_bar` / `update_menu_item_state` renderer
-interface) was removed in the PuiKit port and no longer exists in the code; see
-[PROJECT_HISTORY.md](PROJECT_HISTORY.md).
-
 ## Architecture
 
 The system spans three layers.
@@ -242,4 +236,3 @@ backend's `native_menus` capability, so XeFM stays backend-agnostic.
 - [Dialog System](DIALOG_SYSTEM.md) — the other in-window UI-layer surfaces
 - [Key Bindings Implementation](KEY_BINDINGS_IMPLEMENTATION.md) — the keymap the
   menu shares its actions and shortcut hints with
-- [Project History](PROJECT_HISTORY.md) — the `ttk` → PuiKit port

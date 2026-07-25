@@ -43,7 +43,7 @@ SIZE_COL = 9
 #: Gap (base units) between adjacent columns (name|size, size|date).
 COL_GAP = 1
 #: Smallest name column we'll allow before dropping the date column on a narrow
-#: pane — mirrors ttk XeFM, which hides the datetime when the pane gets tight.
+#: pane — the datetime is hidden when the pane gets tight.
 MIN_NAME_W = 12
 #: Left/right gutter (base units) reserved on a **grid** (TUI) for the cursor
 #: row's framing brackets — ``[`` on the left, ``]`` on the right. GUI reserves
@@ -62,7 +62,7 @@ MATCH_TINT = 0.28
 #: File-type name foregrounds when a theme names no ``file_types`` palette (its
 #: ``extras['file_types']`` sub-dict of ``directory`` / ``file`` / ``link``, the
 #: same shape as the ``syntax`` palette). ``directory`` defaults to a soft yellow
-#: (the ttk build's hue); ``link`` to a cyan (the ls convention); ``file`` to the
+#: ``link`` to a cyan (the ls convention); ``file`` to the
 #: theme's own ``theme.text``. A theme (or a user's ``config.py`` ``THEMES``)
 #: overrides any of them per palette; the legacy flat ``extras['directory']`` is
 #: still honored as a shorthand for ``file_types['directory']``.
@@ -160,7 +160,7 @@ class FilePane(Widget):
     ):
         self.pane = pane_data
         #: XeFM Config; read for SEPARATE_EXTENSIONS / MAX_EXTENSION_LENGTH so the
-        #: extension column matches the ttk build. None disables the split.
+        #: extension column can be split off. None disables the split.
         self.config = config
         #: Active pane (controller sets it on switch_pane / click); drives the
         #: louder cursor highlight.
@@ -311,7 +311,7 @@ class FilePane(Widget):
 
     def _split_name(self, name: str, is_dir: bool) -> tuple[str, str]:
         """Split ``name`` into (basename, extension) for the separate-extension
-        column, mirroring ttk XeFM's ``separate_filename_extension``:
+        column:
         directories, dotfiles (leading dot), no-dot names, and over-long
         extensions are not split (extension == "").
         """
@@ -440,13 +440,13 @@ class FilePane(Widget):
             return ctx.measure_text(s, Style(font=MONO))
 
         # Columns, left to right: gutter | basename | ext | size | date. The
-        # extension column sits between the name and size (ttk XeFM layout); it is
+        # extension column sits between the name and size; it is
         # dropped when the pane has no splittable extensions.
         ext_w = self._ext_width(measure)
         ext_block = (COL_GAP + ext_w) if ext_w > 0 else 0.0
 
         # Date column (right of size), shown only while the name still has room to
-        # breathe, matching ttk XeFM's narrow-pane behaviour.
+        # breathe.
         date_w = self._date_width()
         name_if_dated = content_right - content_left - SIZE_COL - date_w - COL_GAP * 2 - ext_block
         show_date = date_w > 0 and name_if_dated >= MIN_NAME_W

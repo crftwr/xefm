@@ -10,9 +10,7 @@ the complete text layout and rendering pipeline, including:
 - Spacer support for expandable whitespace
 - Wide character support (CJK, emoji)
 - Color and attribute management per segment
-- Integration with TTK rendering backend
-
-This system has replaced the legacy xefm_string_width.py module.
+- Integration with the rendering backend
 
 Basic Usage:
     from xefm.text_layout import draw_text_segments, AbbreviationSegment, SpacerSegment
@@ -216,8 +214,9 @@ class AbbreviationSegment(TextSegment):
             Shortened text with ellipsis at the specified position
             
         Note:
-            TTK's get_display_width() and truncate_to_width() already normalize
-            to NFC internally, so no explicit normalization is needed here.
+            The backend's get_display_width() and truncate_to_width() already
+            normalize to NFC internally, so no explicit normalization is needed
+            here.
         """
         try:
             current_width = get_display_width(self.text)
@@ -1125,13 +1124,13 @@ class RenderContext:
     the renderer instance, current drawing position, and default styling.
     
     Attributes:
-        renderer: TTK renderer instance for drawing text
+        renderer: renderer instance for drawing text
         row: Row position for rendering (0-based)
         current_col: Current column position (updated as segments are rendered)
         default_color: Default color pair for segments without color
         default_attributes: Default attributes for segments without attributes
     """
-    renderer: any  # TTK Renderer type
+    renderer: any  # Renderer type
     row: int
     current_col: int
     default_color: int
@@ -1248,7 +1247,7 @@ def draw_text_segments(
     even if individual segments fail to render.
     
     Args:
-        renderer: TTK renderer instance (must have draw_text method)
+        renderer: renderer instance (must have draw_text method)
         row: Row position for rendering (0-based)
         col: Starting column position (0-based)
         segments: List of text/spacer segments to layout and render

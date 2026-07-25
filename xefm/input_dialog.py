@@ -2,7 +2,7 @@
 
 The text-entry counterpart to :class:`xefm.filter_list_dialog.FilterListDialog`: a
 small centered modal with a title, a prompt label, and one ``TextEdit``. It is
-the PuiKit equivalent of ttk XeFM's ``QuickEditBar`` prompts — Create Directory,
+the single-line prompts — Create Directory,
 Create File, Rename — collapsed into one reusable primitive.
 
 Like the filter-list dialog it reuses PuiKit primitives rather than

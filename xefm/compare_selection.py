@@ -1,5 +1,5 @@
 """Compare & Select — the storage-agnostic engine behind the ``compare_selection``
-action (ttk XeFM's ``W`` key, rebuilt for the PuiKit port).
+action (the ``W`` key).
 
 Each entry in the active pane is joined to the same-named, same-type (file-vs-dir)
 entry in the other pane, after NFC-normalizing names. An entry is selected when
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional
 
 # Filesystems round mtimes (FAT ≈ 2s, some networks ≈ 1s); treat timestamps
-# within this many seconds as identical, matching ttk XeFM's compare.
+# within this many seconds as identical.
 MTIME_TOLERANCE = 1.0
 
 # Read size for the streaming byte compare (only reached when sizes already match).

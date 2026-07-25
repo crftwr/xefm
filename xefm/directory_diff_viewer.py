@@ -631,7 +631,7 @@ class DirectoryDiffView(Widget):
 
     def _finalize_locked(self) -> None:
         """One-shot tree finish (both scan paths). Directories stay collapsed —
-        only the root is open (ttk parity: the user drills down themselves). A
+        only the root is open (the user drills down themselves). A
         rescan restores the pre-rescan expansion + cursor so the user keeps their
         place across a copy/delete."""
         if self._restore_expanded is not None:

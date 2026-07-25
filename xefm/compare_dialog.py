@@ -1,5 +1,5 @@
 """CompareSelectDialog — the modal that builds a :class:`~xefm.compare_selection.CompareCriteria`
-for the ``compare_selection`` action (ttk XeFM's ``W`` key, rebuilt for PuiKit).
+for the ``compare_selection`` action (the ``W`` key).
 
 A compact, keyboard-first list (no Tab, no buttons):
 

@@ -101,7 +101,7 @@ def test_scanner_respects_show_hidden(tmp_path):
 
 
 def test_directories_start_collapsed(trees):
-    # ttk parity: only the root is open — directories are NOT auto-expanded, even
+    # Only the root is open — directories are NOT auto-expanded, even
     # when they contain a difference. The user drills down themselves.
     view = _sync_view(*trees)
     sub = _find(view.root, "sub")
@@ -367,7 +367,7 @@ def test_empty_two_sided_dir_resolves_identical(tmp_path):
 
 def test_one_sided_dir_scanned_lazily_on_expand(tmp_path):
     """One-sided directories aren't walked up front; their contents materialise
-    only when the user expands them (ttk-parity lazy scan)."""
+    only when the user expands them (lazy scan)."""
     left, right = tmp_path / "L", tmp_path / "R"
     (left / "only" / "deep").mkdir(parents=True)
     (left / "only" / "deep" / "x.txt").write_text("x")

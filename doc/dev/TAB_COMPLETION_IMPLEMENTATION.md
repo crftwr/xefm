@@ -4,10 +4,7 @@ User-facing behaviour: [TAB_COMPLETION_FEATURE.md](../TAB_COMPLETION_FEATURE.md)
 
 TAB completion is built as a **reusable component**, decoupled from any single
 dialog, so the same engine can drive completion anywhere a single-line field is
-edited. It is the PuiKit-era port of the pre-port `ttk` implementation (commit
-`b8e4719`, "Tab completion 20260104" #143, whose Kiro spec lives in
-`.kiro/specs/tab-completion/`), reusing that proven logic and UX on the current
-widgets.
+edited.
 
 ## Pieces
 

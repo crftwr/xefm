@@ -160,8 +160,7 @@ themselves are display-only.
 - `xefm.text_viewer` — reused `_read_lines`, `_highlight`, `_ScrollBody`, the
   scrollbar / status-bar helpers, and the shared viewer layer hints
 - `xefm.path` — path abstraction for local/remote files
-- `puikit` — the external UI framework (`Widget`, `Splitter`, backend); the old
-  in-repo `ttk` toolkit was removed in the port
+- `puikit` — the external UI framework (`Widget`, `Splitter`, backend)
 
 ### File Manager Integration
 

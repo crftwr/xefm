@@ -388,18 +388,6 @@ XeFM is highly configurable through `~/.xefm/config.py`. Access configuration vi
 
 For detailed configuration options, see the **[Configuration Feature Guide](doc/CONFIGURATION_FEATURE.md)** and the [User Guide](doc/XEFM_USER_GUIDE.md#configuration).
 
-### Upgrading from TFM
-
-XeFM was previously called **TFM**. The rename is a clean break — nothing is read
-from the old locations, so migrate by hand:
-
-| Was | Now |
-|-----|-----|
-| `~/.tfm/` (config, state, `tools/`) | `~/.xefm/` — move the directory, or let XeFM write a fresh `config.py` |
-| `TFM_THIS_DIR`, `TFM_LEFT_SELECTED`, `TFM_BACKEND`, … | `XEFM_*` — update any custom external-program scripts |
-| `tfm_tool()`, `tfm_python` in `config.py` | `xefm_tool()`, `xefm_python` — imported from `xefm.external_programs` |
-| `python3 tfm.py` / the `tfm` command | `python3 -m xefm` / the `xefm` command |
-
 ## Project Structure
 
 ```

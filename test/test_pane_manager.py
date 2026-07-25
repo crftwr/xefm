@@ -1,10 +1,10 @@
 """
-Test PaneManager integration with TTK-based XeFM system.
+Test PaneManager integration with the XeFM system.
 
-This test verifies that PaneManager works correctly with the TTK-migrated
+This test verifies that PaneManager works correctly with the
 xefm_main.py and that all pane management functionality is intact.
 
-Run with: python -m pytest test/test_pane_manager_ttk_integration.py -v
+Run with: python -m pytest test/test_pane_manager.py -v
 """
 
 import unittest
@@ -18,8 +18,8 @@ from xefm.pane_manager import PaneManager
 from xefm.config import get_config
 
 
-class TestPaneManagerTTKIntegration(unittest.TestCase):
-    """Test PaneManager integration with TTK system"""
+class TestPaneManagerIntegration(unittest.TestCase):
+    """Test PaneManager integration"""
     
     def setUp(self):
         """Set up test environment"""

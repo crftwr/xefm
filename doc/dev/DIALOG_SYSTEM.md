@@ -13,13 +13,6 @@ per-frame redraw bookkeeping. A dialog is a `Widget` (usually also a
 `ListView`, `MarkdownView`, `Checkbox` — and relies on the Panel's layer stack for
 modality, focus, event routing, and drawing.
 
-> Historical note: the pre-port curses design (an in-repo `ttk` toolkit with
-> `GeneralPurposeDialog`, `ListDialog`, `QuickEditBar`, `InfoDialog`,
-> `SearchDialog`, `DialogHelpers`, a `content_changed`/`needs_redraw` render
-> optimization, and `draw(stdscr, safe_addstr)` signatures) **no longer exists**.
-> Those classes and that rendering model have been removed; consult git history if
-> you need them. This document describes the current PuiKit implementation only.
-
 ## The dialog classes
 
 | Class | Module | Factory | Role |
@@ -42,16 +35,6 @@ Two supporting pieces are not dialogs themselves:
   uses for confirmations, info, and error boxes (Quit, "No favorites configured",
   operation-error summaries). It follows the same layer model but ships with
   PuiKit rather than living in `src/`.
-
-### Correspondence to the old (removed) classes
-
-| Removed ttk class | Current replacement |
-|-------------------|---------------------|
-| `QuickEditBar` (status-line input) | `InputDialog` — a centered modal, not a status-line prompt |
-| `ListDialog` / `BaseListDialog` | `FilterListDialog` |
-| `SearchDialog` | `ProgressiveSearchDialog` |
-| `InfoDialog` | `TextDialog` / `MarkdownDialog` |
-| `GeneralPurposeDialog`, `DialogHelpers` | (no equivalent — each dialog is self-contained; `show_*` factories replace the helpers) |
 
 The `JumpDialog` and the drives/favorites pickers survive as features but are
 implemented on this framework (jump has its own module; drives/favorites are
@@ -211,8 +194,8 @@ archive password prompt.
 
 ### FilterListDialog — `show_filter_list`
 
-The canonical searchable-list picker (the PuiKit equivalent of ttk's
-`BaseListDialog`), built from a `TextEdit` filter field over a `ListView`. Typing
+The canonical searchable-list picker, built from a `TextEdit` filter field over
+a `ListView`. Typing
 filters the list (substring, case-insensitive); `up`/`down`/`pageup`/`pagedown`
 drive the selection even while the field holds focus; Enter accepts the selected
 value via `on_accept`; a click selects/activates a row.

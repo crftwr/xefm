@@ -283,7 +283,7 @@ class ExternalProgramManager:
             # Resume the renderer
             self.renderer.resume()
             
-            # Reinitialize colors after the subprocess (legacy ttk renderer)
+            # Reinitialize colors after the subprocess
             from xefm.colors import init_colors
             init_colors(self.renderer)
             
@@ -414,7 +414,7 @@ class ExternalProgramManager:
             # Resume the renderer
             self.renderer.resume()
             
-            # Reinitialize colors after the subprocess (legacy ttk renderer)
+            # Reinitialize colors after the subprocess
             from xefm.colors import init_colors
             init_colors(self.renderer)
             

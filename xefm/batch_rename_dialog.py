@@ -1,10 +1,10 @@
 """BatchRenameDialog — modal regex batch-rename for the PuiKit port.
 
-The PuiKit equivalent of ttk XeFM's ``BatchRenameDialog``: rename many files at
+The batch-rename dialog: rename many files at
 once with a regular-expression *search* pattern and a *replace* pattern, with a
 live preview of every ``original → new`` result before anything touches disk.
 
-The replace pattern supports the same macros as the ttk dialog:
+The replace pattern supports these macros:
 
 - ``\\0`` — the whole match; ``\\1``..``\\9`` — capture groups.
 - ``\\d`` — the 1-based index of the file in the batch.
@@ -31,7 +31,7 @@ from puikit.widgets.list import ListView
 
 from xefm.dialog_geometry import animate_open, draw_title_bar
 
-#: Characters we refuse in a result name (matches the ttk dialog's check).
+#: Characters we refuse in a result name.
 _INVALID_CHARS = set('/\\:*?"<>|')
 #: Preview-list scroll keys (unsuffixed backend names, matching ListView).
 _SCROLL_KEYS = frozenset({"up", "down", "pageup", "pagedown", "home", "end"})

@@ -1,7 +1,7 @@
 """
-Test TTK integration for xefm/external_programs.py
+Tests for xefm/external_programs.py
 
-Run with: python -m pytest test/test_external_programs_ttk_integration.py -v
+Run with: python -m pytest test/test_external_programs.py -v
 """
 
 import unittest
@@ -12,8 +12,8 @@ from xefm.external_programs import ExternalProgramManager, xefm_tool, quote_file
 from xefm.path import Path
 
 
-class TestExternalProgramsTTKIntegration(unittest.TestCase):
-    """Test TTK integration for external programs module"""
+class TestExternalPrograms(unittest.TestCase):
+    """Tests for the external programs module"""
     
     def setUp(self):
         """Set up test fixtures"""

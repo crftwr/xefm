@@ -2,10 +2,6 @@
 
 XeFM is a TUI file manager. It is a single Python package, `xefm/`, at the repo root (flat layout, matching PuiKit's own repo): `xefm/app.py` is the entry module holding the `XeFMApp` shell, and its siblings (`xefm/config.py`, `xefm/path.py`, …) hold the storage-agnostic business logic. Tests live in `test/`, docs in `doc/`. Its rendering/UI layer runs on **[PuiKit](https://github.com/crftwr/puikit)** — an external, capability-based framework that runs the same widget code on curses, macOS, and Windows backends. PuiKit is **not vendored** here; it is installed editable from `../puikit` (see `make install-puikit`).
 
-The pre-PuiKit code — the old in-repo **`ttk`** toolkit and the UI modules bound to it — has been removed; consult git history if you ever need it. Don't reintroduce it or import from it.
-
-The app was renamed from **TFM** to **XeFM** (and the flat `tfm_*` modules folded into the `xefm` package); the historical Kiro design docs under `.kiro/` were dropped in the same change. Consult git history if you need either. Source of truth is the code.
-
 ---
 
 ## Terminal session rules
@@ -21,7 +17,7 @@ The app was renamed from **TFM** to **XeFM** (and the flat `tfm_*` modules folde
 
 ### Import path
 
-Run everything **from the repo root**. `python -m <mod>` puts the working directory on `sys.path`, so the root-level `xefm` package resolves with no install and no `PYTHONPATH`. PuiKit comes from its editable install in `.venv/`. (There is no `ttk` entry — the in-repo toolkit was removed in the PuiKit port.)
+Run everything **from the repo root**. `python -m <mod>` puts the working directory on `sys.path`, so the root-level `xefm` package resolves with no install and no `PYTHONPATH`. PuiKit comes from its editable install in `.venv/`.
 
 ```bash
 python -m pytest test/test_file.py -v     # `-m` puts the repo root on sys.path

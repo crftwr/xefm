@@ -1,11 +1,9 @@
 # Screen Redraw (Ctrl-L) Implementation
 
-> **⚠️ Partly historical (pre-PuiKit port).** The `force_repaint()` / backend
-> plumbing referenced below (`ttk/backends/curses_backend.py`, `ttk/renderer.py`)
-> moved to the external **[PuiKit](https://github.com/crftwr/puikit)** framework
+> **Note.** The `force_repaint()` / backend plumbing referenced below lives in
+> the external **[PuiKit](https://github.com/crftwr/puikit)** framework
 > (`puikit/backends/curses_backend.py`, `puikit/backend.py`), where the API may
-> differ. XeFM's redraw-trigger design still applies. See
-> [PROJECT_HISTORY.md](PROJECT_HISTORY.md).
+> differ from what is sketched here. XeFM's redraw-trigger design still applies.
 
 ## Problem
 
@@ -91,8 +89,8 @@ viewers). It honors two triggers:
 
 | File | Change |
 |------|--------|
-| `ttk/backends/curses_backend.py` | Translate Ctrl+letter (1-26) to CONTROL KeyEvents; add `force_repaint()` |
-| `ttk/renderer.py` | Add concrete no-op `force_repaint()` to the ABC |
+| the curses backend | Translate Ctrl+letter (1-26) to CONTROL key events; add `force_repaint()` (now PuiKit's, see `puikit/backends/curses_backend.py`) |
+| the backend ABC | Concrete no-op `force_repaint()` (now PuiKit's, see `puikit/backend.py`) |
 | `xefm/app.py` | Add `UILayerStack.mark_all_dirty()` |
 | `xefm/app.py` | Add `FileManager.force_redraw()`; route Ctrl-L / `redraw` globally |
 | `xefm/_config.py` | Add `redraw: ['F5']` default key binding (Ctrl-L is hardcoded separately) |
@@ -100,8 +98,6 @@ viewers). It honors two triggers:
 
 ## Tests
 
-- `ttk/test/test_curses_input_handling.py` — Ctrl+letter translation, reserved
-  bytes preserved, `force_repaint()` behavior.
 - `test/test_ui_layer_basic.py` — `mark_all_dirty()` marks all layers and
   triggers a full re-render.
 - `test/test_redraw_action.py` — `Ctrl-L` resolves to `redraw`; default config

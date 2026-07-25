@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """XeFM on PuiKit — dual-pane file manager.
 
-XeFM running on PuiKit instead of ttk. It reuses the storage-agnostic business
+XeFM runs on PuiKit. It keeps the storage-agnostic business
 logic unchanged — ``xefm.path.Path`` for listing, ``PaneManager`` /
 ``FileListManager`` for pane state, and ``xefm.config``'s keymap (ported to the
 PuiKit keyboard contract) — and renders through a custom ``FilePane`` widget
@@ -12,8 +12,7 @@ sort, hidden-file toggle, filename filter and incremental search, the built-in
 text and diff viewers, and the create / rename / batch-rename / favorites /
 jump-to-path dialogs are all wired — as are file operations (copy / move /
 delete, threaded with progress and per-conflict resolution via ``xefm.task``),
-archive browsing, and remote storage (S3 / SFTP). The original ttk implementation
-was removed after the port (see git history).
+archive browsing, and remote storage (S3 / SFTP).
 
     python -m xefm                       # TUI (curses)
     python -m xefm --backend gui         # macOS GUI
@@ -1752,7 +1751,7 @@ class XeFMApp:
         elif action == "go_parent":
             self._go_parent(pane)
         elif action == "nav_left":
-            # Context-aware LEFT (ttk XeFM): from the right pane, move focus to the
+            # Context-aware LEFT: from the right pane, move focus to the
             # left pane; already in the left pane, go to its parent directory.
             if self.pm.active_pane == "right":
                 self.pm.active_pane = "left"
@@ -1760,7 +1759,7 @@ class XeFMApp:
             else:
                 self._go_parent(pane)
         elif action == "nav_right":
-            # Context-aware RIGHT (ttk XeFM): from the left pane, move focus to the
+            # Context-aware RIGHT: from the left pane, move focus to the
             # right pane; already in the right pane, go to its parent directory.
             if self.pm.active_pane == "left":
                 self.pm.active_pane = "right"
@@ -2361,7 +2360,7 @@ class XeFMApp:
     def file_details(self) -> None:
         """Show stat details for the focused entry — or an aggregate summary plus
         per-item details for a multi-file selection — in a scrollable Markdown
-        dialog (mirrors ttk XeFM's file-details, reusing the shared text-dialog).
+        dialog, reusing the shared text-dialog.
 
         Each entry renders as a heading followed by a GFM table of its stat
         fields, so the values line up in a real column instead of hand-padded."""
@@ -2601,7 +2600,7 @@ class XeFMApp:
 
     def _quick_sort(self, mode: str) -> None:
         """Set the active pane's sort mode from a quick-sort key; pressing the
-        same mode again toggles the sort direction (mirrors ttk XeFM's quick_sort).
+        same mode again toggles the sort direction.
         The current reverse setting is kept when switching to a new mode."""
         pane = self.active_pane()
         if pane["sort_mode"] == mode:
@@ -3140,7 +3139,7 @@ class XeFMApp:
 
     def create_directory(self) -> None:
         """Prompt for a name and create a directory in the active pane — the
-        canonical text-input dialog, mirroring ttk XeFM's create-directory flow."""
+        canonical text-input dialog."""
         pane = self.active_pane()
         if self._is_archive(pane["path"]):
             self.log_info("Cannot create a directory inside a read-only archive")
@@ -3378,7 +3377,7 @@ class XeFMApp:
 
     def diff_files(self) -> None:
         """Compare exactly two selected files side by side. Files may be selected
-        across both panes (mirrors ttk XeFM)."""
+        across both panes."""
         selected: list = []
         for name in ("left", "right"):
             pane = self.pane(name)
@@ -3400,7 +3399,7 @@ class XeFMApp:
 
     def diff_directories(self) -> None:
         """Recursively compare the two panes' current directories side by side
-        (the Shift-EQUAL action). Mirrors ttk XeFM's directory diff viewer."""
+        (the Shift-EQUAL action)."""
         left = self.pane("left")["path"]
         right = self.pane("right")["path"]
         show_directory_diff_viewer(self.panel, left, right,
@@ -3422,14 +3421,14 @@ class XeFMApp:
     def copy_names_to_clipboard(self) -> None:
         """Copy the active pane's selected file name(s) — or the cursor entry's
         name when nothing is selected — to the system clipboard, one per line
-        (ttk XeFM's Cmd-Shift-C). On the curses backend the clipboard is process-
+        (Cmd-Shift-C). On the curses backend the clipboard is process-
         local, but the copy still succeeds."""
         self._copy_to_clipboard(lambda f: f.name, "name")
 
     def copy_paths_to_clipboard(self) -> None:
         """Copy the active pane's selected full path(s) — or the cursor entry's
         path when nothing is selected — to the system clipboard, one per line
-        (ttk XeFM's Cmd-Shift-P)."""
+        (Cmd-Shift-P)."""
         self._copy_to_clipboard(str, "path")
 
     def _copy_to_clipboard(self, render, label: str) -> None:
@@ -3448,7 +3447,7 @@ class XeFMApp:
 
     def copy_files(self) -> bool:
         """Copy the active pane's selection (or cursor entry) into the other
-        pane's directory (the 'C' key). Mirrors ttk XeFM's copy-to-other-pane.
+        pane's directory (the 'C' key).
         Returns True when a guard bailed out synchronously (see ``_transfer``)."""
         return self._transfer("copy")
 
@@ -3676,7 +3675,7 @@ class XeFMApp:
         """Create an archive from the active pane's selection (or cursor entry)
         in the other pane's directory (the 'P' key). Prompts for a filename whose
         extension picks the format; an unrecognised extension defaults to
-        ``.tar.gz``. Mirrors ttk XeFM's create-archive flow.
+        ``.tar.gz``.
 
         Returns True when a guard bailed out synchronously (see ``_transfer`` for
         why the caller then needs to redraw)."""
@@ -4028,7 +4027,7 @@ class XeFMApp:
     def jump_to_path(self) -> None:
         """Prompt for a directory path and navigate the active pane there.
         Accepts ``~``, relative (to the current path), and absolute paths;
-        mirrors ttk XeFM's jump-to-path. TAB completes directory names via
+        the jump-to-path dialog. TAB completes directory names via
         :class:`xefm.completion.FilepathCompleter`."""
         pane = self.active_pane()
         current = str(pane["path"])
@@ -4063,7 +4062,7 @@ class XeFMApp:
             self.panel.render()
 
         # Prefill with the current path plus a trailing separator, ready to type
-        # a child directory name (the ttk behaviour).
+        # a child directory name.
         initial = current if current.endswith(os.sep) else current + os.sep
         show_input(self.panel, title="Jump to Path", prompt="Path:", text=initial,
                    on_accept=accept, validate=validate, select_all=False,

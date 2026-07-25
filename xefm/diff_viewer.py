@@ -1,6 +1,6 @@
 """DiffViewer — a modal side-by-side text diff for the PuiKit port.
 
-The PuiKit counterpart to ttk XeFM's ``DiffViewer``: compares two text files
+The diff viewer: compares two text files
 side by side using ``difflib``, line-by-line with character-level highlighting
 within changed lines. Deletions, insertions, and replacements are tinted; the
 matched/changed spans inside a replaced line are highlighted more strongly.

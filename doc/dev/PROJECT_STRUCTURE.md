@@ -3,11 +3,9 @@
 ## Overview
 
 XeFM (Terminal File Manager) is organized so that the file-manager application,
-its tests, and its documentation stay cleanly separated. Since the **PuiKit
-port**, the rendering/UI toolkit is no longer vendored in this repo — XeFM depends
-on the external [PuiKit](https://github.com/crftwr/puikit) framework, and the old
-in-repo `ttk` toolkit (plus the UI modules bound to it) was removed after the
-port (preserved in git history).
+its tests, and its documentation stay cleanly separated. The rendering/UI
+toolkit is not vendored in this repo — XeFM depends on the external
+[PuiKit](https://github.com/crftwr/puikit) framework.
 
 ## Directory Structure
 
@@ -113,7 +111,6 @@ should not be launched non-interactively (they block).
 
 - **`doc/*_FEATURE.md`** — end-user feature docs (usage, behavior)
 - **`doc/dev/*_IMPLEMENTATION.md`, `*_SYSTEM.md`** — developer docs (design, internals)
-- **`doc/dev/PROJECT_HISTORY.md`** — project timeline, including the ttk→PuiKit port
 
 ## Entry Points
 

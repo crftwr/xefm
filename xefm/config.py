@@ -33,10 +33,6 @@ logger = getLogger("Config")
 #                  digits and punctuation (the produced glyph is the identity).
 # --------------------------------------------------------------------------- #
 
-# ttk.ModifierKey bit values, inlined so this module no longer imports ttk.
-# Used only by the transitional legacy-event path in _event_identity().
-_TTK_MOD_BITS = (("shift", 1), ("ctrl", 2), ("alt", 4), ("cmd", 8))
-
 # Config modifier token (upper) -> contract modifier name.
 _MODIFIER_ALIASES = {
     "SHIFT": "shift", "CONTROL": "ctrl", "CTRL": "ctrl",
@@ -73,7 +69,7 @@ _SHIFT_SYMBOL = {
     "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
 }
 
-# PuiKit identity aliases for legacy ttk KeyCode names that differ.
+# Identity aliases for key names that differ from the contract vocabulary.
 _KEY_ALIASES = {"page_up": "pageup", "page_down": "pagedown"}
 
 
@@ -172,26 +168,12 @@ class KeyBindings:
 
     @staticmethod
     def _event_identity(event) -> tuple:
-        """Reduce a key event to the contract triple ``(key, char, modifiers)``.
-
-        Accepts a PuiKit ``Event`` (native) or a legacy ttk ``KeyEvent``
-        (transitional, until the runtime emits PuiKit events). ttk's ``KeyCode``
-        is a ``StrEnum`` whose values already match the contract vocabulary;
-        only ``page_up``/``page_down`` need aliasing.
-        """
-        if hasattr(event, "key"):                       # PuiKit Event
-            key = event.key
-            char = getattr(event, "char", None)
-            mods = frozenset(getattr(event, "modifiers", ()) or ())
-        else:                                           # legacy ttk KeyEvent
-            kc = getattr(event, "key_code", None)
-            if kc is None:
-                key = None
-            else:
-                key = kc.value if hasattr(kc, "value") else str(kc)
-            char = getattr(event, "char", None)
-            flags = getattr(event, "modifiers", 0) or 0
-            mods = frozenset(name for name, bit in _TTK_MOD_BITS if flags & bit)
+        """Reduce a PuiKit ``Event`` to the contract triple
+        ``(key, char, modifiers)``. Only ``page_up``/``page_down`` need
+        aliasing; the rest of the vocabulary already matches."""
+        key = getattr(event, "key", None)
+        char = getattr(event, "char", None)
+        mods = frozenset(getattr(event, "modifiers", ()) or ())
         if key in _KEY_ALIASES:
             key = _KEY_ALIASES[key]
         return key, char, mods
@@ -259,7 +241,7 @@ class KeyBindings:
         Find the action bound to a key event, respecting selection requirements.
 
         Args:
-            event: PuiKit ``Event`` (or, transitionally, a ttk ``KeyEvent``)
+            event: PuiKit ``Event``
             has_selection: Whether files are currently selected
 
         Returns:
@@ -292,7 +274,7 @@ class KeyBindings:
         regardless of dict order.
 
         Args:
-            event: PuiKit ``Event`` (or, transitionally, a ttk ``KeyEvent``)
+            event: PuiKit ``Event``
             action: The action name to test.
             has_selection: Whether files are currently selected.
 
@@ -711,7 +693,7 @@ def find_action_for_event(event, has_selection: bool = False):
     Find the action bound to a KeyEvent.
     
     Args:
-        event: KeyEvent from TTK
+        event: PuiKit key ``Event``
         has_selection: Whether files are currently selected
     
     Returns:

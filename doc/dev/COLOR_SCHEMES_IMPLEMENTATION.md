@@ -13,11 +13,8 @@ XeFM's colors come from two layers today:
    cycles at runtime. It is summarized at the end and documented in depth by
    PuiKit; this doc does not restate its internals.
 
-> The UI runs on PuiKit, not curses. Several docstrings and comments in
-> `xefm/colors.py` still say "TTK renderer" — that naming is vestigial from the
-> pre-PuiKit port and does not imply a curses-only code path. The renderer
-> passed to `init_colors()` is the active PuiKit backend renderer, which always
-> supports full 24-bit RGB.
+> The renderer passed to `init_colors()` is the active PuiKit backend renderer,
+> which always supports full 24-bit RGB.
 
 ## What `xefm/colors.py` provides
 
@@ -95,21 +92,11 @@ Note the live "Next Theme" / `T` action does **not** call
 `toggle_color_scheme()`; it cycles the PuiKit `Theme` system (below). These
 dark/light helpers are the legacy pair-layer switch.
 
-### Fallback mode
+### Reduced-color terminals
 
-Instead of a separate low-color palette table, fallback is a single flag,
-`force_fallback_colors`, toggled via `toggle_fallback_mode()` /
-`set_fallback_mode()` / `is_fallback_mode()`. When set, `init_colors()` calls
-`renderer.set_fullcolor_mode(False)` and the backend approximates the RGB values
-in a reduced palette. (There is no `FALLBACK_COLOR_SCHEMES` dict — RGB is always
-the source of truth and the renderer handles any down-conversion.)
-
-### Deprecated shims
-
-`get_color_capabilities()`, `print_color_support_info()`,
-`check_default_colors_support()`, and `define_rgb_color()` remain for backward
-compatibility. They report/assume "full RGB always available" and are no-ops or
-constant returns; new code should not rely on them.
+There is no `FALLBACK_COLOR_SCHEMES` dict — RGB is always the source of truth.
+`init_colors()` calls `renderer.set_fullcolor_mode(True)` and the backend
+approximates the RGB values on a terminal with a reduced palette.
 
 ## The modern multi-theme system (high level)
 
@@ -134,12 +121,6 @@ framework seam, the authoritative reference is PuiKit's `docs/color_system.md`
 (in the separate PuiKit repo). For how per-theme motion/effects are wired on the
 XeFM side, see [MOTION_IMPLEMENTATION.md](MOTION_IMPLEMENTATION.md); the built-in
 palettes themselves live in `_THEME_SPECS` in `xefm/app.py`.
-
-## Diagnostics
-
-`print_current_color_scheme()` and `print_all_color_schemes()` print the
-`dark`/`light` pair-layer scheme information (a few key RGB values) for
-debugging.
 
 ## Related Files
 

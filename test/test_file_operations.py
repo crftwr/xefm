@@ -1,6 +1,6 @@
 """Tests for the shared file-operation engine (xefm.file_operations) and the
 central task system (xefm.task): recursive counting, per-file execution, the
-TTK-style conflict resolution (skip / overwrite / keep-both + apply-to-all),
+conflict resolution (skip / overwrite / keep-both + apply-to-all),
 cancellation, and the worker↔main-thread UI bridge."""
 
 import os

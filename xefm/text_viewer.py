@@ -1,6 +1,6 @@
 """TextViewer — a modal syntax-highlighting text viewer for the PuiKit port.
 
-The PuiKit counterpart to ttk XeFM's ``TextViewer``: a full-window read-only
+The text viewer: a full-window read-only
 viewer with line numbers, vertical + horizontal scroll, line wrapping, and
 optional pygments syntax highlighting (a soft dependency — without it the text
 shows plain). Incremental search (the ``search`` binding) opens the same
@@ -140,7 +140,7 @@ def viewer_pad(ctx) -> tuple[float, float]:
     return (VIEWER_PAD_PX / bw if bw else 0.0, VIEWER_PAD_PX / bh if bh else 0.0)
 
 #: pygments token category → RGB — the default syntax palette (VS Code Dark+),
-#: categorised by substring of the token name (mirroring ttk XeFM's
+#: categorised by substring of the token name (see
 #: ``get_syntax_color``). A theme overrides any subset of these via its
 #: ``extras['syntax']`` (see :func:`_syntax_palette` and xefm/app.py's ``_theme``); the
 #: viewer bakes the resolved palette at show time.

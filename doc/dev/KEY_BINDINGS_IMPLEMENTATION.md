@@ -45,9 +45,6 @@ that contract.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-A legacy ttk `KeyEvent` is still accepted transitionally (see
-`_event_identity`), but the model below is the PuiKit one.
-
 ## The keyboard contract (XeFM's view)
 
 A key event reduces to a triple: `key` (canonical identity), `char` (produced
@@ -121,10 +118,8 @@ Builds a `char`-mode binding, folding a `Shift` modifier into the produced
 character the key actually emits.
 
 #### `_event_identity(event) -> (key, char, modifiers)`
-Reduces a key event to the contract triple. Accepts a PuiKit `Event` (native:
-`event.key` / `event.char` / `event.modifiers`) or a legacy ttk `KeyEvent`
-(transitional: a `key_code` StrEnum plus integer modifier flags decoded via
-`_TTK_MOD_BITS`). Aliases `page_up` / `page_down` → `pageup` / `pagedown`.
+Reduces a PuiKit `Event` (`event.key` / `event.char` / `event.modifiers`) to
+the contract triple. Aliases `page_up` / `page_down` → `pageup` / `pagedown`.
 
 #### `_matches(parsed, key, char, mods) -> bool`
 Applies the two match modes described in *The keyboard contract* above.

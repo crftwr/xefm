@@ -3,9 +3,7 @@
 Drives XeFM's real default keymap (`_config.py`) through
 ``find_action_for_event`` using **PuiKit** ``Event`` objects shaped exactly as
 the curses/macOS backends now produce them (see
-``doc/dev/PUIKIT_KEYBOARD_CONTRACT.md``). This is the forward-looking companion
-to ``test_key_bindings_input_event.py`` (which exercises the transitional ttk
-event path).
+``doc/dev/PUIKIT_KEYBOARD_CONTRACT.md``).
 """
 
 import unittest

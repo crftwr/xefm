@@ -12,7 +12,6 @@ import os
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ttk'))
 
 from xefm.log_manager import LogManager, getLogger, set_log_manager
 from xefm._config import Config

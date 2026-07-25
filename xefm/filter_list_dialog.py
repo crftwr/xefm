@@ -1,6 +1,6 @@
 """FilterListDialog — a modal, filterable list picker for the PuiKit port.
 
-This is the PuiKit equivalent of XeFM/ttk's ``BaseListDialog`` workhorse: a modal
+The searchable-list workhorse: a modal
 overlay with a **filter text field** on top of a **scrollable list**, used for
 discrete selection (favorites, drives, programs, …). It reuses PuiKit primitives
 rather than re-implementing them:
@@ -13,7 +13,7 @@ rather than re-implementing them:
 - ``ListView`` for the results — virtualized draw, smooth scroll, a scrollbar,
   and ``on_select`` activation, all for free.
 
-Interaction matches the ttk dialog: typing filters the list (substring,
+Interaction: typing filters the list (substring,
 case-insensitive); ↑/↓/PageUp/PageDown move the selection; Enter accepts the
 selected value; Esc cancels; a click selects/activates a row. The dialog is
 modal — it owns events while open — and reports its outcome through
@@ -38,7 +38,7 @@ from puikit.widgets.text_edit import TextEdit
 from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
 
 #: Navigation keys the *list* owns even while the filter field holds focus —
-#: typing filters, but the arrows still drive the selection (the ttk behavior).
+#: typing filters, but the arrows still drive the selection.
 #: Backend key names are unsuffixed ("pageup"/"pagedown"), matching ListView.
 _LIST_KEYS = frozenset({"up", "down", "pageup", "pagedown"})
 
