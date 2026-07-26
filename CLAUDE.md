@@ -127,6 +127,46 @@ Python files should NOT be executable. Run them via `python3 script.py`, not `./
 
 ---
 
+## Release notes
+
+`make release-github` opens the Release with `--generate-notes`, which here lists
+every merged PR — two dozen lines of "Cg optimization 20251214" that tell a user
+nothing. Rewrite it once the Release exists:
+
+```bash
+gh release edit vX.Y.Z --notes-file notes.md
+```
+
+These are read by people who run a file manager, not by people reading the diff.
+**At most three bullets**, one for each change a user would actually notice, one
+to three sentences each: what changed for them, not how it was built. Name the
+platform or backend when a change is specific to one (macOS, Windows, GUI, TUI).
+Then fold everything else — smaller fixes, packaging, docs — into one short
+"Also" paragraph, so nothing is dropped silently but nothing minor gets a
+headline either. Close with the `**Full Changelog**` compare link.
+
+The shape, sketched from work already on `main`:
+
+```markdown
+## XeFM 1.0.2
+
+- **Directory listings no longer block the UI** — a directory is read in one pass
+  on a worker thread and sorted from that same pass, instead of being scanned on
+  the UI thread and re-read to sort.
+- **Comparing two panes reuses what they already hold** — the compare no longer
+  re-reads either side from disk.
+
+Also: the conflict dialog's accent moved to the button Enter actually presses.
+
+**Full Changelog**: https://github.com/crftwr/xefm/compare/v1.0.1...v1.0.2
+```
+
+The reasoning behind a change belongs in the commit body and in `doc/`, where it
+is already written at length — notes that restate it are the failure mode to
+avoid.
+
+---
+
 ## References
 
 - Logging system: `doc/dev/LOGGING_SYSTEM.md`
