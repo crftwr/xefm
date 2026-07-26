@@ -1299,11 +1299,17 @@ class XeFMApp:
         listings that have completed. Returns True if a pane changed (so the
         caller re-renders)."""
         self._sync_monitored_dirs()
-        reloaded = self._process_reload_queue()
+        # Drained for its side effect only — *starting* a reload no longer changes
+        # anything on screen, because the pane keeps its entries throughout the
+        # re-read (see _list_pane's keep_visible). Whether a frame is owed is
+        # decided when the result lands, and only if it differs from what is
+        # already drawn; counting the start as a change re-rendered the pane once
+        # per spurious event, which is most of them (#239).
+        self._process_reload_queue()
         listed = self._process_result_queue()
         loading = self._pump_loading_indicator()
         captured = self._drain_captured_output()
-        return reloaded or listed or loading or captured
+        return listed or loading or captured
 
     #: Log-pane styles for captured streams. stdout leaves its color unset so it
     #: resolves to ``theme.text`` at draw time (tracking the theme like
@@ -1338,7 +1344,8 @@ class XeFMApp:
     #: a remote path) ever shows the indicator. See ``_pump_loading_indicator``.
     _LOADING_INDICATOR_DELAY = 0.12
 
-    def _list_pane(self, pane_name: str, *, on_ready=None) -> None:
+    def _list_pane(self, pane_name: str, *, on_ready=None,
+                   keep_visible: bool = False) -> None:
         """(Re)list a pane's directory on a worker thread, so the UI never blocks
         on the ``iterdir`` + per-entry ``stat`` — no matter whether the path is
         local, a slow network mount, a spun-down disk, or a remote (S3/SSH) URL.
@@ -1352,18 +1359,37 @@ class XeFMApp:
         Single-flight per pane: each call bumps the pane's ``_load_gen``; a result
         whose generation no longer matches (a newer navigation superseded it) is
         dropped. ``on_ready(pane)`` runs once the files are in place (on the tick),
-        for cursor placement etc."""
+        for cursor placement etc.
+
+        ``keep_visible`` re-reads the directory *without* first emptying the pane —
+        the current listing stays on screen and stays actionable for the whole
+        re-read, and no "Loading…" indicator is armed. It is for a re-list nothing
+        asked for, where the expected outcome is "identical to what is already
+        shown": a filesystem-monitor reload (see ``_handle_reload_request``). The
+        blanking below is right for a *navigation*, where the old directory's
+        entries must not stay actionable under the new path, but on a monitor
+        reload it empties the pane for the length of a full re-scan in response to
+        a change the user never made — see #239."""
         pane = self.pane(pane_name)
         gen = pane["_load_gen"] = pane.get("_load_gen", 0) + 1
-        pane["loading"] = True
-        pane["_load_started"] = time.monotonic()
-        pane["_loading_shown"] = False
-        # Clear the old listing so a stale entry can't be acted on under the new
-        # path; the pane shows blank (then "Loading…" only if slow) until the
-        # result lands. Snapshot the inputs so the worker never reads the pane
-        # dict — the UI thread owns it.
-        pane["files"] = []
-        pane["file_info"] = {}
+        # "A listing is in flight", tracked separately from ``loading`` because
+        # the two answer different questions: ``loading`` means "this pane is
+        # blanked and showing (or about to show) an indicator", which a
+        # keep_visible re-list deliberately never does. Callers that must know
+        # whether the filesystem read has landed — ``_listings_pending`` — need
+        # this one, or a keep_visible listing looks settled the moment it starts.
+        pane["_load_pending"] = True
+        if not keep_visible:
+            pane["loading"] = True
+            pane["_load_started"] = time.monotonic()
+            pane["_loading_shown"] = False
+            # Clear the old listing so a stale entry can't be acted on under the
+            # new path; the pane shows blank (then "Loading…" only if slow) until
+            # the result lands.
+            pane["files"] = []
+            pane["file_info"] = {}
+        # Snapshot the inputs so the worker never reads the pane dict — the UI
+        # thread owns it.
         path = pane["path"]
         filter_pattern = pane["filter_pattern"]
         sort_mode = pane["sort_mode"]
@@ -1374,29 +1400,67 @@ class XeFMApp:
                 path, filter_pattern=filter_pattern,
                 sort_mode=sort_mode, sort_reverse=sort_reverse,
             )
-            self._result_queue.put((pane_name, gen, result, on_ready))
+            self._result_queue.put((pane_name, gen, result, on_ready, keep_visible))
             self._wake_pump()  # wake the UI thread to install the listing
 
         threading.Thread(target=worker, name=f"xefm-list-{pane_name}", daemon=True).start()
 
         # Event-driven mode has no permanent tick, so a slow listing would never
         # surface its "Loading…" indicator; a transient tick runs while any pane
-        # is loading and retires itself the moment the listing lands.
-        if self._event_driven:
+        # is loading and retires itself the moment the listing lands. A
+        # keep_visible re-list shows no indicator, so it needs no tick — the
+        # worker's _wake_pump still delivers the result.
+        if self._event_driven and not keep_visible:
             self.panel.request_animation_ticks(self._loading_tick)
+
+    @staticmethod
+    def _listing_unchanged(pane: dict, result: dict) -> bool:
+        """True if ``result`` would redraw the pane exactly as it already looks.
+
+        ``files`` is the rows and their order; ``file_info`` is every column drawn
+        from disk (size, date, dir/link flags). Together they are precisely what a
+        pane renders, so comparing equal means installing the result could not
+        change one cell on screen.
+
+        Deliberately ignores anything the listing read but never shows — an xattr
+        write, a permission change, a `chmod`, a same-minute mtime bump. Those are
+        what makes a monitor reload spurious in the first place (#239): macOS
+        reports them as ordinary "modified" events, indistinguishable from a real
+        write, and playing a video file emits a stream of them."""
+        if not result.get("ok"):
+            return False  # an error result really does change the pane
+        return (result.get("files") == pane.get("files")
+                and result.get("file_info") == pane.get("file_info"))
 
     def _process_result_queue(self) -> bool:
         """Install completed async listings on the UI thread, dropping any that a
-        newer navigation superseded (stale generation)."""
+        newer navigation superseded (stale generation) or that would not change
+        anything on screen (a spurious monitor reload)."""
         applied = False
         while True:
             try:
-                pane_name, gen, result, on_ready = self._result_queue.get_nowait()
+                pane_name, gen, result, on_ready, keep_visible = self._result_queue.get_nowait()
             except queue.Empty:
                 break
             pane = self.pane(pane_name)
             if gen != pane.get("_load_gen"):
-                continue  # superseded by a newer navigation
+                # Superseded by a newer navigation. Leave _load_pending set — it
+                # tracks the *latest* generation, which is still in flight.
+                continue
+            pane["_load_pending"] = False
+
+            # Only a keep_visible re-list can be dropped, and only while the pane
+            # is actually showing the listing it is compared against: one still
+            # blanked by an in-flight navigation must install the result even when
+            # it compares equal (an empty directory would otherwise match the
+            # blank pane and leave it stuck "loading" forever).
+            if keep_visible and not pane.get("loading") and self._listing_unchanged(pane, result):
+                # Nothing to redraw, but the entries are a fresher snapshot than
+                # the one held — keep it current so a later sort or filter change
+                # rebuilds from what is on disk now, at no cost.
+                pane["_listing_entries"] = result.get("entries")
+                continue
+
             self.flm.apply_listing(pane, result)
             pane["loading"] = False
             pane["_loading_shown"] = False
@@ -1427,8 +1491,9 @@ class XeFMApp:
 
     def _listings_pending(self) -> bool:
         """True while any pane's async listing is still in flight (worker running
-        or its result not yet drained)."""
-        return any(self.pane(n).get("loading") for n in ("left", "right"))
+        or its result not yet drained) — including a keep_visible re-list, which
+        never raises ``loading``."""
+        return any(self.pane(n).get("_load_pending") for n in ("left", "right"))
 
     def _settle_listings(self, timeout: float = 2.0) -> None:
         """Block until every in-flight async listing has completed and been
@@ -1550,7 +1615,14 @@ class XeFMApp:
         cursor on the same filename if it survives, otherwise the nearest name
         alphabetically, and hold the scroll offset where it can still show it.
 
-        Returns True if the pane was reloaded, False for an unknown pane name."""
+        Re-lists with ``keep_visible``: the pane nobody asked to reload keeps
+        showing its entries throughout, and the result is dropped outright unless
+        it differs from them (see ``_listing_unchanged``). Most reloads reaching
+        here change nothing on screen — macOS reports a metadata-only write
+        (xattr, permissions) as an ordinary "modified" event, so merely opening a
+        file in an app fires one (#239).
+
+        Returns True if a re-list was started, False for an unknown pane name."""
         if pane_name == "left":
             pane = self.pm.left_pane
         elif pane_name == "right":
@@ -1563,6 +1635,13 @@ class XeFMApp:
         # result set away. Monitoring is effectively suspended while it is virtual;
         # a mutating op reconciles it explicitly via _refresh -> _refresh_virtual.
         if pane.get("virtual"):
+            return False
+
+        # A listing is already in flight for this pane (a navigation, a sort, a
+        # post-operation refresh). It will install contents at least as fresh as
+        # this request, and superseding it would throw away the cursor placement
+        # its on_ready carries — landing on the child you came up from, say.
+        if pane.get("loading"):
             return False
 
         old_focused = pane["focused_index"]
@@ -1599,10 +1678,12 @@ class XeFMApp:
                 pane["focused_index"] = 0
                 pane["scroll_offset"] = 0
 
-        # Local: lists + restores synchronously (unchanged). Remote: lists on a
-        # worker (a polled remote reload no longer blocks the tick), restoring the
-        # cursor when the result lands.
-        self._list_pane(pane_name, on_ready=restore)
+        # Always on a worker, local or remote, so a reload nobody asked for can
+        # never block the tick. ``restore`` runs on the UI thread when the result
+        # lands — and only if it lands: a result matching what the pane already
+        # shows is dropped, leaving the cursor and scroll exactly where the user
+        # put them.
+        self._list_pane(pane_name, on_ready=restore, keep_visible=True)
         return True
 
     # --- state ---------------------------------------------------------------

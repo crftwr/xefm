@@ -20,6 +20,7 @@ import os
 import sys
 import tempfile
 import shutil
+import time
 import unittest
 from unittest.mock import patch
 
@@ -214,6 +215,13 @@ class ContextPreservation(MonitoringTestBase):
         pane["focused_index"] = 2      # near the top
         pane["scroll_offset"] = 12     # ...but scrolled far down (focus off-screen)
 
+        # The reload has to actually change the listing, or it is dropped before
+        # the cursor restore runs (see ReloadIsDroppedWhenNothingChanged) — a
+        # reload that installs nothing must not move the user's viewport either.
+        # f30 sorts last, so the focused row keeps its index and only the offset
+        # is under test.
+        open(os.path.join(self.left_dir, "f30.dat"), "w").close()
+
         self.app._handle_reload_request("left")
         self.app._settle_listings()
 
@@ -236,6 +244,109 @@ class ContextPreservation(MonitoringTestBase):
 
     def test_unknown_pane_name_is_ignored(self):
         self.assertFalse(self.app._handle_reload_request("middle"))
+
+
+class ReloadIsDroppedWhenNothingChanged(MonitoringTestBase):
+    """A monitor reload whose listing matches what the pane already shows is
+    discarded instead of swapped in (#239).
+
+    macOS reports a metadata-only write — an xattr, a permission bit — as an
+    ordinary "modified" event, so simply opening a file in an app fires one.
+    Playing a video emits a stream of them. None change a single cell the pane
+    draws, so none should cost a re-render, a cursor reconciliation, or the
+    blank-then-repopulate that a re-list used to force.
+    """
+
+    def touch_metadata(self, name):
+        """Change a file's metadata *only* — the exact shape of the spurious
+        event this whole path exists to absorb. Its name, size and mtime are all
+        left alone, so the listing must compare equal. macOS reports this
+        through FSEvents identically to a real write."""
+        path = os.path.join(self.left_dir, name)
+        os.chmod(path, 0o600)
+        os.chmod(path, 0o644)
+
+    def test_unchanged_listing_leaves_the_pane_alone(self):
+        self.touch_metadata("b.txt")
+        before = self.app.pm.left_pane["files"]
+
+        self.assertTrue(self.app._handle_reload_request("left"))
+        self.app._settle_listings()
+
+        # Same list object, not merely an equal one: nothing was swapped in.
+        self.assertIs(self.app.pm.left_pane["files"], before)
+        self.assertEqual(self.left_names(), ["a.txt", "b.txt", "c.txt"])
+
+    def test_unchanged_listing_reports_nothing_applied(self):
+        self.touch_metadata("b.txt")
+        self.app.reload_queue.put("left")
+
+        self.app._process_reload_queue()
+        # Wait for the worker, then drain: the result must be dropped, so the
+        # drain reports that it changed nothing.
+        deadline = time.monotonic() + 2.0
+        while self.app._listings_pending() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.app._process_result_queue())
+
+    def test_pane_stays_populated_while_reloading(self):
+        """The pane keeps its entries for the whole re-read. Previously
+        _list_pane emptied files/file_info up front, so every spurious reload
+        blanked the pane for the length of a full directory scan."""
+        before = list(self.app.pm.left_pane["files"])
+
+        self.app._handle_reload_request("left")
+
+        # Checked *before* settling: the worker is still running here.
+        self.assertEqual(self.app.pm.left_pane["files"], before)
+        self.assertNotEqual(self.app.pm.left_pane["file_info"], {})
+        self.assertFalse(self.app.pm.left_pane.get("loading"))
+        self.app._settle_listings()
+
+    def test_real_change_is_still_installed(self):
+        os.remove(os.path.join(self.left_dir, "b.txt"))
+
+        self.app._handle_reload_request("left")
+        self.app._settle_listings()
+
+        self.assertEqual(self.left_names(), ["a.txt", "c.txt"])
+
+    def test_dropped_reload_still_refreshes_the_sort_snapshot(self):
+        """Dropping the result must not leave a stale entry snapshot behind: a
+        later sort or filter rebuilds from it without touching the disk."""
+        self.touch_metadata("b.txt")
+
+        self.app._handle_reload_request("left")
+        self.app._settle_listings()
+
+        entries = self.app.pm.left_pane["_listing_entries"]
+        self.assertEqual(sorted(p.name for p, _ in entries),
+                         ["a.txt", "b.txt", "c.txt"])
+
+    def test_reload_does_not_supersede_an_in_flight_listing(self):
+        """A navigation already reading the directory carries cursor placement in
+        its on_ready; a monitor reload must not bump the generation out from
+        under it just to read the same directory again."""
+        self.app._list_pane("left", on_ready=lambda p: None)   # navigation in flight
+        gen = self.app.pm.left_pane["_load_gen"]
+
+        self.assertFalse(self.app._handle_reload_request("left"))
+
+        self.assertEqual(self.app.pm.left_pane["_load_gen"], gen)
+        self.app._settle_listings()
+
+    def test_empty_directory_lands_on_a_blanked_pane(self):
+        """An empty listing compares equal to a pane blanked by an in-flight
+        navigation. It must still be installed, or the pane stays 'loading'
+        forever with nothing to show."""
+        for n in ("a.txt", "b.txt", "c.txt"):
+            os.remove(os.path.join(self.left_dir, n))
+
+        self.app._list_pane("left")                 # blanks the pane, loading=True
+        self.app._settle_listings()
+
+        self.assertEqual(self.app.pm.left_pane["files"], [])
+        self.assertFalse(self.app.pm.left_pane["loading"])
 
 
 if __name__ == "__main__":

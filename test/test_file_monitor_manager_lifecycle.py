@@ -234,21 +234,6 @@ class TestFileMonitorManagerLifecycle(unittest.TestCase):
         self.assertEqual(state['retry_count'], 0)
         self.assertFalse(state['failed_permanently'])
     
-    def test_suppress_reloads(self):
-        """Test reload suppression"""
-        # Suppress reloads for 500ms
-        self.manager.suppress_reloads(500)
-        
-        # Check that suppress_until was set for both panes
-        current_time = time.time()
-        self.assertGreater(self.manager.suppress_until['left'], current_time)
-        self.assertGreater(self.manager.suppress_until['right'], current_time)
-        
-        # Check that suppression expires after the duration
-        time.sleep(0.6)
-        self.assertLess(self.manager.suppress_until['left'], time.time())
-        self.assertLess(self.manager.suppress_until['right'], time.time())
-    
     def test_event_callback_posts_to_queue(self):
         """Test that filesystem events post reload requests to queue"""
         # Start monitoring

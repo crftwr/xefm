@@ -678,51 +678,6 @@ class TestEventCoalescing(unittest.TestCase):
         else:
             self.assertLessEqual(reload_count, 2)
     
-    def test_suppression_after_user_action(self):
-        """Test that reloads are suppressed after user action."""
-        # Start monitoring
-        self.manager.start_monitoring(self.left_path, self.right_path)
-        time.sleep(0.5)  # Wait for initialization events
-        
-        # Drain initialization events
-        while not self.file_manager.reload_queue.empty():
-            self.file_manager.reload_queue.get_nowait()
-        
-        # Suppress reloads for 500ms
-        self.manager.suppress_reloads(500)
-        
-        # Create file during suppression period
-        test_file = self.left_path / "test.txt"
-        test_file.write_text("test content")
-        
-        # Wait for event processing (but still within suppression)
-        time.sleep(0.3)
-        
-        # Queue should be empty (suppressed)
-        self.assertTrue(self.file_manager.reload_queue.empty())
-        
-        # Wait for suppression to expire
-        time.sleep(0.5)
-        
-        # Create another file after suppression
-        test_file2 = self.left_path / "test2.txt"
-        test_file2.write_text("test content 2")
-        
-        # Wait for event processing
-        time.sleep(1.0)
-        
-        # Should get reload request now
-        if not self.file_manager.reload_queue.empty():
-            # Drain all posted reloads and check the expected pane is among them.
-            # Coalescing and shared observers can post more than one entry, in any
-            # order, so asserting on just the first is racy.
-            posted = set()
-            while not self.file_manager.reload_queue.empty():
-                posted.add(self.file_manager.reload_queue.get_nowait())
-            self.assertIn("left", posted)
-        else:
-            self.skipTest("Filesystem events not detected - may be system-specific timing issue")
-
 
 if __name__ == '__main__':
     unittest.main()

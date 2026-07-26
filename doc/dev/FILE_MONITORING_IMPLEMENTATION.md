@@ -88,14 +88,12 @@ self.monitors = {
 }
 self.reload_timers = {}     # Coalescing timers per pane
 self.rate_limit_times = {}  # Rate limiting timestamps per pane
-self.suppress_until = 0     # Suppression timestamp
 ```
 
 **Configuration Properties**:
 - `FILE_MONITORING_ENABLED` - Master enable/disable flag
 - `FILE_MONITORING_COALESCE_DELAY_MS` - Event batching window (default: 200ms)
 - `FILE_MONITORING_MAX_RELOADS_PER_SECOND` - Rate limit (default: 5/sec)
-- `FILE_MONITORING_SUPPRESS_AFTER_ACTION_MS` - Post-action suppression (default: 1000ms)
 - `FILE_MONITORING_FALLBACK_POLL_INTERVAL_S` - Polling interval (default: 5s)
 
 #### FileMonitorObserver
@@ -317,16 +315,22 @@ External Change → watchdog → XeFMFileSystemEventHandler → FileMonitorManag
                                                     └───────────┬───────────┘
                                                                 │
                                                                 ▼
-                                                    ┌───────────────────────┐
-                                                    │ Suppression Check     │
-                                                    │ (1s after user action)│
-                                                    └───────────┬───────────┘
-                                                                │
-                                                                ▼
                                                     reload_queue.put(pane_name)
                                                                 │
                                                                 ▼
                                                     FileManager._handle_reload_request()
+                                                                │
+                                                                ▼
+                                                    ┌───────────────────────┐
+                                                    │ Re-list (keep_visible)│
+                                                    │ pane keeps its entries│
+                                                    └───────────┬───────────┘
+                                                                │
+                                                                ▼
+                                                    ┌───────────────────────┐
+                                                    │ Compare vs. on-screen │
+                                                    │ equal → drop, no draw │
+                                                    └───────────────────────┘
 ```
 
 ### Detailed Event Flow
@@ -393,15 +397,68 @@ External Change → watchdog → XeFMFileSystemEventHandler → FileMonitorManag
    ```
 
 
+## Absorbing Spurious Reloads
+
+Most reload requests that reach `_handle_reload_request` change nothing the user
+can see. A "modified" event does not mean the file's *contents* changed: on macOS
+watchdog's FSEvents backend maps inode-metadata, extended-attribute and ownership
+changes onto an ordinary `FileModifiedEvent`, indistinguishable from a real write
+(`_is_meta_mod` in `watchdog/observers/fsevents.py`). Opening a file in a GUI app
+writes exactly those — `com.apple.macl`, `com.apple.lastuseddate#PS`, a quarantine
+flag update — and a media player checkpointing playback position emits a stream of
+them. Reading a file produces no event at all; the writes around the open do.
+
+Two mechanisms keep those free (issue #239):
+
+**1. The pane is never blanked for a reload nobody asked for.**
+`_list_pane(..., keep_visible=True)` re-reads the directory without first clearing
+`files` / `file_info`. The listing stays on screen and stays actionable for the
+whole re-read, and no "Loading…" indicator is armed. The default (blanking) path
+is still correct for a *navigation*, where the old directory's entries must not
+remain actionable under the new path.
+
+**2. A result matching what is on screen is dropped.**
+`_listing_unchanged` compares the incoming `files` (rows and their order) and
+`file_info` (every column drawn from disk: size, date, dir/link flags) against
+what the pane already holds. Equal means installing it could not change one cell,
+so it is discarded — no `apply_listing`, no cursor reconciliation, no re-render.
+The `entries` snapshot is still refreshed, so a later sort or filter rebuilds from
+current data at no cost.
+
+Two ordering rules make this safe:
+
+- A result is only droppable while the pane is **not** `loading`. One still blanked
+  by an in-flight navigation must install even a matching result — an empty
+  directory would otherwise compare equal to the blank pane and leave it stuck
+  loading forever.
+- `_handle_reload_request` returns early when a listing is already in flight for
+  the pane. That listing is at least as fresh, and superseding it would discard
+  the cursor placement its `on_ready` carries.
+
+Because starting a reload no longer changes anything on screen, `_pump_monitoring`
+excludes `_process_reload_queue` from its "needs a redraw" answer; only a result
+that actually differs triggers a frame.
+
+### Two flags, not one
+
+`loading` means "this pane is blanked and showing (or about to show) an
+indicator". `_load_pending` means "a filesystem read is in flight". A
+`keep_visible` re-list sets only the second. `_listings_pending` (and therefore
+`_settle_listings`) must consult `_load_pending`, or such a listing looks settled
+the moment it starts.
+
 ## Context Preservation
 
 ### User Context During Reload
 
-When an automatic reload occurs, XeFM preserves the user's context to avoid disrupting their workflow:
+When a reload does install a change, XeFM preserves the user's context to avoid disrupting their workflow:
 
 1. **Cursor Position**: Stays on the same filename if it still exists
 2. **Scroll Position**: Maintained when possible
 3. **Selection**: Moves to nearest file if selected file was deleted
+
+A reload that installs nothing leaves cursor and scroll exactly where the user put
+them — the restore callback never runs.
 
 ### Implementation
 

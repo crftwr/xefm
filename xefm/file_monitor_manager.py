@@ -81,13 +81,6 @@ class FileMonitorManager:
             'right': []
         }
         
-        # Suppression state for temporarily disabling automatic reloads
-        # Used after user-initiated actions to avoid redundant reloads
-        self.suppress_until: Dict[str, float] = {
-            'left': 0.0,
-            'right': 0.0
-        }
-        
         # Lock for thread-safe access to internal state
         self.state_lock = threading.Lock()
         
@@ -420,13 +413,7 @@ class FileMonitorManager:
                 # Process reload for each pane that's monitoring this directory
                 for pane in panes_to_reload:
                     pane_state = self.monitoring_state[pane]
-                    
-                    # Check if reloads are currently suppressed for this pane
-                    current_time = time.time()
-                    if current_time < self.suppress_until[pane]:
-                        self.logger.debug(f"Reload suppressed for {pane} pane (event: {event_type}, file: {filename})")
-                        continue
-                    
+
                     # Check rate limiting for this pane
                     if not self._check_rate_limit(pane):
                         self.logger.warning(f"Rate limit exceeded for {pane} pane, skipping reload (event: {event_type}, file: {filename})")
@@ -589,23 +576,6 @@ class FileMonitorManager:
         
         # If not currently monitored, detect what mode would be used
         return self._detect_monitoring_mode(path)
-    
-    def suppress_reloads(self, duration_ms: int) -> None:
-        """
-        Temporarily suppress automatic reloads.
-        
-        Used after user-initiated actions to avoid redundant reloads.
-        
-        Args:
-            duration_ms: Suppression duration in milliseconds
-        """
-        suppress_until = time.time() + (duration_ms / 1000.0)
-        
-        with self.state_lock:
-            for pane_name in ['left', 'right']:
-                self.suppress_until[pane_name] = suppress_until
-        
-        self.logger.debug(f"Suppressing reloads for {duration_ms}ms")
     
     def check_observer_health(self) -> None:
         """
