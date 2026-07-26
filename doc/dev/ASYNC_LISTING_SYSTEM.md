@@ -1,12 +1,17 @@
 # Async Listing System
 
-Reading a directory — `iterdir` plus a `stat` per entry for the sort and the
-display cache — is the one piece of blocking I/O XeFM does on behalf of nearly
-every action. On a local disk it costs microseconds; on a network mount, a
-spun-down drive, a huge directory, or a remote (`s3://`, `ssh://`) path it can
-cost seconds. **No listing runs on the UI thread.** Every path that produces a
-pane listing goes through one worker-thread mechanism, and the result is
-installed on the UI thread.
+Reading a directory — the entry list plus each entry's type, size and date — is
+the one piece of blocking I/O XeFM does on behalf of nearly every action. On a
+local disk it costs microseconds; on a network mount, a spun-down drive, a huge
+directory, or a remote (`s3://`, `ssh://`) path it can cost seconds. **No
+listing runs on the UI thread.** Every path that produces a pane listing goes
+through one worker-thread mechanism, and the result is installed on the UI
+thread.
+
+Two companion documents cover the cost of the read itself rather than the thread
+it runs on: [`DIRECTORY_SCAN_SYSTEM.md`](DIRECTORY_SCAN_SYSTEM.md) explains why
+the directory is scanned in one pass instead of stat'd per file, and why a sort
+or filter change rebuilds from the previous scan rather than re-reading.
 
 Source: [`xefm/app.py`](../../xefm/app.py) (`_list_pane` and its callers),
 [`xefm/file_list_manager.py`](../../xefm/file_list_manager.py) (the split between
@@ -74,22 +79,31 @@ a stale entry can never be acted on under a listing that no longer exists.
 Callers rarely reach for `_list_pane` directly. They pick one of two wrappers,
 which differ only in what they reset:
 
-| | `_relist(pane)` | `_refresh(pane)` |
-|---|---|---|
-| Meaning | re-list the **same** directory | the pane **navigated** |
-| Cursor / scroll | untouched (clamped when the result lands) | reset to the top |
-| History record | no | yes |
-| Used by | sort, filter, post-operation reload, startup | enter/leave a directory, jump, favorites |
+| | `_relist(pane)` | `_refresh(pane)` | `_resort(pane)` |
+|---|---|---|---|
+| Meaning | re-list the **same** directory | the pane **navigated** | re-order what is already listed |
+| Reads the disk | yes, on a worker | yes, on a worker | **no** — rebuilds from the snapshot |
+| Cursor / scroll | untouched (clamped when the result lands) | reset to the top | held on the same **file** |
+| History record | no | yes | no |
+| Used by | post-operation reload, startup, `show_hidden` | enter/leave a directory, jump, favorites | sort, filter |
 
-Both are virtual-pane aware: a search-results feed has no directory to read, so
-it is rebuilt from its in-memory result set (`flm.refresh_files`) and `on_ready`
-fires synchronously. `_refresh` is literally `_relist` plus the cursor reset and
-the history record, so the two can never drift.
+Both re-reading wrappers are virtual-pane aware: a search-results feed has no
+directory to read, so it is rebuilt from its in-memory result set
+(`flm.refresh_files`) and `on_ready` fires synchronously. `_refresh` is literally
+`_relist` plus the cursor reset and the history record, so the two can never
+drift.
 
-Filter changes get a third, thin wrapper — `XeFMApp._apply_filter(pane, pattern,
+`_resort` is the one that does no I/O: a sort or filter change needs nothing the
+previous listing did not already collect, so it re-filters and re-sorts the
+snapshot on the current tick and falls back to `_relist` only when the pane has
+no snapshot to reuse. See
+[`DIRECTORY_SCAN_SYSTEM.md`](DIRECTORY_SCAN_SYSTEM.md#sorting-and-filtering-without-re-reading).
+
+Filter changes get a thin wrapper on top — `XeFMApp._apply_filter(pane, pattern,
 on_count=…)` — because the *count* the log line reports is a property of the
-listing, not of the pane state: `set_filter` lands immediately, `on_count(n)`
-fires when the listing does.
+listing, not of the pane state: `set_filter` lands immediately, and `on_count(n)`
+fires when the listing does (immediately via `_resort`, or when the worker
+reports back if it had to fall back to `_relist`).
 
 ---
 

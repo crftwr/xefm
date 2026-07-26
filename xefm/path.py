@@ -12,15 +12,37 @@ from abc import ABC, abstractmethod
 from pathlib import Path as PathlibPath, PurePath
 from datetime import datetime
 from typing import Union, Iterator, List, Optional, Any
+from xefm import dir_scan
 from xefm.str_format import format_size
 
 
 
 
+def attrs_via_path(entry) -> dict:
+    """Build one :mod:`xefm.dir_scan` attribute record by asking a ``Path``
+    itself — the per-file route, for backends with no bulk listing form.
+
+    ``is_symlink`` is captured first because it stays meaningful for a broken
+    symlink, whose ``stat`` below fails.
+    """
+    try:
+        is_link = entry.is_symlink()
+    except Exception:
+        is_link = False
+    try:
+        stat_info = entry.stat()
+        is_dir = entry.is_dir()
+    except Exception:
+        return dict(dir_scan.BROKEN_ATTRS, is_link=is_link)
+    return {'is_dir': is_dir, 'is_link': is_link,
+            'size': 0 if is_dir else stat_info.st_size,
+            'mtime': stat_info.st_mtime, 'ok': True}
+
+
 class PathImpl(ABC):
     """
     Abstract base class for path implementations.
-    
+
     This defines the interface that all storage implementations must provide.
     Subclasses implement specific storage backends (local, S3, SCP, etc.).
     """
@@ -176,7 +198,25 @@ class PathImpl(ABC):
     def iterdir(self) -> Iterator['Path']:
         """Iterate over the files in this directory"""
         pass
-    
+
+    def listdir_attrs(self) -> List[tuple]:
+        """Return ``[(Path, attrs), …]`` for this directory's entries, where
+        ``attrs`` is the record described in :mod:`xefm.dir_scan`
+        (``is_dir``/``is_link``/``size``/``mtime``/``ok``).
+
+        This is ``iterdir`` plus everything a listing needs to know about each
+        entry, in one call — so a backend that can answer for the whole
+        directory at once (a bulk syscall, a single list request) does, instead
+        of being interrogated per file. A pane listing goes through here rather
+        than through ``iterdir`` + per-entry ``stat``.
+
+        The default implementation *is* ``iterdir`` + per-entry ``stat``, so a
+        backend that has no bulk form keeps working unchanged; override it where
+        the underlying protocol already returns metadata alongside names.
+        """
+        return [(child, attrs_via_path(child)) for child in self.iterdir()]
+
+
     @abstractmethod
     def glob(self, pattern: str) -> Iterator['Path']:
         """Iterate over this subtree and yield all existing files matching pattern"""
@@ -675,7 +715,17 @@ class LocalPathImpl(PathImpl):
         """Iterate over the files in this directory"""
         for item in self._path.iterdir():
             yield Path(item)
-    
+
+    def listdir_attrs(self) -> List[tuple]:
+        """Read the directory and every entry's attributes in one pass — see
+        :func:`xefm.dir_scan.scan_dir`, which uses the platform's bulk
+        enumeration where one exists. This is what keeps a large directory on a
+        network mount from costing one round trip per file."""
+        base = self._path
+        return [(Path(base / name), attrs)
+                for name, attrs in dir_scan.scan_dir(str(base))]
+
+
     def glob(self, pattern: str) -> Iterator['Path']:
         """Iterate over this subtree and yield all existing files matching pattern"""
         for item in self._path.glob(pattern):
@@ -1143,7 +1193,14 @@ class Path:
     def iterdir(self) -> Iterator['Path']:
         """Iterate over the files in this directory"""
         return self._impl.iterdir()
-    
+
+    def listdir_attrs(self) -> List[tuple]:
+        """Return ``[(Path, attrs), …]`` for this directory — ``iterdir`` plus
+        each entry's ``is_dir``/``is_link``/``size``/``mtime`` in one call. See
+        :meth:`PathImpl.listdir_attrs`."""
+        return self._impl.listdir_attrs()
+
+
     def glob(self, pattern: str) -> Iterator['Path']:
         """Iterate over this subtree and yield all existing files matching pattern"""
         return self._impl.glob(pattern)

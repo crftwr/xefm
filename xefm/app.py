@@ -1691,6 +1691,60 @@ class XeFMApp:
             return
         self._list_pane(self._pane_name_of(pane), on_ready=on_ready)
 
+    def _resort(self, pane: dict, *, keep_cursor: bool = True, on_ready=None) -> None:
+        """Re-sort / re-filter ``pane`` from the snapshot its last listing left
+        behind, without touching the filesystem — the path every sort and filter
+        change takes.
+
+        A sort change needs nothing the previous listing did not already read:
+        the entry list and each entry's size, date and type are still in hand, so
+        the new order is computed in memory and installed on this tick. That
+        matters most where it used to hurt most — re-sorting a 1,680-entry
+        directory on a NAS cost a full re-read (tens of seconds of per-file round
+        trips, #183) to produce a list the pane could already have derived.
+
+        Because it lands synchronously there is no blank-then-repopulate flicker:
+        ``_relist`` clears ``pane['files']`` until a worker reports back, which on
+        a slow mount left the pane empty for the whole re-read.
+
+        Falls back to :meth:`_relist` when the pane has no snapshot (nothing
+        listed yet, or the last listing failed), so behaviour is unchanged when
+        there is nothing to reuse.
+
+        ``keep_cursor`` holds the cursor on the *same file* across the reorder
+        rather than the same row number. Callers that deliberately reset the
+        cursor — a filter change, via ``FileListManager.set_filter`` — pass
+        False."""
+        result = self.flm.recompute_listing(
+            pane,
+            filter_pattern=pane.get("filter_pattern"),
+            sort_mode=pane["sort_mode"],
+            sort_reverse=pane["sort_reverse"],
+        )
+        if result is None:
+            self._relist(pane, on_ready=on_ready)
+            return
+
+        focused = None
+        if keep_cursor:
+            files = pane.get("files") or []
+            index = pane.get("focused_index", 0)
+            if 0 <= index < len(files):
+                focused = str(files[index])
+
+        self.flm.apply_listing(pane, result)
+
+        if focused is not None:
+            for i, entry in enumerate(pane["files"]):
+                if str(entry) == focused:
+                    pane["focused_index"] = i
+                    break
+            self.pm.adjust_scroll_for_focus(pane, self._display_height())
+
+        self._animate_pane_text(self._pane_name_of(pane))
+        if on_ready is not None:
+            on_ready(pane)
+
     def _refresh(self, pane: dict, *, on_ready=None) -> None:
         """Re-list ``pane`` after a directory change: reset the cursor, record
         history, and (re)list on a worker thread (see :meth:`_relist`).
@@ -1719,7 +1773,9 @@ class XeFMApp:
         ``pane['files']`` straight after this call sees an empty pane."""
         self.flm.set_filter(pane, pattern)
         on_ready = None if on_count is None else (lambda p: on_count(len(p["files"])))
-        self._relist(pane, on_ready=on_ready)
+        # set_filter has just reset the cursor to the top, which a filter change
+        # should do — so don't restore it over that.
+        self._resort(pane, keep_cursor=False, on_ready=on_ready)
 
     def _seed_history(self) -> None:
         """Populate the recent-directory history from the persisted
@@ -2651,20 +2707,20 @@ class XeFMApp:
             pane["sort_reverse"] = not pane["sort_reverse"]
         else:
             pane["sort_mode"] = mode
-        self._relist(pane)
+        self._resort(pane)
         self.log_info(f"Sort: {self.flm.get_sort_description(pane)}")
 
     def _set_sort(self, mode: str) -> None:
         pane = self.active_pane()
         pane["sort_mode"] = mode
-        self._relist(pane)
+        self._resort(pane)
         self.log_info(f"Sort: {self.flm.get_sort_description(pane)}")
         self.panel.render()
 
     def _toggle_reverse(self) -> None:
         pane = self.active_pane()
         pane["sort_reverse"] = not pane["sort_reverse"]
-        self._relist(pane)
+        self._resort(pane)
         self.log_info(f"Sort: {self.flm.get_sort_description(pane)}")
         self.panel.render()
 

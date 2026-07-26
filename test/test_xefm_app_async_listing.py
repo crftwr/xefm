@@ -16,6 +16,7 @@ to the end of ``__init__``, because the worker path does not exist before it.
 Run with: python -m pytest test/test_xefm_app_async_listing.py -v
 """
 
+import contextlib
 import os
 import queue
 import shutil
@@ -61,6 +62,13 @@ class StubFLM:
             pane["focused_index"] = min(pane["focused_index"], len(pane["files"]) - 1)
         else:
             pane["focused_index"] = 0
+
+    def recompute_listing(self, pane, *, filter_pattern=None, sort_mode="name",
+                          sort_reverse=False):
+        """These stub panes carry no listing snapshot, so this reports "nothing
+        to reuse" exactly as FileListManager does — which is what keeps the
+        worker-thread fallback below under test."""
+        return None
 
     # --- the synchronous halves _relist / _apply_filter still lean on ---------
 
@@ -348,23 +356,77 @@ class StartupOnARealApp(_RealAppBase):
 
 
 class SortOnARealApp(_RealAppBase):
-    def test_quick_sort_relists_off_the_ui_thread(self):
+    """Sorting re-orders the entries already in hand — no directory read at all,
+    and the new order is in place by the time the call returns (#183).
+
+    The old design re-listed on a worker, which kept the UI responsive but still
+    paid a full re-read: on a NAS that is one network round trip per file, for
+    information the pane had already collected.
+    """
+
+    @contextlib.contextmanager
+    def _no_directory_reads(self, app):
+        """Fail the test if anything re-reads the directory inside the block."""
+        def boom(*a, **kw):
+            raise AssertionError("re-read the directory to sort")
+        original = app.flm.compute_listing
+        app.flm.compute_listing = boom
+        try:
+            yield
+        finally:
+            app.flm.compute_listing = original
+
+    def test_quick_sort_reorders_without_reading_the_directory(self):
         app = self._build()
         app._settle_listings()
-        app.dispatch("quick_sort_size")
-        # The re-sort is a fresh listing on a worker, not an inline re-read.
-        self.assertTrue(app.pm.left_pane["loading"])
-        app._settle_listings()
+        with self._no_directory_reads(app):
+            app.dispatch("quick_sort_size")
+        self.assertFalse(app.pm.left_pane["loading"])  # nothing to wait for
         self.assertEqual(app.pm.left_pane["sort_mode"], "size")
         self.assertEqual(len(app.pm.left_pane["files"]), 3)
 
-    def test_toggle_reverse_relists_off_the_ui_thread(self):
+    def test_toggle_reverse_reorders_without_reading_the_directory(self):
         app = self._build()
         app._settle_listings()
-        app._toggle_reverse()
-        self.assertTrue(app.pm.left_pane["loading"])
-        app._settle_listings()
+        with self._no_directory_reads(app):
+            app._toggle_reverse()
         self.assertEqual([f.name for f in app.pm.left_pane["files"]],
+                         ["c.txt", "b.txt", "a.txt"])
+        self.assertFalse(app.pm.left_pane["loading"])
+
+    def test_sort_keeps_the_cursor_on_the_same_file(self):
+        app = self._build()
+        app._settle_listings()
+        pane = app.pm.left_pane
+        pane["focused_index"] = next(i for i, f in enumerate(pane["files"])
+                                     if f.name == "a.txt")
+        app._toggle_reverse()
+        # a.txt moved from the top to the bottom; the cursor went with it rather
+        # than staying on row 0.
+        self.assertEqual(pane["files"][pane["focused_index"]].name, "a.txt")
+
+    def test_filter_reuses_the_snapshot_and_widening_restores_entries(self):
+        app = self._build()
+        app._settle_listings()
+        pane = app.pm.left_pane
+        with self._no_directory_reads(app):
+            app._apply_filter(pane, "a*")
+            self.assertEqual([f.name for f in pane["files"]], ["a.txt"])
+            # The snapshot is kept pre-filter, so clearing restores the rest
+            # without going back to the directory.
+            app._apply_filter(pane, "")
+        self.assertEqual([f.name for f in pane["files"]],
+                         ["a.txt", "b.txt", "c.txt"])
+
+    def test_a_pane_with_no_snapshot_still_falls_back_to_a_real_listing(self):
+        app = self._build()
+        app._settle_listings()
+        pane = app.pm.left_pane
+        pane["_listing_entries"] = None  # e.g. the last listing failed
+        app._toggle_reverse()
+        self.assertTrue(pane["loading"])  # went to a worker after all
+        app._settle_listings()
+        self.assertEqual([f.name for f in pane["files"]],
                          ["c.txt", "b.txt", "a.txt"])
 
 

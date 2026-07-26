@@ -6,7 +6,7 @@ XeFM File List Manager - Manages file lists, sorting, filtering, and selection
 import os
 import stat
 import fnmatch
-from xefm.path import Path
+from xefm.path import Path, attrs_via_path
 from datetime import datetime
 from xefm.str_format import format_size
 
@@ -104,27 +104,19 @@ class FileListManager:
                 ArchivePermissionError
             )
 
-            # Get all entries in the directory
-            all_entries = list(path.iterdir())
+            # Read the directory and every entry's attributes in one pass, so a
+            # large directory on a network mount costs one bulk enumeration
+            # rather than a round trip per file (see xefm.dir_scan).
+            all_entries = path.listdir_attrs()
 
             # Filter hidden files if needed
             if not self.show_hidden:
-                all_entries = [entry for entry in all_entries if not entry.name.startswith('.')]
+                all_entries = [(entry, attrs) for entry, attrs in all_entries
+                               if not entry.name.startswith('.')]
 
-            # Apply filename filter if active (only to files, not directories)
-            if filter_pattern:
-                filtered_entries = []
-                for entry in all_entries:
-                    # Always include directories, only filter files
-                    if entry.is_dir() or fnmatch.fnmatch(entry.name.lower(), filter_pattern.lower()):
-                        filtered_entries.append(entry)
-                all_entries = filtered_entries
-
-            # Sort the entries
-            files = self.sort_entries(all_entries, sort_mode, sort_reverse)
-
-            return {"ok": True, "files": files,
-                    "file_info": self._build_file_info(files)}
+            return self._assemble_listing(
+                all_entries, filter_pattern=filter_pattern,
+                sort_mode=sort_mode, sort_reverse=sort_reverse)
 
         except ArchiveNavigationError as e:
             # Archive navigation error - path doesn't exist in archive
@@ -169,64 +161,94 @@ class FileListManager:
         filter: the search that produced ``paths`` already honoured
         ``show_hidden``, and a scattered result set has no single directory whose
         dotfiles to hide."""
-        all_entries = list(paths)
+        all_entries = [(p, attrs_via_path(p)) for p in paths]
+        return self._assemble_listing(
+            all_entries, filter_pattern=filter_pattern,
+            sort_mode=sort_mode, sort_reverse=sort_reverse)
+
+    def _assemble_listing(self, entries, *, filter_pattern=None,
+                          sort_mode='name', sort_reverse=False):
+        """Turn ``[(Path, attrs), …]`` into a listing dict: apply the filename
+        filter, sort, and build the display cache — all from ``attrs``, with no
+        filesystem access at all.
+
+        This is the half of a listing that does not depend on the disk, split
+        out so it can run twice: once behind :meth:`compute_listing`, and again
+        on every later sort or filter change straight from the snapshot it
+        returns in ``entries`` (see :meth:`recompute_listing`).
+        """
+        attrs = {str(p): a for p, a in entries}
+        paths = [p for p, _ in entries]
+
+        # Apply filename filter if active (only to files, not directories)
         if filter_pattern:
-            # Filter files by name; always keep directories (matches compute_listing).
-            all_entries = [e for e in all_entries
-                           if self._is_dir_safe(e)
-                           or fnmatch.fnmatch(e.name.lower(), filter_pattern.lower())]
-        files = self.sort_entries(all_entries, sort_mode, sort_reverse)
+            pattern = filter_pattern.lower()
+            paths = [p for p in paths
+                     if attrs[str(p)]['is_dir']
+                     or fnmatch.fnmatch(p.name.lower(), pattern)]
+
+        files = self.sort_entries(paths, sort_mode, sort_reverse, attrs=attrs)
         return {"ok": True, "files": files,
-                "file_info": self._build_file_info(files)}
+                "file_info": self._build_file_info(files, attrs=attrs),
+                "entries": entries}
 
-    @staticmethod
-    def _is_dir_safe(entry):
-        try:
-            return entry.is_dir()
-        except Exception:
-            return False
+    def recompute_listing(self, pane_data, *, filter_pattern=None,
+                          sort_mode='name', sort_reverse=False):
+        """Re-filter and re-sort a pane from the snapshot its last listing left
+        behind — **no filesystem access**, so it costs microseconds where a
+        re-read of the same directory on a NAS costs seconds.
 
-    def _build_file_info(self, files):
+        A sort or filter change needs no information the previous listing did
+        not already collect: ``entries`` holds every entry with its
+        ``is_dir``/``size``/``mtime``. Returns a listing dict for
+        :meth:`apply_listing`, or ``None`` if the pane has no snapshot yet
+        (nothing listed, or the listing failed) and the caller must re-list.
+
+        The snapshot is taken *before* the filename filter, so widening or
+        clearing a filter restores entries without re-reading. It is taken
+        *after* the hidden-file filter, so toggling ``show_hidden`` does need a
+        real re-list.
+        """
+        entries = pane_data.get('_listing_entries')
+        if entries is None:
+            return None
+        return self._assemble_listing(
+            entries, filter_pattern=filter_pattern,
+            sort_mode=sort_mode, sort_reverse=sort_reverse)
+
+    def _build_file_info(self, files, attrs=None):
         """Populate the per-entry display cache (size/date strings, is_dir) once
         at load time, so rendering never issues a ``stat``. Shared by the
-        directory listing and the virtual (search-results) listing."""
+        directory listing and the virtual (search-results) listing.
+
+        ``attrs`` maps ``str(path)`` to the record the listing already collected
+        (see :mod:`xefm.dir_scan`); an entry missing from it is read per file, so
+        a caller that has no attributes still works.
+        """
+        attrs = attrs or {}
         file_info = {}
         for file_path in files:
             file_key = str(file_path)
-            # is_symlink() does not follow the link, so it stays true even for a
-            # broken symlink whose stat() below fails; capture it up front.
+            a = attrs.get(file_key) or attrs_via_path(file_path)
             try:
-                is_link = file_path.is_symlink()
-            except Exception:
-                is_link = False
-            try:
-                stat_info = file_path.stat()
-                is_dir = file_path.is_dir()
-
-                # Format size
-                if is_dir:
-                    size_str = "<DIR>"
+                if a['ok']:
+                    size_str = "<DIR>" if a['is_dir'] else format_size(
+                        a['size'], compact=True)
+                    date_str = self._format_date(a['mtime'])
                 else:
-                    size_str = format_size(stat_info.st_size, compact=True)
-
-                # Format date
-                date_str = self._format_date(stat_info.st_mtime)
-
-                # Cache the formatted info
-                file_info[file_key] = {
-                    'size_str': size_str,
-                    'date_str': date_str,
-                    'is_dir': is_dir,
-                    'is_link': is_link
-                }
+                    # Unreadable (typically a broken symlink): is_link stays
+                    # true, describing the link rather than its missing target.
+                    size_str = date_str = '---'
             except Exception:
-                # Cache error result to avoid repeated stat() calls
-                file_info[file_key] = {
-                    'size_str': '---',
-                    'date_str': '---',
-                    'is_dir': False,
-                    'is_link': is_link
-                }
+                # One entry that will not format (an out-of-range timestamp, say)
+                # shows as unknown rather than costing the whole listing.
+                size_str = date_str = '---'
+            file_info[file_key] = {
+                'size_str': size_str,
+                'date_str': date_str,
+                'is_dir': a['is_dir'],
+                'is_link': a['is_link'],
+            }
         return file_info
 
     def apply_listing(self, pane_data, result):
@@ -238,9 +260,15 @@ class FileListManager:
         if not result.get("ok"):
             pane_data['files'] = []
             pane_data['focused_index'] = 0
+            # Drop the snapshot: a failed listing must not leave a later sort
+            # re-filtering entries from a directory we can no longer read.
+            pane_data['_listing_entries'] = None
             return
         pane_data['files'] = result['files']
         pane_data['file_info'] = result['file_info']
+        # Keep the pre-filter entry snapshot so a later sort or filter change
+        # rebuilds from it instead of re-reading the directory (#183).
+        pane_data['_listing_entries'] = result.get('entries')
 
         # Ensure focused index is valid
         if pane_data['files']:
@@ -274,65 +302,63 @@ class FileListManager:
         parts = re.split(r'(\d+)', text)
         return [convert(part) for part in parts]
     
-    def sort_entries(self, entries, sort_mode, reverse=False):
+    def sort_entries(self, entries, sort_mode, reverse=False, attrs=None):
         """Sort file entries based on the specified mode
-        
+
         Args:
             entries: List of Path objects to sort
             sort_mode: 'name', 'ext', 'size', or 'date'
             reverse: Whether to reverse the sort order
-            
+            attrs: Optional ``{str(path): record}`` from the listing that
+                produced ``entries`` (see :mod:`xefm.dir_scan`). Every key the
+                sort needs — is_dir, size, mtime — comes from here, so sorting
+                issues no filesystem calls. Entries missing from it are read per
+                file, so callers with no attributes still work.
+
         Returns:
             Sorted list with directories always first
         """
-        def get_sort_key(entry):
-            """Generate sort key for an entry"""
-            try:
-                if sort_mode == 'size':
-                    return entry.stat().st_size if entry.is_file() else 0
-                elif sort_mode == 'date':
-                    return entry.stat().st_mtime
-                elif sort_mode == 'type':
-                    if entry.is_dir():
-                        return ""  # Directories first
-                    else:
-                        return entry.suffix.lower()
-                elif sort_mode == 'ext':
-                    if entry.is_dir():
-                        return ""  # Directories first (no extension)
-                    else:
-                        # Use the same extension logic as rendering
-                        filename = entry.name
-                        dot_index = filename.rfind('.')
-                        if dot_index <= 0:
-                            return ""  # No extension
-                        extension = filename[dot_index:]
-                        # Check extension length limit (same as rendering)
-                        max_ext_length = self.config.MAX_EXTENSION_LENGTH
-                        if len(extension) > max_ext_length:
-                            return ""  # Extension too long, treat as no extension
-                        return extension.lower()
-                else:  # name (default)
-                    return self._natural_sort_key(entry.name)
-            except (OSError, PermissionError):
-                # If we can't get file info, use name as fallback
-                return self._natural_sort_key(entry.name)
-        
-        # Cache is_dir() results to avoid redundant calls (optimization for remote filesystems)
-        # This reduces calls from 2N to N, providing 50% reduction in network operations
-        dirs_and_files = []
+        attrs = dict(attrs) if attrs else {}
         for entry in entries:
-            try:
-                is_directory = entry.is_dir()
-                dirs_and_files.append((entry, is_directory))
-            except (OSError, PermissionError):
-                # Treat as file on error
-                dirs_and_files.append((entry, False))
-        
-        # Separate directories and files using cached results
-        directories = [entry for entry, is_dir in dirs_and_files if is_dir]
-        files = [entry for entry, is_dir in dirs_and_files if not is_dir]
-        
+            key = str(entry)
+            if key not in attrs:
+                attrs[key] = attrs_via_path(entry)
+
+        def get_sort_key(entry):
+            """Generate sort key for an entry, from the cached attributes"""
+            a = attrs[str(entry)]
+            if sort_mode == 'size':
+                # Directories and unreadable entries sort as 0, as before.
+                return a['size']
+            elif sort_mode == 'date':
+                return a['mtime']
+            elif sort_mode == 'type':
+                if a['is_dir']:
+                    return ""  # Directories first
+                else:
+                    return entry.suffix.lower()
+            elif sort_mode == 'ext':
+                if a['is_dir']:
+                    return ""  # Directories first (no extension)
+                else:
+                    # Use the same extension logic as rendering
+                    filename = entry.name
+                    dot_index = filename.rfind('.')
+                    if dot_index <= 0:
+                        return ""  # No extension
+                    extension = filename[dot_index:]
+                    # Check extension length limit (same as rendering)
+                    max_ext_length = self.config.MAX_EXTENSION_LENGTH
+                    if len(extension) > max_ext_length:
+                        return ""  # Extension too long, treat as no extension
+                    return extension.lower()
+            else:  # name (default)
+                return self._natural_sort_key(entry.name)
+
+        # Separate directories and files using the cached attributes
+        directories = [e for e in entries if attrs[str(e)]['is_dir']]
+        files = [e for e in entries if not attrs[str(e)]['is_dir']]
+
         # Sort each group separately
         sorted_dirs = sorted(directories, key=get_sort_key, reverse=reverse)
         sorted_files = sorted(files, key=get_sort_key, reverse=reverse)
