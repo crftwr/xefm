@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 from xefm import app as xefm_app  # noqa: E402
 from xefm.compare_dialog import CompareSelectDialog, ConditionRow  # noqa: E402
 from xefm.path import Path  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
 from puikit.event import Event, EventType  # noqa: E402
 
@@ -50,10 +51,16 @@ class CompareDialogApp(unittest.TestCase):
         _write(self.left, "orphan.txt", b"z")                          # only on the left
         _write(self.right, "only_right.txt", b"y")
 
+        self.state_dir = tempfile.mkdtemp()
+        # Temp state DB, never the real ~/.xefm/state.db: the app restores each
+        # pane's sort mode, sort direction and filter from it, so the developer's
+        # own last-used settings would otherwise decide these panes' row order.
+        self.sm = XeFMStateManager(db_path=os.path.join(self.state_dir, "state.db"))
         self.b = create_backend("memory")
         self.b.open()
         self.app = xefm_app.XeFMApp(self.b, self.left, self.right,
-                              left_provided=True, right_provided=True)
+                              left_provided=True, right_provided=True,
+                              state_manager=self.sm)
         # These tests assert on the dialog's *content*, and the app restores
         # whichever theme was last used — which on a developer's machine may be
         # one carrying an arriving-text effect (see puikit.textfx), so a
@@ -75,6 +82,7 @@ class CompareDialogApp(unittest.TestCase):
         self.b.close()
         shutil.rmtree(self.left, ignore_errors=True)
         shutil.rmtree(self.right, ignore_errors=True)
+        shutil.rmtree(self.state_dir, ignore_errors=True)
 
     def _open(self):
         self.app.compare_selection()

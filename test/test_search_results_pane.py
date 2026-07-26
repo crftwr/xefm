@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 from xefm import app as xefm_app  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.file_list_manager import FileListManager  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 from xefm import _config  # noqa: E402
 
 
@@ -97,10 +98,16 @@ class AppVirtual(unittest.TestCase):
     def setUp(self):
         from puikit.backends import create_backend
         self.tmp = tempfile.mkdtemp()
+        self.state_dir = tempfile.mkdtemp()
+        # Temp state DB, never the real ~/.xefm/state.db: the app restores each
+        # pane's sort mode, sort direction and filter from it, so the developer's
+        # own last-used settings would otherwise decide these panes' row order.
+        self.sm = XeFMStateManager(db_path=os.path.join(self.state_dir, "state.db"))
         self.b = create_backend("memory")
         self.b.open()
         self.app = xefm_app.XeFMApp(self.b, self.tmp, self.tmp,
-                              left_provided=True, right_provided=True)
+                              left_provided=True, right_provided=True,
+                              state_manager=self.sm)
         # These tests exercise pane state, not the filesystem watcher; spinning up
         # a real watchdog observer per test (8 of them) is both unnecessary and
         # flaky under the xdist/PyObjC runner. Stop it and keep it off.
@@ -112,6 +119,7 @@ class AppVirtual(unittest.TestCase):
         self.app.file_monitor.stop_monitoring()
         self.b.close()
         shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.state_dir, ignore_errors=True)
 
     def _write(self, rel, content="x"):
         p = os.path.join(self.tmp, rel)

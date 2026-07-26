@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm.path import Path  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 
 
 def _bare_app(show_hidden=False):
@@ -118,6 +119,7 @@ class LooksTextual(unittest.TestCase):
 class Navigation(unittest.TestCase):
     def test_go_to_hit_moves_pane_and_cursor(self):
         tmp = tempfile.mkdtemp()
+        state_dir = tempfile.mkdtemp()   # outside the pane dir: not a listed row
         try:
             os.makedirs(os.path.join(tmp, "sub"))
             target = os.path.join(tmp, "sub", "hit.txt")
@@ -126,7 +128,13 @@ class Navigation(unittest.TestCase):
 
             from puikit.backends import create_backend
             b = create_backend("memory"); b.open()
-            app = xefm_app.XeFMApp(b, tmp, tmp, left_provided=True, right_provided=True)
+            # Temp state DB, never the real ~/.xefm/state.db: the app restores
+            # each pane's sort mode, sort direction and filter from it, so the
+            # developer's own last-used settings would otherwise decide where
+            # the cursor lands in this listing.
+            sm = XeFMStateManager(db_path=os.path.join(state_dir, "state.db"))
+            app = xefm_app.XeFMApp(b, tmp, tmp, left_provided=True,
+                                   right_provided=True, state_manager=sm)
             try:
                 app._go_to_content_hit({"path": Path(target), "line": 1, "text": "x"})
                 app._settle_listings()  # navigation lists on a worker; wait for it
@@ -138,6 +146,7 @@ class Navigation(unittest.TestCase):
                 b.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+            shutil.rmtree(state_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

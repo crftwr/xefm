@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 from xefm import app as xefm_app  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.file_pane import FilePane, DRAG_THRESHOLD  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.event import Event, EventType  # noqa: E402
 
 
@@ -102,10 +103,18 @@ class AppDragDrop(unittest.TestCase):
         from puikit.backends import create_backend
         self.src = tempfile.mkdtemp()
         self.dst = tempfile.mkdtemp()
+        self.state_dir = tempfile.mkdtemp()
+        # Temp state DB: XeFMApp restores each pane's sort mode, sort direction
+        # and filter from the state store, so on the real ~/.xefm/state.db these
+        # tests would inherit whatever the developer last left the app in — a
+        # size sort makes the listing order of same-size files arbitrary, and the
+        # selection assertions below are about listing order.
+        self.sm = XeFMStateManager(db_path=os.path.join(self.state_dir, "state.db"))
         self.b = create_backend("memory")
         self.b.open()
         self.app = xefm_app.XeFMApp(self.b, self.src, self.dst,
-                              left_provided=True, right_provided=True)
+                              left_provided=True, right_provided=True,
+                              state_manager=self.sm)
         self.app.file_monitor.stop_monitoring()
         self.app.file_monitor.enabled = False
         self.app._settle_listings()
@@ -115,6 +124,7 @@ class AppDragDrop(unittest.TestCase):
         self.b.close()
         shutil.rmtree(self.src, ignore_errors=True)
         shutil.rmtree(self.dst, ignore_errors=True)
+        shutil.rmtree(self.state_dir, ignore_errors=True)
 
     def _write(self, root, rel, content="x"):
         p = os.path.join(root, rel)

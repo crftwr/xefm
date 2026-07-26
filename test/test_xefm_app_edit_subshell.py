@@ -21,18 +21,25 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm.path import Path  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
 
 
 class EditSubshellBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self.state_dir = tempfile.mkdtemp()
         self.file = os.path.join(self.tmp, "note.txt")
         open(self.file, "w").close()
+        # Temp state DB, never the real ~/.xefm/state.db: the app restores each
+        # pane's sort mode, sort direction and filter from it, so the developer's
+        # own last-used settings would otherwise decide these panes' row order.
+        self.sm = XeFMStateManager(db_path=os.path.join(self.state_dir, "state.db"))
         self.backend = create_backend("memory")
         self.backend.open()
         self.app = xefm_app.XeFMApp(self.backend, self.tmp, self.tmp,
-                              left_provided=True, right_provided=True)
+                              left_provided=True, right_provided=True,
+                              state_manager=self.sm)
         self.app._settle_listings()  # startup lists on workers; wait for it
 
     def tearDown(self):
@@ -42,6 +49,7 @@ class EditSubshellBase(unittest.TestCase):
         except Exception:
             pass
         shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.state_dir, ignore_errors=True)
 
     def _focus(self, name):
         pane = self.app.active_pane()

@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm.progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
+from xefm.state_manager import XeFMStateManager  # noqa: E402
 
 
 def _run(dialog, query):
@@ -144,9 +145,16 @@ class AppIntegration(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self.state_dir = tempfile.mkdtemp()
+        # Temp state DB, never the real ~/.xefm/state.db: the app restores each
+        # pane's sort mode, sort direction and filter from it, so the developer's
+        # own last-used settings would otherwise decide these panes' row order.
+        self.sm = XeFMStateManager(
+            db_path=os.path.join(self.state_dir, "state.db"))
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.state_dir, ignore_errors=True)
 
     def _write(self, rel, content=""):
         p = os.path.join(self.tmp, rel)
@@ -164,7 +172,8 @@ class AppIntegration(unittest.TestCase):
 
         b = create_backend("memory")
         b.open()
-        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
+        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True,
+                               right_provided=True, state_manager=self.sm)
         try:
             app._settle_listings()
             app._open_search("filename")
@@ -197,7 +206,8 @@ class AppIntegration(unittest.TestCase):
 
         b = create_backend("memory")
         b.open()
-        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
+        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True,
+                               right_provided=True, state_manager=self.sm)
         try:
             app._settle_listings()
             app._open_search("filename")
@@ -231,7 +241,8 @@ class AppIntegration(unittest.TestCase):
 
         b = create_backend("memory")
         b.open()
-        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True, right_provided=True)
+        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True,
+                               right_provided=True, state_manager=self.sm)
         try:
             app._settle_listings()
             app._open_search("filename")
