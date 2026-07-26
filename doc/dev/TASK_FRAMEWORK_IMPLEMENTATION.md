@@ -99,6 +99,8 @@ A generic modal progress surface (a PuiKit `Widget`) that renders purely from `t
 - **Running** — a determinate primary `ProgressBar` (items done / total), the current item name, and a secondary byte bar shown only while the current file reports a byte total (large / remote copies).
 - **Cancelling** — a `Cancelling…` line once cancellation is confirmed, until the worker unwinds.
 
+The current item name is fitted with `abbreviate_path` (`xefm/str_format.py`) against `ctx.measure_text`, the same pairing the pane header uses. Measuring through the draw context is what makes the budget a *drawn-width* budget: a wide CJK glyph counts as the two columns it takes and a proportional GUI font by its real width, where a character count let a long name run out through the dialog's own border. Names arrive as bare `Path.name`s, so the fallback middle cut applies and the extension survives; a full path handed to it would instead lose whole components.
+
 It is modal: `handle_event` swallows all input, so while a task runs the rest of the app is inert. `Esc` opens a confirm box; confirming calls `task.request_cancel()`.
 
 ## The UI bridge (`ask` / `_UiRequest` / `pump`)

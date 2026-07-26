@@ -35,7 +35,7 @@ from puikit.widgets.base import Widget
 
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.progress_manager import ProgressManager
-from xefm.str_format import format_size
+from xefm.str_format import abbreviate_path, format_size
 
 
 class TaskStatus(Enum):
@@ -320,10 +320,15 @@ class ProgressDialog(Widget):
         if self.task.cancelled():
             ctx.draw_text(2, 2.2, "Cancelling…", text_style)
 
-        # Current item (elided) above the bars.
+        # Current item above the bars, abbreviated the way the pane header is:
+        # measured through the backend, so a wide CJK glyph and a proportional
+        # GUI font each count for what they really take rather than for one
+        # character, and cut in the middle, so the extension — the part that
+        # says what the file *is* — survives a name too long to show whole.
         item = (op.get("current_item") or "") if not self.task.cancelled() else ""
         if item:
-            ctx.draw_text(2, 2.2, _clip(item, int(width)), text_style)
+            ctx.draw_text(2, 2.2, abbreviate_path(item, width, measure=ctx.measure_text),
+                          text_style)
 
         # Primary bar: items processed / total.
         self._bar.value = self.task.progress.get_progress_percentage() / 100.0
@@ -373,11 +378,3 @@ class ProgressDialog(Widget):
             title="Cancel", icon="warning",
             buttons=("Cancel operation", "Keep running"),
             default=1, cancel=1, on_result=on_result, z=getattr(self, "_z", 70) + 5)
-
-
-def _clip(text: str, max_width: int) -> str:
-    """Trim to a column budget with an ellipsis (proportional-font imprecision is
-    acceptable for a transient status line, as elsewhere in the port)."""
-    if max_width <= 1 or len(text) <= max_width:
-        return text
-    return text[: max_width - 1] + "…"

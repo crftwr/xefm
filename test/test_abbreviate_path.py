@@ -119,6 +119,15 @@ class TestEdgeCases:
         assert len(result) <= 12
         assert "…" in result
 
+    def test_bare_name_keeps_its_extension(self):
+        # The progress dialog passes a bare file name, which has no component
+        # boundary to cut on. The middle goes and the extension stays — it is
+        # what says which kind of file is being worked on.
+        result = abbreviate_path("quarterly_report_2026_final_revised.pdf", 20,
+                                 home=HOME)
+        assert len(result) <= 20
+        assert result.startswith("quarterly") and result.endswith(".pdf")
+
     def test_custom_measure_is_honoured(self):
         # A measure where every character counts double: the same path must
         # abbreviate as if the budget were half.

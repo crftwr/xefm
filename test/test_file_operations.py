@@ -512,3 +512,87 @@ def test_background_cancel_stops_and_cleans_up(tmp_path, cfg):
     assert not svc.tasks.has_active()    # task dropped from the registry
     # It stopped early — not every file made it across.
     assert len(os.listdir(dst)) < 400
+
+
+# --- the progress dialog's current-item line ---------------------------------
+
+from puikit.text import display_width  # noqa: E402
+
+from xefm.progress_manager import OperationType  # noqa: E402
+from xefm.task import ProgressDialog  # noqa: E402
+
+
+class _RecordingCtx:
+    """A draw context that measures like a character grid (a wide CJK glyph is two
+    columns) and keeps what was drawn, so the item line can be inspected at the
+    width it really occupies. The MemoryBackend cannot stand in here: its grid
+    stores one cell per glyph, so an overflowing wide-character name still lands
+    inside the box there."""
+
+    vector_shapes = False
+    snap = True
+
+    def __init__(self, w=70.0, h=8.0):
+        self.size_units = (w, h)
+        self.panel = None
+        self.theme = None
+        self.texts = []
+
+    def measure_text(self, text, style=None):
+        return float(display_width(text))
+
+    def draw_text(self, x, y, text, style=None):
+        self.texts.append((x, y, text))
+
+    def draw_box(self, *a, **kw):
+        pass
+
+    def draw_child(self, *a, **kw):
+        pass
+
+
+def _draw_item(item, w=70.0):
+    """Draw a running task's ProgressDialog and return its current-item line."""
+    task = Task("Move…")
+    task.progress.start_operation(OperationType.MOVE, 5, description="")
+    task.progress.update_progress(item, processed_items=2)
+    ctx = _RecordingCtx(w=w)
+    ProgressDialog(task).draw(ctx)
+    return next(t for x, y, t in ctx.texts if y == 2.2)
+
+
+def test_progress_dialog_shows_a_short_name_whole():
+    assert _draw_item("report.pdf") == "report.pdf"
+
+
+def test_progress_dialog_abbreviates_a_long_name_keeping_the_extension():
+    """A name too long to show is cut in the *middle*: an end-cut leaves a column
+    of names that all look alike and never says what kind of file is moving."""
+    line = _draw_item("a" * 100 + "_quarterly_final_report.pdf")
+    assert line.endswith("_quarterly_final_report.pdf")  # the tail survived
+    assert line.startswith("aaa") and "…" in line        # the middle went
+    assert display_width(line) <= 66                     # box width less its inset
+
+
+def test_progress_dialog_measures_wide_characters():
+    """Regression: the budget is a *column* budget, so a CJK name (two columns per
+    glyph) has to be abbreviated on what it draws, not on how many characters it
+    has — counting characters let a 64-character name run 124 columns wide, out
+    through the dialog's own border."""
+    line = _draw_item("あ" * 60 + ".txt")
+    assert line.endswith(".txt")
+    assert display_width(line) <= 66
+
+
+def test_progress_dialog_renders_the_abbreviated_name_on_a_real_panel():
+    """The same line through the real draw context (``ctx.measure_text``), so the
+    stand-in above cannot drift from what a backend actually offers."""
+    backend, panel = _panel()
+    task = Task("Move…")
+    task.progress.start_operation(OperationType.MOVE, 5, description="")
+    task.progress.update_progress("b" * 100 + "_final_report.pdf", processed_items=2)
+    ProgressDialog(task).show(panel)
+    panel.render()
+    screen = "\n".join(backend.snapshot())
+    assert "…" in screen
+    assert "_final_report.pdf" in screen
