@@ -96,8 +96,18 @@ Today the manager runs **one modal task at a time**; the shape (a registry plus 
 A generic modal progress surface (a PuiKit `Widget`) that renders purely from `task.title` and `task.progress`, so every task type reuses it. It shows three phases:
 
 - **Preparing** — a `BusyIndicator` and `Preparing… (N items)` while the operation is still counting (no total yet).
-- **Running** — a determinate primary `ProgressBar` (items done / total), the current item name, and a secondary byte bar shown only while the current file reports a byte total (large / remote copies).
+- **Running** — a determinate primary `ProgressBar` (items done / total), the current item name, and a secondary byte bar shown only while the current file reports a byte total (large files, remote copies, and moves across filesystems).
 - **Cancelling** — a `Cancelling…` line once cancellation is confirmed, until the worker unwinds.
+
+The box is a fixed 8 rows and the byte bar's two rows are **reserved whether or not
+the current file reports bytes** — an operation alternates between files that do
+and files that don't, and a box that resized under each one would jitter for its
+whole run. Those two rows are measured up from `box_h` rather than written as
+absolute offsets, the way `ConflictDialog` places its button row: a centered box
+can land on a half cell (an odd screen height, a GUI backend's line metrics) and
+absolute offsets then round a row further down — which is how the byte label came
+to be drawn *on* the bottom border. `test_progress_dialog_draws_the_byte_bar_inside_its_frame`
+renders the real grid at several screen heights on both profiles to hold that.
 
 The current item name is fitted with `abbreviate_path` (`xefm/str_format.py`) against `ctx.measure_text`, the same pairing the pane header uses. Measuring through the draw context is what makes the budget a *drawn-width* budget: a wide CJK glyph counts as the two columns it takes and a proportional GUI font by its real width, where a character count let a long name run out through the dialog's own border. Names arrive as bare `Path.name`s, so the fallback middle cut applies and the extension survives; a full path handed to it would instead lose whole components.
 

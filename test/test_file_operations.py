@@ -14,6 +14,7 @@ from xefm import _config
 from xefm import file_operations as F
 from xefm.file_operations import FileOperationService, _unique_dest
 from xefm.path import Path
+from xefm.progress_manager import ProgressManager
 from xefm.task import Cancelled, Task, TaskManager
 
 
@@ -104,6 +105,120 @@ def test_move_same_storage_is_atomic(tmp_path, svc):
     assert res["done"] == 1
     assert (dst / "m.txt").read_text() == "move"
     assert not (src / "m.txt").exists()
+
+
+# --- moving across filesystems ----------------------------------------------
+
+def _fake_devices(monkeypatch, other_root):
+    """Report everything under ``other_root`` as a *different* filesystem — what an
+    external drive or a second partition looks like to ``stat``. A test can't mount
+    one, and the only thing the code reads is the device id."""
+    def device(path):
+        return 2 if str(path).startswith(str(other_root)) else 1
+    monkeypatch.setattr(F, "_entry_device", device)
+
+
+def _record_byte_progress(monkeypatch):
+    """Capture every ``(copied, total)`` the engine reports for the current file."""
+    seen = []
+    original = ProgressManager.update_file_byte_progress
+
+    def spy(self, copied, total):
+        seen.append((copied, total))
+        original(self, copied, total)
+
+    monkeypatch.setattr(ProgressManager, "update_file_byte_progress", spy)
+    return seen
+
+
+def test_is_atomic_move_within_one_filesystem(tmp_path):
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    (src / "f.txt").write_text("x")
+    assert F._is_atomic_move("move", _P(src / "f.txt"), _P(dst)) is True
+
+
+def test_is_atomic_move_across_filesystems(tmp_path, monkeypatch):
+    """One storage backend is not one filesystem: a move to another mount point is
+    a copy plus a delete, so it must not take the rename fast path."""
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    (src / "f.txt").write_text("x")
+    _fake_devices(monkeypatch, dst)
+    assert F._is_atomic_move("move", _P(src / "f.txt"), _P(dst)) is False
+
+
+def test_is_atomic_move_unknown_device_stays_atomic(tmp_path, monkeypatch):
+    """When the device can't be read (a remote backend, an unstat-able path) the
+    scheme test decides alone — and ``Path.move_to`` still falls back to copy+delete
+    on EXDEV, so guessing "atomic" is never wrong, only unprogressed."""
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    (src / "f.txt").write_text("x")
+    monkeypatch.setattr(F, "_entry_device", lambda path: None)
+    assert F._is_atomic_move("move", _P(src / "f.txt"), _P(dst)) is True
+
+
+def test_entry_device_reads_the_local_filesystem(tmp_path):
+    assert F._entry_device(_P(tmp_path)) == tmp_path.stat().st_dev
+    assert F._entry_device(_P(tmp_path / "nope")) is None  # unstat-able → unknown
+
+
+def test_move_across_filesystems_reports_byte_progress(tmp_path, svc, monkeypatch):
+    """The reported case: the move is really a copy + delete, so it walks the tree
+    file by file and drives the per-file byte bar instead of sitting on one opaque
+    rename."""
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    folder = src / "folder"
+    folder.mkdir()
+    big = 2 * 1024 * 1024
+    (folder / "big.bin").write_bytes(b"x" * big)
+    (folder / "small.txt").write_text("hi")
+    _fake_devices(monkeypatch, dst)
+    seen = _record_byte_progress(monkeypatch)
+
+    res = _run_sync(svc, svc.move, [_P(folder)], _P(dst))
+
+    assert res["done"] == 1 and res["failed"] == 0 and res["errors"] == []
+    assert res["items"] == 3  # folder + its two files — the tree was walked
+    assert (dst / "folder" / "big.bin").stat().st_size == big
+    assert (dst / "folder" / "small.txt").read_text() == "hi"
+    assert not folder.exists()  # source dropped only after the copy came out clean
+    # The large file streamed in chunks: from zero, through the middle, to whole.
+    assert (0, big) in seen and (big, big) in seen
+    assert len(seen) > 2
+
+
+def test_move_across_filesystems_counts_the_whole_subtree(tmp_path, svc, monkeypatch):
+    root = tmp_path / "s" / "r"
+    (root / "sub").mkdir(parents=True)
+    (root / "sub" / "f").write_text("x")
+    dst = tmp_path / "d"
+    dst.mkdir()
+    _fake_devices(monkeypatch, dst)
+    task = Task("Move…")
+    # r + sub + f, so the primary bar advances per entry (an atomic move counts 1).
+    items, _ = svc._count(task, "move", _P(dst), [_P(root)])
+    assert items == 3
+
+
+def test_move_across_filesystems_keeps_source_when_a_file_fails(tmp_path, svc,
+                                                                monkeypatch):
+    """A partial copy must not delete the source — the same rule the cross-storage
+    move already follows."""
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    folder = src / "folder"
+    folder.mkdir()
+    (folder / "good.txt").write_text("ok")
+    os.symlink(str(folder / "missing-target"), str(folder / "broken"))  # dangling
+    _fake_devices(monkeypatch, dst)
+
+    res = _run_sync(svc, svc.move, [_P(folder)], _P(dst))
+
+    assert res["errors"]  # the dangling link failed
+    assert folder.exists() and (folder / "good.txt").exists()
 
 
 def test_duplicate_renames_file_in_place(tmp_path, svc):
@@ -447,7 +562,9 @@ def test_ask_headless_returns_default():
 
 import time  # noqa: E402
 
-from puikit import Event, EventType, Panel, PROFILE_GUI_DESKTOP  # noqa: E402
+from puikit import (  # noqa: E402
+    Event, EventType, Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI,
+)
 from puikit.backends.memory_backend import MemoryBackend  # noqa: E402
 
 
@@ -537,6 +654,7 @@ class _RecordingCtx:
         self.panel = None
         self.theme = None
         self.texts = []
+        self.children = []
 
     def measure_text(self, text, style=None):
         return float(display_width(text))
@@ -547,8 +665,8 @@ class _RecordingCtx:
     def draw_box(self, *a, **kw):
         pass
 
-    def draw_child(self, *a, **kw):
-        pass
+    def draw_child(self, child, x, y, w, h, **kw):
+        self.children.append((child, x, y, w, h))
 
 
 def _draw_item(item, w=70.0):
@@ -582,6 +700,77 @@ def test_progress_dialog_measures_wide_characters():
     line = _draw_item("あ" * 60 + ".txt")
     assert line.endswith(".txt")
     assert display_width(line) <= 66
+
+
+def _draw_running(item, *, copied=0, total=0, w=70.0):
+    """Draw a running task's ProgressDialog with the current file's byte counts
+    set, and return the recording context."""
+    task = Task("Move…")
+    task.progress.start_operation(OperationType.MOVE, 5, description="")
+    task.progress.update_progress(item, processed_items=2)
+    task.progress.update_file_byte_progress(copied, total)
+    ctx = _RecordingCtx(w=w)
+    ProgressDialog(task).draw(ctx)
+    return ctx
+
+
+def test_progress_dialog_has_room_for_the_byte_bar():
+    """The dialog reserves the rows the per-file byte bar needs: bar and label both
+    land inside the box, clear of its bottom border, so a move across filesystems
+    has somewhere to show the bytes it is grinding through."""
+    ctx = _draw_running("big.bin", copied=1024 * 1024, total=4 * 1024 * 1024)
+    _box_w, box_h = ctx.size_units
+    bars = [(y, h) for _child, _x, y, _w, h in ctx.children]
+    assert len(bars) == 2  # the items bar and the byte bar below it
+    for y, h in bars:
+        assert y + h <= box_h - 1.0
+    label_y = next(y for _x, y, t in ctx.texts if t == "1.0M / 4.0M")
+    assert label_y + 1.0 <= box_h - 1.0
+
+
+def test_progress_dialog_hides_the_byte_bar_without_a_total():
+    """A small file copies in one shot and reports no total — one bar, no stray
+    empty second bar. The rows stay reserved either way, so the box does not
+    resize from file to file."""
+    ctx = _draw_running("small.txt")
+    assert len(ctx.children) == 1
+    assert not any("/" in t and "items" not in t for _x, _y, t in ctx.texts)
+
+
+def _settled_dialog_rows(profile, screen_h=30):
+    """Render a running ProgressDialog with byte progress and return the screen
+    once the opening animation has finished growing the box — the inset opening
+    frame is not the geometry under test."""
+    backend = MemoryBackend(width=100, height=screen_h, capabilities=profile)
+    panel = Panel(backend)
+    task = Task("Move…")
+    task.progress.start_operation(OperationType.MOVE, 5, description="")
+    task.progress.update_progress("bigfile.bin", processed_items=2)
+    task.progress.update_file_byte_progress(1024 * 1024, 4 * 1024 * 1024)
+    ProgressDialog(task).show(panel)
+    for _ in range(300):
+        backend.run_animation_ticks()
+        panel.render()
+        rows = backend.snapshot()
+        top = next((i for i, r in enumerate(rows) if "┌" in r), None)
+        bottom = next((i for i, r in enumerate(rows) if "└" in r), None)
+        if top is not None and bottom is not None and bottom - top == 7:
+            return rows  # the full 8-row box
+        time.sleep(0.002)
+    raise AssertionError("the progress dialog never reached its full size")
+
+
+@pytest.mark.parametrize("profile", [PROFILE_TUI, PROFILE_GUI_DESKTOP])
+@pytest.mark.parametrize("screen_h", [24, 25, 30, 31])
+def test_progress_dialog_draws_the_byte_bar_inside_its_frame(profile, screen_h):
+    """Regression: the byte label used to be drawn a row below the box's last row,
+    landing *on* the bottom border — the bytes ate the frame they were supposed to
+    sit in. Checked on the real grid at several screen heights, because a centered
+    box can land on a half cell and round its content a row further down."""
+    rows = _settled_dialog_rows(profile, screen_h)
+    label_row = next(r for r in rows if "1.0M / 4.0M" in r)
+    assert "└" not in label_row and "┘" not in label_row
+    assert label_row.strip().startswith("│")  # inside the frame, not over it
 
 
 def test_progress_dialog_renders_the_abbreviated_name_on_a_real_panel():

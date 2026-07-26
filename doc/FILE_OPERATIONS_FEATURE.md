@@ -42,20 +42,24 @@ XeFM confirms before moving by default:
 CONFIRM_MOVE = False   # default: True
 ```
 
-### Moving between storage types
+### Moving between disks and storage types
 
-Move works the same whether the source and destination are on your computer or
-on cloud storage such as Amazon S3.
+Move works the same whether the source and destination are on the same disk, on
+two different disks, or on cloud storage such as Amazon S3.
 
-- **Same storage** (local → local, or within one S3 bucket): XeFM uses a fast
+- **Same disk** (within one drive, or within one S3 bucket): XeFM uses a fast
   rename — the move happens instantly with no data copying.
+- **Different disk** (to an external drive, another partition, or a network
+  share): a rename cannot cross a disk, so XeFM copies the file across and then
+  removes the original. This takes as long as a copy does, and it shows the same
+  progress a copy does — a bar per file with the bytes transferred so far.
 - **Different storage** (local → S3, S3 → local, S3 → S3): XeFM copies the file
   to the destination, verifies the copy, and only then removes the original.
   Large transfers show progress.
 
-Because the original is removed only after a verified copy, **a failed
-cross-storage move never deletes your source files**. Directory moves work too —
-all contained files are moved recursively.
+Because the original is removed only after a verified copy, **a failed move
+across disks or storage never deletes your source files**. Directory moves work
+too — all contained files are moved recursively.
 
 For S3 you need AWS credentials configured and the `boto3` package installed.
 Cross-storage transfers depend on your network speed, so test with small files
@@ -192,8 +196,9 @@ files and, for large files, at each chunk — so it may take a moment to stop at
 the next checkpoint. Partial files are removed cleanly, leaving nothing
 half-written behind.
 
-Progress works across storage types, so local, cross-storage, and S3-to-S3
-transfers all show the same feedback. No configuration is required — it is
+Progress works across disks and storage types, so a move to an external drive
+gets the same per-file byte progress that a local copy, a cross-storage transfer,
+or an S3-to-S3 transfer does. No configuration is required — it is
 always on and adapts automatically to file size, file count, and terminal width.
 
 ## Create file operations

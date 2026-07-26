@@ -321,8 +321,9 @@ class FileOperationService:
     def _count(self, task: Task, kind: str, dest_dir: Optional[Path],
                targets: list) -> tuple[int, int]:
         """Recursively count the nodes (files + dirs) and total bytes to process,
-        so the primary bar is determinate. A same-storage move is one atomic
-        rename, so it counts as a single node (its subtree is never walked)."""
+        so the primary bar is determinate. A move that stays on one filesystem is
+        one atomic rename, so it counts as a single node (its subtree is never
+        walked); a move to another filesystem is walked like a copy."""
         items = 0
         bytes_ = 0
         for t in targets:
@@ -372,8 +373,8 @@ class FileOperationService:
                 return 0
             _log_op(log, "Moved", target, dest_base)  # atomic: one line per target
             return 1
-        # Copy, duplicate, or a cross-storage move (copy the tree, then — move only
-        # — drop the source).
+        # Copy, duplicate, or a move that crosses a filesystem / storage boundary
+        # (copy the tree, then — move only — drop the source).
         verb = {"move": "Moved", "duplicate": "Duplicated"}.get(kind, "Copied")
         before = len(errors)
         ok = self._copy_tree(task, target, dest_base, overwrite, prog, log, verb, errors)
@@ -566,11 +567,39 @@ def _log_del(log, path: Path) -> None:
         log(f"Deleted '{path.name}': {path.parent}")
 
 
+def _entry_device(path: Path) -> Optional[int]:
+    """``st_dev`` of the filesystem holding ``path`` — the identity a rename has to
+    match on both sides. ``None`` when ``path`` isn't local or can't be stat'ed, so
+    the caller falls back to the storage-scheme test alone."""
+    try:
+        if path.get_scheme() != "file":
+            return None
+        return path.stat().st_dev
+    except Exception:  # noqa: BLE001 — unknown device just means "can't tell"
+        return None
+
+
 def _is_atomic_move(kind: str, target: Path, dest_dir: Optional[Path]) -> bool:
-    """A move within one storage backend is a single rename — no per-file walk,
-    no byte bar. (A cross-storage move copies the tree then deletes the source.)"""
-    return (kind == "move" and dest_dir is not None
-            and target.get_scheme() == dest_dir.get_scheme())
+    """A move that stays within one *filesystem* is a single rename — no per-file
+    walk, no byte bar.
+
+    One storage backend is not enough: ``rename`` only works inside a single
+    filesystem, so moving to another mount point (an external drive, a network
+    share, another partition) is really a copy followed by a delete. Those get the
+    tree walk, the per-file log lines and the byte bar, exactly as a cross-storage
+    move does — the wait is just as long, so the progress has to be just as real.
+
+    The devices compared are the ones that hold the directory *entries*: the
+    source's parent, and the destination directory the new entry lands in."""
+    if kind != "move" or dest_dir is None:
+        return False
+    if target.get_scheme() != dest_dir.get_scheme():
+        return False
+    src_dev = _entry_device(target.parent)
+    dest_dev = _entry_device(dest_dir)
+    if src_dev is not None and dest_dev is not None:
+        return src_dev == dest_dev
+    return True
 
 
 # --- conflict dialog ---------------------------------------------------------

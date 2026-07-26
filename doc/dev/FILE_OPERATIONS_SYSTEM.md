@@ -63,7 +63,7 @@ Runs on the task thread, top to bottom:
    - **delete** — trivial (one entry per target).
    - **duplicate** — pre-plan a fresh ` (N)` name per target (an in-place copy always collides, so it never prompts).
    - **copy / move** — `_resolve` checks each destination for an existing file and prompts only for collisions.
-2. **Count.** `_count` recursively totals the nodes and bytes to process, so the progress bar is determinate. A same-storage move is a single atomic rename, so it counts as one node and its subtree is never walked (`_is_atomic_move`).
+2. **Count.** `_count` recursively totals the nodes and bytes to process, so the progress bar is determinate. A move that stays within one *filesystem* is a single atomic rename, so it counts as one node and its subtree is never walked (`_is_atomic_move`); a move to another filesystem is walked like a copy, because that is what it is.
 3. **Execute.** For each planned target: `task.checkpoint()` (cancellation point), then `_execute_one`, updating `task.progress`. Per-target exceptions are recorded in `errors` and processing continues; a `Cancelled` unwinds the loop.
 
 ### Result summary
@@ -142,7 +142,10 @@ The same-directory copy relaxation lives in `_transfer()`: when `dest_dir == src
 
 - `recursive_delete(entry)` — delete a file or directory tree.
 - `_unique_dest(dest_dir, name, is_dir=…)` — the shared ` (N)` non-colliding-name scheme (used by duplicate and "Keep both").
-- `_is_atomic_move(kind, target, dest_dir)` — true when a move stays within one storage backend (a single rename); a cross-storage move copies the tree then deletes the source.
+- `_is_atomic_move(kind, target, dest_dir)` — true when a move stays within one *filesystem* (a single rename); anything wider copies the tree then deletes the source.
+- `_entry_device(path)` — `st_dev` of the filesystem holding `path`, or `None` when it isn't local / can't be stat'ed.
+
+  One storage backend is not one filesystem. `rename` only works inside a single filesystem, so a local move to an external drive, another partition, or a network share is really a copy followed by a delete — it takes as long as a copy and needs the same feedback. `_is_atomic_move` therefore compares schemes *and* devices: the device holding the source's parent (where its directory entry lives) against the one holding `dest_dir` (where the new entry lands). When either device is unknown the scheme test decides alone, which is safe: `Path.move_to` still falls back to copy+delete on `EXDEV`, so the only cost of guessing "atomic" is an unprogressed move rather than a wrong one.
 - `format_op_summary(verb, result)` / `format_op_errors(verb, result)` — human-readable reporting from the result dict.
 
 ## Integration

@@ -156,7 +156,9 @@ the boundary.
 
 `_copy_file` streams a file through `_copy_bytes` when it is large
 (`size >= 1 MiB`) or crosses storage backends; otherwise it uses a plain
-`copy_to`. For local large files it copies in 1 MiB chunks, calling
+`copy_to`. A move to another *filesystem* reaches this path too — it is not a
+rename, so `_is_atomic_move` sends it down the copy tree and each large file
+drives the byte bar (see [File Operations System](FILE_OPERATIONS_SYSTEM.md)). For local large files it copies in 1 MiB chunks, calling
 `prog.update_file_byte_progress(copied, size)` per chunk and checkpointing between
 chunks (a cancel deletes the partial file so no stub is left). Cross-storage
 copies delegate to `Path.copy_to(..., progress_callback=prog.update_file_byte_progress)`,

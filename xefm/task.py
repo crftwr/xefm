@@ -271,7 +271,11 @@ class ProgressDialog(Widget):
         self._z = z
         sw, _sh = panel.backend.size_units
         w = float(max(44, min(70, int(sw) - 4)))
-        h = 8.0  # title + current item + primary bar/label + secondary bar/label
+        # title + current item + primary bar/label + secondary bar/label. The last
+        # two rows are reserved whether or not the current file reports bytes: an
+        # operation alternates between files that do and files that don't, and a
+        # box that resized under each one would jitter for its whole run.
+        h = 8.0
         panel.push_layer(self, z=z, hints={"shadow": True, "w": w, "h": h})
         animate_open(panel, self, OPEN_MS_VIEWER)
 
@@ -336,12 +340,17 @@ class ProgressDialog(Widget):
         ctx.draw_text(2, 4.3, f"{op['processed_items']} / {op['total_items']} items", text_style)
 
         # Secondary bar: bytes of the current file (only when a total is known).
+        # Placed by measuring up from the foot of the box — label on the last row
+        # inside the frame, bar above it — rather than at absolute offsets. A
+        # centered box can land on a half cell, and absolute offsets then round a
+        # row further down: that is how the label came to be drawn *on* the border.
         bc, bt = op.get("file_bytes_copied", 0), op.get("file_bytes_total", 0)
         if bt > 0:
+            label_y = box_h - 2.0
             self._byte_bar.value = min(1.0, bc / bt) if bt else 0.0
-            ctx.draw_child(self._byte_bar, 2, 5.7, width, 1.0)
+            ctx.draw_child(self._byte_bar, 2, label_y - 1.0, width, 1.0)
             ctx.draw_text(
-                2, 6.6,
+                2, label_y,
                 f"{format_size(bc, compact=True)} / {format_size(bt, compact=True)}",
                 text_style)
 
