@@ -21,18 +21,29 @@ The relations subsume the legacy three-way menu and add direction:
 - ``mtime``   — ``any`` / ``same`` / ``newer`` / ``older``   (relative to other pane)
 - ``content`` — ``any`` / ``equal`` / ``differs``   (byte compare; ignored for dirs)
 
-``stat``-only comparisons (size / mtime) are cheap and are called only on
-name-matched pairs. A content comparison reads both files, so callers route it
-through the task worker; a size mismatch short-circuits it (files are only read
-when their sizes already match). The optional ``checkpoint`` callable is invoked
-between entries and between chunks so a worker can raise to cancel.
+Every fact a comparison needs — is-it-a-directory, size, mtime — is read from the
+:mod:`xefm.dir_scan` attribute records the callers pass in as ``current_attrs`` /
+``other_attrs``, not by asking the filesystem again. A pane's listing already
+collected exactly those fields for exactly these entries, so the compare is pure
+CPU over data in hand. Asking per file instead cost one round trip per entry per
+side, which on a network mount *was* the feature: two 1,680-entry panes meant
+~6,700 calls where the panes between them held every answer (#245, the same cost
+model #183 removed from listing). An entry with no record falls back to reading
+it per file, so a caller with no attributes still works — at one ``stat`` each,
+which is the cost this exists to avoid.
+
+A content comparison is the one thing no snapshot can answer, so it reads both
+files and callers route it through the task worker; a size mismatch short-circuits
+it (files are only read when their recorded sizes already match). The optional
+``checkpoint`` callable is invoked between entries and between chunks so a worker
+can raise to cancel.
 """
 
 from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 # Filesystems round mtimes (FAT ≈ 2s, some networks ≈ 1s); treat timestamps
 # within this many seconds as identical.
@@ -81,11 +92,38 @@ class CompareResult:
         return len(self.paths)
 
 
+def _attrs_of(entry, attrs: Mapping[str, dict]) -> dict:
+    """The attribute record for ``entry``: from the caller's listing snapshot, or
+    read per file when it holds none for this entry.
+
+    The per-file route is deliberately not ``attrs_via_path`` — that also asks
+    ``is_symlink``, and a comparison reads only ``ok``/``is_dir``/``size``/
+    ``mtime``. This fallback exists precisely for the storage where every call is
+    a round trip, so it must not spend one on a field nobody here looks at; the
+    record it returns is that subset, not a full :mod:`xefm.dir_scan` one."""
+    a = attrs.get(str(entry))
+    if a is not None:
+        return a
+    try:
+        st = entry.stat()
+        is_dir = entry.is_dir()
+    except Exception:
+        # As broad as ``attrs_via_path``'s, and for the same reason: a remote
+        # backend (SSH, S3, an archive) raises its own type here, and every one
+        # of them means the same thing to a comparison — this entry cannot be
+        # read. That is reported as ``ok`` False rather than swallowed.
+        return {'is_dir': False, 'size': 0, 'mtime': 0.0, 'ok': False}
+    return {'is_dir': is_dir, 'size': 0 if is_dir else st.st_size,
+            'mtime': st.st_mtime, 'ok': True}
+
+
 def compute_compare_selection(
     current_files: Iterable,
     other_files: Iterable,
     criteria: CompareCriteria,
     *,
+    current_attrs: Optional[Mapping[str, dict]] = None,
+    other_attrs: Optional[Mapping[str, dict]] = None,
     checkpoint: Callable[[], None] = _noop,
     on_advance: Optional[Callable[[Any], None]] = None,
 ) -> CompareResult:
@@ -97,28 +135,37 @@ def compute_compare_selection(
     NFC-normalized and joined with type (file vs dir), so a file never matches a
     same-named directory. When the other side holds several entries with the same
     name (only possible for a result set spanning directories), the entry is
-    selected if **any** of them satisfies the relations. Entries whose ``stat``
-    fails are skipped.
+    selected if **any** of them satisfies the relations.
+
+    ``current_attrs`` / ``other_attrs`` map ``str(path)`` to the
+    :mod:`xefm.dir_scan` record the caller's listing already collected for that
+    side — the whole comparison is answered from them, so it touches the
+    filesystem only for a content read. Entries missing from the mapping are read
+    per file, so passing nothing still works, at one ``stat`` per entry.
+
+    An entry whose attributes are unreadable — a broken symlink, a vanished file,
+    ``ok`` False — satisfies no relation, so it is never selected through a
+    counterpart. It still *counts* as a counterpart for the other side's
+    orphan test, exactly as an entry whose ``stat`` raised always has.
 
     ``checkpoint`` is called between entries and between content chunks (a worker
     raises from it to cancel); ``on_advance(entry)`` is called once per current
     entry, before it is compared, for progress reporting."""
+    current_attrs = current_attrs or {}
+    other_attrs = other_attrs or {}
+
     other_by_key: dict[tuple[str, bool], list] = {}
     for p in other_files:
-        try:
-            other_by_key.setdefault((_norm(p.name), p.is_dir()), []).append(p)
-        except OSError:
-            continue
+        a = _attrs_of(p, other_attrs)
+        other_by_key.setdefault((_norm(p.name), a['is_dir']), []).append((p, a))
 
     result = CompareResult()
     for cur in current_files:
         checkpoint()
         if on_advance is not None:
             on_advance(cur)
-        try:
-            cur_is_dir = cur.is_dir()
-        except OSError:
-            continue
+        cur_a = _attrs_of(cur, current_attrs)
+        cur_is_dir = cur_a['is_dir']
 
         candidates = other_by_key.get((_norm(cur.name), cur_is_dir))
         if not candidates:
@@ -126,9 +173,10 @@ def compute_compare_selection(
                 _add(result, cur, cur_is_dir)
             continue
 
-        for other in candidates:
+        for other, other_a in candidates:
             try:
-                if _matches(cur, other, cur_is_dir, criteria, checkpoint):
+                if _matches(cur, other, cur_a, other_a, cur_is_dir, criteria,
+                            checkpoint):
                     _add(result, cur, cur_is_dir)
                     break
             except OSError:
@@ -150,22 +198,24 @@ def _add(result: CompareResult, entry, is_dir: bool) -> None:
         result.files += 1
 
 
-def _matches(cur, other, is_dir: bool, criteria: CompareCriteria,
+def _matches(cur, other, cur_a: dict, other_a: dict, is_dir: bool,
+             criteria: CompareCriteria,
              checkpoint: Callable[[], None]) -> bool:
-    """Whether the matched pair satisfies every enabled relation. Directories have
-    no meaningful size/content, so those relations pass automatically for them."""
-    cur_stat = cur.stat()
-    other_stat = other.stat()
+    """Whether the matched pair satisfies every enabled relation, judged from the
+    two attribute records. Directories have no meaningful size/content, so those
+    relations pass automatically for them."""
+    if not (cur_a['ok'] and other_a['ok']):
+        return False  # unreadable on either side — nothing can be asserted
 
     if not is_dir and criteria.size != "any":
-        equal = cur_stat.st_size == other_stat.st_size
+        equal = cur_a['size'] == other_a['size']
         if criteria.size == "equal" and not equal:
             return False
         if criteria.size == "differs" and equal:
             return False
 
     if criteria.mtime != "any":
-        delta = cur_stat.st_mtime - other_stat.st_mtime  # >0 ⇒ current is newer
+        delta = cur_a['mtime'] - other_a['mtime']  # >0 ⇒ current is newer
         if criteria.mtime == "same" and abs(delta) >= MTIME_TOLERANCE:
             return False
         if criteria.mtime == "newer" and delta <= MTIME_TOLERANCE:
@@ -174,7 +224,8 @@ def _matches(cur, other, is_dir: bool, criteria: CompareCriteria,
             return False
 
     if not is_dir and criteria.content != "any":
-        equal = _content_equal(cur, other, cur_stat, other_stat, checkpoint)
+        equal = _content_equal(cur, other, cur_a['size'], other_a['size'],
+                               checkpoint)
         if criteria.content == "equal" and not equal:
             return False
         if criteria.content == "differs" and equal:
@@ -183,11 +234,12 @@ def _matches(cur, other, is_dir: bool, criteria: CompareCriteria,
     return True
 
 
-def _content_equal(cur, other, cur_stat, other_stat,
+def _content_equal(cur, other, cur_size: int, other_size: int,
                    checkpoint: Callable[[], None]) -> bool:
     """Byte-compare two files, short-circuiting: different sizes ⇒ not equal
-    (no read), otherwise stream both and stop at the first differing chunk."""
-    if cur_stat.st_size != other_stat.st_size:
+    (no read), otherwise stream both and stop at the first differing chunk. The
+    sizes come from the listing records, so the short-circuit costs no ``stat``."""
+    if cur_size != other_size:
         return False
     with cur.open("rb") as fa, other.open("rb") as fb:
         while True:

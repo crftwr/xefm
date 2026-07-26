@@ -213,6 +213,72 @@ class CompareDialogApp(unittest.TestCase):
         dlg._accept()
         self.assertEqual(self._selected_names(), {"newer.txt"})
 
+    # --- cost (#245) ---------------------------------------------------------
+
+    def _accept_counting_os_calls(self, dlg):
+        """Accept the dialog and return how many per-file stat/lstat calls the
+        comparison issued. Both bottom out every route a Path takes to the
+        filesystem for attributes, so this counts round trips on a network mount."""
+        from unittest import mock
+
+        calls = []
+        real_stat, real_lstat = os.stat, os.lstat
+
+        def counted(inner):
+            def wrapper(*a, **kw):
+                calls.append(1)
+                return inner(*a, **kw)
+            return wrapper
+
+        with mock.patch("os.stat", counted(real_stat)), \
+             mock.patch("os.lstat", counted(real_lstat)):
+            dlg._accept()
+        return len(calls)
+
+    def test_comparing_listed_panes_touches_no_files(self):
+        """The panes already hold every attribute a stat-only comparison needs —
+        their listings collected exactly these fields for exactly these entries —
+        so accepting the dialog must not go back to the filesystem. Before #245 it
+        asked per file per side, which on a NAS *was* the feature's cost."""
+        for relation in (None, ("_size", "equal"), ("_mtime", "newer"),
+                         ("_mtime", "older"), ("_size", "differs")):
+            dlg = self._open()
+            if relation is not None:
+                _enable(getattr(dlg, relation[0]), relation[1])
+            calls = self._accept_counting_os_calls(dlg)
+            self.assertEqual(calls, 0, f"{relation} cost {calls} per-file calls")
+
+    def test_a_virtual_pane_compares_from_its_snapshot_too(self):
+        """A search-results pane keeps the same attribute snapshot a directory
+        listing does, so comparing from one is just as free."""
+        sub = os.path.join(self.left, "sub")
+        os.mkdir(sub)
+        _write(sub, "newer.txt", b"CCCC", mtime=9000.0)
+        self.app._feed_search_results(
+            "filename",
+            [Path(os.path.join(self.left, "same.txt")),
+             Path(os.path.join(sub, "newer.txt"))],
+            Path(self.left), "txt")
+
+        dlg = self._open()
+        _enable(dlg._mtime, "newer")
+        calls = self._accept_counting_os_calls(dlg)
+        self.assertEqual(self.app.active_pane()["selected_files"],
+                         {os.path.join(sub, "newer.txt")})
+        self.assertEqual(calls, 0)
+
+    def test_a_pane_with_no_snapshot_still_compares(self):
+        """The fallback stays live: drop the snapshot and the engine reads the
+        entries per file rather than reporting nothing."""
+        pane = self.app.active_pane()
+        pane["_listing_entries"] = None
+        self.assertEqual(self.app._pane_attrs(pane), {})
+
+        dlg = self._open()
+        _enable(dlg._mtime, "newer")
+        dlg._accept()
+        self.assertEqual(self._selected_names(), {"newer.txt"})
+
     # --- keyboard model (no Tab, no buttons) ---------------------------------
 
     def test_up_down_move_focus_only(self):

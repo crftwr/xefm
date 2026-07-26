@@ -145,3 +145,56 @@ and it is unaffected. `Ctrl-R` and every post-operation path still re-list for
 real. The trade-off is only visible where file monitoring is unavailable *and*
 the directory changed underneath: previously a sort would have surfaced it by
 accident, now it waits for an explicit refresh.
+
+---
+
+## Other readers of the snapshot
+
+Sorting was the first consumer of `pane['_listing_entries']`, not the only one.
+Any feature that wants is_dir / size / mtime for entries a pane has **already
+listed** should read them from there rather than ask the filesystem again —
+otherwise it reintroduces exactly the per-file round trips this system exists to
+remove, on top of a listing that already paid for the answers.
+
+### Compare & Select (issue #245)
+
+[`compute_compare_selection`](../../xefm/compare_selection.py) joins the two
+panes by name and tests each pair against the enabled relations. It used to call
+`is_dir()` on every entry of both sides for the join, then `stat()` on both
+halves of every matched pair — **two per-file calls per entry, per side, for
+every criteria**, including the pure filename join that reads no attributes at
+all. Two 1,680-entry panes meant ~6,700 calls, or roughly 45 s under the cost
+model above, for a comparison whose every input the panes already held.
+
+It now takes the records instead:
+
+```python
+compute_compare_selection(current_files, other_files, criteria,
+                          current_attrs=..., other_attrs=...)   # {str(path): record}
+```
+
+`XeFMApp._pane_attrs(pane)` builds one side's mapping from `_listing_entries`;
+both the inline path and the content-comparison worker pass it. Measured on two
+200-file directories, all relations: **1,200 per-file calls → 0.**
+
+Three rules this follows, and any future consumer should:
+
+* **The snapshot is a superset of the displayed rows** — it is taken before the
+  filename filter — so a filtered pane is fully covered.
+* **A missing record falls back to reading that entry**, so a caller with no
+  attributes still works. `_attrs_of` deliberately does *not* use
+  `attrs_via_path` for this: that also asks `is_symlink`, which a comparison
+  never reads, and the fallback exists for exactly the storage where a wasted
+  call is a wasted round trip.
+* **`ok: False` satisfies no relation.** An entry whose target cannot be read
+  can never be asserted equal, newer or larger, so it is never selected through
+  a counterpart — but it still *counts* as a counterpart, so the other side's
+  entry is not reported as an orphan. That is what raising `OSError` out of the
+  old `stat()` did, preserved.
+
+The staleness trade-off is the one `_resort` already made: a comparison now
+reflects the same snapshot the pane's own size and date columns are drawn from,
+so it agrees with what the user is looking at, and is refreshed by the same
+mechanisms. Content comparison is unaffected in kind — no snapshot can answer
+"are these bytes equal", so it still reads both files on the task worker; only
+the size short-circuit that decides *whether* to read now comes for free.

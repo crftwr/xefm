@@ -4263,7 +4263,11 @@ class XeFMApp:
         a directory listing — the compared feed is the pane's *displayed* listing
         (sorted + filtered) on both sides. A result set spans directories, so the
         other side may hold several same-named candidates; the engine selects an
-        entry when any of them matches."""
+        entry when any of them matches.
+
+        Both sides' attributes come from the snapshot each pane's listing left
+        behind, so a compare reads nothing but file *contents* — see
+        :meth:`_pane_attrs`."""
         pane = self.active_pane()
         other = self.pm.get_inactive_pane()
         if not pane["files"]:
@@ -4278,7 +4282,9 @@ class XeFMApp:
                 return  # the task drives its own redraw
             else:
                 result = compute_compare_selection(
-                    pane["files"], other["files"], criteria)
+                    pane["files"], other["files"], criteria,
+                    current_attrs=self._pane_attrs(pane),
+                    other_attrs=self._pane_attrs(other))
                 self._apply_compare_result(pane, criteria, result)
             self.panel.render()
 
@@ -4286,12 +4292,35 @@ class XeFMApp:
                             on_result=on_result)
         self.panel.render()
 
+    @staticmethod
+    def _pane_attrs(pane: dict) -> dict:
+        """``{str(path): attrs}`` for everything a pane last listed — the
+        :mod:`xefm.dir_scan` records ``apply_listing`` kept, handed to the compare
+        engine so it answers is_dir/size/mtime without touching the filesystem.
+
+        The snapshot is taken before the filename filter, so it covers every
+        displayed row and then some. Empty when the pane has no snapshot (nothing
+        listed yet, or the listing failed); the engine then reads per file, which
+        is what it always did.
+
+        These are the same attributes the pane's own size and date columns are
+        drawn from, so a comparison now agrees with what the user is looking at —
+        and carries that display's staleness, which the file monitor and Ctrl-R
+        already exist to clear."""
+        entries = pane.get("_listing_entries")
+        if not entries:
+            return {}
+        return {str(p): a for p, a in entries}
+
     def _compare_with_content(self, pane: dict, other: dict, criteria) -> None:
         """Content-comparison path: reads files, so it runs on the task worker with
-        a cancellable progress dialog. Snapshots the pane feeds up front (the worker
-        must not touch the panel) and applies the result on the main thread."""
+        a cancellable progress dialog. Snapshots the pane feeds and their attributes
+        up front (the worker must not touch the panel) and applies the result on the
+        main thread."""
         current_files = list(pane["files"])
         other_files = list(other["files"])
+        current_attrs = self._pane_attrs(pane)
+        other_attrs = self._pane_attrs(other)
         task = Task("Comparing contents", config=self.config, kind="compare")
 
         def run(t: Task) -> dict:
@@ -4307,6 +4336,7 @@ class XeFMApp:
 
             result = compute_compare_selection(
                 current_files, other_files, criteria,
+                current_attrs=current_attrs, other_attrs=other_attrs,
                 checkpoint=t.checkpoint, on_advance=advance)
             return {"result": result, "cancelled": t.cancelled()}
 
