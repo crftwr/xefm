@@ -31,72 +31,82 @@ class TestS3CopyFix(unittest.TestCase):
     @patch('xefm.s3.boto3')
     def test_local_to_s3_copy(self, mock_boto3):
         """Test copying a local file to S3"""
-        # Mock S3 client
+        # Mock S3 client - the upload drains the caller's file object, so the
+        # bytes have to be captured while the call is in flight
         mock_client = Mock()
         mock_client.list_objects_v2.return_value = {'KeyCount': 0}
+        uploaded = {}
+
+        def fake_upload(Fileobj, Bucket, Key, Callback=None, **kwargs):
+            uploaded['content'] = Fileobj.read()
+
+        mock_client.upload_fileobj.side_effect = fake_upload
         mock_boto3.client.return_value = mock_client
-        
+
         # Create S3 destination path
         s3_dest = Path("s3://test-bucket/test-file.txt")
-        
+
         # Perform copy operation
         try:
             result = self.test_file.copy_to(s3_dest, overwrite=True)
             self.assertTrue(result, "Copy operation should return True on success")
-            
-            # Verify S3 put_object was called
-            mock_client.put_object.assert_called_once()
-            call_args = mock_client.put_object.call_args
-            
+
+            # Verify the streaming upload was used (not a single put_object)
+            mock_client.upload_fileobj.assert_called_once()
+            mock_client.put_object.assert_not_called()
+            call_args = mock_client.upload_fileobj.call_args
+
             # Check that the correct bucket and key were used
             self.assertEqual(call_args[1]['Bucket'], 'test-bucket')
             self.assertEqual(call_args[1]['Key'], 'test-file.txt')
-            
+
             # Check that the content was uploaded correctly
-            uploaded_content = call_args[1]['Body']
-            self.assertEqual(uploaded_content, self.test_content.encode('utf-8'))
-            
+            self.assertEqual(uploaded['content'], self.test_content.encode('utf-8'))
+
         except ImportError:
             self.skipTest("boto3 not available for S3 testing")
-    
+
     @patch('xefm.s3.boto3')
     def test_s3_to_local_copy(self, mock_boto3):
         """Test copying an S3 file to local filesystem"""
-        # Mock S3 client and response
+        # Mock S3 client - the download streams into the caller's file object
         mock_client = Mock()
         mock_client.list_objects_v2.return_value = {'KeyCount': 0}
-        mock_response = {
-            'Body': Mock()
+        mock_client.head_object.return_value = {
+            'ContentLength': len(self.test_content),
         }
-        mock_response['Body'].read.return_value = self.test_content.encode('utf-8')
-        mock_client.get_object.return_value = mock_response
+
+        def fake_download(Bucket, Key, Fileobj, Callback=None, **kwargs):
+            Fileobj.write(self.test_content.encode('utf-8'))
+
+        mock_client.download_fileobj.side_effect = fake_download
         mock_boto3.client.return_value = mock_client
-        
+
         # Create S3 source path
         s3_source = Path("s3://test-bucket/source-file.txt")
         local_dest = Path(self.temp_dir) / "copied_file.txt"
-        
+
         try:
             # Perform copy operation
             result = s3_source.copy_to(local_dest, overwrite=True)
             self.assertTrue(result, "Copy operation should return True on success")
-            
+
             # Verify file was created locally
             self.assertTrue(local_dest.exists(), "Destination file should exist")
-            
+
             # Verify content is correct
             copied_content = local_dest.read_text()
             self.assertEqual(copied_content, self.test_content)
-            
-            # Verify S3 get_object was called
-            mock_client.get_object.assert_called_once_with(
-                Bucket='test-bucket',
-                Key='source-file.txt'
-            )
-            
+
+            # Verify the streaming download was used (not a single get_object)
+            mock_client.get_object.assert_not_called()
+            call_args = mock_client.download_fileobj.call_args
+            self.assertEqual(call_args[1]['Bucket'], 'test-bucket')
+            self.assertEqual(call_args[1]['Key'], 'source-file.txt')
+
         except ImportError:
             self.skipTest("boto3 not available for S3 testing")
-    
+
     def test_local_to_local_copy(self):
         """Test copying between local paths (should still work)"""
         local_dest = Path(self.temp_dir) / "local_copy.txt"

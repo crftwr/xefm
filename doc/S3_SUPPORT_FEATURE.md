@@ -300,9 +300,13 @@ s3://eu-west-bucket/file.txt
 ### Large File Handling
 
 For large files:
-- XeFM shows progress during downloads
+- The progress dialog fills as the bytes actually move, in both directions, so a
+  slow transfer no longer looks stalled at 0%
+- A large object is streamed to or from disk rather than held in memory, so its
+  size is not limited by available RAM
 - Uploads use multipart upload for files >5MB
-- Consider using AWS CLI for very large files (>1GB)
+- Copying between two S3 locations happens server-side — the bytes never travel
+  down to your machine and back up
 
 ### Bucket Policies
 

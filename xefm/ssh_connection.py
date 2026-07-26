@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 import os
+import shlex
 import shutil
 import traceback
 from pathlib import Path
@@ -48,13 +49,99 @@ class SSHConnectionLostError(SSHError):
     pass
 
 
+class _TransferMonitor:
+    """Drives byte-level progress for a running ``sftp`` transfer, and stops the
+    transfer when the progress callback raises.
+
+    ``sftp`` writes its progress meter only to a terminal, so nothing usable
+    reaches us on a pipe — enabling it explicitly changes nothing. The byte
+    count comes instead from watching the file being written, which the caller
+    supplies as ``probe``: the local temp file for a download, the remote file
+    for an upload.
+
+    The progress callback doubles as the cancel checkpoint. Whatever it raises
+    is recorded in :attr:`error`, the ``sftp`` process is killed so the transfer
+    stops immediately rather than running to completion, and the caller
+    re-raises it unchanged.
+    """
+
+    def __init__(self, probe, total_bytes: int, callback: callable,
+                 interval: float, logger):
+        self._probe = probe
+        self._total = total_bytes
+        self._callback = callback
+        self._interval = interval
+        self.logger = logger
+        self._stop = threading.Event()
+        self._thread = None
+        self._process = None
+        #: Exception raised by the progress callback, if any
+        self.error = None
+
+    def start(self, process):
+        """Report an empty bar and begin sampling alongside ``process``."""
+        self._process = process
+        if self._report(0):
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def _report(self, transferred: int) -> bool:
+        """Push one update; return False if the callback asked us to stop."""
+        try:
+            self._callback(min(transferred, self._total), self._total)
+            return True
+        except BaseException as e:  # noqa: BLE001 - forwarded to the caller
+            self.error = e
+            self._kill()
+            return False
+
+    def _run(self):
+        while not self._stop.wait(self._interval):
+            if self._process.poll() is not None:
+                return
+            try:
+                transferred = self._probe()
+            except Exception as e:  # noqa: BLE001
+                # A probe that fails (file not created yet, remote hiccup) must
+                # never take down a transfer that is otherwise healthy
+                self.logger.debug(f"Transfer progress probe failed: {e}")
+                continue
+            if not self._report(transferred):
+                return
+
+    def _kill(self):
+        try:
+            self._process.kill()
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"Failed to stop cancelled transfer: {e}")
+
+    def stop(self):
+        """Stop sampling and wait for the sampling thread to finish."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+
+    def finish(self):
+        """Report the transfer as complete (no-op once cancelled)."""
+        if self.error is None:
+            self._report(self._total)
+
+
 class SSHConnection:
     """
     Manages an SSH/SFTP connection to a remote host.
-    
+
     Provides methods for file operations over SFTP using subprocess
     to invoke the sftp command-line tool.
     """
+
+    #: How often a download samples its growing temp file. A local ``stat``
+    #: costs nothing, so this is set by how smooth the bar should look.
+    _DOWNLOAD_POLL = 0.25
+
+    #: How often an upload samples the remote file. Each sample is a command
+    #: over the multiplexed connection, so it is deliberately less frequent.
+    _UPLOAD_POLL = 0.5
     
     def __init__(self, hostname: str, config: Dict[str, str]):
         """
@@ -80,10 +167,11 @@ class SSHConnection:
         # Default remote directory (set during connection)
         self.default_directory = None
         
-        # Progress tracking
+        # Progress tracking. Transfers of any size are watched: the caller
+        # decides what is worth a progress bar, and a cancel has to work on a
+        # small file over a slow link too.
         self._progress_callback = None
-        self._progress_threshold = 1024 * 1024  # 1MB threshold for progress display
-        
+
         # SSH multiplexing (ControlMaster) for persistent connections
         # Use user's home directory instead of /tmp to avoid sandboxing issues
         # when running from DMG-packaged apps
@@ -231,10 +319,15 @@ class SSHConnection:
     def set_progress_callback(self, callback: Optional[callable]):
         """
         Set progress callback for file transfers.
-        
-        The callback will be called with (bytes_transferred, total_bytes) during
-        file transfers that exceed the progress threshold (1MB).
-        
+
+        The callback is called with (bytes_transferred, total_bytes) as a
+        transfer proceeds: once with 0 as it starts, repeatedly while it runs,
+        and once with the full size when it completes.
+
+        It doubles as the cancel checkpoint. Anything it raises stops the
+        transfer — the ``sftp`` process is killed — and is re-raised unchanged
+        to whoever called ``read_file``/``write_file``.
+
         Args:
             callback: Callable that takes (bytes_transferred: int, total_bytes: int)
                      or None to disable progress tracking
@@ -421,6 +514,42 @@ class SSHConnection:
         # Wrap in double quotes
         return f'"{escaped_path}"'
     
+    #: Size of a remote file without reading it. GNU coreutils and BSD spell
+    #: ``stat`` differently, so try both; a file that does not exist yet (the
+    #: upload has not created it) reports 0 rather than failing.
+    _REMOTE_SIZE_COMMAND = (
+        'stat -c %s -- {p} 2>/dev/null || stat -f %z -- {p} 2>/dev/null || echo 0')
+
+    def _remote_size(self, remote_path: str) -> int:
+        """Current size of a remote file, in bytes.
+
+        Runs over the existing ControlMaster, so this is a channel on the
+        connection already open — not a new SSH session, and no re-auth.
+        """
+        command = self._REMOTE_SIZE_COMMAND.format(p=shlex.quote(remote_path))
+
+        ssh_cmd = ['ssh',
+                   '-o', f'ControlPath={self._control_path}',
+                   '-o', 'ControlMaster=no',
+                   '-o', 'BatchMode=yes']
+        if self.port and self.port != '22':
+            ssh_cmd.extend(['-p', str(self.port)])
+        if self.identity_file:
+            ssh_cmd.extend(['-i', self.identity_file])
+        ssh_cmd.extend([self.hostname, command])
+
+        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        return int(lines[-1]) if lines else 0
+
+    def _make_transfer_monitor(self, probe, total_bytes: int,
+                               interval: float) -> Optional['_TransferMonitor']:
+        """Build a monitor for a transfer, or None if nobody is watching."""
+        if not self._progress_callback:
+            return None
+        return _TransferMonitor(probe, total_bytes, self._progress_callback,
+                                interval, self.logger)
+
     def _parse_ls_line(self, line: str) -> Optional[Dict[str, any]]:
         """
         Parse a single line from ls -la output.
@@ -508,16 +637,21 @@ class SSHConnection:
         }
 
     
-    def _execute_sftp_command(self, commands: List[str], timeout: int = 30) -> Tuple[str, str, int]:
+    def _execute_sftp_command(self, commands: List[str], timeout: int = 30,
+                              monitor: Optional['_TransferMonitor'] = None) -> Tuple[str, str, int]:
         """
         Execute SFTP commands using SSH multiplexing.
-        
+
         Uses the control master connection for efficient command execution.
-        
+
         Args:
             commands: List of SFTP commands to execute
             timeout: Command timeout in seconds (default: 30), or None for no timeout
-            
+            monitor: Optional :class:`_TransferMonitor` to report progress and
+                     cancel the transfer. It may kill the process, in which case
+                     the non-zero return code here is expected and the caller
+                     should raise ``monitor.error`` in preference to it.
+
         Returns:
             (stdout, stderr, returncode) tuple
             
@@ -562,6 +696,9 @@ class SSHConnection:
                 text=True
             )
             
+            if monitor is not None:
+                monitor.start(process)
+
             # Standard timeout or no timeout
             try:
                 stdout, stderr = process.communicate(input=command_input, timeout=timeout)
@@ -572,7 +709,10 @@ class SSHConnection:
                 error_msg = f"SFTP command timeout after {timeout}s for {self.hostname}"
                 self.logger.error(error_msg)
                 raise SSHConnectionTimeoutError(error_msg)
-            
+            finally:
+                if monitor is not None:
+                    monitor.stop()
+
             return stdout, stderr, returncode
             
         except SSHConnectionTimeoutError:
@@ -902,50 +1042,58 @@ class SSHConnection:
             timeout = None
             
             self.logger.info(f"Downloading {file_size} bytes (no timeout - SFTP handles it)")
-            
-            # For large files, emit progress events
-            if file_size > self._progress_threshold and self._progress_callback:
-                # Start progress tracking
-                self._progress_callback(0, file_size)
-            
+
+            # A download's byte count is free: sftp is filling tmp_path, so its
+            # size on disk is exactly how far the transfer has got
+            monitor = self._make_transfer_monitor(
+                lambda: os.path.getsize(tmp_path), file_size, self._DOWNLOAD_POLL)
+
             # Execute download without timeout - SFTP handles timeouts internally
             try:
                 stdout, stderr, returncode = self._execute_sftp_command(
                     commands,
-                    timeout=timeout
+                    timeout=timeout,
+                    monitor=monitor
                 )
-                
-                if returncode != 0:
-                    # Parse error to determine specific type
-                    stderr_lower = stderr.lower()
-                    
-                    if 'no such file' in stderr_lower or 'not found' in stderr_lower:
-                        error_msg = f"Remote file not found: {remote_path}"
-                        self.logger.error(error_msg)
-                        self.logger.error(f"Detailed error: {stderr}")
-                        raise SSHPathNotFoundError(error_msg)
-                    elif 'permission denied' in stderr_lower:
-                        error_msg = f"Permission denied reading: {remote_path}"
-                        self.logger.error(error_msg)
-                        self.logger.error(f"Detailed error: {stderr}")
-                        raise SSHPermissionDeniedError(error_msg)
-                    else:
-                        error_msg = f"Failed to read file {remote_path}: {stderr}"
-                        self.logger.error(error_msg)
-                        raise SSHError(error_msg)
-                
-                # Report completion for large files
-                if file_size > self._progress_threshold and self._progress_callback:
-                    self._progress_callback(file_size, file_size)
-                
             except (SSHPathNotFoundError, SSHPermissionDeniedError, SSHConnectionLostError):
                 # Re-raise SSH-specific errors
+                raise
+            except SSHConnectionTimeoutError:
                 raise
             except Exception as e:
                 error_msg = f"Unexpected error reading file {remote_path}: {e}"
                 self.logger.error(error_msg)
                 raise SSHError(error_msg)
-            
+
+            # A cancel arrives as an exception from the caller's progress
+            # callback. It is not a transfer failure, so it is re-raised as-is
+            # and ahead of the killed process's return code.
+            if monitor is not None and monitor.error is not None:
+                raise monitor.error
+
+            if returncode != 0:
+                # Parse error to determine specific type
+                stderr_lower = stderr.lower()
+
+                if 'no such file' in stderr_lower or 'not found' in stderr_lower:
+                    error_msg = f"Remote file not found: {remote_path}"
+                    self.logger.error(error_msg)
+                    self.logger.error(f"Detailed error: {stderr}")
+                    raise SSHPathNotFoundError(error_msg)
+                elif 'permission denied' in stderr_lower:
+                    error_msg = f"Permission denied reading: {remote_path}"
+                    self.logger.error(error_msg)
+                    self.logger.error(f"Detailed error: {stderr}")
+                    raise SSHPermissionDeniedError(error_msg)
+                else:
+                    error_msg = f"Failed to read file {remote_path}: {stderr}"
+                    self.logger.error(error_msg)
+                    raise SSHError(error_msg)
+
+            if monitor is not None:
+                monitor.finish()
+
+
             # Read the downloaded file
             with open(tmp_path, 'rb') as f:
                 data = f.read()
@@ -992,50 +1140,60 @@ class SSHConnection:
             timeout = None
             
             self.logger.info(f"Uploading {file_size} bytes (no timeout - SFTP handles it)")
-            
-            # For large files, emit progress events
-            if file_size > self._progress_threshold and self._progress_callback:
-                # Start progress tracking
-                self._progress_callback(0, file_size)
-            
+
+            # An upload has no growing local file to watch — the source is
+            # already complete — so the byte count comes from the remote file
+            # sftp is filling, sampled over the connection already open
+            monitor = self._make_transfer_monitor(
+                lambda: self._remote_size(remote_path), file_size, self._UPLOAD_POLL)
+
             # Execute upload without timeout - SFTP handles timeouts internally
             try:
                 stdout, stderr, returncode = self._execute_sftp_command(
-                    commands, 
-                    timeout=timeout
+                    commands,
+                    timeout=timeout,
+                    monitor=monitor
                 )
-                
-                if returncode != 0:
-                    # Parse error to determine specific type
-                    stderr_lower = stderr.lower()
-                    
-                    if 'permission denied' in stderr_lower:
-                        error_msg = f"Permission denied writing to: {remote_path}"
-                        self.logger.error(error_msg)
-                        self.logger.error(f"Detailed error: {stderr}")
-                        raise SSHPermissionDeniedError(error_msg)
-                    elif 'no space' in stderr_lower or 'disk full' in stderr_lower:
-                        error_msg = f"Disk full on remote system: {remote_path}"
-                        self.logger.error(error_msg)
-                        self.logger.error(f"Detailed error: {stderr}")
-                        raise SSHError(error_msg)
-                    else:
-                        error_msg = f"Failed to write file {remote_path}: {stderr}"
-                        self.logger.error(error_msg)
-                        raise SSHError(error_msg)
-                
-                # Report completion for large files
-                if file_size > self._progress_threshold and self._progress_callback:
-                    self._progress_callback(file_size, file_size)
-                
             except (SSHPermissionDeniedError, SSHConnectionLostError):
                 # Re-raise SSH-specific errors
+                raise
+            except SSHConnectionTimeoutError:
                 raise
             except Exception as e:
                 error_msg = f"Unexpected error writing file {remote_path}: {e}"
                 self.logger.error(error_msg)
                 raise SSHError(error_msg)
-            
+
+            # A cancel arrives as an exception from the caller's progress
+            # callback. It is not a transfer failure, so it is re-raised as-is
+            # and ahead of the killed process's return code.
+            if monitor is not None and monitor.error is not None:
+                # The remote file holds however much arrived before the kill
+                self._cache.invalidate_path(self.hostname, remote_path)
+                raise monitor.error
+
+            if returncode != 0:
+                # Parse error to determine specific type
+                stderr_lower = stderr.lower()
+
+                if 'permission denied' in stderr_lower:
+                    error_msg = f"Permission denied writing to: {remote_path}"
+                    self.logger.error(error_msg)
+                    self.logger.error(f"Detailed error: {stderr}")
+                    raise SSHPermissionDeniedError(error_msg)
+                elif 'no space' in stderr_lower or 'disk full' in stderr_lower:
+                    error_msg = f"Disk full on remote system: {remote_path}"
+                    self.logger.error(error_msg)
+                    self.logger.error(f"Detailed error: {stderr}")
+                    raise SSHError(error_msg)
+                else:
+                    error_msg = f"Failed to write file {remote_path}: {stderr}"
+                    self.logger.error(error_msg)
+                    raise SSHError(error_msg)
+
+            if monitor is not None:
+                monitor.finish()
+
             # Invalidate cache after successful write
             self._cache.invalidate_path(self.hostname, remote_path)
                 

@@ -436,14 +436,36 @@ class FileOperationService:
             src.copy_to(dest, overwrite=overwrite)
         return True
 
+    @staticmethod
+    def _remote_progress(task: Task, prog: ProgressManager):
+        """Byte-progress callback for a remote transfer, doubling as the cancel
+        checkpoint.
+
+        A local copy checkpoints between chunks in its own loop; a remote one is
+        a single call into S3 or SFTP, so the progress callback is the only
+        thread of control that comes back often enough to notice a cancel. The
+        ``Cancelled`` raised here unwinds the transfer and is re-raised
+        unchanged by ``Path.copy_to``."""
+        def report(bytes_copied: int, bytes_total: int) -> None:
+            task.checkpoint()
+            prog.update_file_byte_progress(bytes_copied, bytes_total)
+        return report
+
     def _copy_bytes(self, task: Task, src: Path, dest: Path, size: int,
                     overwrite: bool, local: bool, prog: ProgressManager) -> None:
         """Copy a large / cross-storage file while driving the byte bar. Local
         files are streamed in chunks here (so ``shutil`` doesn't hide progress);
         cross-storage copies delegate to ``Path.copy_to``'s own progress callback."""
         if not local:
-            src.copy_to(dest, overwrite=overwrite,
-                        progress_callback=prog.update_file_byte_progress)
+            try:
+                src.copy_to(dest, overwrite=overwrite,
+                            progress_callback=self._remote_progress(task, prog))
+            except Cancelled:
+                try:
+                    dest.unlink()  # a half-sent remote file is not a copy
+                except Exception:  # noqa: BLE001
+                    pass
+                raise
             return
         dest.parent.mkdir(parents=True, exist_ok=True)
         copied = 0

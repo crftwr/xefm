@@ -204,3 +204,77 @@ Details worth preserving:
   `error_ttl`, default 300 s). `stat()` still falls back to `ls -l` on a miss.
 - No API changes were needed — `stat()`, `SSHCache`, and the `Path` layer already
   supported this; only `list_directory()`'s parse loop grew the `put` call.
+
+## Byte-level transfer progress & cancellation
+
+Issue #131. A remote copy showed no byte-level progress and could not be
+cancelled: `read_file()`/`write_file()` fired the progress callback exactly
+twice, at 0% and 100%, with one uninterruptible `sftp -b` subprocess in between.
+
+### Why the sftp progress meter is not the answer
+
+`sftp` has a progress meter, and even an interactive `progress` command to
+toggle it, but it never reaches us:
+
+- With stdout on a pipe — which is how `_execute_sftp_command()` invokes it —
+  no meter is emitted at all.
+- The `progress` command *toggles*, so sending it unconditionally turns the
+  meter **off** on a terminal, where it would otherwise have been on.
+- It could not be coaxed into emitting even on a real pty with a deliberately
+  throttled transfer.
+
+So the byte count is obtained by watching the file being written instead.
+
+### `_TransferMonitor`
+
+A sampling thread runs alongside the `sftp` subprocess and pushes updates to the
+caller's progress callback. The byte count comes from a `probe` supplied per
+direction:
+
+- **Download** — `os.path.getsize(tmp_path)`. `sftp get` is filling that local
+  temp file, so its size on disk *is* the progress. Free, exact, and needs
+  nothing remote. Sampled every `_DOWNLOAD_POLL` (0.25 s).
+- **Upload** — `_remote_size(remote_path)`. The source file is already complete,
+  so there is nothing local that grows; the destination is measured instead.
+  Sampled every `_UPLOAD_POLL` (0.5 s), less often because each sample costs a
+  command.
+
+`_remote_size()` runs `stat -c %s` with a `stat -f %z` fallback (GNU vs BSD) and
+a final `echo 0` for the window before the file exists. It runs over the
+**existing ControlMaster**, so it is a channel on the connection already open —
+not a second SSH session and no re-auth. Deliberately one command per sample
+rather than a long-lived remote polling loop: a remote `while :; do … done`
+would outlive an XeFM crash and never be cleaned up.
+
+The path is interpolated into a remote *shell* command, so it is escaped with
+`shlex.quote()` — not `_quote_path()`, which produces double quotes for sftp's
+own parser and would leave `$(…)` live.
+
+A probe that raises (file not yet created, remote hiccup) is logged at debug and
+skipped. It must never take down a transfer that is otherwise healthy.
+
+### Cancellation
+
+The progress callback doubles as the cancel checkpoint — mid-file it is the only
+thread of control that returns to the caller often enough to notice. Anything it
+raises is recorded in `_TransferMonitor.error`, the `sftp` process is killed, and
+the exception is re-raised unchanged by `read_file()`/`write_file()`.
+
+Re-raising it *unchanged* is the fiddly part. A killed subprocess returns a
+non-zero code, and both methods wrap unexpected exceptions in `SSHError`, so the
+cancel is checked **before** the return code and **outside** the error-wrapping
+`try`. Otherwise a cancel surfaces as "Failed to read file: …".
+
+The same contract is carried through `Path.copy_to()` by `_CallbackAbort` (see
+`xefm/path.py`), which tags whatever the caller's callback raised so the generic
+`except Exception → OSError` in the cross-storage copy helpers does not relabel a
+cancel as a copy failure. `FileOperationService._remote_progress()` is what
+supplies a callback that calls `task.checkpoint()`.
+
+### Cost of the S3 side
+
+For S3 the equivalent hook is boto3's transfer `Callback`. Raising from it aborts
+the transfer and the exception reaches the caller intact — verified against a
+real HTTP endpoint, since a stubbed client never reads the request body and so
+never fires the callback at all. A cancelled multipart upload issues its own
+`AbortMultipartUpload`, so no orphaned parts are left accruing storage charges.

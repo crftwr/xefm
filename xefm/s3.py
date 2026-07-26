@@ -1019,7 +1019,133 @@ class S3PathImpl(PathImpl):
             return len(data)
         except ClientError as e:
             raise OSError(f"Failed to write S3 object: {e}")
-    
+
+    # Streaming transfers with byte-level progress
+    #
+    # read_bytes()/write_bytes() above are single-shot API calls: they hold the
+    # whole object in memory and give the caller nothing to report while they
+    # run. Copies go through the methods below instead, so a multi-gigabyte
+    # object moves in chunks and the progress bar moves with it.
+
+    def _byte_progress_adapter(self, total_bytes: int, progress_callback: Optional[callable]):
+        """Adapt boto3's per-chunk byte *deltas* to the absolute
+        (transferred, total) pairs the progress manager expects.
+
+        A multipart transfer invokes the callback from each of its transfer
+        threads, so the running total is kept under a lock.
+
+        Args:
+            total_bytes: Size of the object being transferred
+            progress_callback: Callable taking (bytes_transferred, total_bytes),
+                               or None to disable progress tracking
+
+        Returns:
+            A boto3-style Callback, or None if progress tracking is disabled
+        """
+        if progress_callback is None:
+            return None
+
+        transferred = 0
+        lock = threading.Lock()
+
+        def report(chunk_bytes):
+            nonlocal transferred
+            with lock:
+                transferred += chunk_bytes
+                so_far = transferred
+            progress_callback(so_far, total_bytes)
+
+        # Show an empty bar right away rather than after the first chunk lands
+        progress_callback(0, total_bytes)
+        return report
+
+    def download_to_stream(self, fileobj, progress_callback: Optional[callable] = None) -> int:
+        """Stream this object into an open binary file object.
+
+        Args:
+            fileobj: Writable binary file object to receive the object's bytes
+            progress_callback: Optional callable taking (bytes_transferred, total_bytes)
+
+        Returns:
+            Number of bytes transferred
+
+        Raises:
+            FileNotFoundError: If the object does not exist
+            OSError: For other transfer failures
+        """
+        total_bytes = self.stat().st_size
+        try:
+            self._client.download_fileobj(
+                Bucket=self._bucket,
+                Key=self._key,
+                Fileobj=fileobj,
+                Callback=self._byte_progress_adapter(total_bytes, progress_callback),
+            )
+        except ClientError as e:
+            if e.response['Error']['Code'] in ('NoSuchKey', '404'):
+                raise FileNotFoundError(f"S3 object not found: {self._uri}")
+            raise OSError(f"Failed to download S3 object: {e}")
+        return total_bytes
+
+    def upload_from_stream(self, fileobj, total_bytes: int,
+                           progress_callback: Optional[callable] = None) -> int:
+        """Stream an open binary file object into this object.
+
+        Args:
+            fileobj: Readable binary file object supplying the bytes to upload
+            total_bytes: Size of the source, used to scale the progress bar
+            progress_callback: Optional callable taking (bytes_transferred, total_bytes)
+
+        Returns:
+            Number of bytes transferred
+
+        Raises:
+            OSError: If the upload fails
+        """
+        try:
+            self._client.upload_fileobj(
+                Fileobj=fileobj,
+                Bucket=self._bucket,
+                Key=self._key,
+                Callback=self._byte_progress_adapter(total_bytes, progress_callback),
+            )
+        except ClientError as e:
+            raise OSError(f"Failed to upload S3 object: {e}")
+
+        self._invalidate_cache_for_write()
+        return total_bytes
+
+    def copy_from_s3(self, source: 'S3PathImpl',
+                     progress_callback: Optional[callable] = None) -> int:
+        """Copy another S3 object to this one.
+
+        The bytes are copied server-side, so nothing crosses the client at all;
+        boto3 still reports progress as each part of a multipart copy lands.
+
+        Args:
+            source: The S3PathImpl to copy from
+            progress_callback: Optional callable taking (bytes_transferred, total_bytes)
+
+        Returns:
+            Number of bytes copied
+
+        Raises:
+            OSError: If the copy fails
+        """
+        total_bytes = source.stat().st_size
+        try:
+            self._client.copy(
+                CopySource={'Bucket': source._bucket, 'Key': source._key},
+                Bucket=self._bucket,
+                Key=self._key,
+                Callback=self._byte_progress_adapter(total_bytes, progress_callback),
+            )
+        except ClientError as e:
+            raise OSError(f"Failed to copy S3 object {source._uri} to {self._uri}: {e}")
+
+        self._invalidate_cache_for_write()
+        return total_bytes
+
     # File system modification operations
     def mkdir(self, mode=0o777, parents=False, exist_ok=False):
         """Create a new directory at this given path"""

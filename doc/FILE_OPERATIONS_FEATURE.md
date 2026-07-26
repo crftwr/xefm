@@ -196,6 +196,12 @@ files and, for large files, at each chunk — so it may take a moment to stop at
 the next checkpoint. Partial files are removed cleanly, leaving nothing
 half-written behind.
 
+This applies to remote transfers too: a slow upload to S3 or an SFTP server
+stops when you press **ESC**, rather than running to completion in the
+background. A cancelled S3 upload leaves no object behind and no partially
+uploaded pieces to be billed for; a cancelled download leaves no file on disk.
+An SFTP transfer stops within about half a second of the keypress.
+
 Progress works across disks and storage types, so a move to an external drive
 gets the same per-file byte progress that a local copy, a cross-storage transfer,
 or an S3-to-S3 transfer does. No configuration is required — it is

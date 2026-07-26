@@ -16,6 +16,37 @@ from xefm import dir_scan
 from xefm.str_format import format_size
 
 
+class _CallbackAbort(Exception):
+    """Carries an exception raised by a caller's ``progress_callback`` back out
+    of a copy untouched, instead of letting it be folded into the generic
+    ``OSError`` every transfer failure becomes.
+
+    Cancelling a transfer is signalled by raising from the progress callback:
+    mid-file, it is the only point at which the storage layer calls back into
+    the caller often enough to notice. The storage layer stays ignorant of what
+    that exception means — it just has to not swallow it.
+    """
+
+    def __init__(self, original: BaseException):
+        super().__init__(str(original))
+        self.original = original
+
+
+def _guard_progress(progress_callback: Optional[callable]) -> Optional[callable]:
+    """Wrap a caller's progress callback so anything it raises is tagged as
+    :class:`_CallbackAbort` and survives the copy's error handling."""
+    if progress_callback is None:
+        return None
+
+    def guarded(bytes_copied: int, bytes_total: int) -> None:
+        try:
+            progress_callback(bytes_copied, bytes_total)
+        except _CallbackAbort:
+            raise
+        except BaseException as e:
+            raise _CallbackAbort(e) from e
+
+    return guarded
 
 
 def attrs_via_path(entry) -> dict:
@@ -1499,11 +1530,17 @@ class Path:
                     shutil.copy2(str(self), str(destination))
                 return True
         
-        # Cross-storage copying with progress tracking
-        if self.is_dir():
-            return self._copy_directory_cross_storage(destination, overwrite, progress_callback)
-        else:
-            return self._copy_file_cross_storage(destination, overwrite, progress_callback)
+        # Cross-storage copying with progress tracking. The callback is guarded
+        # so that a caller cancelling from inside it gets their own exception
+        # back rather than an OSError describing a "failed" copy.
+        guarded = _guard_progress(progress_callback)
+        try:
+            if self.is_dir():
+                return self._copy_directory_cross_storage(destination, overwrite, guarded)
+            else:
+                return self._copy_file_cross_storage(destination, overwrite, guarded)
+        except _CallbackAbort as e:
+            raise e.original from None
     
     def _copy_file_cross_storage(self, destination: 'Path', overwrite: bool = False, 
                                  progress_callback: Optional[callable] = None) -> bool:
@@ -1534,46 +1571,89 @@ class Path:
             source_scheme = self.get_scheme()
             dest_scheme = destination.get_scheme()
             
-            # Handle all cross-storage combinations with progress tracking
-            if source_scheme == 'file' and dest_scheme in ('s3', 'ssh'):
-                # Local → Remote (S3 or SSH)
+            # Handle all cross-storage combinations with progress tracking.
+            # An S3 leg streams through boto3's managed transfer, which reports
+            # bytes as they move and never holds the whole object in memory; an
+            # SSH leg still passes whole ``bytes`` through its own progress
+            # hooks.
+            if source_scheme == 's3' and dest_scheme == 's3':
+                # S3 → S3: copied server-side, so no bytes cross the client
+                destination._impl.copy_from_s3(self._impl, progress_callback)
+
+            elif source_scheme == 'file' and dest_scheme == 's3':
+                # Local → S3
+                with self.open('rb') as src:
+                    destination._impl.upload_from_stream(
+                        src, self.stat().st_size, progress_callback)
+
+            elif source_scheme == 's3' and dest_scheme == 'file':
+                # S3 → Local. The object lands in the file as it arrives, so a
+                # failure part way through would otherwise leave a truncated
+                # file that looks like a finished copy
+                try:
+                    with destination.open('wb') as dst:
+                        self._impl.download_to_stream(dst, progress_callback)
+                except Exception:
+                    try:
+                        destination.unlink()
+                    except OSError:
+                        pass
+                    raise
+
+            elif source_scheme == 'file' and dest_scheme == 'ssh':
+                # Local → SSH
                 # Read from local file and write to remote
                 with self.open('rb') as src:
                     data = src.read()
-                
+
                 # Use progress-aware write if available and callback provided
-                if dest_scheme == 'ssh' and progress_callback:
+                if progress_callback:
                     destination._impl.write_bytes_with_progress(data, progress_callback)
                 else:
                     destination.write_bytes(data)
-                    
-            elif source_scheme in ('s3', 'ssh') and dest_scheme == 'file':
-                # Remote → Local (S3 or SSH)
+
+            elif source_scheme == 'ssh' and dest_scheme == 'file':
+                # SSH → Local
                 # Read from remote and write to local file
-                if source_scheme == 'ssh' and progress_callback:
+                if progress_callback:
                     data = self._impl.read_bytes_with_progress(progress_callback)
                 else:
                     data = self.read_bytes()
                 destination.write_bytes(data)
-                
+
             elif source_scheme in ('s3', 'ssh') and dest_scheme in ('s3', 'ssh'):
-                # Remote → Remote (S3 or SSH)
-                # Read from source remote and write to destination remote
-                if source_scheme == 'ssh' and progress_callback:
-                    data = self._impl.read_bytes_with_progress(progress_callback)
+                # Remote → Remote across storage types (S3 ↔ SSH). The SSH side
+                # only deals in whole ``bytes``, so the object is buffered here
+                # even though the S3 side could stream; each leg reports its own
+                # progress in turn.
+                if source_scheme == 'ssh':
+                    if progress_callback:
+                        data = self._impl.read_bytes_with_progress(progress_callback)
+                    else:
+                        data = self.read_bytes()
                 else:
-                    data = self.read_bytes()
-                
-                if dest_scheme == 'ssh' and progress_callback:
-                    destination._impl.write_bytes_with_progress(data, progress_callback)
+                    buffer = io.BytesIO()
+                    self._impl.download_to_stream(buffer, progress_callback)
+                    data = buffer.getvalue()
+
+                if dest_scheme == 'ssh':
+                    if progress_callback:
+                        destination._impl.write_bytes_with_progress(data, progress_callback)
+                    else:
+                        destination.write_bytes(data)
                 else:
-                    destination.write_bytes(data)
+                    destination._impl.upload_from_stream(
+                        io.BytesIO(data), len(data), progress_callback)
             else:
                 # Generic cross-storage copy for any other combinations
                 data = self.read_bytes()
                 destination.write_bytes(data)
             
             return True
+        except _CallbackAbort:
+            # The caller cancelled from inside their progress callback; their
+            # exception is not a copy failure and must not be relabelled as one
+            raise
         except Exception as e:
             raise OSError(f"Failed to copy file from {self} to {destination}: {e}")
     
@@ -1617,6 +1697,8 @@ class Path:
                     item._copy_file_cross_storage(dest_item, overwrite, progress_callback)
             
             return True
+        except _CallbackAbort:
+            raise
         except Exception as e:
             raise OSError(f"Failed to copy directory from {self} to {destination}: {e}")
 

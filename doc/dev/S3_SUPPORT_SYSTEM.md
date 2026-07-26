@@ -679,9 +679,66 @@ def name(self) -> str:
 
 **Cross-Storage Copy Support**:
 - **Local to Local**: Uses `shutil.copy2()` for optimal performance
-- **Local to S3**: Reads file content and uploads using `write_bytes()`
-- **S3 to Local**: Downloads using `read_bytes()` and writes locally
-- **S3 to S3**: Downloads from source and uploads to destination
+- **Local to S3**: Streams the open file up via `upload_from_stream()`
+- **S3 to Local**: Streams into the open destination via `download_to_stream()`
+- **S3 to S3**: Copied server-side via `copy_from_s3()`
+
+#### S3 Byte-Level Copy Progress
+**Problem** (issue #131): S3 copies showed no byte-level progress. The bar sat at
+0% for the whole transfer and then jumped to 100%.
+
+**Root Cause**: The copy path called `read_bytes()`/`write_bytes()`, which are a
+single `get_object(...)['Body'].read()` and a single `put_object(...)`. One
+blocking call has nothing to report from, so `progress_callback` was never even
+wired up for S3. It also meant the entire object was held in memory, and a read
+additionally cached the whole body in the S3 cache.
+
+**Solution**: Copies go through boto3's managed transfer
+(`download_fileobj`/`upload_fileobj`/`copy`), which takes a `Callback=` invoked
+as each chunk moves. `read_bytes()`/`write_bytes()` are left alone — the viewer
+still wants whole objects, and caching a small file's body there is useful.
+
+**Implementation notes** (`xefm/s3.py`):
+- `_byte_progress_adapter()` converts boto3's per-chunk *deltas* into the
+  absolute `(transferred, total)` pairs `ProgressManager.update_file_byte_progress()`
+  expects, and emits an initial `(0, total)` so the bar appears immediately.
+- A multipart transfer invokes the callback from each of its transfer threads,
+  so the running total is accumulated under a lock.
+- The total comes from `stat().st_size`, which reuses the `head_object` already
+  cached by the `exists()` check in `copy_to()` — no extra API call.
+- Streaming means a failed download can leave a truncated file, so
+  `_copy_file_cross_storage()` unlinks the partial destination and re-raises.
+
+**Not covered**: S3 ↔ SSH copies still buffer the whole object, because the SSH
+implementation only deals in whole `bytes`. Each leg reports its own progress in
+turn.
+
+#### Cancelling an In-Flight S3 Transfer
+**Problem** (issue #131): a copy to or from S3 could not be cancelled. The whole
+transfer was one blocking call, and `task.checkpoint()` only ran between files.
+
+**Solution**: the byte-progress callback doubles as the cancel checkpoint —
+mid-file it is the only thread of control that returns to the caller often
+enough. `FileOperationService._remote_progress()` calls `task.checkpoint()`
+before forwarding each update, so a cancel raises `Cancelled` inside boto3's
+transfer callback, which aborts the transfer.
+
+**Verified behaviour** (against a real HTTP endpoint — a `botocore` `Stubber`
+never reads the request body, so the callback never fires and the transfer looks
+uncancellable):
+- Raising from the callback aborts both single-part and multipart transfers, and
+  the exception type reaches the caller intact.
+- A cancelled multipart upload issues its own `AbortMultipartUpload`, so no
+  orphaned parts are left accruing storage charges.
+- A cancelled single-part upload never completes the `PUT`, so no object appears.
+- A cancelled download's partial local file is unlinked by
+  `_copy_file_cross_storage()`.
+
+**Keeping the signal intact**: `Path.copy_to()` wraps the caller's callback with
+`_guard_progress()`, tagging anything it raises as `_CallbackAbort` so the
+generic `except Exception → OSError` in the cross-storage helpers cannot relabel
+a cancel as a copy failure. `copy_to()` unwraps it and re-raises the original.
+Genuine transfer errors still become `OSError` as before.
 
 #### S3 Move Fix
 **Problem**: Moving files between S3 directories resulted in "No such file or directory" errors.
