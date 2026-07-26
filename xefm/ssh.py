@@ -11,13 +11,14 @@ import stat as stat_module
 from typing import Iterator, List, Optional
 from datetime import datetime
 from xefm.log_manager import getLogger
+from xefm.path import PathImpl
 from xefm.str_format import format_size
 
 
-class SSHPathImpl:
+class SSHPathImpl(PathImpl):
     """
     SSH/SFTP implementation of PathImpl.
-    
+
     Represents paths on remote systems accessible via SSH/SFTP.
     URI format: ssh://hostname/path/to/file
     """
@@ -326,17 +327,41 @@ class SSHPathImpl:
         return self.stat()
     
     # Directory operations
+    def _entry_path(self, entry_name: str):
+        """The Path for one entry of this directory, by name"""
+        entry_path = self.remote_path.rstrip('/') + '/' + entry_name
+        return self._make_path(f"ssh://{self.hostname}{entry_path}")
+
     def iterdir(self) -> Iterator:
         """Iterate over the files in this directory"""
         conn = self._get_connection()
         entries = conn.list_directory(self.remote_path)
-        
+
         for entry in entries:
-            entry_name = entry['name']
-            entry_path = self.remote_path.rstrip('/') + '/' + entry_name
-            entry_uri = f"ssh://{self.hostname}{entry_path}"
-            yield self._make_path(entry_uri)
-    
+            yield self._entry_path(entry['name'])
+
+    def listdir_attrs(self) -> List[tuple]:
+        """Read the directory and every entry's attributes from the one remote
+        listing. ``ls -la`` already reports type, size and mtime beside each
+        name, so there is nothing left to ask the host — the base class would
+        otherwise re-``stat`` every entry over the connection."""
+        conn = self._get_connection()
+        return [(self._entry_path(entry['name']), self._entry_attrs(entry))
+                for entry in conn.list_directory(self.remote_path)]
+
+    @staticmethod
+    def _entry_attrs(entry: dict) -> dict:
+        """Turn one :meth:`SSHConnection.list_directory` record into the
+        attribute record :mod:`xefm.dir_scan` describes. As everywhere else in
+        this backend, a symlink is reported as the link itself — ``ls`` names
+        the target but does not say what it is."""
+        is_dir = entry.get('is_dir', False)
+        return {'is_dir': is_dir,
+                'is_link': entry.get('is_symlink', False),
+                'size': 0 if is_dir else entry.get('size', 0),
+                'mtime': entry.get('mtime', 0.0),
+                'ok': True}
+
     def glob(self, pattern: str) -> Iterator:
         """Iterate over this subtree and yield all existing files matching pattern"""
         import fnmatch
