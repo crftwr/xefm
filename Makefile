@@ -64,6 +64,7 @@ help:
 	@echo "  release-whl        - Upload sdist + wheel to PyPI, and to the Release"
 	@echo "  release-macos-dmg  - (on macOS)   attach XeFM-<ver>-macos.dmg to the Release"
 	@echo "  release-windows-zip- (on Windows) attach XeFM-<ver>-win64.zip to the Release"
+	@echo "  release-windows-msix - (on Windows) submit the MSIX to the Microsoft Store"
 	@echo "  release-status     - Show which artifacts have landed so far"
 	@echo ""
 	@echo "  The three release-<artifact> targets are independent and re-runnable,"
@@ -114,6 +115,7 @@ help:
 	@echo "  make release-whl                # Publish its sdist + wheel to PyPI"
 	@echo "  make release-macos-dmg          # Upload the DMG to the GitHub Release"
 	@echo "  make release-windows-zip        # Upload the Windows zip to the GitHub Release"
+	@echo "  make release-windows-msix       # Submit the MSIX to the Microsoft Store"
 
 venv:
 	@if [ -d .venv ]; then \
@@ -355,6 +357,7 @@ demo: check-venv
 #   make release-whl           any machine  sdist + wheel -> PyPI (+ the Release)
 #   make release-macos-dmg     macOS        XeFM-<ver>-macos.dmg  -> the Release
 #   make release-windows-zip   Windows      XeFM-<ver>-win64.zip  -> the Release
+#   make release-windows-msix  Windows      XeFM-<ver>.0-x64.msix -> the Microsoft Store
 #   make release-status        any machine  what has landed so far
 #
 # Order matters only twice: `tag` first (everything else names the tag it
@@ -364,6 +367,11 @@ demo: check-venv
 # three different platforms and no one machine can produce them all. Each one
 # builds its artifact if it is missing, re-checks the preconditions, and
 # uploads with --clobber, so re-running any of them is safe.
+#
+# release-windows-msix is the odd one out: it publishes to the Microsoft Store,
+# not the GitHub Release, so it needs no `release-github` — and it always
+# repacks rather than reusing an existing .msix, since the Store rejects a
+# resubmitted package version anyway (each submission must be strictly higher).
 #
 # The version's single source of truth is xefm/__init__.py's __version__;
 # pyproject.toml derives it (dynamic version = attr), `xefm --version`
@@ -433,6 +441,7 @@ tag: check-venv
 	@echo "  make release-whl             # here:       sdist + wheel -> PyPI"
 	@echo "  make release-macos-dmg       # on macOS:   XeFM-$(VERSION)-macos.dmg"
 	@echo "  make release-windows-zip     # on Windows: XeFM-$(VERSION)-win64.zip"
+	@echo "  make release-windows-msix    # on Windows: submit the MSIX to the Microsoft Store"
 
 # --- release-github: open the Release the artifacts upload into -------------
 # Reads the version from the checkout, so the usual path is `make tag` then
@@ -858,4 +867,45 @@ install-windows-msix: $(WINDOWS_APP_BUNDLE)
 uninstall-windows-msix:
 	@echo "Removing installed MSIX package and throwaway cert..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Uninstall
+
+# --- release-windows-msix: submit the MSIX to the Microsoft Store -----------
+# Packs first via the 'windows-msix' target, not the file: signed and unsigned
+# packs write the same path, and Partner Center takes only the UNSIGNED form,
+# so repacking is what guarantees the upload is not a leftover self-signed
+# .msix from 'install-windows-msix'. The msstore CLI then uploads the package,
+# creates a new submission carrying the listing metadata of the previous one,
+# and commits it -- certification proceeds exactly as for a browser submission.
+#
+# One-time setup, both outside this Makefile (doc/dev/WINDOWS_STORE_MSIX_PLAN.md):
+#   - the msstore CLI, configured once with the Partner Center API credentials
+#     ('msstore reconfigure'; they persist in Windows Credential Manager)
+#   - XEFM_STORE_PRODUCT_ID in windows_app/store.env: the listing's 9N...
+#     Store product ID (see store.env.example)
+#
+# Poll certification afterwards with: msstore submission status <product id>
+#
+# Mirrors WINDOWS_ZIP: build_msix.ps1 derives its version from the same
+# __version__ literal as XEFM_VERSION, plus the Store-required ".0" revision,
+# so this is the path the pack above just wrote.
+WINDOWS_MSIX := windows_app/build/XeFM-$(XEFM_VERSION).0-x64.msix
+
+release-windows-msix: windows-msix
+	@command -v msstore >/dev/null 2>&1 || { \
+		echo "ERROR: msstore CLI not found on PATH."; \
+		echo "       Install: winget install \"Microsoft Store Developer CLI\", then run 'msstore reconfigure'."; \
+		exit 1; }
+	@test -f windows_app/store.env || { \
+		echo "ERROR: windows_app/store.env not found."; \
+		echo "       Copy windows_app/store.env.example to store.env and fill it in."; \
+		exit 1; }
+	@. ./windows_app/store.env; \
+	test -n "$$XEFM_STORE_PRODUCT_ID" || { \
+		echo "ERROR: XEFM_STORE_PRODUCT_ID is not set in windows_app/store.env."; \
+		echo "       Add the listing's 9N... product ID (see store.env.example)."; \
+		exit 1; }; \
+	test -f "$(WINDOWS_MSIX)" || { \
+		echo "ERROR: $(WINDOWS_MSIX) missing after packing."; \
+		exit 1; }; \
+	echo "Submitting $(WINDOWS_MSIX) to the Microsoft Store ($$XEFM_STORE_PRODUCT_ID)..."; \
+	msstore publish "$(WINDOWS_MSIX)" -id "$$XEFM_STORE_PRODUCT_ID"
 
