@@ -157,7 +157,7 @@ class FileMonitorManager:
                 # Stop existing observer for this pane if any
                 if state['observer'] is not None and state['observer'] != other_state['observer']:
                     self.logger.debug(f"Stopping separate observer for {pane_name} pane")
-                    state['observer'].stop()
+                    self._stop_observer_async(state['observer'])
                 
                 # Share the other pane's observer
                 # Note: The observer's callback will trigger events for both panes
@@ -175,7 +175,7 @@ class FileMonitorManager:
                 # Only stop if this observer is not shared with the other pane
                 if state['observer'] != other_state['observer']:
                     self.logger.debug(f"Stopping existing observer for {pane_name} pane")
-                    state['observer'].stop()
+                    self._stop_observer_async(state['observer'])
                 state['observer'] = None
             
             # Update path
@@ -514,31 +514,53 @@ class FileMonitorManager:
         
         # Stop monitoring the old directory and start monitoring the new one
         self._start_pane_monitoring(pane_name, new_path)
-    
+
+    def _stop_observer_async(self, observer) -> None:
+        """Stop a detached observer on a background thread.
+
+        Never stop an observer while holding state_lock: watchdog's
+        BaseObserver.stop() acquires the observer's internal lock, and the
+        observer's dispatch thread holds that same lock while delivering events
+        into _on_filesystem_event — which acquires state_lock. Stopping in-line
+        under state_lock is a lock-order inversion that deadlocks the UI thread
+        (observed as a whole-app freeze on navigation). Callers detach the
+        observer from monitoring_state first, so nothing else references it
+        while it winds down.
+        """
+        threading.Thread(target=observer.stop, name="xefm-monitor-stop",
+                         daemon=True).start()
+
     def stop_monitoring(self) -> None:
         """Stop all monitoring and cleanup resources."""
         self.logger.debug("Stopping all monitoring")
-        
+
+        # Detach everything under the lock, but stop the observers outside it:
+        # stopping joins watchdog threads that may be blocked acquiring
+        # state_lock in _on_filesystem_event (see _stop_observer_async).
+        observers_to_stop = []
         with self.state_lock:
-            # Stop observers for both panes
             for pane_name in ['left', 'right']:
                 state = self.monitoring_state[pane_name]
-                
+
                 # Cancel coalesce timer if any
                 if self.coalesce_timers[pane_name] is not None:
                     self.coalesce_timers[pane_name].cancel()
                     self.coalesce_timers[pane_name] = None
-                
-                # Stop observer if any
+
+                # Detach observer if any (may be shared between panes)
                 if state['observer'] is not None:
                     self.logger.debug(f"Stopping observer for {pane_name} pane")
-                    state['observer'].stop()
+                    if state['observer'] not in observers_to_stop:
+                        observers_to_stop.append(state['observer'])
                     state['observer'] = None
-                
+
                 # Clear state
                 state['path'] = None
                 state['pending_reload'] = False
-        
+
+        for observer in observers_to_stop:
+            observer.stop()
+
         self.logger.debug("All monitoring stopped")
     
     def is_monitoring_enabled(self) -> bool:
@@ -598,12 +620,8 @@ class FileMonitorManager:
                     self.logger.error(f"Observer for {pane_name} pane has died unexpectedly (path: {path})")
                     self.logger.debug(f"Connection loss detected for {pane_name} pane, attempting recovery")
                     
-                    # Stop the dead observer
-                    try:
-                        state['observer'].stop()
-                    except Exception as e:
-                        self.logger.error(f"Error stopping dead observer for {pane_name} pane: {e}")
-                    
+                    # Stop the dead observer (off-thread; see _stop_observer_async)
+                    self._stop_observer_async(state['observer'])
                     state['observer'] = None
                     state['error_count'] += 1
                     
