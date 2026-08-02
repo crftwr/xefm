@@ -68,6 +68,21 @@ _SCHEME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9+.\-]*://')
 #: Sentinel returned instead of a path component that was dropped.
 _ELLIPSIS = '…'
 
+#: A drive-letter anchor (``C:\`` or ``C:/``) — the giveaway that a path
+#: follows Windows conventions even when it happens to use forward slashes.
+_WINDOWS_DRIVE_RE = re.compile(r'^[A-Za-z]:($|[\\/])')
+
+
+def _is_windowsish(path_str: str) -> bool:
+    """Whether a local path follows Windows conventions.
+
+    Detected from the string, not the platform, so the same input abbreviates
+    the same way everywhere and tests don't depend on the host OS. A POSIX
+    filename can legally contain ``\\``, but a header path is overwhelmingly
+    more likely to be a Windows one.
+    """
+    return '\\' in path_str or bool(_WINDOWS_DRIVE_RE.match(path_str))
+
 
 def _fit_prefix(text: str, budget: float, measure) -> str:
     """Longest prefix of ``text`` that measures at most ``budget``.
@@ -121,6 +136,10 @@ def abbreviate_path(path_str: str, avail: float, measure=None,
     home directory contracts to ``~`` before any components are dropped —
     often enough on its own to make the path fit.
 
+    Windows paths (``C:\\Users\\name\\abc``) are recognized by their drive
+    anchor or ``\\`` separator: the home comparison is then case-insensitive
+    and accepts either separator, and components are dropped on ``\\``.
+
     Args:
         path_str: The location to display.
         avail: Budget in the same units ``measure`` returns.
@@ -161,20 +180,33 @@ def abbreviate_path(path_str: str, avail: float, measure=None,
             except (RuntimeError, OSError):
                 home = None
         if home and home != '/':
-            if rest == home:
+            # Windows names compare case-insensitively and accept either
+            # separator, so fold both sides before the prefix test. Folding
+            # preserves length, so slice offsets apply to the original.
+            if _is_windowsish(rest) or _is_windowsish(home):
+                n_rest = rest.replace('\\', '/').lower()
+                n_home = home.replace('\\', '/').lower()
+            else:
+                n_rest, n_home = rest, home
+            if n_rest == n_home:
                 rest = '~'
-            elif rest.startswith(home + '/'):
+            elif n_rest.startswith(n_home + '/'):
                 rest = '~' + rest[len(home):]
 
     if measure(scheme + rest) <= avail:
         return scheme + rest
 
+    # Local Windows paths separate components with '\'; everything else uses
+    # '/'. Split and rejoin on the path's own separator so components are
+    # dropped whole on both conventions.
+    sep = '\\' if not scheme and '\\' in rest else '/'
+
     # Trailing separator carries no name; drop it so it cannot become an empty
     # component that reads as a phantom directory level. '/' itself is exempt.
-    if len(rest) > 1 and rest.endswith('/'):
-        rest = rest.rstrip('/') or '/'
+    if len(rest) > 1 and rest.endswith(sep):
+        rest = rest.rstrip(sep) or sep
 
-    components = rest.split('/')
+    components = rest.split(sep)
     if len(components) <= 1:
         # Nothing to drop (a bare name, or a scheme with no path). Fall through
         # to a character-level middle cut — the only option left.
@@ -188,15 +220,15 @@ def abbreviate_path(path_str: str, avail: float, measure=None,
     # components are the ones nearest where the user is, so they are the ones
     # worth keeping when something has to go.
     for take in range(len(components) - 2, 0, -1):
-        candidate = scheme + '/'.join([anchor, _ELLIPSIS, *components[-take:]])
+        candidate = scheme + sep.join([anchor, _ELLIPSIS, *components[-take:]])
         if measure(candidate) <= avail:
             return candidate
 
     # Even anchor + leaf alone overflows; try dropping the anchor too.
-    candidate = scheme + '/'.join([anchor, _ELLIPSIS, leaf])
+    candidate = scheme + sep.join([anchor, _ELLIPSIS, leaf])
     if measure(candidate) <= avail:
         return candidate
-    candidate = scheme + _ELLIPSIS + '/' + leaf
+    candidate = scheme + _ELLIPSIS + sep + leaf
     if measure(candidate) <= avail:
         return candidate
 

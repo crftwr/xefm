@@ -83,6 +83,54 @@ class TestHomeContraction:
         assert "…" not in abbreviate_path("/Users/me/projects", 12, home=HOME)
 
 
+class TestWindowsPaths:
+    """Issue #254: Windows paths separate with '\\' and compare
+    case-insensitively, which used to defeat both the home contraction and
+    component-wise dropping. Detection is from the path string itself, so
+    these pass on every host OS."""
+
+    WIN_HOME = "C:\\Users\\me"
+
+    def test_home_becomes_tilde(self):
+        assert abbreviate_path("C:\\Users\\me\\abc", 80,
+                               home=self.WIN_HOME) == "~\\abc"
+
+    def test_home_itself_becomes_tilde(self):
+        assert abbreviate_path("C:\\Users\\me", 80, home=self.WIN_HOME) == "~"
+
+    def test_case_and_separator_do_not_block_contraction(self):
+        # Drive letters and names match regardless of case, and a
+        # forward-slash spelling of the same location still contracts.
+        assert abbreviate_path("c:/users/ME/abc", 80,
+                               home=self.WIN_HOME) == "~/abc"
+
+    def test_only_a_whole_component_matches(self):
+        assert abbreviate_path("C:\\Users\\meredith", 80,
+                               home=self.WIN_HOME) == "C:\\Users\\meredith"
+
+    def test_components_dropped_whole_on_backslash(self):
+        path = "C:\\Users\\me\\projects\\xefm\\src\\widgets"
+        result = abbreviate_path(path, 20, home=self.WIN_HOME)
+        assert len(result) <= 20
+        assert result.startswith("~\\")
+        assert "…" in result
+        assert result.endswith("widgets")
+
+    def test_drive_anchor_kept(self):
+        path = "C:\\Program Files\\Some Vendor\\App\\bin"
+        result = abbreviate_path(path, 18, home=self.WIN_HOME)
+        assert len(result) <= 18
+        assert result.startswith("C:\\")
+        assert "…" in result
+        assert result.endswith("bin")
+
+    def test_trailing_backslash_makes_no_empty_component(self):
+        result = abbreviate_path("C:\\Users\\me\\a\\b\\c\\trailing\\", 14,
+                                 home=self.WIN_HOME)
+        assert len(result) <= 14
+        assert "\\\\" not in result
+
+
 class TestSchemes:
     """A scheme is part of the location's identity and is never abbreviated."""
 
