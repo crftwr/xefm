@@ -292,6 +292,7 @@ clean: clean-python clean-macos clean-windows
 clean-python:
 	@echo "Cleaning Python build, bytecode and test artifacts..."
 	@rm -rf build/ dist/ .pytest_cache .coverage
+	@rm -f README.pypi.md
 	@find . -path ./.venv -prune -o -type d -name "*.egg-info" -prune -exec rm -rf {} + 2>/dev/null || true
 	@find . \( -path ./.venv -o -path ./macos_app/build -o -path ./windows_app/build \) -prune -o \
 		-type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
@@ -470,13 +471,20 @@ release-github:
 # requirements.txt. Invoked as `python -m ...` (not the venv's console scripts)
 # so the same recipe works on Windows, where those scripts live in Scripts/ and
 # end in .exe.
+# The PyPI long description (README.pypi.md) is generated here on the fly and
+# never committed: README.md keeps repo-relative image/link targets for GitHub,
+# and gen_pypi_readme.py rewrites them to version-tagged GitHub URLs so they
+# render on the PyPI page. `twine check --strict` promotes twine's
+# "description missing" warning to a failure, so a build that somehow skipped
+# generation can never upload an empty description.
 
 build: check-venv
 	@echo "Building sdist + wheel..."
 	@$(PIP) install --quiet build twine
 	@rm -rf dist build xefm.egg-info
+	@$(PYTHON) tools/gen_pypi_readme.py
 	@$(PYTHON) -m build
-	@$(PYTHON) -m twine check dist/*
+	@$(PYTHON) -m twine check --strict dist/*
 
 # The safe rehearsal for release-whl: same build and upload path, but a bad
 # TestPyPI version costs nothing. Deliberately NOT named release-* — it needs

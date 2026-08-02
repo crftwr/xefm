@@ -25,6 +25,10 @@ wheels/
 # Per-developer Make overrides (e.g. PUIKIT_DIR for an editable PuiKit checkout)
 Makefile.local
 
+# PyPI long description — generated at build time by tools/gen_pypi_readme.py
+# (make build): README.md with relative links rewritten to version-tagged URLs.
+README.pypi.md
+
 # Virtual environments
 .venv/
 venv/
