@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img"
+     aria-label="XeFM — dual-pane file manager for the desktop and the terminal">
+  <title>XeFM — dual-pane file manager for the desktop and the terminal</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#0d1626"/>
+    </linearGradient>
+    <linearGradient id="wm" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset="1" stop-color="#7ce3f2"/>
+    </linearGradient>
+    <filter id="soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="7" stdDeviation="12" flood-color="#01040a" flood-opacity="0.55"/>
+    </filter>
+    <clipPath id="clip">
+      <rect width="1200" height="300" rx="14"/>
+    </clipPath>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="1.1" fill="#e6edf3" opacity="0.05"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="300" rx="14" fill="url(#bg)"/>
+  <g clip-path="url(#clip)">
+    <rect width="1200" height="300" fill="url(#dots)"/>
+    <ellipse cx="210" cy="152" rx="180" ry="100" fill="#1f6feb" opacity="0.16" filter="url(#soft)"/>
+    <ellipse cx="990" cy="152" rx="180" ry="100" fill="#39c5cf" opacity="0.13" filter="url(#soft)"/>
+  </g>
+  <rect x="0.5" y="0.5" width="1199" height="299" rx="13.5" fill="none" stroke="#30363d"/>
+
+  <!-- TUI rendering: dual-pane terminal, navy theme -->
+  <g font-family="ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="13">
+    <rect x="68" y="64" width="284" height="174" fill="#040b16" stroke="#21262d" filter="url(#drop)"/>
+    <rect x="80" y="76" width="126" height="150" fill="none" stroke="#33639c" stroke-width="1.5"/>
+    <rect x="214" y="76" width="126" height="150" fill="none" stroke="#33639c" stroke-width="1.5"/>
+    <rect x="88" y="70" width="52" height="12" fill="#040b16"/>
+    <text x="92" y="80" font-size="11" fill="#7aa7e8">~/docs</text>
+    <rect x="222" y="70" width="44" height="12" fill="#040b16"/>
+    <text x="226" y="80" font-size="11" fill="#7aa7e8">~/bak</text>
+    <rect x="86" y="124" width="114" height="22" fill="#316dca"/>
+    <text x="90" y="114" fill="#bcd7ff">photos/</text>
+    <text x="90" y="140" fill="#eaf2ff">projects/</text>
+    <text x="90" y="166" fill="#9fc0f0">notes.md</text>
+    <text x="90" y="192" fill="#9fc0f0">todo.txt</text>
+    <text x="224" y="114" fill="#bcd7ff">backup/</text>
+    <text x="224" y="140" fill="#bcd7ff">music/</text>
+    <text x="224" y="166" fill="#9fc0f0">report.pdf</text>
+    <text x="224" y="192" fill="#9fc0f0">song.flac</text>
+  </g>
+
+  <!-- GUI rendering: dual-pane native-style window -->
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13">
+    <rect x="848" y="64" width="284" height="174" rx="10" fill="#ffffff" filter="url(#drop)"/>
+    <path d="M848 98 V74 a10 10 0 0 1 10 -10 h264 a10 10 0 0 1 10 10 v24 z" fill="#eef1f4"/>
+    <rect x="848" y="97" width="284" height="1" fill="#d8dee4"/>
+    <circle cx="866" cy="81" r="5.5" fill="#ff5f57"/>
+    <circle cx="884" cy="81" r="5.5" fill="#febc2e"/>
+    <circle cx="902" cy="81" r="5.5" fill="#28c840"/>
+    <text x="990" y="85.5" fill="#59636e" text-anchor="middle">XeFM</text>
+    <rect x="991" y="98" width="1" height="134" fill="#e2e7ec"/>
+    <rect x="854" y="130" width="132" height="26" rx="5" fill="#0969da"/>
+    <g fill="#54aeff">
+      <path d="M862 112.5 a1.5 1.5 0 0 1 1.5 -1.5 h3.5 l1.5 2 h6 a1.5 1.5 0 0 1 1.5 1.5 v6 a1.5 1.5 0 0 1 -1.5 1.5 h-11 a1.5 1.5 0 0 1 -1.5 -1.5 z"/>
+      <path d="M862 164.5 a1.5 1.5 0 0 1 1.5 -1.5 h3.5 l1.5 2 h6 a1.5 1.5 0 0 1 1.5 1.5 v6 a1.5 1.5 0 0 1 -1.5 1.5 h-11 a1.5 1.5 0 0 1 -1.5 -1.5 z"/>
+      <path d="M1002 112.5 a1.5 1.5 0 0 1 1.5 -1.5 h3.5 l1.5 2 h6 a1.5 1.5 0 0 1 1.5 1.5 v6 a1.5 1.5 0 0 1 -1.5 1.5 h-11 a1.5 1.5 0 0 1 -1.5 -1.5 z"/>
+      <path d="M1002 138.5 a1.5 1.5 0 0 1 1.5 -1.5 h3.5 l1.5 2 h6 a1.5 1.5 0 0 1 1.5 1.5 v6 a1.5 1.5 0 0 1 -1.5 1.5 h-11 a1.5 1.5 0 0 1 -1.5 -1.5 z"/>
+    </g>
+    <path d="M862 138.5 a1.5 1.5 0 0 1 1.5 -1.5 h3.5 l1.5 2 h6 a1.5 1.5 0 0 1 1.5 1.5 v6 a1.5 1.5 0 0 1 -1.5 1.5 h-11 a1.5 1.5 0 0 1 -1.5 -1.5 z" fill="#ffffff"/>
+    <g fill="#c8d1da">
+      <rect x="864" y="163" width="10" height="13" rx="1.5"/>
+      <rect x="864" y="189" width="10" height="13" rx="1.5"/>
+      <rect x="1004" y="163" width="10" height="13" rx="1.5"/>
+      <rect x="1004" y="189" width="10" height="13" rx="1.5"/>
+    </g>
+    <text x="882" y="121" fill="#1f2328">photos</text>
+    <text x="882" y="147" font-weight="600" fill="#ffffff">projects</text>
+    <text x="882" y="173" fill="#1f2328">notes.md</text>
+    <text x="882" y="199" fill="#1f2328">todo.txt</text>
+    <text x="1022" y="121" fill="#1f2328">backup</text>
+    <text x="1022" y="147" fill="#1f2328">music</text>
+    <text x="1022" y="173" fill="#1f2328">report.pdf</text>
+    <text x="1022" y="199" fill="#1f2328">song.flac</text>
+    <rect x="1119" y="104" width="6" height="44" rx="3" fill="#cdd5dd"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" text-anchor="middle">
+    <text x="600" y="136" font-size="68" font-weight="700" letter-spacing="-1.5" fill="url(#wm)">XeFM</text>
+    <text x="600" y="178" font-size="19" fill="#9aa4b2">Dual-pane file manager — desktop and terminal</text>
+    <rect x="506" y="196" width="188" height="28" rx="14" fill="#161b22" stroke="#30363d"/>
+    <text x="600" y="215" font-size="14.5" fill="#8b949e"
+          font-family="ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"><tspan fill="#79c0ff">$</tspan> pip install xefm</text>
+  </g>
+</svg>
