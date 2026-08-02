@@ -656,6 +656,16 @@ def _archive_header_label(path_str: str) -> str:
     return f"[{archive_name}]/{internal}" if internal else f"[{archive_name}]"
 
 
+def _stem_selection(name: str, is_dir: bool) -> tuple[int, int] | None:
+    """The rename prompt's initial selection: the span of ``name``'s stem, or
+    None to select the whole name. Selecting only the stem lets typing replace
+    the name body while the extension survives. Directories, dotfiles, and
+    extensionless names have no extension to protect, so they keep the
+    whole-name selection."""
+    stem = name if is_dir else os.path.splitext(name)[0]
+    return (0, len(stem)) if 0 < len(stem) < len(name) else None
+
+
 #: Content inset for the chrome bars (pane header / footer, global status), in
 #: device pixels on a vector backend. This replaces the old window-level margin
 #: (``Panel.set_layout(margin_px=…)``): each bar's *surface* fills its whole slot
@@ -3407,6 +3417,7 @@ class XeFMApp:
             return
         entry = files[pane["focused_index"]]
         original = entry.name
+        select_range = _stem_selection(original, entry.is_dir())
 
         def validate(name: str) -> str | None:
             name = name.strip()
@@ -3434,7 +3445,7 @@ class XeFMApp:
             self.panel.render()
 
         show_input(self.panel, title="Rename", prompt="Rename to:", text=original,
-                   on_accept=accept, validate=validate,
+                   on_accept=accept, validate=validate, select_range=select_range,
                    completer=FilepathCompleter(base_directory=str(entry.parent)),
                    region=self._active_pane_region())
         self.panel.render()

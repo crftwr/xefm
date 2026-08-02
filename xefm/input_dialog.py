@@ -63,6 +63,7 @@ class InputDialog(FocusContainer, Widget):
         on_change: Callable[[str], None] | None = None,
         validate: Callable[[str], str | None] | None = None,
         select_all: bool = True,
+        select_range: tuple[int, int] | None = None,
         completer: Completer | None = None,
         password: bool = False,
     ):
@@ -82,10 +83,18 @@ class InputDialog(FocusContainer, Widget):
         # like an encrypted-archive password.
         self.edit = TextEdit(text=text, mask="•" if password else None)
         # Caret at the end. With ``select_all`` the whole value is also selected,
-        # so the first keystroke replaces it (rename); without it the caret just
-        # sits at the end, ready to append (jump-to-path's trailing separator).
-        self.edit.cursor = len(text)
-        self.edit._anchor = 0 if select_all else len(text)
+        # so the first keystroke replaces it; without it the caret just sits at
+        # the end, ready to append (jump-to-path's trailing separator).
+        # ``select_range`` overrides both with a sub-span — rename selects only
+        # the stem, so typing replaces the name body but keeps the extension.
+        if select_range is not None:
+            start, end = select_range
+            start = max(0, min(start, len(text)))
+            self.edit.cursor = max(start, min(end, len(text)))
+            self.edit._anchor = start
+        else:
+            self.edit.cursor = len(text)
+            self.edit._anchor = 0 if select_all else len(text)
         # Focus the field so the Panel's focus leaf resolves to it: that is what
         # engages the backend's text input (``begin_text_input`` → IME) while the
         # dialog is open. Without it ``focused_leaf`` stops at the dialog (which is
@@ -357,6 +366,7 @@ def show_input(
     on_change: Callable[[str], None] | None = None,
     validate: Callable[[str], str | None] | None = None,
     select_all: bool = True,
+    select_range: tuple[int, int] | None = None,
     completer: Completer | None = None,
     region: tuple[float, float] | None = None,
     anchor: str = "center",
@@ -386,8 +396,8 @@ def show_input(
     dialog = InputDialog(
         title=title, prompt=prompt, text=text,
         on_accept=on_accept, on_cancel=on_cancel, on_change=on_change,
-        validate=validate, select_all=select_all, completer=completer,
-        password=password,
+        validate=validate, select_all=select_all, select_range=select_range,
+        completer=completer, password=password,
     )
     dialog._z = z
     sw, sh = panel.backend.size_units
