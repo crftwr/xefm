@@ -24,17 +24,20 @@ archive browsing, and remote storage (S3 / SFTP).
 """
 
 import argparse
+import getpass
 import os
 import platform
 import queue
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import threading
 import time
 import sys
 from pathlib import Path as _StdPath
+from urllib.parse import urlsplit
 
 from puikit import EventType, Font, Item, Panel, PostEffect, Style, TextAttribute, Theme, VSplit, derive_theme, mix
 from puikit.background import Shader, Wallpaper
@@ -4776,6 +4779,30 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _web_access_message(url: str) -> str:
+    """The startup notice for ``--backend web``: where the UI is being served,
+    and how to reach it from another machine. PuiKit's web server binds
+    127.0.0.1 only, so a remote browser needs an SSH tunnel to this host — the
+    command below is ready to paste, carrying this run's actual (ephemeral)
+    port. The user/host part is a best guess (``getpass`` / ``gethostname``);
+    a user whose ssh address differs substitutes their own."""
+    port = urlsplit(url).port
+    try:
+        user_host = f"{getpass.getuser()}@{socket.gethostname()}"
+    except Exception:
+        # getuser() has no username to report (stripped container / odd env) —
+        # a placeholder keeps the hint useful rather than failing startup.
+        user_host = "USER@HOST"
+    return (
+        f"XeFM web UI: {url} — reachable from this machine only.\n"
+        f"To use it from another machine, start a tunnel there:\n"
+        f"\n"
+        f"    ssh -N -L {port}:127.0.0.1:{port} {user_host}\n"
+        f"\n"
+        f"then open {url} in that machine's browser."
+    )
+
+
 def main() -> None:
     args = create_parser().parse_args()
 
@@ -4814,6 +4841,14 @@ def main() -> None:
         backend_kwargs["ui_font"] = Font(family=cfg.UI_FONT_NAME)
     backend = create_backend(backend_name, **backend_kwargs)
     with backend:
+        if backend_name == "web":
+            # A deliberate console print, not the unified logger: the notice
+            # must reach the terminal the user launched from (over SSH that
+            # terminal is all they have), and the log pipeline that print()
+            # is normally routed into — XeFMApp redirects the streams in
+            # __init__ — doesn't exist yet. The port is only known here, after
+            # open() has bound the server.
+            print(_web_access_message(backend.url), flush=True)
         XeFMApp(
             backend,
             args.left if args.left is not None else ".",
