@@ -10,8 +10,10 @@ XeFM can run as a native desktop application on Windows and macOS with GPU accel
 
 **Install the desktop package.** That is the supported way to run XeFM as a
 desktop app: a native `.app` (macOS) or a self-contained `XeFM.exe` folder
-(Windows), with Python bundled in — no Python install of your own required. Both
-are published on the
+(Windows), with Python bundled in — no Python install of your own required. On
+Windows, install from the
+**[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)**; the macOS
+DMG (and a portable Windows zip) are published on the
 **[latest GitHub release](https://github.com/crftwr/xefm/releases/latest)**;
 [the next section](#installing-the-desktop-app-package) walks through it.
 
@@ -50,16 +52,32 @@ make run-gui                    # the same thing, through .venv
 
 ### Installing the desktop app package
 
-Every stable release attaches ready-to-run desktop packages. The link above
-always resolves to the newest stable release, so it never needs updating:
-
-| Platform | Asset | Signed? |
+| Platform | Install | Signed? |
 |---|---|---|
+| Windows 10/11 x64 | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** (recommended) | Yes — signed by Microsoft |
+| Windows 10/11 x64 | `XeFM-<version>-win64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
 | macOS 10.13+ (Intel & Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
-| Windows 10/11 x64 | `XeFM-<version>-win64.zip` | Not yet — Microsoft Store submission in certification |
 
-You can also link straight to a specific release, e.g.
-`https://github.com/crftwr/xefm/releases/tag/v1.0.1`.
+Every stable release attaches the ready-to-run DMG and zip; the
+[latest-release link](https://github.com/crftwr/xefm/releases/latest) always
+resolves to the newest stable release. You can also link straight to a specific
+release, e.g. `https://github.com/crftwr/xefm/releases/tag/v1.0.1`.
+
+#### Windows — the Microsoft Store package
+
+Install from the
+**[Store page](https://apps.microsoft.com/detail/9PK2X44W810V)**, or from a
+shell:
+
+```powershell
+winget install --id 9PK2X44W810V --source msstore
+```
+
+The Store package is signed by Microsoft during certification, so there is no
+SmartScreen prompt; it appears in the Start menu, updates automatically through
+the Store, and uninstalls from *Settings → Apps*. Settings live in
+`%USERPROFILE%\.xefm\`, shared with every other install of XeFM, and survive an
+uninstall unless you delete that folder yourself.
 
 #### macOS — the DMG
 
@@ -78,13 +96,15 @@ be deleted separately.
 
 #### Windows — the portable zip
 
-The Windows package is a **portable folder**, not an installer: unzip it and run
-`XeFM.exe`. There is no MSI, nothing is written to the registry, and no admin
-rights are needed.
+The zip is the alternative to the Store install: a **portable folder**, not an
+installer. Unzip it and run `XeFM.exe` — there is no MSI, nothing is written to
+the registry, and no admin rights are needed. Reach for it on machines without
+Store access, or when you want a copy that runs from a USB stick or a network
+share.
 
-XeFM is currently in certification for the **Microsoft Store**. Store packages
-are signed by Microsoft during certification, which is what removes the warning
-below — until the listing goes live, the zip on GitHub Releases is unsigned.
+Unlike the Store package, which Microsoft signs during certification, the zip
+on GitHub Releases is unsigned — which is what causes the warning handled
+below.
 
 1. **Unblock the zip first.** Right-click the downloaded
    `XeFM-<version>-win64.zip` → **Properties** → tick **Unblock** at the bottom
@@ -112,15 +132,17 @@ below — until the listing goes live, the zip on GitHub Releases is unsigned.
 To remove it: delete the extracted folder (and `%USERPROFILE%\.xefm\` if you also
 want the settings gone).
 
-**Why not an `.msix`?** The repository can build one (`make windows-msix`),
-but an MSIX must be signed before Windows will install it, and the unsigned
-build exists only as a Microsoft Store submission artifact — Microsoft signs it
-during certification. So a downloadable `.msix` would simply refuse to install;
-the portable zip is the installable form until the Store listing is live.
+**Why not a downloadable `.msix`?** The repository can build one
+(`make windows-msix`), but an MSIX must be signed before Windows will install
+it, and the unsigned build exists only as a Microsoft Store submission
+artifact — Microsoft signs it during certification. So a downloadable `.msix`
+would simply refuse to install; outside the Store, the portable zip is the
+installable form.
 
-**Prefer not to run an unsigned binary?** Wait for the Microsoft Store listing —
-Store packages are signed by Microsoft — or install from PyPI
-(`pipx install xefm`) and use XeFM in terminal mode until then.
+**Prefer not to run an unsigned binary?** Install from the
+**[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** — Store
+packages are signed by Microsoft — or install from PyPI (`pipx install xefm`)
+and use XeFM in terminal mode.
 
 ### First Launch
 

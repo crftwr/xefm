@@ -26,24 +26,47 @@ Pick the install that matches how you want to run XeFM:
 
 | | Get it from | Gives you |
 |---|---|---|
-| **Desktop app** — Windows, macOS | the [latest release](https://github.com/crftwr/xefm/releases/latest) | A real installed application: own icon, Dock / Start-menu entry, own file permissions. No Python needed. |
+| **Desktop app** — Windows | the **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** | A real installed application, signed by Microsoft: one click, automatic updates, no SmartScreen prompt. No Python needed. |
+| **Desktop app** — macOS | the [latest release](https://github.com/crftwr/xefm/releases/latest) | A real installed application: own icon, Dock entry, own file permissions. No Python needed. |
 | **Terminal app** — Windows, macOS, Linux | [PyPI](https://pypi.org/project/xefm/) | The `xefm` command in any terminal, including over SSH. Needs Python 3.10+. |
 
-The two coexist and share their settings in `~/.xefm/` — installing both is a
-perfectly normal setup.
+The desktop and terminal apps coexist and share their settings in `~/.xefm/` —
+installing both is a perfectly normal setup.
 
 ### Desktop app (Windows, macOS)
 
-Download from the **[latest release](https://github.com/crftwr/xefm/releases/latest)**
-— these packages bundle their own Python, so there is nothing else to install:
+The desktop packages bundle their own Python, so there is nothing else to
+install:
 
-| Platform | Asset | Install |
-|---|---|---|
-| **macOS** 10.13+ | `XeFM-<version>-macos.dmg` | Open the DMG and drag **XeFM** to *Applications*. Signed with the author's Apple Developer ID. |
-| **Windows** 10/11 x64 | `XeFM-<version>-win64.zip` | Portable folder: unblock the zip, extract anywhere, run `XeFM.exe`. **Not code-signed yet** — SmartScreen warns once, see below. |
+| Platform | Recommended install |
+|---|---|
+| **Windows** 10/11 x64 | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** — signed by Microsoft, automatic updates |
+| **macOS** 10.13+ | `XeFM-<version>-macos.dmg` from the [latest release](https://github.com/crftwr/xefm/releases/latest) — signed with the author's Apple Developer ID |
 
-Then launch it like any other app — Launchpad or Spotlight on macOS, the Start
-menu on Windows.
+#### Windows — Microsoft Store
+
+Install from the **[Store page](https://apps.microsoft.com/detail/9PK2X44W810V)**,
+or straight from a shell:
+
+```powershell
+winget install --id 9PK2X44W810V --source msstore
+```
+
+Either way XeFM lands in the Start menu, updates automatically, and uninstalls
+from *Settings → Apps* like any other application. The Store package is signed
+by Microsoft, so there is no SmartScreen prompt.
+
+A **portable zip** (`XeFM-<version>-win64.zip`) also ships with every
+[release](https://github.com/crftwr/xefm/releases/latest) for machines without
+Store access, or when you want a run-from-anywhere folder. It is not
+code-signed, so it needs [unblocking once](#windows-unblocking-the-unsigned-zip).
+
+#### macOS — the DMG
+
+Download `XeFM-<version>-macos.dmg` from the
+**[latest release](https://github.com/crftwr/xefm/releases/latest)**, open it
+and drag **XeFM** to *Applications*, then launch it from Launchpad or
+Spotlight. The app is signed with the author's Apple Developer ID.
 
 > **Use the package, not `--backend gui`.** XeFM can open the same window from a
 > terminal, but that path is for developing XeFM, not for using it: on macOS the
@@ -53,15 +76,13 @@ menu on Windows.
 > those problems. See
 > [Why not `xefm --backend gui`?](doc/DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui).
 
-XeFM is also awaiting certification on the **Microsoft Store**. Once it is live
-the Store becomes the recommended Windows install — one click, automatic
-updates, and no SmartScreen prompt.
-
 #### Windows: unblocking the unsigned zip
 
-Code signing for Windows comes with the Store submission, which is still in
-certification. Until then the zip is unsigned, and Windows marks anything
-downloaded from the internet:
+*This applies only to the portable zip — the
+[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) install is
+signed and needs none of it.* Only the Store package is signed (Microsoft signs
+it during certification); the zip on GitHub Releases is not, and Windows marks
+anything downloaded from the internet:
 
 1. Right-click the downloaded zip → **Properties** → tick **Unblock** → **OK**.
    Doing this *before* extracting clears the mark on every extracted file at once.
@@ -73,8 +94,9 @@ downloaded from the internet:
 
 The bundle is self-contained and writes nothing outside its own folder and
 `%USERPROFILE%\.xefm\`, so uninstalling is deleting the folder. Would rather not
-run an unsigned binary at all? Wait for the Store listing, or use the terminal
-app below.
+run an unsigned binary at all? Install from the
+[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) instead, or
+use the terminal app below.
 
 Full details, including macOS Gatekeeper notes, are in the
 **[Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package)**.
@@ -374,7 +396,7 @@ xefm/
 **Desktop Mode Issues:**
 - Desktop mode runs on Windows and macOS; on other platforms use terminal mode
 - Generic Python icon in the Dock / taskbar, or macOS permission prompts naming your terminal instead of XeFM — symptoms of launching with `--backend gui`; install the [desktop package](#desktop-app-windows-macos) instead
-- *"Windows protected your PC"* when launching the downloaded `XeFM.exe` — the zip is not code-signed yet (Microsoft Store submission pending); click **More info** → **Run anyway**, or unblock the zip before extracting ([details](doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip))
+- *"Windows protected your PC"* when launching the downloaded `XeFM.exe` — the portable zip is not code-signed; click **More info** → **Run anyway**, or unblock the zip before extracting ([details](doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip)). The [Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) install is signed and never shows this prompt
 - *"XeFM cannot be opened because the developer cannot be verified"* on macOS — right-click `XeFM.app` in *Applications* and choose **Open**, then confirm once
 - On macOS, if PyObjC is missing XeFM automatically falls back to terminal mode
 - Check console output for backend initialization messages
@@ -399,6 +421,7 @@ Have questions, suggestions, or found a bug? Get in touch:
 
 - **GitHub Repository**: [https://github.com/crftwr/xefm](https://github.com/crftwr/xefm)
 - **GitHub Issues**: [Report bugs or request features](https://github.com/crftwr/xefm/issues)
+- **Microsoft Store**: [XeFM on the Store](https://apps.microsoft.com/detail/9PK2X44W810V) — the Windows desktop app
 - **PyPI**: [pypi.org/project/xefm](https://pypi.org/project/xefm/) — released versions (`pipx install xefm`)
 - **Author's X (Twitter)**: [@smmrtmnr](https://x.com/smmrtmnr)
 

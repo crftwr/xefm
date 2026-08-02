@@ -53,8 +53,10 @@ the work and can be run directly.
 make release-windows-zip         # build the zip if needed + attach it to the GitHub Release
 ```
 
-The zip is the artifact end users download. It is **unsigned** until the
-Microsoft Store listing goes live, so it triggers Windows' Mark-of-the-Web /
+The zip is the portable alternative to the
+[Microsoft Store listing](https://apps.microsoft.com/detail/9PK2X44W810V)
+(the recommended end-user install). It is **unsigned** — only the Store package
+gets signed, by Microsoft — so it triggers Windows' Mark-of-the-Web /
 SmartScreen prompt once; the user-facing workaround lives in
 [`../doc/DESKTOP_MODE_GUIDE.md`](../doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip).
 

@@ -92,8 +92,9 @@ can never be re-uploaded, so that one is a hard error.
 
 The **unsigned `.msix` is never uploaded to a release**. Windows will not
 install an unsigned MSIX, so that artifact exists solely as a Microsoft Store
-submission (Microsoft signs it during certification). The portable zip is the
-form end users can actually run — see
+submission (Microsoft signs it during certification; the signed result is the
+[Store listing](https://apps.microsoft.com/detail/9PK2X44W810V)). The portable
+zip is the form end users can run straight from a release — see
 [DESKTOP_MODE_GUIDE.md](../DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package)
 for the Mark-of-the-Web / SmartScreen instructions that go with it.
 
