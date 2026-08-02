@@ -21,7 +21,7 @@ edited.
   `[]` → `""`, a single candidate → the whole candidate.
 - `Completer` (`typing.Protocol`) — `get_candidates(text, cursor_pos) -> list[str]`
   and `get_completion_start_pos(text, cursor_pos) -> int`.
-- `FilepathCompleter(base_directory=None, directories_only=False)`
+- `FilepathCompleter(base_directory=None, directories_only=False, show_hidden=True)`
   — splits the text before the caret at the last `os.sep` into a directory +
   filename prefix, reads that directory in **one pass** via
   `xefm.dir_scan.scan_dir` — the same bulk enumeration the pane listing uses
@@ -31,7 +31,10 @@ edited.
   start with the prefix (case-sensitive), sorted, with `os.sep` appended to
   directories (`attrs["is_dir"]`; a broken symlink reads as not-a-directory,
   as `os.path.isdir` did).
-  `directories_only` drops files.
+  `directories_only` drops files. `show_hidden=False` (issue #258) drops
+  dot-entries **unless the token itself starts with `.`** — the shell convention,
+  so an explicitly typed dot still reaches `.config` while hidden files are off;
+  the app passes the panes' `flm.show_hidden` at each of the five call sites.
   Filesystem errors (`FileNotFoundError`, `PermissionError`, `NotADirectoryError`,
   `OSError`) return `[]` — so a not-yet-existing or non-local path is a no-op, not
   a crash. The completer itself stays synchronous; *threading is the
@@ -150,9 +153,9 @@ your own). Supply any `Completer` — `FilepathCompleter` is one implementation.
 
 ## Tests
 
-`test/test_completion.py` (31 tests, `python -m pytest`): the LCP helper,
+`test/test_completion.py` (34 tests, `python -m pytest`): the LCP helper,
 `FilepathCompleter` against a temp tree (prefix/sep/sorted/case/`~`/absolute/
-missing-dir), and
+missing-dir, hidden-file filtering incl. the explicit-dot override), and
 `CompletionController` on a real `TextEdit` (LCP insert, single full-completion,
 narrow/hide, focus wrap, accept consumed-vs-not, apply/dismiss). Threaded mode is
 tested with a gate-blocked completer (`GatedCompleter`): apply-on-pump, a stale

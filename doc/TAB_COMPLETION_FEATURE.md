@@ -43,6 +43,16 @@ Paths beginning with `~` (your home directory), relative paths, and absolute
 paths all complete. Matching is **case-sensitive**, matching how the filesystem
 names things.
 
+## Hidden files
+
+Completion follows the panes' **hidden-files toggle**: while hidden files are
+off, dot-entries (`.config`, `.gitignore`, …) do not appear among the
+candidates — the same rule the file lists use.
+
+Typing the leading dot yourself overrides this for that one token, the way
+shells do: `.c` + TAB still completes `.config/` even with hidden files off, so
+a hidden directory stays reachable without flipping the toggle.
+
 ## Notes and limits
 
 - Completion reads the **local filesystem** only. In a remote (S3 / SSH) pane,

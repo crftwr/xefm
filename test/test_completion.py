@@ -115,6 +115,45 @@ def test_filepath_nonexistent_directory_is_empty(tmp_path):
     assert comp.get_candidates("x", 1) == []
 
 
+def test_filepath_show_hidden_true_lists_dotfiles(tmp_path):
+    _make_tree(tmp_path)
+    (tmp_path / ".config").mkdir()
+    (tmp_path / ".darkfile").write_text("x")
+    comp = FilepathCompleter(base_directory=str(tmp_path))  # show_hidden defaults True
+    assert comp.get_candidates("", 0) == [
+        ".config" + SEP, ".darkfile", "Archive" + SEP,
+        "data.txt", "docs" + SEP, "downloads" + SEP, "readme.md",
+    ]
+
+
+def test_filepath_show_hidden_false_skips_dotfiles(tmp_path):
+    _make_tree(tmp_path)
+    (tmp_path / ".config").mkdir()
+    (tmp_path / ".darkfile").write_text("x")
+    comp = FilepathCompleter(base_directory=str(tmp_path), show_hidden=False)
+    assert comp.get_candidates("", 0) == [
+        "Archive" + SEP, "data.txt", "docs" + SEP, "downloads" + SEP, "readme.md",
+    ]
+    assert comp.get_candidates("d", 1) == ["data.txt", "docs" + SEP, "downloads" + SEP]
+
+
+def test_filepath_explicit_dot_prefix_reveals_hidden(tmp_path):
+    # Typing the leading dot is an explicit ask for hidden entries (shell
+    # convention) — otherwise .config could never be completed while hidden
+    # files are off.
+    _make_tree(tmp_path)
+    (tmp_path / ".config").mkdir()
+    (tmp_path / ".cache").mkdir()
+    comp = FilepathCompleter(base_directory=str(tmp_path), show_hidden=False)
+    assert comp.get_candidates(".c", 2) == [".cache" + SEP, ".config" + SEP]
+    # And within a subdirectory token, the same rule applies per token.
+    (tmp_path / "docs" / ".drafts").mkdir(parents=True, exist_ok=True)
+    text = "docs" + SEP
+    assert comp.get_candidates(text, len(text)) == []  # dir empty but for the hidden entry
+    text = "docs" + SEP + "."
+    assert comp.get_candidates(text, len(text)) == [".drafts" + SEP]
+
+
 def test_completion_start_pos(tmp_path):
     comp = FilepathCompleter(base_directory=str(tmp_path))
     assert comp.get_completion_start_pos("abc", 3) == 0

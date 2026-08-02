@@ -3522,7 +3522,8 @@ class XeFMApp:
 
         show_input(self.panel, title="New Directory", prompt="Name:",
                    on_accept=accept, validate=validate,
-                   completer=FilepathCompleter(base_directory=str(pane["path"])),
+                   completer=FilepathCompleter(base_directory=str(pane["path"]),
+                                               show_hidden=self.flm.show_hidden),
                    region=self._active_pane_region())
         self.panel.render()
 
@@ -3555,7 +3556,8 @@ class XeFMApp:
 
         show_input(self.panel, title="New File", prompt="Name:",
                    on_accept=accept, validate=validate,
-                   completer=FilepathCompleter(base_directory=str(pane["path"])),
+                   completer=FilepathCompleter(base_directory=str(pane["path"]),
+                                               show_hidden=self.flm.show_hidden),
                    region=self._active_pane_region())
         self.panel.render()
 
@@ -3605,7 +3607,8 @@ class XeFMApp:
 
         show_input(self.panel, title="Rename", prompt="Rename to:", text=original,
                    on_accept=accept, validate=validate, select_range=select_range,
-                   completer=FilepathCompleter(base_directory=str(entry.parent)),
+                   completer=FilepathCompleter(base_directory=str(entry.parent),
+                                               show_hidden=self.flm.show_hidden),
                    region=self._active_pane_region())
         self.panel.render()
 
@@ -4089,7 +4092,8 @@ class XeFMApp:
 
         show_input(self.panel, title="Create Archive", prompt="Archive filename:",
                    text=initial, on_accept=accept, validate=validate, select_all=False,
-                   completer=FilepathCompleter(base_directory=str(dest_dir)),
+                   completer=FilepathCompleter(base_directory=str(dest_dir),
+                                               show_hidden=self.flm.show_hidden),
                    region=self._active_pane_region())
         self.panel.render()
         return False
@@ -4425,7 +4429,8 @@ class XeFMApp:
         initial = current if current.endswith(os.sep) else current + os.sep
         show_input(self.panel, title="Jump to Path", prompt="Path:", text=initial,
                    on_accept=accept, validate=validate, select_all=False,
-                   completer=FilepathCompleter(base_directory=current, directories_only=True),
+                   completer=FilepathCompleter(base_directory=current, directories_only=True,
+                                               show_hidden=self.flm.show_hidden),
                    region=self._active_pane_region())
         self.panel.render()
 

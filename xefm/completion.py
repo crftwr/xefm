@@ -106,14 +106,22 @@ class FilepathCompleter:
     is expanded for the *listing*, but the returned tokens are the plain entry
     names, so the field keeps whatever the user typed to their left.
 
+    ``show_hidden`` mirrors the panes' hidden-files toggle (issue #258): when
+    False, dot-entries are left out of the candidates — *unless* the typed token
+    itself starts with a ``.``, which is an explicit request for them (the shell
+    convention; without it there would be no way to complete into ``.config``
+    while hidden files are off).
+
     Errors reaching the filesystem (missing directory, permission denied, or a
     non-local path that ``os`` can't stat) yield ``[]`` — completing a path that
     does not exist yet is a no-op, never a crash.
     """
 
-    def __init__(self, base_directory: str | None = None, directories_only: bool = False):
+    def __init__(self, base_directory: str | None = None, directories_only: bool = False,
+                 show_hidden: bool = True):
         self.base_directory = base_directory or os.getcwd()
         self.directories_only = directories_only
+        self.show_hidden = show_hidden
         self.logger = getLogger("Completion")
 
     def get_candidates(self, text: str, cursor_pos: int) -> List[str]:
@@ -137,6 +145,10 @@ class FilepathCompleter:
 
         directory = os.path.normpath(directory)
 
+        # Honour the hidden-files toggle, except when the token itself starts
+        # with a dot — typing the dot is an explicit ask for hidden entries.
+        hide_dotfiles = not self.show_hidden and not prefix.startswith(".")
+
         candidates: List[str] = []
         try:
             # One bulk enumeration answers name + is_dir for the whole
@@ -144,6 +156,8 @@ class FilepathCompleter:
             # directory", matching what os.path.isdir said here before.
             for entry, attrs in scan_dir(directory):
                 if not entry.startswith(prefix):  # case-sensitive
+                    continue
+                if hide_dotfiles and entry.startswith("."):
                     continue
                 is_directory = attrs["is_dir"]
                 if self.directories_only and not is_directory:
