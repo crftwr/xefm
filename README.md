@@ -423,7 +423,7 @@ Have questions, suggestions, or found a bug? Get in touch:
 - **GitHub Issues**: [Report bugs or request features](https://github.com/crftwr/xefm/issues)
 - **Microsoft Store**: [XeFM on the Store](https://apps.microsoft.com/detail/9PK2X44W810V) — the Windows desktop app
 - **PyPI**: [pypi.org/project/xefm](https://pypi.org/project/xefm/) — released versions (`pipx install xefm`)
-- **Author's X (Twitter)**: [@smmrtmnr](https://x.com/smmrtmnr)
+- **Author's X (Twitter)**: [@crftwr](https://x.com/crftwr)
 
 We welcome feedback and contributions to make XeFM even better!
 
