@@ -107,8 +107,12 @@ class InputDialog(FocusContainer, Widget):
         # TAB completion (optional). The controller mutates ``self.edit`` and
         # tracks the candidate state; the overlay is a separate, lower-z layer this
         # dialog pushes/positions/removes (created lazily on first activation). The
-        # z is the dialog's own layer z, set by ``show_input``.
-        self._completion = CompletionController(self.edit, completer) if completer is not None else None
+        # z is the dialog's own layer z, set by ``show_input``. Threaded: the
+        # candidate listing runs on a worker, applied via ``_drain_completion`` /
+        # ``_pump_completion``, so a slow mount never freezes the dialog (#246).
+        self._completion = (CompletionController(self.edit, completer, threaded=True)
+                            if completer is not None else None)
+        self._completion_pump_cancel: Callable[[], None] | None = None
         self._overlay: CandidateListOverlay | None = None
         self._z = 70
         # Captured each draw so the overlay can be anchored to the field: the
@@ -143,6 +147,11 @@ class InputDialog(FocusContainer, Widget):
             self.on_cancel()
 
     def _close(self) -> None:
+        if self._completion_pump_cancel is not None:
+            self._completion_pump_cancel()
+            self._completion_pump_cancel = None
+        if self._completion is not None:
+            self._completion.dismiss()  # drop any in-flight candidate fetch
         self._remove_overlay()  # never leave a stray candidate layer behind
         panel = self._panel
         if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
@@ -187,6 +196,35 @@ class InputDialog(FocusContainer, Widget):
             self._overlay.set_state(c.candidates, c.focused_index)
         else:
             self._remove_overlay()
+
+    def _drain_completion(self) -> None:
+        """Apply a threaded candidate fetch. A brief synchronous window lets a
+        fast (local) listing land within the triggering key event — the overlay
+        opens in the same frame, exactly as the old inline listing did — and a
+        listing still running after it (a slow mount) is left to finish on its
+        worker, its result picked up by a short ``call_later`` poll. Either way
+        the dialog keeps taking keys throughout."""
+        c = self._completion
+        if c is None:
+            return
+        c.wait(0.02)
+        c.pump()
+        self._sync_overlay()
+        if c.fetch_pending() and self._completion_pump_cancel is None and self._panel is not None:
+            self._completion_pump_cancel = self._panel.call_later(0.03, self._pump_completion)
+
+    def _pump_completion(self) -> None:
+        """Poll tick for a fetch that outlived its synchronous window: apply an
+        arrived result and repaint, re-arming until nothing is pending."""
+        self._completion_pump_cancel = None
+        c = self._completion
+        if c is None or self._panel is None:
+            return
+        if c.pump():
+            self._sync_overlay()
+            self._panel.render()
+        if c.fetch_pending():
+            self._completion_pump_cancel = self._panel.call_later(0.03, self._pump_completion)
 
     def _on_candidate_click(self, index: int) -> None:
         """A candidate row was clicked: apply it, close the list, and notify a
@@ -298,8 +336,9 @@ class InputDialog(FocusContainer, Widget):
             if key == "tab" and c is not None:
                 # TAB completes the token: insert the common prefix and, when
                 # several matches remain, open (or refresh) the candidate list.
+                # The listing runs threaded; _drain_completion applies it.
                 c.on_tab()
-                self._sync_overlay()
+                self._drain_completion()
                 return True
             if key == "escape":
                 # Esc closes the candidate list first; a second Esc cancels.
@@ -331,7 +370,7 @@ class InputDialog(FocusContainer, Widget):
             if self.edit.text != before:
                 if c is not None:
                     c.on_text_changed()
-                    self._sync_overlay()
+                    self._drain_completion()
                 if self.on_change is not None:
                     self.on_change(self.edit.text)
             return True

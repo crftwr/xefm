@@ -7,6 +7,7 @@ helper, the filesystem ``FilepathCompleter`` (against a real temp tree), and the
 
 import os
 import sys
+import threading
 
 import pytest
 
@@ -247,3 +248,85 @@ def test_dismiss_clears_state():
     assert ctrl.active is False
     assert ctrl.candidates == []
     assert ctrl.focused_index == -1
+
+
+# --- CompletionController, threaded mode --------------------------------------
+
+class GatedCompleter(StubCompleter):
+    """A StubCompleter whose listing blocks until the test opens the gate, so a
+    threaded fetch's in-flight window is deterministic."""
+
+    def __init__(self, candidates):
+        super().__init__(candidates)
+        self.gate = threading.Event()
+
+    def get_candidates(self, text, cursor_pos):
+        assert self.gate.wait(5.0), "test gate never opened"
+        return super().get_candidates(text, cursor_pos)
+
+
+def _threaded_controller(text, candidates):
+    edit = TextEdit(text=text)
+    edit.cursor = len(text)
+    comp = GatedCompleter(candidates)
+    return CompletionController(edit, comp, threaded=True), edit, comp
+
+
+def test_threaded_tab_applies_on_pump():
+    ctrl, edit, comp = _threaded_controller("h", ["helium", "helmet"])
+    assert ctrl.on_tab() is True          # fetch started, TAB consumed
+    assert ctrl.fetch_pending() is True
+    assert ctrl.pump() is False           # nothing has arrived yet
+    assert edit.text == "h"               # the field is untouched meanwhile
+    comp.gate.set()
+    ctrl.wait(5.0)
+    assert ctrl.pump() is True
+    assert edit.text == "hel"             # LCP inserted at apply time
+    assert ctrl.active is True
+    assert ctrl.candidates == ["helium", "helmet"]
+    assert ctrl.fetch_pending() is False
+
+
+def test_threaded_result_dropped_when_text_moved_on():
+    ctrl, edit, comp = _threaded_controller("h", ["helium", "helmet"])
+    ctrl.on_tab()
+    edit.text, edit.cursor = "x", 1       # the user kept typing while it ran
+    comp.gate.set()
+    ctrl.wait(5.0)
+    assert ctrl.pump() is False           # stale snapshot: dropped, not applied
+    assert edit.text == "x"
+    assert ctrl.active is False
+    assert ctrl.fetch_pending() is False  # settled, just not applied
+
+
+def test_threaded_dismiss_invalidates_inflight_fetch():
+    ctrl, edit, comp = _threaded_controller("h", ["helium", "helmet"])
+    ctrl.on_tab()
+    ctrl.dismiss()                        # e.g. Esc / dialog closed mid-fetch
+    assert ctrl.fetch_pending() is False
+    comp.gate.set()
+    ctrl.wait(5.0)
+    assert ctrl.pump() is False           # the late result is dropped
+    assert ctrl.active is False
+    assert edit.text == "h"
+
+
+def test_threaded_text_changed_refreshes_open_list():
+    ctrl, edit, comp = _threaded_controller("he", ["hello", "help", "hero"])
+    comp.gate.set()                       # fast-filesystem case: no blocking
+    ctrl.on_tab()
+    ctrl.wait(5.0)
+    ctrl.pump()
+    assert ctrl.active is True
+    assert ctrl.candidates == ["hello", "help", "hero"]
+    edit.text, edit.cursor = "hel", 3     # narrow
+    ctrl.on_text_changed()
+    ctrl.wait(5.0)
+    assert ctrl.pump() is True
+    assert ctrl.candidates == ["hello", "help"]
+    edit.text, edit.cursor = "hez", 3     # narrow to nothing: the list hides
+    ctrl.on_text_changed()
+    ctrl.wait(5.0)
+    assert ctrl.pump() is True
+    assert ctrl.active is False
+    assert ctrl.candidates == []

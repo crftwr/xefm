@@ -45,9 +45,13 @@ names things.
 
 ## Notes and limits
 
-- Completion reads the **local filesystem** only and is instant — it never blocks
-  the UI waiting on a slow or remote location. In a remote (S3 / SSH) pane, TAB
-  simply offers no candidates rather than stalling.
+- Completion reads the **local filesystem** only. In a remote (S3 / SSH) pane,
+  TAB simply offers no candidates rather than stalling.
+- The directory listing behind the candidates is read **in one pass** (the same
+  fast enumeration the file panes use) and runs **in the background**: on a slow
+  location (a network mount, a spun-down disk) the prompt keeps taking
+  keystrokes and the candidates appear when the listing lands. On a local disk
+  this is indistinguishable from instant.
 - Completing a path that does not exist yet is harmless: TAB just offers nothing.
 
 See also: [developer notes](dev/TAB_COMPLETION_IMPLEMENTATION.md).

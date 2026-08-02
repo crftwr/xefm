@@ -21,19 +21,26 @@ edited.
   `[]` → `""`, a single candidate → the whole candidate.
 - `Completer` (`typing.Protocol`) — `get_candidates(text, cursor_pos) -> list[str]`
   and `get_completion_start_pos(text, cursor_pos) -> int`.
-- `FilepathCompleter(base_directory=None, directories_only=False)` — splits the
-  text before the caret at the last `os.sep` into a directory + filename prefix,
-  `os.listdir`s that directory (a leading `~`/`~user` is expanded for the lookup
-  only), and returns names that start with the prefix (case-sensitive), sorted,
-  with `os.sep` appended to directories. `directories_only` drops files.
+- `FilepathCompleter(base_directory=None, directories_only=False)`
+  — splits the text before the caret at the last `os.sep` into a directory +
+  filename prefix, reads that directory in **one pass** via
+  `xefm.dir_scan.scan_dir` — the same bulk enumeration the pane listing uses
+  (`getattrlistbulk` on macOS, `os.scandir` elsewhere), so a large directory
+  costs one enumeration instead of a per-entry `isdir` stat (issue #246); a
+  leading `~`/`~user` is expanded for the lookup only — and returns names that
+  start with the prefix (case-sensitive), sorted, with `os.sep` appended to
+  directories (`attrs["is_dir"]`; a broken symlink reads as not-a-directory,
+  as `os.path.isdir` did).
+  `directories_only` drops files.
   Filesystem errors (`FileNotFoundError`, `PermissionError`, `NotADirectoryError`,
   `OSError`) return `[]` — so a not-yet-existing or non-local path is a no-op, not
-  a crash. Local-filesystem and synchronous by design (issue #202's "no blocking
-  on slow mounts").
-- `CompletionController(edit, completer)` — the **reusable seam**. It reads/writes
-  only `edit.text` / `edit.cursor` (and clears `edit._anchor`), so it depends on
-  no particular dialog. State: `active`, `candidates`, `focused_index` (`-1` = no
-  highlight), `completion_start_pos`. Key methods:
+  a crash. The completer itself stays synchronous; *threading is the
+  controller's job* (below).
+- `CompletionController(edit, completer, threaded=False)` — the **reusable
+  seam**. It reads/writes only `edit.text` / `edit.cursor` (and clears
+  `edit._anchor`), so it depends on no particular dialog. State: `active`,
+  `candidates`, `focused_index` (`-1` = no highlight), `completion_start_pos`.
+  Key methods:
   - `on_tab()` — insert the common prefix if it extends the typed token; open the
     list when `len(candidates) > 1`.
   - `on_text_changed()` — refresh after an edit; hide on zero matches, keep open
@@ -44,6 +51,25 @@ edited.
     when nothing is highlighted (so Enter is an ordinary submit — this is why the
     "no highlight" state is functionally, not just visually, distinct).
   - `apply_index(i)` / `dismiss()` — mouse-selection and Esc.
+
+### Threaded candidate listing (issue #246)
+
+With `threaded=True`, `on_tab()` / `on_text_changed()` no longer run the
+completer inline: each spawns a daemon worker (`_spawn_fetch`) that calls
+`completer.get_candidates` off-thread and posts `(gen, kind, text, cursor,
+candidates)` to a thread-safe queue. The UI side applies results with:
+
+- `pump()` — drain the queue on the UI thread; a result is **dropped** when a
+  newer fetch or a `dismiss()` superseded it (generation mismatch) or when the
+  field's text/caret moved on while it ran (snapshot mismatch), so a slow
+  listing can never clobber later typing. The LCP insertion for a TAB happens
+  here, at apply time.
+- `wait(timeout)` / `fetch_pending()` — let the host give a fetch a brief
+  synchronous window and keep polling while one is in flight.
+
+The worker touches only its snapshot arguments and the queue; all controller
+state stays UI-thread-owned. `dismiss()` also invalidates any in-flight fetch
+(generation bump), which is what makes closing the dialog mid-fetch safe.
 
 ### `xefm/candidate_list.py` (presentational)
 
@@ -88,8 +114,8 @@ removed the one-frame position jump on GUI.
 
 `show_input(..., completer=...)` enables completion. `InputDialog`:
 
-- creates a `CompletionController` up front and the `CandidateListOverlay` lazily
-  on first activation;
+- creates a `CompletionController` up front (**threaded**) and the
+  `CandidateListOverlay` lazily on first activation;
 - `handle_event`: `tab` → `on_tab`; `up/down/pageup/pagedown` (while active) →
   `move_focus`; `enter` → `accept()` or fall through to the normal submit;
   `escape` → close the list first, else cancel; ordinary edits → `on_text_changed`.
@@ -97,6 +123,15 @@ removed the one-frame position jump on GUI.
   a placeholder rect) or removes the overlay to match the controller. The app
   re-renders after every consumed event (`on_event` in `xefm/app.py`), so the handlers
   don't render themselves.
+- `tab` and edits go through `_drain_completion()`: `wait(0.02)` gives the
+  threaded fetch a 20 ms synchronous window — a local listing lands inside it,
+  so the overlay opens within the same key event, exactly like the old inline
+  listing — then `pump()` + `_sync_overlay()`. A fetch still running after the
+  window (a slow mount) is left to its worker and picked up by a 30 ms
+  `panel.call_later` poll (`_pump_completion`, which renders on apply);
+  `call_later` works on every backend, so there is no capability branch.
+  `_close()` cancels the poll and `dismiss()`es the controller, dropping any
+  in-flight result.
 - `draw` captures the dialog's `screen_rect` and the field's rect, then sets the
   overlay slot's rect via `overlay_geometry` using the *measured* text width before
   the token — running before the overlay draws, so no reflow flash.
@@ -115,10 +150,14 @@ your own). Supply any `Completer` — `FilepathCompleter` is one implementation.
 
 ## Tests
 
-`test/test_completion.py` (27 tests, `python -m pytest`): the LCP helper,
+`test/test_completion.py` (31 tests, `python -m pytest`): the LCP helper,
 `FilepathCompleter` against a temp tree (prefix/sep/sorted/case/`~`/absolute/
-missing-dir), and `CompletionController` on a real `TextEdit` (LCP insert, single
-full-completion, narrow/hide, focus wrap, accept consumed-vs-not, apply/dismiss).
+missing-dir), and
+`CompletionController` on a real `TextEdit` (LCP insert, single full-completion,
+narrow/hide, focus wrap, accept consumed-vs-not, apply/dismiss). Threaded mode is
+tested with a gate-blocked completer (`GatedCompleter`): apply-on-pump, a stale
+snapshot dropped after further typing, dismiss invalidating an in-flight fetch,
+and a live refresh cycle.
 The overlay layer lifecycle and event routing were verified end-to-end through a
 `MemoryBackend` panel (including that `focused_leaf` stays on the field, so IME
 survives, while the popup is on top). The PuiKit non-interactive-layer primitive
