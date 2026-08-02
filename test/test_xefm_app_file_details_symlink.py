@@ -46,7 +46,8 @@ class FileDetailsSymlink(unittest.TestCase):
         # Capture the markdown the dialog would render instead of showing it.
         self._captured = []
         self._orig_show = xefm_app.show_markdown
-        xefm_app.show_markdown = lambda panel, text, title=None: self._captured.append(text)
+        xefm_app.show_markdown = \
+            lambda panel, text, title=None, **kw: self._captured.append(text)
 
     def tearDown(self):
         xefm_app.show_markdown = self._orig_show

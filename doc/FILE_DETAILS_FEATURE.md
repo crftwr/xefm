@@ -26,9 +26,25 @@ directories.
 
 ### Directories
 
-Directories show the same timestamps and permissions, plus a contents summary
-(number of subdirectories and files, counting only what you have permission to
-read).
+Directories show the same fields, plus their **total disk usage** and a
+contents count:
+
+- **Disk usage** — the recursive total size of everything inside, shown
+  human-readable and in exact bytes
+- **Contents** — how many files and folders it contains, recursively
+
+Both are counted in the background *after* the dialog opens: the dialog
+appears instantly and the numbers climb until the count finishes, so a large
+(or remote) directory never blocks the UI. While counting, the row is marked
+*scanning…*; if some subdirectories could not be read, the result notes how
+many were unreadable. Closing the dialog stops the counting.
+
+Symbolic links are counted as single entries and never followed, so a link
+pointing back into the same tree cannot inflate the total.
+
+When multiple items are selected, the summary at the top shows the live
+**Total size** and **Total items** (files and folders) across the whole
+selection, including everything inside selected directories.
 
 Example:
 

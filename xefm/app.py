@@ -57,6 +57,7 @@ from xefm.background_shaders import SHADER_KINDS
 from xefm.config import (KeyBindings, config_manager, get_builtin_handler_for_file,
                          get_config, get_favorite_directories, get_program_for_file,
                          has_explicit_association, keys_label_for_action)
+from xefm.disk_usage import UsageScan
 from xefm.file_list_manager import FileListManager
 from xefm.file_monitor_manager import FileMonitorManager
 from xefm.file_pane import FilePane
@@ -2563,7 +2564,14 @@ class XeFMApp:
         dialog, reusing the shared text-dialog.
 
         Each entry renders as a heading followed by a GFM table of its stat
-        fields, so the values line up in a real column instead of hand-padded."""
+        fields, so the values line up in a real column instead of hand-padded.
+
+        Directories additionally get live "Disk usage" / "Contents" rows: a
+        background walk (:class:`xefm.disk_usage.UsageScan`) totals their
+        recursive size and item counts while the dialog is already open, and a
+        throttled animation tick swaps updated Markdown in place — the dialog
+        opens instantly and the numbers climb until the walk finishes. Closing
+        the dialog cancels the walk."""
         import datetime as _dt
         import stat as _stat
         pane = self.active_pane()
@@ -2586,7 +2594,41 @@ class XeFMApp:
                 text = text.replace(ch, "\\" + ch)
             return text
 
-        def details(entry) -> list[str]:
+        # Directories whose recursive size/counts the background walk fills in.
+        # Symlinks to directories are excluded — the walk never follows links.
+        dir_roots = []
+        for t in targets:
+            try:
+                if t.is_dir() and not t.is_symlink():
+                    dir_roots.append(t)
+            except Exception:
+                pass
+        scan = UsageScan(dir_roots)
+
+        def _size_cell(nbytes, done, errors) -> str:
+            value = f"{format_size(nbytes)} ({nbytes:,} bytes)"
+            if done:
+                return value + (f" — *{errors} unreadable*" if errors else "")
+            if scan.cancelled:
+                # Only visible on a backend with no animation ticks (the walk
+                # was dropped before it started) — never claim "scanning".
+                return "*n/a*"
+            return value + " — *scanning…*"
+
+        def _usage_rows(root):
+            # Two live table rows bound to one root's running totals; called on
+            # every rebuild, so it reads the counters fresh each time.
+            totals = scan.totals[str(root)]
+            def rows() -> str:
+                if scan.cancelled and not totals.done:
+                    counts = "*n/a*"
+                else:
+                    counts = f"{totals.files:,} files, {totals.dirs:,} folders"
+                return (f"| Disk usage | {_size_cell(totals.bytes, totals.done, totals.errors)} |\n"
+                        f"| Contents | {counts} |")
+            return rows
+
+        def details(entry) -> list:
             out = [f"### {_md_escape(entry.name)}", ""]
             try:
                 is_symlink = entry.is_symlink()
@@ -2623,6 +2665,10 @@ class XeFMApp:
                 f"| Path | `{entry}` |",
                 f"| Type | {kind} |",
                 f"| Size | {st.st_size:,} bytes |",
+            ]
+            if str(entry) in scan.totals:
+                out.append(_usage_rows(entry))
+            out += [
                 f"| Modified | {mtime} |",
                 f"| Permissions | `{_stat.filemode(st.st_mode)}` |",
             ]
@@ -2635,23 +2681,88 @@ class XeFMApp:
             return out
 
         if len(targets) == 1:
-            lines = details(targets[0])
+            segments = details(targets[0])
         else:
-            total = 0
+            # Non-directory targets' own sizes, summed once; the directories'
+            # recursive share comes from the scan's live grand totals.
+            plain_bytes = 0
+            plain_files = 0
             for t in targets:
+                if str(t) in scan.totals:
+                    continue
+                plain_files += 1
                 try:
-                    total += t.stat().st_size
+                    plain_bytes += t.stat().st_size
                 except Exception:
                     pass
-            lines = [
-                f"# {len(targets)} items selected",
-                "",
-                f"**Total size:** {total:,} bytes",
-                "",
-            ]
+
+            def totals_lines() -> str:
+                b, f, d, errors = scan.grand_totals()
+                total_files = plain_files + f
+                total_dirs = len(dir_roots) + d
+                if scan.cancelled and not scan.done:
+                    items = "*n/a*"
+                else:
+                    items = (f"{total_files + total_dirs:,} "
+                             f"({total_files:,} files, {total_dirs:,} folders)")
+                return (
+                    f"**Total size:** {_size_cell(plain_bytes + b, scan.done, errors)}\n\n"
+                    f"**Total items:** {items}"
+                )
+
+            segments = [f"# {len(targets)} items selected", "", totals_lines, ""]
             for t in targets:
-                lines += details(t)
-        show_markdown(self.panel, "\n".join(lines), title="Details")
+                segments += details(t)
+
+        # The document is a mix of fixed lines and callables for the live rows:
+        # a rebuild re-renders only the counters, never re-stats the entries.
+        def render() -> str:
+            return "\n".join(s if isinstance(s, str) else s() for s in segments)
+
+        source = render()
+        dialog = show_markdown(self.panel, source, title="Details",
+                               on_close=scan.cancel)
+
+        if dir_roots:
+            cache = {"src": source}
+
+            def refresh() -> None:
+                src = render()
+                if src == cache["src"]:
+                    return
+                cache["src"] = src
+                # set_source resets the scroll to the top; put it back before
+                # the next draw so an update never yanks the view.
+                offset = dialog.md.offset
+                dialog.md.set_source(src)
+                dialog.md.offset = offset
+                self.panel.render()
+
+            # Ticks fire every frame, but re-parsing the document that often is
+            # waste — ~5 Hz reads live; a big multi-selection document (one
+            # table per entry) re-parses slower still.
+            interval = 0.2 if source.count("\n") < 400 else 0.5
+            deadline = [time.monotonic() + interval]
+
+            def tick() -> bool:
+                if scan.cancelled:
+                    return False
+                if scan.done:
+                    refresh()
+                    return False
+                now = time.monotonic()
+                if now >= deadline[0]:
+                    deadline[0] = now + interval
+                    refresh()
+                return True
+
+            if self.panel.request_animation_ticks(tick):
+                scan.start()
+            else:
+                # Still backend (no timer to repaint on): drop the walk rather
+                # than leave "scanning…" up forever.
+                scan.cancel()
+                refresh()
         self.panel.render()
 
     def open_with_os(self) -> None:
