@@ -295,7 +295,7 @@ class Config:
         'clear_filter': [':'],                 # Clear current file filter
         
         # === Sorting ===
-        'sort_menu': ['S'],                    # Show sort options menu
+        'sort_menu': ['S'],                    # Open the sort dialog (key + order)
         'quick_sort_name': ['1'],              # Quick sort by filename
         'quick_sort_ext': ['2'],               # Quick sort by file extension
         'quick_sort_size': ['3'],              # Quick sort by file size

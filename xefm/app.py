@@ -72,6 +72,7 @@ from xefm.str_format import abbreviate_path, format_size
 from xefm.batch_rename_dialog import show_batch_rename
 from xefm.compare_dialog import show_compare_select
 from xefm.compare_selection import compute_compare_selection
+from xefm.sort_dialog import show_sort_dialog
 from xefm.progress_manager import OperationType
 from xefm.diff_viewer import show_diff_viewer
 from xefm.directory_diff_viewer import show_directory_diff_viewer
@@ -2706,10 +2707,12 @@ class XeFMApp:
             self.log_info(f"Revealed {entry.name}")
 
     def _sort_menu(self) -> Menu:
-        """The sort-mode menu, shared by the menu-bar's 'Sort By' submenu and the
-        keyboard-triggered sort popup (``show_sort_menu``). A live ``checked``
-        predicate marks the active pane's current mode."""
-        sort_modes = (("Name", "name"), ("Size", "size"), ("Date", "date"), ("Type", "type"))
+        """The menu-bar's 'Sort By' submenu, over the same four keys the sort
+        dialog offers (the keyboard path — ``show_sort_menu`` — opens the
+        specialized dialog instead, see :mod:`xefm.sort_dialog`). A live
+        ``checked`` predicate marks the active pane's current mode."""
+        sort_modes = (("Filename", "name"), ("Extension", "ext"),
+                      ("Size", "size"), ("Timestamp", "date"))
         return Menu(*[
             MenuItem(label, on_select=(lambda m=mode: self._set_sort(m)),
                      checked=(lambda m=mode: self.active_pane()["sort_mode"] == m))
@@ -2717,9 +2720,21 @@ class XeFMApp:
         ], title="Sort By")
 
     def show_sort_menu(self) -> None:
-        """Pop the sort menu over the active pane (the 's' key)."""
-        rx, rw = self._active_pane_region()
-        self.panel.popup_menu(self._sort_menu(), rx + rw / 2.0, 2.0)
+        """Open the sort dialog over the active pane (the 's' key): Up/Down pick
+        the key, Left/Right the order, F/E/S/T apply a key directly, with an
+        example of the resulting order at the bottom (issue #237)."""
+        pane = self.active_pane()
+
+        def on_result(result) -> None:
+            if result is not None:
+                pane["sort_mode"], pane["sort_reverse"] = result
+                self._resort(pane)
+                self.log_info(f"Sort: {self.flm.get_sort_description(pane)}")
+            self.panel.render()
+
+        show_sort_dialog(self.panel, mode=pane["sort_mode"],
+                         reverse=pane["sort_reverse"],
+                         region=self._active_pane_region(), on_result=on_result)
         self.panel.render()
 
     #: Keyboard nudge for the pane boundary / log height (fraction of the split),
@@ -4473,7 +4488,7 @@ class XeFMApp:
             ("diff_files", "Compare two selected files"),
             ("toggle_hidden", "Toggle hidden files"),
             ("toggle_color_scheme", "Cycle color theme"),
-            ("sort_menu", "Sort options (menu)"),
+            ("sort_menu", "Sort dialog (key F/E/S/T + order)"),
             ("quick_sort_name", "Quick-sort by name (repeat: reverse)"),
             ("quick_sort_size", "Quick-sort by size (repeat: reverse)"),
             ("quick_sort_date", "Quick-sort by date (repeat: reverse)"),

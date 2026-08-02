@@ -367,18 +367,21 @@ class FileListManager:
         return sorted_dirs + sorted_files
     
     def get_sort_description(self, pane_data):
-        """Get a human-readable description of the current sort mode"""
+        """Get a human-readable description of the current sort mode, using the
+        same key names the sort dialog and the menu show (Filename / Extension /
+        Size / Timestamp)."""
         mode = pane_data['sort_mode']
         reverse = pane_data['sort_reverse']
-        
+
         descriptions = {
-            'name': 'Name',
-            'ext':  'Ext',
-            'size': 'Size', 
-            'date': 'Date',
+            'name': 'Filename',
+            'ext':  'Extension',
+            'size': 'Size',
+            'date': 'Timestamp',
+            'type': 'Extension',  # legacy suffix sort (the pre-dialog menu)
         }
-        
-        description = descriptions.get(mode, 'Name')
+
+        description = descriptions.get(mode, 'Filename')
         if reverse:
             description += ' ↓'
         else:

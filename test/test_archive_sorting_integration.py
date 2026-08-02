@@ -168,14 +168,15 @@ def test_sort_description():
     
     # Test different sort modes
     test_cases = [
-        ({'sort_mode': 'name', 'sort_reverse': False}, 'Name ↑'),
-        ({'sort_mode': 'name', 'sort_reverse': True}, 'Name ↓'),
+        ({'sort_mode': 'name', 'sort_reverse': False}, 'Filename ↑'),
+        ({'sort_mode': 'name', 'sort_reverse': True}, 'Filename ↓'),
         ({'sort_mode': 'size', 'sort_reverse': False}, 'Size ↑'),
         ({'sort_mode': 'size', 'sort_reverse': True}, 'Size ↓'),
-        ({'sort_mode': 'date', 'sort_reverse': False}, 'Date ↑'),
-        ({'sort_mode': 'date', 'sort_reverse': True}, 'Date ↓'),
-        ({'sort_mode': 'ext', 'sort_reverse': False}, 'Ext ↑'),
-        ({'sort_mode': 'ext', 'sort_reverse': True}, 'Ext ↓'),
+        ({'sort_mode': 'date', 'sort_reverse': False}, 'Timestamp ↑'),
+        ({'sort_mode': 'date', 'sort_reverse': True}, 'Timestamp ↓'),
+        ({'sort_mode': 'ext', 'sort_reverse': False}, 'Extension ↑'),
+        ({'sort_mode': 'ext', 'sort_reverse': True}, 'Extension ↓'),
+        ({'sort_mode': 'type', 'sort_reverse': False}, 'Extension ↑'),
     ]
     
     for pane_data, expected_desc in test_cases:

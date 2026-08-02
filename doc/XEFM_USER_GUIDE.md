@@ -284,12 +284,15 @@ Shift-G  - Content search (grep) dialog
 
 ### Sorting
 ```
-S        - Show sort options menu
+S        - Open the sort dialog (key + order)
 1        - Quick sort by name
 2        - Quick sort by extension
 3        - Quick sort by size
 4        - Quick sort by date
 ```
+
+See [Sort Dialog Feature](SORT_DIALOG_FEATURE.md) for the dialog's controls
+(F/E/S/T choose a key directly; Left/Right choose ascending/descending).
 
 ### Search Tips
 - **Incremental search**: Start typing to filter files immediately
@@ -701,7 +704,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | Shift+G | Content (grep) search dialog |
 | ; | Filter the pane by pattern |
 | : | Clear the filter |
-| S | Sort menu |
+| S | Sort dialog (key + order) |
 | 1 / 2 / 3 / 4 | Quick sort by name / extension / size / date |
 
 ### Archive Operations
