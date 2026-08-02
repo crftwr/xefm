@@ -11,12 +11,10 @@ XeFM — short for *Xenolith File Manager* — is a powerful file manager that r
 - **Archive browsing** - Navigate ZIP, TAR, and compressed archives as virtual directories
 - **SFTP support** - Browse and manage remote servers via SSH with optimized performance
 - **AWS S3 support** for cloud storage operations
-- **Advanced search** with real-time filtering and background processing  
-- **Multi-selection** with bulk operations and progress tracking
+- **Advanced search** with real-time filtering, background processing, and multi-selection bulk operations
 - **Rich built-in viewers** - Syntax-highlighted text, images, Markdown, JSON, and CSV/TSV
 - **Themes & visual effects** - A dozen built-in themes; desktop mode adds GPU background animations, CRT/phosphor screen effects, and text-reveal animations
-- **External program integration** with configurable launchers
-- **Customizable** - Fully configurable key bindings and settings
+- **Customizable** - Fully configurable key bindings, settings, and external program launchers
 
 ## Quick Start
 
@@ -35,71 +33,27 @@ installing both is a perfectly normal setup.
 
 ### Desktop app (Windows, macOS)
 
-The desktop packages bundle their own Python, so there is nothing else to
-install:
+The desktop packages bundle their own Python, so there is nothing else to install.
 
-| Platform | Recommended install |
-|---|---|
-| **Windows** 10/11 x64 | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** — signed by Microsoft, automatic updates |
-| **macOS** 10.13+ | `XeFM-<version>-macos.dmg` from the [latest release](https://github.com/crftwr/xefm/releases/latest) — signed with the author's Apple Developer ID |
+**Windows** — install from the
+**[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)**, or run
+`winget install --id 9PK2X44W810V --source msstore`: XeFM lands in the Start
+menu, updates automatically, and uninstalls from *Settings → Apps*. An unsigned
+**portable zip** also ships with every
+[release](https://github.com/crftwr/xefm/releases/latest); it needs
+[unblocking once](doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip).
 
-#### Windows — Microsoft Store
-
-Install from the **[Store page](https://apps.microsoft.com/detail/9PK2X44W810V)**,
-or straight from a shell:
-
-```powershell
-winget install --id 9PK2X44W810V --source msstore
-```
-
-Either way XeFM lands in the Start menu, updates automatically, and uninstalls
-from *Settings → Apps* like any other application. The Store package is signed
-by Microsoft, so there is no SmartScreen prompt.
-
-A **portable zip** (`XeFM-<version>-win64.zip`) also ships with every
-[release](https://github.com/crftwr/xefm/releases/latest) for machines without
-Store access, or when you want a run-from-anywhere folder. It is not
-code-signed, so it needs [unblocking once](#windows-unblocking-the-unsigned-zip).
-
-#### macOS — the DMG
-
-Download `XeFM-<version>-macos.dmg` from the
-**[latest release](https://github.com/crftwr/xefm/releases/latest)**, open it
-and drag **XeFM** to *Applications*, then launch it from Launchpad or
-Spotlight. The app is signed with the author's Apple Developer ID.
-
-> **Use the package, not `--backend gui`.** XeFM can open the same window from a
-> terminal, but that path is for developing XeFM, not for using it: on macOS the
-> file-access permissions get attributed to your *terminal* instead of to XeFM,
-> both platforms show the Python interpreter's icon in the Dock / taskbar, and
-> you need a terminal window open the whole time. The installed app has none of
-> those problems. See
-> [Why not `xefm --backend gui`?](doc/DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui).
-
-#### Windows: unblocking the unsigned zip
-
-*This applies only to the portable zip — the
-[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) install is
-signed and needs none of it.* Only the Store package is signed (Microsoft signs
-it during certification); the zip on GitHub Releases is not, and Windows marks
-anything downloaded from the internet:
-
-1. Right-click the downloaded zip → **Properties** → tick **Unblock** → **OK**.
-   Doing this *before* extracting clears the mark on every extracted file at once.
-2. Extract the `XeFM` folder wherever you like — for example
-   `%LOCALAPPDATA%\Programs\XeFM` (no admin rights needed).
-3. Run `XeFM.exe`. If you skipped step 1, SmartScreen shows *"Windows protected
-   your PC"* — click **More info** → **Run anyway**. It asks only once per
-   download.
-
-The bundle is self-contained and writes nothing outside its own folder and
-`%USERPROFILE%\.xefm\`, so uninstalling is deleting the folder. Would rather not
-run an unsigned binary at all? Install from the
-[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) instead, or
-use the terminal app below.
-
-Full details, including macOS Gatekeeper notes, are in the
+**macOS** — download `XeFM-<version>-macos.dmg` from the
+**[latest release](https://github.com/crftwr/xefm/releases/latest)**, drag
+**XeFM** to *Applications*, and launch it from Launchpad or Spotlight. It is
+signed with the author's Apple Developer ID; full install details, including
+Gatekeeper notes, are in the
 **[Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package)**.
+
+> **Use the package, not `xefm --backend gui`** — that path is for developing
+> XeFM, not for using it: the Dock / taskbar icon and, on macOS, the file
+> permissions get attributed to Python / your terminal instead of to XeFM. See
+> [Why not `xefm --backend gui`?](doc/DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui).
 
 ### Terminal app (Windows, macOS, Linux)
 
@@ -112,27 +66,15 @@ xefm
 ```
 
 [pipx](https://pipx.pypa.io) and [uv](https://docs.astral.sh/uv/) keep XeFM in
-its own environment while putting the `xefm` command on your PATH — the right
-shape for an application. Or run `uvx xefm` to try it once without installing
-anything.
+its own environment while putting the `xefm` command on your PATH; `uvx xefm`
+tries it once without installing anything. Python 3.10+ is the only
+prerequisite, and this is the only install available on Linux — the one for
+SSH sessions, remote servers, and terminal-centric workflows.
 
-**Upgrading and uninstalling use the tool you installed with**, so pick the row
-you started from:
-
-| Installed with | Upgrade | Uninstall |
-|----------------|---------|-----------|
-| `pipx install xefm` | `pipx upgrade xefm` | `pipx uninstall xefm` |
-| `uv tool install xefm` | `uv tool upgrade xefm` | `uv tool uninstall xefm` |
-| `pip install xefm` | `pip install --upgrade xefm` | `pip uninstall xefm` |
-
-These are not interchangeable: each tool only knows about what it installed
-itself. `uv tool upgrade xefm` on a pipx- or pip-installed copy fails with
-`` `xefm` is not installed ``, and `uvx xefm` installs nothing at all, so there
-is never anything for it to upgrade.
-
-Python 3.10 or later is the only prerequisite. This is the install to use for
-SSH sessions, remote servers, Linux, and terminal-centric workflows — and the
-only one available on Linux.
+**Upgrade with the same tool you installed with** (`pipx upgrade xefm`,
+`uv tool upgrade xefm`, or `pip install --upgrade xefm`) — they are not
+interchangeable. Details and fixes for common install errors are in the
+[User Guide](doc/XEFM_USER_GUIDE.md#upgrading-and-uninstalling).
 
 ### From source
 
@@ -149,120 +91,61 @@ make run         # launch XeFM through it, no activation needed
 macOS / Windows app bundles.
 
 ### Essential Controls
+
 - **Navigate:** `↑↓` to move up/down, `←→` to switch panes/navigate directories
-- **Enter archives:** Press `Enter` on `.zip`, `.tar`, `.tar.gz` files to browse contents
 - **Select:** `Space` to select/deselect files, `A` for all files, `Shift-A` for all items
 - **File operations:** `C` (copy), `M` (move), `K` (delete), `R` (rename)
-- **Help:** `?` for comprehensive help dialog
+- **Search:** `F` for incremental search, `Shift-F` for filename search, `Shift-G` for content search
+- **Remote paths:** open `ssh://hostname/path` or `s3://bucket/path` like any directory
+- **Help:** `?` opens the help dialog with every key binding organized by category — no need to memorize
 - **Quit:** `Q` to exit
 
-### Help System
-Press `?` to open the comprehensive help dialog with all key bindings and features organized by category. The help dialog is your quick reference guide - no need to memorize all shortcuts!
-
 ## Documentation
-
-For comprehensive information about XeFM's features and usage:
 
 ### User Documentation
 - **[Complete User Guide](doc/XEFM_USER_GUIDE.md)** - Comprehensive guide covering all features, configuration, and usage
 - **[Configuration](doc/CONFIGURATION_FEATURE.md)** - Complete configuration reference and customization guide
 - **[Desktop Mode](doc/DESKTOP_MODE_GUIDE.md)** - Native Windows / macOS desktop app setup and options
 - **[Color Schemes & Visual Effects](doc/COLOR_SCHEMES_FEATURE.md)** - Themes, themeable GPU background scenes, and screen effects
-- **[Image Viewer](doc/IMAGE_VIEWER_FEATURE.md)** - Built-in zoom / pan image viewer
-- **[Markdown Viewer](doc/MARKDOWN_VIEWER_FEATURE.md)** & **[JSON / CSV Viewers](doc/JSON_CSV_VIEWERS_FEATURE.md)** - Rendered structured-file views
+- **[Image Viewer](doc/IMAGE_VIEWER_FEATURE.md)**, **[Markdown Viewer](doc/MARKDOWN_VIEWER_FEATURE.md)** & **[JSON / CSV Viewers](doc/JSON_CSV_VIEWERS_FEATURE.md)** - Built-in viewers
+- **[Diff Viewer](doc/DIFF_VIEWER_FEATURE.md)** & **[Batch Rename](doc/BATCH_RENAME_FEATURE.md)** - File / directory diffs and regex-based multi-file renaming
 - **[SFTP Support](doc/SFTP_SUPPORT_FEATURE.md)** - Remote server access via SSH with file operations and search
 - **[AWS S3 Support](doc/S3_SUPPORT_FEATURE.md)** - Cloud storage integration and S3 bucket management
 - **[Archives](doc/ARCHIVE_FEATURE.md)** - Create, extract, and browse archives as directories
 - **[Search Animation](doc/SEARCH_ANIMATION_FEATURE.md)** - Advanced search features and visual feedback
 
 ### Developer Documentation
+- **[Project Structure](doc/dev/PROJECT_STRUCTURE.md)** - Repository layout and where things live
 - **[Path Polymorphism System](doc/dev/PATH_POLYMORPHISM_SYSTEM.md)** - Storage-agnostic architecture and extensibility
 - **[Navigation System](doc/dev/NAVIGATION_SYSTEM.md)** - Core navigation implementation
 - **[External Programs](doc/dev/EXTERNAL_PROGRAMS_SYSTEM.md)** - Program integration system
 
-## Key Features Overview
-
-All key bindings are fully customizable through the configuration system. For complete key binding reference, press `?` in XeFM or see the [User Guide](doc/XEFM_USER_GUIDE.md).
-
-### Core Operations
-- **Navigation:** Arrow keys, Tab to switch panes, Enter to open directories/files/archives
-- **Archive Browsing:** Press Enter on `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz` files to browse as virtual directories
-- **File Operations:** Copy (`C`), Move (`M`), Delete (`K`), Rename (`R`)
-- **Selection:** Space to select files, `A` for all files, `Shift-A` for all items
-- **Search:** `F` for incremental search, `Shift-F` for filename search, `Shift-G` for content search
-- **Archives:** `P` to create archives, `U` to extract, Enter to browse contents
-- **File Viewers:** `V` to view the selected file — text (syntax-highlighted), images, Markdown, JSON, and CSV/TSV (works inside archives); `M` toggles rendered/raw in the viewer
-
-### Advanced Features
-- **Favorite Directories:** `J` for quick access to bookmarked locations
-- **External Programs:** `X` for custom program integration
-- **Sub-shell Mode:** `Shift-X` to enter shell with XeFM environment variables
-- **Themes:** `T` to cycle themes; more display options under `Z` (view options) and `Shift-Z` (settings)
-- **Configuration:** `Shift-Z` for settings menu (`Z` opens view options)
-- **SFTP Support:** Navigate remote servers using `ssh://hostname/path` syntax
-- **AWS S3 Support:** Navigate S3 buckets using `s3://bucket/path` syntax
-
-For comprehensive SFTP setup and usage, see the **[SFTP Support Feature Guide](doc/SFTP_SUPPORT_FEATURE.md)**.
-
-For comprehensive S3 setup and usage, see the **[AWS S3 Support Feature Guide](doc/S3_SUPPORT_FEATURE.md)**.
-
 ## Archive Virtual Directory Browsing
 
-XeFM lets you browse archive files as if they were regular directories - no extraction needed!
-
-**Supported formats:** `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`
-
-**How to use:**
-1. Navigate to any archive file
-2. Press `Enter` to browse its contents
-3. Navigate directories inside the archive with arrow keys
-4. Press `Enter` on files to view them
-5. Copy files out with `C` (or your copy key)
-6. Search within archives with `Alt+F7`
-7. Press `Backspace` to exit the archive
-
-**What you can do:**
-- Browse nested directories within archives
-- View text files with syntax highlighting
-- Copy files and directories from archives to local/S3
-- Search for files by name or content
-- Select multiple files for batch operations
-- Sort by name, size, date, or extension
-
-See [Archive Feature](doc/ARCHIVE_FEATURE.md) for complete documentation.
+Press `Enter` on an archive file (`.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`,
+`.tar.xz`) to browse it as if it were a regular directory — no extraction
+needed. Navigate nested directories, view files, search by name or content, and
+copy files out with the normal copy key; `Backspace` leaves the archive. `P`
+creates a new archive, `U` extracts one. See the
+[Archive Feature Guide](doc/ARCHIVE_FEATURE.md).
 
 ## Built-in File Viewers
 
-Press `V` (or `Enter`) to view the selected file. XeFM picks the right viewer for the file type — all of them work seamlessly on local files, inside archives, and on remote SFTP / S3 paths without extraction or download.
-
-### Text viewer
-
-A powerful text viewer with syntax highlighting for 20+ file formats.
+Press `V` (or `Enter`) to view the selected file. XeFM picks the right viewer
+for the file type: syntax-highlighted text (20+ formats, line numbers, wrapping,
+in-file search), images with zoom / pan (inline in iTerm2 / kitty / sixel
+terminals and in desktop mode), and *rendered* views for Markdown, JSON, and
+CSV/TSV (`M` toggles rendered / raw). All viewers work on local files, inside
+archives, and on remote SFTP / S3 paths without extraction or download.
 
 ![Text viewer](doc/images/text-viewer.jpg)
-
-- Syntax highlighting for Python, JavaScript, JSON, Markdown, YAML, and more
-- Line numbers, horizontal scrolling, line wrapping (`W`), and in-file search
-- Multiple encoding support (UTF-8, Latin-1, CP1252)
-
-### Rich viewers — Markdown, JSON, CSV/TSV
-
-For structured files, the viewer offers a *rendered* view in addition to the raw text. Press `M` inside the viewer to toggle between the formatted and raw views.
 
 | Markdown | JSON / JSONL | CSV / TSV |
 |:---:|:---:|:---:|
 | <img src="doc/images/markdown-viewer.jpg" width="280"> | <img src="doc/images/json-viewer.jpg" width="280"> | <img src="doc/images/csv-viewer.jpg" width="280"> |
 | Rendered headings, lists, code, and links | Collapsible, syntax-colored tree (`.json`, `.jsonl`, `.ndjson`) | Column-aligned table grid (`.csv`, `.tsv`) |
 
-### Image viewer
-
-A modal image viewer with zoom, pan, and prev/next navigation through the sibling images in the current pane.
-
 ![Image viewer](doc/images/image-viewer.jpg)
-
-- Supports PNG, JPEG, GIF, BMP, WebP, TIFF, ICO, and more (via Pillow)
-- Renders inline in graphics-capable terminals (iTerm2, kitty, sixel) and in desktop mode; falls back to a metadata card (format / dimensions / size) elsewhere
-- Zoom with `+` / `-`, pan with the arrow keys or a mouse drag, step through images with prev/next
 
 ## Themes & Visual Effects
 
@@ -275,164 +158,58 @@ XeFM ships a dozen built-in themes. Press `T` to cycle to the next theme, or pic
 | <img src="doc/images/theme-light.jpg" width="260"><br>**Light+** | <img src="doc/images/theme-solarized-light.jpg" width="260"><br>**Solarized Light** | <img src="doc/images/theme-sci-fi.jpg" width="260"><br>**Sci-Fi** |
 | <img src="doc/images/theme-cyber.jpg" width="260"><br>**Cyber** | <img src="doc/images/theme-segment-lcd.jpg" width="260"><br>**Segment LCD** | <img src="doc/images/theme-shinagawa.jpg" width="260"><br>**Shinagawa** |
 
-The default config also includes a **Phosphor** sample theme — a monochrome phosphor-green CRT terminal — as a starting point for your own.
-
-### Visual effects (desktop mode)
-
-In desktop mode, a theme can carry visual effects that the GPU renders behind and over the interface. Terminal mode simply shows the theme's colors and ignores these.
-
-- **Background animations** — a slow, on-palette scene drawn behind the panes, rendered as a GPU fragment shader: `starfield`, `rain`, `hologram`, `wave`, `grid`, `constellation`, and `datastream`.
-- **Screen post-effects** — a full-frame CRT / phosphor look composited over the UI: bloom, glow, scanlines, vignette, and drop shadows.
-- **Text-reveal animations** — filenames and labels *arrive* rather than appear, decoding or typing into place on a directory change (used by Sci-Fi and Cyber).
-- **Translucent surfaces** — panels and chrome can sit at reduced opacity so the animated background reads through.
-
-Effects are pure theme data — each is a combination of parameters attached to a theme, so a custom theme can mix and match them without any application code.
+In desktop mode a theme can also carry **visual effects** the GPU renders behind
+and over the interface: background animations (`starfield`, `rain`, `hologram`,
+…), CRT / phosphor screen post-effects, text-reveal animations, and translucent
+surfaces. Effects are pure theme data — a custom theme can mix and match them,
+and terminal mode ignores them. See
+[Color Schemes & Visual Effects](doc/COLOR_SCHEMES_FEATURE.md).
 
 ## Sub-shell Mode
 
-Press `Shift-X` to temporarily suspend XeFM and enter a shell with environment variables providing access to current directories and selected files:
-
-- `XEFM_LEFT_DIR`, `XEFM_RIGHT_DIR` - Directory paths for each pane
-- `XEFM_THIS_DIR`, `XEFM_OTHER_DIR` - Current and other pane directories  
-- `XEFM_LEFT_SELECTED`, `XEFM_RIGHT_SELECTED` - Selected files in each pane
-- `XEFM_ACTIVE` - Set to '1' to indicate XeFM sub-shell mode
-
-Type `exit` to return to XeFM.
-
-## Advanced Features
-
-- **Native Desktop App:** Run in a real window on Windows and macOS with GPU rendering, or in any terminal — same keyboard-driven interface
-- **Archive Virtual Directories:** Browse ZIP, TAR, and compressed archives as if they were directories - navigate, search, view files, and copy contents without extraction
-- **SFTP Support:** Access remote servers via SSH with full file operations, search, and optimized performance through connection multiplexing and bulk operations
-- **AWS S3 Support:** Navigate and manage S3 buckets with seamless local/remote operations
-- **Rich Viewers:** Built-in viewers for text (syntax-highlighted), images (zoom/pan), Markdown, JSON, and CSV/TSV — plus text and directory diff viewers
-- **Themes & Effects:** A dozen built-in themes with GPU background animations, CRT/phosphor screen effects, and text-reveal animations in desktop mode
-- **Batch Rename:** Regex-based renaming with capture groups and macros
-- **Threaded Search:** Non-blocking filename and content search with progress tracking (works inside archives and on remote servers)
-- **Pane Management:** Resizable layout, directory sync, state persistence
-- **External Integration:** VSCode, Beyond Compare, and custom program support
-
-For detailed information on all features, see the [User Guide](doc/XEFM_USER_GUIDE.md).
+Press `Shift-X` to temporarily suspend XeFM and enter a shell whose environment
+describes the current panes and selection (`XEFM_LEFT_DIR`, `XEFM_THIS_DIR`,
+`XEFM_LEFT_SELECTED`, …); type `exit` to return to XeFM. The full variable list
+is in the [User Guide](doc/XEFM_USER_GUIDE.md#sub-shell-mode).
 
 ## Command Line Options
 
-These apply to the terminal install (`pipx install xefm`) and to source
-checkouts. The desktop packages take no arguments — their launcher starts the
-native backend directly.
+These apply to the terminal install and to source checkouts (where every command
+also works as `python3 -m xefm …`); the desktop packages take no arguments.
 
 ```bash
-# Run in terminal mode (default)
-xefm
-
-# Specify startup directories
-xefm --left /path/to/projects --right /path/to/documents
-
-# Run in desktop mode — for XeFM development; install the desktop package instead
-xefm --backend gui
-
-# Help and version
-xefm --help
-xefm --version
+xefm                                    # terminal mode (the default)
+xefm --left /path/a --right /path/b     # startup directories
+xefm --backend gui                      # desktop window — development path only
 ```
 
-The full flag set is just `--backend {tui,curses,gui,macos,windows}`, `--left DIR`,
-`--right DIR`, `--version`, and `--help`.
-
-Every line above also works as `python3 -m xefm …` when you are running from a
-source checkout, where no `xefm` console command is installed.
-
-### Backend Selection
-
-XeFM supports two rendering backends, chosen with `--backend`:
-
-- **Terminal Mode** (`--backend tui`, alias `curses`): traditional terminal interface, works on all platforms (**Windows, macOS, Linux**) — the default
-- **Desktop Mode** (`--backend gui`): native desktop window on **Windows** (Direct2D/DirectWrite) or **macOS** (CoreGraphics, via PyObjC). The `gui` alias resolves to the right backend for the current platform; `windows` / `macos` name them explicitly. **For everyday desktop use install the [desktop package](#desktop-app-windows-macos) instead** — this flag is the development path, and comes with the [caveats](doc/DESKTOP_MODE_GUIDE.md#why-not-xefm---backend-gui) of running a GUI out of a terminal.
-
-Desktop mode provides:
-- Native window with resizing and full-screen support
-- Customizable fonts (`MONO_FONT_NAME` / `UI_FONT_NAME` / `FONT_SIZE`)
-- Window size and position remembered automatically across runs
-- Better color accuracy with true RGB colors, plus GPU-rendered theme background animations and screen effects
-
-See the [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed desktop mode configuration.
+The full flag set is `--backend {tui,curses,gui,macos,windows}`, `--left DIR`,
+`--right DIR`, `--version`, and `--help`. Backend details are in the
+[Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md#choosing-the-backend).
 
 ## Configuration
 
-XeFM is highly configurable through `~/.xefm/config.py`. Access configuration via the Settings menu (`Shift-Z` key) or edit manually.
-
-**Key areas:**
-- Themes, color schemes, and visual effects (including custom themes)
-- Key bindings (fully customizable)
-- External programs, file associations, and text editor
-- Favorite directories and startup paths
-- Performance and behavior settings
-
-For detailed configuration options, see the **[Configuration Feature Guide](doc/CONFIGURATION_FEATURE.md)** and the [User Guide](doc/XEFM_USER_GUIDE.md#configuration).
-
-## Project Structure
-
-```
-xefm/
-├── xefm/          # The `xefm` package — everything the app ships
-│   ├── app.py     # The application (XeFMApp + top-level UI)
-│   ├── __main__.py # `python -m xefm` entry point
-│   ├── *.py       # Business logic, imported as `xefm.config`, `xefm.path`, …
-│   └── tools/     # External programs for end users
-├── tools/         # Development tools and utilities
-├── test/          # Test files (1000+ passing tests)
-└── doc/           # User documentation
-    └── dev/       # Developer documentation
-```
+XeFM is highly configurable through `~/.xefm/config.py` — themes and visual
+effects, key bindings, external programs and file associations, favorite
+directories, and behavior settings. Open the settings menu with `Shift-Z`
+(`Z` opens view options), or edit the file directly. See the
+**[Configuration Feature Guide](doc/CONFIGURATION_FEATURE.md)**.
 
 ## Troubleshooting
 
-**Installation Issues:**
-- Ensure Python 3.10+ is installed
-- `xefm: command not found` after `pip install xefm` — the console script landed in an environment that is not on your PATH; `pipx install xefm` or `uv tool install xefm` handle that for you (or run it as `python3 -m xefm`)
-- `error: externally-managed-environment` from pip — [PEP 668](https://peps.python.org/pep-0668/) is protecting a system Python (Homebrew, Debian/Ubuntu); use pipx, uv, or a virtualenv
-- `` `xefm` is not installed `` from `uv tool upgrade xefm` — uv only manages what `uv tool install` put there, so this means pipx or pip owns your copy (or `uvx` ran it without installing). Upgrade with the tool you installed with — see the table in [Terminal app](#terminal-app-windows-macos-linux)
-- Check terminal compatibility with curses library (terminal mode)
-
-**Desktop Mode Issues:**
-- Desktop mode runs on Windows and macOS; on other platforms use terminal mode
-- Generic Python icon in the Dock / taskbar, or macOS permission prompts naming your terminal instead of XeFM — symptoms of launching with `--backend gui`; install the [desktop package](#desktop-app-windows-macos) instead
-- *"Windows protected your PC"* when launching the downloaded `XeFM.exe` — the portable zip is not code-signed; click **More info** → **Run anyway**, or unblock the zip before extracting ([details](doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip)). The [Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) install is signed and never shows this prompt
+- *"Windows protected your PC"* when launching the portable `XeFM.exe` — the zip is not code-signed; click **More info** → **Run anyway**, or [unblock the zip](doc/DESKTOP_MODE_GUIDE.md#windows--the-portable-zip) before extracting. The [Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) install is signed and never shows this prompt
 - *"XeFM cannot be opened because the developer cannot be verified"* on macOS — right-click `XeFM.app` in *Applications* and choose **Open**, then confirm once
-- On macOS, if PyObjC is missing XeFM automatically falls back to terminal mode
-- Check console output for backend initialization messages
-- See [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md) for detailed setup
+- Install problems (`command not found`, `externally-managed-environment`, upgrade errors) — see [Installation troubleshooting](doc/XEFM_USER_GUIDE.md#installation-troubleshooting)
 
-**Performance Issues:**
-- Check available memory for large directory operations
-- First access to large archives may be slow while structure is cached
-- Desktop mode provides better performance with GPU acceleration
+More in the [User Guide](doc/XEFM_USER_GUIDE.md#troubleshooting) and the [Desktop Mode Guide](doc/DESKTOP_MODE_GUIDE.md#troubleshooting).
 
-**Archive Issues:**
-- Verify archive file is not corrupted
-- Ensure you have read permissions for the archive
-- Check supported formats: `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`
-- Archives are read-only - use copy operations to extract files
+## Contact & Support
 
-For detailed troubleshooting, see the [User Guide](doc/XEFM_USER_GUIDE.md#troubleshooting).
-
-## Contact Author
-
-Have questions, suggestions, or found a bug? Get in touch:
-
-- **GitHub Repository**: [https://github.com/crftwr/xefm](https://github.com/crftwr/xefm)
 - **GitHub Issues**: [Report bugs or request features](https://github.com/crftwr/xefm/issues)
 - **Microsoft Store**: [XeFM on the Store](https://apps.microsoft.com/detail/9PK2X44W810V) — the Windows desktop app
 - **PyPI**: [pypi.org/project/xefm](https://pypi.org/project/xefm/) — released versions (`pipx install xefm`)
 - **Author's X (Twitter)**: [@crftwr](https://x.com/crftwr)
 
-We welcome feedback and contributions to make XeFM even better!
-
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
-
-## Support
-
-- **Issues:** Create an issue on the project repository
-- **Documentation:** Review files in `doc/` and `doc/dev/` directories
-- **User Guide:** See [XEFM_USER_GUIDE.md](doc/XEFM_USER_GUIDE.md) for comprehensive information

@@ -37,11 +37,12 @@ XeFM (*Xenolith File Manager*) is a powerful dual-pane file manager that runs bo
 
 ## Installation
 
-**Desktop app (Windows, macOS).** Download the `-macos.dmg` or the `-win64.zip` from
-the [latest release](https://github.com/crftwr/xefm/releases/latest) and install
-it like any other application — Python is bundled in. This is the recommended
-way to run XeFM on the desktop; see the
-[Desktop Mode Guide](DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package).
+**Desktop app (Windows, macOS).** Install from the
+[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V) on Windows, or
+download the `-macos.dmg` from the
+[latest release](https://github.com/crftwr/xefm/releases/latest) on macOS —
+Python is bundled in. This is the recommended way to run XeFM on the desktop;
+see the [Desktop Mode Guide](DESKTOP_MODE_GUIDE.md#installing-the-desktop-app-package).
 
 **Terminal app (Windows, macOS, Linux).** From PyPI:
 
@@ -50,12 +51,46 @@ pipx install xefm     # or:  uv tool install xefm,  or:  pip install xefm
 xefm
 ```
 
-Python 3.10 or later is all you need; every dependency, including the
+[pipx](https://pipx.pypa.io) and [uv](https://docs.astral.sh/uv/) keep XeFM in
+its own environment while putting the `xefm` command on your PATH — the right
+shape for an application. Or run `uvx xefm` to try it once without installing
+anything. Python 3.10 or later is all you need; every dependency, including the
 platform-specific ones, comes with it.
 
-The two installs coexist and share `~/.xefm/`. The
-**[README](../README.md#installation)** covers the rest — upgrading, running
-without installing (`uvx xefm`), and working from a source checkout.
+The two installs coexist and share `~/.xefm/`; installing both is a perfectly
+normal setup. The **[README](../README.md#from-source)** covers working from a
+source checkout.
+
+### Upgrading and uninstalling
+
+**Use the tool you installed with**, so pick the row you started from:
+
+| Installed with | Upgrade | Uninstall |
+|----------------|---------|-----------|
+| `pipx install xefm` | `pipx upgrade xefm` | `pipx uninstall xefm` |
+| `uv tool install xefm` | `uv tool upgrade xefm` | `uv tool uninstall xefm` |
+| `pip install xefm` | `pip install --upgrade xefm` | `pip uninstall xefm` |
+
+These are not interchangeable: each tool only knows about what it installed
+itself. `uv tool upgrade xefm` on a pipx- or pip-installed copy fails with
+`` `xefm` is not installed ``, and `uvx xefm` installs nothing at all, so there
+is never anything for it to upgrade.
+
+The desktop packages upgrade through their own channel: the Microsoft Store
+updates automatically, and on macOS you install the new DMG over the old app.
+
+### Installation troubleshooting
+
+- `xefm: command not found` after `pip install xefm` — the console script landed
+  in an environment that is not on your PATH; `pipx install xefm` or
+  `uv tool install xefm` handle that for you (or run it as `python3 -m xefm`)
+- `error: externally-managed-environment` from pip —
+  [PEP 668](https://peps.python.org/pep-0668/) is protecting a system Python
+  (Homebrew, Debian/Ubuntu); use pipx, uv, or a virtualenv
+- `` `xefm` is not installed `` from `uv tool upgrade xefm` — uv only manages
+  what `uv tool install` put there, so this means pipx or pip owns your copy
+  (or `uvx` ran it without installing). Upgrade with the tool you installed
+  with — see the table above
 
 **First run:** arrow keys navigate, `Tab` switches panes, `?` opens help, `Q`
 quits.
