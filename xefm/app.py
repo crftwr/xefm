@@ -2868,8 +2868,10 @@ class XeFMApp:
         """Home / root / common folders + mounted volumes, as ``{name, path}``
         rows for the drives picker. SSH hosts are added by ``_ssh_drives``; S3
         buckets (an async, credentialed scan) remain a later phase."""
-        drives = [{"name": "Home", "path": str(Path.home())},
-                  {"name": "Root", "path": "/"}]
+        system = platform.system()
+        drives = [{"name": "Home", "path": str(Path.home())}]
+        if system != "Windows":
+            drives.append({"name": "Root", "path": "/"})
         for name in ("Documents", "Downloads", "Desktop"):
             p = Path.home() / name
             try:
@@ -2877,25 +2879,48 @@ class XeFMApp:
                     drives.append({"name": name, "path": str(p)})
             except Exception:
                 pass
-        if platform.system() == "Darwin":
-            vol_roots = ["/Volumes"]
+        if system == "Windows":
+            for root in self._windows_drive_roots():
+                drives.append({"name": root.rstrip("\\/"), "path": root})
         else:
-            vol_roots = [f"/media/{os.environ.get('USER', '')}", "/media", "/mnt"]
-        for root in vol_roots:
-            try:
-                rp = Path(root)
-                if rp.exists() and rp.is_dir():
-                    for v in rp.iterdir():
-                        if v.is_dir():
-                            drives.append({"name": v.name, "path": str(v)})
-            except Exception:
-                pass
+            if system == "Darwin":
+                vol_roots = ["/Volumes"]
+            else:
+                vol_roots = [f"/media/{os.environ.get('USER', '')}", "/media", "/mnt"]
+            for root in vol_roots:
+                try:
+                    rp = Path(root)
+                    if rp.exists() and rp.is_dir():
+                        for v in rp.iterdir():
+                            if v.is_dir():
+                                drives.append({"name": v.name, "path": str(v)})
+                except Exception:
+                    pass
         seen, out = set(), []
         for d in drives:
             if d["path"] not in seen:
                 seen.add(d["path"])
                 out.append(d)
         return out
+
+    @staticmethod
+    def _windows_drive_roots() -> list[str]:
+        """Drive roots (``C:\\``, ``D:\\``, …) on Windows. ``os.listdrives`` on
+        Python ≥ 3.12, the ``GetLogicalDrives`` bitmask below that; both only ask
+        the OS which letters exist, so an unready removable or network drive
+        cannot stall the picker. Best-effort: an empty list on failure."""
+        try:
+            return list(os.listdrives())
+        except AttributeError:
+            pass
+        except OSError:
+            return []
+        try:
+            import ctypes
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        except Exception:
+            return []
+        return [f"{chr(ord('A') + i)}:\\" for i in range(26) if bitmask & (1 << i)]
 
     def _ssh_drives(self) -> list[dict]:
         """SSH hosts from ``~/.ssh/config`` as ``ssh://host/`` rows for the drives

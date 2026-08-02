@@ -8,6 +8,8 @@ elsewhere; here we pin down the ``{name, path}`` rows the picker is fed.
 """
 
 import os
+import platform
+import re
 import sys
 import unittest
 from unittest.mock import patch, MagicMock
@@ -24,15 +26,54 @@ def _bare_app():
 
 
 class LocalDrives(unittest.TestCase):
-    def test_includes_home_and_root(self):
-        rows = _bare_app()._local_drives()
-        by_name = {r["name"]: r["path"] for r in rows}
+    def _rows(self, system, drive_roots=()):
+        with patch.object(xefm_app.platform, "system", return_value=system), \
+             patch.object(xefm_app.XeFMApp, "_windows_drive_roots",
+                          return_value=list(drive_roots)):
+            return _bare_app()._local_drives()
+
+    def test_includes_home(self):
+        by_name = {r["name"]: r["path"] for r in _bare_app()._local_drives()}
         self.assertEqual(by_name.get("Home"), str(xefm_app.Path.home()))
+
+    def test_posix_includes_root(self):
+        by_name = {r["name"]: r["path"] for r in self._rows("Linux")}
         self.assertEqual(by_name.get("Root"), "/")
+
+    def test_windows_lists_drive_letters_not_root(self):
+        rows = self._rows("Windows", ["C:\\", "D:\\"])
+        by_name = {r["name"]: r["path"] for r in rows}
+        self.assertEqual(by_name.get("C:"), "C:\\")
+        self.assertEqual(by_name.get("D:"), "D:\\")
+        self.assertNotIn("Root", by_name)  # "/" is drive-relative on Windows
+
+    def test_windows_survives_empty_drive_scan(self):
+        by_name = {r["name"]: r["path"] for r in self._rows("Windows")}
+        self.assertEqual(by_name.get("Home"), str(xefm_app.Path.home()))
 
     def test_paths_are_unique(self):
         paths = [r["path"] for r in _bare_app()._local_drives()]
         self.assertEqual(len(paths), len(set(paths)))
+
+
+class WindowsDriveRoots(unittest.TestCase):
+    @unittest.skipUnless(platform.system() == "Windows", "queries real Windows drives")
+    def test_real_roots_shape(self):
+        roots = xefm_app.XeFMApp._windows_drive_roots()
+        self.assertTrue(roots)  # at least the system drive
+        for root in roots:
+            self.assertRegex(root, re.compile(r"^[A-Z]:\\$"))
+
+    def test_bitmask_fallback(self):
+        # Pre-3.12 path: os.listdrives is absent, GetLogicalDrives supplies bits
+        # 2 and 3 (C: and D:).
+        ctypes_mod = MagicMock()
+        ctypes_mod.windll.kernel32.GetLogicalDrives.return_value = 0b1100
+        with patch.object(xefm_app.os, "listdrives", create=True,
+                          side_effect=AttributeError), \
+             patch.dict(sys.modules, {"ctypes": ctypes_mod}):
+            roots = xefm_app.XeFMApp._windows_drive_roots()
+        self.assertEqual(roots, ["C:\\", "D:\\"])
 
 
 class SshDrives(unittest.TestCase):
