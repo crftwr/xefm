@@ -2271,9 +2271,14 @@ class XeFMApp:
             MenuItem("Delete…", on_select=self.delete_files,
                      enabled=has_files, shortcut=sc("delete_files")),
             SEPARATOR,
-            MenuItem("Copy Name(s)", on_select=self.copy_names_to_clipboard,
+            # Through _menu (dispatch + render), not the bare method: these two
+            # actions' only feedback is a log line, and a native menu activation
+            # renders nothing on its own — the line would sit unpainted until
+            # the next event (#253). Sibling items get away with the direct call
+            # because they open a dialog or viewer that repaints itself.
+            MenuItem("Copy Name(s)", on_select=lambda: self._menu("copy_names"),
                      enabled=has_files, shortcut=sc("copy_names")),
-            MenuItem("Copy Full Path(s)", on_select=self.copy_paths_to_clipboard,
+            MenuItem("Copy Full Path(s)", on_select=lambda: self._menu("copy_paths"),
                      enabled=has_files, shortcut=sc("copy_paths")),
             SEPARATOR,
             MenuItem("Create Archive…", on_select=self.create_archive,
