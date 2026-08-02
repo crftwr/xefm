@@ -288,6 +288,21 @@ class AppVirtual(unittest.TestCase):
         self.assertFalse(self.app._handle_reload_request(name))
         self.assertIsNotNone(pane["virtual"])
 
+    def test_toggle_hidden_keeps_virtual_results(self):
+        # Issue #259: toggling hidden-file visibility re-listed the search root
+        # into the pane, wiping the result set while the header still claimed a
+        # search. The results must survive the toggle, in both directions.
+        a = self._write("sub/a.txt")
+        b = self._write("sub2/b.txt")
+        self._write("root.txt")  # at the search root: appears only on a reset
+        self.app._feed_search_results("filename", [a, b], Path(self.tmp), "txt")
+        pane = self.app.active_pane()
+        for _ in range(2):  # hidden off, then back on
+            self.assertTrue(self.app.dispatch("toggle_hidden"))
+            self.app._settle_listings()
+            self.assertIsNotNone(pane["virtual"])
+            self.assertEqual({f.name for f in pane["files"]}, {"a.txt", "b.txt"})
+
 
 if __name__ == "__main__":
     unittest.main()

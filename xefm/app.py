@@ -1964,7 +1964,12 @@ class XeFMApp:
                 self._go_parent(pane)
         elif action == "toggle_hidden":
             self.flm.show_hidden = not self.flm.show_hidden
-            self._list_pane(self._pane_name_of(pane))
+            # _relist, not _list_pane: on a virtual (search-results) pane a raw
+            # directory read would replace the result set with the search root's
+            # listing while the pane still claimed to be a results view (#259).
+            # The virtual-aware path keeps the set; the new flag applies to the
+            # next real listing (the hidden filter never applies to a result set).
+            self._relist(pane)
             self.log_info(f"Hidden files: {'shown' if self.flm.show_hidden else 'hidden'}")
         elif action == "toggle_color_scheme":
             self._cycle_theme()  # falls through to a full re-render below
