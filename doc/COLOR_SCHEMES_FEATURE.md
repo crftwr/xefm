@@ -48,7 +48,7 @@ palette with a recommended *screen effect*:
   effect is a soft drop shadow on the text, which lifts the glyphs clear of the
   background. Text appears instantly; the water is the only thing that moves.
 
-Select any of them from **View → Theme** or by cycling with `T`.
+Select any of them from **View → Theme**.
 
 The screen effect is composited over the whole frame and is only rendered by the
 **desktop app** (macOS/Windows) — a terminal shows the
@@ -71,23 +71,24 @@ Every theme changes:
 
 ### Switch Themes
 
-Press `T` to cycle through the available themes while XeFM is running, or pick one
-directly from **View → Theme**. The change happens immediately.
+Pick a theme directly from **View → Theme** while XeFM is running. The change
+happens immediately.
 
 ### Default Theme
 
 XeFM starts on the **Dark+** theme and remembers whichever theme you last switched
-to (with `T`, or **View → Theme**) across restarts — there is no single
-default-scheme setting. To add or customize themes, use the `THEMES` dict in
-`~/.xefm/config.py` (see [Configuration](CONFIGURATION_FEATURE.md)).
+to across restarts — there is no single default-scheme setting. To add or
+customize themes, use the `THEMES` dict in `~/.xefm/config.py` (see
+[Configuration](CONFIGURATION_FEATURE.md)).
 
-### Change the Theme Key
+### Assign a Theme Key
 
-If you want to use a different key to cycle themes:
+Cycling themes has no key by default. To cycle from the keyboard, bind
+`toggle_color_scheme` in `~/.xefm/config.py`:
 
 ```python
 KEY_BINDINGS = {
-    'toggle_color_scheme': ['T'],  # Change 'T' to your preferred key
+    'toggle_color_scheme': ['Y'],  # Pick any free key
     # ... other bindings
 }
 ```
@@ -148,7 +149,7 @@ with no usable GPU shader support.
 
 Animations are chosen per theme. Among the built-in themes, **Sci-Fi** ships with
 the starfield, **Cyber** with the hologram and **Shinagawa** with the wave; select
-one from **View → Theme** or cycle themes with `T`.
+one from **View → Theme**.
 
 To use one in your own theme, add an `animation` key to a theme in the `THEMES`
 dict in `~/.xefm/config.py`:
@@ -393,7 +394,7 @@ full screen repaint.
 
 ## Troubleshooting
 
-### Colors Don't Change When Pressing 'T'
+### Colors Don't Change When Switching Themes
 - Make sure your terminal supports colors
 - Check that colors are enabled in your configuration
 - Try restarting XeFM
@@ -404,21 +405,21 @@ full screen repaint.
 - Try a different terminal if you want more colors
 
 ### Colors Are Too Bright/Dark
-- Cycle to a different theme with `T`
+- Switch to a different theme (**View → Theme**)
 - Dark themes (Dark+) work better with dark terminal backgrounds
 - Light themes (Light+) work better with light terminal backgrounds
 
 ## Tips
 
 - **Dark terminals**: Use a dark theme such as Dark+ (the default)
-- **Light terminals**: Cycle with `T` to a light theme such as Light+
+- **Light terminals**: Switch to a light theme such as Light+
 - **SSH connections**: Colors work over SSH too
 - **Screen/tmux**: Colors work in terminal multiplexers
 - **Different terminals**: Try several themes to see which looks best
 
 ## Getting More Information
 
-- **In XeFM**: Press `?` for help, which lists the `T` key
+- **In XeFM**: Press `?` for help, which lists all key bindings
 - **Log messages**: XeFM shows what type of colors your terminal supports
 
 The theme feature makes XeFM look good in any terminal environment!

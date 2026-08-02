@@ -422,10 +422,11 @@ W        - Show file and directory comparison options
 ```
 Z        - Show view options menu
 Shift-Z  - Show settings and configuration menu
-T        - Switch color scheme (cycles dark / light / themes)
-Shift-T  - Toggle fallback color mode for terminal compatibility
 .        - Toggle visibility of hidden files
 ```
+
+Color themes are switched from the menu bar (**View → Theme**); assign a key to
+`toggle_color_scheme` in `~/.xefm/config.py` to cycle them from the keyboard.
 
 ### Progress Animation
 XeFM shows animated progress indicators during long-running operations like searching files.
@@ -743,8 +744,6 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | ? | Show the help dialog |
 | Q | Quit XeFM |
 | . | Toggle hidden files |
-| T | Cycle the color theme |
-| Shift+T | Toggle fallback color mode |
 | X | External programs menu |
 | Shift+X | Enter subshell (command line) mode |
 | Z | View options menu |

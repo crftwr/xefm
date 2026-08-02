@@ -150,7 +150,6 @@ KEY_BINDINGS = {
     'compare_selection': ['w', 'W'],      # Show file and directory comparison options
     
     # Interface Options
-    'toggle_fallback_colors': ['T'],       # Toggle fallback color mode for compatibility
     'view_options': ['z'],                 # Show view options menu
     'settings_menu': ['Z'],                # Show settings and configuration menu
 }

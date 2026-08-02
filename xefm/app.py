@@ -2804,7 +2804,7 @@ class XeFMApp:
         self.backend.set_surface_opacity(theme.extras.get("opacity", 1.0))
 
     def _cycle_theme(self) -> None:
-        """Advance to the next palette (the ``toggle_color_scheme`` / T action)."""
+        """Advance to the next palette (the ``toggle_color_scheme`` action)."""
         self._apply_theme(self._theme_index + 1)
 
     def _select_theme(self, index: int) -> None:

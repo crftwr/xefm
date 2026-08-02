@@ -353,8 +353,9 @@ class Config:
 
         # === Display & Appearance ===
         'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles)
-        'toggle_color_scheme': ['T'],          # Switch between dark and light color schemes
-        'toggle_fallback_colors': ['Shift-T'], # Toggle fallback color mode for compatibility
+        # Unbound by default (use View → Theme in the menu bar). Assign a key
+        # here to cycle themes from the keyboard, e.g. ['T'].
+        'toggle_color_scheme': [],             # Cycle to the next color theme
         'view_options': ['Z'],                 # Show view options menu
         'settings_menu': ['Shift-Z'],          # Show settings and configuration menu
         
