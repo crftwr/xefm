@@ -108,6 +108,17 @@ def test_toggle_builds_and_caches(backend, md_file):
     assert type(v._rich_widget).__name__ == "MarkdownView"
     assert v._rich_widget._sems      # source parsed into semantic blocks
 
+
+def test_rich_widget_resolves_images_against_file_directory(backend, md_file):
+    # The built MarkdownView carries the file's own directory, so a relative
+    # image path (``![x](docs/images/a.png)``) resolves as GitHub renders it,
+    # not against XeFM's process CWD.
+    panel = Panel(backend)
+    v = show_text_viewer(panel, md_file)
+    panel.render()
+    v._toggle_view_mode()
+    assert v._rich_widget.base_dir == str(md_file.parent)
+
     built = v._rich_widget
     v._toggle_view_mode()
     assert v.mode == "text"

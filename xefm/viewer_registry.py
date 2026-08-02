@@ -38,8 +38,11 @@ class RichRenderer:
     """A named formatted renderer for one family of file types.
 
     ``name`` is the short label shown in the viewer chrome (e.g. ``"Markdown"``);
-    ``build(source, *, style)`` turns the file's raw source text into a scrollable
-    PuiKit widget drawn on ``style`` (the viewer's content surface)."""
+    ``build(source, *, style, base_dir=None)`` turns the file's raw source text
+    into a scrollable PuiKit widget drawn on ``style`` (the viewer's content
+    surface). ``base_dir`` is the directory the file lives in when that is a
+    local filesystem directory (else None) — Markdown resolves relative image
+    paths against it; renderers with no use for it accept and ignore it."""
 
     name: str
     build: Callable[..., Widget]
@@ -68,7 +71,7 @@ def rich_renderer_for(path: Any) -> RichRenderer | None:
     return _REGISTRY.get(suffix)
 
 
-def _build_markdown(source: str, *, style: Style) -> Widget:
+def _build_markdown(source: str, *, style: Style, base_dir: str | None = None) -> Widget:
     """Build a PuiKit ``MarkdownView`` for ``source`` on the viewer's surface.
     Imported here (not at module load) so the registry stays cheap to import and
     free of any widget-import ordering concerns."""
@@ -76,8 +79,9 @@ def _build_markdown(source: str, *, style: Style) -> Widget:
 
     # ``selectable`` turns on mouse text-selection + Cmd/Ctrl+C copy (plain text
     # plus rich HTML) in the file viewer; help / message popups build their own
-    # MarkdownView without it, so those stay inert.
-    return MarkdownView(source, style=style, selectable=True)
+    # MarkdownView without it, so those stay inert. ``base_dir`` makes the
+    # document's relative image paths resolve the way GitHub renders them.
+    return MarkdownView(source, style=style, selectable=True, base_dir=base_dir)
 
 
 def _parse_json(source: str) -> Any:
@@ -99,7 +103,7 @@ def _parse_json(source: str) -> Any:
         return records
 
 
-def _build_json(source: str, *, style: Style) -> Widget:
+def _build_json(source: str, *, style: Style, base_dir: str | None = None) -> Widget:
     """Build a collapsible ``JsonView`` tree for ``source`` (JSON or JSON Lines).
     Imported lazily, like :func:`_build_markdown`, so the registry stays cheap to
     import."""
@@ -113,7 +117,7 @@ def _make_table_builder(delimiter: str) -> Callable[..., Widget]:
     for CSV, ``"\\t"`` for TSV — the suffix picks which, since ``build`` itself is
     not handed the path). The first row is the header; the rest are body rows."""
 
-    def build(source: str, *, style: Style) -> Widget:
+    def build(source: str, *, style: Style, base_dir: str | None = None) -> Widget:
         from puikit.widgets import TableView
 
         rows = list(csv.reader(io.StringIO(source), delimiter=delimiter))

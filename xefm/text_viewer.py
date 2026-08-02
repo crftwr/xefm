@@ -969,11 +969,15 @@ class TextViewer(Widget):
             logger.warning(f"Cannot render {self.path.name}: unreadable as text")
             return False
         style = Style(fg=self._text_fg or (212, 212, 212), bg=self._bg)
+        # The file's own directory anchors a document's relative resources
+        # (Markdown image paths) — only meaningful on the local filesystem; a
+        # remote file (s3://, scp://) renders without one.
+        base_dir = None if self.path.is_remote() else str(self.path.parent)
         # A renderer may reject malformed input (an unparseable .json / .csv). Keep
         # the viewer in raw text mode on failure rather than letting the toggle
         # crash — raw still renders the file fine (pygments-highlighted).
         try:
-            self._rich_widget = self._rich.build(source, style=style)
+            self._rich_widget = self._rich.build(source, style=style, base_dir=base_dir)
         except Exception as e:
             logger.warning(f"Cannot render {self.path.name} as {self._rich.name}: {e}")
             return False
