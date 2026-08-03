@@ -176,6 +176,27 @@ class TestTerminalOption(RunProgramBase):
         enter.assert_not_called()
 
 
+class TestSubshellEnv(RunProgramBase):
+    def test_subshell_gets_xefm_env_and_prompt_marker(self):
+        """Shift-X hands the shell the XEFM_* variables and a [XeFM] prompt"""
+        with patch.object(self.app, '_run_in_terminal') as handoff:
+            self.app.subshell()
+
+        handoff.assert_called_once()
+        argv = handoff.call_args[0][0]
+        self.assertEqual(argv, [os.environ.get('SHELL', '/bin/sh')])
+        kwargs = handoff.call_args[1]
+        self.assertEqual(os.path.realpath(kwargs['cwd']),
+                         os.path.realpath(self.tmp))
+        env = kwargs['env']
+        self.assertEqual(env['XEFM_ACTIVE'], '1')
+        self.assertEqual(os.path.realpath(env['XEFM_THIS_DIR']),
+                         os.path.realpath(self.tmp))
+        self.assertIn('XEFM_LEFT_SELECTED', env)
+        self.assertTrue(env['PS1'].startswith('[XeFM] '))
+        self.assertTrue(env['PROMPT'].startswith('[XeFM] '))
+
+
 class TestAutoReturnDeprecation(unittest.TestCase):
     def _validate(self, programs):
         from xefm._config import Config

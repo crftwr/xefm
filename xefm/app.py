@@ -2535,14 +2535,25 @@ class XeFMApp:
     def subshell(self) -> None:
         """Drop to an interactive shell (``$SHELL``) in the active pane's
         directory, handing over the terminal via suspend/resume; refresh on
-        return. Local directories only."""
+        return. Local directories only. The shell gets the ``XEFM_*``
+        variables (pane directories, selections, ``XEFM_ACTIVE``) and a
+        best-effort ``[XeFM]`` prefix on ``PS1``/``PROMPT``."""
+        from xefm.external_programs import (build_xefm_env,
+                                           ensure_common_paths_in_env,
+                                           prefix_prompt_markers)
         path = self.active_pane()["path"]
         if not self._is_local(path):
             self.log_info("Subshell is only available for local directories")
             return
         shell = os.environ.get("SHELL", "/bin/sh")
+        env = os.environ.copy()
+        ensure_common_paths_in_env(env)
+        env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
+                                  self.pm.get_current_pane(),
+                                  self.pm.get_inactive_pane()))
+        prefix_prompt_markers(env)
         self.log_info(f"Subshell in {path} — exit the shell to return")
-        self._run_in_terminal([shell], cwd=str(path))
+        self._run_in_terminal([shell], cwd=str(path), env=env)
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor

@@ -26,8 +26,10 @@ The Subshell System allows users to temporarily suspend the XeFM interface and e
 
 ## Activation
 
-- **Key binding**: `x` or `X`
+- **Key binding**: `Shift-X` (plain `X` opens the external-programs picker)
 - **Action**: Suspends XeFM curses interface and starts a new shell session
+  (`XeFMApp.subshell` → `_run_in_terminal`, with the environment built by
+  `build_xefm_env` and the prompt marked by `prefix_prompt_markers`)
 - **Visual indicator**: Shell prompt includes `[XeFM]` label for easy identification
 - **Working directory**: Automatically set to appropriate directory (with remote fallback)
 

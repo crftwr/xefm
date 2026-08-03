@@ -123,6 +123,23 @@ def build_xefm_env(left_pane, right_pane, current_pane, other_pane):
     }
 
 
+def prefix_prompt_markers(env):
+    """Prefix a ``[XeFM]`` marker onto the shell prompt variables (bash ``PS1``,
+    zsh ``PROMPT``) so a sub-shell visibly reads as nested inside XeFM. Best
+    effort: an rc file that sets its own prompt overwrites this — the docs
+    suggest keying off ``XEFM_ACTIVE`` for that case."""
+    current_ps1 = env.get('PS1', '')
+    if current_ps1:
+        env['PS1'] = f'[XeFM] {current_ps1}'
+    else:
+        env['PS1'] = '[XeFM] \\u@\\h:\\w\\$ '
+    current_prompt = env.get('PROMPT', '')
+    if current_prompt:
+        env['PROMPT'] = f'[XeFM] {current_prompt}'
+    else:
+        env['PROMPT'] = '[XeFM] %n@%m:%~%# '
+
+
 def ensure_common_paths_in_env(env):
     """
     Ensure common binary paths are in PATH environment variable.
@@ -327,21 +344,7 @@ class ExternalProgramManager:
             env.update(build_xefm_env(left_pane, right_pane, current_pane, other_pane))
 
             # Modify shell prompt to include [XeFM] label
-            # Handle both bash (PS1) and zsh (PROMPT) prompts
-            current_ps1 = env.get('PS1', '')
-            current_prompt = env.get('PROMPT', '')
-            
-            # Modify PS1 for bash and other shells
-            if current_ps1:
-                env['PS1'] = f'[XeFM] {current_ps1}'
-            else:
-                env['PS1'] = '[XeFM] \\u@\\h:\\w\\$ '
-            
-            # Modify PROMPT for zsh
-            if current_prompt:
-                env['PROMPT'] = f'[XeFM] {current_prompt}'
-            else:
-                env['PROMPT'] = '[XeFM] %n@%m:%~%# '
+            prefix_prompt_markers(env)
             
             # Determine working directory for subshell
             # If current pane is browsing a remote directory (like S3), 
