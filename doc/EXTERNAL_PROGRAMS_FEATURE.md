@@ -127,33 +127,17 @@ XeFM's bundled tools directory (`xefm/tools/`) and are located at run time by
 `xefm_tool('name')`, which searches `~/.xefm/tools/` first and then that bundled
 directory. `xefm_python` is the interpreter XeFM is running under.
 
-### Beyond Compare
+### Beyond Compare (removed)
 
-XeFM's built-in diff viewer already compares the two selected files (**=**)
-and the two pane directories (**Shift+=**) — see
-[Diff Viewer Feature](DIFF_VIEWER_FEATURE.md) — so the Beyond Compare entries
-are no longer part of the default configuration. The helper scripts stay
-bundled for configs that still reference them; if you prefer
-[Beyond Compare](https://www.scootersoftware.com/), add the entries yourself:
-
-```python
-PROGRAMS = [
-    {'name': 'Compare Files (BeyondCompare)',
-     'command': [xefm_python, xefm_tool('bcompare_files.py')]},
-    {'name': 'Compare Directories (BeyondCompare)',
-     'command': [xefm_python, xefm_tool('bcompare_dirs.py')]},
-]
-```
-
-- `bcompare_dirs.py` launches Beyond Compare on `XEFM_LEFT_DIR` and
-  `XEFM_RIGHT_DIR` (the left and right pane directories).
-- `bcompare_files.py` compares the first selected file in each pane, building
-  full paths from `XEFM_LEFT_SELECTED` / `XEFM_RIGHT_SELECTED` and the pane
-  directories. If nothing is explicitly selected, the file under each cursor is
-  used.
-
-Requires the `bcompare` command on your `PATH` (install Beyond Compare — e.g.
-`brew install --cask beyond-compare` on macOS).
+Earlier releases bundled Beyond Compare helper scripts (`bcompare_files.py`,
+`bcompare_dirs.py`) and menu entries driving them. Both are gone: XeFM's
+built-in diff viewer compares the two selected files (**=**) and the two pane
+directories (**Shift+=**) — see
+[Diff Viewer Feature](DIFF_VIEWER_FEATURE.md). A config still referencing the
+old scripts will log a launch failure; remove those `PROGRAMS` entries, or —
+if you prefer [Beyond Compare](https://www.scootersoftware.com/) — write a
+small tool in `~/.xefm/tools/` that runs `bcompare` on `XEFM_LEFT_DIR` /
+`XEFM_RIGHT_DIR` (start from `example_tool.py`).
 
 ### Visual Studio Code
 
