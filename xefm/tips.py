@@ -227,7 +227,8 @@ TIPS: tuple[tuple[str, str], ...] = (
      "{key:programs} runs an external program on the current selection — and "
      "the menu is yours to extend. Add entries to `PROGRAMS` in "
      "`~/.xefm/config.py` pointing at any command, and drop personal scripts "
-     "in `~/.xefm/tools/`, where the `xefm_tool()` helper finds them."),
+     "in `~/.xefm/tools/`, where the `xefm_tool()` helper finds them. That "
+     "folder starts you off with an editable `example_tool.py`."),
 
     ("Associate your favorite apps",
      "`FILE_ASSOCIATIONS` in `~/.xefm/config.py` maps filename patterns to "

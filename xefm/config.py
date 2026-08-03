@@ -455,6 +455,7 @@ class ConfigManager:
         self.logger = getLogger("Config")
         self.config_dir = Path.home() / '.xefm'
         self.config_file = self.config_dir / 'config.py'
+        self.user_tools_dir = self.config_dir / 'tools'
         self.config = None
         self._key_bindings = None
         
@@ -467,6 +468,36 @@ class ConfigManager:
             self.logger.warning(f"Could not create config directory {self.config_dir}: {e}")
             return False
     
+    def ensure_user_tools_dir(self):
+        """Create ~/.xefm/tools/ with the bundled example tool, first time only.
+
+        Acts only when the directory does not exist yet, so a user who
+        deletes the example never has it resurrected; existing files are
+        never overwritten. Returns True when the directory was created."""
+        if self.user_tools_dir.exists():
+            return False
+
+        try:
+            self.user_tools_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Created user tools directory: {self.user_tools_dir}")
+        except Exception as e:
+            self.logger.warning(f"Could not create user tools directory {self.user_tools_dir}: {e}")
+            return False
+
+        try:
+            example_src = Path(__file__).parent / 'tools' / 'example_tool.py'
+            example_dst = self.user_tools_dir / 'example_tool.py'
+            if example_src.exists() and not example_dst.exists():
+                with open(example_src, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                with open(example_dst, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                self.logger.info(f"Created example tool: {example_dst}")
+        except Exception as e:
+            self.logger.warning(f"Could not copy example tool to {self.user_tools_dir}: {e}")
+
+        return True
+
     def create_default_config(self):
         """Create a default configuration file by copying from template"""
         if not self.ensure_config_dir():
@@ -499,6 +530,10 @@ class ConfigManager:
     
     def load_config(self):
         """Load configuration from file or create default if not exists"""
+        # First launch: seed ~/.xefm/tools/ before the config module executes,
+        # so xefm_tool('example_tool.py') in a config resolves to the user copy.
+        self.ensure_user_tools_dir()
+
         # Load template config class for filling in missing fields
         template_config_class = _load_template_config()
         

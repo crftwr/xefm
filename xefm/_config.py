@@ -579,6 +579,8 @@ class Config:
     # Use xefm_tool('tool_name') to search for tools in:
     #   1. ~/.xefm/tools/ (user-specific tools, highest priority)
     #   2. {xefm/app.py directory}/tools/ (system tools, fallback)
+    # ~/.xefm/tools/ is created on first launch with example_tool.py in it —
+    # copy that file as the starting point for your own tools.
     # The "options" field is a dictionary with program-specific options:
     #   - auto_return: if True, automatically returns to XeFM without waiting for user input
     PROGRAMS = [
@@ -586,6 +588,7 @@ class Config:
         {'name': 'Compare Directories (BeyondCompare)', 'command': [xefm_python, xefm_tool('bcompare_dirs.py')], 'options': {'auto_return': True}},
         {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')], 'options': {'auto_return': True}},
         {'name': 'Open in Kiro', 'command': [xefm_python, xefm_tool('kiro.py')], 'options': {'auto_return': True}},
+        {'name': 'Example Tool (show XeFM environment)', 'command': [xefm_python, xefm_tool('example_tool.py')]},
 
         # Add your own programs here:
         # {'name': 'My Custom Tool', 'command': [xefm_python, xefm_tool('my_custom_tool.py')], 'options': {'auto_return': True}},
