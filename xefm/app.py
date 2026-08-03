@@ -800,16 +800,20 @@ class StatusBar(Widget):
 
     #: (action, label) pairs shown as ``<key> <label>``, in bar order. The key
     #: for each is looked up from the keymap and formatted for display.
+    #: ``help`` leads: the bar elides from the right on narrow windows, and the
+    #: help dialog is the hint that reveals every other binding.
     _HINTS = (
+        ("help", "help"),
         ("quit", "quit"),
         ("switch_pane", "switch"),
         ("select_file", "select"),
-        ("select_all_files", "all-files"),
         ("open_item", "open"),
         ("go_parent", "parent"),
+        ("copy_files", "copy"),
+        ("move_files", "move"),
+        ("delete_files", "delete"),
+        ("create_directory", "mkdir"),
         ("search", "find"),
-        ("filter", "filter"),
-        ("toggle_hidden", "hidden"),
     )
 
     #: Shown in place of the hints while the footer isearch is open, so the bottom
@@ -839,6 +843,12 @@ class StatusBar(Widget):
         # Left/right inset; the bottom padding is the extra row height reserved
         # by measure(), so the text stays at the top (y=0) of the taller slot.
         pad_x, _ = _bar_pad(ctx)
+        # Plus one whole cell on vector backends: the bar sits in the window's
+        # bottom corners, which the OS rounds (16pt on macOS Tahoe) — deep
+        # enough to shave the first/last glyph's ink at BAR_PAD_PX alone. A
+        # terminal keeps the bare inset; the emulator owns its window corners.
+        if ctx.vector_shapes:
+            pad_x += 1.0
         avail = max(0.0, ctx.size_units[0] - 2 * pad_x)
         hints = self.ISEARCH_HINTS if self.app._isearch_active else self._hints()
         text = elide(hints, avail, where="end", measure=ctx.measure_text)
