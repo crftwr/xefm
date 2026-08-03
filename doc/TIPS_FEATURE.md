@@ -10,7 +10,7 @@ You can also open it anytime from **Help ▸ Tip of the Day…** in the menu bar
 
 ## Usage
 
-- **←/→** — previous / next tip (the `3/26` counter shows where you are)
+- **←/→** — previous / next tip (the position counter shows where you are)
 - **↑/↓**, **Page Up/Down** — scroll, if a tip overflows a small window
 - **Space** — toggle *Don't show tips at startup* (clicking the checkbox works
   too)

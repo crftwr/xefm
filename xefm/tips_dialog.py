@@ -2,8 +2,8 @@
 
 A centered modal showing one tip from :mod:`xefm.tips` at a time:
 
-- **Left / Right** step to the previous / next tip (wrapping), with a ``3/26``
-  counter in the footer showing where the rotation stands.
+- **Left / Right** step to the previous / next tip (wrapping), with a
+  position counter in the footer showing where the rotation stands.
 - **Up / Down / PageUp / PageDown** scroll the body — a tip should not need it,
   but a small window must not clip one.
 - **Space** toggles the *Don't show tips at startup* checkbox (a click on it

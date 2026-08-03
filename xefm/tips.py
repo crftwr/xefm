@@ -8,16 +8,20 @@ display time, so a tip never quotes a key the user has rebound away. Actions are
 the same names the help dialog uses (``XeFMApp._HELP_SECTIONS``); an unbound
 action renders as ``—``, exactly like help.
 
-Adding a tip is appending a pair to :data:`TIPS` — order matters only for the
-first entry, the Welcome tip a brand-new user sees on first launch. The rotation
-index persisted by the app is taken modulo :func:`tip_count`, so the list can
-grow (or shrink) between versions without invalidating anyone's saved position.
+Adding a tip is appending a pair to :data:`TIPS`. The Welcome tip must stay
+first (a fresh install starts the rotation at index 0), and — once a release
+has shipped this list — new tips go at the **end, before the closing GitHub
+tip**, rather than reordering: the app persists a position *into* this list,
+so reordering makes a returning user see repeats or skips. The index is taken
+modulo :func:`tip_count`, so growth itself is always safe.
 """
 
 from __future__ import annotations
 
 import re
 from typing import Callable
+
+from xefm.const import GITHUB_URL
 
 #: ``{key:action}`` — the action name a placeholder carries.
 _KEY_REF = re.compile(r"\{key:([a-z0-9_]+)\}")
@@ -133,11 +137,6 @@ TIPS: tuple[tuple[str, str], ...] = (
      "{key:subshell} opens your shell in the current directory. Exit the shell "
      "and you are right back in XeFM."),
 
-    ("Your own tools, one keystroke away",
-     "{key:programs} runs an external program on the current selection. The "
-     "menu comes from `PROGRAMS` in `~/.xefm/config.py`, so you can wire in "
-     "your own scripts and tools."),
-
     ("Batch rename with a regex",
      "Select more than one file and press {key:rename_file}: the rename prompt "
      "becomes a regex-based batch-rename dialog that renames the whole "
@@ -152,11 +151,99 @@ TIPS: tuple[tuple[str, str], ...] = (
      "{key:drives_dialog} opens a picker of mounted volumes, common locations, "
      "and your configured SSH hosts and S3 buckets — one list, one jump."),
 
+    ("Rich viewers for data files",
+     "{key:view_file} knows more than plain text: Markdown (`.md`) renders "
+     "with headings and tables, JSON (`.json`, `.jsonl`) opens as a "
+     "collapsible tree, and CSV/TSV as a table grid."),
+
+    ("File details, with live sizes",
+     "{key:file_details} shows stat details for the focused item — or an "
+     "aggregate summary of the whole selection. Directories total their "
+     "recursive size and item counts in the background while the dialog is "
+     "open, so the numbers climb until the walk finishes."),
+
+    ("Sync the cursor, not just the directory",
+     "When both panes already show the same directory, "
+     "{key:sync_current_to_other} moves the cursor onto the file the *other* "
+     "pane is highlighting — press it twice to land on the same file in the "
+     "same place. {key:sync_other_to_current} mirrors it the other way."),
+
+    ("A photo tour from a search",
+     "Search for images with {key:search_dialog} — say `*.jpg` — then open "
+     "one hit with {key:view_file}: the image viewer's prev/next pages "
+     "through every hit, across all the subdirectories the search covered."),
+
+    ("Fix differences right in the diff",
+     "The directory diff ({key:diff_directories}) is not just a report: the "
+     "usual {key:copy_files} / {key:move_files} / {key:delete_files} keys "
+     "work on the tree in place, and it rescans afterwards keeping your "
+     "expanded folders and cursor."),
+
+    ("Reuse a filter",
+     "The Filter prompt ({key:filter}) opens with your recent patterns — "
+     "kept across sessions — so a filter you use often is one pick away. "
+     "The first row clears the current filter."),
+
+    ("Complete the path",
+     "Path prompts — Jump to Path ({key:jump_to_path}), Rename "
+     "({key:rename_file}) and friends — complete filenames with **Tab**, so "
+     "a deep path is a few keystrokes."),
+
+    ("Locked archives",
+     "A password-protected zip prompts for its password (masked) when you "
+     "open a file inside it, then remembers it for the session. Classic "
+     "ZipCrypto only — AES-encrypted zips are declined with a clear "
+     "message."),
+
+    ("Your SSH hosts, ready to go",
+     "The drives picker ({key:drives_dialog}) lists the hosts from your "
+     "`~/.ssh/config` automatically as `ssh://` locations — nothing to "
+     "configure in XeFM to browse a machine you already SSH to."),
+
+    ("A GUI in the browser — even over SSH",
+     "`xefm --backend web` serves the full GUI to your browser. It binds "
+     "`127.0.0.1` only; to reach a remote machine's XeFM, forward the port "
+     "through an SSH tunnel — the startup message prints the exact command "
+     "to paste."),
+
+    ("Start where you mean to",
+     "`xefm --left DIR --right DIR` opens each pane on a chosen directory, "
+     "and `--backend tui|gui|web` picks the frontend — handy in a shell "
+     "alias for a project you visit daily."),
+
+    ("The log pane is a pane too",
+     "The log under the file panes scrolls with {key:scroll_log_up} / "
+     "{key:scroll_log_down} and resizes with {key:adjust_log_up} / "
+     "{key:adjust_log_down} — older messages are never gone, just above the "
+     "fold."),
+
     ("Make XeFM yours",
      "Every key binding and many behaviors live in `~/.xefm/config.py`. "
      "**Tools ▸ Edit Configuration…** opens it in your editor, and "
      "**Tools ▸ Reload Configuration** applies the changes without "
      "restarting."),
+
+    ("Your own tools, one keystroke away",
+     "{key:programs} runs an external program on the current selection — and "
+     "the menu is yours to extend. Add entries to `PROGRAMS` in "
+     "`~/.xefm/config.py` pointing at any command, and drop personal scripts "
+     "in `~/.xefm/tools/`, where the `xefm_tool()` helper finds them."),
+
+    ("Associate your favorite apps",
+     "`FILE_ASSOCIATIONS` in `~/.xefm/config.py` maps filename patterns to "
+     "the commands used to **open**, **view**, and **edit** them — per "
+     "pattern, per verb — so a PDF can view in one app while an image edits "
+     "in another."),
+
+    ("A theme of your very own",
+     "`THEMES` in `~/.xefm/config.py` defines new themes: inherit a base, "
+     "override any colors — and on GUI backends add a `post_effect` "
+     "(CRT-style glow and scanlines), an `animation` behind the UI "
+     "(starfield, rain, wave…), or a `wallpaper` image."),
+
+    ("Bugs, ideas, requests",
+     "XeFM is developed in the open. Found a bug, or missing a feature? "
+     f"Issues and requests are very welcome at {GITHUB_URL}/issues"),
 )
 
 

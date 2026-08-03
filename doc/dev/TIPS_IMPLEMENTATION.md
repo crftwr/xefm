@@ -18,7 +18,7 @@ Issue #261. Two new modules plus a small wiring in `app.py`.
   (a `Widget` pushed as a Panel layer; `sort_dialog.py` is the template). Body
   is a PuiKit `MarkdownView` (`set_source` on navigation resets the scroll),
   the opt-out is a PuiKit `Checkbox`, footer is the usual muted hint line plus
-  a right-aligned `3/26` counter. Fixed box size — tips differ in length and a
+  a right-aligned position counter. Fixed box size — tips differ in length and a
   box that resized on every ←/→ would jitter; the body scrolls instead. On
   close it reports `(index, dont_show)` through `on_result` and touches no
   storage itself.
@@ -50,8 +50,11 @@ dialog itself (opened from the menu) is the UI to flip it back.
 
 ## Adding a tip
 
-Append a `(title, body)` pair to `TIPS`. Keep the Welcome tip first — a fresh
-install starts at index 0. Only reference `{key:action}` for actions that are
+Append a `(title, body)` pair to `TIPS`, before the closing GitHub tip. Keep
+the Welcome tip first — a fresh install starts at index 0 — and once a release
+has shipped the list, **append only, never reorder**: the persisted `tips.index`
+points into this list, so reordering makes a returning user see repeats or
+skips. Only reference `{key:action}` for actions that are
 **bound in the template keymap** (`xefm/_config.py` `KEY_BINDINGS`); actions
 shipped unbound (`edit_config`, `toggle_color_scheme`, …) must be described by
 their menu path instead, or they render as `—`.
