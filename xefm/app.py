@@ -81,6 +81,8 @@ from xefm.file_operations import (FileOperationService, format_op_errors,
                                   format_op_summary)
 from xefm.task import Task, TaskManager
 from xefm.text_dialog import show_markdown
+from xefm.tips import tip_count
+from xefm.tips_dialog import show_tips_dialog
 from xefm.image_viewer import is_image_file, show_image_viewer
 from xefm.text_viewer import looks_binary, show_text_viewer
 from xefm.viewer_registry import rich_renderer_for
@@ -96,6 +98,14 @@ _FILTER_HISTORY_MAX = 100
 #: Cap on the recent-directory history behind the History picker, applied both
 #: in memory (``_record_history_path``) and when persisted to the state DB.
 _HISTORY_MAX = 100
+
+#: Tip-of-the-day rotation state (issue #261): whether the startup dialog is
+#: enabled (the dialog's "Don't show tips at startup" checkbox writes it), the
+#: index of the next unseen tip, and the local date it last opened at startup —
+#: several launches in one day surface at most one tip.
+_TIPS_ENABLED_KEY = "tips.enabled"
+_TIPS_INDEX_KEY = "tips.index"
+_TIPS_LAST_SHOWN_KEY = "tips.last_shown"
 
 
 # --- theme palettes ----------------------------------------------------------
@@ -2379,6 +2389,7 @@ class XeFMApp:
         )
         help_menu = Menu(
             MenuItem("Keyboard Shortcuts…", on_select=self.show_help, shortcut=sc("help")),
+            MenuItem("Tip of the Day…", on_select=self.show_tips),
             SEPARATOR,
             MenuItem("About XeFM", on_select=self.show_about),
             title="Help",
@@ -4686,6 +4697,51 @@ class XeFMApp:
                          title="About XeFM", icon="info", buttons=("OK",))
         self.panel.render()
 
+    def show_tips(self) -> None:
+        """The Tip of the Day dialog (Help menu, and once a day at startup),
+        opened at the next unseen tip in the persisted rotation. The dialog's
+        "Don't show tips at startup" checkbox arrives reflecting the current
+        setting, so opening from the menu and unchecking it re-enables the
+        startup tips."""
+        try:
+            index = int(self.state_manager.get_state(_TIPS_INDEX_KEY, 0))
+        except Exception:
+            index = 0
+        try:
+            dont_show = not self.state_manager.get_state(_TIPS_ENABLED_KEY, True)
+        except Exception:
+            dont_show = False
+        show_tips_dialog(self.panel, index=index, dont_show=dont_show,
+                         resolve=self._keys_label, on_result=self._tips_closed)
+        self.panel.render()
+
+    def _tips_closed(self, index: int, dont_show: bool) -> None:
+        """Persist the tips rotation as the dialog closes: the rotation resumes
+        after the last tip *viewed* (browsing with ←/→ advances it), and the
+        checkbox decides the startup dialog. Silent and best-effort — a state
+        write must never break closing a dialog."""
+        try:
+            self.state_manager.set_state(_TIPS_INDEX_KEY, (index + 1) % tip_count())
+            self.state_manager.set_state(_TIPS_ENABLED_KEY, not dont_show)
+        except Exception:
+            pass
+
+    def _maybe_show_startup_tip(self) -> None:
+        """Show the Tip of the Day on the first launch of the day, unless the
+        user opted out. The shown-today marker is written before the dialog
+        opens, so a same-day relaunch stays quiet either way."""
+        from datetime import date
+        try:
+            if not self.state_manager.get_state(_TIPS_ENABLED_KEY, True):
+                return
+            today = date.today().isoformat()
+            if self.state_manager.get_state(_TIPS_LAST_SHOWN_KEY) == today:
+                return
+            self.state_manager.set_state(_TIPS_LAST_SHOWN_KEY, today)
+        except Exception:
+            return
+        self.show_tips()
+
     def _show_context_menu(self, pane_name: str, index: int, x: float, y: float) -> None:
         """Right-click on a row: activate that row, then pop a context menu at the
         pointer (native on macOS, a widget popup on curses)."""
@@ -4891,6 +4947,9 @@ class XeFMApp:
 
     def run(self) -> None:
         self.panel.render()
+        # After the first full render, so the tip dialog opens over a live UI.
+        # Here rather than __init__: tests construct the app without run().
+        self._maybe_show_startup_tip()
         try:
             self.backend.run_event_loop(self.on_event)
         finally:
