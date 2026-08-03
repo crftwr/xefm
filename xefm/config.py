@@ -661,7 +661,17 @@ class ConfigManager:
         
         if not isinstance(config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S, (int, float)) or config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S <= 0:
             errors.append("FILE_MONITORING_FALLBACK_POLL_INTERVAL_S must be a positive number")
-        
+
+        # 'auto_return' predates the non-blocking program launcher and is
+        # ignored; surface it once per load so configs migrate off it.
+        legacy = [prog.get('name', '?') for prog in (getattr(config, 'PROGRAMS', None) or [])
+                  if isinstance(prog, dict) and 'auto_return' in (prog.get('options') or {})]
+        if legacy:
+            errors.append(
+                "PROGRAMS option 'auto_return' is deprecated and ignored — launches "
+                "never block XeFM; remove it, or use {'terminal': True} for "
+                "full-screen terminal programs. Entries: " + ", ".join(legacy))
+
         return errors
     
     def get_key_for_action(self, action):

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, patch
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
@@ -120,6 +121,66 @@ class TestRunProgramOutput(RunProgramBase):
         stderr_lines = [l[1] for l in lines if l[0] == 'STDERR']
         self.assertIn('boom', stderr_lines)
         self.assertIn("'Failing Tool' exited with code 3", stderr_lines)
+
+
+class TestTerminalOption(RunProgramBase):
+    def test_terminal_option_hands_off_in_terminal_mode(self):
+        """options {'terminal': True} diverts to _run_in_terminal with the env"""
+        program = {'name': 'Less', 'command': ['less'],
+                   'options': {'terminal': True}}
+        with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch('xefm.app.is_desktop_mode', return_value=False):
+            self.app._run_program(program)
+
+        handoff.assert_called_once()
+        _, kwargs = handoff.call_args
+        argv = handoff.call_args[0][0]
+        self.assertEqual(argv[0], 'less')
+        self.assertEqual(os.path.realpath(kwargs['cwd']),
+                         os.path.realpath(self.tmp))
+        self.assertEqual(kwargs['env']['XEFM_ACTIVE'], '1')
+        self.assertIn('XEFM_THIS_DIR', kwargs['env'])
+
+    def test_terminal_option_ignored_in_desktop_mode(self):
+        """Desktop mode has no tty: the entry runs on the piped path instead"""
+        program = {'name': 'Echoer',
+                   'command': [sys.executable, '-c', "print('piped output')"],
+                   'options': {'terminal': True}}
+        with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch('xefm.app.is_desktop_mode', return_value=True):
+            self.app._run_program(program)
+
+        handoff.assert_not_called()
+        lines = self.collect_log_lines(
+            lambda ls: any(l[1] == 'piped output' for l in ls))
+        self.assertIn(('STDOUT', 'piped output'), lines)
+
+
+class TestAutoReturnDeprecation(unittest.TestCase):
+    def _validate(self, programs):
+        from xefm._config import Config
+        from xefm.config import ConfigManager
+
+        class UserConfig(Config):
+            PROGRAMS = programs
+
+        return ConfigManager().validate_config(UserConfig())
+
+    def test_auto_return_triggers_config_warning(self):
+        errors = self._validate([
+            {'name': 'Old Tool', 'command': ['x'],
+             'options': {'auto_return': True}},
+        ])
+        matches = [e for e in errors if 'auto_return' in e]
+        self.assertEqual(len(matches), 1)
+        self.assertIn('Old Tool', matches[0])
+        self.assertIn('deprecated', matches[0])
+
+    def test_default_config_carries_no_auto_return(self):
+        from xefm._config import Config
+        from xefm.config import ConfigManager
+        errors = ConfigManager().validate_config(Config())
+        self.assertEqual([e for e in errors if 'auto_return' in e], [])
 
 
 if __name__ == '__main__':

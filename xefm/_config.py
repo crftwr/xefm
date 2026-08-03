@@ -582,15 +582,22 @@ class Config:
     # ~/.xefm/tools/ is created on first launch with example_tool.py in it —
     # copy that file as the starting point for your own tools.
     # The "options" field is a dictionary with program-specific options:
-    #   - auto_return: if True, automatically returns to XeFM without waiting for user input
+    #   - terminal: if True, hand the terminal over to the program and wait for
+    #     it to exit — for full-screen / interactive programs (vim, less, a
+    #     REPL). Terminal mode only; desktop mode has no terminal to hand over,
+    #     so the program runs with its output captured to the log pane as usual.
+    #   - auto_return: deprecated and ignored — launches never block XeFM.
     PROGRAMS = [
-        {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')], 'options': {'auto_return': True}},
-        {'name': 'Open in Kiro', 'command': [xefm_python, xefm_tool('kiro.py')], 'options': {'auto_return': True}},
+        {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')]},
+        {'name': 'Open in Kiro', 'command': [xefm_python, xefm_tool('kiro.py')]},
         {'name': 'Example Tool (show XeFM environment)', 'command': [xefm_python, xefm_tool('example_tool.py')]},
 
         # Add your own programs here:
-        # {'name': 'My Custom Tool', 'command': [xefm_python, xefm_tool('my_custom_tool.py')], 'options': {'auto_return': True}},
+        # {'name': 'My Custom Tool', 'command': [xefm_python, xefm_tool('my_custom_tool.py')]},
         # {'name': 'My Script (direct path)', 'command': [xefm_python, '/path/to/script.py']},
-        # {'name': 'Python REPL', 'command': ['python3']},
-        # {'name': 'Quick Command', 'command': ['ls', '-la'], 'options': {'auto_return': True}},
+        # {'name': 'Quick Command', 'command': ['ls', '-la']},
+
+        # Full-screen / interactive programs need the terminal handed over:
+        # {'name': 'View with less', 'command': ['less'], 'options': {'terminal': True}},
+        # {'name': 'Python REPL', 'command': ['python3'], 'options': {'terminal': True}},
     ]

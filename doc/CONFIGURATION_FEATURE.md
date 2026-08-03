@@ -226,7 +226,8 @@ PROGRAMS = [
 ```
 
 Each entry has a `name`, a `command` (list or string), and optional `options`
-(e.g. `{'auto_return': True}`). Access programs with `x`. See
+(e.g. `{'terminal': True}` for full-screen programs like `vim` or `less`).
+Access programs with `x`. See
 [External Programs](EXTERNAL_PROGRAMS_FEATURE.md).
 
 ### File Associations

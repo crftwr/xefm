@@ -19,9 +19,13 @@ External programs are configured in the `PROGRAMS` list in your `config.py` file
 
 - `name`: Display name for the program
 - `command`: List of command arguments
-- `options` (optional): accepted for compatibility with older configs
-  (`auto_return`), but the current launcher never blocks XeFM, so it has no
-  effect
+- `options` (optional):
+  - `terminal: True` — hand the terminal over to the program and wait for it
+    to exit, for full-screen / interactive programs (`vim`, `less`, a REPL).
+    Terminal mode only; in desktop mode there is no terminal to hand over, so
+    the program runs in the background as usual.
+  - `auto_return` — deprecated and ignored; launches never block XeFM. A
+    config warning names the entries still carrying it.
 
 ### Basic Configuration Example
 
@@ -58,9 +62,20 @@ command-line arguments. Its output — stdout and stderr — streams into the lo
 pane, in both terminal and desktop mode, and a nonzero exit code is reported
 there too. XeFM stays fully responsive throughout.
 
-Because the program's input is closed at launch, interactive terminal programs
-(a REPL, `vim`, `less`) can't run from this menu — use sub-shell mode
-(**Shift-X**) for those.
+By default the program's input is closed at launch, so interactive terminal
+programs can't run this way. Give such an entry `'options': {'terminal': True}`
+instead: in terminal mode XeFM suspends its own display and hands the program
+the terminal — with the same working directory, arguments, and `XEFM_*`
+environment — then repaints when it exits, so `vim`, `less`, or a REPL work as
+expected:
+
+```python
+{'name': 'View with less', 'command': ['less'], 'options': {'terminal': True}},
+```
+
+In desktop mode there is no terminal to hand over, so the option is ignored
+and output is captured to the log pane. Sub-shell mode (**Shift-X**) remains
+the tool for extended interactive command-line work.
 
 ## Example Use Cases
 
@@ -145,8 +160,7 @@ One entry opens the current directory (and any selected files) in VS Code:
 
 ```python
 {'name': 'Open in VSCode',
- 'command': [xefm_python, xefm_tool('vscode.py')],
- 'options': {'auto_return': True}}
+ 'command': [xefm_python, xefm_tool('vscode.py')]}
 ```
 
 `vscode.py` reads `XEFM_THIS_DIR` and `XEFM_THIS_SELECTED`. If the current

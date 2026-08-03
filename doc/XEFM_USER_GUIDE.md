@@ -541,8 +541,9 @@ FAVORITE_DIRECTORIES = [
 ```python
 PROGRAMS = [
     {'name': 'Git Status', 'command': ['git', 'status']},
-    {'name': 'Open in VSCode', 'command': ['code', '.'], 
-     'options': {'auto_return': True}},
+    {'name': 'Open in VSCode', 'command': ['code', '.']},
+    {'name': 'View with less', 'command': ['less'],
+     'options': {'terminal': True}},
 ]
 ```
 

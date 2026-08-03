@@ -2437,13 +2437,14 @@ class XeFMApp:
         Such paths are read-only, so write-side operations refuse them."""
         return str(path).startswith("archive://")
 
-    def _run_in_terminal(self, argv: list, cwd: str | None = None) -> None:
+    def _run_in_terminal(self, argv: list, cwd: str | None = None,
+                         env: dict | None = None) -> None:
         """Run a full-screen child process (editor / shell) with the display
         handed over via ``backend.suspended()``, then refresh both panes and
         repaint — the child may have changed files while we were away."""
         try:
             with self.backend.suspended():
-                subprocess.run(argv, cwd=cwd)
+                subprocess.run(argv, cwd=cwd, env=env)
         except FileNotFoundError:
             self.log_info(f"Command not found: {argv[0]}")
         except Exception as exc:
@@ -3459,9 +3460,10 @@ class XeFMApp:
         """The external-programs picker: choose a configured program and launch it
         on the selection (or the focused entry). Launched without blocking the UI,
         with the active pane as the working directory, the ``XEFM_*`` variables in
-        the environment, and stdout/stderr streamed into the log pane. Programs
-        that need to take over the terminal (interactive CLIs) await a backend
-        suspend/resume (see ``edit_file``); their stdin reads EOF."""
+        the environment, and stdout/stderr streamed into the log pane. An entry
+        with ``options {'terminal': True}`` instead gets the terminal via
+        suspend/resume (like ``edit_file``) so full-screen programs (vim, less)
+        work; other programs' stdin reads EOF."""
         programs = getattr(self.config, "PROGRAMS", None) or []
         if not programs:
             show_message_box(self.panel, "No external programs configured.",
@@ -3505,6 +3507,13 @@ class XeFMApp:
             env["XEFM_THIS_DIR"] = cwd
             env["XEFM_THIS_SELECTED"] = " ".join(
                 quote_filenames_with_double_quotes(args))
+        options = program.get("options") or {}
+        if options.get("terminal") and not is_desktop_mode():
+            # Full-screen child (vim, less, a REPL): hand over the tty and wait.
+            # Desktop mode has no tty to hand over and falls through to the
+            # piped launch below.
+            self._run_in_terminal(command + args, cwd=cwd, env=env)
+            return
         try:
             # Pipes, never the terminal: in TUI mode a direct write would corrupt
             # the curses screen; in desktop mode there may be no terminal at all.

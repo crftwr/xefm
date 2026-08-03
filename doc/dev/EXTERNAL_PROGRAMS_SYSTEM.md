@@ -64,19 +64,19 @@ External programs are configured as a `PROGRAMS` list in the config
 - `name` — display name.
 - `command` — command as a list of arguments (executed without a shell, so no
   shell injection).
-- `options` (optional) — `auto_return` (bool, default `False`) belongs to the
-  legacy blocking launcher (skip the "press Enter to return" prompt). The
-  current picker launch never blocks, so it is accepted but has no effect
-  there.
+- `options` (optional) — `terminal` (bool, default `False`): divert the launch
+  to `_run_in_terminal` so a full-screen program gets the tty (terminal mode
+  only; desktop mode ignores it). `auto_return` is deprecated and ignored —
+  `validate_config` emits a config warning naming the entries that still carry
+  it (the legacy blocking launcher honored it; the picker never blocks).
 
 ```python
 PROGRAMS = [
     {'name': 'Git Status', 'command': ['git', 'status']},
     {'name': 'Git Log', 'command': ['git', 'log', '--oneline', '-10']},
-    {'name': 'Python REPL', 'command': ['python3']},
     {'name': 'My Tool', 'command': [xefm_python, xefm_tool('my_script.py')]},
-    {'name': 'Quick Git Status', 'command': ['git', 'status', '--short'],
-     'options': {'auto_return': True}},
+    {'name': 'Python REPL', 'command': ['python3'],
+     'options': {'terminal': True}},
 ]
 ```
 
@@ -110,6 +110,11 @@ terminal and desktop mode:
    search-results pane passes absolute paths and runs from the search root;
    its `XEFM_THIS_DIR` / `XEFM_THIS_SELECTED` are overridden to match).
 2. Build the environment: `ensure_common_paths_in_env` + `build_xefm_env`.
+   An entry with `options {'terminal': True}` diverts here in terminal mode:
+   `_run_in_terminal(command + args, cwd, env)` suspends the display via
+   `backend.suspended()` and blocks until the child exits — the same hand-off
+   `edit_file` and the sub-shell use. Desktop mode ignores the flag and
+   continues below.
 3. `subprocess.Popen` with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE` — the
    child never touches the terminal. In TUI mode a direct write would corrupt
    the curses screen (newlines without carriage returns under raw mode); in
@@ -120,9 +125,8 @@ terminal and desktop mode:
    (dim) or `STDERR` (red). A waiter thread reports a nonzero exit code once
    both streams close.
 
-Because stdin reads EOF, interactive terminal programs can't run from this
-path; a renderer suspend/resume hand-off (as `edit_file` does for the editor)
-is the intended future extension for those.
+Because stdin reads EOF on the piped path, interactive terminal programs must
+opt into the hand-off with `options {'terminal': True}`.
 
 ### Legacy path: `ExternalProgramManager.execute_external_program`
 
@@ -220,8 +224,8 @@ Guidelines:
 - Use `eval` to parse the quoted selection variables, and build absolute paths
   by joining `XEFM_THIS_DIR` with each filename, so spaces and special
   characters are handled correctly.
-- When launching a GUI application, `unset` the `XEFM_*` variables first and set
-  `options.auto_return = True` for a seamless return.
+- When launching a GUI application, `unset` the `XEFM_*` variables first so
+  they don't leak into an unrelated long-lived process.
 
 ### Registering the program
 
@@ -233,12 +237,11 @@ import platform
 
 if platform.system() == 'Darwin':
     PROGRAMS.append({'name': 'macOS Program',
-                     'command': [xefm_tool('macos_program.sh')],
-                     'options': {'auto_return': True}})
+                     'command': [xefm_tool('macos_program.sh')]})
 ```
 
-`auto_return: True` matters only under the legacy blocking launcher (GUI apps
-that return control immediately); the current picker never blocks either way.
+`auto_return: True` is deprecated and ignored (the picker never blocks); use
+`terminal: True` for programs that need the tty.
 
 ## Related documentation
 
