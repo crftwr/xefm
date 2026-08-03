@@ -248,11 +248,14 @@ class TestFileMonitorManagerLifecycle(unittest.TestCase):
         # Note: On some systems (especially macOS), filesystem events may be delayed
         time.sleep(1.0)
         
-        # Check that reload request was posted to queue
-        # This test may be flaky on some systems due to filesystem event timing
-        if not self.file_manager.reload_queue.empty():
-            pane_name = self.file_manager.reload_queue.get_nowait()
-            self.assertEqual(pane_name, "left")
+        # Check that reload request was posted to queue. Drain everything and
+        # assert on membership: macOS FSEvents can replay the setUp directory
+        # creations as a spurious right-pane event ahead of the real one.
+        posted = set()
+        while not self.file_manager.reload_queue.empty():
+            posted.add(self.file_manager.reload_queue.get_nowait())
+        if posted:
+            self.assertIn("left", posted)
         else:
             # If no event was detected, skip this test
             # This can happen on systems where watchdog doesn't detect changes immediately

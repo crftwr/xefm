@@ -351,7 +351,13 @@ class TestDirectoryNavigation(unittest.TestCase):
         # Navigate to new directory
         self.manager.update_monitored_directory('left', self.new_left_path)
         time.sleep(0.2)
-        
+
+        # Discard anything already queued: macOS FSEvents can replay the setUp
+        # directory creations as events after the watches start, and those are
+        # not what this test is about.
+        while not self.file_manager.reload_queue.empty():
+            self.file_manager.reload_queue.get_nowait()
+
         # Create file in OLD directory
         old_file = self.left_path / "old_test.txt"
         old_file.write_text("old content")
