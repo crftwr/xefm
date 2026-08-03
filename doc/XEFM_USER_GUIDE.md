@@ -422,7 +422,8 @@ s3://my-bucket/path/to/files/
 ## Advanced Features
 
 ### Sub-shell Mode
-Press **X** (Shift+x) to enter sub-shell mode with environment variables:
+Press **Shift+X** to enter sub-shell mode (terminal mode only — the desktop
+app has no terminal to hand over) with environment variables:
 - `XEFM_LEFT_DIR`: Left pane directory
 - `XEFM_RIGHT_DIR`: Right pane directory
 - `XEFM_THIS_DIR`: Current pane directory

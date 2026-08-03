@@ -111,8 +111,12 @@ class EditFile(EditSubshellBase):
 
 
 class Subshell(EditSubshellBase):
+    # is_desktop_mode() caches process-global detection that other tests in the
+    # same worker can pollute (XEFM_BACKEND, loaded GUI modules); pin it so the
+    # terminal-only guard doesn't fire order-dependently.
     def test_launches_shell_in_active_pane_dir(self):
         with patch.dict(os.environ, {"SHELL": "/bin/zsh"}, clear=False), \
+             patch("xefm.app.is_desktop_mode", return_value=False), \
              patch("subprocess.run") as run:
             self.app.subshell()
         run.assert_called_once()
@@ -122,7 +126,8 @@ class Subshell(EditSubshellBase):
 
     def test_skips_remote_directory(self):
         self.app.active_pane()["path"] = Path("s3://bucket/")
-        with patch("subprocess.run") as run:
+        with patch("xefm.app.is_desktop_mode", return_value=False), \
+             patch("subprocess.run") as run:
             self.app.subshell()
         run.assert_not_called()
 

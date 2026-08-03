@@ -2344,7 +2344,8 @@ class XeFMApp:
         )
         tools_menu = Menu(
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
-            MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
+            MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell"),
+                     enabled=lambda: not is_desktop_mode()),
             SEPARATOR,
             MenuItem("Edit Configuration…", on_select=self.edit_config,
                      shortcut=sc("edit_config")),
@@ -2535,12 +2536,17 @@ class XeFMApp:
     def subshell(self) -> None:
         """Drop to an interactive shell (``$SHELL``) in the active pane's
         directory, handing over the terminal via suspend/resume; refresh on
-        return. Local directories only. The shell gets the ``XEFM_*``
-        variables (pane directories, selections, ``XEFM_ACTIVE``) and a
-        best-effort ``[XeFM]`` prefix on ``PS1``/``PROMPT``."""
+        return. Terminal mode and local directories only. The shell gets the
+        ``XEFM_*`` variables (pane directories, selections, ``XEFM_ACTIVE``)
+        and a best-effort ``[XeFM]`` prefix on ``PS1``/``PROMPT``."""
         from xefm.external_programs import (build_xefm_env,
                                            ensure_common_paths_in_env,
                                            prefix_prompt_markers)
+        if is_desktop_mode():
+            self.log_info("Cannot open a subshell: it needs a terminal, "
+                          "and desktop mode has none")
+            self.panel.render()
+            return
         path = self.active_pane()["path"]
         if not self._is_local(path):
             self.log_info("Subshell is only available for local directories")

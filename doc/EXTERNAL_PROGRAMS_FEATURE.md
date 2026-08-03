@@ -77,8 +77,9 @@ If the program exits with a nonzero code, XeFM waits for Enter before
 repainting, so whatever error output it left on the terminal stays readable.
 
 In desktop mode there is no terminal to hand over, so a `terminal: True`
-entry is refused with an error in the log pane. Sub-shell mode (**Shift-X**)
-remains the tool for extended interactive command-line work.
+entry is refused with an error in the log pane — as is sub-shell mode
+(**Shift-X**), which in terminal mode remains the tool for extended
+interactive command-line work.
 
 ## Example Use Cases
 

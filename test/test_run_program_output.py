@@ -179,7 +179,8 @@ class TestTerminalOption(RunProgramBase):
 class TestSubshellEnv(RunProgramBase):
     def test_subshell_gets_xefm_env_and_prompt_marker(self):
         """Shift-X hands the shell the XEFM_* variables and a [XeFM] prompt"""
-        with patch.object(self.app, '_run_in_terminal') as handoff:
+        with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch('xefm.app.is_desktop_mode', return_value=False):
             self.app.subshell()
 
         handoff.assert_called_once()
@@ -195,6 +196,17 @@ class TestSubshellEnv(RunProgramBase):
         self.assertIn('XEFM_LEFT_SELECTED', env)
         self.assertTrue(env['PS1'].startswith('[XeFM] '))
         self.assertTrue(env['PROMPT'].startswith('[XeFM] '))
+
+    def test_subshell_refused_in_desktop_mode(self):
+        """Desktop mode has no tty to hand over: the subshell is refused"""
+        with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch.object(self.app, 'log_info') as log, \
+                patch('xefm.app.is_desktop_mode', return_value=True):
+            self.app.subshell()
+
+        handoff.assert_not_called()
+        log.assert_called_once()
+        self.assertIn('terminal', log.call_args[0][0])
 
 
 class TestAutoReturnDeprecation(unittest.TestCase):
