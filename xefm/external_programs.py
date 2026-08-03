@@ -102,6 +102,27 @@ def get_selected_or_cursor_files(pane_data):
     return selected
 
 
+def build_xefm_env(left_pane, right_pane, current_pane, other_pane):
+    """The XEFM_* variables describing the pane state, ready to merge into a
+    subprocess environment. Selection variables hold space-separated,
+    double-quoted filenames; when nothing is selected the file under the
+    cursor is substituted."""
+    def selected(pane):
+        return ' '.join(quote_filenames_with_double_quotes(
+            get_selected_or_cursor_files(pane)))
+    return {
+        'XEFM_LEFT_DIR': str(left_pane['path']),
+        'XEFM_RIGHT_DIR': str(right_pane['path']),
+        'XEFM_THIS_DIR': str(current_pane['path']),
+        'XEFM_OTHER_DIR': str(other_pane['path']),
+        'XEFM_LEFT_SELECTED': selected(left_pane),
+        'XEFM_RIGHT_SELECTED': selected(right_pane),
+        'XEFM_THIS_SELECTED': selected(current_pane),
+        'XEFM_OTHER_SELECTED': selected(other_pane),
+        'XEFM_ACTIVE': '1',
+    }
+
+
 def ensure_common_paths_in_env(env):
     """
     Ensure common binary paths are in PATH environment variable.
@@ -162,26 +183,8 @@ class ExternalProgramManager:
             # Set environment variables with XEFM_ prefix
             env = os.environ.copy()
             ensure_common_paths_in_env(env)
-            env['XEFM_LEFT_DIR'] = str(left_pane['path'])
-            env['XEFM_RIGHT_DIR'] = str(right_pane['path'])
-            env['XEFM_THIS_DIR'] = str(current_pane['path'])
-            env['XEFM_OTHER_DIR'] = str(other_pane['path'])
-            
-            # Get selected files for each pane, or cursor position if no selection
-            left_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(left_pane))
-            right_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(right_pane))
-            current_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(current_pane))
-            other_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(other_pane))
-            
-            # Set selected files environment variables (space-separated) with XEFM_ prefix
-            env['XEFM_LEFT_SELECTED'] = ' '.join(left_selected)
-            env['XEFM_RIGHT_SELECTED'] = ' '.join(right_selected)
-            env['XEFM_THIS_SELECTED'] = ' '.join(current_selected)
-            env['XEFM_OTHER_SELECTED'] = ' '.join(other_selected)
-            
-            # Set XeFM indicator environment variable
-            env['XEFM_ACTIVE'] = '1'
-            
+            env.update(build_xefm_env(left_pane, right_pane, current_pane, other_pane))
+
             # Use the command as-is (users should use xefm_tool() for XeFM tools)
             command = program['command']
             
@@ -321,27 +324,8 @@ class ExternalProgramManager:
             # Set environment variables with XEFM_ prefix
             env = os.environ.copy()
             ensure_common_paths_in_env(env)
-            env['XEFM_LEFT_DIR'] = str(left_pane['path'])
-            env['XEFM_RIGHT_DIR'] = str(right_pane['path'])
-            env['XEFM_THIS_DIR'] = str(current_pane['path'])
-            env['XEFM_OTHER_DIR'] = str(other_pane['path'])
-            
-            # Get selected files for each pane, or cursor position if no selection
-            left_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(left_pane))
-            right_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(right_pane))
-            current_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(current_pane))
-            other_selected = quote_filenames_with_double_quotes(get_selected_or_cursor_files(other_pane))
-            
-            # Set selected files environment variables (space-separated) with XEFM_ prefix
-            # Filenames are properly quoted with double quotes for shell safety
-            env['XEFM_LEFT_SELECTED'] = ' '.join(left_selected)
-            env['XEFM_RIGHT_SELECTED'] = ' '.join(right_selected)
-            env['XEFM_THIS_SELECTED'] = ' '.join(current_selected)
-            env['XEFM_OTHER_SELECTED'] = ' '.join(other_selected)
-            
-            # Set XeFM indicator environment variable
-            env['XEFM_ACTIVE'] = '1'
-            
+            env.update(build_xefm_env(left_pane, right_pane, current_pane, other_pane))
+
             # Modify shell prompt to include [XeFM] label
             # Handle both bash (PS1) and zsh (PROMPT) prompts
             current_ps1 = env.get('PS1', '')

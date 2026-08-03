@@ -19,7 +19,9 @@ External programs are configured in the `PROGRAMS` list in your `config.py` file
 
 - `name`: Display name for the program
 - `command`: List of command arguments
-- `options` (optional): Program-specific options like `auto_return`
+- `options` (optional): accepted for compatibility with older configs
+  (`auto_return`), but the current launcher never blocks XeFM, so it has no
+  effect
 
 ### Basic Configuration Example
 
@@ -27,9 +29,7 @@ External programs are configured in the `PROGRAMS` list in your `config.py` file
 PROGRAMS = [
     {'name': 'Git Status', 'command': ['git', 'status']},
     {'name': 'Git Log', 'command': ['git', 'log', '--oneline', '-10']},
-    {'name': 'Disk Usage', 'command': ['du', '-sh', '*']},
-    {'name': 'Python REPL', 'command': ['python3']},
-    {'name': 'Quick Git Status', 'command': ['git', 'status', '--short'], 'options': {'auto_return': True}},
+    {'name': 'Disk Usage', 'command': ['du', '-sh', '.']},
 ]
 ```
 
@@ -37,10 +37,12 @@ PROGRAMS = [
 
 When you run external programs, XeFM provides information about your current state through environment variables:
 
-- `XEFM_THIS_DIR`: Current pane directory
-- `XEFM_OTHER_DIR`: Other pane directory
-- `XEFM_THIS_SELECTED`: Selected files in current pane
-- `XEFM_OTHER_SELECTED`: Selected files in other pane
+- `XEFM_THIS_DIR` / `XEFM_OTHER_DIR`: Current / other pane directory
+- `XEFM_LEFT_DIR` / `XEFM_RIGHT_DIR`: Left / right pane directory
+- `XEFM_THIS_SELECTED` / `XEFM_OTHER_SELECTED` / `XEFM_LEFT_SELECTED` /
+  `XEFM_RIGHT_SELECTED`: Selected files in the respective pane
+  (space-separated, double-quoted; the focused file when nothing is selected)
+- `XEFM_ACTIVE`: Set to `1` while running under XeFM
 
 Your scripts can use these variables to work with your current selection and location.
 
@@ -48,9 +50,17 @@ Your scripts can use these variables to work with your current selection and loc
 
 1. Press **X** to open the programs dialog
 2. Use the searchable list to find and select a program
-3. Press Enter to execute the selected program
-4. The program runs in the current pane's directory
-5. Press Enter after the program completes to return to XeFM
+3. Press Enter to launch it
+
+The program runs in the background with the current pane as its working
+directory; the selected filenames (or the focused one) are also appended as
+command-line arguments. Its output — stdout and stderr — streams into the log
+pane, in both terminal and desktop mode, and a nonzero exit code is reported
+there too. XeFM stays fully responsive throughout.
+
+Because the program's input is closed at launch, interactive terminal programs
+(a REPL, `vim`, `less`) can't run from this menu — use sub-shell mode
+(**Shift-X**) for those.
 
 ## Example Use Cases
 
@@ -76,13 +86,36 @@ Your scripts can use these variables to work with your current selection and loc
 
 ## Creating Custom Scripts
 
-You can create custom scripts that work with XeFM's environment variables. For example:
+On first launch XeFM creates a personal tools directory, `~/.xefm/tools/`, and
+places an example in it: `example_tool.py`, which prints every `XEFM_*`
+variable and resolves the current selection to absolute paths. It is wired
+into the default `PROGRAMS` as **Example Tool (show XeFM environment)**, so
+pressing **X** and running it shows exactly what your own scripts receive.
+(The directory is seeded once — if you delete the example, it stays deleted.)
+
+To add a tool of your own:
+
+1. Drop a script into `~/.xefm/tools/` — copying `example_tool.py` is a good
+   starting point.
+2. Add an entry to `PROGRAMS` in `~/.xefm/config.py`:
+
+```python
+{'name': 'My Tool', 'command': [xefm_python, xefm_tool('my_tool.py')]},
+```
+
+Tools are not limited to Python. The `command` field is an argument list
+passed straight to the operating system, so shell scripts and plain commands
+work the same way:
 
 ```bash
 #!/bin/bash
 # Simple script that processes selected files
 echo "Working in: $XEFM_THIS_DIR"
 echo "Selected files: $XEFM_THIS_SELECTED"
+```
+
+```python
+{'name': 'My Shell Script', 'command': ['bash', xefm_tool('my_script.sh')]},
 ```
 
 ## Example integrations
@@ -116,8 +149,8 @@ PROGRAMS = [
   full paths from `XEFM_LEFT_SELECTED` / `XEFM_RIGHT_SELECTED` and the pane
   directories. If nothing is explicitly selected, the file under each cursor is
   used.
-- `auto_return: True` returns to XeFM as soon as Beyond Compare launches, without
-  waiting for you to press Enter.
+- `auto_return: True` is a leftover from when launching blocked XeFM; it is
+  harmless and has no effect today.
 
 Requires the `bcompare` command on your `PATH` (install Beyond Compare — e.g.
 `brew install --cask beyond-compare` on macOS).

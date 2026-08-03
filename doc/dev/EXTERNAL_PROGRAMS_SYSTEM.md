@@ -4,9 +4,14 @@
 
 The External Programs system lets users run configured external programs from
 within XeFM with access to the current file-manager state through environment
-variables. It also provides the interactive sub-shell feature. Both are
-implemented in `xefm/external_programs.py` by the `ExternalProgramManager`
-class.
+variables. It also provides the interactive sub-shell feature.
+
+The live launch path for the picker (**X**) is `XeFMApp._run_program` /
+`_watch_program` in `xefm/app.py`; the shared helpers (environment building,
+tool resolution) and the sub-shell live in `xefm/external_programs.py`. That
+module's `ExternalProgramManager.execute_external_program` is the **legacy**
+blocking launcher — it suspends the renderer and hands the terminal to the
+child — and is currently not wired to the picker.
 
 This document covers the implementation. For the interactive shell in
 particular, see [SUBSHELL_SYSTEM.md](SUBSHELL_SYSTEM.md); for the user-facing
@@ -39,6 +44,10 @@ run the child process, then restore the renderer and stdio in a `finally` block.
   the original name if not found, so execution fails later with a clear error.
 - `xefm_python` — path to the correct Python interpreter, accounting for the
   macOS app bundle where a bundled `python3` lives inside the `.app`.
+- `build_xefm_env(left_pane, right_pane, current_pane, other_pane)` — the
+  `XEFM_*` variables as a dict, ready to merge into a subprocess environment.
+  The single source of truth, shared by `_run_program`, the legacy manager,
+  and the sub-shell.
 - `quote_filenames_with_double_quotes(filenames)` — quote filenames with double
   quotes (escaping `"` and `\`) for safe use in the `XEFM_*_SELECTED` variables.
 - `get_selected_or_cursor_files(pane_data)` — the selected files, or the file
@@ -55,9 +64,10 @@ External programs are configured as a `PROGRAMS` list in the config
 - `name` — display name.
 - `command` — command as a list of arguments (executed without a shell, so no
   shell injection).
-- `options` (optional) — currently just `auto_return` (bool, default `False`):
-  return to XeFM immediately after the program exits instead of waiting for the
-  user to press Enter.
+- `options` (optional) — `auto_return` (bool, default `False`) belongs to the
+  legacy blocking launcher (skip the "press Enter to return" prompt). The
+  current picker launch never blocks, so it is accepted but has no effect
+  there.
 
 ```python
 PROGRAMS = [
@@ -91,21 +101,38 @@ own working directory.
 
 ## Execution flow
 
-`execute_external_program` branches on `is_desktop_mode()`:
+### Live path: `XeFMApp._run_program`
 
-- **Terminal mode** — restore stdout/stderr so the child can use the terminal
-  directly, suspend the renderer, and run with `subprocess.run(command, env=env)`
-  so the program shares the terminal. On completion it prints the exit status
-  and, unless `auto_return` is set, waits for the user to press Enter.
-- **Desktop mode** — keep `LogCapture` active and run with
-  `capture_output=True`; the program's stdout is echoed to the log pane at
-  `info` level and stderr at `error` level. Desktop mode always returns
-  immediately (no Enter prompt), even on error, since the user can read the log
-  pane.
+The picker launches the program without blocking the UI, identically in
+terminal and desktop mode:
 
-Errors (`FileNotFoundError`, other exceptions) are logged with a hint to use
-`xefm_tool()` for XeFM tools. In every case the `finally` block resumes the
-renderer, re-initializes colors, and restores stdio capture.
+1. Resolve arguments and working directory from the active pane (a virtual
+   search-results pane passes absolute paths and runs from the search root;
+   its `XEFM_THIS_DIR` / `XEFM_THIS_SELECTED` are overridden to match).
+2. Build the environment: `ensure_common_paths_in_env` + `build_xefm_env`.
+3. `subprocess.Popen` with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE` — the
+   child never touches the terminal. In TUI mode a direct write would corrupt
+   the curses screen (newlines without carriage returns under raw mode); in
+   desktop mode there may be no terminal at all.
+4. `_watch_program` starts daemon reader threads that post complete lines to
+   `XeFMApp._log_queue` — the same thread-safe channel as the app's own
+   captured stdout/stderr, drained only by the UI thread — tagged `STDOUT`
+   (dim) or `STDERR` (red). A waiter thread reports a nonzero exit code once
+   both streams close.
+
+Because stdin reads EOF, interactive terminal programs can't run from this
+path; a renderer suspend/resume hand-off (as `edit_file` does for the editor)
+is the intended future extension for those.
+
+### Legacy path: `ExternalProgramManager.execute_external_program`
+
+Branches on `is_desktop_mode()`: in terminal mode it restores stdio, suspends
+the renderer and gives the child the terminal, then waits for Enter unless
+`auto_return` is set; in desktop mode it runs with `capture_output=True` and
+echoes output to the log pane. Errors are logged with a hint to use
+`xefm_tool()`, and a `finally` block resumes the renderer, re-initializes
+colors, and restores stdio capture. Kept as the reference implementation for a
+future terminal hand-off; not called by the app today.
 
 ## Comparison with sub-shell mode
 
@@ -131,7 +158,10 @@ External Programs Policy.
 External programs **must** read XeFM's environment variables rather than expect
 command-line arguments. This keeps every program integrated with XeFM's
 selection and navigation state in the same way, and lets a program adapt to the
-user's current context automatically.
+user's current context automatically. (The picker *also* appends the selected
+filenames as argv — a convenience for generic launchers like `open` — but XeFM
+tools must not rely on it: the environment carries the full four-pane state,
+argv only the active selection.)
 
 Directory variables: `XEFM_THIS_DIR`, `XEFM_OTHER_DIR`, `XEFM_LEFT_DIR`,
 `XEFM_RIGHT_DIR`. Selection variables (space-separated, double-quoted filenames):
@@ -145,6 +175,13 @@ scripts; user-specific tools go in `~/.xefm/tools/`. Reference them from a
 `PROGRAMS` entry via `xefm_tool('script_name.sh')`, which resolves either
 location to an absolute path. Follow a descriptive naming convention
 (`descriptive_name.sh`).
+
+`ConfigManager.ensure_user_tools_dir()` (called from `load_config()`, i.e. on
+every launch) seeds `~/.xefm/tools/` with a copy of the bundled
+`example_tool.py` — but only when the directory does not exist yet, so a
+deleted example is never resurrected and user files are never overwritten. It
+runs before the config module executes, so `xefm_tool('example_tool.py')` in a
+config resolves to the user copy from the very first launch.
 
 ### Script structure
 
@@ -200,8 +237,8 @@ if platform.system() == 'Darwin':
                      'options': {'auto_return': True}})
 ```
 
-Use `auto_return: True` for GUI apps that return control immediately, and the
-default (`False`) for CLI tools whose output you want to read before returning.
+`auto_return: True` matters only under the legacy blocking launcher (GUI apps
+that return control immediately); the current picker never blocks either way.
 
 ## Related documentation
 

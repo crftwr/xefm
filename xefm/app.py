@@ -3457,10 +3457,11 @@ class XeFMApp:
 
     def show_programs(self) -> None:
         """The external-programs picker: choose a configured program and launch it
-        on the selection (or the focused entry). Launched fire-and-forget with the
-        active pane as the working directory — well suited to the GUI launchers in
-        the default config (VS Code, BeyondCompare). Programs that need to take
-        over the terminal await a backend suspend/resume (see ``edit_file``)."""
+        on the selection (or the focused entry). Launched without blocking the UI,
+        with the active pane as the working directory, the ``XEFM_*`` variables in
+        the environment, and stdout/stderr streamed into the log pane. Programs
+        that need to take over the terminal (interactive CLIs) await a backend
+        suspend/resume (see ``edit_file``); their stdin reads EOF."""
         programs = getattr(self.config, "PROGRAMS", None) or []
         if not programs:
             show_message_box(self.panel, "No external programs configured.",
@@ -3474,8 +3475,10 @@ class XeFMApp:
         self.panel.render()
 
     def _run_program(self, program: dict) -> None:
-        from xefm.external_programs import (ensure_common_paths_in_env,
-                                           get_selected_or_cursor_files)
+        from xefm.external_programs import (build_xefm_env,
+                                           ensure_common_paths_in_env,
+                                           get_selected_or_cursor_files,
+                                           quote_filenames_with_double_quotes)
         pane = self.active_pane()
         command = list(program.get("command", []))
         if not command:
@@ -3493,13 +3496,60 @@ class XeFMApp:
             cwd = str(pane["path"])
         env = os.environ.copy()
         ensure_common_paths_in_env(env)
+        env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
+                                  self.pm.get_current_pane(),
+                                  self.pm.get_inactive_pane()))
+        if virtual:
+            # The env contract mirrors the argv decision above: absolute paths
+            # from the search root, not bare names.
+            env["XEFM_THIS_DIR"] = cwd
+            env["XEFM_THIS_SELECTED"] = " ".join(
+                quote_filenames_with_double_quotes(args))
         try:
-            subprocess.Popen(command + args, cwd=cwd, env=env)
+            # Pipes, never the terminal: in TUI mode a direct write would corrupt
+            # the curses screen; in desktop mode there may be no terminal at all.
+            # stdin reads EOF so an interactive program can't hang on input.
+            proc = subprocess.Popen(
+                command + args, cwd=cwd, env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True, errors="replace")
         except Exception as exc:
             self.log_info(f"Failed to launch {program.get('name')}: {exc}")
         else:
             self.log_info(f"Launched: {program.get('name')}")
+            self._watch_program(program.get("name", "?"), proc)
         self.panel.render()
+
+    def _watch_program(self, name: str, proc: subprocess.Popen) -> None:
+        """Stream a launched program's output into the log pane without blocking
+        the UI. Reader threads post complete lines to ``_log_queue`` — the same
+        channel as captured stdout/stderr, drained only by the UI thread — and a
+        waiter thread reports a nonzero exit code once both streams close."""
+        def reader(stream, source):
+            for line in stream:
+                self._log_queue.put((source, line.rstrip("\n")))
+                self._wake_pump()
+            stream.close()
+
+        readers = [
+            threading.Thread(target=reader, args=(proc.stdout, "STDOUT"),
+                             name="xefm-program-out", daemon=True),
+            threading.Thread(target=reader, args=(proc.stderr, "STDERR"),
+                             name="xefm-program-err", daemon=True),
+        ]
+        for t in readers:
+            t.start()
+
+        def waiter():
+            for t in readers:
+                t.join()
+            code = proc.wait()
+            if code != 0:
+                self._log_queue.put(("STDERR", f"'{name}' exited with code {code}"))
+                self._wake_pump()
+
+        threading.Thread(target=waiter, name="xefm-program-wait",
+                         daemon=True).start()
 
     def _jump_to_favorite(self, fav: dict) -> None:
         pane = self.active_pane()
