@@ -129,17 +129,19 @@ directory. `xefm_python` is the interpreter XeFM is running under.
 
 ### Beyond Compare
 
-Two entries drive [Beyond Compare](https://www.scootersoftware.com/) — one
-compares the two pane *directories*, the other the two selected *files*:
+XeFM's built-in diff viewer already compares the two selected files (**=**)
+and the two pane directories (**Shift+=**) — see
+[Diff Viewer Feature](DIFF_VIEWER_FEATURE.md) — so the Beyond Compare entries
+are no longer part of the default configuration. The helper scripts stay
+bundled for configs that still reference them; if you prefer
+[Beyond Compare](https://www.scootersoftware.com/), add the entries yourself:
 
 ```python
 PROGRAMS = [
     {'name': 'Compare Files (BeyondCompare)',
-     'command': [xefm_python, xefm_tool('bcompare_files.py')],
-     'options': {'auto_return': True}},
+     'command': [xefm_python, xefm_tool('bcompare_files.py')]},
     {'name': 'Compare Directories (BeyondCompare)',
-     'command': [xefm_python, xefm_tool('bcompare_dirs.py')],
-     'options': {'auto_return': True}},
+     'command': [xefm_python, xefm_tool('bcompare_dirs.py')]},
 ]
 ```
 
@@ -149,8 +151,6 @@ PROGRAMS = [
   full paths from `XEFM_LEFT_SELECTED` / `XEFM_RIGHT_SELECTED` and the pane
   directories. If nothing is explicitly selected, the file under each cursor is
   used.
-- `auto_return: True` is a leftover from when launching blocked XeFM; it is
-  harmless and has no effect today.
 
 Requires the `bcompare` command on your `PATH` (install Beyond Compare — e.g.
 `brew install --cask beyond-compare` on macOS).

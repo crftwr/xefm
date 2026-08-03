@@ -680,7 +680,7 @@ For detailed information about specific features, see these dedicated guides:
 - [Key Bindings Feature](KEY_BINDINGS_FEATURE.md) - Customizable keyboard shortcuts
 
 ### Integration and Extensions
-- [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md) - Custom program integration (incl. Beyond Compare & VSCode recipes)
+- [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md) - Custom program integration (incl. the VSCode recipe)
 
 ---
 

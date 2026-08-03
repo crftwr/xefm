@@ -584,8 +584,6 @@ class Config:
     # The "options" field is a dictionary with program-specific options:
     #   - auto_return: if True, automatically returns to XeFM without waiting for user input
     PROGRAMS = [
-        {'name': 'Compare Files (BeyondCompare)', 'command': [xefm_python, xefm_tool('bcompare_files.py')], 'options': {'auto_return': True}},
-        {'name': 'Compare Directories (BeyondCompare)', 'command': [xefm_python, xefm_tool('bcompare_dirs.py')], 'options': {'auto_return': True}},
         {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')], 'options': {'auto_return': True}},
         {'name': 'Open in Kiro', 'command': [xefm_python, xefm_tool('kiro.py')], 'options': {'auto_return': True}},
         {'name': 'Example Tool (show XeFM environment)', 'command': [xefm_python, xefm_tool('example_tool.py')]},
