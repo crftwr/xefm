@@ -2438,13 +2438,24 @@ class XeFMApp:
         return str(path).startswith("archive://")
 
     def _run_in_terminal(self, argv: list, cwd: str | None = None,
-                         env: dict | None = None) -> None:
+                         env: dict | None = None,
+                         pause_on_error: bool = False) -> None:
         """Run a full-screen child process (editor / shell) with the display
         handed over via ``backend.suspended()``, then refresh both panes and
-        repaint — the child may have changed files while we were away."""
+        repaint — the child may have changed files while we were away. With
+        ``pause_on_error``, a nonzero exit holds the terminal until Enter, so
+        the child's parting error output stays readable before the repaint
+        wipes it."""
         try:
             with self.backend.suspended():
-                subprocess.run(argv, cwd=cwd, env=env)
+                result = subprocess.run(argv, cwd=cwd, env=env)
+                if pause_on_error and result.returncode != 0:
+                    # sys.stdout is captured into the log pane; the prompt must
+                    # reach the real tty the child just wrote its errors to.
+                    print(f"\n{argv[0]} exited with code {result.returncode}"
+                          " - press Enter to return to XeFM",
+                          file=sys.__stdout__)
+                    input()
         except FileNotFoundError:
             self.log_info(f"Command not found: {argv[0]}")
         except Exception as exc:
@@ -3463,7 +3474,8 @@ class XeFMApp:
         the environment, and stdout/stderr streamed into the log pane. An entry
         with ``options {'terminal': True}`` instead gets the terminal via
         suspend/resume (like ``edit_file``) so full-screen programs (vim, less)
-        work; other programs' stdin reads EOF."""
+        work — terminal mode only; desktop mode refuses the launch. Other
+        programs' stdin reads EOF."""
         programs = getattr(self.config, "PROGRAMS", None) or []
         if not programs:
             show_message_box(self.panel, "No external programs configured.",
@@ -3508,11 +3520,16 @@ class XeFMApp:
             env["XEFM_THIS_SELECTED"] = " ".join(
                 quote_filenames_with_double_quotes(args))
         options = program.get("options") or {}
-        if options.get("terminal") and not is_desktop_mode():
+        if options.get("terminal"):
+            if is_desktop_mode():
+                self.log_info(f"Cannot launch '{program.get('name')}': "
+                              "options {'terminal': True} needs a terminal, "
+                              "and desktop mode has none")
+                self.panel.render()
+                return
             # Full-screen child (vim, less, a REPL): hand over the tty and wait.
-            # Desktop mode has no tty to hand over and falls through to the
-            # piped launch below.
-            self._run_in_terminal(command + args, cwd=cwd, env=env)
+            self._run_in_terminal(command + args, cwd=cwd, env=env,
+                                  pause_on_error=True)
             return
         try:
             # Pipes, never the terminal: in TUI mode a direct write would corrupt

@@ -23,7 +23,7 @@ External programs are configured in the `PROGRAMS` list in your `config.py` file
   - `terminal: True` — hand the terminal over to the program and wait for it
     to exit, for full-screen / interactive programs (`vim`, `less`, a REPL).
     Terminal mode only; in desktop mode there is no terminal to hand over, so
-    the program runs in the background as usual.
+    the launch is refused with an error in the log pane.
   - `auto_return` — deprecated and ignored; launches never block XeFM. A
     config warning names the entries still carrying it.
 
@@ -73,9 +73,12 @@ expected:
 {'name': 'View with less', 'command': ['less'], 'options': {'terminal': True}},
 ```
 
-In desktop mode there is no terminal to hand over, so the option is ignored
-and output is captured to the log pane. Sub-shell mode (**Shift-X**) remains
-the tool for extended interactive command-line work.
+If the program exits with a nonzero code, XeFM waits for Enter before
+repainting, so whatever error output it left on the terminal stays readable.
+
+In desktop mode there is no terminal to hand over, so a `terminal: True`
+entry is refused with an error in the log pane. Sub-shell mode (**Shift-X**)
+remains the tool for extended interactive command-line work.
 
 ## Example Use Cases
 

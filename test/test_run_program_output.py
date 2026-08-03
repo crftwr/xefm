@@ -140,20 +140,40 @@ class TestTerminalOption(RunProgramBase):
                          os.path.realpath(self.tmp))
         self.assertEqual(kwargs['env']['XEFM_ACTIVE'], '1')
         self.assertIn('XEFM_THIS_DIR', kwargs['env'])
+        self.assertTrue(kwargs['pause_on_error'])
 
-    def test_terminal_option_ignored_in_desktop_mode(self):
-        """Desktop mode has no tty: the entry runs on the piped path instead"""
+    def test_terminal_option_refused_in_desktop_mode(self):
+        """Desktop mode has no tty to hand over: the launch is refused"""
         program = {'name': 'Echoer',
                    'command': [sys.executable, '-c', "print('piped output')"],
                    'options': {'terminal': True}}
         with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch.object(self.app, 'log_info') as log, \
+                patch('xefm.app.subprocess.Popen') as popen, \
                 patch('xefm.app.is_desktop_mode', return_value=True):
             self.app._run_program(program)
 
         handoff.assert_not_called()
-        lines = self.collect_log_lines(
-            lambda ls: any(l[1] == 'piped output' for l in ls))
-        self.assertIn(('STDOUT', 'piped output'), lines)
+        popen.assert_not_called()
+        log.assert_called_once()
+        message = log.call_args[0][0]
+        self.assertIn('Echoer', message)
+        self.assertIn('terminal', message)
+
+    def test_terminal_nonzero_exit_waits_for_enter(self):
+        """pause_on_error holds the terminal until Enter on a nonzero exit"""
+        with patch('builtins.input', return_value='') as enter:
+            self.app._run_in_terminal(
+                [sys.executable, '-c', 'import sys; sys.exit(2)'],
+                pause_on_error=True)
+        enter.assert_called_once()
+
+    def test_terminal_zero_exit_returns_immediately(self):
+        """A clean exit returns to XeFM without prompting"""
+        with patch('builtins.input', return_value='') as enter:
+            self.app._run_in_terminal(
+                [sys.executable, '-c', 'pass'], pause_on_error=True)
+        enter.assert_not_called()
 
 
 class TestAutoReturnDeprecation(unittest.TestCase):

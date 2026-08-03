@@ -584,8 +584,9 @@ class Config:
     # The "options" field is a dictionary with program-specific options:
     #   - terminal: if True, hand the terminal over to the program and wait for
     #     it to exit — for full-screen / interactive programs (vim, less, a
-    #     REPL). Terminal mode only; desktop mode has no terminal to hand over,
-    #     so the program runs with its output captured to the log pane as usual.
+    #     REPL). If it exits with an error, XeFM waits for Enter so the output
+    #     stays readable. Terminal mode only; desktop mode has no terminal to
+    #     hand over and refuses the launch with an error in the log pane.
     #   - auto_return: deprecated and ignored — launches never block XeFM.
     PROGRAMS = [
         {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')]},

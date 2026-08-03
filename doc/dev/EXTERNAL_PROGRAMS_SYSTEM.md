@@ -66,7 +66,7 @@ External programs are configured as a `PROGRAMS` list in the config
   shell injection).
 - `options` (optional) — `terminal` (bool, default `False`): divert the launch
   to `_run_in_terminal` so a full-screen program gets the tty (terminal mode
-  only; desktop mode ignores it). `auto_return` is deprecated and ignored —
+  only; desktop mode refuses the launch). `auto_return` is deprecated and ignored —
   `validate_config` emits a config warning naming the entries that still carry
   it (the legacy blocking launcher honored it; the picker never blocks).
 
@@ -111,10 +111,12 @@ terminal and desktop mode:
    its `XEFM_THIS_DIR` / `XEFM_THIS_SELECTED` are overridden to match).
 2. Build the environment: `ensure_common_paths_in_env` + `build_xefm_env`.
    An entry with `options {'terminal': True}` diverts here in terminal mode:
-   `_run_in_terminal(command + args, cwd, env)` suspends the display via
-   `backend.suspended()` and blocks until the child exits — the same hand-off
-   `edit_file` and the sub-shell use. Desktop mode ignores the flag and
-   continues below.
+   `_run_in_terminal(command + args, cwd, env, pause_on_error=True)` suspends
+   the display via `backend.suspended()` and blocks until the child exits —
+   the same hand-off `edit_file` and the sub-shell use — and a nonzero exit
+   holds the terminal until Enter (the prompt goes to `sys.__stdout__`, since
+   `sys.stdout` is captured into the log pane). In desktop mode there is no
+   terminal, so the launch is refused with a log-pane error.
 3. `subprocess.Popen` with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE` — the
    child never touches the terminal. In TUI mode a direct write would corrupt
    the curses screen (newlines without carriage returns under raw mode); in
