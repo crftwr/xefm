@@ -199,9 +199,13 @@ class FilterListDialog(FocusContainer, Widget):
             )
         else:
             self._list_rect = frame
+        # The "bg" hint hands the list the popup surface as its inherited
+        # background — otherwise its bg=None rows fall through to the terminal's
+        # default colors on a grid backend (dark bands over the dialog).
         ctx.draw_child(
             self.list, self._list_rect.x, self._list_rect.y,
-            self._list_rect.w, self._list_rect.h, hints={"focused": False},
+            self._list_rect.w, self._list_rect.h,
+            hints={"focused": False, "bg": surface_bg},
         )
 
     # --- events --------------------------------------------------------------

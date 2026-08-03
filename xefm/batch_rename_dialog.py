@@ -247,8 +247,12 @@ class BatchRenameDialog(FocusContainer, Widget):
 
         list_h = max(1.0, hu - y - pad)
         self._list_rect = Rect(2.0, y, max(1.0, wu - 4.0), list_h)
+        # The "bg" hint hands the list the popup surface as its inherited
+        # background — otherwise its bg=None rows fall through to the terminal's
+        # default colors on a grid backend (dark bands over the dialog).
         ctx.draw_child(self.preview_list, self._list_rect.x, self._list_rect.y,
-                       self._list_rect.w, self._list_rect.h, hints={"focused": False})
+                       self._list_rect.w, self._list_rect.h,
+                       hints={"focused": False, "bg": surface_bg})
 
     # --- events --------------------------------------------------------------
 
