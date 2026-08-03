@@ -14,15 +14,29 @@ file-by-file with byte-level progress — all off the UI thread, driving a
 :class:`~xefm.task.ProgressDialog` reads each frame. The initial ``CONFIRM_*``
 prompt stays a plain main-thread message box before the task starts.
 
+Two accelerations sit under that linear surface (issue #248, see
+``doc/dev/PARALLEL_COPY_IMPLEMENTATION.md``): a same-volume local copy is
+attempted as one macOS ``clonefile`` syscall before falling back to streaming,
+and a multi-file copy/move fans individual files out to a small worker pool
+(``_run_parallel``) while the task thread keeps walking directories. The
+resolve/confirm phase stays strictly single-threaded; workers only touch the
+task's cancel flag, its (locked) progress manager, and their own target's
+error list.
+
 Pass ``background=False`` (tests) to run the operation inline and resolve
 conflicts headlessly (skip existing) — deterministic, no dialog, no thread.
 """
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import os
 import re
 import shutil
+import sys
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
 from puikit.backend import Style
@@ -50,6 +64,76 @@ _OP_TYPE = {
 #: shot — instant, no byte bar).
 _CHUNK = 1024 * 1024
 _BYTE_BAR_MIN = 1024 * 1024
+
+#: Copy-worker pool sizes by storage latency class — the fallbacks behind
+#: ``config.FILE_OP_WORKERS_LOCAL`` / ``FILE_OP_WORKERS_S3``. Local disk
+#: saturates fast — measured ~1.3–1.9× at 2–4 workers on APFS SSD, and *worse*
+#: beyond that (GIL + filesystem metadata serialization). S3 is per-object
+#: round-trip latency, so more concurrency keeps paying. ssh stays at 1:
+#: transfers share one control-master connection per host whose progress state
+#: is per-connection, not per-transfer.
+_WORKERS_LOCAL = 4
+_WORKERS_REMOTE = 8
+
+#: macOS ``clonefile(2)``: a same-volume APFS copy is one copy-on-write
+#: syscall — instant regardless of size, sharing data blocks until either side
+#: is modified (exactly what Finder's Duplicate does). Resolved lazily:
+#: ``None`` = not looked up yet, ``False`` = unavailable (non-macOS, or libc
+#: without the symbol).
+_clonefile = None if sys.platform == "darwin" else False
+_clonefile_lock = threading.Lock()
+
+
+def _clonefile_fn():
+    """The libc ``clonefile`` function, or ``None`` where it doesn't exist."""
+    global _clonefile
+    if _clonefile is None:
+        with _clonefile_lock:
+            if _clonefile is None:
+                try:
+                    libc = ctypes.CDLL(None, use_errno=True)
+                    fn = libc.clonefile
+                    fn.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint32]
+                    fn.restype = ctypes.c_int
+                    _clonefile = fn
+                except (OSError, AttributeError):
+                    _clonefile = False
+    return _clonefile or None
+
+
+def _clone_file(src: Path, dest: Path, overwrite: bool) -> bool:
+    """Try to copy ``src`` to ``dest`` as an APFS clone; return True when the
+    clone landed. False means "use the byte path" — cross-volume, a non-cloning
+    filesystem (exFAT, NFS), or not macOS — and is never an error: the caller's
+    ordinary copy handles those exactly as before.
+
+    The device check up front keeps a cross-volume copy from ever attempting
+    (and failing) the syscall, and doubles as the seam tests already fake to
+    simulate a second filesystem. ``copystat`` afterwards makes the cloned
+    file's metadata bit-identical to what the streaming path produces."""
+    fn = _clonefile_fn()
+    if fn is None:
+        return False
+    src_dev = _entry_device(src)
+    if src_dev is None or src_dev != _entry_device(dest.parent):
+        return False
+    src_b, dest_b = os.fsencode(str(src)), os.fsencode(str(dest))
+    rc = fn(src_b, dest_b, 0)
+    if rc != 0 and overwrite and ctypes.get_errno() == errno.EEXIST:
+        # clonefile never replaces; drop the old file and try once more. If the
+        # retry still fails, the streaming fallback recreates dest anyway.
+        try:
+            dest.unlink()
+        except Exception:  # noqa: BLE001 — undeletable dest: let the copy path report it
+            return False
+        rc = fn(src_b, dest_b, 0)
+    if rc != 0:
+        return False
+    try:
+        shutil.copystat(str(src), str(dest))
+    except OSError:
+        pass  # the clone itself carries the data; stat parity is best-effort
+    return True
 
 
 def recursive_delete(entry: Path) -> None:
@@ -256,28 +340,34 @@ class FileOperationService:
             prog.update_operation_total(total_items)
 
             errors = result["errors"]
-            for target, dest_base, overwrite in plan:
-                task.checkpoint()
-                before = len(errors)
-                try:
-                    ok = self._execute_one(task, kind, target, dest_base, overwrite,
-                                           dest_dir, prog, log, errors)
-                except Cancelled:
-                    raise
-                except Exception as exc:  # noqa: BLE001 — unexpected; record + go on
-                    errors.append((str(target), str(exc)))
-                    if log is not None:
-                        log(f"{_VERB[kind]} failed for {target.name}: {exc}")
-                    ok = 0
-                result["items"] += ok
-                # A top-level target "done" if any of its entries succeeded;
-                # "failed" only if it produced nothing and did raise (a single bad
-                # file / an uncreatable dir). Inner file failures stay in ``errors``
-                # and don't sink the target.
-                if ok > 0 or len(errors) == before:
-                    result["done"] += 1
-                else:
-                    result["failed"] += 1
+            workers = self._copy_workers(kind, plan, dest_dir)
+            if workers > 1 and total_items > 1:
+                self._run_parallel(task, kind, plan, dest_dir, prog, log,
+                                   result, workers)
+            else:
+                for target, dest_base, overwrite in plan:
+                    task.checkpoint()
+                    before = len(errors)
+                    try:
+                        ok = self._execute_one(task, kind, target, dest_base,
+                                               overwrite, dest_dir, prog, log,
+                                               errors)
+                    except Cancelled:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 — unexpected; record + go on
+                        errors.append((str(target), str(exc)))
+                        if log is not None:
+                            log(f"{_VERB[kind]} failed for {target.name}: {exc}")
+                        ok = 0
+                    result["items"] += ok
+                    # A top-level target "done" if any of its entries succeeded;
+                    # "failed" only if it produced nothing and did raise (a single
+                    # bad file / an uncreatable dir). Inner file failures stay in
+                    # ``errors`` and don't sink the target.
+                    if ok > 0 or len(errors) == before:
+                        result["done"] += 1
+                    else:
+                        result["failed"] += 1
         except Cancelled:
             result["cancelled"] = True
         finally:
@@ -384,15 +474,182 @@ class FileOperationService:
             self._delete_tree(task, target, None, None, [])
         return ok
 
+    # --- the parallel copy pool -----------------------------------------------
+
+    def _copy_workers(self, kind: str, plan: list,
+                      dest_dir: Optional[Path]) -> int:
+        """How many pool workers this operation may use; 1 means the sequential
+        path runs unchanged. Local↔local gets a small pool
+        (``config.FILE_OP_WORKERS_LOCAL``), S3 a larger one
+        (``config.FILE_OP_WORKERS_S3`` — per-object round-trip latency
+        dominates there, and boto3 clients are thread-safe). Anything else
+        stays sequential regardless of the knobs: ssh transfers share one
+        control-master connection per host whose progress state is
+        per-connection, not per-transfer, and archive/unknown schemes make no
+        thread-safety promises."""
+        if kind not in ("copy", "duplicate", "move"):
+            return 1
+        schemes = {t.get_scheme() for t, _dest, _ow in plan}
+        if dest_dir is not None:
+            schemes.add(dest_dir.get_scheme())
+        if not schemes <= {"file", "s3"}:
+            return 1
+        if "s3" in schemes:
+            workers = getattr(self.config, "FILE_OP_WORKERS_S3", _WORKERS_REMOTE)
+            fallback = _WORKERS_REMOTE
+        else:
+            workers = getattr(self.config, "FILE_OP_WORKERS_LOCAL", _WORKERS_LOCAL)
+            fallback = _WORKERS_LOCAL
+        try:
+            workers = int(workers)
+        except (TypeError, ValueError):
+            workers = fallback
+        return workers if workers >= 1 else fallback
+
+    def _run_parallel(self, task: Task, kind: str, plan: list,
+                      dest_dir: Optional[Path], prog: ProgressManager, log,
+                      result: dict, workers: int) -> None:
+        """Execute the plan with a pool of file-copy workers.
+
+        The task thread stays the *walker*: it renames atomic moves inline,
+        creates directories in order (a child job must never race its parent's
+        mkdir), and turns every file into one pool job. Copy and duplicate
+        never wait between targets — files from the second folder stream while
+        the first folder's stragglers finish. A cross-filesystem move of a
+        directory drains that target's own jobs before dropping the source
+        (never delete what didn't fully copy); a single-file move carries its
+        source cleanup inside the job, so a many-file move still pipelines.
+
+        Bookkeeping is per-target so the summary counts match the sequential
+        path exactly: each target has its own error list and its jobs' futures,
+        folded into ``result`` in plan order at the end — or, on cancel, only
+        the jobs that actually finished."""
+        verb = {"move": "Moved", "duplicate": "Duplicated"}.get(kind, "Copied")
+        if log is not None:
+            log = _serialized_log(log)
+        n = len(plan)
+        sync_ok = [0] * n          # dirs + atomic renames, tallied by the walker
+        per_async = [0] * n        # files, tallied from the jobs' futures
+        per_errors: list[list] = [[] for _ in range(n)]
+        futures: list[tuple[int, Future]] = []
+        completed = False
+        ex = ThreadPoolExecutor(max_workers=workers,
+                                thread_name_prefix=f"xefm-{kind}")
+        try:
+            for i, (target, dest_base, overwrite) in enumerate(plan):
+                task.checkpoint()
+                terr = per_errors[i]
+                if kind == "move" and _is_atomic_move(kind, target, dest_dir):
+                    prog.update_progress(target.name)
+                    try:
+                        target.move_to(dest_base, overwrite=overwrite)
+                    except Cancelled:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        terr.append((str(target), str(exc)))
+                        continue
+                    _log_op(log, "Moved", target, dest_base)
+                    sync_ok[i] = 1
+                    continue
+                dir_target = target.is_dir() and not target.is_symlink()
+                cleanup_src = kind == "move" and not dir_target
+
+                def submit(src: Path, dest: Path, i=i, terr=terr,
+                           overwrite=overwrite, cleanup=cleanup_src) -> None:
+                    futures.append((i, ex.submit(
+                        self._copy_file_job, task, src, dest, overwrite,
+                        prog, log, verb, terr, cleanup)))
+
+                try:
+                    sync_ok[i] = self._copy_tree(task, target, dest_base,
+                                                 overwrite, prog, log, verb,
+                                                 terr, submit=submit)
+                except Cancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — unexpected; record + go on
+                    terr.append((str(target), str(exc)))
+                    if log is not None:
+                        log(f"{_VERB[kind]} failed for {target.name}: {exc}")
+                if kind == "move" and dir_target:
+                    # Wait for this target's own files (the pool keeps other
+                    # targets' jobs running), then drop the source only if the
+                    # whole tree copied cleanly. ``result()`` here only tallies
+                    # locally — ``per_async`` is filled once, in the final drain.
+                    ok_async = sum(f.result() for j, f in futures if j == i)
+                    if sync_ok[i] + ok_async > 0 and not terr:
+                        self._delete_tree(task, target, None, None, [])
+            for j, f in futures:
+                per_async[j] += f.result()  # re-raises a job's Cancelled
+            completed = True
+        finally:
+            if not completed:
+                for _j, f in futures:
+                    f.cancel()  # drop the queue; running jobs see the cancel flag
+            ex.shutdown(wait=True)
+            if not completed:
+                # Fold in what did land before the unwind, so the summary's
+                # item count reflects the files actually copied.
+                for j, f in futures:
+                    if f.done() and not f.cancelled():
+                        try:
+                            per_async[j] += f.result()
+                        except BaseException:  # noqa: BLE001 — job unwound with the cancel
+                            pass
+            for i in range(n):
+                result["items"] += sync_ok[i] + per_async[i]
+                result["errors"].extend(per_errors[i])
+                if completed:
+                    # Same rule as the sequential loop: done if anything landed
+                    # or nothing went wrong; failed only when a target produced
+                    # nothing but errors. Cancelled targets are not judged.
+                    if sync_ok[i] + per_async[i] > 0 or not per_errors[i]:
+                        result["done"] += 1
+                    else:
+                        result["failed"] += 1
+
+    def _copy_file_job(self, task: Task, src: Path, dest: Path, overwrite: bool,
+                       prog: ProgressManager, log, verb: str, errors: list,
+                       cleanup_src: bool) -> int:
+        """One pool worker's unit: copy a single already-resolved file with the
+        same per-file error absorption as the sequential walk. Returns the
+        entry count (1 copied, 0 skipped or failed). ``cleanup_src`` drops the
+        source after a clean copy — a single-file cross-filesystem move, whose
+        cleanup errors are ignored exactly as the sequential path ignores
+        them."""
+        task.checkpoint()
+        prog.update_progress(src.name)
+        try:
+            copied = self._copy_file(task, src, dest, overwrite, prog)
+        except Cancelled:
+            raise
+        except Exception as exc:  # noqa: BLE001 — one bad file, keep going
+            errors.append((str(src), str(exc)))
+            return 0
+        if not copied:
+            return 0  # skipped (inner collision under a non-overwrite dir)
+        _log_op(log, verb, src, dest)
+        if cleanup_src:
+            try:
+                src.unlink()
+            except Exception:  # noqa: BLE001
+                pass
+        return 1
+
     # --- per-node IO ---------------------------------------------------------
 
     def _copy_tree(self, task: Task, src: Path, dest: Path, overwrite: bool,
-                   prog: ProgressManager, log, verb: str, errors: list) -> int:
+                   prog: ProgressManager, log, verb: str, errors: list,
+                   submit: Optional[Callable[[Path, Path], None]] = None) -> int:
         """Copy one node (recursing into directories); return the number of entries
-        copied, collecting per-entry failures in ``errors`` and continuing."""
+        copied, collecting per-entry failures in ``errors`` and continuing.
+
+        With ``submit`` (the parallel path), directories are still created here,
+        synchronously — a child job must never race its parent's mkdir — but each
+        *file* is handed to ``submit`` for a pool worker and is not counted in the
+        return value; the pool tallies those as the jobs finish."""
         task.checkpoint()
-        prog.update_progress(src.name)
         if src.is_dir() and not src.is_symlink():
+            prog.update_progress(src.name)
             try:
                 dest.mkdir(parents=True, exist_ok=True)
             except Cancelled:
@@ -403,8 +660,12 @@ class FileOperationService:
             ok = 1  # the directory itself
             for child in src.iterdir():
                 ok += self._copy_tree(task, child, dest / child.name,
-                                      overwrite, prog, log, verb, errors)
+                                      overwrite, prog, log, verb, errors, submit)
             return ok
+        if submit is not None:
+            submit(src, dest)
+            return 0  # counted by the pool when the job completes
+        prog.update_progress(src.name)
         try:
             copied = self._copy_file(task, src, dest, overwrite, prog)
         except Cancelled:
@@ -430,6 +691,10 @@ class FileOperationService:
             size = 0
         same = src.get_scheme() == dest.get_scheme()
         local = same and src.get_scheme() == "file"
+        if local and not src.is_symlink() and _clone_file(src, dest, overwrite):
+            if size >= _BYTE_BAR_MIN:
+                prog.update_file_byte_progress(size, size, src.name)
+            return True
         if not src.is_symlink() and (not same or size >= _BYTE_BAR_MIN):
             self._copy_bytes(task, src, dest, size, overwrite, local, prog)
         else:
@@ -437,7 +702,8 @@ class FileOperationService:
         return True
 
     @staticmethod
-    def _remote_progress(task: Task, prog: ProgressManager):
+    def _remote_progress(task: Task, prog: ProgressManager,
+                         item: Optional[str] = None):
         """Byte-progress callback for a remote transfer, doubling as the cancel
         checkpoint.
 
@@ -445,10 +711,11 @@ class FileOperationService:
         a single call into S3 or SFTP, so the progress callback is the only
         thread of control that comes back often enough to notice a cancel. The
         ``Cancelled`` raised here unwinds the transfer and is re-raised
-        unchanged by ``Path.copy_to``."""
+        unchanged by ``Path.copy_to``. ``item`` names the file for the byte bar
+        so parallel transfers don't fight over it."""
         def report(bytes_copied: int, bytes_total: int) -> None:
             task.checkpoint()
-            prog.update_file_byte_progress(bytes_copied, bytes_total)
+            prog.update_file_byte_progress(bytes_copied, bytes_total, item)
         return report
 
     def _copy_bytes(self, task: Task, src: Path, dest: Path, size: int,
@@ -459,7 +726,8 @@ class FileOperationService:
         if not local:
             try:
                 src.copy_to(dest, overwrite=overwrite,
-                            progress_callback=self._remote_progress(task, prog))
+                            progress_callback=self._remote_progress(task, prog,
+                                                                    src.name))
             except Cancelled:
                 try:
                     dest.unlink()  # a half-sent remote file is not a copy
@@ -469,7 +737,7 @@ class FileOperationService:
             return
         dest.parent.mkdir(parents=True, exist_ok=True)
         copied = 0
-        prog.update_file_byte_progress(0, size)
+        prog.update_file_byte_progress(0, size, src.name)
         try:
             with open(str(src), "rb") as fi, open(str(dest), "wb") as fo:
                 while True:
@@ -479,7 +747,7 @@ class FileOperationService:
                         break
                     fo.write(chunk)
                     copied += len(chunk)
-                    prog.update_file_byte_progress(copied, size)
+                    prog.update_file_byte_progress(copied, size, src.name)
             shutil.copystat(str(src), str(dest))
         except Cancelled:
             try:
@@ -587,6 +855,18 @@ def _log_del(log, path: Path) -> None:
     """Log one delete compactly: the name once, then its directory."""
     if log is not None:
         log(f"Deleted '{path.name}': {path.parent}")
+
+
+def _serialized_log(log: Callable[[str], None]) -> Callable[[str], None]:
+    """Wrap a log sink so parallel workers take turns. The app's sink appends
+    to a LogView — a line list plus an incremental wrap cache — which copes
+    with one background writer but was never built for several at once."""
+    lock = threading.Lock()
+
+    def write(message: str) -> None:
+        with lock:
+            log(message)
+    return write
 
 
 def _entry_device(path: Path) -> Optional[int]:

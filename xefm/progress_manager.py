@@ -3,6 +3,7 @@
 XeFM Progress Manager - Handles progress tracking for file operations
 """
 
+import threading
 import time
 from enum import Enum
 from typing import Optional, Callable, Dict, Any
@@ -33,6 +34,10 @@ class ProgressManager:
         self.progress_callback: Optional[Callable] = None
         self.last_callback_time: float = 0
         self.callback_throttle_ms: float = 50  # Minimum 50ms between callbacks
+        # A parallel copy has several worker threads reporting into one
+        # operation dict; the read-modify-write updates below hold this lock so
+        # a processed-items increment is never lost between threads.
+        self._lock = threading.Lock()
         
         # Create animator with config or use minimal config
         if config:
@@ -104,37 +109,51 @@ class ProgressManager:
             current_item: Name of the current item being processed
             processed_items: Optional override for processed count (auto-increments if None)
         """
-        if not self.current_operation:
-            return
-        
-        self.current_operation['current_item'] = current_item
-        self.current_operation['file_bytes_copied'] = 0  # Reset byte progress for new file
-        self.current_operation['file_bytes_total'] = 0
-        
-        # Mark counting as complete when we start processing items
-        self.current_operation['counting'] = False
-        
-        if processed_items is not None:
-            self.current_operation['processed_items'] = processed_items
-        else:
-            self.current_operation['processed_items'] += 1
-        
+        with self._lock:
+            op = self.current_operation
+            if not op:
+                return
+
+            op['current_item'] = current_item
+            op['file_bytes_copied'] = 0  # Reset byte progress for new file
+            op['file_bytes_total'] = 0
+
+            # Mark counting as complete when we start processing items
+            op['counting'] = False
+
+            if processed_items is not None:
+                op['processed_items'] = processed_items
+            else:
+                op['processed_items'] += 1
+
         # Call callback with updated state (with throttling)
         self._trigger_callback_if_needed()
     
-    def update_file_byte_progress(self, bytes_copied: int, bytes_total: int):
+    def update_file_byte_progress(self, bytes_copied: int, bytes_total: int,
+                                  item: Optional[str] = None):
         """Update the byte-level progress for the current file being copied
-        
+
         Args:
             bytes_copied: Number of bytes copied so far
             bytes_total: Total number of bytes in the file
+            item: Name of the file these bytes belong to. When parallel workers
+                stream several files at once, the byte bar belongs to whichever
+                file most recently became the current item — an update tagged
+                with any other name is dropped instead of making the bar jump
+                between files. ``None`` (the sequential path) always applies.
         """
-        if not self.current_operation:
-            return
-        
-        self.current_operation['file_bytes_copied'] = bytes_copied
-        self.current_operation['file_bytes_total'] = bytes_total
-        
+        with self._lock:
+            op = self.current_operation
+            if not op:
+                return
+
+            if (item is not None and op.get('current_item')
+                    and item != op['current_item']):
+                return
+
+            op['file_bytes_copied'] = bytes_copied
+            op['file_bytes_total'] = bytes_total
+
         # Call callback with updated state (with throttling)
         self._trigger_callback_if_needed()
     
@@ -171,8 +190,9 @@ class ProgressManager:
     
     def increment_errors(self):
         """Increment the error count for the current operation"""
-        if self.current_operation:
-            self.current_operation['errors'] += 1
+        with self._lock:
+            if self.current_operation:
+                self.current_operation['errors'] += 1
     
     def finish_operation(self):
         """Finish the current operation and clear progress state"""

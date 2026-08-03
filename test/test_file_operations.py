@@ -123,9 +123,9 @@ def _record_byte_progress(monkeypatch):
     seen = []
     original = ProgressManager.update_file_byte_progress
 
-    def spy(self, copied, total):
+    def spy(self, copied, total, item=None):
         seen.append((copied, total))
-        original(self, copied, total)
+        original(self, copied, total, item)
 
     monkeypatch.setattr(ProgressManager, "update_file_byte_progress", spy)
     return seen

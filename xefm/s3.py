@@ -180,6 +180,9 @@ class S3Cache:
 # Global S3 cache instance
 _s3_cache = None
 
+#: Serializes boto3 client creation (see S3PathImpl._client).
+_s3_client_create_lock = threading.Lock()
+
 
 def get_s3_cache() -> S3Cache:
     """Get or create the global S3 cache instance"""
@@ -346,12 +349,19 @@ class S3PathImpl(PathImpl):
     
     @property
     def _client(self):
-        """Lazy initialization of S3 client"""
+        """Lazy initialization of S3 client.
+
+        Creation is serialized: parallel copy workers touch many path objects
+        at once, and while boto3 clients are thread-safe to *use*, building one
+        goes through the shared default session's loader, which is not safe to
+        enter from two threads at the same time."""
         if self._s3_client is None:
-            try:
-                self._s3_client = boto3.client('s3')
-            except NoCredentialsError:
-                raise RuntimeError("AWS credentials not found. Configure AWS credentials using AWS CLI, environment variables, or IAM roles.")
+            with _s3_client_create_lock:
+                if self._s3_client is None:
+                    try:
+                        self._s3_client = boto3.client('s3')
+                    except NoCredentialsError:
+                        raise RuntimeError("AWS credentials not found. Configure AWS credentials using AWS CLI, environment variables, or IAM roles.")
         return self._s3_client
     
     @property

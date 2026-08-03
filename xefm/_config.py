@@ -216,6 +216,8 @@ class Config:
     CONFIRM_DUPLICATE = True  # Show confirmation dialog before duplicating files/directories
     CONFIRM_EXTRACT_ARCHIVE = True  # Show confirmation dialog before extracting archives
     CONFIRM_ARCHIVE_CREATE = True   # Show confirmation dialog before creating archives
+    FILE_OP_WORKERS_LOCAL = 4  # Copy/move worker threads, local disk (1 = sequential)
+    FILE_OP_WORKERS_S3 = 8     # Copy/move worker threads when S3 is involved (ssh is always 1)
     
     # Key bindings - customize your shortcuts
     # Each action can have multiple keys assigned to it
