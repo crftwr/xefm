@@ -2513,7 +2513,7 @@ class XeFMApp:
                 return
         elif has_explicit_association(entry.name, "edit"):
             # Explicitly None: the config says this type has no editor (a PDF,
-            # say). Falling back to $EDITOR would ignore that on purpose.
+            # say). Falling back to TEXT_EDITOR would ignore that on purpose.
             self.log_info(f"No editor configured for {entry.name}")
             return
         editor = getattr(self.config, "TEXT_EDITOR", "vim")
@@ -4617,7 +4617,7 @@ class XeFMApp:
             ("create_archive", "Create archive from selection"),
             ("extract_archive", "Extract the focused archive"),
             ("file_details", "Show file details"),
-            ("edit_file", "Edit the focused file in $EDITOR"),
+            ("edit_file", "Edit the focused file in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
             ("open_with_os", "Open with the default app"),
             ("reveal_in_os", "Reveal in the OS file manager"),

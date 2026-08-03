@@ -104,8 +104,10 @@ TIPS: tuple[tuple[str, str], ...] = (
      "Explorer)."),
 
     ("Edit in your editor",
-     "{key:edit_file} opens the focused file in the editor named by your "
-     "`$EDITOR` environment variable, right from the pane."),
+     "{key:edit_file} opens the focused file in your text editor — the "
+     "`TEXT_EDITOR` command in `~/.xefm/config.py` (VS Code in desktop mode, "
+     "vim in the terminal, by default). An `edit` entry in "
+     "`FILE_ASSOCIATIONS` overrides it per file type."),
 
     ("Archives are directories",
      "Press {key:open_item} on a zip or tar archive to browse *inside* it like "
