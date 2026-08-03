@@ -5,6 +5,10 @@ Tests the _post_reload_request method to verify:
 - Thread-safe queue operations
 - Proper state management
 - Logging for reload requests
+
+Also tests suppress_path / release_path (issue #243): while one of XeFM's own
+file operations mutates a directory, its events must be dropped before they
+arm a coalesce timer or post a reload.
 """
 
 import unittest
@@ -180,6 +184,78 @@ class TestFileMonitorManagerReloadPosting(unittest.TestCase):
         self.assertFalse(self.manager.monitoring_state['left']['pending_reload'])
         self.assertGreater(self.manager.monitoring_state['left']['last_reload_time'], initial_time)
         self.assertFalse(self.file_manager.reload_queue.empty())
+
+
+class TestFileMonitorManagerSuppression(unittest.TestCase):
+    """suppress_path / release_path: events for a directory one of our own
+    file operations is mutating are dropped at the source (issue #243)."""
+
+    def setUp(self):
+        self.config = Mock()
+        self.config.FILE_MONITORING_ENABLED = True
+        self.config.FILE_MONITORING_COALESCE_DELAY_MS = 200
+        self.config.FILE_MONITORING_MAX_RELOADS_PER_SECOND = 5
+        self.config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S = 5
+
+        self.file_manager = Mock()
+        self.file_manager.reload_queue = queue.Queue()
+
+        self.manager = FileMonitorManager(self.config, self.file_manager)
+        # Simulate a live watch without spawning an observer: events are
+        # delivered straight into _on_filesystem_event.
+        self.watched = Path('/watched/dir')
+        self.manager.monitoring_state['left']['path'] = self.watched
+
+    def tearDown(self):
+        self.manager.stop_monitoring()
+
+    def test_suppressed_event_arms_no_timer_and_posts_nothing(self):
+        self.manager.suppress_path(self.watched)
+        self.manager._on_filesystem_event('left', 'created', 'a.txt')
+        # Dropped before the coalesce timer — no timer thread, no reload.
+        self.assertIsNone(self.manager.coalesce_timers['left'])
+        self.assertTrue(self.file_manager.reload_queue.empty())
+        self.assertFalse(self.manager.monitoring_state['left']['pending_reload'])
+
+    def test_event_flows_again_after_release(self):
+        self.manager.suppress_path(self.watched)
+        self.manager.release_path(self.watched)
+        self.manager._on_filesystem_event('left', 'created', 'a.txt')
+        self.assertIsNotNone(self.manager.coalesce_timers['left'])
+
+    def test_suppression_is_refcounted(self):
+        # Two overlapping operations on the same directory: events stay
+        # suppressed until the last one releases.
+        self.manager.suppress_path(self.watched)
+        self.manager.suppress_path(self.watched)
+        self.manager.release_path(self.watched)
+        self.manager._on_filesystem_event('left', 'created', 'a.txt')
+        self.assertIsNone(self.manager.coalesce_timers['left'])
+        self.manager.release_path(self.watched)
+        self.manager._on_filesystem_event('left', 'created', 'a.txt')
+        self.assertIsNotNone(self.manager.coalesce_timers['left'])
+
+    def test_release_of_unsuppressed_path_is_noop(self):
+        # A stray release must not go negative and swallow a later suppress.
+        self.manager.release_path(self.watched)
+        self.manager.suppress_path(self.watched)
+        self.manager._on_filesystem_event('left', 'created', 'a.txt')
+        self.assertIsNone(self.manager.coalesce_timers['left'])
+
+    def test_other_directories_unaffected(self):
+        self.manager.monitoring_state['right']['path'] = Path('/other/dir')
+        self.manager.suppress_path(self.watched)
+        self.manager._on_filesystem_event('right', 'created', 'b.txt')
+        self.assertIsNotNone(self.manager.coalesce_timers['right'])
+
+    def test_pending_coalesce_timer_dropped_at_post_time(self):
+        # A timer armed just before suppress_path() fires mid-operation: the
+        # post-time guard must drop it instead of posting a reload.
+        self.manager.monitoring_state['left']['pending_reload'] = True
+        self.manager.suppress_path(self.watched)
+        self.manager._post_reload_request('left')
+        self.assertTrue(self.file_manager.reload_queue.empty())
+        self.assertFalse(self.manager.monitoring_state['left']['pending_reload'])
 
 
 if __name__ == '__main__':

@@ -201,10 +201,18 @@ class FileOperationService:
     ``panel`` to draw on and a ``z`` so a full-window modal (the diff viewer) can
     stack its dialogs above itself."""
 
-    def __init__(self, config: Any, tasks: Optional[TaskManager] = None):
+    def __init__(self, config: Any, tasks: Optional[TaskManager] = None,
+                 monitor: Any = None):
         self.config = config
         #: Central task registry — shared with the app when passed, else private.
         self.tasks = tasks if tasks is not None else TaskManager()
+        #: Optional FileMonitorManager (duck-typed: ``suppress_path`` /
+        #: ``release_path``). When set, each operation silences the filesystem
+        #: watchers on the directories it mutates for its duration — the
+        #: caller's ``on_complete`` refresh reconciles the panes (issue #243).
+        #: The app attaches this after construction (its monitor is built
+        #: later); the diff viewer passes it here.
+        self.monitor = monitor
 
     # --- public API ----------------------------------------------------------
 
@@ -314,6 +322,9 @@ class FileOperationService:
         result = {"done": 0, "skipped": 0, "failed": 0, "cancelled": False,
                   "items": 0, "errors": []}
         prog = task.progress
+        mutated = self._mutated_dirs(kind, targets, dest_dir) if self.monitor else []
+        for d in mutated:
+            self.monitor.suppress_path(d)
         try:
             # Resolve conflicts first (cheap existence checks; may prompt), so the
             # recursive count only covers what will actually be processed.
@@ -371,8 +382,27 @@ class FileOperationService:
         except Cancelled:
             result["cancelled"] = True
         finally:
+            for d in mutated:
+                self.monitor.release_path(d)
             prog.finish_operation()
         return result
+
+    def _mutated_dirs(self, kind: str, targets: list,
+                      dest_dir: Optional[Path]) -> list:
+        """The directories this operation writes into or removes entries from —
+        the ones whose filesystem watchers its own writes would spam: the
+        destination, plus each target's parent for the kinds that take the
+        target out of it (move/delete). Deduped, order preserved. Copy reads
+        its sources without mutating their directories, so only the destination
+        is included; for duplicate the destination *is* the source directory."""
+        dirs: dict = {}
+        if dest_dir is not None:
+            dirs.setdefault(str(dest_dir), dest_dir)
+        if kind in ("move", "delete"):
+            for target in targets:
+                parent = target.parent
+                dirs.setdefault(str(parent), parent)
+        return list(dirs.values())
 
     def _resolve(self, task: Task, targets: list, dest_dir: Path, z: int,
                  panel: Any) -> tuple[list, int]:

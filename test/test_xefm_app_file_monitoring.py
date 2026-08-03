@@ -40,6 +40,8 @@ class FakeMonitor:
         self.enabled = True
         self.updated = []          # [(pane_name, path_str), ...]
         self.stopped = False
+        self.suppressed = []       # str paths, from suppress_path (#243)
+        self.released = []
 
     def is_monitoring_enabled(self):
         return self.enabled
@@ -49,6 +51,13 @@ class FakeMonitor:
 
     def stop_monitoring(self):
         self.stopped = True
+
+    # File operations bracket the directories they mutate (#243).
+    def suppress_path(self, path):
+        self.suppressed.append(str(path))
+
+    def release_path(self, path):
+        self.released.append(str(path))
 
 
 class MonitoringTestBase(unittest.TestCase):
@@ -108,6 +117,11 @@ class MonitorLifecycle(MonitoringTestBase):
         self.app._sync_monitored_dirs()
 
         self.assertEqual(self.app.file_monitor.updated, [])
+
+    def test_fileops_get_the_monitor_attached(self):
+        # File operations silence the watchers on the directories they mutate
+        # (#243); the app wires its monitor into the shared operation service.
+        self.assertIs(self.app._fileops.monitor, self.app.file_monitor)
 
     def test_quit_stops_monitoring(self):
         self.app._quit()

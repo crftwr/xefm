@@ -1107,6 +1107,10 @@ class XeFMApp:
         # it on the same tick as ``reload_queue``.
         self._result_queue: queue.Queue = queue.Queue()
         self.file_monitor = FileMonitorManager(self.config, self)
+        # File operations silence the watchers on the directories they mutate
+        # for their duration (issue #243); the monitor doesn't exist yet where
+        # ``_fileops`` is built, so it is attached here.
+        self._fileops.monitor = self.file_monitor
         self._monitored: dict[str, object] = {"left": None, "right": None}
         self._sync_monitored_dirs()
 
@@ -3762,7 +3766,8 @@ class XeFMApp:
         left = self.pane("left")["path"]
         right = self.pane("right")["path"]
         show_directory_diff_viewer(self.panel, left, right,
-                                   show_hidden=self.flm.show_hidden, config=self.config)
+                                   show_hidden=self.flm.show_hidden, config=self.config,
+                                   monitor=self.file_monitor)
         self.panel.render()
 
     # --- file operations (copy / move / delete) ------------------------------

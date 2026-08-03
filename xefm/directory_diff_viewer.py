@@ -338,7 +338,7 @@ class DirectoryDiffView(Widget):
     })
 
     def __init__(self, left_path: Path, right_path: Path, show_hidden: bool = True,
-                 background: bool = True, config: Any = None):
+                 background: bool = True, config: Any = None, monitor: Any = None):
         self.left_path = left_path
         self.right_path = right_path
         self.show_hidden = show_hidden
@@ -349,7 +349,7 @@ class DirectoryDiffView(Widget):
         # FileOperationService. ``background`` doubles as the ops' sync/async flag
         # (tests construct with background=False → deterministic inline ops).
         self._keys = KeyBindings(config.KEY_BINDINGS) if config is not None else None
-        self._fileops = FileOperationService(config) if config is not None else None
+        self._fileops = FileOperationService(config, monitor=monitor) if config is not None else None
         self._op_background = background
         self._panel: Any = None
         # An empty tree until the worker's first build; navigation state.
@@ -1592,16 +1592,19 @@ class DirectoryDiffView(Widget):
 
 def show_directory_diff_viewer(panel: Any, left_path: Path, right_path: Path,
                                show_hidden: bool = True, background: bool = True,
-                               z: int = 80, config: Any = None) -> DirectoryDiffView:
+                               z: int = 80, config: Any = None,
+                               monitor: Any = None) -> DirectoryDiffView:
     """Push a full-window modal :class:`DirectoryDiffView` for two directories.
 
     Scanning runs in the background and repaints live via an animation tick (see
     the module docstring). On a still backend without animation ticks the tick
     simply never fires; the tree still fills in and repaints on the next user
     event. Pass ``config`` to enable the config-driven file-operation keys and the
-    shared copy/move/delete engine (the main app supplies its ``Config``)."""
+    shared copy/move/delete engine (the main app supplies its ``Config``), and
+    ``monitor`` (the app's FileMonitorManager) so those operations silence the
+    pane watchers on the directories they mutate (issue #243)."""
     viewer = DirectoryDiffView(left_path, right_path, show_hidden=show_hidden,
-                               background=background, config=config)
+                               background=background, config=config, monitor=monitor)
     viewer._child_z = z + 10
     sw, sh = panel.backend.size_units
     viewer._panel = panel

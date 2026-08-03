@@ -447,6 +447,39 @@ indicator". `_load_pending` means "a filesystem read is in flight". A
 `_settle_listings`) must consult `_load_pending`, or such a listing looks settled
 the moment it starts.
 
+## Suppression During XeFM's Own File Operations
+
+A copy, move, delete or duplicate mutates the very directories the panes watch,
+so the operation's own writes stream events at the watchers for its whole
+duration. Unchecked, that drives re-lists at the configured rate limit (up to
+`FILE_MONITORING_MAX_RELOADS_PER_SECOND` full `scandir`+stat passes per second)
+competing with the operation for disk I/O — and arms one `threading.Timer` (a
+real thread) per event just to keep resetting the coalesce window. None of it
+buys anything: every operation already performs an explicit refresh of the
+affected panes in its `on_complete`, which is strictly fresher (issue #243).
+
+`FileMonitorManager.suppress_path(path)` / `release_path(path)` therefore
+bracket each operation. `FileOperationService._run` computes the mutated
+directories up front — the destination, plus each target's parent for
+move/delete (`_mutated_dirs`) — suppresses them before the first write, and
+releases them in its `finally`, so errors and cancellation cannot leak a
+silenced watcher. The set is refcounted per `str(path)`, letting overlapping
+operations on the same directory nest.
+
+Suppressed events are **dropped, not deferred** — at the top of
+`_on_filesystem_event`, before any timer is armed — and a guard in
+`_post_reload_request` catches a coalesce timer armed just before suppression
+began. The completion refresh is the reconciliation, and it also picks up any
+external change that happened to land mid-operation. Events for directories the
+operation does not touch flow normally throughout, so a background watcher on
+the other pane stays live.
+
+The app attaches its monitor to the shared operation service right after
+constructing it (`self._fileops.monitor = self.file_monitor`); the directory
+diff viewer receives it through `show_directory_diff_viewer(..., monitor=...)`.
+A service with no monitor (unit tests, standalone use) skips the bracketing
+entirely.
+
 ## Context Preservation
 
 ### User Context During Reload

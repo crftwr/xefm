@@ -80,6 +80,13 @@ class FileMonitorManager:
             'left': [],
             'right': []
         }
+
+        # Directories whose filesystem events are currently ignored, refcounted
+        # by str(path). While one of XeFM's own file operations mutates a
+        # directory, its watcher would otherwise drive re-lists at the rate
+        # limit for the operation's whole duration — work the operation's
+        # completion refresh makes redundant (issue #243). See suppress_path().
+        self.suppressed_paths: Dict[str, int] = {}
         
         # Lock for thread-safe access to internal state
         self.state_lock = threading.Lock()
@@ -400,6 +407,14 @@ class FileMonitorManager:
         try:
             with self.state_lock:
                 state = self.monitoring_state[pane_name]
+
+                # One of our own file operations is mutating this directory:
+                # drop the event before it costs anything (no coalesce timer —
+                # a thread per event — and no re-list). The operation's
+                # completion refresh reconciles the pane; see suppress_path().
+                if self.suppressed_paths and str(state['path']) in self.suppressed_paths:
+                    return
+
                 other_pane = 'right' if pane_name == 'left' else 'left'
                 other_state = self.monitoring_state[other_pane]
                 
@@ -480,7 +495,14 @@ class FileMonitorManager:
         """
         with self.state_lock:
             state = self.monitoring_state[pane_name]
-            
+
+            # A coalesce timer armed just before suppress_path() was called can
+            # still fire mid-operation; drop it here too rather than re-list a
+            # directory we are mutating ourselves.
+            if self.suppressed_paths and str(state['path']) in self.suppressed_paths:
+                state['pending_reload'] = False
+                return
+
             # Clear pending reload flag
             state['pending_reload'] = False
             
@@ -499,6 +521,37 @@ class FileMonitorManager:
         if wake is not None:
             wake()
     
+    def suppress_path(self, path: Path) -> None:
+        """Ignore filesystem events for ``path`` until :meth:`release_path`.
+
+        Bracketed (from any thread) around a file operation that mutates
+        ``path``: the operation's own writes would otherwise re-list the
+        watching pane(s) at the configured rate limit for its whole duration,
+        competing with the operation for disk I/O — and the operation already
+        refreshes the affected panes on completion (issue #243). Events are
+        dropped, not deferred; that completion refresh is the reconciliation
+        (it also picks up any external change made during the operation).
+
+        Refcounted per directory, so overlapping operations on the same
+        directory stay suppressed until the last one releases it.
+        """
+        key = str(path)
+        with self.state_lock:
+            self.suppressed_paths[key] = self.suppressed_paths.get(key, 0) + 1
+        self.logger.debug(f"Suppressing filesystem events for {key}")
+
+    def release_path(self, path: Path) -> None:
+        """Undo one :meth:`suppress_path`. Events resume once every suppression
+        of the path is released; releasing an unsuppressed path is a no-op."""
+        key = str(path)
+        with self.state_lock:
+            count = self.suppressed_paths.get(key, 0) - 1
+            if count > 0:
+                self.suppressed_paths[key] = count
+            else:
+                self.suppressed_paths.pop(key, None)
+        self.logger.debug(f"Resumed filesystem events for {key}")
+
     def update_monitored_directory(self, pane_name: str, new_path: Path) -> None:
         """
         Update the monitored directory for a specific pane.

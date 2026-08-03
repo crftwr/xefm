@@ -785,3 +785,100 @@ def test_progress_dialog_renders_the_abbreviated_name_on_a_real_panel():
     screen = "\n".join(backend.snapshot())
     assert "…" in screen
     assert "_final_report.pdf" in screen
+
+
+# --- watcher suppression while an operation runs (#243) ----------------------
+
+class _RecordingMonitor:
+    """Duck-typed FileMonitorManager: records suppress/release calls so tests
+    can assert the operation bracketed exactly the directories it mutates."""
+
+    def __init__(self):
+        self.suppressed = []          # str(path) in call order
+        self.released = []
+        self.active = set()           # currently suppressed
+
+    def suppress_path(self, path):
+        self.suppressed.append(str(path))
+        self.active.add(str(path))
+
+    def release_path(self, path):
+        self.released.append(str(path))
+        self.active.discard(str(path))
+
+
+def _svc_with_monitor(cfg):
+    mon = _RecordingMonitor()
+    return FileOperationService(cfg, monitor=mon), mon
+
+
+def test_copy_suppresses_only_the_destination(tmp_path, cfg):
+    svc, mon = _svc_with_monitor(cfg)
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    (src / "a.txt").write_text("x")
+    res = _run_sync(svc, svc.copy, [_P(src / "a.txt")], _P(dst))
+    assert res["done"] == 1
+    # Copy reads its sources; only the destination directory is mutated.
+    assert mon.suppressed == [str(_P(dst))]
+    assert mon.released == [str(_P(dst))]
+    assert not mon.active
+
+
+def test_move_suppresses_source_parents_and_destination(tmp_path, cfg):
+    svc, mon = _svc_with_monitor(cfg)
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    (src / "a.txt").write_text("x")
+    (src / "b.txt").write_text("y")
+    res = _run_sync(svc, svc.move, [_P(src / "a.txt"), _P(src / "b.txt")], _P(dst))
+    assert res["done"] == 2
+    # Both targets share one parent — suppressed once, not per target.
+    assert sorted(mon.suppressed) == sorted([str(_P(dst)), str(_P(src))])
+    assert sorted(mon.released) == sorted(mon.suppressed)
+    assert not mon.active
+
+
+def test_delete_suppresses_each_parent_once(tmp_path, cfg):
+    svc, mon = _svc_with_monitor(cfg)
+    d1, d2 = tmp_path / "d1", tmp_path / "d2"
+    d1.mkdir(); d2.mkdir()
+    (d1 / "a.txt").write_text("x")
+    (d1 / "b.txt").write_text("y")
+    (d2 / "c.txt").write_text("z")
+    res = _run_sync(svc, svc.delete,
+                    [_P(d1 / "a.txt"), _P(d1 / "b.txt"), _P(d2 / "c.txt")])
+    assert res["done"] == 3
+    assert sorted(mon.suppressed) == sorted([str(_P(d1)), str(_P(d2))])
+    assert sorted(mon.released) == sorted(mon.suppressed)
+    assert not mon.active
+
+
+def test_duplicate_suppresses_its_own_directory(tmp_path, cfg):
+    svc, mon = _svc_with_monitor(cfg)
+    (tmp_path / "a.txt").write_text("x")
+    res = _run_sync(svc, svc.duplicate, [_P(tmp_path / "a.txt")], _P(tmp_path))
+    assert res["done"] == 1
+    assert mon.suppressed == [str(_P(tmp_path))]
+    assert mon.released == [str(_P(tmp_path))]
+    assert not mon.active
+
+
+def test_suppression_released_when_targets_fail(tmp_path, cfg):
+    # The release lives in the worker's finally: a target that errors out must
+    # not leave the watcher permanently silenced.
+    svc, mon = _svc_with_monitor(cfg)
+    res = _run_sync(svc, svc.delete, [_P(tmp_path / "missing.txt")])
+    assert res["failed"] == 1
+    assert mon.suppressed == [str(_P(tmp_path))]
+    assert mon.released == [str(_P(tmp_path))]
+    assert not mon.active
+
+
+def test_operations_run_without_a_monitor(tmp_path, cfg):
+    # The default service has no monitor attached — ops must not touch it.
+    svc = FileOperationService(cfg)
+    (tmp_path / "a.txt").write_text("x")
+    dst = tmp_path / "d"; dst.mkdir()
+    res = _run_sync(svc, svc.copy, [_P(tmp_path / "a.txt")], _P(dst))
+    assert res["done"] == 1 and svc.monitor is None
