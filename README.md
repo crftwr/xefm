@@ -2,6 +2,22 @@
 
 XeFM — short for *Xenolith File Manager* — is a powerful file manager that runs as a native desktop application on **Windows and macOS**, and in the terminal on **all platforms — Windows, macOS, and Linux**. Navigate your filesystem with keyboard shortcuts in a clean, intuitive dual-pane interface with comprehensive file operations, rich built-in viewers, themeable visual effects, and professional-grade features.
 
+<!-- pypi-exclude-start -->
+<p>
+  <a href="https://apps.microsoft.com/detail/9PK2X44W810V">
+    <img src="doc/images/download-windows.svg" alt="Download XeFM for Windows from the Microsoft Store" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/crftwr/xefm/releases/latest">
+    <img src="doc/images/download-macos.svg" alt="Download XeFM for macOS (.dmg) from GitHub Releases" />
+  </a>
+  &nbsp;
+  <a href="https://pypi.org/project/xefm/">
+    <img src="doc/images/install-pypi.svg" alt="Install the XeFM terminal app from PyPI with pip" />
+  </a>
+</p>
+<!-- pypi-exclude-end -->
+
 ![title](doc/images/xefm-page-title.jpg)
 
 ## Key Features

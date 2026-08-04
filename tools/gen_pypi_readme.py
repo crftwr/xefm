@@ -33,7 +33,14 @@ local metadata simply carries an empty description, which nothing reads; the
 `twine check --strict` in `make build` is what keeps an empty description
 from ever reaching an upload.
 
+Blocks fenced by ``<!-- pypi-exclude-start -->`` / ``<!-- pypi-exclude-end -->``
+are dropped entirely — GitHub-only content like the download buttons, which
+duplicate what PyPI's own install instructions already cover.
+
 Absolute URLs and intra-page ``#anchors`` pass through untouched.
+
+Same scheme as PuiKit's scripts/gen_pypi_readme.py and Keyhac's
+tools/gen_pypi_readme.py.
 """
 
 import re
@@ -57,6 +64,9 @@ IMG_SRC = re.compile(r'(<img\s+src=")([^"]+)(")')
 
 #: An absolute target: a URI scheme (https:, mailto:, ...) per RFC 3986.
 SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
+
+#: A GitHub-only block to drop from the PyPI page, fence comments included.
+EXCLUDE = re.compile(r"[ \t]*<!-- pypi-exclude-start -->.*?<!-- pypi-exclude-end -->\n?", re.DOTALL)
 
 
 def rewrite(text: str, version: str) -> tuple[str, int]:
@@ -94,14 +104,19 @@ def rewrite(text: str, version: str) -> tuple[str, int]:
 
 def main() -> int:
     version = read_version()
-    text, count = rewrite(SOURCE.read_text(encoding="utf-8"), version)
+    source = SOURCE.read_text(encoding="utf-8")
+    source, excluded = EXCLUDE.subn("", source)
+    text, count = rewrite(source, version)
     header = (
         f"<!-- Generated from README.md by tools/gen_pypi_readme.py; relative\n"
         f"     links rewritten against the v{version} tag for PyPI. Do not edit\n"
         f"     or commit. -->\n\n"
     )
     OUTPUT.write_text(header + text, encoding="utf-8")
-    print(f"{OUTPUT.name}: {count} relative link(s) -> v{version} URLs")
+    print(
+        f"{OUTPUT.name}: {count} relative link(s) -> v{version} URLs, "
+        f"{excluded} pypi-exclude block(s) dropped"
+    )
     return 0
 
 
