@@ -1963,6 +1963,10 @@ class XeFMApp:
             pane["selected_files"] = {str(f) for f in files}
         elif action == "unselect_all":  # END: clear selection
             pane["selected_files"].clear()
+        elif action == "cursor_next_selected":  # Ctrl-Down: jump down to a selected item
+            self._focus_adjacent_selected(pane, +1)
+        elif action == "cursor_prev_selected":  # Ctrl-Up: jump up to one
+            self._focus_adjacent_selected(pane, -1)
         elif action == "switch_pane":
             self.pm.active_pane = "right" if self.pm.active_pane == "left" else "left"
             self._sync_active()
@@ -2159,6 +2163,26 @@ class XeFMApp:
         else:
             return False
         return True
+
+    def _focus_adjacent_selected(self, pane: dict, direction: int) -> None:
+        """Move the cursor to the nearest selected entry below (``+1``) or
+        above (``-1``) the current position (#265). The cursor stays put — with
+        a log line saying why — when there is no selected item that way; the
+        pane widget auto-scrolls to the cursor whenever it moves."""
+        files = pane["files"]
+        selected = pane["selected_files"]
+        idx = pane["focused_index"]
+        span = (range(idx + 1, len(files)) if direction > 0
+                else range(idx - 1, -1, -1))
+        for i in span:
+            if str(files[i]) in selected:
+                pane["focused_index"] = i
+                return
+        if not selected:
+            self.log_info("No selection")
+        else:
+            self.log_info("No selected item "
+                          + ("below" if direction > 0 else "above"))
 
     def _exit_virtual(self, pane: dict) -> None:
         """Drop a pane out of virtual (search-results) mode so a subsequent
@@ -4722,6 +4746,8 @@ class XeFMApp:
             ("select_all_items", "Toggle all items"),
             ("select_all", "Select every item"),
             ("unselect_all", "Clear selection"),
+            ("cursor_next_selected", "Move cursor to the next selected item"),
+            ("cursor_prev_selected", "Move cursor to the previous selected item"),
             ("compare_selection", "Compare & select vs. other pane"),
         )),
         ("File Operations", (

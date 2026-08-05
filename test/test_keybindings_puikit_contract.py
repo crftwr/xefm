@@ -63,6 +63,12 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
     def test_shift_arrow(self):
         self.assertEqual(self.action(key("up", mods={"shift"})), "scroll_log_up")
 
+    def test_ctrl_arrow(self):
+        self.assertEqual(self.action(key("down", mods={"ctrl"})),
+                         "cursor_next_selected")
+        self.assertEqual(self.action(key("up", mods={"ctrl"})),
+                         "cursor_prev_selected")
+
     def test_function_key(self):
         self.assertEqual(self.action(key("f5")), "redraw")
 

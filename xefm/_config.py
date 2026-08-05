@@ -263,6 +263,8 @@ class Config:
         'unselect_all': ['END'],               # Unselect all items (End key)
         'select_all_files': ['A'],             # Toggle selection of all files in current pane
         'select_all_items': ['Shift-A'],       # Toggle selection of all items (files + dirs)
+        'cursor_next_selected': ['Ctrl-DOWN'], # Move cursor to the next selected item
+        'cursor_prev_selected': ['Ctrl-UP'],   # Move cursor to the previous selected item
         
         # === Clipboard (copy names/paths to the system clipboard) ===
         'copy_names': ['Command-Shift-C'],     # Copy selected/focused file name(s) to clipboard
