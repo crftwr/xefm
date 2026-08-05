@@ -108,7 +108,8 @@ TIPS: tuple[tuple[str, str], ...] = (
      "Explorer)."),
 
     ("Edit in your editor",
-     "{key:edit_file} opens the focused file in your text editor — the "
+     "{key:edit_file} opens the selected files — or the focused file when "
+     "nothing is selected — in your text editor, all in one session: the "
      "`TEXT_EDITOR` command in `~/.xefm/config.py` (VS Code in desktop mode, "
      "vim in the terminal, by default). An `edit` entry in "
      "`FILE_ASSOCIATIONS` overrides it per file type."),
@@ -170,8 +171,9 @@ TIPS: tuple[tuple[str, str], ...] = (
 
     ("A photo tour from a search",
      "Search for images with {key:search_dialog} — say `*.jpg` — then open "
-     "one hit with {key:view_file}: the image viewer's prev/next pages "
-     "through every hit, across all the subdirectories the search covered."),
+     "one hit with {key:view_file}: the image viewer's prev/next keys "
+     "({key:image_prev} / {key:image_next}) page through every hit, across "
+     "all the subdirectories the search covered."),
 
     ("Fix differences right in the diff",
      "The directory diff ({key:diff_directories}) is not just a report: the "
@@ -241,6 +243,12 @@ TIPS: tuple[tuple[str, str], ...] = (
      "override any colors — and on GUI backends add a `post_effect` "
      "(CRT-style glow and scanlines), an `animation` behind the UI "
      "(starfield, rain, wave…), or a `wallpaper` image."),
+
+    ("Walk through your selection",
+     "With several files selected, {key:cursor_next_selected} / "
+     "{key:cursor_prev_selected} jump the cursor straight to the next / "
+     "previous selected item, skipping everything in between — handy for "
+     "double-checking a scattered selection before a copy or a delete."),
 
     ("Bugs, ideas, requests",
      "XeFM is developed in the open. Found a bug, or missing a feature? "

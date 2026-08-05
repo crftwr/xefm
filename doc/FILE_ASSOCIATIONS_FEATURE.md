@@ -353,15 +353,21 @@ Remote and in-archive files always use the built-in viewer — an external
 program has no path on disk it could open.
 
 #### E Key - Edit File
-When you press E on a file, XeFM uses the **edit** action from file associations.
+When you press E, XeFM edits the selected files — or the focused file when
+nothing is selected — using the **edit** action from file associations.
 
-**Behavior**:
+**Behavior** (per file):
 1. Checks file associations for 'edit' action
 2. If found, launches the configured editor
 3. If explicitly `None`, reports that no editor is configured and stops
 4. If not found, falls back to the `TEXT_EDITOR` config setting
 
-Local files only; remote and in-archive paths are skipped.
+Files that resolve to the same program are passed to it in one launch
+(`vim a.txt b.txt`), so a multi-file edit is one editor session — a mixed
+selection can still fan out to one launch per distinct editor.
+
+Local files only; remote and in-archive paths are skipped (in a mixed
+selection they are skipped individually, with a log line each).
 
 ### Usage Examples
 

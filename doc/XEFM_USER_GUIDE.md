@@ -246,7 +246,7 @@ C        - Copy selected files to the other pane
 M        - Move selected files (or create a directory when nothing is selected)
 K        - Delete selected files (also the Delete key)
 R        - Rename file (or batch-rename multiple)
-E        - Edit file with the external editor
+E        - Edit the selected files (or the focused file) with the external editor
 Shift-E  - Create a new file
 ```
 
@@ -257,7 +257,8 @@ Shift-E  - Create a new file
 1. Use **Space** to select individual files
 2. Use **A** to select/deselect all files
 3. Use **Shift-A** to select/deselect all items (files + directories)
-4. Perform operations on selected files
+4. Use **Ctrl-Down** / **Ctrl-Up** to jump the cursor to the next / previous selected item
+5. Perform operations on selected files
 
 **See detailed documentation**: [Key Bindings Feature](KEY_BINDINGS_FEATURE.md)
 
@@ -366,9 +367,12 @@ s        - Toggle syntax highlighting
 
 ### External Editor
 ```
-e        - Edit existing file
-E        - Create new file and edit
+E        - Edit the selected files (or the focused file)
+Shift-E  - Create a new file
 ```
+
+With several files selected, `E` opens them all — files sharing an editor are
+passed to it in one launch (`vim a.txt b.txt`).
 
 Configure your preferred editor in `~/.xefm/config.py`:
 ```python
@@ -402,7 +406,8 @@ s3://my-bucket/path/to/files/
 ### S3 Operations
 - All standard file operations work with S3 objects
 - Copy between local and S3 storage
-- Edit S3 text files directly
+- View S3 text files and images directly (editing is local-only — copy the
+  file to a local pane, edit it there, and copy it back)
 - Create/extract archives with S3 objects
 
 ### S3 Examples
@@ -412,9 +417,9 @@ s3://my-bucket/path/to/files/
 # 2. Navigate right pane to s3://bucket/path
 # 3. Press 'c' to copy
 
-# Edit S3 text file
+# View S3 text file
 # 1. Navigate to s3://bucket/file.txt
-# 2. Press 'e' to edit or 'v' to view
+# 2. Press 'v' to view (editing needs a local copy)
 ```
 
 ---
@@ -713,6 +718,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | End | Unselect all |
 | A | Toggle all *files* |
 | Shift+A | Toggle all *items* (files + directories) |
+| Ctrl+↓ / Ctrl+↑ | Jump the cursor to the next / previous selected item |
 | W | Compare-and-select against the other pane |
 
 ### File Operations
@@ -725,7 +731,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | K or Delete | Delete selection | required |
 | R | Rename the focused file/directory | any |
 | Shift+E | Create a new file | any |
-| E | Edit the file (external editor) | any |
+| E | Edit the selected file(s) (external editor) | any |
 | V | View the file (built-in viewer) | any |
 | I | Show file details | any |
 | = | Diff two selected files | 2 files |

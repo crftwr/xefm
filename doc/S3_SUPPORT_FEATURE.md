@@ -200,10 +200,12 @@ S3_CACHE_TTL = 60
 
 ### Refresh Cache
 
-Get fresh data:
+Changes made **through XeFM** (uploads, new directories, deletes, renames)
+invalidate the affected listings immediately, so they show up on the next
+draw — no waiting.
 
-1. Re-enter the directory (navigate away and back), or wait for `S3_CACHE_TTL` to expire
-2. XeFM then fetches fresh data from S3
+Changes made **outside XeFM** (another client or process writing to the
+bucket) appear once `S3_CACHE_TTL` expires — up to 60 seconds by default.
 
 ## Limitations and Considerations
 
