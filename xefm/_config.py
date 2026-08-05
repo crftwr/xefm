@@ -343,17 +343,22 @@ class Config:
         # === Image Viewer ===
         # Image-viewer-only actions, matched by name in-context like the text
         # viewer's above. '-' and '_' intentionally share with
-        # 'reset_pane_boundary' / 'reset_log_height': those apply to the file
-        # list only, never to an open viewer, and each context matches its own
-        # action by name via KeyBindings.is_action_for_event, so the shared keys
-        # are unambiguous. Arrow keys pan and Home/End jump to the first/last
-        # image; those stay viewer-local (not rebindable), like the text viewer's
-        # scroll keys.
+        # 'reset_pane_boundary' / 'reset_log_height', and the arrow /
+        # Shift-arrow keys with the file list's cursor and log-scroll actions:
+        # all of those apply to the file list only, never to an open viewer,
+        # and each context matches its own action by name via
+        # KeyBindings.is_action_for_event, so the shared keys are unambiguous.
+        # Home/End jump to the first/last image and stay viewer-local (not
+        # rebindable), like the text viewer's scroll keys.
         'image_zoom_in': ['+', '='],           # Image viewer: zoom in ('=' is unshifted '+')
         'image_zoom_out': ['-', '_'],          # Image viewer: zoom out
         'image_zoom_reset': ['0'],             # Image viewer: fit the whole image to the window
-        'image_next': ['n'],                   # Image viewer: next image in the file list
-        'image_prev': ['p'],                   # Image viewer: previous image in the file list
+        'image_next': ['DOWN'],                # Image viewer: next image in the file list
+        'image_prev': ['UP'],                  # Image viewer: previous image in the file list
+        'image_scroll_up': ['Shift-UP'],       # Image viewer: pan up (while zoomed in)
+        'image_scroll_down': ['Shift-DOWN'],   # Image viewer: pan down
+        'image_scroll_left': ['Shift-LEFT'],   # Image viewer: pan left
+        'image_scroll_right': ['Shift-RIGHT'], # Image viewer: pan right
 
         # === Display & Appearance ===
         'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles)

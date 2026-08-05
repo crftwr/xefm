@@ -44,7 +44,8 @@ from puikit.panel import Rect
 from puikit.text import elide
 from puikit.widgets.base import Widget
 
-from xefm.config import get_keys_for_action, is_action_for_event, keys_label_for_action
+from xefm.config import (format_key_for_display, get_keys_for_action,
+                        is_action_for_event, keys_label_for_action)
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.log_manager import getLogger
 from xefm.text_dialog import keys_markdown, show_markdown
@@ -69,6 +70,43 @@ MAX_ZOOM = 40.0
 #: One arrow-key pan step, as a fraction of the *visible* extent (not the whole
 #: image), so a keypress covers the same share of the screen at every zoom.
 PAN_STEP = 0.2
+
+#: Pan action base names in display order, with the arrow glyph each renders as.
+_ARROW_GLYPHS = {"UP": "↑", "DOWN": "↓", "LEFT": "←", "RIGHT": "→"}
+
+
+def _keys_display(action: str, fallback: str) -> str:
+    """Display label for ``action``'s configured key(s), formatted for the UI
+    (``DOWN`` -> ↓, ``Shift-UP`` -> Shift-↑), or ``fallback`` when the action
+    is absent from KEY_BINDINGS (a config from an older template)."""
+    keys, _ = get_keys_for_action(action)
+    if not keys:
+        return fallback
+    return " / ".join(format_key_for_display(k) for k in keys)
+
+
+def _pan_keys_label() -> str:
+    """One compact label for the four pan actions.
+
+    The expected shapes collapse to a single arrow cluster: the default
+    (``Shift-↑↓←→``), any rebind keeping one shared modifier on the four
+    arrows, and — when the actions are absent from KEY_BINDINGS (an older
+    config template) — the hardcoded plain-arrow pan (``↑↓←→``). Any other
+    rebind lists each action's own label."""
+    bindings = [get_keys_for_action(f"image_scroll_{base.lower()}")[0]
+                for base in _ARROW_GLYPHS]
+    if not any(bindings):
+        return "↑↓←→"
+    prefixes = set()
+    for keys, base in zip(bindings, _ARROW_GLYPHS):
+        if len(keys) == 1 and keys[0].upper().endswith(base):
+            prefixes.add(keys[0][:-len(base)])
+        else:
+            prefixes.add(None)
+    if len(prefixes) == 1 and (prefix := next(iter(prefixes))) is not None:
+        # "Shift-↑" -> "Shift-" + the full cluster (empty prefix -> "↑↓←→").
+        return format_key_for_display(prefix + "UP")[:-1] + "↑↓←→"
+    return " ".join(format_key_for_display(k) for keys in bindings for k in keys)
 
 
 def is_image_file(path: Any) -> bool:
@@ -428,10 +466,11 @@ class ImageViewer(Widget):
         if self._can_render(ctx):
             parts.append("+/- zoom")
             if self.zoom > MIN_ZOOM:
-                parts.append("↑↓←→ pan")
-                parts.append("0 fit")
+                parts.append(f"{_pan_keys_label()} pan")
+                parts.append(f"{_keys_display('image_zoom_reset', '0')} fit")
         if len(self.paths) > 1:
-            parts.append("n/p prev·next")
+            parts.append(f"{_keys_display('image_prev', 'p')}"
+                         f"/{_keys_display('image_next', 'n')} prev·next")
         parts.append(f"{help_k} help")
         parts.append(f"{quit_k}/Esc close")
         return " " + " · ".join(parts) + " "
@@ -470,13 +509,13 @@ class ImageViewer(Widget):
             self._step_image(1)
         elif self._pressed(event, "image_prev", ("p",)):
             self._step_image(-1)
-        elif key == "left":
+        elif self._pressed_key(event, "image_scroll_left", "left"):
             self._pan_by(-PAN_STEP, 0.0)
-        elif key == "right":
+        elif self._pressed_key(event, "image_scroll_right", "right"):
             self._pan_by(PAN_STEP, 0.0)
-        elif key == "up":
+        elif self._pressed_key(event, "image_scroll_up", "up"):
             self._pan_by(0.0, -PAN_STEP)
-        elif key == "down":
+        elif self._pressed_key(event, "image_scroll_down", "down"):
             self._pan_by(0.0, PAN_STEP)
         elif key == "home":
             self._step_image(-self.index)
@@ -495,6 +534,16 @@ class ImageViewer(Widget):
         # get_keys_for_action returns (keys, selection_requirement) -- index the
         # key list, or the non-empty tuple would always read as "bound".
         return not get_keys_for_action(action)[0] and event.char in fallback
+
+    def _pressed_key(self, event: Event, action: str, fallback_key: str) -> bool:
+        """``_pressed`` for named (non-printable) keys: falls back to the bare
+        unmodified ``fallback_key`` when the action is absent from KEY_BINDINGS.
+        The fallbacks are the plain arrows that used to pan here hardcoded, so a
+        config from a template older than the pan actions keeps its keys."""
+        if is_action_for_event(event, action):
+            return True
+        return (not get_keys_for_action(action)[0]
+                and event.key == fallback_key and not event.modifiers)
 
     def _drag_mouse(self, event: Event) -> None:
         """Drag to pan: a press anchors, each drag step converts the pointer
@@ -534,17 +583,17 @@ class ImageViewer(Widget):
         if self._panel is None:
             return
         rows = [
-            (keys_label_for_action("image_zoom_in", "+"), "zoom in"),
-            (keys_label_for_action("image_zoom_out", "-"), "zoom out"),
-            (keys_label_for_action("image_zoom_reset", "0"), "fit to window"),
-            ("↑ / ↓ / ← / →", "pan (while zoomed in)"),
+            (_keys_display("image_zoom_in", "+"), "zoom in"),
+            (_keys_display("image_zoom_out", "-"), "zoom out"),
+            (_keys_display("image_zoom_reset", "0"), "fit to window"),
+            (_pan_keys_label(), "pan (while zoomed in)"),
             ("drag", "pan with the mouse"),
             ("scroll", "zoom in / out"),
         ]
         if len(self.paths) > 1:
             rows += [
-                (keys_label_for_action("image_next", "n"), "next image"),
-                (keys_label_for_action("image_prev", "p"), "previous image"),
+                (_keys_display("image_next", "n"), "next image"),
+                (_keys_display("image_prev", "p"), "previous image"),
                 ("Home / End", "first / last image"),
             ]
         rows += [

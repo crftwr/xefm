@@ -61,7 +61,7 @@ def _png(path, w, h):
     return path
 
 
-def _key(key=None, char=None):
+def _key(key=None, char=None, mods=()):
     """A KEY event shaped the way a real backend delivers it.
 
     PuiKit's keyboard contract (puikit/docs/keyboard_contract.md §3) says a
@@ -74,7 +74,8 @@ def _key(key=None, char=None):
     """
     if key is None and char is not None:
         key = char.lower()
-    return Event(type=EventType.KEY, key=key, char=char)
+    return Event(type=EventType.KEY, key=key, char=char,
+                 modifiers=frozenset(mods))
 
 
 @pytest.fixture(autouse=True)
@@ -191,7 +192,7 @@ def test_zoom_reset_returns_to_fit_and_recenters(images):
     viewer = ImageViewer(images[0])
     for _ in range(4):
         viewer.handle_event(_key(char="+"))
-    viewer.handle_event(_key(key="right"))
+    viewer.handle_event(_key(key="right", mods={"shift"}))
     viewer.handle_event(_key(char="0"))
     assert viewer.zoom == pytest.approx(MIN_ZOOM)
     assert (viewer.cx, viewer.cy) == (0.5, 0.5)
@@ -201,7 +202,7 @@ def test_zooming_back_out_to_fit_recenters(images):
     # A stale pan center at fit would make the next zoom-in jump to a corner.
     viewer = ImageViewer(images[0])
     viewer.handle_event(_key(char="+"))
-    viewer.handle_event(_key(key="right"))
+    viewer.handle_event(_key(key="right", mods={"shift"}))
     viewer.handle_event(_key(char="-"))
     assert viewer.zoom == pytest.approx(MIN_ZOOM)
     assert (viewer.cx, viewer.cy) == (0.5, 0.5)
@@ -219,10 +220,10 @@ def test_scroll_zooms(images):
 def test_pan_moves_the_center_by_a_share_of_the_visible_extent(images):
     viewer = ImageViewer(images[0])
     viewer.zoom = 2.0
-    viewer.handle_event(_key(key="right"))
+    viewer.handle_event(_key(key="right", mods={"shift"}))
     # The step is divided by the zoom, so it covers the same share of screen.
     assert viewer.cx == pytest.approx(0.5 + PAN_STEP / 2.0)
-    viewer.handle_event(_key(key="down"))
+    viewer.handle_event(_key(key="down", mods={"shift"}))
     assert viewer.cy == pytest.approx(0.5 + PAN_STEP / 2.0)
 
 
@@ -235,13 +236,13 @@ def test_pan_center_clamps_to_the_reachable_range(images):
     viewer._view = (200, 100, 1, 1)  # cached client area (matches image aspect)
     viewer.zoom = 2.0                # reachable range = [1/(2*zoom), 1-1/(2*zoom)]
     for _ in range(50):
-        viewer.handle_event(_key(key="right"))
-        viewer.handle_event(_key(key="down"))
+        viewer.handle_event(_key(key="right", mods={"shift"}))
+        viewer.handle_event(_key(key="down", mods={"shift"}))
     assert viewer.cx == pytest.approx(0.75)
     assert viewer.cy == pytest.approx(0.75)
     for _ in range(100):
-        viewer.handle_event(_key(key="left"))
-        viewer.handle_event(_key(key="up"))
+        viewer.handle_event(_key(key="left", mods={"shift"}))
+        viewer.handle_event(_key(key="up", mods={"shift"}))
     assert viewer.cx == pytest.approx(0.25)
     assert viewer.cy == pytest.approx(0.25)
 
@@ -253,9 +254,9 @@ def test_reversing_pan_moves_immediately_at_the_edge(images):
     viewer._view = (200, 100, 1, 1)
     viewer.zoom = 2.0
     for _ in range(20):  # jam against the right edge
-        viewer.handle_event(_key(key="right"))
+        viewer.handle_event(_key(key="right", mods={"shift"}))
     assert viewer.cx == pytest.approx(0.75)  # the reachable edge
-    viewer.handle_event(_key(key="left"))    # a single reverse press
+    viewer.handle_event(_key(key="left", mods={"shift"}))    # a single reverse press
     assert viewer.cx < 0.75                   # moved immediately, no dead presses
 
 
@@ -266,7 +267,7 @@ def test_zooming_out_pulls_the_center_back_into_range(images):
     viewer._view = (200, 100, 1, 1)
     viewer.zoom = 8.0
     for _ in range(30):
-        viewer.handle_event(_key(key="right"))
+        viewer.handle_event(_key(key="right", mods={"shift"}))
     assert viewer.cx > 0.8
     viewer.zoom = 2.0
     viewer._clamp_center()
@@ -296,7 +297,7 @@ def test_pan_at_an_edge_keeps_filling_the_client_area(images):
     viewer._view = (200, 100, 1, 1)
     viewer.zoom = 4.0
     for _ in range(50):
-        viewer.handle_event(_key(key="left"))
+        viewer.handle_event(_key(key="left", mods={"shift"}))
     (dx, dy, dw, dh), src = viewer._fill_geometry(200, 100, 1, 1)
     assert (dw, dh) == pytest.approx((200, 100))  # dest still fills the whole body
     assert src[0] == pytest.approx(0.0)           # flush to the left image edge
@@ -328,19 +329,19 @@ def test_drag_does_nothing_while_fitted(images):
 
 def test_next_and_prev_walk_the_sibling_list(images):
     viewer = ImageViewer(images[0], siblings=images, index=0)
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(_key(key="down"))
     assert viewer.path.name == "b.png"
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(_key(key="down"))
     assert viewer.path.name == "c.png"
-    viewer.handle_event(_key(char="p"))
+    viewer.handle_event(_key(key="up"))
     assert viewer.path.name == "b.png"
 
 
 def test_navigation_wraps_at_both_ends(images):
     viewer = ImageViewer(images[0], siblings=images, index=0)
-    viewer.handle_event(_key(char="p"))
+    viewer.handle_event(_key(key="up"))
     assert viewer.path.name == "c.png"
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(_key(key="down"))
     assert viewer.path.name == "a.png"
 
 
@@ -357,8 +358,8 @@ def test_navigation_resets_zoom_and_pan(images):
     viewer = ImageViewer(images[0], siblings=images, index=0)
     for _ in range(5):
         viewer.handle_event(_key(char="+"))
-    viewer.handle_event(_key(key="right"))
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(_key(key="right", mods={"shift"}))
+    viewer.handle_event(_key(key="down"))
     assert viewer.zoom == MIN_ZOOM
     assert (viewer.cx, viewer.cy) == (0.5, 0.5)
 
@@ -366,13 +367,13 @@ def test_navigation_resets_zoom_and_pan(images):
 def test_navigation_reloads_dimensions_for_the_new_image(images):
     viewer = ImageViewer(images[0], siblings=images, index=0)
     assert viewer._size == (200, 100)
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(_key(key="down"))
     assert viewer._size == (40, 40)
 
 
 def test_single_image_has_navigation_disabled(images):
     viewer = ImageViewer(images[0])
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(_key(key="down"))
     assert viewer.path.name == "a.png"
 
 
@@ -382,7 +383,7 @@ def test_sibling_list_is_snapshotted_not_referenced(images):
     live = list(images)
     viewer = ImageViewer(images[0], siblings=live, index=0)
     live.clear()
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(_key(key="down"))
     assert viewer.path.name == "b.png"
 
 
@@ -390,6 +391,66 @@ def test_index_is_recovered_when_it_disagrees_with_the_path(images):
     # A caller passing a stale index must not land the viewer on another file.
     viewer = ImageViewer(images[2], siblings=images, index=0)
     assert viewer.path.name == "c.png"
+
+
+def test_plain_arrows_step_and_do_not_pan_with_shipped_bindings(images):
+    # Down/Up step the sibling list now; panning is on the Shift-arrows.
+    viewer = ImageViewer(images[0], siblings=images, index=0)
+    viewer.zoom = 2.0
+    viewer.handle_event(Event(type=EventType.KEY, key="down", char=None))
+    assert viewer.path.name == "b.png"  # stepped (and reset), not panned
+
+
+# --- older user configs (template without the rebindable viewer keys) --------
+
+
+@pytest.fixture
+def legacy_config(monkeypatch):
+    """A user config merged from a template older than the image viewer's
+    rebindable navigation / pan actions: those actions are simply absent from
+    KEY_BINDINGS, and the viewer must fall back to its historical hardcoded
+    keys (n / p step, plain arrows pan)."""
+    cfg = DefaultConfig()
+    bindings = dict(cfg.KEY_BINDINGS)
+    for action in ("image_next", "image_prev", "image_scroll_up",
+                   "image_scroll_down", "image_scroll_left",
+                   "image_scroll_right"):
+        bindings.pop(action, None)
+    cfg.KEY_BINDINGS = bindings  # instance attr shadows the class dict
+    monkeypatch.setattr(config_manager, "config", cfg)
+    monkeypatch.setattr(config_manager, "_key_bindings", None)
+
+
+def test_legacy_config_keeps_n_p_navigation(images, legacy_config):
+    viewer = ImageViewer(images[0], siblings=images, index=0)
+    viewer.handle_event(_key(char="n"))
+    assert viewer.path.name == "b.png"
+    viewer.handle_event(_key(char="p"))
+    assert viewer.path.name == "a.png"
+
+
+def test_legacy_config_keeps_plain_arrow_pan(images, legacy_config):
+    viewer = ImageViewer(images[0])
+    viewer.zoom = 2.0
+    viewer.handle_event(Event(type=EventType.KEY, key="right", char=None))
+    assert viewer.cx == pytest.approx(0.5 + PAN_STEP / 2.0)
+    # A shift-arrow matches nothing in a legacy config — no pan, no step.
+    cx = viewer.cx
+    viewer.handle_event(_key(key="down", mods={"shift"}))
+    assert (viewer.cx, viewer.cy) == (cx, 0.5)
+
+
+# --- key labels in the hint bar / help ----------------------------------------
+
+
+def test_pan_keys_label_collapses_the_default_chord():
+    from xefm.image_viewer import _pan_keys_label
+    assert _pan_keys_label() == "Shift-↑↓←→"
+
+
+def test_pan_keys_label_falls_back_to_plain_arrows(legacy_config):
+    from xefm.image_viewer import _pan_keys_label
+    assert _pan_keys_label() == "↑↓←→"
 
 
 # --- drawing: real picture vs metadata card ----------------------------------

@@ -21,11 +21,11 @@ family (PPM/PGM/PBM/PNM).
 | `+` / `=` | Zoom in |
 | `-` | Zoom out |
 | `0` | Fit the whole image to the window |
-| `↑` `↓` `←` `→` | Pan (while zoomed in) |
+| `Shift-↑` `Shift-↓` `Shift-←` `Shift-→` | Pan (while zoomed in) |
 | mouse drag | Pan |
 | mouse scroll | Zoom in / out |
-| `n` | Next image |
-| `p` | Previous image |
+| `↓` | Next image |
+| `↑` | Previous image |
 | `Home` / `End` | First / last image |
 | `?` | Key help |
 | `q` / `Esc` | Close |
@@ -39,7 +39,7 @@ dimensions, file size, and the current zoom while you are zoomed in.
 
 ## Prev / next navigation
 
-`n` and `p` walk the **images in the pane you opened the viewer from**, in the
+`↓` and `↑` walk the **images in the pane you opened the viewer from**, in the
 order shown there — so your sort order and filters carry into the viewer, and
 non-image files are skipped. The list wraps at both ends.
 
@@ -117,20 +117,30 @@ Setting `'view': None` (the default) selects the built-in viewer.
 
 ## Customizing keys
 
-The zoom and navigation keys are rebindable in your config's `KEY_BINDINGS`:
+The zoom, navigation, and pan keys are rebindable in your config's
+`KEY_BINDINGS`:
 
 ```python
 KEY_BINDINGS = {
-    'image_zoom_in':    ['+', '='],
-    'image_zoom_out':   ['-', '_'],
-    'image_zoom_reset': ['0'],
-    'image_next':       ['n'],
-    'image_prev':       ['p'],
+    'image_zoom_in':      ['+', '='],
+    'image_zoom_out':     ['-', '_'],
+    'image_zoom_reset':   ['0'],
+    'image_next':         ['DOWN'],
+    'image_prev':         ['UP'],
+    'image_scroll_up':    ['Shift-UP'],
+    'image_scroll_down':  ['Shift-DOWN'],
+    'image_scroll_left':  ['Shift-LEFT'],
+    'image_scroll_right': ['Shift-RIGHT'],
 }
 ```
 
-Arrow-key panning and `Home`/`End` are viewer-local and not rebindable, matching
-the text viewer's scroll keys.
+`Home`/`End` are viewer-local and not rebindable, matching the text viewer's
+scroll keys.
+
+If your config predates these actions (they are missing from your
+`KEY_BINDINGS`), the viewer keeps its historical keys: `n` / `p` step through
+the images and the plain arrow keys pan. Add the entries above to switch to
+the current defaults.
 
 ## See also
 
