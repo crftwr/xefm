@@ -126,8 +126,10 @@ class S3Cache:
                     # Invalidate exact key matches
                     if entry['key'] == key:
                         keys_to_remove.append(cache_key)
-                    # Invalidate parent directory listings
-                    elif entry['operation'] in ['list_objects_v2', 'head_bucket'] and key.startswith(entry['key']):
+                    # Invalidate parent directory listings ('list_objects_v2_complete'
+                    # is the aggregated listing iterdir() caches — the one the file
+                    # panes actually read, so a write must evict it too, #262)
+                    elif entry['operation'] in ['list_objects_v2', 'list_objects_v2_complete', 'head_bucket'] and key.startswith(entry['key']):
                         keys_to_remove.append(cache_key)
                     # Invalidate child directory listings if we're modifying a parent
                     elif entry['key'].startswith(key.rstrip('/') + '/'):
@@ -424,17 +426,23 @@ class S3PathImpl(PathImpl):
     def _invalidate_cache_for_write(self, key: Optional[str] = None):
         """Invalidate cache entries that might be affected by a write operation"""
         target_key = key or self._key
-        
+
         # Invalidate the specific key
         self._cache.invalidate_key(self._bucket, target_key)
-        
-        # Also invalidate parent directory listings
-        if '/' in target_key:
-            parent_key = '/'.join(target_key.split('/')[:-1]) + '/'
+
+        # Also invalidate parent directory listings. Strip the trailing slash a
+        # directory-marker key carries first — "foo/bar/" would otherwise compute
+        # its "parent" as itself and leave the real parent's listing stale (#262).
+        # Listings are cached under the listing path's own key, which may carry a
+        # trailing slash or not, so invalidate both spellings.
+        trimmed = target_key.rstrip('/')
+        if '/' in trimmed:
+            parent_key = trimmed.rsplit('/', 1)[0]
             self._cache.invalidate_key(self._bucket, parent_key)
-        
+            self._cache.invalidate_key(self._bucket, parent_key + '/')
+
         # Invalidate bucket root listing if this is a top-level key
-        if '/' not in target_key.strip('/'):
+        if '/' not in trimmed:
             self._cache.invalidate_key(self._bucket, '')
     
     def __str__(self) -> str:
