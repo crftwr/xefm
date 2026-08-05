@@ -43,6 +43,10 @@ dimensions, file size, and the current zoom while you are zoomed in.
 order shown there — so your sort order and filters carry into the viewer, and
 non-image files are skipped. The list wraps at both ends.
 
+The pane's cursor follows along: stepping to another image (including with
+`Home`/`End`) moves the file list's cursor onto that file, so closing the
+viewer leaves you exactly on the image you were looking at.
+
 The list is fixed when the viewer opens, so a background directory refresh
 cannot shift it under you. Close and reopen to pick up new files.
 

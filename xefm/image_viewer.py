@@ -146,7 +146,7 @@ class ImageViewer(Widget):
     focusable = True
 
     def __init__(self, path, siblings: Sequence | None = None, index: int = 0,
-                 on_close=None):
+                 on_close=None, on_navigate=None):
         # The sibling list is a snapshot taken at open time, never a live
         # reference to the pane's list: the file monitor mutates that in place on
         # refresh, which would shift the index out from under the viewer.
@@ -164,6 +164,10 @@ class ImageViewer(Widget):
         # theme's post-effect, which it suspends while a picture is up so the
         # real pixels show instead of a CRT/scanline-filtered version of them.
         self._on_close = on_close
+        # Called with the new path each time prev/next (or Home/End) moves to
+        # another image. The app uses it to keep the pane's cursor on the file
+        # being shown, so closing the viewer leaves the user where they looked.
+        self._on_navigate = on_navigate
         self._panel: Any = None
         self._child_z = 90
         # Local filesystem path for the current image (a temp copy for a remote
@@ -253,6 +257,8 @@ class ImageViewer(Widget):
         self.zoom = MIN_ZOOM
         self.cx = self.cy = 0.5
         self._resolve()
+        if self._on_navigate is not None:
+            self._on_navigate(self.path)
 
     def _zoom_by(self, factor: float) -> None:
         """Multiply the zoom by ``factor``, clamped to the allowed range, then
@@ -605,17 +611,21 @@ class ImageViewer(Widget):
 
 
 def show_image_viewer(panel: Any, path, siblings: Sequence | None = None,
-                      index: int = 0, z: int = 80, on_close=None) -> ImageViewer:
+                      index: int = 0, z: int = 80, on_close=None,
+                      on_navigate=None) -> ImageViewer:
     """Push a full-window modal :class:`ImageViewer` over ``panel``.
 
     ``siblings`` is the image files from the pane the viewer was opened from, in
     the order the user sees them, so prev/next walks that list; ``index`` is
     ``path``'s position in it. Omit both to view a single image with navigation
     disabled. ``on_close`` runs once when the viewer closes (the app restores the
-    post-effect it suspended for a faithful picture). Like the other viewers,
-    ``reflow`` re-derives the layer rect from the live window size each render, so
-    it follows resizes."""
-    viewer = ImageViewer(path, siblings=siblings, index=index, on_close=on_close)
+    post-effect it suspended for a faithful picture); ``on_navigate(path)`` runs
+    each time prev/next or Home/End moves to another image (the app keeps the
+    pane's cursor on the shown file). Like the other viewers, ``reflow``
+    re-derives the layer rect from the live window size each render, so it
+    follows resizes."""
+    viewer = ImageViewer(path, siblings=siblings, index=index, on_close=on_close,
+                         on_navigate=on_navigate)
     sw, sh = panel.backend.size_units
     viewer._panel = panel
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer

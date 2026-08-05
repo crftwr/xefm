@@ -3853,6 +3853,11 @@ class XeFMApp:
             siblings = [f for f in (pane or {}).get("files", []) if is_image_file(f)]
             if entry not in siblings:  # a pane we were not given, or a stale list
                 siblings = [entry]
+            # Prev/next in the viewer drags the pane's cursor along, so the list
+            # beneath tracks the tour and closing lands on the image last shown.
+            on_navigate = None
+            if pane is not None and len(siblings) > 1:
+                on_navigate = lambda path: self._follow_viewer_cursor(pane, path)
             # Suspend the theme's post-effect while a picture is up: on a
             # CRT/Pip-Boy theme the effect is a full-view Core Image filter, so it
             # would tint the image and lay scanlines over it. Show the real
@@ -3865,7 +3870,8 @@ class XeFMApp:
                 self.backend.set_post_effect(None)
             show_image_viewer(self.panel, entry, siblings=siblings,
                               index=siblings.index(entry),
-                              on_close=self._restore_post_effect if has_effect else None)
+                              on_close=self._restore_post_effect if has_effect else None,
+                              on_navigate=on_navigate)
         else:
             show_text_viewer(self.panel, entry, state_manager=self.state_manager)
         self.panel.render()
@@ -3875,6 +3881,18 @@ class XeFMApp:
         for the image viewer, which suspends it for a faithful picture."""
         self._apply_post_effect(self.themes[self._theme_index][1])
         self.panel.render()
+
+    @staticmethod
+    def _follow_viewer_cursor(pane: dict, path) -> None:
+        """The image viewer stepped to another file: land ``pane``'s cursor on
+        it. Matched by full path — a virtual (search-results) pane lists hits
+        from many directories, where names alone can collide. A file the pane no
+        longer lists (a refresh happened under the viewer) is a no-op; the pane
+        widget auto-scrolls to a moved cursor on the next draw."""
+        for i, f in enumerate(pane["files"]):
+            if str(f) == str(path):
+                pane["focused_index"] = i
+                return
 
     def view_file(self) -> None:
         """View the focused file (directories are skipped).

@@ -590,10 +590,12 @@ def test_show_image_viewer_stacks_help_above_itself(images):
 # --- app dispatch ------------------------------------------------------------
 
 
-def _app_open(images, focus, pane_files, backend=None):
+def _app_open(images, focus, pane_files, backend=None, pane=None):
     """Drive XeFMApp._open_viewer directly with a synthetic pane, so the routing
     is tested without depending on the live config's FILE_ASSOCIATIONS (which
-    decide only whether an *external* program pre-empts the built-in viewer)."""
+    decide only whether an *external* program pre-empts the built-in viewer).
+    Pass ``pane`` to supply (and keep a reference to) the pane dict itself —
+    the cursor-follow tests read ``focused_index`` back out of it."""
     app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)  # no curses / no file monitor
     backend = backend or MemoryBackend(width=60, height=20,
                                        capabilities=PROFILE_GUI_DESKTOP)
@@ -605,7 +607,7 @@ def _app_open(images, focus, pane_files, backend=None):
     # post-effect; the auto-derived theme carries none.
     app.themes = [("Test", panel.theme)]
     app._theme_index = 0
-    app._open_viewer(focus, {"files": pane_files})
+    app._open_viewer(focus, pane if pane is not None else {"files": pane_files})
     return panel._layers[-1].widget
 
 
@@ -636,6 +638,54 @@ def test_open_viewer_without_a_pane_falls_back_to_a_single_image(images):
     widget = _app_open(images, images[0], [])
     assert isinstance(widget, ImageViewer)
     assert [p.name for p in widget.paths] == ["a.png"]
+
+
+# --- the pane cursor follows prev/next ----------------------------------------
+
+
+def test_step_reports_the_new_path_to_on_navigate(images):
+    seen = []
+    viewer = ImageViewer(images[0], siblings=images, index=0,
+                         on_navigate=seen.append)
+    viewer.handle_event(_key(key="down"))
+    viewer.handle_event(_key(key="down"))
+    viewer.handle_event(_key(key="up"))
+    assert [p.name for p in seen] == ["b.png", "c.png", "b.png"]
+    viewer.handle_event(_key(key="end"))  # Home/End step too
+    assert seen[-1].name == "c.png"
+
+
+def test_on_navigate_not_called_when_navigation_is_disabled(images):
+    seen = []
+    viewer = ImageViewer(images[0], on_navigate=seen.append)
+    viewer.handle_event(_key(key="down"))
+    assert seen == []
+
+
+def test_pane_cursor_follows_the_viewer(tmp_path, images):
+    # The pane holds a non-image between the pictures: the cursor must land on
+    # the file's index in the *full* list, not its index among the images.
+    text = Path(str(tmp_path / "notes.txt"))
+    pane = {"files": [images[0], text, images[1], images[2]],
+            "focused_index": 0}
+    viewer = _app_open(images, images[0], None, pane=pane)
+    viewer.handle_event(_key(key="down"))     # -> b.png, at pane index 2
+    assert pane["focused_index"] == 2
+    viewer.handle_event(_key(key="down"))     # -> c.png, at pane index 3
+    assert pane["focused_index"] == 3
+    viewer.handle_event(_key(key="up"))       # back to b.png
+    assert pane["focused_index"] == 2
+
+
+def test_pane_cursor_stays_put_when_the_file_vanished(images):
+    # A refresh under the viewer may drop the file from the pane; stepping to
+    # it must leave the cursor alone rather than raise or guess.
+    pane = {"files": list(images), "focused_index": 0}
+    viewer = _app_open(images, images[0], None, pane=pane)
+    pane["files"] = [images[0]]               # b.png / c.png vanished
+    viewer.handle_event(_key(key="down"))     # viewer still shows its snapshot
+    assert viewer.path.name == "b.png"
+    assert pane["focused_index"] == 0         # cursor untouched
 
 
 class _EffectBackend(MemoryBackend):
