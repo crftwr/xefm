@@ -2465,8 +2465,9 @@ class XeFMApp:
         self._relist(self.pm.right_pane)
         self.panel.render()
 
-    def _launch_associated(self, entry, command: list) -> bool:
-        """Run the FILE_ASSOCIATIONS program ``command`` on ``entry``.
+    def _launch_associated(self, entries, command: list) -> bool:
+        """Run the FILE_ASSOCIATIONS program ``command`` on ``entries`` — one
+        launch, with every path appended to the argv.
 
         Whether to hand over the display is a property of *our backend*, not of
         the program, so associations do not describe it:
@@ -2482,10 +2483,11 @@ class XeFMApp:
         the key press doing nothing. An external program needs a real path on
         disk, so remote and in-archive entries always take that fallback.
         """
-        if not self._is_local(entry):
-            self.log_info(f"{entry.name}: external programs need a local file")
-            return False
-        argv = list(command) + [str(entry)]
+        for entry in entries:
+            if not self._is_local(entry):
+                self.log_info(f"{entry.name}: external programs need a local file")
+                return False
+        argv = list(command) + [str(e) for e in entries]
         if not is_desktop_mode():
             self._run_in_terminal(argv)
             return True
@@ -2495,43 +2497,67 @@ class XeFMApp:
             self.log_info(f"Command not found: {argv[0]}")
             return False
         except Exception as exc:
-            self.log_info(f"Failed to open {entry.name}: {exc}")
+            self.log_info(f"Failed to open {self._files_label(entries)}: {exc}")
             return False
         return True
 
-    def edit_file(self) -> None:
-        """Open the focused file for editing.
+    @staticmethod
+    def _files_label(entries) -> str:
+        """A log-message subject for a batch of entries: the file's name for
+        one, a count for several."""
+        return entries[0].name if len(entries) == 1 else f"{len(entries)} files"
 
-        A matching ``edit`` entry in FILE_ASSOCIATIONS wins; otherwise the
-        configured ``TEXT_EDITOR`` gets the terminal via suspend/resume. An
-        association set explicitly to ``None`` means "no editor for this kind
-        of file" and is honored rather than falling back. Local files only;
-        directories and remote paths are skipped."""
-        entry = self._focused_entry()
-        if entry is None:
+    def edit_file(self) -> None:
+        """Open the selected files — or the focused file when nothing is
+        selected — for editing (#273).
+
+        Per file, a matching ``edit`` entry in FILE_ASSOCIATIONS wins;
+        otherwise the configured ``TEXT_EDITOR`` gets the terminal via
+        suspend/resume. Files resolving to the same program are handed to it
+        in one launch (``vim a b``), so a multi-file edit is one editor
+        session, not a chain of them. An association set explicitly to
+        ``None`` means "no editor for this kind of file" and is honored rather
+        than falling back. Local files only; directories and remote paths are
+        skipped."""
+        targets = self._selected_or_focused(self.active_pane())
+        files = []
+        for entry in targets:
+            if not self._is_local(entry):
+                self.log_info(f"{entry.name}: edit is only available for local files")
+                continue
+            try:
+                if entry.is_dir():
+                    self.log_info(f"{entry.name} is a directory")
+                    continue
+            except Exception:
+                pass
+            files.append(entry)
+        if not files:
             return
-        if not self._is_local(entry):
-            self.log_info("Edit is only available for local files")
-            return
-        try:
-            if entry.is_dir():
-                self.log_info(f"{entry.name} is a directory")
-                return
-        except Exception:
-            pass
-        command = get_program_for_file(entry.name, "edit")
-        if command:
-            if self._launch_associated(entry, command):
-                self.log_info(f"Edited {entry.name} with {command[0]}")
-                return
-        elif has_explicit_association(entry.name, "edit"):
-            # Explicitly None: the config says this type has no editor (a PDF,
-            # say). Falling back to TEXT_EDITOR would ignore that on purpose.
-            self.log_info(f"No editor configured for {entry.name}")
-            return
-        editor = getattr(self.config, "TEXT_EDITOR", "vim")
-        self._run_in_terminal(shlex.split(editor) + [str(entry)])
-        self.log_info(f"Edited {entry.name}")
+        # Resolve each file's editor, batching files that share one. A failed
+        # associated launch falls back to TEXT_EDITOR, as it always has.
+        fallback: list = []
+        groups: dict[tuple, list] = {}
+        for entry in files:
+            command = get_program_for_file(entry.name, "edit")
+            if command:
+                groups.setdefault(tuple(command), []).append(entry)
+            elif has_explicit_association(entry.name, "edit"):
+                # Explicitly None: the config says this type has no editor (a
+                # PDF, say). Falling back to TEXT_EDITOR would ignore that on
+                # purpose.
+                self.log_info(f"No editor configured for {entry.name}")
+            else:
+                fallback.append(entry)
+        for command, batch in groups.items():
+            if self._launch_associated(batch, list(command)):
+                self.log_info(f"Edited {self._files_label(batch)} with {command[0]}")
+            else:
+                fallback.extend(batch)
+        if fallback:
+            editor = getattr(self.config, "TEXT_EDITOR", "vim")
+            self._run_in_terminal(shlex.split(editor) + [str(e) for e in fallback])
+            self.log_info(f"Edited {self._files_label(fallback)}")
 
     def subshell(self) -> None:
         """Drop to an interactive shell (``$SHELL``) in the active pane's
@@ -2838,7 +2864,7 @@ class XeFMApp:
             return
         command = get_program_for_file(entry.name, "open")
         if command:
-            if self._launch_associated(entry, command):
+            if self._launch_associated([entry], command):
                 self.log_info(f"Opened {entry.name} with {command[0]}")
                 return
         elif has_explicit_association(entry.name, "open"):
@@ -3847,7 +3873,7 @@ class XeFMApp:
         except Exception:
             pass
         command = get_program_for_file(entry.name, "view")
-        if command and self._launch_associated(entry, command):
+        if command and self._launch_associated([entry], command):
             self.log_info(f"Viewing {entry.name} with {command[0]}")
             return
         self._ensure_archive_password(entry, lambda: self._open_viewer(entry, pane))
@@ -4710,7 +4736,7 @@ class XeFMApp:
             ("create_archive", "Create archive from selection"),
             ("extract_archive", "Extract the focused archive"),
             ("file_details", "Show file details"),
-            ("edit_file", "Edit the focused file in the configured TEXT_EDITOR"),
+            ("edit_file", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
             ("open_with_os", "Open with the default app"),
             ("reveal_in_os", "Reveal in the OS file manager"),

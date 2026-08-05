@@ -110,6 +110,79 @@ class EditFile(EditSubshellBase):
         run.assert_not_called()
 
 
+class EditSelectedFiles(EditSubshellBase):
+    """E opens *all* selected files, not just the focused one (#273)."""
+
+    def _make(self, *names):
+        for name in names:
+            open(os.path.join(self.tmp, name), "w").close()
+        self.app._refresh(self.app.active_pane())
+        self.app._settle_listings()
+
+    def _select(self, *names):
+        pane = self.app.active_pane()
+        pane["selected_files"] = {str(f) for f in pane["files"]
+                                  if f.name in names}
+
+    def test_opens_all_selected_in_one_editor_run(self):
+        self._make("a.txt", "b.txt")
+        self._select("a.txt", "b.txt")
+        pane = self.app.active_pane()
+        expected = [str(f) for f in pane["files"] if f.name in ("a.txt", "b.txt")]
+        with patch("subprocess.run") as run:
+            self.app.edit_file()
+        run.assert_called_once()
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[-2:], expected)
+        self.assertIn(self.app.config.TEXT_EDITOR.split()[0], argv[0])
+
+    def test_selection_skips_directories(self):
+        self._make("a.txt")
+        os.makedirs(os.path.join(self.tmp, "adir"))
+        self.app._refresh(self.app.active_pane())
+        self.app._settle_listings()
+        self._select("a.txt", "adir")
+        pane = self.app.active_pane()
+        expected = [str(f) for f in pane["files"] if f.name == "a.txt"]
+        with patch("subprocess.run") as run:
+            self.app.edit_file()
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0][-1:], expected)
+
+    def test_association_batches_share_one_launch(self):
+        self._make("a.md", "b.md", "c.txt")
+        self._select("a.md", "b.md", "c.txt")
+        pane = self.app.active_pane()
+        md = [str(f) for f in pane["files"] if f.name.endswith(".md")]
+        txt = [str(f) for f in pane["files"] if f.name == "c.txt"]
+
+        def assoc(name, verb):
+            return ["mdedit"] if name.endswith(".md") else None
+
+        # Pin terminal mode (is_desktop_mode caches process-global detection
+        # other tests can pollute) so both launches go through subprocess.run.
+        with patch("xefm.app.get_program_for_file", side_effect=assoc), \
+             patch("xefm.app.has_explicit_association", return_value=False), \
+             patch("xefm.app.is_desktop_mode", return_value=False), \
+             patch("subprocess.run") as run:
+            self.app.edit_file()
+        # One run for the .md pair (mdedit a.md b.md), one TEXT_EDITOR run
+        # for the leftover .txt.
+        argvs = [c.args[0] for c in run.call_args_list]
+        self.assertEqual(len(argvs), 2)
+        self.assertEqual(argvs[0], ["mdedit"] + md)
+        self.assertEqual(argvs[1][-1:], txt)
+
+    def test_explicit_none_association_is_skipped(self):
+        self._make("a.pdf")
+        self._select("a.pdf")
+        with patch("xefm.app.get_program_for_file", return_value=None), \
+             patch("xefm.app.has_explicit_association", return_value=True), \
+             patch("subprocess.run") as run:
+            self.app.edit_file()
+        run.assert_not_called()
+
+
 class Subshell(EditSubshellBase):
     # is_desktop_mode() caches process-global detection that other tests in the
     # same worker can pollute (XEFM_BACKEND, loaded GUI modules); pin it so the

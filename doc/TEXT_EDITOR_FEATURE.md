@@ -1,18 +1,21 @@
 # Text Editor Integration
 
-XeFM can hand a file straight to your text editor. Put the cursor on the file and
-press `E` — XeFM steps aside while the editor runs and comes back automatically
-when you save and quit. Any editor that takes a filename argument works.
+XeFM can hand files straight to your text editor. Put the cursor on a file —
+or select several with `Space` — and press `E`: XeFM steps aside while the
+editor runs and comes back automatically when you save and quit. Any editor
+that takes filename arguments works.
 
 ## Usage
 
-1. Move the cursor to the file you want to edit.
-2. Press `E`.
+1. Move the cursor to the file you want to edit, or select multiple files.
+2. Press `E`. With a selection, every selected file is passed to the editor in
+   one launch (`vim a.txt b.txt`), so you get one session over all of them.
 3. Edit, save, and exit the editor — XeFM redraws where you left off.
 
 Editing is available for local files only. Directories (and the `..` parent)
-can't be edited, and a warning is shown if you try. `E` is rebindable via the
-`edit_file` action in your config's `KEY_BINDINGS`.
+can't be edited, and a warning is shown if you try; in a mixed selection they
+are simply skipped. `E` is rebindable via the `edit_file` action in your
+config's `KEY_BINDINGS`.
 
 ## Which editor is used
 

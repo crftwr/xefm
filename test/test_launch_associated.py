@@ -46,6 +46,7 @@ class FakeApp:
         self.ran_in_terminal = argv
 
     launch = xefm_app.XeFMApp._launch_associated
+    _files_label = staticmethod(xefm_app.XeFMApp._files_label)
 
 
 @pytest.fixture
@@ -70,7 +71,7 @@ def app(monkeypatch):
 class TestTerminalMode:
     def test_hands_over_the_display_and_waits(self, app):
         a = app(desktop=False)
-        assert a.launch(FakeEntry(), ["less"]) is True
+        assert a.launch([FakeEntry()], ["less"]) is True
         assert a.ran_in_terminal == ["less", "/home/me/a.log"]
         assert a.popen_calls == [], "must not detach in terminal mode"
 
@@ -78,25 +79,25 @@ class TestTerminalMode:
         """`open -a` returns immediately, so waiting for it is cheap — and it
         is what lets one entry mix terminal and GUI programs freely."""
         a = app(desktop=False)
-        a.launch(FakeEntry("/x/photo.png"), ["open", "-a", "Preview"])
+        a.launch([FakeEntry("/x/photo.png")], ["open", "-a", "Preview"])
         assert a.ran_in_terminal == ["open", "-a", "Preview", "/x/photo.png"]
 
 
 class TestDesktopMode:
     def test_detaches_and_never_blocks(self, app):
         a = app(desktop=True)
-        assert a.launch(FakeEntry(), ["code"]) is True
+        assert a.launch([FakeEntry()], ["code"]) is True
         assert a.popen_calls == [["code", "/home/me/a.log"]]
         assert a.ran_in_terminal is None, "no tty to hand over in desktop mode"
 
     def test_missing_program_reports_and_fails(self, app):
         a = app(desktop=True, popen=FileNotFoundError())
-        assert a.launch(FakeEntry(), ["nope"]) is False
+        assert a.launch([FakeEntry()], ["nope"]) is False
         assert "Command not found: nope" in a.logged[0]
 
     def test_other_launch_errors_are_logged_not_raised(self, app):
         a = app(desktop=True, popen=PermissionError("denied"))
-        assert a.launch(FakeEntry(), ["blocked"]) is False
+        assert a.launch([FakeEntry()], ["blocked"]) is False
         assert "Failed to open a.log" in a.logged[0]
 
 
@@ -107,7 +108,7 @@ class TestNonLocalPaths:
         the caller fall back to the built-in viewer, which *can* read them."""
         a = app(desktop=desktop, local=False)
         entry = FakeEntry("s3://bucket/notes.txt")
-        assert a.launch(entry, ["less"]) is False
+        assert a.launch([entry], ["less"]) is False
         assert a.ran_in_terminal is None
         assert a.popen_calls == []
         assert "need a local file" in a.logged[0]
@@ -116,13 +117,19 @@ class TestNonLocalPaths:
 class TestArgv:
     def test_the_path_is_appended_to_the_command(self, app):
         a = app(desktop=True)
-        a.launch(FakeEntry("/x/y.pdf"), ["open", "-a", "Preview"])
+        a.launch([FakeEntry("/x/y.pdf")], ["open", "-a", "Preview"])
         assert a.popen_calls[0] == ["open", "-a", "Preview", "/x/y.pdf"]
+
+    def test_a_batch_is_one_launch_with_every_path(self, app):
+        """Several entries (a multi-file E, #273) become one argv, in order."""
+        a = app(desktop=True)
+        a.launch([FakeEntry("/x/a.md"), FakeEntry("/x/b.md")], ["mdedit"])
+        assert a.popen_calls == [["mdedit", "/x/a.md", "/x/b.md"]]
 
     def test_the_configured_command_is_not_mutated(self, app):
         """The command comes straight from the user's config dict; appending
         in place would corrupt it for every later launch."""
         a = app(desktop=True)
         command = ["open", "-a", "Preview"]
-        a.launch(FakeEntry(), command)
+        a.launch([FakeEntry()], command)
         assert command == ["open", "-a", "Preview"]
