@@ -189,8 +189,10 @@ The `run` body resolves conflicts (via `task.ask`), counts work (updating `task.
 - `xefm/task.py` — `Task`, `TaskStatus`, `Cancelled`, `_UiRequest`, `TaskManager`, `ProgressDialog`; the cancellation machinery (`Task._cancel`, `checkpoint()`, `ask()`, `request_cancel()`; `ProgressDialog._confirm_cancel`; `TaskManager._finish`)
 - `xefm/progress_manager.py` — `ProgressManager` (the per-task progress model)
 - `xefm/file_operations.py` — the first heavy user of the framework (its `_run` / `_resolve` catch `Cancelled` and return a partial summary)
+- `xefm/app.py` — archive create/extract (`_submit_archive_task`, checkpointing per entry) and directory-diff content comparison (`_compare_with_content`)
 
 ## Related documentation
 
 - [File Operations System](FILE_OPERATIONS_SYSTEM.md)
 - [Progress Manager System](PROGRESS_MANAGER_SYSTEM.md)
+- [Archive System](ARCHIVE_SYSTEM.md)

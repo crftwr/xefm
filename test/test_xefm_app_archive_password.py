@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 from xefm import app as xefm_app  # noqa: E402
 from xefm import archive as A  # noqa: E402
 from xefm.path import Path  # noqa: E402
+from xefm.task import TaskManager  # noqa: E402
 
 # Same ZipCrypto fixture as test_archive_password.py: message.txt +
 # folder/note.txt, password "s3cr3t".
@@ -61,6 +62,18 @@ def _app():
     return app
 
 
+class _InlineTasks(TaskManager):
+    """The app's real task manager forced into synchronous mode: extraction runs
+    on a worker thread behind a progress dialog, and these flow tests drive a bare
+    app with no live panel to host one. Running the task inline keeps them about
+    the password flow; the worker path itself is covered in
+    test_archive_task.py."""
+
+    def submit(self, task, panel, **kw):
+        kw["background"] = False
+        return super().submit(task, panel, **kw)
+
+
 def _extract_app(entry, dest_dir, *, confirm=False):
     app = _app()
     app._focused_entry = lambda: entry
@@ -68,6 +81,7 @@ def _extract_app(entry, dest_dir, *, confirm=False):
     app.refreshes = []
     app._relist = lambda pane, **kw: app.refreshes.append(pane)
     app.config = types.SimpleNamespace(CONFIRM_EXTRACT_ARCHIVE=confirm)
+    app.tasks = _InlineTasks()
     return app
 
 

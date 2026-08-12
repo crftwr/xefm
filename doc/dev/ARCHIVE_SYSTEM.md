@@ -151,12 +151,18 @@ Class data on `XeFMApp`:
 
 ### Creation
 
-- `_add_to_zip(zf, path, arcname)` — adds a path to an open `ZipFile`, recursing
-  into directories (zipfile, unlike tarfile, does not recurse on its own).
-- `_write_archive(sources, archive_path, fmt)` — writes `sources` into a new
-  archive. ZIP uses `zipfile.ZipFile(..., "w", ZIP_DEFLATED)`; tar formats use
-  `tarfile.open(..., _TAR_MODES[fmt])` (tarfile recurses into directories).
-  Returns the number of files added.
+- `_add_to_zip(zf, path, arcname, task=None, prog=None)` — adds a path to an open
+  `ZipFile`, recursing into directories (zipfile, unlike tarfile, does not recurse
+  on its own).
+- `_write_archive(sources, archive_path, fmt, task=None, prog=None)` — writes
+  `sources` into a new archive. ZIP uses `zipfile.ZipFile(..., "w", ZIP_DEFLATED)`;
+  tar formats use `tarfile.open(..., _TAR_MODES[fmt])` (tarfile recurses into
+  directories, and its `add(filter=…)` hook is where per-member progress and
+  cancellation are taken). Returns the number of files added.
+- `_count_archive_entries(sources, include_dirs)` — the counting pass that makes
+  the progress bar determinate: leaf files only for ZIP, files *and* directories
+  for tar, matching what each writer actually adds. An unreadable directory counts
+  as itself and is not descended.
 - `create_archive()` (the **P** key) — the UI flow: takes the active pane's
   selection (or the focused entry), prompts for a filename, and writes the
   archive into the **other** pane's directory. An unrecognized extension defaults
@@ -166,17 +172,53 @@ Class data on `XeFMApp`:
 
 ### Extraction
 
-- `_extract_archive(archive_path, dest_dir, fmt, pwd=None)` — extracts into
-  `dest_dir` (created if absent) and returns the entry count. Tar extraction uses
-  the `filter="data"` argument where available (Python 3.12+) to reject unsafe
-  member paths, falling back when the argument is unsupported. `pwd` is the
-  password for an encrypted ZIP, verified up front (see §3) so a wrong password
-  fails before any file is written.
+- `_extract_archive(archive_path, dest_dir, fmt, pwd=None, task=None, prog=None)`
+  — extracts into `dest_dir` (created if absent) and returns the entry count. Tar
+  extraction uses the `filter="data"` argument where available (Python 3.12+) to
+  reject unsafe member paths, falling back when the argument is unsupported. `pwd`
+  is the password for an encrypted ZIP, verified up front (see §3) so a wrong
+  password fails before any file is written.
+- `_reporting_members(members, name_of, task, prog)` — the generator handed to
+  `extractall(members=…)`. Progress and cancellation are taken *per member yielded*
+  rather than by hand-rolling the loop, so `extractall`'s deferred
+  directory-permission fix-up (a read-only directory would otherwise block writing
+  into it) still runs.
 - `extract_archive()` (the **U** key) — the UI flow: extracts the focused archive
   into a subdirectory named after the archive (`_archive_basename`) in the other
   pane's directory. Confirms when `CONFIRM_EXTRACT_ARCHIVE` is set or the
   destination already exists. Refuses non-archives, nested archives, and
   extracting into a read-only archive.
+
+### Running as a task
+
+Both flows hand the work to `xefm.task` rather than doing it in the dialog
+callback that started it (issue #280) — compressing a large tree, or building a
+compressed tar's member list, would otherwise block the event loop for its whole
+duration: no repaint, no keys, no way out.
+
+`_submit_archive_task(task, run, on_done, dest_dir)` is the shared submit. Each
+flow builds a `Task` (`kind="archive_create"` / `"archive_extract"`, progress
+started as `OperationType.ARCHIVE_CREATE` / `ARCHIVE_EXTRACT`) whose `run` body
+counts, then writes or extracts, and returns its outcome as a dict —
+`{"added": n}` / `{"count": n}`, `{"cancelled": True}`, or `{"error": exc}` —
+which `on_done` reports on the main thread. The submit also brackets `dest_dir`'s
+filesystem watcher for the run, the same suppression copy/move/delete use so an
+operation's own writes don't re-list the watching pane throughout (issue #243).
+
+This buys the standard `ProgressDialog`: a determinate items bar, the current
+entry's name, and **Esc to cancel**. Cancellation unwinds from the per-entry
+checkpoint; a cancelled *create* deletes the half-written archive (it either did
+not exist before, or an overwrite truncated it the moment the file opened), while
+a cancelled *extract* leaves what landed — the destination may be a directory the
+user already had files in, so removing it wholesale could take those with it.
+
+Extraction's failure dispatch is ordered most-specific-first, because
+`NotImplementedError` **is a** `RuntimeError`: AES is reported as unsupported, and
+only a plain `RuntimeError` re-opens the password prompt.
+
+There is no byte-level (secondary) bar: `zf.write()` / `tf.add()` are per-file
+opaque calls, and streaming around them would mean rebuilding each member's
+metadata by hand.
 
 ### Supported formats
 
@@ -184,10 +226,9 @@ Multi-file: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`).
 Single-file gzip/bzip2/xz streams are readable as members but are not first-class
 create targets in the flow above.
 
-> The create/extract flow works on local filesystem paths and runs synchronously
-> within its dialog callbacks; it is not wired to the progress manager and does
-> not perform cross-storage staging. (Remote-archive support exists only on the
-> read/browse side, where a handler downloads the archive to a temp file.)
+> The create/extract flow works on local filesystem paths and does not perform
+> cross-storage staging. (Remote-archive support exists only on the read/browse
+> side, where a handler downloads the archive to a temp file.)
 
 ---
 
@@ -278,11 +319,16 @@ CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
 - `test/test_xefm_app_archive_password.py` — `_extract_archive` and the extract UI
   flow (prompt, wrong-then-right retry, AES refusal, plain zip), and
   `_ensure_archive_password`.
+- `test/test_archive_task.py` — the task path: per-entry progress and
+  cancellation in both loops, the counting pass agreeing with each writer, what a
+  cancelled or failed create leaves on disk, and a real app on a MemoryBackend
+  running both flows on the worker.
 
 ## References
 
 - Read/browse: `xefm/archive.py`; `Path` factory in `xefm/path.py`.
 - Create/extract: `XeFMApp` in `xefm/app.py`.
+- Task system: `xefm/task.py`; the copy/move/delete equivalent in
+  `xefm/file_operations.py`.
 - Similar virtual filesystem: `xefm/s3.py`.
-</content>
-</invoke>
+
