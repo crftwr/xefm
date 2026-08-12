@@ -4165,23 +4165,38 @@ class XeFMApp:
         return name
 
     @staticmethod
-    def _add_to_zip(zf, path, arcname: str, *, task=None, prog=None) -> int:
+    def _entry_size(path) -> int:
+        """``path``'s size in bytes for the byte bar, or 0 if it can't be read —
+        the archive writer is what reports a genuinely unreadable file."""
+        try:
+            return int(path.stat().st_size)
+        except Exception:  # noqa: BLE001 — a missing size just hides the bar
+            return 0
+
+    @staticmethod
+    def _add_to_zip(zf, path, arcname: str, *, task=None, prog=None,
+                    bytes_=None) -> int:
         """Add ``path`` to an open ZipFile under ``arcname``, recursing into
         directories (tarfile recurses on its own; zipfile does not). Returns the
         number of files written.
 
         ``task`` / ``prog`` make each file a cancellation checkpoint and a
-        progress update; both default to None, which writes exactly as before."""
+        progress update, and ``bytes_`` (a
+        :class:`~xefm.archive_progress.ByteProgress`) opens each file's byte bar;
+        all three default to None, which writes exactly as before."""
         if path.is_dir() and not path.is_symlink():
             count = 0
             for child in path.iterdir():
                 count += XeFMApp._add_to_zip(zf, child, f"{arcname}/{child.name}",
-                                             task=task, prog=prog)
+                                             task=task, prog=prog, bytes_=bytes_)
             return count
         if task is not None:
             task.checkpoint()
         if prog is not None:
             prog.update_progress(arcname)
+        if bytes_ is not None:
+            # After update_progress, which clears the byte fields for the new item.
+            bytes_.start(XeFMApp._entry_size(path))
         zf.write(str(path), arcname)
         return 1
 
@@ -4192,14 +4207,19 @@ class XeFMApp:
 
         ``task`` (a :class:`~xefm.task.Task`) and ``prog`` (its
         :class:`~xefm.progress_manager.ProgressManager`) make the write
-        cancellable and progress-reporting, entry by entry; ``Cancelled`` unwinds
-        out of here mid-archive, leaving the caller to drop the partial file.
-        Both default to None, which writes exactly as before."""
-        import tarfile
+        cancellable and progress-reporting, entry by entry — and, through the
+        :mod:`xefm.archive_progress` file subclasses, byte by byte within an
+        entry, so a single huge member still moves something. ``Cancelled``
+        unwinds out of here mid-archive, leaving the caller to drop the partial
+        file. Both default to None, which writes exactly as before."""
         import zipfile
+        from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
+        bytes_ = ByteProgress(prog) if prog is not None else None
         if fmt == "zip":
-            with zipfile.ZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
-                return sum(self._add_to_zip(zf, s, s.name, task=task, prog=prog)
+            with ProgressZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.byte_progress = bytes_
+                return sum(self._add_to_zip(zf, s, s.name, task=task, prog=prog,
+                                            bytes_=bytes_)
                            for s in sources)
         added = 0
 
@@ -4214,9 +4234,12 @@ class XeFMApp:
             added += 1
             if prog is not None:
                 prog.update_progress(tarinfo.name, added)
+            if bytes_ is not None:
+                bytes_.start(tarinfo.size)
             return tarinfo
 
-        with tarfile.open(str(archive_path), self._TAR_MODES[fmt]) as tf:
+        with ProgressTarFile.open(str(archive_path), self._TAR_MODES[fmt]) as tf:
+            tf.byte_progress = bytes_
             for s in sources:
                 tf.add(str(s), arcname=s.name, filter=report)  # recurses into dirs
         return added
@@ -4256,19 +4279,25 @@ class XeFMApp:
         return total
 
     @staticmethod
-    def _reporting_members(members, name_of, task, prog):
-        """Yield ``members`` one at a time, checkpointing and reporting each.
+    def _reporting_members(members, describe, task, prog, bytes_=None):
+        """Yield ``members`` one at a time, checkpointing and reporting each —
+        ``describe(member)`` gives its ``(name, size)``.
 
         Handed to ``extractall(members=…)`` so extraction gets per-entry progress
         and cancellation *without* reimplementing its loop: tar's deferred
         directory-permission fixup is subtle enough (permissions on a directory
         would otherwise block writing into it) that a hand-rolled per-member
-        ``extract()`` would be a regression."""
+        ``extract()`` would be a regression. The member's bytes are counted by the
+        :mod:`xefm.archive_progress` subclass doing the reading; this only opens
+        the bar, after ``update_progress`` has cleared the previous member's."""
         for member in members:
             if task is not None:
                 task.checkpoint()
+            name, size = describe(member)
             if prog is not None:
-                prog.update_progress(name_of(member))
+                prog.update_progress(name)
+            if bytes_ is not None:
+                bytes_.start(size)
             yield member
 
     def _extract_archive(self, archive_path, dest_dir, fmt: str, pwd: bytes | None = None,
@@ -4286,22 +4315,25 @@ class XeFMApp:
         ``task`` / ``prog``, when given, report each member and make it a
         cancellation point (see ``_reporting_members``); both default to None,
         which extracts exactly as before."""
-        import tarfile
-        import zipfile
         from xefm.archive import verify_zip_password
+        from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
+        bytes_ = ByteProgress(prog) if prog is not None else None
         dest_dir.mkdir(parents=True, exist_ok=True)
         if fmt == "zip":
-            with zipfile.ZipFile(str(archive_path)) as zf:
+            with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
+                zf.byte_progress = bytes_     # after the probe, which reads a little
                 members = zf.infolist()
                 if prog is not None:
                     prog.update_operation_total(len(members))
                 zf.extractall(
                     str(dest_dir), pwd=pwd,
                     members=self._reporting_members(
-                        members, lambda m: m.filename, task, prog))
+                        members, lambda m: (m.filename, m.file_size), task, prog,
+                        bytes_))
                 return len(members)
-        with tarfile.open(str(archive_path)) as tf:
+        with ProgressTarFile.open(str(archive_path)) as tf:
+            tf.byte_progress = bytes_
             # getmembers() reads the whole (compressed) archive to build the list;
             # that is the operation's counting phase, and why it runs on the worker.
             members = tf.getmembers()
@@ -4309,7 +4341,8 @@ class XeFMApp:
                 prog.update_operation_total(len(members))
 
             def reported():
-                return self._reporting_members(members, lambda m: m.name, task, prog)
+                return self._reporting_members(
+                    members, lambda m: (m.name, m.size), task, prog, bytes_)
 
             try:
                 tf.extractall(str(dest_dir), filter="data", members=reported())

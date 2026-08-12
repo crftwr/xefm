@@ -151,14 +151,17 @@ Class data on `XeFMApp`:
 
 ### Creation
 
-- `_add_to_zip(zf, path, arcname, task=None, prog=None)` — adds a path to an open
-  `ZipFile`, recursing into directories (zipfile, unlike tarfile, does not recurse
-  on its own).
+- `_add_to_zip(zf, path, arcname, task=None, prog=None, bytes_=None)` — adds a
+  path to an open `ZipFile`, recursing into directories (zipfile, unlike tarfile,
+  does not recurse on its own).
 - `_write_archive(sources, archive_path, fmt, task=None, prog=None)` — writes
-  `sources` into a new archive. ZIP uses `zipfile.ZipFile(..., "w", ZIP_DEFLATED)`;
-  tar formats use `tarfile.open(..., _TAR_MODES[fmt])` (tarfile recurses into
-  directories, and its `add(filter=…)` hook is where per-member progress and
-  cancellation are taken). Returns the number of files added.
+  `sources` into a new archive. ZIP uses `ProgressZipFile(..., "w", ZIP_DEFLATED)`;
+  tar formats use `ProgressTarFile.open(..., _TAR_MODES[fmt])` (tarfile recurses
+  into directories, and its `add(filter=…)` hook is where per-member progress and
+  cancellation are taken). Both subclasses are stdlib passthroughs that count
+  bytes — see *The byte bar* below. Returns the number of files added.
+- `_entry_size(path)` — a source file's size for the byte bar, 0 when unreadable
+  (the writer is what reports a genuinely broken file).
 - `_count_archive_entries(sources, include_dirs)` — the counting pass that makes
   the progress bar determinate: leaf files only for ZIP, files *and* directories
   for tar, matching what each writer actually adds. An unreadable directory counts
@@ -178,11 +181,12 @@ Class data on `XeFMApp`:
   reject unsafe member paths, falling back when the argument is unsupported. `pwd`
   is the password for an encrypted ZIP, verified up front (see §3) so a wrong
   password fails before any file is written.
-- `_reporting_members(members, name_of, task, prog)` — the generator handed to
-  `extractall(members=…)`. Progress and cancellation are taken *per member yielded*
-  rather than by hand-rolling the loop, so `extractall`'s deferred
-  directory-permission fix-up (a read-only directory would otherwise block writing
-  into it) still runs.
+- `_reporting_members(members, describe, task, prog, bytes_=None)` — the generator
+  handed to `extractall(members=…)`; `describe(member)` yields its `(name, size)`.
+  Progress and cancellation are taken *per member yielded* rather than by
+  hand-rolling the loop, so `extractall`'s deferred directory-permission fix-up (a
+  read-only directory would otherwise block writing into it) and zipfile's member
+  path sanitization both still run.
 - `extract_archive()` (the **U** key) — the UI flow: extracts the focused archive
   into a subdirectory named after the archive (`_archive_basename`) in the other
   pane's directory. Confirms when `CONFIRM_EXTRACT_ARCHIVE` is set or the
@@ -216,9 +220,35 @@ Extraction's failure dispatch is ordered most-specific-first, because
 `NotImplementedError` **is a** `RuntimeError`: AES is reported as unsupported, and
 only a plain `RuntimeError` re-opens the password prompt.
 
-There is no byte-level (secondary) bar: `zf.write()` / `tf.add()` are per-file
-opaque calls, and streaming around them would mean rebuilding each member's
-metadata by hand.
+### The byte bar (`xefm/archive_progress.py`)
+
+The dialog's secondary bar shows the *current member's* bytes, the same meaning
+it has for a copy — without it a single large member (a VM image, a video) leaves
+the item bar still for minutes.
+
+The payload copy is buried inside `zipfile` / `tarfile`, and rewriting those loops
+to count bytes would mean re-deriving each member's metadata and, on the extract
+side, their safety checks: zipfile's path sanitization and tarfile's sparse-file
+and deferred directory-permission handling. So `ProgressZipFile` /
+`ProgressTarFile` instead override the one method the payload actually flows
+through and wrap the file object passing by. The stdlib loop runs untouched:
+
+| Operation | Seam | Counts |
+|---|---|---|
+| zip create | `ZipFile.open(zinfo, 'w')` — `write()` copies into it | writes |
+| zip extract | `ZipFile.open(member)` — `_extract_member` copies out of it | reads |
+| tar create | `TarFile.addfile(tarinfo, fileobj)` — `add()` hands it the source | reads |
+| tar extract | `TarFile.makefile` — proxy swapped over `self.fileobj` for the call | reads |
+
+`ByteProgress` holds the current member's total (from `stat()`, `ZipInfo.file_size`
+or `TarInfo.size`) and rate-limits reports by *volume* — at most ~200 per member,
+never oftener than every 64 KiB — so an 8 KiB-chunked gigabyte does not cost a
+hundred thousand lock acquisitions. `start()` must be called *after*
+`update_progress`, which clears the byte fields for the incoming item. With no
+`ByteProgress` attached both classes are pure passthroughs.
+
+Measured overhead of the whole task path, 1500 files: ~1.06x for zip, within noise
+for `.tar.xz` (the counting pass is 11 ms of it).
 
 ### Supported formats
 
@@ -320,14 +350,17 @@ CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
   flow (prompt, wrong-then-right retry, AES refusal, plain zip), and
   `_ensure_archive_password`.
 - `test/test_archive_task.py` — the task path: per-entry progress and
-  cancellation in both loops, the counting pass agreeing with each writer, what a
+  cancellation in both loops, the counting pass agreeing with each writer, the
+  byte bar streaming inside a large member in all four directions (plus the
+  metadata and path-sanitization the stdlib hooks exist to preserve), what a
   cancelled or failed create leaves on disk, and a real app on a MemoryBackend
   running both flows on the worker.
 
 ## References
 
 - Read/browse: `xefm/archive.py`; `Path` factory in `xefm/path.py`.
-- Create/extract: `XeFMApp` in `xefm/app.py`.
+- Create/extract: `XeFMApp` in `xefm/app.py`; byte counting in
+  `xefm/archive_progress.py`.
 - Task system: `xefm/task.py`; the copy/move/delete equivalent in
   `xefm/file_operations.py`.
 - Similar virtual filesystem: `xefm/s3.py`.

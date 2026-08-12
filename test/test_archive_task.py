@@ -16,6 +16,7 @@ test_xefm_app_archive_password.py.
 Run with: python -m pytest test/test_archive_task.py -v
 """
 
+import io
 import os
 import shutil
 import sys
@@ -214,6 +215,193 @@ class ArchiveLoops(unittest.TestCase):
         dest = Path(os.path.join(self.tmp, "out"))
         self.assertEqual(self.app._extract_archive(arc, dest, "tar.gz"), 7)
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "out", "src", "a.txt")))
+
+
+# --- byte-level progress within one member -----------------------------------
+
+
+class ArchiveByteProgress(unittest.TestCase):
+    """The secondary (byte) bar. A member big enough to matter has to move it
+    while it is being written or read, not just before and after — that is the
+    whole reason the bar exists, since the item bar sits still for the duration
+    of a single large file."""
+
+    #: Big enough for several reports and several compression buffers, small
+    #: enough to stay a fast test. Zero bytes compress to nothing, so the write
+    #: is quick despite the size.
+    SIZE = 8 * 1024 * 1024
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.src = os.path.join(self.tmp, "src")
+        os.makedirs(self.src)
+        with open(os.path.join(self.src, "big.bin"), "wb") as f:
+            f.write(bytes(self.SIZE))
+        with open(os.path.join(self.src, "tiny.txt"), "wb") as f:
+            f.write(b"x")
+        os.makedirs(os.path.join(self.src, "emptydir"))
+        self.app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+        self.sources = [Path(self.src)]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _recording_task(self):
+        """A headless task that records every `(item, copied, total)` byte sample
+        its progress manager publishes."""
+        task = Task("test", kind="archive")
+        task._headless = True
+        samples = []
+
+        def cb(op):
+            if op and op.get("file_bytes_total"):
+                samples.append((op["current_item"], op["file_bytes_copied"],
+                                op["file_bytes_total"]))
+
+        task.progress.start_operation(OperationType.ARCHIVE_CREATE, 0,
+                                      progress_callback=cb)
+        task.progress.callback_throttle_ms = 0   # keep every sample, not one per 50ms
+        return task, task.progress, samples
+
+    def _assert_streams(self, samples, name):
+        """The samples for ``name`` must start at zero, only ever move forward,
+        and finish exactly on the member's size."""
+        mine = [s for s in samples if name in s[0]]
+        self.assertGreater(len(mine), 2,
+                           f"{name} reported no progress *during* the transfer")
+        self.assertEqual(mine[0][1], 0)
+        self.assertEqual(mine[-1][1], self.SIZE)
+        self.assertEqual(mine[-1][2], self.SIZE)
+        self.assertEqual([c for _n, c, _t in mine],
+                         sorted(c for _n, c, _t in mine))   # monotonic
+
+    def test_zip_create_streams_the_byte_bar(self):
+        task, prog, samples = self._recording_task()
+        self.app._write_archive(self.sources, Path(os.path.join(self.tmp, "a.zip")),
+                                "zip", task=task, prog=prog)
+        self._assert_streams(samples, "big.bin")
+
+    def test_tar_create_streams_the_byte_bar(self):
+        task, prog, samples = self._recording_task()
+        self.app._write_archive(self.sources, Path(os.path.join(self.tmp, "a.tar.gz")),
+                                "tar.gz", task=task, prog=prog)
+        self._assert_streams(samples, "big.bin")
+
+    def test_zip_extract_streams_the_byte_bar(self):
+        arc = Path(os.path.join(self.tmp, "a.zip"))
+        self.app._write_archive(self.sources, arc, "zip")
+        task, prog, samples = self._recording_task()
+        self.app._extract_archive(arc, Path(os.path.join(self.tmp, "out")), "zip",
+                                  task=task, prog=prog)
+        self._assert_streams(samples, "big.bin")
+
+    def test_tar_extract_streams_the_byte_bar(self):
+        arc = Path(os.path.join(self.tmp, "a.tar.gz"))
+        self.app._write_archive(self.sources, arc, "tar.gz")
+        task, prog, samples = self._recording_task()
+        self.app._extract_archive(arc, Path(os.path.join(self.tmp, "out")), "tar.gz",
+                                  task=task, prog=prog)
+        self._assert_streams(samples, "big.bin")
+
+    def test_payloadless_members_show_no_byte_bar(self):
+        """A directory or an empty file has no bytes to report, and the dialog
+        draws the secondary bar only while a total is set — so nothing must set
+        one for them."""
+        with open(os.path.join(self.src, "empty.bin"), "wb"):
+            pass
+        task, prog, samples = self._recording_task()
+        self.app._write_archive(self.sources, Path(os.path.join(self.tmp, "a.tar")),
+                                "tar", task=task, prog=prog)
+        for name, _copied, total in samples:
+            self.assertNotIn("emptydir", name)
+            self.assertNotIn("empty.bin", name)
+            self.assertGreater(total, 0)
+
+    def test_reports_are_rate_limited(self):
+        """Counting happens per buffer (8 KiB for zip); reporting must not, or a
+        large member would take a six-figure number of locks to copy."""
+        task, prog, samples = self._recording_task()
+        self.app._write_archive(self.sources, Path(os.path.join(self.tmp, "a.zip")),
+                                "zip", task=task, prog=prog)
+        big = [s for s in samples if "big.bin" in s[0]]
+        self.assertLess(len(big), 250)             # ~200 by design, not 1024
+        self.assertGreater(len(big), 10)           # but still a moving bar
+
+    # --- what the stdlib hooks must not have broken --------------------------
+
+    def _marked_file(self):
+        """A source file with distinctive mode and mtime to trace through."""
+        marked = os.path.join(self.src, "marked.sh")
+        with open(marked, "wb") as f:
+            f.write(b"#!/bin/sh\n")
+        os.chmod(marked, 0o750)
+        os.utime(marked, (1000000000, 1000000000))
+        return marked
+
+    def test_zip_members_match_a_stock_write(self):
+        """The byte counting hangs off `ZipFile.open` so `zf.write()` keeps
+        deriving each member's metadata itself; a hand-rolled copy loop would have
+        to rebuild all of it. Compared against stock zipfile rather than against
+        expectations, so the bar is "identical", not "plausible". (Restoring the
+        mode on *extract* is not tested because zipfile never has — extractall
+        leaves the umask default either way.)"""
+        self._marked_file()
+        arc = Path(os.path.join(self.tmp, "hooked.zip"))
+        task, prog, _ = self._recording_task()
+        self.app._write_archive(self.sources, arc, "zip", task=task, prog=prog)
+
+        stock = os.path.join(self.tmp, "stock.zip")
+        with zipfile.ZipFile(stock, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(os.path.join(self.src, "marked.sh"), "src/marked.sh")
+
+        def fields(path):
+            with zipfile.ZipFile(path) as zf:
+                i = zf.getinfo("src/marked.sh")
+                return (i.external_attr, i.date_time, i.CRC, i.file_size,
+                        i.compress_type, i.create_system)
+
+        self.assertEqual(fields(str(arc)), fields(stock))
+        self.assertEqual(fields(str(arc))[0] >> 16, 0o100750)   # mode really is in there
+
+    def test_tar_round_trip_preserves_mode_and_mtime(self):
+        """tar *does* restore attributes on extract (the `data` filter keeps the
+        mode bits it does not consider unsafe), so this one runs end to end."""
+        self._marked_file()
+        arc = Path(os.path.join(self.tmp, "meta.tar"))
+        dest = Path(os.path.join(self.tmp, "meta-out"))
+        task, prog, _ = self._recording_task()
+        self.app._write_archive(self.sources, arc, "tar", task=task, prog=prog)
+        task, prog, _ = self._recording_task()
+        self.app._extract_archive(arc, dest, "tar", task=task, prog=prog)
+        out = os.path.join(str(dest), "src", "marked.sh")
+        self.assertEqual(os.stat(out).st_mode & 0o777, 0o750)
+        self.assertEqual(int(os.stat(out).st_mtime), 1000000000)
+
+    def test_zip_extraction_still_sanitizes_member_paths(self):
+        """Extraction goes through `extractall`/`_extract_member` precisely so its
+        path sanitization still applies; a member naming its way out of the
+        destination must land inside it anyway."""
+        arc = os.path.join(self.tmp, "evil.zip")
+        with zipfile.ZipFile(arc, "w") as zf:
+            zf.writestr("../escaped.txt", b"nope")
+        dest = Path(os.path.join(self.tmp, "out"))
+        task, prog, _ = self._recording_task()
+        self.app._extract_archive(Path(arc), dest, "zip", task=task, prog=prog)
+        self.assertTrue(os.path.exists(os.path.join(str(dest), "escaped.txt")))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "escaped.txt")))
+
+    def test_tar_extraction_still_applies_the_data_filter(self):
+        """Likewise `filter="data"` — passing `members=` must not have dropped it."""
+        arc = os.path.join(self.tmp, "evil.tar")
+        with tarfile.open(arc, "w") as tf:
+            info = tarfile.TarInfo("../escaped.txt")
+            info.size = 4
+            tf.addfile(info, io.BytesIO(b"nope"))
+        dest = Path(os.path.join(self.tmp, "out"))
+        task, prog, _ = self._recording_task()
+        with self.assertRaises(tarfile.OutsideDestinationError):
+            self.app._extract_archive(Path(arc), dest, "tar", task=task, prog=prog)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "escaped.txt")))
 
 
 # --- the flow: what a cancelled / failed run leaves behind ---------------------
