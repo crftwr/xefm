@@ -79,7 +79,7 @@ from xefm.diff_viewer import show_diff_viewer
 from xefm.directory_diff_viewer import show_directory_diff_viewer
 from xefm.file_operations import (FileOperationService, format_op_errors,
                                   format_op_summary)
-from xefm.task import Task, TaskManager
+from xefm.task import Cancelled, Task, TaskManager
 from xefm.text_dialog import show_markdown
 from xefm.tips import tip_count
 from xefm.tips_dialog import show_tips_dialog
@@ -4165,32 +4165,143 @@ class XeFMApp:
         return name
 
     @staticmethod
-    def _add_to_zip(zf, path, arcname: str) -> int:
+    def _entry_size(path) -> int:
+        """``path``'s size in bytes for the byte bar, or 0 if it can't be read —
+        the archive writer is what reports a genuinely unreadable file."""
+        try:
+            return int(path.stat().st_size)
+        except Exception:  # noqa: BLE001 — a missing size just hides the bar
+            return 0
+
+    @staticmethod
+    def _add_to_zip(zf, path, arcname: str, *, task=None, prog=None,
+                    bytes_=None) -> int:
         """Add ``path`` to an open ZipFile under ``arcname``, recursing into
         directories (tarfile recurses on its own; zipfile does not). Returns the
-        number of files written."""
+        number of files written.
+
+        ``task`` / ``prog`` make each file a cancellation checkpoint and a
+        progress update, and ``bytes_`` (a
+        :class:`~xefm.archive_progress.ByteProgress`) opens each file's byte bar;
+        all three default to None, which writes exactly as before."""
         if path.is_dir() and not path.is_symlink():
             count = 0
             for child in path.iterdir():
-                count += XeFMApp._add_to_zip(zf, child, f"{arcname}/{child.name}")
+                count += XeFMApp._add_to_zip(zf, child, f"{arcname}/{child.name}",
+                                             task=task, prog=prog, bytes_=bytes_)
             return count
+        if task is not None:
+            task.checkpoint()
+        if prog is not None:
+            prog.update_progress(arcname)
+        if bytes_ is not None:
+            # After update_progress, which clears the byte fields for the new item.
+            bytes_.start(XeFMApp._entry_size(path))
         zf.write(str(path), arcname)
         return 1
 
-    def _write_archive(self, sources: list, archive_path, fmt: str) -> int:
+    def _write_archive(self, sources: list, archive_path, fmt: str, *,
+                       task=None, prog=None) -> int:
         """Write ``sources`` into a new archive at ``archive_path`` in ``fmt``.
-        Local filesystem paths (this phase); returns the number of files added."""
-        import tarfile
-        import zipfile
-        if fmt == "zip":
-            with zipfile.ZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
-                return sum(self._add_to_zip(zf, s, s.name) for s in sources)
-        with tarfile.open(str(archive_path), self._TAR_MODES[fmt]) as tf:
-            for s in sources:
-                tf.add(str(s), arcname=s.name)  # tarfile recurses into directories
-            return len(tf.getmembers())
+        Local filesystem paths (this phase); returns the number of files added.
 
-    def _extract_archive(self, archive_path, dest_dir, fmt: str, pwd: bytes | None = None) -> int:
+        ``task`` (a :class:`~xefm.task.Task`) and ``prog`` (its
+        :class:`~xefm.progress_manager.ProgressManager`) make the write
+        cancellable and progress-reporting, entry by entry — and, through the
+        :mod:`xefm.archive_progress` file subclasses, byte by byte within an
+        entry, so a single huge member still moves something. ``Cancelled``
+        unwinds out of here mid-archive, leaving the caller to drop the partial
+        file. Both default to None, which writes exactly as before."""
+        import zipfile
+        from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
+        bytes_ = ByteProgress(prog) if prog is not None else None
+        if fmt == "zip":
+            with ProgressZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.byte_progress = bytes_
+                return sum(self._add_to_zip(zf, s, s.name, task=task, prog=prog,
+                                            bytes_=bytes_)
+                           for s in sources)
+        added = 0
+
+        def report(tarinfo):
+            # tarfile.add()'s own per-member filter hook, called as it recurses —
+            # the one seam it offers for progress and cancellation, since (unlike
+            # zipfile) it walks directories itself. Never skips a member, so the
+            # count matches the getmembers() this replaces.
+            nonlocal added
+            if task is not None:
+                task.checkpoint()
+            added += 1
+            if prog is not None:
+                prog.update_progress(tarinfo.name, added)
+            if bytes_ is not None:
+                bytes_.start(tarinfo.size)
+            return tarinfo
+
+        with ProgressTarFile.open(str(archive_path), self._TAR_MODES[fmt]) as tf:
+            tf.byte_progress = bytes_
+            for s in sources:
+                tf.add(str(s), arcname=s.name, filter=report)  # recurses into dirs
+        return added
+
+    @classmethod
+    def _count_archive_entries(cls, sources: list, *, include_dirs: bool,
+                               task=None) -> int:
+        """Recursively count the entries writing ``sources`` will produce, so the
+        progress bar is determinate rather than a spinner.
+
+        ``include_dirs`` follows the format: zip writes leaf files only (see
+        ``_add_to_zip``), tar adds a member per directory too. A directory that
+        cannot be listed is counted as itself and not descended — the write is
+        what surfaces the error, not the count."""
+        total = 0
+
+        def walk(path) -> None:
+            nonlocal total
+            if task is not None:
+                task.checkpoint()
+            is_dir = path.is_dir() and not path.is_symlink()
+            if include_dirs or not is_dir:
+                total += 1
+                if task is not None:
+                    task.counted = total
+            if not is_dir:
+                return
+            try:
+                children = list(path.iterdir())
+            except Exception:  # noqa: BLE001 — the write reports the real error
+                return
+            for child in children:
+                walk(child)
+
+        for s in sources:
+            walk(s)
+        return total
+
+    @staticmethod
+    def _reporting_members(members, describe, task, prog, bytes_=None):
+        """Yield ``members`` one at a time, checkpointing and reporting each —
+        ``describe(member)`` gives its ``(name, size)``.
+
+        Handed to ``extractall(members=…)`` so extraction gets per-entry progress
+        and cancellation *without* reimplementing its loop: tar's deferred
+        directory-permission fixup is subtle enough (permissions on a directory
+        would otherwise block writing into it) that a hand-rolled per-member
+        ``extract()`` would be a regression. The member's bytes are counted by the
+        :mod:`xefm.archive_progress` subclass doing the reading; this only opens
+        the bar, after ``update_progress`` has cleared the previous member's."""
+        for member in members:
+            if task is not None:
+                task.checkpoint()
+            name, size = describe(member)
+            if prog is not None:
+                prog.update_progress(name)
+            if bytes_ is not None:
+                bytes_.start(size)
+            yield member
+
+    def _extract_archive(self, archive_path, dest_dir, fmt: str, pwd: bytes | None = None,
+                         *, task=None, prog=None) -> int:
         """Extract ``archive_path`` into ``dest_dir`` (created if absent). Returns
         the number of entries. Tar extraction uses the ``data`` filter where
         available (Python 3.12+) to reject unsafe member paths.
@@ -4199,23 +4310,83 @@ class XeFMApp:
         front (:func:`xefm.archive.verify_zip_password`) so a missing/wrong
         password raises *before* any file is written, rather than leaving a
         half-extracted directory behind. A missing/wrong password raises
-        ``RuntimeError``; AES encryption raises ``NotImplementedError``."""
-        import tarfile
-        import zipfile
+        ``RuntimeError``; AES encryption raises ``NotImplementedError``.
+
+        ``task`` / ``prog``, when given, report each member and make it a
+        cancellation point (see ``_reporting_members``); both default to None,
+        which extracts exactly as before."""
         from xefm.archive import verify_zip_password
+        from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
+        bytes_ = ByteProgress(prog) if prog is not None else None
         dest_dir.mkdir(parents=True, exist_ok=True)
         if fmt == "zip":
-            with zipfile.ZipFile(str(archive_path)) as zf:
+            with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
-                zf.extractall(str(dest_dir), pwd=pwd)
-                return len(zf.namelist())
-        with tarfile.open(str(archive_path)) as tf:
+                zf.byte_progress = bytes_     # after the probe, which reads a little
+                members = zf.infolist()
+                if prog is not None:
+                    prog.update_operation_total(len(members))
+                zf.extractall(
+                    str(dest_dir), pwd=pwd,
+                    members=self._reporting_members(
+                        members, lambda m: (m.filename, m.file_size), task, prog,
+                        bytes_))
+                return len(members)
+        with ProgressTarFile.open(str(archive_path)) as tf:
+            tf.byte_progress = bytes_
+            # getmembers() reads the whole (compressed) archive to build the list;
+            # that is the operation's counting phase, and why it runs on the worker.
             members = tf.getmembers()
+            if prog is not None:
+                prog.update_operation_total(len(members))
+
+            def reported():
+                return self._reporting_members(
+                    members, lambda m: (m.name, m.size), task, prog, bytes_)
+
             try:
-                tf.extractall(str(dest_dir), filter="data")
+                tf.extractall(str(dest_dir), filter="data", members=reported())
             except TypeError:  # older Python without the extraction filter
-                tf.extractall(str(dest_dir))
+                # Raised on the call itself (unknown keyword), before the members
+                # generator is touched, so a fresh one is the whole retry.
+                tf.extractall(str(dest_dir), members=reported())
             return len(members)
+
+    @staticmethod
+    def _unlink_quietly(path) -> bool:
+        """Remove ``path``, returning whether it went. Cleanup after a cancelled
+        write, where the cancel is the news and a failed tidy-up is not — but the
+        caller still says which of the two happened."""
+        try:
+            path.unlink()
+            return True
+        except Exception:  # noqa: BLE001 — best effort
+            return False
+
+    def _submit_archive_task(self, task: Task, run, on_done, dest_dir) -> None:
+        """Run an archive operation on the task worker, silencing ``dest_dir``'s
+        filesystem watcher for its duration.
+
+        The operation writes into the directory the other pane is showing, and its
+        own writes would otherwise re-list that pane for the whole run, competing
+        with it for I/O; ``on_done``'s refresh is the reconciliation (the same
+        bracket :class:`~xefm.file_operations.FileOperationService` puts around
+        copy / move / delete — issue #243)."""
+        monitor = getattr(self, "file_monitor", None)
+
+        def run_bracketed(t: Task) -> dict:
+            # Suppression is taken on the worker (it is refcounted and lock-guarded,
+            # so any thread may) rather than before submit, so it cannot be leaked
+            # by a task that never starts.
+            if monitor is not None:
+                monitor.suppress_path(dest_dir)
+            try:
+                return run(t)
+            finally:
+                if monitor is not None:
+                    monitor.release_path(dest_dir)
+
+        self.tasks.submit(task, self.panel, run=run_bracketed, on_done=on_done)
 
     def create_archive(self) -> bool:
         """Create an archive from the active pane's selection (or cursor entry)
@@ -4255,14 +4426,49 @@ class XeFMApp:
             archive_path = dest_dir / name
 
             def go() -> None:
-                try:
-                    added = self._write_archive(sources, archive_path, fmt)
-                except Exception as exc:
-                    self.log_info(f"Archive creation failed: {exc}")
-                else:
-                    self.log_info(f"Created {name} ({added} file(s)) in {dest_dir}")
-                self._relist(self.pm.get_inactive_pane())
-                self.panel.render()
+                # Compression is slow enough on a large tree (and .tar.xz slow
+                # enough on a small one) that doing it here would freeze the UI for
+                # its whole duration, so it runs as a task: worker thread, progress
+                # dialog, Esc to cancel.
+                task = Task("Creating archive…", config=self.config,
+                            kind="archive_create")
+                task.progress.start_operation(OperationType.ARCHIVE_CREATE, 0,
+                                              description=name)
+
+                def run(t: Task) -> dict:
+                    prog = t.progress
+                    try:
+                        prog.update_operation_total(self._count_archive_entries(
+                            sources, include_dirs=(fmt != "zip"), task=t))
+                        added = self._write_archive(sources, archive_path, fmt,
+                                                    task=t, prog=prog)
+                    except Cancelled:
+                        # A half-written archive is not a usable one, and the file
+                        # did not exist before (an overwrite truncated whatever was
+                        # there the moment it opened): drop it rather than leave
+                        # rubble behind. Cancelling during the count precedes the
+                        # file, hence "removed" rather than an unconditional claim.
+                        return {"cancelled": True,
+                                "removed": self._unlink_quietly(archive_path)}
+                    except Exception as exc:  # noqa: BLE001 — reported on the main thread
+                        return {"error": exc}
+                    finally:
+                        prog.finish_operation()
+                    return {"added": added}
+
+                def on_done(res: dict) -> None:
+                    if res.get("cancelled"):
+                        tail = f" — {name} removed" if res.get("removed") else ""
+                        self.log_info(f"Archive creation cancelled{tail}")
+                    elif res.get("error") is not None:
+                        self.log_info(f"Archive creation failed: {res['error']}")
+                    else:
+                        self.log_info(
+                            f"Created {name} ({res.get('added', 0)} file(s)) in {dest_dir}")
+                    self._relist(self.pm.get_inactive_pane())
+                    self.panel.render()
+
+                self._submit_archive_task(task, run, on_done, dest_dir)
 
             if archive_path.exists():
                 show_message_box(
@@ -4324,33 +4530,66 @@ class XeFMApp:
             self.panel.render()
 
         def do_extract(pwd: bytes | None) -> None:
-            """Run the extraction with an optional zip password. A wrong/missing
-            password surfaces as ``RuntimeError`` (verified before any file is
-            written), which re-opens the password prompt with an error."""
-            try:
-                count = self._extract_archive(entry, target, fmt, pwd=pwd)
-            except RuntimeError:
-                # Encrypted zip: the password was missing or wrong. Re-prompt
-                # (nothing was written, thanks to the up-front verify).
-                prompt_password(error="Incorrect password — try again:")
-                return
-            except NotImplementedError:
-                # Defensive: AES is normally caught up front in go(); if a zip
-                # slips through, report it clearly rather than as a raw traceback.
-                self.log_info(
-                    f"Cannot extract {entry.name}: AES-encrypted zips are not supported")
-                self._relist(self.pm.get_inactive_pane())
-                self.panel.render()
-                return
-            except Exception as exc:  # noqa: BLE001 — reported to the user
-                finish(exc, 0)
-                return
-            if pwd is not None:
-                # Remember the working password so browsing this same zip later
-                # doesn't prompt again this session.
-                from xefm.archive import set_archive_password
-                set_archive_password(entry, pwd)
-            finish(None, count)
+            """Run the extraction with an optional zip password on the task worker
+            — decompressing a large archive would otherwise freeze the UI for its
+            whole duration, and building a compressed tar's member list (the
+            counting phase) is itself a full read of the file.
+
+            A wrong/missing password surfaces as ``RuntimeError`` (verified before
+            any file is written), which re-opens the password prompt with an
+            error."""
+            task = Task("Extracting archive…", config=self.config,
+                        kind="archive_extract")
+            task.progress.start_operation(OperationType.ARCHIVE_EXTRACT, 0,
+                                          description=entry.name)
+
+            def run(t: Task) -> dict:
+                prog = t.progress
+                try:
+                    count = self._extract_archive(entry, target, fmt, pwd=pwd,
+                                                  task=t, prog=prog)
+                except Cancelled:
+                    # What landed stays: the destination may be a directory the
+                    # user already had files in (the confirm box says as much), so
+                    # removing it wholesale could take those with it.
+                    return {"cancelled": True}
+                except Exception as exc:  # noqa: BLE001 — dispatched on the main thread
+                    return {"error": exc}
+                finally:
+                    prog.finish_operation()
+                return {"count": count}
+
+            def on_done(res: dict) -> None:
+                # Most specific first: NotImplementedError *is* a RuntimeError, so
+                # the other order would send an AES zip to the password prompt.
+                exc = res.get("error")
+                if res.get("cancelled"):
+                    self.log_info(
+                        f"Extraction cancelled — {target.name}/ is partly written")
+                    self._relist(self.pm.get_inactive_pane())
+                    self.panel.render()
+                elif isinstance(exc, NotImplementedError):
+                    # Defensive: AES is normally caught up front in go(); if a zip
+                    # slips through, report it clearly rather than as a raw traceback.
+                    self.log_info(
+                        f"Cannot extract {entry.name}: AES-encrypted zips are not supported")
+                    self._relist(self.pm.get_inactive_pane())
+                    self.panel.render()
+                elif isinstance(exc, RuntimeError):
+                    # Encrypted zip: the password was missing or wrong. Re-prompt
+                    # (nothing was written, thanks to the up-front verify).
+                    prompt_password(error="Incorrect password — try again:")
+                elif exc is not None:
+                    finish(exc, 0)
+                else:
+                    if pwd is not None:
+                        # Remember the working password so browsing this same zip
+                        # later doesn't prompt again this session.
+                        from xefm.archive import set_archive_password
+                        set_archive_password(entry, pwd)
+                    finish(None, res.get("count", 0))
+
+            self._submit_archive_task(task, run, on_done, dest_dir)
 
         def prompt_password(error: str | None = None) -> None:
             show_input(
