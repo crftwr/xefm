@@ -4,6 +4,8 @@ XeFM Archive Operations - Handles archive creation and extraction with cross-sto
 """
 
 import os
+import calendar
+import datetime
 import tempfile
 import tarfile
 import zipfile
@@ -21,6 +23,42 @@ from pathlib import Path as PathlibPath
 from xefm.path import Path, PathImpl
 from xefm.str_format import format_size
 from typing import List, Optional, Union, Tuple, Dict, Any, Iterator
+
+
+def zip_date_time_to_timestamp(date_time) -> float:
+    """Convert a ``ZipInfo.date_time`` tuple to a POSIX timestamp, tolerating junk.
+
+    A zip entry stores its timestamp as a packed MS-DOS date/time, and writers
+    that have no timestamp to record simply leave the field zero — streamed
+    zips, and several Java/Go/Android writers, do exactly that. ``zipfile``
+    unpacks a zero field to ``(1980, 0, 0, 0, 0, 0)``: month and day zero, which
+    ``datetime`` rejects. The other components can be out of range too, since
+    each is only masked off the packed word — the DOS hour field holds 0..31,
+    minutes 0..63, and seconds count 2-second units up to 62.
+
+    So every component is clamped into range rather than trusted. One entry with
+    a nonsense date used to raise out of ``ArchiveEntry.from_zip_info`` and fail
+    the *entire* archive listing (xefm#277); a clamped date at worst shows the
+    DOS epoch, 1980-01-01, for that one entry."""
+    if not date_time:
+        return 0.0
+
+    year, month, day, hour, minute, second = (tuple(date_time) + (0,) * 6)[:6]
+    year = min(max(year, datetime.MINYEAR), datetime.MAXYEAR)
+    month = min(max(month, 1), 12)
+    # Clamp the day to the month's real length: the 5-bit DOS day field can hold
+    # 31 for a month that never has that many days.
+    day = min(max(day, 1), calendar.monthrange(year, month)[1])
+    hour = min(max(hour, 0), 23)
+    minute = min(max(minute, 0), 59)
+    second = min(max(second, 0), 59)
+
+    try:
+        return datetime.datetime(year, month, day, hour, minute, second).timestamp()
+    except (ValueError, OverflowError, OSError):
+        # Platforms disagree on which naive datetimes have a POSIX timestamp at
+        # all (Windows rejects anything before 1970).
+        return 0.0
 
 
 @dataclass
@@ -104,13 +142,7 @@ class ArchiveEntry:
         
         # Convert date_time tuple to timestamp
         # ZipInfo.date_time is a tuple: (year, month, day, hour, minute, second)
-        import time
-        import datetime
-        if zip_info.date_time:
-            dt = datetime.datetime(*zip_info.date_time)
-            mtime = dt.timestamp()
-        else:
-            mtime = 0.0
+        mtime = zip_date_time_to_timestamp(zip_info.date_time)
         
         # Extract Unix permissions from external_attr
         # For Unix systems, permissions are in the high 16 bits

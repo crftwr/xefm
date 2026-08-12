@@ -4,6 +4,8 @@ Tests for ArchiveEntry dataclass
 Run with: python -m pytest test/test_archive_entry.py -v
 """
 
+import datetime
+import io
 import os
 import stat
 import time
@@ -11,7 +13,8 @@ import zipfile
 import tarfile
 import tempfile
 
-from xefm.archive import ArchiveEntry
+from xefm.archive import ArchiveEntry, ZipHandler, zip_date_time_to_timestamp
+from xefm.path import Path
 
 
 def test_archive_entry_creation():
@@ -169,6 +172,83 @@ def test_archive_entry_from_tar_info():
     
     finally:
         # Clean up
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+def _zip_with_zero_dos_date(path):
+    """Write a one-entry zip whose MS-DOS date/time fields are all zero.
+
+    zipfile can't produce one (it always writes a real date), so the packed
+    words are zeroed in place afterwards, in both the local file header
+    (offset 10, 4 bytes) and the central directory record (offset 12)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as zf:
+        zf.writestr('a.txt', 'hello')
+    data = bytearray(buf.getvalue())
+
+    local = data.find(b'PK\x03\x04')
+    central = data.find(b'PK\x01\x02')
+    data[local + 10:local + 14] = b'\x00' * 4
+    data[central + 12:central + 16] = b'\x00' * 4
+
+    with open(path, 'wb') as fh:
+        fh.write(bytes(data))
+
+
+def test_zip_date_time_to_timestamp_clamps_junk():
+    """Out-of-range DOS date components are clamped, never raised (xefm#277)"""
+    # A zeroed DOS date unpacks to month/day 0 — the reported crash.
+    assert (datetime.datetime.fromtimestamp(
+        zip_date_time_to_timestamp((1980, 0, 0, 0, 0, 0)))
+        == datetime.datetime(1980, 1, 1, 0, 0, 0))
+
+    # Every other component is only masked off the packed word, so each can
+    # overflow: day 31 in February, hour 31, minute 63, second 62.
+    assert (datetime.datetime.fromtimestamp(
+        zip_date_time_to_timestamp((2024, 2, 31, 31, 63, 62)))
+        == datetime.datetime(2024, 2, 29, 23, 59, 59))
+
+    # Missing/empty dates stay at the epoch, as before.
+    assert zip_date_time_to_timestamp(()) == 0.0
+    assert zip_date_time_to_timestamp(None) == 0.0
+
+    # A valid date is passed through untouched.
+    assert (datetime.datetime.fromtimestamp(
+        zip_date_time_to_timestamp((2024, 6, 15, 14, 30, 0)))
+        == datetime.datetime(2024, 6, 15, 14, 30, 0))
+    print("✓ Junk DOS dates are clamped instead of raising")
+
+
+def test_archive_entry_from_zip_info_zero_dos_date():
+    """An entry with a zeroed DOS date is listed, not fatal (xefm#277)"""
+    with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        _zip_with_zero_dos_date(tmp_path)
+
+        with zipfile.ZipFile(tmp_path, 'r') as zf:
+            zip_info = zf.infolist()[0]
+            assert zip_info.date_time == (1980, 0, 0, 0, 0, 0)  # what zipfile hands us
+            entry = ArchiveEntry.from_zip_info(zip_info, 'zip')
+
+        assert entry.name == 'a.txt'
+        assert entry.mtime == datetime.datetime(1980, 1, 1).timestamp()
+        assert entry.to_stat_result().st_mtime == entry.mtime
+
+        # The whole archive must open and list, which is what used to fail with
+        # "Error iterating directory: Error opening ZIP archive: month must be
+        # in 1..12, not 0".
+        handler = ZipHandler(Path(tmp_path))
+        try:
+            handler.open()
+            assert [e.name for e in handler.list_entries('')] == ['a.txt']
+        finally:
+            handler.close()
+        print("✓ Zip with a zeroed DOS date opens and lists")
+
+    finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
