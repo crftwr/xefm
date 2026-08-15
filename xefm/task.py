@@ -37,6 +37,13 @@ from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.progress_manager import ProgressManager
 from xefm.str_format import abbreviate_path, format_size
 
+#: Transfer rows the progress dialog reserves — the local copy pool's size.
+#: A wider pool (S3) folds its overflow into a final "… N more files" row.
+_TRANSFER_ROWS = 4
+#: A transfer row prints its byte counts only for files at least this large;
+#: below it the copy is one shot and the numbers would just flicker.
+_BYTE_TEXT_MIN = 1024 * 1024
+
 
 class TaskStatus(Enum):
     """Lifecycle of a :class:`Task`. Preparing / running / cancelling are *not*
@@ -241,9 +248,13 @@ class ProgressDialog(Widget):
 
     - **Preparing** (``ProgressManager`` still ``counting``): a :class:`BusyIndicator`
       and a "Preparing…" line — an indeterminate phase with no total yet.
-    - **Running**: a determinate primary :class:`ProgressBar` (items done / total),
-      the current file name, and a **secondary byte bar** shown only while the
-      current file reports a byte total (large / remote copies).
+    - **Running**: a determinate primary :class:`ProgressBar` (weighted by items
+      *and* bytes when the operation measured them), then either the current file
+      name with a **secondary byte bar** (operations that work one file at a
+      time — delete, archives), or — once the copy engine's per-file transfer
+      slots report in — **one row per in-flight file**, each with its own byte
+      counts, so a parallel copy shows every worker's file rather than whichever
+      one most recently started.
     - **Cancelling** (derived from the cancel flag): a "Cancelling…" line until the
       worker unwinds.
 
@@ -271,11 +282,14 @@ class ProgressDialog(Widget):
         self._z = z
         sw, _sh = panel.backend.size_units
         w = float(max(44, min(70, int(sw) - 4)))
-        # title + current item + primary bar/label + secondary bar/label. The last
-        # two rows are reserved whether or not the current file reports bytes: an
-        # operation alternates between files that do and files that don't, and a
-        # box that resized under each one would jitter for its whole run.
-        h = 8.0
+        # title + primary bar/label + either (current item + secondary bar/label)
+        # or up to four per-file transfer rows. The rows are reserved whether or
+        # not anything fills them: an operation alternates between files that
+        # report bytes and files that don't, and a box that resized under each
+        # one would jitter for its whole run. The height stays *even*: an odd box
+        # centers onto a half cell, and the rounding then walks the foot-anchored
+        # rows onto the bottom border.
+        h = 10.0
         panel.push_layer(self, z=z, hints={"shadow": True, "w": w, "h": h})
         animate_open(panel, self, OPEN_MS_VIEWER)
 
@@ -315,11 +329,21 @@ class ProgressDialog(Widget):
         ctx.draw_box(0, 0, box_w, box_h, box_style, hints={"fill": True})
         text_style = Style(bg=surface_bg)
         ctx.draw_text(2, 0.5, self.task.title, Style(bg=surface_bg, attr=TextAttribute.BOLD))
+        # The popup surface, handed to the child widgets (bars, spinner)
+        # explicitly: their glyph runs name no background, and on a grid backend
+        # an unbackgrounded cell falls to the *terminal default* rather than the
+        # theme surface — a light theme showed dark strips through the dialog.
+        child_hints = {"bg": surface_bg}
 
         op = self.task.progress.get_current_operation()
         width = max(1.0, box_w - 4)
         if op is None or op.get("counting"):
-            self._draw_preparing(ctx, op, box_w, box_h, text_style)
+            self._draw_preparing(ctx, op, box_w, box_h, text_style, child_hints)
+            return
+        transfers = self.task.progress.get_transfers()
+        if transfers:
+            self._draw_transfers(ctx, op, transfers, box_h, width, text_style,
+                                 child_hints)
             return
         if self.task.cancelled():
             ctx.draw_text(2, 2.2, "Cancelling…", text_style)
@@ -336,7 +360,7 @@ class ProgressDialog(Widget):
 
         # Primary bar: items processed / total.
         self._bar.value = self.task.progress.get_progress_percentage() / 100.0
-        ctx.draw_child(self._bar, 2, 3.4, width, 1.0)
+        ctx.draw_child(self._bar, 2, 3.4, width, 1.0, hints=child_hints)
         ctx.draw_text(2, 4.3, f"{op['processed_items']} / {op['total_items']} items", text_style)
 
         # Secondary bar: bytes of the current file (only when a total is known).
@@ -348,14 +372,59 @@ class ProgressDialog(Widget):
         if bt > 0:
             label_y = box_h - 2.0
             self._byte_bar.value = min(1.0, bc / bt) if bt else 0.0
-            ctx.draw_child(self._byte_bar, 2, label_y - 1.0, width, 1.0)
+            ctx.draw_child(self._byte_bar, 2, label_y - 1.0, width, 1.0,
+                           hints=child_hints)
             ctx.draw_text(
                 2, label_y,
                 f"{format_size(bc, compact=True)} / {format_size(bt, compact=True)}",
                 text_style)
 
-    def _draw_preparing(self, ctx, op, box_w, box_h, text_style) -> None:
-        ctx.draw_child(self._busy, 2, 3.0, 2.0, 1.0)
+    def _draw_transfers(self, ctx, op, transfers, box_h, width, text_style,
+                        child_hints) -> None:
+        """The copy engine's layout: the primary bar (items and, when measured,
+        bytes) directly under the title, then one row per transfer slot — each
+        worker's current file with its own byte counts. Rows are keyed by slot,
+        and a finished file holds its row until the worker's next file replaces
+        it, so the lines stay put instead of blinking."""
+        self._bar.value = self.task.progress.get_progress_percentage() / 100.0
+        ctx.draw_child(self._bar, 2, 1.9, width, 1.0, hints=child_hints)
+        label = f"{op['processed_items']} / {op['total_items']} items"
+        if op.get("total_bytes"):
+            label += (f" — {format_size(op['processed_bytes'], compact=True)}"
+                      f" / {format_size(op['total_bytes'], compact=True)}")
+        ctx.draw_text(2, 2.9, label, text_style)
+        # The file rows are anchored up from the foot of the box (the same
+        # proven-safe rule as the single-file byte label), which leaves a blank
+        # line under the summary — the operation total and the per-file section
+        # read as two parts on the grid backends as well as the vector ones.
+        foot = box_h - 2.0
+        first_row = foot - (_TRANSFER_ROWS - 1) * 0.9
+        if self.task.cancelled():
+            ctx.draw_text(2, first_row, "Cancelling…", text_style)
+            return
+        rows = transfers
+        extra = len(rows) - _TRANSFER_ROWS
+        if extra > 0:
+            rows = rows[:_TRANSFER_ROWS - 1]
+        for i, (_slot, t) in enumerate(rows):
+            y = first_row + i * 0.9
+            bytes_text = ""
+            if t["total"] >= _BYTE_TEXT_MIN:
+                bytes_text = (f"{format_size(t['copied'], compact=True)}"
+                              f" / {format_size(t['total'], compact=True)}")
+            bytes_w = ctx.measure_text(bytes_text) if bytes_text else 0.0
+            name_w = max(1.0, width - (bytes_w + 2.0 if bytes_text else 0.0))
+            ctx.draw_text(2, y, abbreviate_path(t["item"], name_w,
+                                                measure=ctx.measure_text),
+                          text_style)
+            if bytes_text:
+                ctx.draw_text(2 + width - bytes_w, y, bytes_text, text_style)
+        if extra > 0:
+            ctx.draw_text(2, foot, f"… {extra + 1} more files", text_style)
+
+    def _draw_preparing(self, ctx, op, box_w, box_h, text_style,
+                        child_hints) -> None:
+        ctx.draw_child(self._busy, 2, 3.0, 2.0, 1.0, hints=child_hints)
         n = self.task.counted
         label = f"Preparing… ({n} item{'s' if n != 1 else ''})" if n else "Preparing…"
         ctx.draw_text(4, 3.0, label, text_style)

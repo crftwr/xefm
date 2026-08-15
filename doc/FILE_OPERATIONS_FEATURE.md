@@ -169,24 +169,32 @@ Copy and move operations show detailed, real-time progress — especially useful
 for large files or directories with many files. The UI stays responsive while
 the transfer runs in the background.
 
-The status bar shows an animated spinner, a file count, the current filename,
-and — for large files — byte-level progress:
+The progress dialog shows one overall bar and, below it, the files currently
+in flight:
 
 ```
-⠋ Copying (to destination)... 45/100 (45%) - subdir/large_file.dat [67%]
+Copy…
+[███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
+12 / 100 items — 350.2M / 2.1G
+
+photos/IMG_2041.jpg                 8.1M / 24.5M
+photos/IMG_2042.jpg                12.9M / 31.0M
+notes.txt
+video/trip.mov                    310.5M / 1.4G
 ```
 
-- **⠋** — spinner confirming the operation is active (not frozen).
-- **Copying (to destination)** — operation type and where it is going.
-- **45/100 (45%)** — files processed out of the total.
-- **subdir/large_file.dat** — the file currently being transferred, shown with
-  its relative path inside subdirectories.
-- **[67%]** — byte-level progress for the current large file, in human-readable
-  units (B, K, M, G, T).
-
-Byte-level progress appears only for files large enough to take multiple
-read/write passes; small files complete too quickly to need it. Long filenames
-are truncated to fit the terminal width.
+- **The overall bar** tracks the whole operation by *bytes* as well as file
+  count, so one huge file among many small ones no longer parks the bar near
+  the end while most of the actual work is still ahead.
+- **12 / 100 items** counts files that have *finished*. When several files copy
+  in parallel, starting four files no longer reads as four files done.
+- **350.2M / 2.1G** — bytes moved so far out of the operation's total, in
+  human-readable units (B, K, M, G, T).
+- **One row per file in flight** — parallel copies show each worker's current
+  file with its own byte counts, not just whichever file started most recently.
+  Rows show byte counts only for files large enough to take multiple
+  read/write passes; small files complete too quickly to need them. Long
+  filenames are truncated to fit.
 
 ### Cancelling
 

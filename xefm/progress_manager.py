@@ -26,6 +26,15 @@ class OperationType(Enum):
     ARCHIVE_EXTRACT = "archive_extract"
 
 
+#: A file's fixed per-item cost in the progress percentage, in byte-equivalents.
+#: The primary bar advances on ``processed_bytes + _ITEM_WEIGHT * processed_items``
+#: over the same expression for the totals, so one huge file no longer freezes a
+#: bar that counts items, and thousands of tiny files no longer pin a bar that
+#: counts bytes. Operations that report no byte totals (delete, archives) reduce
+#: to the old pure item ratio.
+_ITEM_WEIGHT = 8 * 1024
+
+
 class ProgressManager:
     """Manages progress tracking for long-running file operations"""
     
@@ -70,7 +79,10 @@ class ProgressManager:
             'errors': 0,
             'file_bytes_copied': 0,  # Bytes copied for current file
             'file_bytes_total': 0,   # Total bytes for current file
-            'counting': True         # Flag to indicate we're still counting files
+            'counting': True,        # Flag to indicate we're still counting files
+            'total_bytes': 0,        # Bytes the whole operation will move (0 = unknown)
+            'processed_bytes': 0,    # Bytes moved so far, across all workers
+            'transfers': {}          # slot -> per-file transfer state (file_begin)
         }
         self.progress_callback = progress_callback
         self.animator.reset()
@@ -79,26 +91,30 @@ class ProgressManager:
         if self.progress_callback:
             self.progress_callback(self.current_operation)
     
-    def update_operation_total(self, total_items: int, description: str = ""):
+    def update_operation_total(self, total_items: int, description: str = "",
+                               total_bytes: int = 0):
         """Update the total item count for current operation
-        
+
         This is useful when the total count isn't known at operation start
         (e.g., during file counting phase).
-        
+
         Args:
             total_items: New total number of items
             description: Optional updated description
+            total_bytes: Total bytes the operation will move, when the counting
+                pass measured them; 0 leaves the bar weighted by items alone
         """
         if not self.current_operation:
             return
-        
+
         self.current_operation['total_items'] = total_items
         if description:
             self.current_operation['description'] = description
-        
+        self.current_operation['total_bytes'] = max(0, int(total_bytes))
+
         # Mark counting as complete
         self.current_operation['counting'] = False
-        
+
         # Trigger callback to update display
         self._trigger_callback_if_needed(force=True)
     
@@ -129,26 +145,20 @@ class ProgressManager:
         # Call callback with updated state (with throttling)
         self._trigger_callback_if_needed()
     
-    def update_file_byte_progress(self, bytes_copied: int, bytes_total: int,
-                                  item: Optional[str] = None):
+    def update_file_byte_progress(self, bytes_copied: int, bytes_total: int):
         """Update the byte-level progress for the current file being copied
+
+        The single-current-item path (archives, and any operation that works one
+        file at a time through :meth:`update_progress`). The copy engine's
+        workers report through per-file slots instead — see :meth:`file_begin`.
 
         Args:
             bytes_copied: Number of bytes copied so far
             bytes_total: Total number of bytes in the file
-            item: Name of the file these bytes belong to. When parallel workers
-                stream several files at once, the byte bar belongs to whichever
-                file most recently became the current item — an update tagged
-                with any other name is dropped instead of making the bar jump
-                between files. ``None`` (the sequential path) always applies.
         """
         with self._lock:
             op = self.current_operation
             if not op:
-                return
-
-            if (item is not None and op.get('current_item')
-                    and item != op['current_item']):
                 return
 
             op['file_bytes_copied'] = bytes_copied
@@ -156,6 +166,101 @@ class ProgressManager:
 
         # Call callback with updated state (with throttling)
         self._trigger_callback_if_needed()
+
+    # --- per-file transfer slots (the copy engine's path) --------------------
+    #
+    # A parallel copy has several files in flight at once; each takes a slot for
+    # its lifetime. The slot keys a row in the progress dialog (lowest free slot
+    # is reused, so rows stay put while workers cycle through files), its byte
+    # updates accumulate into the operation-wide ``processed_bytes``, and the
+    # item is counted when the file *finishes* — the item bar no longer jumps to
+    # "4/5" the moment four workers have merely started.
+
+    def file_begin(self, item: str, total_bytes: int = 0) -> int:
+        """A file starts: claim a slot and name it. Returns the slot id for
+        :meth:`file_bytes` / :meth:`file_end`. Does not advance the item count.
+
+        Args:
+            item: Name of the file
+            total_bytes: The file's size when already known; usually left 0 and
+                published by the first :meth:`file_bytes` call instead
+        """
+        with self._lock:
+            op = self.current_operation
+            if not op:
+                return -1
+            transfers = op['transfers']
+            slot = 0
+            while slot in transfers and not transfers[slot].get('done'):
+                slot += 1
+            transfers[slot] = {'item': item, 'copied': 0,
+                               'total': max(0, int(total_bytes)), 'done': False}
+            op['current_item'] = item
+            op['file_bytes_copied'] = 0  # Reset byte progress for new file
+            op['file_bytes_total'] = 0
+            op['counting'] = False
+        self._trigger_callback_if_needed()
+        return slot
+
+    def file_bytes(self, slot: int, copied: int, total: Optional[int] = None):
+        """Cumulative bytes for the file in ``slot``; the growth since the last
+        report is added to the operation's ``processed_bytes``.
+
+        Args:
+            slot: The id :meth:`file_begin` returned
+            copied: Bytes of this file copied so far (cumulative, not a delta)
+            total: The file's size, when the caller has it; None leaves the
+                slot's stored total unchanged
+        """
+        with self._lock:
+            op = self.current_operation
+            if not op:
+                return
+            t = op['transfers'].get(slot)
+            if t is None or t.get('done'):
+                return
+            if total is not None:
+                t['total'] = max(0, int(total))
+            copied = max(0, int(copied))
+            if copied > t['copied']:
+                op['processed_bytes'] += copied - t['copied']
+            t['copied'] = copied
+            # Mirror into the legacy per-file fields while this is the current
+            # item, so the flat-text renderers keep showing the newest file's
+            # bytes exactly as the sequential path always has.
+            if t['item'] == op.get('current_item'):
+                op['file_bytes_copied'] = t['copied']
+                op['file_bytes_total'] = t['total']
+        self._trigger_callback_if_needed()
+
+    def file_end(self, slot: int):
+        """The file in ``slot`` is done (copied, skipped, or failed): count the
+        item, and credit any of its bytes that were never streamed — a small
+        file copied in one shot, an instant clone, a skip — so the byte-weighted
+        bar stays honest without every path having to report bytes itself."""
+        with self._lock:
+            op = self.current_operation
+            if not op:
+                return
+            t = op['transfers'].get(slot)
+            if t is not None and not t.get('done'):
+                if t['total'] > t['copied']:
+                    op['processed_bytes'] += t['total'] - t['copied']
+                    t['copied'] = t['total']
+                t['done'] = True
+            op['processed_items'] += 1
+        self._trigger_callback_if_needed()
+
+    def get_transfers(self) -> list:
+        """Snapshot of the per-slot transfer rows, ``(slot, state)`` sorted by
+        slot, copied under the lock so the UI thread never iterates a dict the
+        workers are mutating. Finished files stay in their slot (marked
+        ``done``) until a new file reuses it, so dialog rows don't blink."""
+        with self._lock:
+            op = self.current_operation
+            if not op:
+                return []
+            return [(slot, dict(t)) for slot, t in sorted(op['transfers'].items())]
     
     def _trigger_callback_if_needed(self, force: bool = False):
         """Trigger progress callback if enough time has passed or forced
@@ -214,11 +319,19 @@ class ProgressManager:
         return self.current_operation
     
     def get_progress_percentage(self) -> int:
-        """Get the current progress as a percentage (0-100)"""
-        if not self.current_operation or self.current_operation['total_items'] == 0:
+        """Get the current progress as a percentage (0-100)
+
+        Weighted by bytes as well as items (see :data:`_ITEM_WEIGHT`): with no
+        byte totals reported this is the plain item ratio, and with them a
+        4 GiB file among a dozen small ones holds the bar back for the time it
+        will actually take."""
+        op = self.current_operation
+        if not op or op['total_items'] == 0:
             return 0
-        
-        return int((self.current_operation['processed_items'] / self.current_operation['total_items']) * 100)
+
+        weight = op.get('total_bytes', 0) + _ITEM_WEIGHT * op['total_items']
+        done = op.get('processed_bytes', 0) + _ITEM_WEIGHT * op['processed_items']
+        return int(min(weight, done) / weight * 100)
     
     def get_progress_text(self, max_width: int = 80) -> str:
         """Render the current operation's progress as a single plain-text line no

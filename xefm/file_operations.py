@@ -346,9 +346,12 @@ class FileOperationService:
                 except Exception:  # noqa: BLE001 — per-target op will surface it
                     pass
 
-            total_items, _total_bytes = self._count(task, kind, dest_dir,
-                                                    [p[0] for p in plan])
-            prog.update_operation_total(total_items)
+            total_items, total_bytes = self._count(task, kind, dest_dir,
+                                                   [p[0] for p in plan])
+            # Delete never reports bytes, so weighting its bar by them would
+            # freeze it; copy/move/duplicate report every byte they touch.
+            prog.update_operation_total(
+                total_items, total_bytes=0 if kind == "delete" else total_bytes)
 
             errors = result["errors"]
             workers = self._copy_workers(kind, plan, dest_dir)
@@ -647,14 +650,16 @@ class FileOperationService:
         cleanup errors are ignored exactly as the sequential path ignores
         them."""
         task.checkpoint()
-        prog.update_progress(src.name)
+        slot = prog.file_begin(src.name)
         try:
-            copied = self._copy_file(task, src, dest, overwrite, prog)
+            copied = self._copy_file(task, src, dest, overwrite, prog, slot)
         except Cancelled:
             raise
         except Exception as exc:  # noqa: BLE001 — one bad file, keep going
             errors.append((str(src), str(exc)))
+            prog.file_end(slot)
             return 0
+        prog.file_end(slot)
         if not copied:
             return 0  # skipped (inner collision under a non-overwrite dir)
         _log_op(log, verb, src, dest)
@@ -679,7 +684,6 @@ class FileOperationService:
         return value; the pool tallies those as the jobs finish."""
         task.checkpoint()
         if src.is_dir() and not src.is_symlink():
-            prog.update_progress(src.name)
             try:
                 dest.mkdir(parents=True, exist_ok=True)
             except Cancelled:
@@ -687,6 +691,7 @@ class FileOperationService:
             except Exception as exc:  # noqa: BLE001 — can't copy into it; skip children
                 errors.append((str(src), str(exc)))
                 return 0
+            prog.update_progress(src.name)  # counted once it exists, like files
             ok = 1  # the directory itself
             for child in src.iterdir():
                 ok += self._copy_tree(task, child, dest / child.name,
@@ -695,45 +700,48 @@ class FileOperationService:
         if submit is not None:
             submit(src, dest)
             return 0  # counted by the pool when the job completes
-        prog.update_progress(src.name)
+        slot = prog.file_begin(src.name)
         try:
-            copied = self._copy_file(task, src, dest, overwrite, prog)
+            copied = self._copy_file(task, src, dest, overwrite, prog, slot)
         except Cancelled:
             raise
         except Exception as exc:  # noqa: BLE001 — one bad file, keep going
             errors.append((str(src), str(exc)))
+            prog.file_end(slot)
             return 0
+        prog.file_end(slot)
         if copied:
             _log_op(log, verb, src, dest)  # one line per file, with the real dest
             return 1
         return 0  # skipped (inner collision under a non-overwrite dir)
 
     def _copy_file(self, task: Task, src: Path, dest: Path, overwrite: bool,
-                   prog: ProgressManager) -> bool:
+                   prog: ProgressManager, slot: int) -> bool:
         """Copy one file; return True if it was written, False if skipped (an inner
         collision under a non-overwrite directory), so the caller logs only real
-        copies."""
-        if dest.exists() and not overwrite:
-            return False  # inner collision under a non-overwrite dir — leave it
+        copies. ``slot`` is the file's progress slot (``ProgressManager.file_begin``);
+        the size is published to it up front so ``file_end`` can credit the bytes
+        of whatever path the copy then takes — stream, clone, one-shot, or skip."""
         try:
             size = 0 if src.is_symlink() else src.stat().st_size
         except Exception:  # noqa: BLE001
             size = 0
+        prog.file_bytes(slot, 0, size)
+        if dest.exists() and not overwrite:
+            return False  # inner collision under a non-overwrite dir — leave it
         same = src.get_scheme() == dest.get_scheme()
         local = same and src.get_scheme() == "file"
         if local and not src.is_symlink() and _clone_file(src, dest, overwrite):
-            if size >= _BYTE_BAR_MIN:
-                prog.update_file_byte_progress(size, size, src.name)
+            prog.file_bytes(slot, size, size)  # one syscall, all bytes landed
             return True
         if not src.is_symlink() and (not same or size >= _BYTE_BAR_MIN):
-            self._copy_bytes(task, src, dest, size, overwrite, local, prog)
+            self._copy_bytes(task, src, dest, size, overwrite, local, prog, slot)
         else:
             src.copy_to(dest, overwrite=overwrite)
         return True
 
     @staticmethod
-    def _remote_progress(task: Task, prog: ProgressManager,
-                         item: Optional[str] = None):
+    def _remote_progress(task: Task, prog: ProgressManager, slot: int):
         """Byte-progress callback for a remote transfer, doubling as the cancel
         checkpoint.
 
@@ -741,23 +749,24 @@ class FileOperationService:
         a single call into S3 or SFTP, so the progress callback is the only
         thread of control that comes back often enough to notice a cancel. The
         ``Cancelled`` raised here unwinds the transfer and is re-raised
-        unchanged by ``Path.copy_to``. ``item`` names the file for the byte bar
-        so parallel transfers don't fight over it."""
+        unchanged by ``Path.copy_to``. ``slot`` is the file's progress slot, so
+        parallel transfers each drive their own row."""
         def report(bytes_copied: int, bytes_total: int) -> None:
             task.checkpoint()
-            prog.update_file_byte_progress(bytes_copied, bytes_total, item)
+            prog.file_bytes(slot, bytes_copied, bytes_total)
         return report
 
     def _copy_bytes(self, task: Task, src: Path, dest: Path, size: int,
-                    overwrite: bool, local: bool, prog: ProgressManager) -> None:
-        """Copy a large / cross-storage file while driving the byte bar. Local
+                    overwrite: bool, local: bool, prog: ProgressManager,
+                    slot: int) -> None:
+        """Copy a large / cross-storage file while driving its byte slot. Local
         files are streamed in chunks here (so ``shutil`` doesn't hide progress);
         cross-storage copies delegate to ``Path.copy_to``'s own progress callback."""
         if not local:
             try:
                 src.copy_to(dest, overwrite=overwrite,
                             progress_callback=self._remote_progress(task, prog,
-                                                                    src.name))
+                                                                    slot))
             except Cancelled:
                 try:
                     dest.unlink()  # a half-sent remote file is not a copy
@@ -767,7 +776,6 @@ class FileOperationService:
             return
         dest.parent.mkdir(parents=True, exist_ok=True)
         copied = 0
-        prog.update_file_byte_progress(0, size, src.name)
         try:
             with open(str(src), "rb") as fi, open(str(dest), "wb") as fo:
                 while True:
@@ -777,7 +785,7 @@ class FileOperationService:
                         break
                     fo.write(chunk)
                     copied += len(chunk)
-                    prog.update_file_byte_progress(copied, size, src.name)
+                    prog.file_bytes(slot, copied, size)
             shutil.copystat(str(src), str(dest))
         except Cancelled:
             try:
