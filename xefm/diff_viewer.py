@@ -294,8 +294,8 @@ class DiffViewer(Widget):
 
     def __init__(self, path1, path2, *, syntax: dict | None = None):
         self.path1, self.path2 = path1, path2
-        self.lines1, _ = _read_lines(path1)
-        self.lines2, _ = _read_lines(path2)
+        self.lines1, _, _ = _read_lines(path1)
+        self.lines2, _, _ = _read_lines(path2)
         self.hl1 = _highlight(self.lines1, path1, syntax)
         self.hl2 = _highlight(self.lines2, path2, syntax)
         self.rows, self.blocks = compute_diff(self.lines1, self.lines2)

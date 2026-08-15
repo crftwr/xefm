@@ -2545,7 +2545,13 @@ class XeFMApp:
 
     def edit_file(self) -> None:
         """Open the selected files — or the focused file when nothing is
-        selected — for editing (#273).
+        selected — for editing (#273). See :meth:`_edit_entries`."""
+        self._edit_entries(self._selected_or_focused(self.active_pane()))
+
+    def _edit_entries(self, targets: list) -> None:
+        """Open ``targets`` for editing — the ``edit_file`` machinery, shared
+        by the file list and the text viewer (which passes the viewed file as
+        the single target).
 
         Per file, a matching ``edit`` entry in FILE_ASSOCIATIONS wins;
         otherwise the configured ``TEXT_EDITOR`` gets the terminal via
@@ -2555,7 +2561,6 @@ class XeFMApp:
         ``None`` means "no editor for this kind of file" and is honored rather
         than falling back. Local files only; directories and remote paths are
         skipped."""
-        targets = self._selected_or_focused(self.active_pane())
         files = []
         for entry in targets:
             if not self._is_local(entry):
@@ -3889,7 +3894,8 @@ class XeFMApp:
                               on_close=self._restore_post_effect if has_effect else None,
                               on_navigate=on_navigate)
         else:
-            show_text_viewer(self.panel, entry, state_manager=self.state_manager)
+            show_text_viewer(self.panel, entry, state_manager=self.state_manager,
+                             on_edit=lambda path: self._edit_entries([path]))
         self.panel.render()
 
     def _restore_post_effect(self) -> None:

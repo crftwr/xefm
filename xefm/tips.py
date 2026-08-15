@@ -250,6 +250,12 @@ TIPS: tuple[tuple[str, str], ...] = (
      "previous selected item, skipping everything in between — handy for "
      "double-checking a scattered selection before a copy or a delete."),
 
+    ("Legacy text encodings",
+     "The text viewer detects a file's encoding automatically — UTF-8 with or "
+     "without BOM, Shift-JIS, EUC-JP, ISO-2022-JP and more — and shows what it "
+     "chose in the header. When a file is detected wrong, {key:change_encoding} "
+     "in the viewer picks the encoding explicitly."),
+
     ("Bugs, ideas, requests",
      "XeFM is developed in the open. Found a bug, or missing a feature? "
      f"Issues and requests are very welcome at {GITHUB_URL}/issues"),

@@ -1,10 +1,12 @@
 # Text Viewer
 
 XeFM has a built-in text viewer for source code, config files, logs, and any
-other UTF-8 (or Latin-1 / CP1252) text. Put the cursor on a file and press `V`
-(or `Enter` on a file with no other `enter` rule) to open it full-window,
-without leaving XeFM. Binary files are detected and show a short placeholder
-instead of mojibake.
+other text. The encoding is detected automatically — UTF-8 with or without
+BOM, Shift-JIS, EUC-JP, ISO-2022-JP, Latin-1 / CP1252 and more, with a manual
+override on `Shift-E` (see [Text Encodings](TEXT_ENCODING_FEATURE.md)). Put the
+cursor on a file and press `V` (or `Enter` on a file with no other `enter`
+rule) to open it full-window, without leaving XeFM. Binary files are detected
+and show a short placeholder instead of mojibake.
 
 For file types with a richer renderer — Markdown especially — the viewer can
 switch between the rendered view and the plain source (see below and
@@ -23,6 +25,8 @@ switch between the rendered view and the plain source (see below and
 | `W` | Toggle line wrapping |
 | `F` | Incremental search — then `↑` / `↓` step between matches |
 | `M` | Toggle rendered / raw view (Markdown and other rich types) |
+| `Shift-E` | Choose the text encoding (Auto / explicit) |
+| `E` | Edit the viewed file in the configured editor |
 | `Cmd`/`Ctrl` + `C` | Copy the current selection |
 | `Cmd`/`Ctrl` + `A` | Select the whole file |
 | `?` | Key help |
@@ -78,6 +82,7 @@ a plain editor gets the plain text. See
 
 ## See also
 
+- [Text Encodings](TEXT_ENCODING_FEATURE.md) — automatic detection and the manual picker
 - [Markdown Viewer](MARKDOWN_VIEWER_FEATURE.md) — the rendered view for `.md` files
 - [JSON & CSV Viewers](JSON_CSV_VIEWERS_FEATURE.md) — structured views for data files
 - [Image Viewer](IMAGE_VIEWER_FEATURE.md) — the viewer for images

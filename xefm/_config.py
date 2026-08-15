@@ -62,6 +62,15 @@ class Config:
 
     FONT_SIZE = 12  # point size for both faces (8-72)
 
+    # Text viewer: the encodings offered by the viewer's encoding picker (the
+    # 'change_encoding' action, E). Automatic detection — UTF-8 with or without
+    # BOM, UTF-16/32 by BOM, Shift-JIS, EUC-JP, ISO-2022-JP, CP1252 — is built
+    # in and always the default; this list only feeds the manual picker, for
+    # when detection gets a file wrong. Any Python codec name works here
+    # (e.g. 'koi8-r', 'gb2312', 'utf-16-le'):
+    # https://docs.python.org/3/library/codecs.html#standard-encodings
+    TEXT_ENCODINGS = ['utf-8', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
+
     # Display settings
     SHOW_HIDDEN_FILES = False
     DEFAULT_LEFT_PANE_RATIO = 0.5  # 0.1 to 0.9
@@ -280,7 +289,7 @@ class Config:
         
         # === File Viewing & Editing ===
         'view_file': ['V'],                    # View file using configured viewer
-        'edit_file': ['E'],                    # Edit selected file with configured text editor
+        'edit_file': ['E'],                    # Edit selected file with configured text editor (also inside the text viewer)
         'file_details': ['I'],                 # Show detailed file information dialog
         
         # === File Comparison ===
@@ -339,6 +348,11 @@ class Config:
         # only); in an open viewer it toggles the raw text view and the file
         # type's rich renderer (Markdown for *.md), matched by name in-context.
         'toggle_view_mode': ['M'],             # Text viewer: toggle rendered (Markdown) / raw text
+        # 'Shift-E' likewise shares with 'create_file' (file list only); in the
+        # text viewer it opens the encoding picker — Auto plus the
+        # TEXT_ENCODINGS list above. Plain 'E' (edit_file, defined under File
+        # Operations) works inside the text viewer too, editing the viewed file.
+        'change_encoding': ['Shift-E'],        # Text viewer: choose the text encoding (auto / explicit)
 
         # === Image Viewer ===
         # Image-viewer-only actions, matched by name in-context like the text
