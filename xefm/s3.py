@@ -1192,18 +1192,23 @@ class S3PathImpl(PathImpl):
             raise OSError("Cannot remove S3 bucket using rmdir. Use AWS CLI or boto3 directly.")
         
         try:
-            # Check if directory is empty
+            # Check if directory is empty. The directory's own zero-byte marker
+            # object (key == the prefix itself) doesn't count as content — it is
+            # exactly what this method deletes below. StartAfter=prefix skips it
+            # and nothing else, since the marker is lexicographically the first
+            # possible key under its own prefix.
+            directory_key = self._key.rstrip('/') + '/'
             response = self._client.list_objects_v2(
                 Bucket=self._bucket,
-                Prefix=self._key.rstrip('/') + '/',
+                Prefix=directory_key,
+                StartAfter=directory_key,
                 MaxKeys=1
             )
-            
+
             if response.get('KeyCount', 0) > 0:
                 raise OSError(f"Directory not empty: {self._uri}")
-            
+
             # Remove directory marker if it exists
-            directory_key = self._key.rstrip('/') + '/'
             try:
                 self._client.delete_object(Bucket=self._bucket, Key=directory_key)
                 # Invalidate cache after directory removal
