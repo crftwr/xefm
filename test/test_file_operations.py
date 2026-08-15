@@ -119,15 +119,16 @@ def _fake_devices(monkeypatch, other_root):
 
 
 def _record_byte_progress(monkeypatch):
-    """Capture every ``(copied, total)`` the engine reports for the current file."""
+    """Capture every ``(copied, total)`` the engine reports into a file's
+    transfer slot."""
     seen = []
-    original = ProgressManager.update_file_byte_progress
+    original = ProgressManager.file_bytes
 
-    def spy(self, copied, total, item=None):
+    def spy(self, slot, copied, total=None):
         seen.append((copied, total))
-        original(self, copied, total, item)
+        original(self, slot, copied, total)
 
-    monkeypatch.setattr(ProgressManager, "update_file_byte_progress", spy)
+    monkeypatch.setattr(ProgressManager, "file_bytes", spy)
     return seen
 
 
@@ -655,6 +656,7 @@ class _RecordingCtx:
         self.theme = None
         self.texts = []
         self.children = []
+        self.child_hints = []
 
     def measure_text(self, text, style=None):
         return float(display_width(text))
@@ -667,6 +669,7 @@ class _RecordingCtx:
 
     def draw_child(self, child, x, y, w, h, **kw):
         self.children.append((child, x, y, w, h))
+        self.child_hints.append(kw.get("hints"))
 
 
 def _draw_item(item, w=70.0):
@@ -754,8 +757,8 @@ def _settled_dialog_rows(profile, screen_h=30):
         rows = backend.snapshot()
         top = next((i for i, r in enumerate(rows) if "┌" in r), None)
         bottom = next((i for i, r in enumerate(rows) if "└" in r), None)
-        if top is not None and bottom is not None and bottom - top == 7:
-            return rows  # the full 8-row box
+        if top is not None and bottom is not None and bottom - top == 9:
+            return rows  # the full 10-row box
         time.sleep(0.002)
     raise AssertionError("the progress dialog never reached its full size")
 
@@ -771,6 +774,86 @@ def test_progress_dialog_draws_the_byte_bar_inside_its_frame(profile, screen_h):
     label_row = next(r for r in rows if "1.0M / 4.0M" in r)
     assert "└" not in label_row and "┘" not in label_row
     assert label_row.strip().startswith("│")  # inside the frame, not over it
+
+
+def test_progress_dialog_separates_summary_from_file_rows():
+    """A blank line sits between the operation summary (bar + counts) and the
+    per-file rows, so the two parts read separately on the grid backends too."""
+    task = Task("Copy…")
+    task.progress.start_operation(OperationType.COPY, 0, description="")
+    task.progress.update_operation_total(4)
+    task.progress.file_begin("a.bin")
+    ctx = _RecordingCtx(h=10.0)
+    ProgressDialog(task).draw(ctx)
+    label_y = next(y for _x, y, t in ctx.texts if "items" in t)
+    row_y = next(y for _x, y, t in ctx.texts if t == "a.bin")
+    assert row_y - label_y >= 2.0  # at least one whole empty grid row between
+
+
+class _PopupTheme:
+    popup_bg = (240, 240, 240)
+    popup_border = (60, 60, 60)
+
+
+def test_progress_dialog_children_carry_the_popup_surface():
+    """A grid backend paints an unbackgrounded glyph run on the *terminal
+    default* background, so the bars and the spinner must be handed the popup
+    surface explicitly — a light theme otherwise shows dark strips through the
+    dialog."""
+    surface = {"bg": _PopupTheme.popup_bg}
+    task = Task("Copy…")
+    task.progress.start_operation(OperationType.COPY, 0, description="")
+    dialog = ProgressDialog(task)
+
+    ctx = _RecordingCtx(h=10.0)
+    ctx.theme = _PopupTheme()
+    dialog.draw(ctx)  # counting phase → the busy spinner
+    assert ctx.child_hints == [surface]
+
+    task.progress.update_operation_total(4)
+    task.progress.update_progress("big.bin", processed_items=1)
+    task.progress.update_file_byte_progress(1024 * 1024, 4 * 1024 * 1024)
+    ctx = _RecordingCtx(h=10.0)
+    ctx.theme = _PopupTheme()
+    dialog.draw(ctx)  # single-file layout → the items bar and the byte bar
+    assert ctx.child_hints == [surface, surface]
+
+    task.progress.file_begin("worker.bin")
+    ctx = _RecordingCtx(h=10.0)
+    ctx.theme = _PopupTheme()
+    dialog.draw(ctx)  # transfers layout → the primary bar
+    assert ctx.child_hints == [surface]
+
+
+def test_progress_dialog_shows_a_row_per_inflight_file():
+    """Parallel copies (issue #268): each in-flight file gets its own row with
+    its own byte counts — all four worker rows inside the frame — and the
+    summary line carries the operation-wide bytes next to a count of files that
+    have actually *finished*, not merely started."""
+    backend, panel = _panel()
+    task = Task("Copy…")
+    task.progress.start_operation(OperationType.COPY, 0, description="")
+    task.progress.update_operation_total(10, total_bytes=16 * 1024 * 1024)
+    names = ["alpha.bin", "beta.bin", "gamma.bin", "delta.bin"]
+    for i, n in enumerate(names):
+        slot = task.progress.file_begin(n)
+        task.progress.file_bytes(slot, (i + 1) * 1024 * 1024, 4 * 1024 * 1024)
+    ProgressDialog(task).show(panel)
+    rows = []
+    for _ in range(300):
+        backend.run_animation_ticks()
+        panel.render()
+        rows = backend.snapshot()
+        if "delta.bin" in "\n".join(rows):
+            break
+        time.sleep(0.002)
+    screen = "\n".join(rows)
+    assert "0 / 10 items" in screen            # four files *started* is not 4 done
+    assert "10.0M / 16.0M" in screen           # the operation-wide byte counts
+    for i, n in enumerate(names):
+        row = next(r for r in rows if n in r)
+        assert f"{i + 1}.0M / 4.0M" in row     # each file's own bytes, on its row
+        assert "└" not in row and "┘" not in row  # inside the frame, not over it
 
 
 def test_progress_dialog_renders_the_abbreviated_name_on_a_real_panel():

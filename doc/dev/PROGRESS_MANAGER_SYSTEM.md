@@ -47,9 +47,16 @@ class OperationType(Enum):
 ProgressManager(config=None)          # builds its own spinner ProgressAnimator
 
 start_operation(operation_type, total_items, description="", progress_callback=None)
-update_operation_total(total_items, description="")   # ends the "counting" phase
+update_operation_total(total_items, description="", total_bytes=0)  # ends "counting"
 update_progress(current_item, processed_items=None)   # None → auto-increment
-update_file_byte_progress(bytes_copied, bytes_total)  # per-file byte bar
+update_file_byte_progress(bytes_copied, bytes_total)  # single-current-file byte bar
+
+# Per-file transfer slots — the copy engine's path (parallel-safe):
+file_begin(item, total_bytes=0) -> slot   # claim a row; does NOT count the item
+file_bytes(slot, copied, total=None)      # cumulative; delta feeds processed_bytes
+file_end(slot)                            # count the item; credit unstreamed bytes
+get_transfers() -> [(slot, state), ...]   # locked snapshot for the dialog rows
+
 refresh_animation()                                   # force a callback (no data change)
 increment_errors()                                    # bump the error counter
 finish_operation()                                    # clears state; callback(None)
@@ -71,7 +78,8 @@ Notes on the real shapes (these differ from older drafts):
   error list.
 - The current operation is a plain dict with keys: `type`, `total_items`,
   `processed_items`, `current_item`, `description`, `errors`,
-  `file_bytes_copied`, `file_bytes_total`, `counting`.
+  `file_bytes_copied`, `file_bytes_total`, `counting`, `total_bytes`,
+  `processed_bytes`, `transfers`.
 
 ### Two-phase progress: counting then determinate
 
@@ -86,6 +94,38 @@ clears `counting` as a safety net.
 `update_file_byte_progress(copied, total)` feeds a secondary bar for the current
 file. It is only surfaced for files larger than 1 MiB (`file_bytes_total > 1024*1024`),
 rendered compactly (e.g. `[15M/32.0G]`); small files show no byte bar.
+
+### Transfer slots (the copy engine's path, issue #268)
+
+The copy engine — sequential or parallel — reports each file through a **slot**
+instead of the single current-file fields:
+
+- `file_begin(item)` claims the lowest free slot and names it. It does **not**
+  advance `processed_items`; four workers starting four files no longer reads
+  as 4/5 done.
+- `file_bytes(slot, copied, total)` takes *cumulative* bytes for that file; the
+  growth since the last report accumulates into the operation-wide
+  `processed_bytes`. Each slot owns its own counts, so concurrent workers never
+  fight over one bar. While the slot's file is still the most recently begun
+  one, the legacy `file_bytes_*` fields mirror it for the flat-text renderers.
+- `file_end(slot)` counts the item as processed and credits any bytes the copy
+  path never streamed (a one-shot small file, an instant clone, a skip), so
+  `processed_bytes` reaches `total_bytes` however the file traveled.
+
+A finished file stays in its slot (`done: True`) until the worker's next
+`file_begin` reuses it — `ProgressDialog` keys its per-transfer rows by slot, so
+rows update in place instead of blinking. `get_transfers()` returns a snapshot
+copied under the manager's lock for exactly that consumer.
+
+### The progress percentage is weighted by bytes
+
+`get_progress_percentage()` computes
+`(processed_bytes + W·processed_items) / (total_bytes + W·total_items)` with
+`W = _ITEM_WEIGHT` (8 KiB per item). Operations that never report byte totals
+(delete, archives) reduce to the old pure item ratio; for copies, one 4 GiB
+file among a dozen small ones holds the bar back for the time it will actually
+take. `update_operation_total(..., total_bytes=...)` supplies the denominator —
+the counting pass already measures it.
 
 ### Rendering
 
@@ -146,11 +186,14 @@ the boundary.
   answer — so prompts appear sequentially. Choices: skip, overwrite, keep-both
   (a fresh ` (N)` name), or cancel.
 - **Count** the surviving plan recursively (`_count` / `_count_node`) to get
-  `total_items`, then `prog.update_operation_total(total_items)` to leave the
-  "Preparing…" phase.
+  `total_items` *and* `total_bytes`, then
+  `prog.update_operation_total(total_items, total_bytes=...)` to leave the
+  "Preparing…" phase (delete passes 0 bytes — it never reports any).
 - **Execute** each top-level target. Before each unit, `task.checkpoint()` raises
-  `Cancelled` if cancellation was requested. `prog.update_progress(name)` marks
-  the current entry.
+  `Cancelled` if cancellation was requested. Directories and deletes use
+  `prog.update_progress(name)`; each file runs inside a
+  `file_begin` … `file_bytes` … `file_end` slot, counting toward the item total
+  only when it finishes.
 
 ### Byte-level copy
 
@@ -158,11 +201,14 @@ the boundary.
 (`size >= 1 MiB`) or crosses storage backends; otherwise it uses a plain
 `copy_to`. A move to another *filesystem* reaches this path too — it is not a
 rename, so `_is_atomic_move` sends it down the copy tree and each large file
-drives the byte bar (see [File Operations System](FILE_OPERATIONS_SYSTEM.md)). For local large files it copies in 1 MiB chunks, calling
-`prog.update_file_byte_progress(copied, size)` per chunk and checkpointing between
+drives its byte row (see [File Operations System](FILE_OPERATIONS_SYSTEM.md)). For local large files it copies in 1 MiB chunks, calling
+`prog.file_bytes(slot, copied, size)` per chunk and checkpointing between
 chunks (a cancel deletes the partial file so no stub is left). Cross-storage
-copies delegate to `Path.copy_to(..., progress_callback=prog.update_file_byte_progress)`,
-letting the backend drive the same byte bar.
+copies delegate to `Path.copy_to(...)` with a progress callback that forwards
+cumulative counts into the same slot (and doubles as the cancel checkpoint —
+`_remote_progress`). Files that move in one call — a small `copy_to`, an APFS
+clone, a skip over an existing file — report nothing along the way; `file_end`
+credits their full size so the aggregate bar stays honest.
 
 ### Errors and cancellation
 

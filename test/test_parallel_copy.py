@@ -119,12 +119,12 @@ def test_large_copy_reports_a_full_byte_bar(tmp_path, svc, monkeypatch):
     """Whether the file cloned (instant) or streamed, a >=1 MiB copy ends with
     the byte bar full — the dialog never shows a large file finishing at 0%."""
     seen = []
-    original = ProgressManager.update_file_byte_progress
+    original = ProgressManager.file_bytes
 
-    def spy(self, copied, total, item=None):
+    def spy(self, slot, copied, total=None):
         seen.append((copied, total))
-        original(self, copied, total, item)
-    monkeypatch.setattr(ProgressManager, "update_file_byte_progress", spy)
+        original(self, slot, copied, total)
+    monkeypatch.setattr(ProgressManager, "file_bytes", spy)
 
     src, dst = tmp_path / "s", tmp_path / "d"
     src.mkdir(); dst.mkdir()
@@ -269,11 +269,11 @@ def test_parallel_cancel_stops_short(tmp_path, svc, monkeypatch):
     calls = {"n": 0}
     original = FileOperationService._copy_file
 
-    def counting(self, task, s, d, overwrite, prog):
+    def counting(self, task, s, d, overwrite, prog, slot):
         calls["n"] += 1
         if calls["n"] == 5:
             task.request_cancel()
-        return original(self, task, s, d, overwrite, prog)
+        return original(self, task, s, d, overwrite, prog, slot)
     monkeypatch.setattr(FileOperationService, "_copy_file", counting)
 
     res = _run_sync(svc, svc.copy, [_P(src / n) for n in names], _P(dst))
@@ -372,15 +372,98 @@ def test_workers_one_takes_the_sequential_path(tmp_path, cfg, monkeypatch):
     assert res["done"] == 5
 
 
-# --- byte-bar ownership under concurrency ---------------------------------------
+# --- per-file transfer slots (issue #268) ----------------------------------------
 
-def test_byte_bar_ignores_a_non_current_file():
+def test_items_are_counted_at_completion_not_start():
+    """The 4/5-at-once illusion: four workers *starting* files must not read as
+    four files done. file_begin leaves the count alone; file_end advances it."""
     pm = ProgressManager()
-    pm.start_operation(OperationType.COPY, 2)
-    pm.update_progress("current.bin")
-    pm.update_file_byte_progress(10, 100, "other.bin")   # a different worker's file
-    assert pm.current_operation["file_bytes_copied"] == 0
-    pm.update_file_byte_progress(10, 100, "current.bin")  # the owner
-    assert pm.current_operation["file_bytes_copied"] == 10
-    pm.update_file_byte_progress(50, 100)                 # untagged: always applies
-    assert pm.current_operation["file_bytes_copied"] == 50
+    pm.start_operation(OperationType.COPY, 0)
+    pm.update_operation_total(5)
+    slots = [pm.file_begin(f"f{i}.bin") for i in range(4)]
+    assert pm.current_operation["processed_items"] == 0
+    pm.file_end(slots[0])
+    assert pm.current_operation["processed_items"] == 1
+
+
+def test_parallel_transfers_each_keep_their_own_bytes():
+    """Concurrent workers report into distinct slots — no worker's bytes are
+    dropped for not being the most recently started file, and every report
+    accumulates into the operation-wide processed_bytes."""
+    pm = ProgressManager()
+    pm.start_operation(OperationType.COPY, 0)
+    pm.update_operation_total(2, total_bytes=300)
+    a = pm.file_begin("a.bin")
+    b = pm.file_begin("b.bin")
+    assert a != b
+    pm.file_bytes(a, 10, 100)
+    pm.file_bytes(b, 20, 200)
+    transfers = dict(pm.get_transfers())
+    assert transfers[a]["item"] == "a.bin" and transfers[a]["copied"] == 10
+    assert transfers[b]["item"] == "b.bin" and transfers[b]["copied"] == 20
+    assert pm.current_operation["processed_bytes"] == 30
+
+
+def test_file_end_credits_unstreamed_bytes():
+    """A skipped, cloned, or one-shot-copied file never streams its bytes; its
+    known size is credited on completion so the byte-weighted bar stays honest."""
+    pm = ProgressManager()
+    pm.start_operation(OperationType.COPY, 0)
+    pm.update_operation_total(1, total_bytes=500)
+    slot = pm.file_begin("small.txt")
+    pm.file_bytes(slot, 0, 500)  # size published, nothing streamed
+    pm.file_end(slot)
+    assert pm.current_operation["processed_bytes"] == 500
+
+
+def test_finished_slots_are_reused_lowest_first():
+    """Dialog rows are keyed by slot: a worker's next file takes the lowest
+    finished slot, so rows update in place instead of marching downwards."""
+    pm = ProgressManager()
+    pm.start_operation(OperationType.COPY, 0)
+    pm.update_operation_total(3)
+    a = pm.file_begin("a.bin")
+    b = pm.file_begin("b.bin")
+    pm.file_end(a)
+    c = pm.file_begin("c.bin")
+    assert c == a  # a's row, taken over
+    assert dict(pm.get_transfers())[a]["item"] == "c.bin"
+    assert not dict(pm.get_transfers())[b]["done"]
+
+
+def test_percentage_is_weighted_by_bytes():
+    """One 800 KiB spread over two items: bytes dominate the bar, and each
+    item adds its fixed _ITEM_WEIGHT so pure-item operations still advance."""
+    from xefm.progress_manager import _ITEM_WEIGHT
+    pm = ProgressManager()
+    pm.start_operation(OperationType.COPY, 0)
+    pm.update_operation_total(2, total_bytes=_ITEM_WEIGHT * 98)
+    slot = pm.file_begin("a.bin")
+    pm.file_bytes(slot, _ITEM_WEIGHT * 49, _ITEM_WEIGHT * 49)
+    assert pm.get_progress_percentage() == 49   # bytes alone, item not done yet
+    pm.file_end(slot)
+    assert pm.get_progress_percentage() == 50   # + one item's fixed weight
+
+
+def test_parallel_copy_accounts_every_byte_and_item(tmp_path, svc, monkeypatch):
+    """End state of a real parallel copy: processed equals total for items and
+    bytes both — nothing double-counted by racing workers, nothing dropped."""
+    final = {}
+    original = ProgressManager.finish_operation
+
+    def capture(self):
+        if self.current_operation:
+            final.update(self.current_operation)
+        original(self)
+    monkeypatch.setattr(ProgressManager, "finish_operation", capture)
+
+    src, dst = tmp_path / "s", tmp_path / "d"
+    src.mkdir(); dst.mkdir()
+    sizes = [i * 977 % (3 * 1024 * 1024) for i in range(40)]  # small and >1MiB mixed
+    for i, n in enumerate(sizes):
+        (src / f"f{i:02d}.bin").write_bytes(b"b" * n)
+    res = _run_sync(svc, svc.copy,
+                    [_P(src / f"f{i:02d}.bin") for i in range(40)], _P(dst))
+    assert res["done"] == 40 and res["errors"] == []
+    assert final["processed_items"] == final["total_items"] == 40
+    assert final["processed_bytes"] == final["total_bytes"] == sum(sizes)

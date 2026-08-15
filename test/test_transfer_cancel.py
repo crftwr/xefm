@@ -407,10 +407,10 @@ class TestRemoteProgressCheckpoint(unittest.TestCase):
 
         task = Task("copy")
         prog = Mock()
-        report = FileOperationService._remote_progress(task, prog)
+        report = FileOperationService._remote_progress(task, prog, 3)
 
         report(512, 2048)
-        prog.update_file_byte_progress.assert_called_once_with(512, 2048, None)
+        prog.file_bytes.assert_called_once_with(3, 512, 2048)
 
         task.request_cancel()
         with self.assertRaises(Cancelled):

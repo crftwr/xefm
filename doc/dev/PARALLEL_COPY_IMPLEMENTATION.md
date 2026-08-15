@@ -73,11 +73,14 @@ keep the semantics identical to the sequential path:
 
 ## Shared-state rules
 
-- `ProgressManager` mutators now hold a lock (several workers increment one
-  `processed_items`). `update_file_byte_progress` takes an `item` tag: the
-  byte bar belongs to whichever file most recently became the current item,
-  and updates tagged with another name are dropped instead of making the bar
-  jump between concurrently streaming files. Untagged updates always apply.
+- `ProgressManager` mutators now hold a lock (several workers report into one
+  operation dict). Each in-flight file claims a **transfer slot**
+  (`file_begin` / `file_bytes` / `file_end`, see
+  [Progress Manager System](PROGRESS_MANAGER_SYSTEM.md)): concurrent workers
+  each drive their own byte row instead of fighting over a single bar, the
+  item count advances when a file *finishes* rather than when a worker picks
+  it up, and every byte lands in the operation-wide `processed_bytes` that
+  weights the primary bar.
 - The `log` sink is wrapped by `_serialized_log` in the parallel path —
   `LogView.append` (line list + wrap cache) is not built for concurrent
   writers.
@@ -91,7 +94,9 @@ keep the semantics identical to the sequential path:
 (content, mtime, copy-on-write independence, overwrite, cross-device
 decline), parallel copy/duplicate/move including per-target failure
 accounting and the move source-retention rule, cancellation mid-batch,
-lost-increment progress accounting, worker-count selection, and byte-bar
-ownership. The pre-existing suites in `test_file_operations.py` run the same
+lost-increment progress accounting, worker-count selection, and the transfer
+slots (count-at-completion, per-slot byte ownership, unstreamed-byte crediting,
+slot reuse, byte-weighted percentage, and whole-operation byte totals). The
+pre-existing suites in `test_file_operations.py` run the same
 engine through both the sequential (single-item) and parallel (multi-item)
 entry conditions.
