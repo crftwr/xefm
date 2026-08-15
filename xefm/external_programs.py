@@ -123,11 +123,53 @@ def build_xefm_env(left_pane, right_pane, current_pane, other_pane):
     }
 
 
-def prefix_prompt_markers(env):
-    """Prefix a ``[XeFM]`` marker onto the shell prompt variables (bash ``PS1``,
-    zsh ``PROMPT``) so a sub-shell visibly reads as nested inside XeFM. Best
-    effort: an rc file that sets its own prompt overwrites this — the docs
-    suggest keying off ``XEFM_ACTIVE`` for that case."""
+#: Shell basenames whose prompt convention we know, mapped to a family. Anything
+#: unrecognized falls back to the platform's own family (see :func:`shell_family`).
+_SHELL_FAMILIES = {
+    'cmd': 'cmd', 'command': 'cmd',
+    'powershell': 'powershell', 'pwsh': 'powershell',
+    'sh': 'posix', 'bash': 'posix', 'zsh': 'posix', 'ksh': 'posix',
+    'dash': 'posix', 'ash': 'posix', 'fish': 'posix', 'csh': 'posix',
+    'tcsh': 'posix', 'busybox': 'posix',
+}
+
+
+def shell_family(command):
+    """Which prompt convention the shell in ``command`` (a list, as passed to
+    ``subprocess``) follows: ``'cmd'``, ``'powershell'`` or ``'posix'``. An
+    unrecognized shell is assumed to follow the platform's own convention."""
+    # Split on both separators regardless of the host: the config that names
+    # C:\Windows\system32\cmd.exe is read on Windows, but the tests for it run
+    # everywhere. A POSIX filename containing a backslash is not worth the
+    # ambiguity here — the only thing riding on this is which prompt variable
+    # gets the marker.
+    name = command[0].replace('\\', '/').rsplit('/', 1)[-1] if command else ''
+    name = os.path.splitext(name)[0].lower()
+    return _SHELL_FAMILIES.get(name,
+                               'cmd' if os.name == 'nt' else 'posix')
+
+
+def prefix_prompt_markers(env, command=None):
+    """Prefix a ``[XeFM]`` marker onto the prompt variable of the shell in
+    ``command`` so a sub-shell visibly reads as nested inside XeFM.
+
+    ``PROMPT`` is claimed by two unrelated shells with incompatible syntaxes —
+    zsh's ``%``-codes and cmd.exe's ``$``-codes — so which default we write has
+    to follow the shell actually being launched, not the variable name: cmd.exe
+    given zsh's default rendered it literally as ``[XeFM] %n@%m:%~%#``.
+    PowerShell builds its prompt from a ``prompt`` function and reads neither
+    variable, so it gets no marker at all.
+
+    Best effort in every case: an rc file (or a ``PROMPT`` set by a cmd
+    ``AutoRun``) that sets its own prompt overwrites this — the docs suggest
+    keying off ``XEFM_ACTIVE`` for that case."""
+    family = shell_family(command)
+    if family == 'powershell':
+        return
+    if family == 'cmd':
+        # cmd.exe's built-in default when PROMPT is unset is "$P$G".
+        env['PROMPT'] = f"[XeFM] {env.get('PROMPT', '') or '$P$G'}"
+        return
     current_ps1 = env.get('PS1', '')
     if current_ps1:
         env['PS1'] = f'[XeFM] {current_ps1}'
@@ -344,7 +386,8 @@ class ExternalProgramManager:
             env.update(build_xefm_env(left_pane, right_pane, current_pane, other_pane))
 
             # Modify shell prompt to include [XeFM] label
-            prefix_prompt_markers(env)
+            shell = env.get('SHELL', '/bin/bash')
+            prefix_prompt_markers(env, [shell])
             
             # Determine working directory for subshell
             # If current pane is browsing a remote directory (like S3), 
@@ -390,7 +433,6 @@ class ExternalProgramManager:
             os.chdir(working_dir)
             
             # Start the shell with the modified environment
-            shell = env.get('SHELL', '/bin/bash')
             subprocess.run([shell], env=env)
             
         except Exception as e:

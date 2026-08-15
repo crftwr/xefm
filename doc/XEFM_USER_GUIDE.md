@@ -405,6 +405,18 @@ A framework that rebuilds the prompt before every command (powerlevel10k,
 starship) overwrites even this; put the marker in its own config instead —
 e.g. starship's `env_var` module, or a custom powerlevel10k segment.
 
+Which variable carries the prefix follows the shell being launched: `cmd.exe`
+reads `PROMPT` in its own `$`-code syntax, so it gets `[XeFM] $P$G` (or your
+existing `PROMPT`, prefixed). PowerShell builds its prompt from a `prompt`
+function that no environment variable can reach, so it gets no prefix — define
+one in your profile keyed off `XEFM_ACTIVE`:
+
+```powershell
+if ($env:XEFM_ACTIVE) {
+  function prompt { "[XeFM] $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }
+}
+```
+
 By default XeFM launches `$SHELL`, falling back to the platform default
 (`cmd.exe` on Windows, `/bin/sh` elsewhere). Override it in
 `~/.xefm/config.py`:

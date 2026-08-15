@@ -150,9 +150,11 @@ future terminal hand-off; not called by the app today.
 | Interaction | Program runs and exits | Full shell session |
 | Use case | Quick operations, scripts | Extended command-line work |
 
-`enter_subshell_mode` additionally sets a `[XeFM]` prefix on `PS1`/`PROMPT` and
-logs snippets the user can add to their shell config to show the marker
-themselves. See [SUBSHELL_SYSTEM.md](SUBSHELL_SYSTEM.md).
+`enter_subshell_mode` additionally sets a `[XeFM]` prefix on the prompt variable
+the launched shell actually reads — `PS1`/`PROMPT` for a POSIX shell, cmd.exe's
+`$`-code `PROMPT` for cmd, nothing for PowerShell — and logs snippets the user
+can add to their shell config to show the marker themselves. See
+[SUBSHELL_SYSTEM.md](SUBSHELL_SYSTEM.md).
 
 ## Authoring external programs
 
