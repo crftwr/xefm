@@ -12,23 +12,27 @@ tint laid over them. Push it with :func:`show_diff_viewer`.
 Config-driven keys resolve through the shared ``KEY_BINDINGS`` (honouring the
 user's rebinds): the ``search`` binding opens the same ``ISearchBar`` overlay the
 main file manager uses (matches highlighted on both sides, ``Up``/``Down`` walk
-them); ``help`` and ``quit`` do the obvious. ↑/↓/PageUp/PageDown/Home/End scroll,
-←/→ scroll horizontally, and ``n``/``N`` jump to the next/previous *change block*
-(viewer-local, independent of search); Esc closes.
+them); the ``edit_file`` binding launches the configured ``TEXT_DIFF`` tool on
+the two files and re-reads them when it returns; ``help`` and ``quit`` do the
+obvious. ↑/↓/PageUp/PageDown/Home/End scroll, ←/→ scroll horizontally, and
+``n``/``N`` jump to the next/previous *change block* (viewer-local, independent
+of search); Esc closes.
 """
 
 from __future__ import annotations
 
 import difflib
+import shlex
+import subprocess
 from typing import Any
 
 from puikit.backend import Style, TextAttribute
 from puikit.event import Event, EventType
 from puikit.panel import Rect
-from puikit.widgets import Splitter
+from puikit.widgets import Splitter, show_message_box
 from puikit.widgets.base import Widget
 
-from xefm.config import is_action_for_event, keys_label_for_action
+from xefm.config import get_config, is_action_for_event, keys_label_for_action
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.isearch_bar import ViewerISearch
@@ -292,8 +296,12 @@ class DiffViewer(Widget):
         EventType.MOUSE_CLICK, EventType.MOUSE_DRAG,
     })
 
-    def __init__(self, path1, path2, *, syntax: dict | None = None):
+    def __init__(self, path1, path2, *, syntax: dict | None = None, on_edited=None):
         self.path1, self.path2 = path1, path2
+        # ``syntax`` is kept so a reload after the external TEXT_DIFF tool can
+        # re-highlight; ``on_edited`` tells the opener the files may have changed.
+        self._syntax = syntax
+        self._on_edited = on_edited
         self.lines1, _, _ = _read_lines(path1)
         self.lines2, _, _ = _read_lines(path2)
         self.hl1 = _highlight(self.lines1, path1, syntax)
@@ -368,6 +376,56 @@ class DiffViewer(Widget):
             nxt = next((b for b in reversed(self.blocks) if b < cur), self.blocks[-1])
         self.top = float(nxt)
         self._clamp()
+
+    # --- external edit -------------------------------------------------------
+
+    def _notify(self, message: str) -> None:
+        if self._panel is not None:
+            show_message_box(self._panel, message, title="File Diff", icon="info",
+                             z=self._child_z)
+
+    def _reload(self) -> None:
+        """Re-read both sides and recompute the highlights and diff (after the
+        external tool returns), keeping the scroll clamped to the new rows."""
+        self.lines1, _, _ = _read_lines(self.path1)
+        self.lines2, _, _ = _read_lines(self.path2)
+        self.hl1 = _highlight(self.lines1, self.path1, self._syntax)
+        self.hl2 = _highlight(self.lines2, self.path2, self._syntax)
+        self.rows, self.blocks = compute_diff(self.lines1, self.lines2)
+        self._max_line = max((len(line) for line in self.lines1 + self.lines2), default=0)
+        self._clear_search()
+        self._clamp()
+
+    def _edit_in_tool(self) -> None:
+        """Launch the configured ``TEXT_DIFF`` tool (e.g. ``vimdiff`` / ``code
+        --diff``) on the two compared files so the user can edit/merge them (the
+        ``edit_file`` binding), handing the terminal over via the backend
+        suspend/resume, then re-read both sides so the diff shows the result. A
+        GUI tool returns immediately and the reload is a no-op. Local files
+        only."""
+        if "://" in str(self.path1) or "://" in str(self.path2):
+            self._notify("Editing is only available for local files.")
+            return
+        tool = getattr(get_config(), "TEXT_DIFF", None)
+        if not tool:
+            self._notify("No TEXT_DIFF tool is configured.")
+            return
+        argv = (shlex.split(tool) if isinstance(tool, str) else list(tool))
+        argv = argv + [str(self.path1), str(self.path2)]
+        backend = getattr(self._panel, "backend", None)
+        try:
+            with backend.suspended():
+                subprocess.run(argv)
+        except FileNotFoundError:
+            self._notify(f"Command not found: {argv[0]}")
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._notify(f"Diff tool failed: {exc}")
+            return
+        self._reload()
+        if self._on_edited is not None:
+            self._on_edited()
+        self._render()
 
     # --- search --------------------------------------------------------------
 
@@ -502,9 +560,11 @@ class DiffViewer(Widget):
         # is captured so the ISearchBar can pin over it during a search.
         self._footer_rect = (0.0, fy, wu, hu - fy)
         search_k = keys_label_for_action("search", "F")
+        edit_k = keys_label_for_action("edit_file", "E")
         quit_k = keys_label_for_action("quit", "q")
         hint = (f" {len(self.rows)} rows · {len(self.blocks)} changes · "
-                f"n/N jump · {search_k} search · ←→ pan · {quit_k}/Esc close ")
+                f"n/N jump · {search_k} search · {edit_k} edit · ←→ pan · "
+                f"{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
     # --- events --------------------------------------------------------------
@@ -545,6 +605,8 @@ class DiffViewer(Widget):
             self._show_help()
         elif is_action_for_event(event, "search"):
             self._enter_search()
+        elif is_action_for_event(event, "edit_file"):
+            self._edit_in_tool()
         elif key == "down":
             self.top += 1
         elif key == "up":
@@ -579,6 +641,7 @@ class DiffViewer(Widget):
             ("n / N", "next / prev diff block"),
             (keys_label_for_action("search", "F"), "incremental search"),
             ("↑ / ↓ (in search)", "next / prev match"),
+            (keys_label_for_action("edit_file", "E"), "edit both sides in $TEXT_DIFF"),
             ("Drag gutter", "move centre split"),
             (keys_label_for_action("help", "?"), "this help"),
             (keys_label_for_action("quit", "q") + " / Esc", "close"),
@@ -587,9 +650,12 @@ class DiffViewer(Widget):
                       title="File Diff — Keys", z=self._child_z)
 
 
-def show_diff_viewer(panel: Any, path1, path2, z: int = 80) -> DiffViewer:
-    """Push a full-window modal :class:`DiffViewer` comparing two files."""
-    viewer = DiffViewer(path1, path2, syntax=_syntax_palette(panel))
+def show_diff_viewer(panel: Any, path1, path2, z: int = 80, on_edited=None) -> DiffViewer:
+    """Push a full-window modal :class:`DiffViewer` comparing two files.
+    ``on_edited`` is called after the external ``TEXT_DIFF`` tool has run (the
+    ``edit_file`` binding), so the opener can refresh anything it derived from
+    the files."""
+    viewer = DiffViewer(path1, path2, syntax=_syntax_palette(panel), on_edited=on_edited)
     sw, sh = panel.backend.size_units
     viewer._panel = panel
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer

@@ -919,7 +919,8 @@ class DirectoryDiffView(Widget):
         if (node is not None and not node.is_directory
                 and node.left_path is not None and node.right_path is not None
                 and self._panel is not None):
-            show_diff_viewer(self._panel, node.left_path, node.right_path, z=self._child_z)
+            show_diff_viewer(self._panel, node.left_path, node.right_path, z=self._child_z,
+                             on_edited=self._restart_scan)
 
     # --- file operations across sides ----------------------------------------
 
@@ -1250,8 +1251,10 @@ class DirectoryDiffView(Widget):
                     f"({self._pct(self._dirs_scanned, self._dirs_total)}%) · "
                     f"{queued} queued · esc cancel ")
         diffs = sum(1 for n in self.visible if n.difference_type in _IS_DIFF)
+        merge_k = self._keys_label("edit_file", "E")
         return (f" {len(self.visible)} nodes · {diffs} differences · "
-                "n/N jump · ←/→ expand · [ ] resize · tab side · enter diff · q close ")
+                f"n/N jump · ←/→ expand · [ ] resize · tab side · enter diff · "
+                f"{merge_k} merge · q close ")
 
     def _details_line(self) -> str:
         """The focused node's size on each side (the details pane, condensed to a
