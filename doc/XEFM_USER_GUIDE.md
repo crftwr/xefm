@@ -381,6 +381,38 @@ TEXT_EDITOR = 'vim'  # or 'nano', 'code', etc.
 
 **See detailed documentation**: [Text Editor Feature](TEXT_EDITOR_FEATURE.md)
 
+### Subshell
+```
+Shift-X  - Open a shell in the current directory (terminal mode only)
+```
+
+Exit the shell to return to XeFM. The shell sees the `XEFM_*` environment
+variables (pane directories and selections) and a `[XeFM]` prompt prefix.
+
+The prefix is passed via the `PS1`/`PROMPT` environment variables, so a shell
+whose startup files set their own prompt overwrites it. zsh always does — on
+macOS, `/etc/zshrc` resets the prompt for every interactive shell, even if you
+have no `~/.zshrc` — so key off `XEFM_ACTIVE` at the **end** of your
+`~/.zshrc` instead:
+
+```zsh
+if [[ -n $XEFM_ACTIVE ]]; then
+  PROMPT="[XeFM] $PROMPT"
+fi
+```
+
+A framework that rebuilds the prompt before every command (powerlevel10k,
+starship) overwrites even this; put the marker in its own config instead —
+e.g. starship's `env_var` module, or a custom powerlevel10k segment.
+
+By default XeFM launches `$SHELL`, falling back to the platform default
+(`cmd.exe` on Windows, `/bin/sh` elsewhere). Override it in
+`~/.xefm/config.py`:
+```python
+SUBSHELL = 'zsh'                     # a single command...
+SUBSHELL = ['powershell', '-NoLogo'] # ...or a command with arguments
+```
+
 ---
 
 ## AWS S3 Integration

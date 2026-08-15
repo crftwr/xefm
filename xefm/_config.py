@@ -447,7 +447,16 @@ class Config:
     # - Terminal mode (curses): vimdiff (string format example)
     # - Desktop mode (coregraphics): code --diff (list format example)
     TEXT_DIFF = ['code', '--diff'] if is_desktop_mode() else 'vimdiff'
-    
+
+    # Subshell settings
+    # Shell launched by the 'subshell' action (Shift-X), terminal mode only.
+    # None: use $SHELL if set, otherwise the platform default
+    # (%COMSPEC% / cmd.exe on Windows, /bin/sh elsewhere).
+    # Supports both string and list formats:
+    # - String format: 'zsh' (single command, no arguments)
+    # - List format: ['powershell', '-NoLogo'] (command with arguments)
+    SUBSHELL = None
+
     # S3 settings
     S3_CACHE_TTL = 60  # S3 cache TTL in seconds (default: 60 seconds)
     

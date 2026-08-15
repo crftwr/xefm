@@ -46,7 +46,9 @@ When you run external programs, XeFM provides information about your current sta
 - `XEFM_THIS_SELECTED` / `XEFM_OTHER_SELECTED` / `XEFM_LEFT_SELECTED` /
   `XEFM_RIGHT_SELECTED`: Selected files in the respective pane
   (space-separated, double-quoted; the focused file when nothing is selected)
-- `XEFM_ACTIVE`: Set to `1` while running under XeFM
+- `XEFM_ACTIVE`: Set to `1` while running under XeFM — shell rc files can key
+  off it, e.g. to mark the subshell prompt (see the Subshell section of the
+  [User Guide](XEFM_USER_GUIDE.md))
 
 Your scripts can use these variables to work with your current selection and location.
 
