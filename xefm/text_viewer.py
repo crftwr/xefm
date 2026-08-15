@@ -31,12 +31,15 @@ from puikit.text import elide, word_bounds
 from puikit.widgets._input import MultiClickTracker
 from puikit.widgets.base import Widget
 
-from xefm.config import (get_keys_for_action, is_action_for_event,
+from xefm.choice_dialog import show_choice_dialog
+from xefm.config import (get_config, get_keys_for_action, is_action_for_event,
                         keys_label_for_action)
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.isearch_bar import ViewerISearch
 from xefm.log_manager import getLogger
 from xefm.text_dialog import keys_markdown, show_markdown
+from xefm.text_encoding import (AUTO_ENCODING, decode_text, encoding_label,
+                               looks_binary_bytes, picker_encodings)
 from xefm.viewer_registry import rich_renderer_for
 
 logger = getLogger("TextViewer")
@@ -240,7 +243,9 @@ def _syntax_fg(token_type, palette: dict) -> tuple[int, int, int] | None:
 
 def looks_binary(path, sample_size: int = 1024) -> bool:
     """Whether ``path`` holds binary content, judged by a NUL byte in its first
-    ``sample_size`` bytes.
+    ``sample_size`` bytes — unless they open with a Unicode BOM: UTF-16/32 text
+    contains NULs by construction, and the BOM already names it text (the
+    viewer decodes it accordingly; see :mod:`xefm.text_encoding`).
 
     Returns False when the file cannot be sampled at all — "unreadable" is not
     "binary", and the caller's own error handling gives a better message than a
@@ -255,46 +260,56 @@ def looks_binary(path, sample_size: int = 1024) -> bool:
             chunk = f.read(sample_size)
     except Exception:
         return False
-    return b"\x00" in chunk
+    return looks_binary_bytes(chunk, sample_size)
 
 
-def _read_lines(path) -> tuple[list[str], bool]:
-    """Read ``path`` into display lines (tabs expanded). Returns ``(lines,
-    is_error)``; a binary file yields a one-line placeholder with error=True."""
-    # Sniff *before* decoding, not after. latin-1 maps all 256 byte values and
-    # so never raises UnicodeDecodeError — any decode loop containing it always
-    # succeeds, which previously left this placeholder unreachable and rendered
-    # binaries as thousands of lines of mojibake.
-    if looks_binary(path):
-        return ["[Binary file — cannot display as text]"], True
-    content = None
-    for encoding in ("utf-8", "latin-1", "cp1252"):
-        try:
-            content = path.read_text(encoding=encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-        except (FileNotFoundError, OSError) as exc:
-            return [f"Error reading file: {exc}"], True
-    if content is None:
-        return ["[Binary file — cannot display as text]"], True
-    return [_expand_tabs(line) for line in content.splitlines()], False
+def _read_lines(path, encoding: str | None = None) -> tuple[list[str], bool, str]:
+    """Read ``path`` into display lines (tabs expanded), decoded per
+    ``encoding`` — ``None`` auto-detects (see :mod:`xefm.text_encoding`), a
+    codec name forces it (the viewer's encoding picker). Returns ``(lines,
+    is_error, encoding_label)``; the label names what was actually used (""
+    on error / binary).
+
+    A binary file yields a one-line placeholder with error=True — sniffed
+    *before* decoding, not after: the decode chain ends in a codec that maps
+    every byte value and never fails, so "did decoding fail" can't be the
+    binary test. An explicit ``encoding`` bypasses the sniff and shows the
+    bytes as text: the override exists precisely for a file the sniff got
+    wrong (BOM-less UTF-16 being the canonical case).
+    """
+    try:
+        with path.open("rb") as f:
+            data = f.read()
+    except (FileNotFoundError, OSError) as exc:
+        return [f"Error reading file: {exc}"], True, ""
+    if encoding is None and looks_binary_bytes(data):
+        return ["[Binary file — cannot display as text]"], True, ""
+    content, label = decode_text(data, encoding)
+    return [_expand_tabs(line) for line in content.splitlines()], False, label
 
 
-def _read_source(path) -> str | None:
+def _read_source(path, encoding: str | None = None) -> str | None:
     """Read ``path`` as raw text (tabs and line endings intact) for a rich
-    renderer, trying the same encodings as :func:`_read_lines`. Returns ``None``
-    when it can't be read at all (missing / OS error); a binary file still
-    decodes via the latin-1 fallback, so the renderer — not this reader — decides
-    what to make of it."""
-    for encoding in ("utf-8", "latin-1", "cp1252"):
-        try:
-            return path.read_text(encoding=encoding)
-        except UnicodeDecodeError:
-            continue
-        except (FileNotFoundError, OSError):
-            return None
-    return None
+    renderer, decoded like :func:`_read_lines` (auto-detect unless ``encoding``
+    forces a codec). Returns ``None`` when it can't be read at all (missing /
+    OS error); a binary file still decodes via the latin-1 tail, so the
+    renderer — not this reader — decides what to make of it."""
+    try:
+        with path.open("rb") as f:
+            data = f.read()
+    except (FileNotFoundError, OSError):
+        return None
+    return decode_text(data, encoding)[0]
+
+
+def _encoding_rows(names: list[str], detected: str | None) -> list[tuple[str, str]]:
+    """The encoding picker's ``(value, label)`` rows: **Auto** first — naming
+    what detection chose when known, so the picker doubles as an indicator —
+    then one row per configured codec name (``Config.TEXT_ENCODINGS``, already
+    filtered via :func:`xefm.text_encoding.picker_encodings`)."""
+    auto_label = f"Auto  ({detected})" if detected else "Auto"
+    return [(AUTO_ENCODING, auto_label)] + \
+        [(name, encoding_label(name)) for name in names]
 
 
 def _highlight(lines: list[str], path, palette: dict | None = None) -> list[list[tuple[str, Any]]]:
@@ -503,9 +518,20 @@ class TextViewer(Widget):
     text_effect = {"kind": "scatter", "flash": 0.10,
                    "stagger_ms": 0, "max_rows": 0}
 
-    def __init__(self, path, *, syntax: dict | None = None, state_manager=None):
+    def __init__(self, path, *, syntax: dict | None = None, state_manager=None,
+                 on_edit=None):
         self.path = path
-        self.lines, self.is_error = _read_lines(path)
+        self._syntax = syntax
+        # ``on_edit`` is the app's editor machinery (associations +
+        # TEXT_EDITOR), called with the viewed path on the ``edit_file``
+        # binding; ``None`` (a bare-constructed viewer) hides the action.
+        self._on_edit = on_edit
+        # ``forced_encoding`` is the picker's override (None = auto-detect,
+        # issue #289); ``encoding`` labels what was actually used, shown in the
+        # header. Viewer-local, deliberately not persisted: a wrong detection
+        # is per-file, not a preference.
+        self.forced_encoding: str | None = None
+        self.lines, self.is_error, self.encoding = _read_lines(path)
         self.highlighted = _highlight(self.lines, path, syntax)
         # Optional rich (formatted) renderer for this file type — Markdown for
         # *.md today (see xefm.viewer_registry). When a renderer exists,
@@ -734,11 +760,13 @@ class TextViewer(Widget):
         ctx.draw_text(pad_x, pad_y, elide(header, iw, where="end", measure=ctx.measure_text),
                       Style(fg=accent, bg=header_bg, attr=TextAttribute.BOLD))
         # The right-aligned tag names the current view: the rendered renderer's
-        # name in rich mode, the line position (+ WRAP) in raw text mode.
+        # name in rich mode, the encoding + line position (+ WRAP) in raw text
+        # mode. The encoding label is empty on the error/binary placeholder.
         if self.mode == "rich" and self._rich_widget is not None:
             info = f"{self._rich.name} "
         else:
-            info = f"{pos}/{total}  {'WRAP' if self.wrap else ''} "
+            enc = f"{self.encoding}  " if self.encoding else ""
+            info = f"{enc}{pos}/{total}  {'WRAP' if self.wrap else ''} "
         ctx.draw_text(max(pad_x, wu - pad_x - len(info)), pad_y, info, Style(fg=muted, bg=header_bg))
 
         self._bg, self._text_fg, self._muted = bg, text_fg, muted
@@ -800,16 +828,19 @@ class TextViewer(Widget):
         self._footer_rect = (0.0, fy, wu, hu - fy)
         wrap_k = keys_label_for_action("toggle_wrap", "w")
         search_k = keys_label_for_action("search", "F")
+        enc_k = keys_label_for_action("change_encoding", "Shift-E")
         quit_k = keys_label_for_action("quit", "q")
+        edit_seg = self._edit_hint_segment()
         # When a rich renderer exists, advertise the toggle to it (e.g. "M markdown");
         # elide handles the longer hint on a narrow window.
         if self._rich is not None:
             view_k = keys_label_for_action("toggle_view_mode", "M")
             hint = (f" ↑↓ scroll · {wrap_k} wrap · {search_k} search · "
-                    f"{view_k} {self._rich.name.lower()} · {quit_k}/Esc close ")
+                    f"{view_k} {self._rich.name.lower()} · {enc_k} encoding · "
+                    f"{edit_seg}{quit_k}/Esc close ")
         else:
             hint = (f" ↑↓ scroll · ←→ pan · {wrap_k} wrap · {search_k} search · "
-                    f"{quit_k}/Esc close ")
+                    f"{enc_k} encoding · {edit_seg}{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
     def _draw_rich(self, ctx, wu, hu, pad_x, pad_y, iw, head_h) -> None:
@@ -825,9 +856,10 @@ class TextViewer(Widget):
         self._footer_rect = (0.0, fy, wu, hu - fy)
         view_k = keys_label_for_action("toggle_view_mode", "M")
         search_k = keys_label_for_action("search", "F")
+        enc_k = keys_label_for_action("change_encoding", "Shift-E")
         quit_k = keys_label_for_action("quit", "q")
         hint = (f" ↑↓ scroll · {search_k} search · {view_k} raw text · "
-                f"{quit_k}/Esc close ")
+                f"{enc_k} encoding · {self._edit_hint_segment()}{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
     def _draw_rows(self, ctx) -> None:
@@ -964,7 +996,7 @@ class TextViewer(Widget):
             return False
         if self._rich_widget is not None:
             return True
-        source = _read_source(self.path)
+        source = _read_source(self.path, self.forced_encoding)
         if source is None:
             logger.warning(f"Cannot render {self.path.name}: unreadable as text")
             return False
@@ -1072,6 +1104,18 @@ class TextViewer(Widget):
         # viewer drives the shared bar and delegates to the renderer's match set).
         if is_action_for_event(event, "search"):
             self._enter_search()
+            return True
+        # The encoding picker applies in both modes too — re-decoding rebuilds
+        # the raw lines and the rich renderer's source alike.
+        if self._encoding_pressed(event):
+            self._change_encoding()
+            return True
+        # So does editing: the viewed file goes to the app's editor machinery
+        # (associations + TEXT_EDITOR), then the viewer re-reads it. A terminal
+        # editor runs synchronously via suspend/resume, so the reload shows its
+        # result; a GUI editor returns immediately and the reload is a no-op.
+        if self._on_edit is not None and is_action_for_event(event, "edit_file"):
+            self._edit_file()
             return True
         # Rich mode: the embedded renderer owns navigation (arrows / page / home /
         # end / in-document link jumps); forward and let it repaint. Line-wrap is
@@ -1194,6 +1238,78 @@ class TextViewer(Widget):
             return True
         return not get_keys_for_action("toggle_view_mode")[0] and event.char == "m"
 
+    def _encoding_pressed(self, event: Event) -> bool:
+        """Whether ``event`` opens the encoding picker — the ``change_encoding``
+        binding, with a literal ``Shift-E`` fallback for user configs predating
+        that action (merged from an older template, so their ``KEY_BINDINGS``
+        has no ``change_encoding`` entry). The fallback is the *shifted* char:
+        plain ``e`` is ``edit_file``, in the viewer too."""
+        if is_action_for_event(event, "change_encoding"):
+            return True
+        return not get_keys_for_action("change_encoding")[0] and event.char == "E"
+
+    def _change_encoding(self) -> None:
+        """Open the encoding picker (the ``change_encoding`` action, issue
+        #289): Auto or an explicit codec from ``Config.TEXT_ENCODINGS``,
+        applied via :meth:`_apply_encoding`. The picker seeds on the choice in
+        effect and its Auto row names what detection chose, so it doubles as an
+        indicator."""
+        if self._panel is None:
+            return
+        names = picker_encodings(getattr(get_config(), "TEXT_ENCODINGS", None))
+        detected = (self.encoding or None) if self.forced_encoding is None else None
+        show_choice_dialog(
+            self._panel, "Encoding", _encoding_rows(names, detected),
+            current=self.forced_encoding if self.forced_encoding is not None
+            else AUTO_ENCODING,
+            on_result=self._apply_encoding, z=self._child_z)
+
+    def _apply_encoding(self, choice: str | None) -> None:
+        """The picker's result: ``None`` = cancelled (keep everything),
+        ``AUTO_ENCODING`` = return to detection, else the codec name to force."""
+        if choice is None:
+            return
+        forced = None if choice == AUTO_ENCODING else choice
+        if forced == self.forced_encoding:
+            return
+        self.forced_encoding = forced
+        self._reload_text()
+
+    def _reload_text(self) -> None:
+        """Re-read the file (honouring the encoding override) and rebuild
+        everything derived from its text — after an encoding change or an
+        editor run. The scroll position is kept (clamped); the selection and
+        search chrome are dropped — their line/column coordinates described
+        the old text; the cached rich widget is discarded so a rendered view
+        rebuilds from the re-read source on its next draw."""
+        self.lines, self.is_error, self.encoding = _read_lines(self.path,
+                                                               self.forced_encoding)
+        self.highlighted = _highlight(self.lines, self.path, self._syntax)
+        self._max_line = max((len(line) for line in self.lines), default=0)
+        self._wrap_w = -1  # the wrap layout cache derives from the old lines
+        self._sel.clear()
+        self._clear_search()
+        self._rich_widget = None
+        self._clamp()
+        self._render()
+
+    def _edit_hint_segment(self) -> str:
+        """The footer's ``edit`` hint (with trailing separator), or empty for a
+        viewer constructed without editor machinery."""
+        if self._on_edit is None:
+            return ""
+        return f"{keys_label_for_action('edit_file', 'E')} edit · "
+
+    def _edit_file(self) -> None:
+        """Hand the viewed file to the app's editor machinery (the
+        ``edit_file`` action — same key as the file list's), then re-read it so
+        a terminal editor's changes show the moment it returns."""
+        try:
+            self._on_edit(self.path)
+        except Exception as e:
+            logger.error(f"Editor launch failed for {self.path.name}: {e}")
+        self._reload_text()
+
     def _show_help(self) -> None:
         if self._panel is None:
             return
@@ -1205,7 +1321,11 @@ class TextViewer(Widget):
             (keys_label_for_action("toggle_wrap", "w"), "toggle line wrap"),
             (keys_label_for_action("search", "F"), "incremental search"),
             ("↑ / ↓ (in search)", "next / prev match"),
+            (keys_label_for_action("change_encoding", "Shift-E"), "change text encoding"),
         ]
+        if self._on_edit is not None:
+            rows.append((keys_label_for_action("edit_file", "E"),
+                         "edit in the configured editor"))
         # Only offer the view-mode toggle for a file type that has a rich renderer.
         if self._rich is not None:
             rows.append((keys_label_for_action("toggle_view_mode", "M"),
@@ -1218,15 +1338,18 @@ class TextViewer(Widget):
                       title="Text Viewer — Keys", z=self._child_z)
 
 
-def show_text_viewer(panel: Any, path, z: int = 80, state_manager=None) -> TextViewer:
+def show_text_viewer(panel: Any, path, z: int = 80, state_manager=None,
+                     on_edit=None) -> TextViewer:
     """Push a full-window modal :class:`TextViewer` over ``panel``. The ``reflow``
     callback re-derives the layer rect from the live window size each render, so
     the viewer follows terminal / window resizes. When a ``state_manager`` is
     given, the last view mode chosen for each file type is remembered through it,
     so e.g. Markdown files reopen rendered once you've toggled one (issue #217);
-    without one the viewer just opens raw and persists nothing."""
+    without one the viewer just opens raw and persists nothing. ``on_edit`` is
+    the app's editor launcher (called with the viewed path on the ``edit_file``
+    binding); without one the viewer offers no edit action."""
     viewer = TextViewer(path, syntax=_syntax_palette(panel),
-                        state_manager=state_manager)
+                        state_manager=state_manager, on_edit=on_edit)
     sw, sh = panel.backend.size_units
     viewer._panel = panel
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer

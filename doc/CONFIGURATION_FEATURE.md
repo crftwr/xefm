@@ -119,6 +119,18 @@ Adjust the pane split at runtime with `[` / `]`, and the log-pane height with
 and the date column widens automatically for the longer form. After editing the
 setting, **Tools → Reload Configuration** applies it without restarting.
 
+## Text viewer encodings
+
+```python
+TEXT_ENCODINGS = ['utf-8', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
+```
+
+The encodings offered by the text viewer's manual encoding picker (`Shift-E` in
+the viewer). Automatic detection is built in and always the default; this list only
+feeds the picker, for when detection gets a file wrong. Any
+[Python codec name](https://docs.python.org/3/library/codecs.html#standard-encodings)
+works. See [Text Encodings](TEXT_ENCODING_FEATURE.md).
+
 ## Sorting
 
 ```python

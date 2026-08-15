@@ -66,7 +66,7 @@ class TestLooksBinary:
 
 class TestReadLines:
     def test_binary_yields_one_placeholder_line(self, tmp_file):
-        lines, is_error = _read_lines(tmp_file("img.png", PNG_HEADER + b"\xff" * 900))
+        lines, is_error, _ = _read_lines(tmp_file("img.png", PNG_HEADER + b"\xff" * 900))
         assert lines == [PLACEHOLDER]
         assert is_error is True
 
@@ -74,34 +74,35 @@ class TestReadLines:
         """The actual regression: latin-1 decoded the whole file successfully,
         so thousands of garbage lines reached the viewer."""
         data = PNG_HEADER + bytes(range(256)) * 200
-        lines, _ = _read_lines(tmp_file("big.png", data))
+        lines, _, _ = _read_lines(tmp_file("big.png", data))
         assert len(lines) == 1, f"expected a placeholder, got {len(lines)} lines"
 
     def test_text_still_reads_normally(self, tmp_file):
-        lines, is_error = _read_lines(tmp_file("a.txt", b"one\ntwo\nthree\n"))
+        lines, is_error, _ = _read_lines(tmp_file("a.txt", b"one\ntwo\nthree\n"))
         assert lines == ["one", "two", "three"]
         assert is_error is False
 
     def test_utf8_text_survives(self, tmp_file):
-        lines, is_error = _read_lines(tmp_file("a.txt", "héllo — wörld".encode()))
+        lines, is_error, _ = _read_lines(tmp_file("a.txt", "héllo — wörld".encode()))
         assert lines == ["héllo — wörld"]
         assert is_error is False
 
     def test_latin1_fallback_still_works_for_non_utf8_text(self, tmp_file):
-        """latin-1 remains a useful fallback for genuine text that is not
-        UTF-8; removing it was never the fix. It just must not run first."""
-        lines, is_error = _read_lines(tmp_file("a.txt", b"caf\xe9 cr\xe8me"))
+        """Western single-byte text still decodes (via CP1252, with latin-1 as
+        the never-fails tail of the chain — see xefm.text_encoding); removing
+        that fallback was never the fix. It just must not run first."""
+        lines, is_error, _ = _read_lines(tmp_file("a.txt", b"caf\xe9 cr\xe8me"))
         assert is_error is False
         assert len(lines) == 1
         assert "caf" in lines[0]
 
     def test_empty_file_is_not_an_error(self, tmp_file):
-        lines, is_error = _read_lines(tmp_file("empty.txt", b""))
+        lines, is_error, _ = _read_lines(tmp_file("empty.txt", b""))
         assert is_error is False
         assert lines == []
 
     def test_missing_file_reports_an_error_not_a_placeholder(self, tmp_path):
-        lines, is_error = _read_lines(Path(str(tmp_path / "nope.txt")))
+        lines, is_error, _ = _read_lines(Path(str(tmp_path / "nope.txt")))
         assert is_error is True
         assert lines != [PLACEHOLDER]
         assert "Error reading file" in lines[0]

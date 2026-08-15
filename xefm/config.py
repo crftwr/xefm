@@ -645,6 +645,15 @@ class ConfigManager:
         if config.DEFAULT_SORT_MODE not in ['name', 'ext', 'size', 'date']:
             errors.append("DEFAULT_SORT_MODE must be 'name', 'ext', 'size', or 'date'")
 
+        # Validate the text viewer's encoding picker list. Only the shape is
+        # checked here — an unknown codec name is a per-entry warning when the
+        # picker builds (see xefm.text_encoding.picker_encodings), not a config
+        # error that would block loading.
+        if not isinstance(config.TEXT_ENCODINGS, (list, tuple)) or not all(
+            isinstance(e, str) and e.strip() for e in config.TEXT_ENCODINGS
+        ):
+            errors.append("TEXT_ENCODINGS must be a list of non-empty encoding names")
+
         # Validate motion settings
         if not isinstance(config.REDUCED_MOTION, bool):
             errors.append("REDUCED_MOTION must be a boolean")
