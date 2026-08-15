@@ -34,7 +34,8 @@ and asked again per file.
 
 Source: [`xefm/dir_scan.py`](../../xefm/dir_scan.py),
 [`PathImpl.listdir_attrs`](../../xefm/path.py).
-Tests: [`test/test_dir_scan.py`](../../test/test_dir_scan.py).
+Tests: [`test/test_dir_scan.py`](../../test/test_dir_scan.py),
+[`test/test_hidden_files.py`](../../test/test_hidden_files.py).
 
 ---
 
@@ -44,7 +45,8 @@ Every backend returns the same record per entry, so callers never branch on
 platform:
 
 ```python
-{'is_dir': bool, 'is_link': bool, 'size': int, 'mtime': float, 'ok': bool}
+{'is_dir': bool, 'is_link': bool, 'size': int, 'mtime': float,
+ 'hidden': bool, 'ok': bool}
 ```
 
 `is_dir`, `size` and `mtime` describe the **target** of a symlink; `is_link`
@@ -52,6 +54,11 @@ describes the link itself. That is exactly what `stat()`/`is_dir()` and
 `is_symlink()` reported when callers asked per file, so nothing downstream
 changed meaning. `ok` is False when the target could not be stat'd — a broken
 symlink — and the pane renders it as a link with `---` for size and date.
+`hidden` is the exception to `ok`: it describes the directory entry itself, so
+it stays valid for an entry whose target is gone.
+
+`hidden` is the **platform's** mark, not the dot convention — see
+[hidden entries](#hidden-entries) below.
 
 Directories report `size: 0` on every backend. The bulk syscall cannot supply a
 directory's size, and nothing displays or sorts on it (a directory renders as
@@ -89,6 +96,42 @@ no bulk form (S3, SSH, archives) keep working untouched; `LocalPathImpl`
 overrides it with `dir_scan.scan_dir`. S3 already caches its
 `list_objects_v2` response, which carries `Size` and `LastModified`, so the
 bulk-metadata idea has precedent — the local backend was the one asking per file.
+
+---
+
+## Hidden entries
+
+A leading dot hides an entry on POSIX. Windows says the same thing with a file
+attribute and no dot, and XeFM only ever tested the name — so with hidden files
+off, a Windows pane still listed `AppData`, `$Recycle.Bin`,
+`System Volume Information` and every `desktop.ini` (issue #284).
+
+The attribute is part of the record because reading it is free where it exists:
+`DirEntry.stat(follow_symlinks=False)` on Windows is served from the
+enumeration, so the one-pass scan already has it. Elsewhere `hidden` is False
+and costs nothing to fill in.
+
+Two predicates in `dir_scan` put the two conventions together, and every
+consumer of the hidden-files toggle calls one of them:
+
+| Predicate | For a caller holding | Cost |
+|---|---|---|
+| `is_hidden(name, attrs)` | a scan record | none |
+| `is_hidden_path(path)` | only a path | one `lstat`, Windows only |
+
+`FILE_ATTRIBUTE_HIDDEN` alone decides it. `FILE_ATTRIBUTE_SYSTEM` on its own
+sits on folders a user still expects to see — `C:\Windows\Fonts`, a customized
+`Documents` — while everything Explorer calls a *protected operating system
+file* carries HIDDEN as well as SYSTEM. Testing HIDDEN therefore catches
+`pagefile.sys` and `System Volume Information` without swallowing `Fonts`.
+
+`hidden` is read from the entry, never from a symlink's target: a followed
+`stat` describes something else, so `attrs_via_path` and `attrs_for_path` take
+a second `lstat` for links only.
+
+macOS has `UF_HIDDEN`, which Finder honours; `dir_scan` does not read it. The
+bulk record would need `ATTR_CMN_FLAGS`, which shifts every offset in
+`_parse_bulk_entry`, and nothing on macOS commonly carries the flag.
 
 ---
 

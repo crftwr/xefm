@@ -22,13 +22,19 @@ This module answers all four for a whole directory at once:
 
 Every backend returns the same record, so callers never branch on platform::
 
-    {'is_dir': bool, 'is_link': bool, 'size': int, 'mtime': float, 'ok': bool}
+    {'is_dir': bool, 'is_link': bool, 'size': int, 'mtime': float,
+     'hidden': bool, 'ok': bool}
 
 ``is_dir``, ``size`` and ``mtime`` describe the **target** of a symlink, and
 ``is_link`` the link itself — matching what ``stat()``/``is_dir()`` and
 ``is_symlink()`` reported when callers asked per file. ``ok`` is False when the
 target could not be stat'd (a broken symlink); its other fields are then
-meaningless and callers should render the entry as unknown.
+meaningless and callers should render the entry as unknown — except ``hidden``,
+which describes the directory entry itself and stays valid.
+
+``hidden`` is the platform's own mark, which on Windows is a file attribute
+rather than a leading dot in the name (issue #284); :func:`is_hidden` puts the
+two conventions together for the hidden-files toggle.
 """
 
 import os
@@ -39,16 +45,68 @@ from xefm.log_manager import getLogger
 
 logger = getLogger("DirScan")
 
-__all__ = ["scan_dir", "attrs_for_path", "BROKEN_ATTRS"]
+__all__ = ["scan_dir", "attrs_for_path", "is_hidden", "is_hidden_path",
+           "hidden_from_stat", "hidden_of", "BROKEN_ATTRS"]
+
+_WINDOWS = sys.platform == "win32"
+
+#: Windows marks an entry hidden with a file attribute instead of with a
+#: leading dot in its name. ``FILE_ATTRIBUTE_HIDDEN`` alone decides it:
+#: ``FILE_ATTRIBUTE_SYSTEM`` on its own sits on folders a user still expects to
+#: see (``C:\\Windows\\Fonts``, a customized ``Documents``), while everything
+#: Explorer calls a protected operating-system file — ``pagefile.sys``,
+#: ``System Volume Information``, ``$Recycle.Bin`` — carries HIDDEN as well as
+#: SYSTEM, so testing HIDDEN catches those without swallowing the former.
+FILE_ATTRIBUTE_HIDDEN = 0x02
 
 #: What a caller sees for an entry whose target could not be stat'd.
 BROKEN_ATTRS = {'is_dir': False, 'is_link': False, 'size': 0, 'mtime': 0.0,
-                'ok': False}
+                'hidden': False, 'ok': False}
 
 
-def _broken(is_link):
+def _broken(is_link, hidden=False):
     return {'is_dir': False, 'is_link': is_link, 'size': 0, 'mtime': 0.0,
-            'ok': False}
+            'hidden': hidden, 'ok': False}
+
+
+def hidden_from_stat(st) -> bool:
+    """Whether a ``stat_result`` carries the Windows hidden attribute. False
+    everywhere else — no other platform has the field, and there "hidden" is a
+    naming convention that :func:`is_hidden` reads off the name instead.
+
+    The ``or 0`` earns its place: a ``stat_result`` a backend built itself from
+    a plain tuple — the archive backend does — *has* the field on Windows, with
+    None in it."""
+    return bool((getattr(st, 'st_file_attributes', 0) or 0)
+                & FILE_ATTRIBUTE_HIDDEN)
+
+
+def hidden_of(path) -> bool:
+    """The hidden attribute of the entry ``path`` names — the entry itself,
+    never a symlink's target. False on platforms without the attribute, and for
+    anything that cannot be stat'd, a non-local backend's path included:
+    showing an entry we failed to read beats dropping it from the listing."""
+    if not _WINDOWS:
+        return False
+    try:
+        return hidden_from_stat(os.lstat(str(path)))
+    except (OSError, ValueError):
+        return False
+
+
+def is_hidden(name, attrs=None) -> bool:
+    """Whether an entry counts as hidden for the hidden-files toggle: a leading
+    dot — the POSIX convention, honoured on every platform and every backend —
+    or the platform attribute recorded in ``attrs`` (see :func:`scan_dir`)."""
+    return name.startswith('.') or bool(attrs and attrs.get('hidden'))
+
+
+def is_hidden_path(path) -> bool:
+    """:func:`is_hidden` for a caller holding only a path, with no attribute
+    record to consult. Costs one ``lstat`` on Windows; elsewhere the name
+    settles it."""
+    name = getattr(path, 'name', None) or os.path.basename(str(path))
+    return name.startswith('.') or hidden_of(path)
 
 
 def attrs_for_path(path_str, *, is_link=None):
@@ -64,34 +122,50 @@ def attrs_for_path(path_str, *, is_link=None):
     try:
         st = os.stat(path_str)  # follows symlinks
     except (OSError, ValueError):
-        return _broken(is_link)
+        return _broken(is_link, hidden_of(path_str))
     is_dir = stat_mod.S_ISDIR(st.st_mode)
+    # For anything but a link the followed stat *is* the entry's own, so its
+    # attribute answers without a second syscall.
+    hidden = hidden_of(path_str) if is_link else hidden_from_stat(st)
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else st.st_size,
-            'mtime': st.st_mtime, 'ok': True}
+            'mtime': st.st_mtime, 'hidden': hidden, 'ok': True}
 
 
 # ---------------------------------------------------------------------------
 # Portable backend: os.scandir
 # ---------------------------------------------------------------------------
 
+def _hidden_from_direntry(entry):
+    """The entry's own hidden attribute. On Windows the un-followed stat is
+    already in hand from the enumeration, so this costs no syscall; elsewhere
+    there is no attribute to read and the question is free."""
+    if not _WINDOWS:
+        return False
+    try:
+        return hidden_from_stat(entry.stat(follow_symlinks=False))
+    except (OSError, ValueError):
+        return False
+
+
 def _attrs_from_direntry(entry):
     try:
         is_link = entry.is_symlink()
     except OSError:
         is_link = False
+    hidden = _hidden_from_direntry(entry)
     try:
         # Both follow symlinks, and DirEntry caches the stat it takes.
         st = entry.stat()
         is_dir = entry.is_dir()
     except (OSError, ValueError):
-        return _broken(is_link)
+        return _broken(is_link, hidden)
     # Directories report size 0 on every backend: the bulk syscall cannot supply
     # a directory's size, and nothing displays or sorts on it (a directory
     # renders as "<DIR>" and sorts as 0).
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else st.st_size,
-            'mtime': st.st_mtime, 'ok': True}
+            'mtime': st.st_mtime, 'hidden': hidden, 'ok': True}
 
 
 def _scan_scandir(path_str):
@@ -221,9 +295,12 @@ if sys.platform == "darwin":
 
         sec, nsec = struct.unpack_from("<qq", rec, _OFF_MODTIME)
         size = struct.unpack_from("<q", rec, _OFF_DATALENGTH)[0]
+        # 'hidden' is the Windows attribute, which no macOS record carries; a
+        # dot-name is what hides an entry here, and callers read that off the
+        # name (see is_hidden).
         return name, {'is_dir': is_dir, 'is_link': False,
                       'size': 0 if is_dir else size,
-                      'mtime': sec + nsec / 1e9, 'ok': True}
+                      'mtime': sec + nsec / 1e9, 'hidden': False, 'ok': True}
 
 
 # ---------------------------------------------------------------------------

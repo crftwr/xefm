@@ -354,12 +354,15 @@ class SSHPathImpl(PathImpl):
         """Turn one :meth:`SSHConnection.list_directory` record into the
         attribute record :mod:`xefm.dir_scan` describes. As everywhere else in
         this backend, a symlink is reported as the link itself — ``ls`` names
-        the target but does not say what it is."""
+        the target but does not say what it is. ``hidden`` is always False: a
+        remote host has no attribute to report over this protocol, so a dot in
+        the name is the whole of it (see :func:`xefm.dir_scan.is_hidden`)."""
         is_dir = entry.get('is_dir', False)
         return {'is_dir': is_dir,
                 'is_link': entry.get('is_symlink', False),
                 'size': 0 if is_dir else entry.get('size', 0),
                 'mtime': entry.get('mtime', 0.0),
+                'hidden': False,
                 'ok': True}
 
     def glob(self, pattern: str) -> Iterator:

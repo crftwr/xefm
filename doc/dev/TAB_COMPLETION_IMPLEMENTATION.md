@@ -35,6 +35,9 @@ edited.
   dot-entries **unless the token itself starts with `.`** — the shell convention,
   so an explicitly typed dot still reaches `.config` while hidden files are off;
   the app passes the panes' `flm.show_hidden` at each of the five call sites.
+  It also drops entries whose `attrs["hidden"]` is set (the Windows hidden
+  attribute, issue #284) — with no dot-escape, since the attribute has no
+  spelling in the typed token.
   Filesystem errors (`FileNotFoundError`, `PermissionError`, `NotADirectoryError`,
   `OSError`) return `[]` — so a not-yet-existing or non-local path is a no-op, not
   a crash. The completer itself stays synchronous; *threading is the

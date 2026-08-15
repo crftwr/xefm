@@ -225,7 +225,8 @@ When you first run XeFM, you'll see:
 
 ### Display and Visualization
 - **File Information**: Size, date, permissions display
-- **Hidden Files Toggle**: Show/hide hidden files with '.' key
+- **Hidden Files Toggle**: Show/hide hidden files with '.' key — dot-names on
+  every platform, plus files and folders carrying the hidden attribute on Windows
 - **Color Schemes**: Dark and Light themes with runtime switching
 - **Status Bar**: Current path, file count, operation status
 - **Log Pane**: Bottom pane for system messages and output

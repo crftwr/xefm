@@ -54,7 +54,8 @@ def attrs_via_path(entry) -> dict:
     itself — the per-file route, for backends with no bulk listing form.
 
     ``is_symlink`` is captured first because it stays meaningful for a broken
-    symlink, whose ``stat`` below fails.
+    symlink, whose ``stat`` below fails — as does ``hidden``, which describes
+    the directory entry rather than whatever it points at.
     """
     try:
         is_link = entry.is_symlink()
@@ -64,10 +65,15 @@ def attrs_via_path(entry) -> dict:
         stat_info = entry.stat()
         is_dir = entry.is_dir()
     except Exception:
-        return dict(dir_scan.BROKEN_ATTRS, is_link=is_link)
+        return dict(dir_scan.BROKEN_ATTRS, is_link=is_link,
+                    hidden=dir_scan.hidden_of(entry))
+    # A followed stat describes the target, so a link's own attribute needs its
+    # own look; anything else already has it in hand.
+    hidden = (dir_scan.hidden_of(entry) if is_link
+              else dir_scan.hidden_from_stat(stat_info))
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else stat_info.st_size,
-            'mtime': stat_info.st_mtime, 'ok': True}
+            'mtime': stat_info.st_mtime, 'hidden': hidden, 'ok': True}
 
 
 class PathImpl(ABC):

@@ -78,15 +78,17 @@ class TestSSHListdirAttrs(unittest.TestCase):
     def test_attributes_match_the_dir_scan_record(self):
         attrs = {child.name: a for child, a in self.impl.listdir_attrs()}
 
+        # 'hidden' is the platform attribute, which a remote host has no way to
+        # report here — a dot in the name is the whole of hidden over SSH.
         self.assertEqual(attrs['docs'],
                          {'is_dir': True, 'is_link': False, 'size': 0,
-                          'mtime': 100.0, 'ok': True})
+                          'mtime': 100.0, 'hidden': False, 'ok': True})
         self.assertEqual(attrs['notes.txt'],
                          {'is_dir': False, 'is_link': False, 'size': 12,
-                          'mtime': 200.0, 'ok': True})
+                          'mtime': 200.0, 'hidden': False, 'ok': True})
         self.assertEqual(attrs['current'],
                          {'is_dir': False, 'is_link': True, 'size': 7,
-                          'mtime': 300.0, 'ok': True})
+                          'mtime': 300.0, 'hidden': False, 'ok': True})
 
     def test_whole_listing_costs_one_remote_call(self):
         """The point of the method: no per-entry round trip over the link"""

@@ -44,6 +44,7 @@ from puikit.text import elide, truncate_to_width
 from puikit.widgets import DragBar, show_message_box
 from puikit.widgets.base import Widget
 
+from xefm.dir_scan import is_hidden_path
 from xefm.path import Path
 from xefm.str_format import abbreviate_path, format_size
 from xefm.text_viewer import (MONO, _ScrollBody, _header_bg, draw_status_bar,
@@ -126,8 +127,10 @@ class DirectoryScanner:
     """Recursively lists a directory into ``{relative_path: FileInfo}``.
 
     Iterative (stack-based) to avoid deep recursion; records inaccessible entries
-    rather than aborting. ``show_hidden`` skips dot-entries when false. Supports
-    cancellation via :meth:`cancel` (the progressive worker cancels on close)."""
+    rather than aborting. ``show_hidden`` skips hidden entries when false — a
+    dot-name anywhere, plus whatever the platform marks hidden by attribute
+    (Windows, issue #284). Supports cancellation via :meth:`cancel` (the
+    progressive worker cancels on close)."""
 
     def __init__(self, show_hidden: bool = True):
         self.show_hidden = show_hidden
@@ -160,7 +163,7 @@ class DirectoryScanner:
                 if info.is_directory and info.is_accessible:
                     try:
                         for child in current.iterdir():
-                            if not self.show_hidden and child.name.startswith("."):
+                            if not self.show_hidden and is_hidden_path(child):
                                 continue
                             stack.append(child)
                     except (OSError, PermissionError) as exc:
@@ -184,7 +187,7 @@ class DirectoryScanner:
             return files
         for child in children:
             name = child.name
-            if not self.show_hidden and name.startswith("."):
+            if not self.show_hidden and is_hidden_path(child):
                 continue
             try:
                 st = child.stat()

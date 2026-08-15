@@ -110,7 +110,9 @@ class FilepathCompleter:
     False, dot-entries are left out of the candidates — *unless* the typed token
     itself starts with a ``.``, which is an explicit request for them (the shell
     convention; without it there would be no way to complete into ``.config``
-    while hidden files are off).
+    while hidden files are off). Entries the platform marks hidden by attribute
+    rather than by name (Windows, issue #284) are left out too, and a typed dot
+    does not bring them back: there is nothing to type that asks for them.
 
     Errors reaching the filesystem (missing directory, permission denied, or a
     non-local path that ``os`` can't stat) yield ``[]`` — completing a path that
@@ -158,6 +160,10 @@ class FilepathCompleter:
                 if not entry.startswith(prefix):  # case-sensitive
                     continue
                 if hide_dotfiles and entry.startswith("."):
+                    continue
+                # The platform's own hidden mark (a Windows file attribute) has
+                # no spelling in the typed token, so nothing overrides it.
+                if not self.show_hidden and attrs["hidden"]:
                     continue
                 is_directory = attrs["is_dir"]
                 if self.directories_only and not is_directory:

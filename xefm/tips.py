@@ -89,7 +89,8 @@ TIPS: tuple[tuple[str, str], ...] = (
      "and pressing the same key again reverses the order."),
 
     ("Hidden files",
-     "{key:toggle_hidden} shows or hides hidden files (dotfiles). The setting "
+     "{key:toggle_hidden} shows or hides hidden files — dotfiles everywhere, "
+     "and on Windows also whatever carries the hidden attribute. The setting "
      "applies to both panes."),
 
     ("Pick a look",
