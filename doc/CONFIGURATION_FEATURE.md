@@ -116,8 +116,8 @@ Adjust the pane split at runtime with `[` / `]`, and the log-pane height with
 `DATE_FORMAT` chooses how modification times are shown in the file panes:
 `'short'` gives `YY-MM-DD HH:mm` (compact, no seconds) and `'full'` gives
 `YYYY-MM-DD HH:mm:ss` (four-digit year plus seconds). Both use ISO-8601 ordering,
-and the date column widens automatically for the longer form. You can also cycle
-the format live from the **View Options** menu (`z`) without editing the config.
+and the date column widens automatically for the longer form. After editing the
+setting, **Tools → Reload Configuration** applies it without restarting.
 
 ## Sorting
 

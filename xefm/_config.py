@@ -365,9 +365,7 @@ class Config:
         # Unbound by default (use View → Theme in the menu bar). Assign a key
         # here to cycle themes from the keyboard, e.g. ['T'].
         'toggle_color_scheme': [],             # Cycle to the next color theme
-        'view_options': ['Z'],                 # Show view options menu
-        'settings_menu': ['Shift-Z'],          # Show settings and configuration menu
-        
+
         # === External Programs ===
         'programs': ['X'],                     # Show external programs menu
         'subshell': ['Shift-X'],               # Enter subshell (command line) mode

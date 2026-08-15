@@ -148,10 +148,6 @@ KEY_BINDINGS = {
     'create_archive': ['p', 'P'],         # Create archive from selected files
     'extract_archive': ['u', 'U'],        # Extract selected archive file
     'compare_selection': ['w', 'W'],      # Show file and directory comparison options
-    
-    # Interface Options
-    'view_options': ['z'],                 # Show view options menu
-    'settings_menu': ['Z'],                # Show settings and configuration menu
 }
 ```
 
