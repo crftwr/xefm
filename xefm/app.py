@@ -681,6 +681,18 @@ def _stem_selection(name: str, is_dir: bool) -> tuple[int, int] | None:
     return (0, len(stem)) if 0 < len(stem) < len(name) else None
 
 
+def _subshell_command(config) -> list[str]:
+    """The command the subshell action launches: ``SUBSHELL`` from the config
+    if set, else ``$SHELL``, else the platform default — ``%COMSPEC%``
+    (cmd.exe) on Windows, ``/bin/sh`` elsewhere (issue #288). A string names a
+    single command; a list carries arguments. No shlex-splitting: a Windows
+    path like ``C:\\Windows\\system32\\cmd.exe`` must survive intact."""
+    shell = getattr(config, "SUBSHELL", None) or os.environ.get("SHELL")
+    if not shell:
+        shell = os.environ.get("COMSPEC", "cmd.exe") if os.name == "nt" else "/bin/sh"
+    return list(shell) if isinstance(shell, (list, tuple)) else [shell]
+
+
 #: Content inset for the chrome bars (pane header / footer, global status), in
 #: device pixels on a vector backend. This replaces the old window-level margin
 #: (``Panel.set_layout(margin_px=…)``): each bar's *surface* fills its whole slot
@@ -2584,11 +2596,14 @@ class XeFMApp:
             self.log_info(f"Edited {self._files_label(fallback)}")
 
     def subshell(self) -> None:
-        """Drop to an interactive shell (``$SHELL``) in the active pane's
-        directory, handing over the terminal via suspend/resume; refresh on
-        return. Terminal mode and local directories only. The shell gets the
-        ``XEFM_*`` variables (pane directories, selections, ``XEFM_ACTIVE``)
-        and a best-effort ``[XeFM]`` prefix on ``PS1``/``PROMPT``."""
+        """Drop to an interactive shell in the active pane's directory, handing
+        over the terminal via suspend/resume; refresh on return. Terminal mode
+        and local directories only. The shell is ``SUBSHELL`` from the config,
+        falling back to ``$SHELL`` and then the platform default (cmd.exe on
+        Windows, ``/bin/sh`` elsewhere) — see :func:`_subshell_command`. The
+        shell gets the ``XEFM_*`` variables (pane directories, selections,
+        ``XEFM_ACTIVE``) and a best-effort ``[XeFM]`` prefix on
+        ``PS1``/``PROMPT``."""
         from xefm.external_programs import (build_xefm_env,
                                            ensure_common_paths_in_env,
                                            prefix_prompt_markers)
@@ -2601,7 +2616,7 @@ class XeFMApp:
         if not self._is_local(path):
             self.log_info("Subshell is only available for local directories")
             return
-        shell = os.environ.get("SHELL", "/bin/sh")
+        command = _subshell_command(self.config)
         env = os.environ.copy()
         ensure_common_paths_in_env(env)
         env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
@@ -2609,7 +2624,7 @@ class XeFMApp:
                                   self.pm.get_inactive_pane()))
         prefix_prompt_markers(env)
         self.log_info(f"Subshell in {path} — exit the shell to return")
-        self._run_in_terminal([shell], cwd=str(path), env=env)
+        self._run_in_terminal(command, cwd=str(path), env=env)
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor
