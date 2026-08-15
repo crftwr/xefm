@@ -102,7 +102,7 @@ See [Color Schemes](COLOR_SCHEMES_FEATURE.md) for the full theme key reference
 ## Display and Layout
 
 ```python
-SHOW_HIDDEN_FILES       = False  # show dotfiles (toggle at runtime with '.')
+SHOW_HIDDEN_FILES       = False  # show hidden files (toggle at runtime with '.')
 DEFAULT_LEFT_PANE_RATIO = 0.5    # left pane width as a ratio (0.1 - 0.9)
 DEFAULT_LOG_HEIGHT_RATIO = 0.25  # log pane height as a ratio (0.1 - 0.5)
 DATE_FORMAT             = 'short'  # 'short' (YY-MM-DD HH:mm) or 'full' (YYYY-MM-DD HH:mm:ss)

@@ -53,6 +53,11 @@ Typing the leading dot yourself overrides this for that one token, the way
 shells do: `.c` + TAB still completes `.config/` even with hidden files off, so
 a hidden directory stays reachable without flipping the toggle.
 
+On Windows an entry can be hidden by attribute rather than by name (`AppData`,
+`$Recycle.Bin`). Those follow the toggle too, and nothing you type brings them
+back for one token — there is no leading dot to spell — so reaching them means
+turning hidden files on.
+
 ## Notes and limits
 
 - Completion reads the **local filesystem** only. In a remote (S3 / SSH) pane,

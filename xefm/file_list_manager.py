@@ -6,6 +6,7 @@ XeFM File List Manager - Manages file lists, sorting, filtering, and selection
 import os
 import stat
 import fnmatch
+from xefm.dir_scan import is_hidden
 from xefm.path import Path, attrs_via_path
 from datetime import datetime
 from xefm.str_format import format_size
@@ -109,10 +110,12 @@ class FileListManager:
             # rather than a round trip per file (see xefm.dir_scan).
             all_entries = path.listdir_attrs()
 
-            # Filter hidden files if needed
+            # Filter hidden files if needed — a leading dot, or the platform's
+            # own mark, which on Windows is a file attribute the one-pass scan
+            # already collected (issue #284).
             if not self.show_hidden:
                 all_entries = [(entry, attrs) for entry, attrs in all_entries
-                               if not entry.name.startswith('.')]
+                               if not is_hidden(entry.name, attrs)]
 
             return self._assemble_listing(
                 all_entries, filter_pattern=filter_pattern,

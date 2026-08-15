@@ -72,7 +72,7 @@ class Config:
     TEXT_ENCODINGS = ['utf-8', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
 
     # Display settings
-    SHOW_HIDDEN_FILES = False
+    SHOW_HIDDEN_FILES = False  # dot-names anywhere, plus the hidden attribute on Windows
     DEFAULT_LEFT_PANE_RATIO = 0.5  # 0.1 to 0.9
     DEFAULT_LOG_HEIGHT_RATIO = 0.25  # 0.1 to 0.5
     DATE_FORMAT = 'short'  # 'short' (YY-MM-DD HH:mm) or 'full' (YYYY-MM-DD HH:mm:ss)
@@ -375,7 +375,7 @@ class Config:
         'image_scroll_right': ['Shift-RIGHT'], # Image viewer: pan right
 
         # === Display & Appearance ===
-        'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles)
+        'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles, Windows hidden attribute)
         # Unbound by default (use View → Theme in the menu bar). Assign a key
         # here to cycle themes from the keyboard, e.g. ['T'].
         'toggle_color_scheme': [],             # Cycle to the next color theme

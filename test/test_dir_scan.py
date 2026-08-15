@@ -29,15 +29,16 @@ def _reference(directory, name):
     every backend has to reproduce."""
     p = os.path.join(directory, name)
     is_link = os.path.islink(p)
+    hidden = dir_scan.hidden_of(p)
     try:
         st = os.stat(p)
     except OSError:
         return {'is_dir': False, 'is_link': is_link, 'size': 0, 'mtime': 0.0,
-                'ok': False}
+                'hidden': hidden, 'ok': False}
     is_dir = os.path.isdir(p)
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else st.st_size,
-            'mtime': st.st_mtime, 'ok': True}
+            'mtime': st.st_mtime, 'hidden': hidden, 'ok': True}
 
 
 class _TreeBase(unittest.TestCase):
@@ -120,6 +121,7 @@ class PathListdirAttrs(_TreeBase):
             self.assertEqual(attrs['is_dir'], per_file['is_dir'], entry.name)
             self.assertEqual(attrs['is_link'], per_file['is_link'], entry.name)
             self.assertEqual(attrs['size'], per_file['size'], entry.name)
+            self.assertEqual(attrs['hidden'], per_file['hidden'], entry.name)
             self.assertEqual(attrs['ok'], per_file['ok'], entry.name)
 
     def test_it_covers_the_same_names_as_iterdir(self):

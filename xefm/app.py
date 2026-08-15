@@ -57,6 +57,7 @@ from xefm.background_shaders import SHADER_KINDS
 from xefm.config import (KeyBindings, config_manager, get_builtin_handler_for_file,
                          get_config, get_favorite_directories, get_program_for_file,
                          has_explicit_association, keys_label_for_action)
+from xefm.dir_scan import is_hidden
 from xefm.disk_usage import UsageScan
 from xefm.file_list_manager import FileListManager
 from xefm.file_monitor_manager import FileMonitorManager
@@ -3409,22 +3410,22 @@ class XeFMApp:
             if cancel.is_set():
                 return
             try:
-                entries = list(stack.pop().iterdir())
+                # One pass per directory answers both questions asked of every
+                # entry below — is it hidden, is it a directory to descend —
+                # instead of a stat apiece.
+                entries = stack.pop().listdir_attrs()
             except Exception:
                 continue
-            for e in entries:
+            for e, attrs in entries:
                 if cancel.is_set():
                     return
                 nodes += 1
-                if not self.flm.show_hidden and e.name.startswith("."):
+                if not self.flm.show_hidden and is_hidden(e.name, attrs):
                     continue
-                try:
-                    if fnmatch.fnmatch(e.name.lower(), pat):
-                        yield e
-                    if e.is_dir():
-                        stack.append(e)
-                except Exception:
-                    continue
+                if fnmatch.fnmatch(e.name.lower(), pat):
+                    yield e
+                if attrs["is_dir"]:
+                    stack.append(e)
 
     def _go_to_result(self, entry) -> None:
         pane = self.active_pane()
@@ -3515,17 +3516,17 @@ class XeFMApp:
             if cancel.is_set():
                 return
             try:
-                entries = list(stack.pop().iterdir())
+                entries = stack.pop().listdir_attrs()
             except Exception:
                 continue
-            for e in entries:
+            for e, attrs in entries:
                 if cancel.is_set():
                     return
                 nodes += 1
-                if not self.flm.show_hidden and e.name.startswith("."):
+                if not self.flm.show_hidden and is_hidden(e.name, attrs):
                     continue
                 try:
-                    if e.is_dir():
+                    if attrs["is_dir"]:
                         stack.append(e)
                         continue
                     if not self._looks_textual(e):

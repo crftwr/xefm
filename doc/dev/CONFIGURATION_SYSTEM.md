@@ -39,7 +39,7 @@ class Config:
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `SHOW_HIDDEN_FILES` | bool | `False` | Show hidden files by default |
+| `SHOW_HIDDEN_FILES` | bool | `False` | Show hidden files by default (dot-names, plus the Windows hidden attribute) |
 | `DEFAULT_LEFT_PANE_RATIO` | float | `0.5` | Left pane width ratio (0.1-0.9) |
 | `DEFAULT_LOG_HEIGHT_RATIO` | float | `0.25` | Log pane height ratio (0.1-0.5) |
 
@@ -100,7 +100,7 @@ KEY_BINDINGS = {
     'help': ['?'],                         # Show help dialog with all key bindings
     
     # Display & Navigation
-    'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles)
+    'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles, Windows hidden attribute)
     'toggle_color_scheme': ['t'],          # Switch between dark and light color schemes
     
     # Search & Filter
