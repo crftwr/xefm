@@ -20,7 +20,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
-from xefm.external_programs import build_xefm_env  # noqa: E402
+from xefm.external_programs import build_xefm_env, shell_family  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
@@ -177,16 +177,21 @@ class TestTerminalOption(RunProgramBase):
 
 
 class TestSubshellEnv(RunProgramBase):
-    def test_subshell_gets_xefm_env_and_prompt_marker(self):
-        """Shift-X hands the shell the XEFM_* variables and a [XeFM] prompt"""
+    def _subshell(self, shell):
+        """Run the subshell action with SUBSHELL pinned to ``shell`` — the
+        app's config is the *user's* here, so the shell has to be forced for
+        this to test anything stable — and return (argv, kwargs)."""
         with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch.object(self.app.config, 'SUBSHELL', shell, create=True), \
                 patch('xefm.app.is_desktop_mode', return_value=False):
             self.app.subshell()
-
         handoff.assert_called_once()
-        argv = handoff.call_args[0][0]
-        self.assertEqual(argv, [os.environ.get('SHELL', '/bin/sh')])
-        kwargs = handoff.call_args[1]
+        return handoff.call_args[0][0], handoff.call_args[1]
+
+    def test_subshell_gets_xefm_env_and_prompt_marker(self):
+        """Shift-X hands the shell the XEFM_* variables and a [XeFM] prompt"""
+        argv, kwargs = self._subshell('/bin/zsh')
+        self.assertEqual(argv, ['/bin/zsh'])
         self.assertEqual(os.path.realpath(kwargs['cwd']),
                          os.path.realpath(self.tmp))
         env = kwargs['env']
@@ -194,8 +199,17 @@ class TestSubshellEnv(RunProgramBase):
         self.assertEqual(os.path.realpath(env['XEFM_THIS_DIR']),
                          os.path.realpath(self.tmp))
         self.assertIn('XEFM_LEFT_SELECTED', env)
+        self.assertEqual(shell_family(argv), 'posix')
         self.assertTrue(env['PS1'].startswith('[XeFM] '))
         self.assertTrue(env['PROMPT'].startswith('[XeFM] '))
+
+    def test_cmd_exe_gets_a_prompt_it_can_render(self):
+        """A cmd.exe subshell must not be handed zsh's %-code prompt"""
+        argv, kwargs = self._subshell(['cmd.exe'])
+        self.assertEqual(argv, ['cmd.exe'])
+        env = kwargs['env']
+        self.assertEqual(env['XEFM_ACTIVE'], '1')
+        self.assertEqual(env['PROMPT'], '[XeFM] $P$G')
 
     def test_subshell_refused_in_desktop_mode(self):
         """Desktop mode has no tty to hand over: the subshell is refused"""

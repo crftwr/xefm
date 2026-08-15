@@ -2602,8 +2602,9 @@ class XeFMApp:
         falling back to ``$SHELL`` and then the platform default (cmd.exe on
         Windows, ``/bin/sh`` elsewhere) — see :func:`_subshell_command`. The
         shell gets the ``XEFM_*`` variables (pane directories, selections,
-        ``XEFM_ACTIVE``) and a best-effort ``[XeFM]`` prefix on
-        ``PS1``/``PROMPT``."""
+        ``XEFM_ACTIVE``) and a best-effort ``[XeFM]`` prefix on the prompt
+        variable that *that* shell reads — ``PS1``/``PROMPT`` for a POSIX shell,
+        cmd.exe's ``$``-code ``PROMPT`` for cmd.exe, nothing for PowerShell."""
         from xefm.external_programs import (build_xefm_env,
                                            ensure_common_paths_in_env,
                                            prefix_prompt_markers)
@@ -2622,7 +2623,7 @@ class XeFMApp:
         env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
-        prefix_prompt_markers(env)
+        prefix_prompt_markers(env, command)
         self.log_info(f"Subshell in {path} — exit the shell to return")
         self._run_in_terminal(command, cwd=str(path), env=env)
 

@@ -259,6 +259,23 @@ done
 
 ## Shell Prompt Customization
 
+### Which Variable Gets the Marker
+
+`prefix_prompt_markers(env, command)` picks the prompt convention from the shell
+in `command`, not from the variable name, because `PROMPT` is claimed by two
+unrelated shells with incompatible syntaxes:
+
+| Shell family | Detected from (basename of `command[0]`) | What is written |
+|---|---|---|
+| `posix` | `sh`, `bash`, `zsh`, `ksh`, `dash`, `ash`, `fish`, `csh`, `tcsh`, `busybox` | `PS1` (bash `\`-codes) **and** `PROMPT` (zsh `%`-codes) |
+| `cmd` | `cmd`, `command` | `PROMPT` only, in cmd's `$`-codes — `[XeFM] $P$G` when unset |
+| `powershell` | `powershell`, `pwsh` | nothing — the prompt is a function, unreachable from the environment |
+
+An unrecognized shell name follows the platform's own family (`cmd` on Windows,
+`posix` elsewhere). Writing zsh's `%n@%m:%~%#` unconditionally is what made a
+`SUBSHELL = ["cmd.exe"]` subshell display `[XeFM] %n@%m:%~%#` literally — cmd
+does not expand `%`-codes.
+
 ### Why Manual Configuration is Needed
 
 Shell configuration files (like `.zshrc` and `.bashrc`) are loaded after XeFM sets environment variables, which overwrites any prompt modifications XeFM makes. The solution is to modify your shell configuration to check for the `XEFM_ACTIVE` environment variable.
@@ -334,6 +351,8 @@ fi
 | zsh | `~/.zshrc` | `PROMPT` | `[XeFM] %n@%m:%~%# ` |
 | bash | `~/.bashrc` | `PS1` | `[XeFM] \u@\h:\w\$ ` |
 | fish | `~/.config/fish/config.fish` | Custom function | See fish documentation |
+| cmd.exe | `AutoRun` registry value | `PROMPT` | `[XeFM] $P$G` |
+| PowerShell | `$PROFILE` | `prompt` function | `function prompt { "[XeFM] …" }` |
 
 ## Returning to XeFM
 

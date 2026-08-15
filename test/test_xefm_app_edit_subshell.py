@@ -188,7 +188,10 @@ class Subshell(EditSubshellBase):
     # same worker can pollute (XEFM_BACKEND, loaded GUI modules); pin it so the
     # terminal-only guard doesn't fire order-dependently.
     def test_launches_shell_in_active_pane_dir(self):
+        # SUBSHELL comes from the *user's* config here; pin it off so this
+        # exercises the $SHELL fallback rather than whatever they configured.
         with patch.dict(os.environ, {"SHELL": "/bin/zsh"}, clear=False), \
+             patch.object(self.app.config, "SUBSHELL", None, create=True), \
              patch("xefm.app.is_desktop_mode", return_value=False), \
              patch("subprocess.run") as run:
             self.app.subshell()
