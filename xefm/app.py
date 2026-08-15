@@ -3684,8 +3684,10 @@ class XeFMApp:
                 self.log_info(f"Failed to create directory '{name}': {exc}")
             else:
                 self.log_info(f"Created directory: {name}")
-                self._refresh(pane)
-                self._select_by_name(pane, name)
+                # mkdir(parents=True) accepts "a/b"; the entry that appears in
+                # this pane is the first component.
+                top = _StdPath(name).parts[0]
+                self._refresh(pane, on_ready=lambda p: self._select_by_name(p, top))
             self.panel.render()
 
         show_input(self.panel, title="New Directory", prompt="Name:",
@@ -3718,8 +3720,7 @@ class XeFMApp:
                 self.log_info(f"Failed to create file '{name}': {exc}")
             else:
                 self.log_info(f"Created file: {name}")
-                self._refresh(pane)
-                self._select_by_name(pane, name)
+                self._refresh(pane, on_ready=lambda p: self._select_by_name(p, name))
             self.panel.render()
 
         show_input(self.panel, title="New File", prompt="Name:",
@@ -3769,8 +3770,7 @@ class XeFMApp:
                 self.log_info(f"Failed to rename '{original}': {exc}")
             else:
                 self.log_info(f"Renamed '{original}' to '{name}'")
-                self._refresh(pane)
-                self._select_by_name(pane, name)
+                self._refresh(pane, on_ready=lambda p: self._select_by_name(p, name))
             self.panel.render()
 
         show_input(self.panel, title="Rename", prompt="Rename to:", text=original,
