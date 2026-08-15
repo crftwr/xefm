@@ -8,6 +8,7 @@ import stat
 import fnmatch
 import io
 import errno
+from concurrent.futures import CancelledError
 from abc import ABC, abstractmethod
 from pathlib import Path as PathlibPath, PurePath
 from datetime import datetime
@@ -16,7 +17,7 @@ from xefm import dir_scan
 from xefm.str_format import format_size
 
 
-class _CallbackAbort(Exception):
+class _CallbackAbort(CancelledError):
     """Carries an exception raised by a caller's ``progress_callback`` back out
     of a copy untouched, instead of letting it be folded into the generic
     ``OSError`` every transfer failure becomes.
@@ -25,6 +26,18 @@ class _CallbackAbort(Exception):
     mid-file, it is the only point at which the storage layer calls back into
     the caller often enough to notice. The storage layer stays ignorant of what
     that exception means — it just has to not swallow it.
+
+    The base class must be ``concurrent.futures.CancelledError``: during an S3
+    multipart upload the callback fires while botocore is reading the request
+    body, and botocore wraps any other exception raised there in its
+    *retryable* ``HTTPClientError`` — every in-flight part then retries the
+    cancel as if it were a network blip, for ``max_attempts`` times with
+    backoff (with ``max_attempts = 100`` in ``~/.aws/config``, effectively
+    forever). ``CancelledError`` is the one exception botocore's HTTP layer
+    re-raises unwrapped and its retry logic never retries, so a cancel aborts
+    the transfer immediately. Since Python 3.8 ``CancelledError`` is a
+    ``BaseException``, so cleanup handlers on the transfer path that must see
+    it need ``except BaseException``, not ``except Exception``.
     """
 
     def __init__(self, original: BaseException):
@@ -1599,7 +1612,9 @@ class Path:
                 try:
                     with destination.open('wb') as dst:
                         self._impl.download_to_stream(dst, progress_callback)
-                except Exception:
+                except BaseException:
+                    # BaseException so a cancel (_CallbackAbort) also lands
+                    # here and the truncated file is still removed
                     try:
                         destination.unlink()
                     except OSError:
