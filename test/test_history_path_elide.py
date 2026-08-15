@@ -99,7 +99,7 @@ class PathPickersRequestMiddleElide(unittest.TestCase):
     def test_drives_uses_middle(self):
         # Local drives are always present; stub the remote scans out.
         with patch.object(self.app, "_ssh_drives", return_value=[]), \
-             patch.object(self.app, "_s3_drives", return_value=[]), \
+             patch.object(self.app, "_s3_scan_available", return_value=False), \
              patch("xefm.app.show_filter_list") as show:
             self.app.show_drives()
         show.assert_called_once()

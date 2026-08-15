@@ -3123,7 +3123,8 @@ class XeFMApp:
     def _local_drives(self) -> list[dict]:
         """Home / root / common folders + mounted volumes, as ``{name, path}``
         rows for the drives picker. SSH hosts are added by ``_ssh_drives``; S3
-        buckets (an async, credentialed scan) remain a later phase."""
+        buckets (a credentialed network scan) stream in afterwards via
+        ``_s3_drives_iter`` on the picker's loader thread."""
         system = platform.system()
         drives = [{"name": "Home", "path": str(Path.home())}]
         if system != "Windows":
@@ -3210,41 +3211,61 @@ class XeFMApp:
         except Exception:
             return False
 
-    def _s3_drives(self) -> list[dict]:
-        """S3 buckets as ``s3://bucket/`` rows for the drives picker. A single
-        ``list_buckets`` call, gated on local AWS credentials and bounded by short
-        timeouts so it fails fast instead of hanging the picker. Best-effort: no
-        boto3, no credentials, or any AWS error yields nothing.
-
-        Note: EC2 instance-role (IMDS-only) credentials are intentionally not
-        probed here — that is the one path that can hang — so buckets won't list
-        on a bare instance role without an env var or ``~/.aws`` file."""
+    def _s3_scan_available(self) -> bool:
+        """Whether the drives picker should scan S3 at all: boto3 importable and
+        AWS credentials plausibly present locally. Checked before attaching the
+        background scan, so the common no-AWS case starts no thread and shows no
+        spinner."""
         try:
             from xefm.s3 import HAS_BOTO3
-            if not HAS_BOTO3 or not self._aws_configured():
-                return []
+        except Exception:
+            return False
+        return HAS_BOTO3 and self._aws_configured()
+
+    def _s3_drives_iter(self, cancel: threading.Event):
+        """S3 buckets as ``s3://bucket/`` rows for the drives picker, yielded as
+        they arrive. Runs on the picker's background loader thread (never the UI
+        thread — issue #274), so the dialog opens instantly and bucket rows
+        stream in below the local ones. Pages through ``ListBuckets`` where the
+        SDK supports it, so a large account fills progressively rather than all
+        at once. Bounded by short timeouts and best-effort: any AWS error simply
+        ends the scan with the rows yielded so far.
+
+        Note: EC2 instance-role (IMDS-only) credentials are intentionally not
+        probed — ``_s3_scan_available`` requires an env var or ``~/.aws`` file —
+        so that endpoint is never waited on."""
+        try:
             import boto3
             from botocore.config import Config as _BotoConfig
             client = boto3.client("s3", config=_BotoConfig(
                 connect_timeout=2, read_timeout=3, retries={"max_attempts": 0}))
-            resp = client.list_buckets()
+            if client.can_paginate("list_buckets"):
+                pages = client.get_paginator("list_buckets").paginate()
+            else:  # older botocore: ListBuckets has no paginator — one full call
+                pages = [client.list_buckets()]
+            for page in pages:
+                if cancel.is_set():
+                    return
+                for b in page.get("Buckets", []):
+                    yield {"name": b["Name"], "path": f"s3://{b['Name']}/"}
         except Exception:
-            return []
-        return [{"name": b["Name"], "path": f"s3://{b['Name']}/"}
-                for b in resp.get("Buckets", [])]
+            return
 
     def show_drives(self) -> None:
         """The drives picker: choose a volume / common location / SSH host / S3
         bucket and jump the active pane there (reuses the searchable-list dialog,
-        like favorites). Selecting an ``ssh://`` or ``s3://`` row connects on
-        first listing."""
-        drives = self._local_drives() + self._ssh_drives() + self._s3_drives()
+        like favorites). Local and SSH rows are ready instantly; S3 buckets — a
+        credentialed network scan — stream in on the dialog's background loader
+        while it is already open (issue #274). Selecting an ``ssh://`` or
+        ``s3://`` row connects on first listing."""
+        drives = self._local_drives() + self._ssh_drives()
         show_filter_list(
             self.panel, drives, title="Drives",
             to_label=lambda d: f"{d['name']}  —  {d['path']}",
             on_accept=self._go_to_drive,
             region=self._active_pane_region(),
-            elide_where="middle")  # keep the path tail visible (issue #211)
+            elide_where="middle",  # keep the path tail visible (issue #211)
+            load_more=self._s3_drives_iter if self._s3_scan_available() else None)
         self.panel.render()
 
     def _go_to_drive(self, drive: dict) -> None:

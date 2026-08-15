@@ -13,6 +13,16 @@ rather than re-implementing them:
 - ``ListView`` for the results — virtualized draw, smooth scroll, a scrollbar,
   and ``on_select`` activation, all for free.
 
+An optional **background loader** (``load_more``) streams extra rows in after
+the dialog is already open: the callable runs once on a daemon worker thread
+and yields values, which are appended below the eager rows on the UI thread —
+via the animation tick, mirroring :class:`ProgressiveSearchDialog`'s threading
+model — with whatever filter text is active re-applied and a small spinner in
+the title while the scan runs. The drives picker uses this for S3 buckets, a
+credentialed network scan that must not delay the dialog (issue #274). On a
+still backend with no animation ticks (chiefly tests) the loader is settled
+synchronously: the worker is joined and its rows drained in one shot.
+
 Interaction: typing filters the list (substring,
 case-insensitive); ↑/↓/PageUp/PageDown move the selection; Enter accepts the
 selected value; Esc cancels; a click selects/activates a row. The dialog is
@@ -25,7 +35,9 @@ shared drop-shadow intent the other PuiKit modals use.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+import queue
+import threading
+from typing import Any, Callable, Iterator, Sequence
 
 from puikit.backend import Style
 from puikit.event import Event, EventType
@@ -41,6 +53,9 @@ from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
 #: typing filters, but the arrows still drive the selection.
 #: Backend key names are unsuffixed ("pageup"/"pagedown"), matching ListView.
 _LIST_KEYS = frozenset({"up", "down", "pageup", "pagedown"})
+
+#: Braille spinner frames for the title's background-loading indicator.
+_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 class FilterListDialog(FocusContainer, Widget):
@@ -63,6 +78,7 @@ class FilterListDialog(FocusContainer, Widget):
         on_accept_text: Callable[[str], None] | None = None,
         ellipsis: str = "",
         elide_where: str = "end",
+        load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
     ):
         self.all_items = list(items)
         self.to_label = to_label
@@ -77,6 +93,18 @@ class FilterListDialog(FocusContainer, Widget):
         self._panel: Any = None
         # Values currently passing the filter, parallel to ``self.list.items``.
         self.filtered: list[Any] = list(self.all_items)
+
+        #: Optional background loader (see the module docstring): runs once on a
+        #: worker thread when the dialog opens, yielding values that stream in
+        #: below ``items``. ``None`` -> fully eager, no thread.
+        self._load_more = load_more
+        self._loading = False
+        self._closed = False
+        self._load_queue: queue.Queue = queue.Queue()
+        self._load_cancel = threading.Event()
+        self._load_thread: threading.Thread | None = None
+        self._ticking = False
+        self._spin = 0
 
         self.filter_edit = TextEdit(on_change=self._refilter)
         self.list = ListView(
@@ -105,6 +133,104 @@ class FilterListDialog(FocusContainer, Widget):
         self.list.set_items([self.to_label(v) for v in self.filtered])
         self.list.selected = 0
 
+    def add_items(self, values: Sequence[Any]) -> None:
+        """Append ``values`` below the existing rows, re-applying the active
+        filter text. Appending never reorders: rows already passing the filter
+        keep their indices, so the selection and scroll position carry over
+        (unlike ``_refilter``, which resets both for a changed query)."""
+        if not values:
+            return
+        self.all_items.extend(values)
+        q = self.filter_edit.text.lower()
+        matches = [v for v in values if q in self.to_label(v).lower()]
+        if not matches:
+            return
+        self.filtered.extend(matches)
+        selected, offset = self.list.selected, self.list.offset
+        self.list.set_items([self.to_label(v) for v in self.filtered])
+        self.list.selected = selected
+        self.list.offset = offset
+
+    # --- background loading --------------------------------------------------
+
+    def _start_load_more(self) -> None:
+        """Start the optional background loader (a no-op without one). Called by
+        :func:`show_filter_list` once the layer is pushed, so the streamed rows
+        land in a dialog that is already on screen."""
+        if self._load_more is None or self._load_thread is not None:
+            return
+        cancel = self._load_cancel
+        load = self._load_more
+        self._loading = True
+
+        def worker() -> None:
+            try:
+                for value in load(cancel):
+                    if cancel.is_set():
+                        return
+                    self._load_queue.put(([value], False))
+            except Exception:
+                pass  # best-effort extras; the eager rows are already shown
+            finally:
+                if not cancel.is_set():
+                    self._load_queue.put(([], True))
+
+        self._load_thread = threading.Thread(
+            target=worker, name="xefm-filter-load", daemon=True)
+        self._load_thread.start()
+        self._ensure_ticking()
+
+    def _ensure_ticking(self) -> None:
+        """Register the per-frame drain. On a still backend (no animation ticks)
+        fall back to settling synchronously so the rows still land — used by
+        tests and non-animated backends."""
+        if self._ticking:
+            return
+        self._ticking = True
+        started = self._panel.request_animation_ticks(self._drain) if self._panel else False
+        if not started:
+            self._ticking = False
+            self._settle()
+
+    def _settle(self) -> None:
+        """Join the loader and drain its rows in one shot (still backends)."""
+        thread = self._load_thread
+        if thread is not None:
+            thread.join()
+        self._drain()
+
+    def _drain(self) -> bool:
+        """Animation-tick pump: install streamed rows, advance the spinner, and
+        re-render. Returns True to keep ticking while the loader runs, False to
+        unregister once done (or once the dialog closed)."""
+        if self._closed:
+            self._ticking = False
+            return False
+        added: list[Any] = []
+        was_loading = self._loading
+        while True:
+            try:
+                batch, done = self._load_queue.get_nowait()
+            except queue.Empty:
+                break
+            added.extend(batch)
+            if done:
+                self._loading = False
+        if added:
+            self.add_items(added)
+        if self._loading:
+            self._spin += 1
+        if added or was_loading:
+            self._render()  # new rows, the next spinner frame, or clearing it
+        if not self._loading:
+            self._ticking = False
+            return False
+        return True
+
+    def _render(self) -> None:
+        if not self._closed and self._panel is not None:
+            self._panel.render()
+
     # --- outcome -------------------------------------------------------------
 
     def _accept_index(self, index: int) -> None:
@@ -120,6 +246,8 @@ class FilterListDialog(FocusContainer, Widget):
             self.on_cancel()
 
     def _close(self) -> None:
+        self._closed = True
+        self._load_cancel.set()  # stop a background loader; its rows are dropped
         panel = self._panel
         if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
             panel.pop_layer()
@@ -141,7 +269,13 @@ class FilterListDialog(FocusContainer, Widget):
         y = pad
         if self.title:
             border = theme.popup_border if theme else None
-            y = draw_title_bar(ctx, self.title, surface_bg=surface_bg, border=border, y=y)
+            title = self.title
+            if self._loading:
+                # The background loader is still scanning: a spinner after the
+                # title, advanced by the drain tick, so the extra rows read as
+                # "on their way" rather than missing.
+                title = f"{self.title}  {_SPINNER[self._spin % len(_SPINNER)]}"
+            y = draw_title_bar(ctx, title, surface_bg=surface_bg, border=border, y=y)
 
         # Filter field — one row, focused so the caret blinks and the IME stays on.
         # A magnifier icon sits on the dialog surface just left of the field; the
@@ -269,6 +403,7 @@ def show_filter_list(
     region: tuple[float, float] | None = None,
     ellipsis: str = "…",
     elide_where: str = "end",
+    load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
     z: int = 70,
 ) -> FilterListDialog:
     """Push a modal :class:`FilterListDialog` over ``panel`` and return it.
@@ -287,10 +422,18 @@ def show_filter_list(
     ``ListView``): the default marks a truncated row with a trailing ``…``; pass
     ``elide_where="middle"`` for a path list so the meaningful tail stays visible
     (History, Favorites and Drives do this). Pass ``ellipsis=""`` for a hard clip
-    with no marker."""
+    with no marker.
+
+    ``load_more`` optionally streams extra rows in after the dialog opens: it is
+    called once on a daemon worker thread with a ``threading.Event`` that is set
+    when the dialog closes (poll it and stop), and the values it yields append
+    below ``items`` with the active filter applied, a spinner in the title while
+    the scan runs. For rows that need a network round-trip — the drives picker's
+    S3 buckets — so the dialog never waits on them."""
     dialog = FilterListDialog(
         items, title=title, to_label=to_label, on_accept=on_accept, on_cancel=on_cancel,
         on_accept_text=on_accept_text, ellipsis=ellipsis, elide_where=elide_where,
+        load_more=load_more,
     )
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 72.0))
@@ -308,4 +451,5 @@ def show_filter_list(
     dialog._panel = panel
     panel.push_layer(dialog, z=z, hints=hints)
     animate_open(panel, dialog)
+    dialog._start_load_more()
     return dialog
