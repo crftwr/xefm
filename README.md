@@ -207,8 +207,8 @@ The full flag set is `--backend {tui,curses,gui,macos,windows}`, `--left DIR`,
 
 XeFM is highly configurable through `~/.xefm/config.py` — themes and visual
 effects, key bindings, external programs and file associations, favorite
-directories, and behavior settings. Open the settings menu with `Shift-Z`
-(`Z` opens view options), or edit the file directly. See the
+directories, and behavior settings. Open it with **Tools → Edit Configuration…**
+in the menu bar, or edit the file directly. See the
 **[Configuration Feature Guide](doc/CONFIGURATION_FEATURE.md)**.
 
 ## Troubleshooting

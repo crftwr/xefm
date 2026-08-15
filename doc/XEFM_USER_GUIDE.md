@@ -505,10 +505,11 @@ W        - Show file and directory comparison options
 
 ### View and Display Options
 ```
-Z        - Show view options menu
-Shift-Z  - Show settings and configuration menu
 .        - Toggle visibility of hidden files
 ```
+
+Other display settings — sorting, hidden files, themes — are also in the
+menu bar under **View**.
 
 Color themes are switched from the menu bar (**View → Theme**); assign a key to
 `toggle_color_scheme` in `~/.xefm/config.py` to cycle them from the keyboard.
@@ -524,7 +525,7 @@ XeFM shows animated progress indicators during long-running operations like sear
 
 ### Configuration File
 XeFM creates `~/.xefm/config.py` on first run. Access it via:
-- Press **Z** → Settings Menu → Edit Configuration
+- **Tools → Edit Configuration…** in the menu bar
 - Or edit `~/.xefm/config.py` directly
 
 **For comprehensive configuration documentation**, see the **[Configuration Feature Guide](CONFIGURATION_FEATURE.md)** which covers all available options, examples, and best practices.
