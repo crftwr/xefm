@@ -190,7 +190,7 @@ install-puikit: check-venv
 			echo "PuiKit already installed from PyPI; skipping."; \
 		else \
 			echo "Installing PuiKit from PyPI..."; \
-			$(PIP) install --force-reinstall --no-deps "puikit>=1.0"; \
+			$(PIP) install --force-reinstall --no-deps "$$(grep -o '^puikit[^ #]*' requirements.txt)"; \
 		fi; \
 	fi
 

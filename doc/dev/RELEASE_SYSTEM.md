@@ -212,7 +212,7 @@ It also prints **non-fatal warnings** for the two things a checkout cannot
 decide for you:
 
 - PuiKit is installed editable from `PUIKIT_DIR` — the release depends on the
-  *published* PuiKit (`requirements.txt` pins `puikit>=1.0`), so if XeFM has
+  *published* PuiKit (the `puikit` pin in `requirements.txt`), so if XeFM has
   come to rely on unreleased PuiKit changes, release PuiKit first.
 - `gh` is missing or unauthenticated — `make tag` does not need it, but every
   target after it does.

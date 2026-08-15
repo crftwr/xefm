@@ -13,7 +13,7 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-puikit>=1.0
+puikit>=1.0.11
 pygments
 boto3
 watchdog

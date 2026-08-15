@@ -51,7 +51,7 @@ Issues = "https://github.com/crftwr/xefm/issues"
 # because ``-m`` puts the working directory on sys.path, running from a checkout
 # needs no install and no PYTHONPATH.
 #
-# PuiKit, XeFM's UI framework, is declared in requirements.txt (``puikit>=1.0``),
+# PuiKit, XeFM's UI framework, is declared in requirements.txt (the ``puikit`` pin),
 # so it flows into the dynamic dependencies below and resolves from PyPI on a
 # normal install. For co-development, ``make venv`` additionally installs it
 # editable from ../puikit, which overrides the PyPI build.

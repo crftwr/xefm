@@ -49,7 +49,7 @@ def editable_puikit() -> str | None:
 
     XeFM's Makefile installs PuiKit editable from PUIKIT_DIR for co-development,
     but the sdist/wheel this release builds depends on the *published* PuiKit
-    (``puikit>=1.0`` in requirements.txt). If XeFM has come to rely on unreleased
+    (the ``puikit`` pin in requirements.txt). If XeFM has come to rely on unreleased
     PuiKit changes, the release would install for nobody but you.
     """
     try:
@@ -138,7 +138,7 @@ def main() -> int:
     if puikit_dir:
         warnings.append(
             f"PuiKit is installed editable from {puikit_dir}; the release depends on the "
-            "PyPI build (requirements.txt pins puikit>=1.0). Release PuiKit first if XeFM "
+            "PyPI build (requirements.txt's puikit pin). Release PuiKit first if XeFM "
             "needs unreleased changes from it."
         )
 
