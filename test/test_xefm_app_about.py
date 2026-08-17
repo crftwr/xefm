@@ -27,6 +27,16 @@ class AboutText(unittest.TestCase):
     def test_names_the_app(self):
         self.assertIn("XeFM", xefm_app.XeFMApp._about_text())
 
+    def test_markdown_shape_keeps_rows_and_links_url(self):
+        # The body renders as Markdown (show_about passes markdown=True): the
+        # first line must end with a hard break (trailing backslash) so name and
+        # version keep their own rows, and the URL must sit in its own paragraph
+        # so it autolinkifies into a clickable link — the desktop About showed
+        # it as inert text while the terminal auto-linked it (issue #307).
+        text = xefm_app.XeFMApp._about_text()
+        self.assertTrue(text.split("\n")[0].endswith("\\"))
+        self.assertIn("\n\n" + GITHUB_URL, text)
+
 
 if __name__ == "__main__":
     unittest.main()

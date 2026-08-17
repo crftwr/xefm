@@ -5163,9 +5163,14 @@ class XeFMApp:
     def _about_text() -> str:
         """The About box body: name, version, and project URL (mirrors the legacy
         About dialog's content; its cosmetic Matrix-rain background is answered
-        now by the theme's arriving-text effect, not a background animation)."""
+        now by the theme's arriving-text effect, not a background animation).
+
+        Written as Markdown: the trailing backslash is a hard line break keeping
+        name and version on their own rows, and the URL sits in its own paragraph
+        so it renders as a real clickable link on every backend — the desktop
+        About showed it as inert text while the terminal auto-linked it (#307)."""
         from xefm.const import VERSION, GITHUB_URL
-        return (f"XeFM — a dual-pane file manager for desktop and terminal\n"
+        return (f"XeFM — a dual-pane file manager for desktop and terminal\\\n"
                 f"Version {VERSION}\n\n"
                 f"{GITHUB_URL}")
 
@@ -5177,9 +5182,13 @@ class XeFMApp:
         under every other theme it opens plainly. That is the whole point of the
         text-animation system — the effect is theme data, so no call site in XeFM
         asks for it or knows it exists.
+
+        ``markdown=True`` so the project URL is a real link — clickable on the
+        desktop backends, not just auto-detected by the terminal (#307).
         """
         show_message_box(self.panel, self._about_text(),
-                         title="About XeFM", icon="info", buttons=("OK",))
+                         title="About XeFM", icon="info", buttons=("OK",),
+                         markdown=True)
         self.panel.render()
 
     def show_tips(self) -> None:
