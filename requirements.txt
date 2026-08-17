@@ -13,10 +13,10 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.1.0 is the floor because XeFM's CLI and docs describe its behavior: "tui"
-# resolves to the VT backend on every platform, and --backend curses selects
-# the real curses backend as a distinct fallback (puikit#112 / xefm#309).
-puikit>=1.1.0
+# 1.1.1 is the floor because the About box relies on its message-box behavior:
+# a markdown message routes clicks to its link, making the project URL really
+# clickable on the desktop backends (puikit#114 / xefm#313 / issue #307).
+puikit>=1.1.1
 pygments
 boto3
 watchdog
