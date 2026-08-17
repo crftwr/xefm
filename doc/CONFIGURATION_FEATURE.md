@@ -281,7 +281,7 @@ See [File Monitoring](FILE_MONITORING_FEATURE.md).
 ## Backend and Window
 
 The rendering backend is **not** a config option — it is chosen only by the
-`--backend` command-line flag (`tui`/`curses`, the default, or `gui`/`macos`). In
+`--backend` command-line flag (`tui`, the default, `curses`, or `gui`/`macos`). In
 desktop mode the window's size and position are remembered automatically across
 runs; there are no window-geometry config keys. See
 [Desktop Mode Guide](DESKTOP_MODE_GUIDE.md).

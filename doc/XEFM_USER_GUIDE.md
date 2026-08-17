@@ -151,7 +151,8 @@ Common monospace fonts on macOS:
 The backend is chosen only by the `--backend` flag; there is no configuration-file
 preference. The default is terminal mode:
 
-- `--backend tui` (alias `curses`) — terminal / curses, the default
+- `--backend tui` — terminal, the default (`--backend curses` selects the
+  classic curses renderer instead, as a fallback for unusual terminals)
 - `--backend gui` — native window on Windows (alias `windows`) or macOS (alias `macos`)
 
 On Linux there is no desktop backend; use terminal mode.
@@ -620,7 +621,7 @@ python3 -m xefm --right ~/docs     # Set the right pane's startup directory
 `--backend` chooses the rendering backend:
 
 ```bash
-python3 -m xefm --backend tui      # Terminal / curses (alias: --backend curses) — default
+python3 -m xefm --backend tui      # Terminal — default (--backend curses: classic curses fallback)
 python3 -m xefm --backend gui      # Native window (aliases: --backend macos / windows)
 ```
 

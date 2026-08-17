@@ -254,7 +254,7 @@ each other:
 
 ```bash
 xefm                        # terminal mode
-xefm --backend curses       # the same thing, stated explicitly
+xefm --backend tui          # the same thing, stated explicitly
 ```
 
 All your settings, favorites, and history live in `~/.xefm/` and are shared
@@ -322,7 +322,7 @@ See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
 1. Check console output for error messages
 2. Try terminal mode first to verify XeFM works:
    ```bash
-   python3 -m xefm --backend curses
+   python3 -m xefm --backend tui
    ```
 3. Check macOS version (10.13+ required)
 4. Restart your Mac and try again
