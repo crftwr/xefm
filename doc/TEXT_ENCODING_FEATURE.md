@@ -22,7 +22,9 @@ extension lists, no locale guessing — and something always displays: a file
 nothing else matches falls back to Latin-1 rather than refusing to open.
 
 The same detection feeds the diff viewer, so comparing two Shift-JIS files
-shows real text on both sides.
+shows real text on both sides. Content search (`Shift-G`) honors BOMs too:
+a UTF-16/32 file is grepped as text instead of being skipped as binary, and
+a UTF-8 BOM never blocks a `^`-anchored match on the first line.
 
 ## Choosing an encoding manually
 

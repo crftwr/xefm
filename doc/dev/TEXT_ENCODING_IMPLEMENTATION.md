@@ -34,6 +34,14 @@ label match, prefix beating substring, case-insensitive. Cancel reports
 The diff viewer imports `_read_lines` from the text viewer, so it inherits
 detection with no changes beyond the wider return tuple.
 
+Content search reuses the BOM half only: `XeFMApp._sniff_text_encoding`
+(`xefm/app.py`) calls `sniff_bom` on a file's first chunk to pick a streaming
+codec (`utf-8-sig` / `utf-16` / `utf-32`) before the NUL binary sniff, so
+BOM-tagged Unicode files are grepped line-by-line without loading whole files
+the way `decode_text` does (issue #305). Full charset detection (Shift-JIS,
+EUC-JP) stays viewer-only — grep reads BOM-less files as UTF-8 with
+`errors="ignore"`.
+
 ## Detection order (`decode_text`)
 
 Each step only fires when it is *decisive*:
