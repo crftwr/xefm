@@ -5414,7 +5414,11 @@ class XeFMApp:
             sys.stderr = self._orig_stderr
 
 
-_BACKENDS = {"tui": "tui", "curses": "tui", "gui": "gui", "macos": "gui",
+# XeFM-friendly spellings -> PuiKit backend names. Anything absent passes
+# through verbatim, which is how the concrete names stay reachable — notably
+# "curses", the escape hatch now that "tui" resolves to the VT backend
+# everywhere (mapping it to "tui" here would silently take that hatch away).
+_BACKENDS = {"tui": "tui", "gui": "gui", "macos": "gui",
              "web": "web", "webbrowser": "web", "browser": "web"}
 
 
@@ -5424,13 +5428,13 @@ _BACKENDS = {"tui": "tui", "curses": "tui", "gui": "gui", "macos": "gui",
 _CLI_DESCRIPTION = """\
 XeFM — a dual-pane file manager for the desktop and the terminal.
 
-The same app runs as a native desktop window on Windows and macOS, as a curses
-TUI on Windows, macOS and Linux, or in a browser tab. Choose with --backend.
+The same app runs as a native desktop window on Windows and macOS, as a TUI on
+Windows, macOS and Linux, or in a browser tab. Choose with --backend.
 """
 
 _CLI_EPILOG = """\
 examples:
-  xefm                            terminal (curses) — the default
+  xefm                            terminal — the default
   xefm --backend gui              native desktop window (Windows/macOS)
   xefm --backend web              browser tab
   xefm --left ~/projects --right ~/downloads
@@ -5452,7 +5456,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--version", action="version",
                         version=f"XeFM {_VERSION}")
     parser.add_argument("--backend", default="tui",
-                        help="tui (curses, the default) | gui (native desktop, Windows/macOS) | web (browser tab)")
+                        help="tui (terminal, the default) | gui (native desktop, Windows/macOS) | web (browser tab)")
     # ``default=None`` lets us tell an explicit ``--left .`` from no flag: an
     # explicitly given directory wins over the one saved from the last session.
     parser.add_argument("--left", default=None, help="left pane startup directory")
