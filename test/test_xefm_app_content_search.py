@@ -2,13 +2,15 @@
 Recursive content (grep) search for the PuiKit XeFMApp.
 
 Covers the pane-independent search core behind ``show_content_search`` — the
-streaming tree walk (``_iter_content_matches``), the binary-file filter
-(``_looks_textual``), and result navigation (``_go_to_content_hit``). The
+streaming tree walk (``_iter_content_matches``), the BOM-aware binary/encoding
+sniff (``_sniff_text_encoding``), the pane-filter narrowing, and result
+navigation (``_go_to_content_hit``). The
 results now stream into the progressive ``ProgressiveSearchDialog`` (see
 ``test_progressive_search_dialog.py``); the walk itself is a cancellable
 generator, exercised here directly.
 """
 
+import codecs
 import os
 import re
 import sys
@@ -45,10 +47,11 @@ class WalkGrep(unittest.TestCase):
             f.write(content)
         return p
 
-    def _grep(self, pattern, **kw):
+    def _grep(self, pattern, name_filter="", **kw):
         app = _bare_app(**kw)
         return list(app._iter_content_matches(
-            Path(self.tmp), re.compile(pattern, re.IGNORECASE), threading.Event()))
+            Path(self.tmp), re.compile(pattern, re.IGNORECASE), threading.Event(),
+            name_filter=name_filter))
 
     def test_finds_matching_line_with_number(self):
         self._write("a.txt", "alpha\nneedle here\ngamma\n")
@@ -92,8 +95,49 @@ class WalkGrep(unittest.TestCase):
         self._write("a.txt", "nothing interesting\n")
         self.assertEqual(self._grep("zzz"), [])
 
+    def test_name_filter_narrows_to_matching_files(self):
+        # The pane filter reaches the grep (issue #305): only files it matches
+        # are read, with the same case-insensitive whole-name glob semantics.
+        self._write("a.txt", "needle\n")
+        self._write("b.nim", "needle\n")
+        self._write("c.TXT", "needle\n")
+        hits = self._grep("needle", name_filter="*.txt")
+        self.assertEqual(sorted(h["path"].name for h in hits), ["a.txt", "c.TXT"])
 
-class LooksTextual(unittest.TestCase):
+    def test_name_filter_still_descends_directories(self):
+        # The filter applies to files only, as in the pane listing — a directory
+        # not matching *.txt is still walked for the .txt files inside it.
+        self._write("sub/deep/a.txt", "needle\n")
+        self._write("sub/deep/b.nim", "needle\n")
+        hits = self._grep("needle", name_filter="*.txt")
+        self.assertEqual([h["path"].name for h in hits], ["a.txt"])
+
+    def test_empty_name_filter_searches_everything(self):
+        self._write("a.txt", "needle\n")
+        self._write("b.nim", "needle\n")
+        self.assertEqual(len(self._grep("needle", name_filter="")), 2)
+
+    def test_utf8_bom_file_matches_anchored_pattern_on_line_1(self):
+        # The BOM is consumed by the codec (utf-8-sig), so a ^-anchored pattern
+        # matches the true first characters of the file (issue #305).
+        self._write("bom.txt", b"\xef\xbb\xbf#import winim\n", mode="wb")
+        hits = self._grep("^#import")
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["text"], "#import winim")
+
+    def test_utf16_bom_files_are_searched_not_skipped_as_binary(self):
+        # UTF-16 text is full of NULs; the BOM must win over the NUL sniff
+        # (issue #305 — Windows Notepad's "Unicode" and PowerShell output).
+        self._write("le.txt", "let clip = 1\n日本語\n".encode("utf-16"), mode="wb")
+        self._write("be.txt",
+                    codecs.BOM_UTF16_BE + "let clip = 2\n".encode("utf-16-be"),
+                    mode="wb")
+        hits = self._grep("let clip")
+        self.assertEqual(sorted(h["path"].name for h in hits), ["be.txt", "le.txt"])
+        self.assertEqual(len(self._grep("日本語")), 1)
+
+
+class SniffTextEncoding(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
 
@@ -106,14 +150,28 @@ class LooksTextual(unittest.TestCase):
             fh.write(data)
         return Path(p)
 
-    def test_text_is_textual(self):
-        self.assertTrue(xefm_app.XeFMApp._looks_textual(self._file(b"hello world")))
+    def _sniff(self, data):
+        return xefm_app.XeFMApp._sniff_text_encoding(self._file(data))
+
+    def test_plain_text_reads_as_utf8(self):
+        self.assertEqual(self._sniff(b"hello world"), "utf-8")
 
     def test_nul_byte_is_binary(self):
-        self.assertFalse(xefm_app.XeFMApp._looks_textual(self._file(b"hello\x00world")))
+        self.assertIsNone(self._sniff(b"hello\x00world"))
 
     def test_empty_is_not_textual(self):
-        self.assertFalse(xefm_app.XeFMApp._looks_textual(self._file(b"")))
+        self.assertIsNone(self._sniff(b""))
+
+    def test_utf8_bom_reads_as_utf8_sig(self):
+        self.assertEqual(self._sniff(codecs.BOM_UTF8 + b"hello"), "utf-8-sig")
+
+    def test_utf16_boms_read_as_utf16(self):
+        for bom in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE):
+            self.assertEqual(self._sniff(bom + b"h\x00i\x00"), "utf-16")
+
+    def test_utf32_boms_read_as_utf32(self):
+        for bom in (codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE):
+            self.assertEqual(self._sniff(bom + b"h\x00\x00\x00"), "utf-32")
 
 
 class Navigation(unittest.TestCase):

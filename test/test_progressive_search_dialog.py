@@ -231,6 +231,38 @@ class AppIntegration(unittest.TestCase):
             app.file_monitor.stop_monitoring()
             b.close()
 
+    def test_content_search_honors_pane_filter(self):
+        # Issue #305: an active pane filter narrows content search to the files
+        # it matches (directories are still descended), and the dialog title
+        # names the pattern so the narrowing is visible.
+        from puikit.backends import create_backend
+
+        self._write("a.txt", "needle\n")
+        self._write("b.nim", "needle\n")
+        self._write("sub/c.txt", "needle\n")
+
+        b = create_backend("memory")
+        b.open()
+        app = xefm_app.XeFMApp(b, self.tmp, self.tmp, left_provided=True,
+                               right_provided=True, state_manager=self.sm)
+        try:
+            app._settle_listings()
+            app.active_pane()["filter_pattern"] = "*.txt"
+            app._open_search("content")
+            dlg = app.panel._layers[-1].widget
+            self.assertEqual(dlg._titles["content"], "Search Content (*.txt)")
+
+            dlg.query_edit.text = "needle"
+            dlg._start_search()
+            dlg._thread.join(timeout=5)
+            b.run_animation_ticks()
+
+            names = sorted(v["path"].name for v in dlg.results)
+            self.assertEqual(names, ["a.txt", "c.txt"])
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
     def test_accept_lands_pane_cursor_on_picked_hit(self):
         # Issue #224: accepting a row feeds the whole result set into the pane,
         # and the cursor must land on the row that was picked.

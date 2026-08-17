@@ -338,7 +338,11 @@ See [Sort Dialog Feature](SORT_DIALOG_FEATURE.md) for the dialog's controls
 - **Filename search (Shift-F)**: The query is an *exact* glob matched against the
   whole filename — `report.txt` matches only that name. Add wildcards for partial
   matches: `report*`, `*.py`, or `*report*` for the old "contains" behaviour.
-- **Content search**: Search inside files with progress tracking
+- **Content search**: Search inside files with progress tracking. An active
+  pane filter (`;`) narrows the search to the files it matches — filter to
+  `*.txt` and only `.txt` files are grepped (subdirectories are still walked).
+  The dialog title shows the pattern while it applies. Unicode files with a
+  BOM (UTF-8, UTF-16, UTF-32) are searched as text, not skipped as binary.
 - **Quick sort**: Use number keys 1-4 for instant sorting
 - **ESC**: Cancel any search operation
 

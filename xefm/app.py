@@ -82,6 +82,7 @@ from xefm.file_operations import (FileOperationService, format_op_errors,
                                   format_op_summary)
 from xefm.task import Cancelled, Task, TaskManager
 from xefm.text_dialog import show_markdown
+from xefm.text_encoding import sniff_bom
 from xefm.tips import tip_count
 from xefm.tips_dialog import show_tips_dialog
 from xefm.image_viewer import is_image_file, show_image_viewer
@@ -3299,14 +3300,22 @@ class XeFMApp:
         Shift-F and Shift-G land here — they differ only in the starting mode, and
         Tab toggles between them in place. The dialog runs ``search_iter`` on a
         worker thread and streams results in, so a huge tree never blocks the UI;
-        each keystroke supersedes the previous search."""
-        root = self.active_pane()["path"]
+        each keystroke supersedes the previous search.
+
+        An active pane filter narrows *content* search to the files it matches
+        (issue #305) — the same files the user is looking at — and the dialog
+        title names the pattern so the narrowing is visible. Filename search
+        ignores it: its query is itself a filename pattern."""
+        pane = self.active_pane()
+        root = pane["path"]
         root_str = str(root)
+        name_filter = pane.get("filter_pattern") or ""
 
         def search_iter(mode, query, cancel):
             if mode == "content":
                 regex = re.compile(query, re.IGNORECASE)  # re.error surfaces in the dialog
-                yield from self._iter_content_matches(root, regex, cancel)
+                yield from self._iter_content_matches(root, regex, cancel,
+                                                      name_filter=name_filter)
             else:
                 yield from self._iter_filename_matches(root, query, cancel)
 
@@ -3328,10 +3337,14 @@ class XeFMApp:
                                       root, dialog.query_edit.text.strip(),
                                       focus=value)
 
+        titles = None
+        if name_filter:
+            titles = {"filename": "Search Files",
+                      "content": f"Search Content ({name_filter})"}
         dialog = show_progressive_search(
             self.panel, initial_mode=initial_mode,
             search_iter=search_iter, to_label=to_label, on_accept=on_accept,
-            region=self._active_pane_region())
+            titles=titles, region=self._active_pane_region())
         self.panel.render()
 
     def _feed_search_results(self, mode: str, results: list, root, query: str,
@@ -3393,20 +3406,21 @@ class XeFMApp:
                 self.pm.adjust_scroll_for_focus(pane, self._display_height())
                 return
 
-    def _iter_filename_matches(self, root, pattern, cancel, node_cap: int = 50000):
+    def _iter_filename_matches(self, root, pattern, cancel):
         """Depth-first walk under ``root`` yielding entries whose name matches
         ``pattern`` (case-insensitive glob), checking ``cancel`` between entries so
         a superseded search stops promptly. The pattern is matched against the
         *whole* filename — an exact glob (issue #231): ``report.txt`` matches only
         that name, and wildcards are used explicitly for partial matches
         (``*.py``, ``report*``, or ``*report*`` for the old "contains" behaviour).
-        Hidden entries are skipped unless the pane is showing them; ``node_cap``
-        bounds the walk. The result cap is applied by the dialog consuming this
+        Hidden entries are skipped unless the pane is showing them. The walk is
+        unbounded (issue #305 — a size cap silently hid far-away matches); the
+        result cap and cancellation are applied by the dialog consuming this
         generator."""
         import fnmatch
         pat = pattern.lower()
-        stack, nodes = [root], 0
-        while stack and nodes < node_cap:
+        stack = [root]
+        while stack:
             if cancel.is_set():
                 return
             try:
@@ -3419,7 +3433,6 @@ class XeFMApp:
             for e, attrs in entries:
                 if cancel.is_set():
                     return
-                nodes += 1
                 if not self.flm.show_hidden and is_hidden(e.name, attrs):
                     continue
                 if fnmatch.fnmatch(e.name.lower(), pat):
@@ -3493,26 +3506,50 @@ class XeFMApp:
         return True
 
     @staticmethod
-    def _looks_textual(path, sample_size: int = 1024) -> bool:
-        """Cheap binary filter for content search: a NUL byte in the first chunk
-        means binary. Empty or unreadable files are treated as non-text — there's
-        nothing to grep in them."""
+    def _sniff_text_encoding(path, sample_size: int = 1024) -> str | None:
+        """The codec content search streams ``path`` with, or ``None`` for a file
+        with nothing to grep (binary, empty, unreadable). A Unicode BOM names the
+        text outright and must be honored *before* the NUL sniff — UTF-16/32 text
+        is full of NULs by construction and used to be skipped as binary (issue
+        #305); the self-detecting codec consumes the BOM so it never shadows a
+        line-1 match. Without a BOM, a NUL in the first chunk means binary, and
+        clean bytes read as UTF-8."""
         try:
             with path.open("rb") as f:
                 chunk = f.read(sample_size)
         except Exception:
-            return False
-        return bool(chunk) and b"\x00" not in chunk
+            return None
+        if not chunk:
+            return None
+        bom = sniff_bom(chunk)
+        if bom is not None:
+            codec = bom[1]
+            if codec.startswith("utf-16"):
+                return "utf-16"
+            if codec.startswith("utf-32"):
+                return "utf-32"
+            return "utf-8-sig"
+        if b"\x00" in chunk:
+            return None
+        return "utf-8"
 
-    def _iter_content_matches(self, root, regex, cancel, node_cap: int = 50000,
-                              max_line: int = 200):
+    def _iter_content_matches(self, root, regex, cancel, max_line: int = 200,
+                              name_filter: str = ""):
         """Depth-first walk under ``root`` yielding ``{path, line, text}`` for each
         line of a text file that matches ``regex`` (compiled), checking ``cancel``
-        between entries so a superseded search stops promptly. Binary and (unless
-        the pane shows them) hidden entries are skipped; ``node_cap`` bounds the
-        walk. The result cap is applied by the dialog consuming this generator."""
-        stack, nodes = [root], 0
-        while stack and nodes < node_cap:
+        between entries so a superseded search stops promptly. ``name_filter`` is
+        the pane's filename filter (issue #305): when set, only files matching it
+        are read — the same case-insensitive whole-name glob, files only, as the
+        pane listing — while directories are still descended. Binary and (unless
+        the pane shows them) hidden entries are skipped, with Unicode BOMs
+        deciding text-ness before the binary sniff (``_sniff_text_encoding``).
+        The walk is unbounded (issue #305 — a size cap silently hid far-away
+        matches); the result cap and cancellation are applied by the dialog
+        consuming this generator."""
+        import fnmatch
+        pat = name_filter.lower()
+        stack = [root]
+        while stack:
             if cancel.is_set():
                 return
             try:
@@ -3522,16 +3559,18 @@ class XeFMApp:
             for e, attrs in entries:
                 if cancel.is_set():
                     return
-                nodes += 1
                 if not self.flm.show_hidden and is_hidden(e.name, attrs):
                     continue
                 try:
                     if attrs["is_dir"]:
                         stack.append(e)
                         continue
-                    if not self._looks_textual(e):
+                    if pat and not fnmatch.fnmatch(e.name.lower(), pat):
                         continue
-                    with e.open("r", encoding="utf-8", errors="ignore") as f:
+                    encoding = self._sniff_text_encoding(e)
+                    if encoding is None:
+                        continue
+                    with e.open("r", encoding=encoding, errors="ignore") as f:
                         for line_num, line in enumerate(f, 1):
                             if cancel.is_set():
                                 return
