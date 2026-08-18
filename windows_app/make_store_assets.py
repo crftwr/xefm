@@ -13,6 +13,12 @@ Emitted into ``--out-dir`` (default ``windows_app/resources/Assets``):
     Square44x44Logo.png           44x44    app-list icon (+ .scale-200 = 88)
     Square150x150Logo.png         150x150  medium tile   (+ .scale-200 = 300)
     Wide310x150Logo.png           310x150  wide tile (square logo centered)
+    Square44x44Logo.targetsize-N[_altform-unplated].png
+                                  16/24/32/48/256  shell icons (taskbar, Alt-Tab, ...)
+
+Note that MRT only finds the ``targetsize-*`` variants through the package's
+``resources.pri``; build_msix.ps1 generates one with makepri after writing the
+manifest. Dropping these PNGs in without that index leaves them inert.
 
 Pillow is required (already a build dependency via make_icon.py). If it is missing
 this exits non-zero rather than emitting junk — the Store listing needs real tiles.
@@ -37,6 +43,11 @@ _SQUARE_TILES = {
 # Which square tiles also get a scale-200 (2x) variant that MSIX auto-selects.
 _SCALE_200 = {"Square44x44Logo.png", "Square150x150Logo.png"}
 
+# Sizes emitted as ``targetsize-N`` variants of Square44x44Logo -- the shell's icon
+# sizes (taskbar, Alt-Tab, Task View, jump lists, Start's app list). Each is rendered
+# natively rather than left for the shell to downscale the 44px tile to.
+_TARGETSIZE_SIZES = [16, 24, 32, 48, 256]
+
 _WIDE_TILE = ("Wide310x150Logo.png", 310, 150)
 
 # At or below this tile size the simplified master is used: the detailed art's wordmark
@@ -48,6 +59,12 @@ def _scale_name(name: str, scale: int) -> str:
     """'Square44x44Logo.png' + 200 -> 'Square44x44Logo.scale-200.png'."""
     stem, _, ext = name.rpartition(".")
     return f"{stem}.scale-{scale}.{ext}"
+
+
+def _targetsize_name(size: int, unplated: bool) -> str:
+    """24 -> 'Square44x44Logo.targetsize-24[_altform-unplated].png'."""
+    suffix = "_altform-unplated" if unplated else ""
+    return f"Square44x44Logo.targetsize-{size}{suffix}.png"
 
 
 def main() -> int:
@@ -100,6 +117,26 @@ def main() -> int:
             scaled_name = _scale_name(name, 200)
             tile(big).save(out_dir / scaled_name, format="PNG")
             print(f"[INFO] Wrote {out_dir / scaled_name} ({big}x{big})")
+            count += 1
+
+    # Shell icons. Windows *plates* a packaged app's icon -- composites it onto a
+    # solid square filled with the manifest's BackgroundColor, or with the theme
+    # accent color when that is "transparent" -- on every surface except those where
+    # an ``_altform-unplated`` candidate exists. With no targetsize assets at all the
+    # taskbar plated XeFM's rounded tile into a solid accent-blue square (issue #322).
+    # So both forms ship from the same art: the plain one for the surfaces that plate
+    # by design, the unplated one for the taskbar, Alt-Tab, Task View and jump lists.
+    #
+    # No ``_altform-lightunplated`` companion: that exists for icons which vanish
+    # against a light taskbar, and XeFM's is a dark tile with light content, which
+    # reads on either theme. Windows falls back to the unplated asset when the light
+    # variant is absent.
+    for size in _TARGETSIZE_SIZES:
+        art = tile(size)
+        for unplated in (False, True):
+            name = _targetsize_name(size, unplated)
+            art.save(out_dir / name, format="PNG")
+            print(f"[INFO] Wrote {out_dir / name} ({size}x{size})")
             count += 1
 
     # Wide tile: the square logo (height-fit) centered on a transparent canvas.
