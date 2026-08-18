@@ -240,7 +240,10 @@ def test_rich_search_cancel_restores_and_clears(backend, md_file):
 
     panel.dispatch_event(_key("f", "f"))
     _type(panel, "paragraph")
-    panel.dispatch_event(_key("down"))               # scroll away from the origin
+    # Walk far enough down that the centered jump must scroll (nearby matches
+    # inside the viewport's comfort band no longer move the view).
+    for _ in range(20):
+        panel.dispatch_event(_key("down"))
     panel.render()
     assert mv.offset > 0.0
     panel.dispatch_event(_key("escape"))             # cancel -> restore + clear
@@ -258,7 +261,9 @@ def test_rich_search_accept_keeps_position(backend, md_file):
 
     panel.dispatch_event(_key("f", "f"))
     _type(panel, "paragraph")
-    panel.dispatch_event(_key("down"))
+    # Far enough down that the centered jump must scroll (see the cancel test).
+    for _ in range(20):
+        panel.dispatch_event(_key("down"))
     panel.render()
     kept = mv.offset
     assert kept > 0.0

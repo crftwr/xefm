@@ -49,6 +49,16 @@ def _assert_match_in_context(v, row, total):
     assert (top + v._view_h - 1) - row >= min(3, total - 1 - row)
 
 
+def _assert_match_centered(v, row):
+    """A match jumped to from outside the comfort band sits at the viewport's
+    vertical center — as many rows above as below (±1 for an even height).
+    Only for jumps far enough from both document edges that no clamp bites."""
+    above = row - int(v.top)
+    below = (int(v.top) + v._view_h - 1) - row
+    assert above >= 3 and below >= 3
+    assert abs(above - below) <= 1
+
+
 @pytest.fixture(params=[PROFILE_TUI, PROFILE_GUI_DESKTOP], ids=["tui", "gui"])
 def backend(request):
     return MemoryBackend(width=100, height=30, capabilities=request.param)
@@ -147,9 +157,9 @@ def test_text_search_accept_keeps_position(backend, text_file):
     assert v.top == scrolled
 
 
-def test_text_search_jump_keeps_context_margin(backend, text_file):
-    # Jumping to an off-screen match must not pin it to the viewport edge:
-    # a few lines above and below stay visible (issue #321).
+def test_text_search_jump_centers_offscreen_match(backend, text_file):
+    # Jumping to an off-screen match centers it vertically — equal context
+    # above and below — rather than pinning it near a viewport edge.
     panel = Panel(backend)
     v = show_text_viewer(panel, text_file)
     panel.render()
@@ -159,6 +169,7 @@ def test_text_search_jump_keeps_context_margin(backend, text_file):
     panel.render()
     assert v.matches == [26] and v.top > 0.0
     _assert_match_in_context(v, 26, total)
+    _assert_match_centered(v, 26)
 
 
 def test_text_search_step_keeps_context_margin(backend, text_file):
