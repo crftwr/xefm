@@ -4896,23 +4896,38 @@ class XeFMApp:
             return pattern
         return "*" + "*".join(pattern.split()) + "*"
 
+    @classmethod
+    def _resolve_jump_target(cls, text: str, current: str) -> Path:
+        """Resolve the Jump-to-Path dialog's input against the pane's current
+        directory ``current``. Accepts ``~``, relative (to ``current``) and
+        absolute local paths, plus full remote URIs (``s3://…``, ``ssh://…``):
+        a remote URI is taken as-is, and any remote result skips
+        ``os.path.normpath``, which would collapse its ``scheme://`` separator
+        to ``scheme:/`` (#318)."""
+        text = text.strip()
+        if text.startswith(cls._REMOTE_SCHEMES):
+            return Path(text)
+        if text.startswith("~"):
+            target = Path.home() / text[1:].lstrip("/")
+        elif not os.path.isabs(text):
+            target = Path(current) / text
+        else:
+            target = Path(text)
+        if not cls._is_local(target):
+            return target
+        return Path(os.path.normpath(str(target)))
+
     def jump_to_path(self) -> None:
         """Prompt for a directory path and navigate the active pane there.
-        Accepts ``~``, relative (to the current path), and absolute paths;
+        Accepts ``~``, relative (to the current path), and absolute paths,
+        plus remote URIs (``s3://…``, ``ssh://…``) in
         the jump-to-path dialog. TAB completes directory names via
         :class:`xefm.completion.FilepathCompleter`."""
         pane = self.active_pane()
         current = str(pane["path"])
 
         def resolve(text: str) -> Path:
-            text = text.strip()
-            if text.startswith("~"):
-                target = Path.home() / text[1:].lstrip("/")
-            elif not os.path.isabs(text):
-                target = Path(current) / text
-            else:
-                target = Path(text)
-            return Path(os.path.normpath(str(target)))
+            return self._resolve_jump_target(text, current)
 
         def validate(text: str) -> str | None:
             if not text.strip():
@@ -4934,8 +4949,9 @@ class XeFMApp:
             self.panel.render()
 
         # Prefill with the current path plus a trailing separator, ready to type
-        # a child directory name.
-        initial = current if current.endswith(os.sep) else current + os.sep
+        # a child directory name. Remote URIs always use ``/``, whatever os.sep is.
+        sep = os.sep if self._is_local(current) else "/"
+        initial = current if current.endswith(sep) else current + sep
         show_input(self.panel, title="Jump to Path", prompt="Path:", text=initial,
                    on_accept=accept, validate=validate, select_all=False,
                    completer=FilepathCompleter(base_directory=current, directories_only=True,
