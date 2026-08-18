@@ -27,7 +27,7 @@ from puikit.event import Event, EventType
 from puikit.font import Font
 from puikit.panel import Rect
 from puikit.text import display_width, elide, word_bounds, wrap_text
-from puikit.widgets._input import MultiClickTracker
+from puikit.widgets._input import EdgeAutoScroll, MultiClickTracker
 from puikit.widgets.base import Widget
 
 from xefm.choice_dialog import show_choice_dialog
@@ -590,6 +590,14 @@ class TextViewer(Widget):
         # mode, translates into the embedded widget's coordinate space.
         self._sel = _RawTextSelection()
         self._body_rect: tuple[float, float, float, float] | None = None
+        # Drag held past the body's edge keeps scrolling under it, so a
+        # selection can run past one screenful (issue #320) — the LogView
+        # gesture, ridden on panel animation ticks. The drag's x and which edge
+        # it left by are kept so each scrolled step can re-place the
+        # selection's moving end on the newly revealed edge row.
+        self._edge_scroll = EdgeAutoScroll(self._edge_scroll_step)
+        self._drag_x = 0.0
+        self._edge_dir = 0
 
     # --- layout helpers ------------------------------------------------------
 
@@ -997,6 +1005,7 @@ class TextViewer(Widget):
     # --- events --------------------------------------------------------------
 
     def _close(self) -> None:
+        self._edge_scroll.stop()  # a mid-drag close leaves no timer behind
         panel = self._panel
         if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
             panel.pop_layer()
@@ -1212,6 +1221,7 @@ class TextViewer(Widget):
             return
         if event.type is EventType.MOUSE_UP:
             self._sel.release()
+            self._edge_scroll.stop()
             return
         if ex is None or ey is None:
             return
@@ -1221,7 +1231,68 @@ class TextViewer(Widget):
             else:
                 self._sel.clear()
         elif event.type is EventType.MOUSE_DRAG:
-            self._sel.drag(self._pos_at(ex, ey), self.lines)
+            if not self._sel.pressed:
+                return
+            y = self._pointer_y(event)
+            self._sel.drag(self._drag_pos(ex, y), self.lines)
+            # Held past an edge, the drag also scrolls: without it the selection
+            # could never grow beyond the rows already on screen.
+            self._update_edge_scroll(ex, y)
+
+    def _pointer_y(self, event: Event) -> float:
+        """The drag's true vertical position. The Panel pins a gesture dragged
+        out of the window onto the nearest edge and keeps the pre-clamp
+        coordinate in a hint, so how far outside the pointer is survives the
+        routing (see ``Event.hints``)."""
+        y = event.hints.get("pointer_y")
+        return float(y if y is not None else (event.y or 0.0))
+
+    def _drag_pos(self, ex: float, ey: float) -> tuple[int, int]:
+        """Where a drag endpoint lands, with the pointer first pulled back into
+        the visible band: a drag past an edge selects *to* the edge row and lets
+        the auto-scroll bring further lines into view. Past an edge the row goes
+        whole — the start of the top row, the end of the bottom one — because a
+        pointer beyond a row is past it in reading order, as in an editor."""
+        if self._body_rect is None or not self.lines:
+            return self._pos_at(ex, ey)
+        _, by0, _, bh = self._body_rect
+        if by0 <= ey <= by0 + bh:
+            return self._pos_at(ex, ey)
+        if ey < by0:
+            return (self._pos_at(ex, by0)[0], 0)
+        line = self._pos_at(ex, max(by0, by0 + bh - 1e-3))[0]
+        return (line, len(self.lines[line]))
+
+    def _update_edge_scroll(self, ex: float, ey: float) -> None:
+        """Arm, re-aim or stop the auto-scroll from where this drag now sits."""
+        if self._body_rect is None:
+            return
+        _, by0, _, bh = self._body_rect
+        if ey < by0:
+            direction, overshoot = -1, by0 - ey
+        elif ey > by0 + bh:
+            direction, overshoot = 1, ey - (by0 + bh)
+        else:
+            direction, overshoot = 0, 0.0
+        self._drag_x = ex
+        self._edge_dir = direction
+        self._edge_scroll.update(self._panel, direction, overshoot)
+
+    def _edge_scroll_step(self, rows: float) -> bool:
+        """One auto-scroll step of ``rows`` display rows (fractional, signed),
+        taking the selection's moving end with it so the newly revealed lines
+        join the selection. False once the view is against that end and no
+        longer moves, which retires the timer."""
+        before = self.top
+        self.top += rows
+        self._clamp()
+        if self.top == before:
+            return False
+        if self._sel.pressed and self._body_rect is not None and self._edge_dir:
+            _, by0, _, bh = self._body_rect
+            ey = by0 - 1.0 if self._edge_dir < 0 else by0 + bh + 1.0
+            self._sel.drag(self._drag_pos(self._drag_x, ey), self.lines)
+        return True
 
     def _forward_mouse_to_rich(self, event: Event) -> None:
         """Forward a mouse event to the embedded rich widget in its own coords, so

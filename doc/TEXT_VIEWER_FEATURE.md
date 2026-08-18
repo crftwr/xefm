@@ -62,6 +62,11 @@ You can select text with the mouse and copy it to the clipboard.
 The highlighted range tracks the pointer as you drag, and the selection
 survives scrolling — scroll away and back and it is still there.
 
+To select more than one screenful, drag past the top or bottom of the text and
+hold there: the view keeps scrolling under the pointer and the selection grows
+with it, faster the further out you hold. Drag back inside, or release, and it
+stops.
+
 Press `Cmd`+`C` (macOS) or `Ctrl`+`C` (Linux / Windows) to copy. The text
 viewer copies the selected source text exactly, each display line on its own
 line.
