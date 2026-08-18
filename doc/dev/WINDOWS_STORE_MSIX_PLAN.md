@@ -156,9 +156,16 @@ The Store/manifest needs PNG tile assets (not `.ico`). Minimum set (scale-100):
 - `StoreLogo.png` (50×50, referenced by `<Properties><Logo>`)
 - Optional but nice: `Wide310x150Logo.png`, `SplashScreen` / larger tiles, and
   multiple scale variants (`.scale-200` etc.).
+- **Required for the taskbar**: `Square44x44Logo.targetsize-{16,24,32,48,256}.png`
+  plus an `_altform-unplated` twin of each. Windows *plates* a packaged app's icon —
+  composites it onto a solid square filled with the manifest's `BackgroundColor`, or
+  with the theme accent when that is `"transparent"` — on every surface where no
+  unplated candidate exists. Ship neither and the taskbar button is XeFM's rounded
+  tile sunk into a solid accent-colored square (issue #322).
 
-Extend `windows_app/make_icon.py` (already Pillow-based) to emit these from the
-shared `XeFM.icns`, into `windows_app/resources/Assets/`.
+`windows_app/make_store_assets.py` (Pillow-based, sharing `make_icon.py`'s tile
+rendering) emits these from the committed PNG masters into
+`windows_app/resources/Assets/`, which is gitignored — they are build output.
 
 ### Step 3 — Author `AppxManifest.xml`
 Place at the **root** of the package payload. Template (fill the `‹…›` identity
@@ -227,9 +234,31 @@ Notes:
   such association here via `<uap:Extension Category="windows.fileTypeAssociation">`.
   Check whether the Windows build registers anything; if not, skip.
 
-### Step 4 — Pack with `makeappx`
-Assemble a payload directory = the existing `windows_app\build\XeFM\` folder
-contents **plus** `AppxManifest.xml` and `Assets\` at its root, then:
+### Step 4 — Index the assets, then pack with `makeappx`
+Step 2's qualified assets are reachable only through the package's `resources.pri`.
+With no PRI the shell resolves nothing but the single path the manifest names, so
+the `_altform-unplated` PNGs sit in the package inert and the taskbar icon stays
+plated. Index them first:
+
+```powershell
+makepri createconfig /cf <out>\priconfig.xml /dq en-US /o
+makepri new /pr <pri-root> /cf <out>\priconfig.xml /of <out>\resources.pri /o
+```
+
+Two things that are easy to get wrong here:
+
+- **Strip `<packaging>` from the generated `priconfig.xml`.** Its
+  `autoResourcePackage` entries split the scale-200 tiles into a second
+  `resources.scale-200.pri` — a resource *package* that a single non-bundle `.msix`
+  never carries, leaving those tiles unresolvable. Without the element every
+  candidate lands in the one `resources.pri` that ships.
+- **Point `/pr` at a throwaway root holding just `AppxManifest.xml` and `Assets\`**,
+  not at the staged payload; aimed at the latter makepri walks every file under
+  `Lib\site-packages` for nothing. The layout mirrors the package's, so the indexed
+  paths resolve identically once `resources.pri` is copied to the payload root.
+
+Then assemble a payload directory = the existing `windows_app\build\XeFM\` folder
+contents **plus** `AppxManifest.xml`, `Assets\` and `resources.pri` at its root:
 
 ```powershell
 makeappx pack /d <payload-dir> /p windows_app\build\XeFM-<version>-x64.msix /o

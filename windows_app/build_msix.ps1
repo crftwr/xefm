@@ -258,6 +258,8 @@ if ($Install) {
 # ===========================================================================
 $makeappx = Find-SdkTool "makeappx.exe"
 Write-Host "[INFO] makeappx: $makeappx"
+$makepri = Find-SdkTool "makepri.exe"
+Write-Host "[INFO] makepri: $makepri"
 if ($Sign) {
     $signtool = Find-SdkTool "signtool.exe"
     Write-Host "[INFO] signtool: $signtool"
@@ -337,7 +339,7 @@ $manifest = @"
         Description="Dual-pane terminal-style file manager"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
-        BackgroundColor="transparent">
+        BackgroundColor="#1B2429">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
       </uap:VisualElements>
     </Application>
@@ -348,6 +350,46 @@ $manifestPath = "$staging\AppxManifest.xml"
 # UTF-8 without BOM (makeappx dislikes a BOM on the manifest).
 [System.IO.File]::WriteAllText($manifestPath, $manifest, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "[INFO] Wrote manifest: $manifestPath"
+
+# ---- 3b. Index the qualified assets into resources.pri --------------------
+# MRT only finds Square44x44Logo's targetsize-* / _altform-unplated variants
+# through the package's resources.pri. With no PRI the shell sees just the one
+# path the manifest names, and *plates* the taskbar icon -- XeFM's rounded tile
+# composited into a solid accent-colored square (issue #322). So the unplated
+# PNGs make_store_assets.py emits are inert until they are indexed here.
+#
+# makepri indexes a throwaway root holding only the manifest and Assets\, not
+# $staging: pointed at the full payload it would walk every file under
+# Lib\site-packages to no purpose. The layout under it mirrors the package's, so
+# the indexed Assets\... paths resolve identically once the PRI is copied in.
+$priRoot   = "$OutDir\msix-pri"
+$priConfig = "$OutDir\priconfig.xml"
+$priFile   = "$OutDir\resources.pri"
+if (Test-Path $priRoot) { Remove-Item -Recurse -Force $priRoot }
+New-Item -ItemType Directory -Force -Path $priRoot | Out-Null
+Copy-Item -Force $manifestPath "$priRoot\AppxManifest.xml"
+Copy-Item -Recurse -Force $assetsSrc "$priRoot\Assets"
+
+& $makepri createconfig /cf $priConfig /dq en-US /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "makepri createconfig failed ($LASTEXITCODE)" }
+
+# Drop <packaging>: its autoResourcePackage entries split the scale-200 tiles out
+# into a separate resources.scale-200.pri -- a resource *package* that this single
+# non-bundle .msix never carries, leaving those tiles unresolvable. Without the
+# element every candidate lands in the one resources.pri we ship.
+$priXml = [xml](Get-Content $priConfig)
+$packaging = $priXml.resources.packaging
+if ($packaging) { $priXml.resources.RemoveChild($packaging) | Out-Null }
+$priXml.Save($priConfig)
+
+# Clear stale PRIs so the split-check below cannot pass on a leftover file.
+Get-ChildItem $OutDir -Filter "resources*.pri" -ErrorAction SilentlyContinue | Remove-Item -Force
+& $makepri new /pr $priRoot /cf $priConfig /of $priFile /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "makepri new failed ($LASTEXITCODE)" }
+$split = @(Get-ChildItem $OutDir -Filter "resources.*.pri" -ErrorAction SilentlyContinue)
+if ($split.Count) { throw "makepri split out $($split[0].Name); the <packaging> strip did not take." }
+Copy-Item -Force $priFile "$staging\resources.pri"
+Write-Host "[INFO] Wrote resources.pri -> $staging"
 
 # ---- 4. Pack + optional sign (atomic) -------------------------------------
 # The final $msix must only ever exist as a fully-built (and, if requested,
