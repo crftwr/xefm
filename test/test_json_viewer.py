@@ -98,6 +98,39 @@ def test_draw_both_modes_no_crash(backend, json_file):
     assert type(panel._layers[-1].widget).__name__ == "TextViewer"
 
 
+def test_wrap_key_toggles_json_wrap(backend, json_file):
+    # In rich JSON mode the ``toggle_wrap`` binding (W) drives the JsonView's
+    # own line wrap instead of the raw-text wrap (issue #317).
+    panel = Panel(backend)
+    v = show_text_viewer(panel, json_file)
+    panel.render()
+    v._toggle_view_mode()
+    panel.render()
+    assert v._rich_widget.wrap is False
+    panel.dispatch_event(_key("w", "w"))
+    assert v._rich_widget.wrap is True
+    assert v.wrap is False                   # the raw-mode wrap is untouched
+    panel.render()                           # wrapped tree draws
+    panel.dispatch_event(_key("w", "w"))
+    assert v._rich_widget.wrap is False
+
+
+def test_long_string_fully_visible_when_wrapped(backend, tmp_path):
+    # The issue's symptom: a long string field used to be unreachable past the
+    # right edge. Wrapped, every character of it is on screen.
+    p = tmp_path / "long.json"
+    p.write_text('{"msg": "%s"}' % ("a" * 200))
+    panel = Panel(backend)
+    v = show_text_viewer(panel, Path(str(p)))
+    panel.render()
+    v._toggle_view_mode()
+    panel.render()
+    assert "".join(backend.snapshot()).count("a") < 200   # unwrapped: cut
+    panel.dispatch_event(_key("w", "w"))
+    panel.render()
+    assert "".join(backend.snapshot()).count("a") >= 200  # wrapped: all there
+
+
 def test_malformed_json_stays_raw(backend, tmp_path):
     p = tmp_path / "broken.json"
     p.write_text("{ this is not valid json ,,, }")

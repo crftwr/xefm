@@ -784,7 +784,8 @@ class TextViewer(Widget):
         # name in rich mode, the encoding + line position (+ WRAP) in raw text
         # mode. The encoding label is empty on the error/binary placeholder.
         if self.mode == "rich" and self._rich_widget is not None:
-            info = f"{self._rich.name} "
+            wrap_tag = "  WRAP" if getattr(self._rich_widget, "wrap", False) else ""
+            info = f"{self._rich.name}{wrap_tag} "
         else:
             enc = f"{self.encoding}  " if self.encoding else ""
             info = f"{enc}{pos}/{total}  {'WRAP' if self.wrap else ''} "
@@ -879,7 +880,12 @@ class TextViewer(Widget):
         search_k = keys_label_for_action("search", "F")
         enc_k = keys_label_for_action("change_encoding", "Shift-E")
         quit_k = keys_label_for_action("quit", "q")
-        hint = (f" ↑↓ scroll · {search_k} search · {view_k} raw text · "
+        # A renderer with its own line wrap (JsonView) gets the wrap key in its
+        # hint too; Markdown reflows by itself and advertises nothing.
+        wrap_seg = ""
+        if hasattr(self._rich_widget, "toggle_wrap"):
+            wrap_seg = f"{keys_label_for_action('toggle_wrap', 'w')} wrap · "
+        hint = (f" ↑↓ scroll · {wrap_seg}{search_k} search · {view_k} raw text · "
                 f"{enc_k} encoding · {self._edit_hint_segment()}{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
@@ -1143,9 +1149,13 @@ class TextViewer(Widget):
             self._edit_file()
             return True
         # Rich mode: the embedded renderer owns navigation (arrows / page / home /
-        # end / in-document link jumps); forward and let it repaint. Line-wrap is
-        # raw-text-only, so it doesn't apply here.
+        # end / in-document link jumps); forward and let it repaint. A renderer
+        # with its own line wrap (JsonView) takes the ``toggle_wrap`` binding;
+        # the others (Markdown reflows by itself) just see the key as before.
         if self.mode == "rich" and self._rich_widget is not None:
+            if self._wrap_pressed(event) and hasattr(self._rich_widget, "toggle_wrap"):
+                self._rich_widget.toggle_wrap()
+                return True
             self._rich_widget.handle_event(event)
             return True
         # From here on it is raw text mode. Cmd/Ctrl+C copies the selected text

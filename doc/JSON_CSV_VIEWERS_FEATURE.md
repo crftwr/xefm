@@ -18,6 +18,14 @@ array), so you can see the shape of a document without expanding everything.
 A `.jsonl` / `.ndjson` file (one JSON value per line) is shown as an array of its
 records.
 
+**Long values.** A string longer than the window has two ways to be read.
+Unwrapped (the default), the view **pans horizontally** — swipe sideways on a
+trackpad or press **Shift+←/→**, with a horizontal scrollbar along the bottom
+while something overflows. Press **W** to **wrap** instead: every value folds
+into the window width, continuing on extra lines aligned under where it starts,
+so the whole string is on screen at once. The header shows *WRAP* while wrap is
+on, and W toggles back.
+
 | Key | Action |
 |-----|--------|
 | ↑ / ↓ | Move up / down a row |
@@ -25,6 +33,8 @@ records.
 | ← | Collapse a branch (or jump to its parent) |
 | Enter / Space | Toggle the selected branch |
 | PgUp / PgDn, Home / End | Scroll by a page / jump to the top or bottom |
+| **W** | Toggle line wrap for long values |
+| Shift+← / Shift+→ | Pan a long row sideways (when wrap is off) |
 | Mouse wheel / click | Scroll / select a row (click the ▸ ▾ marker to toggle) |
 | **⌘C / Ctrl+C** | Copy the selected node's value as JSON |
 | **F** | Incremental search |
