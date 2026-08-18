@@ -131,6 +131,28 @@ def test_long_string_fully_visible_when_wrapped(backend, tmp_path):
     assert "".join(backend.snapshot()).count("a") >= 200  # wrapped: all there
 
 
+def test_mouse_selects_json_fragment_and_copies_it(backend, json_file):
+    # Mouse events forwarded through the modal viewer land in the JsonView's
+    # structural selection: a click on the key text selects '"name"', a drag
+    # onto the value widens to the member, and Ctrl+C (also forwarded in rich
+    # mode) copies the fragment as JSON text.
+    panel = Panel(backend)
+    v = show_text_viewer(panel, json_file)
+    panel.render()
+    v._toggle_view_mode()
+    panel.render()
+    bx, by, _, _ = v._body_rect            # row 0: '  name: "xefm"', key at +2
+    x, y = int(bx), int(by)
+    panel.dispatch_event(Event(type=EventType.MOUSE_CLICK, x=x + 3, y=y, button="left"))
+    assert v._rich_widget.fragment_text() == '"name"'
+    panel.dispatch_event(Event(type=EventType.KEY, key="c", modifiers=frozenset({"ctrl"})))
+    assert backend.get_clipboard() == '"name"'
+    panel.dispatch_event(Event(type=EventType.MOUSE_DOWN, x=x + 3, y=y, button="left"))
+    panel.dispatch_event(Event(type=EventType.MOUSE_DRAG, x=x + 9, y=y, button="left"))
+    panel.dispatch_event(Event(type=EventType.MOUSE_UP, x=x + 9, y=y, button="left"))
+    assert v._rich_widget.fragment_text() == '"name": "xefm"'
+
+
 def test_malformed_json_stays_raw(backend, tmp_path):
     p = tmp_path / "broken.json"
     p.write_text("{ this is not valid json ,,, }")

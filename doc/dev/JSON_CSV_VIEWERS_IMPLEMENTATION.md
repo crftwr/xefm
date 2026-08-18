@@ -50,6 +50,28 @@ tree lacks:
 
 `Cmd/Ctrl+C` copies the selected node's value as compact JSON (`json.dumps`).
 
+**Structural mouse selection ("fragment").** Selection snaps to JSON units, not
+text spans. State is `(node, part)` with `part ∈ {"key", "value", "member"}` —
+copied as `"name"`, the value's JSON (`"str"` / `123` / a full `{...}` / `[...]`
+sub-document), or `"name": <value>` via `fragment_text()`. Hit-testing inverts
+the drawing: pointer → display line (wrap map) → character (`_char_at_col`,
+display-column walk, pan applied) → part (`_unit_part`: key chars → key, `": "`
+separator or past the label → member, value chars → value; nodes without a
+string key — array elements, roots — offer only their value). A press anchors,
+a drag widens (`_widen`): same node with differing parts → member; two nodes →
+their nearest common ancestor found by walking the visible rows' depths
+(`_ancestors`) — the ancestor's member when the drag started on its own row,
+its value otherwise; no common ancestor (two top-level entries) → the retained
+synthetic root, i.e. the whole document. A grid backend sends click-only, so a
+click also sets the fragment (guarded by `_frag_dragged` so a trailing click
+never narrows a drag's result); `Cmd/Ctrl+C` copies the fragment before falling
+back to the row-value copy; keyboard navigation or a click on empty space
+clears it. The highlight (`_frag_spans` → `_draw_frag`) paints the fragment's
+label spans — plus every visible descendant row of a selected container — over
+`theme.text_selection_bg` / `text_selection_inactive_bg`, the same tokens the
+log / text widgets use, through the same `_window_text` clipping as everything
+else.
+
 **Long values — wrap and horizontal pan** (issue #317). A row that overflows the
 width is reachable two ways, both living in the widget:
 
