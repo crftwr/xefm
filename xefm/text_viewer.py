@@ -35,7 +35,7 @@ from xefm.choice_dialog import show_choice_dialog
 from xefm.config import (get_config, get_keys_for_action, is_action_for_event,
                         keys_label_for_action)
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
-from xefm.isearch_bar import ViewerISearch
+from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.log_manager import getLogger
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_encoding import (AUTO_ENCODING, decode_text, encoding_label,
@@ -713,13 +713,18 @@ class TextViewer(Widget):
             self._panel.render()
 
     def _scroll_to_line(self, line: int) -> None:
+        """Bring the match on source ``line`` into view, keeping a few rows of
+        context above and below it (issue #321) instead of pinning it to the
+        top edge; no scroll when it is already comfortably visible."""
         if self.wrap:
-            for row, (src, chunk) in enumerate(self._row_map):
-                if src == line and chunk == 0:
-                    self.top = float(row)
-                    break
+            row = next((r for r, (src, chunk) in enumerate(self._row_map)
+                        if src == line and chunk == 0), None)
+            if row is None:
+                self._clamp()
+                return
         else:
-            self.top = float(line)
+            row = line
+        self.top = match_scroll_top(self.top, row, self._view_h)
         self._clamp()
 
     # --- drawing -------------------------------------------------------------

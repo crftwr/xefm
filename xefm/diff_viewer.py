@@ -35,7 +35,7 @@ from puikit.widgets.base import Widget
 from xefm.config import get_config, is_action_for_event, keys_label_for_action
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
-from xefm.isearch_bar import ViewerISearch
+from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_viewer import (MONO, _ScrollBody, _content_bg, _header_bg, _highlight,
                              _is_light, _match_bg, _read_lines, _syntax_palette,
@@ -459,7 +459,9 @@ class DiffViewer(Widget):
             cur = int(self.top)
             self.search_pos = next(
                 (k for k, m in enumerate(self.search_matches) if m >= cur), 0)
-            self.top = float(self.search_matches[self.search_pos])
+            # Keep context rows around the match (#321), same as the text viewer.
+            self.top = match_scroll_top(
+                self.top, self.search_matches[self.search_pos], self._view_h)
         else:
             self.search_pos = -1
             self.top = self._search_origin_top
@@ -472,7 +474,8 @@ class DiffViewer(Widget):
         if not self.search_matches:
             return
         self.search_pos = (self.search_pos + delta) % len(self.search_matches)
-        self.top = float(self.search_matches[self.search_pos])
+        self.top = match_scroll_top(
+            self.top, self.search_matches[self.search_pos], self._view_h)
         self._clamp()
         self._render()
 

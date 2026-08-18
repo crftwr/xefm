@@ -27,6 +27,31 @@ from puikit.panel import Rect
 from puikit.widgets.base import Widget
 from puikit.widgets.text_edit import TextEdit
 
+# Context rows kept visible above and below the match a search jumps to.
+SEARCH_SCROLL_MARGIN = 3
+
+
+def match_scroll_top(top: float, row: int, view_h: int,
+                     margin: int = SEARCH_SCROLL_MARGIN) -> float:
+    """Scroll position that keeps a search match visible *with context*.
+
+    Returns the new ``top`` for a viewer jumping to the match at display row
+    ``row``: unchanged when the row already sits at least ``margin`` rows from
+    both edges of the ``view_h``-row viewport, otherwise the smallest scroll
+    that restores that margin (issue #321 — landing a match on the very first
+    or last row hid the lines around it). The margin shrinks on short viewports
+    so the row itself always stays visible. The caller clamps the result to its
+    content bounds, which is also what lets the margin collapse at the very
+    start and end of the document.
+    """
+    m = min(margin, max(0, (view_h - 1) // 2))
+    t = int(top)
+    if row < t + m:
+        return float(row - m)
+    if row > t + (view_h - 1) - m:
+        return float(row - (view_h - 1) + m)
+    return top
+
 
 class ISearchBar(FocusContainer, Widget):
     """One-row footer overlay: prompt + pattern field. Construct it and push it as
