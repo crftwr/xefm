@@ -240,6 +240,20 @@ over `theme.text_selection_bg` (mirroring the search-match overlay
 `Cmd`/`Ctrl`+`C` (copy, plain text via `Panel.set_clipboard`) and
 `Cmd`/`Ctrl`+`A` (select-all); a press outside the body clears the selection.
 
+**Drag past the edge.** A drag held above or below the body keeps the view
+scrolling under it, so a selection can run past the rows the pointer can reach
+(issue #320). PuiKit's `EdgeAutoScroll` (`puikit.widgets._input`, also driving
+`LogView`) supplies the mechanism: it rides a Panel animation tick and asks for
+a **time-based** row delta, so the speed matches on a 60fps GUI and a terminal's
+slower tick, and a backend with no ticks degrades to one step per drag event.
+The viewer supplies `_edge_scroll_step(rows)`, which moves `top`, re-places the
+selection's moving end on the newly revealed edge row, and returns False at the
+ends of the file to retire the timer. `_pointer_y` reads the pre-clamp
+`pointer_y` hint, since the Panel pins a drag that left the window onto the
+nearest edge; `_drag_pos` pulls the endpoint back into the visible band and
+takes the edge row *whole* (start of the top row, end of the bottom), which is
+what makes dragging out of the view take entire lines.
+
 **Rich mode.** `_forward_mouse_to_rich` translates a mouse event into the
 embedded `MarkdownView`'s coordinate space (`event.translated(-bx0, -by0)`) so
 its own selection and link clicks work through this modal viewer. KEY events
@@ -249,8 +263,9 @@ file viewer's `MarkdownView` with `selectable=True`; help / message-box
 MarkdownViews build without the flag and stay inert.
 
 Tests: `test/test_viewer_selection.py` (raw-mode drag / multi-line / select-all /
-press-outside-clears, and rich-mode mouse + copy forwarding). User-facing
-behavior: `doc/TEXT_VIEWER_FEATURE.md`.
+press-outside-clears, and rich-mode mouse + copy forwarding) and
+`test/test_viewer_drag_scroll.py` (edge auto-scroll, on a fake clock).
+User-facing behavior: `doc/TEXT_VIEWER_FEATURE.md`.
 
 ## Installation & Dependencies
 
