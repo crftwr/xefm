@@ -49,8 +49,35 @@ tree lacks:
   amber highlight (firmer for the current match), like the raw text viewer.
 
 `Cmd/Ctrl+C` copies the selected node's value as compact JSON (`json.dumps`).
-There is no horizontal scroll — a long row elides with the pane clip, like a file
-tree.
+
+**Long values — wrap and horizontal pan** (issue #317). A row that overflows the
+width is reachable two ways, both living in the widget:
+
+- **Pan (default, `wrap = False`).** `left` holds a horizontal offset in columns
+  (float for smooth trackpad accumulation, drawn at `int(left)`), driven by the
+  `scroll_units_x` mouse-scroll hint and `Shift+←/→` (`_PAN_STEP = 4`; plain
+  `←/→` keep their tree meaning). It clamps against `_max_w` — the widest
+  visible row — and a horizontal scrollbar takes the bottom row while anything
+  overflows, mirroring `TableView`.
+- **Wrap (`toggle_wrap()`).** The view lays out *display lines* instead of one
+  line per row: `_ensure_layout` wraps each visible row's label with
+  `wrap_text(..., word=False)` (the raw viewer's hard column cut, so wide CJK
+  glyphs count by display columns) at the content width minus the row's indent,
+  producing `_lines` (display line → `(row, char start, char end)` chunk) and
+  `_row_line` (row → first display line). Scroll offset, clamping, click
+  hit-testing, `_ensure_visible` (whole row when it fits, else its first line)
+  and the search jump all run on display lines; selection and the search match
+  list stay row-based. Continuation lines align under the label
+  (`indent + _MARK_SLOT`); the first line carries the marker / chevron. The
+  layout is cached, keyed on `(wrap, width, _gen)` where `_gen` is bumped by
+  every expand / collapse (keys, clicks, search auto-expansion).
+
+Both paths draw through one seam: `_window_text(text, origin, lo, hi)` returns
+the part of a text flow visible in the pan window plus its screen x (a wide
+glyph straddling an edge is dropped), used by the colored-segment flow
+(`_draw_flow`), the selected row (via `draw_list_row`), and the search
+highlight — which now positions by `display_width` over the label, so a
+highlight after a CJK run lands on the right column, wrapped or panned.
 
 ### `puikit/widgets/table_view.py` — `TableView`
 
@@ -120,9 +147,15 @@ so the registry stays cheap to import.
 `try/except Exception`: a malformed `.json` / `.csv` (a builder that raises) logs
 a warning and returns `False`, so the viewer **stays in raw text mode** instead
 of crashing on the toggle. Raw still renders the file (pygments-highlighted).
-This is the only change to `TextViewer` — everything else (the `M` toggle,
-per-type memory, rich-mode search delegation, event forwarding) already works for
-any registered renderer.
+Everything else (the `M` toggle, per-type memory, rich-mode search delegation,
+event forwarding) already works for any registered renderer.
+
+**Wrap key in rich mode.** In rich mode the `toggle_wrap` binding (W) is checked
+before the generic key forward: when the embedded widget has a `toggle_wrap()`
+method (`JsonView`), the viewer calls it — the raw-text `self.wrap` is untouched
+— and the header tag appends `WRAP` / the footer hint advertises the key, both
+gated on the same `hasattr`, so `MarkdownView` (which reflows by itself) sees no
+change.
 
 ## Tests
 
@@ -131,9 +164,15 @@ any registered renderer.
   alignment, frozen header while the body scrolls, horizontal scroll revealing
   later columns, keyboard cell movement, TSV copy / select-all, and each
   `search_*` method (expand-ancestors, status, navigate/wrap, no-match restore).
+  For long values: the unwrapped cut, Shift+←/→ panning and its clamp, wrap
+  folding a value onto continuation lines (ASCII and CJK-by-columns),
+  display-line scrolling (End with wrapped rows), clicks on continuation lines,
+  and a search highlight straddling a wrap boundary.
 - XeFM `test/test_json_viewer.py`, `test/test_table_viewer.py` (parametrized TUI +
   GUI): the registry mapping; toggle building a `JsonView` / `TableView`; JSONL
   wrapping records in a list; the CSV vs TSV delimiter split; both modes drawing
-  without crashing; an empty CSV rendering an empty grid; and a **malformed
+  without crashing; an empty CSV rendering an empty grid; a **malformed
   `.json` staying raw** (build fails → `_ensure_rich_widget` returns `False`,
-  toggle refused, no crash).
+  toggle refused, no crash); and the W key toggling the JsonView's wrap in rich
+  mode (raw-mode wrap untouched, a 200-char string fully on screen once
+  wrapped).
