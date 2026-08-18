@@ -39,6 +39,16 @@ def _top(panel):
     return type(panel._layers[-1].widget).__name__
 
 
+def _assert_match_in_context(v, row, total):
+    """The current match must be visible with ≥3 rows of context above and
+    below (issue #321), except where the document edge is closer than the
+    margin — there the clamp legitimately eats it."""
+    top = int(v.top)
+    assert top <= row <= top + v._view_h - 1
+    assert row - top >= min(3, row)
+    assert (top + v._view_h - 1) - row >= min(3, total - 1 - row)
+
+
 @pytest.fixture(params=[PROFILE_TUI, PROFILE_GUI_DESKTOP], ids=["tui", "gui"])
 def backend(request):
     return MemoryBackend(width=100, height=30, capabilities=request.param)
@@ -102,14 +112,16 @@ def test_text_search_open_compute_navigate_cancel(backend, text_file):
     assert v.match_pos == 0                         # nearest at/after origin
     assert v._search_status() == (1, 3)
 
+    # All three matches sit inside the first page: walking them never scrolls
+    # (#321 — jump only when the match would land too close to an edge).
     panel.dispatch_event(_key("down"))
-    assert v.match_pos == 1 and int(v.top) == 2
+    assert v.match_pos == 1 and v.top == 0.0
     panel.dispatch_event(_key("down"))
-    assert v.match_pos == 2 and int(v.top) == 4
+    assert v.match_pos == 2 and v.top == 0.0
     panel.dispatch_event(_key("down"))             # wraps
-    assert v.match_pos == 0 and int(v.top) == 0
+    assert v.match_pos == 0 and v.top == 0.0
     panel.dispatch_event(_key("up"))               # wraps back
-    assert v.match_pos == 2 and int(v.top) == 4
+    assert v.match_pos == 2 and v.top == 0.0
 
     panel.dispatch_event(_key("escape"))           # cancel -> restore + clear
     panel.render()
@@ -124,14 +136,49 @@ def test_text_search_accept_keeps_position(backend, text_file):
     v = show_text_viewer(panel, text_file)
     panel.render()
     panel.dispatch_event(_key("f", "f"))
-    _type(panel, "epsilon")                         # line 4 only
+    _type(panel, "pad line 39")                     # line 45 only (the last line)
     panel.render()
-    assert v.matches == [4] and int(v.top) == 4
+    assert v.matches == [45] and v.top > 0.0
+    scrolled = v.top
     panel.dispatch_event(_key("enter"))            # accept -> keep scroll, clear
     panel.render()
     assert not v._isearch.active
     assert v.pattern == "" and v.matches == []
-    assert int(v.top) == 4
+    assert v.top == scrolled
+
+
+def test_text_search_jump_keeps_context_margin(backend, text_file):
+    # Jumping to an off-screen match must not pin it to the viewport edge:
+    # a few lines above and below stay visible (issue #321).
+    panel = Panel(backend)
+    v = show_text_viewer(panel, text_file)
+    panel.render()
+    total = v._total_rows()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "pad line 20")                     # line 26, below the first page
+    panel.render()
+    assert v.matches == [26] and v.top > 0.0
+    _assert_match_in_context(v, 26, total)
+
+
+def test_text_search_step_keeps_context_margin(backend, text_file):
+    # Walking matches keeps the margin in both directions.
+    panel = Panel(backend)
+    v = show_text_viewer(panel, text_file)
+    panel.render()
+    total = v._total_rows()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "pad line 3")                      # lines 9 and 36..45
+    panel.render()
+    assert v.matches == [9] + list(range(36, 46))
+    assert v.match_pos == 0 and v.top == 0.0        # line 9: already visible
+
+    panel.dispatch_event(_key("down"))              # line 36: scrolls down
+    _assert_match_in_context(v, 36, total)
+    down_top = v.top
+    panel.dispatch_event(_key("up"))                # back to 9: scrolls up
+    assert v.top < down_top
+    _assert_match_in_context(v, 9, total)
 
 
 def test_text_search_no_match_restores_origin(backend, text_file):
@@ -185,6 +232,22 @@ def test_diff_search_matches_both_sides(backend, diff_files):
     assert not v._isearch.active
     assert v.search_pattern == "" and v.search_matches == []
     assert v.top == 0.0
+
+
+def test_diff_search_jump_keeps_context_margin(backend, diff_files):
+    # The diff viewer shares the same margin rule (issue #321).
+    panel = Panel(backend)
+    v = show_diff_viewer(panel, *diff_files)
+    panel.render()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "x25")                             # pad row 25 -> display row 29
+    panel.render()
+    assert v.search_matches == [29] and v.top > 0.0
+    top = int(v.top)
+    total = len(v.rows)
+    assert top <= 29 <= top + v._view_h - 1
+    assert 29 - top >= 3
+    assert (top + v._view_h - 1) - 29 >= min(3, total - 1 - 29)
 
 
 def test_diff_search_and_block_nav_are_independent(backend, diff_files):
