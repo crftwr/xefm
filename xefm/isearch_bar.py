@@ -37,20 +37,21 @@ def match_scroll_top(top: float, row: int, view_h: int,
 
     Returns the new ``top`` for a viewer jumping to the match at display row
     ``row``: unchanged when the row already sits at least ``margin`` rows from
-    both edges of the ``view_h``-row viewport, otherwise the smallest scroll
-    that restores that margin (issue #321 — landing a match on the very first
-    or last row hid the lines around it). The margin shrinks on short viewports
-    so the row itself always stays visible. The caller clamps the result to its
-    content bounds, which is also what lets the margin collapse at the very
-    start and end of the document.
+    both edges of the ``view_h``-row viewport (issue #321 — landing a match on
+    the very first or last row hid the lines around it), otherwise the scroll
+    that puts the row at the viewport's vertical center, so a far jump lands
+    with equal context above and below instead of hugging an edge. The margin
+    shrinks on short viewports so the row itself always stays visible. The
+    caller clamps the result to its content bounds, which is also what lets
+    the centering collapse at the very start and end of the document.
+    PuiKit's rich viewers (Markdown / JSON / table) follow the same rule via
+    ``puikit/widgets/_scroll.py``.
     """
     m = min(margin, max(0, (view_h - 1) // 2))
     t = int(top)
-    if row < t + m:
-        return float(row - m)
-    if row > t + (view_h - 1) - m:
-        return float(row - (view_h - 1) + m)
-    return top
+    if t + m <= row <= t + (view_h - 1) - m:
+        return top
+    return float(row - (view_h - 1) // 2)
 
 
 class ISearchBar(FocusContainer, Widget):
