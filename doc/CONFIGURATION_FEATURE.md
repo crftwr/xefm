@@ -111,7 +111,12 @@ MAX_EXTENSION_LENGTH    = 5      # longer extensions stay with the filename
 ```
 
 Adjust the pane split at runtime with `[` / `]`, and the log-pane height with
-`{` / `}`.
+`{` / `}`. `DEFAULT_LOG_HEIGHT_RATIO` sets the log pane's height as long as you
+haven't dragged or `{`/`}`-adjusted it — a height you set by hand persists
+across restarts and wins over the config. Press `_` to return to the configured
+default (which also makes the height follow the config again). Layout ratios
+are read at launch, so changing them in the config takes effect on the next
+start.
 
 `DATE_FORMAT` chooses how modification times are shown in the file panes:
 `'short'` gives `YY-MM-DD HH:mm` (compact, no seconds) and `'full'` gives

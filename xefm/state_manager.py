@@ -478,14 +478,18 @@ class XeFMStateManager(StateManager):
         """
         return self.get_state(f"pane.{pane_name}")
     
-    def save_window_layout(self, left_pane_ratio: float, log_height_ratio: float) -> bool:
+    def save_window_layout(self, left_pane_ratio: float, log_height_ratio: float,
+                           log_height_default: Optional[float] = None) -> bool:
         """
         Save window layout settings.
-        
+
         Args:
             left_pane_ratio: Left pane width ratio
             log_height_ratio: Log pane height ratio
-            
+            log_height_default: The configured default log height at save time,
+                so the next launch can tell an untouched log_height_ratio (keep
+                following the config) from one the user dragged (#316)
+
         Returns:
             bool: True if successful
         """
@@ -493,7 +497,9 @@ class XeFMStateManager(StateManager):
             'left_pane_ratio': left_pane_ratio,
             'log_height_ratio': log_height_ratio
         }
-        
+        if log_height_default is not None:
+            layout['log_height_default'] = log_height_default
+
         return self.set_state("window.layout", layout, self.instance_id)
     
     def load_window_layout(self) -> Optional[Dict[str, float]]:
