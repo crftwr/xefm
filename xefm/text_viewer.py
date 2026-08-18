@@ -20,14 +20,13 @@ vertically and ←/→ scroll horizontally (viewer-local); Esc closes.
 
 from __future__ import annotations
 
-import math
 from typing import Any, Sequence
 
 from puikit.backend import Style, TextAttribute
 from puikit.event import Event, EventType
 from puikit.font import Font
 from puikit.panel import Rect
-from puikit.text import elide, word_bounds
+from puikit.text import display_width, elide, word_bounds, wrap_text
 from puikit.widgets._input import MultiClickTracker
 from puikit.widgets.base import Widget
 
@@ -556,9 +555,12 @@ class TextViewer(Widget):
         self._content_w = 1
         self._max_line = max((len(line) for line in self.lines), default=0)
         # Wrap layout cache: keyed on content width, maps display row -> (line,
-        # chunk) so wrapped rows virtualize without re-splitting every frame.
+        # char start, char end) so wrapped rows virtualize without re-splitting
+        # every frame. Chunks are cut by display columns, not character count —
+        # a CJK character fills two columns, so an 80-char Japanese line must
+        # wrap where an 80-char ASCII line need not (issue #315).
         self._wrap_w = -1
-        self._row_map: list[tuple[int, int]] = []
+        self._row_map: list[tuple[int, int, int]] = []
         # Incremental search state. The ISearchBar overlay drives input; this holds
         # the live pattern (drives highlighting), the ordered match line indices,
         # and the current match. ``_search_origin_top`` is the pre-search scroll,
@@ -598,11 +600,17 @@ class TextViewer(Widget):
         if self.wrap and self._wrap_w == content_w:
             return
         self._wrap_w = content_w
-        row_map: list[tuple[int, int]] = []
+        row_map: list[tuple[int, int, int]] = []
         for i, line in enumerate(self.lines):
-            chunks = max(1, math.ceil(len(line) / content_w)) if content_w > 0 else 1
-            for c in range(chunks):
-                row_map.append((i, c))
+            if content_w <= 0:
+                row_map.append((i, 0, len(line)))
+                continue
+            start = 0
+            # word=False reproduces the hard character cut wrap always used —
+            # segments are lossless, so cumulative lengths are char offsets.
+            for seg in wrap_text(line, content_w, display_width, word=False):
+                row_map.append((i, start, start + len(seg)))
+                start += len(seg)
         self._row_map = row_map
 
     def _total_rows(self) -> int:
@@ -717,8 +725,8 @@ class TextViewer(Widget):
         context above and below it (issue #321) instead of pinning it to the
         top edge; no scroll when it is already comfortably visible."""
         if self.wrap:
-            row = next((r for r, (src, chunk) in enumerate(self._row_map)
-                        if src == line and chunk == 0), None)
+            row = next((r for r, (src, start, _) in enumerate(self._row_map)
+                        if src == line and start == 0), None)
             if row is None:
                 self._clamp()
                 return
@@ -883,21 +891,24 @@ class TextViewer(Widget):
                 break
             y = vis - frac
             if self.wrap:
-                line_idx, chunk = self._row_map[row]
-                col0 = float(chunk * self._content_w)
-                show_no = chunk == 0
+                line_idx, start, end = self._row_map[row]
+                col0, end_col = float(start), end
+                show_no = start == 0
             else:
-                line_idx, col0, show_no = row, self.left, True
+                line_idx, col0, end_col, show_no = row, self.left, None, True
             # Content first, then the gutter — the gutter fill masks the partial
             # left column that a fractional horizontal offset bleeds leftward.
-            self._draw_line(ctx, y, line_idx, col0)
+            self._draw_line(ctx, y, line_idx, col0, end_col)
             ctx.fill_rect(0, y, self._content_x, 1.0, Style(bg=self._bg))
             if show_no:
                 num = str(line_idx + 1).rjust(self._gutter - 1)
                 ctx.draw_text(0, y, num, Style(fg=self._muted, bg=self._bg, font=MONO))
 
-    def _draw_line(self, ctx, y, line_idx, col0) -> None:
-        """Draw source line ``line_idx`` showing columns [col0, col0+content_w).
+    def _draw_line(self, ctx, y, line_idx, col0, end_col=None) -> None:
+        """Draw source line ``line_idx`` showing columns [col0, col0+content_w),
+        or exactly [col0, end_col) when a wrapped chunk supplies its end — a
+        chunk of wide (CJK) characters spans fewer chars than ``_content_w``,
+        and drawing past it would repeat the next chunk's text on this row.
         ``col0`` may be fractional: the view shifts left by its fractional part
         (``xfrac``) for smooth horizontal scroll; the gutter (drawn after) masks
         the left bleed and the clip trims the right."""
@@ -907,7 +918,7 @@ class TextViewer(Widget):
         # Two extra columns: a fractional visible width plus the fractional pan
         # offset can push the visible span up to two columns past the whole count,
         # so the partial right-edge column is drawn to be clipped, not dropped early.
-        window_end = col0_int + self._content_w + 2
+        window_end = col0_int + self._content_w + 2 if end_col is None else end_col
         col = 0
         for text, fg in self.highlighted[line_idx]:
             seg_end = col + len(text)
@@ -1181,8 +1192,8 @@ class TextViewer(Widget):
         disp = int(self.top + by)
         disp = max(0, min(disp, max(0, self._total_rows() - 1)))
         if self.wrap and self._row_map:
-            line_idx, chunk = self._row_map[disp]
-            col_off = float(chunk * self._content_w)
+            line_idx, start, _ = self._row_map[disp]
+            col_off = float(start)
         else:
             line_idx = disp
             col_off = self.left

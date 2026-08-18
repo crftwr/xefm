@@ -216,7 +216,7 @@ def test_text_viewer_draws_rows_to_cover_fractional_bottom():
     v.draw(_GuiCtx(200.0, 100.0))     # establishes _view_h / content geometry
     v.top = 5.7                        # scroll fraction (0.7) that exposes the gap
     ys = []
-    v._draw_line = lambda ctx, y, li, c0: ys.append(y)  # record each row's top y
+    v._draw_line = lambda ctx, y, li, c0, end=None: ys.append(y)  # record each row's top y
     v._draw_rows(_GuiCtx(200.0, 100.0))
     body_h = (100.0 - 1.0 - PY) - (1.0 + PY)   # fy - head_h (no h-scrollbar)
     # The union of drawn rows must reach the body's bottom clip; the last row's
