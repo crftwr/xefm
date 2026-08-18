@@ -18,6 +18,18 @@ array), so you can see the shape of a document without expanding everything.
 A `.jsonl` / `.ndjson` file (one JSON value per line) is shown as an array of its
 records.
 
+**Selecting a fragment with the mouse.** Selection in the tree is *structural*:
+a click or drag always selects a meaningful piece of JSON — never half a word or
+a stray text span. Click a key to select `"name"`, a value to select `"str"` /
+`123` (or, on a branch row, the whole `{...}` / `[...]` sub-document), or the
+`: ` between them to select the whole `"name": ...` entry. Drag to grow the
+selection: across a key and its value it becomes the entry, across two rows it
+becomes the container that holds them both, and across two top-level entries the
+whole document. **⌘C / Ctrl+C** copies the highlighted fragment as JSON text;
+with nothing highlighted it copies the current row's value, as before. Arrow
+keys or a click on empty space clear the highlight. (Array indices aren't JSON
+text, so clicking one selects the element's value.)
+
 **Long values.** A string longer than the window has two ways to be read.
 Unwrapped (the default), the view **pans horizontally** — swipe sideways on a
 trackpad or press **Shift+←/→**, with a horizontal scrollbar along the bottom
@@ -36,7 +48,8 @@ on, and W toggles back.
 | **W** | Toggle line wrap for long values |
 | Shift+← / Shift+→ | Pan a long row sideways (when wrap is off) |
 | Mouse wheel / click | Scroll / select a row (click the ▸ ▾ marker to toggle) |
-| **⌘C / Ctrl+C** | Copy the selected node's value as JSON |
+| Click / drag on text | Select a JSON fragment (key, value, entry, or container) |
+| **⌘C / Ctrl+C** | Copy the fragment — or, with none, the row's value — as JSON |
 | **F** | Incremental search |
 
 ## CSV / TSV (`*.csv`, `*.tsv`)
