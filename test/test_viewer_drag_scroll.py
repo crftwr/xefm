@@ -145,6 +145,27 @@ def test_drag_back_inside_stops_scrolling(backend, clock, long_file):
     assert v.top == scrolled
 
 
+def test_edge_scroll_while_wrapping_wide_text(backend, clock, tmp_path):
+    # Wrap on: rows are wrapped chunks, not source lines, and a CJK line takes
+    # several of them (issue #315). The auto-scroll walks those display rows and
+    # the selection still grows by whole source lines.
+    p = tmp_path / "wide.txt"
+    p.write_text("".join(f"あいうえお{i}" * 6 + "\n" for i in range(40)),
+                 encoding="utf-8")
+    panel = Panel(backend)
+    v = _open(panel, Path(str(p)))
+    panel.dispatch_event(Event(type=EventType.KEY, key="w", char="w"))
+    panel.render()
+    assert v.wrap is True
+    assert len(v._row_map) > len(v.lines)  # wrapped: more rows than lines
+
+    _down(panel, 3, 1)
+    _drag(panel, 6, 40)
+    _run_ticks(backend, clock)
+    assert v.top > 0.0
+    assert len(v._sel.text(v.lines).splitlines()) > 1
+
+
 def test_drag_inside_the_body_does_not_scroll(backend, clock, long_file):
     panel = Panel(backend)
     v = _open(panel, long_file)
