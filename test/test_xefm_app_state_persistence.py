@@ -152,13 +152,52 @@ class RestoreLayoutAndPaths(StatePersistenceTestBase):
         self.assertGreaterEqual(app.pm.left_pane_ratio, 0.1)
         self.assertLessEqual(app._panes_fraction, 0.95)
 
-    def test_no_saved_state_uses_defaults(self):
+    def test_no_saved_state_uses_configured_default(self):
         app = self.make_app()
 
         app._restore_layout_and_paths()
 
-        self.assertEqual(app._panes_fraction, xefm_app.PANES_FRACTION)
+        # The log pane's default height is DEFAULT_LOG_HEIGHT_RATIO (#316).
+        self.assertAlmostEqual(
+            app._panes_fraction, 1.0 - self.config.DEFAULT_LOG_HEIGHT_RATIO)
         self.assertEqual(str(app.pm.left_pane["path"]), self.left_start)
+
+    def test_untouched_log_height_follows_config_change(self):
+        # A layout saved with the log height still AT its default (the user
+        # never dragged it) must keep following the config: edit the value,
+        # restart, and the log pane resizes (#316 — the reported repro).
+        self.sm.save_window_layout(
+            left_pane_ratio=0.5, log_height_ratio=0.25, log_height_default=0.25)
+        self.config.DEFAULT_LOG_HEIGHT_RATIO = 0.4
+        app = self.make_app()
+
+        app._restore_layout_and_paths()
+
+        self.assertAlmostEqual(app._panes_fraction, 0.6)
+
+    def test_dragged_log_height_overrides_config(self):
+        # A height the user dragged away from its then-default persists,
+        # whatever the config says now.
+        self.sm.save_window_layout(
+            left_pane_ratio=0.5, log_height_ratio=0.45, log_height_default=0.25)
+        app = self.make_app()
+
+        app._restore_layout_and_paths()
+
+        self.assertAlmostEqual(app._panes_fraction, 0.55)
+
+    def test_pre_316_untouched_layout_follows_config(self):
+        # Layouts saved before #316 carry no log_height_default; one saved at
+        # the old hardcoded share (1 - PANES_FRACTION) counts as untouched.
+        self.sm.save_window_layout(
+            left_pane_ratio=0.5,
+            log_height_ratio=1.0 - xefm_app.PANES_FRACTION)
+        self.config.DEFAULT_LOG_HEIGHT_RATIO = 0.4
+        app = self.make_app()
+
+        app._restore_layout_and_paths()
+
+        self.assertAlmostEqual(app._panes_fraction, 0.6)
 
 
 class RestoreCursor(StatePersistenceTestBase):
@@ -207,6 +246,10 @@ class SaveApplicationState(StatePersistenceTestBase):
         layout = self.sm.load_window_layout()
         self.assertAlmostEqual(layout["left_pane_ratio"], 0.35)
         self.assertAlmostEqual(layout["log_height_ratio"], 0.30)  # 1 - 0.70
+        # The default in effect at save time rides along, so the next launch
+        # can tell an untouched height from a dragged one (#316).
+        self.assertAlmostEqual(
+            layout["log_height_default"], self.config.DEFAULT_LOG_HEIGHT_RATIO)
 
     def test_pane_state_and_recent_dirs_saved(self):
         app = self._app_ready_to_save()

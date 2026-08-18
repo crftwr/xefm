@@ -89,7 +89,10 @@ from xefm.image_viewer import is_image_file, show_image_viewer
 from xefm.text_viewer import looks_binary, show_text_viewer
 from xefm.viewer_registry import rich_renderer_for
 
-#: Initial share of the content area given to the file panes (vs the log pane).
+#: Share of the content area given to the file panes (vs the log pane) before
+#: ``DEFAULT_LOG_HEIGHT_RATIO`` became the configurable default (#316). Kept as
+#: the fallback default assumed for saved layouts that predate the config wiring
+#: (see ``_restore_layout_and_paths``) and for a config that fails to load.
 PANES_FRACTION = 0.74
 
 #: Persistent, most-recent-first history of filename-filter patterns (fed by
@@ -1231,6 +1234,16 @@ class XeFMApp:
 
     # --- persistent state ----------------------------------------------------
 
+    def _default_log_height(self) -> float:
+        """The configured default log-pane height (``DEFAULT_LOG_HEIGHT_RATIO``),
+        clamped to its documented 0.1–0.5 range so an out-of-range value degrades
+        to the nearest legal one (validation already warned about it)."""
+        try:
+            ratio = float(self.config.DEFAULT_LOG_HEIGHT_RATIO)
+        except (AttributeError, TypeError, ValueError):
+            ratio = 1.0 - PANES_FRACTION
+        return max(0.1, min(0.5, ratio))
+
     def _restore_layout_and_paths(self) -> None:
         """Restore window layout and each pane's directory / sort / filter from
         the saved session, *before* the splitters and file lists are built.
@@ -1240,7 +1253,12 @@ class XeFMApp:
         directory still exists; sort mode and filter are always restored. Fully
         best-effort — the log view does not exist yet, so failures stay silent
         rather than blocking startup on a corrupt or absent state store."""
-        self._panes_fraction = PANES_FRACTION
+        # The log pane starts at the configured DEFAULT_LOG_HEIGHT_RATIO (#316).
+        # A saved height only overrides it when the user actually dragged the
+        # splitter away from whatever the default was when that layout was saved
+        # (the layout carries that default too) — a layout saved untouched keeps
+        # following the config, so editing the config and restarting works.
+        self._panes_fraction = max(0.1, min(0.95, 1.0 - self._default_log_height()))
         try:
             self.state_manager.update_session_heartbeat()
             self.state_manager.cleanup_non_existing_directories()
@@ -1249,8 +1267,12 @@ class XeFMApp:
             if layout:
                 ratio = layout.get('left_pane_ratio', self.pm.left_pane_ratio)
                 self.pm.left_pane_ratio = max(0.1, min(0.9, ratio))
-                log_h = layout.get('log_height_ratio', 1.0 - PANES_FRACTION)
-                self._panes_fraction = max(0.1, min(0.95, 1.0 - log_h))
+                log_h = layout.get('log_height_ratio')
+                # Layouts saved before #316 carry no default; they were saved
+                # under the old hardcoded share, so assume that.
+                saved_default = layout.get('log_height_default', 1.0 - PANES_FRACTION)
+                if log_h is not None and abs(log_h - saved_default) > 1e-4:
+                    self._panes_fraction = max(0.1, min(0.95, 1.0 - log_h))
 
             self._restore_one_pane('left', self.pm.left_pane, self._left_provided)
             self._restore_one_pane('right', self.pm.right_pane, self._right_provided)
@@ -1310,6 +1332,9 @@ class XeFMApp:
             self.state_manager.save_window_layout(
                 self.pane_splitter.fraction,
                 1.0 - self.content_splitter.fraction,
+                # Stored alongside so the next launch can tell an untouched
+                # height (keep following the config) from a dragged one (#316).
+                log_height_default=self._default_log_height(),
             )
             self.state_manager.save_pane_state('left', self.pm.left_pane)
             self.state_manager.save_pane_state('right', self.pm.right_pane)
@@ -2074,8 +2099,8 @@ class XeFMApp:
             self._nudge(self.content_splitter, -self._LOG_STEP)
         elif action == "adjust_log_down":      # shrink the log (panes grow)
             self._nudge(self.content_splitter, +self._LOG_STEP)
-        elif action == "reset_log_height":     # back to the default share
-            self.content_splitter.fraction = PANES_FRACTION
+        elif action == "reset_log_height":     # back to the configured default
+            self.content_splitter.fraction = 1.0 - self._default_log_height()
         elif action == "scroll_log_up":
             self.log.scroll_by(-1.0)
         elif action == "scroll_log_down":
