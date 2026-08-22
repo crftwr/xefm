@@ -2199,6 +2199,12 @@ class XeFMApp:
         elif action == "help":
             self.show_help()
             return False
+        elif action == "menu":
+            # F10 on every backend, a bare Alt tap on the Windows terminal:
+            # open the menu bar's first pulldown; ←/→ then walk the bar and
+            # Esc closes (#304). A no-op where the OS owns the bar
+            # (native-menu backends handle Alt themselves).
+            return self.menu_bar.open_menu()
         else:
             return False
         return True
@@ -5172,6 +5178,7 @@ class XeFMApp:
             ("quick_sort_ext", "Quick-sort by extension (repeat: reverse)"),
         )),
         ("Other", (
+            ("menu", "Open the menu bar (←/→ walk it, Esc closes)"),
             ("edit_config", "Edit ~/.xefm/config.py, then reload"),
             ("reload_config", "Reload ~/.xefm/config.py"),
             ("help", "Show this help"),

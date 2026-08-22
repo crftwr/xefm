@@ -251,6 +251,7 @@ class Config:
         'quit': ['Q'],                         # Exit XeFM application
         'help': ['?'],                         # Show help dialog with all key bindings
         'redraw': ['F5'],                      # Additional redraw trigger (Ctrl-L is always hardcoded)
+        'menu': ['F10', 'ALT'],                # Open the menu bar (terminal; a bare Alt tap works on the Windows terminal, F10 everywhere)
         
         # === Navigation ===
         'cursor_up': ['UP'],                   # Move cursor up one item

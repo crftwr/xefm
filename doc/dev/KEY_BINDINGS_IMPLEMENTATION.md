@@ -77,6 +77,7 @@ two **modes**:
 | `UP` / `DOWN` / `LEFT` / `RIGHT` / `HOME` / `END` | same, lowercased | `key` + exact mods |
 | `PAGE_UP`/`PAGEUP`, `PAGE_DOWN`/`PAGEDOWN` | `pageup` / `pagedown` | `key` + exact mods |
 | `F1`…`F12` | `f1`…`f12` | `key` + exact mods |
+| `ALT` (alone, not as a prefix) | `alt` — a *bare Alt tap*, delivered only by the Windows terminal (PuiKit keyboard contract §1); bound to `menu` alongside `F10` | `key` + exact mods |
 | named punctuation (`MINUS`, `EQUAL`, `LEFT_BRACKET`, `SEMICOLON`, `SLASH`, …) | base glyph (`-`, `=`, `[`, `;`, `/`, …) | `char` (ignore shift/alt) |
 | digit / punctuation literal (`?`, `.`, `:`, `1`, …) | the produced glyph | `char` |
 | `Shift-<named punct / digit>` | the **shifted** glyph (`Shift-EQUAL` → `+`, `Shift-1` → `!`) | `char` |

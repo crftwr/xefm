@@ -30,6 +30,22 @@ from a checkout.)
 - **Keyboard**: every item can be triggered directly by its shortcut (shown next
   to the item) without opening the menu.
 
+### Opening the menu with the keyboard (terminal mode)
+
+In terminal mode, press **F10** to open the first menu (on the Windows
+terminal, tapping **Alt** by itself works too, just like a desktop menu bar).
+While a menu is open:
+
+- **←/→** move between the menus on the bar (wrapping at the ends);
+- **↑/↓** move within the open menu;
+- **→** on an item with a submenu opens the submenu, **←** backs out of it;
+- **Enter** runs the highlighted item;
+- **Esc** (or F10 again, or a click elsewhere) closes the menu.
+
+The activation key is the `menu` action in `~/.xefm/config.py`
+(default `['F10', 'ALT']`), so it can be rebound like any other. In desktop
+mode the OS menu bar handles keyboard access natively (Alt on Windows).
+
 ## Available Menus
 
 XeFM has four menus: **File**, **Select**, **View**, and **Help**.
