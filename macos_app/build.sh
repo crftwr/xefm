@@ -412,7 +412,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
         rm -rf "${PYTHON_DEST}/Resources"
         log_info "  Removed Resources/"
     fi
-    
+
     # Remove development tools from bin/
     for tool in "idle${PYTHON_VERSION}" pip3 "pip${PYTHON_VERSION}" "pydoc${PYTHON_VERSION}" "python${PYTHON_VERSION}-config"; do
         if [ -f "${PYTHON_DEST}/bin/${tool}" ]; then
@@ -420,21 +420,60 @@ if [ "$USE_FRAMEWORK" = true ]; then
             log_info "  Removed bin/${tool}"
         fi
     done
-    
+
     # Remove pkg-config files
     if [ -d "${PYTHON_DEST}/lib/pkgconfig" ]; then
         rm -rf "${PYTHON_DEST}/lib/pkgconfig"
         log_info "  Removed lib/pkgconfig/"
     fi
-    
+
     # Remove Python test suite (saves ~68MB)
     if [ -d "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test" ]; then
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
         log_info "  Removed lib/python${PYTHON_VERSION}/test/"
     fi
-    
+
     log_success "Unnecessary files removed"
-    
+
+    # Make the bundled interpreter self-contained. bin/pythonX.Y in a framework
+    # build is a stub that posix_spawns Resources/Python.app/Contents/MacOS/Python
+    # — an app this bundle strips — and both binaries reference the framework by
+    # the build machine's absolute path (the versioned Homebrew keg), so external
+    # programs launched via xefm_python only ran on machines where that exact
+    # path still existed. Replace the stub with the real interpreter binary and
+    # point it at the embedded framework dylib. The old load command is read out
+    # of the binary rather than assumed (Homebrew records the Cellar path there,
+    # not the opt path in ${PYTHON_BASE_PREFIX}) because install_name_tool
+    # -change no-ops silently on a mismatch.
+    log_info "Making bundled interpreter self-contained..."
+    EMBEDDED_PYTHON_BIN="${PYTHON_DEST}/bin/python${PYTHON_VERSION}"
+    REAL_PYTHON_BIN="${PYTHON_SOURCE}/Resources/Python.app/Contents/MacOS/Python"
+    if [ ! -f "${REAL_PYTHON_BIN}" ]; then
+        log_error "Real interpreter not found at ${REAL_PYTHON_BIN}"
+        exit 1
+    fi
+    cp -f "${REAL_PYTHON_BIN}" "${EMBEDDED_PYTHON_BIN}"
+    chmod u+wx "${EMBEDDED_PYTHON_BIN}"
+    OLD_PYTHON_DYLIB=$(otool -L "${EMBEDDED_PYTHON_BIN}" | awk -v ver="${PYTHON_VERSION}" \
+        'index($1, "/Python.framework/Versions/" ver "/Python") && $1 !~ /^@/ {print $1; exit}')
+    if [ -n "${OLD_PYTHON_DYLIB}" ]; then
+        install_name_tool -change \
+            "${OLD_PYTHON_DYLIB}" \
+            "@executable_path/../Python" \
+            "${EMBEDDED_PYTHON_BIN}"
+    fi
+    # install_name_tool invalidates the copied Homebrew signature (it is not
+    # linker-signed), which is fatal at exec on Apple Silicon. Ad-hoc re-sign so
+    # the interpreter runs in unsigned builds and in the pre-compile step below;
+    # release signing later replaces this signature (--force).
+    codesign --force --sign - "${EMBEDDED_PYTHON_BIN}"
+    if otool -L "${EMBEDDED_PYTHON_BIN}" | awk 'NR > 1 && $1 !~ /^@/ && $1 !~ /^\/usr\/lib\// && $1 !~ /^\/System\//' | grep -q .; then
+        log_error "Embedded python${PYTHON_VERSION} still links a build-machine path:"
+        otool -L "${EMBEDDED_PYTHON_BIN}"
+        exit 1
+    fi
+    log_success "Bundled interpreter is self-contained"
+
     # Pre-compile Python standard library
     log_info "Pre-compiling Python standard library..."
     STDLIB_PATH="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
