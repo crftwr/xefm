@@ -13,18 +13,48 @@ from xefm.backend_detector import is_desktop_mode
 from xefm.log_manager import getLogger
 
 
-# Python interpreter path for external programs
-# This variable points to the correct Python interpreter depending on execution context:
-# - When running from macOS app bundle: uses bundled python3 executable
-# - When running normally: uses sys.executable (current Python interpreter)
-if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
-    # Running from macOS app bundle - use bundled python3
-    # The bundled Python is at: XeFM.app/Contents/Frameworks/Python.framework/bin/python3
-    bundle_path = sys.executable.rsplit('.app/Contents/MacOS', 1)[0] + '.app'
-    xefm_python = os.path.join(bundle_path, 'Contents', 'Frameworks', 'Python.framework', 'bin', 'python3')
-else:
+def _resolve_xefm_python():
+    r"""The interpreter external programs should be launched with.
+
+    ``sys.executable`` is the obvious answer and the right one whenever XeFM
+    runs under a real ``python``. In an application bundle it is not: the
+    bundle's own launcher executable is reported there, and running *it* with a
+    script argument does not run the script.
+
+    - macOS: ``XeFM.app/Contents/MacOS/XeFM`` -> the interpreter bundled at
+      ``Contents/Frameworks/Python.framework/bin/python3``.
+    - Windows: ``<root>\XeFM.exe`` -> ``<root>\runtime\pythonw.exe`` from the
+      embedded CPython. The C launcher (windows_app/src/launcher.c) hardcodes
+      ``sys.argv`` and sets ``parse_argv = 0``, so handing XeFM.exe a script
+      would discard it and just open a second file manager window. ``pythonw``
+      rather than ``python`` because this is a GUI-subsystem app and a console
+      interpreter would flash a window; the tool's output is captured through
+      pipes into the log pane either way.
+    """
+    if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
+        # The bundled Python is at: XeFM.app/Contents/Frameworks/Python.framework/bin/python3
+        bundle_path = sys.executable.rsplit('.app/Contents/MacOS', 1)[0] + '.app'
+        return os.path.join(bundle_path, 'Contents', 'Frameworks', 'Python.framework', 'bin', 'python3')
+
+    if sys.platform == 'win32':
+        # Any real interpreter is named python*.exe (python.exe, pythonw.exe,
+        # python3.14.exe); anything else is a launcher wrapping one - the
+        # bundle's XeFM.exe. The embeddable package ships pythonw.exe next to
+        # the DLL under runtime\, which the build keeps (it only strips the
+        # ._pth files).
+        exe_name = os.path.basename(sys.executable).lower()
+        if not (exe_name.startswith('python') and exe_name.endswith('.exe')):
+            bundled = os.path.join(os.path.dirname(sys.executable), 'runtime', 'pythonw.exe')
+            if os.path.exists(bundled):
+                return bundled
+        return sys.executable
+
     # Normal execution - use current Python interpreter
-    xefm_python = sys.executable
+    return sys.executable
+
+
+#: Python interpreter path for external programs, resolved once at import.
+xefm_python = _resolve_xefm_python()
 
 
 def xefm_tool(tool_name):
