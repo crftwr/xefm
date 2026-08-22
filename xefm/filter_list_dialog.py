@@ -24,8 +24,9 @@ still backend with no animation ticks (chiefly tests) the loader is settled
 synchronously: the worker is joined and its rows drained in one shot.
 
 Interaction: typing filters the list (substring,
-case-insensitive); ↑/↓/PageUp/PageDown move the selection; Enter accepts the
-selected value; Esc cancels; a click selects/activates a row. The dialog is
+case-insensitive, plus Migemo so romaji finds Japanese labels — see
+``xefm.migemo_search``); ↑/↓/PageUp/PageDown move the selection; Enter accepts
+the selected value; Esc cancels; a click selects/activates a row. The dialog is
 modal — it owns events while open — and reports its outcome through
 ``on_accept(value)`` / ``on_cancel()``.
 
@@ -47,6 +48,7 @@ from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 from puikit.widgets.text_edit import TextEdit
 
+from xefm import migemo_search
 from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
 
 #: Navigation keys the *list* owns even while the filter field holds focus —
@@ -127,9 +129,18 @@ class FilterListDialog(FocusContainer, Widget):
 
     # --- filtering -----------------------------------------------------------
 
+    def _label_hit(self, value: Any, q: str, regex) -> bool:
+        """Whether a row passes the filter: case-insensitive substring on the
+        rendered label, unioned with the query's Migemo regex (romaji finds
+        Japanese labels, #302 — ``regex`` is None when Migemo doesn't apply)."""
+        label = self.to_label(value)
+        return q in label.lower() or (
+            regex is not None and migemo_search.search_nfc(regex, label))
+
     def _refilter(self, text: str) -> None:
         q = text.lower()
-        self.filtered = [v for v in self.all_items if q in self.to_label(v).lower()]
+        regex = migemo_search.get_regex(text)
+        self.filtered = [v for v in self.all_items if self._label_hit(v, q, regex)]
         self.list.set_items([self.to_label(v) for v in self.filtered])
         self.list.selected = 0
 
@@ -142,7 +153,8 @@ class FilterListDialog(FocusContainer, Widget):
             return
         self.all_items.extend(values)
         q = self.filter_edit.text.lower()
-        matches = [v for v in values if q in self.to_label(v).lower()]
+        regex = migemo_search.get_regex(self.filter_edit.text)
+        matches = [v for v in values if self._label_hit(v, q, regex)]
         if not matches:
             return
         self.filtered.extend(matches)

@@ -124,6 +124,20 @@ start.
 and the date column widens automatically for the longer form. After editing the
 setting, **Tools → Reload Configuration** applies it without restarting.
 
+## Incremental search (Migemo)
+
+```python
+MIGEMO_SEARCH    = True  # add Migemo (romaji -> Japanese) matches to incremental search
+MIGEMO_MIN_LENGTH = 3    # shortest pattern handed to Migemo
+```
+
+With Migemo on, incremental search (the file panes, the text/diff viewers,
+and the filter-list dialogs) also matches Japanese names from typed romaji —
+`kensaku` finds `検索`. Plain matching always still applies, glob patterns
+(`* ? [`) keep their exact wildcard behavior, and patterns shorter than
+`MIGEMO_MIN_LENGTH` skip Migemo. See
+[Migemo Search](MIGEMO_SEARCH_FEATURE.md).
+
 ## Text viewer encodings
 
 ```python

@@ -4,6 +4,8 @@
 # watchdog for automatic file list reloading
 # pillow for the built-in image viewer (decode/crop/scale; the viewer degrades
 #   to a metadata card without it, and inline terminal images need it too)
+# pymigemo for Migemo (romaji -> Japanese) matching in incremental search
+#   (will fallback gracefully to plain matching if not available)
 #
 # Backend/platform deps (pyobjc on macOS, windows-curses on Windows, numpy on
 # Windows) are PuiKit's own requirements and resolve transitively via the puikit
@@ -21,3 +23,9 @@ pygments
 boto3
 watchdog
 pillow
+
+# Pinned exactly: 0.0.1's dictionary reader breaks on LP64 platforms
+# (macOS/Linux) and xefm/migemo_search.py patches it at runtime — a future
+# upstream release could move the internals that patch touches. See
+# discussion #332 before bumping.
+pymigemo==0.0.1

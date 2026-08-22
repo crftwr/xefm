@@ -269,3 +269,79 @@ def test_diff_search_and_block_nav_are_independent(backend, diff_files):
     assert v.blocks
     panel.dispatch_event(_key("n", "n"))
     assert int(v.top) == v.blocks[0]
+
+
+# --- Migemo in the viewers (discussion #332) ---------------------------------
+#
+# The recompute paths union a Migemo regex with the literal test, so typed
+# romaji finds Japanese lines; drawing is covered by the render() calls (the
+# highlight paths compute Migemo spans for the visible rows).
+
+from types import SimpleNamespace
+
+from xefm import migemo_search
+
+needs_migemo = pytest.mark.skipif(migemo_search._load_engine() is None,
+                                  reason="pymigemo not installed")
+
+
+@pytest.fixture
+def migemo_on(monkeypatch):
+    monkeypatch.setattr(migemo_search, "_config",
+                        lambda: SimpleNamespace(MIGEMO_SEARCH=True, MIGEMO_MIN_LENGTH=3))
+
+
+@pytest.fixture
+def japanese_file(tmp_path):
+    p = tmp_path / "nihongo.txt"
+    body = ["検索の結果", "plain line", "kensaku spelled out", "無題のメモ"]
+    body += [f"pad line {i}" for i in range(20)]
+    p.write_text("\n".join(body), encoding="utf-8")
+    return Path(str(p))
+
+
+@pytest.fixture
+def japanese_diff_files(tmp_path):
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("\n".join(["検索する", "same", "tail"]), encoding="utf-8")
+    b.write_text("\n".join(["置換する", "same", "tail"]), encoding="utf-8")
+    return Path(str(a)), Path(str(b))
+
+
+@needs_migemo
+def test_text_search_romaji_finds_japanese_lines(backend, japanese_file, migemo_on):
+    panel = Panel(backend)
+    v = show_text_viewer(panel, japanese_file)
+    panel.render()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "kensaku")                        # 検索の結果 + the literal line
+    panel.render()                                 # draws the Migemo span highlight
+    assert v.matches == [0, 2]
+    assert v._search_status() == (1, 2)
+    panel.dispatch_event(_key("escape"))
+    panel.render()
+
+
+@needs_migemo
+def test_text_search_short_pattern_stays_literal(backend, japanese_file, migemo_on):
+    panel = Panel(backend)
+    v = show_text_viewer(panel, japanese_file)
+    panel.render()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "ke")                             # under the gate: literal only
+    panel.render()
+    assert v.matches == [2]
+
+
+@needs_migemo
+def test_diff_search_romaji_matches_either_side(backend, japanese_diff_files, migemo_on):
+    panel = Panel(backend)
+    v = show_diff_viewer(panel, *japanese_diff_files)
+    panel.render()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "kensaku")                        # 検索する on the left side only
+    panel.render()                                 # draws the Migemo span highlight
+    assert v.search_matches == [0]
+    panel.dispatch_event(_key("escape"))
+    panel.render()
