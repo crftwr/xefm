@@ -257,6 +257,14 @@ TIPS: tuple[tuple[str, str], ...] = (
      "chose in the header. When a file is detected wrong, {key:change_encoding} "
      "in the viewer picks the encoding explicitly."),
 
+    ("Japanese search without an IME",
+     "Incremental search speaks **Migemo**: typed romaji matches the Japanese "
+     "it could spell, so `kensaku` in {key:search} also finds 検索 or ケンサク "
+     "— in the file panes, the text and diff viewers, and the pickers' filter "
+     "fields. It kicks in from the third character, plain matching always "
+     "still applies, and `MIGEMO_SEARCH = False` in `~/.xefm/config.py` turns "
+     "it off."),
+
     ("Bugs, ideas, requests",
      "XeFM is developed in the open. Found a bug, or missing a feature? "
      f"Issues and requests are very welcome at {GITHUB_URL}/issues"),
