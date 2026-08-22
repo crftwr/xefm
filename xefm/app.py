@@ -3663,7 +3663,8 @@ class XeFMApp:
         self.panel.render()
 
     def _run_program(self, program: dict) -> None:
-        from xefm.external_programs import (build_xefm_env,
+        from xefm.external_programs import (SUBPROCESS_NO_WINDOW,
+                                           build_xefm_env,
                                            ensure_common_paths_in_env,
                                            get_selected_or_cursor_files,
                                            quote_filenames_with_double_quotes)
@@ -3709,10 +3710,13 @@ class XeFMApp:
             # Pipes, never the terminal: in TUI mode a direct write would corrupt
             # the curses screen; in desktop mode there may be no terminal at all.
             # stdin reads EOF so an interactive program can't hang on input.
+            # SUBPROCESS_NO_WINDOW keeps a console program from flashing a window
+            # of its own on Windows, where the GUI backend has no console to lend.
             proc = subprocess.Popen(
                 command + args, cwd=cwd, env=env,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, text=True, errors="replace")
+                stderr=subprocess.PIPE, text=True, errors="replace",
+                **SUBPROCESS_NO_WINDOW)
         except Exception as exc:
             self.log_info(f"Failed to launch {program.get('name')}: {exc}")
         else:

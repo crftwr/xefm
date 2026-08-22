@@ -13,18 +13,64 @@ from xefm.backend_detector import is_desktop_mode
 from xefm.log_manager import getLogger
 
 
-# Python interpreter path for external programs
-# This variable points to the correct Python interpreter depending on execution context:
-# - When running from macOS app bundle: uses bundled python3 executable
-# - When running normally: uses sys.executable (current Python interpreter)
-if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
-    # Running from macOS app bundle - use bundled python3
-    # The bundled Python is at: XeFM.app/Contents/Frameworks/Python.framework/bin/python3
-    bundle_path = sys.executable.rsplit('.app/Contents/MacOS', 1)[0] + '.app'
-    xefm_python = os.path.join(bundle_path, 'Contents', 'Frameworks', 'Python.framework', 'bin', 'python3')
-else:
+def _resolve_xefm_python():
+    r"""The interpreter external programs should be launched with.
+
+    ``sys.executable`` is the obvious answer and the right one whenever XeFM
+    runs under a real ``python``. In an application bundle it is not: the
+    bundle's own launcher executable is reported there, and running *it* with a
+    script argument does not run the script.
+
+    - macOS: ``XeFM.app/Contents/MacOS/XeFM`` -> the interpreter bundled at
+      ``Contents/Frameworks/Python.framework/bin/python3``.
+    - Windows: ``<root>\XeFM.exe`` -> ``<root>\runtime\python.exe`` from the
+      embedded CPython. The C launcher (windows_app/src/launcher.c) hardcodes
+      ``sys.argv`` and sets ``parse_argv = 0``, so handing XeFM.exe a script
+      would discard it and just open a second file manager window.
+
+      The console interpreter, not ``pythonw.exe``: a tool that shells out to
+      another console program (``code.cmd``, ``git``) passes on its own pipes
+      only if it has a console itself. Under ``pythonw`` the grandchild gets a
+      fresh console instead, so its output never reaches the log pane and its
+      window flashes on screen. What keeps the console hidden is
+      :data:`SUBPROCESS_NO_WINDOW`, applied at the launch sites.
+    """
+    if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
+        # The bundled Python is at: XeFM.app/Contents/Frameworks/Python.framework/bin/python3
+        bundle_path = sys.executable.rsplit('.app/Contents/MacOS', 1)[0] + '.app'
+        return os.path.join(bundle_path, 'Contents', 'Frameworks', 'Python.framework', 'bin', 'python3')
+
+    if sys.platform == 'win32':
+        # Any real interpreter is named python*.exe (python.exe, pythonw.exe,
+        # python3.14.exe); anything else is a launcher wrapping one - the
+        # bundle's XeFM.exe. The embeddable package ships python.exe next to
+        # the DLL under runtime\, which the build keeps (it only strips the
+        # ._pth files).
+        exe_name = os.path.basename(sys.executable).lower()
+        if not (exe_name.startswith('python') and exe_name.endswith('.exe')):
+            bundled = os.path.join(os.path.dirname(sys.executable), 'runtime', 'python.exe')
+            if os.path.exists(bundled):
+                return bundled
+        return sys.executable
+
     # Normal execution - use current Python interpreter
-    xefm_python = sys.executable
+    return sys.executable
+
+
+#: Python interpreter path for external programs, resolved once at import.
+xefm_python = _resolve_xefm_python()
+
+
+#: Extra :mod:`subprocess` keyword arguments for launching a console program
+#: without showing a console window. Windows gives a console-subsystem child a
+#: window of its own whenever the parent has no console - which is every launch
+#: from the GUI backend - and that window appears even though the child's output
+#: is already redirected to pipes. ``CREATE_NO_WINDOW`` gives the child a console
+#: it can still lend to *its* own children, just an invisible one. Empty off
+#: Windows, and deliberately not applied where a program is meant to take over
+#: the terminal (``options {'terminal': True}``, the sub-shell).
+SUBPROCESS_NO_WINDOW = (
+    {'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {})
 
 
 def xefm_tool(tool_name):
@@ -275,7 +321,8 @@ class ExternalProgramManager:
             # Execute the program with the modified environment
             # In desktop mode, capture output to redirect to log pane
             if desktop_mode:
-                result = subprocess.run(command, env=env, capture_output=True, text=True)
+                result = subprocess.run(command, env=env, capture_output=True, text=True,
+                                        **SUBPROCESS_NO_WINDOW)
                 
                 # Redirect stdout to log pane (LogCapture is still active)
                 if result.stdout:

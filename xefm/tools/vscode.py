@@ -26,8 +26,13 @@ def find_git_root(directory):
 
 def main():
     """Main function to open VSCode with XeFM context."""
-    # Check if VSCode is available
-    if not shutil.which('code'):
+    # Resolve the launcher once and run *that* path. A bare name would be
+    # looked up differently by the two calls on Windows: shutil.which()
+    # applies PATHEXT and finds code.cmd, while CreateProcess (which
+    # subprocess uses) only ever appends .exe - so the check passed and the
+    # launch then failed with "executable not found".
+    code_exe = shutil.which('code')
+    if not code_exe:
         print("Error: VSCode (code) is not installed or not in PATH")
         print("Please install VSCode and ensure 'code' command is available")
         print("You may need to install the VSCode command line tools:")
@@ -114,10 +119,10 @@ def main():
         os.environ.pop(var, None)
 
     # Execute VSCode
-    print(f"Executing: code {' '.join(vscode_args)}")
+    print(f"Executing: {code_exe} {' '.join(vscode_args)}")
     
     try:
-        subprocess.run(['code'] + vscode_args, check=True)
+        subprocess.run([code_exe] + vscode_args, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error launching VSCode: {e}")
         sys.exit(1)
