@@ -129,6 +129,30 @@ the `M` key with `move_files` without conflict — XeFM picks whichever action f
 the current selection state. You can add a `'selection'` requirement to any other
 action the same way.
 
+### Viewer keys
+
+The keys used *inside* the text, image, diff and directory-diff viewers are named
+actions too, prefixed with the viewer they belong to — `text_viewer.page_down`,
+`diff_viewer.next_block`, `dir_diff.switch_side`. They are not listed in the
+default `KEY_BINDINGS` because they work without an entry; add one only for a key
+you want to change:
+
+```python
+KEY_BINDINGS = {
+    'text_viewer.page_down': ['SPACE'],
+    'diff_viewer.next_block': ['J'],
+}
+```
+
+Because each surface only looks at its own names, a viewer key may share a key
+with a file-list key with no conflict. The same prefix also scopes a *shared*
+action — `quit`, `help`, `search`, `edit_file` — to one viewer:
+`'diff_viewer.quit': ['X']` changes it there and nowhere else.
+
+The full list of viewer actions and their defaults is in
+[Customization (Preview)](CUSTOMIZATION_FEATURE.md), along with how to bind a key
+to a Python function of your own.
+
 ## Complete Example
 
 Here's a complete configuration example:
@@ -237,4 +261,5 @@ KEY_BINDINGS = {
 ## See Also
 
 - [Configuration Feature](CONFIGURATION_FEATURE.md) - General configuration guide
+- [Customization (Preview)](CUSTOMIZATION_FEATURE.md) - Viewer keys, your own actions, event hooks
 - [Help Dialog Feature](HELP_DIALOG_FEATURE.md) - Viewing key bindings in XeFM

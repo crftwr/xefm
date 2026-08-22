@@ -390,6 +390,53 @@ class Config:
         # open/reload this file without leaving XeFM, e.g. 'edit_config': ['Y'].
         'edit_config': [],                     # Edit this config.py in TEXT_EDITOR, then reload
         'reload_config': [],                   # Re-read this config.py and apply live
+
+        # === Viewer-local actions (rebindable, not listed above) ==============
+        # Every key the modal viewers use is a named action too, and every one of
+        # them can be rebound here. They are *not* listed as entries above,
+        # because they already work without one: an action XeFM does not find in
+        # this dictionary falls back to the default it declares in xefm/actions.py
+        # (which is also what keeps a config written before an action existed
+        # working). Add an entry only for the ones you want to change.
+        #
+        # The names are prefixed with the viewer they belong to, so they never
+        # collide with the file list's own actions — and because each surface only
+        # ever looks at its own names, a viewer action may share a key with a file
+        # list action with no ambiguity at all. Their defaults:
+        #
+        #   Text viewer                        Diff viewer
+        #     'text_viewer.scroll_up':  UP       'diff_viewer.scroll_up':      UP
+        #     'text_viewer.scroll_down': DOWN    'diff_viewer.scroll_down':    DOWN
+        #     'text_viewer.page_up':    PAGE_UP  'diff_viewer.page_up':        PAGE_UP
+        #     'text_viewer.page_down':  PAGE_DOWN 'diff_viewer.page_down':     PAGE_DOWN
+        #     'text_viewer.scroll_top': HOME     'diff_viewer.scroll_top':     HOME
+        #     'text_viewer.scroll_bottom': END   'diff_viewer.scroll_bottom':  END
+        #     'text_viewer.scroll_left': LEFT    'diff_viewer.scroll_left':    LEFT
+        #     'text_viewer.scroll_right': RIGHT  'diff_viewer.scroll_right':   RIGHT
+        #                                        'diff_viewer.next_block':     n
+        #   Image viewer                         'diff_viewer.prev_block':     N
+        #     'image_viewer.first':     HOME
+        #     'image_viewer.last':      END
+        #
+        #   Directory diff
+        #     'dir_diff.cursor_up':   UP        'dir_diff.expand':      RIGHT
+        #     'dir_diff.cursor_down': DOWN      'dir_diff.collapse':    LEFT
+        #     'dir_diff.page_up':     PAGE_UP   'dir_diff.activate':    ENTER
+        #     'dir_diff.page_down':   PAGE_DOWN 'dir_diff.switch_side': TAB
+        #     'dir_diff.cursor_top':  HOME      'dir_diff.next_diff':   n
+        #     'dir_diff.cursor_bottom': END     'dir_diff.prev_diff':   Shift-N
+        #     'dir_diff.rescan':      r         'dir_diff.split_left':  [
+        #                                       'dir_diff.split_right': ]
+        #
+        # Example -- page with space and b inside the text viewer only:
+        # 'text_viewer.page_down': ['SPACE'],
+        # 'text_viewer.page_up': ['B'],
+        #
+        # The same prefix also scopes a *shared* action to one viewer. 'quit',
+        # 'help', 'search' and 'edit_file' are understood everywhere, so rebinding
+        # 'quit' above changes it in the file list and in every viewer; writing
+        # 'diff_viewer.quit' changes it in the diff viewer alone:
+        # 'diff_viewer.quit': ['X'],
     }
 
     # Windows has no Command key, and Alt-Enter is the platform fullscreen-toggle
@@ -400,6 +447,102 @@ class Config:
         KEY_BINDINGS['reveal_in_os'] = ['Ctrl-Shift-E']  # Reveal focused file in Explorer
         KEY_BINDINGS['copy_names'] = ['Ctrl-Shift-C']    # Copy selected/focused file name(s) to clipboard
         KEY_BINDINGS['copy_paths'] = ['Ctrl-Shift-P']    # Copy selected/focused full path(s) to clipboard
+
+
+    # -----------------------------------------------------------------------
+    # In-process customization -- PREVIEW
+    # -----------------------------------------------------------------------
+    # This config file is executed Python, so it can define functions as well as
+    # settings. ACTIONS binds your own functions to action names (which
+    # KEY_BINDINGS above then binds to keys, exactly like a built-in action), and
+    # EVENT_HOOKS runs them at set moments in XeFM's life.
+    #
+    # PREVIEW: this is not a stable API yet. The objects passed to your functions
+    # and the shape of these two variables may change in any release until
+    # xefm.user_api.API_VERSION reaches 1. XeFM logs one line saying so when a
+    # config uses either variable. Everything else in this file is unaffected.
+    #
+    # Both reload with the rest of the config ('reload_config'), so iterating on
+    # an action is edit-then-reload -- no restart.
+    #
+    # --- ACTIONS ----------------------------------------------------------
+    # A function takes one argument, the context object, and is run on the UI
+    # thread while XeFM waits -- so keep it quick. Anything it raises is logged
+    # with a traceback and dropped; it never takes XeFM down.
+    #
+    # Define the functions ABOVE `class Config:` (module level), then:
+    #
+    # def select_documents(ctx):
+    #     """Select every Word/PDF document in the active pane."""
+    #     n = ctx.pane.select(lambda e: e.suffix.lower() in ('.docx', '.pdf'))
+    #     ctx.message(f"Selected {n} document(s)")
+    #
+    # def go_to_sibling(ctx):
+    #     """Point the other pane at this pane's directory."""
+    #     ctx.other.cd(ctx.pane.path)
+    #
+    # ACTIONS = {
+    #     'select-documents': select_documents,
+    #     'go-to-sibling': go_to_sibling,
+    # }
+    # ...and bind them in KEY_BINDINGS above, like any built-in action:
+    #     'select-documents': ['Shift-D'],
+    #
+    # An action name that already exists is ignored unless you say you meant it,
+    # which also keeps the built-in reachable so you can wrap it:
+    #
+    # def confirm_then_quit(ctx):
+    #     ctx.message("see you")
+    #     ctx.invoke('quit')          # runs the built-in 'quit'
+    #
+    # ACTIONS = {'quit': {'func': confirm_then_quit, 'override': True}}
+    #
+    # What the context object offers:
+    #   ctx.pane / ctx.other / ctx.left / ctx.right   the panes
+    #   ctx.invoke(name)                              run another action
+    #   ctx.message(text)                             one line in the log pane
+    #   ctx.input(prompt, default, on_accept=fn)      ask for text
+    #   ctx.choose(title, items, on_result=fn)        pick from a list
+    #   ctx.confirm(prompt, on_result=fn)             yes / no
+    # ...and on each pane:
+    #   pane.path, pane.entries, pane.cursor, pane.focused, pane.selected()
+    #   pane.select(predicate) / pane.unselect(predicate) / pane.refresh()
+    #   pane.cd(path, focus_name=None)
+    # Each entry has .name, .path, .suffix, .stem, .is_dir, .is_file, .is_link,
+    # .size and .mtime.
+    #
+    # XeFM never blocks on a dialog, so input/choose/confirm hand their answer to
+    # a callback instead of returning it -- put the rest of the action in there.
+    ACTIONS = {}
+
+    # --- EVENT_HOOKS ------------------------------------------------------
+    # Functions run at set moments. Each event maps to a list, run in order.
+    #
+    #   'startup'           fn(ctx)            once the app is up
+    #   'quit'              fn(ctx)            before XeFM shuts down
+    #   'directory_changed' fn(ctx, pane, old_path, new_path)
+    #   'file_open'         fn(ctx, path)      return True to claim the open
+    #
+    # 'file_open' fires before XeFM decides what to do with a file, so returning
+    # True is how you route one file type somewhere of your own without touching
+    # FILE_ASSOCIATIONS. It does not fire for directories -- entering one is
+    # navigation, not opening.
+    #
+    # def log_visit(ctx, pane, old_path, new_path):
+    #     with open(Path.home() / '.xefm' / 'visited.log', 'a') as f:
+    #         f.write(f"{new_path}\n")
+    #
+    # def open_psd_in_gimp(ctx, path):
+    #     if path.suffix.lower() != '.psd':
+    #         return False
+    #     subprocess.Popen(['gimp', str(path)])
+    #     return True                 # claimed -- XeFM does nothing further
+    #
+    # EVENT_HOOKS = {
+    #     'directory_changed': [log_visit],
+    #     'file_open': [open_psd_in_gimp],
+    # }
+    EVENT_HOOKS = {}
 
 
     # Favorite directories - customize your frequently used directories

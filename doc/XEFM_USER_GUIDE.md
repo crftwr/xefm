@@ -739,6 +739,7 @@ For detailed information about specific features, see these dedicated guides:
 ### Configuration and Customization
 - [Configuration Feature](CONFIGURATION_FEATURE.md) - Complete configuration reference and customization guide
 - [Key Bindings Feature](KEY_BINDINGS_FEATURE.md) - Customizable keyboard shortcuts
+- [Customization (Preview)](CUSTOMIZATION_FEATURE.md) - Rebind viewer keys, bind keys to your own Python functions, run functions on events
 
 ### Integration and Extensions
 - [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md) - Custom program integration (incl. the VSCode recipe)
