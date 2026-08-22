@@ -965,3 +965,84 @@ def test_operations_run_without_a_monitor(tmp_path, cfg):
     dst = tmp_path / "d"; dst.mkdir()
     res = _run_sync(svc, svc.copy, [_P(tmp_path / "a.txt")], _P(dst))
     assert res["done"] == 1 and svc.monitor is None
+
+
+# --- teardown robustness (issue #333) -----------------------------------------
+
+import threading  # noqa: E402
+
+from puikit import CapabilityProfile  # noqa: E402
+
+
+def test_finish_while_cancel_confirm_open_tears_down_both_layers():
+    """Issue #333: a delete finished while the Esc→cancel-confirm box was
+    covering the progress dialog. The teardown runs exactly once, and close()
+    used to pop only a *topmost* dialog — so it silently skipped, stranding the
+    dialog on screen forever (with Cancel dead: the task had already ended)."""
+    backend, panel = _panel()
+    tm = TaskManager()
+    task = Task("Delete…")
+    release = threading.Event()
+    done = {}
+
+    def run(t):
+        release.wait(5)
+        return {"done": 8, "skipped": 0, "failed": 0, "cancelled": False}
+
+    tm.submit(task, panel, run=run, on_done=lambda r: done.update(r))
+    assert _pump_until(backend, panel, lambda: _top(panel) == "ProgressDialog")
+    # Esc opens the cancel-confirm box above the dialog; leave it unanswered.
+    panel.dispatch_event(Event(EventType.KEY, key="escape", char=None, modifiers=set()))
+    assert [type(s.widget).__name__ for s in panel._layers] == \
+        ["ProgressDialog", "MessageBox"]
+    backend.run_animation_ticks()  # a frame passes with the box up, task running
+    # The worker finishes while the box is still covering the dialog.
+    release.set()
+    assert _pump_until(backend, panel, lambda: bool(done))
+    assert done["done"] == 8
+    assert panel._layers == []        # dialog AND confirm box torn down
+    assert not tm.has_active()
+
+
+def test_on_done_failure_does_not_strand_the_dialog():
+    """A raising on_done must not derail the one-shot teardown (nor escape
+    into the backend's tick dispatch): the dialog still closes and the task is
+    still dropped from the registry."""
+    backend, panel = _panel()
+    tm = TaskManager()
+    task = Task("Job…")
+
+    def run(t):
+        return {"done": 1, "skipped": 0, "failed": 0, "cancelled": False}
+
+    def bad_done(result):
+        raise RuntimeError("boom")
+
+    tm.submit(task, panel, run=run, on_done=bad_done)
+    assert _pump_until(backend, panel, lambda: not tm.has_active())
+    assert panel._layers == []
+
+
+def test_background_submit_without_ticks_falls_back_inline():
+    """A backend with no animation ticks would never pump prompts, service
+    Cancel, or close the dialog — submit() must notice and run inline (with
+    headless prompt defaults) instead of stranding a dialog over a live
+    worker."""
+    still = CapabilityProfile(
+        {**PROFILE_TUI, "animation": False, "animation_ticks": False})
+    backend = MemoryBackend(width=100, height=30, capabilities=still)
+    panel = Panel(backend)
+    tm = TaskManager()
+    task = Task("Job…")
+    done = {}
+    prompts = []
+
+    def run(t):
+        prompts.append(t.ask(lambda p, deliver: None, headless="skip"))
+        return {"done": 3, "skipped": 0, "failed": 0, "cancelled": False}
+
+    tm.submit(task, panel, run=run, on_done=lambda r: done.update(r))
+    assert done["done"] == 3
+    assert prompts == ["skip"]        # ask() resolved headlessly, no dialog pump
+    assert panel._layers == []        # dialog closed, not stranded
+    assert not tm.has_active()
