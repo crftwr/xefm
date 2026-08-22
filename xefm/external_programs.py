@@ -23,13 +23,17 @@ def _resolve_xefm_python():
 
     - macOS: ``XeFM.app/Contents/MacOS/XeFM`` -> the interpreter bundled at
       ``Contents/Frameworks/Python.framework/bin/python3``.
-    - Windows: ``<root>\XeFM.exe`` -> ``<root>\runtime\pythonw.exe`` from the
+    - Windows: ``<root>\XeFM.exe`` -> ``<root>\runtime\python.exe`` from the
       embedded CPython. The C launcher (windows_app/src/launcher.c) hardcodes
       ``sys.argv`` and sets ``parse_argv = 0``, so handing XeFM.exe a script
-      would discard it and just open a second file manager window. ``pythonw``
-      rather than ``python`` because this is a GUI-subsystem app and a console
-      interpreter would flash a window; the tool's output is captured through
-      pipes into the log pane either way.
+      would discard it and just open a second file manager window.
+
+      The console interpreter, not ``pythonw.exe``: a tool that shells out to
+      another console program (``code.cmd``, ``git``) passes on its own pipes
+      only if it has a console itself. Under ``pythonw`` the grandchild gets a
+      fresh console instead, so its output never reaches the log pane and its
+      window flashes on screen. What keeps the console hidden is
+      :data:`SUBPROCESS_NO_WINDOW`, applied at the launch sites.
     """
     if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
         # The bundled Python is at: XeFM.app/Contents/Frameworks/Python.framework/bin/python3
@@ -39,12 +43,12 @@ def _resolve_xefm_python():
     if sys.platform == 'win32':
         # Any real interpreter is named python*.exe (python.exe, pythonw.exe,
         # python3.14.exe); anything else is a launcher wrapping one - the
-        # bundle's XeFM.exe. The embeddable package ships pythonw.exe next to
+        # bundle's XeFM.exe. The embeddable package ships python.exe next to
         # the DLL under runtime\, which the build keeps (it only strips the
         # ._pth files).
         exe_name = os.path.basename(sys.executable).lower()
         if not (exe_name.startswith('python') and exe_name.endswith('.exe')):
-            bundled = os.path.join(os.path.dirname(sys.executable), 'runtime', 'pythonw.exe')
+            bundled = os.path.join(os.path.dirname(sys.executable), 'runtime', 'python.exe')
             if os.path.exists(bundled):
                 return bundled
         return sys.executable
@@ -55,6 +59,18 @@ def _resolve_xefm_python():
 
 #: Python interpreter path for external programs, resolved once at import.
 xefm_python = _resolve_xefm_python()
+
+
+#: Extra :mod:`subprocess` keyword arguments for launching a console program
+#: without showing a console window. Windows gives a console-subsystem child a
+#: window of its own whenever the parent has no console - which is every launch
+#: from the GUI backend - and that window appears even though the child's output
+#: is already redirected to pipes. ``CREATE_NO_WINDOW`` gives the child a console
+#: it can still lend to *its* own children, just an invisible one. Empty off
+#: Windows, and deliberately not applied where a program is meant to take over
+#: the terminal (``options {'terminal': True}``, the sub-shell).
+SUBPROCESS_NO_WINDOW = (
+    {'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {})
 
 
 def xefm_tool(tool_name):
@@ -305,7 +321,8 @@ class ExternalProgramManager:
             # Execute the program with the modified environment
             # In desktop mode, capture output to redirect to log pane
             if desktop_mode:
-                result = subprocess.run(command, env=env, capture_output=True, text=True)
+                result = subprocess.run(command, env=env, capture_output=True, text=True,
+                                        **SUBPROCESS_NO_WINDOW)
                 
                 # Redirect stdout to log pane (LogCapture is still active)
                 if result.stdout:

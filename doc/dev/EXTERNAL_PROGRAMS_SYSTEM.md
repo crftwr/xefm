@@ -46,9 +46,18 @@ run the child process, then restore the renderer and stdio in a `finally` block.
   import by `_resolve_xefm_python()`. In an app bundle `sys.executable` names
   the bundle's own launcher, which ignores a script argument, so each bundle
   gets the interpreter shipped inside it: `Contents/Frameworks/`
-  `Python.framework/bin/python3` on macOS, `runtime\pythonw.exe` on Windows
-  (`pythonw`, not `python`, so a GUI-subsystem app flashes no console).
+  `Python.framework/bin/python3` on macOS, `runtime\python.exe` on Windows.
   Everywhere else it is `sys.executable`.
+- `SUBPROCESS_NO_WINDOW` — `{'creationflags': CREATE_NO_WINDOW}` on Windows,
+  empty elsewhere, spread into every *piped* launch (`_run_program`, the legacy
+  manager's desktop path). Without it a console program started from the GUI
+  backend — which has no console of its own to lend — pops a window for the
+  duration of the run, even though its output is already going to pipes. This
+  is the reason the Windows bundle can use the console `python.exe`: a tool
+  that itself shells out (`code.cmd`, `git`) passes on its pipes only if it has
+  a console, so `pythonw.exe` would swallow the grandchild's output and flash
+  the grandchild's own window instead. Not applied where the program is meant
+  to own the terminal (`options {'terminal': True}`, the sub-shell).
 - `build_xefm_env(left_pane, right_pane, current_pane, other_pane)` — the
   `XEFM_*` variables as a dict, ready to merge into a subprocess environment.
   The single source of truth, shared by `_run_program`, the legacy manager,
