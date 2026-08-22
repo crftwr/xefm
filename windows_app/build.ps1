@@ -301,7 +301,16 @@ $PuikitSrc = & $VenvPy -c "import puikit, os; print(os.path.dirname(os.path.absp
 if ($LASTEXITCODE -ne 0 -or -not $PuikitSrc -or -not (Test-Path $PuikitSrc)) {
     Fail "PuiKit not importable from the venv (resolved: '$PuikitSrc'). Install it: make install-puikit"
 }
-Info "PuiKit source: $PuikitSrc"
+# The version of the source actually being copied. PuiKit is normally installed
+# editable, and an editable install's .dist-info records the version that was
+# current when `pip install -e` ran - it is never rewritten as __version__ moves
+# on, so package metadata is not a trustworthy source here. __version__ in the
+# copied source is.
+$PuikitVersion = & $VenvPy -c "import puikit; print(puikit.__version__)"
+if ($LASTEXITCODE -ne 0 -or -not $PuikitVersion) {
+    Fail "Could not read puikit.__version__ from the venv. The bundle's third-party notices must name the version they ship."
+}
+Info "PuiKit source: $PuikitSrc (version $PuikitVersion)"
 Copy-Tree $PuikitSrc (Join-Path $AppDir 'puikit')
 
 # XeFM's own LICENSE goes at the bundle root, alongside THIRD_PARTY_NOTICES.txt.
@@ -374,7 +383,7 @@ if (Test-Path $rootLicense) {
     }
 }
 if ($PuikitLicense -and (Test-Path $PuikitLicense)) {
-    $NoticesExtras += @('--extra', "PuiKit (MIT License)=$PuikitLicense")
+    $NoticesExtras += @('--extra', "PuiKit $PuikitVersion (MIT License)=$PuikitLicense")
 } else {
     Fail "PuiKit LICENSE not found (looked for '$rootLicense' and puikit-*.dist-info under '$PuikitParent'). Install it: make install-puikit"
 }

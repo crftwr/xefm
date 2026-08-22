@@ -80,6 +80,16 @@ All Python components are copied from the venv's base_prefix:
 **Third-Party Packages:**
 - Source: `${PROJECT_ROOT}/.venv/lib/python3.13/site-packages/`
 - Destination: `XeFM.app/Contents/Resources/python_packages/`
+- The destination is wiped before each collection. `tools/collect_dependencies.py`
+  only ever adds files, so rebuilding over an existing bundle would otherwise keep
+  distributions no longer in the dependency closure — and the notices generator
+  scans exactly this directory, so the bundle would advertise packages it does not
+  ship.
+- PuiKit is excluded here via `--include-deps-of puikit`, which keeps its runtime
+  deps without copying PuiKit itself (its source is copied separately, below).
+  The flag is required: PuiKit is installed editable, and an editable install's
+  `.dist-info` records the version that was current when `pip install -e` ran, so
+  collecting it normally ships metadata for a version the bundle does not contain.
 
 **XeFM Source:**
 - Source: `${PROJECT_ROOT}/src/`
@@ -88,6 +98,9 @@ All Python components are copied from the venv's base_prefix:
 **PuiKit Framework:**
 - Source: the installed PuiKit package, located via `import puikit` in the venv (its checkout is typically `../puikit`; honours any `PUIKIT_DIR` override used at install)
 - Destination: `XeFM.app/Contents/Resources/puikit/`
+- The version recorded in the third-party notices is read from `puikit.__version__`
+  in that same source, not from package metadata, and the build fails if it cannot
+  be read — the bundle must name the PuiKit it actually ships
 - Bundled fonts (`puikit/fonts/`) are fetched into the source tree before copying so Core Text can register them at runtime
 
 ### 4. Framework Structure
