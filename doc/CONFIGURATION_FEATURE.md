@@ -208,6 +208,22 @@ Selection modes: `'any'` (default), `'required'` (only with a selection), `'none
 (only without one). See [Key Bindings](KEY_BINDINGS_FEATURE.md) for the full
 action list.
 
+The keys *inside* the modal viewers are named actions too, and rebindable the
+same way — as is binding a key to a function of your own. Both are covered in
+[Customization (Preview)](CUSTOMIZATION_FEATURE.md).
+
+## Customization — Preview
+
+```python
+ACTIONS = {}       # your own functions, bound by name in KEY_BINDINGS
+EVENT_HOOKS = {}   # your own functions, run when something happens
+```
+
+A preview API for turning this config file into a scripting surface: bind a key
+to a Python function that manipulates the panes, or run one at startup, on quit,
+on a directory change, or when a file is opened. Not stable yet — see
+[Customization (Preview)](CUSTOMIZATION_FEATURE.md).
+
 ## Favorite Directories
 
 ```python
@@ -362,5 +378,6 @@ available setting.
 - [File Associations](FILE_ASSOCIATIONS_FEATURE.md) - File type associations
 - [File Monitoring](FILE_MONITORING_FEATURE.md) - Automatic directory reloading
 - [Key Bindings](KEY_BINDINGS_FEATURE.md) - Key binding configuration
+- [Customization (Preview)](CUSTOMIZATION_FEATURE.md) - Your own actions and event hooks
 - [Desktop Mode](DESKTOP_MODE_GUIDE.md) - Desktop mode (macOS)
 - [XeFM User Guide](XEFM_USER_GUIDE.md) - Complete user guide

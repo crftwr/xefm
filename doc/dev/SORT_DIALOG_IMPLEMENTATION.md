@@ -1,6 +1,6 @@
 # Sort Dialog — Implementation
 
-Issue #237: the `sort_menu` action (the `S` key) used the generic popup menu;
+Issue #237: the `sort` action (the `S` key) used the generic popup menu;
 it now opens a specialized modal, `xefm/sort_dialog.py`.
 
 ## Shape

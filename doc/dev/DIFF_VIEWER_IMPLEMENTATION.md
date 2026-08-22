@@ -141,7 +141,7 @@ rebinds); the scroll and `n`/`N` keys are viewer-local.
 | `Home` / `End` | Top / bottom |
 | `←` / `→` | Scroll horizontally |
 | `n` / `N` | Next / previous change block |
-| `search` (default `F`) | Incremental search — the shared `ISearchBar` overlay (matches on both sides; `↑`/`↓` walk them) |
+| `isearch` (default `F`) | Incremental search — the shared `ISearchBar` overlay (matches on both sides; `↑`/`↓` walk them) |
 | `help` (default `?`) | Key reference |
 | `quit` (default `q`) / `Esc` | Close |
 

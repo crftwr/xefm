@@ -1,6 +1,14 @@
 # In-Process Customization API — Draft Design
 
-**Status: draft — nothing in this document is implemented yet.**
+**Status: steps 1–3 implemented as a Preview.** The action registry with
+contexts, `ACTIONS` with its invocation-time façade, and `EVENT_HOOKS` all
+ship; step 4 (exposed registries) does not. What was built, where it differs
+from this sketch, and why, is in
+[`CUSTOMIZATION_API_IMPLEMENTATION.md`](CUSTOMIZATION_API_IMPLEMENTATION.md);
+the user-facing side is [`doc/CUSTOMIZATION_FEATURE.md`](../CUSTOMIZATION_FEATURE.md).
+This document is kept as the design record it was, action names included —
+several were corrected during implementation, and the current spellings are
+in the implementation doc.
 
 Motivated by [issue #287](https://github.com/crftwr/xefm/issues/287): bind
 arbitrary keys to arbitrary functions, and let those functions manipulate

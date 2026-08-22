@@ -44,8 +44,9 @@ from puikit.panel import Rect
 from puikit.text import elide
 from puikit.widgets.base import Widget
 
-from xefm.config import (format_key_for_display, get_keys_for_action,
-                        is_action_for_event, keys_label_for_action)
+from xefm.actions import IMAGE_VIEWER as _CONTEXT
+from xefm.config import (find_action_for_event, format_key_for_display,
+                        get_keys_for_action)
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.log_manager import getLogger
 from xefm.text_dialog import keys_markdown, show_markdown
@@ -75,11 +76,12 @@ PAN_STEP = 0.2
 _ARROW_GLYPHS = {"UP": "↑", "DOWN": "↓", "LEFT": "←", "RIGHT": "→"}
 
 
-def _keys_display(action: str, fallback: str) -> str:
-    """Display label for ``action``'s configured key(s), formatted for the UI
-    (``DOWN`` -> ↓, ``Shift-UP`` -> Shift-↑), or ``fallback`` when the action
-    is absent from KEY_BINDINGS (a config from an older template)."""
-    keys, _ = get_keys_for_action(action)
+def _keys_display(action: str, fallback: str = "") -> str:
+    """Display label for ``action``'s key(s) **as this viewer resolves them** —
+    in the ``image_viewer`` context, so a scoped rebind and the action's
+    built-in defaults both show up — formatted for the UI (``DOWN`` -> ↓,
+    ``Shift-UP`` -> Shift-↑). ``fallback`` covers an unbound action."""
+    keys, _ = get_keys_for_action(action, _CONTEXT)
     if not keys:
         return fallback
     return " / ".join(format_key_for_display(k) for k in keys)
@@ -93,7 +95,7 @@ def _pan_keys_label() -> str:
     arrows, and — when the actions are absent from KEY_BINDINGS (an older
     config template) — the hardcoded plain-arrow pan (``↑↓←→``). Any other
     rebind lists each action's own label."""
-    bindings = [get_keys_for_action(f"image_scroll_{base.lower()}")[0]
+    bindings = [get_keys_for_action(f"image_scroll_{base.lower()}", _CONTEXT)[0]
                 for base in _ARROW_GLYPHS]
     if not any(bindings):
         return "↑↓←→"
@@ -182,6 +184,8 @@ class ImageViewer(Widget):
         # pixel delta into a pan.
         self._body_rect: tuple[float, float, float, float] | None = None
         self._drag: tuple[float, float] | None = None
+        #: Action handlers, built on first key (see _handlers_table).
+        self._handlers: dict | None = None
         # Client-area geometry captured each draw — (body_w, body_h, base_w,
         # base_h), the first two in base units and the last two the pixel size of
         # a base unit — so pan clamping knows the real client area between frames.
@@ -466,17 +470,17 @@ class ImageViewer(Widget):
         """The footer key hints — only for what is actually available: zoom and
         pan are omitted where no picture can be drawn, prev/next where the file
         has no siblings."""
-        quit_k = keys_label_for_action("quit", "q")
-        help_k = keys_label_for_action("help", "?")
+        quit_k = _keys_display("quit", "q")
+        help_k = _keys_display("help", "?")
         parts = []
         if self._can_render(ctx):
             parts.append("+/- zoom")
             if self.zoom > MIN_ZOOM:
                 parts.append(f"{_pan_keys_label()} pan")
-                parts.append(f"{_keys_display('image_zoom_reset', '0')} fit")
+                parts.append(f"{_keys_display('image_viewer.zoom_reset', '0')} fit")
         if len(self.paths) > 1:
-            parts.append(f"{_keys_display('image_prev', 'p')}"
-                         f"/{_keys_display('image_next', 'n')} prev·next")
+            parts.append(f"{_keys_display('image_viewer.prev', 'p')}"
+                         f"/{_keys_display('image_viewer.next', 'n')} prev·next")
         parts.append(f"{help_k} help")
         parts.append(f"{quit_k}/Esc close")
         return " " + " · ".join(parts) + " "
@@ -497,59 +501,45 @@ class ImageViewer(Widget):
             return True
         if event.type is not EventType.KEY:
             return True  # modal: swallow other non-key events
-        key = event.key
-        if key == "escape" or is_action_for_event(event, "quit"):
+        # Every key here is a named action in the ``image_viewer`` context
+        # (xefm.actions), resolved against that context alone — which is what
+        # lets '-' and the arrows keep sharing bindings with the file list's
+        # own actions without either surface stealing the other's key. Esc is
+        # the universal modal dismiss and stays hardcoded.
+        action = find_action_for_event(event, context=_CONTEXT)
+        if event.key == "escape" or action == "quit":
             self._close()
             return True
-        if is_action_for_event(event, "help"):
+        if action == "help":
             self._show_help()
             return True
-        if self._pressed(event, "image_zoom_in", ("+", "=")):
-            self._zoom_by(ZOOM_STEP)
-        elif self._pressed(event, "image_zoom_out", ("-", "_")):
-            self._zoom_by(1.0 / ZOOM_STEP)
-        elif self._pressed(event, "image_zoom_reset", ("0",)):
-            self.zoom = MIN_ZOOM
-            self.cx = self.cy = 0.5
-        elif self._pressed(event, "image_next", ("n",)):
-            self._step_image(1)
-        elif self._pressed(event, "image_prev", ("p",)):
-            self._step_image(-1)
-        elif self._pressed_key(event, "image_scroll_left", "left"):
-            self._pan_by(-PAN_STEP, 0.0)
-        elif self._pressed_key(event, "image_scroll_right", "right"):
-            self._pan_by(PAN_STEP, 0.0)
-        elif self._pressed_key(event, "image_scroll_up", "up"):
-            self._pan_by(0.0, -PAN_STEP)
-        elif self._pressed_key(event, "image_scroll_down", "down"):
-            self._pan_by(0.0, PAN_STEP)
-        elif key == "home":
-            self._step_image(-self.index)
-        elif key == "end":
-            self._step_image(len(self.paths) - 1 - self.index)
+        handler = self._handlers_table().get(action)
+        if handler is not None:
+            handler()
         return True
 
-    def _pressed(self, event: Event, action: str, fallback: tuple[str, ...]) -> bool:
-        """Whether ``event`` triggers ``action``, matched by name so a binding
-        shared with the file manager still resolves correctly here. Falls back to
-        the literal characters when the action is absent from KEY_BINDINGS —
-        which is what a config merged from a template older than this viewer
-        looks like, and mirrors TextViewer._wrap_pressed."""
-        if is_action_for_event(event, action):
-            return True
-        # get_keys_for_action returns (keys, selection_requirement) -- index the
-        # key list, or the non-empty tuple would always read as "bound".
-        return not get_keys_for_action(action)[0] and event.char in fallback
+    def _handlers_table(self) -> dict:
+        """This viewer's actions, by name."""
+        if self._handlers is None:
+            self._handlers = {
+                "image_viewer.zoom_in": lambda: self._zoom_by(ZOOM_STEP),
+                "image_viewer.zoom_out": lambda: self._zoom_by(1.0 / ZOOM_STEP),
+                "image_viewer.zoom_reset": self._zoom_reset,
+                "image_viewer.next": lambda: self._step_image(1),
+                "image_viewer.prev": lambda: self._step_image(-1),
+                "image_viewer.pan_left": lambda: self._pan_by(-PAN_STEP, 0.0),
+                "image_viewer.pan_right": lambda: self._pan_by(PAN_STEP, 0.0),
+                "image_viewer.pan_up": lambda: self._pan_by(0.0, -PAN_STEP),
+                "image_viewer.pan_down": lambda: self._pan_by(0.0, PAN_STEP),
+                "image_viewer.first": lambda: self._step_image(-self.index),
+                "image_viewer.last": lambda: self._step_image(
+                    len(self.paths) - 1 - self.index),
+            }
+        return self._handlers
 
-    def _pressed_key(self, event: Event, action: str, fallback_key: str) -> bool:
-        """``_pressed`` for named (non-printable) keys: falls back to the bare
-        unmodified ``fallback_key`` when the action is absent from KEY_BINDINGS.
-        The fallbacks are the plain arrows that used to pan here hardcoded, so a
-        config from a template older than the pan actions keeps its keys."""
-        if is_action_for_event(event, action):
-            return True
-        return (not get_keys_for_action(action)[0]
-                and event.key == fallback_key and not event.modifiers)
+    def _zoom_reset(self) -> None:
+        self.zoom = MIN_ZOOM
+        self.cx = self.cy = 0.5
 
     def _drag_mouse(self, event: Event) -> None:
         """Drag to pan: a press anchors, each drag step converts the pointer
@@ -589,22 +579,23 @@ class ImageViewer(Widget):
         if self._panel is None:
             return
         rows = [
-            (_keys_display("image_zoom_in", "+"), "zoom in"),
-            (_keys_display("image_zoom_out", "-"), "zoom out"),
-            (_keys_display("image_zoom_reset", "0"), "fit to window"),
+            (_keys_display("image_viewer.zoom_in", "+"), "zoom in"),
+            (_keys_display("image_viewer.zoom_out", "-"), "zoom out"),
+            (_keys_display("image_viewer.zoom_reset", "0"), "fit to window"),
             (_pan_keys_label(), "pan (while zoomed in)"),
             ("drag", "pan with the mouse"),
             ("scroll", "zoom in / out"),
         ]
         if len(self.paths) > 1:
             rows += [
-                (_keys_display("image_next", "n"), "next image"),
-                (_keys_display("image_prev", "p"), "previous image"),
-                ("Home / End", "first / last image"),
+                (_keys_display("image_viewer.next", "n"), "next image"),
+                (_keys_display("image_viewer.prev", "p"), "previous image"),
+                (f'{_keys_display("image_viewer.first")} / '
+                 f'{_keys_display("image_viewer.last")}', "first / last image"),
             ]
         rows += [
-            (keys_label_for_action("help", "?"), "this help"),
-            (keys_label_for_action("quit", "q") + " / Esc", "close"),
+            (_keys_display("help", "?"), "this help"),
+            (_keys_display("quit", "q") + " / Esc", "close"),
         ]
         show_markdown(self._panel, keys_markdown(rows),
                       title="Image Viewer — Keys", z=self._child_z)

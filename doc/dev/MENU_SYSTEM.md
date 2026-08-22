@@ -171,7 +171,7 @@ def has_files() -> bool:
     return bool(self.active_pane()["files"])
 
 MenuItem("Rename…", on_select=self.rename,
-         enabled=has_files, shortcut=sc("rename_file"))
+         enabled=has_files, shortcut=sc("rename"))
 
 MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),
          checked=lambda: self.flm.show_hidden, shortcut=sc("toggle_hidden"))

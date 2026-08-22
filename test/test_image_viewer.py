@@ -408,11 +408,22 @@ def test_plain_arrows_step_and_do_not_pan_with_shipped_bindings(images):
 def legacy_config(monkeypatch):
     """A user config merged from a template older than the image viewer's
     rebindable navigation / pan actions: those actions are simply absent from
-    KEY_BINDINGS, and the viewer must fall back to its historical hardcoded
-    keys (n / p step, plain arrows pan)."""
+    its KEY_BINDINGS.
+
+    ``_copy_missing_fields`` can add a whole missing config *field* but never a
+    missing key inside one, so such a config would otherwise be stuck with those
+    keys dead forever. The action registry is what closes that: an action the
+    config never names falls back to the default the action itself declares
+    (:mod:`xefm.actions`), so a legacy config lands on exactly the same keys a
+    freshly written one does."""
     cfg = DefaultConfig()
     bindings = dict(cfg.KEY_BINDINGS)
-    for action in ("image_next", "image_prev", "image_scroll_up",
+    # Both spellings: such a config predates the actions entirely, so it has
+    # neither the current name nor the old one an alias would still resolve.
+    for action in ("image_viewer.next", "image_viewer.prev",
+                   "image_viewer.pan_up", "image_viewer.pan_down",
+                   "image_viewer.pan_left", "image_viewer.pan_right",
+                   "image_next", "image_prev", "image_scroll_up",
                    "image_scroll_down", "image_scroll_left",
                    "image_scroll_right"):
         bindings.pop(action, None)
@@ -421,23 +432,23 @@ def legacy_config(monkeypatch):
     monkeypatch.setattr(config_manager, "_key_bindings", None)
 
 
-def test_legacy_config_keeps_n_p_navigation(images, legacy_config):
+def test_legacy_config_gets_the_registry_default_navigation(images, legacy_config):
     viewer = ImageViewer(images[0], siblings=images, index=0)
-    viewer.handle_event(_key(char="n"))
+    viewer.handle_event(Event(type=EventType.KEY, key="down", char=None))
     assert viewer.path.name == "b.png"
-    viewer.handle_event(_key(char="p"))
+    viewer.handle_event(Event(type=EventType.KEY, key="up", char=None))
     assert viewer.path.name == "a.png"
 
 
-def test_legacy_config_keeps_plain_arrow_pan(images, legacy_config):
+def test_legacy_config_gets_the_registry_default_pan(images, legacy_config):
     viewer = ImageViewer(images[0])
     viewer.zoom = 2.0
-    viewer.handle_event(Event(type=EventType.KEY, key="right", char=None))
+    viewer.handle_event(_key(key="right", mods={"shift"}))
     assert viewer.cx == pytest.approx(0.5 + PAN_STEP / 2.0)
-    # A shift-arrow matches nothing in a legacy config — no pan, no step.
+    # The unmodified arrow steps images, exactly as with a current config.
     cx = viewer.cx
-    viewer.handle_event(_key(key="down", mods={"shift"}))
-    assert (viewer.cx, viewer.cy) == (cx, 0.5)
+    viewer.handle_event(Event(type=EventType.KEY, key="down", char=None))
+    assert viewer.cx == cx  # stepped (and zoom reset), not panned
 
 
 # --- key labels in the hint bar / help ----------------------------------------
@@ -448,9 +459,9 @@ def test_pan_keys_label_collapses_the_default_chord():
     assert _pan_keys_label() == "Shift-↑↓←→"
 
 
-def test_pan_keys_label_falls_back_to_plain_arrows(legacy_config):
+def test_pan_keys_label_uses_registry_defaults_for_a_legacy_config(legacy_config):
     from xefm.image_viewer import _pan_keys_label
-    assert _pan_keys_label() == "↑↓←→"
+    assert _pan_keys_label() == "Shift-↑↓←→"
 
 
 # --- drawing: real picture vs metadata card ----------------------------------

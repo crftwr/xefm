@@ -33,7 +33,9 @@ from puikit.widgets import Splitter, show_message_box
 from puikit.widgets.base import Widget
 
 from xefm import migemo_search
-from xefm.config import get_config, is_action_for_event, keys_label_for_action
+from xefm.actions import FILE_DIFF as _CONTEXT
+from xefm.config import (find_action_for_event, format_key_for_display,
+                         get_config, get_keys_for_action)
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
@@ -43,6 +45,22 @@ from xefm.text_viewer import (MONO, _ScrollBody, _content_bg, _header_bg, _highl
                              draw_hscrollbar, draw_status_bar, span_x,
                              viewer_layer_hints, viewer_pad)
 from puikit.text import display_width
+
+def _label(action: str, fallback: str = "") -> str:
+    """Display label for ``action``'s keys **as this viewer resolves them** — in
+    the ``file_diff`` context, so a scoped rebind (``'file_diff.quit'``) and
+    the action's built-in defaults both show up, formatted for the UI
+    (``DOWN`` -> ↓)."""
+    keys, _ = get_keys_for_action(action, _CONTEXT)
+    if not keys:
+        return fallback
+    return " / ".join(format_key_for_display(k) for k in keys)
+
+
+def _pair(first: str, second: str) -> str:
+    """One help row's label for two actions that read as a pair (``↑ / ↓``)."""
+    return f"{_label(first)} / {_label(second)}"
+
 
 #: Semantic diff hues. The whole-row tints and the stronger changed-character
 #: tints are the theme's *content background* blended toward these, so a diff
@@ -322,6 +340,8 @@ class DiffViewer(Widget):
         # Chrome surfaces fill the window; text and the panes inset (see draw).
         # _pad is cached to translate pointer events into the inset splitter.
         self._pad = (0.0, 0.0)
+        #: Action handlers, built on first key (see _handlers_table).
+        self._handlers: dict | None = None
         self._child_z = 90  # z for the help overlay; raised above this viewer in show_
         self.top = 0.0
         self.left = 0.0
@@ -580,9 +600,9 @@ class DiffViewer(Widget):
         # text inset, matching the main window (and the other two viewers). Its rect
         # is captured so the ISearchBar can pin over it during a search.
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        search_k = keys_label_for_action("search", "F")
-        edit_k = keys_label_for_action("edit_file", "E")
-        quit_k = keys_label_for_action("quit", "q")
+        search_k = _label("isearch", "F")
+        edit_k = _label("edit_file", "E")
+        quit_k = _label("quit", "q")
         hint = (f" {len(self.rows)} rows · {len(self.blocks)} changes · "
                 f"n/N jump · {search_k} search · {edit_k} edit · ←→ pan · "
                 f"{quit_k}/Esc close ")
@@ -614,58 +634,68 @@ class DiffViewer(Widget):
             return True
         if event.type is not EventType.KEY:
             return True
-        key = event.key
-        # Config-driven keys (quit / help / search) resolve through KEY_BINDINGS by
-        # name, so they honour the user's rebinds. Esc is the universal modal
-        # dismiss; the scroll and n/N diff-block keys below are viewer-local. While
-        # a search is open the ISearchBar is the top layer and receives keys, so
-        # this isn't reached.
-        if key == "escape" or is_action_for_event(event, "quit"):
+        # Every key this viewer understands is a named action in the
+        # ``file_diff`` context (xefm.actions) — the scroll keys and the n/N
+        # block jumps included, which used to be raw comparisons here and so
+        # could not be rebound at all. Esc is the universal modal dismiss and
+        # stays hardcoded. While a search is open the ISearchBar is the top
+        # layer and receives keys, so this isn't reached.
+        action = find_action_for_event(event, context=_CONTEXT)
+        if event.key == "escape" or action == "quit":
             self._close()
-        elif is_action_for_event(event, "help"):
-            self._show_help()
-        elif is_action_for_event(event, "search"):
-            self._enter_search()
-        elif is_action_for_event(event, "edit_file"):
-            self._edit_in_tool()
-        elif key == "down":
-            self.top += 1
-        elif key == "up":
-            self.top -= 1
-        elif key == "pagedown":
-            self.top += self._view_h
-        elif key == "pageup":
-            self.top -= self._view_h
-        elif key == "home":
-            self.top = 0.0
-        elif key == "end":
-            self.top = float(max(0, len(self.rows) - self._view_h))
-        elif key == "right":
-            self.left += 4
-        elif key == "left":
-            self.left = max(0.0, self.left - 4)
-        elif event.char == "n":
-            self._step_block(1)
-        elif event.char == "N":
-            self._step_block(-1)
+        else:
+            handler = self._handlers_table().get(action)
+            if handler is not None:
+                handler()
         self._clamp()
         return True
+
+    def _handlers_table(self) -> dict:
+        """This viewer's actions, by name."""
+        if self._handlers is None:
+            self._handlers = {
+                "help": self._show_help,
+                "isearch": self._enter_search,
+                "edit_file": self._edit_in_tool,
+                "file_diff.next_block": lambda: self._step_block(1),
+                "file_diff.prev_block": lambda: self._step_block(-1),
+                "file_diff.scroll_down": lambda: self._scroll(1),
+                "file_diff.scroll_up": lambda: self._scroll(-1),
+                "file_diff.page_down": lambda: self._scroll(self._view_h),
+                "file_diff.page_up": lambda: self._scroll(-self._view_h),
+                "file_diff.scroll_top": lambda: setattr(self, "top", 0.0),
+                "file_diff.scroll_bottom": self._scroll_bottom,
+                "file_diff.scroll_right": lambda: self._pan(4),
+                "file_diff.scroll_left": lambda: self._pan(-4),
+            }
+        return self._handlers
+
+    def _scroll(self, rows: float) -> None:
+        self.top += rows
+
+    def _scroll_bottom(self) -> None:
+        self.top = float(max(0, len(self.rows) - self._view_h))
+
+    def _pan(self, cells: float) -> None:
+        self.left = max(0.0, self.left + cells)
 
     def _show_help(self) -> None:
         if self._panel is None:
             return
         rows = [
-            ("↑ / ↓", "scroll line"),
-            ("PgUp / PgDn", "scroll page"),
-            ("Home / End", "top / bottom"),
-            ("← / →", "scroll horizontally"),
-            ("n / N", "next / prev diff block"),
-            (keys_label_for_action("search", "F"), "incremental search"),
+            (_pair("file_diff.scroll_up", "file_diff.scroll_down"), "scroll line"),
+            (_pair("file_diff.page_up", "file_diff.page_down"), "scroll page"),
+            (_pair("file_diff.scroll_top", "file_diff.scroll_bottom"), "top / bottom"),
+            (_pair("file_diff.scroll_left", "file_diff.scroll_right"),
+             "scroll horizontally"),
+            (_pair("file_diff.next_block", "file_diff.prev_block"),
+             "next / prev diff block"),
+            (_label("isearch", "F"), "incremental search"),
             ("↑ / ↓ (in search)", "next / prev match"),
-            (keys_label_for_action("edit_file", "E"), "edit both sides in $TEXT_DIFF"),
+            (_label("edit_file", "E"), "edit both sides in $TEXT_DIFF"),
             ("Drag gutter", "move centre split"),
-            (keys_label_for_action("help", "?"), "this help"),
-            (keys_label_for_action("quit", "q") + " / Esc", "close"),
+            (_label("help", "?"), "this help"),
+            (_label("quit", "q") + " / Esc", "close"),
         ]
         show_markdown(self._panel, keys_markdown(rows),
                       title="File Diff — Keys", z=self._child_z)

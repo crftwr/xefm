@@ -96,58 +96,58 @@ XeFM now features a fully configurable key binding system where all keyboard sho
 ```python
 KEY_BINDINGS = {
     # Application Control
-    'quit': ['q', 'Q'],                    # Exit XeFM application
-    'help': ['?'],                         # Show help dialog with all key bindings
+    'quit': ['q', 'Q'],                 # Exit XeFM application
+    'help': ['?'],                      # Show help dialog with all key bindings
     
     # Display & Navigation
-    'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles, Windows hidden attribute)
-    'toggle_color_scheme': ['t'],          # Switch between dark and light color schemes
+    'toggle_hidden': ['.'],             # Toggle visibility of hidden files (dotfiles, Windows hidden attribute)
+    'toggle_color_scheme': ['t'],       # Switch between dark and light color schemes
     
     # Search & Filter
-    'search': ['f'],                       # Enter incremental search mode (isearch)
-    'search_dialog': ['F'],                # Show filename search dialog
-    'search_content': ['G'],               # Show content search dialog (grep)
-    'filter': [';'],                       # Enter filter mode to show only matching files
-    'clear_filter': [':'],                 # Clear current file filter
+    'isearch': ['f'],                   # Enter incremental search mode (isearch)
+    'find_files': ['F'],                # Show filename search dialog
+    'find_in_files': ['G'],             # Show content search dialog (grep)
+    'filter': [';'],                    # Enter filter mode to show only matching files
+    'clear_filter': [':'],              # Clear current file filter
     
     # Sorting
-    'sort_menu': ['s', 'S'],              # Open the sort dialog (key + order)
-    'quick_sort_name': ['1'],              # Quick sort by filename
-    'quick_sort_ext': ['2'],               # Quick sort by file extension
-    'quick_sort_size': ['3'],              # Quick sort by file size
-    'quick_sort_date': ['4'],              # Quick sort by modification date
+    'sort': ['s', 'S'],                 # Open the sort dialog (key + order)
+    'quick_sort_name': ['1'],           # Quick sort by filename
+    'quick_sort_ext': ['2'],            # Quick sort by file extension
+    'quick_sort_size': ['3'],           # Quick sort by file size
+    'quick_sort_date': ['4'],           # Quick sort by modification date
     
     # File Selection
-    'select_file': [' '],                  # Toggle selection of current file (Space)
-    'select_all_files': ['a'],             # Toggle selection of all files in current pane
-    'select_all_items': ['A'],             # Toggle selection of all items (files + dirs)
+    'toggle_select_down': [' '],        # Toggle selection of current file (Space)
+    'toggle_select_files': ['a'],       # Toggle selection of all files in current pane
+    'toggle_select_items': ['A'],       # Toggle selection of all items (files + dirs)
     
     # Pane Management
-    'sync_current_to_other': ['o'],        # Sync current pane directory to other pane
-    'sync_other_to_current': ['O'],        # Sync other pane directory to current pane
-    'adjust_pane_left': ['['],            # Make left pane smaller (move boundary left)
+    'sync_current_to_other': ['o'],     # Sync current pane directory to other pane
+    'sync_other_to_current': ['O'],     # Sync other pane directory to current pane
+    'adjust_pane_left': ['['],          # Make left pane smaller (move boundary left)
     'adjust_pane_right': [']'],           # Make left pane larger (move boundary right)
-    'adjust_log_up': ['{'],               # Make log pane larger (Shift+[)
-    'adjust_log_down': ['}'],             # Make log pane smaller (Shift+])
-    'reset_log_height': ['_'],            # Reset log pane height to default (Shift+-)
+    'adjust_log_up': ['{'],             # Make log pane larger (Shift+[)
+    'adjust_log_down': ['}'],           # Make log pane smaller (Shift+])
+    'reset_log_height': ['_'],          # Reset log pane height to default (Shift+-)
     
     # File Operations
-    'view_text': ['v', 'V'],              # View text file in built-in viewer
-    'edit_file': ['e'],                    # Edit selected file with configured text editor
-    'create_file': ['E'],                  # Create new file (prompts for filename)
-    'copy_files': ['c', 'C'],             # Copy selected files to other pane
-    'move_files': ['m', 'M'],             # Move selected files to other pane
-    'delete_files': ['k', 'K'],           # Delete selected files/directories
-    'rename_file': ['r', 'R'],            # Rename selected file/directory
+    'view_text': ['v', 'V'],            # View text file in built-in viewer
+    'edit_file': ['e'],                 # Edit selected file with configured text editor
+    'create_file': ['E'],               # Create new file (prompts for filename)
+    'copy_files': ['c', 'C'],           # Copy selected files to other pane
+    'move_files': ['m', 'M'],           # Move selected files to other pane
+    'delete_files': ['k', 'K'],         # Delete selected files/directories
+    'rename': ['r', 'R'],               # Rename selected file/directory
     
     # Advanced Features
-    'file_details': ['i', 'I'],           # Show detailed file information dialog
-    'favorites': ['j', 'J'],              # Show favorite directories dialog
-    'subshell': ['X'],                     # Enter subshell (command line) mode
-    'programs': ['x'],                     # Show external programs menu
-    'create_archive': ['p', 'P'],         # Create archive from selected files
-    'extract_archive': ['u', 'U'],        # Extract selected archive file
-    'compare_selection': ['w', 'W'],      # Show file and directory comparison options
+    'file_details': ['i', 'I'],         # Show detailed file information dialog
+    'favorites': ['j', 'J'],            # Show favorite directories dialog
+    'subshell': ['X'],                  # Enter subshell (command line) mode
+    'programs': ['x'],                  # Show external programs menu
+    'create_archive': ['p', 'P'],       # Create archive from selected files
+    'extract_archive': ['u', 'U'],      # Extract selected archive file
+    'compare_selection': ['w', 'W'],    # Show file and directory comparison options
 }
 ```
 
@@ -279,9 +279,9 @@ class Config:
 ```python
 class Config:
     KEY_BINDINGS = {
-        'quit': ['q'],  # Remove 'Q' binding
+        'quit': ['q'],                  # Remove 'Q' binding
         'file_details': ['i', 'I', 'd'],  # Add 'd' for details
-        'search': ['/', 'f'],  # Add '/' for search
+        'isearch': ['/', 'f'],          # Add '/' for search
         'sync_current_to_other': ['o', '>'],  # Add '>' for sync
         'sync_other_to_current': ['O', '<'],  # Add '<' for reverse sync
         'adjust_pane_left': ['[', 'h'],  # Add 'h' for left adjustment
@@ -484,13 +484,13 @@ class Config:
         'toggle_color_scheme': ['t'],
         
         # Search and filter
-        'search': ['/', 'f'],  # Add '/' for search
-        'search_dialog': ['F'],
+        'isearch': ['/', 'f'],          # Add '/' for search
+        'find_files': ['F'],
         'filter': [';'],
         'clear_filter': [':'],
         
         # File operations
-        'file_details': ['i', 'd'],  # Add 'd' for details
+        'file_details': ['i', 'd'],     # Add 'd' for details
         'edit_file': ['e'],
         'view_text': ['v'],
         'copy_files': ['c'],
@@ -507,12 +507,12 @@ class Config:
         'reset_log_height': ['_'],
         
         # Selection
-        'select_file': [' '],
-        'select_all_files': ['a'],
-        'select_all_items': ['A'],
+        'toggle_select_down': [' '],
+        'toggle_select_files': ['a'],
+        'toggle_select_items': ['A'],
         
         # Sorting
-        'sort_menu': ['s'],
+        'sort': ['s'],
         'quick_sort_name': ['1'],
         'quick_sort_size': ['2'],
         'quick_sort_date': ['3'],

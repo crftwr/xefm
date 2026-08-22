@@ -50,12 +50,15 @@ from puikit.widgets import LayoutView, LogView, MenuBar, Splitter, show_message_
 from puikit.widgets.base import Widget
 
 from xefm import __version__ as _VERSION
+from xefm import actions as _ctx
+from xefm.actions import registry as _action_registry
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
 from xefm.background_shaders import SHADER_KINDS
-from xefm.config import (KeyBindings, config_manager, get_builtin_handler_for_file,
-                         get_config, get_favorite_directories, get_program_for_file,
+from xefm.config import (KeyBindings, config_manager, deprecated_names_notice,
+                         get_builtin_handler_for_file, get_config,
+                         get_favorite_directories, get_program_for_file,
                          has_explicit_association, keys_label_for_action)
 from xefm.dir_scan import is_hidden
 from xefm.disk_usage import UsageScan
@@ -71,6 +74,8 @@ from xefm.pane_manager import PaneManager
 from xefm.path import Path
 from xefm.state_manager import get_state_manager
 from xefm.str_format import abbreviate_path, format_size
+from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
+                           load_user_entries, preview_notice, run_guarded)
 from xefm.batch_rename_dialog import show_batch_rename
 from xefm.compare_dialog import show_compare_select
 from xefm.compare_selection import compute_compare_selection
@@ -833,14 +838,14 @@ class StatusBar(Widget):
         ("help", "help"),
         ("quit", "quit"),
         ("switch_pane", "switch"),
-        ("select_file", "select"),
+        ("toggle_select_down", "select"),
         ("open_item", "open"),
         ("go_parent", "parent"),
         ("copy_files", "copy"),
         ("move_files", "move"),
         ("delete_files", "delete"),
         ("create_directory", "mkdir"),
-        ("search", "find"),
+        ("isearch", "find"),
     )
 
     #: Shown in place of the hints while the footer isearch is open, so the bottom
@@ -1181,8 +1186,37 @@ class XeFMApp:
         sys.stdout = _StreamToLog("STDOUT", self._log_queue, on_write=self._wake_pump)
         sys.stderr = _StreamToLog("STDERR", self._log_queue, on_write=self._wake_pump)
 
+        # The customization API (Preview). ``_handlers`` is the filer's
+        # name -> bound-method table, built on first dispatch; ``_user_ctx`` is
+        # the single ActionContext handed to every user action and hook.
+        self._handlers: dict | None = None
+        self._user_ctx = ActionContext(self)
+        self._load_user_entries(self.config)
+
         # Everything the listing path needs is up: read the two directories.
         self._start_initial_listings()
+
+    def _load_user_entries(self, config) -> None:
+        """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` and report on them.
+
+        Shared by startup and reload — the loader drops every previously loaded
+        user entry first, so re-running it *is* the reload. Problems are reported
+        as ordinary log lines, one per bad entry, and a config that uses the API
+        at all gets the one-line preview notice: this is not a stable surface
+        yet, and the log pane is where a user finds that out."""
+        warnings, action_count, hook_count = load_user_entries(config)
+        for warning in warnings:
+            self.log_info(f"Config warning: {warning}")
+        notice = preview_notice(action_count, hook_count)
+        if notice:
+            self.log_info(notice)
+        # Action names that have been corrected since this config was written.
+        # The old spellings still resolve, so this is a nudge — and one line
+        # however many there are, since a config predating several renames would
+        # otherwise open every session with a wall of warnings.
+        renamed = deprecated_names_notice(getattr(config, "KEY_BINDINGS", None) or {})
+        if renamed:
+            self.log_info(f"Config warning: {renamed}")
 
     def _start_initial_listings(self) -> None:
         """Kick off the two startup listings, on worker threads like every other
@@ -1353,6 +1387,9 @@ class XeFMApp:
 
     def _quit(self) -> None:
         """Stop monitoring, save state, then end the event loop."""
+        # Before anything is torn down, so a 'quit' hook still sees live panes
+        # (saving a session is the motivating case).
+        _hooks.fire("quit", self._user_ctx)
         if getattr(self, "file_monitor", None) is not None:
             self.file_monitor.stop_monitoring()
         self._save_application_state()
@@ -1449,6 +1486,7 @@ class XeFMApp:
         reload it empties the pane for the length of a full re-scan in response to
         a change the user never made — see #239."""
         pane = self.pane(pane_name)
+        self._fire_directory_changed(pane_name, pane)
         gen = pane["_load_gen"] = pane.get("_load_gen", 0) + 1
         # "A listing is in flight", tracked separately from ``loading`` because
         # the two answer different questions: ``loading`` means "this pane is
@@ -1490,6 +1528,30 @@ class XeFMApp:
         # worker's _wake_pump still delivers the result.
         if self._event_driven and not keep_visible:
             self.panel.request_animation_ticks(self._loading_tick)
+
+    def _fire_directory_changed(self, pane_name: str, pane: dict) -> None:
+        """Fire the 'directory_changed' hook when a pane is about to list a
+        *different* directory from the one it last reported.
+
+        Every listing funnels through ``_list_pane``, which makes this the one
+        place that sees all of them — navigation, the O-sync that lists directly,
+        a jump, a drive change. Comparing against the last reported path is what
+        keeps the event meaning "changed": a post-operation reload, a
+        filesystem-monitor reload and a sort change all re-list the same
+        directory and must stay silent.
+
+        The startup listings are silent too — ``_hook_path`` is seeded from the
+        pane's opening directory — because 'startup' is the event for that."""
+        new_path = pane.get("path")
+        # Recorded unconditionally, hooks or not, so a hook added by a config
+        # reload mid-session starts from where the pane actually is rather than
+        # missing the first change after it loaded.
+        old_path = pane.get("_hook_path", new_path)
+        pane["_hook_path"] = new_path
+        if str(old_path) == str(new_path) or not _hooks.get("directory_changed"):
+            return
+        _hooks.fire("directory_changed", self._user_ctx,
+                    PaneApi(self, pane_name), old_path, new_path)
 
     @staticmethod
     def _listing_unchanged(pane: dict, result: dict) -> bool:
@@ -1969,245 +2031,292 @@ class XeFMApp:
 
     # --- actions -------------------------------------------------------------
 
+    def _filer_handlers(self) -> dict:
+        """The ``filer`` context's ``{action name: (handler, redraw)}`` table —
+        what the long ``if/elif`` chain in ``dispatch`` used to be.
+
+        ``redraw`` says what running the handler means for the screen: ``True``
+        for an action that changes the panes and wants a repaint, ``False`` for
+        one that hands off to a dialog, a viewer or another process and drives
+        its own redraw, and ``None`` for the handful that decide per call and
+        return the flag themselves.
+
+        Built once per app and cached: the values are bound methods, so the table
+        cannot live in :mod:`xefm.actions` alongside the action *metadata* — the
+        registry describes what an action is, this says how this app performs it.
+        """
+        if self._handlers is None:
+            self._handlers = {
+                # --- application ---
+                "quit": (self.confirm_quit, False),
+                "help": (self.show_help, False),
+                "menu": (self.menu_bar.open_menu, None),
+                "redraw": (lambda: None, True),
+                # --- cursor ---
+                "cursor_up": (self._act_cursor_up, True),
+                "cursor_down": (self._act_cursor_down, True),
+                "page_up": (self._act_page_up, True),
+                "page_down": (self._act_page_down, True),
+                "cursor_next_selected": (
+                    lambda: self._focus_adjacent_selected(self.active_pane(), +1), True),
+                "cursor_prev_selected": (
+                    lambda: self._focus_adjacent_selected(self.active_pane(), -1), True),
+                # --- selection (reuses FileListManager) ---
+                "toggle_select_down": (self._act_select_file, True),
+                "toggle_select_up": (self._act_select_file_up, True),
+                "toggle_select_files": (self._act_select_all_files, True),
+                "toggle_select_items": (self._act_select_all_items, True),
+                "select_all": (self._act_select_all, True),
+                "unselect_all": (self._act_unselect_all, True),
+                # --- navigation ---
+                "switch_pane": (self._act_switch_pane, True),
+                "open_item": (lambda: self._open(self.active_pane()), True),
+                "go_parent": (lambda: self._go_parent(self.active_pane()), True),
+                "nav_left": (self._act_nav_left, True),
+                "nav_right": (self._act_nav_right, True),
+                "sync_current_to_other": (self._act_sync_current_to_other, True),
+                "sync_other_to_current": (self._act_sync_other_to_current, True),
+                # --- listing ---
+                "toggle_hidden": (self._act_toggle_hidden, True),
+                "toggle_color_scheme": (self._cycle_theme, True),
+                "quick_sort_name": (lambda: self._quick_sort("name"), True),
+                "quick_sort_size": (lambda: self._quick_sort("size"), True),
+                "quick_sort_date": (lambda: self._quick_sort("date"), True),
+                "quick_sort_ext": (lambda: self._quick_sort("ext"), True),
+                "sort": (self.show_sort_menu, False),
+                "clear_filter": (self._act_clear_filter, True),
+                "filter": (self.enter_filter, False),
+                "isearch": (self.enter_isearch, False),
+                # --- layout ---
+                "adjust_pane_left": (
+                    lambda: self._nudge(self.pane_splitter, -self._PANE_STEP), True),
+                "adjust_pane_right": (
+                    lambda: self._nudge(self.pane_splitter, +self._PANE_STEP), True),
+                "reset_pane_boundary": (self._act_reset_pane_boundary, True),
+                "adjust_log_up": (
+                    lambda: self._nudge(self.content_splitter, -self._LOG_STEP), True),
+                "adjust_log_down": (
+                    lambda: self._nudge(self.content_splitter, +self._LOG_STEP), True),
+                "reset_log_height": (self._act_reset_log_height, True),
+                "scroll_log_up": (lambda: self.log.scroll_by(-1.0), True),
+                "scroll_log_down": (lambda: self.log.scroll_by(+1.0), True),
+                "scroll_log_page_up": (
+                    lambda: self.log.scroll_by(-self._LOG_PAGE), True),
+                "scroll_log_page_down": (
+                    lambda: self.log.scroll_by(+self._LOG_PAGE), True),
+                # --- dialogs and pickers ---
+                "file_details": (self.file_details, False),
+                "drives": (self.show_drives, False),
+                "find_files": (self.show_search, False),
+                "find_in_files": (self.show_content_search, False),
+                "history": (self.show_history, False),
+                "programs": (self.show_programs, False),
+                "favorites": (self.show_favorites, False),
+                "jump_to_path": (self.jump_to_path, False),
+                "compare_selection": (self.compare_selection, False),
+                # --- opening things ---
+                "open_with_os": (self.open_with_os, False),
+                "reveal_in_os": (self.reveal_in_os, False),
+                "edit_file": (self.edit_file, False),
+                "view_file": (self.view_file, False),
+                "diff_files": (self.diff_files, False),
+                "diff_directories": (self.diff_directories, False),
+                "subshell": (self.subshell, False),
+                "edit_config": (self.edit_config, False),
+                "reload_config": (self.reload_config, False),
+                # --- file operations ---
+                "create_directory": (self.create_directory, False),
+                "create_file": (self.create_file, False),
+                "rename": (self.rename, False),
+                "copy_names": (self.copy_names_to_clipboard, True),
+                "copy_paths": (self.copy_paths_to_clipboard, True),
+                "copy_files": (self.copy_files, None),
+                "move_files": (self.move_files, None),
+                "duplicate_files": (self.duplicate_files, None),
+                "delete_files": (self.delete_files, None),
+                "create_archive": (self.create_archive, None),
+                "extract_archive": (self.extract_archive, None),
+            }
+        return self._handlers
+
     def dispatch(self, action: str | None) -> bool:
         """Apply an action to the active pane. Returns True if a redraw is needed."""
         if action is None:
             return False
-        pane = self.active_pane()
-        files = pane["files"]
-        last = max(0, len(files) - 1)
-        idx = pane["focused_index"]
+        return self._run_action(_ctx.FILER, action)
 
-        if action == "quit":
-            self.confirm_quit()
+    def _run_action(self, context: str, action: str,
+                    ctx: "ActionContext | None" = None) -> bool:
+        """Run one named action in one context, user definitions first.
+
+        ``context`` is always ``filer`` today — the viewers own their surfaces
+        and run their own handler tables, and user functions are accepted only
+        in the file list for now (see :func:`xefm.user_api._build_action`). It is
+        a parameter rather than a constant because widening either of those is
+        the expected next step, and this is where it lands.
+
+        A config's ``ACTIONS`` entry wins over the built-in of the same name only
+        when it asked to (``'override': True``) — the registry has already
+        refused it otherwise. The ``_invoking`` guard is what lets an overriding
+        action reach the built-in it replaced: ``ctx.invoke('quit')`` from inside
+        the user's ``quit`` finds its own name already running and falls through
+        to the built-in rather than recurring. The guard lives on the app's own
+        context object, so it holds however the caller reached here.
+
+        Returns whether the screen needs a repaint.
+        """
+        user = _action_registry.resolve(context, action)
+        if (user is not None and user.is_user and user.func is not None
+                and action not in self._user_ctx._invoking):
+            ctx = ctx if ctx is not None else self._user_ctx
+            self._user_ctx._invoking.add(action)
+            try:
+                run_guarded(f"action '{action}'", user.func, ctx)
+            finally:
+                self._user_ctx._invoking.discard(action)
+            # A user action can change anything about the panes, and has no way
+            # to say so — always repaint.
+            return True
+
+        handler, redraw = self._filer_handlers().get(action, (None, False))
+        if handler is None:
             return False
-        if action == "cursor_up":
-            pane["focused_index"] = max(0, idx - 1)
-        elif action == "cursor_down":
-            pane["focused_index"] = min(last, idx + 1)
-        elif action == "page_up":
-            pane["focused_index"] = max(0, idx - 10)
-        elif action == "page_down":
-            pane["focused_index"] = min(last, idx + 10)
-        # --- selection (reuses FileListManager) ---
-        elif action == "select_file":  # SPACE: toggle current, move down
-            self._log_result(self.flm.toggle_selection(pane, move_cursor=True, direction=1))
-        elif action == "select_file_up":  # Shift-SPACE: toggle, move up
-            self._log_result(self.flm.toggle_selection(pane, move_cursor=True, direction=-1))
-        elif action == "select_all_files":  # A: toggle all files
-            self._log_result(self.flm.toggle_all_files_selection(pane))
-        elif action == "select_all_items":  # Shift-A: toggle all items
-            self._log_result(self.flm.toggle_all_items_selection(pane))
-        elif action == "select_all":  # HOME: select every item
-            pane["selected_files"] = {str(f) for f in files}
-        elif action == "unselect_all":  # END: clear selection
-            pane["selected_files"].clear()
-        elif action == "cursor_next_selected":  # Ctrl-Down: jump down to a selected item
-            self._focus_adjacent_selected(pane, +1)
-        elif action == "cursor_prev_selected":  # Ctrl-Up: jump up to one
-            self._focus_adjacent_selected(pane, -1)
-        elif action == "switch_pane":
-            self.pm.active_pane = "right" if self.pm.active_pane == "left" else "left"
+        result = handler()
+        return bool(result) if redraw is None else redraw
+
+    # --- filer action handlers ------------------------------------------------
+    #
+    # One method per action that is more than a call to an existing one. They
+    # stay small on purpose: the table above is meant to be read as the list of
+    # what the file list can do, which only works while the entries are names.
+
+    def _act_cursor_up(self) -> None:
+        pane = self.active_pane()
+        pane["focused_index"] = max(0, pane["focused_index"] - 1)
+
+    def _act_cursor_down(self) -> None:
+        pane = self.active_pane()
+        last = max(0, len(pane["files"]) - 1)
+        pane["focused_index"] = min(last, pane["focused_index"] + 1)
+
+    def _act_page_up(self) -> None:
+        pane = self.active_pane()
+        pane["focused_index"] = max(0, pane["focused_index"] - 10)
+
+    def _act_page_down(self) -> None:
+        pane = self.active_pane()
+        last = max(0, len(pane["files"]) - 1)
+        pane["focused_index"] = min(last, pane["focused_index"] + 10)
+
+    def _act_select_file(self) -> None:
+        """SPACE: toggle the focused item, then move down."""
+        self._log_result(self.flm.toggle_selection(
+            self.active_pane(), move_cursor=True, direction=1))
+
+    def _act_select_file_up(self) -> None:
+        """Shift-SPACE: toggle, then move up."""
+        self._log_result(self.flm.toggle_selection(
+            self.active_pane(), move_cursor=True, direction=-1))
+
+    def _act_select_all_files(self) -> None:
+        """A: toggle selection of every file."""
+        self._log_result(self.flm.toggle_all_files_selection(self.active_pane()))
+
+    def _act_select_all_items(self) -> None:
+        """Shift-A: toggle selection of every item (files + directories)."""
+        self._log_result(self.flm.toggle_all_items_selection(self.active_pane()))
+
+    def _act_select_all(self) -> None:
+        pane = self.active_pane()
+        pane["selected_files"] = {str(f) for f in pane["files"]}
+
+    def _act_unselect_all(self) -> None:
+        self.active_pane()["selected_files"].clear()
+
+    def _act_switch_pane(self) -> None:
+        self.pm.active_pane = "right" if self.pm.active_pane == "left" else "left"
+        self._sync_active()
+
+    def _act_nav_left(self) -> None:
+        # Context-aware LEFT: from the right pane, move focus to the
+        # left pane; already in the left pane, go to its parent directory.
+        if self.pm.active_pane == "right":
+            self.pm.active_pane = "left"
             self._sync_active()
-        elif action == "open_item":
-            self._open(pane)
-        elif action == "go_parent":
-            self._go_parent(pane)
-        elif action == "nav_left":
-            # Context-aware LEFT: from the right pane, move focus to the
-            # left pane; already in the left pane, go to its parent directory.
-            if self.pm.active_pane == "right":
-                self.pm.active_pane = "left"
-                self._sync_active()
-            else:
-                self._go_parent(pane)
-        elif action == "nav_right":
-            # Context-aware RIGHT: from the left pane, move focus to the
-            # right pane; already in the right pane, go to its parent directory.
-            if self.pm.active_pane == "left":
-                self.pm.active_pane = "right"
-                self._sync_active()
-            else:
-                self._go_parent(pane)
-        elif action == "toggle_hidden":
-            self.flm.show_hidden = not self.flm.show_hidden
-            # _relist, not _list_pane: on a virtual (search-results) pane a raw
-            # directory read would replace the result set with the search root's
-            # listing while the pane still claimed to be a results view (#259).
-            # The virtual-aware path keeps the set; the new flag applies to the
-            # next real listing (the hidden filter never applies to a result set).
-            self._relist(pane)
-            self.log_info(f"Hidden files: {'shown' if self.flm.show_hidden else 'hidden'}")
-        elif action == "toggle_color_scheme":
-            self._cycle_theme()  # falls through to a full re-render below
-        elif action in ("quick_sort_name", "quick_sort_size",
-                        "quick_sort_date", "quick_sort_ext"):
-            self._quick_sort(action[len("quick_sort_"):])
-        elif action == "sort_menu":
-            self.show_sort_menu()
-            return False  # the menu popup drives its own redraw
-        elif action == "clear_filter":
-            if pane["filter_pattern"]:
-                self._apply_filter(pane, "")
-                self.log_info("Filter cleared")
-            else:
-                self.log_info("No filter to clear")
-        elif action == "sync_current_to_other":
-            # O = go to the other pane's location, landing the cursor there.
-            other = self.pm.get_inactive_pane()
-            other_hit = self._virtual_focused_entry(other)
-            if other_hit is not None:
-                # Other pane is a results view: its "location" is the highlighted
-                # hit's directory, cursor on that file.
-                self._go_to_dir(pane, other_hit.parent, other_hit.name)
-                self.log_info(f"Go to: {other_hit}")
-            elif pane.get("virtual"):
-                # Standing on the results view: O behaves like a normal pane —
-                # leave the results and open the other pane's directory (cursor
-                # synced to the other pane's cursor).
-                self._go_to_dir(pane, other["path"], self._focused_name(other))
-                self.log_info(f"Go to {other['path']}")
-            elif pane["path"] == other["path"]:
-                # Both panes already show the same directory: a second O moves
-                # this pane's cursor onto the file the other pane is highlighting.
-                self.pm.sync_cursor_to_other_pane(self.log_info)
-            elif self.pm.sync_current_to_other(self.log_info):
-                self._list_pane(self._pane_name_of(self.active_pane()))
-        elif action == "sync_other_to_current":
-            # From the results pane, Shift-O reveals the highlighted result in the
-            # *other* pane, keeping the results here. If instead the *other* pane
-            # is the results view, there is nowhere to send a directory — block it.
-            if self._reveal_result_other():
-                pass
-            elif self.pm.get_inactive_pane().get("virtual"):
-                self.log_info("The other pane is a search-results view")
-            elif pane["path"] == self.pm.get_inactive_pane()["path"]:
-                # Both panes already show the same directory: a second Shift-O
-                # moves the other pane's cursor onto this pane's focused file.
-                self.pm.sync_cursor_from_current_pane(self.log_info)
-            elif self.pm.sync_other_to_current(self.log_info):
-                self._list_pane(self._pane_name_of(self.pm.get_inactive_pane()))
-        elif action == "redraw":
-            pass  # falls through to a full re-render below
-        elif action == "adjust_pane_left":     # make the left pane smaller
-            self._nudge(self.pane_splitter, -self._PANE_STEP)
-        elif action == "adjust_pane_right":    # make the left pane larger
-            self._nudge(self.pane_splitter, +self._PANE_STEP)
-        elif action == "reset_pane_boundary":  # even 50 | 50 split
-            self.pane_splitter.fraction = 0.5
-        elif action == "adjust_log_up":        # grow the log (panes shrink)
-            self._nudge(self.content_splitter, -self._LOG_STEP)
-        elif action == "adjust_log_down":      # shrink the log (panes grow)
-            self._nudge(self.content_splitter, +self._LOG_STEP)
-        elif action == "reset_log_height":     # back to the configured default
-            self.content_splitter.fraction = 1.0 - self._default_log_height()
-        elif action == "scroll_log_up":
-            self.log.scroll_by(-1.0)
-        elif action == "scroll_log_down":
-            self.log.scroll_by(+1.0)
-        elif action == "scroll_log_page_up":
-            self.log.scroll_by(-self._LOG_PAGE)
-        elif action == "scroll_log_page_down":
-            self.log.scroll_by(+self._LOG_PAGE)
-        elif action == "file_details":
-            self.file_details()
-            return False  # the dialog drives its own redraw
-        elif action == "drives_dialog":
-            self.show_drives()
-            return False
-        elif action == "search_dialog":
-            self.show_search()
-            return False
-        elif action == "search_content":
-            self.show_content_search()
-            return False
-        elif action == "history":
-            self.show_history()
-            return False
-        elif action == "programs":
-            self.show_programs()
-            return False
-        elif action == "open_with_os":
-            self.open_with_os()
-            return False  # hands off to the OS; no in-app redraw
-        elif action == "reveal_in_os":
-            self.reveal_in_os()
-            return False
-        elif action == "edit_file":
-            self.edit_file()
-            return False
-        elif action == "subshell":
-            self.subshell()
-            return False
-        elif action == "edit_config":
-            self.edit_config()
-            return False  # hands over to the editor; self-renders on return
-        elif action == "reload_config":
-            self.reload_config()
-            return False  # reload_config renders once applied
-        elif action == "filter":
-            self.enter_filter()
-            return False  # the dialog drives its own redraw
-        elif action == "search":
-            self.enter_isearch()
-            return False  # the isearch overlay drives its own redraw
-        elif action == "favorites":
-            self.show_favorites()
-            return False  # the dialog drives its own redraw
-        elif action == "create_directory":
-            self.create_directory()
-            return False  # the dialog drives its own redraw
-        elif action == "create_file":
-            self.create_file()
-            return False
-        elif action == "rename_file":
-            self.rename()
-            return False
-        elif action == "copy_names":
-            self.copy_names_to_clipboard()
-        elif action == "copy_paths":
-            self.copy_paths_to_clipboard()
-        elif action == "copy_files":
-            # A guard bail returns True (redraw so the reason shows at once); once
-            # the confirm dialog takes over it returns False and drives its own redraw.
-            return self.copy_files()
-        elif action == "move_files":
-            return self.move_files()
-        elif action == "duplicate_files":
-            return self.duplicate_files()
-        elif action == "delete_files":
-            return self.delete_files()
-        elif action == "create_archive":
-            return self.create_archive()
-        elif action == "extract_archive":
-            return self.extract_archive()
-        elif action == "jump_to_path":
-            self.jump_to_path()
-            return False
-        elif action == "compare_selection":
-            self.compare_selection()
-            return False
-        elif action == "view_file":
-            self.view_file()
-            return False
-        elif action == "diff_files":
-            self.diff_files()
-            return False
-        elif action == "diff_directories":
-            self.diff_directories()
-            return False
-        elif action == "help":
-            self.show_help()
-            return False
-        elif action == "menu":
-            # F10 on every backend, a bare Alt tap on the Windows terminal:
-            # open the menu bar's first pulldown; ←/→ then walk the bar and
-            # Esc closes (#304). A no-op where the OS owns the bar
-            # (native-menu backends handle Alt themselves).
-            return self.menu_bar.open_menu()
         else:
-            return False
-        return True
+            self._go_parent(self.active_pane())
+
+    def _act_nav_right(self) -> None:
+        # Context-aware RIGHT: from the left pane, move focus to the
+        # right pane; already in the right pane, go to its parent directory.
+        if self.pm.active_pane == "left":
+            self.pm.active_pane = "right"
+            self._sync_active()
+        else:
+            self._go_parent(self.active_pane())
+
+    def _act_toggle_hidden(self) -> None:
+        self.flm.show_hidden = not self.flm.show_hidden
+        # _relist, not _list_pane: on a virtual (search-results) pane a raw
+        # directory read would replace the result set with the search root's
+        # listing while the pane still claimed to be a results view (#259).
+        # The virtual-aware path keeps the set; the new flag applies to the
+        # next real listing (the hidden filter never applies to a result set).
+        self._relist(self.active_pane())
+        self.log_info(f"Hidden files: {'shown' if self.flm.show_hidden else 'hidden'}")
+
+    def _act_clear_filter(self) -> None:
+        pane = self.active_pane()
+        if pane["filter_pattern"]:
+            self._apply_filter(pane, "")
+            self.log_info("Filter cleared")
+        else:
+            self.log_info("No filter to clear")
+
+    def _act_reset_pane_boundary(self) -> None:
+        self.pane_splitter.fraction = 0.5
+
+    def _act_reset_log_height(self) -> None:
+        self.content_splitter.fraction = 1.0 - self._default_log_height()
+
+    def _act_sync_current_to_other(self) -> None:
+        # O = go to the other pane's location, landing the cursor there.
+        pane = self.active_pane()
+        other = self.pm.get_inactive_pane()
+        other_hit = self._virtual_focused_entry(other)
+        if other_hit is not None:
+            # Other pane is a results view: its "location" is the highlighted
+            # hit's directory, cursor on that file.
+            self._go_to_dir(pane, other_hit.parent, other_hit.name)
+            self.log_info(f"Go to: {other_hit}")
+        elif pane.get("virtual"):
+            # Standing on the results view: O behaves like a normal pane —
+            # leave the results and open the other pane's directory (cursor
+            # synced to the other pane's cursor).
+            self._go_to_dir(pane, other["path"], self._focused_name(other))
+            self.log_info(f"Go to {other['path']}")
+        elif pane["path"] == other["path"]:
+            # Both panes already show the same directory: a second O moves
+            # this pane's cursor onto the file the other pane is highlighting.
+            self.pm.sync_cursor_to_other_pane(self.log_info)
+        elif self.pm.sync_current_to_other(self.log_info):
+            self._list_pane(self._pane_name_of(self.active_pane()))
+
+    def _act_sync_other_to_current(self) -> None:
+        # From the results pane, Shift-O reveals the highlighted result in the
+        # *other* pane, keeping the results here. If instead the *other* pane
+        # is the results view, there is nowhere to send a directory — block it.
+        pane = self.active_pane()
+        if self._reveal_result_other():
+            pass
+        elif self.pm.get_inactive_pane().get("virtual"):
+            self.log_info("The other pane is a search-results view")
+        elif pane["path"] == self.pm.get_inactive_pane()["path"]:
+            # Both panes already show the same directory: a second Shift-O
+            # moves the other pane's cursor onto this pane's focused file.
+            self.pm.sync_cursor_from_current_pane(self.log_info)
+        elif self.pm.sync_other_to_current(self.log_info):
+            self._list_pane(self._pane_name_of(self.pm.get_inactive_pane()))
 
     def _focus_adjacent_selected(self, pane: dict, direction: int) -> None:
         """Move the cursor to the nearest selected entry below (``+1``) or
@@ -2240,6 +2349,17 @@ class XeFMApp:
         if not files:
             return
         entry = files[pane["focused_index"]]
+        # A 'file_open' hook sees the entry before XeFM decides what to do with
+        # it and may claim it by returning True — which is how a config routes
+        # one file type somewhere of its own without touching FILE_ASSOCIATIONS.
+        # Directories are excluded: entering one is navigation, not opening.
+        try:
+            if _hooks.get("file_open") and not entry.is_dir():
+                if _hooks.fire("file_open", self._user_ctx, entry):
+                    return
+        except Exception as exc:
+            self.log_info(f"Cannot open {entry.name}: {exc}")
+            return
         try:
             if entry.is_dir():
                 self._remember_cursor(pane)  # remember where we were in this dir
@@ -2374,7 +2494,7 @@ class XeFMApp:
             SEPARATOR,
             MenuItem("New Folder…", on_select=self.create_directory, shortcut=sc("create_directory")),
             MenuItem("New File…", on_select=self.create_file, shortcut=sc("create_file")),
-            MenuItem("Rename…", on_select=self.rename, enabled=has_files, shortcut=sc("rename_file")),
+            MenuItem("Rename…", on_select=self.rename, enabled=has_files, shortcut=sc("rename")),
             MenuItem("Duplicate", on_select=self.duplicate_files,
                      enabled=has_files, shortcut=sc("duplicate_files")),
             MenuItem("Copy to Other Pane", on_select=self.copy_files,
@@ -2407,7 +2527,7 @@ class XeFMApp:
                      shortcut=sc("go_parent")),
             MenuItem("Go to Favorite…", on_select=self.show_favorites, shortcut=sc("favorites")),
             MenuItem("Jump to Path…", on_select=self.jump_to_path, shortcut=sc("jump_to_path")),
-            MenuItem("Drives…", on_select=self.show_drives, shortcut=sc("drives_dialog")),
+            MenuItem("Drives…", on_select=self.show_drives, shortcut=sc("drives")),
             MenuItem("History…", on_select=self.show_history, shortcut=sc("history")),
             title="Go",
         )
@@ -2423,8 +2543,8 @@ class XeFMApp:
             title="Tools",
         )
         select_menu = Menu(
-            MenuItem("Toggle Selection", on_select=lambda: self._menu("select_file"),
-                     enabled=has_files, shortcut=sc("select_file")),
+            MenuItem("Toggle Selection", on_select=lambda: self._menu("toggle_select_down"),
+                     enabled=has_files, shortcut=sc("toggle_select_down")),
             MenuItem("Select All Items", on_select=lambda: self._menu("select_all"),
                      shortcut=sc("select_all")),
             MenuItem("Clear Selection", on_select=lambda: self._menu("unselect_all"),
@@ -2439,10 +2559,10 @@ class XeFMApp:
             title="Select",
         )
         view_menu = Menu(
-            MenuItem("Find…", on_select=self.enter_isearch, enabled=has_files, shortcut=sc("search")),
+            MenuItem("Find…", on_select=self.enter_isearch, enabled=has_files, shortcut=sc("isearch")),
             MenuItem("Filter…", on_select=self.enter_filter, shortcut=sc("filter")),
-            MenuItem("Search Files…", on_select=self.show_search, shortcut=sc("search_dialog")),
-            MenuItem("Search Content…", on_select=self.show_content_search, shortcut=sc("search_content")),
+            MenuItem("Search Files…", on_select=self.show_search, shortcut=sc("find_files")),
+            MenuItem("Search Content…", on_select=self.show_content_search, shortcut=sc("find_in_files")),
             SEPARATOR,
             MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),
                      checked=lambda: self.flm.show_hidden, shortcut=sc("toggle_hidden")),
@@ -2715,6 +2835,11 @@ class XeFMApp:
         for holder in (self._fileops, self.flm, self.pm, self.file_monitor,
                        self.left_view, self.right_view):
             holder.config = new_config
+
+        # User actions and event hooks reload the same way everything else does:
+        # every 'user' entry is dropped and rebuilt from the file just read, so
+        # iterating on a custom action is edit-then-reload, with no restart.
+        self._load_user_entries(new_config)
 
         self.log_info("Configuration reloaded — key bindings and file settings "
                       "applied; theme, layout and font changes take effect on "
@@ -5125,16 +5250,16 @@ class XeFMApp:
             ("nav_right", "Focus right pane / go to parent"),
             ("favorites", "Go to a favorite directory"),
             ("jump_to_path", "Jump to a typed path"),
-            ("drives_dialog", "Open the drives / locations picker"),
+            ("drives", "Open the drives / locations picker"),
             ("history", "Go to a recently-visited directory"),
             ("sync_current_to_other", "Go to the other pane's directory"),
             ("sync_other_to_current", "Send this directory to the other pane"),
         )),
         ("Selection", (
-            ("select_file", "Toggle selection, move down"),
-            ("select_file_up", "Toggle selection, move up"),
-            ("select_all_files", "Toggle all files"),
-            ("select_all_items", "Toggle all items"),
+            ("toggle_select_down", "Toggle selection, move down"),
+            ("toggle_select_up", "Toggle selection, move up"),
+            ("toggle_select_files", "Toggle all files"),
+            ("toggle_select_items", "Toggle all items"),
             ("select_all", "Select every item"),
             ("unselect_all", "Clear selection"),
             ("cursor_next_selected", "Move cursor to the next selected item"),
@@ -5144,7 +5269,7 @@ class XeFMApp:
         ("File Operations", (
             ("create_directory", "Create new directory"),
             ("create_file", "Create new file"),
-            ("rename_file", "Rename file/directory"),
+            ("rename", "Rename file/directory"),
             ("copy_files", "Copy selection to the other pane"),
             ("copy_names", "Copy selection's name(s) to the clipboard"),
             ("copy_paths", "Copy selection's full path(s) to the clipboard"),
@@ -5160,18 +5285,18 @@ class XeFMApp:
             ("programs", "Run an external program on the selection"),
         )),
         ("Search", (
-            ("search", "Incremental search (jump to match)"),
+            ("isearch", "Incremental search (jump to match)"),
             ("filter", "Filter list by filename pattern"),
             ("clear_filter", "Clear the filename filter"),
-            ("search_dialog", "Recursive filename search"),
-            ("search_content", "Recursive content (grep) search"),
+            ("find_files", "Recursive filename search"),
+            ("find_in_files", "Recursive content (grep) search"),
         )),
         ("View", (
             ("view_file", "View file (text viewer)"),
             ("diff_files", "Compare two selected files"),
             ("toggle_hidden", "Toggle hidden files"),
             ("toggle_color_scheme", "Cycle color theme"),
-            ("sort_menu", "Sort dialog (key F/E/S/T + order)"),
+            ("sort", "Sort dialog (key F/E/S/T + order)"),
             ("quick_sort_name", "Quick-sort by name (repeat: reverse)"),
             ("quick_sort_size", "Quick-sort by size (repeat: reverse)"),
             ("quick_sort_date", "Quick-sort by date (repeat: reverse)"),
@@ -5188,11 +5313,17 @@ class XeFMApp:
 
     def _keys_label(self, action: str) -> str:
         """Comma-joined, display-formatted key(s) bound to ``action`` ("—" if
-        unbound), for the help dialog."""
-        keys, _ = self.keys.get_keys_for_action(action)
-        if not keys:
-            return "—"
-        return ", ".join(self.keys.format_key_for_display(k) for k in keys)
+        unbound), for the help dialog and the tips.
+
+        The ``filer`` context answers first, so the help — which lists file-list
+        actions — shows what the file list will do with the key. Falling through
+        to the other contexts is for the tips, which talk about the viewers too
+        (``{key:image_viewer.next}``) and would otherwise render those as "—"."""
+        for context in (_ctx.FILER,) + _ctx.CONTEXTS:
+            keys, _ = self.keys.get_keys_for_action(action, context)
+            if keys:
+                return ", ".join(self.keys.format_key_for_display(k) for k in keys)
+        return "—"
 
     def show_help(self) -> None:
         """A scrollable key-binding reference, built live from the port's keymap.
@@ -5202,7 +5333,7 @@ class XeFMApp:
         titles stand out."""
         from xefm.const import VERSION
         lines = ["# XeFM", f"Version {VERSION}", ""]
-        for title, entries in self._HELP_SECTIONS:
+        for title, entries in self._HELP_SECTIONS + self._user_help_sections():
             lines += [f"## {title}", "", "| Key(s) | Action |", "| --- | --- |"]
             for action, desc in entries:
                 keys = self._keys_label(action).replace("|", "\\|")
@@ -5210,6 +5341,17 @@ class XeFMApp:
             lines.append("")
         show_markdown(self.panel, "\n".join(lines), title="Help")
         self.panel.render()
+
+    def _user_help_sections(self) -> tuple:
+        """The config's own actions as a final help section, or nothing when it
+        defines none. A user who binds a key deserves to find it in the same
+        place as every built-in one; the description comes from the ``ACTIONS``
+        entry, falling back to the action's name."""
+        user = _action_registry.user_actions(_ctx.FILER)
+        if not user:
+            return ()
+        return (("Your Actions (config.py)",
+                 tuple((a.name, a.description) for a in user)),)
 
     @staticmethod
     def _about_text() -> str:
@@ -5301,7 +5443,7 @@ class XeFMApp:
             MenuItem("Open", on_select=lambda: self._menu("open_item")),
             MenuItem("View File", on_select=self.view_file, enabled=entry is not None),
             MenuItem("Deselect" if selected else "Select",
-                     on_select=lambda: self._menu("select_file")),
+                     on_select=lambda: self._menu("toggle_select_down")),
             SEPARATOR,
             MenuItem("Rename…", on_select=self.rename, enabled=entry is not None),
             MenuItem("Duplicate", on_select=self.duplicate_files, enabled=entry is not None),
@@ -5497,7 +5639,7 @@ class XeFMApp:
                 self.panel.render()
                 return
             has_sel = bool(self.active_pane()["selected_files"])
-            action = self.keys.find_action_for_event(event, has_sel)
+            action = self.keys.find_action_for_event(event, has_sel, _ctx.FILER)
             if self.dispatch(action):
                 self.panel.render()
             elif action is None and self._menu_mnemonic(event):
@@ -5509,6 +5651,10 @@ class XeFMApp:
 
     def run(self) -> None:
         self.panel.render()
+        # 'startup' fires against a fully live app — panes listed, panel drawn —
+        # which is the whole reason the event exists: a config's module body runs
+        # long before any of that is true.
+        _hooks.fire("startup", self._user_ctx)
         # After the first full render, so the tip dialog opens over a live UI.
         # Here rather than __init__: tests construct the app without run().
         self._maybe_show_startup_tip()

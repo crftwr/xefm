@@ -13,7 +13,8 @@ File reading goes through ``xefm.path.Path`` so it works for every storage
 backend. Push it with :func:`show_text_viewer`.
 
 Keys resolve through the shared ``KEY_BINDINGS`` (so they honour the user's
-rebinds): ``search`` opens incremental search, ``toggle_wrap`` toggles line wrap,
+rebinds): ``isearch`` opens incremental search, ``toggle_wrap``
+toggles line wrap,
 ``help`` and ``quit`` do the obvious. ↑/↓/PageUp/PageDown/Home/End scroll
 vertically and ←/→ scroll horizontally (viewer-local); Esc closes.
 """
@@ -30,9 +31,10 @@ from puikit.text import display_width, elide, word_bounds, wrap_text
 from puikit.widgets._input import EdgeAutoScroll, MultiClickTracker
 from puikit.widgets.base import Widget
 
+from xefm.actions import TEXT_VIEWER as _CONTEXT
 from xefm.choice_dialog import show_choice_dialog
-from xefm.config import (get_config, get_keys_for_action, is_action_for_event,
-                        keys_label_for_action)
+from xefm.config import (find_action_for_event, format_key_for_display,
+                         get_config, get_keys_for_action)
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.log_manager import getLogger
@@ -54,6 +56,22 @@ except ImportError:
 #: Content is fixed-advance so columns (gutter, h-scroll, highlights) align.
 MONO = Font(monospace=True)
 _TAB = 8
+
+
+def _label(action: str, fallback: str = "") -> str:
+    """Display label for ``action``'s keys **as this viewer resolves them** —
+    in the ``text_viewer`` context, so a scoped rebind (``'text_viewer.quit'``)
+    and the action's built-in defaults both show up, formatted for the UI
+    (``DOWN`` -> ↓). ``fallback`` covers an action left deliberately unbound."""
+    keys, _ = get_keys_for_action(action, _CONTEXT)
+    if not keys:
+        return fallback
+    return " / ".join(format_key_for_display(k) for k in keys)
+
+
+def _pair(first: str, second: str) -> str:
+    """One help row's label for two actions that read as a pair (``↑ / ↓``)."""
+    return f"{_label(first)} / {_label(second)}"
 
 
 def span_x(line: str, col0: int, col: int) -> float:
@@ -582,6 +600,8 @@ class TextViewer(Widget):
         self._state_manager = state_manager
         self.mode = self._remembered_view_mode()
         self._rich_widget: Widget | None = None
+        #: Raw-mode action handlers, built on first key (see _raw_handlers).
+        self._handlers: dict | None = None
         self._panel: Any = None
         self._child_z = 90  # z for the help overlay; raised above this viewer in show_
         self.top = 0.0       # first visible display row (vertical scroll)
@@ -891,15 +911,15 @@ class TextViewer(Widget):
         # rect is captured so the ISearchBar overlay can pin exactly over it (the
         # bar covers this hint while a search is open, showing pattern + counter).
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        wrap_k = keys_label_for_action("toggle_wrap", "w")
-        search_k = keys_label_for_action("search", "F")
-        enc_k = keys_label_for_action("change_encoding", "Shift-E")
-        quit_k = keys_label_for_action("quit", "q")
+        wrap_k = _label("toggle_wrap", "w")
+        search_k = _label("isearch", "F")
+        enc_k = _label("change_encoding", "Shift-E")
+        quit_k = _label("quit", "q")
         edit_seg = self._edit_hint_segment()
         # When a rich renderer exists, advertise the toggle to it (e.g. "M markdown");
         # elide handles the longer hint on a narrow window.
         if self._rich is not None:
-            view_k = keys_label_for_action("toggle_view_mode", "M")
+            view_k = _label("toggle_view_mode", "M")
             hint = (f" ↑↓ scroll · {wrap_k} wrap · {search_k} search · "
                     f"{view_k} {self._rich.name.lower()} · {enc_k} encoding · "
                     f"{edit_seg}{quit_k}/Esc close ")
@@ -919,15 +939,15 @@ class TextViewer(Widget):
         self._body_rect = (pad_x, head_h, iw, body_h)
         ctx.draw_child(self._rich_widget, pad_x, head_h, iw, body_h)
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        view_k = keys_label_for_action("toggle_view_mode", "M")
-        search_k = keys_label_for_action("search", "F")
-        enc_k = keys_label_for_action("change_encoding", "Shift-E")
-        quit_k = keys_label_for_action("quit", "q")
+        view_k = _label("toggle_view_mode", "M")
+        search_k = _label("isearch", "F")
+        enc_k = _label("change_encoding", "Shift-E")
+        quit_k = _label("quit", "q")
         # A renderer with its own line wrap (JsonView) gets the wrap key in its
         # hint too; Markdown reflows by itself and advertises nothing.
         wrap_seg = ""
         if hasattr(self._rich_widget, "toggle_wrap"):
-            wrap_seg = f"{keys_label_for_action('toggle_wrap', 'w')} wrap · "
+            wrap_seg = f"{_label('toggle_wrap', 'w')} wrap · "
         hint = (f" ↑↓ scroll · {wrap_seg}{search_k} search · {view_k} raw text · "
                 f"{enc_k} encoding · {self._edit_hint_segment()}{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
@@ -1172,46 +1192,49 @@ class TextViewer(Widget):
         if event.type is not EventType.KEY:
             return True  # modal: swallow other non-key events
         key = event.key
-        # Config-driven keys (quit / help / search / wrap) resolve through
-        # KEY_BINDINGS by name, so they honour the user's rebinds; each action is
-        # matched independently, which lets ``toggle_wrap`` share ``W`` with the
-        # file manager's ``compare_selection``. Esc is the universal modal dismiss;
-        # the scroll keys below are viewer-local. While a search is open the
+        # Every key this viewer understands is a named action in the
+        # ``text_viewer`` context (xefm.actions), so all of them — the scroll
+        # keys included, which used to be hardcoded here — honour the user's
+        # KEY_BINDINGS. Resolving *in context* is also what lets the wrap toggle
+        # keep sharing ``W`` with the file manager's ``compare_selection``: the
+        # other context's actions are not in this table at all. Esc is the
+        # universal modal dismiss and stays hardcoded. While a search is open the
         # ISearchBar is the top layer and receives keys, so this isn't reached.
+        action = find_action_for_event(event, context=_CONTEXT)
         # Quit / help / the view-mode toggle apply in both raw and rich modes.
-        if key == "escape" or is_action_for_event(event, "quit"):
+        if key == "escape" or action == "quit":
             self._close()
             return True
-        if is_action_for_event(event, "help"):
+        if action == "help":
             self._show_help()
             return True
-        if self._view_mode_pressed(event):
+        if action == "toggle_view_mode":
             self._toggle_view_mode()
             return True
         # Incremental search applies in both modes: open it before the rich
         # renderer would swallow the key (it has no search of its own — this
         # viewer drives the shared bar and delegates to the renderer's match set).
-        if is_action_for_event(event, "search"):
+        if action == "isearch":
             self._enter_search()
             return True
         # The encoding picker applies in both modes too — re-decoding rebuilds
         # the raw lines and the rich renderer's source alike.
-        if self._encoding_pressed(event):
+        if action == "change_encoding":
             self._change_encoding()
             return True
         # So does editing: the viewed file goes to the app's editor machinery
         # (associations + TEXT_EDITOR), then the viewer re-reads it. A terminal
         # editor runs synchronously via suspend/resume, so the reload shows its
         # result; a GUI editor returns immediately and the reload is a no-op.
-        if self._on_edit is not None and is_action_for_event(event, "edit_file"):
+        if self._on_edit is not None and action == "edit_file":
             self._edit_file()
             return True
         # Rich mode: the embedded renderer owns navigation (arrows / page / home /
         # end / in-document link jumps); forward and let it repaint. A renderer
-        # with its own line wrap (JsonView) takes the ``toggle_wrap`` binding;
+        # with its own line wrap (JsonView) takes the wrap binding;
         # the others (Markdown reflows by itself) just see the key as before.
         if self.mode == "rich" and self._rich_widget is not None:
-            if self._wrap_pressed(event) and hasattr(self._rich_widget, "toggle_wrap"):
+            if action == "toggle_wrap" and hasattr(self._rich_widget, "toggle_wrap"):
                 self._rich_widget.toggle_wrap()
                 return True
             self._rich_widget.handle_event(event)
@@ -1224,28 +1247,44 @@ class TextViewer(Widget):
             else:
                 self._sel.select_all(self.lines)
             return True
-        if self._wrap_pressed(event):
-            self.wrap = not self.wrap
-            self.left = 0.0
-            self._wrap_w = -1
-        elif key == "down":
-            self.top += 1
-        elif key == "up":
-            self.top -= 1
-        elif key == "pagedown":
-            self.top += self._view_h
-        elif key == "pageup":
-            self.top -= self._view_h
-        elif key == "home":
-            self.top = 0.0
-        elif key == "end":
-            self.top = float(max(0, self._total_rows() - self._view_h))
-        elif key == "right" and not self.wrap:
-            self.left += 4
-        elif key == "left" and not self.wrap:
-            self.left = max(0.0, self.left - 4)
+        handler = self._raw_handlers().get(action)
+        if handler is not None:
+            handler()
         self._clamp()
         return True
+
+    def _raw_handlers(self) -> dict:
+        """Raw-text-mode actions, by name. Horizontal scrolling is inert while
+        wrapping is on — there is nothing off-screen to the side — which is why
+        those two consult ``self.wrap`` rather than being left out of the table."""
+        if self._handlers is None:
+            self._handlers = {
+                "toggle_wrap": self._toggle_wrap,
+                "text_viewer.scroll_down": lambda: self._scroll(1),
+                "text_viewer.scroll_up": lambda: self._scroll(-1),
+                "text_viewer.page_down": lambda: self._scroll(self._view_h),
+                "text_viewer.page_up": lambda: self._scroll(-self._view_h),
+                "text_viewer.scroll_top": lambda: setattr(self, "top", 0.0),
+                "text_viewer.scroll_bottom": self._scroll_bottom,
+                "text_viewer.scroll_right": lambda: self._pan(4),
+                "text_viewer.scroll_left": lambda: self._pan(-4),
+            }
+        return self._handlers
+
+    def _toggle_wrap(self) -> None:
+        self.wrap = not self.wrap
+        self.left = 0.0
+        self._wrap_w = -1
+
+    def _scroll(self, rows: float) -> None:
+        self.top += rows
+
+    def _scroll_bottom(self) -> None:
+        self.top = float(max(0, self._total_rows() - self._view_h))
+
+    def _pan(self, cells: float) -> None:
+        if not self.wrap:
+            self.left = max(0.0, self.left + cells)
 
     # --- text selection (raw mode) / mouse forwarding (rich mode) -------------
 
@@ -1378,33 +1417,6 @@ class TextViewer(Widget):
         if text and self._panel is not None:
             self._panel.set_clipboard(text)
 
-    def _wrap_pressed(self, event: Event) -> bool:
-        """Whether ``event`` toggles line wrap — the ``toggle_wrap`` binding, with a
-        literal ``w`` fallback for user configs predating that action (so wrap keeps
-        working when KEY_BINDINGS has no ``toggle_wrap`` entry)."""
-        if is_action_for_event(event, "toggle_wrap"):
-            return True
-        return not get_keys_for_action("toggle_wrap")[0] and event.char == "w"
-
-    def _view_mode_pressed(self, event: Event) -> bool:
-        """Whether ``event`` toggles the view mode — the ``toggle_view_mode``
-        binding, with a literal ``m`` fallback for user configs predating that
-        action (so the Markdown toggle works even when a user's ``KEY_BINDINGS``
-        — merged from an older template — has no ``toggle_view_mode`` entry)."""
-        if is_action_for_event(event, "toggle_view_mode"):
-            return True
-        return not get_keys_for_action("toggle_view_mode")[0] and event.char == "m"
-
-    def _encoding_pressed(self, event: Event) -> bool:
-        """Whether ``event`` opens the encoding picker — the ``change_encoding``
-        binding, with a literal ``Shift-E`` fallback for user configs predating
-        that action (merged from an older template, so their ``KEY_BINDINGS``
-        has no ``change_encoding`` entry). The fallback is the *shifted* char:
-        plain ``e`` is ``edit_file``, in the viewer too."""
-        if is_action_for_event(event, "change_encoding"):
-            return True
-        return not get_keys_for_action("change_encoding")[0] and event.char == "E"
-
     def _change_encoding(self) -> None:
         """Open the encoding picker (the ``change_encoding`` action, issue
         #289): Auto or an explicit codec from ``Config.TEXT_ENCODINGS``,
@@ -1455,7 +1467,7 @@ class TextViewer(Widget):
         viewer constructed without editor machinery."""
         if self._on_edit is None:
             return ""
-        return f"{keys_label_for_action('edit_file', 'E')} edit · "
+        return f"{_label('edit_file', 'E')} edit · "
 
     def _edit_file(self) -> None:
         """Hand the viewed file to the app's editor machinery (the
@@ -1471,25 +1483,26 @@ class TextViewer(Widget):
         if self._panel is None:
             return
         rows = [
-            ("↑ / ↓", "scroll line"),
-            ("PgUp / PgDn", "scroll page"),
-            ("Home / End", "top / bottom"),
-            ("← / →", "scroll horizontally (no-wrap)"),
-            (keys_label_for_action("toggle_wrap", "w"), "toggle line wrap"),
-            (keys_label_for_action("search", "F"), "incremental search"),
+            (_pair("text_viewer.scroll_up", "text_viewer.scroll_down"), "scroll line"),
+            (_pair("text_viewer.page_up", "text_viewer.page_down"), "scroll page"),
+            (_pair("text_viewer.scroll_top", "text_viewer.scroll_bottom"), "top / bottom"),
+            (_pair("text_viewer.scroll_left", "text_viewer.scroll_right"),
+             "scroll horizontally (no-wrap)"),
+            (_label("toggle_wrap", "w"), "toggle line wrap"),
+            (_label("isearch", "F"), "incremental search"),
             ("↑ / ↓ (in search)", "next / prev match"),
-            (keys_label_for_action("change_encoding", "Shift-E"), "change text encoding"),
+            (_label("change_encoding", "Shift-E"), "change text encoding"),
         ]
         if self._on_edit is not None:
-            rows.append((keys_label_for_action("edit_file", "E"),
+            rows.append((_label("edit_file", "E"),
                          "edit in the configured editor"))
         # Only offer the view-mode toggle for a file type that has a rich renderer.
         if self._rich is not None:
-            rows.append((keys_label_for_action("toggle_view_mode", "M"),
+            rows.append((_label("toggle_view_mode", "M"),
                          f"toggle {self._rich.name} / raw text"))
         rows += [
-            (keys_label_for_action("help", "?"), "this help"),
-            (keys_label_for_action("quit", "q") + " / Esc", "close"),
+            (_label("help", "?"), "this help"),
+            (_label("quit", "q") + " / Esc", "close"),
         ]
         show_markdown(self._panel, keys_markdown(rows),
                       title="Text Viewer — Keys", z=self._child_z)

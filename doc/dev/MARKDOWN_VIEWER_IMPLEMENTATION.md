@@ -62,7 +62,7 @@ it.
   there (`_ensure_rich_widget`, now that colors are known) and, if the source
   can't be rendered, drops back to raw for that file. Raw mode is unchanged.
 - `handle_event()`: `quit` / `help` / the view toggle / **incremental search**
-  are handled in **both** modes. The `search` key is intercepted *before* the
+  are handled in **both** modes. The `isearch` key is intercepted *before* the
   rich forward (the renderer has no search of its own, so it would swallow the
   key); every other key and mouse-scroll in rich mode is **forwarded** to the
   embedded widget (it owns arrows / page / home / end / in-document link jumps).
@@ -92,7 +92,7 @@ matched substrings with an amber-tinted background, preserving each styled run's
 own color/font so headings, `code`, links, etc. stay recognisable. The match set
 is keyed on `(pattern, wrap width)` so a resize that re-wraps the document
 rebuilds it (`_sync_search` in `draw`). The footer hint in `_draw_rich` advertises
-the `search` key in rich mode.
+the `isearch` key in rich mode.
 
 ### Key binding
 
@@ -102,11 +102,13 @@ matches its own action by name, the same pattern `toggle_wrap` uses for `W`).
 
 Because `ConfigManager._copy_missing_fields` only merges whole **missing
 attributes**, an existing user's `~/.xefm/config.py` — which already has a
-`KEY_BINDINGS` dict — will **not** gain the new key automatically. So
-`_view_mode_pressed()` mirrors `_wrap_pressed()`: it matches the
-`toggle_view_mode` action, and, only when that action is unbound (an older
-config), falls back to the literal `m` char. New/regenerated configs get `M` and
-honor rebinds; old configs still get the toggle on `m`.
+`KEY_BINDINGS` dict — will **not** gain the new key automatically. That is now
+handled generally rather than per viewer: the action carries its own default
+keys in `xefm/actions.py`, used whenever the config does not name it, so a
+config written before the action existed still gets `M` and a rebind still
+wins. (Before the action registry, `_view_mode_pressed()` did this on its own
+with a hardcoded literal-`m` fallback; that method is gone — see
+[`CUSTOMIZATION_API_IMPLEMENTATION.md`](CUSTOMIZATION_API_IMPLEMENTATION.md).)
 
 ### Remembering the view mode (issue #217)
 

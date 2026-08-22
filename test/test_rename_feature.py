@@ -105,21 +105,21 @@ def test_key_binding():
     try:
         from xefm.config import get_config, is_key_bound_to
         
-        # Test if 'r' and 'R' are bound to rename_file action
-        if is_key_bound_to('r', 'rename_file'):
-            print("✓ 'r' key is bound to rename_file action")
+        # Test if 'r' and 'R' are bound to rename action
+        if is_key_bound_to('r', 'rename'):
+            print("✓ 'r' key is bound to rename action")
         else:
-            print("✗ 'r' key is not bound to rename_file action")
+            print("✗ 'r' key is not bound to rename action")
             
-        if is_key_bound_to('R', 'rename_file'):
-            print("✓ 'R' key is bound to rename_file action")
+        if is_key_bound_to('R', 'rename'):
+            print("✓ 'R' key is bound to rename action")
         else:
-            print("✗ 'R' key is not bound to rename_file action")
+            print("✗ 'R' key is not bound to rename action")
             
         # Check configuration
         config = get_config()
-        if hasattr(config, 'KEY_BINDINGS') and 'rename_file' in config.KEY_BINDINGS:
-            rename_keys = config.KEY_BINDINGS['rename_file']
+        if hasattr(config, 'KEY_BINDINGS') and 'rename' in config.KEY_BINDINGS:
+            rename_keys = config.KEY_BINDINGS['rename']
             print(f"✓ Rename keys configured: {rename_keys}")
         else:
             print("✗ Rename key binding not found in configuration")

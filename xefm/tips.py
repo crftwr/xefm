@@ -23,8 +23,9 @@ from typing import Callable
 
 from xefm.const import GITHUB_URL
 
-#: ``{key:action}`` — the action name a placeholder carries.
-_KEY_REF = re.compile(r"\{key:([a-z0-9_]+)\}")
+#: ``{key:action}`` — the action name a placeholder carries. Dots included: an
+#: action owned by one surface is qualified with it (``toggle_wrap``).
+_KEY_REF = re.compile(r"\{key:([a-z0-9_.]+)\}")
 
 #: The rotation, in display order: (title, Markdown body). The first entry is
 #: the Welcome tip and must stay first — a fresh install starts the rotation at
@@ -46,12 +47,12 @@ TIPS: tuple[tuple[str, str], ...] = (
      "fire."),
 
     ("Select several files at once",
-     "{key:select_file} toggles selection on the focused item and moves down; "
-     "{key:select_file_up} toggles and moves up. {key:select_all} selects "
+     "{key:toggle_select_down} toggles selection on the focused item and moves down; "
+     "{key:toggle_select_up} toggles and moves up. {key:select_all} selects "
      "everything, and {key:unselect_all} clears the selection."),
 
     ("Jump to a file by typing",
-     "Press {key:search} and just start typing — the cursor jumps to the first "
+     "Press {key:isearch} and just start typing — the cursor jumps to the first "
      "matching name in the pane as each character narrows the match."),
 
     ("Filter the listing",
@@ -60,8 +61,8 @@ TIPS: tuple[tuple[str, str], ...] = (
      "hundreds of entries."),
 
     ("Search the whole tree",
-     "{key:search_dialog} finds files by name recursively under the current "
-     "directory, and {key:search_content} searches *inside* files (grep). "
+     "{key:find_files} finds files by name recursively under the current "
+     "directory, and {key:find_in_files} searches *inside* files (grep). "
      "Results stream in as they are found."),
 
     ("Favorite directories",
@@ -83,7 +84,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "pane. Perfect just before a copy or a compare."),
 
     ("Sorting, fast and slow",
-     "{key:sort_menu} opens the sort dialog. Even quicker: "
+     "{key:sort} opens the sort dialog. Even quicker: "
      "{key:quick_sort_name} / {key:quick_sort_size} / {key:quick_sort_date} / "
      "{key:quick_sort_ext} sort by name, size, date or extension directly — "
      "and pressing the same key again reverses the order."),
@@ -140,7 +141,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "and you are right back in XeFM."),
 
     ("Batch rename with a regex",
-     "Select more than one file and press {key:rename_file}: the rename prompt "
+     "Select more than one file and press {key:rename}: the rename prompt "
      "becomes a regex-based batch-rename dialog that renames the whole "
      "selection in one go."),
 
@@ -150,7 +151,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "directory."),
 
     ("Drives and locations",
-     "{key:drives_dialog} opens a picker of mounted volumes, common locations, "
+     "{key:drives} opens a picker of mounted volumes, common locations, "
      "and your configured SSH hosts and S3 buckets — one list, one jump."),
 
     ("Rich viewers for data files",
@@ -171,9 +172,9 @@ TIPS: tuple[tuple[str, str], ...] = (
      "same place. {key:sync_other_to_current} mirrors it the other way."),
 
     ("A photo tour from a search",
-     "Search for images with {key:search_dialog} — say `*.jpg` — then open "
+     "Search for images with {key:find_files} — say `*.jpg` — then open "
      "one hit with {key:view_file}: the image viewer's prev/next keys "
-     "({key:image_prev} / {key:image_next}) page through every hit, across "
+     "({key:image_viewer.prev} / {key:image_viewer.next}) page through every hit, across "
      "all the subdirectories the search covered."),
 
     ("Fix differences right in the diff",
@@ -189,7 +190,7 @@ TIPS: tuple[tuple[str, str], ...] = (
 
     ("Complete the path",
      "Path prompts — Jump to Path ({key:jump_to_path}), Rename "
-     "({key:rename_file}) and friends — complete filenames with **Tab**, so "
+     "({key:rename}) and friends — complete filenames with **Tab**, so "
      "a deep path is a few keystrokes."),
 
     ("Locked archives",
@@ -199,7 +200,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "message."),
 
     ("Your SSH hosts, ready to go",
-     "The drives picker ({key:drives_dialog}) lists the hosts from your "
+     "The drives picker ({key:drives}) lists the hosts from your "
      "`~/.ssh/config` automatically as `ssh://` locations — nothing to "
      "configure in XeFM to browse a machine you already SSH to."),
 
@@ -259,7 +260,7 @@ TIPS: tuple[tuple[str, str], ...] = (
 
     ("Japanese search without an IME",
      "Incremental search speaks **Migemo**: typed romaji matches the Japanese "
-     "it could spell, so `kensaku` in {key:search} also finds 検索 or ケンサク "
+     "it could spell, so `kensaku` in {key:isearch} also finds 検索 or ケンサク "
      "— in the file panes, the text and diff viewers, and the pickers' filter "
      "fields. It kicks in from the third character, plain matching always "
      "still applies, and `MIGEMO_SEARCH = False` in `~/.xefm/config.py` turns "

@@ -52,7 +52,9 @@ from xefm.text_viewer import (MONO, _ScrollBody, _header_bg, draw_status_bar,
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.diff_viewer import show_diff_viewer
 from xefm.text_dialog import keys_markdown, show_markdown
-from xefm.config import KeyBindings, find_action_for_event, keys_label_for_action
+from xefm.actions import DIR_DIFF as _CONTEXT
+from xefm.config import (KeyBindings, find_action_for_event,
+                         format_key_for_display, get_keys_for_action)
 from xefm.file_operations import FileOperationService
 
 
@@ -352,6 +354,8 @@ class DirectoryDiffView(Widget):
         # FileOperationService. ``background`` doubles as the ops' sync/async flag
         # (tests construct with background=False → deterministic inline ops).
         self._keys = KeyBindings(config.KEY_BINDINGS) if config is not None else None
+        #: Viewer-local action handlers, built on first key (see _handlers_table).
+        self._handlers: dict | None = None
         self._fileops = FileOperationService(config, monitor=monitor) if config is not None else None
         self._op_background = background
         self._panel: Any = None
@@ -1042,22 +1046,31 @@ class DirectoryDiffView(Widget):
             "view_file": self._open_file_diff,
         }
 
-    def _resolve_action(self, event) -> Any:
-        """Action bound to ``event`` via KEY_BINDINGS — the injected config's
-        bindings when present, else the shared singleton — so close/help honour the
-        user's rebinds even when the viewer is constructed without a config."""
+    def _resolve_action(self, event, has_selection: bool = False) -> Any:
+        """Action bound to ``event`` in the ``dir_diff`` context — the injected
+        config's bindings when present, else the shared singleton — so the whole
+        keymap, close and help included, honours the user's rebinds even when
+        the viewer is constructed without a config."""
         if self._keys is not None:
-            return self._keys.find_action_for_event(event)
-        return find_action_for_event(event)
+            return self._keys.find_action_for_event(event, has_selection, _CONTEXT)
+        return find_action_for_event(event, has_selection, _CONTEXT)
 
-    def _keys_label(self, action: str, fallback: str) -> str:
-        """Display string for an action's configured key(s) (so the help matches
-        the user's KEY_BINDINGS), or ``fallback`` when the action is unbound. Uses
-        the injected config's bindings when present, else the shared singleton."""
+    def _keys_label(self, action: str, fallback: str = "") -> str:
+        """Display string for an action's key(s) as this viewer resolves them,
+        formatted for the UI (``DOWN`` -> ↓), or ``fallback`` when the action is
+        unbound. Uses the injected config's bindings when present, else the
+        shared singleton."""
         if self._keys is not None:
-            keys, _ = self._keys.get_keys_for_action(action)
-            return " / ".join(keys) if keys else fallback
-        return keys_label_for_action(action, fallback)
+            keys, _ = self._keys.get_keys_for_action(action, _CONTEXT)
+        else:
+            keys, _ = get_keys_for_action(action, _CONTEXT)
+        if not keys:
+            return fallback
+        return " / ".join(format_key_for_display(k) for k in keys)
+
+    def _keys_pair(self, first: str, second: str) -> str:
+        """One help row's label for two actions that read as a pair."""
+        return f"{self._keys_label(first)} / {self._keys_label(second)}"
 
     def _show_help(self) -> None:
         if self._panel is None:
@@ -1067,18 +1080,24 @@ class DirectoryDiffView(Widget):
         delete = self._keys_label("delete_files", "K / Del")
         merge = self._keys_label("edit_file", "E")
         rows = [
-            ("↑ / ↓ · PgUp/PgDn · Home/End", "move cursor"),
-            ("→ / ←", "expand / collapse"),
-            ("Enter", "open dir · diff file"),
-            ("n / N", "next / prev difference"),
-            ("Tab", "switch active side"),
-            ("[ / ]", "move centre split (drag gutter too)"),
+            (f'{self._keys_pair("dir_diff.cursor_up", "dir_diff.cursor_down")} · '
+             f'{self._keys_pair("dir_diff.page_up", "dir_diff.page_down")} · '
+             f'{self._keys_pair("dir_diff.cursor_top", "dir_diff.cursor_bottom")}',
+             "move cursor"),
+            (self._keys_pair("dir_diff.expand", "dir_diff.collapse"),
+             "expand / collapse"),
+            (self._keys_label("dir_diff.activate", "Enter"), "open dir · diff file"),
+            (self._keys_pair("dir_diff.next_change", "dir_diff.prev_change"),
+             "next / prev difference"),
+            (self._keys_label("dir_diff.switch_side", "Tab"), "switch active side"),
+            (self._keys_pair("dir_diff.split_left", "dir_diff.split_right"),
+             "move centre split (drag gutter too)"),
             ("Click / double-click", "focus side · open dir/diff"),
             (copy, "copy focused → other side"),
             (move, "move focused → other side"),
             (delete, "delete focused (active side)"),
             (merge, "merge sides in $TEXT_DIFF"),
-            ("r", "rescan"),
+            (self._keys_label("dir_diff.rescan", "r"), "rescan"),
             (self._keys_label("quit", "q") + " / Esc", "close"),
         ]
         show_markdown(
@@ -1525,75 +1544,78 @@ class DirectoryDiffView(Widget):
             return self._handle_mouse(event)
         if event.type is not EventType.KEY:
             return True
-        key = event.key
-        char = event.char
-        # File operations resolve through the injected config's KeyBindings +
-        # FileOperationService (C / M / K / DELETE / E / V), present only when a
-        # config was passed in. The focused node stands in for a selection —
-        # has_selection=True so the selection-gated copy/move/delete bindings fire;
-        # each handler then checks the active side itself and reports if the node is
-        # missing there.
+        # Every key this viewer understands is a named action in the ``dir_diff``
+        # context (xefm.actions) — the tree navigation, n/N, r and the split
+        # nudges included, which used to be raw comparisons here and so could not
+        # be rebound. The focused node stands in for a selection, hence
+        # has_selection=True: that is what lets the selection-gated copy / move /
+        # delete bindings fire on it, each handler then checking the active side
+        # itself. Esc is the universal modal dismiss and stays hardcoded.
+        action = self._resolve_action(event, has_selection=True)
+        # File operations need the injected config (they run through the shared
+        # FileOperationService), so they are only offered when one was passed in.
         if self._keys is not None:
-            action = self._keys.find_action_for_event(event, has_selection=True)
             handler = self._file_op_handlers().get(action) if action else None
             if handler is not None:
                 handler()
                 self._update_priorities()
                 return True
-        # Close and help also resolve through KEY_BINDINGS (the injected config when
-        # present, else the shared singleton) so they match the main file manager and
-        # honour rebinds. Esc is the universal modal dismiss and stays hardcoded; the
-        # viewer-only keys below (navigation, expand/collapse, next-diff, split,
-        # rescan) are local to the viewer.
-        action = self._resolve_action(event)
-        if key == "escape" or action == "quit":
+        if event.key == "escape" or action == "quit":
             self._close()
-        elif action == "help":
-            self._show_help()
-        elif key == "down":
-            self._move_cursor(1)
-        elif key == "up":
-            self._move_cursor(-1)
-        elif key == "pagedown":
-            self._move_cursor(self._view_h)
-        elif key == "pageup":
-            self._move_cursor(-self._view_h)
-        elif key == "home":
-            self.cursor = 0
-            self._ensure_cursor_visible()
-        elif key == "end":
-            self.cursor = max(0, len(self.visible) - 1)
-            self._ensure_cursor_visible()
-        elif key == "right":
-            self._toggle(expand=True)
-        elif key == "left":
-            node = self._current()
-            if node is not None and node.is_directory and node.is_expanded:
-                self._toggle(expand=False)
-            elif node is not None and node.parent is not None and node.parent.depth > 0:
-                if node.parent in self.visible:
-                    self.cursor = self.visible.index(node.parent)
-                    self._ensure_cursor_visible()
-        elif key in ("enter", "return"):
-            node = self._current()
-            if node is not None and node.is_directory:
-                self._toggle()
-            else:
-                self._open_file_diff()
-        elif key == "tab":
-            self.active = "right" if self.active == "left" else "left"
-        elif char == "n":
-            self._step_diff(1)
-        elif char == "N":
-            self._step_diff(-1)
-        elif char == "r":
-            self._restart_scan()
-        elif char == "[":
-            self._nudge_split(-0.05)
-        elif char == "]":
-            self._nudge_split(0.05)
+        else:
+            handler = self._handlers_table().get(action)
+            if handler is not None:
+                handler()
         self._update_priorities()  # bias scanning toward the new viewport
         return True
+
+    def _handlers_table(self) -> dict:
+        """The viewer-local actions, by name."""
+        if self._handlers is None:
+            self._handlers = {
+                "help": self._show_help,
+                "dir_diff.cursor_down": lambda: self._move_cursor(1),
+                "dir_diff.cursor_up": lambda: self._move_cursor(-1),
+                "dir_diff.page_down": lambda: self._move_cursor(self._view_h),
+                "dir_diff.page_up": lambda: self._move_cursor(-self._view_h),
+                "dir_diff.cursor_top": lambda: self._go_row(0),
+                "dir_diff.cursor_bottom": lambda: self._go_row(len(self.visible) - 1),
+                "dir_diff.expand": lambda: self._toggle(expand=True),
+                "dir_diff.collapse": self._collapse_or_up,
+                "dir_diff.activate": self._activate,
+                "dir_diff.switch_side": self._switch_side,
+                "dir_diff.next_change": lambda: self._step_diff(1),
+                "dir_diff.prev_change": lambda: self._step_diff(-1),
+                "dir_diff.rescan": self._restart_scan,
+                "dir_diff.split_left": lambda: self._nudge_split(-0.05),
+                "dir_diff.split_right": lambda: self._nudge_split(0.05),
+            }
+        return self._handlers
+
+    def _go_row(self, index: int) -> None:
+        self.cursor = max(0, index)
+        self._ensure_cursor_visible()
+
+    def _collapse_or_up(self) -> None:
+        """Collapse an expanded directory; on anything else, move to the parent
+        row — the conventional tree-view LEFT."""
+        node = self._current()
+        if node is not None and node.is_directory and node.is_expanded:
+            self._toggle(expand=False)
+        elif node is not None and node.parent is not None and node.parent.depth > 0:
+            if node.parent in self.visible:
+                self._go_row(self.visible.index(node.parent))
+
+    def _activate(self) -> None:
+        """Enter on a row: expand/collapse a directory, diff a file."""
+        node = self._current()
+        if node is not None and node.is_directory:
+            self._toggle()
+        else:
+            self._open_file_diff()
+
+    def _switch_side(self) -> None:
+        self.active = "right" if self.active == "left" else "left"
 
 
 def show_directory_diff_viewer(panel: Any, left_path: Path, right_path: Path,

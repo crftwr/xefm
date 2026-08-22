@@ -1,4 +1,4 @@
-"""SortDialog — the specialized sort picker for the ``sort_menu`` action (the
+"""SortDialog — the specialized sort picker for the ``sort`` action (the
 ``S`` key), replacing the generic popup menu (issue #237).
 
 A compact, keyboard-first modal (no Tab, no buttons):
