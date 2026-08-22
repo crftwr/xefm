@@ -40,8 +40,9 @@ from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_viewer import (MONO, _ScrollBody, _content_bg, _header_bg, _highlight,
                              _is_light, _match_bg, _read_lines, _syntax_palette,
-                             draw_hscrollbar, draw_status_bar, viewer_layer_hints,
-                             viewer_pad)
+                             draw_hscrollbar, draw_status_bar, span_x,
+                             viewer_layer_hints, viewer_pad)
+from puikit.text import display_width
 
 #: Semantic diff hues. The whole-row tints and the stronger changed-character
 #: tints are the theme's *content background* blended toward these, so a diff
@@ -229,6 +230,7 @@ class _DiffPane(Widget):
             if lineno is not None:
                 segs = highlighted[lineno - 1] if 0 <= lineno - 1 < len(highlighted) else [(plain, None)]
                 col = 0
+                x_disp = 0.0  # display cols drawn from col0_int (CJK spans two)
                 for text, fg in segs:
                     seg_end = col + len(text)
                     vis_start = max(col, col0_int)
@@ -238,16 +240,17 @@ class _DiffPane(Widget):
                         # A syntax-colored span keeps its exact (dark-tuned) palette
                         # on a dark theme; on a light theme auto-ink re-tones it to
                         # the light surface. The uncolored fallback is always inked.
-                        ctx.draw_text(content_x + (vis_start - col0_int) - xfrac, y, sub,
+                        ctx.draw_text(content_x + x_disp - xfrac, y, sub,
                                       Style(fg=fg if fg is not None else text_fg, bg=row_bg, font=MONO),
                                       ink=fg is None or _is_light(bg))
+                        x_disp += display_width(sub)
                     col = seg_end
                     if col >= window_end:
                         break
                 for s, e in (cranges or []):
                     vs, ve = max(s, col0_int), min(e, window_end)
                     if ve > vs:
-                        ctx.draw_text(content_x + (vs - col0_int) - xfrac, y, plain[vs:ve],
+                        ctx.draw_text(content_x + span_x(plain, col0_int, vs) - xfrac, y, plain[vs:ve],
                                       Style(fg=text_fg, bg=char_bg, font=MONO))
                 # Incremental-search highlights overlay the diff tint for this side.
                 if v.search_pattern:
@@ -288,7 +291,7 @@ class _DiffPane(Widget):
         for s, e in spans:
             vs, ve = max(s, col0_int), min(e, window_end)
             if ve > vs:
-                ctx.draw_text(content_x + (vs - col0_int) - xfrac, y, plain[vs:ve],
+                ctx.draw_text(content_x + span_x(plain, col0_int, vs) - xfrac, y, plain[vs:ve],
                               Style(fg=text_fg, bg=_match_bg(self._bg, is_current), font=MONO))
 
 

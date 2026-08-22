@@ -55,6 +55,41 @@ except ImportError:
 MONO = Font(monospace=True)
 _TAB = 8
 
+
+def span_x(line: str, col0: int, col: int) -> float:
+    """Display-column offset of character ``col`` from the draw window's start
+    at character ``col0``. Drawn glyphs advance by display width — a CJK
+    character spans two cells — so an overlay (search highlight, selection)
+    must position by the prefix's display width, not its character count, or
+    it lands left of the glyphs it repaints."""
+    return float(display_width(line[col0:col]))
+
+
+def col_at_cells(line: str, col0: int, cells: float) -> int:
+    """The character column ``cells`` display columns right of character
+    ``col0`` in ``line`` — the inverse of the drawn glyphs' display-width
+    advance, rounded to the nearest character boundary (a click on the right
+    half of a glyph selects past it, like a text editor's caret)."""
+    col = max(0, min(col0, len(line)))
+    remaining = cells
+    if remaining < 0:
+        # Left of the window (a drag past the content edge while scrolled):
+        # walk back through the scrolled-out characters.
+        while col > 0:
+            w = display_width(line[col - 1])
+            if remaining > -w / 2:
+                break
+            remaining += w
+            col -= 1
+        return col
+    while col < len(line):
+        w = display_width(line[col])
+        if remaining < w / 2:
+            break
+        remaining -= w
+        col += 1
+    return col
+
 #: State-manager key prefix for a file type's remembered view mode. The value
 #: ("rich" | "text") is stored per lower-cased extension (e.g. "viewer_mode:.md"),
 #: so a type reopens in the mode last chosen for it (issue #217).
@@ -942,6 +977,7 @@ class TextViewer(Widget):
         # so the partial right-edge column is drawn to be clipped, not dropped early.
         window_end = col0_int + self._content_w + 2 if end_col is None else end_col
         col = 0
+        x_disp = 0.0  # display cols drawn so far from col0_int (CJK spans two)
         for text, fg in self.highlighted[line_idx]:
             seg_end = col + len(text)
             vis_start = max(col, col0_int)
@@ -955,9 +991,10 @@ class TextViewer(Widget):
                 # palette would be unreadable, so auto-ink re-tones each token
                 # (hue preserved, darkened to the light surface). The error color
                 # and the uncolored fallback are always auto-inked.
-                ctx.draw_text(content_x + (vis_start - col0_int) - xfrac, y, sub,
+                ctx.draw_text(content_x + x_disp - xfrac, y, sub,
                               Style(fg=style_fg, bg=bg, font=MONO),
                               ink=self.is_error or fg is None or _is_light(bg))
+                x_disp += display_width(sub)
             col = seg_end
             if col >= window_end:
                 break
@@ -991,7 +1028,7 @@ class TextViewer(Widget):
         theme = ctx.theme
         sel_bg = theme.text_selection_bg if theme is not None else (38, 79, 120)
         sub = line[vis_start:vis_end]
-        ctx.draw_text(content_x + (vis_start - col0_int) - xfrac, y, sub,
+        ctx.draw_text(content_x + span_x(line, col0_int, vis_start) - xfrac, y, sub,
                       Style(fg=text_fg, bg=sel_bg, font=MONO))
 
     def _draw_matches(self, ctx, y, line_idx, col0_int, xfrac, window_end, content_x, text_fg) -> None:
@@ -1022,7 +1059,7 @@ class TextViewer(Widget):
                 continue
             sub = line[vis_start:vis_end]
             hl_bg = _match_bg(self._bg, is_current)
-            ctx.draw_text(content_x + (vis_start - col0_int) - xfrac, y, sub,
+            ctx.draw_text(content_x + span_x(line, col0_int, vis_start) - xfrac, y, sub,
                           Style(fg=text_fg, bg=hl_bg, font=MONO))
 
     # --- events --------------------------------------------------------------
@@ -1223,7 +1260,8 @@ class TextViewer(Widget):
     def _pos_at(self, ex: float, ey: float) -> tuple[int, int]:
         """Layer-local ``(ex, ey)`` to a ``(line, col)`` selection position, via
         the body rect and the current vertical (``top``) / horizontal (``left``)
-        scroll. Columns are characters (monospace); the x is rounded to the
+        scroll. The x maps through the glyphs' display-width advance (a CJK
+        character spans two cells — see :func:`col_at_cells`), rounded to the
         nearest character boundary and clamped to the line."""
         if self._body_rect is None or not self.lines:
             return (0, 0)
@@ -1239,9 +1277,10 @@ class TextViewer(Widget):
             col_off = self.left
         line_idx = max(0, min(line_idx, len(self.lines) - 1))
         line = self.lines[line_idx]
-        char_index = col_off + (ex - bx0 - self._content_x)
-        col = max(0, min(int(char_index + 0.5), len(line)))
-        return (line_idx, col)
+        # Cells right of the first drawn glyph: the window starts at character
+        # int(col_off), shifted left by the fractional pan (xfrac cells).
+        cells = ex - bx0 - self._content_x + (col_off - int(col_off))
+        return (line_idx, col_at_cells(line, int(col_off), cells))
 
     def _selection_mouse(self, event: Event) -> None:
         """Raw-mode selection from a press / drag / release (a click is inert —
