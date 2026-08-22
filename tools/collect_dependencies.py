@@ -24,9 +24,12 @@ the notices to what is actually shipped.
 
 Note: PuiKit is installed editable during development and is copied into the
 bundle separately by each build script (its editable shim would be broken on the
-target machine), so it is intentionally not collected here. Pass
-``--include-deps-of puikit`` to still pull in PuiKit's own runtime deps (e.g.
-``numpy``, which the Windows Direct2D backend imports) without copying PuiKit.
+target machine). Both builds therefore pass ``--include-deps-of puikit``, which
+pulls in PuiKit's own runtime deps (e.g. ``numpy``, which the Windows Direct2D
+backend imports) *without* copying PuiKit itself. That flag is required, not
+optional: collected normally, an editable PuiKit contributes its ``.dist-info``
+recording whatever version was current when ``pip install -e`` last ran, so the
+bundle would advertise a version it does not ship.
 """
 
 import argparse

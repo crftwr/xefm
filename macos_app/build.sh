@@ -225,12 +225,25 @@ fi
 log_info "Copying PuiKit library..."
 PUIKIT_DEST="${RESOURCES_DIR_BUNDLE}/puikit"
 PUIKIT_SRC=$("${VENV_PYTHON}" -c "import puikit, os; print(os.path.dirname(os.path.abspath(puikit.__file__)))" 2>/dev/null)
+# The version of the source actually being copied. PuiKit is normally installed
+# editable, and an editable install's .dist-info records the version that was
+# current when `pip install -e` ran - it is never rewritten as __version__ moves
+# on, so package metadata is not a trustworthy source here. __version__ in the
+# copied source is.
+PUIKIT_VERSION=$("${VENV_PYTHON}" -c "import puikit; print(puikit.__version__)" 2>/dev/null)
 
 if [ -z "${PUIKIT_SRC}" ] || [ ! -d "${PUIKIT_SRC}" ]; then
     log_error "PuiKit not importable from the venv (resolved source: '${PUIKIT_SRC}')."
     log_error "Install it first: make install-puikit"
     exit 1
 fi
+
+if [ -z "${PUIKIT_VERSION}" ]; then
+    log_error "Could not read puikit.__version__ from the venv."
+    log_error "The bundle's third-party notices must name the version they ship."
+    exit 1
+fi
+log_info "  PuiKit version: ${PUIKIT_VERSION}"
 
 # The GUI backend defaults to a bundled Noto Sans + Noto Sans Mono pair
 # (puikit/fonts/), registered with Core Text at runtime so the app renders the
@@ -284,6 +297,15 @@ fi
 # Collect Python dependencies
 log_info "Collecting Python dependencies..."
 PACKAGES_DEST="${RESOURCES_DIR_BUNDLE}/python_packages"
+# Start from empty, as the XeFM and PuiKit copies above do. The collector only
+# ever adds files, so without this a rebuild over an existing bundle keeps
+# distributions that are no longer in the dependency closure - one dropped from
+# requirements.txt, one that changed name, or a .dist-info left by an earlier
+# install of a different version. Those stale directories are what the notices
+# generator scans, so the bundle would keep advertising packages it no longer
+# ships. (windows_app/build.ps1 gets this for free: it removes the whole app
+# root before building.)
+rm -rf "${PACKAGES_DEST}"
 mkdir -p "${PACKAGES_DEST}"
 
 REQUIREMENTS_FILE="${PROJECT_ROOT}/requirements.txt"
@@ -292,7 +314,12 @@ COLLECT_SCRIPT="${PROJECT_ROOT}/tools/collect_dependencies.py"
 
 if [ -f "${COLLECT_SCRIPT}" ]; then
     # Use venv's Python to run the collection script
-    if "${VENV_PYTHON}" "${COLLECT_SCRIPT}" --requirements "${REQUIREMENTS_FILE}" --dest "${PACKAGES_DEST}"; then
+    # --include-deps-of puikit pulls in PuiKit's own runtime deps without copying
+    # PuiKit itself (its source is copied into Resources/puikit above). Without
+    # it the editable install's stale puikit-*.dist-info ships in the bundle,
+    # claiming whatever version was current when `pip install -e` last ran.
+    # windows_app/build.ps1 passes the same flag.
+    if "${VENV_PYTHON}" "${COLLECT_SCRIPT}" --requirements "${REQUIREMENTS_FILE}" --dest "${PACKAGES_DEST}" --include-deps-of puikit; then
         log_success "Dependencies collected successfully"
     else
         log_error "Failed to collect dependencies"
@@ -771,7 +798,7 @@ if [ ! -f "${PUIKIT_LICENSE}" ]; then
                       -iname 'LICEN[SC]E*' -type f 2>/dev/null | head -n 1)"
 fi
 if [ -n "${PUIKIT_LICENSE}" ] && [ -f "${PUIKIT_LICENSE}" ]; then
-    NOTICES_EXTRAS+=(--extra "PuiKit (MIT License)=${PUIKIT_LICENSE}")
+    NOTICES_EXTRAS+=(--extra "PuiKit ${PUIKIT_VERSION} (MIT License)=${PUIKIT_LICENSE}")
 else
     log_error "PuiKit LICENSE not found (looked for ${PUIKIT_PARENT}/LICENSE and puikit-*.dist-info under ${PUIKIT_PARENT})"
     exit 1
