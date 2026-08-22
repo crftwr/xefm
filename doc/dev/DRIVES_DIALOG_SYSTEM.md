@@ -211,7 +211,7 @@ self.drives_dialog = DrivesDialog(self.config)
 #### Input Handling
 ```python
 # In FileManager.run() main loop
-elif self.is_key_for_action(key, 'drives_dialog'):
+elif self.is_key_for_action(key, 'drives'):
     self.show_drives_dialog()
 
 # Dialog input handling
@@ -268,7 +268,7 @@ Default configuration in `xefm/_config.py`:
 ```python
 KEY_BINDINGS = {
     # ... other bindings ...
-    'drives_dialog': ['d', 'D'],  # Show drives/storage selection dialog
+    'drives': ['d', 'D'],  # Show drives/storage selection dialog
 }
 ```
 

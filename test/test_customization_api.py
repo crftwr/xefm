@@ -43,17 +43,17 @@ def key(name, char=None, mods=()):
 def test_builtin_actions_are_registered_per_context():
     r = xa._new_registry()
     assert r.resolve(xa.FILER, "cursor_up").context == xa.FILER
-    assert r.resolve(xa.TEXT_VIEWER, "toggle_wrap").context == xa.TEXT_VIEWER
+    assert r.resolve(xa.TEXT_VIEWER, "text_viewer.toggle_wrap").context == xa.TEXT_VIEWER
     # A viewer action is invisible to the file list and vice versa — the whole
     # point of contexts.
-    assert r.resolve(xa.FILER, "toggle_wrap") is None
+    assert r.resolve(xa.FILER, "text_viewer.toggle_wrap") is None
     assert r.resolve(xa.TEXT_VIEWER, "cursor_up") is None
 
 
 def test_common_actions_are_inherited_by_every_context():
     r = xa._new_registry()
     for context in (xa.FILER, xa.TEXT_VIEWER, xa.IMAGE_VIEWER,
-                    xa.DIFF_VIEWER, xa.DIR_DIFF):
+                    xa.FILE_DIFF, xa.DIR_DIFF):
         assert r.resolve(context, "quit").context == xa.COMMON, context
         assert r.resolve(context, "help") is not None, context
 
@@ -68,7 +68,7 @@ def test_defaults_for_pre_registry_actions_come_from_the_template():
 
 def test_new_dotted_actions_declare_their_own_defaults():
     r = xa._new_registry()
-    assert r.resolve(xa.DIFF_VIEWER, "diff_viewer.next_block").resolved_default_keys() == ("n",)
+    assert r.resolve(xa.FILE_DIFF, "file_diff.next_block").resolved_default_keys() == ("n",)
     assert r.resolve(xa.TEXT_VIEWER, "text_viewer.page_down").resolved_default_keys() == ("PAGE_DOWN",)
 
 
@@ -141,9 +141,9 @@ def test_filer_resolves_every_default_key_exactly_as_the_flat_table_did(kb):
 def test_viewer_local_keys_resolve_without_any_config_entry(kb):
     """Nothing in KEY_BINDINGS mentions these, and they still work — the
     defaults come off the action itself."""
-    assert "diff_viewer.next_block" not in DefaultConfig.KEY_BINDINGS
+    assert "file_diff.next_block" not in DefaultConfig.KEY_BINDINGS
     assert kb.find_action_for_event(key("n", "n"), False,
-                                    xa.DIFF_VIEWER) == "diff_viewer.next_block"
+                                    xa.FILE_DIFF) == "file_diff.next_block"
     assert kb.find_action_for_event(key("pagedown"), False,
                                     xa.TEXT_VIEWER) == "text_viewer.page_down"
     assert kb.find_action_for_event(key("tab"), False,
@@ -155,38 +155,38 @@ def test_the_same_key_means_different_things_in_different_contexts(kb):
     arrows are the file list's cursor and the diff viewer's scroll. Under the
     flat table which one won came down to dict order."""
     assert kb.find_action_for_event(key("-", "-"), False, xa.FILER) == "reset_pane_boundary"
-    assert kb.find_action_for_event(key("-", "-"), False, xa.IMAGE_VIEWER) == "image_zoom_out"
+    assert kb.find_action_for_event(key("-", "-"), False, xa.IMAGE_VIEWER) == "image_viewer.zoom_out"
     assert kb.find_action_for_event(key("down"), False, xa.FILER) == "cursor_down"
-    assert kb.find_action_for_event(key("down"), False, xa.DIFF_VIEWER) == "diff_viewer.scroll_down"
-    assert kb.find_action_for_event(key("down"), False, xa.IMAGE_VIEWER) == "image_next"
+    assert kb.find_action_for_event(key("down"), False, xa.FILE_DIFF) == "file_diff.scroll_down"
+    assert kb.find_action_for_event(key("down"), False, xa.IMAGE_VIEWER) == "image_viewer.next"
 
 
 def test_a_rebound_viewer_action_wins_over_its_default():
     bindings = dict(DefaultConfig.KEY_BINDINGS)
-    bindings["diff_viewer.next_block"] = ["j"]
+    bindings["file_diff.next_block"] = ["j"]
     kb = KeyBindings(bindings)
-    assert kb.find_action_for_event(key("j", "j"), False, xa.DIFF_VIEWER) == "diff_viewer.next_block"
-    assert kb.find_action_for_event(key("n", "n"), False, xa.DIFF_VIEWER) is None
+    assert kb.find_action_for_event(key("j", "j"), False, xa.FILE_DIFF) == "file_diff.next_block"
+    assert kb.find_action_for_event(key("n", "n"), False, xa.FILE_DIFF) is None
     # ...and the sibling default it did not touch is unaffected.
     assert kb.find_action_for_event(key("n", "N", {"shift"}), False,
-                                    xa.DIFF_VIEWER) == "diff_viewer.prev_block"
+                                    xa.FILE_DIFF) == "file_diff.prev_block"
 
 
 def test_a_dotted_prefix_scopes_a_shared_action_to_one_context():
-    """``'diff_viewer.quit'`` rebinds quit inside the diff viewer only."""
+    """``'file_diff.quit'`` rebinds quit inside the file diff viewer only."""
     bindings = dict(DefaultConfig.KEY_BINDINGS)
-    bindings["diff_viewer.quit"] = ["X"]
+    bindings["file_diff.quit"] = ["X"]
     kb = KeyBindings(bindings)
-    assert kb.find_action_for_event(key("x", "x"), False, xa.DIFF_VIEWER) == "quit"
+    assert kb.find_action_for_event(key("x", "x"), False, xa.FILE_DIFF) == "quit"
     # The scoped entry replaces the inherited one in that context...
-    assert kb.find_action_for_event(key("q", "q"), False, xa.DIFF_VIEWER) is None
+    assert kb.find_action_for_event(key("q", "q"), False, xa.FILE_DIFF) is None
     # ...and leaves every other surface alone.
     assert kb.find_action_for_event(key("q", "q"), False, xa.FILER) == "quit"
     assert kb.find_action_for_event(key("q", "q"), False, xa.TEXT_VIEWER) == "quit"
 
 
 @pytest.mark.parametrize("context", [xa.FILER, xa.TEXT_VIEWER, xa.IMAGE_VIEWER,
-                                     xa.DIFF_VIEWER, xa.DIR_DIFF])
+                                     xa.FILE_DIFF, xa.DIR_DIFF])
 def test_no_two_actions_in_a_context_fight_over_a_key(context, kb):
     """Within one surface a key must mean one thing — the exception being a pair
     whose selection requirements are disjoint ('M' is move-files with a
@@ -203,9 +203,9 @@ def test_no_two_actions_in_a_context_fight_over_a_key(context, kb):
 
 
 def test_get_keys_for_action_reports_what_the_context_will_use(kb):
-    assert kb.get_keys_for_action("diff_viewer.next_block", xa.DIFF_VIEWER) == (["n"], "any")
+    assert kb.get_keys_for_action("file_diff.next_block", xa.FILE_DIFF) == (["n"], "any")
     # Without a context the flat dict alone answers, and it has no such entry.
-    assert kb.get_keys_for_action("diff_viewer.next_block") == ([], "any")
+    assert kb.get_keys_for_action("file_diff.next_block") == ([], "any")
 
 
 def test_a_config_missing_an_action_still_gets_its_keys():
@@ -213,9 +213,10 @@ def test_a_config_missing_an_action_still_gets_its_keys():
     missing key inside ``KEY_BINDINGS``, so an action added after a user wrote
     their config would otherwise be unreachable forever."""
     bindings = dict(DefaultConfig.KEY_BINDINGS)
-    del bindings["image_zoom_in"]
+    del bindings["image_viewer.zoom_in"]
     kb = KeyBindings(bindings)
-    assert kb.find_action_for_event(key("+", "+"), False, xa.IMAGE_VIEWER) == "image_zoom_in"
+    assert kb.find_action_for_event(key("+", "+"), False,
+                                    xa.IMAGE_VIEWER) == "image_viewer.zoom_in"
 
 
 def test_the_context_table_is_rebuilt_when_the_registry_changes(kb):
@@ -228,6 +229,125 @@ def test_the_context_table_is_rebuilt_when_the_registry_changes(kb):
     finally:
         xa.registry.unregister_source("user")
     assert kb.find_action_for_event(key("y", "y"), False, xa.FILER) is None
+
+
+# --------------------------------------------------------------------------- #
+# 2b. Renamed actions and their aliases
+# --------------------------------------------------------------------------- #
+
+# Every rename that has shipped, as (old name, current name, context). An entry
+# here may never be deleted: the alias is the only thing keeping a config that
+# predates the rename working.
+SHIPPED_RENAMES = [
+    ("search", "isearch", xa.FILER),
+    ("search_dialog", "find_files", xa.FILER),
+    ("search_content", "find_in_files", xa.FILER),
+    ("sort_menu", "sort", xa.FILER),
+    ("drives_dialog", "drives", xa.FILER),
+    ("rename_file", "rename", xa.FILER),
+    ("select_file", "toggle_select_down", xa.FILER),
+    ("select_file_up", "toggle_select_up", xa.FILER),
+    ("select_all_files", "toggle_select_files", xa.FILER),
+    ("select_all_items", "toggle_select_items", xa.FILER),
+    ("toggle_wrap", "text_viewer.toggle_wrap", xa.TEXT_VIEWER),
+    ("toggle_view_mode", "text_viewer.toggle_view_mode", xa.TEXT_VIEWER),
+    ("change_encoding", "text_viewer.change_encoding", xa.TEXT_VIEWER),
+    ("image_zoom_in", "image_viewer.zoom_in", xa.IMAGE_VIEWER),
+    ("image_zoom_out", "image_viewer.zoom_out", xa.IMAGE_VIEWER),
+    ("image_zoom_reset", "image_viewer.zoom_reset", xa.IMAGE_VIEWER),
+    ("image_next", "image_viewer.next", xa.IMAGE_VIEWER),
+    ("image_prev", "image_viewer.prev", xa.IMAGE_VIEWER),
+    ("image_scroll_up", "image_viewer.pan_up", xa.IMAGE_VIEWER),
+    ("image_scroll_down", "image_viewer.pan_down", xa.IMAGE_VIEWER),
+    ("image_scroll_left", "image_viewer.pan_left", xa.IMAGE_VIEWER),
+    ("image_scroll_right", "image_viewer.pan_right", xa.IMAGE_VIEWER),
+]
+
+
+@pytest.mark.parametrize("old, current, context", SHIPPED_RENAMES)
+def test_every_shipped_rename_keeps_its_alias(old, current, context):
+    r = xa._new_registry()
+    assert r.resolve(context, current) is not None, f"{current} is not registered"
+    assert r.canonical(context, old) == current, f"{old} lost its alias"
+
+
+def test_a_config_binding_an_old_name_still_works():
+    """The whole point of aliases: a config written before a rename keeps
+    working, key for key."""
+    bindings = {old: ["Y"] for old, _c, _x in SHIPPED_RENAMES if _x == xa.FILER}
+    kb = KeyBindings(bindings)
+    for old, current, context in SHIPPED_RENAMES:
+        if context is not xa.FILER:
+            continue
+        assert kb.find_action_for_event(key("y", "y"), True, context) is not None
+        assert kb.get_keys_for_action(current, context)[0] == ["Y"], current
+
+
+def test_an_old_viewer_name_still_reaches_its_viewer():
+    # A config from before the rename: the old spelling, and only the old one.
+    bindings = dict(DefaultConfig.KEY_BINDINGS)
+    del bindings["text_viewer.toggle_wrap"]
+    bindings["toggle_wrap"] = ["Y"]
+    kb = KeyBindings(bindings)
+    assert kb.find_action_for_event(key("y", "y"), False,
+                                    xa.TEXT_VIEWER) == "text_viewer.toggle_wrap"
+    assert kb.get_keys_for_action("text_viewer.toggle_wrap",
+                                  xa.TEXT_VIEWER)[0] == ["Y"]
+
+
+def test_the_current_name_wins_when_a_config_has_both():
+    """A config half-migrated — the new name added, the old one left behind —
+    must not depend on which the dict happens to list first."""
+    for order in (("toggle_wrap", "text_viewer.toggle_wrap"),
+                  ("text_viewer.toggle_wrap", "toggle_wrap")):
+        bindings = {}
+        for name in order:
+            bindings[name] = ["Y"] if name == "toggle_wrap" else ["Z"]
+        kb = KeyBindings(bindings)
+        assert kb.get_keys_for_action("text_viewer.toggle_wrap",
+                                      xa.TEXT_VIEWER)[0] == ["Z"], order
+        assert kb.find_action_for_event(key("z", "z"), False,
+                                        xa.TEXT_VIEWER) == "text_viewer.toggle_wrap"
+        assert kb.find_action_for_event(key("y", "y"), False,
+                                        xa.TEXT_VIEWER) is None
+
+
+def test_the_shipped_template_uses_only_current_names():
+    from xefm.config import deprecated_binding_names
+    assert deprecated_binding_names(DefaultConfig.KEY_BINDINGS) == []
+
+
+def test_an_old_name_is_reported_once_as_a_single_line():
+    from xefm.config import deprecated_binding_names, deprecated_names_notice
+    bindings = dict(DefaultConfig.KEY_BINDINGS)
+    for name in ("text_viewer.toggle_wrap", "image_viewer.zoom_in", "sort"):
+        del bindings[name]
+    bindings.update({"toggle_wrap": ["W"], "image_zoom_in": ["+"], "sort_menu": ["S"]})
+
+    pairs = dict(deprecated_binding_names(bindings))
+    assert pairs == {"toggle_wrap": "text_viewer.toggle_wrap",
+                     "image_zoom_in": "image_viewer.zoom_in",
+                     "sort_menu": "sort"}
+    notice = deprecated_names_notice(bindings)
+    assert notice.count("\n") == 0 and "3 old action name(s)" in notice
+
+
+def test_a_name_spelled_both_ways_is_not_reported():
+    from xefm.config import deprecated_binding_names
+    bindings = dict(DefaultConfig.KEY_BINDINGS, toggle_wrap=["W"])
+    assert "text_viewer.toggle_wrap" in bindings   # the current spelling is there
+    assert deprecated_binding_names(bindings) == []
+
+
+def test_no_alias_collides_with_a_current_name():
+    """An alias that is also somebody's current name would make resolution
+    depend on lookup order — and would mean a rename had quietly reused a
+    retired name for a different action."""
+    r = xa._new_registry()
+    for context in xa.CONTEXTS:
+        current = {a.name for a in r.actions(context)}
+        for old in r.aliases_in(context):
+            assert old not in current, (context, old)
 
 
 # --------------------------------------------------------------------------- #

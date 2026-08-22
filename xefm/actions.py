@@ -30,14 +30,20 @@ Names
 -----
 
 ``KEY_BINDINGS`` stays one flat dictionary, so context lives in the *name*.
-Actions that predate the registry keep their unqualified names (``toggle_wrap``,
-``image_zoom_in``) — existing configs bind them and must keep working. Actions
-this module names for the first time are dot-qualified with their context
-(``diff_viewer.next_block``, ``text_viewer.scroll_up``), which keeps the one flat
-namespace collision-free and reads properly in the help dialog.
+Every action a surface owns is dot-qualified with its context
+(``file_diff.next_block``, ``image_viewer.zoom_in``), which keeps the one flat
+namespace collision-free and reads properly in the help dialog. The file list's
+own actions stay unqualified: ``filer`` is the namespace's incumbent, every
+config in existence binds those names, and letting the dot mean "not the file
+list" is worth more than uniformity.
+
+Names that have changed keep their old spelling in ``Action.aliases``. A config
+binding an alias still resolves to the action, and XeFM says so once at load —
+which is what makes correcting a name possible at all. Aliases are permanent;
+never reuse one for a different action.
 
 The same dotted form also *scopes* an inherited action: a config may write
-``'diff_viewer.quit': ['x']`` to rebind ``quit`` inside the diff viewer only,
+``'file_diff.quit': ['x']`` to rebind ``quit`` inside the file diff viewer only,
 leaving it alone everywhere else. See ``KeyBindings._context_entries``.
 
 Defaults
@@ -72,15 +78,18 @@ FILER = "filer"
 TEXT_VIEWER = "text_viewer"
 #: The modal image viewer.
 IMAGE_VIEWER = "image_viewer"
-#: The modal two-file diff viewer.
-DIFF_VIEWER = "diff_viewer"
+#: The modal two-file diff viewer. Named for what it diffs rather than after
+#: its module, so it pairs with ``dir_diff`` — the two are symmetric surfaces
+#: and reading ``diff_viewer`` next to ``dir_diff`` never made clear which was
+#: which.
+FILE_DIFF = "file_diff"
 #: The modal recursive directory-diff viewer.
 DIR_DIFF = "dir_diff"
 
 #: Every context a binding or a user action may name, most-specific first.
 #: ``common`` is deliberately included: a config may bind (or a future release
 #: may allow overriding) an action there.
-CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, DIFF_VIEWER, DIR_DIFF, COMMON)
+CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, COMMON)
 
 
 # --------------------------------------------------------------------------- #
@@ -111,6 +120,11 @@ class Action:
     selection: str = "any"
     func: Callable | None = None
     source: str = "builtin"
+    #: Names this action used to have. A config binding an alias still works,
+    #: resolving to this action; XeFM says so once at load. Aliases are how a
+    #: name can be corrected without breaking the configs that already use it,
+    #: so they are permanent — never reuse one for a different action.
+    aliases: tuple[str, ...] = ()
 
     @property
     def is_user(self) -> bool:
@@ -194,6 +208,9 @@ class ActionRegistry:
         #: Built-ins a user action has shadowed, kept so ``invoke()`` can still
         #: reach them and so dropping the user entry restores them.
         self._overridden: dict[str, dict[str, Action]] = {}
+        #: ``{context: {old_name: current_name}}``, rebuilt on demand.
+        self._aliases: dict[str, dict[str, str]] = {}
+        self._alias_generation: int | None = None
         self.generation = 0
 
     # --- mutation ---------------------------------------------------------- #
@@ -261,6 +278,37 @@ class ActionRegistry:
             return self._overridden.get(COMMON, {}).get(name)
         return None
 
+    def _alias_table(self, context: str) -> dict[str, str]:
+        """``{old_name: current_name}`` for one context, its own actions before
+        the inherited ``common`` ones."""
+        if self._alias_generation != self.generation:
+            self._aliases.clear()
+            self._alias_generation = self.generation
+        table = self._aliases.get(context)
+        if table is None:
+            table = {}
+            for action in self.actions(context):
+                for alias in action.aliases:
+                    table.setdefault(alias, action.name)
+            self._aliases[context] = table
+        return table
+
+    def canonical(self, context: str, name: str) -> str | None:
+        """The action ``name`` refers to in ``context``: itself when it is a
+        current name, the current name when it is an alias, ``None`` when the
+        context does not understand it at all.
+
+        A current name always wins — a config carrying both an old and a new
+        name for the same action gets the new one, not whichever it listed
+        first."""
+        if self.resolve(context, name) is not None:
+            return name
+        return self._alias_table(context).get(name)
+
+    def aliases_in(self, context: str) -> dict[str, str]:
+        """Every ``{old_name: current_name}`` pair this context understands."""
+        return dict(self._alias_table(context))
+
     def actions(self, context: str) -> list[Action]:
         """Every action ``context`` understands, its own before the inherited
         ``common`` ones, each in registration order."""
@@ -306,7 +354,8 @@ def _a(name, context, description, **kw) -> Action:
 _COMMON_ACTIONS = [
     _a("quit", COMMON, "Quit XeFM — or close the open viewer"),
     _a("help", COMMON, "Show the key bindings for what is on screen"),
-    _a("search", COMMON, "Incremental search"),
+    _a("isearch", COMMON, "Incremental search",
+       aliases=("search",)),
     _a("edit_file", COMMON, "Edit in the configured text editor"),
 ]
 
@@ -324,12 +373,16 @@ _FILER_ACTIONS = [
     _a("nav_left", FILER, "Focus the left pane, or go to the parent"),
     _a("nav_right", FILER, "Focus the right pane, or go to the parent"),
     # Selection
-    _a("select_file", FILER, "Toggle selection and move down"),
-    _a("select_file_up", FILER, "Toggle selection and move up"),
+    _a("toggle_select_down", FILER, "Toggle selection and move down",
+       aliases=("select_file",)),
+    _a("toggle_select_up", FILER, "Toggle selection and move up",
+       aliases=("select_file_up",)),
     _a("select_all", FILER, "Select every item"),
     _a("unselect_all", FILER, "Clear the selection"),
-    _a("select_all_files", FILER, "Toggle selection of every file"),
-    _a("select_all_items", FILER, "Toggle selection of every item"),
+    _a("toggle_select_files", FILER, "Toggle selection of every file",
+       aliases=("select_all_files",)),
+    _a("toggle_select_items", FILER, "Toggle selection of every item",
+       aliases=("select_all_items",)),
     _a("cursor_next_selected", FILER, "Jump to the next selected item"),
     _a("cursor_prev_selected", FILER, "Jump to the previous selected item"),
     # Clipboard
@@ -341,7 +394,8 @@ _FILER_ACTIONS = [
     _a("duplicate_files", FILER, "Duplicate the selection in place",
        default_keys=()),
     _a("delete_files", FILER, "Delete the selected files and directories"),
-    _a("rename_file", FILER, "Rename the focused item"),
+    _a("rename", FILER, "Rename the focused item, or batch-rename the selection",
+       aliases=("rename_file",)),
     _a("create_file", FILER, "Create a new file"),
     _a("create_directory", FILER, "Create a new directory"),
     # Viewing
@@ -353,12 +407,15 @@ _FILER_ACTIONS = [
     _a("create_archive", FILER, "Create an archive from the selection"),
     _a("extract_archive", FILER, "Extract the focused archive"),
     # Search and filter
-    _a("search_dialog", FILER, "Search for files by name"),
-    _a("search_content", FILER, "Search inside files"),
+    _a("find_files", FILER, "Search for files by name",
+       aliases=("search_dialog",)),
+    _a("find_in_files", FILER, "Search inside files",
+       aliases=("search_content",)),
     _a("filter", FILER, "Filter the listing by a filename pattern"),
     _a("clear_filter", FILER, "Clear the filename filter"),
     # Sorting
-    _a("sort_menu", FILER, "Open the sort dialog"),
+    _a("sort", FILER, "Open the sort dialog",
+       aliases=("sort_menu",)),
     _a("quick_sort_name", FILER, "Sort by name"),
     _a("quick_sort_ext", FILER, "Sort by extension"),
     _a("quick_sort_size", FILER, "Sort by size"),
@@ -367,7 +424,8 @@ _FILER_ACTIONS = [
     _a("favorites", FILER, "Go to a favorite directory"),
     _a("jump_to_path", FILER, "Jump to a typed path"),
     _a("history", FILER, "Go to a recently visited directory"),
-    _a("drives_dialog", FILER, "Show drives and volumes"),
+    _a("drives", FILER, "Show drives and volumes",
+       aliases=("drives_dialog",)),
     # Panes
     _a("sync_current_to_other", FILER, "Go to the other pane's directory"),
     _a("sync_other_to_current", FILER, "Send this directory to the other pane"),
@@ -396,9 +454,12 @@ _FILER_ACTIONS = [
 ]
 
 _TEXT_VIEWER_ACTIONS = [
-    _a("toggle_wrap", TEXT_VIEWER, "Toggle line wrapping"),
-    _a("toggle_view_mode", TEXT_VIEWER, "Toggle the rendered / raw view"),
-    _a("change_encoding", TEXT_VIEWER, "Choose the text encoding"),
+    _a("text_viewer.toggle_wrap", TEXT_VIEWER, "Toggle line wrapping",
+       aliases=("toggle_wrap",)),
+    _a("text_viewer.toggle_view_mode", TEXT_VIEWER, "Toggle the rendered / raw view",
+       aliases=("toggle_view_mode",)),
+    _a("text_viewer.change_encoding", TEXT_VIEWER, "Choose the text encoding",
+       aliases=("change_encoding",)),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",
@@ -418,45 +479,56 @@ _TEXT_VIEWER_ACTIONS = [
 ]
 
 _IMAGE_VIEWER_ACTIONS = [
-    _a("image_zoom_in", IMAGE_VIEWER, "Zoom in"),
-    _a("image_zoom_out", IMAGE_VIEWER, "Zoom out"),
-    _a("image_zoom_reset", IMAGE_VIEWER, "Fit the whole image to the window"),
-    _a("image_next", IMAGE_VIEWER, "Next image in the file list"),
-    _a("image_prev", IMAGE_VIEWER, "Previous image in the file list"),
-    _a("image_scroll_up", IMAGE_VIEWER, "Pan up (while zoomed in)"),
-    _a("image_scroll_down", IMAGE_VIEWER, "Pan down (while zoomed in)"),
-    _a("image_scroll_left", IMAGE_VIEWER, "Pan left (while zoomed in)"),
-    _a("image_scroll_right", IMAGE_VIEWER, "Pan right (while zoomed in)"),
+    # 'pan_*', not 'scroll_*': these move the viewport over a zoomed image,
+    # which the code (``_pan_by``) and the help have always called panning.
+    _a("image_viewer.zoom_in", IMAGE_VIEWER, "Zoom in",
+       aliases=("image_zoom_in",)),
+    _a("image_viewer.zoom_out", IMAGE_VIEWER, "Zoom out",
+       aliases=("image_zoom_out",)),
+    _a("image_viewer.zoom_reset", IMAGE_VIEWER, "Fit the whole image to the window",
+       aliases=("image_zoom_reset",)),
+    _a("image_viewer.next", IMAGE_VIEWER, "Next image in the file list",
+       aliases=("image_next",)),
+    _a("image_viewer.prev", IMAGE_VIEWER, "Previous image in the file list",
+       aliases=("image_prev",)),
+    _a("image_viewer.pan_up", IMAGE_VIEWER, "Pan up (while zoomed in)",
+       aliases=("image_scroll_up",)),
+    _a("image_viewer.pan_down", IMAGE_VIEWER, "Pan down (while zoomed in)",
+       aliases=("image_scroll_down",)),
+    _a("image_viewer.pan_left", IMAGE_VIEWER, "Pan left (while zoomed in)",
+       aliases=("image_scroll_left",)),
+    _a("image_viewer.pan_right", IMAGE_VIEWER, "Pan right (while zoomed in)",
+       aliases=("image_scroll_right",)),
     _a("image_viewer.first", IMAGE_VIEWER, "First image in the file list",
        default_keys=("HOME",)),
     _a("image_viewer.last", IMAGE_VIEWER, "Last image in the file list",
        default_keys=("END",)),
 ]
 
-_DIFF_VIEWER_ACTIONS = [
-    _a("diff_viewer.next_block", DIFF_VIEWER, "Next diff block",
+_FILE_DIFF_ACTIONS = [
+    _a("file_diff.next_block", FILE_DIFF, "Next diff block",
        default_keys=("n",)),
     # 'Shift-N', not 'N': a bare letter token means the unshifted key (see
     # KeyBindings._parse_key_expression), so 'N' would be the same binding as
     # 'n'. The shifted form is what the raw ``event.char == "N"`` test this
     # replaced actually matched.
-    _a("diff_viewer.prev_block", DIFF_VIEWER, "Previous diff block",
+    _a("file_diff.prev_block", FILE_DIFF, "Previous diff block",
        default_keys=("Shift-N",)),
-    _a("diff_viewer.scroll_up", DIFF_VIEWER, "Scroll up one line",
+    _a("file_diff.scroll_up", FILE_DIFF, "Scroll up one line",
        default_keys=("UP",)),
-    _a("diff_viewer.scroll_down", DIFF_VIEWER, "Scroll down one line",
+    _a("file_diff.scroll_down", FILE_DIFF, "Scroll down one line",
        default_keys=("DOWN",)),
-    _a("diff_viewer.page_up", DIFF_VIEWER, "Scroll up one page",
+    _a("file_diff.page_up", FILE_DIFF, "Scroll up one page",
        default_keys=("PAGE_UP",)),
-    _a("diff_viewer.page_down", DIFF_VIEWER, "Scroll down one page",
+    _a("file_diff.page_down", FILE_DIFF, "Scroll down one page",
        default_keys=("PAGE_DOWN",)),
-    _a("diff_viewer.scroll_top", DIFF_VIEWER, "Go to the top",
+    _a("file_diff.scroll_top", FILE_DIFF, "Go to the top",
        default_keys=("HOME",)),
-    _a("diff_viewer.scroll_bottom", DIFF_VIEWER, "Go to the bottom",
+    _a("file_diff.scroll_bottom", FILE_DIFF, "Go to the bottom",
        default_keys=("END",)),
-    _a("diff_viewer.scroll_left", DIFF_VIEWER, "Scroll left",
+    _a("file_diff.scroll_left", FILE_DIFF, "Scroll left",
        default_keys=("LEFT",)),
-    _a("diff_viewer.scroll_right", DIFF_VIEWER, "Scroll right",
+    _a("file_diff.scroll_right", FILE_DIFF, "Scroll right",
        default_keys=("RIGHT",)),
 ]
 
@@ -489,9 +561,9 @@ _DIR_DIFF_ACTIONS = [
        default_keys=("ENTER",)),
     _a("dir_diff.switch_side", DIR_DIFF, "Switch the active side",
        default_keys=("TAB",)),
-    _a("dir_diff.next_diff", DIR_DIFF, "Next difference",
+    _a("dir_diff.next_change", DIR_DIFF, "Next difference",
        default_keys=("n",)),
-    _a("dir_diff.prev_diff", DIR_DIFF, "Previous difference",
+    _a("dir_diff.prev_change", DIR_DIFF, "Previous difference",
        default_keys=("Shift-N",)),
     _a("dir_diff.rescan", DIR_DIFF, "Rescan both trees",
        default_keys=("r",)),
@@ -502,7 +574,7 @@ _DIR_DIFF_ACTIONS = [
 ]
 
 _BUILTIN_ACTIONS = (_COMMON_ACTIONS + _FILER_ACTIONS + _TEXT_VIEWER_ACTIONS
-                    + _IMAGE_VIEWER_ACTIONS + _DIFF_VIEWER_ACTIONS
+                    + _IMAGE_VIEWER_ACTIONS + _FILE_DIFF_ACTIONS
                     + _DIR_DIFF_ACTIONS)
 
 

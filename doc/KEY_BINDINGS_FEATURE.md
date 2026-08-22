@@ -31,8 +31,8 @@ Examples:
 ```python
 'quit': ['Q']           # 'Q' and 'q' are equivalent (alphabet, case-insensitive)
 'help': ['?']           # Matches only '?' (non-alphabet, case-sensitive)
-'search': ['F']         # 'F' and 'f' are equivalent (alphabet, case-insensitive)
-'search_dialog': ['Shift-F']  # Matches only Shift+F (explicit modifier)
+'isearch': ['F']         # 'F' and 'f' are equivalent (alphabet, case-insensitive)
+'find_files': ['Shift-F']  # Matches only Shift+F (explicit modifier)
 ```
 
 ### KeyCode Names
@@ -133,25 +133,67 @@ action the same way.
 
 The keys used *inside* the text, image, diff and directory-diff viewers are named
 actions too, prefixed with the viewer they belong to — `text_viewer.page_down`,
-`diff_viewer.next_block`, `dir_diff.switch_side`. They are not listed in the
+`file_diff.next_block`, `dir_diff.switch_side`. They are not listed in the
 default `KEY_BINDINGS` because they work without an entry; add one only for a key
 you want to change:
 
 ```python
 KEY_BINDINGS = {
     'text_viewer.page_down': ['SPACE'],
-    'diff_viewer.next_block': ['J'],
+    'file_diff.next_block': ['J'],
 }
 ```
 
 Because each surface only looks at its own names, a viewer key may share a key
 with a file-list key with no conflict. The same prefix also scopes a *shared*
-action — `quit`, `help`, `search`, `edit_file` — to one viewer:
-`'diff_viewer.quit': ['X']` changes it there and nowhere else.
+action — `quit`, `help`, `isearch`, `edit_file` — to one viewer:
+`'file_diff.quit': ['X']` changes it there and nowhere else.
 
 The full list of viewer actions and their defaults is in
 [Customization (Preview)](CUSTOMIZATION_FEATURE.md), along with how to bind a key
 to a Python function of your own.
+
+### Renamed actions
+
+Some actions have been given clearer names. **Your old names keep working** — a
+config binding one still resolves to the same action — and XeFM notes it once in
+the log pane at startup. Rename when convenient; nothing breaks if you don't.
+
+| Old name | Current name |
+|---|---|
+| `search` | `isearch` |
+| `search_dialog` | `find_files` |
+| `search_content` | `find_in_files` |
+| `sort_menu` | `sort` |
+| `drives_dialog` | `drives` |
+| `rename_file` | `rename` |
+| `select_file` | `toggle_select_down` |
+| `select_file_up` | `toggle_select_up` |
+| `select_all_files` | `toggle_select_files` |
+| `select_all_items` | `toggle_select_items` |
+| `toggle_wrap` | `text_viewer.toggle_wrap` |
+| `toggle_view_mode` | `text_viewer.toggle_view_mode` |
+| `change_encoding` | `text_viewer.change_encoding` |
+| `image_zoom_in` | `image_viewer.zoom_in` |
+| `image_zoom_out` | `image_viewer.zoom_out` |
+| `image_zoom_reset` | `image_viewer.zoom_reset` |
+| `image_next` | `image_viewer.next` |
+| `image_prev` | `image_viewer.prev` |
+| `image_scroll_up` | `image_viewer.pan_up` |
+| `image_scroll_down` | `image_viewer.pan_down` |
+| `image_scroll_left` | `image_viewer.pan_left` |
+| `image_scroll_right` | `image_viewer.pan_right` |
+
+Three kinds of change are in there. The viewer actions gained their viewer's
+prefix, so `zoom_in` and `toggle_wrap` are free to become shared actions if a
+second viewer ever grows them. The `image_scroll_*` group became `pan_*`,
+which is what those keys have always done. And the three unrelated things called
+"search" got names that say which is which: `isearch` jumps to a match as you
+type, `find_files` searches for files by name, `find_in_files` searches inside
+them.
+
+If a config lists both spellings of an action, the current one wins and the old
+one is ignored — so migrating a key at a time is safe.
 
 ## Complete Example
 
@@ -190,7 +232,7 @@ class Config:
             'selection': 'none'
         },
         # Use Shift modifier for uppercase-specific bindings
-        'search_dialog': ['Shift-F'],     # Only matches Shift+F
+        'find_files': ['Shift-F'],     # Only matches Shift+F
     }
 ```
 

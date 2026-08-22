@@ -211,7 +211,7 @@ When XeFM is in a text input mode, mouse events are automatically ignored to pre
    - Prevents accidental clicks during decision-making
 
 3. **I-search Mode**: When searching in the text viewer
-   - Activated by the `search` key (default `F`) in the text viewer
+   - Activated by the `isearch` key (default `F`) in the text viewer
    - Mouse clicks are ignored until you exit search mode
    - Prevents accidental scrolling while typing search terms
 

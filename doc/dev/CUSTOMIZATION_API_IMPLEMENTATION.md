@@ -60,30 +60,37 @@ and drives its own redraw. The table keeps that distinction explicitly —
 
 ## 2. Contexts
 
-Six contexts: `filer`, `text_viewer`, `image_viewer`, `diff_viewer`, `dir_diff`,
+Six contexts: `filer`, `text_viewer`, `image_viewer`, `file_diff`, `dir_diff`,
 and `common`. Every context inherits `common`, which holds `quit`, `help`,
-`search` and `edit_file` — the four names that mean something on every surface.
+`isearch` and `edit_file` — the four names that mean something on every surface.
 Each context supplies its own handler for an inherited name, which is how one
 `quit` binding closes a viewer here and quits the app there.
+
+`file_diff` rather than `diff_viewer` (which is what the module is called): the
+two diff surfaces are symmetric, and `diff_viewer` next to `dir_diff` never said
+which was which. A context is a user-facing name in `KEY_BINDINGS`, so it is
+named for the reader rather than after its module — `dir_diff` never matched
+`directory_diff_viewer.py` either.
 
 Dialogs (sort, rename, input, …) deliberately have no context. They are forms,
 not customization surfaces.
 
 ### Names, and why `KEY_BINDINGS` stayed flat
 
-`KEY_BINDINGS` is still one dictionary, so context lives in the name. Two kinds
-of name coexist:
+`KEY_BINDINGS` is still one dictionary, so context lives in the name. Every
+action a surface owns is dot-qualified with that surface — `file_diff.next_block`,
+`image_viewer.zoom_in`, `text_viewer.toggle_wrap`. The file list's own actions
+stay unqualified: `filer` is the namespace's incumbent, every config in existence
+binds `cursor_up` and `copy_files`, and letting the dot mean "not the file list"
+is worth more than uniformity.
 
-- **Unqualified**, for every action that predates the registry (`cursor_up`,
-  `toggle_wrap`, `image_zoom_in`). Existing configs bind these; renaming them
-  would break every config in the wild.
-- **Dot-qualified with the context**, for the actions named here for the first
-  time (`diff_viewer.next_block`, `text_viewer.scroll_up`). New names in a flat
-  namespace need a prefix, and the prefix may as well be the context.
-
-The design sketch wrote `diff.next_block`; this uses `diff_viewer.next_block`.
+The design sketch wrote `diff.next_block`; this uses `file_diff.next_block`.
 Making the prefix *exactly* the context name means the resolution rule is one
 sentence with no lookup table.
+
+Twelve actions that already existed had to be renamed to fit — the `image_*`
+family and the text viewer's three unprefixed names. See "Renamed actions"
+below.
 
 A nested `KEY_BINDINGS_BY_CONTEXT` was rejected in the design and is not here:
 two dictionaries with overlapping meaning, and every existing config would sit
@@ -101,8 +108,8 @@ in match order.
 
 Three sources feed it, each supplying keys for actions the previous one did not:
 
-1. **Context-qualified config entries** — `'diff_viewer.quit': ['x']`, where
-   `quit` is a registered name in that context and `diff_viewer.quit` is not.
+1. **Context-qualified config entries** — `'file_diff.quit': ['x']`, where
+   `quit` is a registered name in that context and `file_diff.quit` is not.
    A rebind scoped to one surface, so it wins over the unqualified one.
 2. **Config entries under the action's own registered name**, iterated in the
    config's own dict order.
@@ -132,14 +139,15 @@ Each action's default keys live in exactly one place:
 - An action already listed in the shipped `_config.py` template reads its
   defaults **from the template**, lazily, via `actions._template_bindings()`.
   There is no second copy to drift.
-- An action the template does not list (the dotted viewer ones, plus
-  `duplicate_files`, which is deliberately unbound) declares `default_keys` on
-  its `Action`.
+- An action the template does not list (the scroll/navigation actions the
+  viewers gained here, plus `duplicate_files`, which is deliberately unbound)
+  declares `default_keys` on its `Action`.
 
-The template documents the dotted actions and their defaults in a comment block
-rather than as live entries. Adding them as entries would have put them in the
-flat `_key_to_actions` table too, where they would compete with file-list keys
-in the context-free lookup that still exists.
+The template documents those in a comment block rather than as live entries.
+Adding them as entries would have put them in the flat `_key_to_actions` table
+too, where they would compete with file-list keys in the context-free lookup
+that still exists. The viewer actions the template *already* listed stay listed,
+under their current names — renaming a key is not the same as adding one.
 
 ### Compatibility
 
@@ -151,9 +159,9 @@ flat result must equal `filer`-context result.
 It holds because the template's dict order already put every file-list action
 ahead of every viewer-local one, so the flat lookup was already picking the
 file-list meaning of `W`, `-`, `↓` and the rest. What changes is that this no
-longer *depends* on dict order — a user config that happens to list
-`toggle_wrap` before `compare_selection` used to resolve `W` to the viewer
-action in the file list, and now cannot.
+longer *depends* on dict order — a user config that happens to list its wrap
+binding before `compare_selection` used to resolve `W` to the viewer action in
+the file list, and now cannot.
 
 ### Caching
 
@@ -295,9 +303,74 @@ open with no way to dismiss it.
 
 ---
 
+## 6b. Renamed actions
+
+Naming every key made the names already there worth auditing. Twenty-two were
+changed. Every old spelling survives as an entry in `Action.aliases`, so a config
+binding one still resolves to the action — that is the only thing making a
+rename possible at all, since every config generated from the template carries
+the nine `image_*` names.
+
+The user-facing table is in
+[`KEY_BINDINGS_FEATURE.md`](../KEY_BINDINGS_FEATURE.md#renamed-actions);
+`test_customization_api.py`'s `SHIPPED_RENAMES` is the authoritative list and is
+parameterized over, so an alias cannot be dropped by accident.
+
+Three groups:
+
+**The viewers' own actions gained their viewer's prefix.** `image_zoom_in` →
+`image_viewer.zoom_in`, and the text viewer's three unprefixed names →
+`text_viewer.*`. The `image_*` family was the dotted convention already, spelled
+with an underscore; the text viewer's was the same defect inverted — viewer-only
+behavior holding a generic name in a flat namespace. Both mattered for the same
+reason: `zoom_in` and `toggle_wrap` are concepts a *second* viewer could grow,
+and only the qualified form leaves the bare name available for that. `toggle_wrap`
+was already half-shared — `TextViewer` forwards it to a rich renderer that has
+its own wrap (`JsonView` does).
+
+**`image_scroll_*` became `image_viewer.pan_*`.** The code is `_pan_by`, the
+help says "pan", and the keys move a viewport over a zoomed image. Only the name
+was ever wrong.
+
+**Three unrelated things called "search" got names that distinguish them.**
+`search` → `isearch` (jump to a match as you type), `search_dialog` →
+`find_files`, `search_content` → `find_in_files`. Alongside that, `sort_menu` →
+`sort` (it opens a dialog; there is no menu), `drives_dialog` → `drives`
+(dropping a suffix that named the widget, which `favorites`/`history`/`programs`
+never had), `rename_file` → `rename` (it batch-renames a multi-selection), and
+the four selection toggles → `toggle_select_*`, which separates them from
+`select_all` / `unselect_all` — those set and clear outright rather than
+toggling, and `select_all` sitting one character from `select_all_items` hid
+that.
+
+The file list's other 60-odd actions were left alone. `filer` is the default
+context and the namespace's incumbent; prefixing `cursor_up` would churn every
+config alive to say what the absence of a dot already says.
+
+### How an alias resolves
+
+`ActionRegistry.canonical(context, name)` returns the current name for either
+spelling, backed by a per-context alias index rebuilt on `generation` change.
+`_context_entries` runs its config pass twice — current names first, then
+aliases — so a config carrying **both** spellings of an action resolves to the
+current one rather than to whichever it happened to list first; the stale entry
+is simply not reached. `_context_binding` walks the same order for one name.
+
+`config.deprecated_names_notice()` produces the nudge, as **one line** however
+many names are involved: a config predating several renames would otherwise open
+every session with a wall of warnings about bindings that all still work. A name
+the config spells both ways is not reported — the current spelling already wins,
+and telling someone to rename what they have already renamed is noise.
+
+Aliases are permanent, and an alias may never be reused for a different action —
+`test_no_alias_collides_with_a_current_name` enforces the second half.
+
 ## 7. Behavior changes
 
-Three, all deliberate:
+Four, all deliberate:
+
+0. **Twenty-two actions were renamed**, old names kept as aliases. See
+   "Renamed actions" above.
 
 1. **Viewer keys are rebindable.** The visible win of the refactor.
 

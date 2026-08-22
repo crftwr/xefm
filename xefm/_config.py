@@ -63,7 +63,7 @@ class Config:
     FONT_SIZE = 12  # point size for both faces (8-72)
 
     # Text viewer: the encodings offered by the viewer's encoding picker (the
-    # 'change_encoding' action, E). Automatic detection — UTF-8 with or without
+    # 'text_viewer.change_encoding' action, Shift-E). Automatic detection — UTF-8 with or without
     # BOM, UTF-16/32 by BOM, Shift-JIS, EUC-JP, ISO-2022-JP, CP1252 — is built
     # in and always the default; this list only feeds the manual picker, for
     # when detection gets a file wrong. Any Python codec name works here
@@ -267,12 +267,12 @@ class Config:
         'nav_right': ['RIGHT'],                # Right pane: go to parent, Left pane: switch to right pane
         
         # === File Selection ===
-        'select_file': ['SPACE'],              # Toggle selection of current file
-        'select_file_up': ['Shift-SPACE'],     # Toggle selection and move up
+        'toggle_select_down': ['SPACE'],              # Toggle selection of current file
+        'toggle_select_up': ['Shift-SPACE'],     # Toggle selection and move up
         'select_all': ['HOME'],                # Select all items (Home key)
         'unselect_all': ['END'],               # Unselect all items (End key)
-        'select_all_files': ['A'],             # Toggle selection of all files in current pane
-        'select_all_items': ['Shift-A'],       # Toggle selection of all items (files + dirs)
+        'toggle_select_files': ['A'],             # Toggle selection of all files in current pane
+        'toggle_select_items': ['Shift-A'],       # Toggle selection of all items (files + dirs)
         'cursor_next_selected': ['Ctrl-DOWN'], # Move cursor to the next selected item
         'cursor_prev_selected': ['Ctrl-UP'],   # Move cursor to the previous selected item
         
@@ -284,7 +284,7 @@ class Config:
         'copy_files': {'keys': ['C'], 'selection': 'required'},  # Copy selected files to other pane
         'move_files': {'keys': ['M'], 'selection': 'required'},  # Move selected files to other pane
         'delete_files': {'keys': ['K', 'DELETE'], 'selection': 'required'}, # Delete selected files/directories
-        'rename_file': ['R'],                  # Rename selected file/directory
+        'rename': ['R'],                  # Rename selected file/directory
         'create_file': ['Shift-E'],            # Create new file (prompts for filename)
         'create_directory': {'keys': ['M'], 'selection': 'none'},  # Create new directory (only when no files selected)
         
@@ -302,14 +302,14 @@ class Config:
         'extract_archive': ['U'],              # Extract selected archive file
         
         # === Search & Filter ===
-        'search': ['F'],                       # Enter incremental search mode (isearch)
-        'search_dialog': ['Shift-F'],          # Show filename search dialog
-        'search_content': ['Shift-G'],         # Show content search dialog (grep)
+        'isearch': ['F'],                       # Enter incremental search mode (isearch)
+        'find_files': ['Shift-F'],          # Show filename search dialog
+        'find_in_files': ['Shift-G'],         # Show content search dialog (grep)
         'filter': [';'],                       # Enter filter mode to show only matching files
         'clear_filter': [':'],                 # Clear current file filter
         
         # === Sorting ===
-        'sort_menu': ['S'],                    # Open the sort dialog (key + order)
+        'sort': ['S'],                    # Open the sort dialog (key + order)
         'quick_sort_name': ['1'],              # Quick sort by filename
         'quick_sort_ext': ['2'],               # Quick sort by file extension
         'quick_sort_size': ['3'],              # Quick sort by file size
@@ -319,7 +319,7 @@ class Config:
         'favorites': ['J'],                    # Show favorite directories dialog
         'jump_to_path': ['Shift-J'],           # Jump to path
         'history': ['H'],                      # Show history for current pane
-        'drives_dialog': ['D'],                # Show drives/volumes dialog
+        'drives': ['D'],                # Show drives/volumes dialog
         
         # === Pane Management ===
         'sync_current_to_other': ['O'],        # Sync current pane directory to other pane
@@ -338,26 +338,21 @@ class Config:
         'scroll_log_page_up': ['Shift-LEFT'],  # Scroll log pane up one page (to older messages)
         'scroll_log_page_down': ['Shift-RIGHT'], # Scroll log pane down one page (to newer messages)
         
-        # === Text / Diff Viewer ===
-        # Viewer-only actions. 'search' (F, above) opens incremental search inside
-        # the viewers too. 'toggle_wrap' intentionally shares 'W' with
-        # 'compare_selection': they never apply in the same context (file list vs.
-        # open viewer), and each context matches its own action by name via
-        # KeyBindings.is_action_for_event, so the shared key is unambiguous.
-        'toggle_wrap': ['W'],                  # Text viewer: toggle line wrapping
-        # 'M' likewise shares with 'move_files' / 'create_directory' (file list
-        # only); in an open viewer it toggles the raw text view and the file
-        # type's rich renderer (Markdown for *.md), matched by name in-context.
-        'toggle_view_mode': ['M'],             # Text viewer: toggle rendered (Markdown) / raw text
-        # 'Shift-E' likewise shares with 'create_file' (file list only); in the
-        # text viewer it opens the encoding picker — Auto plus the
-        # TEXT_ENCODINGS list above. Plain 'E' (edit_file, defined under File
+        # === Text Viewer ===
+        # Text-viewer-only actions. 'isearch' (F, above) opens incremental search
+        # inside the viewers too. These deliberately share keys with file-list
+        # actions -- 'W' with 'compare_selection', 'M' with 'move_files' /
+        # 'create_directory', 'Shift-E' with 'create_file'. The two surfaces never
+        # apply at once, and each only ever looks at its own context's actions, so
+        # a shared key is never ambiguous. Plain 'E' (edit_file, under File
         # Operations) works inside the text viewer too, editing the viewed file.
-        'change_encoding': ['Shift-E'],        # Text viewer: choose the text encoding (auto / explicit)
+        'text_viewer.toggle_wrap': ['W'],                  # Toggle line wrapping
+        'text_viewer.toggle_view_mode': ['M'],             # Toggle rendered (Markdown) / raw text
+        'text_viewer.change_encoding': ['Shift-E'],        # Choose the text encoding (auto / explicit)
 
         # === Image Viewer ===
-        # Image-viewer-only actions, matched by name in-context like the text
-        # viewer's above. '-' and '_' intentionally share with
+        # Image-viewer-only actions, scoped like the text viewer's above. '-' and
+        # '_' intentionally share with
         # 'reset_pane_boundary' / 'reset_log_height', and the arrow /
         # Shift-arrow keys with the file list's cursor and log-scroll actions:
         # all of those apply to the file list only, never to an open viewer,
@@ -365,15 +360,15 @@ class Config:
         # KeyBindings.is_action_for_event, so the shared keys are unambiguous.
         # Home/End jump to the first/last image and stay viewer-local (not
         # rebindable), like the text viewer's scroll keys.
-        'image_zoom_in': ['+', '='],           # Image viewer: zoom in ('=' is unshifted '+')
-        'image_zoom_out': ['-', '_'],          # Image viewer: zoom out
-        'image_zoom_reset': ['0'],             # Image viewer: fit the whole image to the window
-        'image_next': ['DOWN'],                # Image viewer: next image in the file list
-        'image_prev': ['UP'],                  # Image viewer: previous image in the file list
-        'image_scroll_up': ['Shift-UP'],       # Image viewer: pan up (while zoomed in)
-        'image_scroll_down': ['Shift-DOWN'],   # Image viewer: pan down
-        'image_scroll_left': ['Shift-LEFT'],   # Image viewer: pan left
-        'image_scroll_right': ['Shift-RIGHT'], # Image viewer: pan right
+        'image_viewer.zoom_in': ['+', '='],           # Image viewer: zoom in ('=' is unshifted '+')
+        'image_viewer.zoom_out': ['-', '_'],          # Image viewer: zoom out
+        'image_viewer.zoom_reset': ['0'],             # Image viewer: fit the whole image to the window
+        'image_viewer.next': ['DOWN'],                # Image viewer: next image in the file list
+        'image_viewer.prev': ['UP'],                  # Image viewer: previous image in the file list
+        'image_viewer.pan_up': ['Shift-UP'],       # Image viewer: pan up (while zoomed in)
+        'image_viewer.pan_down': ['Shift-DOWN'],   # Image viewer: pan down
+        'image_viewer.pan_left': ['Shift-LEFT'],   # Image viewer: pan left
+        'image_viewer.pan_right': ['Shift-RIGHT'], # Image viewer: pan right
 
         # === Display & Appearance ===
         'toggle_hidden': ['.'],                # Toggle visibility of hidden files (dotfiles, Windows hidden attribute)
@@ -404,17 +399,17 @@ class Config:
         # ever looks at its own names, a viewer action may share a key with a file
         # list action with no ambiguity at all. Their defaults:
         #
-        #   Text viewer                        Diff viewer
-        #     'text_viewer.scroll_up':  UP       'diff_viewer.scroll_up':      UP
-        #     'text_viewer.scroll_down': DOWN    'diff_viewer.scroll_down':    DOWN
-        #     'text_viewer.page_up':    PAGE_UP  'diff_viewer.page_up':        PAGE_UP
-        #     'text_viewer.page_down':  PAGE_DOWN 'diff_viewer.page_down':     PAGE_DOWN
-        #     'text_viewer.scroll_top': HOME     'diff_viewer.scroll_top':     HOME
-        #     'text_viewer.scroll_bottom': END   'diff_viewer.scroll_bottom':  END
-        #     'text_viewer.scroll_left': LEFT    'diff_viewer.scroll_left':    LEFT
-        #     'text_viewer.scroll_right': RIGHT  'diff_viewer.scroll_right':   RIGHT
-        #                                        'diff_viewer.next_block':     n
-        #   Image viewer                         'diff_viewer.prev_block':     N
+        #   Text viewer                        File diff
+        #     'text_viewer.scroll_up':  UP       'file_diff.scroll_up':      UP
+        #     'text_viewer.scroll_down': DOWN    'file_diff.scroll_down':    DOWN
+        #     'text_viewer.page_up':    PAGE_UP  'file_diff.page_up':        PAGE_UP
+        #     'text_viewer.page_down':  PAGE_DOWN 'file_diff.page_down':     PAGE_DOWN
+        #     'text_viewer.scroll_top': HOME     'file_diff.scroll_top':     HOME
+        #     'text_viewer.scroll_bottom': END   'file_diff.scroll_bottom':  END
+        #     'text_viewer.scroll_left': LEFT    'file_diff.scroll_left':    LEFT
+        #     'text_viewer.scroll_right': RIGHT  'file_diff.scroll_right':   RIGHT
+        #                                        'file_diff.next_block':     n
+        #   Image viewer                         'file_diff.prev_block':     Shift-N
         #     'image_viewer.first':     HOME
         #     'image_viewer.last':      END
         #
@@ -423,8 +418,8 @@ class Config:
         #     'dir_diff.cursor_down': DOWN      'dir_diff.collapse':    LEFT
         #     'dir_diff.page_up':     PAGE_UP   'dir_diff.activate':    ENTER
         #     'dir_diff.page_down':   PAGE_DOWN 'dir_diff.switch_side': TAB
-        #     'dir_diff.cursor_top':  HOME      'dir_diff.next_diff':   n
-        #     'dir_diff.cursor_bottom': END     'dir_diff.prev_diff':   Shift-N
+        #     'dir_diff.cursor_top':  HOME      'dir_diff.next_change': n
+        #     'dir_diff.cursor_bottom': END     'dir_diff.prev_change': Shift-N
         #     'dir_diff.rescan':      r         'dir_diff.split_left':  [
         #                                       'dir_diff.split_right': ]
         #
@@ -433,10 +428,10 @@ class Config:
         # 'text_viewer.page_up': ['B'],
         #
         # The same prefix also scopes a *shared* action to one viewer. 'quit',
-        # 'help', 'search' and 'edit_file' are understood everywhere, so rebinding
+        # 'help', 'isearch' and 'edit_file' are understood everywhere, so rebinding
         # 'quit' above changes it in the file list and in every viewer; writing
-        # 'diff_viewer.quit' changes it in the diff viewer alone:
-        # 'diff_viewer.quit': ['X'],
+        # 'file_diff.quit' changes it in the file diff viewer alone:
+        # 'file_diff.quit': ['X'],
     }
 
     # Windows has no Command key, and Alt-Enter is the platform fullscreen-toggle

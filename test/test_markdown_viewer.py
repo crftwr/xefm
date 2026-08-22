@@ -1,7 +1,7 @@
 """Markdown (rich) view mode of the built-in file viewer.
 
 The modal text viewer opens ``*.md`` files in raw text and toggles to a rendered
-Markdown view in place (PuiKit's ``MarkdownView``), via the ``toggle_view_mode``
+Markdown view in place (PuiKit's ``MarkdownView``), via the ``text_viewer.toggle_view_mode``
 action. The rich-renderer registry (``xefm.viewer_registry``) is the seam future
 formatted viewers (JSON, CSV, …) plug into. See
 doc/dev/MARKDOWN_VIEWER_IMPLEMENTATION.md.

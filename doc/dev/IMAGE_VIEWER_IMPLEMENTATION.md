@@ -314,7 +314,7 @@ rather than raised — one corrupt file should not make a directory unbrowsable.
 - `_config.py` gains an `image_*` binding block. `-` and `_` intentionally share
   with `reset_pane_boundary` / `reset_log_height`: those are file-list-only, and
   each context matches its own action *by name* through `is_action_for_event`,
-  the same pattern `toggle_wrap` uses to share `W`.
+  the same pattern `text_viewer.toggle_wrap` uses to share `W`.
 - `_pressed()` falls back to literal characters when an action is absent from
   `KEY_BINDINGS`, so a config merged from a template older than this viewer
   still works — mirroring `TextViewer._wrap_pressed`. Note the `[0]`:

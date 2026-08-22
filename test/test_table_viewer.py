@@ -1,7 +1,7 @@
 """CSV / TSV (rich) view mode of the built-in file viewer.
 
 The modal text viewer opens ``*.csv`` / ``*.tsv`` files in raw text and toggles
-to a ``TableView`` grid in place, via the ``toggle_view_mode`` action and the
+to a ``TableView`` grid in place, via the ``text_viewer.toggle_view_mode`` action and the
 rich-renderer registry (``xefm.viewer_registry``). The TableView widget's own
 behavior (frozen header, scroll, selection, search) is covered in PuiKit's
 test_table_view.py; these check XeFM wires it up, including the CSV vs TSV

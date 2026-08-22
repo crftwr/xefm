@@ -33,7 +33,7 @@ from puikit.widgets import Splitter, show_message_box
 from puikit.widgets.base import Widget
 
 from xefm import migemo_search
-from xefm.actions import DIFF_VIEWER as _CONTEXT
+from xefm.actions import FILE_DIFF as _CONTEXT
 from xefm.config import (find_action_for_event, format_key_for_display,
                          get_config, get_keys_for_action)
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
@@ -48,7 +48,7 @@ from puikit.text import display_width
 
 def _label(action: str, fallback: str = "") -> str:
     """Display label for ``action``'s keys **as this viewer resolves them** — in
-    the ``diff_viewer`` context, so a scoped rebind (``'diff_viewer.quit'``) and
+    the ``file_diff`` context, so a scoped rebind (``'file_diff.quit'``) and
     the action's built-in defaults both show up, formatted for the UI
     (``DOWN`` -> ↓)."""
     keys, _ = get_keys_for_action(action, _CONTEXT)
@@ -600,7 +600,7 @@ class DiffViewer(Widget):
         # text inset, matching the main window (and the other two viewers). Its rect
         # is captured so the ISearchBar can pin over it during a search.
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        search_k = _label("search", "F")
+        search_k = _label("isearch", "F")
         edit_k = _label("edit_file", "E")
         quit_k = _label("quit", "q")
         hint = (f" {len(self.rows)} rows · {len(self.blocks)} changes · "
@@ -635,7 +635,7 @@ class DiffViewer(Widget):
         if event.type is not EventType.KEY:
             return True
         # Every key this viewer understands is a named action in the
-        # ``diff_viewer`` context (xefm.actions) — the scroll keys and the n/N
+        # ``file_diff`` context (xefm.actions) — the scroll keys and the n/N
         # block jumps included, which used to be raw comparisons here and so
         # could not be rebound at all. Esc is the universal modal dismiss and
         # stays hardcoded. While a search is open the ISearchBar is the top
@@ -655,18 +655,18 @@ class DiffViewer(Widget):
         if self._handlers is None:
             self._handlers = {
                 "help": self._show_help,
-                "search": self._enter_search,
+                "isearch": self._enter_search,
                 "edit_file": self._edit_in_tool,
-                "diff_viewer.next_block": lambda: self._step_block(1),
-                "diff_viewer.prev_block": lambda: self._step_block(-1),
-                "diff_viewer.scroll_down": lambda: self._scroll(1),
-                "diff_viewer.scroll_up": lambda: self._scroll(-1),
-                "diff_viewer.page_down": lambda: self._scroll(self._view_h),
-                "diff_viewer.page_up": lambda: self._scroll(-self._view_h),
-                "diff_viewer.scroll_top": lambda: setattr(self, "top", 0.0),
-                "diff_viewer.scroll_bottom": self._scroll_bottom,
-                "diff_viewer.scroll_right": lambda: self._pan(4),
-                "diff_viewer.scroll_left": lambda: self._pan(-4),
+                "file_diff.next_block": lambda: self._step_block(1),
+                "file_diff.prev_block": lambda: self._step_block(-1),
+                "file_diff.scroll_down": lambda: self._scroll(1),
+                "file_diff.scroll_up": lambda: self._scroll(-1),
+                "file_diff.page_down": lambda: self._scroll(self._view_h),
+                "file_diff.page_up": lambda: self._scroll(-self._view_h),
+                "file_diff.scroll_top": lambda: setattr(self, "top", 0.0),
+                "file_diff.scroll_bottom": self._scroll_bottom,
+                "file_diff.scroll_right": lambda: self._pan(4),
+                "file_diff.scroll_left": lambda: self._pan(-4),
             }
         return self._handlers
 
@@ -683,14 +683,14 @@ class DiffViewer(Widget):
         if self._panel is None:
             return
         rows = [
-            (_pair("diff_viewer.scroll_up", "diff_viewer.scroll_down"), "scroll line"),
-            (_pair("diff_viewer.page_up", "diff_viewer.page_down"), "scroll page"),
-            (_pair("diff_viewer.scroll_top", "diff_viewer.scroll_bottom"), "top / bottom"),
-            (_pair("diff_viewer.scroll_left", "diff_viewer.scroll_right"),
+            (_pair("file_diff.scroll_up", "file_diff.scroll_down"), "scroll line"),
+            (_pair("file_diff.page_up", "file_diff.page_down"), "scroll page"),
+            (_pair("file_diff.scroll_top", "file_diff.scroll_bottom"), "top / bottom"),
+            (_pair("file_diff.scroll_left", "file_diff.scroll_right"),
              "scroll horizontally"),
-            (_pair("diff_viewer.next_block", "diff_viewer.prev_block"),
+            (_pair("file_diff.next_block", "file_diff.prev_block"),
              "next / prev diff block"),
-            (_label("search", "F"), "incremental search"),
+            (_label("isearch", "F"), "incremental search"),
             ("↑ / ↓ (in search)", "next / prev match"),
             (_label("edit_file", "E"), "edit both sides in $TEXT_DIFF"),
             ("Drag gutter", "move centre split"),

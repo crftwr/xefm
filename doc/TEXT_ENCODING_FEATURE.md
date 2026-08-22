@@ -28,7 +28,7 @@ a UTF-8 BOM never blocks a `^`-anchored match on the first line.
 
 ## Choosing an encoding manually
 
-Press `Shift-E` in the viewer (the `change_encoding` binding) to open the
+Press `Shift-E` in the viewer (the `text_viewer.change_encoding` binding) to open the
 encoding picker:
 
 - **Auto** — the default; the row also names what detection chose, so the
@@ -73,7 +73,7 @@ works — add `'koi8-r'`, `'gb2312'`, `'utf-16-le'`, or anything else you deal
 with. The list only feeds the manual picker; automatic detection is built in
 and unaffected.
 
-The `Shift-E` key is rebindable via `KEY_BINDINGS['change_encoding']` like any
+The `Shift-E` key is rebindable via `KEY_BINDINGS['text_viewer.change_encoding']` like any
 other action (see [Key Bindings](KEY_BINDINGS_FEATURE.md)).
 
 ## See also

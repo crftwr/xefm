@@ -2,7 +2,7 @@
 
 The modal text viewer opens ``*.json`` / ``*.jsonl`` / ``*.ndjson`` files in raw
 text and toggles to a collapsible ``JsonView`` tree in place, via the
-``toggle_view_mode`` action and the rich-renderer registry
+``text_viewer.toggle_view_mode`` action and the rich-renderer registry
 (``xefm.viewer_registry``). The JsonView widget's own behavior (expand/collapse,
 search, copy) is covered in PuiKit's test_json_view.py; these check XeFM wires it
 up and degrades gracefully on malformed JSON.
@@ -99,7 +99,7 @@ def test_draw_both_modes_no_crash(backend, json_file):
 
 
 def test_wrap_key_toggles_json_wrap(backend, json_file):
-    # In rich JSON mode the ``toggle_wrap`` binding (W) drives the JsonView's
+    # In rich JSON mode the ``text_viewer.toggle_wrap`` binding (W) drives the JsonView's
     # own line wrap instead of the raw-text wrap (issue #317).
     panel = Panel(backend)
     v = show_text_viewer(panel, json_file)

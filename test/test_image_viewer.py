@@ -418,7 +418,12 @@ def legacy_config(monkeypatch):
     freshly written one does."""
     cfg = DefaultConfig()
     bindings = dict(cfg.KEY_BINDINGS)
-    for action in ("image_next", "image_prev", "image_scroll_up",
+    # Both spellings: such a config predates the actions entirely, so it has
+    # neither the current name nor the old one an alias would still resolve.
+    for action in ("image_viewer.next", "image_viewer.prev",
+                   "image_viewer.pan_up", "image_viewer.pan_down",
+                   "image_viewer.pan_left", "image_viewer.pan_right",
+                   "image_next", "image_prev", "image_scroll_up",
                    "image_scroll_down", "image_scroll_left",
                    "image_scroll_right"):
         bindings.pop(action, None)

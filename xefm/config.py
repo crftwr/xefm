@@ -280,6 +280,12 @@ class KeyBindings:
            ``_copy_missing_fields`` can add a whole missing *field* to an old
            config but never a missing key inside ``KEY_BINDINGS``.
 
+        Sources 1 and 2 accept an action's **old** names as well as its current
+        one (``Action.aliases``), so a config written before a rename keeps
+        working. Current names are matched first, so a config carrying both
+        spellings gets the current one rather than whichever it happened to list
+        first.
+
         Only names the context understands (its own, plus the inherited
         ``common`` ones) are considered at all. That is the substantive change
         from the flat table: the file list can no longer be hijacked by a key
@@ -306,21 +312,28 @@ class KeyBindings:
             # scoped override of some shorter name.
             if registry.resolve(context, key_name) is not None:
                 continue
-            bare = key_name[len(prefix):]
-            if registry.resolve(context, bare) is None:
+            target = registry.canonical(context, key_name[len(prefix):])
+            if target is None or target in claimed:
                 continue
             keys, selection = self._binding_parts(binding)
-            self._add_entries(entries, keys, bare, selection)
-            claimed.add(bare)
+            self._add_entries(entries, keys, target, selection)
+            claimed.add(target)
 
-        for key_name, binding in self._bindings.items():
-            if not isinstance(key_name, str) or key_name in claimed:
-                continue
-            if registry.resolve(context, key_name) is None:
-                continue
-            keys, selection = self._binding_parts(binding)
-            self._add_entries(entries, keys, key_name, selection)
-            claimed.add(key_name)
+        # Current names before old ones, so a config carrying both spellings of
+        # a renamed action resolves to the current entry.
+        for exact_only in (True, False):
+            for key_name, binding in self._bindings.items():
+                if not isinstance(key_name, str):
+                    continue
+                if exact_only:
+                    target = key_name if registry.resolve(context, key_name) else None
+                else:
+                    target = registry.canonical(context, key_name)
+                if target is None or target in claimed:
+                    continue
+                keys, selection = self._binding_parts(binding)
+                self._add_entries(entries, keys, target, selection)
+                claimed.add(target)
 
         for action in registry.actions(context):
             if action.name in claimed:
@@ -336,17 +349,24 @@ class KeyBindings:
         three-source order as :meth:`_context_entries`."""
         from xefm.actions import registry
 
-        resolved = registry.resolve(context, action)
-        if resolved is None:
+        name = registry.canonical(context, action)
+        if name is None:
             # A name this context does not understand has no keys *here*, even
             # when KEY_BINDINGS binds it — otherwise this would disagree with
             # _context_entries, which never considers such a name at all.
             return ([], 'any')
-        qualified = f"{context}.{action}"
-        if qualified in self._bindings and registry.resolve(context, qualified) is None:
-            return self._binding_parts(self._bindings[qualified])
-        if action in self._bindings:
-            return self._binding_parts(self._bindings[action])
+        resolved = registry.resolve(context, name)
+        # Every spelling the config may have used, current first.
+        spellings = [name] + [old for old, current
+                              in registry.aliases_in(context).items()
+                              if current == name]
+        for spelling in spellings:
+            qualified = f"{context}.{spelling}"
+            if qualified in self._bindings and registry.resolve(context, qualified) is None:
+                return self._binding_parts(self._bindings[qualified])
+        for spelling in spellings:
+            if spelling in self._bindings:
+                return self._binding_parts(self._bindings[spelling])
         return (list(resolved.resolved_default_keys()),
                 resolved.resolved_selection())
 
@@ -394,11 +414,14 @@ class KeyBindings:
 
         Unlike :meth:`find_action_for_event` — which returns the single,
         globally-first action bound to a key — this tests one named action, so a
-        context (e.g. a viewer) can safely handle a key that another action also
-        uses elsewhere. The text viewer's ``toggle_wrap`` and the main file
-        manager's ``compare_selection`` both bind ``W``; the viewer asks
-        ``is_action_for_event(event, "toggle_wrap")`` and gets the right answer
-        regardless of dict order.
+        caller can safely handle a key that another action also uses elsewhere.
+        The text viewer's ``text_viewer.toggle_wrap`` and the file list's
+        ``compare_selection`` both bind ``W``; asking about one by name gets the
+        right answer regardless of dict order.
+
+        Passing a ``context`` is the better tool for that job now — a surface
+        resolving in its own context cannot see another's actions at all — but
+        this stays for callers that want to test a single name.
 
         Args:
             event: PuiKit ``Event``
@@ -911,9 +934,10 @@ def find_action_for_event(event, has_selection: bool = False,
 def is_action_for_event(event, action: str, has_selection: bool = False,
                         context: str | None = None) -> bool:
     """Whether ``event`` triggers a specific ``action`` (see
-    :meth:`KeyBindings.is_action_for_event`). Lets a context handle a key that a
-    different action also binds elsewhere — e.g. a viewer's ``toggle_wrap`` vs the
-    main file manager's ``compare_selection``, both on ``W``."""
+    :meth:`KeyBindings.is_action_for_event`). Lets a caller handle a key that a
+    different action also binds elsewhere — e.g. the text viewer's
+    ``text_viewer.toggle_wrap`` vs the file list's ``compare_selection``, both
+    on ``W``."""
     key_bindings = config_manager.get_key_bindings()
     return key_bindings.is_action_for_event(event, action, has_selection, context)
 
@@ -932,6 +956,51 @@ def get_keys_for_action(action: str, context: str | None = None) -> tuple:
     """
     key_bindings = config_manager.get_key_bindings()
     return key_bindings.get_keys_for_action(action, context)
+
+
+def deprecated_binding_names(bindings: dict) -> list[tuple[str, str]]:
+    """The ``(old_name, current_name)`` pairs a ``KEY_BINDINGS`` dict still uses.
+
+    An old name keeps working — that is what :attr:`xefm.actions.Action.aliases`
+    is for — so this is a nudge, not an error. It exists because a config is
+    hand-written and long-lived: the only way its owner learns a name has been
+    corrected is if XeFM says so.
+
+    A name the config spells *both* ways is not reported: the current spelling
+    already wins, and telling someone to rename what they have already renamed
+    would be noise.
+    """
+    from xefm.actions import registry, CONTEXTS
+
+    found: dict[str, str] = {}
+    for context in CONTEXTS:
+        aliases = registry.aliases_in(context)
+        for name in bindings:
+            if not isinstance(name, str):
+                continue
+            current = aliases.get(name)
+            if current is not None and current not in bindings:
+                found[name] = current
+    return sorted(found.items())
+
+
+def deprecated_names_notice(bindings: dict, limit: int = 3) -> str | None:
+    """One line naming the old action names a config still uses, or ``None``.
+
+    Deliberately one line however many there are: a config that predates several
+    renames would otherwise open every session with a wall of warnings about
+    bindings that all still work.
+    """
+    pairs = deprecated_binding_names(bindings)
+    if not pairs:
+        return None
+    shown = ", ".join(f"'{old}' -> '{new}'" for old, new in pairs[:limit])
+    more = len(pairs) - limit
+    if more > 0:
+        shown += f", and {more} more"
+    return (f"KEY_BINDINGS uses {len(pairs)} old action name(s) — they still "
+            f"work, but the current names are: {shown}. "
+            f"See doc/KEY_BINDINGS_FEATURE.md for the full list.")
 
 
 def keys_label_for_action(action: str, fallback: str = "",

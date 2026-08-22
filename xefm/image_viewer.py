@@ -477,10 +477,10 @@ class ImageViewer(Widget):
             parts.append("+/- zoom")
             if self.zoom > MIN_ZOOM:
                 parts.append(f"{_pan_keys_label()} pan")
-                parts.append(f"{_keys_display('image_zoom_reset', '0')} fit")
+                parts.append(f"{_keys_display('image_viewer.zoom_reset', '0')} fit")
         if len(self.paths) > 1:
-            parts.append(f"{_keys_display('image_prev', 'p')}"
-                         f"/{_keys_display('image_next', 'n')} prev·next")
+            parts.append(f"{_keys_display('image_viewer.prev', 'p')}"
+                         f"/{_keys_display('image_viewer.next', 'n')} prev·next")
         parts.append(f"{help_k} help")
         parts.append(f"{quit_k}/Esc close")
         return " " + " · ".join(parts) + " "
@@ -522,15 +522,15 @@ class ImageViewer(Widget):
         """This viewer's actions, by name."""
         if self._handlers is None:
             self._handlers = {
-                "image_zoom_in": lambda: self._zoom_by(ZOOM_STEP),
-                "image_zoom_out": lambda: self._zoom_by(1.0 / ZOOM_STEP),
-                "image_zoom_reset": self._zoom_reset,
-                "image_next": lambda: self._step_image(1),
-                "image_prev": lambda: self._step_image(-1),
-                "image_scroll_left": lambda: self._pan_by(-PAN_STEP, 0.0),
-                "image_scroll_right": lambda: self._pan_by(PAN_STEP, 0.0),
-                "image_scroll_up": lambda: self._pan_by(0.0, -PAN_STEP),
-                "image_scroll_down": lambda: self._pan_by(0.0, PAN_STEP),
+                "image_viewer.zoom_in": lambda: self._zoom_by(ZOOM_STEP),
+                "image_viewer.zoom_out": lambda: self._zoom_by(1.0 / ZOOM_STEP),
+                "image_viewer.zoom_reset": self._zoom_reset,
+                "image_viewer.next": lambda: self._step_image(1),
+                "image_viewer.prev": lambda: self._step_image(-1),
+                "image_viewer.pan_left": lambda: self._pan_by(-PAN_STEP, 0.0),
+                "image_viewer.pan_right": lambda: self._pan_by(PAN_STEP, 0.0),
+                "image_viewer.pan_up": lambda: self._pan_by(0.0, -PAN_STEP),
+                "image_viewer.pan_down": lambda: self._pan_by(0.0, PAN_STEP),
                 "image_viewer.first": lambda: self._step_image(-self.index),
                 "image_viewer.last": lambda: self._step_image(
                     len(self.paths) - 1 - self.index),
@@ -579,17 +579,17 @@ class ImageViewer(Widget):
         if self._panel is None:
             return
         rows = [
-            (_keys_display("image_zoom_in", "+"), "zoom in"),
-            (_keys_display("image_zoom_out", "-"), "zoom out"),
-            (_keys_display("image_zoom_reset", "0"), "fit to window"),
+            (_keys_display("image_viewer.zoom_in", "+"), "zoom in"),
+            (_keys_display("image_viewer.zoom_out", "-"), "zoom out"),
+            (_keys_display("image_viewer.zoom_reset", "0"), "fit to window"),
             (_pan_keys_label(), "pan (while zoomed in)"),
             ("drag", "pan with the mouse"),
             ("scroll", "zoom in / out"),
         ]
         if len(self.paths) > 1:
             rows += [
-                (_keys_display("image_next", "n"), "next image"),
-                (_keys_display("image_prev", "p"), "previous image"),
+                (_keys_display("image_viewer.next", "n"), "next image"),
+                (_keys_display("image_viewer.prev", "p"), "previous image"),
                 (f'{_keys_display("image_viewer.first")} / '
                  f'{_keys_display("image_viewer.last")}', "first / last image"),
             ]

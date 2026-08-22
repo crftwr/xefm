@@ -56,8 +56,9 @@ from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
 from xefm.background_shaders import SHADER_KINDS
-from xefm.config import (KeyBindings, config_manager, get_builtin_handler_for_file,
-                         get_config, get_favorite_directories, get_program_for_file,
+from xefm.config import (KeyBindings, config_manager, deprecated_names_notice,
+                         get_builtin_handler_for_file, get_config,
+                         get_favorite_directories, get_program_for_file,
                          has_explicit_association, keys_label_for_action)
 from xefm.dir_scan import is_hidden
 from xefm.disk_usage import UsageScan
@@ -837,14 +838,14 @@ class StatusBar(Widget):
         ("help", "help"),
         ("quit", "quit"),
         ("switch_pane", "switch"),
-        ("select_file", "select"),
+        ("toggle_select_down", "select"),
         ("open_item", "open"),
         ("go_parent", "parent"),
         ("copy_files", "copy"),
         ("move_files", "move"),
         ("delete_files", "delete"),
         ("create_directory", "mkdir"),
-        ("search", "find"),
+        ("isearch", "find"),
     )
 
     #: Shown in place of the hints while the footer isearch is open, so the bottom
@@ -1209,6 +1210,13 @@ class XeFMApp:
         notice = preview_notice(action_count, hook_count)
         if notice:
             self.log_info(notice)
+        # Action names that have been corrected since this config was written.
+        # The old spellings still resolve, so this is a nudge — and one line
+        # however many there are, since a config predating several renames would
+        # otherwise open every session with a wall of warnings.
+        renamed = deprecated_names_notice(getattr(config, "KEY_BINDINGS", None) or {})
+        if renamed:
+            self.log_info(f"Config warning: {renamed}")
 
     def _start_initial_listings(self) -> None:
         """Kick off the two startup listings, on worker threads like every other
@@ -2054,10 +2062,10 @@ class XeFMApp:
                 "cursor_prev_selected": (
                     lambda: self._focus_adjacent_selected(self.active_pane(), -1), True),
                 # --- selection (reuses FileListManager) ---
-                "select_file": (self._act_select_file, True),
-                "select_file_up": (self._act_select_file_up, True),
-                "select_all_files": (self._act_select_all_files, True),
-                "select_all_items": (self._act_select_all_items, True),
+                "toggle_select_down": (self._act_select_file, True),
+                "toggle_select_up": (self._act_select_file_up, True),
+                "toggle_select_files": (self._act_select_all_files, True),
+                "toggle_select_items": (self._act_select_all_items, True),
                 "select_all": (self._act_select_all, True),
                 "unselect_all": (self._act_unselect_all, True),
                 # --- navigation ---
@@ -2075,10 +2083,10 @@ class XeFMApp:
                 "quick_sort_size": (lambda: self._quick_sort("size"), True),
                 "quick_sort_date": (lambda: self._quick_sort("date"), True),
                 "quick_sort_ext": (lambda: self._quick_sort("ext"), True),
-                "sort_menu": (self.show_sort_menu, False),
+                "sort": (self.show_sort_menu, False),
                 "clear_filter": (self._act_clear_filter, True),
                 "filter": (self.enter_filter, False),
-                "search": (self.enter_isearch, False),
+                "isearch": (self.enter_isearch, False),
                 # --- layout ---
                 "adjust_pane_left": (
                     lambda: self._nudge(self.pane_splitter, -self._PANE_STEP), True),
@@ -2098,9 +2106,9 @@ class XeFMApp:
                     lambda: self.log.scroll_by(+self._LOG_PAGE), True),
                 # --- dialogs and pickers ---
                 "file_details": (self.file_details, False),
-                "drives_dialog": (self.show_drives, False),
-                "search_dialog": (self.show_search, False),
-                "search_content": (self.show_content_search, False),
+                "drives": (self.show_drives, False),
+                "find_files": (self.show_search, False),
+                "find_in_files": (self.show_content_search, False),
                 "history": (self.show_history, False),
                 "programs": (self.show_programs, False),
                 "favorites": (self.show_favorites, False),
@@ -2119,7 +2127,7 @@ class XeFMApp:
                 # --- file operations ---
                 "create_directory": (self.create_directory, False),
                 "create_file": (self.create_file, False),
-                "rename_file": (self.rename, False),
+                "rename": (self.rename, False),
                 "copy_names": (self.copy_names_to_clipboard, True),
                 "copy_paths": (self.copy_paths_to_clipboard, True),
                 "copy_files": (self.copy_files, None),
@@ -2486,7 +2494,7 @@ class XeFMApp:
             SEPARATOR,
             MenuItem("New Folder…", on_select=self.create_directory, shortcut=sc("create_directory")),
             MenuItem("New File…", on_select=self.create_file, shortcut=sc("create_file")),
-            MenuItem("Rename…", on_select=self.rename, enabled=has_files, shortcut=sc("rename_file")),
+            MenuItem("Rename…", on_select=self.rename, enabled=has_files, shortcut=sc("rename")),
             MenuItem("Duplicate", on_select=self.duplicate_files,
                      enabled=has_files, shortcut=sc("duplicate_files")),
             MenuItem("Copy to Other Pane", on_select=self.copy_files,
@@ -2519,7 +2527,7 @@ class XeFMApp:
                      shortcut=sc("go_parent")),
             MenuItem("Go to Favorite…", on_select=self.show_favorites, shortcut=sc("favorites")),
             MenuItem("Jump to Path…", on_select=self.jump_to_path, shortcut=sc("jump_to_path")),
-            MenuItem("Drives…", on_select=self.show_drives, shortcut=sc("drives_dialog")),
+            MenuItem("Drives…", on_select=self.show_drives, shortcut=sc("drives")),
             MenuItem("History…", on_select=self.show_history, shortcut=sc("history")),
             title="Go",
         )
@@ -2535,8 +2543,8 @@ class XeFMApp:
             title="Tools",
         )
         select_menu = Menu(
-            MenuItem("Toggle Selection", on_select=lambda: self._menu("select_file"),
-                     enabled=has_files, shortcut=sc("select_file")),
+            MenuItem("Toggle Selection", on_select=lambda: self._menu("toggle_select_down"),
+                     enabled=has_files, shortcut=sc("toggle_select_down")),
             MenuItem("Select All Items", on_select=lambda: self._menu("select_all"),
                      shortcut=sc("select_all")),
             MenuItem("Clear Selection", on_select=lambda: self._menu("unselect_all"),
@@ -2551,10 +2559,10 @@ class XeFMApp:
             title="Select",
         )
         view_menu = Menu(
-            MenuItem("Find…", on_select=self.enter_isearch, enabled=has_files, shortcut=sc("search")),
+            MenuItem("Find…", on_select=self.enter_isearch, enabled=has_files, shortcut=sc("isearch")),
             MenuItem("Filter…", on_select=self.enter_filter, shortcut=sc("filter")),
-            MenuItem("Search Files…", on_select=self.show_search, shortcut=sc("search_dialog")),
-            MenuItem("Search Content…", on_select=self.show_content_search, shortcut=sc("search_content")),
+            MenuItem("Search Files…", on_select=self.show_search, shortcut=sc("find_files")),
+            MenuItem("Search Content…", on_select=self.show_content_search, shortcut=sc("find_in_files")),
             SEPARATOR,
             MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),
                      checked=lambda: self.flm.show_hidden, shortcut=sc("toggle_hidden")),
@@ -5242,16 +5250,16 @@ class XeFMApp:
             ("nav_right", "Focus right pane / go to parent"),
             ("favorites", "Go to a favorite directory"),
             ("jump_to_path", "Jump to a typed path"),
-            ("drives_dialog", "Open the drives / locations picker"),
+            ("drives", "Open the drives / locations picker"),
             ("history", "Go to a recently-visited directory"),
             ("sync_current_to_other", "Go to the other pane's directory"),
             ("sync_other_to_current", "Send this directory to the other pane"),
         )),
         ("Selection", (
-            ("select_file", "Toggle selection, move down"),
-            ("select_file_up", "Toggle selection, move up"),
-            ("select_all_files", "Toggle all files"),
-            ("select_all_items", "Toggle all items"),
+            ("toggle_select_down", "Toggle selection, move down"),
+            ("toggle_select_up", "Toggle selection, move up"),
+            ("toggle_select_files", "Toggle all files"),
+            ("toggle_select_items", "Toggle all items"),
             ("select_all", "Select every item"),
             ("unselect_all", "Clear selection"),
             ("cursor_next_selected", "Move cursor to the next selected item"),
@@ -5261,7 +5269,7 @@ class XeFMApp:
         ("File Operations", (
             ("create_directory", "Create new directory"),
             ("create_file", "Create new file"),
-            ("rename_file", "Rename file/directory"),
+            ("rename", "Rename file/directory"),
             ("copy_files", "Copy selection to the other pane"),
             ("copy_names", "Copy selection's name(s) to the clipboard"),
             ("copy_paths", "Copy selection's full path(s) to the clipboard"),
@@ -5277,18 +5285,18 @@ class XeFMApp:
             ("programs", "Run an external program on the selection"),
         )),
         ("Search", (
-            ("search", "Incremental search (jump to match)"),
+            ("isearch", "Incremental search (jump to match)"),
             ("filter", "Filter list by filename pattern"),
             ("clear_filter", "Clear the filename filter"),
-            ("search_dialog", "Recursive filename search"),
-            ("search_content", "Recursive content (grep) search"),
+            ("find_files", "Recursive filename search"),
+            ("find_in_files", "Recursive content (grep) search"),
         )),
         ("View", (
             ("view_file", "View file (text viewer)"),
             ("diff_files", "Compare two selected files"),
             ("toggle_hidden", "Toggle hidden files"),
             ("toggle_color_scheme", "Cycle color theme"),
-            ("sort_menu", "Sort dialog (key F/E/S/T + order)"),
+            ("sort", "Sort dialog (key F/E/S/T + order)"),
             ("quick_sort_name", "Quick-sort by name (repeat: reverse)"),
             ("quick_sort_size", "Quick-sort by size (repeat: reverse)"),
             ("quick_sort_date", "Quick-sort by date (repeat: reverse)"),
@@ -5305,12 +5313,17 @@ class XeFMApp:
 
     def _keys_label(self, action: str) -> str:
         """Comma-joined, display-formatted key(s) bound to ``action`` ("—" if
-        unbound), for the help dialog. Resolved in the ``filer`` context, so the
-        help shows what the file list will actually do with the key."""
-        keys, _ = self.keys.get_keys_for_action(action, _ctx.FILER)
-        if not keys:
-            return "—"
-        return ", ".join(self.keys.format_key_for_display(k) for k in keys)
+        unbound), for the help dialog and the tips.
+
+        The ``filer`` context answers first, so the help — which lists file-list
+        actions — shows what the file list will do with the key. Falling through
+        to the other contexts is for the tips, which talk about the viewers too
+        (``{key:image_viewer.next}``) and would otherwise render those as "—"."""
+        for context in (_ctx.FILER,) + _ctx.CONTEXTS:
+            keys, _ = self.keys.get_keys_for_action(action, context)
+            if keys:
+                return ", ".join(self.keys.format_key_for_display(k) for k in keys)
+        return "—"
 
     def show_help(self) -> None:
         """A scrollable key-binding reference, built live from the port's keymap.
@@ -5430,7 +5443,7 @@ class XeFMApp:
             MenuItem("Open", on_select=lambda: self._menu("open_item")),
             MenuItem("View File", on_select=self.view_file, enabled=entry is not None),
             MenuItem("Deselect" if selected else "Select",
-                     on_select=lambda: self._menu("select_file")),
+                     on_select=lambda: self._menu("toggle_select_down")),
             SEPARATOR,
             MenuItem("Rename…", on_select=self.rename, enabled=entry is not None),
             MenuItem("Duplicate", on_select=self.duplicate_files, enabled=entry is not None),

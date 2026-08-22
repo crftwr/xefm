@@ -31,10 +31,10 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
         self.assertEqual(self.action(key("q", "q")), "quit")
 
     def test_letter_lowercase_vs_shift(self):
-        # 'A' bound to select_all_files; 'Shift-A' bound to select_all_items.
-        self.assertEqual(self.action(key("a", "a")), "select_all_files")
+        # 'A' bound to toggle_select_files; 'Shift-A' to toggle_select_items.
+        self.assertEqual(self.action(key("a", "a")), "toggle_select_files")
         self.assertEqual(
-            self.action(key("a", "A", {"shift"})), "select_all_items"
+            self.action(key("a", "A", {"shift"})), "toggle_select_items"
         )
 
     def test_letter_with_selection_requirement(self):
@@ -74,9 +74,9 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
 
     # --- space vs shift-space (named key, shift significant) ----------------
     def test_space_and_shift_space(self):
-        self.assertEqual(self.action(key("space", " ")), "select_file")
+        self.assertEqual(self.action(key("space", " ")), "toggle_select_down")
         self.assertEqual(
-            self.action(key("space", " ", {"shift"})), "select_file_up"
+            self.action(key("space", " ", {"shift"})), "toggle_select_up"
         )
 
     # --- punctuation & digits (char mode, ignore shift/alt) -----------------

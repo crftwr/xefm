@@ -126,15 +126,15 @@ The zoom, navigation, and pan keys are rebindable in your config's
 
 ```python
 KEY_BINDINGS = {
-    'image_zoom_in':      ['+', '='],
-    'image_zoom_out':     ['-', '_'],
-    'image_zoom_reset':   ['0'],
-    'image_next':         ['DOWN'],
-    'image_prev':         ['UP'],
-    'image_scroll_up':    ['Shift-UP'],
-    'image_scroll_down':  ['Shift-DOWN'],
-    'image_scroll_left':  ['Shift-LEFT'],
-    'image_scroll_right': ['Shift-RIGHT'],
+    'image_viewer.zoom_in':      ['+', '='],
+    'image_viewer.zoom_out':     ['-', '_'],
+    'image_viewer.zoom_reset':   ['0'],
+    'image_viewer.next':         ['DOWN'],
+    'image_viewer.prev':         ['UP'],
+    'image_viewer.pan_up':    ['Shift-UP'],
+    'image_viewer.pan_down':  ['Shift-DOWN'],
+    'image_viewer.pan_left':  ['Shift-LEFT'],
+    'image_viewer.pan_right': ['Shift-RIGHT'],
 }
 ```
 

@@ -20,6 +20,10 @@ Three things it lets you do:
 - **Run your own function when something happens** — at startup, on quit, when a
   pane changes directory, when a file is opened.
 
+Naming every key also meant correcting some names that were already there. Old
+names keep working — see
+[Renamed actions](KEY_BINDINGS_FEATURE.md#renamed-actions) for the list.
+
 ---
 
 ## Rebinding viewer keys
@@ -38,8 +42,8 @@ KEY_BINDINGS = {
     ...
     'text_viewer.page_down': ['SPACE'],   # page with Space in the text viewer
     'text_viewer.page_up': ['B'],
-    'diff_viewer.next_block': ['J'],
-    'diff_viewer.prev_block': ['Shift-J'],
+    'file_diff.next_block': ['J'],
+    'file_diff.prev_block': ['Shift-J'],
 }
 ```
 
@@ -55,51 +59,56 @@ List both if you want both — `['SPACE', 'PAGE_DOWN']`.
 
 ### Every viewer action and its default
 
-| Text viewer | | Diff viewer | |
+| Text viewer | | File diff | |
 |---|---|---|---|
-| `text_viewer.scroll_up` | ↑ | `diff_viewer.scroll_up` | ↑ |
-| `text_viewer.scroll_down` | ↓ | `diff_viewer.scroll_down` | ↓ |
-| `text_viewer.page_up` | PgUp | `diff_viewer.page_up` | PgUp |
-| `text_viewer.page_down` | PgDn | `diff_viewer.page_down` | PgDn |
-| `text_viewer.scroll_top` | Home | `diff_viewer.scroll_top` | Home |
-| `text_viewer.scroll_bottom` | End | `diff_viewer.scroll_bottom` | End |
-| `text_viewer.scroll_left` | ← | `diff_viewer.scroll_left` | ← |
-| `text_viewer.scroll_right` | → | `diff_viewer.scroll_right` | → |
-| | | `diff_viewer.next_block` | n |
-| | | `diff_viewer.prev_block` | Shift-N |
+| `text_viewer.scroll_up` | ↑ | `file_diff.scroll_up` | ↑ |
+| `text_viewer.scroll_down` | ↓ | `file_diff.scroll_down` | ↓ |
+| `text_viewer.page_up` | PgUp | `file_diff.page_up` | PgUp |
+| `text_viewer.page_down` | PgDn | `file_diff.page_down` | PgDn |
+| `text_viewer.scroll_top` | Home | `file_diff.scroll_top` | Home |
+| `text_viewer.scroll_bottom` | End | `file_diff.scroll_bottom` | End |
+| `text_viewer.scroll_left` | ← | `file_diff.scroll_left` | ← |
+| `text_viewer.scroll_right` | → | `file_diff.scroll_right` | → |
+| `text_viewer.toggle_wrap` \* | W | `file_diff.next_block` | n |
+| `text_viewer.toggle_view_mode` \* | M | `file_diff.prev_block` | Shift-N |
+| `text_viewer.change_encoding` \* | Shift-E | | |
 
 | Image viewer | | Directory diff | |
 |---|---|---|---|
-| `image_viewer.first` | Home | `dir_diff.cursor_up` | ↑ |
-| `image_viewer.last` | End | `dir_diff.cursor_down` | ↓ |
-| | | `dir_diff.page_up` | PgUp |
-| | | `dir_diff.page_down` | PgDn |
-| | | `dir_diff.cursor_top` | Home |
-| | | `dir_diff.cursor_bottom` | End |
-| | | `dir_diff.expand` | → |
-| | | `dir_diff.collapse` | ← |
-| | | `dir_diff.activate` | Enter |
-| | | `dir_diff.switch_side` | Tab |
-| | | `dir_diff.next_diff` | n |
-| | | `dir_diff.prev_diff` | Shift-N |
+| `image_viewer.zoom_in` \* | + = | `dir_diff.cursor_up` | ↑ |
+| `image_viewer.zoom_out` \* | - _ | `dir_diff.cursor_down` | ↓ |
+| `image_viewer.zoom_reset` \* | 0 | `dir_diff.page_up` | PgUp |
+| `image_viewer.next` \* | ↓ | `dir_diff.page_down` | PgDn |
+| `image_viewer.prev` \* | ↑ | `dir_diff.cursor_top` | Home |
+| `image_viewer.pan_up` \* | Shift-↑ | `dir_diff.cursor_bottom` | End |
+| `image_viewer.pan_down` \* | Shift-↓ | `dir_diff.expand` | → |
+| `image_viewer.pan_left` \* | Shift-← | `dir_diff.collapse` | ← |
+| `image_viewer.pan_right` \* | Shift-→ | `dir_diff.activate` | Enter |
+| `image_viewer.first` | Home | `dir_diff.switch_side` | Tab |
+| `image_viewer.last` | End | `dir_diff.next_change` | n |
+| | | `dir_diff.prev_change` | Shift-N |
 | | | `dir_diff.rescan` | r |
 | | | `dir_diff.split_left` | [ |
 | | | `dir_diff.split_right` | ] |
 
-The image viewer's zoom, pan and step actions (`image_zoom_in`, `image_next`,
-`image_scroll_up`, …) and the text viewer's `toggle_wrap`, `toggle_view_mode`
-and `change_encoding` were already in `KEY_BINDINGS` and are unchanged.
+\* These are listed as live entries in the default `KEY_BINDINGS`, so a config
+generated from the template already has them. The rest work from the defaults
+above with no entry at all.
+
+The directory diff also understands the file-list actions it can perform on the
+focused node — `copy_files`, `move_files`, `delete_files`, `view_file` and
+`edit_file` — under those same names, so one rebind moves both.
 
 ### Rebinding a shared key in one place only
 
-`quit`, `help`, `search` and `edit_file` mean something on every surface, which
+`quit`, `help`, `isearch` and `edit_file` mean something on every surface, which
 is why rebinding `quit` changes it in the file list *and* in every viewer. To
 change it in one viewer alone, prefix it with that viewer's name:
 
 ```python
 KEY_BINDINGS = {
-    'quit': ['Q'],              # everywhere...
-    'diff_viewer.quit': ['X'],  # ...except in the diff viewer
+    'quit': ['Q'],            # everywhere...
+    'file_diff.quit': ['X'],  # ...except in the file diff viewer
 }
 ```
 

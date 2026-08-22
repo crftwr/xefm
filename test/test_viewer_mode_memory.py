@@ -2,7 +2,7 @@
 
 The modal file viewer opens rich-renderable files (``*.md`` today) either raw
 (plain text + syntax highlighting) or in a rendered "rich" view, toggled with the
-``toggle_view_mode`` action. This suite covers remembering that choice per file
+``text_viewer.toggle_view_mode`` action. This suite covers remembering that choice per file
 *extension* through the state manager, so a type reopens in the mode last chosen
 for it — and that types with no rich renderer never persist anything.
 

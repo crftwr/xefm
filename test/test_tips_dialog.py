@@ -92,11 +92,17 @@ class TipsDialogApp(unittest.TestCase):
         # action deliberately shipped unbound (edit_config) must not appear in
         # a tip as a key reference in the first place.
         from xefm._config import Config
+        from xefm.actions import CONTEXTS
+        from xefm.config import KeyBindings
+        keys = KeyBindings(Config.KEY_BINDINGS)
         for action in sorted(referenced_actions()):
-            binding = Config.KEY_BINDINGS.get(action)
-            if isinstance(binding, dict):
-                binding = binding.get("keys")
-            self.assertTrue(binding,
+            # Resolved per context, since a viewer action is only bound within
+            # its own — and so an action named by its *old* spelling still
+            # resolves, which would hide a stale name from this check. Tips must
+            # use current names.
+            bound = any(keys.get_keys_for_action(action, context)[0]
+                        for context in CONTEXTS)
+            self.assertTrue(bound,
                             f"tip references unbound/unknown action {action!r}")
 
     # --- draw / layout -------------------------------------------------------
