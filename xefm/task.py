@@ -34,8 +34,11 @@ from puikit.widgets import BusyIndicator, ProgressBar, show_message_box
 from puikit.widgets.base import Widget
 
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
+from xefm.log_manager import getLogger
 from xefm.progress_manager import ProgressManager
 from xefm.str_format import abbreviate_path, format_size
+
+logger = getLogger("TaskMgr")
 
 #: Transfer rows the progress dialog reserves — the local copy pool's size.
 #: A wider pool (S3) folds its overflow into a final "… N more files" row.
@@ -175,7 +178,10 @@ class TaskManager:
         spawn the worker, and pump the bridge + repaint each frame, closing the
         dialog and calling ``on_done(result)`` on the main thread when it ends. In
         synchronous mode (tests): run inline, ``ask`` resolves to its headless
-        default, no dialog, ``on_done`` fires immediately."""
+        default, no dialog, ``on_done`` fires immediately. A backend that cannot
+        drive animation ticks gets the synchronous treatment too — with no tick
+        there would be nothing to pump prompts, service Cancel, or close the
+        dialog."""
         self.tasks.append(task)
 
         if not background:
@@ -200,8 +206,6 @@ class TaskManager:
             finally:
                 finished.set()
 
-        threading.Thread(target=worker, name=f"xefm-task-{task.id}", daemon=True).start()
-
         def tick() -> bool:
             # Main thread: service at most one pending prompt (sequential), repaint
             # the live dialog, and on completion tear down + report the result.
@@ -209,13 +213,37 @@ class TaskManager:
             if not finished.is_set():
                 panel.render()
                 return True
+            # Teardown runs exactly once (the tick unregisters below), so it must
+            # not be derailed: close first, and keep an on_done failure from
+            # escaping into the backend's tick dispatch.
             dialog.close()
             self._finish(task)
             if on_done is not None:
-                on_done(task.result or _empty_result())
+                try:
+                    on_done(task.result or _empty_result())
+                except Exception as exc:  # noqa: BLE001 — logged, teardown completes
+                    logger.error(f"Task completion callback failed: {exc}")
+            # One repaint so the closed dialog leaves the screen even when
+            # on_done did not render (or was None / raised).
+            panel.render()
             return False
 
-        panel.request_animation_ticks(tick)
+        # Register the tick before the worker exists: if this backend cannot
+        # drive frame ticks, nothing would ever pump the prompt bridge, service
+        # Cancel, or close the dialog — the worker would mutate the filesystem
+        # behind a dialog that can never be dismissed. Fall back to running the
+        # task inline (prompts resolve to their headless defaults), exactly as
+        # the synchronous mode above does.
+        if not panel.request_animation_ticks(tick):
+            dialog.close()
+            task._headless = True
+            result = self._run_inline(task, run)
+            self._finish(task)
+            if on_done is not None:
+                on_done(result)
+            return task
+
+        threading.Thread(target=worker, name=f"xefm-task-{task.id}", daemon=True).start()
         return task
 
     @staticmethod
@@ -274,6 +302,9 @@ class ProgressDialog(Widget):
         self._request_in_flight = False
         #: True while the cancel-confirm box is up, so Esc doesn't stack another.
         self._confirming_cancel = False
+        #: The open cancel-confirm box itself, so close() can dismiss it along
+        #: with the dialog — its question is moot once the task has ended.
+        self._cancel_box: Any = None
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -294,9 +325,20 @@ class ProgressDialog(Widget):
         animate_open(panel, self, OPEN_MS_VIEWER)
 
     def close(self) -> None:
+        """Remove this dialog's layer — and the cancel-confirm box, if one is
+        still open above it. Removal is by identity, wherever each layer sits:
+        the dialog is *not* necessarily topmost at teardown (the task can
+        finish while the confirm box is covering it), and the old "pop only if
+        topmost" guard then silently skipped the pop, stranding the dialog on
+        screen with nothing left to ever close it (#333)."""
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+        if panel is None:
+            return
+        if self._cancel_box is not None:
+            panel.remove_layer(self._cancel_box)
+            self._cancel_box = None
+            self._confirming_cancel = False
+        panel.remove_layer(self)
 
     # --- bridge pump (main thread) -------------------------------------------
 
@@ -446,12 +488,13 @@ class ProgressDialog(Widget):
 
         def on_result(label: str) -> None:
             self._confirming_cancel = False
+            self._cancel_box = None
             if label == "Cancel operation":
                 self.task.request_cancel()
             if self._panel is not None:
                 self._panel.render()
 
-        show_message_box(
+        self._cancel_box = show_message_box(
             self._panel, f"Cancel {self.task.title.rstrip('… ')}?",
             title="Cancel", icon="warning",
             buttons=("Cancel operation", "Keep running"),
