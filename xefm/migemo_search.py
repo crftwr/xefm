@@ -144,6 +144,18 @@ def _word_expansion(engine, word: str) -> str:
     return '(?:' + '|'.join(alts) + ')'
 
 
+def _words_expansion(engine, words, min_length: int) -> str:
+    """The concatenated expansion for a word split: each word expanded
+    lowercased, words under the gate as escaped literals — expanding 1-2
+    character words is the seconds-slow path, and inside a camel pattern
+    (``abC``) they'd dodge the whole-pattern gate."""
+    return ''.join(
+        _word_expansion(engine, w.lower()) if len(w) >= min_length
+        else re.escape(w)
+        for w in words
+    )
+
+
 @lru_cache(maxsize=256)
 def _compiled(pattern: str, min_length: int) -> re.Pattern | None:
     """The compiled Migemo regex for ``pattern``, or ``None``. Cached per
@@ -156,21 +168,27 @@ def _compiled(pattern: str, min_length: int) -> re.Pattern | None:
     so ``Mudai`` would expand without 無題 (the cfiler#9 confusion) and an
     all-caps word can expand to a degenerate alternative (``KENSAKU`` ->
     ``(ＫＥＮＳＡＫＵ|KE)``) that, under IGNORECASE, floods the result with
-    every name containing "ke". Words shorter than the gate stay escaped
-    literals — expanding 1-2 char words is the seconds-slow path, and inside
-    a camel pattern (``abC``) they'd dodge the whole-pattern gate.
-    ``IGNORECASE`` keeps the regex as forgiving as the callers' lowercased
-    native matching."""
+    every name containing "ke".
+
+    A mixed-case pattern is ambiguous: ``TenkiYohou`` means two camel words,
+    but ``Sa-bisu`` is one word typed with a capital — and the camel split
+    (``Sa`` + ``-bisu``) demands a literal ``Sa`` no Japanese text contains.
+    Migemo is additive, so both readings are expanded and unioned: the camel
+    split, and the whole pattern lowercased. ``IGNORECASE`` keeps the regex
+    as forgiving as the callers' lowercased native matching."""
     engine = _load_engine()
     if engine is None:
         return None
     try:
-        words = engine.parse_query(pattern)
-        expansion = ''.join(
-            _word_expansion(engine, w.lower()) if len(w) >= min_length
-            else re.escape(w)
-            for w in words
-        )
+        expansion = _words_expansion(engine, engine.parse_query(pattern),
+                                     min_length)
+        lower = pattern.lower()
+        if lower != pattern:
+            whole = _words_expansion(engine, engine.parse_query(lower),
+                                     min_length)
+            if whole and whole != expansion:
+                expansion = (f"(?:{expansion})|(?:{whole})" if expansion
+                             else whole)
         if not expansion:
             # e.g. an all-whitespace pattern: re.compile('') matches
             # everything, which would light up every row.

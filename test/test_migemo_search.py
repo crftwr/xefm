@@ -133,6 +133,18 @@ def test_capitalization_reaches_the_same_expansion():
 
 
 @needs_migemo
+def test_mixed_case_word_is_not_only_a_camel_split():
+    # 'Sa-bisu' camel-splits into ['Sa', '-bisu'], whose literal 'Sa' no
+    # Japanese text contains — the whole-pattern-lowercased reading is
+    # unioned in, so a word typed with capitals still finds its katakana.
+    assert migemo_search.match("Sa-bisu", "サービス")
+    assert migemo_search.match("SA-BISU", "サービス")
+    assert migemo_search.match("Sa-Bisu", "サービス")
+    # The camel reading itself must survive the union.
+    assert migemo_search.match("TenkiYohou", "天気予報.csv")
+
+
+@needs_migemo
 def test_uppercase_does_not_flood_match():
     # pymigemo expands 'KENSAKU' to '(ＫＥＮＳＡＫＵ|KE)'; under IGNORECASE
     # that would match every name containing "ke". The lowercased per-word

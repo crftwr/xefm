@@ -60,6 +60,13 @@ dodge the whole-pattern gate. The result compiles with `re.IGNORECASE` and is
 cached per `(pattern, gate)` in an `lru_cache` — generation is the expensive
 step; matching is cheap.
 
+A mixed-case pattern is ambiguous: `TenkiYohou` means two camel words, but
+`Sa-bisu` is one word typed with a capital — and its camel split
+(`Sa` + `-bisu`) demands a literal `Sa` no Japanese text contains. Since
+Migemo is additive, both readings are expanded and unioned: the camel split
+and the whole pattern lowercased (skipped when they agree, which is every
+single-word and all-lowercase pattern).
+
 A third pymigemo defect is repaired per word (`_word_expansion`): its
 expansions stop at hiragana, where C/Migemo also unions the katakana and
 half-width-katakana forms — so `kensaku` could never find `ケンサク`, nor
