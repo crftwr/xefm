@@ -42,8 +42,13 @@ run the child process, then restore the renderer and stdio in a `finally` block.
   `~/.xefm/tools/` (user tools, highest priority) then the `tools/` directory
   next to the module (bundled tools; `xefm/tools/` in a source checkout). Returns
   the original name if not found, so execution fails later with a clear error.
-- `xefm_python` — path to the correct Python interpreter, accounting for the
-  macOS app bundle where a bundled `python3` lives inside the `.app`.
+- `xefm_python` — path to the correct Python interpreter, resolved once at
+  import by `_resolve_xefm_python()`. In an app bundle `sys.executable` names
+  the bundle's own launcher, which ignores a script argument, so each bundle
+  gets the interpreter shipped inside it: `Contents/Frameworks/`
+  `Python.framework/bin/python3` on macOS, `runtime\pythonw.exe` on Windows
+  (`pythonw`, not `python`, so a GUI-subsystem app flashes no console).
+  Everywhere else it is `sys.executable`.
 - `build_xefm_env(left_pane, right_pane, current_pane, other_pane)` — the
   `XEFM_*` variables as a dict, ready to merge into a subprocess environment.
   The single source of truth, shared by `_run_program`, the legacy manager,
