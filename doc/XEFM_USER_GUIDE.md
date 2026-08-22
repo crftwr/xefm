@@ -334,6 +334,8 @@ See [Sort Dialog Feature](SORT_DIALOG_FEATURE.md) for the dialog's controls
 
 ### Search Tips
 - **Incremental search**: Start typing to filter files immediately
+- **Japanese by romaji (Migemo)**: In incremental search, typing `kensaku`
+  also finds `検索` — no IME needed. See [Migemo Search](MIGEMO_SEARCH_FEATURE.md).
 - **Pattern filtering**: Use wildcards like `*.txt` or `test_*`
 - **Filename search (Shift-F)**: The query is an *exact* glob matched against the
   whole filename — `report.txt` matches only that name. Add wildcards for partial
@@ -713,6 +715,7 @@ For detailed information about specific features, see these dedicated guides:
 ### Navigation and Search
 - [Navigation Dialogs Feature](NAVIGATION_DIALOGS_FEATURE.md) - Favorites, jump, history, and drives pickers
 - [Tab Completion Feature](TAB_COMPLETION_FEATURE.md) - Path completion in input dialogs
+- [Migemo Search Feature](MIGEMO_SEARCH_FEATURE.md) - Japanese matching from typed romaji in incremental search
 - [Search Animation Feature](SEARCH_ANIMATION_FEATURE.md) - Progress indicators during search
 
 ### Viewers

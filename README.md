@@ -128,6 +128,7 @@ macOS / Windows app bundles.
 - **[SFTP Support](doc/SFTP_SUPPORT_FEATURE.md)** - Remote server access via SSH with file operations and search
 - **[AWS S3 Support](doc/S3_SUPPORT_FEATURE.md)** - Cloud storage integration and S3 bucket management
 - **[Archives](doc/ARCHIVE_FEATURE.md)** - Create, extract, and browse archives as directories
+- **[Migemo Search](doc/MIGEMO_SEARCH_FEATURE.md)** - Japanese matching from typed romaji in incremental search
 - **[Search Animation](doc/SEARCH_ANIMATION_FEATURE.md)** - Advanced search features and visual feedback
 
 ### Developer Documentation

@@ -296,3 +296,16 @@ def test_search_key_ignored_by_renderer_in_rich_mode(backend, md_file):
     handled = v.handle_event(_key("f", "f"))
     assert handled is True
     assert v._isearch.active
+
+
+def test_rich_widget_gets_migemo_matcher(backend, md_file):
+    # The viewer hands its rich renderer the Migemo matcher on build, so
+    # rich-mode isearch matches romaji like raw mode does (discussion #332).
+    from xefm import migemo_search
+
+    panel = Panel(backend)
+    v = show_text_viewer(panel, md_file)
+    panel.render()
+    v._toggle_view_mode()
+    assert v.mode == "rich"
+    assert v._rich_widget.search_matcher is migemo_search.find_spans

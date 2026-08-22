@@ -662,6 +662,13 @@ class ConfigManager:
         if not isinstance(config.REDUCED_MOTION, bool):
             errors.append("REDUCED_MOTION must be a boolean")
 
+        # Validate incremental search settings
+        if not isinstance(config.MIGEMO_SEARCH, bool):
+            errors.append("MIGEMO_SEARCH must be a boolean")
+
+        if not isinstance(config.MIGEMO_MIN_LENGTH, int) or config.MIGEMO_MIN_LENGTH < 1:
+            errors.append("MIGEMO_MIN_LENGTH must be a positive integer")
+
         # Validate file monitoring settings
         if not isinstance(config.FILE_MONITORING_ENABLED, bool):
             errors.append("FILE_MONITORING_ENABLED must be a boolean")

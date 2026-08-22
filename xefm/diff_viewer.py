@@ -32,6 +32,7 @@ from puikit.panel import Rect
 from puikit.widgets import Splitter, show_message_box
 from puikit.widgets.base import Widget
 
+from xefm import migemo_search
 from xefm.config import get_config, is_action_for_event, keys_label_for_action
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
@@ -271,13 +272,20 @@ class _DiffPane(Widget):
         low = plain.lower()
         is_current = bool(v.search_matches and v.search_pos >= 0
                           and v.search_matches[v.search_pos] == ri)
+        # Literal occurrences, then Migemo hits (#302); overlapping spans just
+        # repaint the same cells with the same tint.
+        spans = []
         start = 0
         while True:
             hit = low.find(pat, start)
             if hit < 0:
                 break
-            s, e = hit, hit + len(pat)
-            start = e
+            spans.append((hit, hit + len(pat)))
+            start = hit + len(pat)
+        migemo_spans = migemo_search.find_spans(v.search_pattern, plain)
+        if migemo_spans:
+            spans.extend(migemo_spans)
+        for s, e in spans:
             vs, ve = max(s, col0_int), min(e, window_end)
             if ve > vs:
                 ctx.draw_text(content_x + (vs - col0_int) - xfrac, y, plain[vs:ve],
@@ -447,13 +455,20 @@ class DiffViewer(Widget):
 
     def _search_recompute(self, pattern: str) -> None:
         """Live per-keystroke: rows whose left or right line contains ``pattern``
-        (case-insensitive) become the match set; jump to the nearest match at/after
+        (case-insensitive, unioned with the Migemo regex so romaji finds
+        Japanese, #302) become the match set; jump to the nearest match at/after
         the current scroll, or restore the pre-search view when nothing matches."""
         self.search_pattern = pattern
         pat = pattern.lower()
+        # Migemo matches raw lines, not an NFC form: _draw_search indexes
+        # highlight spans into the line as drawn (see migemo_search.find_spans).
+        regex = migemo_search.get_regex(pattern)
         self.search_matches = [
             i for i, r in enumerate(self.rows)
             if pat in r["l1"].lower() or pat in r["l2"].lower()
+            or (regex is not None
+                and (migemo_search.has_hit(regex, r["l1"])
+                     or migemo_search.has_hit(regex, r["l2"])))
         ] if pat else []
         if self.search_matches:
             cur = int(self.top)

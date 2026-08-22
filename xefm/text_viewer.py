@@ -36,6 +36,7 @@ from xefm.config import (get_config, get_keys_for_action, is_action_for_event,
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.log_manager import getLogger
+from xefm import migemo_search
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_encoding import (AUTO_ENCODING, decode_text, encoding_label,
                                looks_binary_bytes, picker_encodings)
@@ -661,7 +662,8 @@ class TextViewer(Widget):
 
     def _search_recompute(self, pattern: str) -> None:
         """Live per-keystroke: recompute the matching lines (case-insensitive
-        *contains*), highlight them, and jump to the nearest match at/after the
+        *contains*, unioned with the Migemo regex so romaji finds Japanese,
+        #302), highlight them, and jump to the nearest match at/after the
         current scroll position — or back to the pre-search view when nothing
         matches (mirrors the main file manager's isearch). In rich mode the
         embedded renderer runs the same search over its own layout."""
@@ -671,8 +673,14 @@ class TextViewer(Widget):
             return
         self.pattern = pattern
         pat = pattern.lower()
-        self.matches = [i for i, line in enumerate(self.lines) if pat in line.lower()] \
-            if pat else []
+        # Migemo matches the raw line, not an NFC form: _draw_matches indexes
+        # highlight spans into the line as drawn (see migemo_search.find_spans).
+        regex = migemo_search.get_regex(pattern)
+        self.matches = [
+            i for i, line in enumerate(self.lines)
+            if pat in line.lower()
+            or (regex is not None and migemo_search.has_hit(regex, line))
+        ] if pat else []
         if self.matches:
             cur = int(self.top)
             self.match_pos = next((k for k, m in enumerate(self.matches) if m >= cur), 0)
@@ -987,23 +995,32 @@ class TextViewer(Widget):
                       Style(fg=text_fg, bg=sel_bg, font=MONO))
 
     def _draw_matches(self, ctx, y, line_idx, col0_int, xfrac, window_end, content_x, text_fg) -> None:
-        plain = self.lines[line_idx].lower()
         pat = self.pattern.lower()
         if not pat:
             return
+        line = self.lines[line_idx]
+        plain = line.lower()
         is_current = self.match_pos >= 0 and self.matches[self.match_pos] == line_idx
+        # Literal occurrences, then Migemo hits (#302). The Migemo regex finds
+        # the typed pattern too, so spans can overlap — repainting the same
+        # cells with the same tint is harmless.
+        spans = []
         start = 0
         while True:
             hit = plain.find(pat, start)
             if hit < 0:
                 break
-            s, e = hit, hit + len(pat)
-            start = e
+            spans.append((hit, hit + len(pat)))
+            start = hit + len(pat)
+        migemo_spans = migemo_search.find_spans(self.pattern, line)
+        if migemo_spans:
+            spans.extend(migemo_spans)
+        for s, e in spans:
             vis_start = max(s, col0_int)
             vis_end = min(e, window_end)
             if vis_end <= vis_start:
                 continue
-            sub = self.lines[line_idx][vis_start:vis_end]
+            sub = line[vis_start:vis_end]
             hl_bg = _match_bg(self._bg, is_current)
             ctx.draw_text(content_x + (vis_start - col0_int) - xfrac, y, sub,
                           Style(fg=text_fg, bg=hl_bg, font=MONO))
@@ -1044,6 +1061,10 @@ class TextViewer(Widget):
         except Exception as e:
             logger.warning(f"Cannot render {self.path.name} as {self._rich.name}: {e}")
             return False
+        # Rich renderers own their search; hand them the Migemo matcher so
+        # rich-mode isearch finds Japanese from romaji the way raw mode does
+        # (#302). On a PuiKit predating the hook the attribute is never read.
+        self._rich_widget.search_matcher = migemo_search.find_spans
         return True
 
     def _view_mode_state_key(self) -> str | None:

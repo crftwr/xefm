@@ -441,6 +441,19 @@ class Config:
     # File display settings
     SEPARATE_EXTENSIONS = True  # Show file extensions separately from basenames
     MAX_EXTENSION_LENGTH = 5    # Maximum extension length to show separately
+
+    # Incremental search settings
+    # Migemo expands romaji into the Japanese it could spell, so incremental
+    # search (the file panes, the text/diff viewers, and the filter-list
+    # dialogs — favorites, history, drives …) finds Japanese names without an
+    # IME: typing "kensaku" also matches 検索. Plain matching always still
+    # applies — Migemo only ever adds matches. Patterns with glob characters
+    # (* ? [) keep exact fnmatch behavior, and patterns shorter than
+    # MIGEMO_MIN_LENGTH skip Migemo (1-2 character queries are slow to expand
+    # and barely one kana anyway). Needs the pymigemo package (installed with
+    # XeFM); without it searches quietly stay plain.
+    MIGEMO_SEARCH = True   # Add Migemo (romaji -> Japanese) matches to incremental search
+    MIGEMO_MIN_LENGTH = 3  # Shortest pattern handed to Migemo
     
     # Text editor settings
     # Supports both string and list formats:
