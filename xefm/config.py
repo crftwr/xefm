@@ -48,6 +48,10 @@ _NAMED_KEYS = {
     "HOME": "home", "END": "end",
     "PAGE_UP": "pageup", "PAGEUP": "pageup",
     "PAGE_DOWN": "pagedown", "PAGEDOWN": "pagedown",
+    # A *bare Alt tap* — pressed and released with nothing in between — is a
+    # named key of its own on the Windows terminal (PuiKit keyboard contract
+    # §1), distinct from ALT the modifier prefix; XeFM binds it to 'menu'.
+    "ALT": "alt",
 }
 _NAMED_KEYS.update({f"F{n}": f"f{n}" for n in range(1, 13)})
 

@@ -83,11 +83,27 @@ The two fallback widgets live in `puikit/widgets/menu.py` (re-exported from
 
 - **`MenuBar`** — a horizontal strip of top-level titles placed in the app
   layout. On a `native_menus` backend it registers the model as the OS bar and
-  collapses to zero height.
+  collapses to zero height. Deliberately **not a focus stop** (no desktop puts
+  the menu bar in the Tab order): the open entry's title highlights from the
+  pulldown's open state, never from focus — taking focus on click is what left
+  a title stuck inverted after an outside click dismissed its modal pulldown
+  (#304). Keyboard activation is `MenuBar.open_menu(index=0)` — XeFM binds
+  the `menu` action (`F10`, bare `ALT` on the Windows terminal) to it in
+  `dispatch()` — and `MenuBar.open_menu_mnemonic(letter)` for the Alt+letter
+  accelerators (Alt+F → File, by title first letter), which XeFM tries in
+  `_menu_mnemonic()` only after the keymap had no binding for the chord.
+  Alt+letter chords are deliverable on the Windows console and GUI backends;
+  POSIX terminals reserve the ESC-prefix for word editing (see the PuiKit
+  keyboard contract §5), so there the path is F10 + letters.
 - **`MenuPopup`** — the floating list pushed as a modal Panel layer, shared by a
   bar entry dropping down and by a context menu. It handles separators,
   submenus (each opens a nested popup), the live `enabled`/`checked` predicates,
-  and keyboard + mouse.
+  and keyboard + mouse. A pulldown opened from the bar carries the bar as its
+  `bar`: ←/→ with no submenu to enter (and Alt+letter) dismiss the chain and
+  open another bar entry's pulldown (the desktop convention, #304); a plain
+  letter picks items by first letter — a unique enabled match activates,
+  several matches cycle the cursor. A context menu has no bar, so there ←
+  closes and → fires like Enter (letters still pick items).
 
 The native builders are `puikit/backends/_macos_menu.py` (turns a `Menu` into an
 `NSMenu`; a `_MenuTarget` implements `validateMenuItem:` to answer live

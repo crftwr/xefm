@@ -30,9 +30,39 @@ from a checkout.)
 - **Keyboard**: every item can be triggered directly by its shortcut (shown next
   to the item) without opening the menu.
 
+### Opening the menu with the keyboard (terminal mode)
+
+In terminal mode, press **F10** to open the first menu (on the Windows
+terminal, tapping **Alt** by itself works too, just like a desktop menu bar).
+On the Windows terminal, **Alt+letter** opens a menu directly by the first
+letter of its title: **Alt+F** for File, **Alt+G** for Go, **Alt+S** Select,
+**Alt+V** View, **Alt+T** Tools, **Alt+H** Help. (Other terminals don't
+deliver bare Alt or Alt+letter chords reliably — use F10 and the arrow keys
+there.)
+
+While a menu is open:
+
+- **←/→** move between the menus on the bar (wrapping at the ends), and
+  **Alt+letter** jumps straight to that menu;
+- **↑/↓** move within the open menu;
+- **a letter by itself** picks items by first letter: a unique match runs
+  immediately, several matches step the highlight through them (press Enter
+  on the one you mean);
+- **→** on an item with a submenu opens the submenu, **←** backs out of it;
+- **Enter** runs the highlighted item;
+- **Esc** (or F10 again, or a click elsewhere) closes the menu.
+
+The activation key is the `menu` action in `~/.xefm/config.py`
+(default `['F10', 'ALT']`), so it can be rebound like any other; if you bind
+`Alt-<letter>` chords of your own, they win over the menu accelerator. In
+desktop mode the OS menu bar handles keyboard access natively (Alt on
+Windows).
+
 ## Available Menus
 
-XeFM has four menus: **File**, **Select**, **View**, and **Help**.
+XeFM has six menus: **File**, **Go**, **Select**, **View**, **Tools**, and
+**Help** — in the terminal, each opens directly with Alt + its first letter
+on the Windows terminal.
 
 ### File Menu
 
@@ -44,16 +74,10 @@ XeFM has four menus: **File**, **Select**, **View**, and **Help**.
 | Details… | I |
 | Open with Default App | Cmd-Enter |
 | Reveal in File Manager | Alt-Enter |
-| External Programs… | X |
-| Subshell Here | Shift-X |
-| Parent Directory | Backspace |
-| Go to Favorite… | J |
-| Jump to Path… | Shift-J |
-| Drives… | D |
-| History… | H |
 | New Folder… | M *(when nothing is selected)* |
 | New File… | Shift-E |
 | Rename… | R |
+| Duplicate | — |
 | Copy to Other Pane | C |
 | Move to Other Pane | M *(when files are selected)* |
 | Delete… | K |
@@ -63,12 +87,22 @@ XeFM has four menus: **File**, **Select**, **View**, and **Help**.
 | Extract Archive… | U |
 | Quit | Q |
 
+### Go Menu
+
+| Item | Shortcut |
+|------|----------|
+| Parent Directory | Backspace |
+| Go to Favorite… | J |
+| Jump to Path… | Shift-J |
+| Drives… | D |
+| History… | H |
+
 ### Select Menu
 
 | Item | Shortcut |
 |------|----------|
 | Toggle Selection | Space |
-| Select All Items | Shift-A |
+| Select All Items | Home |
 | Clear Selection | End |
 | Compare and Select… | W |
 | Compare Selected Files… | = |
@@ -86,14 +120,24 @@ XeFM has four menus: **File**, **Select**, **View**, and **Help**.
 | Reverse Sort | — |
 | Sort By ▸ | (submenu: Name / Extension / Size / Date; quick keys `1`–`4`) |
 | Theme ▸ | (submenu of installed themes) |
-| Next Theme | T |
+| Next Theme | — |
 | Switch Pane | Tab |
+
+### Tools Menu
+
+| Item | Shortcut |
+|------|----------|
+| External Programs… | X |
+| Subshell Here | Shift-X *(terminal mode only)* |
+| Edit Configuration… | — |
+| Reload Configuration | — |
 
 ### Help Menu
 
 | Item | Shortcut |
 |------|----------|
 | Keyboard Shortcuts… | ? |
+| Tip of the Day… | — |
 | About XeFM | — |
 
 > Note: `M` is context-sensitive — it creates a new folder when nothing is

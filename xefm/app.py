@@ -2199,6 +2199,12 @@ class XeFMApp:
         elif action == "help":
             self.show_help()
             return False
+        elif action == "menu":
+            # F10 on every backend, a bare Alt tap on the Windows terminal:
+            # open the menu bar's first pulldown; ←/→ then walk the bar and
+            # Esc closes (#304). A no-op where the OS owns the bar
+            # (native-menu backends handle Alt themselves).
+            return self.menu_bar.open_menu()
         else:
             return False
         return True
@@ -5172,6 +5178,7 @@ class XeFMApp:
             ("quick_sort_ext", "Quick-sort by extension (repeat: reverse)"),
         )),
         ("Other", (
+            ("menu", "Open the menu bar (←/→ walk it, Esc closes)"),
             ("edit_config", "Edit ~/.xefm/config.py, then reload"),
             ("reload_config", "Reload ~/.xefm/config.py"),
             ("help", "Show this help"),
@@ -5447,6 +5454,20 @@ class XeFMApp:
         self.log.clear_selection()
         return True
 
+    def _menu_mnemonic(self, event) -> bool:
+        """Alt+letter opens the menu whose title starts with that letter
+        (Alt+F → File, Alt+G → Go) — the desktop accelerator convention,
+        brought to the terminal menu (#304). Tried only after the keymap had
+        no binding for the chord, so a user's own Alt-<letter> bindings keep
+        winning; a no-op on native-menu backends, where the OS bar owns Alt.
+        With a menu already open, the modal popup handles Alt+letter itself
+        (the layer branch above), jumping between the bar's menus."""
+        key = event.key
+        if (frozenset(event.modifiers or ()) == frozenset({"alt"})
+                and isinstance(key, str) and len(key) == 1 and key.isalpha()):
+            return self.menu_bar.open_menu_mnemonic(key)
+        return False
+
     def on_event(self, event) -> None:
         # Flush any filesystem reloads that landed since the last frame, so user
         # input and idle ticks both surface them; render if a pane changed.
@@ -5478,6 +5499,8 @@ class XeFMApp:
             has_sel = bool(self.active_pane()["selected_files"])
             action = self.keys.find_action_for_event(event, has_sel)
             if self.dispatch(action):
+                self.panel.render()
+            elif action is None and self._menu_mnemonic(event):
                 self.panel.render()
             return
         if event.type in self._MOUSE:
