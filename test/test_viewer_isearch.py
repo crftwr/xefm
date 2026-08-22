@@ -345,3 +345,112 @@ def test_diff_search_romaji_matches_either_side(backend, japanese_diff_files, mi
     assert v.search_matches == [0]
     panel.dispatch_event(_key("escape"))
     panel.render()
+
+
+# --- highlight position on lines with wide (CJK) characters ------------------
+#
+# Drawn glyphs advance by display width (a CJK char spans two cells), so the
+# search-highlight overlay must position by the prefix's display width, not
+# its character count — or a hit after Japanese text lands left of the glyphs
+# it repaints. Asserted at the backend boundary: the overlay's x relative to
+# the body line's x must equal the prefix's display width.
+
+from puikit.text import display_width
+
+from xefm.text_viewer import col_at_cells, span_x
+
+
+class RecordingBackend(MemoryBackend):
+    """MemoryBackend that records every draw_text call's final (x, text)."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.calls: list[tuple[float, str]] = []
+
+    def draw_text(self, x, y, text, style=None, hints=None):
+        self.calls.append((x, text))
+        if style is None:
+            super().draw_text(x, y, text)
+        else:
+            super().draw_text(x, y, text, style)
+
+
+def _last_x(backend, text):
+    xs = [x for x, t in backend.calls if t == text]
+    assert xs, f"no draw_text call with text {text!r}"
+    return xs[-1]
+
+
+def test_span_x_counts_display_columns():
+    assert span_x("日本語 abc", 0, 4) == 7.0     # 3 wide chars + 1 space
+    assert span_x("日本語 abc", 1, 4) == 5.0     # window scrolled past 日
+    assert span_x("plain abc", 0, 6) == 6.0      # ASCII: unchanged behavior
+
+
+def test_col_at_cells_inverts_display_advance():
+    line = "日本語abc"
+    assert col_at_cells(line, 0, 0.0) == 0
+    assert col_at_cells(line, 0, 0.9) == 0       # left half of 日
+    assert col_at_cells(line, 0, 1.0) == 1       # right half rounds past it
+    assert col_at_cells(line, 0, 6.0) == 3
+    assert col_at_cells(line, 0, 7.0) == 4       # first ASCII char
+    assert col_at_cells(line, 0, 99.0) == len(line)
+    assert col_at_cells("abcdef", 2, -1.0) == 1  # drag left of a scrolled window
+    assert col_at_cells("abcdef", 0, 3.0) == 3   # ASCII: unchanged behavior
+
+
+@pytest.fixture
+def cjk_text_file(tmp_path):
+    p = tmp_path / "cjk.txt"
+    p.write_text("日本語 kensaku here\nplain line\n", encoding="utf-8")
+    return Path(str(p))
+
+
+def test_text_search_highlight_x_after_cjk(cjk_text_file):
+    backend = RecordingBackend(width=100, height=30, capabilities=PROFILE_TUI)
+    panel = Panel(backend)
+    v = show_text_viewer(panel, cjk_text_file)
+    panel.render()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "kensaku")
+    backend.calls.clear()
+    panel.render()
+    line = "日本語 kensaku here"
+    # The overlay repaints "kensaku" exactly display_width("日本語 ") = 7
+    # cells right of the body line's origin (was 4 — the character count).
+    assert _last_x(backend, "kensaku") - _last_x(backend, line) \
+        == display_width("日本語 ")
+
+
+@needs_migemo
+def test_text_migemo_highlight_x_before_ascii(migemo_on, tmp_path):
+    p = tmp_path / "migemo.txt"
+    p.write_text("before 検索 after\n", encoding="utf-8")
+    backend = RecordingBackend(width=100, height=30, capabilities=PROFILE_TUI)
+    panel = Panel(backend)
+    v = show_text_viewer(panel, Path(str(p)))
+    panel.render()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "kensaku")
+    backend.calls.clear()
+    panel.render()
+    assert v.matches == [0]
+    assert _last_x(backend, "検索") - _last_x(backend, "before 検索 after") \
+        == display_width("before ")
+
+
+def test_diff_search_highlight_x_after_cjk(tmp_path):
+    a, b = tmp_path / "a.txt", tmp_path / "b.txt"
+    a.write_text("日本語 needle x\nsame\n", encoding="utf-8")
+    b.write_text("changed\nsame\n", encoding="utf-8")
+    backend = RecordingBackend(width=100, height=30, capabilities=PROFILE_TUI)
+    panel = Panel(backend)
+    v = show_diff_viewer(panel, Path(str(a)), Path(str(b)))
+    panel.render()
+    panel.dispatch_event(_key("f", "f"))
+    _type(panel, "needle")
+    backend.calls.clear()
+    panel.render()
+    assert v.search_matches == [0]
+    assert _last_x(backend, "needle") - _last_x(backend, "日本語 needle x") \
+        == display_width("日本語 ")
