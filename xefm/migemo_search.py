@@ -70,6 +70,12 @@ class _Array32:
         return array.array(typecode, *args)
 
 
+#: hiragana -> katakana, for str.translate: the blocks are parallel
+#: (ぁ..ゖ at U+3041 -> ァ..ヶ at U+30A1), plus the iteration marks ゝゞ.
+_HIRA2KATA = {c: c + 0x60 for c in range(0x3041, 0x3097)}
+_HIRA2KATA.update({0x309D: 0x30FD, 0x309E: 0x30FE})
+
+
 def _config():
     """The live config, or ``None`` (early startup, tests) — the gates in
     :func:`get_regex` then fall back to their defaults."""
@@ -103,6 +109,41 @@ def _load_engine():
     return _engine if _engine else None
 
 
+def _word_expansion(engine, word: str) -> str:
+    """pymigemo's regex for one lowercased word, plus the katakana it
+    forgets: C/Migemo unions hiragana->katakana (and half-width katakana)
+    forms into every expansion, while pymigemo 0.0.1 stops at hiragana — so
+    romaji could never find ダウンロード, nor typed hiragana find ケンサク.
+    Each hiragana reading (the word's predictive romaji conversions, and the
+    word itself when it is hiragana) comes back as its katakana and
+    half-width-katakana literals, longest first so a span covers the whole
+    hit rather than a shorter alternative's prefix."""
+    base = engine.query(word)
+    forms = set()
+    try:
+        from migemo import characterconverter, romajiconverter
+        readings = list(
+            romajiconverter.convert_romaji_to_hiragana_predictively(word))
+        readings.append(word)
+        for hira in readings:
+            kata = hira.translate(_HIRA2KATA)
+            if kata == hira:
+                continue
+            forms.add(kata)
+            han = characterconverter.zen2han(kata)
+            if han != kata:
+                forms.add(han)
+    except Exception as e:
+        # The base expansion still stands; only the katakana forms are lost.
+        logger.warning(f"Migemo katakana forms failed for {word!r} "
+                       f"({type(e).__name__}: {e})")
+    if not forms:
+        return base
+    alts = ([base] if base else []) + [
+        re.escape(f) for f in sorted(forms, key=lambda s: (-len(s), s))]
+    return '(?:' + '|'.join(alts) + ')'
+
+
 @lru_cache(maxsize=256)
 def _compiled(pattern: str, min_length: int) -> re.Pattern | None:
     """The compiled Migemo regex for ``pattern``, or ``None``. Cached per
@@ -126,7 +167,8 @@ def _compiled(pattern: str, min_length: int) -> re.Pattern | None:
     try:
         words = engine.parse_query(pattern)
         expansion = ''.join(
-            engine.query(w.lower()) if len(w) >= min_length else re.escape(w)
+            _word_expansion(engine, w.lower()) if len(w) >= min_length
+            else re.escape(w)
             for w in words
         )
         if not expansion:

@@ -148,6 +148,44 @@ def test_nfd_haystack_matches():
 
 
 @needs_migemo
+def test_romaji_matches_katakana():
+    # pymigemo 0.0.1 expands to hiragana but forgets the katakana forms
+    # C/Migemo always adds — _word_expansion unions them back in.
+    assert migemo_search.match("memo", "メモ.txt")
+    assert migemo_search.match("kensaku", "ケンサク.md")
+    assert migemo_search.match("daunro-do", "ダウンロード")
+
+
+@needs_migemo
+def test_romaji_matches_katakana_predictive_prefix():
+    # Mid-typing: an incomplete word still matches as a katakana prefix.
+    assert migemo_search.match("kensa", "ケンサク.md")
+
+
+@needs_migemo
+def test_hiragana_pattern_matches_katakana():
+    assert migemo_search.match("けんさく", "ケンサク.md")
+
+
+@needs_migemo
+def test_romaji_matches_halfwidth_katakana():
+    assert migemo_search.match("kensaku", "ｹﾝｻｸ.md")
+
+
+@needs_migemo
+def test_katakana_nfd_haystack():
+    assert migemo_search.match(
+        "daunro-do", unicodedata.normalize("NFD", "ダウンロード"))
+
+
+@needs_migemo
+def test_find_spans_cover_whole_katakana_hit():
+    # Longest-first alternation: the span is the whole ケンサク, not a
+    # shorter alternative's prefix.
+    assert (0, 4) in migemo_search.find_spans("kensaku", "ケンサクの件")
+
+
+@needs_migemo
 def test_find_spans_on_raw_text():
     line = "今日は検索の日 kensaku day"
     spans = migemo_search.find_spans("kensaku", line)

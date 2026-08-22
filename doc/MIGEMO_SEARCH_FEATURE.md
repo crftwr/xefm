@@ -3,9 +3,11 @@
 ## Overview
 
 Migemo lets incremental search find Japanese names by typing romaji — no IME
-needed. Typing `kensaku` also matches `検索`, `けんさく`, and `ｋｅｎｓａｋｕ`;
-typing `mudai` finds `無題.png`. It is on by default and needs no mode or
-switch: plain matching always still applies, Migemo only ever *adds* matches.
+needed. Typing `kensaku` also matches `検索`, `けんさく`, `ケンサク`, `ｹﾝｻｸ`,
+and `ｋｅｎｓａｋｕ`; typing `mudai` finds `無題.png`, and `daunro-do` finds
+`ダウンロード` (typed hiragana finds katakana too). It is on by default and
+needs no mode or switch: plain matching always still applies, Migemo only
+ever *adds* matches.
 
 ## Where it works
 

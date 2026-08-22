@@ -60,6 +60,16 @@ dodge the whole-pattern gate. The result compiles with `re.IGNORECASE` and is
 cached per `(pattern, gate)` in an `lru_cache` — generation is the expensive
 step; matching is cheap.
 
+A third pymigemo defect is repaired per word (`_word_expansion`): its
+expansions stop at hiragana, where C/Migemo also unions the katakana and
+half-width-katakana forms — so `kensaku` could never find `ケンサク`, nor
+typed hiragana find katakana. Each hiragana reading of the word (its
+predictive romaji conversions via pymigemo's `romajiconverter`, plus the
+word itself when it is hiragana) is translated to katakana (a parallel-block
+`str.translate`) and to half-width katakana (pymigemo's
+`characterconverter.zen2han`), and the results join the expansion as escaped
+literals, longest first so a highlight span covers the whole hit.
+
 ### The ASCII filter
 
 A Migemo hit only counts when the matched span contains a non-ASCII
