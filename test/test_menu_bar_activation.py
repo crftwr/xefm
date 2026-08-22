@@ -133,6 +133,56 @@ class MenuBarActivation(unittest.TestCase):
         self.assertTrue(self._menu_open())
         self.assertEqual(self.app.menu_bar._index, 1)
 
+    # --- Alt+letter accelerators and item mnemonics ---------------------------
+
+    def _bar_titles(self):
+        return [item.label for item in self.app.menu_bar.menu.selectable]
+
+    def test_alt_letter_opens_the_named_menu(self):
+        # Alt+G opens Go directly (the bar titles' first letters are unique).
+        self.assertEqual(self._bar_titles(),
+                         ["File", "Go", "Select", "View", "Tools", "Help"])
+        self.app.on_event(_key("g", mods={"alt"}))
+        self.assertTrue(self._menu_open())
+        self.assertEqual(self.app.menu_bar._index, 1)
+
+    def test_alt_letter_without_match_does_nothing(self):
+        self.app.on_event(_key("z", mods={"alt"}))
+        self.assertFalse(self._menu_open())
+
+    def test_alt_letter_switches_the_open_menu(self):
+        self.app.on_event(_key("f10"))          # File open
+        self.app.on_event(_key("v", mods={"alt"}))
+        self.assertTrue(self._menu_open())
+        self.assertEqual(self.app.menu_bar._index, 3)  # View
+
+    def test_letter_activates_a_unique_item(self):
+        # Go → "P" matches only "Parent Directory": it runs immediately and
+        # the menu closes (the pane navigates to the parent directory).
+        before = str(self.app.active_pane()["path"])
+        self.app.on_event(_key("g", mods={"alt"}))
+        self.app.on_event(_key("p"))
+        self.assertFalse(self._menu_open())
+        self.assertNotEqual(str(self.app.active_pane()["path"]), before)
+
+    def test_letter_cycles_ambiguous_items(self):
+        # File has several C… items: the letter only steps the highlight, so
+        # nothing fires until Enter.
+        self.app.on_event(_key("f10"))
+        popup = self.app.panel._layers[-1].widget
+        labels = [getattr(e, "label", None) for e in popup.menu.items]
+        c_rows = [i for i, l in enumerate(labels)
+                  if l and l.lower().startswith("c")]
+        self.assertGreater(len(c_rows), 1)
+        self.app.on_event(_key("c"))
+        self.assertTrue(self._menu_open())      # nothing fired
+        self.assertIn(popup.cursor, c_rows)
+        first = popup.cursor
+        self.app.on_event(_key("c"))
+        self.assertTrue(self._menu_open())
+        self.assertIn(popup.cursor, c_rows)
+        self.assertNotEqual(popup.cursor, first)
+
 
 if __name__ == "__main__":
     unittest.main()
