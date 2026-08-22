@@ -2,7 +2,7 @@
 
 Both viewers reuse the main file manager's ``ISearchBar`` (via
 ``ViewerISearch``) for search, bound to the shared ``search`` action; the text
-viewer's line-wrap toggle is the ``text_viewer.toggle_wrap`` action. See
+viewer's line-wrap toggle is the ``toggle_wrap`` action. See
 doc/dev/KEY_BINDINGS_IMPLEMENTATION.md and the viewers' module docstrings.
 
 Run with: python -m pytest test/test_viewer_isearch.py -v
@@ -93,14 +93,14 @@ def test_context_resolves_shared_key():
     from xefm.actions import FILER, TEXT_VIEWER
     kb = KeyBindings(_config.Config().KEY_BINDINGS)
     w = _key("w", "w")
-    # W is bound to both text_viewer.toggle_wrap and compare_selection. Each
+    # W is bound to both toggle_wrap and compare_selection. Each
     # surface only ever looks at its own context's actions, so which one W means
     # is decided by who is asking rather than by KEY_BINDINGS' dict order.
     assert kb.find_action_for_event(w, context=FILER) == "compare_selection"
-    assert kb.find_action_for_event(w, context=TEXT_VIEWER) == "text_viewer.toggle_wrap"
+    assert kb.find_action_for_event(w, context=TEXT_VIEWER) == "toggle_wrap"
     # A different key means neither.
     assert kb.find_action_for_event(_key("f", "f"), context=TEXT_VIEWER) != \
-        "text_viewer.toggle_wrap"
+        "toggle_wrap"
 
 
 # --- Text viewer -------------------------------------------------------------

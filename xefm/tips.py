@@ -24,7 +24,7 @@ from typing import Callable
 from xefm.const import GITHUB_URL
 
 #: ``{key:action}`` — the action name a placeholder carries. Dots included: an
-#: action owned by one surface is qualified with it (``text_viewer.toggle_wrap``).
+#: action owned by one surface is qualified with it (``toggle_wrap``).
 _KEY_REF = re.compile(r"\{key:([a-z0-9_.]+)\}")
 
 #: The rotation, in display order: (title, Markdown body). The first entry is
@@ -255,7 +255,7 @@ TIPS: tuple[tuple[str, str], ...] = (
     ("Legacy text encodings",
      "The text viewer detects a file's encoding automatically — UTF-8 with or "
      "without BOM, Shift-JIS, EUC-JP, ISO-2022-JP and more — and shows what it "
-     "chose in the header. When a file is detected wrong, {key:text_viewer.change_encoding} "
+     "chose in the header. When a file is detected wrong, {key:change_encoding} "
      "in the viewer picks the encoding explicitly."),
 
     ("Japanese search without an IME",

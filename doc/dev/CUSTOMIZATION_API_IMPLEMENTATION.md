@@ -77,20 +77,36 @@ not customization surfaces.
 
 ### Names, and why `KEY_BINDINGS` stayed flat
 
-`KEY_BINDINGS` is still one dictionary, so context lives in the name. Every
-action a surface owns is dot-qualified with that surface — `file_diff.next_block`,
-`image_viewer.zoom_in`, `text_viewer.toggle_wrap`. The file list's own actions
-stay unqualified: `filer` is the namespace's incumbent, every config in existence
-binds `cursor_up` and `copy_files`, and letting the dot mean "not the file list"
-is worth more than uniformity.
+`KEY_BINDINGS` is still one dictionary, so context lives in the name — but only
+where a name genuinely belongs to one surface. The test is what the *bare* name
+would mean:
+
+- **Dot-qualified** when the action is specific to that surface and the bare name
+  would be meaningless or misleading elsewhere: `file_diff.next_block`,
+  `image_viewer.next`, `dir_diff.switch_side`.
+- **Unqualified** when the name is a *capability* another surface could plausibly
+  grow: `toggle_wrap`, `change_encoding`, `copy_files`. A name may be registered
+  in several contexts, each with its own handler — `copy_files` already is, in
+  `filer` and `dir_diff` — so one binding covers all of them, and adding the
+  second implementation later changes nothing in anyone's config.
+- The file list's own actions stay unqualified regardless: `filer` is the
+  namespace's incumbent, every config in existence binds `cursor_up`, and letting
+  the absence of a dot mean "not one specific viewer" is worth more than
+  uniformity.
+
+A config narrows an unqualified action to one surface with the `context.` prefix
+(`'file_diff.quit': ['X']`) — which is *not* an alias and never warns; see
+§3. Note the two forms are mutually exclusive per action: if both `scroll_up` and
+`file_diff.scroll_up` were registered as separate actions, a config key
+`file_diff.scroll_up` would bind the second rather than narrowing the first, and
+both keys would end up live. An action is named one way or the other.
 
 The design sketch wrote `diff.next_block`; this uses `file_diff.next_block`.
 Making the prefix *exactly* the context name means the resolution rule is one
 sentence with no lookup table.
 
-Twelve actions that already existed had to be renamed to fit — the `image_*`
-family and the text viewer's three unprefixed names. See "Renamed actions"
-below.
+Nine actions that already existed had to be renamed to fit — the `image_*`
+family. See "Renamed actions" below.
 
 A nested `KEY_BINDINGS_BY_CONTEXT` was rejected in the design and is not here:
 two dictionaries with overlapping meaning, and every existing config would sit
@@ -305,7 +321,7 @@ open with no way to dismiss it.
 
 ## 6b. Renamed actions
 
-Naming every key made the names already there worth auditing. Twenty-two were
+Naming every key made the names already there worth auditing. Nineteen were
 changed. Every old spelling survives as an entry in `Action.aliases`, so a config
 binding one still resolves to the action — that is the only thing making a
 rename possible at all, since every config generated from the template carries
@@ -318,15 +334,25 @@ parameterized over, so an alias cannot be dropped by accident.
 
 Three groups:
 
-**The viewers' own actions gained their viewer's prefix.** `image_zoom_in` →
-`image_viewer.zoom_in`, and the text viewer's three unprefixed names →
-`text_viewer.*`. The `image_*` family was the dotted convention already, spelled
-with an underscore; the text viewer's was the same defect inverted — viewer-only
-behavior holding a generic name in a flat namespace. Both mattered for the same
-reason: `zoom_in` and `toggle_wrap` are concepts a *second* viewer could grow,
-and only the qualified form leaves the bare name available for that. `toggle_wrap`
-was already half-shared — `TextViewer` forwards it to a rich renderer that has
-its own wrap (`JsonView` does).
+**The image viewer's actions gained their viewer's prefix.** `image_zoom_in` →
+`image_viewer.zoom_in`. That family was the dotted convention already, spelled
+with an underscore, and the rename leaves the plain `zoom_in` / `next` free to
+become shared actions if a second viewer grows them.
+
+The text viewer's `toggle_wrap`, `toggle_view_mode` and `change_encoding` were
+**not** renamed, and the reason is worth recording because the first pass got it
+wrong. Qualifying them would have made the bare name a permanent alias — and an
+alias can never become a current name again (`test_no_alias_collides_with_a_current_name`),
+so `text_viewer.change_encoding` would have spent `change_encoding`, which is
+exactly the name the rule existed to preserve. The `image_*` renames do not have
+this problem: their aliases are `image_zoom_in`, not `zoom_in`.
+
+The concern is concrete rather than theoretical. `DiffViewer` already reads
+through `text_viewer._read_lines`, which already takes an `encoding` override
+and is called there with the detected value discarded — adding the picker is
+small, and it would want the same binding. `toggle_wrap` is further along still:
+`TextViewer` already forwards it to a rich renderer with its own wrap
+(`JsonView`).
 
 **`image_scroll_*` became `image_viewer.pan_*`.** The code is `_pan_by`, the
 help says "pan", and the keys move a viewport over a zoomed image. Only the name
@@ -369,7 +395,7 @@ Aliases are permanent, and an alias may never be reused for a different action �
 
 Four, all deliberate:
 
-0. **Twenty-two actions were renamed**, old names kept as aliases. See
+0. **Nineteen actions were renamed**, old names kept as aliases. See
    "Renamed actions" above.
 
 1. **Viewer keys are rebindable.** The visible win of the refactor.

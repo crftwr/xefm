@@ -172,7 +172,7 @@ of crashing on the toggle. Raw still renders the file (pygments-highlighted).
 Everything else (the `M` toggle, per-type memory, rich-mode search delegation,
 event forwarding) already works for any registered renderer.
 
-**Wrap key in rich mode.** In rich mode the `text_viewer.toggle_wrap` binding (W) is checked
+**Wrap key in rich mode.** In rich mode the `toggle_wrap` binding (W) is checked
 before the generic key forward: when the embedded widget has a `toggle_wrap()`
 method (`JsonView`), the viewer calls it — the raw-text `self.wrap` is untouched
 — and the header tag appends `WRAP` / the footer hint advertises the key, both

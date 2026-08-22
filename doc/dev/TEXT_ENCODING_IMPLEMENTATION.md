@@ -17,7 +17,7 @@ sniff bytes *before* decoding; see `test_binary_file_handling.py`.)
 |-------|-------|------|
 | Detection + decoding | `xefm/text_encoding.py` | pure bytes → `(text, label)`; no UI, no Path; also owns `AUTO_ENCODING` |
 | Generic list picker | `xefm/choice_dialog.py` | `ChoiceDialog`: reusable pick-one modal over `(value, label)` rows, with type-ahead |
-| Viewer integration | `xefm/text_viewer.py` | readers take an `encoding` override; `_encoding_rows` + `text_viewer.change_encoding` wire the picker; `edit_file` shares the reload path |
+| Viewer integration | `xefm/text_viewer.py` | readers take an `encoding` override; `_encoding_rows` + `change_encoding` wire the picker; `edit_file` shares the reload path |
 | Picker list config | `Config.TEXT_ENCODINGS` in `xefm/_config.py` | manual picker entries only — detection is fixed |
 
 `ChoiceDialog` is deliberately encoding-agnostic — a titled pick-one list in
@@ -118,7 +118,7 @@ described the old text), and drops the cached rich widget so a rendered view
 rebuilds from the re-decoded source (`_ensure_rich_widget` and `_read_source`
 take the override too). Scroll position is kept, clamped.
 
-The `text_viewer.change_encoding` binding (default `Shift-E`) follows the
+The `change_encoding` binding (default `Shift-E`) follows the
 established viewer-action pattern: it is a named action of the `text_viewer`
 context, so it safely shares the key with the file list's `create_file` — the
 two surfaces never apply at once, and neither can see the other's actions. A

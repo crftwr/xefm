@@ -454,12 +454,16 @@ _FILER_ACTIONS = [
 ]
 
 _TEXT_VIEWER_ACTIONS = [
-    _a("text_viewer.toggle_wrap", TEXT_VIEWER, "Toggle line wrapping",
-       aliases=("toggle_wrap",)),
-    _a("text_viewer.toggle_view_mode", TEXT_VIEWER, "Toggle the rendered / raw view",
-       aliases=("toggle_view_mode",)),
-    _a("text_viewer.change_encoding", TEXT_VIEWER, "Choose the text encoding",
-       aliases=("change_encoding",)),
+    # Unqualified on purpose. These name *capabilities*, not this viewer's use
+    # of them: the diff viewer already reads through the same decoder and could
+    # grow the encoding picker, and a renderer with its own wrap already takes
+    # the wrap binding here. Registering one of them in a second context later
+    # is then a no-op for every existing config — same name, another handler,
+    # the way ``copy_files`` already works in both ``filer`` and ``dir_diff``.
+    # Qualifying them would have spent the very names that makes possible.
+    _a("toggle_wrap", TEXT_VIEWER, "Toggle line wrapping"),
+    _a("toggle_view_mode", TEXT_VIEWER, "Toggle the rendered / raw view"),
+    _a("change_encoding", TEXT_VIEWER, "Choose the text encoding"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",

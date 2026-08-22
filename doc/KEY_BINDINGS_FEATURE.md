@@ -171,9 +171,6 @@ the log pane at startup. Rename when convenient; nothing breaks if you don't.
 | `select_file_up` | `toggle_select_up` |
 | `select_all_files` | `toggle_select_files` |
 | `select_all_items` | `toggle_select_items` |
-| `toggle_wrap` | `text_viewer.toggle_wrap` |
-| `toggle_view_mode` | `text_viewer.toggle_view_mode` |
-| `change_encoding` | `text_viewer.change_encoding` |
 | `image_zoom_in` | `image_viewer.zoom_in` |
 | `image_zoom_out` | `image_viewer.zoom_out` |
 | `image_zoom_reset` | `image_viewer.zoom_reset` |
@@ -184,13 +181,19 @@ the log pane at startup. Rename when convenient; nothing breaks if you don't.
 | `image_scroll_left` | `image_viewer.pan_left` |
 | `image_scroll_right` | `image_viewer.pan_right` |
 
-Three kinds of change are in there. The viewer actions gained their viewer's
-prefix, so `zoom_in` and `toggle_wrap` are free to become shared actions if a
-second viewer ever grows them. The `image_scroll_*` group became `pan_*`,
-which is what those keys have always done. And the three unrelated things called
-"search" got names that say which is which: `isearch` jumps to a match as you
-type, `find_files` searches for files by name, `find_in_files` searches inside
-them.
+Three kinds of change are in there. The image viewer's actions gained their
+viewer's prefix, which leaves the plain names — `zoom_in`, `next` — free to
+become shared actions if a second viewer ever grows them. The `image_scroll_*`
+group became `pan_*`, which is what those keys have always done. And the three
+unrelated things called "search" got names that say which is which: `isearch`
+jumps to a match as you type, `find_files` searches for files by name,
+`find_in_files` searches inside them.
+
+The text viewer's `toggle_wrap`, `toggle_view_mode` and `change_encoding` were
+deliberately **not** prefixed. Those name capabilities rather than one viewer's
+use of them — the diff viewer could grow an encoding picker tomorrow — and an
+unprefixed name is what lets a second viewer pick one up with no change to your
+config at all.
 
 If a config lists both spellings of an action, the current one wins and the old
 one is ignored — so migrating a key at a time is safe.

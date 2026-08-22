@@ -63,7 +63,7 @@ class Config:
     FONT_SIZE = 12  # point size for both faces (8-72)
 
     # Text viewer: the encodings offered by the viewer's encoding picker (the
-    # 'text_viewer.change_encoding' action, Shift-E). Automatic detection — UTF-8 with or without
+    # 'change_encoding' action, Shift-E). Automatic detection — UTF-8 with or without
     # BOM, UTF-16/32 by BOM, Shift-JIS, EUC-JP, ISO-2022-JP, CP1252 — is built
     # in and always the default; this list only feeds the manual picker, for
     # when detection gets a file wrong. Any Python codec name works here
@@ -346,9 +346,9 @@ class Config:
         # apply at once, and each only ever looks at its own context's actions, so
         # a shared key is never ambiguous. Plain 'E' (edit_file, under File
         # Operations) works inside the text viewer too, editing the viewed file.
-        'text_viewer.toggle_wrap': ['W'],                  # Toggle line wrapping
-        'text_viewer.toggle_view_mode': ['M'],             # Toggle rendered (Markdown) / raw text
-        'text_viewer.change_encoding': ['Shift-E'],        # Choose the text encoding (auto / explicit)
+        'toggle_wrap': ['W'],                  # Toggle line wrapping
+        'toggle_view_mode': ['M'],             # Toggle rendered (Markdown) / raw text
+        'change_encoding': ['Shift-E'],        # Choose the text encoding (auto / explicit)
 
         # === Image Viewer ===
         # Image-viewer-only actions, scoped like the text viewer's above. '-' and

@@ -43,10 +43,10 @@ def key(name, char=None, mods=()):
 def test_builtin_actions_are_registered_per_context():
     r = xa._new_registry()
     assert r.resolve(xa.FILER, "cursor_up").context == xa.FILER
-    assert r.resolve(xa.TEXT_VIEWER, "text_viewer.toggle_wrap").context == xa.TEXT_VIEWER
+    assert r.resolve(xa.TEXT_VIEWER, "toggle_wrap").context == xa.TEXT_VIEWER
     # A viewer action is invisible to the file list and vice versa — the whole
     # point of contexts.
-    assert r.resolve(xa.FILER, "text_viewer.toggle_wrap") is None
+    assert r.resolve(xa.FILER, "toggle_wrap") is None
     assert r.resolve(xa.TEXT_VIEWER, "cursor_up") is None
 
 
@@ -249,9 +249,6 @@ SHIPPED_RENAMES = [
     ("select_file_up", "toggle_select_up", xa.FILER),
     ("select_all_files", "toggle_select_files", xa.FILER),
     ("select_all_items", "toggle_select_items", xa.FILER),
-    ("toggle_wrap", "text_viewer.toggle_wrap", xa.TEXT_VIEWER),
-    ("toggle_view_mode", "text_viewer.toggle_view_mode", xa.TEXT_VIEWER),
-    ("change_encoding", "text_viewer.change_encoding", xa.TEXT_VIEWER),
     ("image_zoom_in", "image_viewer.zoom_in", xa.IMAGE_VIEWER),
     ("image_zoom_out", "image_viewer.zoom_out", xa.IMAGE_VIEWER),
     ("image_zoom_reset", "image_viewer.zoom_reset", xa.IMAGE_VIEWER),
@@ -286,30 +283,30 @@ def test_a_config_binding_an_old_name_still_works():
 def test_an_old_viewer_name_still_reaches_its_viewer():
     # A config from before the rename: the old spelling, and only the old one.
     bindings = dict(DefaultConfig.KEY_BINDINGS)
-    del bindings["text_viewer.toggle_wrap"]
-    bindings["toggle_wrap"] = ["Y"]
+    del bindings["image_viewer.zoom_in"]
+    bindings["image_zoom_in"] = ["Y"]
     kb = KeyBindings(bindings)
     assert kb.find_action_for_event(key("y", "y"), False,
-                                    xa.TEXT_VIEWER) == "text_viewer.toggle_wrap"
-    assert kb.get_keys_for_action("text_viewer.toggle_wrap",
-                                  xa.TEXT_VIEWER)[0] == ["Y"]
+                                    xa.IMAGE_VIEWER) == "image_viewer.zoom_in"
+    assert kb.get_keys_for_action("image_viewer.zoom_in",
+                                  xa.IMAGE_VIEWER)[0] == ["Y"]
 
 
 def test_the_current_name_wins_when_a_config_has_both():
     """A config half-migrated — the new name added, the old one left behind —
     must not depend on which the dict happens to list first."""
-    for order in (("toggle_wrap", "text_viewer.toggle_wrap"),
-                  ("text_viewer.toggle_wrap", "toggle_wrap")):
+    for order in (("image_zoom_in", "image_viewer.zoom_in"),
+                  ("image_viewer.zoom_in", "image_zoom_in")):
         bindings = {}
         for name in order:
-            bindings[name] = ["Y"] if name == "toggle_wrap" else ["Z"]
+            bindings[name] = ["Y"] if name == "image_zoom_in" else ["Z"]
         kb = KeyBindings(bindings)
-        assert kb.get_keys_for_action("text_viewer.toggle_wrap",
-                                      xa.TEXT_VIEWER)[0] == ["Z"], order
+        assert kb.get_keys_for_action("image_viewer.zoom_in",
+                                      xa.IMAGE_VIEWER)[0] == ["Z"], order
         assert kb.find_action_for_event(key("z", "z"), False,
-                                        xa.TEXT_VIEWER) == "text_viewer.toggle_wrap"
+                                        xa.IMAGE_VIEWER) == "image_viewer.zoom_in"
         assert kb.find_action_for_event(key("y", "y"), False,
-                                        xa.TEXT_VIEWER) is None
+                                        xa.IMAGE_VIEWER) is None
 
 
 def test_the_shipped_template_uses_only_current_names():
@@ -320,13 +317,14 @@ def test_the_shipped_template_uses_only_current_names():
 def test_an_old_name_is_reported_once_as_a_single_line():
     from xefm.config import deprecated_binding_names, deprecated_names_notice
     bindings = dict(DefaultConfig.KEY_BINDINGS)
-    for name in ("text_viewer.toggle_wrap", "image_viewer.zoom_in", "sort"):
+    for name in ("image_viewer.zoom_in", "image_viewer.pan_up", "sort"):
         del bindings[name]
-    bindings.update({"toggle_wrap": ["W"], "image_zoom_in": ["+"], "sort_menu": ["S"]})
+    bindings.update({"image_zoom_in": ["+"], "image_scroll_up": ["Shift-UP"],
+                     "sort_menu": ["S"]})
 
     pairs = dict(deprecated_binding_names(bindings))
-    assert pairs == {"toggle_wrap": "text_viewer.toggle_wrap",
-                     "image_zoom_in": "image_viewer.zoom_in",
+    assert pairs == {"image_zoom_in": "image_viewer.zoom_in",
+                     "image_scroll_up": "image_viewer.pan_up",
                      "sort_menu": "sort"}
     notice = deprecated_names_notice(bindings)
     assert notice.count("\n") == 0 and "3 old action name(s)" in notice
@@ -334,8 +332,8 @@ def test_an_old_name_is_reported_once_as_a_single_line():
 
 def test_a_name_spelled_both_ways_is_not_reported():
     from xefm.config import deprecated_binding_names
-    bindings = dict(DefaultConfig.KEY_BINDINGS, toggle_wrap=["W"])
-    assert "text_viewer.toggle_wrap" in bindings   # the current spelling is there
+    bindings = dict(DefaultConfig.KEY_BINDINGS, image_zoom_in=["+"])
+    assert "image_viewer.zoom_in" in bindings   # the current spelling is there
     assert deprecated_binding_names(bindings) == []
 
 

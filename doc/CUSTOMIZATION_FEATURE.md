@@ -69,9 +69,9 @@ List both if you want both — `['SPACE', 'PAGE_DOWN']`.
 | `text_viewer.scroll_bottom` | End | `file_diff.scroll_bottom` | End |
 | `text_viewer.scroll_left` | ← | `file_diff.scroll_left` | ← |
 | `text_viewer.scroll_right` | → | `file_diff.scroll_right` | → |
-| `text_viewer.toggle_wrap` \* | W | `file_diff.next_block` | n |
-| `text_viewer.toggle_view_mode` \* | M | `file_diff.prev_block` | Shift-N |
-| `text_viewer.change_encoding` \* | Shift-E | | |
+| `toggle_wrap` \* † | W | `file_diff.next_block` | n |
+| `toggle_view_mode` \* † | M | `file_diff.prev_block` | Shift-N |
+| `change_encoding` \* † | Shift-E | | |
 
 | Image viewer | | Directory diff | |
 |---|---|---|---|
@@ -94,6 +94,14 @@ List both if you want both — `['SPACE', 'PAGE_DOWN']`.
 \* These are listed as live entries in the default `KEY_BINDINGS`, so a config
 generated from the template already has them. The rest work from the defaults
 above with no entry at all.
+
+† Unprefixed on purpose. These three name a *capability* rather than one
+viewer's use of it, and the diff viewer — which already reads through the same
+decoder — is a plausible second home for the encoding picker. Keeping the plain
+name means that, if it happens, your existing binding covers both viewers with
+no change: a name can live in more than one context, each with its own
+behaviour, exactly as `copy_files` already does in the file list and the
+directory diff.
 
 The directory diff also understands the file-list actions it can perform on the
 focused node — `copy_files`, `move_files`, `delete_files`, `view_file` and

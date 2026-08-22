@@ -96,9 +96,9 @@ the `isearch` key in rich mode.
 
 ### Key binding
 
-`text_viewer.toggle_view_mode` → `M`, added to `_config.py` (`M` is shared with
+`toggle_view_mode` → `M`, added to `_config.py` (`M` is shared with
 `move_files` / `create_directory`, which only apply in the file list; the viewer
-matches its own action by name, the same pattern `text_viewer.toggle_wrap` uses for `W`).
+matches its own action by name, the same pattern `toggle_wrap` uses for `W`).
 
 Because `ConfigManager._copy_missing_fields` only merges whole **missing
 attributes**, an existing user's `~/.xefm/config.py` — which already has a

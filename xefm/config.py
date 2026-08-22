@@ -415,7 +415,7 @@ class KeyBindings:
         Unlike :meth:`find_action_for_event` — which returns the single,
         globally-first action bound to a key — this tests one named action, so a
         caller can safely handle a key that another action also uses elsewhere.
-        The text viewer's ``text_viewer.toggle_wrap`` and the file list's
+        The text viewer's ``toggle_wrap`` and the file list's
         ``compare_selection`` both bind ``W``; asking about one by name gets the
         right answer regardless of dict order.
 
@@ -936,7 +936,7 @@ def is_action_for_event(event, action: str, has_selection: bool = False,
     """Whether ``event`` triggers a specific ``action`` (see
     :meth:`KeyBindings.is_action_for_event`). Lets a caller handle a key that a
     different action also binds elsewhere — e.g. the text viewer's
-    ``text_viewer.toggle_wrap`` vs the file list's ``compare_selection``, both
+    ``toggle_wrap`` vs the file list's ``compare_selection``, both
     on ``W``."""
     key_bindings = config_manager.get_key_bindings()
     return key_bindings.is_action_for_event(event, action, has_selection, context)

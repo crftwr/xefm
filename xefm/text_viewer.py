@@ -13,7 +13,7 @@ File reading goes through ``xefm.path.Path`` so it works for every storage
 backend. Push it with :func:`show_text_viewer`.
 
 Keys resolve through the shared ``KEY_BINDINGS`` (so they honour the user's
-rebinds): ``isearch`` opens incremental search, ``text_viewer.toggle_wrap``
+rebinds): ``isearch`` opens incremental search, ``toggle_wrap``
 toggles line wrap,
 ``help`` and ``quit`` do the obvious. ↑/↓/PageUp/PageDown/Home/End scroll
 vertically and ←/→ scroll horizontally (viewer-local); Esc closes.
@@ -588,7 +588,7 @@ class TextViewer(Widget):
         self.highlighted = _highlight(self.lines, path, syntax)
         # Optional rich (formatted) renderer for this file type — Markdown for
         # *.md today (see xefm.viewer_registry). When a renderer exists,
-        # ``text_viewer.toggle_view_mode`` swaps to it in place; the rich widget is built
+        # ``toggle_view_mode`` swaps to it in place; the rich widget is built
         # lazily — on first switch, or on the first draw when we open straight
         # into rich — and cached, so each mode keeps its own scroll position
         # across toggles. ``mode`` is "text" | "rich" and starts at the mode last
@@ -911,15 +911,15 @@ class TextViewer(Widget):
         # rect is captured so the ISearchBar overlay can pin exactly over it (the
         # bar covers this hint while a search is open, showing pattern + counter).
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        wrap_k = _label("text_viewer.toggle_wrap", "w")
+        wrap_k = _label("toggle_wrap", "w")
         search_k = _label("isearch", "F")
-        enc_k = _label("text_viewer.change_encoding", "Shift-E")
+        enc_k = _label("change_encoding", "Shift-E")
         quit_k = _label("quit", "q")
         edit_seg = self._edit_hint_segment()
         # When a rich renderer exists, advertise the toggle to it (e.g. "M markdown");
         # elide handles the longer hint on a narrow window.
         if self._rich is not None:
-            view_k = _label("text_viewer.toggle_view_mode", "M")
+            view_k = _label("toggle_view_mode", "M")
             hint = (f" ↑↓ scroll · {wrap_k} wrap · {search_k} search · "
                     f"{view_k} {self._rich.name.lower()} · {enc_k} encoding · "
                     f"{edit_seg}{quit_k}/Esc close ")
@@ -939,15 +939,15 @@ class TextViewer(Widget):
         self._body_rect = (pad_x, head_h, iw, body_h)
         ctx.draw_child(self._rich_widget, pad_x, head_h, iw, body_h)
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        view_k = _label("text_viewer.toggle_view_mode", "M")
+        view_k = _label("toggle_view_mode", "M")
         search_k = _label("isearch", "F")
-        enc_k = _label("text_viewer.change_encoding", "Shift-E")
+        enc_k = _label("change_encoding", "Shift-E")
         quit_k = _label("quit", "q")
         # A renderer with its own line wrap (JsonView) gets the wrap key in its
         # hint too; Markdown reflows by itself and advertises nothing.
         wrap_seg = ""
         if hasattr(self._rich_widget, "toggle_wrap"):
-            wrap_seg = f"{_label('text_viewer.toggle_wrap', 'w')} wrap · "
+            wrap_seg = f"{_label('toggle_wrap', 'w')} wrap · "
         hint = (f" ↑↓ scroll · {wrap_seg}{search_k} search · {view_k} raw text · "
                 f"{enc_k} encoding · {self._edit_hint_segment()}{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
@@ -1150,7 +1150,7 @@ class TextViewer(Widget):
 
     def _toggle_view_mode(self) -> None:
         """Switch between the raw text view and this file type's rich renderer
-        (the ``text_viewer.toggle_view_mode`` action) and remember the choice for the type, so
+        (the ``toggle_view_mode`` action) and remember the choice for the type, so
         same-type files reopen the same way (issue #217). A no-op for a type with
         no registered renderer. The rich widget is built once, from the file
         source, and cached — so each mode keeps its own scroll position across
@@ -1208,7 +1208,7 @@ class TextViewer(Widget):
         if action == "help":
             self._show_help()
             return True
-        if action == "text_viewer.toggle_view_mode":
+        if action == "toggle_view_mode":
             self._toggle_view_mode()
             return True
         # Incremental search applies in both modes: open it before the rich
@@ -1219,7 +1219,7 @@ class TextViewer(Widget):
             return True
         # The encoding picker applies in both modes too — re-decoding rebuilds
         # the raw lines and the rich renderer's source alike.
-        if action == "text_viewer.change_encoding":
+        if action == "change_encoding":
             self._change_encoding()
             return True
         # So does editing: the viewed file goes to the app's editor machinery
@@ -1234,7 +1234,7 @@ class TextViewer(Widget):
         # with its own line wrap (JsonView) takes the wrap binding;
         # the others (Markdown reflows by itself) just see the key as before.
         if self.mode == "rich" and self._rich_widget is not None:
-            if action == "text_viewer.toggle_wrap" and hasattr(self._rich_widget, "toggle_wrap"):
+            if action == "toggle_wrap" and hasattr(self._rich_widget, "toggle_wrap"):
                 self._rich_widget.toggle_wrap()
                 return True
             self._rich_widget.handle_event(event)
@@ -1259,7 +1259,7 @@ class TextViewer(Widget):
         those two consult ``self.wrap`` rather than being left out of the table."""
         if self._handlers is None:
             self._handlers = {
-                "text_viewer.toggle_wrap": self._toggle_wrap,
+                "toggle_wrap": self._toggle_wrap,
                 "text_viewer.scroll_down": lambda: self._scroll(1),
                 "text_viewer.scroll_up": lambda: self._scroll(-1),
                 "text_viewer.page_down": lambda: self._scroll(self._view_h),
@@ -1418,7 +1418,7 @@ class TextViewer(Widget):
             self._panel.set_clipboard(text)
 
     def _change_encoding(self) -> None:
-        """Open the encoding picker (the ``text_viewer.change_encoding`` action, issue
+        """Open the encoding picker (the ``change_encoding`` action, issue
         #289): Auto or an explicit codec from ``Config.TEXT_ENCODINGS``,
         applied via :meth:`_apply_encoding`. The picker seeds on the choice in
         effect and its Auto row names what detection chose, so it doubles as an
@@ -1488,17 +1488,17 @@ class TextViewer(Widget):
             (_pair("text_viewer.scroll_top", "text_viewer.scroll_bottom"), "top / bottom"),
             (_pair("text_viewer.scroll_left", "text_viewer.scroll_right"),
              "scroll horizontally (no-wrap)"),
-            (_label("text_viewer.toggle_wrap", "w"), "toggle line wrap"),
+            (_label("toggle_wrap", "w"), "toggle line wrap"),
             (_label("isearch", "F"), "incremental search"),
             ("↑ / ↓ (in search)", "next / prev match"),
-            (_label("text_viewer.change_encoding", "Shift-E"), "change text encoding"),
+            (_label("change_encoding", "Shift-E"), "change text encoding"),
         ]
         if self._on_edit is not None:
             rows.append((_label("edit_file", "E"),
                          "edit in the configured editor"))
         # Only offer the view-mode toggle for a file type that has a rich renderer.
         if self._rich is not None:
-            rows.append((_label("text_viewer.toggle_view_mode", "M"),
+            rows.append((_label("toggle_view_mode", "M"),
                          f"toggle {self._rich.name} / raw text"))
         rows += [
             (_label("help", "?"), "this help"),
