@@ -26,8 +26,13 @@ def find_git_root(directory):
 
 def main():
     """Main function to open Kiro with XeFM context."""
-    # Check if Kiro is available
-    if not shutil.which('kiro'):
+    # Resolve the launcher once and run *that* path. A bare name would be
+    # looked up differently by the two calls on Windows: shutil.which()
+    # applies PATHEXT and finds kiro.cmd, while CreateProcess (which
+    # subprocess uses) only ever appends .exe - so the check passed and the
+    # launch then failed with "executable not found".
+    kiro_exe = shutil.which('kiro')
+    if not kiro_exe:
         print("Error: Kiro (kiro) is not installed or not in PATH")
         print("Please install Kiro and ensure 'kiro' command is available")
         sys.exit(1)
@@ -109,10 +114,10 @@ def main():
         os.environ.pop(var, None)
 
     # Execute Kiro
-    print(f"Executing: kiro {' '.join(kiro_args)}")
+    print(f"Executing: {kiro_exe} {' '.join(kiro_args)}")
     
     try:
-        subprocess.run(['kiro'] + kiro_args, check=True)
+        subprocess.run([kiro_exe] + kiro_args, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error launching Kiro: {e}")
         sys.exit(1)
