@@ -118,10 +118,12 @@ class Config:
     #   #   ('directory' may also be given as a flat top-level key — shorthand for
     #   #    file_types['directory']. A symlink is colored as a link even when it
     #   #    points at a directory.)
-    #   # --- file pane cursor cue (a sub-dict; the row outline / [ ] bracket,
+    #   # --- file pane cursor cue (a sub-dict; the row outline on the desktop
+    #   #     app, the [ ] brackets and the rule under the row in a terminal,
     #   #     distinct from the selection fill) ---
     #   'cursor': {'active':   (231, 76, 76),  # focused pane (default: red)
-    #              'inactive': (140, 92, 94)}  # blurred pane (default: muted red)
+    #              'inactive': (140, 92, 94)}  # resting pane (default: a gray
+    #   #     derived from the theme — only the focused pane's cue is colored)
     #   # --- incremental search ---
     #   'isearch_match': (78, 201, 176)   # match-highlight base (default: accent2)
     #   # --- text / diff viewer syntax colors (override only the tokens you name) ---
