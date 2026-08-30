@@ -15,12 +15,16 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.2.0 is the floor because XeFM now calls APIs added there: the rich viewers'
-# ``search_matcher`` hook (Migemo in incremental search -- issue #302),
-# ``Panel.remove_layer`` (the progress dialog closing itself from under a
+# 1.4.3 is the floor because anything older draws the CSV / TSV table viewer's
+# header wrong: a full-width (CJK) cell made PuiKit's TableView lay a row out
+# wider than its own column rules, so every column after a Japanese header
+# drifted right of its rule and the last ones fell off the end (issue #355).
+# The API floor underneath it is 1.2.0, where the calls XeFM makes arrived: the
+# rich viewers' ``search_matcher`` hook (Migemo in incremental search -- issue
+# #302), ``Panel.remove_layer`` (the progress dialog closing itself from under a
 # covering confirm box -- issue #333), and ``MenuBar.open_menu`` /
 # ``open_menu_mnemonic`` (keyboard menu activation -- issue #304).
-puikit>=1.2.0
+puikit>=1.4.3
 pygments
 boto3
 watchdog
