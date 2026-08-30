@@ -1328,6 +1328,14 @@ class DirectoryDiffView(Widget):
         # A pending file/dir is dimmed until its verdict resolves.
         pending = verdict == DifferenceType.PENDING
         suffix = " …" if (pending and not node.is_directory) else ""
+        # KNOWN DEVIATION from PuiKit's capability rule (its
+        # docs/rendering_system.md §5): reading a capability may drop a
+        # pixel-only ornament, never switch drawing models — and the two branches
+        # below are whole renderers, pixel strokes against box-drawing glyphs.
+        # It sits here because PuiKit has no tree-connector primitive to resolve
+        # it (``draw_hairline`` makes exactly this choice for a single rule and
+        # proves the model; a connector is that plus the elbow/tee/stem cases).
+        # Audited in doc/dev/CAPABILITY_BRANCHING_AUDIT.md.
         vector = ctx.vector_shapes
         chain = self._connector_chain(node)
 

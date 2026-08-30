@@ -122,6 +122,71 @@ framework seam, the authoritative reference is PuiKit's `docs/color_system.md`
 XeFM side, see [MOTION_IMPLEMENTATION.md](MOTION_IMPLEMENTATION.md); the built-in
 palettes themselves live in `_THEME_SPECS` in `xefm/app.py`.
 
+## The cursor cue
+
+`extras['cursor']` (`active` / `inactive`) is the color of the *cursor row*
+marker, kept orthogonal to the selection fill so the two never read as the same
+channel. `xefm/file_pane.py` draws it two ways, because the two surfaces have
+different room:
+
+- **GUI** (`vector_shapes`): a rounded outline rectangle framing the row, drawn
+  over the row fill (`_draw_cursor`).
+- **TUI** (character grid): the `[` … `]` brackets in the reserved gutter
+  columns **and a rule under the whole row**, both in the cursor color.
+
+The rule was added for [#350](https://github.com/crftwr/xefm/issues/350): two
+bracket characters at the far ends of a wide row are easy to lose, and their
+color was the only thing separating the active pane's cursor from the resting
+one's. Three details make it work on a grid:
+
+1. **A blank run goes down first.** Each grid cell carries exactly one style, so
+   an underline cannot be added to a row after its text is drawn, and the gaps
+   *between* columns have no text of their own to carry it. `_draw_row` lays a
+   run of underlined blanks across the content region, then draws the name / size
+   / date runs underlined over it — one unbroken line.
+2. **The brackets carry their own two cells.** The gutter is exactly one column
+   on each side (`GUTTER_W` / `BRACKET_W`), so the bracket cue joins the rule up
+   end to end rather than sitting outside it.
+3. **The color rides on `Style.underline_color`** (PuiKit ≥ 1.5), which the VT
+   backend emits as SGR 58 in the sub-parameter form `58:2::r:g:b`. A terminal
+   without colored underlines discards that one parameter and still draws the
+   rule in the text color, so the cue degrades to "underlined row" rather than
+   disappearing. The blanks take the cursor color as their *foreground* for the
+   same reason: on such a terminal the gaps still rule in it.
+
+`--backend curses` draws the underline (curses `A_UNDERLINE`) but never its
+color; the GUI backends are unaffected, since they keep the outline rectangle.
+
+Choosing between the two shapes is a **known deviation** from PuiKit's rule that
+a widget reads a capability only to drop a pixel-only ornament, never to switch
+drawing models (its `docs/rendering_system.md` §5). `FilePane.draw` carries the
+note at the `grid = not ctx.vector_shapes` line, the framework half — a missing
+row-marker primitive — is §9.4 there, and every capability read in XeFM is
+audited in [CAPABILITY_BRANCHING_AUDIT.md](CAPABILITY_BRANCHING_AUDIT.md). The color itself is *not* part of
+the deviation: it travels as `Style.underline_color`, an intent each backend
+resolves its own way.
+
+### The resting pane's cue is colorless
+
+`active` defaults to `CURSOR_ACTIVE` (a red). `inactive` has **no constant**: when
+a theme names none, `_cursor_fg` derives a gray — `_neutral(theme.muted_text)`,
+chroma removed in OKLab so the gray keeps the muted ink's *perceived* lightness,
+then floored against the pane background at `LC_MIN_NONTEXT` (a rule and two
+brackets are decoration, not text; `LC_LARGE` lands around 180 gray, bright enough
+to compete with the focused pane).
+
+It replaced a per-theme "muted version of the active color" — a dark red beside a
+bright red, a dark amber beside a bright amber. That is one cue at two strengths,
+and on a one-pixel rule the eye reads hue long before it reads strength, so the
+two panes looked alike. Colorless makes them categorically different: color means
+"you are working here". Deriving it from the theme (rather than one fixed gray)
+keeps it at each palette's own quiet level, and the floor keeps a theme with very
+dim muted ink (Nord) from hiding its resting cursor entirely.
+
+Only **Segment LCD** still names an `inactive`, because a two-colour LCD panel has
+no gray — and needs none, its near-black active cue being as far from mid-green as
+that palette goes. A user's `config.py` names one the same way.
+
 ## Related Files
 
 - `xefm/colors.py` — color-pair constants, `dark`/`light` palettes, `init_colors`, accessors

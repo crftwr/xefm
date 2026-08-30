@@ -396,7 +396,10 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                     status=lambda p: mix(p["bg"], p["accent"], 0.20),
                     footer=lambda p: mix(p["bg"], p["accent"], 0.20),
                     file_types={"directory": (130, 205, 255), "link": (176, 186, 255)},
-                    cursor={"active": (255, 158, 54), "inactive": (122, 98, 58)},
+                    # Only the focused pane's cue is amber; the resting pane's is
+                    # the derived gray (file_pane._cursor_fg). A dimmed amber next
+                    # to a bright one is the same cue twice.
+                    cursor={"active": (255, 158, 54)},
                     syntax={"keyword": (96, 186, 255), "string": (255, 182, 98),
                             "comment": (98, 128, 164), "number": (255, 158, 54),
                             "operator": (176, 186, 255), "builtin": (140, 212, 255)},
@@ -451,7 +454,9 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                    status=lambda p: mix(p["bg"], p["accent"], 0.18),
                    footer=lambda p: mix(p["bg"], p["accent"], 0.18),
                    file_types={"directory": (120, 230, 248), "link": (236, 132, 200)},
-                   cursor={"active": (255, 196, 84), "inactive": (118, 96, 52)},
+                   # Focused pane only — the resting one takes the derived gray
+                   # (see Sci-Fi above).
+                   cursor={"active": (255, 196, 84)},
                    syntax={"keyword": (64, 214, 236), "string": (255, 196, 84),
                            "comment": (94, 128, 154), "number": (255, 224, 138),
                            "operator": (236, 132, 200), "builtin": (140, 240, 250)},
@@ -507,8 +512,10 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                          # so selected files read clearly in the two-colour palette —
                          # the accent-tinted default corrects itself invisible here.
                          selection_fill=(70, 100, 58),
-                         # Active cursor is the black frame; the inactive pane's is a
-                         # mid-green frame — clearly softer, so the focused pane reads.
+                         # The one theme that still names its resting cue. Everywhere
+                         # else it is a neutral gray, which a two-colour LCD panel does
+                         # not have — and it needs none: near-black beside mid-green is
+                         # already as far apart as this palette goes.
                          cursor={"active": (22, 32, 22), "inactive": (120, 140, 95)},
                          syntax={"keyword": (22, 32, 22), "string": (58, 82, 48),
                                  "comment": (110, 128, 92), "number": (22, 32, 22),
@@ -543,7 +550,7 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                        # family: it frames whichever row you are on, and half those
                        # rows are now orange directory names — a warm frame around a
                        # warm name is the one place the cue could disappear.
-                       cursor={"active": (232, 244, 255), "inactive": (110, 140, 180)},
+                       cursor={"active": (232, 244, 255)},
                        # A full spread of hues, one per token class, each held above
                        # 4.5:1 on the navy. ``comment`` is the deliberate exception —
                        # it keeps the muted slate, because a comment's job is to

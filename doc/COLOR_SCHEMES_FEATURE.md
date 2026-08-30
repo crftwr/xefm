@@ -327,6 +327,23 @@ It still obeys the theme on everything that matters: if your theme has no text
 effect the viewer opens plainly like everything else, and it takes its timing
 from the theme rather than setting its own.
 
+### The cursor row
+
+The row your cursor is on is marked in the theme's cursor color. In the desktop
+app it is an outline around the row; in a terminal it is the `[` … `]` brackets
+**and a line under the whole row**, which is what makes it findable on a wide
+listing.
+
+Only the pane you are **working in** gets that color. The other pane marks its
+cursor in plain gray — so the two never look alike, and a glance at the color
+tells you which side Enter will act on. (Before, the resting cue was a dimmed
+version of the same color, which at the width of a rule read as the same cue.)
+
+Most modern terminals (Windows Terminal, iTerm2, WezTerm, kitty, GNOME Terminal,
+Ghostty, …) draw that line in the cursor color. On one that cannot, the line is
+still drawn — in the row's own text color — so the cursor stays just as easy to
+find, only less colorful. Nothing needs to be configured either way.
+
 ### Pane focus
 
 Two cues mark which pane you are working in. Both are per-theme, and only the
@@ -341,8 +358,8 @@ it. A theme cannot configure its resting pane into illegibility.
 
 In a terminal the brackets are skipped. A character grid has no sub-cell room for
 them, and reserving whole columns and rows for decoration would cost real listing
-space — so terminal focus stays marked by the cursor cue, which is vivid on the
-focused pane and muted on the resting one. The ink wash still applies, since a
+space — so terminal focus stays marked by the cursor cue, which is colored on the
+focused pane and gray on the resting one. The ink wash still applies, since a
 color change costs no space.
 
 #### Turning them on for another theme
