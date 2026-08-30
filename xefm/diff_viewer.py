@@ -36,6 +36,7 @@ from xefm import migemo_search
 from xefm.actions import FILE_DIFF as _CONTEXT
 from xefm.config import (find_action_for_event, format_key_for_display,
                          get_config, get_keys_for_action)
+from xefm.external_programs import resolve_command
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
@@ -446,7 +447,7 @@ class DiffViewer(Widget):
         backend = getattr(self._panel, "backend", None)
         try:
             with backend.suspended():
-                subprocess.run(argv)
+                subprocess.run(resolve_command(argv))
         except FileNotFoundError:
             self._notify(f"Command not found: {argv[0]}")
             return
