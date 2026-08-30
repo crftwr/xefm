@@ -18,6 +18,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from xefm import migemo_search
+from xefm import romaji_azik
 from xefm.file_list_manager import FileListManager
 from xefm.filter_list_dialog import FilterListDialog
 
@@ -29,7 +30,8 @@ needs_migemo = pytest.mark.skipif(not HAS_MIGEMO, reason="pymigemo not installed
 def migemo_config(monkeypatch):
     """Pin the gates to their defaults, independent of ~/.xefm/config.py. Tests
     that vary them mutate the returned namespace."""
-    cfg = SimpleNamespace(MIGEMO_SEARCH=True, MIGEMO_MIN_LENGTH=3)
+    cfg = SimpleNamespace(MIGEMO_SEARCH=True, MIGEMO_MIN_LENGTH=3,
+                          MIGEMO_ROMAJI_TABLE="default")
     monkeypatch.setattr(migemo_search, "_config", lambda: cfg)
     return cfg
 
@@ -310,3 +312,106 @@ def test_filter_dialog_substring_unchanged():
     d = FilterListDialog(["apple", "banana", "apricot"])
     d._refilter("ap")
     assert d.filtered == ["apple", "apricot"]
+
+
+# --- AZIK romaji table (#346) -----------------------------------------------
+
+
+PLAIN = {"ka": "か", "ki": "き", "ku": "く", "ke": "け", "ko": "こ",
+         "sa": "さ", "si": "し", "su": "す", "se": "せ", "so": "そ",
+         "sya": "しゃ", "syi": "しぃ", "syu": "しゅ", "sye": "しぇ", "syo": "しょ",
+         "kya": "きゃ", "kyi": "きぃ", "kyu": "きゅ", "kye": "きぇ", "kyo": "きょ"}
+
+
+def test_azik_table_is_generated_from_the_rules():
+    table = romaji_azik.build(PLAIN)
+    # 撥音拡張: the key under each vowel spells the kana plus ん, N covers あ段
+    assert [table[k] for k in ("kz", "kn", "kk", "kj", "kd", "kl")] == \
+        ["かん", "かん", "きん", "くん", "けん", "こん"]
+    # 二重母音拡張
+    assert [table[k] for k in ("kq", "kh", "kw", "kp")] == \
+        ["かい", "くう", "けい", "こう"]
+    # 拗音互換キー: G for Y, and the extensions apply to the third stroke too
+    assert table["kga"] == "きゃ" and table["kgp"] == "きょう"
+    # 互換キー and 特殊拡張
+    assert table[";"] == "っ" and table["q"] == "ん"
+    assert table["kt"] == "こと" and table["mn"] == "もの"
+
+
+def test_azik_own_rows_win_over_the_plain_spelling():
+    table = romaji_azik.build(PLAIN)
+    assert table["xa"] == "しゃ" and table["xi"] == "し"   # plain: ぁ / ぃ
+    assert table["ca"] == "ちゃ" and table["ci"] == "ち"   # plain: か / し
+    assert table["cz"] == "ちゃん"
+
+
+def test_azik_skips_rows_the_plain_table_cannot_spell():
+    # PLAIN has no ta-row, so nothing is guessed for it.
+    table = romaji_azik.build(PLAIN)
+    assert "tz" not in table and "ta" not in table
+
+
+@needs_migemo
+def test_azik_table_is_sorted_and_within_the_lookahead():
+    keys, values = migemo_search._alternate_table("azik")
+    assert keys == sorted(keys)          # the converter prefix-searches by bisect
+    assert max(len(k) for k in keys) <= 4  # its lookahead window
+    assert len(keys) == len(values)
+    assert dict(zip(keys, values))["kz"] == "かん"
+
+
+@needs_migemo
+def test_unknown_table_falls_back_to_plain(migemo_config):
+    migemo_config.MIGEMO_ROMAJI_TABLE = "nosuchtable"
+    assert migemo_search._alternate_table("nosuchtable") is None
+    assert migemo_search.match("kensaku", "検索")   # plain expansion still stands
+
+
+@needs_migemo
+def test_azik_spellings_need_the_table(migemo_config):
+    # けんさく as AZIK types it: KD spells けん.
+    assert migemo_search.match("kdsaku", "検索結果.txt") is False
+    migemo_config.MIGEMO_ROMAJI_TABLE = "azik"
+    assert migemo_search.match("kdsaku", "検索結果.txt")
+    assert migemo_search.match("kzxa", "感謝.txt")      # かんしゃ: KZ + XA
+    assert migemo_search.match("cairo", "茶色.png")     # ちゃいろ: C is チャ行
+    assert migemo_search.match("se;kw", "設計書.md")    # せっけい: ; is っ
+    assert migemo_search.match("kthazime", "事始め.txt")  # KT is the 特殊拡張 こと
+
+
+@needs_migemo
+def test_azik_only_adds_matches(migemo_config):
+    # CA is か in plain romaji and ちゃ in AZIK. Both readings must survive.
+    assert migemo_search.match("camoku", "科目.txt")
+    migemo_config.MIGEMO_ROMAJI_TABLE = "azik"
+    assert migemo_search.match("camoku", "科目.txt")
+    assert migemo_search.match("kensaku", "検索")
+    assert migemo_search.match("mudai", "無題")
+
+
+@needs_migemo
+def test_table_choice_is_part_of_the_cache_key(migemo_config):
+    # Config reloads at runtime, so a cached regex must not outlive its table.
+    assert migemo_search.match("kdsaku", "検索結果.txt") is False
+    migemo_config.MIGEMO_ROMAJI_TABLE = "azik"
+    assert migemo_search.match("kdsaku", "検索結果.txt")
+    migemo_config.MIGEMO_ROMAJI_TABLE = "default"
+    assert migemo_search.match("kdsaku", "検索結果.txt") is False
+
+
+@needs_migemo
+def test_plain_table_is_restored_after_an_azik_expansion(migemo_config):
+    from migemo import romajiconverter
+
+    before = romajiconverter.ROMAJI_KEYS, romajiconverter.ROMAJI_VALUES
+    migemo_config.MIGEMO_ROMAJI_TABLE = "azik"
+    migemo_search.get_regex("kzsaku")
+    assert (romajiconverter.ROMAJI_KEYS, romajiconverter.ROMAJI_VALUES) == before
+
+
+@needs_migemo
+def test_isearch_azik_pattern(flm, pane, migemo_config):
+    migemo_config.MIGEMO_ROMAJI_TABLE = "azik"
+    # てんき as AZIK types it: TD spells てん.
+    assert isearch(flm, pane, "tdki") == ["天気予報.csv"]
+    assert isearch(flm, pane, "kensaku") == ["検索結果.txt", "kensaku_notes.md"]

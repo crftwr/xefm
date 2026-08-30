@@ -35,12 +35,41 @@ Migemo applies to every incremental-search surface:
   slow, so Migemo waits for the third character.
 - Filenames macOS stores in decomposed form (NFD) match correctly.
 
+## AZIK
+
+If you type Japanese with AZIK — the extended romaji scheme where a second
+stroke below the vowel spells the kana plus "n" — set:
+
+```python
+MIGEMO_ROMAJI_TABLE = 'azik'
+```
+
+Search then also understands the spellings AZIK trained your fingers on:
+
+| You type | You get | Rule |
+|---|---|---|
+| `kz` `kk` `kj` `kd` `kl` | かん きん くん けん こん | 撥音拡張 (`sn` さん on the あ段) |
+| `kq` `kh` `kw` `kp` | かい くう けい こう | 二重母音拡張 |
+| `xa` `ca` | しゃ ちゃ | シャ行・チャ行互換キー |
+| `kga` `kgp` | きゃ きょう | 拗音のＹ互換キー |
+| `;` `:` `q` | っ ー ん | |
+| `kf` `nf` | き ぬ | 同指打鍵互換キー |
+| `kt` `mn` `ds` | こと もの です | 特殊拡張 |
+
+So `kdsaku` finds 検索, `kzxa` finds 感謝, and `se;kw` finds 設計.
+
+AZIK is added *alongside* plain romaji, never in place of it: the handful of
+keys the two spell differently (`ca` is か in plain romaji and ちゃ in AZIK)
+match either reading, so turning this on cannot make a search you already use
+stop working.
+
 ## Configuration
 
 ```python
 # In ~/.xefm/config.py
 MIGEMO_SEARCH = True   # Add Migemo (romaji -> Japanese) matches to incremental search
 MIGEMO_MIN_LENGTH = 3  # Shortest pattern handed to Migemo
+MIGEMO_ROMAJI_TABLE = 'default'  # 'default' or 'azik'
 ```
 
 Set `MIGEMO_SEARCH = False` to turn the feature off — searches then behave

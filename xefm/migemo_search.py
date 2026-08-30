@@ -26,6 +26,13 @@ discussion #332; the load-bearing choices:
   gated away. ``MIGEMO_MIN_LENGTH``, default 3.
 - **Globs bypass Migemo.** A pattern containing ``* ? [`` keeps its exact
   fnmatch semantics; Migemo's regex would collide with them.
+- **Alternate romaji tables are unioned, not swapped in.** ``AZIK`` typists
+  spell かん ``kz`` (#346), and pymigemo hard-codes its romaji table where
+  C/Migemo kept an editable ``roma2hira.dat``. ``MIGEMO_ROMAJI_TABLE`` picks a
+  table from :mod:`xefm.romaji_azik`, and a pattern is expanded twice — once
+  under the plain table, once under the alternate — so the ~13 keys AZIK
+  reassigns (``ca`` ちゃ where plain romaji says か) add their reading instead
+  of replacing it, and the additive rule above still holds.
 - **Everything degrades to plain matching.** Package missing, dictionary
   unreadable, an engine landmine (a lone ``s`` raises IndexError in its bit
   vector), a regex the stdlib rejects: the answer is always ``None`` /
@@ -41,7 +48,9 @@ from __future__ import annotations
 
 import array
 import re
+import threading
 import unicodedata
+from contextlib import contextmanager
 from functools import lru_cache
 
 from xefm.log_manager import getLogger
@@ -55,6 +64,14 @@ _GLOB_CHARS = ('*', '?', '[')
 #: None: not tried yet. False: tried and unavailable (missing package, wrong
 #: package under the ``migemo`` name, broken dictionary). Else the engine.
 _engine = None
+
+#: Alternate romaji tables, built on first use: name -> (keys, values) for
+#: pymigemo's module globals, or ``False`` where the build failed.
+_tables: dict[str, object] = {}
+
+#: Held across every expansion. An alternate table is installed by swapping
+#: pymigemo's module globals, so no other thread may be expanding meanwhile.
+_table_lock = threading.RLock()
 
 
 class _Array32:
@@ -109,6 +126,52 @@ def _load_engine():
     return _engine if _engine else None
 
 
+def _alternate_table(name: str):
+    """``(keys, values)`` for the named romaji table overlaid on pymigemo's
+    own, or ``None`` when there is no such table (or building it failed —
+    warned once, then cached as unavailable and the plain table stands alone).
+
+    The pair is what pymigemo's converter reads: two parallel lists it
+    prefix-searches with :mod:`bisect`, so the keys are sorted here. That also
+    quietly repairs upstream's one out-of-order key (``~`` sits before ``a``,
+    where ``bisect`` can never find it)."""
+    if name not in _tables:
+        try:
+            from migemo import romajiconverter
+            from xefm import romaji_azik
+            if name != 'azik':
+                raise ValueError(f"unknown romaji table {name!r}")
+            plain = dict(zip(romajiconverter.ROMAJI_KEYS,
+                             romajiconverter.ROMAJI_VALUES))
+            merged = plain | romaji_azik.build(plain)
+            items = sorted(merged.items())
+            _tables[name] = ([k for k, _ in items], [v for _, v in items])
+            logger.info(f"Romaji table {name!r} built "
+                        f"({len(items)} entries, {len(plain)} plain)")
+        except Exception as e:
+            logger.warning(f"Romaji table {name!r} unavailable "
+                           f"({type(e).__name__}: {e}); using the plain table")
+            _tables[name] = False
+    table = _tables[name]
+    return table if table else None
+
+
+@contextmanager
+def _installed(table):
+    """pymigemo's romaji table replaced by ``table`` for the block. Its
+    converter reads two module globals and offers no seam below
+    :meth:`Migemo.query`, so the swap is how an alternate table reaches both
+    the dictionary lookup and the katakana forms below."""
+    from migemo import romajiconverter as converter
+    with _table_lock:
+        saved = converter.ROMAJI_KEYS, converter.ROMAJI_VALUES
+        converter.ROMAJI_KEYS, converter.ROMAJI_VALUES = table
+        try:
+            yield
+        finally:
+            converter.ROMAJI_KEYS, converter.ROMAJI_VALUES = saved
+
+
 def _word_expansion(engine, word: str) -> str:
     """pymigemo's regex for one lowercased word, plus the katakana it
     forgets: C/Migemo unions hiragana->katakana (and half-width katakana)
@@ -156,11 +219,9 @@ def _words_expansion(engine, words, min_length: int) -> str:
     )
 
 
-@lru_cache(maxsize=256)
-def _compiled(pattern: str, min_length: int) -> re.Pattern | None:
-    """The compiled Migemo regex for ``pattern``, or ``None``. Cached per
-    (pattern, gate): generation is the expensive step; matching with the
-    result is cheap (#332 §3.3).
+def _pattern_expansion(engine, pattern: str, min_length: int) -> str:
+    """The expansion for a whole pattern under whichever romaji table is
+    currently installed.
 
     The pattern is split into words with pymigemo's own parser (camel case
     and whitespace are word breaks) but each word is expanded *lowercased*,
@@ -174,21 +235,42 @@ def _compiled(pattern: str, min_length: int) -> re.Pattern | None:
     but ``Sa-bisu`` is one word typed with a capital — and the camel split
     (``Sa`` + ``-bisu``) demands a literal ``Sa`` no Japanese text contains.
     Migemo is additive, so both readings are expanded and unioned: the camel
-    split, and the whole pattern lowercased. ``IGNORECASE`` keeps the regex
-    as forgiving as the callers' lowercased native matching."""
+    split, and the whole pattern lowercased."""
+    expansion = _words_expansion(engine, engine.parse_query(pattern),
+                                 min_length)
+    lower = pattern.lower()
+    if lower != pattern:
+        whole = _words_expansion(engine, engine.parse_query(lower), min_length)
+        if whole and whole != expansion:
+            expansion = f"(?:{expansion})|(?:{whole})" if expansion else whole
+    return expansion
+
+
+@lru_cache(maxsize=256)
+def _compiled(pattern: str, min_length: int,
+              romaji_table: str) -> re.Pattern | None:
+    """The compiled Migemo regex for ``pattern``, or ``None``. Cached per
+    (pattern, gate, table): generation is the expensive step; matching with
+    the result is cheap (#332 §3.3).
+
+    A configured alternate romaji table is expanded *in addition to* the plain
+    one and unioned in, so the keys it reassigns add a reading rather than
+    take one away (#346). ``IGNORECASE`` keeps the regex as forgiving as the
+    callers' lowercased native matching."""
     engine = _load_engine()
     if engine is None:
         return None
     try:
-        expansion = _words_expansion(engine, engine.parse_query(pattern),
-                                     min_length)
-        lower = pattern.lower()
-        if lower != pattern:
-            whole = _words_expansion(engine, engine.parse_query(lower),
-                                     min_length)
-            if whole and whole != expansion:
-                expansion = (f"(?:{expansion})|(?:{whole})" if expansion
-                             else whole)
+        with _table_lock:
+            expansion = _pattern_expansion(engine, pattern, min_length)
+            table = (_alternate_table(romaji_table)
+                     if romaji_table != 'default' else None)
+            if table is not None:
+                with _installed(table):
+                    alternate = _pattern_expansion(engine, pattern, min_length)
+                if alternate and alternate != expansion:
+                    expansion = (f"(?:{expansion})|(?:{alternate})"
+                                 if expansion else alternate)
         if not expansion:
             # e.g. an all-whitespace pattern: re.compile('') matches
             # everything, which would light up every row.
@@ -215,7 +297,8 @@ def get_regex(pattern: str) -> re.Pattern | None:
         return None
     if any(c in pattern for c in _GLOB_CHARS):
         return None
-    return _compiled(pattern, min_length)
+    table = getattr(config, 'MIGEMO_ROMAJI_TABLE', 'default') or 'default'
+    return _compiled(pattern, min_length, str(table).lower())
 
 
 def has_hit(regex: re.Pattern, text: str) -> bool:

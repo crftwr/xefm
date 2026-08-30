@@ -77,6 +77,42 @@ word itself when it is hiragana) is translated to katakana (a parallel-block
 `characterconverter.zen2han`), and the results join the expansion as escaped
 literals, longest first so a highlight span covers the whole hit.
 
+### Alternate romaji tables (`xefm/romaji_azik.py`, #346)
+
+C/Migemo keeps its romaji→hiragana table in an editable `roma2hira.dat`, which
+is how AZIK typists made C/Migemo understand their spellings. pymigemo has no
+such seam: the table is two module-level parallel lists in
+`migemo/romajiconverter.py`, prefix-searched with `bisect` inside
+`convert_romaji_to_hiragana_predictively`, which `Migemo.query_word` calls
+directly. So an alternate table has to be *installed* over those globals
+(`_installed()`, a context manager under `_table_lock` — the swap is process
+global, so no other thread may be expanding meanwhile).
+
+**Union, not replacement.** AZIK reassigns ~13 keys plain romaji already uses
+(`ca` か → ちゃ, `xa` ぁ → しゃ, `wi` ゐ → うぃ). Swapping the table would take
+those readings away, breaking the module's founding rule that Migemo only ever
+*adds* matches. `_compiled()` therefore expands the pattern twice — once under
+the plain table, once under the alternate — and unions the two expansions, the
+same shape as the camel/lowercase union above. The cache key carries the table
+name so a runtime config reload cannot serve a regex built for the other one.
+
+**The table is generated, not shipped.** `romaji_azik.build(plain)` takes the
+engine's own table as a mapping and returns AZIK's entries: 44 first strokes ×
+(5 vowels + 10 extension keys) plus ~60 hand-listed 互換キー and 特殊拡張, 703
+entries from ~90 lines. Base kana are read from `plain` (`_BORROWED` maps
+AZIK's `kg`/`zy`/`tg`/`dc` onto the plain `ky`/`jy`/`th`/`dh` rows; `_OWN` holds
+the five rows AZIK spells itself), so the kana always match the engine's and a
+prefix `plain` cannot spell is skipped rather than guessed. Two reasons not to
+bundle a data file: the published AZIK tables for Google IME carry no
+redistribution licence (and the one under BSD-2 is a personal variant), and the
+generator is checkable against the spec — [AZIK総合解説書](http://www1.vecceed.ne.jp/~bemu/azik/azikinfo.htm) —
+in a way a 700-line table is not.
+
+Merging sorts the keys, which also repairs upstream's one out-of-order entry
+(`~` is stored before `a` in `ROMAJI_KEYS` though it sorts after, so
+`bisect` can never find it). Longest
+AZIK key is 3 characters, inside the converter's 4-character lookahead window.
+
 ### The ASCII filter
 
 A Migemo hit only counts when the matched span contains a non-ASCII
@@ -140,9 +176,10 @@ both (rich-mode Migemo lights up once PuiKit ships the hook).
 
 ## Config plumbing
 
-`MIGEMO_SEARCH` (bool, default `True`) and `MIGEMO_MIN_LENGTH` (int ≥ 1,
-default 3) live in `xefm/_config.py` under "Incremental search settings" and
-are validated in `ConfigManager.validate_config`. Existing user configs pick
+`MIGEMO_SEARCH` (bool, default `True`), `MIGEMO_MIN_LENGTH` (int ≥ 1, default
+3) and `MIGEMO_ROMAJI_TABLE` (`'default'` or `'azik'`) live in
+`xefm/_config.py` under "Incremental search settings" and are validated in
+`ConfigManager.validate_config`. Existing user configs pick
 them up through `_copy_missing_fields`.
 
 ## Out of scope (deliberately)
@@ -160,7 +197,8 @@ them up through `_copy_missing_fields`.
 ## Tests
 
 - `test/test_migemo_search.py` — loader/patch, gates, expansion casing, the
-  ASCII filter, NFD, engine-landmine absorption, `find_matches` and
+  ASCII filter, NFD, engine-landmine absorption, the AZIK table's rules and
+  its union/cache-key/global-restore behaviour, `find_matches` and
   `FilterListDialog` integration. Engine-dependent tests skip without
   pymigemo.
 - `test/test_viewer_isearch.py` — romaji matching (and highlight drawing via
