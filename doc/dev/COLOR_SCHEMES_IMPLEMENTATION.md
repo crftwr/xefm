@@ -144,15 +144,28 @@ one's. Three details make it work on a grid:
    *between* columns have no text of their own to carry it. `_draw_row` lays a
    run of underlined blanks across the content region, then draws the name / size
    / date runs underlined over it — one unbroken line.
-2. **The brackets carry their own two cells.** The gutter is exactly one column
-   on each side (`GUTTER_W` / `BRACKET_W`), so the bracket cue joins the rule up
-   end to end rather than sitting outside it.
-3. **The color rides on `Style.underline_color`** (PuiKit ≥ 1.5), which the VT
-   backend emits as SGR 58 in the sub-parameter form `58:2::r:g:b`. A terminal
-   without colored underlines discards that one parameter and still draws the
-   rule in the text color, so the cue degrades to "underlined row" rather than
-   disappearing. The blanks take the cursor color as their *foreground* for the
-   same reason: on such a terminal the gaps still rule in it.
+2. **The color rides on `Style.underline_color`** (PuiKit ≥ 1.5), which the VT
+   backend emits as SGR 58 in the sub-parameter form `58:2::r:g:b` — and only to
+   a terminal it recognizes as parsing sub-parameters at all
+   (`vt_backend._supports_underline_color`, a whitelist). That whitelist is not
+   caution for its own sake: macOS Terminal.app abandons the whole escape
+   sequence at the first colon, which drops the underline attribute and the row's
+   fg/bg with it, so the cursor row came out in the terminal's own default ink.
+3. **The two spellings are exclusive, and chosen by capability.** PuiKit
+   publishes that detection as `ctx.colored_underlines`, and `FilePane.draw`
+   reads it into `ruled`. Where it is true the row is ruled and **no brackets are
+   drawn**; where it is false the row is **not** underlined at all and the `[`
+   `]` brackets are the cue. A colorless rule was the first fallback and it is
+   the wrong one — it marks a row without saying which pane owns it, which is
+   most of what the cue is for, while the brackets carry the cursor color in
+   their own foreground on any terminal.
+4. **The gutter is reserved either way** (`GUTTER_W` / `BRACKET_W`, one column
+   per side), so which spelling a terminal gets never moves a pane's columns.
+   `_draw_cursor` owns those two cells in both: the brackets, or — when ruled —
+   underlined blanks, which is how the rule reaches past the content region and
+   out to the row's ends. Neither carries a background: the gutter sits outside
+   the row's fill, and a cell written with one would widen the selection tint on
+   the cursor row alone.
 
 `--backend curses` draws the underline (curses `A_UNDERLINE`) but never its
 color; the GUI backends are unaffected, since they keep the outline rectangle.

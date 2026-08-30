@@ -47,9 +47,12 @@ COL_GAP = 1
 #: pane — the datetime is hidden when the pane gets tight.
 MIN_NAME_W = 12
 #: Left/right gutter (base units) reserved on a **grid** (TUI) for the cursor
-#: row's framing brackets — ``[`` on the left, ``]`` on the right. GUI reserves
-#: neither (its cursor is a drawn outline rectangle — see ``_draw_cursor``), so
-#: names sit flush against the pane edge there.
+#: cue's own two columns — the ``[`` ``]`` brackets where those are the cue, and
+#: the cells that carry the rule out to the row's ends where it is (both drawn by
+#: ``_draw_cursor``). Reserved whichever spelling the terminal gets, so a pane's
+#: columns land in the same places on every terminal. GUI reserves neither (its
+#: cursor is a drawn outline rectangle), so names sit flush against the pane edge
+#: there.
 GUTTER_W = 1
 BRACKET_W = 1
 #: Incremental-search match highlight: a wash behind every row matching the live
@@ -468,7 +471,7 @@ class FilePane(Widget):
         # consequence rather than a second one.
         #
         # The fix is a row-marker primitive in PuiKit — ``ctx.draw_row_marker``
-        # resolving to the outline on a vector backend and to brackets + an
+        # resolving to the outline on a vector backend and to brackets or an
         # underlined blank run on a grid, plus a way to ask what gutter it costs
         # so the column budget stops branching too. Until that exists the branch
         # cannot move down, and it is recorded rather than hidden:
@@ -476,6 +479,17 @@ class FilePane(Widget):
         # XeFM, and puikit's docs/rendering_system.md §9 carries the framework
         # half.
         grid = not ctx.vector_shapes
+
+        # Which of the two grid spellings the cursor gets. The rule is the better
+        # cue — it marks the whole row rather than its two ends — but it is only
+        # legible AS A CURSOR while it can be drawn in a color the rest of the
+        # pane does not have. Where every underline inks in the text color, a
+        # ruled row says "this row is underlined", not "you are here", and says
+        # nothing at all about which pane owns it; there the brackets are the
+        # cue, and they carry the cursor color in their own foreground. This is
+        # the ``images`` reading of a capability — not whether to draw, but which
+        # fallback is worth drawing (puikit's ``DrawContext.colored_underlines``).
+        ruled = grid and ctx.colored_underlines
 
         # Content region [content_left, content_right): where a row's text/columns
         # and its selection/match fill sit — inset by the content margin, up to the
@@ -536,7 +550,7 @@ class FilePane(Widget):
             if i >= 0:
                 entry = files[i]
                 self._draw_row(ctx, my + ry, entry, i == cursor, str(entry) in selected,
-                               i in self.search_matches, grid,
+                               i in self.search_matches, grid, ruled,
                                content_left, name_w, ext_x, ext_w, size_right, show_date,
                                date_right, content_right, band_left, band_right,
                                measure, measure_mono)
@@ -571,7 +585,7 @@ class FilePane(Widget):
             ctx.draw_corner_brackets(ctx.size_units[0], ctx.size_units[1],
                                      Style(fg=color), arm=arm, thickness=thickness)
 
-    def _draw_row(self, ctx, y, entry, is_cursor, selected, is_match, grid,
+    def _draw_row(self, ctx, y, entry, is_cursor, selected, is_match, grid, ruled,
                   content_left, name_w, ext_x, ext_w, size_right, show_date,
                   date_right, content_right, band_left, band_right,
                   measure, measure_mono) -> None:
@@ -601,18 +615,19 @@ class FilePane(Widget):
         # channel).
         gui_cursor = is_cursor and not grid
         # A grid has no sub-cell room for the GUI's outline rectangle, so the TUI
-        # cursor is drawn *through* the row: the framing brackets in the gutters
-        # (``_draw_cursor``) plus a rule under the whole row, both in the cursor
-        # color. The rule is what makes the cursor readable at a glance and which
-        # pane owns it — the brackets alone are two characters at the far ends of
-        # a wide row, and their color is the only thing separating the active
-        # pane's cursor from the resting one's.
-        grid_cursor = is_cursor and grid
+        # cursor is drawn *through* the row — ruled underneath in the cursor color
+        # where that color can be had (``ruled``), and framed by the ``[`` ``]``
+        # brackets in the gutters where it cannot (``_draw_cursor``). The rule is
+        # the better cue when it is available: it marks the whole row instead of
+        # its two far ends. Never both — two cues for one thing. The gutter is
+        # reserved for either spelling, so which one a terminal gets never moves
+        # a pane's columns.
+        ruled_cursor = is_cursor and ruled
         base = ctx.background or DEFAULT_BG
         # ``base`` first: the resting pane's cue is floored against the pane
         # background it will be drawn on (see ``_cursor_fg``).
-        under = self._cursor_fg(theme, base) if grid_cursor else None
-        row_attr = TextAttribute.UNDERLINE if grid_cursor else TextAttribute.NORMAL
+        under = self._cursor_fg(theme, base) if ruled_cursor else None
+        row_attr = TextAttribute.UNDERLINE if ruled_cursor else TextAttribute.NORMAL
         if selected:
             pinned = theme.extras.get("selection_fill")
             if pinned is not None:
@@ -647,7 +662,7 @@ class FilePane(Widget):
             ctx.fill_rect(content_left, y, max(0.0, content_right - content_left), 1.0,
                           Style(bg=fill_bg))
         if gui_cursor:
-            self._draw_cursor(ctx, y, band_left, band_right, grid)
+            self._draw_cursor(ctx, y, band_left, band_right, grid, ruled)
 
         # Foreground keeps the file-type color language on every row (link / dir /
         # file from the theme's file_types palette, a symlink winning over a dir),
@@ -685,7 +700,7 @@ class FilePane(Widget):
         # underlined over it, leaving one unbroken line across the row. Its blanks
         # take the cursor color as their foreground, so a terminal that ignores
         # SGR 58 still rules the gaps in it (the text keeps its own colors there).
-        if grid_cursor:
+        if ruled_cursor:
             ctx.draw_text(content_left, y, " " * max(0, int(round(content_right - content_left))),
                           Style(fg=under, bg=text_bg, attr=row_attr, underline_color=under))
 
@@ -701,12 +716,13 @@ class FilePane(Widget):
             ctx.draw_text(date_right - measure_mono(date), y, date,
                           Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO))
 
-        # Grid cursor cue drawn last: bold ``[`` … ``]`` brackets in the gutter
-        # (they sit in the reserved gutter columns, clear of the glyphs).
+        # Grid cursor cue drawn last, in the reserved gutter columns clear of the
+        # glyphs: the brackets, or — where the row is ruled — the two cells that
+        # carry the rule past the content and out to the row's ends.
         if is_cursor and grid:
-            self._draw_cursor(ctx, y, band_left, band_right, grid)
+            self._draw_cursor(ctx, y, band_left, band_right, grid, ruled)
 
-    def _draw_cursor(self, ctx, y, band_left, band_right, grid) -> None:
+    def _draw_cursor(self, ctx, y, band_left, band_right, grid, ruled=False) -> None:
         """Draw the cursor-position cue for the current row — the theme's ``cursor``
         color (default a distinct **red**), orthogonal to the selection fill. Vivid
         on the active pane, muted on the inactive one so the focused pane's cursor
@@ -714,10 +730,11 @@ class FilePane(Widget):
         ``[band_left, band_right)``.
 
         - **GUI** (``vector_shapes``): an outline rectangle framing the row.
-        - **TUI** (grid): a bold ``[`` … ``]`` bracket pair around the row, ruled
-          underneath in the same color — the brackets carry the rule across their
-          own two gutter cells, and ``_draw_row`` carries it across everything
-          between them, so the row is underlined end to end.
+        - **TUI** (grid), ``ruled``: the gutter cells ``_draw_row``'s rule cannot
+          reach — it spans the content, these two carry it out to the row's ends,
+          the job the brackets used to do for it.
+        - **TUI** (grid), otherwise: a bold ``[`` … ``]`` bracket pair around the
+          row, the spelling for a terminal that cannot color a rule.
         """
         color = self._cursor_fg(ctx.theme, ctx.background or DEFAULT_BG)
         if not grid:
@@ -732,8 +749,14 @@ class FilePane(Widget):
                            max(0.0, (band_right - band_left) + 2 * bleed), 1.0,
                            Style(fg=color), radius=CURSOR_RADIUS)
             return
-        style = Style(fg=color, attr=TextAttribute.BOLD | TextAttribute.UNDERLINE,
-                      underline_color=color)
+        # No bg on either spelling: the gutter sits outside the row's fill, and a
+        # cell written with one would widen the selection tint on this row alone.
+        if ruled:
+            blanks = Style(fg=color, attr=TextAttribute.UNDERLINE, underline_color=color)
+            ctx.draw_text(int(band_left), y, " " * GUTTER_W, blanks)
+            ctx.draw_text(int(band_right) - BRACKET_W, y, " " * BRACKET_W, blanks)
+            return
+        style = Style(fg=color, attr=TextAttribute.BOLD)
         ctx.draw_text(int(band_left), y, "[", style)
         ctx.draw_text(int(band_right) - BRACKET_W, y, "]", style)
 

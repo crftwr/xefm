@@ -14,6 +14,11 @@ capability"):
 > it only makes the widget *add or omit an ornament the grid can't afford*, it
 > belongs in the widget.
 
+§5 carries one narrow extension of that rule, the **fidelity reading** (`images`
+and `colored_underlines`): read where the framework's own fallback would lose the
+*meaning* and the widget has a better one. It is explicit that the litmus test
+still binds, so a read under it is sanctioned but not exempt — see deviation 1.
+
 XeFM reads capabilities in about twenty places. Most are within the rule — a
 sub-cell pad that collapses to zero, an ornament a grid cannot afford. **Two are
 not**, and both exist for the same reason: PuiKit has no intent primitive for the
@@ -30,17 +35,29 @@ see, and the fixes are PuiKit API additions.
 ### 1. The file-pane cursor cue — `xefm/file_pane.py`
 
 `grid = not ctx.vector_shapes` picks between a stroked rounded rect framing the
-row (GUI) and `[` `]` bracket characters plus an underline attribute (TUI). That
-is different *in kind*, and it drags two more branches with it: the gutter
-columns the brackets need, and the cursor band those gutters define.
+row (GUI) and a grid cue (TUI). That is different *in kind*, and it drags two
+more branches with it: the gutter columns the cue may need, and the cursor band
+those gutters define.
+
+A second capability now feeds the same choice: `ruled = grid and
+ctx.colored_underlines` picks between the two grid spellings — an underlined row
+where a rule can be colored, `[` `]` brackets where it cannot. That read is
+sanctioned as the *fidelity reading* PuiKit's §5 now spells out — the `images`
+case: not *whether* to draw, but which fallback is worth drawing when the
+framework's own would lose the meaning. §5 is explicit that this does not
+suspend the litmus test, and it does not here either: the second spelling is a
+different mark in kind, and it sits in the widget only because no primitive can
+express both. So it is recorded with the first rather than counted as within the
+rule. It costs no third layout — both grid spellings spend the same gutter.
 
 The fix is a row-marker primitive in PuiKit — `ctx.draw_row_marker(x, y, w,
 style, hints)` in the control-face family (`round_rect`, `draw_hairline`,
-`draw_check`), resolving to the outline on a vector backend and to brackets plus
-an underlined blank run on a grid. It needs a second half the other faces do not:
-the grid variant spends a gutter column at each end, so a widget must be able to
-ask what the marker costs *before* it lays out its columns — the same shape as
-`draw_border` insetting the content clip.
+`draw_check`), resolving to the outline on a vector backend and to whichever
+grid spelling the terminal can show. It needs a second half the other faces do
+not: the grid spellings spend a gutter column at each end and the vector one
+spends none, so a widget must be able to ask what the marker costs *before* it
+lays out its columns — the same shape as `draw_border` insetting the content
+clip.
 
 Recorded at the branch in `FilePane.draw`, in
 [COLOR_SCHEMES_IMPLEMENTATION.md](COLOR_SCHEMES_IMPLEMENTATION.md), and as §9.4

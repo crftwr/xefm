@@ -330,19 +330,24 @@ from the theme rather than setting its own.
 ### The cursor row
 
 The row your cursor is on is marked in the theme's cursor color. In the desktop
-app it is an outline around the row; in a terminal it is the `[` … `]` brackets
-**and a line under the whole row**, which is what makes it findable on a wide
-listing.
+app it is an outline around the row; in a terminal it is **a line under the whole
+row**, which is what makes it findable on a wide listing.
 
 Only the pane you are **working in** gets that color. The other pane marks its
 cursor in plain gray — so the two never look alike, and a glance at the color
 tells you which side Enter will act on. (Before, the resting cue was a dimmed
 version of the same color, which at the width of a rule read as the same cue.)
 
-Most modern terminals (Windows Terminal, iTerm2, WezTerm, kitty, GNOME Terminal,
-Ghostty, …) draw that line in the cursor color. On one that cannot, the line is
-still drawn — in the row's own text color — so the cursor stays just as easy to
-find, only less colorful. Nothing needs to be configured either way.
+**XeFM picks the marking your terminal can actually show, by itself.** Most
+modern terminals (Windows Terminal, iTerm2, WezTerm, kitty, GNOME Terminal,
+Ghostty, Alacritty, Konsole, …) can draw an underline in a color of its own, and
+there you get the line. Where a terminal cannot — macOS's own Terminal.app among
+them — a line would come out in the row's own text color, saying only "this row
+is underlined" and nothing about which pane you are in, so the cursor row is
+marked `[` … `]` instead, in the cursor color. Both spellings say the same thing,
+neither needs configuring, and both cost the listing the same one column at each
+edge — so a pane looks the same on every terminal but for how its cursor row is
+marked.
 
 ### Pane focus
 

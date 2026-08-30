@@ -1,10 +1,15 @@
-"""The TUI cursor cue: an underlined row, not just two brackets.
+"""The TUI cursor cue: an underlined row, or two brackets, never both.
 
 On a character grid the cursor used to be a bold ``[`` … ``]`` pair in the gutter
 columns — two characters at the far ends of a wide row, with their color the only
-thing telling the active pane's cursor from the resting one's (xefm#350). It now
-rules the whole row underneath as well, in the same cursor color, which is what
-makes the row readable at a glance and which pane owns it.
+thing telling the active pane's cursor from the resting one's (xefm#350). Where
+the terminal can color an underline it now rules the whole row instead, which is
+what makes the row readable at a glance and which pane owns it.
+
+Where it cannot, a rule would ink in the row's own text color and say only "this
+row is underlined" — so there the brackets stay, being the spelling that carries
+the cursor color no matter what the terminal implements. That choice is
+``ctx.colored_underlines``; these tests render both sides of it.
 
 The rule is drawn cell by cell (each grid cell holds one style), so these tests
 walk the row: the blanks between columns have to carry it just as the text does,
@@ -24,6 +29,7 @@ from xefm.file_pane import BRACKET_W, CURSOR_ACTIVE, GUTTER_W, FilePane  # noqa:
 from puikit import Panel  # noqa: E402
 from puikit.backend import TextAttribute  # noqa: E402
 from puikit.backends.memory_backend import MemoryBackend  # noqa: E402
+from puikit.capability import PROFILE_TUI, CapabilityProfile  # noqa: E402
 
 THEME = dict(xefm_app.THEMES)["Dark+"]
 
@@ -31,11 +37,16 @@ CURSOR_ROW = 1
 WIDTH, HEIGHT = 30, 6
 
 
-def _render(active=True, theme=THEME):
-    """One settled TUI frame of a pane whose cursor sits on row CURSOR_ROW."""
+def _render(active=True, theme=THEME, colored=True):
+    """One settled TUI frame of a pane whose cursor sits on row CURSOR_ROW.
+
+    ``colored`` is the terminal half: whether an underline can be given a color
+    of its own, which is what decides the cue's spelling."""
     pane = {"files": [Path(f"/tmp/file{i}.txt") for i in range(5)],
             "focused_index": CURSOR_ROW, "selected_files": set(), "path": "/tmp"}
-    backend = MemoryBackend(width=WIDTH, height=HEIGHT)
+    backend = MemoryBackend(width=WIDTH, height=HEIGHT,
+                            capabilities=CapabilityProfile(
+                                {**PROFILE_TUI, "colored_underlines": colored}))
     panel = Panel(backend)
     panel.theme = theme
     view = FilePane(pane)
@@ -60,13 +71,34 @@ class TUICursorCue(unittest.TestCase):
             self.assertEqual(style.underline_color, color,
                              f"column {x} rules in the wrong color")
 
-    def test_the_brackets_survive(self):
-        # The rule is added to the bracket cue, not swapped for it: a terminal
-        # that draws no underline at all must still show where the cursor is.
-        backend, _ = _render()
+    def test_a_ruled_row_drops_the_brackets(self):
+        # One cue, not two. The rule already marks the whole row, and the
+        # brackets would be charging the listing two columns to repeat it.
+        row = _render(colored=True)[0].snapshot()[CURSOR_ROW]
+        self.assertNotEqual(row[0], "[")
+        self.assertNotEqual(row[WIDTH - 1], "]")
+
+    def test_a_terminal_without_colored_underlines_gets_the_brackets(self):
+        # A rule inking in the row's own text color says "this row is
+        # underlined", not "you are here", and nothing about which pane owns it.
+        # The brackets carry the cursor color in their foreground, which every
+        # terminal draws.
+        backend, _ = _render(colored=False)
         row = backend.snapshot()[CURSOR_ROW]
         self.assertEqual(row[0], "[")
         self.assertEqual(row[WIDTH - 1], "]")
+        for x, style in enumerate(_row_styles(backend, CURSOR_ROW)):
+            self.assertFalse(style.attr & TextAttribute.UNDERLINE,
+                             f"column {x} was ruled with no color to rule it in")
+
+    def test_the_gutter_is_kept_either_way(self):
+        # The cue's two columns are reserved whichever spelling the terminal
+        # gets, so a pane's columns land in the same places on every terminal —
+        # the row above the cursor is laid out identically in both.
+        ruled = _render(colored=True)[0].snapshot()[CURSOR_ROW + 1]
+        bracketed = _render(colored=False)[0].snapshot()[CURSOR_ROW + 1]
+        self.assertEqual(ruled, bracketed)
+        self.assertTrue(ruled.startswith(" file"), f"gutter not kept: {ruled!r}")
 
     def test_other_rows_are_untouched(self):
         backend, _ = _render()
@@ -98,9 +130,8 @@ class TUICursorCue(unittest.TestCase):
                          lcd.extras["cursor"]["inactive"])
 
     def test_the_gutters_are_exactly_the_bracket_cells(self):
-        # The rule is laid down across the content and the brackets carry it over
-        # their own two columns; that only joins up because the gutter is one
-        # column wide on each side.
+        # One column each side is what the cue costs the listing, and all it
+        # costs — and what the ruled spelling has to fill to reach the row's ends.
         self.assertEqual((GUTTER_W, BRACKET_W), (1, 1))
 
 
