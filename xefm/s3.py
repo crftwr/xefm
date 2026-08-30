@@ -557,8 +557,15 @@ class S3PathImpl(PathImpl):
     
     @property
     def anchor(self) -> str:
-        """The concatenation of the drive and root"""
-        return 's3://'
+        """The concatenation of the drive and root.
+
+        The bucket is S3's drive: ``s3://`` alone names no listable location —
+        XeFM never enumerates buckets — and ``parent``/``parents`` already stop
+        at the bucket root. So the anchor is the bucket root too, the way the
+        SFTP anchor carries its host. A bucket-less ``s3://`` is its own anchor:
+        there is nothing above it to name.
+        """
+        return f's3://{self._bucket}/' if self._bucket else 's3://'
     
     # Path manipulation methods
     def absolute(self) -> 'Path':

@@ -61,3 +61,18 @@ def test_s3_operations_mock():
     print(f"Is absolute: {s3_path.is_absolute()}")
     
     print("✓ S3 operations mock tests passed!")
+
+
+def test_s3_anchor_carries_the_bucket():
+    """The anchor of an S3 path is its bucket root, not the bare scheme.
+
+    ``s3://`` names nothing XeFM can list — there is no bucket enumeration — so
+    the top of an S3 path is the same place ``parents`` bottoms out at.
+    """
+    s3_path = Path('s3://my-bucket/path/to/file.txt')
+    assert s3_path.anchor == 's3://my-bucket/'
+    assert str(s3_path.parents[-1]) == s3_path.anchor
+
+    bucket_root = Path('s3://my-bucket/')
+    assert bucket_root.anchor == 's3://my-bucket/'
+    assert str(Path(s3_path.anchor)) == str(bucket_root)
