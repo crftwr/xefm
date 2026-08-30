@@ -167,12 +167,20 @@ class SSHPathImpl(PathImpl):
     
     @property
     def parents(self):
-        """A sequence providing access to the logical ancestors of the path"""
+        """A sequence providing access to the logical ancestors of the path.
+
+        The walk stops at the host root, which is its own parent — comparing
+        against the *starting* path instead would never match again once the
+        walk moved off it, and the loop would append forever.
+        """
         parents_list = []
         current = self.parent
         while str(current) != str(self):
             parents_list.append(current)
-            current = current.parent
+            parent = current.parent
+            if str(parent) == str(current):
+                break
+            current = parent
         return parents_list
     
     @property

@@ -75,6 +75,12 @@ TIPS: tuple[tuple[str, str], ...] = (
      "takes the active pane straight there. Pasting a path works too, and a "
      "path naming a *file* lands the cursor on it."),
 
+    ("Straight to the top",
+     "{key:go_root} takes the active pane to the root of wherever it is — the "
+     "current drive on Windows, `/` on macOS and Linux, the bucket over S3, the "
+     "host over SFTP. The cursor lands on the branch you came up through, so "
+     "walking back down is one keypress away."),
+
     ("Revisit recent directories",
      "{key:history} lists the directories you have visited recently, "
      "most-recent first. Pick one to jump back."),

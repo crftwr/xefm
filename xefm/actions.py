@@ -371,6 +371,7 @@ _FILER_ACTIONS = [
     _a("open_with_os", FILER, "Open with the OS default application"),
     _a("reveal_in_os", FILER, "Reveal in the OS file manager"),
     _a("go_parent", FILER, "Go to the parent directory"),
+    _a("go_root", FILER, "Go to the root of the current drive or location"),
     _a("switch_pane", FILER, "Switch between the left and right panes"),
     _a("nav_left", FILER, "Focus the left pane, or go to the parent"),
     _a("nav_right", FILER, "Focus the right pane, or go to the parent"),
