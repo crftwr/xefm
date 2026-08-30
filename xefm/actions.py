@@ -365,6 +365,8 @@ _FILER_ACTIONS = [
     _a("cursor_down", FILER, "Move the cursor down one item"),
     _a("page_up", FILER, "Move the cursor up one page"),
     _a("page_down", FILER, "Move the cursor down one page"),
+    _a("cursor_top", FILER, "Move the cursor to the first item"),
+    _a("cursor_bottom", FILER, "Move the cursor to the last item"),
     _a("open_item", FILER, "Open the file, or enter the directory"),
     _a("open_with_os", FILER, "Open with the OS default application"),
     _a("reveal_in_os", FILER, "Reveal in the OS file manager"),

@@ -293,12 +293,13 @@ Enter    - Enter directory or view file
 Backspace - Go to parent directory
 Home/End - Go to first/last file
 Page Up/Down - Navigate by page
+Ctrl-Home/End - Move the cursor to the first / last item
 ```
 
 ### Quick Navigation
 ```
 J        - Show favorite directories
-Shift-J  - Jump to directory dialog
+Shift-J  - Jump to a path (a file path lands the cursor on the file)
 H        - Show directory history
 O        - Sync current pane to the other pane
 Shift-O  - Sync other pane to the current pane
@@ -485,7 +486,10 @@ app has no terminal to hand over) with environment variables:
 - `XEFM_RIGHT_DIR`: Right pane directory
 - `XEFM_THIS_DIR`: Current pane directory
 - `XEFM_OTHER_DIR`: Other pane directory
-- `XEFM_THIS_SELECTED`: Selected files in current pane
+- `XEFM_THIS_SELECTED`: Files selected with Space in the current pane — empty
+  when nothing is selected
+- `XEFM_THIS_FOCUSED`: The item under the cursor in the current pane, whatever
+  is selected (`*_FOCUSED` exists for the other three panes too)
 
 ### External Programs
 Press **x** to show external programs menu. Programs have access to XeFM environment variables.
@@ -760,6 +764,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | Enter | Open item (enter directory, open file, or enter archive) |
 | Backspace | Go to the parent directory |
 | Page Up / Page Down | Scroll by a page |
+| Ctrl+Home / Ctrl+End | Move the cursor to the first / last item |
 | Cmd+Enter | Open with the OS default application |
 | Alt+Enter | Reveal in the OS file manager |
 
@@ -831,7 +836,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | Key | Action |
 |-----|--------|
 | J | Favorite directories |
-| Shift+J | Jump to a path |
+| Shift+J | Jump to a path — a file path goes to its directory and focuses it |
 | H | History for the current pane |
 | D | Drives / storage selection dialog |
 

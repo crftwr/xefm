@@ -20,7 +20,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
-from xefm.external_programs import build_xefm_env, shell_family  # noqa: E402
+from xefm.external_programs import (build_xefm_env, get_focused_file,  # noqa: E402
+                                    get_selected_or_cursor_files, shell_family)
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
@@ -43,9 +44,55 @@ class TestBuildXefmEnv(unittest.TestCase):
         self.assertEqual(env['XEFM_OTHER_DIR'], '/R')
         self.assertEqual(env['XEFM_LEFT_SELECTED'], '"a.txt" "b c.txt"')
         self.assertEqual(env['XEFM_THIS_SELECTED'], '"a.txt" "b c.txt"')
-        # No selection on the right: the focused file is substituted.
-        self.assertEqual(env['XEFM_RIGHT_SELECTED'], '"x.txt"')
+        # No selection on the right: *_SELECTED is empty, and the focused file
+        # is reported by *_FOCUSED alone (#348).
+        self.assertEqual(env['XEFM_RIGHT_SELECTED'], '')
+        self.assertEqual(env['XEFM_RIGHT_FOCUSED'], '"x.txt"')
         self.assertEqual(env['XEFM_ACTIVE'], '1')
+
+    def test_focused_is_independent_of_the_selection(self):
+        """*_FOCUSED names the item under the cursor whether or not anything is
+        selected, which is what lets a program tell the two apart (#348)."""
+        left = {'path': Path('/L'), 'selected_files': ['/L/a.txt', '/L/b c.txt'],
+                'files': [Path('/L/a.txt'), Path('/L/b c.txt'), Path('/L/c.txt')],
+                'focused_index': 2}
+        right = {'path': Path('/R'), 'selected_files': [],
+                 'files': [Path('/R/x.txt')], 'focused_index': 0}
+
+        env = build_xefm_env(left, right, left, right)
+
+        # A selection is live on the left, and the cursor sits off it.
+        self.assertEqual(env['XEFM_LEFT_SELECTED'], '"a.txt" "b c.txt"')
+        self.assertEqual(env['XEFM_LEFT_FOCUSED'], '"c.txt"')
+        self.assertEqual(env['XEFM_THIS_FOCUSED'], '"c.txt"')
+        # Nothing selected on the right: the cursor is *not* promoted into
+        # *_SELECTED, which is the whole point of the pair.
+        self.assertEqual(env['XEFM_RIGHT_SELECTED'], '')
+        self.assertEqual(env['XEFM_RIGHT_FOCUSED'], '"x.txt"')
+        self.assertEqual(env['XEFM_OTHER_FOCUSED'], '"x.txt"')
+
+    def test_focused_is_empty_for_an_empty_pane(self):
+        empty = {'path': Path('/E'), 'selected_files': [], 'files': [],
+                 'focused_index': 0}
+
+        env = build_xefm_env(empty, empty, empty, empty)
+
+        self.assertEqual(env['XEFM_THIS_FOCUSED'], '')
+        self.assertEqual(env['XEFM_THIS_SELECTED'], '')
+
+    def test_get_focused_file_tolerates_an_out_of_range_cursor(self):
+        pane = {'path': Path('/L'), 'selected_files': [],
+                'files': [Path('/L/a.txt')], 'focused_index': 7}
+        self.assertEqual(get_focused_file(pane), [])
+
+    def test_argv_still_falls_back_to_the_cursor(self):
+        """The command line keeps the single-answer rule: one argument list
+        cannot express both, so it stays 'selection, else cursor'."""
+        pane = {'path': Path('/L'), 'selected_files': [],
+                'files': [Path('/L/a.txt'), Path('/L/b.txt')], 'focused_index': 1}
+        self.assertEqual(get_selected_or_cursor_files(pane), ['b.txt'])
+        pane['selected_files'] = ['/L/a.txt']
+        self.assertEqual(get_selected_or_cursor_files(pane), ['a.txt'])
 
 
 class RunProgramBase(unittest.TestCase):

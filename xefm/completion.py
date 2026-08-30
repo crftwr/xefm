@@ -102,9 +102,9 @@ class FilepathCompleter:
     round trip per entry (issue #246) — and returns entries whose name starts
     with the prefix (case-sensitive). Directory candidates carry a trailing
     ``os.sep`` so a following TAB descends into them; with ``directories_only``
-    the files are dropped (jump-to-path navigation). A leading ``~`` / ``~user``
-    is expanded for the *listing*, but the returned tokens are the plain entry
-    names, so the field keeps whatever the user typed to their left.
+    the files are dropped. A leading ``~`` / ``~user`` is expanded for the
+    *listing*, but the returned tokens are the plain entry names, so the field
+    keeps whatever the user typed to their left.
 
     ``show_hidden`` mirrors the panes' hidden-files toggle (issue #258): when
     False, dot-entries are left out of the candidates — *unless* the typed token

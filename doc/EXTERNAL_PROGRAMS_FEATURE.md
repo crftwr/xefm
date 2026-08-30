@@ -44,13 +44,38 @@ When you run external programs, XeFM provides information about your current sta
 - `XEFM_THIS_DIR` / `XEFM_OTHER_DIR`: Current / other pane directory
 - `XEFM_LEFT_DIR` / `XEFM_RIGHT_DIR`: Left / right pane directory
 - `XEFM_THIS_SELECTED` / `XEFM_OTHER_SELECTED` / `XEFM_LEFT_SELECTED` /
-  `XEFM_RIGHT_SELECTED`: Selected files in the respective pane
-  (space-separated, double-quoted; the focused file when nothing is selected)
+  `XEFM_RIGHT_SELECTED`: The files selected with **Space** in the respective
+  pane (space-separated, double-quoted). **Empty when nothing is selected.**
+- `XEFM_THIS_FOCUSED` / `XEFM_OTHER_FOCUSED` / `XEFM_LEFT_FOCUSED` /
+  `XEFM_RIGHT_FOCUSED`: The single item under that pane's cursor, quoted the
+  same way — regardless of the selection, and empty only when the pane is.
 - `XEFM_ACTIVE`: Set to `1` while running under XeFM — shell rc files can key
   off it, e.g. to mark the subshell prompt (see the Subshell section of the
   [User Guide](XEFM_USER_GUIDE.md))
 
 Your scripts can use these variables to work with your current selection and location.
+
+### Selection vs. cursor
+
+The two families are reported separately so a program can decide for itself
+which one it wants:
+
+```python
+targets = selected or focused   # act on the selection, else the cursor
+if len(selected) != 2:          # or: require a real selection
+    sys.exit("select exactly two files")
+```
+
+> **Changed since XeFM 1.1.0.** Up to that release, `*_SELECTED` substituted
+> the file under the cursor when nothing was selected, so a program could not
+> tell one deliberately selected file from a cursor that happened to sit on it.
+> It now reports the selection alone. A tool that wants the old behaviour gets
+> it with the `selected or focused` line above.
+
+Note this is the *environment's* contract. The filenames appended to the
+program's **command line** still follow the older, single-answer rule — the
+selection when there is one, the focused entry otherwise — because one argument
+list cannot express both.
 
 ## Usage
 

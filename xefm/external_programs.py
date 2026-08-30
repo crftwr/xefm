@@ -138,24 +138,59 @@ def quote_filenames_with_double_quotes(filenames):
     return quoted
 
 
+def get_focused_file(pane_data):
+    """The name of the item under the cursor, as a one-element list — or an
+    empty list when the pane has no rows. Independent of the selection, which
+    is what separates ``XEFM_*_FOCUSED`` from ``XEFM_*_SELECTED`` (#348)."""
+    files = pane_data['files']
+    if not files:
+        return []
+    index = pane_data['focused_index']
+    return [files[index].name] if 0 <= index < len(files) else []
+
+
+def get_selected_files(pane_data):
+    """The names explicitly selected with Space in ``pane_data`` — empty when
+    nothing is selected. The ``XEFM_*_SELECTED`` contract (#348)."""
+    return [Path(f).name for f in pane_data['selected_files']]
+
+
 def get_selected_or_cursor_files(pane_data):
-    """Get selected files, or current cursor position if no files selected"""
-    selected = [Path(f).name for f in pane_data['selected_files']]
-    if not selected and pane_data['files'] and pane_data['focused_index'] < len(pane_data['files']):
+    """Get selected files, or current cursor position if no files selected.
+
+    This is the **argv** rule, not the environment's: a program launched from
+    the picker is handed the selection when there is one and the focused entry
+    otherwise, because one argument list cannot express both. Programs that
+    need the distinction read ``XEFM_*_SELECTED`` and ``XEFM_*_FOCUSED``, which
+    report the two separately.
+    """
+    selected = get_selected_files(pane_data)
+    if not selected:
         # No files selected, use focused file
-        focused_file = pane_data['files'][pane_data['focused_index']]
-        selected = [focused_file.name]
+        selected = get_focused_file(pane_data)
     return selected
 
 
 def build_xefm_env(left_pane, right_pane, current_pane, other_pane):
     """The XEFM_* variables describing the pane state, ready to merge into a
-    subprocess environment. Selection variables hold space-separated,
-    double-quoted filenames; when nothing is selected the file under the
-    cursor is substituted."""
+    subprocess environment. Both families hold space-separated, double-quoted
+    filenames.
+
+    ``XEFM_*_SELECTED`` is exactly what Space selected, and is **empty when
+    nothing is selected** — it does not substitute the file under the cursor
+    (it used to, through XeFM 1.1.0). ``XEFM_*_FOCUSED`` names that file
+    instead, and is empty only when the pane itself is. Keeping them apart is
+    what lets a program require a real selection — one that compares the two
+    selected files, say — rather than silently acting on whatever the cursor
+    happened to be on."""
     def selected(pane):
         return ' '.join(quote_filenames_with_double_quotes(
-            get_selected_or_cursor_files(pane)))
+            get_selected_files(pane)))
+
+    def focused(pane):
+        return ' '.join(quote_filenames_with_double_quotes(
+            get_focused_file(pane)))
+
     return {
         'XEFM_LEFT_DIR': str(left_pane['path']),
         'XEFM_RIGHT_DIR': str(right_pane['path']),
@@ -165,6 +200,10 @@ def build_xefm_env(left_pane, right_pane, current_pane, other_pane):
         'XEFM_RIGHT_SELECTED': selected(right_pane),
         'XEFM_THIS_SELECTED': selected(current_pane),
         'XEFM_OTHER_SELECTED': selected(other_pane),
+        'XEFM_LEFT_FOCUSED': focused(left_pane),
+        'XEFM_RIGHT_FOCUSED': focused(right_pane),
+        'XEFM_THIS_FOCUSED': focused(current_pane),
+        'XEFM_OTHER_FOCUSED': focused(other_pane),
         'XEFM_ACTIVE': '1',
     }
 
@@ -312,6 +351,7 @@ class ExternalProgramManager:
                 self.logger.info(f"Working directory set to XeFM's directory: {working_dir}")
             self.logger.info(f"XEFM_THIS_DIR: {env['XEFM_THIS_DIR']}")
             self.logger.info(f"XEFM_THIS_SELECTED: {env['XEFM_THIS_SELECTED']}")
+            self.logger.info(f"XEFM_THIS_FOCUSED: {env['XEFM_THIS_FOCUSED']}")
             self.logger.info("=" * 50)
             self.logger.info("")
             
@@ -452,6 +492,10 @@ class ExternalProgramManager:
                 self.logger.info(f"XEFM_RIGHT_SELECTED: {env['XEFM_RIGHT_SELECTED']}")
                 self.logger.info(f"XEFM_THIS_SELECTED: {env['XEFM_THIS_SELECTED']}")
                 self.logger.info(f"XEFM_OTHER_SELECTED: {env['XEFM_OTHER_SELECTED']}")
+                self.logger.info(f"XEFM_LEFT_FOCUSED: {env['XEFM_LEFT_FOCUSED']}")
+                self.logger.info(f"XEFM_RIGHT_FOCUSED: {env['XEFM_RIGHT_FOCUSED']}")
+                self.logger.info(f"XEFM_THIS_FOCUSED: {env['XEFM_THIS_FOCUSED']}")
+                self.logger.info(f"XEFM_OTHER_FOCUSED: {env['XEFM_OTHER_FOCUSED']}")
                 self.logger.info("=" * 50)
                 self.logger.info(f"Note: Current pane is browsing remote directory: {current_pane['path']}")
                 self.logger.info(f"Subshell working directory set to XeFM's directory: {working_dir}")
@@ -467,6 +511,10 @@ class ExternalProgramManager:
                 self.logger.info(f"XEFM_RIGHT_SELECTED: {env['XEFM_RIGHT_SELECTED']}")
                 self.logger.info(f"XEFM_THIS_SELECTED: {env['XEFM_THIS_SELECTED']}")
                 self.logger.info(f"XEFM_OTHER_SELECTED: {env['XEFM_OTHER_SELECTED']}")
+                self.logger.info(f"XEFM_LEFT_FOCUSED: {env['XEFM_LEFT_FOCUSED']}")
+                self.logger.info(f"XEFM_RIGHT_FOCUSED: {env['XEFM_RIGHT_FOCUSED']}")
+                self.logger.info(f"XEFM_THIS_FOCUSED: {env['XEFM_THIS_FOCUSED']}")
+                self.logger.info(f"XEFM_OTHER_FOCUSED: {env['XEFM_OTHER_FOCUSED']}")
                 self.logger.info("=" * 50)
             
             self.logger.info("XEFM_ACTIVE environment variable is set for shell customization")

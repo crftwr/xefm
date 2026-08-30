@@ -2085,6 +2085,8 @@ class XeFMApp:
                 "cursor_down": (self._act_cursor_down, True),
                 "page_up": (self._act_page_up, True),
                 "page_down": (self._act_page_down, True),
+                "cursor_top": (self._act_cursor_top, True),
+                "cursor_bottom": (self._act_cursor_bottom, True),
                 "cursor_next_selected": (
                     lambda: self._focus_adjacent_selected(self.active_pane(), +1), True),
                 "cursor_prev_selected": (
@@ -2235,6 +2237,13 @@ class XeFMApp:
         pane = self.active_pane()
         last = max(0, len(pane["files"]) - 1)
         pane["focused_index"] = min(last, pane["focused_index"] + 10)
+
+    def _act_cursor_top(self) -> None:
+        self.active_pane()["focused_index"] = 0
+
+    def _act_cursor_bottom(self) -> None:
+        pane = self.active_pane()
+        pane["focused_index"] = max(0, len(pane["files"]) - 1)
 
     def _act_select_file(self) -> None:
         """SPACE: toggle the focused item, then move down."""
@@ -3848,11 +3857,16 @@ class XeFMApp:
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
         if virtual:
-            # The env contract mirrors the argv decision above: absolute paths
-            # from the search root, not bare names.
+            # Same env contract as anywhere else — SELECTED is the selection
+            # alone, FOCUSED the cursor — but spelled with absolute paths from
+            # the search root rather than bare names, mirroring argv above.
             env["XEFM_THIS_DIR"] = cwd
+            picked = [f for f in pane["files"] if str(f) in pane["selected_files"]]
             env["XEFM_THIS_SELECTED"] = " ".join(
-                quote_filenames_with_double_quotes(args))
+                quote_filenames_with_double_quotes([str(f) for f in picked]))
+            hit = self._virtual_focused_entry(pane)
+            env["XEFM_THIS_FOCUSED"] = " ".join(
+                quote_filenames_with_double_quotes([str(hit)] if hit else []))
         options = program.get("options") or {}
         if options.get("terminal"):
             if is_desktop_mode():
@@ -5106,11 +5120,16 @@ class XeFMApp:
         return Path(os.path.normpath(str(target)))
 
     def jump_to_path(self) -> None:
-        """Prompt for a directory path and navigate the active pane there.
+        """Prompt for a path and navigate the active pane there.
         Accepts ``~``, relative (to the current path), and absolute paths,
         plus remote URIs (``s3://…``, ``ssh://…``) in
-        the jump-to-path dialog. TAB completes directory names via
-        :class:`xefm.completion.FilepathCompleter`."""
+        the jump-to-path dialog. TAB completes names via
+        :class:`xefm.completion.FilepathCompleter`.
+
+        A **file** path is accepted too (#351): the pane goes to the file's
+        directory and the cursor lands on the file, which is what pasting a full
+        path from somewhere else is nearly always meant to do. Completion
+        therefore offers files as well as directories."""
         pane = self.active_pane()
         current = str(pane["path"])
 
@@ -5123,26 +5142,26 @@ class XeFMApp:
             target = resolve(text)
             if not target.exists():
                 return f"Path does not exist: {target}"
-            if not target.is_dir():
-                return f"Not a directory: {target}"
             return None
 
         def accept(text: str) -> None:
             target = resolve(text)
-            self._remember_cursor(pane)
-            pane["path"] = target
-            pane["selected_files"].clear()
-            self._refresh(pane, on_ready=self._restore_remembered_cursor)
+            # A file names where to *go* and what to land on; a directory only
+            # the former. is_dir() is the one filesystem call either way.
+            if target.is_dir():
+                target_dir, target_name = target, None
+            else:
+                target_dir, target_name = target.parent, target.name
             self.log_info(f"Jumped to: {target}")
-            self.panel.render()
+            self._go_to_dir(pane, target_dir, target_name)  # renders
 
         # Prefill with the current path plus a trailing separator, ready to type
-        # a child directory name. Remote URIs always use ``/``, whatever os.sep is.
+        # a child name. Remote URIs always use ``/``, whatever os.sep is.
         sep = os.sep if self._is_local(current) else "/"
         initial = current if current.endswith(sep) else current + sep
         show_input(self.panel, title="Jump to Path", prompt="Path:", text=initial,
                    on_accept=accept, validate=validate, select_all=False,
-                   completer=FilepathCompleter(base_directory=current, directories_only=True,
+                   completer=FilepathCompleter(base_directory=current, directories_only=False,
                                                show_hidden=self.flm.show_hidden),
                    region=self._active_pane_region())
         self.panel.render()
@@ -5271,6 +5290,8 @@ class XeFMApp:
             ("cursor_down", "Move cursor down"),
             ("page_up", "Scroll up by page"),
             ("page_down", "Scroll down by page"),
+            ("cursor_top", "Move cursor to the first item"),
+            ("cursor_bottom", "Move cursor to the last item"),
             ("open_item", "Open: enter a directory/archive, or view a file"),
             ("go_parent", "Go to parent directory"),
             ("switch_pane", "Switch active pane"),

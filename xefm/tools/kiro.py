@@ -40,7 +40,11 @@ def main():
     # Get the current directory from XeFM environment variables
     # XeFM sets XEFM_THIS_DIR to the current pane's directory
     current_dir = os.environ.get('XEFM_THIS_DIR', os.getcwd())
-    selected_files = os.environ.get('XEFM_THIS_SELECTED', '')
+    # XEFM_THIS_SELECTED is the Space selection alone and is empty when there
+    # is none; opening the file under the cursor in that case is this tool's
+    # own choice, which is why it reads XEFM_THIS_FOCUSED itself.
+    selected_files = (os.environ.get('XEFM_THIS_SELECTED', '')
+                      or os.environ.get('XEFM_THIS_FOCUSED', ''))
 
     # Verify the current directory exists
     try:
@@ -72,7 +76,7 @@ def main():
         print(f"Opening selected files: {selected_files}")
         
         try:
-            # XEFM_THIS_SELECTED contains space-separated quoted filenames
+            # Both variables hold space-separated, quoted filenames
             # We need to parse them to remove quotes and handle spaces properly
             selected_array = shlex.split(selected_files)
         except ValueError as e:
@@ -105,12 +109,9 @@ def main():
 
     # Unset XeFM environment variables before launching GUI app
     # These variables are not needed for Kiro and can sometimes cause issues
-    xefm_vars = [
-        'XEFM_THIS_DIR', 'XEFM_THIS_SELECTED', 'XEFM_OTHER_DIR', 'XEFM_OTHER_SELECTED',
-        'XEFM_LEFT_DIR', 'XEFM_LEFT_SELECTED', 'XEFM_RIGHT_DIR', 'XEFM_RIGHT_SELECTED', 'XEFM_ACTIVE'
-    ]
-    
-    for var in xefm_vars:
+    # Matched by prefix rather than by an explicit list, so a variable added
+    # later (XEFM_*_FOCUSED, say) is stripped too instead of leaking through.
+    for var in [v for v in os.environ if v.startswith('XEFM_')]:
         os.environ.pop(var, None)
 
     # Execute Kiro

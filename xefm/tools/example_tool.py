@@ -26,25 +26,39 @@ def main():
     print("XeFM environment variables:")
     print()
     for name in [
-        'XEFM_THIS_DIR', 'XEFM_THIS_SELECTED',
-        'XEFM_OTHER_DIR', 'XEFM_OTHER_SELECTED',
-        'XEFM_LEFT_DIR', 'XEFM_LEFT_SELECTED',
-        'XEFM_RIGHT_DIR', 'XEFM_RIGHT_SELECTED',
+        'XEFM_THIS_DIR', 'XEFM_THIS_SELECTED', 'XEFM_THIS_FOCUSED',
+        'XEFM_OTHER_DIR', 'XEFM_OTHER_SELECTED', 'XEFM_OTHER_FOCUSED',
+        'XEFM_LEFT_DIR', 'XEFM_LEFT_SELECTED', 'XEFM_LEFT_FOCUSED',
+        'XEFM_RIGHT_DIR', 'XEFM_RIGHT_SELECTED', 'XEFM_RIGHT_FOCUSED',
         'XEFM_ACTIVE',
     ]:
         print(f"  {name} = {os.environ.get(name, '')}")
 
-    # The *_SELECTED variables hold space-separated, double-quoted filenames;
-    # shlex.split() turns them back into a list. When nothing is selected,
-    # XeFM substitutes the file under the cursor.
+    # The *_SELECTED and *_FOCUSED variables hold space-separated,
+    # double-quoted filenames; shlex.split() turns them back into a list.
+    # *_SELECTED is what Space selected and is EMPTY when nothing is; the file
+    # under the cursor is in *_FOCUSED instead. A tool that wants the old
+    # "selection, or else the cursor" behaviour writes that fallback itself:
+    #
+    #     targets = selected or focused
+    #
+    # while one that requires a real selection -- comparing two files, say --
+    # just checks len(selected).
     this_dir = os.environ.get('XEFM_THIS_DIR', os.getcwd())
     selected = shlex.split(os.environ.get('XEFM_THIS_SELECTED', ''))
+    focused = shlex.split(os.environ.get('XEFM_THIS_FOCUSED', ''))
 
-    print()
-    print(f"Selection in the current pane ({len(selected)} file(s)):")
-    for name in selected:
-        path = name if os.path.isabs(name) else os.path.join(this_dir, name)
-        print(f"  {path}")
+    def show(label, names):
+        print()
+        print(label)
+        if not names:
+            print("  (none)")
+        for name in names:
+            path = name if os.path.isabs(name) else os.path.join(this_dir, name)
+            print(f"  {path}")
+
+    show(f"Selected in the current pane ({len(selected)} file(s)):", selected)
+    show("Under the cursor:", focused)
 
 
 if __name__ == '__main__':
