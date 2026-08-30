@@ -9,10 +9,12 @@ import logging
 from datetime import datetime
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 from xefm.const import LOG_TIME_FORMAT, MAX_LOG_MESSAGES
 from xefm.colors import get_log_color, get_status_color
-from xefm.logging_handlers import LogPaneHandler, StreamOutputHandler, FileLoggingHandler
+from xefm.logging_handlers import (FileLoggingHandler, LogPaneHandler,
+                                   StreamOutputHandler, format_logger_message,
+                                   should_format_record)
 
 
 @dataclass
@@ -667,21 +669,130 @@ _log_manager_instance: Optional[LogManager] = None
 _pending_loggers: Dict[str, logging.Logger] = {}
 
 
-def set_log_manager(log_manager: LogManager):
+# --------------------------------------------------------------------------- #
+# Log sink - the route from every XeFM logger to the running app's log pane.
+#
+# XeFM does not build a LogManager in production (it is exercised by the tests
+# only), so without this every logger returned below would be handler-less:
+# Python then falls back to ``logging.lastResort``, which drops everything under
+# WARNING and writes the rest, unformatted, to ``sys.stderr``. That silently
+# discarded every ``logger.info`` in the codebase, and under the GUI backends -
+# where a Windows GUI-subsystem process has no stderr at all - discarded the
+# warnings and errors too.
+#
+# Instead a single handler is attached to every logger the moment it is created,
+# formats each record like the log pane's own handler, and hands the line to the
+# installed sink. Until an app installs one - the whole of module import, config
+# loading and app construction happens before the log pane exists - lines are
+# buffered and replayed on install, so a startup diagnostic reaches the pane
+# instead of vanishing.
+# --------------------------------------------------------------------------- #
+
+#: Log-pane source tags for records carried by the sink, mirroring the "STDOUT" /
+#: "STDERR" tags of captured streams: the app maps them to a style.
+LOG_SOURCE = "LOG"
+LOG_ERROR_SOURCE = "LOGERR"
+
+#: Ceiling on lines held before a sink is installed. Startup produces a few dozen;
+#: this only bounds a process that logs heavily and never opens a log pane.
+_EARLY_LINE_LIMIT = 1000
+
+_log_sink: Optional[Callable[[str, str], None]] = None
+_early_lines: deque = deque(maxlen=_EARLY_LINE_LIMIT)
+#: Guards _log_sink and _early_lines together, so a record emitted on a worker
+#: thread is either buffered or delivered - never dropped between the two - and
+#: replay stays in order. Reentrant: the sink runs under it and must tolerate a
+#: (mis)behaving handler logging from the same thread.
+_sink_lock = threading.RLock()
+
+
+class _LogSinkHandler(logging.Handler):
+    """Carries every record to the installed sink, buffering until there is one.
+
+    Failures are swallowed the way a logging handler must be: a broken log pane
+    may not take down a file manager mid-operation."""
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            line = (format_logger_message(record) if should_format_record(record)
+                    else record.getMessage())
+            source = (LOG_ERROR_SOURCE if record.levelno >= logging.WARNING
+                      else LOG_SOURCE)
+            with _sink_lock:
+                if _log_sink is None:
+                    _early_lines.append((source, line))
+                    # No pane yet, so keep lastResort's safety net: a warning or
+                    # error still reaches a terminal if there is one behind us
+                    # (there is none in a GUI-subsystem process, hence the guard).
+                    if record.levelno >= logging.WARNING and sys.stderr is not None:
+                        sys.stderr.write(line + "\n")
+                    return
+                _log_sink(source, line)
+        except Exception:
+            pass
+
+
+#: The one handler instance shared by every logger, so attaching it is cheap and
+#: removing it (see set_log_manager) is exact.
+_sink_handler = _LogSinkHandler()
+
+
+def set_log_sink(sink: Callable[[str, str], None]) -> None:
+    """Route log records to ``sink(source, line)`` and replay what was buffered.
+
+    Called by the app once its log pane and drain queue exist. ``source`` is
+    :data:`LOG_SOURCE` or :data:`LOG_ERROR_SOURCE`; ``line`` is fully formatted.
+    The sink is called from whichever thread logged, so it must be thread-safe -
+    the app's is a queue put picked up by the UI thread's pump."""
+    global _log_sink
+    with _sink_lock:
+        _log_sink = sink
+        # Under the lock, so a record logged on a worker thread right now lands
+        # after the backlog rather than in the middle of it.
+        while _early_lines:
+            source, line = _early_lines.popleft()
+            try:
+                sink(source, line)
+            except Exception:
+                pass
+
+
+def clear_log_sink() -> None:
+    """Stop routing to the installed sink and go back to buffering.
+
+    Called when the app tears its streams down, so a shutdown message does not
+    reach a log pane that is no longer being drawn."""
+    global _log_sink
+    with _sink_lock:
+        _log_sink = None
+
+
+def set_log_manager(log_manager: Optional[LogManager]):
     """
     Set the global LogManager instance.
     
     This should be called once during application initialization.
     When called, all pending loggers will have their handlers attached.
     
+    Passing None removes it again and leaves getLogger() to the log sink, which
+    is how XeFM itself runs. A caller that installs a manager and does not take
+    it back out redirects every logger in the process for good — including the
+    ones a later, unrelated caller creates.
+    
     Args:
-        log_manager: The LogManager instance to use globally
+        log_manager: The LogManager instance to use globally, or None to remove
     """
     global _log_manager_instance
     _log_manager_instance = log_manager
+    if log_manager is None:
+        return
     
     # Attach handlers to all pending loggers
     for name, logger in _pending_loggers.items():
+        # The LogManager owns this logger's handlers from here on; drop the sink
+        # handler so records are not reported through both routes at once.
+        if _sink_handler in logger.handlers:
+            logger.removeHandler(_sink_handler)
         # Configure the pending logger with handlers
         _log_manager_instance._configure_pending_logger(name, logger)
     
@@ -695,9 +806,10 @@ def getLogger(name: str) -> logging.Logger:
     
     This is a module-level function that can be called without a LogManager instance.
     If a LogManager has been set via set_log_manager(), it will use that instance.
-    Otherwise, it creates a "pending" logger without handlers that will be configured
-    when LogManager is initialized.
-    
+    Otherwise - which is the case throughout XeFM itself - it creates a "pending"
+    logger handled by the log sink above, so its records reach the app's log pane
+    (or wait in the early buffer for one) rather than being dropped.
+
     Pending loggers are stored in a dictionary so that multiple calls with the same
     name return the same logger instance, ensuring consistency.
     
@@ -715,11 +827,13 @@ def getLogger(name: str) -> logging.Logger:
             # Return existing pending logger
             return _pending_loggers[name]
         
-        # Create new pending logger without handlers
+        # Create new pending logger, handled by the sink until (and unless) a
+        # LogManager takes it over. Without it the logger would be handler-less,
+        # and everything below WARNING would be dropped by logging.lastResort.
         logger = logging.getLogger(name)
         logger.setLevel(logging.INFO)  # Default level, will be updated when LogManager is created
         logger.propagate = False
-        # Don't add any handlers - they will be added when LogManager is initialized
+        logger.addHandler(_sink_handler)
         
         # Store in pending loggers dictionary
         _pending_loggers[name] = logger

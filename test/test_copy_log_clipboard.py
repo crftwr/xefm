@@ -47,6 +47,13 @@ class TestCopyLogClipboard(unittest.TestCase):
         self.log_manager = LogManager(self.config, is_desktop_mode=True)
         set_log_manager(self.log_manager)
         self.renderer = MockRenderer()
+
+    def tearDown(self):
+        """Take the manager back out. It is a process-wide switch that also
+        swaps stdout/stderr, so leaving it installed routes every later test's
+        loggers into this dead manager instead of the log sink."""
+        set_log_manager(None)
+        self.log_manager.restore_stdio()
     
     def test_get_all_log_text_empty(self):
         """Test getting all log text when no logs exist"""
