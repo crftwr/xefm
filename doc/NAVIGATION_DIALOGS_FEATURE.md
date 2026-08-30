@@ -102,9 +102,33 @@ Press **D** to open a searchable list of storage locations and jump to one.
 
 ### Local locations
 
-Common local filesystem locations are detected automatically, including Home
-(`~`), Root (`/`), the directory XeFM was started from, and Desktop, Documents,
-and Downloads when they exist.
+The list opens with a few fixed locations — Home (`~`), Root (`/`) on macOS and
+Linux, and Desktop, Documents and Downloads when they exist — followed by
+whatever the machine has mounted: drive letters on Windows, `/Volumes` on macOS,
+`/media` and `/mnt` on Linux.
+
+### Choosing your own fixed locations
+
+The fixed part is yours to define. Set `DRIVE_LOCATIONS` in `~/.xefm/config.py`
+to the list you want and it replaces the built-in one:
+
+```python
+DRIVE_LOCATIONS = [
+    {'name': 'Home', 'path': '~'},
+    {'name': 'Work', 'path': '~/work'},
+    {'name': 'NAS', 'path': 'ssh://nas/'},
+]
+```
+
+Set it to `[]` to drop the fixed rows entirely and list only the mounted
+volumes. Left unset (`None`), you get the built-in set described above.
+
+A local path that does not exist is skipped. A remote location (`ssh://`,
+`s3://`) is listed exactly as written, and nothing connects until you select it.
+
+Mounted volumes, SSH hosts and S3 buckets are not configured here — they are
+read from the machine every time the dialog opens. The SSH rows come from your
+`~/.ssh/config`, so a host you no longer use is removed by editing that file.
 
 Visual indicators:
 

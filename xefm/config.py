@@ -9,6 +9,7 @@ Configuration is stored in ~/.xefm/config.py as a Python class.
 import fnmatch
 import importlib.util
 import os
+import platform
 import sys
 from xefm.path import Path
 from xefm.log_manager import getLogger
@@ -1082,6 +1083,61 @@ def get_favorite_directories():
                 logger.warning(f"Invalid favorite directory path: {fav['name']} -> {fav['path']}: {e}")
     
     return favorites
+
+
+#: Path prefixes that name a remote or virtual location (see ``xefm.path``).
+#: A drive location written with one of these is listed exactly as configured:
+#: probing it would mean a network round-trip on the UI thread, and the drives
+#: picker exists to *offer* a connection, not to make one.
+_REMOTE_SCHEMES = ('archive://', 's3://', 'ssh://', 'scp://', 'ftp://')
+
+
+def _default_drive_locations():
+    """The fixed drive-picker rows XeFM ships with, used when a config leaves
+    ``DRIVE_LOCATIONS`` at None. Root is POSIX-only: on Windows the drive
+    letters already cover it, and ``/`` there is just another name for the
+    current drive."""
+    locations = [{'name': 'Home', 'path': '~'}]
+    if platform.system() != 'Windows':
+        locations.append({'name': 'Root', 'path': '/'})
+    for name in ('Documents', 'Downloads', 'Desktop'):
+        locations.append({'name': name, 'path': f'~/{name}'})
+    return locations
+
+
+def get_drive_locations():
+    """The fixed locations listed above the mounted volumes in the drives picker.
+
+    ``DRIVE_LOCATIONS = None`` (the default) means the built-in set; a list
+    replaces it wholesale, so ``[]`` leaves the picker showing only what is
+    discovered — volumes, ``~/.ssh/config`` hosts, S3 buckets. A local path that
+    is missing is skipped (that is how Documents / Downloads / Desktop drop out
+    on a machine without them), but only an explicitly configured one is worth a
+    warning: a missing default is normal, a missing hand-written entry is a typo.
+    """
+    config = get_config()
+    configured = getattr(config, 'DRIVE_LOCATIONS', None)
+    entries = _default_drive_locations() if configured is None else configured
+
+    locations = []
+    for entry in entries:
+        if not (isinstance(entry, dict) and 'name' in entry and 'path' in entry):
+            logger.warning(f"Invalid drive location entry: {entry!r}")
+            continue
+        name, raw = str(entry['name']), str(entry['path'])
+        try:
+            if raw.startswith(_REMOTE_SCHEMES):
+                locations.append({'name': name, 'path': raw})
+                continue
+            path = Path(raw).expanduser()
+            if path.exists() and path.is_dir():
+                locations.append({'name': name, 'path': str(path)})
+            elif configured is not None:
+                logger.warning(f"Drive location does not exist: {name} -> {raw}")
+        except Exception as e:
+            logger.warning(f"Invalid drive location path: {name} -> {raw}: {e}")
+
+    return locations
 
 
 def get_programs():

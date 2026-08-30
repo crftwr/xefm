@@ -558,6 +558,26 @@ class Config:
         # {'name': 'Scripts', 'path': '~/bin'},
     ]
     
+    # Drives dialog (D) - the fixed locations listed above everything the picker
+    # discovers on its own (Windows drive letters, /Volumes, /media, /mnt, the
+    # hosts in ~/.ssh/config, and your S3 buckets when AWS credentials are set).
+    #
+    # None = XeFM's built-in set: Home, Root (POSIX only), and whichever of
+    # Documents / Downloads / Desktop exist in your home directory. Define a list
+    # to replace that set entirely; [] removes the fixed rows and leaves the
+    # picker showing only the discovered ones.
+    #
+    # Each entry needs 'name' and 'path'. A local path that does not exist is
+    # skipped. A remote location (ssh:// s3://) is listed as written - nothing
+    # connects until you select it.
+    #
+    # DRIVE_LOCATIONS = [
+    #     {'name': 'Home', 'path': '~'},
+    #     {'name': 'Work', 'path': '~/work'},
+    #     {'name': 'NAS', 'path': 'ssh://nas/'},
+    # ]
+    DRIVE_LOCATIONS = None
+
     # Performance settings
     MAX_LOG_MESSAGES = 1000
 

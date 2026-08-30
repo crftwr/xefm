@@ -272,6 +272,36 @@ KEY_BINDINGS = {
 }
 ```
 
+### Fixed locations (`DRIVE_LOCATIONS`)
+
+The rows above the mounted volumes are configurable (issue #356); everything
+below them — Windows drive letters, `/Volumes`, `/media`, `/mnt`, the hosts in
+`~/.ssh/config`, S3 buckets — is always discovered, never configured.
+
+```python
+DRIVE_LOCATIONS = None   # built-in set (default)
+DRIVE_LOCATIONS = []     # no fixed rows at all — only what is discovered
+DRIVE_LOCATIONS = [{'name': 'Work', 'path': '~/work'}]
+```
+
+`config.get_drive_locations()` resolves it, and `XeFMApp._local_drives()` starts
+from what it returns. The resolution is deliberately a *replacement*, not a
+filter: a user who wants `Documents` gone says what they do want, rather than
+naming what to subtract.
+
+Three rules live in `get_drive_locations()`:
+
+- `None` means the built-in set (`_default_drive_locations()`): Home, Root on
+  POSIX only — on Windows the drive letters already cover it — and whichever of
+  Documents / Downloads / Desktop exist.
+- A local path is dropped unless it exists and is a directory. Missing *default*
+  folders are silent (no Desktop is normal); a missing *configured* one warns,
+  because a hand-written path that isn't there is a typo.
+- A path opening with a remote scheme (`_REMOTE_SCHEMES`: `ssh://`, `s3://`, …)
+  is passed through unprobed. `Path.exists()` on one would open a connection on
+  the UI thread while the picker is being built — the picker's job is to *offer*
+  a connection, not to make one.
+
 ### Customization Options
 
 The drives dialog respects existing XeFM configuration:
