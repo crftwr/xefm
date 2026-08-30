@@ -258,6 +258,8 @@ class Config:
         'cursor_down': ['DOWN'],               # Move cursor down one item
         'page_up': ['PAGE_UP'],                # Move cursor up one page
         'page_down': ['PAGE_DOWN'],            # Move cursor down one page
+        'cursor_top': ['Ctrl-HOME'],           # Move cursor to the first item
+        'cursor_bottom': ['Ctrl-END'],         # Move cursor to the last item
         'open_item': ['ENTER'],                # Open file/directory or enter directory
         'open_with_os': ['Command-ENTER'],     # Open file(s) with OS default application
         'reveal_in_os': ['Alt-ENTER'],         # Reveal focused file in OS file manager

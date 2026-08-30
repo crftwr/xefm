@@ -12,15 +12,16 @@ typing) shows and narrows the choices.
 
 | Prompt | Opened by | Completes |
 |--------|-----------|-----------|
-| **Jump to Path** | `Shift-J` | directories only |
+| **Jump to Path** | `Shift-J` | files + directories |
 | **New Directory** | create-directory | files + directories |
 | **New File** | create-file | files + directories |
 | **Rename** | `R` (single item) | files + directories |
 | **Create Archive** | create-archive | files + directories |
 
-"Jump to Path" completes directories only, because you can only navigate into a
-directory. The naming prompts complete both files and directories, which helps
-when typing a nested name such as `sub/dir/name`.
+"Jump to Path" completes files as well as directories: a file path is a valid
+destination there — the pane goes to its directory and the cursor lands on the
+file. The naming prompts complete both too, which helps when typing a nested
+name such as `sub/dir/name`.
 
 ## Using it
 

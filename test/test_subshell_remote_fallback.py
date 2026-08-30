@@ -70,13 +70,13 @@ class TestSubshellRemoteFallback(unittest.TestCase):
             'path': MockLocalPath('/home/user/local'),
             'selected_files': [],
             'files': [],
-            'selected_index': 0
+            'focused_index': 0
         }
         self.pane_manager.right_pane = {
             'path': MockRemotePath('s3://my-bucket/folder/'),
             'selected_files': [],
             'files': [],
-            'selected_index': 0
+            'focused_index': 0
         }
         
         # Mock stdscr / renderer. enter_subshell_mode now uses self.renderer

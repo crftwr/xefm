@@ -72,7 +72,8 @@ TIPS: tuple[tuple[str, str], ...] = (
 
     ("Jump to any path",
      "{key:jump_to_path} prompts for a path — with filename completion — and "
-     "takes the active pane straight there. Pasting a path works too."),
+     "takes the active pane straight there. Pasting a path works too, and a "
+     "path naming a *file* lands the cursor on it."),
 
     ("Revisit recent directories",
      "{key:history} lists the directories you have visited recently, "
