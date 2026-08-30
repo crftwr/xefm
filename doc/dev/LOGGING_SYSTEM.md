@@ -7,18 +7,83 @@ description of the log pane and its behavior, see [`doc/LOGGING_FEATURE.md`](../
 
 XeFM logging is built on Python's standard `logging` module. Component code obtains a
 named `logging.Logger` and calls the usual level methods; `print()` and
-`sys.stderr.write()` are also captured and routed through the same pipeline. A set of
-custom handlers fan each record out to the visual log pane, the original terminal
-streams, and (optionally) a log file.
+`sys.stderr.write()` are also captured and routed to the same log pane.
 
-The two source modules are:
+There are **two** routes from a record to the pane, and it matters which one you are
+reading about:
 
-- `xefm/log_manager.py` — `LogManager`, `LogCapture`, `LoggingConfig`, and the
+- **The log sink** — how XeFM itself runs. A single handler on every logger formats
+  each record and hands it to the running app, which puts it on the same queue its
+  captured streams feed. This is the whole of the production path.
+- **`LogManager`** — a fuller pipeline (pane / stream / file handlers, configurable
+  levels, its own stdout capture) that the app **does not** build. It is exercised by
+  the tests, and is the ready-made answer if XeFM ever needs file logging or per-logger
+  levels wired up.
+
+The source modules are:
+
+- `xefm/log_manager.py` — the log sink (`_LogSinkHandler`, `set_log_sink()`,
+  `clear_log_sink()`), plus `LogManager`, `LogCapture`, `LoggingConfig` and the
   module-level `getLogger()` / `set_log_manager()` helpers.
-- `xefm/logging_handlers.py` — the `LogPaneHandler`, `StreamOutputHandler`, and
-  `FileLoggingHandler` classes plus the `should_format_record()` helper.
+- `xefm/logging_handlers.py` — `format_logger_message()` and `should_format_record()`,
+  plus the `LogPaneHandler`, `StreamOutputHandler` and `FileLoggingHandler` classes.
+- `xefm/app.py` — `_StreamToLog` (stdout/stderr capture), `XeFMApp._enqueue_log` (the
+  installed sink) and `_drain_captured_output` (the UI thread's pump).
 
 ## Architecture
+
+XeFM's own route — logger and captured streams meeting on one queue, drained by the UI
+thread into the `LogView`:
+
+```mermaid
+flowchart TD
+    subgraph App["Application code"]
+        A1["getLogger('FileOp').info(...)"]
+        A2["print(...)"]
+        A3["sys.stderr.write(...)"]
+    end
+    A1 --> L["logging.Logger<br/>(one per name)"]
+    L --> SH["_LogSinkHandler<br/>(formats the record)"]
+    SH -->|"before an app exists"| B["early buffer<br/>(replayed on install)"]
+    B --> SK
+    SH -->|"sink installed"| SK["XeFMApp._enqueue_log"]
+    A2 --> T1["_StreamToLog (STDOUT)"]
+    A3 --> T2["_StreamToLog (STDERR)"]
+    SK --> Q["XeFMApp._log_queue"]
+    T1 --> Q
+    T2 --> Q
+    Q -->|"UI thread pump"| P["LogView (the log pane)"]
+```
+
+## The log sink
+
+`getLogger()` attaches `_LogSinkHandler` to every logger it creates. Without it the
+logger would have **no handlers at all**, and Python would fall back to
+`logging.lastResort`: everything below `WARNING` dropped, the rest written unformatted
+to `sys.stderr` — a stream the GUI backends do not have (a Windows GUI-subsystem
+process has none). That was the state through XeFM 1.1.0, and it silently discarded
+every `logger.info` in the codebase (issue #358).
+
+The handler formats the record with `format_logger_message()` and calls the installed
+sink with `(source, line)`, where `source` is `LOG_SOURCE` or — for `WARNING` and above
+— `LOG_ERROR_SOURCE`. `XeFMApp` installs `_enqueue_log` as the sink in `__init__`,
+right where it swaps `sys.stdout` / `sys.stderr` for `_StreamToLog`, and drops it again
+in `_restore_streams()`.
+
+**Records logged before there is a sink are buffered, then replayed when one is
+installed.** Module import, `get_config()` and the whole of app construction happen
+before the log pane exists, so without the replay a startup diagnostic — a `config.py`
+that failed to execute, say — would have nowhere to go. While buffering, `WARNING` and
+above are *also* written to `sys.stderr` if the process has one, keeping the safety net
+`logging.lastResort` used to provide for a crash before the UI comes up.
+
+The sink is called from whichever thread logged, so it does no more than a queue put:
+the `LogView` is touched only by the UI thread, in `_drain_captured_output`.
+
+## The LogManager pipeline
+
+Not used by XeFM itself — see the Overview. `set_log_manager(manager)` takes the
+loggers over from the sink; `set_log_manager(None)` gives them back.
 
 ```mermaid
 flowchart TD
@@ -70,8 +135,9 @@ returns `not getattr(record, 'is_stream_capture', False)`:
 ## Using the logger
 
 The preferred pattern (per the project coding standards) is the module-level helper. It
-works before `LogManager` exists — early loggers are held as "pending" and wired to the
-handlers once `set_log_manager()` runs.
+works at any point in startup: a logger created before the app exists is handled by the
+sink from its first record, and what it logs is replayed into the pane once there is
+one.
 
 ```python
 from xefm.log_manager import getLogger
@@ -167,6 +233,17 @@ file cannot be opened, the error is reported to the fallback stream and `emit()`
 a no-op. `close()` releases the file handle and is called on teardown.
 
 ## Stream capture
+
+XeFM's own capture is `_StreamToLog` in `xefm/app.py`: `XeFMApp.__init__` installs it as
+`sys.stdout` / `sys.stderr`, it buffers by line, and each complete line goes onto
+`_log_queue` tagged `STDOUT` or `STDERR` — raw, with no timestamp or prefix, so external
+program output reads as it would in a terminal. `_restore_streams()` puts the real
+streams back.
+
+`LogManager` has its own, separate capture, described below. Only one of the two can be
+installed at a time; the app's is the one that runs.
+
+### `LogCapture` (the LogManager pipeline)
 
 `LogManager` replaces `sys.stdout` / `sys.stderr` with `LogCapture` instances at
 construction. `LogCapture.write()` accumulates text and, on each newline, emits a
@@ -338,8 +415,19 @@ place of the logger and assert on `mock_logger.info.assert_called_once()`.
 
 ## Troubleshooting
 
-- **Messages not appearing** — confirm the level (`set_default_log_level(logging.DEBUG)`)
-  and that the pane handler is enabled (`configure_handlers(log_pane_enabled=True)`).
+- **Nothing from a logger reaches the pane** — check that the logger has handlers
+  (`getLogger("X").handlers`). A logger with none is the failure this system's sink
+  exists to prevent: `logging.lastResort` then drops everything below `WARNING` and
+  writes the rest to a `sys.stderr` the GUI backends do not have. It happens if
+  something installed a `LogManager` and never removed it, or if a test cleared the
+  logger's handlers.
+- **A startup message is missing** — anything logged before `XeFMApp.__init__` installs
+  the sink is buffered, and only reaches the pane when it is replayed there. If the
+  process dies first, look on stderr (`WARNING`+ only) or, on the Windows bundle, in
+  `~/.xefm/XeFM-error.log`.
+- **Messages not appearing (LogManager pipeline)** — confirm the level
+  (`set_default_log_level(logging.DEBUG)`) and that the pane handler is enabled
+  (`configure_handlers(log_pane_enabled=True)`).
 - **Too many messages / performance** — raise the level to `WARNING`, reduce
   `max_log_messages`, and avoid per-iteration logging in loops.
 

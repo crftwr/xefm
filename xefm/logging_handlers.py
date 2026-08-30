@@ -38,6 +38,22 @@ def should_format_record(record: logging.LogRecord) -> bool:
     return not getattr(record, 'is_stream_capture', False)
 
 
+def format_logger_message(record: logging.LogRecord) -> str:
+    """Format a logger record for the log pane.
+
+    Returns:
+        Formatted string: "HH:MM:SS [LoggerName] LEVEL: message"
+
+    Module level so every route into the pane formats a record identically:
+    :class:`LogPaneHandler` below, and the sink handler in
+    :mod:`xefm.log_manager` that carries records to the running app's pane.
+    """
+    timestamp = datetime.fromtimestamp(record.created).strftime(LOG_TIME_FORMAT)
+    # Pad logger name to 6 chars if shorter, keep as-is if longer
+    logger_name = record.name.ljust(6) if len(record.name) < 6 else record.name
+    return f"{timestamp} [{logger_name}] {record.levelname}: {record.getMessage()}"
+
+
 class LogPaneHandler(logging.Handler):
     """
     Custom handler that stores log messages in a deque for display in XeFM's log pane.
@@ -121,10 +137,7 @@ class LogPaneHandler(logging.Handler):
         Returns:
             Formatted string: "HH:MM:SS [LoggerName] LEVEL: message"
         """
-        timestamp = datetime.fromtimestamp(record.created).strftime(LOG_TIME_FORMAT)
-        # Pad logger name to 6 chars if shorter, keep as-is if longer
-        logger_name = record.name.ljust(6) if len(record.name) < 6 else record.name
-        return f"{timestamp} [{logger_name}] {record.levelname}: {record.getMessage()}"
+        return format_logger_message(record)
     
     def get_messages(self) -> List[Tuple[str, logging.LogRecord]]:
         """

@@ -70,6 +70,8 @@ from xefm.completion import FilepathCompleter
 from xefm.input_dialog import show_input
 from xefm.progressive_search_dialog import show_progressive_search
 from xefm.isearch_bar import ISearchBar
+from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
+                              set_log_sink)
 from xefm.pane_manager import PaneManager
 from xefm.path import Path
 from xefm.state_manager import get_state_manager
@@ -895,9 +897,10 @@ class StatusBar(Widget):
 class _StreamToLog:
     """A ``sys.stdout`` / ``sys.stderr`` stand-in that funnels writes into the
     log pane, mirroring the terminal build's stdout/stderr capture so real-world
-    output — a stray ``print``, a library warning, an uncaught traceback, and the
-    WARNING+ records Python's ``logging.lastResort`` emits for our handler-less
-    loggers — stays visible even when there is no terminal behind the GUI.
+    output — a stray ``print``, a library warning, an uncaught traceback — stays
+    visible even when there is no terminal behind the GUI. XeFM's own loggers do
+    not come this way: they reach the same queue through the log sink (see
+    ``_enqueue_log``), already formatted.
 
     Writes are line-buffered (a ``print`` that emits its text and its newline as
     two writes becomes one log line) and complete lines are handed to a
@@ -1185,6 +1188,12 @@ class XeFMApp:
         self._orig_stderr = sys.stderr
         sys.stdout = _StreamToLog("STDOUT", self._log_queue, on_write=self._wake_pump)
         sys.stderr = _StreamToLog("STDERR", self._log_queue, on_write=self._wake_pump)
+        # ...and the loggers onto the same queue. Everything logged before this
+        # point - module imports, ``get_config()`` above, the whole of app
+        # construction - was buffered by the sink and is replayed here, so a
+        # startup diagnostic (a config that failed to load, say) lands in the
+        # pane instead of on a stderr the GUI backends do not have.
+        set_log_sink(self._enqueue_log)
 
         # The customization API (Preview). ``_handlers`` is the filer's
         # name -> bound-method table, built on first dispatch; ``_user_ctx`` is
@@ -1434,19 +1443,38 @@ class XeFMApp:
     _STDERR_STYLE = Style(fg=(230, 130, 120))
     _STDOUT_STYLE = Style(attr=TextAttribute.DIM)
 
+    #: Queue source -> style. Logger records join captured output on the same
+    #: queue and read the same way: diagnostics recessive under XeFM's own
+    #: ``log_info`` lines, a warning or error in the same red as stderr. They are
+    #: still told apart at a glance by their ``HH:MM:SS [Name] LEVEL:`` prefix.
+    _LOG_STYLES = {
+        "STDERR": _STDERR_STYLE,
+        LOG_ERROR_SOURCE: _STDERR_STYLE,
+        "STDOUT": _STDOUT_STYLE,
+        LOG_SOURCE: _STDOUT_STYLE,
+    }
+
+    def _enqueue_log(self, source: str, line: str) -> None:
+        """Sink for :func:`xefm.log_manager.set_log_sink`: put a formatted record
+        on the same queue the captured streams feed. Called from whichever thread
+        logged, so it does exactly what ``_StreamToLog.write`` does and no more -
+        the ``LogView`` is touched only by the UI thread, in the drain below."""
+        self._log_queue.put((source, line))
+        self._wake_pump()
+
     def _drain_captured_output(self) -> bool:
         """Append any stdout/stderr lines captured since the last pump to the log
         pane. Runs on the UI thread (only place the ``LogView`` is touched); the
-        queue is fed by the ``_StreamToLog`` streams, possibly from worker
-        threads. Returns True if anything was appended (so the caller redraws)."""
+        queue is fed by the ``_StreamToLog`` streams and by the log sink, possibly
+        from worker threads. Returns True if anything was appended (so the caller
+        redraws)."""
         appended = False
         while True:
             try:
                 source, line = self._log_queue.get_nowait()
             except queue.Empty:
                 break
-            style = self._STDERR_STYLE if source == "STDERR" else self._STDOUT_STYLE
-            self.log.append(line, style)
+            self.log.append(line, self._LOG_STYLES.get(source, self._STDOUT_STYLE))
             appended = True
         return appended
 
@@ -1690,9 +1718,9 @@ class XeFMApp:
         if not self._event_driven:
             return
         # A write from the UI thread *during* a render must not schedule another
-        # render. stdout/stderr are routed into the log pane, so a single stray
-        # write from the draw path (a `logger.warning` on a handler-less logger
-        # reaches stderr via logging.lastResort) would otherwise self-sustain:
+        # render. stdout/stderr and the loggers are routed into the log pane, so a
+        # single stray write from the draw path (a `logger.warning`, a stray
+        # `print`) would otherwise self-sustain:
         # render → write → wake → drain → render → …, pegging a core while the
         # UI still responds. The line is not lost — it stays queued and the next
         # pump drains it; it just no longer causes the frame that re-emits it.
@@ -5667,6 +5695,9 @@ class XeFMApp:
         """Put the real stdout/stderr back so anything printed after the event
         loop (a shutdown traceback, teardown warnings) reaches the terminal
         again. Idempotent: safe if the streams were already restored."""
+        # Loggers go back to buffering too: the pane is no longer being drawn, so
+        # a teardown warning belongs on the restored stderr, not on a dead queue.
+        clear_log_sink()
         for stream in (sys.stdout, sys.stderr):
             if isinstance(stream, _StreamToLog):
                 stream.drain_partial()
