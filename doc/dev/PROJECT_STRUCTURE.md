@@ -55,6 +55,8 @@ It imports PuiKit (`from puikit import ...`) and its sibling modules
 ### Panes & file listing
 - **`xefm/file_pane.py`** — a single file pane widget (PuiKit `Widget`)
 - **`xefm/pane_manager.py`** — dual-pane management and navigation
+- **`xefm/search_match.py`** — the incremental-search query language (tokens,
+  wildcards, Migemo union) shared by the pane's isearch and the filter dialogs
 - **`xefm/file_list_manager.py`** — directory listing, sorting, filtering
 
 ### File operations, tasks & progress

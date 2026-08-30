@@ -195,8 +195,14 @@ archive password prompt.
 ### FilterListDialog — `show_filter_list`
 
 The canonical searchable-list picker, built from a `TextEdit` filter field over
-a `ListView`. Typing
-filters the list (substring, case-insensitive); `up`/`down`/`pageup`/`pagedown`
+a `ListView`. Typing filters the list with the shared incremental-search query
+(`xefm.search_match`, issue #349): whitespace-separated tokens that must *all*
+match the rendered label, each as a case-insensitive "contains" glob or through
+Migemo. One matcher, so the dialogs and the pane's isearch cannot drift apart —
+`_label_hit` is `search_match.hit` on `to_label(value)`, with the query compiled
+once per keystroke (and once per streamed batch in `add_items`, where regex
+generation would otherwise repeat per row).
+`up`/`down`/`pageup`/`pagedown`
 drive the selection even while the field holds focus; Enter accepts the selected
 value via `on_accept`; a click selects/activates a row.
 

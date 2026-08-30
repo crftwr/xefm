@@ -145,10 +145,10 @@ tolerated), which tests monkeypatch for determinism.
 
 | Surface | Membership | Highlight |
 |---|---|---|
-| `FileListManager.find_matches` (pane isearch) | per-token: `fnmatch(wrapped) or search_nfc(regex, name)`; regex built once per token, outside the file loop | row-level (`search_matches` index set) — unchanged |
+| `FileListManager.find_matches` (pane isearch) | `search_match.hit` per file — per-token `fnmatch(wrapped) or search_nfc(regex, name)`; the query (and so each token's regex) compiled once, outside the file loop | row-level (`search_matches` index set) — unchanged |
 | `TextViewer._search_recompute` | `pat in line.lower() or has_hit(regex, line)` | `_draw_matches` collects literal spans + `find_spans` |
 | `DiffViewer._search_recompute` | either side, same shape | `_DiffPane._draw_search`, same shape |
-| `FilterListDialog._refilter` / `add_items` | `_label_hit`: substring on the label or `search_nfc` | row selection only |
+| `FilterListDialog._refilter` / `add_items` | `_label_hit`: the same `search_match.hit`, on the rendered label (#349) | row selection only |
 | Rich viewers (Markdown/JSON/CSV) | PuiKit hook, below | markdown: spans; json/table: row-level |
 
 NFC vs raw: filenames and labels are membership-only, so they normalize
@@ -201,6 +201,9 @@ them up through `_copy_missing_fields`.
   its union/cache-key/global-restore behaviour, `find_matches` and
   `FilterListDialog` integration. Engine-dependent tests skip without
   pymigemo.
+- `test/test_search_match.py` — the query language the Migemo union sits in
+  (tokens, wildcards, AND/OR, dialog integration, pane/dialog parity), with
+  Migemo switched off so the two halves are testable apart.
 - `test/test_viewer_isearch.py` — romaji matching (and highlight drawing via
   `render()`) in the text and diff viewers.
 - `test/test_markdown_viewer.py` — the matcher is injected into rich widgets.
