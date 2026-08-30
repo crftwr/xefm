@@ -615,8 +615,17 @@ class Config:
     # MIGEMO_MIN_LENGTH skip Migemo (1-2 character queries are slow to expand
     # and barely one kana anyway). Needs the pymigemo package (installed with
     # XeFM); without it searches quietly stay plain.
+    # MIGEMO_ROMAJI_TABLE names the romaji spelling Migemo also understands.
+    # 'default' is plain romaji only. 'azik' adds AZIK, the extended romaji
+    # input scheme: a second stroke below the vowel spells the kana plus "n"
+    # (kz -> かん, kk -> きん), q/h/w/p spell the double vowels (kq かい, kp
+    # こう), and x/c are the sha/cha rows (xa しゃ, ca ちゃ). AZIK is added
+    # alongside plain romaji rather than replacing it, so the handful of keys
+    # the two spell differently match either reading and no query that worked
+    # before stops working.
     MIGEMO_SEARCH = True   # Add Migemo (romaji -> Japanese) matches to incremental search
     MIGEMO_MIN_LENGTH = 3  # Shortest pattern handed to Migemo
+    MIGEMO_ROMAJI_TABLE = 'default'  # 'default' or 'azik'
     
     # Text editor settings
     # Supports both string and list formats:

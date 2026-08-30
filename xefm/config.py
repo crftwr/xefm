@@ -822,6 +822,9 @@ class ConfigManager:
         if not isinstance(config.MIGEMO_MIN_LENGTH, int) or config.MIGEMO_MIN_LENGTH < 1:
             errors.append("MIGEMO_MIN_LENGTH must be a positive integer")
 
+        if config.MIGEMO_ROMAJI_TABLE not in ['default', 'azik']:
+            errors.append("MIGEMO_ROMAJI_TABLE must be 'default' or 'azik'")
+
         # Validate file monitoring settings
         if not isinstance(config.FILE_MONITORING_ENABLED, bool):
             errors.append("FILE_MONITORING_ENABLED must be a boolean")
