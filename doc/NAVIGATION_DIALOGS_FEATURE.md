@@ -18,8 +18,11 @@ selected location.
 
 Every navigation dialog uses the same list-picker controls:
 
-- **Type** any letters/numbers to filter the list (case-insensitive, matches
-  anywhere)
+- **Type** to filter the list, using the same search syntax as the file pane's
+  incremental search: matching is case-insensitive and hits anywhere in the row,
+  several keywords separated by spaces all have to match (`work src` finds
+  `Projects — /home/me/work/src`), `*` and `?` wildcards work (`*.py`), and
+  romaji finds Japanese entries through Migemo (`kensaku` finds `検索`)
 - **Backspace** to remove filter characters
 - **Up/Down** to move through results
 - **Page Up/Page Down** to scroll by page

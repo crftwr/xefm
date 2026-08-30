@@ -23,9 +23,11 @@ credentialed network scan that must not delay the dialog (issue #274). On a
 still backend with no animation ticks (chiefly tests) the loader is settled
 synchronously: the worker is joined and its rows drained in one shot.
 
-Interaction: typing filters the list (substring,
-case-insensitive, plus Migemo so romaji finds Japanese labels — see
-``xefm.migemo_search``); ↑/↓/PageUp/PageDown move the selection; Enter accepts
+Interaction: typing filters the list with the same query the file pane's
+incremental search takes (``xefm.search_match``) — whitespace-separated tokens
+that all have to match, case-insensitively, each one a "contains" glob or a
+Migemo match so romaji finds Japanese labels (#349); ↑/↓/PageUp/PageDown move
+the selection; Enter accepts
 the selected value; Esc cancels; a click selects/activates a row. The dialog is
 modal — it owns events while open — and reports its outcome through
 ``on_accept(value)`` / ``on_cancel()``.
@@ -48,7 +50,7 @@ from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 from puikit.widgets.text_edit import TextEdit
 
-from xefm import migemo_search
+from xefm import search_match
 from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
 
 #: Navigation keys the *list* owns even while the filter field holds focus —
@@ -129,18 +131,18 @@ class FilterListDialog(FocusContainer, Widget):
 
     # --- filtering -----------------------------------------------------------
 
-    def _label_hit(self, value: Any, q: str, regex) -> bool:
-        """Whether a row passes the filter: case-insensitive substring on the
-        rendered label, unioned with the query's Migemo regex (romaji finds
-        Japanese labels, #302 — ``regex`` is None when Migemo doesn't apply)."""
-        label = self.to_label(value)
-        return q in label.lower() or (
-            regex is not None and migemo_search.search_nfc(regex, label))
+    def _label_hit(self, value: Any,
+                   tokens: Sequence[search_match.Token]) -> bool:
+        """Whether a row passes the filter: the shared incremental-search query
+        against the rendered label — every whitespace-separated token matching it
+        as a "contains" glob or through Migemo (romaji finds Japanese labels,
+        #302), the same matcher the file pane's isearch uses (#349). ``tokens``
+        comes from ``search_match.compile_query``, hoisted out of the row loop."""
+        return search_match.hit(tokens, self.to_label(value))
 
     def _refilter(self, text: str) -> None:
-        q = text.lower()
-        regex = migemo_search.get_regex(text)
-        self.filtered = [v for v in self.all_items if self._label_hit(v, q, regex)]
+        tokens = search_match.compile_query(text)
+        self.filtered = [v for v in self.all_items if self._label_hit(v, tokens)]
         self.list.set_items([self.to_label(v) for v in self.filtered])
         self.list.selected = 0
 
@@ -152,9 +154,8 @@ class FilterListDialog(FocusContainer, Widget):
         if not values:
             return
         self.all_items.extend(values)
-        q = self.filter_edit.text.lower()
-        regex = migemo_search.get_regex(self.filter_edit.text)
-        matches = [v for v in values if self._label_hit(v, q, regex)]
+        tokens = search_match.compile_query(self.filter_edit.text)
+        matches = [v for v in values if self._label_hit(v, tokens)]
         if not matches:
             return
         self.filtered.extend(matches)

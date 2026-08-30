@@ -6,7 +6,7 @@ XeFM File List Manager - Manages file lists, sorting, filtering, and selection
 import os
 import stat
 import fnmatch
-from xefm import migemo_search
+from xefm import search_match
 from xefm.dir_scan import is_hidden
 from xefm.path import Path, attrs_via_path
 from datetime import datetime
@@ -554,13 +554,12 @@ class FileListManager:
         return True, message
     
     def find_matches(self, pane_data, pattern, match_all=False, return_indices_only=False):
-        """Find all files matching the fnmatch patterns in current pane
+        """Find all files matching the search pattern in the current pane.
 
-        A token also matches through Migemo (romaji -> Japanese, #302): the
-        fnmatch test and the Migemo regex are unioned per token, so ``kensaku``
-        finds ``検索結果.txt``. Tokens with glob characters, short tokens, and
-        every token when Migemo is off/unavailable, match by fnmatch alone —
-        see ``xefm.migemo_search``.
+        The pattern is the shared incremental-search query (``xefm.search_match``):
+        whitespace-separated tokens, each matching a name as a "contains" glob or
+        through Migemo (romaji -> Japanese, #302), so ``kensaku`` finds
+        ``検索結果.txt``. The same matcher backs the filter-list dialogs (#349).
 
         Args:
             pane_data: Pane data dictionary
@@ -569,47 +568,21 @@ class FileListManager:
             return_indices_only: If True, return list of indices. If False, return list of (index, filename) tuples
 
         Returns:
-            List of matches (either indices or (index, filename) tuples based on return_indices_only)
+            List of matches (either indices or (index, filename) tuples based on
+            return_indices_only)
         """
         if not pattern or not pane_data['files']:
             return []
 
-        matches = []
-
-        # Split pattern by spaces to get individual patterns
-        patterns = pattern.strip().split()
-        if not patterns:
+        # Compiled once for the whole pane: the Migemo regex per token is the
+        # expensive step, and it does not depend on the file being tested.
+        tokens = search_match.compile_query(pattern)
+        if not tokens:
             return []
 
-        # Convert all patterns to lowercase for case-insensitive matching
-        # and wrap each pattern with wildcards to match "contains" behavior.
-        # Each token carries its Migemo regex (None when Migemo doesn't apply);
-        # the regex is built once per token, not per file — generation is the
-        # expensive step.
-        wrapped_patterns = []
-        for p in patterns:
-            p_lower = p.lower()
-            # If pattern doesn't start with *, add it for "contains" matching
-            if not p_lower.startswith('*'):
-                p_lower = '*' + p_lower
-            # If pattern doesn't end with *, add it for "contains" matching
-            if not p_lower.endswith('*'):
-                p_lower = p_lower + '*'
-            wrapped_patterns.append((p_lower, migemo_search.get_regex(p)))
-
+        matches = []
         for i, file_path in enumerate(pane_data['files']):
-            filename_lower = file_path.name.lower()
-
-            # A token hits on its wrapped glob ("contains" semantics) or its
-            # Migemo regex; tokens combine with AND (match_all) or OR. The
-            # generator keeps the short-circuit the explicit loops had.
-            token_hits = (
-                fnmatch.fnmatch(filename_lower, wrapped)
-                or (regex is not None
-                    and migemo_search.search_nfc(regex, file_path.name))
-                for wrapped, regex in wrapped_patterns
-            )
-            if all(token_hits) if match_all else any(token_hits):
+            if search_match.hit(tokens, file_path.name, match_all=match_all):
                 if return_indices_only:
                     matches.append(i)
                 else:

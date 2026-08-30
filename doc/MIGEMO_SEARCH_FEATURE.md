@@ -21,7 +21,8 @@ Migemo applies to every incremental-search surface:
 - **Rich view modes** (Markdown / JSON / CSV) — the embedded renderer's search
   uses the same matcher.
 - **Filter-list dialogs** — favorites, history, drives, external programs:
-  typing romaji in the filter field finds Japanese labels.
+  the filter field takes the same query as the pane (space-separated tokens,
+  wildcards), so typing romaji finds Japanese labels.
 
 ## How patterns behave
 
