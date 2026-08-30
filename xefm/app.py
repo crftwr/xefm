@@ -2110,6 +2110,7 @@ class XeFMApp:
                 "switch_pane": (self._act_switch_pane, True),
                 "open_item": (lambda: self._open(self.active_pane()), True),
                 "go_parent": (lambda: self._go_parent(self.active_pane()), True),
+                "go_root": (lambda: self._go_root(self.active_pane()), True),
                 "nav_left": (self._act_nav_left, True),
                 "nav_right": (self._act_nav_right, True),
                 "sync_current_to_other": (self._act_sync_current_to_other, True),
@@ -2508,6 +2509,43 @@ class XeFMApp:
             self._refresh(pane, on_ready=land_on_child)
             self.log_info(f"Up to {parent}")
 
+    @staticmethod
+    def _top_level_name(path, root) -> str | None:
+        """The name of the branch directly under ``root`` that ``path`` sits in,
+        so a jump to the root can land the cursor the way ``go_parent`` lands on
+        the child it came from. ``None`` when the walk never meets ``root``.
+
+        The walk is bounded rather than trusting every backend's chain to
+        terminate: this runs on the UI thread, and a path implementation whose
+        parents never reach a fixed point would otherwise hang the app.
+        """
+        node = path
+        for _ in range(256):
+            parent = node.parent
+            if str(parent) == str(node):
+                return None
+            if str(parent) == str(root):
+                return node.name
+            node = parent
+        return None
+
+    def _go_root(self, pane: dict) -> None:
+        """Jump straight to the top of wherever the pane is.
+
+        ``Path.anchor`` names that place for every backend — the drive root on
+        Windows, ``/`` on POSIX, the bucket root on S3, the host root over SFTP
+        — so the one behavior is right on every platform without a branch, which
+        is what made the feature worth building in (#353) rather than leaving to
+        a per-OS favorite.
+        """
+        path = pane["path"]
+        root = Path(path.anchor)
+        if not pane.get("virtual") and str(root) == str(path):
+            self.log_info(f"Already at {root}")
+            return
+        self._go_to_dir(pane, root, self._top_level_name(path, root))
+        self.log_info(f"Up to {root}")
+
     # --- menus & dialogs -----------------------------------------------------
 
     def _build_menu(self) -> Menu:
@@ -2570,6 +2608,8 @@ class XeFMApp:
         go_menu = Menu(
             MenuItem("Parent Directory", on_select=lambda: self._menu("go_parent"),
                      shortcut=sc("go_parent")),
+            MenuItem("Root Directory", on_select=lambda: self._menu("go_root"),
+                     shortcut=sc("go_root")),
             MenuItem("Go to Favorite…", on_select=self.show_favorites, shortcut=sc("favorites")),
             MenuItem("Jump to Path…", on_select=self.jump_to_path, shortcut=sc("jump_to_path")),
             MenuItem("Drives…", on_select=self.show_drives, shortcut=sc("drives")),
@@ -5300,6 +5340,7 @@ class XeFMApp:
             ("cursor_bottom", "Move cursor to the last item"),
             ("open_item", "Open: enter a directory/archive, or view a file"),
             ("go_parent", "Go to parent directory"),
+            ("go_root", "Go to the root of the current drive or location"),
             ("switch_pane", "Switch active pane"),
             ("nav_left", "Focus left pane / go to parent"),
             ("nav_right", "Focus right pane / go to parent"),

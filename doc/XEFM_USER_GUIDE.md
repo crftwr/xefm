@@ -208,6 +208,7 @@ When you first run XeFM, you'll see:
 - **Arrow Keys**: Navigate files and directories
 - **Enter**: Enter directory or view text file
 - **Backspace**: Go to parent directory
+- **\\**: Go to the root of the current drive or location
 - **?**: Show help dialog
 - **Q**: Quit XeFM
 
@@ -291,6 +292,7 @@ Shift-E  - Create a new file
 ←→       - Switch panes or enter/exit directories
 Enter    - Enter directory or view file
 Backspace - Go to parent directory
+\        - Go to the root of the current drive or location
 Home/End - Go to first/last file
 Page Up/Down - Navigate by page
 Ctrl-Home/End - Move the cursor to the first / last item
@@ -763,6 +765,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | Tab | Switch the active pane |
 | Enter | Open item (enter directory, open file, or enter archive) |
 | Backspace | Go to the parent directory |
+| \\ | Go to the root of the current drive or location |
 | Page Up / Page Down | Scroll by a page |
 | Ctrl+Home / Ctrl+End | Move the cursor to the first / last item |
 | Cmd+Enter | Open with the OS default application |

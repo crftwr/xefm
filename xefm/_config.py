@@ -266,6 +266,7 @@ class Config:
         'open_with_os': ['Command-ENTER'],     # Open file(s) with OS default application
         'reveal_in_os': ['Alt-ENTER'],         # Reveal focused file in OS file manager
         'go_parent': ['BACKSPACE'],            # Go to parent directory
+        'go_root': ['\\'],                     # Go to the root of the current drive/location
         'switch_pane': ['TAB'],                # Switch between left and right panes
         'nav_left': ['LEFT'],                  # Left pane: go to parent, Right pane: switch to left pane
         'nav_right': ['RIGHT'],                # Right pane: go to parent, Left pane: switch to right pane
