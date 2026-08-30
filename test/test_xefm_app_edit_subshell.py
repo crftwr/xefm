@@ -71,6 +71,16 @@ class EditFile(EditSubshellBase):
         self.assertEqual(argv[-1], str(entry))
         self.assertIn(self.app.config.TEXT_EDITOR.split()[0], argv[0])
 
+    def test_launches_the_editor_by_the_path_PATH_answers_with(self):
+        """CreateProcess only ever appends .exe, so a bare TEXT_EDITOR never
+        finds the code.cmd a scoop shim (or VS Code's own installer) leaves on
+        PATH. Launch what the PATHEXT-aware lookup found (#345)."""
+        self._focus("note.txt")
+        with patch("shutil.which", return_value=r"C:\shims\code.cmd"), \
+             patch("subprocess.run") as run:
+            self.app.edit_file()
+        self.assertEqual(run.call_args.args[0][0], r"C:\shims\code.cmd")
+
     def test_hands_terminal_over_via_suspended(self):
         self._focus("note.txt")
         suspended_cm = MagicMock()

@@ -2674,9 +2674,11 @@ class XeFMApp:
         ``pause_on_error``, a nonzero exit holds the terminal until Enter, so
         the child's parting error output stays readable before the repaint
         wipes it."""
+        from xefm.external_programs import resolve_command
         try:
             with self.backend.suspended():
-                result = subprocess.run(argv, cwd=cwd, env=env)
+                result = subprocess.run(resolve_command(argv, env),
+                                        cwd=cwd, env=env)
                 if pause_on_error and result.returncode != 0:
                     # sys.stdout is captured into the log pane; the prompt must
                     # reach the real tty the child just wrote its errors to.
@@ -2718,8 +2720,9 @@ class XeFMApp:
         if not is_desktop_mode():
             self._run_in_terminal(argv)
             return True
+        from xefm.external_programs import resolve_command
         try:
-            subprocess.Popen(argv)
+            subprocess.Popen(resolve_command(argv))
         except FileNotFoundError:
             self.log_info(f"Command not found: {argv[0]}")
             return False
@@ -3830,7 +3833,8 @@ class XeFMApp:
                                            build_xefm_env,
                                            ensure_common_paths_in_env,
                                            get_selected_or_cursor_files,
-                                           quote_filenames_with_double_quotes)
+                                           quote_filenames_with_double_quotes,
+                                           resolve_command)
         pane = self.active_pane()
         command = list(program.get("command", []))
         if not command:
@@ -3881,7 +3885,7 @@ class XeFMApp:
             # SUBPROCESS_NO_WINDOW keeps a console program from flashing a window
             # of its own on Windows, where the GUI backend has no console to lend.
             proc = subprocess.Popen(
-                command + args, cwd=cwd, env=env,
+                resolve_command(command, env) + args, cwd=cwd, env=env,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, text=True, errors="replace",
                 **SUBPROCESS_NO_WINDOW)

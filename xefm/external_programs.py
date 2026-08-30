@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import shlex
+import shutil
 import time
 from xefm.path import Path
 from xefm.backend_detector import is_desktop_mode
@@ -291,6 +292,32 @@ def ensure_common_paths_in_env(env):
         env['PATH'] = ':'.join(path_components)
 
 
+def resolve_command(command, env=None):
+    r"""``command`` with its program resolved to a full path, when PATH holds one.
+
+    Windows' ``CreateProcess`` - what :mod:`subprocess` calls - searches PATH
+    but only ever appends ``.exe``; it never reads PATHEXT. So a bare ``code``
+    misses the ``code.cmd`` that scoop's shims (and VS Code's own installer) put
+    on PATH, and the launch fails with "Command not found" even though the very
+    same name runs from XeFM's sub-shell, where cmd.exe does read PATHEXT
+    (#345). :func:`shutil.which` applies PATHEXT, and CreateProcess happily runs
+    a ``.cmd`` it is handed by full path.
+
+    ``env`` is the environment the program will be launched with when that is
+    not ours: its PATH is the one to search - what POSIX :mod:`subprocess` does
+    anyway, and what makes :func:`ensure_common_paths_in_env` count.
+
+    A name PATH cannot resolve comes back untouched rather than raising, so the
+    launch still happens and still fails exactly as it always has: callers
+    report the missing command from the resulting :class:`FileNotFoundError`,
+    naming what the user wrote rather than a path we invented.
+    """
+    if not command:
+        return list(command)
+    found = shutil.which(command[0], path=env.get('PATH') if env else None)
+    return [found] + list(command[1:]) if found else list(command)
+
+
 class ExternalProgramManager:
     """Manages external program execution and subshell functionality"""
     
@@ -329,8 +356,9 @@ class ExternalProgramManager:
             ensure_common_paths_in_env(env)
             env.update(build_xefm_env(left_pane, right_pane, current_pane, other_pane))
 
-            # Use the command as-is (users should use xefm_tool() for XeFM tools)
-            command = program['command']
+            # Use the command as-is (users should use xefm_tool() for XeFM tools),
+            # bar the PATH lookup Windows won't do for us (see resolve_command).
+            command = resolve_command(program['command'], env)
             
             # Determine working directory for external program
             # If current pane is browsing a remote directory (like S3), 
@@ -528,7 +556,7 @@ class ExternalProgramManager:
             os.chdir(working_dir)
             
             # Start the shell with the modified environment
-            subprocess.run([shell], env=env)
+            subprocess.run(resolve_command([shell], env), env=env)
             
         except Exception as e:
             self.logger.error(f"Error starting sub-shell: {e}")

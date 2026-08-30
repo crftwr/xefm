@@ -45,6 +45,7 @@ from puikit.widgets import DragBar, show_message_box
 from puikit.widgets.base import Widget
 
 from xefm.dir_scan import is_hidden_path
+from xefm.external_programs import resolve_command
 from xefm.path import Path
 from xefm.str_format import abbreviate_path, format_size
 from xefm.text_viewer import (MONO, _ScrollBody, _header_bg, draw_status_bar,
@@ -1025,7 +1026,7 @@ class DirectoryDiffView(Widget):
         backend = getattr(self._panel, "backend", None)
         try:
             with backend.suspended():
-                subprocess.run(argv)
+                subprocess.run(resolve_command(argv))
         except FileNotFoundError:
             self._notify(f"Command not found: {argv[0]}")
             return

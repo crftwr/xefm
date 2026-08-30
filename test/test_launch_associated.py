@@ -14,6 +14,8 @@ test_open_tiers.py for why it was removed.
 Run with: python -m pytest test/test_launch_associated.py -v
 """
 
+import shutil
+
 import pytest
 
 from xefm import app as xefm_app
@@ -64,6 +66,11 @@ def app(monkeypatch):
             return object()
 
         monkeypatch.setattr(xefm_app.subprocess, "Popen", fake_popen)
+        # Resolving the program against PATH (#345) is orthogonal to the
+        # handover decision under test; pin it away so the argv assertions
+        # read as the argv that was written, whatever this machine has
+        # installed. TestPathResolution below covers the resolution itself.
+        monkeypatch.setattr(shutil, "which", lambda cmd, path=None: None)
         return a
     return make
 
@@ -99,6 +106,18 @@ class TestDesktopMode:
         a = app(desktop=True, popen=PermissionError("denied"))
         assert a.launch([FakeEntry()], ["blocked"]) is False
         assert "Failed to open a.log" in a.logged[0]
+
+
+class TestPathResolution:
+    def test_desktop_launch_runs_the_program_by_full_path(self, app, monkeypatch):
+        """Windows' CreateProcess searches PATH but only ever appends ``.exe``,
+        so a bare ``code`` never finds the ``code.cmd`` a scoop shim leaves
+        there. Hand the launch the path PATHEXT-aware lookup found (#345)."""
+        a = app(desktop=True)
+        monkeypatch.setattr(shutil, "which",
+                            lambda cmd, path=None: r"C:\shims\code.cmd")
+        assert a.launch([FakeEntry()], ["code"]) is True
+        assert a.popen_calls == [[r"C:\shims\code.cmd", "/home/me/a.log"]]
 
 
 class TestNonLocalPaths:

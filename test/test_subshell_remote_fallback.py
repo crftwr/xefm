@@ -198,10 +198,14 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         # Verify that os.chdir was called with XeFM's working directory, not the remote path
         mock_chdir.assert_called_once_with(xefm_working_dir)
         
-        # Verify subprocess was called with the program command
+        # Verify subprocess was called with the program command. The program
+        # name is resolved against PATH before launching (#345), so it may
+        # arrive as a full path - '/bin/echo' here, plain 'echo' where PATH has
+        # no such file (Windows, where it is a cmd.exe builtin).
         mock_subprocess.assert_called_once()
         args, kwargs = mock_subprocess.call_args
-        self.assertEqual(args[0], ['echo', 'test'])
+        self.assertTrue(args[0][0].endswith('echo'), args[0][0])
+        self.assertEqual(args[0][1:], ['test'])
         
         # Verify environment variables are set correctly
         env = kwargs['env']
@@ -243,10 +247,14 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         # Verify that os.chdir was called with the local directory, not XeFM's working directory
         mock_chdir.assert_called_once_with('/home/user/local')
         
-        # Verify subprocess was called with the program command
+        # Verify subprocess was called with the program command. The program
+        # name is resolved against PATH before launching (#345), so it may
+        # arrive as a full path - '/bin/echo' here, plain 'echo' where PATH has
+        # no such file (Windows, where it is a cmd.exe builtin).
         mock_subprocess.assert_called_once()
         args, kwargs = mock_subprocess.call_args
-        self.assertEqual(args[0], ['echo', 'test'])
+        self.assertTrue(args[0][0].endswith('echo'), args[0][0])
+        self.assertEqual(args[0][1:], ['test'])
         
         # Verify environment variables are set correctly
         env = kwargs['env']

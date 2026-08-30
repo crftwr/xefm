@@ -69,6 +69,20 @@ run the child process, then restore the renderer and stdio in a `finally` block.
 - `ensure_common_paths_in_env(env)` — on macOS, prepend common binary paths
   (`/usr/local/bin`, `/opt/homebrew/bin`, …) to `PATH`, since an app launched
   from Finder/Dock does not inherit the user's shell `PATH`.
+- `resolve_command(command, env=None)` — replace the program name with the full
+  path `shutil.which` finds for it, searching the launch environment's `PATH`
+  (the one `ensure_common_paths_in_env` just extended) rather than ours.
+  Windows' `CreateProcess` — what `subprocess` calls — searches `PATH` but only
+  ever appends `.exe`; it never reads `PATHEXT`. So a bare `code` misses the
+  `code.cmd` that a scoop shim, or VS Code's own installer, leaves on `PATH`,
+  and the launch fails with "Command not found" even though the same name runs
+  from the sub-shell, where cmd.exe *does* read `PATHEXT` (#345). `shutil.which`
+  applies `PATHEXT`, and `CreateProcess` runs a `.cmd` handed to it by full
+  path. A name `PATH` cannot answer comes back untouched, so the launch still
+  fails exactly as it always has and the error still names what the user wrote.
+  Every launch goes through it: `_run_program`, `_run_in_terminal` (editor,
+  `options {'terminal': True}`, sub-shell), `_launch_associated`, the legacy
+  manager, and the `TEXT_DIFF` tool in both diff viewers.
 
 ## Configuration
 
@@ -131,7 +145,8 @@ terminal and desktop mode:
    holds the terminal until Enter (the prompt goes to `sys.__stdout__`, since
    `sys.stdout` is captured into the log pane). In desktop mode there is no
    terminal, so the launch is refused with a log-pane error.
-3. `subprocess.Popen` with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE` — the
+3. `subprocess.Popen` — the program name resolved through `resolve_command`
+   first — with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE`, so the
    child never touches the terminal. In TUI mode a direct write would corrupt
    the curses screen (newlines without carriage returns under raw mode); in
    desktop mode there may be no terminal at all.
