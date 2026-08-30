@@ -58,8 +58,9 @@ from xefm.backend_detector import is_desktop_mode
 from xefm.background_shaders import SHADER_KINDS
 from xefm.config import (KeyBindings, config_manager, deprecated_names_notice,
                          get_builtin_handler_for_file, get_config,
-                         get_favorite_directories, get_program_for_file,
-                         has_explicit_association, keys_label_for_action)
+                         get_drive_locations, get_favorite_directories,
+                         get_program_for_file, has_explicit_association,
+                         keys_label_for_action)
 from xefm.dir_scan import is_hidden
 from xefm.disk_usage import UsageScan
 from xefm.file_list_manager import FileListManager
@@ -3316,21 +3317,15 @@ class XeFMApp:
         return (left_w, sw - left_w)
 
     def _local_drives(self) -> list[dict]:
-        """Home / root / common folders + mounted volumes, as ``{name, path}``
-        rows for the drives picker. SSH hosts are added by ``_ssh_drives``; S3
-        buckets (a credentialed network scan) stream in afterwards via
-        ``_s3_drives_iter`` on the picker's loader thread."""
+        """Fixed locations + mounted volumes, as ``{name, path}`` rows for the
+        drives picker. The fixed part comes from ``DRIVE_LOCATIONS`` in the
+        config — Home / Root / Documents / Downloads / Desktop unless the user
+        defines their own list (issue #356) — while the volumes below it are
+        always whatever the machine has mounted. SSH hosts are added by
+        ``_ssh_drives``; S3 buckets (a credentialed network scan) stream in
+        afterwards via ``_s3_drives_iter`` on the picker's loader thread."""
         system = platform.system()
-        drives = [{"name": "Home", "path": str(Path.home())}]
-        if system != "Windows":
-            drives.append({"name": "Root", "path": "/"})
-        for name in ("Documents", "Downloads", "Desktop"):
-            p = Path.home() / name
-            try:
-                if p.exists() and p.is_dir():
-                    drives.append({"name": name, "path": str(p)})
-            except Exception:
-                pass
+        drives = get_drive_locations()
         if system == "Windows":
             for root in self._windows_drive_roots():
                 drives.append({"name": root.rstrip("\\/"), "path": root})

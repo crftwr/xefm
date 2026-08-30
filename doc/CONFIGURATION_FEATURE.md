@@ -236,6 +236,24 @@ FAVORITE_DIRECTORIES = [
 
 Access favorites with the `J` key. See [Navigation Dialogs](NAVIGATION_DIALOGS_FEATURE.md).
 
+## Drive Locations
+
+```python
+DRIVE_LOCATIONS = None   # built-in: Home, Root, Documents, Downloads, Desktop
+```
+
+The fixed locations at the top of the drives dialog (`D`). Set a list to replace
+them with your own, or `[]` to show only the mounted volumes:
+
+```python
+DRIVE_LOCATIONS = [
+    {'name': 'Work', 'path': '~/work'},
+    {'name': 'NAS', 'path': 'ssh://nas/'},
+]
+```
+
+See [Navigation Dialogs](NAVIGATION_DIALOGS_FEATURE.md).
+
 ## History and Logging
 
 ```python
