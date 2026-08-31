@@ -347,6 +347,12 @@ Press `F`, then type. While the search bar is open:
 | Enter | Stop at the current match (the pattern is saved to the filter history) |
 | Esc | Cancel and go back to where the cursor was |
 
+The search stops where its matches do: a character that would leave nothing
+matching is refused, so the pattern stays on the last file it found instead of
+running on into an empty list. Backspace always takes you back out. (Typing
+romaji for Japanese keeps a couple of characters of leeway, since `ni` finds
+Japanese only once it is `nih` — see [Migemo Search](MIGEMO_SEARCH_FEATURE.md).)
+
 Space types a space — it separates the pattern's words (`re 24` finds
 `report_2024.txt`), so selecting a file uses Shift+↓ rather than the file list's
 Space. Ctrl+A marks the whole set the counter on the right is showing: type

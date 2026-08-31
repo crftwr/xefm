@@ -301,6 +301,29 @@ def get_regex(pattern: str) -> re.Pattern | None:
     return _compiled(pattern, min_length, str(table).lower())
 
 
+def under_gate(pattern: str) -> bool:
+    """Whether ``pattern`` is held back from Migemo by its *length alone* —
+    Migemo is on, the pattern holds no glob character, and it is shorter than
+    ``MIGEMO_MIN_LENGTH``, so one more character hands it a regex it does not
+    have yet.
+
+    The length gate is the one place where typing *more* can find more rather
+    than less: ``ni`` is a plain substring search while ``nih`` also finds
+    日本. Incremental search asks this before declaring that a pattern which
+    found nothing can never find anything (#370). Config only — the engine is
+    never probed here, so a machine without pymigemo simply keeps its short
+    patterns undecided too, which costs nothing.
+    """
+    if not pattern:
+        return False
+    config = _config()
+    if not getattr(config, 'MIGEMO_SEARCH', True):
+        return False
+    if any(c in pattern for c in _GLOB_CHARS):
+        return False
+    return len(pattern) < getattr(config, 'MIGEMO_MIN_LENGTH', 3)
+
+
 def has_hit(regex: re.Pattern, text: str) -> bool:
     """Whether ``regex`` (from :func:`get_regex`) adds a match anywhere in the
     raw ``text``. A hit only counts when the matched span contains a non-ASCII
