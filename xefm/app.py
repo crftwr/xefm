@@ -1958,10 +1958,17 @@ class XeFMApp:
         self.right_view.active = self.pm.active_pane == "right"
 
     def _on_click(self, pane_name: str, index: int) -> None:
-        """A FilePane was left-clicked: make it active and move the cursor."""
+        """A FilePane was left-clicked: make it active and move the cursor.
+
+        ``index`` is ``-1`` when the click landed past the last row — the empty
+        space below a short listing, or anywhere in a pane showing an empty
+        directory. The pane still becomes the active one, which is what the
+        click was asking for; the cursor stays where it is, there being no row
+        to put it on (issue #371)."""
         self.pm.active_pane = pane_name
         self._sync_active()
-        self.active_pane()["focused_index"] = index
+        if index >= 0:
+            self.active_pane()["focused_index"] = index
 
     def _relist(self, pane: dict, *, on_ready=None) -> None:
         """Re-list ``pane`` **in place** — same directory, cursor and scroll left

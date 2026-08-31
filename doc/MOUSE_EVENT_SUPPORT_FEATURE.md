@@ -31,7 +31,8 @@ The mouse moves the cursor and controls which pane is active.
 
 1. **Click a file or directory** → the cursor moves to that row and the pane becomes active
 2. **Click the other pane** → focus switches to it, exactly like pressing Tab
-3. **Visual feedback** → the active pane is highlighted, the inactive pane is dimmed
+3. **Click the empty space below the listing** → the pane becomes active and the cursor stays where it is; this is also how a pane showing an empty directory is focused, since it has no row to click
+4. **Visual feedback** → the active pane is highlighted, the inactive pane is dimmed
 
 Clicking a row is the mouse equivalent of arrowing the cursor onto it; press Enter (or double-click, in the contexts noted below) to open or navigate. Multi-selection is still done with Space (or `+`/`*` patterns).
 

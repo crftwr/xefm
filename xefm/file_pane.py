@@ -13,9 +13,10 @@ quality there:
   wheel carries a sub-unit ``scroll_units`` delta, so GUI scrolling is
   pixel-granular (the first row slides partly off the top, clipped). Whole-unit
   backends only deliver whole deltas, so the TUI stays grid-aligned.
-- **Mouse**: click selects a row (and activates the pane); wheel/trackpad scroll
-  moves the viewport without moving the cursor — the pane *under the pointer*
-  scrolls.
+- **Mouse**: click selects a row (and activates the pane — a click on the empty
+  space below the last row activates it too, without moving the cursor);
+  wheel/trackpad scroll moves the viewport without moving the cursor — the pane
+  *under the pointer* scrolls.
 - **Scrollbar**: shown when the list outgrows the pane, flush to the right edge
   at fractional width.
 - **Measured fitting**: names are elided by ``ctx.measure_text`` so a
@@ -192,7 +193,10 @@ class FilePane(Widget):
         #: rows get a subtle green background so every hit is visible at once.
         self.search_matches: set[int] = set()
         #: Called with the clicked row index — the controller makes this pane
-        #: active and moves the cursor there.
+        #: active and moves the cursor there. ``-1`` for a click that landed
+        #: past the last row (the empty space below the listing, or an empty
+        #: directory): the pane still becomes active, and there is no row to
+        #: move to (#371).
         self.on_click = on_click
         #: Called with (row index, screen_x, screen_y) on right-click, so the
         #: controller can pop a context menu anchored at the pointer.
@@ -205,7 +209,8 @@ class FilePane(Widget):
         #: Called with (row index under the drop, list of dropped paths) when files
         #: are dropped onto the pane from another app (drop-IN, a FILE_DROP event).
         #: ``index`` is ``-1`` when the drop lands below the last row (target the
-        #: pane's own directory); a directory row lets the controller target it.
+        #: pane's own directory — the same "no row here" answer a click gets);
+        #: a directory row lets the controller target it.
         self.on_drop = on_drop
         #: Left-drag gesture state: the row a press landed on (``-1`` = none / not
         #: a file row), the press position (base units), and whether a drag session
@@ -762,6 +767,14 @@ class FilePane(Widget):
 
     # --- events --------------------------------------------------------------
 
+    def _row_at(self, event: Event) -> int:
+        """The row index under ``event``'s pointer, or ``-1`` where there is no
+        row: past the last one, or anywhere in an empty pane. The scroll offset
+        puts the pointer in the listing and the top inner margin takes the
+        chrome off, so a pointer maps to the row it is actually over."""
+        index = int(self.offset + max(0.0, (event.y or 0.0) - self._margin_y))
+        return index if 0 <= index < len(self.pane["files"]) else -1
+
     def handle_event(self, event: Event) -> bool:
         if event.type is EventType.MOUSE_SCROLL:
             # A precise (trackpad) scroll carries a sub-unit delta; a plain wheel
@@ -775,8 +788,7 @@ class FilePane(Widget):
             # Arm a possible drag: remember the row and press point. The click is
             # still synthesized by the Panel on release (so plain clicks keep
             # selecting); a drag only starts if the pointer travels far enough.
-            index = int(self.offset + max(0.0, (event.y or 0.0) - self._margin_y))
-            self._press_index = index if 0 <= index < len(self.pane["files"]) else -1
+            self._press_index = self._row_at(event)
             self._press_xy = (event.x or 0.0, event.y or 0.0)
             self._dragging = False
             return False  # don't consume: let the press→click gesture run
@@ -797,14 +809,16 @@ class FilePane(Widget):
             self._dragging = False
             return False
         if event.type is EventType.MOUSE_CLICK and event.button == "left":
-            index = int(self.offset + max(0.0, (event.y or 0.0) - self._margin_y))
-            if 0 <= index < len(self.pane["files"]):
-                if self.on_click is not None:
-                    self.on_click(index)
+            # Reported even with no row under the pointer (-1): clicking the
+            # empty space below a short listing is still a click on *this* pane,
+            # and it is how a pane showing an empty directory can be reached at
+            # all with the mouse (#371).
+            if self.on_click is not None:
+                self.on_click(self._row_at(event))
                 return True
         if event.type is EventType.MOUSE_CLICK and event.button == "right":
-            index = int(self.offset + max(0.0, (event.y or 0.0) - self._margin_y))
-            if 0 <= index < len(self.pane["files"]) and self.on_context is not None:
+            index = self._row_at(event)
+            if index >= 0 and self.on_context is not None:
                 rx, ry, *_ = self._abs
                 self.on_context(index, rx + (event.x or 0.0), ry + (event.y or 0.0))
                 return True
@@ -812,9 +826,7 @@ class FilePane(Widget):
             # Files dropped onto the pane from another app. Map the drop point to a
             # row so a drop *on a directory* can target it; a drop past the last
             # row (or on empty space) reports -1 → the pane's own directory.
-            index = int(self.offset + max(0.0, (event.y or 0.0) - self._margin_y))
-            if not (0 <= index < len(self.pane["files"])):
-                index = -1
+            index = self._row_at(event)
             paths = event.hints.get("paths") or []
             if paths:
                 self.on_drop(index, list(paths))
