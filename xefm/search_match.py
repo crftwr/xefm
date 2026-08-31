@@ -62,3 +62,44 @@ def hit(tokens: Sequence[Token], text: str, *, match_all: bool = True) -> bool:
             or (regex is not None and migemo_search.search_nfc(regex, text))
             for glob, regex in tokens)
     return all(hits) if match_all else any(hits)
+
+
+def dead_end(pattern: str, *, migemo: bool = True) -> bool:
+    """Whether a query that found nothing can be called a *dead end* — no
+    character typed onto it could find anything either.
+
+    Adding to a token only ever narrows, so a query with no hits is normally
+    finished: the file pane's incremental search refuses the keystroke rather
+    than let the pattern run on past its last match (#370). Two kinds of "no
+    hits" are not finished, and this answers ``False`` for both:
+
+    - **A query with no tokens.** Whitespace alone matches nothing the pane
+      would show, but the very next character makes it a real query.
+    - **A token that can still widen** — see :func:`_undecided`.
+
+    ``migemo=False`` says the caller's candidates hold nothing Migemo could
+    match however the query grows — every one of them is ASCII, and Migemo
+    counts a hit only where the matched span is not
+    (:func:`migemo_search.has_hit`). That settles the short romaji tokens the
+    length gate would otherwise leave open, which is why searching a directory
+    of ASCII names stops at the first character that misses.
+    """
+    tokens = pattern.split()
+    return bool(tokens) and not any(_undecided(t, migemo) for t in tokens)
+
+
+def _undecided(token: str, migemo: bool = True) -> bool:
+    """Whether another character typed onto ``token`` could find *more* than it
+    finds now — the two places where "a query only narrows" does not hold.
+
+    A token under Migemo's length gate is the everyday one: ``ni`` searches
+    plain text while ``nih`` also finds 日本, so a half-typed romaji reading
+    must survive to its third character (:func:`migemo_search.under_gate`).
+    A token ending inside an unclosed ``[`` is the pedantic one: fnmatch reads
+    the bracket literally until the class is closed, so ``a[`` matches names
+    containing "a[" while ``a[bc]`` matches "ab".
+    """
+    if migemo and migemo_search.under_gate(token):
+        return True
+    start = token.rfind('[')
+    return start != -1 and ']' not in token[start + 1:]

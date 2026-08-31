@@ -78,6 +78,12 @@ exactly as before. Raise or lower `MIGEMO_MIN_LENGTH` to move the point where
 Migemo kicks in (1 sends even single characters through Migemo; expect a
 noticeable pause on the first keystroke).
 
+The gate also decides how soon incremental search refuses a character that
+matches nothing. A romaji reading finds Japanese only once it reaches
+`MIGEMO_MIN_LENGTH`, so a shorter pattern is never treated as a dead end —
+unless the directory holds no Japanese name at all, where there is nothing for
+Migemo to find and the search stops on the first miss like any other.
+
 ## Requirements
 
 Migemo uses the `pymigemo` package, installed automatically with XeFM (its

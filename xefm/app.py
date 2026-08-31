@@ -75,6 +75,7 @@ from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
                               set_log_sink)
 from xefm.pane_manager import PaneManager
 from xefm.path import Path
+from xefm import search_match
 from xefm.state_manager import get_state_manager
 from xefm.str_format import abbreviate_path, format_size
 from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
@@ -1053,6 +1054,9 @@ class XeFMApp:
         self._isearch_active = False
         self._isearch_origin = 0
         self._isearch_matches: list[int] = []
+        #: Whether the pane being searched holds a name Migemo could match at
+        #: all (any non-ASCII one), captured when the bar opens.
+        self._isearch_migemo = True
         self._isearch_bar: "ISearchBar | None" = None
 
         #: The pane a native file-drag started from — set by ``_start_drag`` and
@@ -5074,6 +5078,13 @@ class XeFMApp:
         self._isearch_active = True
         self._isearch_origin = self.active_pane()["focused_index"]
         self._isearch_matches = []
+        # Migemo only ever matches a *non-ASCII* name (migemo_search.has_hit),
+        # so a listing without one leaves no romaji token undecided — which is
+        # what lets _isearch_recompute refuse a miss on the first character
+        # there rather than at the third. Read once: the listing does not
+        # change under an open search.
+        self._isearch_migemo = any(
+            not f.name.isascii() for f in self.active_pane()["files"])
         self._active_view().search_matches = set()
         self._isearch_bar = ISearchBar(
             on_change=self._isearch_recompute,
@@ -5094,10 +5105,25 @@ class XeFMApp:
         """Recompute the match set for ``pattern`` (fired live on every edit),
         repaint the pane's highlights, and jump the cursor to the nearest match
         at/after the current position (or back to the origin when nothing
-        matches)."""
+        matches).
+
+        A typed character that would leave the search with no candidate at all
+        is refused instead (issue #370): the bar rolls the pattern back to the
+        last one that had matches, so the search stays on its hit rather than
+        running on past it while the counter reads 0. Backspace always gets you
+        out again — only an edit that *added* text is rolled back — and a
+        pattern Migemo has yet to reach is never called a dead end
+        (``search_match.dead_end``), because two characters of romaji find
+        Japanese only once they are three — in a listing that holds Japanese at
+        all."""
         pane = self.active_pane()
         matches = self.flm.find_matches(
             pane, pattern, match_all=True, return_indices_only=True)
+        if (not matches and search_match.dead_end(pattern,
+                                                  migemo=self._isearch_migemo)
+                and self._isearch_bar is not None
+                and self._isearch_bar.reject_edit()):
+            return  # pattern, matches, highlights and cursor all stay put
         self._isearch_matches = matches
         self._active_view().search_matches = set(matches)
         if matches:

@@ -31,6 +31,12 @@ config can rebind them — but this is the one surface whose keys compete with
    prompt is not wanted; the bar tries its own action names and nothing else.
 3. **Everything else is the field's.** Left/Right/Home/End, Backspace, Delete
    and the clipboard chords fall through untouched.
+
+A keystroke the field accepted can still be *taken back*: the owner answers
+``on_change`` by calling :meth:`ISearchBar.reject_edit`, and the pattern rolls
+back to the last one it accepted. That is how the file pane refuses a character
+that would leave the search with no candidate at all (issue #370) — see
+``XeFMApp._isearch_recompute``.
 """
 
 from __future__ import annotations
@@ -100,7 +106,9 @@ class ISearchBar(FocusContainer, Widget):
     ):
         self.prompt = prompt
         self.surface = surface
-        #: Live pattern edits (every keystroke), for the incremental jump.
+        #: Live pattern edits (every keystroke), for the incremental jump. The
+        #: owner may call :meth:`reject_edit` from inside it to take the edit
+        #: back — the file pane does, when the new pattern matches nothing.
         self.on_change = on_change
         #: ``-1`` (Up) / ``+1`` (Down) — walk to the previous / next match.
         self.on_navigate = on_navigate
@@ -123,6 +131,9 @@ class ISearchBar(FocusContainer, Widget):
         self.edit = TextEdit(text=text, on_change=self._edit_changed,
                              on_submit=self._edit_submitted)
         self.edit.cursor = len(text)
+        #: The last pattern the owner let stand — what :meth:`reject_edit`
+        #: rolls back to.
+        self._accepted = text
         self._focused = self.edit
         self._edit_rect = Rect(0.0, 0.0, 0.0, 0.0)
         self._size: tuple[float, float] = (0.0, 0.0)
@@ -141,10 +152,31 @@ class ISearchBar(FocusContainer, Widget):
     def _edit_changed(self, text: str) -> None:
         if self.on_change is not None:
             self.on_change(text)
+        # The owner may have rolled this edit back from inside on_change, so
+        # what the field holds now — not ``text`` — is what stands.
+        self._accepted = self.edit.text
 
     def _edit_submitted(self, _text: str) -> None:
         if self.on_submit is not None:
             self.on_submit()
+
+    def reject_edit(self) -> bool:
+        """Take back the edit being reported through ``on_change``: the field
+        goes back to the last pattern the owner accepted, caret and all.
+
+        Only an edit that *added* text is taken back. Refusing a character
+        keeps the search on its last hit, which is the point; refusing a
+        deletion would strand the user in a pattern they cannot back out of.
+        Returns whether anything was rolled back, so an owner that computes
+        state per keystroke can tell a refused edit (leave everything alone)
+        from one it has to apply.
+        """
+        added = len(self.edit.text) - len(self._accepted)
+        if added <= 0:
+            return False
+        self.edit.cursor = max(0, self.edit.cursor - added)
+        self.edit.text = self._accepted
+        return True
 
     # --- key routing ---------------------------------------------------------
 
