@@ -552,7 +552,40 @@ class FileListManager:
         
         message = f"Inversed selection: {selected_count} selected, {deselected_count} deselected"
         return True, message
-    
+
+    def toggle_matches_selection(self, pane_data, indices):
+        """Select every item at ``indices``, or clear them when all of them are
+        already selected.
+
+        The bulk half of incremental search: the bar has just counted the matches
+        for a pattern, and this marks that whole set in one key (issue #347).
+
+        Not an item-by-item inversion like ``toggle_all_*_selection``: half a
+        match set flipping each way is not a useful outcome for a search, where
+        the question is "mark these" and the answer to a second press is "no,
+        undo that". Items *outside* the match set keep their selection either
+        way, so narrowing the pattern and marking again accumulates.
+
+        Args:
+            pane_data: Pane data dictionary
+            indices: Indices into ``pane_data['files']`` (what ``find_matches``
+                returns with ``return_indices_only``)
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        files = pane_data['files']
+        paths = [str(files[i]) for i in indices if 0 <= i < len(files)]
+        if not paths:
+            return False, "No matches to select"
+        selected = pane_data['selected_files']
+        plural = "" if len(paths) == 1 else "es"
+        if all(p in selected for p in paths):
+            selected.difference_update(paths)
+            return True, f"Deselected {len(paths)} match{plural}"
+        selected.update(paths)
+        return True, f"Selected {len(paths)} match{plural}"
+
     def find_matches(self, pane_data, pattern, match_all=False, return_indices_only=False):
         """Find all files matching the search pattern in the current pane.
 

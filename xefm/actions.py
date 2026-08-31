@@ -85,11 +85,19 @@ IMAGE_VIEWER = "image_viewer"
 FILE_DIFF = "file_diff"
 #: The modal recursive directory-diff viewer.
 DIR_DIFF = "dir_diff"
+#: The incremental-search bar — the footer overlay the file panes and the
+#: viewers share (``xefm.isearch_bar.ISearchBar``). A surface like any other
+#: while it is up: it is the focus root and every key goes to it first. It is
+#: also the one context whose keys compete with *typing*, which is why the bar
+#: resolves a key here only after the text field has had its say, and runs only
+#: the actions it owns — see ``ISearchBar.handle_event``.
+ISEARCH = "isearch"
 
 #: Every context a binding or a user action may name, most-specific first.
 #: ``common`` is deliberately included: a config may bind (or a future release
 #: may allow overriding) an action there.
-CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, COMMON)
+CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, ISEARCH,
+            COMMON)
 
 
 # --------------------------------------------------------------------------- #
@@ -580,9 +588,56 @@ _DIR_DIFF_ACTIONS = [
        default_keys=("]",)),
 ]
 
+_ISEARCH_ACTIONS = [
+    # Every key the search bar itself answers. They were fixed in the widget
+    # until now — the same gap the viewers had, and closed the same way.
+    #
+    # Two constraints shape the defaults, and any rebinding of them:
+    #
+    # 1. A printable key cannot be one. The pattern field takes every glyph
+    #    (SPACE included — it is the pattern's token separator, which is exactly
+    #    why the file list's SPACE cannot mark a file here, issue #347), so a
+    #    binding on one would silently stop that character from being typed.
+    #    ``xefm.config.printable_isearch_bindings`` reports any the config has.
+    # 2. It has to survive the terminal. Ctrl/Shift+Enter do not reach a TUI
+    #    (no kitty keyboard protocol on the VT input path), and macOS has no
+    #    Insert key at all, so neither can carry a default.
+    #
+    # Shift+arrow satisfies both, and reads as the arrow it modifies: Up/Down
+    # walk the matches, Shift+Up/Down walk them *marking as they go* — the file
+    # list's Space / Shift-Space, whose "move" is one row where this one is one
+    # match.
+    _a("isearch.next_match", ISEARCH, "Move to the next match",
+       default_keys=("DOWN",)),
+    _a("isearch.prev_match", ISEARCH, "Move to the previous match",
+       default_keys=("UP",)),
+    _a("isearch.toggle_select_down", ISEARCH,
+       "Toggle selection and move to the next match",
+       default_keys=("Shift-DOWN",)),
+    _a("isearch.toggle_select_up", ISEARCH,
+       "Toggle selection and move to the previous match",
+       default_keys=("Shift-UP",)),
+    # Named for what it selects: the file list's own 'select_all' means every
+    # *item* in the pane, and the dotted form of a shorter name is how a config
+    # scopes that same action to one context — so reusing it here would read as
+    # "select_all, but in the search bar", which is not what this does.
+    #
+    # Ctrl-A, not Cmd-A: XeFM's own convention is Ctrl for its actions and
+    # Command for the OS-flavoured ones (``Command-ENTER``, ``Command-Shift-C``).
+    # It costs the pattern field its select-all-text chord on Windows and in the
+    # terminal — a one-line field, where Esc and retyping is the shorter move —
+    # and leaves Cmd-A doing exactly that on macOS.
+    _a("isearch.select_matches", ISEARCH, "Select every match (again: clear them)",
+       default_keys=("Ctrl-A",)),
+    _a("isearch.accept", ISEARCH, "Stop at the current match",
+       default_keys=("ENTER",)),
+    _a("isearch.cancel", ISEARCH, "Cancel and restore the cursor",
+       default_keys=("ESCAPE",)),
+]
+
 _BUILTIN_ACTIONS = (_COMMON_ACTIONS + _FILER_ACTIONS + _TEXT_VIEWER_ACTIONS
                     + _IMAGE_VIEWER_ACTIONS + _FILE_DIFF_ACTIONS
-                    + _DIR_DIFF_ACTIONS)
+                    + _DIR_DIFF_ACTIONS + _ISEARCH_ACTIONS)
 
 
 #: The process-wide registry. Built-ins populate it at import; user actions are

@@ -1007,6 +1007,53 @@ def deprecated_names_notice(bindings: dict, limit: int = 3) -> str | None:
             f"See doc/KEY_BINDINGS_FEATURE.md for the full list.")
 
 
+def printable_isearch_bindings(bindings: dict) -> list[tuple[str, str]]:
+    """The ``(action, key)`` pairs where a config has bound an isearch key to a
+    key that types a character.
+
+    The search bar gives the pattern field first refusal on every printable key
+    (that is what keeps ``Q``, ``?`` and SPACE typeable while ``quit``, ``help``
+    and ``toggle_select_down`` own them in the file list), so such a binding can
+    never fire — and the character it names would go on being typed. Reported
+    once at startup rather than silently ignored, because the config is
+    hand-written and this is the one mistake the isearch context invites.
+
+    A chord holding Ctrl or Cmd is not printable and is not reported: the field
+    reads those as commands, so the bar sees them.
+    """
+    from xefm.actions import ISEARCH, registry
+
+    key_bindings = KeyBindings(bindings)
+    found: list[tuple[str, str]] = []
+    for action in registry.actions(ISEARCH):
+        if not action.name.startswith(ISEARCH + "."):
+            continue  # an inherited 'common' action; the bar never runs it here
+        keys, _ = key_bindings.get_keys_for_action(action.name, ISEARCH)
+        for expr in keys:
+            identity, mods, mode = key_bindings._parse_key_expression(expr)
+            if mods & {"ctrl", "cmd"}:
+                continue
+            if mode == "char" or identity == "space" or (
+                    len(identity) == 1 and identity.isprintable()):
+                found.append((action.name, expr))
+    return found
+
+
+def printable_isearch_notice(bindings: dict, limit: int = 3) -> str | None:
+    """One line naming isearch bindings that a typed character will swallow, or
+    ``None`` (see :func:`printable_isearch_bindings`)."""
+    pairs = printable_isearch_bindings(bindings)
+    if not pairs:
+        return None
+    shown = ", ".join(f"'{action}' -> '{key}'" for action, key in pairs[:limit])
+    more = len(pairs) - limit
+    if more > 0:
+        shown += f", and {more} more"
+    return (f"KEY_BINDINGS binds {len(pairs)} isearch action(s) to a key that "
+            f"types a character, so they will never fire: {shown}. "
+            f"Use a modified or non-printable key (Shift-DOWN, F2, Ctrl-N).")
+
+
 def keys_label_for_action(action: str, fallback: str = "",
                           context: str | None = None) -> str:
     """Display string for an action's configured key(s) (so help/footers match

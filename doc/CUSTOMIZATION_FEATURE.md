@@ -91,6 +91,34 @@ List both if you want both — `['SPACE', 'PAGE_DOWN']`.
 | | | `dir_diff.split_left` | [ |
 | | | `dir_diff.split_right` | ] |
 
+### The incremental search bar
+
+The search bar (`F`) is a surface of its own, and its keys are named the same
+way:
+
+| Action | Default | |
+|---|---|---|
+| `isearch.next_match` | ↓ | Move to the next match |
+| `isearch.prev_match` | ↑ | Move to the previous match |
+| `isearch.toggle_select_down` | Shift-↓ | Mark, then move to the next match |
+| `isearch.toggle_select_up` | Shift-↑ | Mark, then move to the previous match |
+| `isearch.select_matches` | Ctrl-A | Mark every match (again: clear them) |
+| `isearch.accept` | Enter | Stop at the current match |
+| `isearch.cancel` | Esc | Cancel, restoring the cursor |
+
+One rule applies here and nowhere else: **the key must not be one that types a
+character.** Everything printable belongs to the pattern you are typing — that
+is why marking a file is Shift-↓ rather than the file list's Space, which the
+search reads as the separator between `report 2024` and `report*2024*`. Bind an
+isearch action to `N` and it can never fire; XeFM says so in the log pane at
+startup rather than leaving you to wonder. Modified or non-printable keys are
+free: `Shift-DOWN`, `Ctrl-N`, `F2`, `INSERT` (on Windows and in the terminal —
+macOS keyboards have no Insert key).
+
+`Ctrl-A` is the one default that takes a key the pattern field would otherwise
+use (select-all-text). Only the Ctrl form: `Cmd-A` still selects the text on
+macOS, which is where that chord is the habit.
+
 \* These are listed as live entries in the default `KEY_BINDINGS`, so a config
 generated from the template already has them. The rest work from the defaults
 above with no entry at all.

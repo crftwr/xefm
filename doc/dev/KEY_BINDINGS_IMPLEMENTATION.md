@@ -193,6 +193,43 @@ Lookup is a linear scan over this table applying `_matches` (the table is small)
 the `ConfigManager` caches the `KeyBindings` instance and rebuilds it only on
 `reload_config()`.
 
+## The isearch context
+
+`xefm.actions.ISEARCH` names one more key-consuming surface: the incremental-
+search bar (`xefm/isearch_bar.py`), which is the focus root while it is open and
+so receives every key. Its keys — `isearch.next_match`, `isearch.prev_match`,
+`isearch.toggle_select_down`, `isearch.toggle_select_up`,
+`isearch.select_matches`, `isearch.accept`, `isearch.cancel` — are ordinary
+named actions, resolved and rebound exactly like a viewer's.
+
+Routing is not a viewer's, though, because this is the one surface whose keys
+compete with **typing**. `ISearchBar.handle_event` runs three steps in order:
+
+1. **Text first.** `typed_char(event) is not None` (minus Ctrl/Cmd chords, taken
+   out first — the order `TextEdit` itself uses so `Cmd+A` is not read as typing
+   "a") goes straight to the pattern field, and the keymap never sees it. This
+   is what keeps `Q`, `?` and SPACE typeable into a pattern while `quit`, `help`
+   and `toggle_select_down` own them in the file list a row above.
+2. **Only what the bar owns.** Every context inherits the `common` actions, so
+   `quit` does resolve here — but the bar tests its own action names alone
+   (`ISearchBar._handlers`, built from the callbacks its owner supplied) rather
+   than taking whatever `find_action_for_event` returns. A viewer's search bar
+   passes no `on_select`, which is how Shift+Up/Down stay the field's there.
+3. **Everything else is the field's.** Left/Right/Home/End, Backspace, Delete
+   and the clipboard chords fall through untouched.
+
+The consequence for a config: an isearch action bound to a **printable** key can
+never fire, because step 1 consumes it — and the character would quietly stop
+being typeable if it could. `config.printable_isearch_bindings` finds those and
+the app logs one line about them at startup, the same nudge `deprecated_names_notice`
+gives a config using an old action name. Defaults therefore avoid printable keys,
+and also avoid the two keys a terminal cannot deliver: modified Enter (no kitty
+keyboard protocol on the VT input path) and Insert (absent on macOS). Shift+arrow
+satisfies both constraints on every backend, and so does the `Ctrl-A` of
+`isearch.select_matches` — the one default that shadows something the field
+wanted (its select-all-text), taken deliberately and only in the Ctrl form, so
+`Cmd-A` still selects the text on macOS.
+
 ## Error handling
 
 Parsing is defensive — an unknown modifier or key token logs a warning and is
@@ -205,6 +242,9 @@ skipped rather than crashing; a missing `KEY_BINDINGS` config falls back to
   / `_matches`) against the real keymap.
 - `test/test_puikit_keyboard_contract.py` — the per-backend translation XeFM relies
   on (the contract's guarantees hold on each backend).
+- `test/test_isearch_keys.py` — the isearch context: its defaults, the
+  printable-binding notice, the bar's three-step routing, and Shift+Up/Down
+  marking through a live file list.
 
 ## See Also
 
