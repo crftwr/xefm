@@ -141,10 +141,10 @@ class MenuBarActivation(unittest.TestCase):
     def test_alt_letter_opens_the_named_menu(self):
         # Alt+G opens Go directly (the bar titles' first letters are unique).
         self.assertEqual(self._bar_titles(),
-                         ["File", "Go", "Select", "View", "Tools", "Help"])
+                         ["File", "Edit", "Go", "Select", "View", "Tools", "Help"])
         self.app.on_event(_key("g", mods={"alt"}))
         self.assertTrue(self._menu_open())
-        self.assertEqual(self.app.menu_bar._index, 1)
+        self.assertEqual(self.app.menu_bar._index, 2)
 
     def test_alt_letter_without_match_does_nothing(self):
         self.app.on_event(_key("z", mods={"alt"}))
@@ -154,7 +154,7 @@ class MenuBarActivation(unittest.TestCase):
         self.app.on_event(_key("f10"))          # File open
         self.app.on_event(_key("v", mods={"alt"}))
         self.assertTrue(self._menu_open())
-        self.assertEqual(self.app.menu_bar._index, 3)  # View
+        self.assertEqual(self.app.menu_bar._index, 4)  # View
 
     def test_letter_activates_a_unique_item(self):
         # Go → "P" matches only "Parent Directory": it runs immediately and

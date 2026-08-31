@@ -452,6 +452,13 @@ _FILER_ACTIONS = [
     _a("scroll_log_down", FILER, "Scroll the log down one line"),
     _a("scroll_log_page_up", FILER, "Scroll the log up one page"),
     _a("scroll_log_page_down", FILER, "Scroll the log down one page"),
+    # Both reach into the log without needing focus, exactly as the seven above
+    # do — see XeFMApp.copy_log_selection. The selection one carries the copy
+    # chord it has always answered (Cmd-C / Ctrl-C, issue #360); the whole-log
+    # one ships unbound and is reached from the Edit menu.
+    _a("copy_log_selection", FILER,
+       "Copy the log pane's selected text to the clipboard"),
+    _a("copy_log_all", FILER, "Copy the whole log to the clipboard"),
     # Appearance
     _a("toggle_hidden", FILER, "Show or hide hidden files"),
     _a("toggle_color_scheme", FILER, "Cycle to the next color theme"),

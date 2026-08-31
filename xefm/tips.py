@@ -228,6 +228,13 @@ TIPS: tuple[tuple[str, str], ...] = (
      "{key:adjust_log_down} — older messages are never gone, just above the "
      "fold."),
 
+    ("Take the log with you",
+     "Select log text by dragging across it — the copy keys "
+     "({key:copy_log_selection}) then put the highlight on the clipboard. "
+     "To hand someone the whole thing — a bug report, say — "
+     "**Edit ▸ Copy All Logs** takes every line, including the ones scrolled "
+     "out of sight."),
+
     ("Make XeFM yours",
      "Every key binding and many behaviors live in `~/.xefm/config.py`. "
      "**Tools ▸ Edit Configuration…** opens it in your editor, and "

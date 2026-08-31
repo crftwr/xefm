@@ -995,10 +995,6 @@ class XeFMApp:
                  left_provided: bool = True, right_provided: bool = True,
                  state_manager=None):
         self.backend = backend
-        # The log pane's copy chord follows the platform convention: Cmd-C on the
-        # macOS GUI, Ctrl-C on the curses TUI and other GUI platforms (curses
-        # never sees Cmd; Windows/Linux copy with Ctrl). See _copy_log_selection.
-        self._log_copy_mod = "cmd" if type(backend).__name__ == "MacOSBackend" else "ctrl"
         # Load via ConfigManager (the shared singleton): this creates
         # ~/.xefm/config.py from the template on first run and reads the user's
         # config, filling any missing fields from the template. Instantiating
@@ -2192,6 +2188,8 @@ class XeFMApp:
                     lambda: self.log.scroll_by(-self._LOG_PAGE), True),
                 "scroll_log_page_down": (
                     lambda: self.log.scroll_by(+self._LOG_PAGE), True),
+                "copy_log_selection": (self.copy_log_selection, True),
+                "copy_log_all": (self.copy_log_all, True),
                 # --- dialogs and pickers ---
                 "file_details": (self.file_details, False),
                 "drives": (self.show_drives, False),
@@ -2605,6 +2603,12 @@ class XeFMApp:
         def has_files() -> bool:
             return bool(self.active_pane()["files"])
 
+        def has_log_selection() -> bool:
+            return bool(self.log.selection_text())
+
+        def has_log_lines() -> bool:
+            return bool(self.log.lines)
+
         # Shortcut hints are derived from the live keymap (§2.3) so menu labels
         # track user rebindings instead of drifting from hardcoded strings.
         sc = self._menu_shortcut
@@ -2636,16 +2640,6 @@ class XeFMApp:
             MenuItem("Delete…", on_select=self.delete_files,
                      enabled=has_files, shortcut=sc("delete_files")),
             SEPARATOR,
-            # Through _menu (dispatch + render), not the bare method: these two
-            # actions' only feedback is a log line, and a native menu activation
-            # renders nothing on its own — the line would sit unpainted until
-            # the next event (#253). Sibling items get away with the direct call
-            # because they open a dialog or viewer that repaints itself.
-            MenuItem("Copy Name(s)", on_select=lambda: self._menu("copy_names"),
-                     enabled=has_files, shortcut=sc("copy_names")),
-            MenuItem("Copy Full Path(s)", on_select=lambda: self._menu("copy_paths"),
-                     enabled=has_files, shortcut=sc("copy_paths")),
-            SEPARATOR,
             MenuItem("Create Archive…", on_select=self.create_archive,
                      enabled=has_files, shortcut=sc("create_archive")),
             MenuItem("Extract Archive…", on_select=self.extract_archive,
@@ -2653,6 +2647,29 @@ class XeFMApp:
             SEPARATOR,
             MenuItem("Quit", on_select=self.confirm_quit, shortcut=sc("quit")),
             title="File",
+        )
+        # Everything that ends on the clipboard, in the menu users look in for
+        # it: the file-name / path copies that used to sit in File, and the log
+        # pane's own two (#360). The log items need a menu more than most —
+        # a log selection is made with the mouse, and "Copy All Logs" ships
+        # unbound — so this is where that feature is discovered at all.
+        #
+        # All four go through _menu (dispatch + render) rather than the bare
+        # method: their only feedback is a log line, and a native menu
+        # activation renders nothing on its own, so the line would sit
+        # unpainted until the next event (#253).
+        edit_menu = Menu(
+            MenuItem("Copy Name(s)", on_select=lambda: self._menu("copy_names"),
+                     enabled=has_files, shortcut=sc("copy_names")),
+            MenuItem("Copy Full Path(s)", on_select=lambda: self._menu("copy_paths"),
+                     enabled=has_files, shortcut=sc("copy_paths")),
+            SEPARATOR,
+            MenuItem("Copy Log Selection",
+                     on_select=lambda: self._menu("copy_log_selection"),
+                     enabled=has_log_selection, shortcut=sc("copy_log_selection")),
+            MenuItem("Copy All Logs", on_select=lambda: self._menu("copy_log_all"),
+                     enabled=has_log_lines, shortcut=sc("copy_log_all")),
+            title="Edit",
         )
         go_menu = Menu(
             MenuItem("Parent Directory", on_select=lambda: self._menu("go_parent"),
@@ -2720,6 +2737,7 @@ class XeFMApp:
         )
         return Menu(
             MenuItem("File", submenu=file_menu),
+            MenuItem("Edit", submenu=edit_menu),
             MenuItem("Go", submenu=go_menu),
             MenuItem("Select", submenu=select_menu),
             MenuItem("View", submenu=view_menu),
@@ -2735,8 +2753,13 @@ class XeFMApp:
     def _menu_shortcut(self, action: str) -> str | None:
         """The display-formatted first key bound to ``action`` for a MenuItem
         shortcut hint, or ``None`` when unbound — so menu labels track the live
-        keymap (and user rebindings) instead of hardcoded strings."""
-        keys, _ = self.keys.get_keys_for_action(action)
+        keymap (and user rebindings) instead of hardcoded strings.
+
+        Resolved in the ``filer`` context (every menu item dispatches a file-list
+        action), which is what makes the hint right for a name the user's config
+        never mentions: the flat lookup reads ``KEY_BINDINGS`` alone and would
+        show nothing at all for an action added after that config was written."""
+        keys, _ = self.keys.get_keys_for_action(action, _ctx.FILER)
         return self.keys.format_key_for_display(keys[0]) if keys else None
 
     def _focused_entry(self):
@@ -4371,6 +4394,36 @@ class XeFMApp:
         count = len(targets)
         self.log_info(f"Copied {count} {label}{'s' if count != 1 else ''} to clipboard")
 
+    def copy_log_selection(self) -> None:
+        """Copy the log pane's selected text — dragged out with the mouse — to
+        the clipboard, then drop the highlight.
+
+        Focus-independent, like every other action that reaches into the log
+        (``scroll_log_up`` and friends drive the pane from the file list): the
+        highlight is on screen, so the chord acts on what the user can see
+        rather than on wherever focus happens to sit. A no-op when nothing is
+        selected, which is what keeps the chord from meaning anything at all in
+        the common case."""
+        text = self.log.selection_text()
+        if not text:
+            return
+        self.panel.set_clipboard(text)
+        self.log.clear_selection()
+
+    def copy_log_all(self) -> None:
+        """Copy the whole log — every line still in the pane's buffer, not only
+        the ones on screen — to the clipboard (issue #360).
+
+        Selecting log text is mouse-only, so this is the one a keyboard user can
+        reach, and it is what "paste your log into the issue" actually wants."""
+        lines = [text for text, _style in self.log.lines]
+        if not lines:
+            self.log_info("Log is empty")
+            return
+        self.panel.set_clipboard("\n".join(lines))
+        count = len(lines)
+        self.log_info(f"Copied {count} log line{'s' if count != 1 else ''} to clipboard")
+
     def copy_files(self) -> bool:
         """Copy the active pane's selection (or cursor entry) into the other
         pane's directory (the 'C' key).
@@ -5501,6 +5554,17 @@ class XeFMApp:
             ("quick_sort_date", "Quick-sort by date (repeat: reverse)"),
             ("quick_sort_ext", "Quick-sort by extension (repeat: reverse)"),
         )),
+        ("Log Pane", (
+            ("scroll_log_up", "Scroll the log up one line"),
+            ("scroll_log_down", "Scroll the log down one line"),
+            ("scroll_log_page_up", "Scroll the log up one page"),
+            ("scroll_log_page_down", "Scroll the log down one page"),
+            ("adjust_log_up", "Make the log pane larger"),
+            ("adjust_log_down", "Make the log pane smaller"),
+            ("reset_log_height", "Reset the log pane height"),
+            ("copy_log_selection", "Copy the log's selected text (drag to select)"),
+            ("copy_log_all", "Copy the whole log (Edit menu; unbound by default)"),
+        )),
         ("Other", (
             ("menu", "Open the menu bar (←/→ walk it, Esc closes)"),
             ("edit_config", "Edit ~/.xefm/config.py, then reload"),
@@ -5778,23 +5842,6 @@ class XeFMApp:
         EventType.MOUSE_DRAG, EventType.MOUSE_SCROLL, EventType.FILE_DROP,
     })
 
-    def _copy_log_selection(self, event) -> bool:
-        """Copy the log pane's selected text to the clipboard on the platform
-        copy chord (Cmd-C on macOS, Ctrl-C on the TUI / other platforms), then
-        clear the selection. Only fires when the log holds keyboard focus and has
-        a selection, so the chord otherwise falls through to the global keymap.
-        Returns True when it handled the event (a redraw is due)."""
-        if event.key != "c" or self._log_copy_mod not in event.modifiers:
-            return False
-        if self.panel.focused_leaf() is not self.log:
-            return False
-        text = self.log.selection_text()
-        if not text:
-            return False
-        self.panel.set_clipboard(text)
-        self.log.clear_selection()
-        return True
-
     def _menu_mnemonic(self, event) -> bool:
         """Alt+letter opens the menu whose title starts with that letter
         (Alt+F → File, Alt+G → Go) — the desktop accelerator convention,
@@ -5831,12 +5878,6 @@ class XeFMApp:
                 self.panel.render()
             return
         if event.type is EventType.KEY:
-            # A copy chord over a focused, selected log pane copies the selection
-            # (and clears it) before the global keymap sees the key; otherwise it
-            # falls through to normal keymap handling.
-            if self._copy_log_selection(event):
-                self.panel.render()
-                return
             has_sel = bool(self.active_pane()["selected_files"])
             action = self.keys.find_action_for_event(event, has_sel, _ctx.FILER)
             if self.dispatch(action):
