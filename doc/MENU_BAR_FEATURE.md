@@ -35,8 +35,8 @@ from a checkout.)
 In terminal mode, press **F10** to open the first menu (on the Windows
 terminal, tapping **Alt** by itself works too, just like a desktop menu bar).
 On the Windows terminal, **Alt+letter** opens a menu directly by the first
-letter of its title: **Alt+F** for File, **Alt+G** for Go, **Alt+S** Select,
-**Alt+V** View, **Alt+T** Tools, **Alt+H** Help. (Other terminals don't
+letter of its title: **Alt+F** for File, **Alt+E** Edit, **Alt+G** for Go,
+**Alt+S** Select, **Alt+V** View, **Alt+T** Tools, **Alt+H** Help. (Other terminals don't
 deliver bare Alt or Alt+letter chords reliably — use F10 and the arrow keys
 there.)
 
@@ -60,8 +60,8 @@ Windows).
 
 ## Available Menus
 
-XeFM has six menus: **File**, **Go**, **Select**, **View**, **Tools**, and
-**Help** — in the terminal, each opens directly with Alt + its first letter
+XeFM has seven menus: **File**, **Edit**, **Go**, **Select**, **View**,
+**Tools**, and **Help** — in the terminal, each opens directly with Alt + its first letter
 on the Windows terminal.
 
 ### File Menu
@@ -81,11 +81,24 @@ on the Windows terminal.
 | Copy to Other Pane | C |
 | Move to Other Pane | M *(when files are selected)* |
 | Delete… | K |
-| Copy Name(s) | Cmd-Shift-C |
-| Copy Full Path(s) | Cmd-Shift-P |
 | Create Archive… | P |
 | Extract Archive… | U |
 | Quit | Q |
+
+### Edit Menu
+
+Everything that ends up on the clipboard.
+
+| Item | Shortcut |
+|------|----------|
+| Copy Name(s) | Cmd-Shift-C |
+| Copy Full Path(s) | Cmd-Shift-P |
+| Copy Log Selection | Cmd-C / Ctrl-C |
+| Copy All Logs | — |
+
+The log items act on the log pane under the file panes: select log text with
+the mouse for the first, take the whole buffer with the second. See
+[Logging](LOGGING_FEATURE.md#copy-log-to-clipboard).
 
 ### Go Menu
 

@@ -1,185 +1,127 @@
 # Log Clipboard Copy Implementation
 
-## Overview
+How the log pane's contents reach the system clipboard: two named actions,
+`copy_log_selection` and `copy_log_all`, both living in the `filer` context and
+both reaching into the `LogView` without needing it to hold focus.
 
-This document describes the implementation of the log clipboard copy feature, which allows users to copy log pane contents to the system clipboard in desktop mode.
+User-facing description: [LOGGING_FEATURE.md](../LOGGING_FEATURE.md#copy-log-to-clipboard).
 
-## Architecture
+## How it got here
 
-### Components
+Before the PuiKit port, an `Edit` menu carried "Copy Visible Logs" / "Copy All
+Logs", served by `LogManager.get_visible_log_text()` and
+`get_all_log_text()` reading a `LogPaneHandler` buffer. The port replaced the
+whole rendering path — the pane is now a PuiKit `LogView` fed by a queue — and
+took the menu with it. What survived was a single hardcoded chord in
+`XeFMApp._copy_log_selection`: `event.key == "c"` plus a modifier chosen by
+sniffing the backend class name (`cmd` on `MacOSBackend`, `ctrl` otherwise),
+tested ahead of the keymap and gated on `panel.focused_leaf() is self.log`.
 
-The feature is implemented across three main components:
+It worked, and nothing named it. It could not be rebound, the help dialog and
+the menu never mentioned it, and issue #360 was filed as "the TUI has no way to
+copy the log, and the desktop app has no Edit menu". The fix is not new
+copying — it is giving the copying a name.
 
-1. **MenuManager** (`xefm/app.py`)
-   - Defines menu item IDs for clipboard operations
-   - Adds menu items to the Edit menu
-   - Manages menu item enabled/disabled states
+## Two actions, no new context
 
-2. **FileManager** (`xefm/app.py`)
-   - Implements action handlers for menu items
-   - Validates desktop mode and clipboard support
-   - Calls LogManager methods to retrieve log text
-   - Copies text to clipboard via renderer
+Both are ordinary `filer` actions ([`xefm/actions.py`](../../xefm/actions.py)),
+registered next to the seven `scroll_log_*` / `adjust_log_*` / `reset_log_height`
+actions that already drive the log pane.
 
-3. **LogManager** (`xefm/log_manager.py`)
-   - Provides methods to extract log text
-   - Handles visible vs. all logs logic
-   - Respects scroll position and display height
+That placement is the whole design decision. A `log` context — resolved only
+while the pane holds focus, the way `isearch` is — was the obvious shape and is
+the wrong one here: XeFM moves keyboard focus **only on a mouse press** (PuiKit's
+`Panel._route_mouse` → `focus_on_click`; `switch_pane` flips
+`pm.active_pane` and the panes' `active` flags, never PuiKit focus), so anything
+confined to a log context would be unreachable without a mouse. The existing log
+actions already answer this: a `filer` action that operates on `self.log`
+directly. The two new ones do the same.
 
-### Data Flow
+Dropping the focus gate follows from that, and costs nothing: the file panes
+have no text selection to compete for the chord, the viewers and the isearch bar
+are modal layers that consume keys before the keymap sees them, and a log
+selection is drawn on screen — so acting on what the user can see is more
+predictable than acting on where focus happens to sit. `LogView` keeps a
+selection across a blur (only `clear`, `set_lines` and a max-lines trim reset
+it), which is exactly the case the old gate got wrong: select in the log, click a
+pane, press the chord, nothing happened.
 
-```
-User clicks menu item
-    ↓
-MenuManager dispatches action
-    ↓
-FileManager action handler
-    ↓
-Validates desktop mode + clipboard support
-    ↓
-LogManager retrieves log text
-    ↓
-Renderer copies to clipboard
-    ↓
-User feedback via logger
-```
+## The two handlers
 
-## Implementation Details
+Both are in [`xefm/app.py`](../../xefm/app.py), next to `copy_names_to_clipboard`
+and friends, and both are entries in the action handler table.
 
-### Menu Items
+- **`copy_log_selection()`** — `self.log.selection_text()`, pushed with
+  `panel.set_clipboard()`, then `self.log.clear_selection()`. Empty selection is
+  a no-op, which is what keeps the chord inert in the common case. The text comes
+  back as **display rows**, so a wrapped line arrives split at its wrap points —
+  that is what the user highlighted.
+- **`copy_log_all()`** — joins `self.log.lines` (the widget's own ring buffer,
+  capped at 2000 by its constructor), so it takes **logical** lines, unwrapped,
+  including everything scrolled out of view. It reports the count through
+  `log_info`, after the snapshot, so the confirmation is never part of what was
+  copied.
 
-Two new menu item IDs were added to `MenuManager`:
+Neither goes near `LogManager.get_all_log_text()` / `get_visible_log_text()`.
+Those read a `LogPaneHandler` that the running app never installs — XeFM routes
+records through `set_log_sink` instead (see `getLogger` in
+[`xefm/log_manager.py`](../../xefm/log_manager.py)), and `XeFMApp.log_info`
+appends to the `LogView` without touching `logging` at all — so they return `""`
+in production. They are exercised only by `test/test_copy_log_clipboard.py`,
+which builds a `LogManager` by hand. Don't wire new code to them.
+
+## Bindings
+
+In the [`_config.py`](../../xefm/_config.py) template, under "Log Pane Control":
 
 ```python
-EDIT_COPY_VISIBLE_LOGS = 'edit.copy_visible_logs'
-EDIT_COPY_ALL_LOGS = 'edit.copy_all_logs'
+'copy_log_selection': ['Command-C', 'Ctrl-C'],
+'copy_log_all': [],
 ```
 
-Menu items are added to the Edit menu after the existing clipboard operations (Copy Names, Copy Paths), separated by a divider for visual grouping.
+Both chords are listed because one machine runs both frontends: the macOS GUI
+answers `Command-C`, while no terminal ever delivers Command — so the pair
+reproduces exactly what the backend sniffing used to compute at runtime, without
+the sniffing. The `sys.platform == 'win32'` branch narrows it to `['Ctrl-C']`, so
+the menu's shortcut hint reads `Ctrl-C` there rather than `⌘C`.
 
-Menu items are enabled only when:
-- FileManager is the active top layer (no dialogs/viewers open)
-- FileManager is not in modal input mode
-- Desktop mode is active
+`copy_log_all` ships deliberately unbound: this key family has few chords left,
+and the action's home is the menu. An empty list is meaningful to
+`KeyBindings._context_entries` — the name is *claimed* with no keys, which is
+what stops the registry default from filling one in — and a user who wants a key
+writes one in their own config.
 
-### Action Handlers
+Existing configs predate both names, and `_copy_missing_fields` adds whole
+missing *fields*, never a missing key inside `KEY_BINDINGS`. The keys therefore
+have to come from `Action.resolved_default_keys()`, which reads the shipped
+template at runtime — including its platform branch, evaluated on the user's own
+machine.
 
-Two action handlers were added to `FileManager`:
+## Where they surface
 
-#### `_action_copy_visible_logs()`
+- **Edit menu** — new in `_build_menu()`, between File and Go: `Copy Name(s)` and
+  `Copy Full Path(s)` moved here from File, then the two log copies. Items go
+  through `_menu()` (dispatch + render) rather than the bare method, because
+  their only feedback is a log line and a native macOS menu activation renders
+  nothing on its own (#253). `enabled` predicates read live widget state:
+  `bool(self.log.selection_text())` and `bool(self.log.lines)`.
+  `_menu_shortcut()` now resolves in the `filer` context rather than reading the
+  flat `KEY_BINDINGS` dict, so an item whose action the user's config never
+  names — every action added after that config was written, these two included —
+  shows the default key instead of a blank hint.
+- **Help dialog** — a new "Log Pane" section listing all nine log actions. The
+  seven older ones had never appeared there at all.
+- **Tip of the day** — "Take the log with you", next to the existing log tip.
 
-1. Validates desktop mode and clipboard support
-2. Calculates current log pane height using `_get_log_pane_height()`
-3. Calls `log_manager.get_visible_log_text(log_height)`
-4. Copies text to clipboard via `renderer.set_clipboard_text()`
-5. Logs success/failure message
+## Tests
 
-#### `_action_copy_all_logs()`
+[`test/test_log_clipboard.py`](../../test/test_log_clipboard.py) drives a live
+`XeFMApp` on the memory backend: the selection copy works with focus elsewhere
+and clears the highlight, an empty selection leaves the clipboard alone,
+`copy_log_all` takes lines scrolled out of view and reports the count on screen,
+the chord resolves to the action both from the template and from an empty config,
+`copy_log_all` resolves to no keys, and the Edit menu carries both items with
+their enable predicates.
 
-1. Validates desktop mode and clipboard support
-2. Calls `log_manager.get_all_log_text()`
-3. Copies text to clipboard via `renderer.set_clipboard_text()`
-4. Logs success/failure message with line count
-
-### LogManager Methods
-
-Two new methods were added to `LogManager`:
-
-#### `get_visible_log_text(display_height)`
-
-Returns log text for currently visible lines based on:
-- Current scroll offset (`self.log_scroll_offset`)
-- Display height (number of visible lines)
-- Total message count
-
-Algorithm:
-1. Get all messages from `LogPaneHandler`
-2. Calculate max scroll offset based on total messages and display height
-3. Cap current scroll offset to max scroll
-4. Calculate start/end indices for visible messages
-5. Extract formatted text from message tuples
-6. Join with newlines and return
-
-#### `get_all_log_text()`
-
-Returns all log messages as text:
-1. Get all messages from `LogPaneHandler`
-2. Extract formatted text from message tuples
-3. Join with newlines and return
-
-### Message Format
-
-Both methods return messages in the same format as displayed in the log pane:
-- Formatted messages include timestamp, logger name, level, and message
-- Raw stdout/stderr messages are included as-is
-- Messages are separated by newlines
-
-The formatting is handled by `LogPaneHandler.get_messages()`, which returns tuples of `(formatted_message, record)`. The clipboard methods extract just the formatted text.
-
-## Design Decisions
-
-### Desktop Mode Only
-
-The feature is restricted to desktop mode because:
-- Clipboard operations require desktop backend support
-- Terminal mode doesn't have reliable clipboard access
-- Consistent with other clipboard features (Copy Names, Copy Paths)
-
-### Separate Visible vs. All
-
-Two separate menu items were provided instead of a single "Copy Logs" command because:
-- Users often want just the visible section they're looking at
-- Copying all logs can be overwhelming for long sessions
-- Provides flexibility for different use cases
-- Follows principle of least surprise (visible = what you see)
-
-### No Line Wrapping in Clipboard
-
-The clipboard text does not include line wrapping that may be applied in the display:
-- Wrapping is display-specific and depends on terminal width
-- Users can wrap text in their target application as needed
-- Preserves original message content without artificial breaks
-- Simplifies implementation
-
-### No Keyboard Shortcuts
-
-Keyboard shortcuts were not assigned because:
-- Limited available key combinations
-- Less frequently used than file operations
-- Can be added later if user demand exists
-- Menu access is sufficient for this use case
-
-## Testing
-
-### Unit Tests
-
-Tests are located in `test/test_copy_log_clipboard.py`:
-
-- `test_get_all_log_text_empty` - Empty log handling
-- `test_get_all_log_text_with_messages` - Multiple messages
-- `test_get_visible_log_text_all_visible` - All messages fit in display
-- `test_get_visible_log_text_partial` - Partial visibility
-- `test_get_visible_log_text_with_scroll` - Scroll offset handling
-- `test_get_visible_log_text_zero_height` - Edge case: zero height
-- `test_log_text_preserves_formatting` - Format verification
-- `test_log_text_different_levels` - Multiple log levels
-
-
-## Future Enhancements
-
-Potential improvements for future versions:
-
-1. **Keyboard Shortcuts**: Add configurable shortcuts for power users
-2. **Copy Selection**: Allow selecting specific log lines to copy
-3. **Format Options**: Provide options for different output formats (plain text, JSON, CSV)
-4. **Filter Before Copy**: Copy only messages matching certain criteria (level, logger name)
-5. **Export to File**: Save logs directly to a file instead of clipboard
-6. **Rich Text Format**: Preserve colors and formatting in clipboard (platform-dependent)
-
-## Related Code
-
-- `xefm/app.py` - Menu structure and item definitions
-- `xefm/app.py` - Action handlers and menu dispatch
-- `xefm/log_manager.py` - Log storage and retrieval
-- `xefm/logging_handlers.py` - Log message formatting
-- `test/test_copy_log_clipboard.py` - Unit tests
+`test/test_menu_bar_activation.py` pins the bar's titles and Alt+letter indices,
+so it moved with the new menu.

@@ -120,7 +120,7 @@ XeFM owns the menu *content*. All of it lives in `xefm/app.py`:
 
 - **`_build_menu()`** — builds the whole menu tree and returns the top-level
   `Menu`. Each bar entry is a `MenuItem(title, submenu=...)`. Current bar:
-  **File, Go, Select, View, Tools, Help**.
+  **File, Edit, Go, Select, View, Tools, Help**.
 - **`self.menu_bar = MenuBar(self._build_menu())`** — the widget is placed into
   the app layout as `Item(self.menu_bar, size="content", hints={"surface":
   "header"})`. `size="content"` lets it self-size: a 1-row strip on curses,
@@ -228,7 +228,7 @@ backend's `native_menus` capability, so XeFM stays backend-agnostic.
 ## Code locations
 
 ### XeFM (`xefm/app.py`)
-- `_build_menu()` — the full menu-bar tree (File / Go / Select / View / Tools / Help)
+- `_build_menu()` — the full menu-bar tree (File / Edit / Go / Select / View / Tools / Help)
 - `_sort_menu()`, `show_sort_menu()` — sort submenu + `s`-key popup
 - `_theme_menu()` — theme-picker submenu
 - `_menu(action)` — run a keymap action from a menu selection and redraw

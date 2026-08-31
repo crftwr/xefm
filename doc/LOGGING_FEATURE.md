@@ -146,48 +146,57 @@ LOG_LEVEL = "INFO"  # or "WARNING", "DEBUG", "ERROR"
 
 ## Copy Log to Clipboard
 
-When running XeFM in **desktop mode**, you can copy the log pane contents to the system clipboard — handy for sharing log information with others or saving it for later reference. This feature is not available in terminal mode.
+The log pane's contents go to the system clipboard two ways, in the desktop app
+and in the terminal alike — handy for pasting into a bug report, a chat message
+or a note.
 
-### Accessing the Feature
+### Copy what you selected
 
-The log clipboard copy commands live in the **Edit** menu:
+Drag across the log with the mouse to highlight lines (double-click selects a
+word, triple-click a line, and dragging past the top or bottom edge keeps
+selecting), then press **Cmd-C** on macOS or **Ctrl-C** elsewhere. The
+highlight clears once the text is on the clipboard.
 
-1. Open XeFM in desktop mode.
-2. Click the **Edit** menu in the menu bar.
-3. Choose one of the clipboard copy options:
-   - **Copy Visible Logs to Clipboard** — copies only the log lines currently visible in the log pane.
-   - **Copy All Logs to Clipboard** — copies all log messages, including those scrolled out of view.
+The chord copies whatever the log has highlighted, whichever pane you were
+last clicking in — so selecting in the log and then going back to the file list
+does not lose the copy. With nothing highlighted it does nothing at all.
 
-### Copy Visible Logs
+**Edit ▸ Copy Log Selection** does the same thing from the menu, and is grayed
+out until something is selected.
 
-Copies only the log lines currently visible in the log pane. The copied content reflects your current scroll position, the number of lines that fit in the visible area, and the exact formatting shown on screen.
+### Copy the whole log
 
-Use this when you want to share a specific section of the logs, you've scrolled to a particular area of interest, or you only need recent messages.
+**Edit ▸ Copy All Logs** copies every line the pane still holds — the ones from
+startup, the ones scrolled out of sight, everything up to the buffer limit
+(2000 lines) — and reports the count in the log itself. This is the one to
+reach for when someone asks you to paste your log.
 
-### Copy All Logs
+It ships without a key of its own. To give it one, bind `copy_log_all` in
+`~/.xefm/config.py`:
 
-Copies all log messages from the current session — everything from startup, messages that have scrolled out of view, and the complete log history (up to the configured maximum).
+```python
+KEY_BINDINGS['copy_log_all'] = ['Ctrl-Alt-C']
+```
 
-Use this when you need the full log history, you're troubleshooting an issue and need complete context, or you want to save all logs for later analysis.
+`copy_log_selection` is bound the same way if you would rather it answered some
+other chord.
 
-### Copied Format
+### Copied format
 
-Copied logs preserve the same format shown in the log pane — timestamp (HH:MM:SS), logger name, log level, and message content:
+Lines arrive exactly as the pane shows them: logger messages carry their
+timestamp (HH:MM:SS), logger name and level, while the app's own status lines
+are copied as plain text, just as they are drawn.
 
 ```
 14:23:45 [Main  ] INFO: Application started
 14:23:46 [FileOp] INFO: Loaded directory: /home/user/documents
+Copied 3 names to clipboard
 14:23:47 [Main  ] WARNING: Configuration file not found, using defaults
 ```
 
-### Tips for Copying
-
-- **Scroll position matters**: When using "Copy Visible Logs", scroll to the section you want first.
-- **Log pane size**: The visible-logs option copies based on the current log pane height — adjust the log divider if needed.
-- **Maximum logs**: XeFM stores a limited number of log messages (default: 1000); very old messages may be discarded.
-- **Paste anywhere**: Paste the logs into any text editor, email, or document.
-
-There are currently no keyboard shortcuts for these commands; use the Edit menu.
+A selection copies the lines as they are laid out on screen, so a long line
+that wraps arrives split at the wrap points. **Copy All Logs** copies whole
+lines, unwrapped.
 
 ## Tips and Tricks
 

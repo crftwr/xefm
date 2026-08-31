@@ -342,6 +342,11 @@ class Config:
         'scroll_log_down': ['Shift-DOWN'],     # Scroll log pane down one line
         'scroll_log_page_up': ['Shift-LEFT'],  # Scroll log pane up one page (to older messages)
         'scroll_log_page_down': ['Shift-RIGHT'], # Scroll log pane down one page (to newer messages)
+        # Drag across the log with the mouse to select, then copy. Both chords
+        # are listed because one machine runs both frontends: the GUI answers
+        # Command-C on macOS, while a terminal never sees Command at all.
+        'copy_log_selection': ['Command-C', 'Ctrl-C'],  # Copy the log pane's selected text
+        'copy_log_all': [],                    # Copy the whole log (unbound; Edit menu, or bind a key here)
         
         # === Text Viewer ===
         # Text-viewer-only actions. 'isearch' (F, above) opens incremental search
@@ -447,6 +452,7 @@ class Config:
         KEY_BINDINGS['reveal_in_os'] = ['Ctrl-Shift-E']  # Reveal focused file in Explorer
         KEY_BINDINGS['copy_names'] = ['Ctrl-Shift-C']    # Copy selected/focused file name(s) to clipboard
         KEY_BINDINGS['copy_paths'] = ['Ctrl-Shift-P']    # Copy selected/focused full path(s) to clipboard
+        KEY_BINDINGS['copy_log_selection'] = ['Ctrl-C']  # Copy the log pane's selected text
 
 
     # -----------------------------------------------------------------------
