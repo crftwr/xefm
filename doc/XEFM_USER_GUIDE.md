@@ -335,6 +335,25 @@ S        - Open the sort dialog (key + order)
 See [Sort Dialog Feature](SORT_DIALOG_FEATURE.md) for the dialog's controls
 (F/E/S/T choose a key directly; Left/Right choose ascending/descending).
 
+### Incremental search keys
+
+Press `F`, then type. While the search bar is open:
+
+| Key | Action |
+|-----|--------|
+| ↑ / ↓ | Previous / next match |
+| Shift+↑ / Shift+↓ | Select the file, then move to the previous / next match |
+| Ctrl+A | Select every match at once — press again to clear them |
+| Enter | Stop at the current match (the pattern is saved to the filter history) |
+| Esc | Cancel and go back to where the cursor was |
+
+Space types a space — it separates the pattern's words (`re 24` finds
+`report_2024.txt`), so selecting a file uses Shift+↓ rather than the file list's
+Space. Ctrl+A marks the whole set the counter on the right is showing: type
+`.log`, press Ctrl+A, and every log file is selected. Files selected outside the
+search are left alone, so a second search adds to them. Every one of these keys can be rebound; see
+[Customization](CUSTOMIZATION_FEATURE.md#the-incremental-search-bar).
+
 ### Search Tips
 - **Incremental search**: Start typing to filter files immediately
 - **Japanese by romaji (Migemo)**: In incremental search, typing `kensaku`

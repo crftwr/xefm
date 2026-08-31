@@ -60,7 +60,7 @@ from xefm.config import (KeyBindings, config_manager, deprecated_names_notice,
                          get_builtin_handler_for_file, get_config,
                          get_drive_locations, get_favorite_directories,
                          get_program_for_file, has_explicit_association,
-                         keys_label_for_action)
+                         keys_label_for_action, printable_isearch_notice)
 from xefm.dir_scan import is_hidden
 from xefm.disk_usage import UsageScan
 from xefm.file_list_manager import FileListManager
@@ -860,13 +860,22 @@ class StatusBar(Widget):
 
     #: Shown in place of the hints while the footer isearch is open, so the bottom
     #: bar explains the isearch keys rather than the (now-inaccessible) global
-    #: ones. These are isearch-mode internal keys, not configurable bindings.
-    ISEARCH_HINTS = ("I-Search   ↑/↓ prev/next match   "
-                     "↵ stop (save to filter history)   esc cancel")
+    #: ones. ``(action, action, label)`` — a pair renders as ``k1/k2 label``, a
+    #: lone action (second entry ``None``) as ``k label``. Read from the keymap
+    #: like ``_HINTS``, since the isearch keys are rebindable actions of their
+    #: own context.
+    _ISEARCH_HINTS = (
+        ("isearch.prev_match", "isearch.next_match", "prev/next match"),
+        ("isearch.toggle_select_up", "isearch.toggle_select_down", "select"),
+        ("isearch.select_matches", None, "all"),
+        ("isearch.accept", None, "stop (save to filter history)"),
+        ("isearch.cancel", None, "cancel"),
+    )
 
     def __init__(self, app: "XeFMApp"):
         self.app = app
         self._hints_cache: str | None = None
+        self._isearch_cache: str | None = None
 
     def _hints(self) -> str:
         """Build (and cache) the hint line from the keymap. The keymap is fixed
@@ -881,6 +890,27 @@ class StatusBar(Widget):
             self._hints_cache = "   ".join(parts)
         return self._hints_cache
 
+    def _isearch_key(self, action: str) -> str:
+        """The first key bound to ``action`` in the isearch context, display-
+        formatted — empty when the action is unbound there."""
+        keys, _ = self.app.keys.get_keys_for_action(action, _ctx.ISEARCH)
+        return self.app.keys.format_key_for_display(keys[0]) if keys else ""
+
+    def _isearch_hints(self) -> str:
+        """The isearch hint line, built (once) from the isearch keymap. An
+        unbound action drops out of the line entirely rather than printing a
+        label nothing triggers."""
+        if self._isearch_cache is None:
+            parts = ["I-Search"]
+            for first, second, label in self._ISEARCH_HINTS:
+                keys = [k for k in (self._isearch_key(first),
+                                    self._isearch_key(second) if second else "")
+                        if k]
+                if keys:
+                    parts.append(f"{'/'.join(keys)} {label}")
+            self._isearch_cache = "   ".join(parts)
+        return self._isearch_cache
+
     def draw(self, ctx) -> None:
         # Left/right inset; the bottom padding is the extra row height reserved
         # by measure(), so the text stays at the top (y=0) of the taller slot.
@@ -892,7 +922,7 @@ class StatusBar(Widget):
         if ctx.vector_shapes:
             pad_x += 1.0
         avail = max(0.0, ctx.size_units[0] - 2 * pad_x)
-        hints = self.ISEARCH_HINTS if self.app._isearch_active else self._hints()
+        hints = self._isearch_hints() if self.app._isearch_active else self._hints()
         text = elide(hints, avail, where="end", measure=ctx.measure_text)
         ctx.draw_text(pad_x, 0, text, Style(fg=ctx.theme.muted_text))
 
@@ -1234,6 +1264,14 @@ class XeFMApp:
         renamed = deprecated_names_notice(getattr(config, "KEY_BINDINGS", None) or {})
         if renamed:
             self.log_info(f"Config warning: {renamed}")
+        # An isearch key bound to a printable one can never fire — the pattern
+        # field takes every glyph first — and would look like the binding was
+        # ignored at random. Say so once, for the same reason as the rename
+        # nudge above: nothing else tells the author.
+        swallowed = printable_isearch_notice(
+            getattr(config, "KEY_BINDINGS", None) or {})
+        if swallowed:
+            self.log_info(f"Config warning: {swallowed}")
 
     def _start_initial_listings(self) -> None:
         """Kick off the two startup listings, on worker threads like every other
@@ -5013,7 +5051,10 @@ class XeFMApp:
         Type a case-insensitive *contains* pattern (space-separated tokens all
         match); every hit is highlighted and the cursor jumps to the nearest match
         at/after its current position. ``Up``/``Down`` walk the previous/next
-        match; ``Enter`` stops at the current match and records the pattern in the
+        match; ``Shift+Up``/``Shift+Down`` mark the current item on the way (the
+        file list's SPACE cannot: here it separates the pattern's tokens — issue
+        #347) and ``Ctrl+A`` marks every match at once; ``Enter`` stops at the
+        current match and records the pattern in the
         filter history (so the ';' Filter prompt can recall it); ``Esc`` cancels
         and restores the pre-search cursor. Reuses ``FileListManager.find_matches``
         for the hits."""
@@ -5030,6 +5071,8 @@ class XeFMApp:
         self._isearch_bar = ISearchBar(
             on_change=self._isearch_recompute,
             on_navigate=self._isearch_step,
+            on_select=self._isearch_toggle_select,
+            on_select_all=self._isearch_select_matches,
             on_submit=self._isearch_stop,
             on_cancel=self._isearch_cancel,
             get_status=self._isearch_status,
@@ -5073,6 +5116,33 @@ class XeFMApp:
             idx = next((i for i in range(len(matches) - 1, -1, -1)
                         if matches[i] < cur), len(matches) - 1)
         pane["focused_index"] = matches[idx]
+        self.panel.render()
+
+    def _isearch_toggle_select(self, delta: int) -> None:
+        """Toggle the focused item's selection, then walk to the previous
+        (``delta<0``) / next (``delta>0``) match — the file list's SPACE /
+        Shift-SPACE, whose "move" is one row where this one is one match.
+
+        The pattern field owns SPACE itself (it separates the pattern's tokens),
+        which is what left marking unreachable during a search until now."""
+        self._log_result(self.flm.toggle_selection(
+            self.active_pane(), move_cursor=False))
+        if self._isearch_matches:
+            self._isearch_step(delta)   # renders
+        else:
+            self.panel.render()
+
+    def _isearch_select_matches(self) -> None:
+        """Ctrl-A: mark every match the pattern has found — the counter's whole
+        "n" in one key — or clear them when they are all marked already.
+
+        The bulk answer to the same need Shift+Up/Down covers one file at a time:
+        the search has already worked out which files you mean. Items outside the
+        match set are left alone, so a second search adds to the marks rather
+        than replacing them, and the bar stays open to make that the obvious
+        move."""
+        self._log_result(self.flm.toggle_matches_selection(
+            self.active_pane(), self._isearch_matches))
         self.panel.render()
 
     def _isearch_status(self) -> tuple[int, int]:

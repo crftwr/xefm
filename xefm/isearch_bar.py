@@ -10,10 +10,27 @@ Being the top layer makes it the focus root, which is what lets its ``TextEdit``
 engage the IME and blink a caret — a plain in-footer draw could do neither.
 
 Layout is one row: a bold prompt on the left and the editable pattern field
-stretched across the rest. ``Up``/``Down`` walk the match set (they never reach
-the single-line field); ``Enter`` stops at the current match (the controller also
-records the pattern in the filter history); ``Esc`` (or a click outside) cancels.
-The controller owns what those outcomes mean and passes them in as callbacks.
+stretched across the rest. ``Up``/``Down`` walk the match set, ``Shift+Up`` /
+``Shift+Down`` walk it marking as they go, ``Ctrl+A`` marks the whole set at
+once, ``Enter`` stops at the current match
+(the controller also records the pattern in the filter history), and ``Esc`` (or
+a click outside) cancels. The controller owns what those outcomes mean and passes
+them in as callbacks.
+
+Those keys are named actions in the ``isearch`` context (``xefm.actions``), so a
+config can rebind them — but this is the one surface whose keys compete with
+*typing*, which makes its routing different from a viewer's:
+
+1. **Text wins.** A printable key the field would insert goes straight there and
+   the keymap never sees it. That is what keeps ``Q``, ``?`` and SPACE typeable
+   into a pattern while ``quit``, ``help`` and ``toggle_select_down`` own them a
+   row above. Chords holding Ctrl/Cmd are excluded first, in the same order
+   ``TextEdit`` itself uses, so ``Cmd+A`` stays a command and never types "a".
+2. **Only what the bar owns runs.** The lookup resolves in a context that
+   inherits the ``common`` actions, and ``quit`` firing from under an open search
+   prompt is not wanted; the bar tries its own action names and nothing else.
+3. **Everything else is the field's.** Left/Right/Home/End, Backspace, Delete
+   and the clipboard chords fall through untouched.
 """
 
 from __future__ import annotations
@@ -24,8 +41,12 @@ from puikit.backend import Style, TextAttribute
 from puikit.event import Event, EventType
 from puikit.focus import FocusContainer, focus_on_click
 from puikit.panel import Rect
+from puikit.widgets._input import typed_char
 from puikit.widgets.base import Widget
 from puikit.widgets.text_edit import TextEdit
+
+from xefm.actions import ISEARCH
+from xefm.config import is_action_for_event
 
 # Context rows kept visible above and below the match a search jumps to.
 SEARCH_SCROLL_MARGIN = 3
@@ -71,6 +92,8 @@ class ISearchBar(FocusContainer, Widget):
         surface: str = "status",
         on_change: Callable[[str], None] | None = None,
         on_navigate: Callable[[int], None] | None = None,
+        on_select: Callable[[int], None] | None = None,
+        on_select_all: Callable[[], None] | None = None,
         on_submit: Callable[[], None] | None = None,
         on_cancel: Callable[[], None] | None = None,
         get_status: Callable[[], tuple[int, int]] | None = None,
@@ -81,6 +104,13 @@ class ISearchBar(FocusContainer, Widget):
         self.on_change = on_change
         #: ``-1`` (Up) / ``+1`` (Down) — walk to the previous / next match.
         self.on_navigate = on_navigate
+        #: ``-1`` / ``+1`` — mark the current item, then walk to the previous /
+        #: next match. Left ``None`` by an owner with nothing to select (the
+        #: viewers' bar), which is what leaves those keys to the field there.
+        self.on_select = on_select
+        #: Mark every current match at once. ``None`` for an owner with nothing
+        #: to select, like ``on_select``.
+        self.on_select_all = on_select_all
         #: Enter in the field: accept the current match and close.
         self.on_submit = on_submit
         #: Esc / outside click: cancel and restore the pre-search cursor.
@@ -115,6 +145,38 @@ class ISearchBar(FocusContainer, Widget):
     def _edit_submitted(self, _text: str) -> None:
         if self.on_submit is not None:
             self.on_submit()
+
+    # --- key routing ---------------------------------------------------------
+
+    def _handlers(self) -> dict[str, Callable[[], None]]:
+        """``{action name: handler}`` for the keys this bar answers, built from
+        the callbacks it was given — so the viewers' bar, which has nothing to
+        select, simply does not claim ``isearch.toggle_select_*`` and leaves
+        Shift+Up/Down to the field.
+
+        It is also the filter that keeps the ``common`` actions every context
+        inherits from firing here: ``quit`` may well resolve in the ``isearch``
+        context, but it is not in this table, so the key goes to the field
+        instead of tearing the application down from under an open prompt.
+
+        Built per keystroke rather than cached in ``__init__``: the callbacks are
+        public attributes, and a table frozen at construction would go stale the
+        moment an owner reassigned one.
+        """
+        handlers: dict[str, Callable[[], None]] = {}
+        if self.on_select is not None:
+            handlers["isearch.toggle_select_down"] = lambda: self.on_select(1)
+            handlers["isearch.toggle_select_up"] = lambda: self.on_select(-1)
+        if self.on_select_all is not None:
+            handlers["isearch.select_matches"] = self.on_select_all
+        if self.on_navigate is not None:
+            handlers["isearch.next_match"] = lambda: self.on_navigate(1)
+            handlers["isearch.prev_match"] = lambda: self.on_navigate(-1)
+        if self.on_submit is not None:
+            handlers["isearch.accept"] = self.on_submit
+        if self.on_cancel is not None:
+            handlers["isearch.cancel"] = self.on_cancel
+        return handlers
 
     # --- drawing -------------------------------------------------------------
 
@@ -164,19 +226,20 @@ class ISearchBar(FocusContainer, Widget):
             self.edit.handle_event(event)
             return True
         if event.type is EventType.KEY:
-            key = event.key
-            if key == "escape":
-                if self.on_cancel is not None:
-                    self.on_cancel()
-            elif key in ("up", "down"):
-                # Match navigation — the single-line field has no use for vertical
-                # arrows anyway.
-                if self.on_navigate is not None:
-                    self.on_navigate(-1 if key == "up" else 1)
-            else:
-                # Everything else goes to the field: typing / editing (which fires
-                # on_change / on_submit).
+            # Text first (see the module docstring): a printable key belongs to
+            # the pattern, and the keymap never gets a say over it. Ctrl/Cmd
+            # chords are taken out before that test — the order TextEdit itself
+            # uses — so a command chord is not mistaken for typing its letter.
+            if not (event.modifiers & {"ctrl", "cmd"}) and typed_char(event) is not None:
                 self.edit.handle_event(event)
+                return True
+            for name, handler in self._handlers().items():
+                if is_action_for_event(event, name, context=ISEARCH):
+                    handler()
+                    return True
+            # Not one of the bar's own: editing keys (and any inherited action
+            # it does not run) go to the field.
+            self.edit.handle_event(event)
             return True
 
         if event.type in (
@@ -212,7 +275,9 @@ class ViewerISearch:
         recompute(pattern): fired live on every keystroke — recompute the match
             set, repaint highlights, and jump to the nearest match.
         navigate(delta):    Up (``-1``) / Down (``+1``) — walk to the prev / next
-            match.
+            match. (No ``select`` / ``select_all`` callbacks: a viewer has no
+            selection to mark, so the bar leaves Shift+Up/Down and Ctrl+A to the
+            pattern field there.)
         status():           returns ``(position, total)`` for the bar's counter.
         accept():           Enter — keep the current match; clear the search chrome.
         cancel():           Esc / outside click — restore the pre-search view.
