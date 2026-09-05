@@ -57,6 +57,7 @@ import traceback
 from typing import Any, Callable, Iterable, Mapping, NamedTuple
 
 from xefm import actions as _actions
+from xefm import name_key
 from xefm import sort_keys as _sort_keys
 from xefm.log_manager import getLogger
 from xefm.path import Path
@@ -109,13 +110,29 @@ class EntryInfo:
     and are then remembered. A predicate that only looks at names therefore
     touches the filesystem not at all, which is what keeps
     :meth:`PaneApi.select` cheap over a large directory.
+
+    **``name`` is the name the pane shows, not the bytes on disk.** It is the
+    compared name (:mod:`xefm.name_key`): composed, and on a search-results pane
+    the whole path below the search root, exactly as the row reads and exactly
+    what the built-in sorts order by. Handing over the raw name instead would put
+    the bug that module exists to fix inside every config that touched
+    ``entry.name`` — a decomposed ``が`` never matching the ``が`` its author
+    typed. ``stem`` and ``suffix`` are composed for the same reason.
+
+    ``path`` is the one verbatim thing here, and is what a filesystem call must
+    use. On a volume that matches names byte for byte, opening ``entry.name``
+    would fail on precisely the entries this distinction exists for.
     """
 
     __slots__ = ("path", "name", "is_dir", "is_link", "_stat")
 
-    def __init__(self, path, *, is_dir: bool = False, is_link: bool = False):
+    def __init__(self, path, *, is_dir: bool = False, is_link: bool = False,
+                 name: str | None = None):
         self.path = path
-        self.name = path.name
+        #: The listing knows the compared name and passes it; a caller holding
+        #: only a path composes the basename, which is the same answer wherever
+        #: there is no pane root to be relative to.
+        self.name = name or name_key.compare_name(path)
         self.is_dir = is_dir
         self.is_link = is_link
         self._stat: Any = None
@@ -126,13 +143,16 @@ class EntryInfo:
 
     @property
     def suffix(self) -> str:
-        """The extension including its dot, ``''`` when there is none."""
-        return self.path.suffix
+        """The extension including its dot, ``''`` when there is none. Composed,
+        like :attr:`name` — a predicate comparing it is comparing text."""
+        return name_key.nfc(self.path.suffix)
 
     @property
     def stem(self) -> str:
-        """The name without its extension."""
-        return self.path.stem
+        """The name without its extension, composed. This is the *file's* own
+        stem even on a search-results pane, where :attr:`name` is the whole
+        relative path."""
+        return name_key.nfc(self.path.stem)
 
     @classmethod
     def from_attrs(cls, path, attrs: Mapping[str, Any]):
@@ -146,7 +166,8 @@ class EntryInfo:
         An entry the listing could not read reports zeroes rather than retrying,
         the same answer :meth:`_stat_result` gives for a broken symlink."""
         entry = cls(path, is_dir=bool(attrs.get("is_dir")),
-                    is_link=bool(attrs.get("is_link")))
+                    is_link=bool(attrs.get("is_link")),
+                    name=attrs.get("cmp_name"))
         entry._stat = (_SeededStat(int(attrs.get("size") or 0),
                                    float(attrs.get("mtime") or 0.0))
                        if attrs.get("ok") else False)
@@ -250,7 +271,8 @@ class PaneApi:
             meta = info.get(str(entry)) or {}
             out.append(EntryInfo(entry,
                                  is_dir=bool(meta.get("is_dir")),
-                                 is_link=bool(meta.get("is_link"))))
+                                 is_link=bool(meta.get("is_link")),
+                                 name=meta.get("cmp_name")))
         return out
 
     @property

@@ -105,6 +105,7 @@ replaced the first.
 | Batch rename: match, output, collision key | [`batch_rename_dialog.py`](../../xefm/batch_rename_dialog.py) `compute_preview` |
 | Single rename: field seed, cursor landing | `app.py` `rename`, `_select_by_name` |
 | Query compilation (once, not per candidate) | [`search_match.py`](../../xefm/search_match.py) `compile_query` |
+| What a config's own code sees — `EntryInfo.name` | [`user_api.py`](../../xefm/user_api.py) |
 
 The one place that deliberately keeps the basename is **Compare and Select's
 pairing**, because matching `a.txt` against `a.txt` wherever each side keeps it is
@@ -228,8 +229,15 @@ ext4, NTFS, S3 keys and archive members all match bytes exactly, and there the
 same call fails — or, for a remote key, quietly addresses something else.
 
 Hence the naming, which is the enforcement mechanism: nothing in `name_key` is
-called `name`, the cached field is `cmp_name`, and `Path` / `EntryInfo.name` stay
-verbatim. A reviewer who sees `cmp_name` passed to `open()` has enough to catch it.
+called `name`, and the cached field is `cmp_name`. A reviewer who sees `cmp_name`
+passed to `open()` has enough to catch it.
+
+`EntryInfo` is the one place the compared name *is* called `name`, and
+deliberately. It is what a config's own code reads, and a config author should
+not have to know this system exists: `entry.name` is the name on the row in front
+of them. The verbatim one is `entry.path`, which is also the only thing there
+that can reach the filesystem, so the split lands on the right side by
+construction.
 
 APFS is also normalization-preserving *within* that insensitivity: it stores the
 spelling it was first given. So a directory cannot hold both forms of one name —

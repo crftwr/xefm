@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import types
+import unicodedata
 from unittest import mock
 
 import pytest
@@ -100,6 +101,73 @@ def test_size_and_mtime_cost_no_filesystem_call(tree):
     with mock.patch.object(Path, "stat", side_effect=AssertionError("stat!")):
         assert order(tree, "probe") == ["zdir", "a.txt", "b.txt", "c.txt"]
     assert seen["size"] > 0 and seen["mtime"] > 0
+
+
+# --- what the key is handed --------------------------------------------------
+
+def test_the_argument_is_an_entryinfo(tree):
+    seen = []
+    load(probe=lambda e: seen.append(type(e).__name__) or e.name)
+    order(tree, "probe")
+    assert set(seen) == {"EntryInfo"}
+
+
+def test_the_name_is_the_one_the_pane_shows_not_the_bytes_on_disk(tmp_path):
+    """Composed, whatever the filesystem stored — otherwise the bug
+    :mod:`xefm.name_key` exists to fix reappears inside every config that
+    touches ``entry.name``."""
+    decomposed = unicodedata.normalize("NFD", "が.txt")
+    (tmp_path / decomposed).write_text("x")
+    seen = {}
+
+    def probe(entry):
+        seen["name"] = entry.name
+        seen["suffix"] = entry.suffix
+        seen["path_name"] = entry.path.name
+        return entry.name
+
+    load(probe=probe)
+    order(tmp_path, "probe")
+    assert seen["name"] == unicodedata.normalize("NFC", "が.txt")
+    assert unicodedata.is_normalized("NFC", seen["name"])
+    assert seen["suffix"] == ".txt"
+    # The Path is the verbatim one, and is what a filesystem call must use.
+    assert seen["path_name"] == decomposed
+
+
+def test_the_path_still_opens_the_file(tmp_path):
+    (tmp_path / unicodedata.normalize("NFD", "が.txt")).write_text("hello")
+    opened = {}
+    load(probe=lambda e: opened.setdefault("text", e.path.read_text()) or e.name)
+    order(tmp_path, "probe")
+    assert opened["text"] == "hello"
+
+
+def test_on_a_search_results_pane_the_name_is_the_path_shown(tmp_path):
+    """#383's scope reaches a registered key too: the pane displays the path
+    below the search root, so that is what the key sorts by."""
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "a.txt").write_text("x")
+    seen = []
+    load(probe=lambda e: seen.append(e.name) or e.name)
+
+    flm = FileListManager(_config.Config())
+    hits = [Path(str(tmp_path / "sub" / "a.txt"))]
+    pane = {"path": Path(str(tmp_path)), "focused_index": 0, "scroll_offset": 0,
+            "files": [], "selected_files": set(), "sort_mode": "probe",
+            "sort_reverse": False, "filter_pattern": "",
+            "virtual": {"kind": "search", "root": Path(str(tmp_path)),
+                        "mode": "filename", "query": "q", "results": hits,
+                        "meta": {}}}
+    flm.refresh_files(pane)
+    assert seen == ["sub/a.txt"]
+
+
+def test_an_entryinfo_built_from_a_bare_path_composes_too():
+    """The fallback for a caller holding no listing record — the same answer,
+    since a basename is its own relative name."""
+    entry = user_api.EntryInfo(Path("/r/" + unicodedata.normalize("NFD", "が.txt")))
+    assert entry.name == unicodedata.normalize("NFC", "が.txt")
 
 
 # --- overriding a built-in ---------------------------------------------------

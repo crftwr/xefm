@@ -314,6 +314,12 @@ Your function is handed one entry, with `name`, `path`, `is_dir`, `is_link`,
 them for the listing, so your key costs nothing extra even in a huge directory on
 a network drive.
 
+`name` is the name **as the pane shows it**, which is what you want to sort by:
+accented and Japanese characters come to you written one way whatever way the
+disk happens to store them, and on a search-results pane it is the whole path
+under the folder you searched, the same text the row displays. Use `path` when
+you need to reach the file itself.
+
 Return anything that can be compared: a string, a number, or a **tuple** for a
 multi-level order — tuples are compared item by item, so `(e.size, e.name)` means
 "by size, and by name within the same size". Whatever you return has to be

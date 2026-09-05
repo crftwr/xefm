@@ -29,8 +29,11 @@ does — otherwise a typo silently changes what Filename means.
 
 **The contract.**
 
-* The key takes one :class:`~xefm.user_api.EntryInfo` and returns anything
-  sortable. Tuples and lists are fine and are the usual answer — they compare
+* The key takes one :class:`~xefm.user_api.EntryInfo`. Its ``name`` is the name
+  the pane *shows* — composed, and on a search-results pane the whole path below
+  the search root (:mod:`xefm.name_key`) — so a key sorts by the string the user
+  is reading. ``entry.path`` is the verbatim one, for anything that has to reach
+  the filesystem. It returns anything sortable. Tuples and lists are fine and are the usual answer — they compare
   element by element, which is how a "text, number, text" natural order is built.
   Every key in one sort must be mutually comparable: an ``int`` meeting a ``str``
   at the same position raises, which is why the built-in natural key splits on
