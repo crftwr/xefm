@@ -39,6 +39,32 @@ a way to make their file manager lie to them.
 
 ---
 
+## Scope: names, not content
+
+This system is about **filenames**. File *content* is matched exactly as it is
+written — the content search ([`app.py`](../../xefm/app.py)
+`_iter_content_matches`) and the text viewer's search both compare raw text, and
+that is deliberate, not an oversight to be tidied up later.
+
+A filename is metadata the platform re-spells behind the user's back: Finder
+decomposes every name it touches, so the name a user types and the name on disk
+routinely disagree about a file the user is looking at. Content is what somebody
+wrote and saved. A search over it that quietly matched a different spelling would
+be reporting text that is not there, and `grep` does not do that either.
+
+There is a mechanical reason to keep the two apart as well. The text viewer
+indexes highlight spans into the line **as drawn**
+([`text_viewer.py`](../../xefm/text_viewer.py), `migemo_search.find_spans`), so
+normalizing for the match would slide the highlights off the characters they
+mark. The content search has no spans and *could* normalize safely — it stays
+literal anyway, so that a search over a file's text means the same thing in both
+places.
+
+The one content-adjacent thing that is normalized is the content search's
+**filename pre-filter** (`*.py` and friends), because that is a name.
+
+---
+
 ## What went wrong before it existed
 
 All three were reproduced before being fixed, and are pinned by tests.
