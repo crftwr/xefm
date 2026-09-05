@@ -6,6 +6,7 @@ XeFM File List Manager - Manages file lists, sorting, filtering, and selection
 import os
 import stat
 import fnmatch
+from xefm import name_key
 from xefm import search_match
 from xefm.dir_scan import is_hidden
 from xefm.path import Path, attrs_via_path
@@ -67,6 +68,7 @@ class FileListManager:
                 filter_pattern=pane_data.get('filter_pattern'),
                 sort_mode=pane_data['sort_mode'],
                 sort_reverse=pane_data['sort_reverse'],
+                rel_root=virtual.get('root'),
             )
             self.apply_listing(pane_data, result)
             return
@@ -153,7 +155,8 @@ class FileListManager:
         return {"ok": False, "files": [], "file_info": {}}
 
     def compute_listing_from_paths(self, paths, *, filter_pattern=None,
-                                   sort_mode='name', sort_reverse=False):
+                                   sort_mode='name', sort_reverse=False,
+                                   rel_root=None):
         """Build a listing dict from an explicit list of ``Path`` objects — a
         virtual / search-results pane — instead of reading a directory. Applies
         the filename filter and the sort in memory and builds the display-info
@@ -168,10 +171,10 @@ class FileListManager:
         all_entries = [(p, attrs_via_path(p)) for p in paths]
         return self._assemble_listing(
             all_entries, filter_pattern=filter_pattern,
-            sort_mode=sort_mode, sort_reverse=sort_reverse)
+            sort_mode=sort_mode, sort_reverse=sort_reverse, rel_root=rel_root)
 
     def _assemble_listing(self, entries, *, filter_pattern=None,
-                          sort_mode='name', sort_reverse=False):
+                          sort_mode='name', sort_reverse=False, rel_root=None):
         """Turn ``[(Path, attrs), …]`` into a listing dict: apply the filename
         filter, sort, and build the display cache — all from ``attrs``, with no
         filesystem access at all.
@@ -184,12 +187,22 @@ class FileListManager:
         attrs = {str(p): a for p, a in entries}
         paths = [p for p, _ in entries]
 
+        # The compared name — NFC, and relative to ``rel_root`` where there is
+        # one (see :mod:`xefm.name_key`) — filled into the attribute record the
+        # first time a listing is assembled. For a directory pane that is a
+        # worker thread, and the record travels on in ``entries``, so every
+        # later re-sort, filter keystroke and i-search pass reads it back
+        # instead of re-normalizing the whole pane on the UI thread.
+        for p, a in entries:
+            if 'cmp_name' not in a:
+                a['cmp_name'] = name_key.compare_name(p, rel_root)
+
         # Apply filename filter if active (only to files, not directories)
         if filter_pattern:
-            pattern = filter_pattern.lower()
+            pattern = name_key.nfc(filter_pattern).lower()
             paths = [p for p in paths
                      if attrs[str(p)]['is_dir']
-                     or fnmatch.fnmatch(p.name.lower(), pattern)]
+                     or fnmatch.fnmatch(attrs[str(p)]['cmp_name'].lower(), pattern)]
 
         files = self.sort_entries(paths, sort_mode, sort_reverse, attrs=attrs)
         return {"ok": True, "files": files,
@@ -216,9 +229,11 @@ class FileListManager:
         entries = pane_data.get('_listing_entries')
         if entries is None:
             return None
+        virtual = pane_data.get('virtual')
         return self._assemble_listing(
             entries, filter_pattern=filter_pattern,
-            sort_mode=sort_mode, sort_reverse=sort_reverse)
+            sort_mode=sort_mode, sort_reverse=sort_reverse,
+            rel_root=virtual.get('root') if virtual else None)
 
     def _build_file_info(self, files, attrs=None):
         """Populate the per-entry display cache (size/date strings, is_dir) once
@@ -252,6 +267,7 @@ class FileListManager:
                 'date_str': date_str,
                 'is_dir': a['is_dir'],
                 'is_link': a['is_link'],
+                'cmp_name': a.get('cmp_name') or name_key.compare_name(file_path),
             }
         return file_info
 
@@ -321,12 +337,23 @@ class FileListManager:
 
         Returns:
             Sorted list with directories always first
+
+        The name sort orders by the entry's *compared* name — NFC, and relative
+        to the pane root on a search-results pane — which the listing left in
+        ``attrs['cmp_name']``. See :mod:`xefm.name_key` for why that is not the
+        same string as the one on disk.
         """
         attrs = dict(attrs) if attrs else {}
         for entry in entries:
             key = str(entry)
-            if key not in attrs:
-                attrs[key] = attrs_via_path(entry)
+            a = attrs.get(key)
+            if a is None:
+                a = attrs[key] = attrs_via_path(entry)
+            if 'cmp_name' not in a:
+                # A caller with no listing behind it — a direct ``sort_entries``
+                # call, or an entry the listing never saw — still orders by the
+                # compared name rather than by the raw one.
+                a['cmp_name'] = name_key.compare_name(entry)
 
         def get_sort_key(entry):
             """Generate sort key for an entry, from the cached attributes"""
@@ -340,13 +367,13 @@ class FileListManager:
                 if a['is_dir']:
                     return ""  # Directories first
                 else:
-                    return entry.suffix.lower()
+                    return name_key.nfc(entry.suffix).lower()
             elif sort_mode == 'ext':
                 if a['is_dir']:
                     return ""  # Directories first (no extension)
                 else:
                     # Use the same extension logic as rendering
-                    filename = entry.name
+                    filename = name_key.nfc(entry.name)
                     dot_index = filename.rfind('.')
                     if dot_index <= 0:
                         return ""  # No extension
@@ -357,7 +384,7 @@ class FileListManager:
                         return ""  # Extension too long, treat as no extension
                     return extension.lower()
             else:  # name (default)
-                return self._natural_sort_key(entry.name)
+                return self._natural_sort_key(a['cmp_name'])
 
         # Separate directories and files using the cached attributes
         directories = [e for e in entries if attrs[str(e)]['is_dir']]
@@ -614,8 +641,15 @@ class FileListManager:
             return []
 
         matches = []
+        # The compared name the listing cached, so a keystroke over a large pane
+        # costs a dict lookup per entry rather than a fresh normalization. A
+        # pane assembled some other way (a bare ``{"files": [...]}``, as the
+        # tests build) falls back to deriving it.
+        info_cache = pane_data.get('file_info') or {}
         for i, file_path in enumerate(pane_data['files']):
-            if search_match.hit(tokens, file_path.name, match_all=match_all):
+            info = info_cache.get(str(file_path))
+            cmp_name = (info or {}).get('cmp_name') or name_key.compare_name(file_path)
+            if search_match.hit(tokens, cmp_name, match_all=match_all):
                 if return_indices_only:
                     matches.append(i)
                 else:

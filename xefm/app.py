@@ -71,6 +71,7 @@ from xefm.completion import FilepathCompleter
 from xefm.input_dialog import show_input
 from xefm.progressive_search_dialog import show_progressive_search
 from xefm.isearch_bar import ISearchBar
+from xefm import name_key
 from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
                               set_log_sink)
 from xefm.pane_manager import PaneManager
@@ -3728,7 +3729,7 @@ class XeFMApp:
         result cap and cancellation are applied by the dialog consuming this
         generator."""
         import fnmatch
-        pat = pattern.lower()
+        pat = name_key.nfc(pattern).lower()
         stack = [root]
         while stack:
             if cancel.is_set():
@@ -3745,7 +3746,7 @@ class XeFMApp:
                     return
                 if not self.flm.show_hidden and is_hidden(e.name, attrs):
                     continue
-                if fnmatch.fnmatch(e.name.lower(), pat):
+                if fnmatch.fnmatch(name_key.compare_name(e).lower(), pat):
                     yield e
                 if attrs["is_dir"]:
                     stack.append(e)
@@ -3857,7 +3858,7 @@ class XeFMApp:
         matches); the result cap and cancellation are applied by the dialog
         consuming this generator."""
         import fnmatch
-        pat = name_filter.lower()
+        pat = name_key.nfc(name_filter).lower()
         stack = [root]
         while stack:
             if cancel.is_set():
@@ -3875,7 +3876,8 @@ class XeFMApp:
                     if attrs["is_dir"]:
                         stack.append(e)
                         continue
-                    if pat and not fnmatch.fnmatch(e.name.lower(), pat):
+                    if pat and not fnmatch.fnmatch(
+                            name_key.compare_name(e).lower(), pat):
                         continue
                     encoding = self._sniff_text_encoding(e)
                     if encoding is None:
@@ -4056,9 +4058,13 @@ class XeFMApp:
         self.panel.render()
 
     def _select_by_name(self, pane: dict, name: str) -> None:
-        """Land the cursor on the entry called ``name`` (after create/rename)."""
+        """Land the cursor on the entry called ``name`` (after create/rename).
+
+        Compared composed, because ``name`` came from a dialog field and the
+        listing holds whatever the filesystem stored."""
+        name = name_key.nfc(name)
         for i, entry in enumerate(pane["files"]):
-            if entry.name == name:
+            if name_key.nfc(entry.name) == name:
                 pane["focused_index"] = i
                 break
 
@@ -4148,7 +4154,11 @@ class XeFMApp:
             self.batch_rename(selected)
             return
         entry = files[pane["focused_index"]]
-        original = entry.name
+        # The name the pane shows, which is the composed one (xefm.name_key), so
+        # the field seeds with what the user is looking at and an untouched name
+        # compares equal below — no rename, no re-spelling. Editing it writes the
+        # composed form back, as a batch rename does.
+        original = name_key.nfc(entry.name)
         select_range = _stem_selection(original, entry.is_dir())
 
         def validate(name: str) -> str | None:
@@ -5379,6 +5389,13 @@ class XeFMApp:
         other side may hold several same-named candidates; the engine selects an
         entry when any of them matches.
 
+        With a virtual pane on either side the dialog grows a "Match the whole
+        path shown" row (#383): a result set can hold a dozen files called
+        ``index.html``, which all collapse onto one another under the default
+        name join, and only the path below the search root separates them. Two
+        directory panes never see the row — their entries are direct children,
+        whose path below the pane is the basename already.
+
         Both sides' attributes come from the snapshot each pane's listing left
         behind, so a compare reads nothing but file *contents* — see
         :meth:`_pane_attrs`."""
@@ -5398,13 +5415,30 @@ class XeFMApp:
                 result = compute_compare_selection(
                     pane["files"], other["files"], criteria,
                     current_attrs=self._pane_attrs(pane),
-                    other_attrs=self._pane_attrs(other))
+                    other_attrs=self._pane_attrs(other),
+                    current_root=self._pane_root(pane),
+                    other_root=self._pane_root(other))
                 self._apply_compare_result(pane, criteria, result)
             self.panel.render()
 
         show_compare_select(self.panel, region=self._active_pane_region(),
-                            on_result=on_result)
+                            on_result=on_result,
+                            allow_path_match=bool(pane.get("virtual")
+                                                  or other.get("virtual")))
         self.panel.render()
+
+    @staticmethod
+    def _pane_root(pane: dict):
+        """The directory a pane's rows are named relative to: the search root on a
+        virtual pane, the pane's own directory otherwise.
+
+        Only the compare's path-match option reads this, and each side brings its
+        own — which is what makes the option mean what it looks like it means. A
+        directory listing of ``/a`` and a search rooted at ``/a`` then agree on
+        ``x.txt`` for a hit sitting in ``/a``, and disagree on ``sub/x.txt`` for
+        one a level down, exactly as the two panes show them."""
+        virtual = pane.get("virtual")
+        return virtual["root"] if virtual else pane.get("path")
 
     @staticmethod
     def _pane_attrs(pane: dict) -> dict:
@@ -5435,6 +5469,8 @@ class XeFMApp:
         other_files = list(other["files"])
         current_attrs = self._pane_attrs(pane)
         other_attrs = self._pane_attrs(other)
+        current_root = self._pane_root(pane)
+        other_root = self._pane_root(other)
         task = Task("Comparing contents", config=self.config, kind="compare")
 
         def run(t: Task) -> dict:
@@ -5451,6 +5487,7 @@ class XeFMApp:
             result = compute_compare_selection(
                 current_files, other_files, criteria,
                 current_attrs=current_attrs, other_attrs=other_attrs,
+                current_root=current_root, other_root=other_root,
                 checkpoint=t.checkpoint, on_advance=advance)
             return {"result": result, "cancelled": t.cancelled()}
 

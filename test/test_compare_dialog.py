@@ -14,7 +14,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
-from xefm.compare_dialog import CompareSelectDialog, ConditionRow  # noqa: E402
+from xefm.compare_dialog import (CompareSelectDialog, ConditionRow,  # noqa: E402
+                                 _layout_context)
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
@@ -328,6 +329,66 @@ class CompareDialogApp(unittest.TestCase):
         self.assertIs(dlg._focused, dlg._preserve)
         dlg.handle_event(_key("right"))
         self.assertFalse(dlg._preserve.checked)
+
+    # --- the path-match row, offered only over a virtual pane (#383) ---------
+
+    def _open_virtual(self):
+        """Open the dialog with the active pane standing in for a search-results
+        listing — the rows stay real, which is all the flag is read from."""
+        pane = self.app.active_pane()
+        pane["virtual"] = {"kind": "search", "root": Path(self.left),
+                           "mode": "filename", "query": "q",
+                           "results": list(pane["files"]), "meta": {}}
+        return self._open()
+
+    def test_two_directory_panes_do_not_offer_the_row(self):
+        dlg = self._open()
+        self.assertIsNone(dlg._match_path)
+        self.assertEqual(dlg.focus_children(),
+                         [dlg._size, dlg._mtime, dlg._content, dlg._preserve])
+        self.assertFalse(dlg._criteria().match_path)
+
+    def test_a_virtual_pane_offers_the_row_above_preserve(self):
+        dlg = self._open_virtual()
+        self.assertIsNotNone(dlg._match_path)
+        self.assertEqual(
+            dlg.focus_children(),
+            [dlg._size, dlg._mtime, dlg._content, dlg._match_path, dlg._preserve])
+
+    def test_space_toggles_the_path_row_into_the_criteria(self):
+        dlg = self._open_virtual()
+        for _ in range(3):
+            dlg.handle_event(_key("down"))            # -> match path
+        self.assertIs(dlg._focused, dlg._match_path)
+        self.assertFalse(dlg._criteria().match_path)
+        dlg.handle_event(_key("space"))
+        self.assertTrue(dlg._match_path.checked)
+        self.assertTrue(dlg._criteria().match_path)
+
+    def test_the_extra_row_still_leaves_preserve_reachable(self):
+        dlg = self._open_virtual()
+        for _ in range(4):
+            dlg.handle_event(_key("down"))
+        self.assertIs(dlg._focused, dlg._preserve)
+        dlg.handle_event(_key("down"))                # wraps past the new row
+        self.assertIs(dlg._focused, dlg._size)
+
+    def test_the_dialog_grows_a_row_for_it(self):
+        plain = self._open()
+        row_h = plain._size.measure(_layout_context(self.b), "y", 0.0).preferred
+        plain_h = plain._box_height(plain._TITLE_ROWS, row_h)
+        plain.handle_event(_key("escape"))
+        virtual = self._open_virtual()
+        self.assertAlmostEqual(
+            virtual._box_height(virtual._TITLE_ROWS, row_h), plain_h + row_h)
+
+    def test_pane_root_is_the_search_root_or_the_directory(self):
+        pane = self.app.active_pane()
+        self.assertEqual(str(self.app._pane_root(pane)), str(pane["path"]))
+        pane["virtual"] = {"kind": "search", "root": Path(self.right),
+                           "mode": "filename", "query": "q",
+                           "results": [], "meta": {}}
+        self.assertEqual(str(self.app._pane_root(pane)), str(self.right))
 
     def test_space_toggles_preserve(self):
         dlg = self._open()

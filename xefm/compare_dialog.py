@@ -163,7 +163,8 @@ class CompareSelectDialog(FocusContainer, Widget):
     _HINT_COND = "←/→ choose · Space on/off · Enter select · Esc cancel"
     _HINT_OTHER = "Space toggle · Enter select · Esc cancel"
 
-    def __init__(self, on_result: Callable[[Optional[CompareCriteria]], None]):
+    def __init__(self, on_result: Callable[[Optional[CompareCriteria]], None],
+                 *, allow_path_match: bool = False):
         self.title = "Compare and Select"
         self.on_result = on_result
         self._panel: Any = None
@@ -172,7 +173,17 @@ class CompareSelectDialog(FocusContainer, Widget):
         self._mtime = ConditionRow(*_MTIME)
         self._content = ConditionRow(*_CONTENT)
         self._conditions = [self._size, self._mtime, self._content]
+        # Pairing by path is offered only where it could change the answer — with
+        # a search-results pane on one side. A directory pane holds direct
+        # children, whose path below the pane *is* their basename, so the row is
+        # left out rather than shown dead: PuiKit's Checkbox has no disabled
+        # state, and inventing one here is the toolkit's job, not XeFM's.
+        self._match_path = (
+            Checkbox("Match the whole path shown", checked=False)
+            if allow_path_match else None)
         self._preserve = Checkbox("Preserve current selection", checked=False)
+        #: The plain checkbox rows under the conditions, in focus/draw order.
+        self._toggles = [c for c in (self._match_path, self._preserve) if c]
 
         self._focused: Any = self._size
         self._child_rects: list[tuple[Any, tuple[float, float, float, float]]] = []
@@ -180,7 +191,7 @@ class CompareSelectDialog(FocusContainer, Widget):
     # --- focus ---------------------------------------------------------------
 
     def focus_children(self) -> list[Any]:
-        return [self._size, self._mtime, self._content, self._preserve]
+        return [*self._conditions, *self._toggles]
 
     def _move_focus(self, delta: int) -> None:
         kids = self.focus_children()
@@ -189,14 +200,19 @@ class CompareSelectDialog(FocusContainer, Widget):
 
     # --- geometry ------------------------------------------------------------
 
+    def _toggle_y0(self, title_bottom: float, row_h: float) -> float:
+        """Row the first plain checkbox sits on: under the conditions, past a gap."""
+        cond_top = float(int(title_bottom) + 2)   # blank row under the intro
+        return cond_top + len(self._conditions) * row_h + 1.0
+
     def _hint_y(self, title_bottom: float, row_h: float) -> float:
         """Row of the key-hint line for the top-down layout — the single source of
         truth shared by :meth:`show` (sizing), :meth:`draw` (placement), and the
         fit resize. Rows are ``row_h`` tall (a Checkbox — taller than a cell on
-        vector)."""
-        cond_top = float(int(title_bottom) + 2)   # blank row under the intro
-        preserve_y = cond_top + 3.0 * row_h + 1.0  # conditions + a gap
-        return preserve_y + row_h + 1.0            # preserve row + a gap
+        vector), and how many toggle rows there are depends on whether the
+        path-match option is offered."""
+        return (self._toggle_y0(title_bottom, row_h)
+                + len(self._toggles) * row_h + 1.0)   # toggles + a gap
 
     def _box_height(self, title_bottom: float, row_h: float) -> float:
         return self._hint_y(title_bottom, row_h) + 2.0  # hint row + bottom border/pad
@@ -209,8 +225,8 @@ class CompareSelectDialog(FocusContainer, Widget):
 
     def _content_width(self, measure) -> float:
         """Width of the widest content line (base units), so the box hugs its text
-        instead of a fixed span: the intro, the longest key hint, the Preserve
-        checkbox, and the widest condition row (gutter + segments). ``measure`` must
+        instead of a fixed span: the intro, the longest key hint, the plain
+        checkboxes, and the widest condition row (gutter + segments). ``measure`` must
         be the *rendering* text measurer (proportional on GUI) — a LayoutContext's
         monospace measure would over-size the box on a proportional backend."""
         opt_x0 = self._opt_gutter(measure)
@@ -221,7 +237,7 @@ class CompareSelectDialog(FocusContainer, Widget):
         return max(
             measure(self._INTRO),
             measure(self._HINT_COND),
-            _CB_MARK + measure(self._preserve.label),
+            max(_CB_MARK + measure(c.label) for c in self._toggles),
             row_w,
         )
 
@@ -265,6 +281,7 @@ class CompareSelectDialog(FocusContainer, Widget):
             mtime=self._mtime.value,
             content=self._content.value,
             include_missing=False,
+            match_path=bool(self._match_path and self._match_path.checked),
             mode=("add" if self._preserve.checked else "replace"),
         )
 
@@ -308,13 +325,15 @@ class CompareSelectDialog(FocusContainer, Widget):
             self._child_rects.append((row, (2.0, box_w - 2.0, row_y, row_y + row_h)))
             row_y += row_h
 
-        preserve_y = cond_top + 3.0 * row_h + 1.0
-        pfocus = self._focused is self._preserve
-        ctx.draw_child(self._preserve, 2, preserve_y, box_w - 4, row_h,
-                       hints={"focused": pfocus,
-                              "bg": hover_bg if pfocus else surface_bg})
-        self._child_rects.append(
-            (self._preserve, (2.0, box_w - 2.0, preserve_y, preserve_y + row_h)))
+        toggle_y = self._toggle_y0(y, row_h)
+        for toggle in self._toggles:
+            tfocus = self._focused is toggle
+            ctx.draw_child(toggle, 2, toggle_y, box_w - 4, row_h,
+                           hints={"focused": tfocus,
+                                  "bg": hover_bg if tfocus else surface_bg})
+            self._child_rects.append(
+                (toggle, (2.0, box_w - 2.0, toggle_y, toggle_y + row_h)))
+            toggle_y += row_h
 
         hint_y = self._hint_y(y, row_h)
         ctx.draw_text(2, hint_y, self._hint(), Style(bg=surface_bg, fg=muted_fg))
@@ -350,10 +369,8 @@ class CompareSelectDialog(FocusContainer, Widget):
             self._focused.move(-1 if key == "left" else 1)
         elif key == "space":
             f = self._focused
-            if isinstance(f, ConditionRow):
+            if isinstance(f, ConditionRow) or f in self._toggles:
                 f.toggle()
-            elif f is self._preserve:
-                self._preserve.toggle()
         self._render()
 
     def _on_mouse(self, event: Event) -> None:
@@ -365,8 +382,8 @@ class CompareSelectDialog(FocusContainer, Widget):
                 if isinstance(widget, ConditionRow):
                     widget.handle_event(dataclasses.replace(
                         event, x=event.x - x0, y=event.y - y0))
-                elif widget is self._preserve:
-                    self._preserve.toggle()
+                elif widget in self._toggles:
+                    widget.toggle()
                 self._render()
                 return
 
@@ -377,10 +394,16 @@ class CompareSelectDialog(FocusContainer, Widget):
 
 def show_compare_select(panel: Any, *, region=None,
                         on_result: Callable[[Optional[CompareCriteria]], None],
+                        allow_path_match: bool = False,
                         z: int = 70) -> CompareSelectDialog:
     """Push a modal :class:`CompareSelectDialog` over ``panel`` and return it. The
     assembled :class:`CompareCriteria` is reported through ``on_result`` (``None``
-    on cancel). ``region`` anchors it over a pane like the other pickers."""
-    dialog = CompareSelectDialog(on_result=on_result)
+    on cancel). ``region`` anchors it over a pane like the other pickers.
+
+    ``allow_path_match`` adds the "Match the whole path shown" row; the caller
+    passes it when either pane is a virtual (search-results) listing, which is
+    the only case where pairing by path differs from pairing by name."""
+    dialog = CompareSelectDialog(on_result=on_result,
+                                 allow_path_match=allow_path_match)
     dialog.show(panel, region=region, z=z)
     return dialog

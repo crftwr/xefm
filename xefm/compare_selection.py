@@ -2,7 +2,9 @@
 action (the ``W`` key).
 
 Each entry in the active pane is joined to the same-named, same-type (file-vs-dir)
-entry in the other pane, after NFC-normalizing names. An entry is selected when
+entry in the other pane, after NFC-normalizing names — or, under
+``criteria.match_path``, by each side's path below its own root instead of by the
+bare name (#383, offered only when a side is virtual). An entry is selected when
 every *enabled* attribute relation holds; entries with no counterpart are selected
 only when ``include_missing`` is set. This module is pure and headless — the dialog
 (``xefm.compare_dialog``) builds a :class:`CompareCriteria`, and the app folds the
@@ -41,9 +43,10 @@ can raise to cancel.
 
 from __future__ import annotations
 
-import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
+
+from xefm import name_key
 
 # Filesystems round mtimes (FAT ≈ 2s, some networks ≈ 1s); treat timestamps
 # within this many seconds as identical.
@@ -53,8 +56,26 @@ MTIME_TOLERANCE = 1.0
 _CHUNK = 1 << 16
 
 
-def _norm(name: str) -> str:
-    return unicodedata.normalize("NFC", name)
+def _pair_key(entry, root, match_path: bool) -> str:
+    """The string an entry is paired by — NFC either way, so a name stored NFD on
+    one side still finds its composed counterpart on the other.
+
+    **Basename by default**, even on a search-results pane that shows whole
+    relative paths: matching ``a.txt`` against ``a.txt`` wherever each lives is
+    what the compare is usually for.
+
+    ``match_path`` pairs by the entry's path below ``root`` instead, for the case
+    where the default is exactly wrong — with a result set on one side, every hit
+    called ``index.html`` collapses onto every other, and only the path below the
+    search root tells them apart (#383). ``root`` is each side's own: the search
+    root of a virtual pane, the directory of an ordinary one. Which is why the
+    dialog offers this only when a side is virtual — a directory pane holds
+    direct children, whose relative path *is* their basename, so the option would
+    have nothing to change.
+    """
+    if match_path:
+        return name_key.compare_name(entry, root)
+    return name_key.nfc(entry.name)
 
 
 def _noop() -> None:
@@ -70,6 +91,7 @@ class CompareCriteria:
     mtime: str = "any"       # any | same | newer | older  (current vs other pane)
     content: str = "any"     # any | equal | differs
     include_missing: bool = False  # also select entries with no counterpart
+    match_path: bool = False  # pair by the path below each side's root, not the basename
     mode: str = "replace"    # replace | add  (how the app folds it in; engine ignores)
 
     @property
@@ -124,6 +146,8 @@ def compute_compare_selection(
     *,
     current_attrs: Optional[Mapping[str, dict]] = None,
     other_attrs: Optional[Mapping[str, dict]] = None,
+    current_root: Any = None,
+    other_root: Any = None,
     checkpoint: Callable[[], None] = _noop,
     on_advance: Optional[Callable[[Any], None]] = None,
 ) -> CompareResult:
@@ -136,6 +160,10 @@ def compute_compare_selection(
     same-named directory. When the other side holds several entries with the same
     name (only possible for a result set spanning directories), the entry is
     selected if **any** of them satisfies the relations.
+
+    ``current_root`` / ``other_root`` are each side's own root — a virtual pane's
+    search root, an ordinary pane's directory — and are read only under
+    ``criteria.match_path``; see :func:`_pair_key`.
 
     ``current_attrs`` / ``other_attrs`` map ``str(path)`` to the
     :mod:`xefm.dir_scan` record the caller's listing already collected for that
@@ -154,10 +182,12 @@ def compute_compare_selection(
     current_attrs = current_attrs or {}
     other_attrs = other_attrs or {}
 
+    match_path = criteria.match_path
     other_by_key: dict[tuple[str, bool], list] = {}
     for p in other_files:
         a = _attrs_of(p, other_attrs)
-        other_by_key.setdefault((_norm(p.name), a['is_dir']), []).append((p, a))
+        key = _pair_key(p, other_root, match_path)
+        other_by_key.setdefault((key, a['is_dir']), []).append((p, a))
 
     result = CompareResult()
     for cur in current_files:
@@ -167,7 +197,8 @@ def compute_compare_selection(
         cur_a = _attrs_of(cur, current_attrs)
         cur_is_dir = cur_a['is_dir']
 
-        candidates = other_by_key.get((_norm(cur.name), cur_is_dir))
+        candidates = other_by_key.get(
+            (_pair_key(cur, current_root, match_path), cur_is_dir))
         if not candidates:
             if criteria.include_missing:
                 _add(result, cur, cur_is_dir)

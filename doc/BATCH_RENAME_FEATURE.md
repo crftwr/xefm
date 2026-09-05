@@ -79,4 +79,22 @@ The dialog shows a real-time preview of the rename operation:
 - Only regular files are included in batch rename (directories are excluded for safety)
 - The regex pattern must match the filename for the rename to occur
 - If no match is found, the original filename is preserved
+
+## Accented and Japanese names
+
+Some characters can be written two ways that look identical on screen — `が` as
+one character, or as `か` plus a voiced-sound mark. Files written the second way
+come from HFS+ disks, network shares, archives, and from Finder itself.
+
+XeFM treats the two spellings as the same text, so a search pattern typed at an
+IME finds a file however it happens to be stored, and two files whose new names
+differ only in spelling are reported as a conflict instead of one silently
+replacing the other.
+
+A renamed file is written back in the single-character spelling. Finder uses the
+other one, so on macOS a name XeFM renames may end up spelled differently from
+the same name renamed in Finder. The file is the same file either way and both
+spellings open it; the difference matters only on disks and cloud storage that
+compare names byte for byte, which is why XeFM keeps one spelling everywhere.
+Files the rename does not touch are left exactly as they are.
 - Empty or invalid destination patterns will prevent the operation
