@@ -371,6 +371,79 @@ you were given.
 
 ---
 
+## Your own filters: `FILTERS`
+
+The pane filter (`;`) has always been one wildcard pattern, which can only ask
+about a name. "The images", "anything I touched today", "everything over 100 MB"
+are questions about the *file*, and no pattern spells them. So the filter is
+yours to write too.
+
+Each entry becomes a fixed row in the Filter dialog, straight under **clear
+filter** and above the patterns you have typed there before — so a filter you
+defined is always in the same place, rather than ageing down a history it was
+never part of.
+
+The simple kind is patterns, which is the case you were already writing by hand:
+
+```python
+FILTERS = {
+    "images": ["*.jpg", "*.jpeg", "*.png", "*.gif"],    # any one of them matches
+}
+```
+
+The other kind is a function. It takes one entry and returns whether to show it:
+
+```python
+import time
+
+FILTERS = {
+    "today": {"label": "Modified today",
+              "match": lambda e: e.mtime >= time.time() - 24 * 3600},
+    "big": {"label": "Over 100 MB", "match": lambda e: e.size > 100 << 20},
+    "no-mates": {"label": "Files with no .txt beside them",
+                 "match": lambda e: not e.path.with_suffix(".txt").exists()},
+}
+```
+
+`label` is the row text and defaults to the name you gave it.
+
+### What you get
+
+The same entry a sort key is handed: `name`, `path`, `suffix`, `stem`, `is_dir`,
+`is_file`, `is_link`, `size` and `mtime`. Reading `size` or `mtime` is free —
+XeFM collected them for the listing already — so a filter over a huge directory
+on a network drive costs nothing extra. `name` is the name **as the pane shows
+it**; use `path` when you need to reach the file itself.
+
+**Directories are always shown**, exactly as they are under a typed pattern: a
+filter that hid them would take away the folder you were about to open. Your
+function therefore only decides which *files* are visible — and "directories
+only" is written `"match": lambda e: False`.
+
+### Where the name shows up
+
+A filter is remembered by its name, so the status bar reads `Filter: Images`
+rather than the pattern behind it, and a content search (`⇧G`) started while the
+filter is on narrows to exactly the files the pane is showing — your `match`
+function included. A name may not contain `*`, `?` or `[`: XeFM remembers a *typed* filter as the pattern itself, and one
+that could be read as both would be impossible to tell apart. Put the wildcards
+in `pattern` and give the filter a plain name.
+
+Names you define never enter the `;` prompt's history either — they already have
+a row, and recording them would list them twice.
+
+### If it goes wrong
+
+A filter that fails loses the filter, not the listing: the pane shows everything
+and says so once in the log pane. That direction is deliberate — a filter that
+quietly hides half a directory is how a file ends up inside an operation nobody
+could see it join.
+
+Like a sort key, `match` may run on a background thread, so keep it to
+arithmetic, strings and quick filesystem questions.
+
+---
+
 ## Things to know
 
 **Your code runs on the UI thread, and XeFM waits for it.** A slow action

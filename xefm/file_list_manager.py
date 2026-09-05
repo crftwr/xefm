@@ -5,7 +5,7 @@ XeFM File List Manager - Manages file lists, sorting, filtering, and selection
 
 import os
 import stat
-import fnmatch
+from xefm import filters
 from xefm import name_key
 from xefm import search_match
 from xefm import sort_keys
@@ -198,17 +198,36 @@ class FileListManager:
             if 'cmp_name' not in a:
                 a['cmp_name'] = name_key.compare_name(p, rel_root)
 
-        # Apply filename filter if active (only to files, not directories)
+        # Apply the filter if active (only to files, not directories)
         if filter_pattern:
-            pattern = name_key.nfc(filter_pattern).lower()
-            paths = [p for p in paths
-                     if attrs[str(p)]['is_dir']
-                     or fnmatch.fnmatch(attrs[str(p)]['cmp_name'].lower(), pattern)]
+            paths = self._apply_filter_pattern(paths, attrs, filter_pattern)
 
         files = self.sort_entries(paths, sort_mode, sort_reverse, attrs=attrs)
         return {"ok": True, "files": files,
                 "file_info": self._build_file_info(files, attrs=attrs),
                 "entries": entries}
+
+    def _apply_filter_pattern(self, paths, attrs, filter_pattern):
+        """Keep the entries ``filter_pattern`` shows — a typed ``fnmatch`` glob,
+        or a filter a config registered (:mod:`xefm.filters`), which is the same
+        string either way.
+
+        Directories are kept whatever the filter says, as they always have been:
+        one that hid them would strand navigation. A registered predicate that
+        raises loses the filter rather than the listing — every entry stays
+        visible and the failure is logged once, the same granularity
+        :meth:`_sort_by_user_key` uses and for the same reason. It fails *open*
+        deliberately: a filter that quietly hides half a directory is how a file
+        gets caught in an operation its user could not see.
+        """
+        try:
+            match = filters.matcher(filter_pattern)
+            return [p for p in paths
+                    if attrs[str(p)]['is_dir'] or match(p, attrs[str(p)])]
+        except Exception as e:
+            self.logger.error(
+                f"Filter '{filter_pattern}' failed ({e}); showing every entry")
+            return paths
 
     def recompute_listing(self, pane_data, *, filter_pattern=None,
                           sort_mode='filename', sort_reverse=False):

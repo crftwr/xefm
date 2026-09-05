@@ -57,6 +57,7 @@ import traceback
 from typing import Any, Callable, Iterable, Mapping, NamedTuple
 
 from xefm import actions as _actions
+from xefm import filters as _filters
 from xefm import name_key
 from xefm import sort_keys as _sort_keys
 from xefm.log_manager import getLogger
@@ -518,14 +519,14 @@ class EventHooks:
 hooks = EventHooks()
 
 
-def load_user_entries(config, registry=None) -> tuple[list[str], int, int, int]:
-    """Install a config's ``ACTIONS``, ``EVENT_HOOKS`` and ``SORT_KEYS``.
+def load_user_entries(config, registry=None) -> tuple[list[str], int, int, int, int]:
+    """Install a config's ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS`` and ``FILTERS``.
 
     Every previously loaded user entry is dropped first, so this doubles as the
     reload path: edit the config, reload, and the new definitions replace the old
     ones with no restart and no idempotence contract on the config's part.
 
-    Returns ``(warnings, action_count, hook_count, sort_key_count)``. Warnings are the same kind
+    Returns ``(warnings, action_count, hook_count, sort_key_count, filter_count)``. Warnings are the same kind
     of non-fatal, report-them-all diagnostics the rest of ``validate_config``
     produces; a warned entry is skipped, never fatal.
     """
@@ -538,12 +539,13 @@ def validate_user_entries(config, registry=None) -> list[str]:
     return _process_user_entries(config, registry, apply=False)[0]
 
 
-def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int, int]:
+def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int, int, int]:
     registry = registry if registry is not None else _actions.registry
     if apply:
         registry.unregister_source("user")
         hooks.clear()
         _sort_keys.clear()
+        _filters.clear()
 
     warnings: list[str] = []
     count = 0
@@ -599,7 +601,18 @@ def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int
                                 explain=entry["explain"], hotkey=entry["hotkey"])
         sort_count += 1
 
-    return warnings, count, hook_count, sort_count
+    filter_count = 0
+    for name, spec in _items(getattr(config, "FILTERS", None), "FILTERS", warnings):
+        entry, problem = _build_filter(name, spec)
+        if problem:
+            warnings.append(problem)
+            continue
+        if apply:
+            _filters.register(name, match=entry["match"], globs=entry["globs"],
+                              label=entry["label"])
+        filter_count += 1
+
+    return warnings, count, hook_count, sort_count, filter_count
 
 
 def _items(value, label: str, warnings: list[str]):
@@ -645,6 +658,50 @@ def _build_sort_key(name, spec) -> tuple[dict | None, str | None]:
             "hotkey": hotkey}, None
 
 
+def _build_filter(name, spec) -> tuple[dict | None, str | None]:
+    """Validate one ``FILTERS`` entry, or explain why it cannot be one.
+
+    Three shorthands collapse into one shape: a callable is a ``match``
+    predicate, a string or a list of strings is a ``pattern`` (globs, any one of
+    which is enough), and a dict carries either plus a ``label``. There is no
+    ``override`` here — unlike a sort mode or an action, a filter name collides
+    with nothing built in.
+    """
+    if not isinstance(name, str) or not name:
+        return None, f"FILTERS keys must be non-empty strings; ignored {name!r}"
+    if any(c in name for c in _filters.GLOB_CHARS):
+        return None, (
+            f"FILTERS['{name}'] must not contain the glob characters "
+            f"{' '.join(_filters.GLOB_CHARS)} — a filter is remembered under its "
+            f"name where a typed pattern is remembered as itself, so a name that "
+            f"reads as a pattern could not be told from one; put the glob in "
+            f"{{'pattern': '{name}'}} and give the filter a plain name")
+    if callable(spec):
+        spec = {"match": spec}
+    elif isinstance(spec, (str, list, tuple)):
+        spec = {"pattern": spec}
+    if not isinstance(spec, dict):
+        return None, (f"FILTERS['{name}'] must be a function, a pattern, or a "
+                      f"dict with a 'match' or 'pattern' key, not "
+                      f"{type(spec).__name__}")
+    match, pattern = spec.get("match"), spec.get("pattern")
+    if match is not None and pattern is not None:
+        return None, (f"FILTERS['{name}'] has both 'match' and 'pattern'; a "
+                      f"filter is one or the other")
+    if match is None and pattern is None:
+        return None, f"FILTERS['{name}'] has no 'match' function and no 'pattern'"
+    if match is not None and not callable(match):
+        return None, f"FILTERS['{name}'] has a 'match' that is not callable"
+    globs = None
+    if pattern is not None:
+        globs = (pattern,) if isinstance(pattern, str) else tuple(pattern)
+        if not globs or not all(isinstance(g, str) and g for g in globs):
+            return None, (f"FILTERS['{name}'] has a 'pattern' that is not a "
+                          f"non-empty string or list of them")
+    return {"label": (str(spec["label"]) if spec.get("label") else None),
+            "match": match, "globs": globs}, None
+
+
 def _override_requested(spec) -> bool:
     return isinstance(spec, dict) and bool(spec.get("override"))
 
@@ -685,13 +742,15 @@ def _build_action(name, spec) -> tuple[_actions.Action | None, str | None]:
 
 
 def preview_notice(action_count: int, hook_count: int,
-                   sort_key_count: int = 0) -> str | None:
+                   sort_key_count: int = 0, filter_count: int = 0) -> str | None:
     """The one line a config using this API gets in the log pane, or ``None``
     when it uses none of it."""
-    if not action_count and not hook_count and not sort_key_count:
+    if not action_count and not hook_count and not sort_key_count and not filter_count:
         return None
     parts = [f"{action_count} action(s)", f"{hook_count} event hook(s)"]
     if sort_key_count:
         parts.append(f"{sort_key_count} sort key(s)")
+    if filter_count:
+        parts.append(f"{filter_count} filter(s)")
     return (f"Customization API (Preview, API_VERSION {API_VERSION}): "
             f"{', '.join(parts)} loaded — this API may change without notice.")

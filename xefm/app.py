@@ -71,6 +71,7 @@ from xefm.completion import FilepathCompleter
 from xefm.input_dialog import show_input
 from xefm.progressive_search_dialog import show_progressive_search
 from xefm.isearch_bar import ISearchBar
+from xefm import filters
 from xefm import name_key
 from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
                               set_log_sink)
@@ -811,7 +812,10 @@ class PaneFooter(Widget):
         dirs, files = self.app.counts(pane)
         nsel = len(pane["selected_files"])
         sel = f" ({nsel} selected)" if nsel else ""
-        filt = f"  |  Filter: {pane['filter_pattern']}" if pane["filter_pattern"] else ""
+        # A registered filter is stored under its name and read back under its
+        # label, so the bar says "Images", not "images" (xefm.filters).
+        filt = (f"  |  Filter: {filters.label(pane['filter_pattern'])}"
+                if pane["filter_pattern"] else "")
         sort = self.app.flm.get_sort_description(pane)
         text = f"{dirs} dirs, {files} files{sel}  |  {sort}{filt}"
         fg = ctx.theme.text if active else ctx.theme.muted_text
@@ -1260,18 +1264,19 @@ class XeFMApp:
         self._start_initial_listings()
 
     def _load_user_entries(self, config) -> None:
-        """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` / ``SORT_KEYS`` and
-        report on them.
+        """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` / ``SORT_KEYS`` /
+        ``FILTERS`` and report on them.
 
         Shared by startup and reload — the loader drops every previously loaded
         user entry first, so re-running it *is* the reload. Problems are reported
         as ordinary log lines, one per bad entry, and a config that uses the API
         at all gets the one-line preview notice: this is not a stable surface
         yet, and the log pane is where a user finds that out."""
-        warnings, action_count, hook_count, sort_count = load_user_entries(config)
+        (warnings, action_count, hook_count, sort_count,
+         filter_count) = load_user_entries(config)
         for warning in warnings:
             self.log_info(f"Config warning: {warning}")
-        notice = preview_notice(action_count, hook_count, sort_count)
+        notice = preview_notice(action_count, hook_count, sort_count, filter_count)
         if notice:
             self.log_info(notice)
         # Action names that have been corrected since this config was written.
@@ -3732,7 +3737,7 @@ class XeFMApp:
         titles = None
         if name_filter:
             titles = {"filename": "Search Files",
-                      "content": f"Search Content ({name_filter})"}
+                      "content": f"Search Content ({filters.label(name_filter)})"}
         dialog = show_progressive_search(
             self.panel, initial_mode=initial_mode,
             search_iter=search_iter, to_label=to_label, on_accept=on_accept,
@@ -3930,16 +3935,18 @@ class XeFMApp:
         """Depth-first walk under ``root`` yielding ``{path, line, text}`` for each
         line of a text file that matches ``regex`` (compiled), checking ``cancel``
         between entries so a superseded search stops promptly. ``name_filter`` is
-        the pane's filename filter (issue #305): when set, only files matching it
-        are read — the same case-insensitive whole-name glob, files only, as the
-        pane listing — while directories are still descended. Binary and (unless
+        the pane's filter (issue #305): when set, only the files it shows are
+        read — resolved through :mod:`xefm.filters`, so a typed glob and a filter
+        the config defined narrow the search alike — while directories are still
+        descended. Binary and (unless
         the pane shows them) hidden entries are skipped, with Unicode BOMs
         deciding text-ness before the binary sniff (``_sniff_text_encoding``).
         The walk is unbounded (issue #305 — a size cap silently hid far-away
         matches); the result cap and cancellation are applied by the dialog
         consuming this generator."""
-        import fnmatch
-        pat = name_key.nfc(name_filter).lower()
+        # The pane's filter, whichever kind it is — a typed glob or a filter the
+        # config registered — applied to the same entries the pane would show.
+        match = filters.matcher(name_filter) if name_filter else None
         stack = [root]
         while stack:
             if cancel.is_set():
@@ -3957,8 +3964,7 @@ class XeFMApp:
                     if attrs["is_dir"]:
                         stack.append(e)
                         continue
-                    if pat and not fnmatch.fnmatch(
-                            name_key.compare_name(e).lower(), pat):
+                    if match is not None and not match(e, attrs):
                         continue
                     encoding = self._sniff_text_encoding(e)
                     if encoding is None:
@@ -5171,33 +5177,47 @@ class XeFMApp:
     _FILTER_CLEAR = "*  (clear filter)"
 
     def enter_filter(self) -> None:
-        """Filename-filter picker for the active pane (the ';' key).
+        """Filter picker for the active pane (the ';' key).
 
-        A searchable list of the saved filter history (the patterns applied here
-        before), plus a "clear filter" row on top. Type to narrow the list;
-        ``↑/↓`` pick a row; ``Enter`` applies the highlighted pattern. If the
-        typed text matches no saved pattern, ``Enter`` applies it verbatim — so a
-        brand-new ``fnmatch`` glob (e.g. ``*.py``) still works. Directories are
-        always shown; the applied pattern is (re)recorded most-recent-first."""
+        A searchable list of three bands, in this order: the "clear filter" row,
+        the filters the config defines (``FILTERS``, :mod:`xefm.filters`), and
+        the patterns applied here before. The middle band is *fixed* — a defined
+        filter sits in the same place every time rather than ageing down a
+        history it was never part of. Type to narrow the list; ``↑/↓`` pick a
+        row; ``Enter`` applies the highlighted one. If the typed text matches no
+        row, ``Enter`` applies it verbatim — so a brand-new ``fnmatch`` glob
+        (e.g. ``*.py``) still works. Directories are always shown; an applied
+        *pattern* is (re)recorded most-recent-first, a defined filter is not
+        (it already has a row of its own)."""
         pane = self.active_pane()
 
         def apply(pattern: str) -> None:
             pattern = pattern.strip()
             if pattern:
                 self._record_filter_pattern(pattern)
+                name = filters.label(pattern)
                 # The item count only exists once the (async) listing lands, so
                 # the summary is logged from there — and redrawn by the same pump.
                 self._apply_filter(pane, pattern, on_count=lambda count:
-                                   self.log_info(f"Filter '{pattern}': {count} item(s)"))
+                                   self.log_info(f"Filter '{name}': {count} item(s)"))
             else:
                 self._apply_filter(pane, pattern)
                 self.log_info("Filter cleared")
             self.panel.render()
 
-        items = [self._FILTER_CLEAR, *self._filter_history()]
+        def accept(value) -> None:
+            # A defined filter travels as a Row (it is applied by name, drawn by
+            # label); every other row is the pattern it shows.
+            if isinstance(value, filters.Row):
+                apply(value.name)
+            else:
+                apply("" if value == self._FILTER_CLEAR else value)
+
+        items = [self._FILTER_CLEAR, *filters.rows(), *self._filter_history()]
         show_filter_list(
-            self.panel, items, title="Filter", to_label=lambda v: v,
-            on_accept=lambda v: apply("" if v == self._FILTER_CLEAR else v),
+            self.panel, items, title="Filter",
+            to_label=lambda v: v.label if isinstance(v, filters.Row) else v,
+            on_accept=accept,
             on_accept_text=apply, on_remove=self._forget_filter_pattern,
             region=self._active_pane_region())
         self.panel.render()
@@ -5368,10 +5388,14 @@ class XeFMApp:
     def _record_filter_pattern(self, pattern: str) -> None:
         """Add ``pattern`` to the most-recent-first filter history (persisted via
         the state manager, capped), so the ';' Filter prompt can recall it. Silent
-        and best-effort — a history write must never break the filter."""
+        and best-effort — a history write must never break the filter.
+
+        The name of a filter the config defines is not a pattern and is not
+        recorded: the picker pins it a row of its own, and recording it would
+        show it twice and push a typed pattern out of the history to do it."""
         pattern = pattern.strip()
-        if not pattern:
-            return
+        if not pattern or filters.is_known(pattern):
+            return          # a defined filter has a fixed row; it never ages
         try:
             hist = [p for p in self.state_manager.get_state(_FILTER_HISTORY_KEY, [])
                     if p != pattern]

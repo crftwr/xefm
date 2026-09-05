@@ -336,8 +336,7 @@ is the one place a PuiKit widget necessarily crosses the façade; that is
 acceptable because renderers are inherently UI extensions, and it is the same
 contract the built-in renderers use.
 
-Sort keys and filter predicates as user callables fit the same pattern and
-can follow once requested.
+Sort keys and filter predicates as user callables fit the same pattern.
 
 **Sort keys have** — `SORT_KEYS`, shipped for #380, and the first of these to
 land. It went first precisely because it is *not* the renderer: a key returns
@@ -347,6 +346,15 @@ than deferred — a sort key runs on a worker, the opposite of what actions and
 hooks promise. See
 [`CUSTOMIZATION_API_IMPLEMENTATION.md`](CUSTOMIZATION_API_IMPLEMENTATION.md)
 §8b.
+
+**Filters have** — `FILTERS`, and the second registry to land. It rides the
+machinery `SORT_KEYS` shook down (same `EntryInfo`, same worker-thread rule, same
+validate-and-warn loading) and needed one new answer of its own: a filter is
+stored where a typed pattern is stored, so `xefm.filters.matcher` is the single
+point that decides which of the two a string is, and a name that could be read as
+a glob is refused at load. See
+[`CUSTOMIZATION_API_IMPLEMENTATION.md`](CUSTOMIZATION_API_IMPLEMENTATION.md)
+§8c.
 
 ---
 
