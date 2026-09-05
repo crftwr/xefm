@@ -8,6 +8,7 @@ import stat
 import fnmatch
 from xefm import name_key
 from xefm import search_match
+from xefm import sort_keys
 from xefm.dir_scan import is_hidden
 from xefm.path import Path, attrs_via_path
 from datetime import datetime
@@ -225,15 +226,33 @@ class FileListManager:
         clearing a filter restores entries without re-reading. It is taken
         *after* the hidden-file filter, so toggling ``show_hidden`` does need a
         real re-list.
+
+        Reads the pane, so it belongs on the UI thread; a caller running the
+        re-sort on a worker pulls the snapshot out first and calls
+        :meth:`recompute_from_snapshot`.
         """
         entries = pane_data.get('_listing_entries')
         if entries is None:
             return None
         virtual = pane_data.get('virtual')
-        return self._assemble_listing(
+        return self.recompute_from_snapshot(
             entries, filter_pattern=filter_pattern,
             sort_mode=sort_mode, sort_reverse=sort_reverse,
             rel_root=virtual.get('root') if virtual else None)
+
+    def recompute_from_snapshot(self, entries, *, filter_pattern=None,
+                                sort_mode='name', sort_reverse=False,
+                                rel_root=None):
+        """:meth:`recompute_listing` with the pane taken out of it — every input
+        passed in, nothing read from pane state, so a worker thread can call it.
+
+        That matters now that a sort key can come from a user's config: the
+        built-in keys are microseconds of arithmetic over data already in hand,
+        but a registered one is arbitrary code over every entry, and it must not
+        be able to hold the UI thread."""
+        return self._assemble_listing(
+            entries, filter_pattern=filter_pattern,
+            sort_mode=sort_mode, sort_reverse=sort_reverse, rel_root=rel_root)
 
     def _build_file_info(self, files, attrs=None):
         """Populate the per-entry display cache (size/date strings, is_dir) once
@@ -342,6 +361,14 @@ class FileListManager:
         to the pane root on a search-results pane — which the listing left in
         ``attrs['cmp_name']``. See :mod:`xefm.name_key` for why that is not the
         same string as the one on disk.
+
+        ``sort_mode`` may also name a key a config registered (:mod:`xefm.sort_keys`),
+        which then replaces the built-in for that mode. A registered key that
+        raises, or returns values that will not compare with each other, loses
+        the whole sort rather than one entry: the order falls back to the
+        built-in name sort and the failure is logged once. Per-entry isolation
+        would be the wrong granularity here — a key that is broken is broken for
+        every file, and would otherwise emit one traceback per row.
         """
         attrs = dict(attrs) if attrs else {}
         for entry in entries:
@@ -354,6 +381,14 @@ class FileListManager:
                 # call, or an entry the listing never saw — still orders by the
                 # compared name rather than by the raw one.
                 a['cmp_name'] = name_key.compare_name(entry)
+
+        user_key = sort_keys.key_for(sort_mode)
+        if user_key is not None:
+            ordered = self._sort_by_user_key(entries, attrs, sort_mode,
+                                             user_key, reverse)
+            if ordered is not None:
+                return ordered
+            sort_mode = 'name'  # the fallback the failure was logged against
 
         def get_sort_key(entry):
             """Generate sort key for an entry, from the cached attributes"""
@@ -397,6 +432,31 @@ class FileListManager:
         # Always put directories first
         return sorted_dirs + sorted_files
     
+    def _sort_by_user_key(self, entries, attrs, sort_mode, user_key, reverse):
+        """Order ``entries`` with a config-registered key, or ``None`` if it
+        could not be done — the caller then falls back to the built-in name sort.
+
+        Directories still lead and ``reverse`` still applies: a registered key
+        only decides the order within a group, so a config never has to
+        re-implement either. Entries are handed
+        :meth:`~xefm.user_api.EntryInfo.from_attrs` objects built from the
+        listing's own records, so a key reading ``size`` or ``mtime`` costs no
+        filesystem call.
+        """
+        from xefm.user_api import EntryInfo   # imported here: user_api imports us
+        try:
+            def key(entry):
+                return user_key(EntryInfo.from_attrs(entry, attrs[str(entry)]))
+
+            directories = [e for e in entries if attrs[str(e)]['is_dir']]
+            files = [e for e in entries if not attrs[str(e)]['is_dir']]
+            return (sorted(directories, key=key, reverse=reverse)
+                    + sorted(files, key=key, reverse=reverse))
+        except Exception as e:
+            self.logger.error(
+                f"Sort key '{sort_mode}' failed ({e}); sorting by filename")
+            return None
+
     def get_sort_description(self, pane_data):
         """Get a human-readable description of the current sort mode, using the
         same key names the sort dialog and the menu show (Filename / Extension /
@@ -404,15 +464,8 @@ class FileListManager:
         mode = pane_data['sort_mode']
         reverse = pane_data['sort_reverse']
 
-        descriptions = {
-            'name': 'Filename',
-            'ext':  'Extension',
-            'size': 'Size',
-            'date': 'Timestamp',
-            'type': 'Extension',  # legacy suffix sort (the pre-dialog menu)
-        }
-
-        description = descriptions.get(mode, 'Filename')
+        description = ('Extension' if mode == 'type'  # legacy pre-dialog menu
+                       else sort_keys.label(mode))
         if reverse:
             description += ' ↓'
         else:

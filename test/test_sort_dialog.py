@@ -64,6 +64,7 @@ class SortDialogApp(unittest.TestCase):
         pane["sort_mode"] = "name"
         pane["sort_reverse"] = False
         self.app._resort(pane)
+        self.app._settle_listings()
 
     def tearDown(self):
         try:
@@ -86,6 +87,8 @@ class SortDialogApp(unittest.TestCase):
         return bool(layers) and isinstance(layers[-1].widget, SortDialog)
 
     def _names(self):
+        # A sort change lands on a worker now, so read the order only once it has.
+        self.app._settle_listings()
         return [os.path.basename(str(p)) for p in self.app.active_pane()["files"]]
 
     # --- draw / layout -------------------------------------------------------

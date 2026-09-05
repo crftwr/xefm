@@ -29,33 +29,11 @@ from puikit.font import Font
 from puikit.theme import DEFAULT_THEME
 from puikit.widgets.base import Widget
 
+from xefm import sort_keys
 from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
-
-#: The sort keys, in row order: (pane ``sort_mode`` value, row label, hotkey).
-_KEYS = (
-    ("name", "Filename", "F"),
-    ("ext", "Extension", "E"),
-    ("size", "Size", "S"),
-    ("date", "Timestamp", "T"),
-)
 
 #: Order segments, indexed by ``sort_reverse`` (False = Ascending).
 _ORDERS = ("Ascending", "Descending")
-
-#: The explanation line per (sort_mode, sort_reverse), drawn under the order
-#: segments: three values in the order the list would show them, plus the
-#: plain-words reading. The box is sized to the widest of these so switching
-#: keys never resizes the dialog.
-_EXPLANATIONS = {
-    ("name", False): "a.txt → m.txt → z.txt  (A to Z)",
-    ("name", True): "z.txt → m.txt → a.txt  (Z to A)",
-    ("ext", False): ".c → .md → .py  (A to Z)",
-    ("ext", True): ".py → .md → .c  (Z to A)",
-    ("size", False): "1 KB → 1 MB → 1 GB  (smallest first)",
-    ("size", True): "1 GB → 1 MB → 1 KB  (largest first)",
-    ("date", False): "2024 → 2025 → 2026  (oldest first)",
-    ("date", True): "2026 → 2025 → 2024  (newest first)",
-}
 
 _OPT_GAP = 2.0  # base units between the order segments (matches compare_dialog)
 
@@ -83,7 +61,12 @@ class SortDialog(Widget):
         # 'type' (the pre-dialog menu's suffix sort) seeds as Extension — the
         # same attribute, minus the display-matched length cap.
         seed = "ext" if mode == "type" else mode
-        self._index = next((i for i, (m, _l, _h) in enumerate(_KEYS) if m == seed), 0)
+        # Snapshotted at construction: the rows include whatever the config
+        # registered, and a reload mid-dialog must not renumber them underneath
+        # the selection (:mod:`xefm.sort_keys`).
+        self._keys = sort_keys.rows()
+        self._index = next((i for i, (m, _l, _h) in enumerate(self._keys)
+                            if m == seed), 0)
         self._reverse = bool(reverse)
         # Hit rects captured during draw, dialog-local: key rows as
         # (index, y0, y1) full-width bands, order segments as
@@ -103,7 +86,7 @@ class SortDialog(Widget):
         return title_bottom + 1.0  # a blank row under the title rule
 
     def _order_y(self, title_bottom: float, pitch: float) -> float:
-        return self._rows_top(title_bottom) + len(_KEYS) * pitch + 1.0
+        return self._rows_top(title_bottom) + len(self._keys) * pitch + 1.0
 
     def _explain_y(self, title_bottom: float, pitch: float) -> float:
         return self._order_y(title_bottom, pitch) + 1.0  # right under the segments
@@ -114,17 +97,18 @@ class SortDialog(Widget):
     def _box_height(self, title_bottom: float, pitch: float) -> float:
         return self._hint_y(title_bottom, pitch) + 2.0  # hint row + bottom border/pad
 
-    @staticmethod
-    def _content_width(measure) -> float:
+    def _content_width(self, measure) -> float:
         """Width of the widest content line (base units, excluding the 2-unit
         margins): the widest key row, the order-segment pair, the widest
-        explanation of *all eight* (so the box never resizes as the selection
-        moves), and the key hint. ``measure`` must be the *rendering* text
-        measurer (proportional on GUI)."""
-        row_w = 1.0 + max(measure(label) for _m, label, _h in _KEYS)
+        explanation of *every* row in both directions (so the box never resizes
+        as the selection moves), and the key hint. ``measure`` must be the
+        *rendering* text measurer (proportional on GUI)."""
+        row_w = 1.0 + max(measure(label) for _m, label, _h in self._keys)
         order_w = (1.0 + sum(measure(o) for o in _ORDERS)
                    + _OPT_GAP + 0.7)  # trailing pill pad
-        explain_w = 1.0 + max(measure(e) for e in _EXPLANATIONS.values())
+        explain_w = 1.0 + max(
+            measure(sort_keys.explanation(mode, rev))
+            for mode, _l, _h in self._keys for rev in (False, True))
         return max(row_w, order_w, explain_w, measure(SortDialog._HINT))
 
     # --- lifecycle -----------------------------------------------------------
@@ -157,7 +141,7 @@ class SortDialog(Widget):
             self.on_result(result)
 
     def _accept(self) -> None:
-        self._finish((_KEYS[self._index][0], self._reverse))
+        self._finish((self._keys[self._index][0], self._reverse))
 
     # --- drawing -------------------------------------------------------------
 
@@ -189,7 +173,7 @@ class SortDialog(Widget):
         # row's initial is its key.
         self._row_hits = []
         y = self._rows_top(title_bottom)
-        for i, (_mode, label, _hotkey) in enumerate(_KEYS):
+        for i, (_mode, label, _hotkey) in enumerate(self._keys):
             selected = i == self._index
             if selected:
                 ctx.round_rect(2.0, y + row_vy - 0.1, box_w - 4.0, line_h + 0.2,
@@ -228,7 +212,7 @@ class SortDialog(Widget):
 
     def explanation(self) -> str:
         """The explanation line for the selected key and order."""
-        return _EXPLANATIONS[(_KEYS[self._index][0], self._reverse)]
+        return sort_keys.explanation(self._keys[self._index][0], self._reverse)
 
     # --- events --------------------------------------------------------------
 
@@ -250,16 +234,16 @@ class SortDialog(Widget):
             self._accept()
             return
         if key == "up":
-            self._index = (self._index - 1) % len(_KEYS)
+            self._index = (self._index - 1) % len(self._keys)
         elif key == "down":
-            self._index = (self._index + 1) % len(_KEYS)
+            self._index = (self._index + 1) % len(self._keys)
         elif key == "left":
             self._reverse = False
         elif key == "right":
             self._reverse = True
         elif not (event.modifiers - {"shift"}):
-            for i, (_mode, _label, hotkey) in enumerate(_KEYS):
-                if key == hotkey.lower():
+            for i, (_mode, _label, hotkey) in enumerate(self._keys):
+                if hotkey and key == hotkey.lower():
                     self._index = i
                     self._accept()  # a hotkey chooses and closes in one stroke
                     return

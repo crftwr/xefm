@@ -22,6 +22,7 @@ import queue
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -29,6 +30,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
+from xefm import sort_keys  # noqa: E402
 
 
 class FakePath:
@@ -356,12 +358,19 @@ class StartupOnARealApp(_RealAppBase):
 
 
 class SortOnARealApp(_RealAppBase):
-    """Sorting re-orders the entries already in hand — no directory read at all,
-    and the new order is in place by the time the call returns (#183).
+    """Sorting re-orders the entries already in hand — no directory read at all
+    (#183).
 
-    The old design re-listed on a worker, which kept the UI responsive but still
-    paid a full re-read: on a NAS that is one network round trip per file, for
-    information the pane had already collected.
+    The original design re-listed on a worker, which kept the UI responsive but
+    still paid a full re-read: on a NAS that is one network round trip per file,
+    for information the pane had already collected. Reusing the snapshot removed
+    the read; the ordering itself then ran on the UI thread, because it was
+    microseconds of arithmetic and landing on the tick avoided a blank pane.
+
+    It is back on a worker now that a config can supply the key
+    (:mod:`xefm.sort_keys`) — arbitrary code, once per entry. The pane is not
+    blanked this time, so the flicker that argued for the synchronous version
+    does not come back with it.
     """
 
     @contextlib.contextmanager
@@ -390,6 +399,9 @@ class SortOnARealApp(_RealAppBase):
         app._settle_listings()
         with self._no_directory_reads(app):
             app._toggle_reverse()
+            # Settled inside the guard, so "no directory reads" covers the
+            # worker's whole re-sort, not just the request.
+            app._settle_listings()
         self.assertEqual([f.name for f in app.pm.left_pane["files"]],
                          ["c.txt", "b.txt", "a.txt"])
         self.assertFalse(app.pm.left_pane["loading"])
@@ -401,6 +413,7 @@ class SortOnARealApp(_RealAppBase):
         pane["focused_index"] = next(i for i, f in enumerate(pane["files"])
                                      if f.name == "a.txt")
         app._toggle_reverse()
+        app._settle_listings()
         # a.txt moved from the top to the bottom; the cursor went with it rather
         # than staying on row 0.
         self.assertEqual(pane["files"][pane["focused_index"]].name, "a.txt")
@@ -411,10 +424,12 @@ class SortOnARealApp(_RealAppBase):
         pane = app.pm.left_pane
         with self._no_directory_reads(app):
             app._apply_filter(pane, "a*")
+            app._settle_listings()
             self.assertEqual([f.name for f in pane["files"]], ["a.txt"])
             # The snapshot is kept pre-filter, so clearing restores the rest
             # without going back to the directory.
             app._apply_filter(pane, "")
+            app._settle_listings()
         self.assertEqual([f.name for f in pane["files"]],
                          ["a.txt", "b.txt", "c.txt"])
 
@@ -428,6 +443,76 @@ class SortOnARealApp(_RealAppBase):
         app._settle_listings()
         self.assertEqual([f.name for f in pane["files"]],
                          ["c.txt", "b.txt", "a.txt"])
+
+
+class RegisteredSortKeyOnARealApp(_RealAppBase):
+    """A config-supplied key sorts the pane, and does it off the UI thread."""
+
+    def setUp(self):
+        super().setUp()
+        sort_keys.clear()
+
+    def tearDown(self):
+        sort_keys.clear()
+        super().tearDown()
+
+    def test_a_registered_key_orders_the_pane(self):
+        app = self._build()
+        app._settle_listings()
+        sort_keys.register("backwards", lambda e: [-ord(c) for c in e.name],
+                           label="Backwards")
+        app.pm.left_pane["sort_mode"] = "backwards"
+        app._resort(app.pm.left_pane)
+        app._settle_listings()
+        self.assertEqual([f.name for f in app.pm.left_pane["files"]],
+                         ["c.txt", "b.txt", "a.txt"])
+
+    def test_the_key_runs_off_the_ui_thread(self):
+        app = self._build()
+        app._settle_listings()
+        started, release = threading.Event(), threading.Event()
+        ui_thread = threading.current_thread()
+        ran_on = []
+
+        def slow(entry):
+            ran_on.append(threading.current_thread())
+            started.set()
+            release.wait(2.0)
+            return entry.name
+
+        sort_keys.register("slow", slow, label="Slow")
+        pane = app.pm.left_pane
+        before = list(pane["files"])
+        pane["sort_mode"] = "slow"
+        app._resort(pane)
+
+        # The call returned while the key is still running, and the pane kept the
+        # rows it had rather than blanking — they stay actionable throughout.
+        self.assertTrue(started.wait(2.0), "the sort key never started")
+        self.assertEqual(pane["files"], before)
+        self.assertFalse(pane["loading"])
+        self.assertTrue(pane["_load_pending"])
+        self.assertNotIn(ui_thread, ran_on)
+
+        release.set()
+        app._settle_listings()
+        self.assertEqual([f.name for f in pane["files"]],
+                         ["a.txt", "b.txt", "c.txt"])
+
+    def test_a_remembered_mode_that_no_longer_exists_falls_back(self):
+        app = self._build()
+        pane = app.pm.left_pane
+        # The config that defined "explorer" was edited away; the saved state
+        # still names it.
+        app.state_manager.save_pane_state("left", dict(pane, sort_mode="explorer"))
+
+        pane["sort_mode"] = "name"
+        app._restore_one_pane("left", pane, cmdline_provided=True)
+        self.assertEqual(pane["sort_mode"], "name")
+
+        sort_keys.register("explorer", lambda e: e.name, label="Explorer order")
+        app._restore_one_pane("left", pane, cmdline_provided=True)
+        self.assertEqual(pane["sort_mode"], "explorer")
 
 
 if __name__ == "__main__":
