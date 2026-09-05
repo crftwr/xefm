@@ -428,11 +428,12 @@ Customization API (Preview, API_VERSION 0): 2 action(s), 1 event hook(s) loaded
 — this API may change without notice.
 ```
 
-`preview_notice()` returns `None` when both counts are zero, so a config that
-does not use the API says nothing.
+`preview_notice()` returns `None` when every count is zero, so a config that
+does not use the API says nothing; the registries that landed later add their own
+clause (`3 sort key(s)`, `2 filter(s)`) only when a config defines any.
 
 Reaching `1` means committing to `ActionContext`, `PaneApi`, `EntryInfo` and the
-two config variable formats. Before that, the questions worth settling with real
+config variable formats. Before that, the questions worth settling with real
 use: whether user functions should be allowed in viewer contexts and what a
 per-view API looks like; whether the callback-shaped prompts are livable or want
 a different idiom; whether `directory_changed` should also fire on entering and
@@ -501,11 +502,61 @@ restore, because a config can stop defining a mode a previous session saved.
 
 ---
 
+## 8c. `FILTERS` — the second one, and the first with no built-in table
+
+`SORT_KEYS` exposed a choice XeFM already made four ways; `FILTERS` exposes one
+it made *one* way — the pane filter has been a single `fnmatch` pattern since the
+beginning. So there is no `BUILTIN` tuple here, no `ALIASES`, and no `override`:
+a filter name collides with nothing, because nothing is registered until a config
+registers it.
+
+`xefm/filters.py` holds the table and, more importantly, `matcher()` — the single
+place that decides whether a string is a **name** or a **pattern**. That question
+is the whole design. `pane['filter_pattern']` is one string that reaches the
+status bar, the saved pane state, the picker's history and the content search's
+narrowing; making a registered filter a second *kind* of value there would have
+touched every one of those. Instead the registry is asked first and `fnmatch` is
+the fallback, so the pane state stays a string and every existing caller keeps
+working — the change to `_assemble_listing` is one line, and the content search's
+walk gained a matcher where it had a glob.
+
+The cost of that choice is one rule: **a filter name may not contain `*`, `?` or
+`[`**, rejected at load with a warning. Without it a config could define `"*.py"`
+and the picker could no longer tell a defined filter from a pattern someone
+typed — the ambiguity would be unresolvable rather than merely surprising.
+
+Three decisions worth keeping:
+
+**Two spellings, one shape.** A `pattern` entry compiles to a closure over
+`fnmatch` and never builds an `EntryInfo`; a `match` entry gets one per file, as
+the sort does. The glob case is the common one and stays exactly as cheap as the
+built-in filter it generalizes, which is what makes "define the filters you keep
+typing" a free convenience rather than a trade.
+
+**Failure fails open.** `_sort_by_user_key` falls back to a *different order*;
+`_apply_filter_pattern` falls back to *no filtering*, logs once, and shows every
+entry. A broken sort shows you the same files in the wrong order; a broken filter
+would hide files — and a hidden file is one a user can neither see nor stop from
+being caught in the next operation. The safe direction is the visible one.
+
+**Defined filters are not history.** `_record_filter_pattern` refuses a name the
+registry knows. The picker's three bands — clear, defined, remembered — each mean
+something different, and a defined filter that also aged through the history
+would appear twice and evict a real typed pattern to do it. It is the same
+reasoning that keeps isearch patterns out of that history (#385).
+
+Directories are still shown unconditionally, exactly as under a typed glob: the
+rule protects navigation (the subdirectory you were about to enter cannot vanish
+because of a filter), and it makes "directories only" expressible as
+`lambda e: False` while leaving "files only" out of reach — the deliberate
+asymmetry.
+
+---
+
 ## 9. Not implemented
 
-**Step 4's remainder.** `VIEWER_RENDERERS` feeding `viewer_registry.register()`,
-and filter predicates as user callables. `xefm/viewer_registry.py` still
-anticipates it in its own docstring. The design flags the reason to wait: a
+**Step 4's remainder.** `VIEWER_RENDERERS` feeding `viewer_registry.register()`.
+`xefm/viewer_registry.py` still anticipates it in its own docstring. The design flags the reason to wait: a
 renderer builder returns a PuiKit widget, which is the one place a PuiKit type
 must cross the façade, and that is the hardest part of this API to keep stable
 across PuiKit releases.

@@ -319,7 +319,7 @@ Shift-O  - Sync other pane to the current pane
 F        - Incremental search (filter as you type)
 Shift-F  - Threaded filename search dialog
 Shift-G  - Content search (grep) dialog
-;        - Filter by pattern (*.py, test_*, etc.)
+;        - Filter the pane (a pattern, or a filter from your config)
 :        - Clear current filter
 ```
 
@@ -365,6 +365,10 @@ search are left alone, so a second search adds to them. Every one of these keys 
 - **Japanese by romaji (Migemo)**: In incremental search, typing `kensaku`
   also finds `検索` — no IME needed. See [Migemo Search](MIGEMO_SEARCH_FEATURE.md).
 - **Pattern filtering**: Use wildcards like `*.txt` or `test_*`
+- **Your own filters**: The `;` prompt also lists the filters your config
+  defines, pinned under *clear filter*. They can match on anything about a file,
+  not just its name — "modified today", "over 100 MB". See
+  [Customization](CUSTOMIZATION_FEATURE.md#your-own-filters-filters).
 - **Filename search (Shift-F)**: The query is an *exact* glob matched against the
   whole filename — `report.txt` matches only that name. Add wildcards for partial
   matches: `report*`, `*.py`, or `*report*` for the old "contains" behaviour.
@@ -834,7 +838,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | F | Incremental search (isearch) |
 | Shift+F | Filename search dialog |
 | Shift+G | Content (grep) search dialog |
-| ; | Filter the pane by pattern (Shift+Delete forgets a saved pattern) |
+| ; | Filter the pane by pattern or by a filter you defined (Shift+Delete forgets a saved pattern) |
 | : | Clear the filter |
 | S | Sort dialog (key + order) |
 | 1 / 2 / 3 / 4 | Quick sort by name / extension / size / date |

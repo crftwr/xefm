@@ -842,10 +842,10 @@ class ConfigManager:
         if not isinstance(config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S, (int, float)) or config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S <= 0:
             errors.append("FILE_MONITORING_FALLBACK_POLL_INTERVAL_S must be a positive number")
 
-        # ACTIONS / EVENT_HOOKS (the Preview customization API). Shape problems
-        # are reported here like every other config field — all of them in one
-        # pass, each one skipping just its own entry — so a typo in one action
-        # never costs a user the rest of their config.
+        # ACTIONS / EVENT_HOOKS / SORT_KEYS / FILTERS (the Preview customization
+        # API). Shape problems are reported here like every other config field —
+        # all of them in one pass, each one skipping just its own entry — so a
+        # typo in one action never costs a user the rest of their config.
         from xefm.user_api import validate_user_entries
         errors.extend(validate_user_entries(config))
 
