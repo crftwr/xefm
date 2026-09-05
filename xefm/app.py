@@ -5381,6 +5381,13 @@ class XeFMApp:
         other side may hold several same-named candidates; the engine selects an
         entry when any of them matches.
 
+        With a virtual pane on either side the dialog grows a "Match the whole
+        path shown" row (#383): a result set can hold a dozen files called
+        ``index.html``, which all collapse onto one another under the default
+        name join, and only the path below the search root separates them. Two
+        directory panes never see the row — their entries are direct children,
+        whose path below the pane is the basename already.
+
         Both sides' attributes come from the snapshot each pane's listing left
         behind, so a compare reads nothing but file *contents* — see
         :meth:`_pane_attrs`."""
@@ -5400,13 +5407,30 @@ class XeFMApp:
                 result = compute_compare_selection(
                     pane["files"], other["files"], criteria,
                     current_attrs=self._pane_attrs(pane),
-                    other_attrs=self._pane_attrs(other))
+                    other_attrs=self._pane_attrs(other),
+                    current_root=self._pane_root(pane),
+                    other_root=self._pane_root(other))
                 self._apply_compare_result(pane, criteria, result)
             self.panel.render()
 
         show_compare_select(self.panel, region=self._active_pane_region(),
-                            on_result=on_result)
+                            on_result=on_result,
+                            allow_path_match=bool(pane.get("virtual")
+                                                  or other.get("virtual")))
         self.panel.render()
+
+    @staticmethod
+    def _pane_root(pane: dict):
+        """The directory a pane's rows are named relative to: the search root on a
+        virtual pane, the pane's own directory otherwise.
+
+        Only the compare's path-match option reads this, and each side brings its
+        own — which is what makes the option mean what it looks like it means. A
+        directory listing of ``/a`` and a search rooted at ``/a`` then agree on
+        ``x.txt`` for a hit sitting in ``/a``, and disagree on ``sub/x.txt`` for
+        one a level down, exactly as the two panes show them."""
+        virtual = pane.get("virtual")
+        return virtual["root"] if virtual else pane.get("path")
 
     @staticmethod
     def _pane_attrs(pane: dict) -> dict:
@@ -5437,6 +5461,8 @@ class XeFMApp:
         other_files = list(other["files"])
         current_attrs = self._pane_attrs(pane)
         other_attrs = self._pane_attrs(other)
+        current_root = self._pane_root(pane)
+        other_root = self._pane_root(other)
         task = Task("Comparing contents", config=self.config, kind="compare")
 
         def run(t: Task) -> dict:
@@ -5453,6 +5479,7 @@ class XeFMApp:
             result = compute_compare_selection(
                 current_files, other_files, criteria,
                 current_attrs=current_attrs, other_attrs=other_attrs,
+                current_root=current_root, other_root=other_root,
                 checkpoint=t.checkpoint, on_advance=advance)
             return {"result": result, "cancelled": t.cancelled()}
 

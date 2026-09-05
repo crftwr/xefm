@@ -392,3 +392,87 @@ def test_needs_content_flag():
     assert not CompareCriteria(size="equal", mtime="newer").needs_content
     assert CompareCriteria(content="equal").needs_content
     assert CompareCriteria(content="differs").needs_content
+
+
+# --- pairing by path instead of name (#383) ----------------------------------
+
+def _tree(base, *rels):
+    """Create ``base/<rel>`` for each rel and return the entries, as a search
+    feed hands them over — real paths scattered under one root."""
+    out = []
+    for rel in rels:
+        p = base / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        _write(p)
+        out.append(_P(p))
+    return out
+
+
+def test_match_path_separates_same_named_hits(tmp_path):
+    """What the option exists for: in a result set the basename can say nothing,
+    because every hit is called the same thing."""
+    root, other = tmp_path / "root", tmp_path / "other"
+    left = _tree(root, "a/index.html", "b/index.html")
+    right = _tree(other, "a/index.html")
+
+    # By name, the one counterpart pairs with both hits.
+    by_name = compute_compare_selection(left, right, CompareCriteria())
+    assert by_name.paths == {str(root / "a/index.html"),
+                             str(root / "b/index.html")}
+
+    # By each side's path below its own root, only a/ has a counterpart.
+    by_path = compute_compare_selection(
+        left, right, CompareCriteria(match_path=True),
+        current_root=_P(root), other_root=_P(other))
+    assert by_path.paths == {str(root / "a/index.html")}
+
+
+def test_match_path_pairs_across_differently_named_roots(tmp_path):
+    """Each side is relative to its *own* root, so two trees pair on shape rather
+    than on where they happen to live."""
+    root, other = tmp_path / "v1", tmp_path / "v2"
+    left = _tree(root, "sub/x.txt")
+    right = _tree(other, "sub/x.txt")
+    res = compute_compare_selection(
+        left, right, CompareCriteria(match_path=True),
+        current_root=_P(root), other_root=_P(other))
+    assert res.paths == {str(root / "sub/x.txt")}
+
+
+def test_match_path_still_normalizes(tmp_path):
+    root, other = tmp_path / "root", tmp_path / "other"
+    nfc = unicodedata.normalize("NFC", "caf\u00e9")
+    nfd = unicodedata.normalize("NFD", "caf\u00e9")
+    assert nfc != nfd
+    left = _tree(root, f"{nfc}/x.txt")
+    right = _tree(other, f"{nfd}/x.txt")
+    res = compute_compare_selection(
+        left, right, CompareCriteria(match_path=True),
+        current_root=_P(root), other_root=_P(other))
+    assert res.paths == {str(root / nfc / "x.txt")}
+
+
+def test_match_path_changes_nothing_between_two_flat_listings(tmp_path):
+    """Which is why the dialog does not offer it there: a directory pane holds
+    direct children, whose path below the pane is their basename."""
+    left, right = tmp_path / "L", tmp_path / "R"
+    left.mkdir(); right.mkdir()
+    _write(left / "a.txt"); _write(left / "only_left.txt")
+    _write(right / "a.txt")
+
+    expected = {str(left / "a.txt")}
+    assert _run(left, right, CompareCriteria()).paths == expected
+    assert compute_compare_selection(
+        _entries(left), _entries(right), CompareCriteria(match_path=True),
+        current_root=_P(left), other_root=_P(right)).paths == expected
+
+
+def test_match_path_without_roots_falls_back_to_basenames(tmp_path):
+    """A caller that passes no roots still pairs sanely rather than never
+    matching: with nothing to be relative to, the compared name is the basename."""
+    root, other = tmp_path / "root", tmp_path / "other"
+    left = _tree(root, "a/x.txt")
+    right = _tree(other, "b/x.txt")
+    res = compute_compare_selection(left, right, CompareCriteria(match_path=True))
+    assert res.paths == {str(root / "a/x.txt")}
+
