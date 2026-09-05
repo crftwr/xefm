@@ -35,6 +35,8 @@ from puikit.font import Font
 from puikit.text import elide
 from puikit.widgets.base import Widget
 
+from xefm import name_key
+
 #: Size and date are numeric columns: pin them to a fixed-advance face so digits
 #: line up in their right-aligned columns. (Names keep the Panel's default
 #: proportional UI font on GUI; on TUI everything is the one grid font anyway.)
@@ -346,16 +348,14 @@ class FilePane(Widget):
         """The text shown in the name column. Normally the entry's basename; on a
         **virtual (search-results) pane** the path relative to the search root, so
         a hit scattered deep in the tree shows *where* it lives (``sub/dir/a.txt``)
-        rather than a bare, location-less ``a.txt``."""
+        rather than a bare, location-less ``a.txt``.
+
+        This is the same string the sort orders by and the i-search matches
+        (:mod:`xefm.name_key`), NFC included — the pane must not show one name
+        and compare another. It is *not* a name to open a file with; ``entry``
+        keeps that."""
         virtual = self.pane.get("virtual")
-        if virtual:
-            root = str(virtual["root"])
-            s = str(entry)
-            if s.startswith(root):
-                rel = s[len(root):].lstrip("/\\")
-                if rel:
-                    return rel
-        return entry.name
+        return name_key.compare_name(entry, virtual["root"] if virtual else None)
 
     def _split_name(self, name: str, is_dir: bool) -> tuple[str, str]:
         """Split ``name`` into (basename, extension) for the separate-extension
@@ -389,9 +389,14 @@ class FilePane(Widget):
         info_cache = self.pane.get("file_info", {})
         width = 0.0
         for entry in files:
+            # Every entry, not just the visible rows — so read the compared name
+            # the listing cached rather than deriving it N times on this thread.
+            # This branch is non-virtual (see above), where that name is exactly
+            # what _display_name would return.
             info = info_cache.get(str(entry))
             is_dir = info["is_dir"] if info else False
-            _, ext = self._split_name(entry.name, is_dir)
+            shown = info["cmp_name"] if info else self._display_name(entry)
+            _, ext = self._split_name(shown, is_dir)
             if ext:
                 width = max(width, measure(ext))
         self._ext_cache = (id(files), width)
@@ -605,7 +610,7 @@ class FilePane(Widget):
             basename, ext = self._display_name(entry), ""
             name_elide = "middle"
         else:
-            basename, ext = self._split_name(entry.name, is_dir)
+            basename, ext = self._split_name(self._display_name(entry), is_dir)
             name_elide = "end"
         name = basename
         size = info["size_str"]

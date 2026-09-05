@@ -28,6 +28,7 @@ import re
 from typing import Sequence
 
 from xefm import migemo_search
+from xefm import name_key
 
 #: One compiled token: its "contains"-wrapped, lowercased glob paired with the
 #: Migemo regex unioned into it (``None`` where Migemo doesn't apply — disabled,
@@ -40,6 +41,10 @@ def compile_query(pattern: str) -> list[Token]:
     across every candidate — see the module docstring on why this is hoisted."""
     tokens: list[Token] = []
     for token in pattern.split():
+        # Normalize the query once here rather than every candidate in `hit`:
+        # the pane hands in names that are already NFC (xefm.name_key), so a
+        # pasted NFD pattern is the only side left that could disagree.
+        token = name_key.nfc(token)
         glob = token.lower()
         if not glob.startswith('*'):
             glob = '*' + glob

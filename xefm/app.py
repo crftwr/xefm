@@ -71,6 +71,7 @@ from xefm.completion import FilepathCompleter
 from xefm.input_dialog import show_input
 from xefm.progressive_search_dialog import show_progressive_search
 from xefm.isearch_bar import ISearchBar
+from xefm import name_key
 from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
                               set_log_sink)
 from xefm.pane_manager import PaneManager
@@ -3728,7 +3729,7 @@ class XeFMApp:
         result cap and cancellation are applied by the dialog consuming this
         generator."""
         import fnmatch
-        pat = pattern.lower()
+        pat = name_key.nfc(pattern).lower()
         stack = [root]
         while stack:
             if cancel.is_set():
@@ -3745,7 +3746,7 @@ class XeFMApp:
                     return
                 if not self.flm.show_hidden and is_hidden(e.name, attrs):
                     continue
-                if fnmatch.fnmatch(e.name.lower(), pat):
+                if fnmatch.fnmatch(name_key.compare_name(e).lower(), pat):
                     yield e
                 if attrs["is_dir"]:
                     stack.append(e)
@@ -3857,7 +3858,7 @@ class XeFMApp:
         matches); the result cap and cancellation are applied by the dialog
         consuming this generator."""
         import fnmatch
-        pat = name_filter.lower()
+        pat = name_key.nfc(name_filter).lower()
         stack = [root]
         while stack:
             if cancel.is_set():
@@ -3875,7 +3876,8 @@ class XeFMApp:
                     if attrs["is_dir"]:
                         stack.append(e)
                         continue
-                    if pat and not fnmatch.fnmatch(e.name.lower(), pat):
+                    if pat and not fnmatch.fnmatch(
+                            name_key.compare_name(e).lower(), pat):
                         continue
                     encoding = self._sniff_text_encoding(e)
                     if encoding is None:

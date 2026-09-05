@@ -41,9 +41,10 @@ can raise to cancel.
 
 from __future__ import annotations
 
-import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
+
+from xefm import name_key
 
 # Filesystems round mtimes (FAT ≈ 2s, some networks ≈ 1s); treat timestamps
 # within this many seconds as identical.
@@ -54,7 +55,15 @@ _CHUNK = 1 << 16
 
 
 def _norm(name: str) -> str:
-    return unicodedata.normalize("NFC", name)
+    """Pair entries by their NFC form, so a name stored NFD on one side still
+    finds its NFC counterpart on the other (:mod:`xefm.name_key`).
+
+    Pairing is by **basename**, deliberately, even on a search-results pane that
+    shows whole relative paths — matching ``a.txt`` against ``a.txt`` wherever
+    each lives is what the compare is for. Where the pane-relative path is
+    wanted instead, that is #383's dialog option, not a change here.
+    """
+    return name_key.nfc(name)
 
 
 def _noop() -> None:
