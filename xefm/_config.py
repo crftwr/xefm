@@ -442,6 +442,39 @@ class Config:
         # 'quit' above changes it in the file list and in every viewer; writing
         # 'file_diff.quit' changes it in the file diff viewer alone:
         # 'file_diff.quit': ['X'],
+
+        # === Incremental-search keys (rebindable, not listed above) ===========
+        # The search bar ('F') is a surface of its own, and its keys are named
+        # the same way. Their defaults:
+        #
+        #   'isearch.next_match':         DOWN        next match
+        #   'isearch.prev_match':         UP          previous match
+        #   'isearch.toggle_select_down': Shift-DOWN  select, then next match
+        #   'isearch.toggle_select_up':   Shift-UP    select, then previous match
+        #   'isearch.select_matches':     Ctrl-A      select every match
+        #                                             (again: clear them)
+        #   'isearch.accept':             ENTER       stop at the current match
+        #   'isearch.cancel':             ESCAPE      cancel, restoring the cursor
+        #
+        # One rule applies here and nowhere else: the key must NOT be one that
+        # types a character. Everything printable belongs to the pattern you are
+        # typing -- SPACE included, which the search reads as the separator
+        # between the pattern's words ('re 24' finds 'report_2024.txt'), and
+        # which is exactly why selecting a file here is Shift-DOWN rather than
+        # the file list's SPACE. Bind one of these to 'N' and it can never fire;
+        # XeFM says so in the log pane at startup rather than leaving you to
+        # wonder. Modified and non-printable keys are all free: 'Shift-DOWN',
+        # 'Ctrl-N', 'F2', 'INSERT' (on Windows and in the terminal -- macOS
+        # keyboards have no Insert key).
+        #
+        # Shift-UP / Shift-DOWN are the log pane's scroll keys above, and stay
+        # so: the two surfaces never apply at once, and each only ever looks at
+        # its own context's actions. Ctrl-A is the one default that takes a key
+        # the pattern field would otherwise use (select-all-text), and only in
+        # the Ctrl form -- Command-A still selects the text on macOS.
+        #
+        # Example -- select with Insert, on a keyboard that has one:
+        # 'isearch.toggle_select_down': ['INSERT'],
     }
 
     # Windows has no Command key, and Alt-Enter is the platform fullscreen-toggle

@@ -21,6 +21,8 @@ configuration (including any customizations). It is organized into sections:
   (C), move (M), delete (K), rename (R), view (V), edit (E), details (I)
 - **Search & Sorting** — search (F incremental, Shift-F filename, Shift-G
   content) and sort options (S, 1–4)
+- **Incremental Search** — the keys the search bar itself answers while it is
+  open (match stepping, selecting matches, accept, cancel)
 - **View Options** — hidden files (.), pane sync (O, Shift-O), layout
 - **Log Pane** — resize (bracket keys) and scroll (Shift+Up/Down)
 - **General** — help (?), quit (Q), cancel (ESC)

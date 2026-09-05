@@ -153,6 +153,22 @@ The full list of viewer actions and their defaults is in
 [Customization (Preview)](CUSTOMIZATION_FEATURE.md), along with how to bind a key
 to a Python function of your own.
 
+### Search bar keys
+
+The incremental search bar (`F`) is a surface of its own too, and its keys carry
+its name the same way — `isearch.next_match`, `isearch.prev_match`,
+`isearch.toggle_select_down`, `isearch.toggle_select_up`,
+`isearch.select_matches`, `isearch.accept`, `isearch.cancel`. They are rebound
+exactly like a viewer's; the defaults and what each one does are in
+[Customization (Preview)](CUSTOMIZATION_FEATURE.md#the-incremental-search-bar).
+
+One rule is specific to this surface: **the key must not be one that types a
+character.** The pattern field is offered every printable key first — that is
+what keeps `Q`, `?` and Space typeable into a pattern while `quit`, `help` and
+`toggle_select_down` own them in the file list — so an isearch action bound to
+`N` can never fire. XeFM notes it in the log pane at startup rather than leaving
+the binding silently dead. `Shift-DOWN`, `Ctrl-N` and `F2` are all fine.
+
 ### Renamed actions
 
 Some actions have been given clearer names. **Your old names keep working** — a
@@ -290,6 +306,9 @@ KEY_BINDINGS = {
 2. Verify the KeyCode name is valid (case doesn't matter)
 3. Make sure modifiers are spelled correctly
 4. Check for conflicts with other key bindings
+5. For an `isearch.*` action, check the key is not a printable one — the search
+   pattern is offered those first, so such a binding never fires (XeFM says so in
+   the log pane at startup)
 
 ### Action not available
 
