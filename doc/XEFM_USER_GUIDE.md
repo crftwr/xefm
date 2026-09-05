@@ -344,7 +344,7 @@ Press `F`, then type. While the search bar is open:
 | ↑ / ↓ | Previous / next match |
 | Shift+↑ / Shift+↓ | Select the file, then move to the previous / next match |
 | Ctrl+A | Select every match at once — press again to clear them |
-| Enter | Stop at the current match (the pattern is saved to the filter history) |
+| Enter | Stop at the current match |
 | Esc | Cancel and go back to where the cursor was |
 
 The search stops where its matches do: a character that would leave nothing

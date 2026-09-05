@@ -106,8 +106,8 @@ from xefm.viewer_registry import rich_renderer_for
 #: (see ``_restore_layout_and_paths``) and for a config that fails to load.
 PANES_FRACTION = 0.74
 
-#: Persistent, most-recent-first history of filename-filter patterns (fed by
-#: isearch's Enter and the ';' Filter prompt), and the cap kept in the store.
+#: Persistent, most-recent-first history of filename-filter patterns (fed by the
+#: ';' Filter prompt), and the cap kept in the store.
 _FILTER_HISTORY_KEY = "filter.history"
 _FILTER_HISTORY_MAX = 100
 
@@ -871,7 +871,7 @@ class StatusBar(Widget):
         ("isearch.prev_match", "isearch.next_match", "prev/next match"),
         ("isearch.toggle_select_up", "isearch.toggle_select_down", "select"),
         ("isearch.select_matches", None, "all"),
-        ("isearch.accept", None, "stop (save to filter history)"),
+        ("isearch.accept", None, "stop"),
         ("isearch.cancel", None, "cancel"),
     )
 
@@ -5120,16 +5120,18 @@ class XeFMApp:
     def _active_view(self) -> FilePane:
         return self.left_view if self.pm.active_pane == "left" else self.right_view
 
-    #: First row of the Filter picker — selecting it clears the filter. A
-    #: distinctive label so a real ``fnmatch`` glob never collides with it.
-    _FILTER_CLEAR = "␀  (clear filter)"
+    #: First row of the Filter picker — selecting it clears the filter. ``*`` is
+    #: the pattern that would show everything anyway, so the row reads as the
+    #: thing it does rather than as a glyph too small to identify (#385); the
+    #: label around it is what keeps a real glob from colliding with the row.
+    _FILTER_CLEAR = "*  (clear filter)"
 
     def enter_filter(self) -> None:
         """Filename-filter picker for the active pane (the ';' key).
 
-        A searchable list of the saved filter history (fed by isearch's Enter and
-        by past filters), plus a "clear filter" row on top. Type to narrow the
-        list; ``↑/↓`` pick a row; ``Enter`` applies the highlighted pattern. If the
+        A searchable list of the saved filter history (the patterns applied here
+        before), plus a "clear filter" row on top. Type to narrow the list;
+        ``↑/↓`` pick a row; ``Enter`` applies the highlighted pattern. If the
         typed text matches no saved pattern, ``Enter`` applies it verbatim — so a
         brand-new ``fnmatch`` glob (e.g. ``*.py``) still works. Directories are
         always shown; the applied pattern is (re)recorded most-recent-first."""
@@ -5168,10 +5170,8 @@ class XeFMApp:
         match; ``Shift+Up``/``Shift+Down`` mark the current item on the way (the
         file list's SPACE cannot: here it separates the pattern's tokens — issue
         #347) and ``Ctrl+A`` marks every match at once; ``Enter`` stops at the
-        current match and records the pattern in the
-        filter history (so the ';' Filter prompt can recall it); ``Esc`` cancels
-        and restores the pre-search cursor. Reuses ``FileListManager.find_matches``
-        for the hits."""
+        current match; ``Esc`` cancels and restores the pre-search cursor. Reuses
+        ``FileListManager.find_matches`` for the hits."""
         if self._isearch_active or not self.active_pane()["files"]:
             return
         footer = self._footers.get(self.pm.active_pane)
@@ -5301,12 +5301,17 @@ class XeFMApp:
         self._isearch_bar = None
 
     def _isearch_stop(self) -> None:
-        """Enter in the field: keep the current match, record the pattern in the
-        filter history (as a ready-to-apply glob), and close."""
-        raw = self._isearch_bar.pattern.strip() if self._isearch_bar else ""
+        """Enter in the field: keep the current match and close.
+
+        The pattern is deliberately *not* added to the ';' filter history (#385).
+        The two are different languages — isearch's space-separated tokens are an
+        order-free AND and its romaji reaches Japanese through Migemo, neither of
+        which has an ``fnmatch`` spelling — so a translated entry would recall
+        something the search never matched. And isearch is a *navigation* key,
+        optimized for typing fast: every Enter on the way to a file would push a
+        real, deliberately composed filter out of the history.
+        """
         self._isearch_close()
-        if raw:
-            self._record_filter_pattern(self._isearch_to_filter(raw))
         self.panel.render()
 
     def _isearch_cancel(self) -> None:
@@ -5318,7 +5323,7 @@ class XeFMApp:
     def _record_filter_pattern(self, pattern: str) -> None:
         """Add ``pattern`` to the most-recent-first filter history (persisted via
         the state manager, capped), so the ';' Filter prompt can recall it. Silent
-        and best-effort — a history write must never break isearch."""
+        and best-effort — a history write must never break the filter."""
         pattern = pattern.strip()
         if not pattern:
             return
@@ -5337,18 +5342,6 @@ class XeFMApp:
             return [p for p in hist if isinstance(p, str)]
         except Exception:
             return []
-
-    @staticmethod
-    def _isearch_to_filter(pattern: str) -> str:
-        """Translate an isearch pattern into the single ``fnmatch`` glob the pane
-        filter stores, so the saved/applied filter keeps the same *contains*
-        semantics the search highlighted. A bare token becomes ``*token*``;
-        multiple tokens chain (``foo bar`` -> ``*foo*bar*``); a pattern that
-        already carries glob metacharacters is passed through untouched."""
-        pattern = pattern.strip()
-        if not pattern or any(c in pattern for c in "*?["):
-            return pattern
-        return "*" + "*".join(pattern.split()) + "*"
 
     @classmethod
     def _resolve_jump_target(cls, text: str, current: str) -> Path:

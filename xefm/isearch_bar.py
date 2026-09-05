@@ -12,8 +12,7 @@ engage the IME and blink a caret — a plain in-footer draw could do neither.
 Layout is one row: a bold prompt on the left and the editable pattern field
 stretched across the rest. ``Up``/``Down`` walk the match set, ``Shift+Up`` /
 ``Shift+Down`` walk it marking as they go, ``Ctrl+A`` marks the whole set at
-once, ``Enter`` stops at the current match
-(the controller also records the pattern in the filter history), and ``Esc`` (or
+once, ``Enter`` stops at the current match, and ``Esc`` (or
 a click outside) cancels. The controller owns what those outcomes mean and passes
 them in as callbacks.
 
