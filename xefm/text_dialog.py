@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Sequence
 
-from puikit.backend import DEFAULT_STYLE, Style, TextAttribute
+from puikit.backend import DEFAULT_STYLE, Style
 from puikit.event import Event, EventType
 from puikit.focus import FocusContainer
 from puikit.panel import Rect
@@ -31,7 +31,8 @@ from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 from puikit.widgets.markdown_view import MarkdownView
 
-from xefm.dialog_geometry import animate_open, draw_title_bar
+from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
+                                  hint_content_bottom)
 
 #: Keys the body widget consumes for scrolling while the dialog is open. (Backend
 #: key names are unsuffixed: "pageup"/"pagedown", matching ListView / MarkdownView.)
@@ -46,7 +47,7 @@ _MOUSE_EVENTS = (
 class _ScrollModal(FocusContainer, Widget):
     """Shared chrome for a modal that hosts a single scrollable ``body`` widget.
 
-    Owns layout, focus, the title / hint header, and event routing: navigation
+    Owns layout, focus, the title bar and bottom hint row, and event routing: navigation
     keys and mouse go to the body, Enter / Esc / outside-click close. Subclasses
     supply the body and may override :meth:`_style_body` to theme it each draw."""
 
@@ -94,7 +95,7 @@ class _ScrollModal(FocusContainer, Widget):
         self._panel = ctx.panel
         self._size = ctx.size_units
         theme = ctx.theme
-        wu, hu = ctx.size_units
+        wu, _hu = ctx.size_units
         surface_bg = theme.popup_bg if theme is not None else None
         box_style = Style(bg=surface_bg, fg=theme.popup_border if theme else None)
         # Exact (fractional) extent, not ctx.width/height: those truncate to whole
@@ -103,17 +104,12 @@ class _ScrollModal(FocusContainer, Widget):
 
         pad = 1.0
         y = pad
+        border = theme.popup_border if theme else None
         if self.title:
-            border = theme.popup_border if theme else None
             y = draw_title_bar(ctx, self.title, surface_bg=surface_bg, border=border, y=y)
-        # A hint row just under the title bar (or at the top when untitled).
-        ctx.draw_text(2, y, self.hint,
-                      Style(bg=surface_bg, fg=theme.muted_text if theme else None,
-                            attr=TextAttribute.DIM))
-        y += 2
 
         self._style_body(theme, surface_bg)
-        body_h = max(1.0, hu - y - pad)
+        body_h = max(1.0, hint_content_bottom(ctx, surface_bg) - y)
         self._body_rect = Rect(2.0, y, max(1.0, wu - 4.0), body_h)
         # Give the body the popup surface as its inherited background, so any
         # bg=None content (a table's un-striped rows, gaps between prose) resolves
@@ -124,6 +120,12 @@ class _ScrollModal(FocusContainer, Widget):
             self._body_rect.w, self._body_rect.h,
             hints={"focused": False, "bg": surface_bg},
         )
+
+        # The keys go in the bottom band, mirroring the title bar: this one used
+        # to carry them in the header, which put chrome between the title and the
+        # body the title describes, and left the dialog reading title / keys /
+        # body instead of title / body / keys.
+        draw_hint_row(ctx, self.hint, surface_bg=surface_bg, border=border)
 
     # --- events --------------------------------------------------------------
 
@@ -251,10 +253,9 @@ def _push(panel: Any, dialog: _ScrollModal, *, rows: int, z: int) -> None:
     body scrolls, so an approximate reserve is fine)."""
     sw, sh = panel.backend.size_units
     w = max(48.0, min(sw * 0.7, 96.0))
-    # rows + chrome: pad, title, divider, hint, blank, pad (the +1 over the old
-    # reserve is the title bar's divider row). The body scrolls, so an approximate
-    # reserve is fine.
-    h = max(10.0, min(sh * 0.8, float(rows + 7)))
+    # rows + chrome: top border, title, rule, body, rule, hint, bottom border.
+    # The body scrolls, so an approximate reserve is fine.
+    h = max(10.0, min(sh * 0.8, float(rows + 6)))
     dialog._panel = panel
     panel.push_layer(dialog, z=z, hints={"shadow": True, "w": w, "h": h})
     animate_open(panel, dialog)

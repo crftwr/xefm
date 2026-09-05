@@ -6,9 +6,11 @@ belonging to the pane by being *centered over it*, but its width is independent
 of the pane: a narrow pane (splitter dragged over) must not shrink the dialog.
 The box keeps its own desired width and just leans over its target pane.
 
-This module also owns :func:`draw_title_bar`, the one place every XeFM modal draws
-its title bar, so the bold title and the rule beneath it look identical across
-the input, filter-list, scroll, and batch-rename dialogs.
+This module also owns :func:`draw_title_bar` and :func:`draw_hint_row`, the one
+place every XeFM modal draws its two chrome bands, so they look identical across
+the input, filter-list, scroll, and batch-rename dialogs. The two are mirrors:
+a bold title above a frame-connecting rule at the top, a muted line of keys
+below one at the bottom, and the content framed between them.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from puikit.backend import Style, TextAttribute
+from puikit.text import elide
 
 
 #: How every XeFM modal enters. Defined once here — the module that already owns
@@ -147,3 +150,60 @@ def draw_title_bar(
     ctx.draw_text(2, y, title, title_style)
     ctx.draw_frame_divider(y + 1.0, style=rule_style)
     return y + 2.0
+
+
+def hint_style(ctx: Any, surface_bg: Any) -> Any:
+    """The hint bar's text style: muted, on the dialog surface. Built here rather
+    than at each call site because the bar's *height* is measured from it, the
+    way the title bar's is measured from the title's."""
+    theme = ctx.theme
+    return Style(fg=theme.muted_text if theme else None, bg=surface_bg)
+
+
+def gui_hint_bar_height(ctx: Any, style: Any) -> float:
+    """Height (base units) of the vector hint bar — the title bar's mirror: the
+    hint's line box framed by the same equal pad above and below, so the two
+    bands read as a matched pair rather than one being visibly heavier."""
+    return ctx.line_height(style) + 2.0 * _GUI_TITLE_PAD
+
+
+def hint_content_bottom(ctx: Any, surface_bg: Any) -> float:
+    """The y a modal's content must stop at, above its hint bar.
+
+    The mirror of what :func:`draw_title_bar` returns: the content lives between
+    the two rules, a ``_GUI_CONTENT_GAP`` clear of each on a vector backend and
+    flush against the rule row on a grid, which spends no fractions of a row."""
+    _wu, hu = ctx.size_units
+    if ctx.vector_shapes:
+        bar_h = gui_hint_bar_height(ctx, hint_style(ctx, surface_bg))
+        return hu - bar_h - _GUI_CONTENT_GAP
+    return hu - 3.0  # bottom border, hint row, rule
+
+
+def draw_hint_row(ctx: Any, text: str, *, surface_bg: Any, border: Any,
+                  x: float = 2.0) -> None:
+    """Draw a modal's key hint as a bar pinned to the bottom of the box — the
+    mirror of :func:`draw_title_bar`, and the one place every XeFM modal names
+    its keys.
+
+    Same construction, upside down: a frame-connecting rule, then the muted line
+    of keys in the band beneath it, hard against the bottom border. A modal is
+    then framed by two matched bands — what it is at the top, what it answers to
+    at the bottom — with the content between them, instead of a hint floating in
+    the client area with nothing to separate it from the content above.
+
+    Elided from the right, so a narrow box drops the tail of the line rather than
+    running under its own frame."""
+    wu, hu = ctx.size_units
+    style = hint_style(ctx, surface_bg)
+    rule_style = Style(fg=border, bg=surface_bg)
+    label = elide(text, max(1.0, wu - 2 * x), where="end", measure=ctx.measure_text)
+    if ctx.vector_shapes:
+        # Center the hint's line box in the bar, the rule at the bar's top edge —
+        # draw_title_bar's own layout, reflected.
+        rule_y = hu - gui_hint_bar_height(ctx, style)
+        ctx.draw_frame_divider(rule_y, style=rule_style)
+        ctx.draw_text(x, rule_y + _GUI_TITLE_PAD, label, style)
+        return
+    ctx.draw_frame_divider(hu - 3.0, style=rule_style)
+    ctx.draw_text(x, hu - 2.0, label, style)

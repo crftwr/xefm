@@ -914,6 +914,21 @@ class StatusBar(Widget):
             self._isearch_cache = "   ".join(parts)
         return self._isearch_cache
 
+    def _text(self) -> str:
+        """What the bar says right now.
+
+        A modal owns the keyboard while it is up, and names its own keys in its
+        own hint row — so the bar goes quiet rather than listing the file list's
+        keys, none of which would do anything (issue #271 follow-up). The search
+        bar is the exception: it is a layer too, but it hands its keys to the bar
+        to show, which is the point of a footer overlay.
+        """
+        if self.app._isearch_active:
+            return self._isearch_hints()
+        if self.app.panel.has_layers:
+            return ""
+        return self._hints()
+
     def draw(self, ctx) -> None:
         # Left/right inset; the bottom padding is the extra row height reserved
         # by measure(), so the text stays at the top (y=0) of the taller slot.
@@ -925,8 +940,7 @@ class StatusBar(Widget):
         if ctx.vector_shapes:
             pad_x += 1.0
         avail = max(0.0, ctx.size_units[0] - 2 * pad_x)
-        hints = self._isearch_hints() if self.app._isearch_active else self._hints()
-        text = elide(hints, avail, where="end", measure=ctx.measure_text)
+        text = elide(self._text(), avail, where="end", measure=ctx.measure_text)
         ctx.draw_text(pad_x, 0, text, Style(fg=ctx.theme.muted_text))
 
     def measure(self, ctx, axis, available) -> SizeRequest:

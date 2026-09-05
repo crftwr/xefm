@@ -299,6 +299,38 @@ viewers' "prev / next match (in search)" row resolves `isearch.prev_match` /
 `isearch.next_match` in `ISEARCH`, not in the viewer's own context, where those
 actions do not exist.
 
+### Where a hint is drawn, and who is allowed to speak
+
+`dialog_geometry.draw_hint_row` is the one place a modal names its keys, and it
+is built as the **mirror of `draw_title_bar`**: a frame-connecting rule, then
+the muted line of keys in the band beneath it, hard against the bottom border.
+A modal is framed by two matched chrome bands — what it is at the top, what it
+answers to at the bottom — with the content between them, rather than a hint
+floating in the client area with nothing separating it from the content above.
+
+The mirroring is literal on both backends:
+
+| | title bar | hint bar |
+|---|---|---|
+| grid | border, title, rule | rule, hint, border |
+| vector | `gui_title_bar_height` = line box + `2 × _GUI_TITLE_PAD`, rule at its bottom edge | `gui_hint_bar_height`, same formula, rule at its **top** edge |
+| content | starts `_GUI_CONTENT_GAP` below the rule | stops `_GUI_CONTENT_GAP` above the rule |
+
+`hint_content_bottom(ctx, surface_bg)` is what a modal's content measures
+against — the counterpart to what `draw_title_bar` returns. It takes the surface
+colour because the band's *height* is measured from the hint's own text style
+(`hint_style`), exactly as the title bar's is measured from the title's, so the
+two bands stay the same height as the font changes.
+
+`TextDialog` (help, file details) used to carry its hint in the header instead,
+between the title and the body the title describes; it does not any more.
+
+Only one surface names keys at a time. `StatusBar._text()` returns the empty
+string while `panel.has_layers` — a modal owns the keyboard and lists its own
+keys, so the file list's would be advertising keys that cannot fire. The search
+bar is the exception: it is a layer too, but it hands the bar its keys to show,
+which is what a footer overlay is for.
+
 ## Error handling
 
 Parsing is defensive — an unknown modifier or key token logs a warning and is
@@ -319,6 +351,9 @@ skipped rather than crashing; a missing `KEY_BINDINGS` config falls back to
 - `test/test_filter_list_remove.py` — the `filter_list` context: the default
   binding, Shift-Delete vs a plain Delete in the query field, the dialog's local
   row edit, and what each owner forgets (issue #271).
+- `test/test_dialog_hint_row.py` — the two bands mirroring each other on both
+  backends, both dialogs drawing the hint below their content, and the status
+  bar going quiet under a modal.
 
 ## See Also
 
