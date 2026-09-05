@@ -31,9 +31,9 @@ the selection; Enter accepts
 the selected value; Esc cancels; a click selects/activates a row. A picker whose
 rows are *remembered* rather than declared (History, the ';' Filter prompt) also
 passes ``on_remove``, which binds the ``remove_list_item`` action — Shift-Delete
-by default — to dropping the highlighted row (#271). A hint line along the
-bottom says which keys are live, the remove key among them read back from the
-keymap so a rebind shows up there.
+by default — to dropping the highlighted row (#271). A hint band along the
+bottom, mirroring the title bar, says which keys are live — the remove key among
+them read back from the keymap, so a rebind shows up there.
 
 The dialog is modal — it owns events while open — and reports its outcome through
 ``on_accept(value)`` / ``on_cancel()``.
@@ -52,7 +52,6 @@ from puikit.backend import Style
 from puikit.event import Event, EventType
 from puikit.focus import FocusContainer, focus_on_click
 from puikit.panel import Rect
-from puikit.text import elide
 from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 from puikit.widgets.text_edit import TextEdit
@@ -61,7 +60,8 @@ from xefm import search_match
 from xefm.actions import FILTER_LIST
 from xefm.config import (format_key_for_display, get_keys_for_action,
                          is_action_for_event)
-from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
+from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
+                                  hint_content_bottom, pane_anchored_box)
 
 #: Navigation keys the *list* owns even while the filter field holds focus —
 #: typing filters, but the arrows still drive the selection.
@@ -350,7 +350,7 @@ class FilterListDialog(FocusContainer, Widget):
         self._panel = ctx.panel
         self._size = ctx.size_units
         theme = ctx.theme
-        wu, hu = ctx.size_units
+        wu, _hu = ctx.size_units
         surface_bg = theme.popup_bg if theme is not None else None
         box_style = Style(bg=surface_bg, fg=theme.popup_border if theme else None)
         # Exact (fractional) extent, not ctx.width/height: those truncate to whole
@@ -359,8 +359,8 @@ class FilterListDialog(FocusContainer, Widget):
 
         pad = 1.0
         y = pad
+        border = theme.popup_border if theme else None
         if self.title:
-            border = theme.popup_border if theme else None
             title = self.title
             if self._loading:
                 # The background loader is still scanning: a spinner after the
@@ -406,13 +406,12 @@ class FilterListDialog(FocusContainer, Widget):
         )
         y += field_h + below_gap
 
-        # Result list fills the rest, above the hint line and the bottom padding.
-        # On a vector backend it reads as a bounded inset panel: a rounded frame
-        # (in the popup frame color) whose outer edges line up with the search box,
-        # with the rows/scrollbar inset inside it. A grid keeps the flush,
-        # frameless list.
-        hint_h = 2.0  # the hint row, plus a blank row separating it from the list
-        list_h = max(1.0, hu - y - pad - hint_h)
+        # Result list fills the rest, down to where the hint row starts. On a
+        # vector backend it reads as a bounded inset panel: a rounded frame (in the
+        # popup frame color) whose outer edges line up with the search box, with
+        # the rows/scrollbar inset inside it. A grid keeps the flush, frameless
+        # list.
+        list_h = max(1.0, hint_content_bottom(ctx, surface_bg) - y)
         frame = Rect(2.0, y, max(1.0, wu - 4.0), list_h)
         if vector:
             ctx.round_rect(
@@ -436,14 +435,9 @@ class FilterListDialog(FocusContainer, Widget):
             hints={"focused": False, "bg": surface_bg},
         )
 
-        # Key hint inside the bottom border — below the content, where SortDialog
-        # and TipsDialog put theirs, so a modal's chrome reads in one order.
-        ctx.draw_text(
-            2.0, hu - pad - 1.0,
-            elide(self.hint(), max(1.0, wu - 4.0), where="end",
-                  measure=ctx.measure_text),
-            Style(fg=theme.muted_text if theme else None, bg=surface_bg),
-        )
+        # Key hint as the bottom band, mirroring the title bar — the list's own
+        # left inset, so the three line up down the left edge.
+        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
     # --- events --------------------------------------------------------------
 
