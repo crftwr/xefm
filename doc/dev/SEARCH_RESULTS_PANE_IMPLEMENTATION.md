@@ -158,6 +158,13 @@ listing.**
 The name column shows each hit's **root-relative path** (`FilePane._display_name`,
 middle-elided) so a scattered result set reveals where each file lives.
 
+That path is also what the pane **sorts, filters and searches by** (#383). It used
+to show the path and order by the bare basename, so the name column looked
+unsorted and the directory part of every visible row could not be matched. Both
+now come from one string — see
+[Filename Normalization System](FILENAME_NORMALIZATION_SYSTEM.md), which also
+covers the Compare and Select checkbox that extends the same choice to pairing.
+
 ---
 
 ## Scope
