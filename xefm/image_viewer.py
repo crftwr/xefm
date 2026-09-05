@@ -51,7 +51,7 @@ from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.log_manager import getLogger
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_viewer import (_content_bg, _header_bg, draw_status_bar,
-                             viewer_layer_hints, viewer_pad)
+                             footer_pair, viewer_layer_hints, viewer_pad)
 
 logger = getLogger("ImageViewer")
 
@@ -474,7 +474,14 @@ class ImageViewer(Widget):
         help_k = _keys_display("help", "?")
         parts = []
         if self._can_render(ctx):
-            parts.append("+/- zoom")
+            # Named from the live keymap, not the default ``+/-``, so a rebind
+            # reads the same here as in the help dialog (issue #382). The pair
+            # takes each action's first key: zoom is bound twice by default
+            # (``+``/``=``, ``-``/``_``) and the bar has no room for all four.
+            zoom_k = footer_pair("image_viewer.zoom_in", "image_viewer.zoom_out",
+                                 _CONTEXT)
+            if zoom_k:
+                parts.append(f"{zoom_k} zoom")
             if self.zoom > MIN_ZOOM:
                 parts.append(f"{_pan_keys_label()} pan")
                 parts.append(f"{_keys_display('image_viewer.zoom_reset', '0')} fit")

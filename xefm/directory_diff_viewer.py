@@ -49,7 +49,8 @@ from xefm.external_programs import resolve_command
 from xefm.path import Path
 from xefm.str_format import abbreviate_path, format_size
 from xefm.text_viewer import (MONO, _ScrollBody, _header_bg, draw_status_bar,
-                             viewer_layer_hints, viewer_pad)
+                             footer_key, footer_pair, viewer_layer_hints,
+                             viewer_pad)
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.diff_viewer import show_diff_viewer
 from xefm.text_dialog import keys_markdown, show_markdown
@@ -1070,8 +1071,20 @@ class DirectoryDiffView(Widget):
         return " / ".join(format_key_for_display(k) for k in keys)
 
     def _keys_pair(self, first: str, second: str) -> str:
-        """One help row's label for two actions that read as a pair."""
-        return f"{self._keys_label(first)} / {self._keys_label(second)}"
+        """One help row's label for two actions that read as a pair. A side left
+        unbound drops out rather than printing a bare separator."""
+        labels = [lab for lab in (self._keys_label(first),
+                                  self._keys_label(second)) if lab]
+        return " / ".join(labels)
+
+    def _footer_key(self, action: str, fallback: str = "") -> str:
+        """One footer key label for ``action`` — its first binding only, since
+        the bar elides and the help dialog is where every binding is listed."""
+        return footer_key(action, _CONTEXT, fallback, keys=self._keys)
+
+    def _footer_pair(self, first: str, second: str) -> str:
+        """One compact footer label for two actions that read as a pair."""
+        return footer_pair(first, second, _CONTEXT, keys=self._keys)
 
     def _show_help(self) -> None:
         if self._panel is None:
@@ -1274,10 +1287,23 @@ class DirectoryDiffView(Widget):
                     f"({self._pct(self._dirs_scanned, self._dirs_total)}%) · "
                     f"{queued} queued · esc cancel ")
         diffs = sum(1 for n in self.visible if n.difference_type in _IS_DIFF)
-        merge_k = self._keys_label("edit_file", "E")
-        return (f" {len(self.visible)} nodes · {diffs} differences · "
-                f"n/N jump · ←/→ expand · [ ] resize · tab side · enter diff · "
-                f"{merge_k} merge · q close ")
+        # Every key named here comes from the live keymap, so a rebind reads the
+        # same in the footer as it does in the help dialog (issue #382); an
+        # action left unbound drops its hint rather than naming a dead key.
+        hints = (
+            (self._footer_pair("dir_diff.next_change", "dir_diff.prev_change"),
+             "jump"),
+            (self._footer_pair("dir_diff.collapse", "dir_diff.expand"), "expand"),
+            (self._footer_pair("dir_diff.split_left", "dir_diff.split_right"),
+             "resize"),
+            (self._footer_key("dir_diff.switch_side", "Tab"), "side"),
+            (self._footer_key("dir_diff.activate", "Enter"), "diff"),
+            (self._footer_key("edit_file", "E"), "merge"),
+            (self._footer_key("quit", "q"), "close"),
+        )
+        parts = [f"{len(self.visible)} nodes", f"{diffs} differences"]
+        parts += [f"{keys} {word}" for keys, word in hints if keys]
+        return " " + " · ".join(parts) + " "
 
     def _details_line(self) -> str:
         """The focused node's size on each side (the details pane, condensed to a

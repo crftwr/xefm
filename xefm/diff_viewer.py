@@ -33,6 +33,7 @@ from puikit.widgets import Splitter, show_message_box
 from puikit.widgets.base import Widget
 
 from xefm import migemo_search
+from xefm.actions import ISEARCH
 from xefm.actions import FILE_DIFF as _CONTEXT
 from xefm.config import (find_action_for_event, format_key_for_display,
                          get_config, get_keys_for_action)
@@ -43,24 +44,28 @@ from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_viewer import (MONO, _ScrollBody, _content_bg, _header_bg, _highlight,
                              _is_light, _match_bg, _read_lines, _syntax_palette,
-                             draw_hscrollbar, draw_status_bar, span_x,
+                             draw_hscrollbar, draw_status_bar, footer_pair, span_x,
                              viewer_layer_hints, viewer_pad)
 from puikit.text import display_width
 
-def _label(action: str, fallback: str = "") -> str:
+def _label(action: str, fallback: str = "", context: str = _CONTEXT) -> str:
     """Display label for ``action``'s keys **as this viewer resolves them** — in
     the ``file_diff`` context, so a scoped rebind (``'file_diff.quit'``) and
     the action's built-in defaults both show up, formatted for the UI
-    (``DOWN`` -> ↓)."""
-    keys, _ = get_keys_for_action(action, _CONTEXT)
+    (``DOWN`` -> ↓). ``context`` names another surface's context for a row about
+    *its* keys — the isearch bar's, which this viewer hands its search over to."""
+    keys, _ = get_keys_for_action(action, context)
     if not keys:
         return fallback
     return " / ".join(format_key_for_display(k) for k in keys)
 
 
-def _pair(first: str, second: str) -> str:
-    """One help row's label for two actions that read as a pair (``↑ / ↓``)."""
-    return f"{_label(first)} / {_label(second)}"
+def _pair(first: str, second: str, context: str = _CONTEXT) -> str:
+    """One help row's label for two actions that read as a pair (``↑ / ↓``).
+    A side left unbound drops out rather than printing a bare separator."""
+    labels = [lab for lab in (_label(first, context=context),
+                              _label(second, context=context)) if lab]
+    return " / ".join(labels)
 
 
 #: Semantic diff hues. The whole-row tints and the stronger changed-character
@@ -604,8 +609,17 @@ class DiffViewer(Widget):
         search_k = _label("isearch", "F")
         edit_k = _label("edit_file", "E")
         quit_k = _label("quit", "q")
+        # Block jumps and the horizontal pan are named from the live keymap like
+        # the rest of the bar, so a rebind reads the same here as in the help
+        # dialog (issue #382); an unbound pair drops its whole segment.
+        jump_k = footer_pair("file_diff.next_block", "file_diff.prev_block",
+                             _CONTEXT)
+        pan_k = footer_pair("file_diff.scroll_left", "file_diff.scroll_right",
+                            _CONTEXT)
+        jump_seg = f"{jump_k} jump · " if jump_k else ""
+        pan_seg = f"{pan_k} pan · " if pan_k else ""
         hint = (f" {len(self.rows)} rows · {len(self.blocks)} changes · "
-                f"n/N jump · {search_k} search · {edit_k} edit · ←→ pan · "
+                f"{jump_seg}{search_k} search · {edit_k} edit · {pan_seg}"
                 f"{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
@@ -692,7 +706,8 @@ class DiffViewer(Widget):
             (_pair("file_diff.next_block", "file_diff.prev_block"),
              "next / prev diff block"),
             (_label("isearch", "F"), "incremental search"),
-            ("↑ / ↓ (in search)", "next / prev match"),
+            (_pair("isearch.prev_match", "isearch.next_match", context=ISEARCH)
+             + " (in search)", "prev / next match"),
             (_label("edit_file", "E"), "edit both sides in $TEXT_DIFF"),
             ("Drag gutter", "move centre split"),
             (_label("help", "?"), "this help"),
