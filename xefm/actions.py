@@ -92,12 +92,18 @@ DIR_DIFF = "dir_diff"
 #: resolves a key here only after the text field has had its say, and runs only
 #: the actions it owns — see ``ISearchBar.handle_event``.
 ISEARCH = "isearch"
+#: The modal searchable-list picker (``xefm.filter_list_dialog``) behind
+#: Favorites, Drives, History, External Programs and the ';' Filter prompt. Its
+#: keys compete with typing for the same reason ``isearch``'s do — the query
+#: field holds focus and every printable key belongs to the query — so only
+#: modified or non-printable keys can reach an action here.
+FILTER_LIST = "filter_list"
 
 #: Every context a binding or a user action may name, most-specific first.
 #: ``common`` is deliberately included: a config may bind (or a future release
 #: may allow overriding) an action there.
 CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, ISEARCH,
-            COMMON)
+            FILTER_LIST, COMMON)
 
 
 # --------------------------------------------------------------------------- #
@@ -642,9 +648,27 @@ _ISEARCH_ACTIONS = [
        default_keys=("ESCAPE",)),
 ]
 
+_FILTER_LIST_ACTIONS = [
+    # Named for the operation, not for the dialog that first offers it: "drop the
+    # highlighted row from the list in front of you" is something other surfaces
+    # will want, and the registry keeps a separate table per context — so this
+    # exact name can be registered again elsewhere, each context carrying its own
+    # default key while a config can still rebind them all at once by naming it
+    # unqualified.
+    #
+    # Deliberately not "delete_*": in the file list that word means erasing files
+    # from disk (``delete_files``), and a name in KEY_BINDINGS must not leave a
+    # reader guessing which of the two they are binding. Nothing here touches the
+    # filesystem — only the remembered list.
+    _a("remove_list_item", FILTER_LIST,
+       "Remove the highlighted entry from the list",
+       default_keys=("Shift-DELETE",)),
+]
+
 _BUILTIN_ACTIONS = (_COMMON_ACTIONS + _FILER_ACTIONS + _TEXT_VIEWER_ACTIONS
                     + _IMAGE_VIEWER_ACTIONS + _FILE_DIFF_ACTIONS
-                    + _DIR_DIFF_ACTIONS + _ISEARCH_ACTIONS)
+                    + _DIR_DIFF_ACTIONS + _ISEARCH_ACTIONS
+                    + _FILTER_LIST_ACTIONS)
 
 
 #: The process-wide registry. Built-ins populate it at import; user actions are

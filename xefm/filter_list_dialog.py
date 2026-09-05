@@ -28,8 +28,14 @@ incremental search takes (``xefm.search_match``) — whitespace-separated tokens
 that all have to match, case-insensitively, each one a "contains" glob or a
 Migemo match so romaji finds Japanese labels (#349); ↑/↓/PageUp/PageDown move
 the selection; Enter accepts
-the selected value; Esc cancels; a click selects/activates a row. The dialog is
-modal — it owns events while open — and reports its outcome through
+the selected value; Esc cancels; a click selects/activates a row. A picker whose
+rows are *remembered* rather than declared (History, the ';' Filter prompt) also
+passes ``on_remove``, which binds the ``remove_list_item`` action — Shift-Delete
+by default — to dropping the highlighted row (#271). A hint line along the
+bottom says which keys are live, the remove key among them read back from the
+keymap so a rebind shows up there.
+
+The dialog is modal — it owns events while open — and reports its outcome through
 ``on_accept(value)`` / ``on_cancel()``.
 
 Push it with :func:`show_filter_list`, which sizes and centers the layer with the
@@ -46,17 +52,26 @@ from puikit.backend import Style
 from puikit.event import Event, EventType
 from puikit.focus import FocusContainer, focus_on_click
 from puikit.panel import Rect
+from puikit.text import elide
 from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 from puikit.widgets.text_edit import TextEdit
 
 from xefm import search_match
+from xefm.actions import FILTER_LIST
+from xefm.config import (format_key_for_display, get_keys_for_action,
+                         is_action_for_event)
 from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
 
 #: Navigation keys the *list* owns even while the filter field holds focus —
 #: typing filters, but the arrows still drive the selection.
 #: Backend key names are unsuffixed ("pageup"/"pagedown"), matching ListView.
 _LIST_KEYS = frozenset({"up", "down", "pageup", "pagedown"})
+
+#: The one key of this dialog's that a config can rebind. Everything else here
+#: (arrows, Enter, Esc) is structural to a modal picker and stays fixed; removal
+#: is the operation a user may well want somewhere other than Shift-Delete.
+_REMOVE_ACTION = "remove_list_item"
 
 #: Braille spinner frames for the title's background-loading indicator.
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -82,6 +97,7 @@ class FilterListDialog(FocusContainer, Widget):
         on_accept_text: Callable[[str], None] | None = None,
         ellipsis: str = "",
         elide_where: str = "end",
+        on_remove: Callable[[Any], bool] | None = None,
         load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
     ):
         self.all_items = list(items)
@@ -94,6 +110,14 @@ class FilterListDialog(FocusContainer, Widget):
         #: picker can double as an editor (e.g. the Filter prompt applies a
         #: brand-new pattern that isn't in its history).
         self.on_accept_text = on_accept_text
+        #: Optional remove hook: called with the highlighted value when the
+        #: ``remove_list_item`` key is pressed, and the row disappears only if it
+        #: returns True. The owner does the forgetting — this dialog knows how a
+        #: list is shown, never where it is stored — and its return value is also
+        #: how a row that is *not* removable (the Filter picker's "clear filter")
+        #: stays put. ``None`` leaves the dialog with no remove key at all.
+        self.on_remove = on_remove
+        self._hint_cache: str | None = None
         self._panel: Any = None
         # Values currently passing the filter, parallel to ``self.list.items``.
         self.filtered: list[Any] = list(self.all_items)
@@ -163,6 +187,61 @@ class FilterListDialog(FocusContainer, Widget):
         self.list.set_items([self.to_label(v) for v in self.filtered])
         self.list.selected = selected
         self.list.offset = offset
+
+    def remove_selected(self) -> bool:
+        """Drop the highlighted row, if ``on_remove`` accepts it.
+
+        The value goes to ``on_remove`` first: only when the owner reports it
+        actually forgot the thing does the row leave the list, so a row it
+        declines (the Filter picker's "clear filter") simply stays. The removal
+        is then local — no re-filter — which is what keeps the query, the
+        selection and the scroll position where the user left them; ``set_items``
+        resets the offset, so it is restored explicitly, the same way
+        :meth:`add_items` does.
+        """
+        if self.on_remove is None or not self.filtered:
+            return False
+        index = self.list.selected
+        if not 0 <= index < len(self.filtered):
+            return False
+        value = self.filtered[index]
+        if not self.on_remove(value):
+            return False
+        del self.filtered[index]
+        try:
+            self.all_items.remove(value)
+        except ValueError:
+            pass  # streamed in and already gone; the visible list is what matters
+        offset = self.list.offset
+        self.list.set_items([self.to_label(v) for v in self.filtered])
+        # Hold the position rather than the index: after removing a row the next
+        # one slides up into it, which is where a repeat press should land.
+        self.list.selected = min(index, max(0, len(self.filtered) - 1))
+        # Restored verbatim — offset is in base units, not rows, and a shrunk
+        # list is clamped against the real viewport by ``ListView.draw``.
+        self.list.offset = offset
+        return True
+
+    # --- hint line -----------------------------------------------------------
+
+    def hint(self) -> str:
+        """The key hint drawn along the bottom, built once per dialog.
+
+        Arrows, Enter and Esc are named as the literals the dialog hard-codes;
+        the remove key is read back from the keymap so a rebind is what the line
+        says, and the whole segment drops out where no ``on_remove`` was given —
+        a picker of declared rows (Favorites, Drives, Programs) must not offer a
+        key that does nothing.
+        """
+        if self._hint_cache is None:
+            parts = ["↑/↓ select", "Enter choose"]
+            if self.on_remove is not None:
+                keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
+                if keys:
+                    parts.append(f"{format_key_for_display(keys[0])} remove")
+            parts.append("Esc cancel")
+            self._hint_cache = " · ".join(parts)
+        return self._hint_cache
 
     # --- background loading --------------------------------------------------
 
@@ -327,11 +406,13 @@ class FilterListDialog(FocusContainer, Widget):
         )
         y += field_h + below_gap
 
-        # Result list fills the rest, above the bottom padding. On a vector
-        # backend it reads as a bounded inset panel: a rounded frame (in the popup
-        # frame color) whose outer edges line up with the search box, with the
-        # rows/scrollbar inset inside it. A grid keeps the flush, frameless list.
-        list_h = max(1.0, hu - y - pad)
+        # Result list fills the rest, above the hint line and the bottom padding.
+        # On a vector backend it reads as a bounded inset panel: a rounded frame
+        # (in the popup frame color) whose outer edges line up with the search box,
+        # with the rows/scrollbar inset inside it. A grid keeps the flush,
+        # frameless list.
+        hint_h = 2.0  # the hint row, plus a blank row separating it from the list
+        list_h = max(1.0, hu - y - pad - hint_h)
         frame = Rect(2.0, y, max(1.0, wu - 4.0), list_h)
         if vector:
             ctx.round_rect(
@@ -353,6 +434,15 @@ class FilterListDialog(FocusContainer, Widget):
             self.list, self._list_rect.x, self._list_rect.y,
             self._list_rect.w, self._list_rect.h,
             hints={"focused": False, "bg": surface_bg},
+        )
+
+        # Key hint inside the bottom border — below the content, where SortDialog
+        # and TipsDialog put theirs, so a modal's chrome reads in one order.
+        ctx.draw_text(
+            2.0, hu - pad - 1.0,
+            elide(self.hint(), max(1.0, wu - 4.0), where="end",
+                  measure=ctx.measure_text),
+            Style(fg=theme.muted_text if theme else None, bg=surface_bg),
         )
 
     # --- events --------------------------------------------------------------
@@ -378,6 +468,14 @@ class FilterListDialog(FocusContainer, Widget):
                     self.on_accept_text(text)
                 else:
                     self._accept_index(self.list.selected)
+            elif (self.on_remove is not None
+                  and is_action_for_event(event, _REMOVE_ACTION,
+                                          context=FILTER_LIST)):
+                # Ahead of the field, which would otherwise read the default
+                # Shift-Delete as its own forward-delete. Resolving by *action*
+                # rather than by key is what keeps a rebind working here, and
+                # what keeps a plain Delete typing in the query field.
+                self.remove_selected()
             elif key in _LIST_KEYS:
                 self.list.handle_event(event)  # arrows drive the list selection
             else:
@@ -413,6 +511,7 @@ def show_filter_list(
     on_accept: Callable[[Any], None] | None = None,
     on_cancel: Callable[[], None] | None = None,
     on_accept_text: Callable[[str], None] | None = None,
+    on_remove: Callable[[Any], bool] | None = None,
     region: tuple[float, float] | None = None,
     ellipsis: str = "…",
     elide_where: str = "end",
@@ -437,6 +536,14 @@ def show_filter_list(
     (History, Favorites and Drives do this). Pass ``ellipsis=""`` for a hard clip
     with no marker.
 
+    ``on_remove(value)`` opts the picker into the remove key (Shift-Delete by
+    default, rebindable as ``remove_list_item`` in the ``filter_list`` context):
+    it is called with the highlighted value and the row goes only if it returns
+    True, so the caller both does the forgetting and decides what is removable at
+    all. For the pickers whose rows accumulate — History and the ';' Filter
+    prompt (#271); a list that comes from the config or from the system has
+    nothing to forget, and without this hook shows no remove key.
+
     ``load_more`` optionally streams extra rows in after the dialog opens: it is
     called once on a daemon worker thread with a ``threading.Event`` that is set
     when the dialog closes (poll it and stop), and the values it yields append
@@ -445,8 +552,8 @@ def show_filter_list(
     S3 buckets — so the dialog never waits on them."""
     dialog = FilterListDialog(
         items, title=title, to_label=to_label, on_accept=on_accept, on_cancel=on_cancel,
-        on_accept_text=on_accept_text, ellipsis=ellipsis, elide_where=elide_where,
-        load_more=load_more,
+        on_accept_text=on_accept_text, on_remove=on_remove,
+        ellipsis=ellipsis, elide_where=elide_where, load_more=load_more,
     )
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 72.0))

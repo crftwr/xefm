@@ -475,6 +475,31 @@ class Config:
         #
         # Example -- select with Insert, on a keyboard that has one:
         # 'isearch.toggle_select_down': ['INSERT'],
+
+        # === Searchable-list picker keys (rebindable, not listed above) =======
+        # The picker dialogs -- Favorites, Drives, History, External Programs and
+        # the ';' Filter prompt -- are a surface of their own ('filter_list'), and
+        # one of their keys is yours to move:
+        #
+        #   'remove_list_item':  Shift-DELETE  forget the highlighted row
+        #
+        # It only does anything where the rows are *remembered* rather than
+        # declared: History and the Filter prompt, whose lists XeFM built by
+        # watching you. Favorites, Drives and External Programs come from this
+        # file or from the machine, so there is nothing there to forget and the
+        # key is not offered.
+        #
+        # The name has no context prefix on purpose: removing the highlighted row
+        # is an operation other lists may grow later, and an unqualified entry
+        # rebinds it in all of them at once. Prefix it to move just one --
+        # 'filter_list.remove_list_item'.
+        #
+        # The printable-key rule from the search bar applies here too: the query
+        # field takes every character you type, so a remove key has to be
+        # modified or non-printable.
+        #
+        # Example -- forget a row with Ctrl-D instead:
+        # 'remove_list_item': ['Ctrl-D'],
     }
 
     # Windows has no Command key, and Alt-Enter is the platform fullscreen-toggle

@@ -28,7 +28,15 @@ Every navigation dialog uses the same list-picker controls:
 - **Page Up/Page Down** to scroll by page
 - **Home/End** to jump to the first/last result
 - **Enter** to navigate to the selected entry
+- **Shift+Delete** to forget the highlighted entry, in the lists XeFM built by
+  watching you — History and the Filter prompt. Favorites, Drives and External
+  Programs come from your config or from the machine, so there is nothing there
+  to forget and the key does nothing
 - **Escape** or **q** to cancel and close
+
+A line along the bottom of each dialog names the keys that are live in it, so
+the remove key shows up only where it applies — and shows the key *you* have
+bound if you rebound it.
 
 ## Favorites (J)
 
@@ -95,6 +103,10 @@ known locations.
 
 Press **H** to open a searchable list of directories you have already visited in
 the current pane, and jump back to any of them. Each pane keeps its own history.
+
+**Shift+Delete** forgets the highlighted directory. Every visit to it is
+dropped, not just the most recent one, and the change is saved immediately. It
+is not a blocklist: going there again puts it back at the top.
 
 The number of remembered entries is set by `MAX_HISTORY_ENTRIES` in
 `~/.xefm/config.py` (default 100).

@@ -230,6 +230,39 @@ satisfies both constraints on every backend, and so does the `Ctrl-A` of
 wanted (its select-all-text), taken deliberately and only in the Ctrl form, so
 `Cmd-A` still selects the text on macOS.
 
+## The filter_list context
+
+`xefm.actions.FILTER_LIST` names the second typing-competing surface: the modal
+searchable-list picker (`xefm/filter_list_dialog.py`) behind Favorites, Drives,
+History, External Programs and the `;` Filter prompt. It has one action —
+`remove_list_item`, Shift-Delete by default — which drops the highlighted row.
+
+The routing constraint is the isearch bar's: the query field holds focus and a
+printable key belongs to the query, so a remove key must be modified or
+non-printable. `FilterListDialog.handle_event` claims the key by **action**
+(`is_action_for_event(..., context=FILTER_LIST)`) rather than by key literal,
+ahead of the field — which is what keeps a rebind working, and what keeps a
+plain Delete editing the query while Shift-Delete removes a row.
+
+Two things about the name are deliberate:
+
+- **No context prefix.** Unlike `isearch.next_match`, this is `remove_list_item`
+  flat. Dropping the highlighted row is an operation other list surfaces may
+  grow later, and `ActionRegistry` keeps a separate table per context, so the
+  same name can be registered again elsewhere with its own default key. An
+  unqualified `KEY_BINDINGS` entry then rebinds every one of them at once;
+  `filter_list.remove_list_item` moves just this one.
+- **Not `delete_*`.** In the file list that word means erasing files from disk
+  (`delete_files`). Nothing here touches the filesystem — only the remembered
+  list — and a name in `KEY_BINDINGS` must not leave a reader guessing which of
+  the two they are binding.
+
+The action is only *offered* where the rows accumulate: `show_filter_list` takes
+an `on_remove(value) -> bool` hook, and a picker that passes none has no remove
+key at all. The hook doing the forgetting is also what decides removability —
+returning False keeps the row, which is how the Filter picker's "clear filter"
+sentinel survives the key with no special case inside the dialog.
+
 ## Key labels in the UI
 
 Every key a surface names on screen is read back from the same keymap that
@@ -283,6 +316,9 @@ skipped rather than crashing; a missing `KEY_BINDINGS` config falls back to
   marking through a live file list.
 - `test/test_viewer_footer_keys.py` — the label helpers, and each viewer's
   footer text under a rebind (issue #382).
+- `test/test_filter_list_remove.py` — the `filter_list` context: the default
+  binding, Shift-Delete vs a plain Delete in the query field, the dialog's local
+  row edit, and what each owner forgets (issue #271).
 
 ## See Also
 
