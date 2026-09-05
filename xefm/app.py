@@ -5620,6 +5620,19 @@ class XeFMApp:
             ("find_files", "Recursive filename search"),
             ("find_in_files", "Recursive content (grep) search"),
         )),
+        # The only non-file-list surface here, and deliberately: the search bar
+        # sits on the pane rather than replacing it, so its keys are the ones a
+        # user reaches for mid-task and looks up in the same place as the rest.
+        # (The viewers keep their own footers.)
+        ("Incremental Search (while the search bar is open)", (
+            ("isearch.next_match", "Move to the next match"),
+            ("isearch.prev_match", "Move to the previous match"),
+            ("isearch.toggle_select_down", "Select, then move to the next match"),
+            ("isearch.toggle_select_up", "Select, then move to the previous match"),
+            ("isearch.select_matches", "Select every match (again: clear them)"),
+            ("isearch.accept", "Stop at the current match"),
+            ("isearch.cancel", "Cancel and restore the cursor"),
+        )),
         ("View", (
             ("view_file", "View file (text viewer)"),
             ("diff_files", "Compare two selected files"),
@@ -5655,10 +5668,12 @@ class XeFMApp:
         """Comma-joined, display-formatted key(s) bound to ``action`` ("—" if
         unbound), for the help dialog and the tips.
 
-        The ``filer`` context answers first, so the help — which lists file-list
-        actions — shows what the file list will do with the key. Falling through
-        to the other contexts is for the tips, which talk about the viewers too
-        (``{key:image_viewer.next}``) and would otherwise render those as "—"."""
+        The ``filer`` context answers first, so a name the file list also owns
+        shows what the file list will do with the key. Falling through to the
+        other contexts is what lets a surface-qualified name resolve at all —
+        the help's isearch section (``isearch.select_matches``) and the tips,
+        which talk about the viewers too (``{key:image_viewer.next}``), would
+        otherwise render every one of those as "—"."""
         for context in (_ctx.FILER,) + _ctx.CONTEXTS:
             keys, _ = self.keys.get_keys_for_action(action, context)
             if keys:

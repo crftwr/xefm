@@ -280,6 +280,14 @@ TIPS: tuple[tuple[str, str], ...] = (
      "still applies, and `MIGEMO_SEARCH = False` in `~/.xefm/config.py` turns "
      "it off."),
 
+    ("Select files while searching",
+     "Incremental search ({key:isearch}) selects, too: "
+     "{key:isearch.toggle_select_down} marks the current match and moves to the "
+     "next one, and {key:isearch.select_matches} marks the whole set the counter "
+     "is showing — type `.log`, press it, and every log file is selected. "
+     "Space cannot do either: the search reads it as the separator between the "
+     "pattern's words."),
+
     ("Bugs, ideas, requests",
      "XeFM is developed in the open. Found a bug, or missing a feature? "
      f"Issues and requests are very welcome at {GITHUB_URL}/issues"),
