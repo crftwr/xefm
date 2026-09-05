@@ -90,7 +90,7 @@ class FileListManager:
         except Exception:
             return False
 
-    def compute_listing(self, path, *, filter_pattern=None, sort_mode='name',
+    def compute_listing(self, path, *, filter_pattern=None, sort_mode='filename',
                         sort_reverse=False):
         """Read ``path`` and return its listing as a plain dict — **no pane
         mutation**, so this is safe to call on a worker thread.
@@ -156,7 +156,7 @@ class FileListManager:
         return {"ok": False, "files": [], "file_info": {}}
 
     def compute_listing_from_paths(self, paths, *, filter_pattern=None,
-                                   sort_mode='name', sort_reverse=False,
+                                   sort_mode='filename', sort_reverse=False,
                                    rel_root=None):
         """Build a listing dict from an explicit list of ``Path`` objects — a
         virtual / search-results pane — instead of reading a directory. Applies
@@ -175,7 +175,7 @@ class FileListManager:
             sort_mode=sort_mode, sort_reverse=sort_reverse, rel_root=rel_root)
 
     def _assemble_listing(self, entries, *, filter_pattern=None,
-                          sort_mode='name', sort_reverse=False, rel_root=None):
+                          sort_mode='filename', sort_reverse=False, rel_root=None):
         """Turn ``[(Path, attrs), …]`` into a listing dict: apply the filename
         filter, sort, and build the display cache — all from ``attrs``, with no
         filesystem access at all.
@@ -211,7 +211,7 @@ class FileListManager:
                 "entries": entries}
 
     def recompute_listing(self, pane_data, *, filter_pattern=None,
-                          sort_mode='name', sort_reverse=False):
+                          sort_mode='filename', sort_reverse=False):
         """Re-filter and re-sort a pane from the snapshot its last listing left
         behind — **no filesystem access**, so it costs microseconds where a
         re-read of the same directory on a NAS costs seconds.
@@ -241,7 +241,7 @@ class FileListManager:
             rel_root=virtual.get('root') if virtual else None)
 
     def recompute_from_snapshot(self, entries, *, filter_pattern=None,
-                                sort_mode='name', sort_reverse=False,
+                                sort_mode='filename', sort_reverse=False,
                                 rel_root=None):
         """:meth:`recompute_listing` with the pane taken out of it — every input
         passed in, nothing read from pane state, so a worker thread can call it.
@@ -346,7 +346,9 @@ class FileListManager:
 
         Args:
             entries: List of Path objects to sort
-            sort_mode: 'name', 'ext', 'size', or 'date'
+            sort_mode: 'filename', 'extension', 'size' or 'timestamp' — or a
+                mode a config registered. Old spellings ('name', 'ext', 'date',
+                'type') resolve through :func:`xefm.sort_keys.canonical`.
             reverse: Whether to reverse the sort order
             attrs: Optional ``{str(path): record}`` from the listing that
                 produced ``entries`` (see :mod:`xefm.dir_scan`). Every key the
@@ -370,6 +372,10 @@ class FileListManager:
         would be the wrong granularity here — a key that is broken is broken for
         every file, and would otherwise emit one traceback per row.
         """
+        # One canonicalization for the whole sort: callers reach this from a
+        # config, from saved state and from tests, all of which may carry an old
+        # spelling (xefm.sort_keys.ALIASES).
+        sort_mode = sort_keys.canonical(sort_mode)
         attrs = dict(attrs) if attrs else {}
         for entry in entries:
             key = str(entry)
@@ -388,7 +394,7 @@ class FileListManager:
                                              user_key, reverse)
             if ordered is not None:
                 return ordered
-            sort_mode = 'name'  # the fallback the failure was logged against
+            sort_mode = 'filename'  # the fallback the failure was logged against
 
         def get_sort_key(entry):
             """Generate sort key for an entry, from the cached attributes"""
@@ -396,14 +402,9 @@ class FileListManager:
             if sort_mode == 'size':
                 # Directories and unreadable entries sort as 0, as before.
                 return a['size']
-            elif sort_mode == 'date':
+            elif sort_mode == 'timestamp':
                 return a['mtime']
-            elif sort_mode == 'type':
-                if a['is_dir']:
-                    return ""  # Directories first
-                else:
-                    return name_key.nfc(entry.suffix).lower()
-            elif sort_mode == 'ext':
+            elif sort_mode == 'extension':
                 if a['is_dir']:
                     return ""  # Directories first (no extension)
                 else:
@@ -418,7 +419,7 @@ class FileListManager:
                     if len(extension) > max_ext_length:
                         return ""  # Extension too long, treat as no extension
                     return extension.lower()
-            else:  # name (default)
+            else:  # filename (default)
                 return self._natural_sort_key(a['cmp_name'])
 
         # Separate directories and files using the cached attributes
@@ -464,8 +465,7 @@ class FileListManager:
         mode = pane_data['sort_mode']
         reverse = pane_data['sort_reverse']
 
-        description = ('Extension' if mode == 'type'  # legacy pre-dialog menu
-                       else sort_keys.label(mode))
+        description = sort_keys.label(mode)
         if reverse:
             description += ' ↓'
         else:

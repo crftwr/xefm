@@ -61,7 +61,7 @@ class SortDialogApp(unittest.TestCase):
         self.app.file_monitor.enabled = False
         self.app._settle_listings()
         pane = self.app.active_pane()
-        pane["sort_mode"] = "name"
+        pane["sort_mode"] = "filename"
         pane["sort_reverse"] = False
         self.app._resort(pane)
         self.app._settle_listings()
@@ -130,7 +130,7 @@ class SortDialogApp(unittest.TestCase):
 
     def test_seeded_from_pane(self):
         pane = self.app.active_pane()
-        pane["sort_mode"] = "date"
+        pane["sort_mode"] = "timestamp"
         pane["sort_reverse"] = True
         dlg = self._open()
         self.assertEqual(dlg._index, 3)                 # Timestamp row
@@ -171,7 +171,7 @@ class SortDialogApp(unittest.TestCase):
         dlg.handle_event(_key("enter"))
         self.assertFalse(self._dialog_open())
         pane = self.app.active_pane()
-        self.assertEqual(pane["sort_mode"], "ext")
+        self.assertEqual(pane["sort_mode"], "extension")
         self.assertTrue(pane["sort_reverse"])
         self.assertEqual(self._names(), ["mid.txt", "alpha.md", "zeta.c"])
 
@@ -182,7 +182,7 @@ class SortDialogApp(unittest.TestCase):
         dlg.handle_event(_key("escape"))
         self.assertFalse(self._dialog_open())
         pane = self.app.active_pane()
-        self.assertEqual(pane["sort_mode"], "name")
+        self.assertEqual(pane["sort_mode"], "filename")
         self.assertFalse(pane["sort_reverse"])
         self.assertEqual(self._names(), ["alpha.md", "mid.txt", "zeta.c"])
 
@@ -193,7 +193,7 @@ class SortDialogApp(unittest.TestCase):
         dlg.handle_event(_key("t"))                     # Timestamp
         self.assertFalse(self._dialog_open())
         pane = self.app.active_pane()
-        self.assertEqual(pane["sort_mode"], "date")
+        self.assertEqual(pane["sort_mode"], "timestamp")
         self.assertFalse(pane["sort_reverse"])          # order kept
         self.assertEqual(self._names(), ["zeta.c", "alpha.md", "mid.txt"])
         self.app.panel.render()                         # footer speaks the same name
@@ -210,7 +210,8 @@ class SortDialogApp(unittest.TestCase):
         self.assertEqual(self._names(), ["alpha.md", "zeta.c", "mid.txt"])
 
     def test_each_hotkey_maps_to_its_key(self):
-        for hotkey, mode in (("f", "name"), ("e", "ext"), ("s", "size"), ("t", "date")):
+        for hotkey, mode in (("f", "filename"), ("e", "extension"),
+                             ("s", "size"), ("t", "timestamp")):
             dlg = self._open()
             dlg.handle_event(_key(hotkey))
             self.assertFalse(self._dialog_open())
@@ -220,7 +221,7 @@ class SortDialogApp(unittest.TestCase):
         dlg = self._open()
         dlg.handle_event(_key("t", {"ctrl"}))
         self.assertTrue(self._dialog_open())            # still open, nothing applied
-        self.assertEqual(self.app.active_pane()["sort_mode"], "name")
+        self.assertEqual(self.app.active_pane()["sort_mode"], "filename")
         dlg.handle_event(_key("escape"))
 
     # --- mouse ---------------------------------------------------------------
@@ -249,7 +250,7 @@ class SortDialogApp(unittest.TestCase):
         self.app.panel.render()
         dlg.handle_event(Event(EventType.MOUSE_CLICK, x=-1.0, y=-1.0))
         self.assertFalse(self._dialog_open())
-        self.assertEqual(self.app.active_pane()["sort_mode"], "name")
+        self.assertEqual(self.app.active_pane()["sort_mode"], "filename")
 
 
 if __name__ == "__main__":

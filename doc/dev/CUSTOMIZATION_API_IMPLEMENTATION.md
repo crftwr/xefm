@@ -451,6 +451,17 @@ choice rather than build one shell's collation in.
 
 `xefm/sort_keys.py` holds the table — the four built-in rows, and whatever a
 config registered, rebuilt wholesale on reload exactly as `EVENT_HOOKS` is.
+
+The built-in modes were renamed to the dialog's own labels in lower case
+(`filename` / `extension` / `size` / `timestamp`) as part of this. XeFM's
+shorthand — `name`, `ext`, `date` — cost nothing while it stayed internal and
+started costing something the moment a config had to write one: a user reads
+"Timestamp" in the dialog and has no way to guess `date`. `sort_keys.ALIASES`
+keeps the old spellings resolving, and `sort_keys.canonical` is applied wherever
+a mode arrives from outside — saved pane state, `DEFAULT_SORT_MODE`, a `SORT_KEYS`
+key, an action — so everything past that boundary compares one set of names. The
+`quick_sort_*` **action** names are untouched: those live in the key-binding
+namespace, which has its own rename mechanism (`Action.aliases`).
 `_process_user_entries` validates and loads it alongside the other two, and
 `_build_sort_key` mirrors `_build_action`: a bare callable is shorthand, a dict
 carries `label` / `explain` / `hotkey`, and naming a built-in needs

@@ -19,7 +19,7 @@ def explorer(entry):
 
 SORT_KEYS = {
     "explorer": {"label": "Explorer order", "key": explorer},
-    "name": {"key": explorer, "override": True},   # replace the built-in
+    "filename": {"key": explorer, "override": True},   # replace the built-in
 }
 ```
 
@@ -56,27 +56,44 @@ from __future__ import annotations
 from typing import Any, Callable
 
 #: The built-in keys in row order: (``sort_mode`` value, label, hotkey).
-#: ``"type"`` is a legacy alias for ``"ext"`` and is deliberately not listed.
+#:
+#: The mode is the label in lower case, deliberately. It used to be XeFM's own
+#: shorthand — ``name`` / ``ext`` / ``date`` — which cost nothing while it stayed
+#: internal, and started costing something the moment a config had to write one:
+#: a user reads "Timestamp" in the dialog and has no way to guess ``date``.
+#: :data:`ALIASES` keeps the old spellings working.
 BUILTIN: tuple[tuple[str, str, str], ...] = (
-    ("name", "Filename", "F"),
-    ("ext", "Extension", "E"),
+    ("filename", "Filename", "F"),
+    ("extension", "Extension", "E"),
     ("size", "Size", "S"),
-    ("date", "Timestamp", "T"),
+    ("timestamp", "Timestamp", "T"),
 )
 
-BUILTIN_NAMES = frozenset(m for m, _l, _h in BUILTIN) | {"type"}
+#: Old spellings of a built-in mode, accepted wherever one arrives from outside.
+#: ``name`` / ``ext`` / ``date`` are what XeFM called these before the modes took
+#: the dialog's own names; ``type`` is older still — the pre-dialog menu's suffix
+#: sort. Saved pane state and configs on disk carry all four, so they resolve
+#: rather than falling back.
+ALIASES: dict[str, str] = {
+    "name": "filename",
+    "ext": "extension",
+    "type": "extension",
+    "date": "timestamp",
+}
+
+BUILTIN_NAMES = frozenset(m for m, _l, _h in BUILTIN) | set(ALIASES)
 
 #: The explanation line per (mode, reverse) the sort dialog draws: three values
 #: in the order the list would show them, plus the plain-words reading.
 BUILTIN_EXPLANATIONS: dict[tuple[str, bool], str] = {
-    ("name", False): "a.txt → m.txt → z.txt  (A to Z)",
-    ("name", True): "z.txt → m.txt → a.txt  (Z to A)",
-    ("ext", False): ".c → .md → .py  (A to Z)",
-    ("ext", True): ".py → .md → .c  (Z to A)",
+    ("filename", False): "a.txt → m.txt → z.txt  (A to Z)",
+    ("filename", True): "z.txt → m.txt → a.txt  (Z to A)",
+    ("extension", False): ".c → .md → .py  (A to Z)",
+    ("extension", True): ".py → .md → .c  (Z to A)",
     ("size", False): "1 KB → 1 MB → 1 GB  (smallest first)",
     ("size", True): "1 GB → 1 MB → 1 KB  (largest first)",
-    ("date", False): "2024 → 2025 → 2026  (oldest first)",
-    ("date", True): "2026 → 2025 → 2024  (newest first)",
+    ("timestamp", False): "2024 → 2025 → 2026  (oldest first)",
+    ("timestamp", True): "2026 → 2025 → 2024  (newest first)",
 }
 
 _DEFAULT_EXPLANATION = "a key from your config"
@@ -84,6 +101,18 @@ _DEFAULT_EXPLANATION = "a key from your config"
 #: ``mode -> {"label", "key", "explain", "hotkey"}``, in registration order.
 #: Rebuilt wholesale on a config reload, exactly as ``EVENT_HOOKS`` is.
 _user: dict[str, dict[str, Any]] = {}
+
+
+def canonical(mode: str) -> str:
+    """``mode`` under its current spelling.
+
+    Applied wherever a mode arrives from outside — saved pane state, a config's
+    ``DEFAULT_SORT_MODE`` or ``SORT_KEYS``, an action — so everything past that
+    point compares against one set of names. A mode nothing recognizes is
+    returned unchanged: it may be one a config registered, and if it is not,
+    :func:`is_known` is what decides.
+    """
+    return ALIASES.get(mode, mode)
 
 
 def clear() -> None:
@@ -95,19 +124,24 @@ def clear() -> None:
 def register(name: str, key: Callable, *, label: str | None = None,
              explain: str | None = None, hotkey: str | None = None) -> None:
     """Add or replace one sort key. Later registration wins, as in
-    :mod:`xefm.viewer_registry`."""
-    _user[name] = {"label": label or name, "key": key,
-                   "explain": explain, "hotkey": hotkey}
+    :mod:`xefm.viewer_registry`.
+
+    ``label`` is stored as given, ``None`` included: "no label" has to survive to
+    :func:`rows`, where it means two different things. Overriding Filename
+    without naming it keeps *Filename*; adding a mode without naming it falls
+    back to the mode itself."""
+    _user[canonical(name)] = {"label": label, "key": key,
+                              "explain": explain, "hotkey": hotkey}
 
 
 def get(name: str) -> dict[str, Any] | None:
     """The registered entry for ``name``, or ``None`` when the built-in applies."""
-    return _user.get(name)
+    return _user.get(canonical(name))
 
 
 def key_for(name: str) -> Callable | None:
     """The user key function for ``name``, or ``None`` to use the built-in."""
-    entry = _user.get(name)
+    entry = _user.get(canonical(name))
     return entry["key"] if entry else None
 
 
@@ -118,7 +152,7 @@ def is_known(name: str) -> bool:
     that registered ``"explorer"`` and no longer does leaves a saved mode naming
     nothing. Callers restoring one ask this and fall back rather than sorting by
     a key that is gone."""
-    return name in BUILTIN_NAMES or name in _user
+    return name in BUILTIN_NAMES or canonical(name) in _user
 
 
 def rows() -> list[tuple[str, str, str | None]]:
@@ -134,35 +168,38 @@ def rows() -> list[tuple[str, str, str | None]]:
     for mode, label, hotkey in BUILTIN:
         entry = _user.get(mode)
         if entry:
-            label = entry["label"] if entry["label"] != mode else label
+            label = entry["label"] or label
             hotkey = entry["hotkey"] or hotkey
         out.append((mode, label, hotkey))
     for mode, entry in _user.items():
         if mode in BUILTIN_NAMES:
             continue
-        hotkey = entry["hotkey"] or _free_hotkey(entry["label"], taken)
+        label = entry["label"] or mode
+        hotkey = entry["hotkey"] or _free_hotkey(label, taken)
         if hotkey:
             taken.add(hotkey)
-        out.append((mode, entry["label"], hotkey))
+        out.append((mode, label, hotkey))
     return out
 
 
 def explanation(mode: str, reverse: bool) -> str:
     """The dialog's line under the order segments, for any mode."""
+    mode = canonical(mode)
     entry = _user.get(mode)
     if entry is None:
         return BUILTIN_EXPLANATIONS.get(
-            (mode, reverse), BUILTIN_EXPLANATIONS[("name", reverse)])
+            (mode, reverse), BUILTIN_EXPLANATIONS[("filename", reverse)])
     text = entry["explain"] or _DEFAULT_EXPLANATION
     return f"({text}, reversed)" if reverse else f"({text})"
 
 
 def label(mode: str) -> str:
     """``mode``'s label for the status bar, falling back to the mode itself."""
+    mode = canonical(mode)
     for name, text, _hotkey in rows():
         if name == mode:
             return text
-    return "Filename" if mode == "type" else mode
+    return mode
 
 
 def _free_hotkey(text: str, taken: set) -> str | None:

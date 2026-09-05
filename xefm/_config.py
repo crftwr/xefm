@@ -78,7 +78,7 @@ class Config:
     DATE_FORMAT = 'short'  # 'short' (YY-MM-DD HH:mm) or 'full' (YYYY-MM-DD HH:mm:ss)
     
     # Sorting settings
-    DEFAULT_SORT_MODE = 'name'  # 'name', 'size', 'date'
+    DEFAULT_SORT_MODE = 'filename'  # 'filename', 'extension', 'size', 'timestamp'
     DEFAULT_SORT_REVERSE = False
     
     # -----------------------------------------------------------------------
@@ -572,9 +572,9 @@ class Config:
     # inside one group. Reading entry.size or entry.mtime is free -- XeFM already
     # collected them for the listing.
     #
-    # Naming one of the four built-in sorts -- 'name', 'ext', 'size', 'date' --
-    # replaces it, which needs 'override': True so a typo cannot quietly change
-    # what Filename means. XeFM orders names by character code, which is not how
+    # Naming one of the four built-in sorts -- 'filename', 'extension', 'size',
+    # 'timestamp', the dialog's own rows in lower case -- replaces it, which
+    # needs 'override': True so a typo cannot quietly change what Filename means. XeFM orders names by character code, which is not how
     # Explorer or Finder order a directory; this is where you change that:
     #
     # import locale, re                       # at the top of this file
@@ -585,7 +585,7 @@ class Config:
     #     parts = re.split(r'(\d+)', entry.name)
     #     return [int(p) if i % 2 else locale.strxfrm(p) for i, p in enumerate(parts)]
     #
-    # SORT_KEYS = {'name': {'key': by_system_order, 'override': True}}
+    # SORT_KEYS = {'filename': {'key': by_system_order, 'override': True}}
     #
     # That follows your locale, which is close to but not the same as the shell's
     # own order. Matching Explorer or Finder exactly means their comparison

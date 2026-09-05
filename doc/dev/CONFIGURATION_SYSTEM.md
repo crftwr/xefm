@@ -27,7 +27,7 @@ class Config:
     DEFAULT_LOG_HEIGHT_RATIO = 0.25
     
     # Sorting settings
-    DEFAULT_SORT_MODE = 'name'
+    DEFAULT_SORT_MODE = 'filename'
     DEFAULT_SORT_REVERSE = False
     
     # ... more settings
@@ -47,7 +47,7 @@ class Config:
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `DEFAULT_SORT_MODE` | str | `'name'` | Default sort mode: 'name', 'size', 'date' |
+| `DEFAULT_SORT_MODE` | str | `'filename'` | Default sort mode: 'filename', 'extension', 'size', 'timestamp' (the old 'name'/'ext'/'date' still resolve) |
 | `DEFAULT_SORT_REVERSE` | bool | `False` | Default reverse sort order |
 
 ### Color Settings
@@ -362,7 +362,7 @@ class Config:
 
 - `DEFAULT_LEFT_PANE_RATIO`: Must be between 0.1 and 0.9
 - `DEFAULT_LOG_HEIGHT_RATIO`: Must be between 0.1 and 0.5
-- `DEFAULT_SORT_MODE`: Must be 'name', 'size', or 'date'
+- `DEFAULT_SORT_MODE`: Must name a sort — 'filename', 'extension', 'size', 'timestamp', an old spelling of one, or a key a config registered
 - `COLOR_SCHEME`: Must be 'default', 'dark', or 'light'
 
 ## Error Handling
@@ -459,7 +459,7 @@ class Config:
     DEFAULT_LOG_HEIGHT_RATIO = 0.2
     
     # Sorting preferences
-    DEFAULT_SORT_MODE = 'date'
+    DEFAULT_SORT_MODE = 'timestamp'
     DEFAULT_SORT_REVERSE = True
     
     # Behavior

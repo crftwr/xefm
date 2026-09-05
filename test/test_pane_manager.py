@@ -257,7 +257,7 @@ class TestPaneManagerIntegration(unittest.TestCase):
         pane = self.pane_manager.left_pane
         
         # Check default
-        self.assertIn(pane['sort_mode'], ['name', 'size', 'date', 'extension'])
+        self.assertIn(pane['sort_mode'], ['filename', 'extension', 'size', 'timestamp'])
         
         # Change sort mode
         pane['sort_mode'] = 'size'

@@ -326,9 +326,9 @@ one group.
 
 ### Replacing a built-in
 
-Naming one of the four built-in sorts — `name`, `ext`, `size`, `date` — replaces
-it. That needs `"override": True`, so a typo cannot quietly change what Filename
-means:
+Naming one of the four built-in sorts — `filename`, `extension`, `size`,
+`timestamp`, which are the dialog's own rows in lower case — replaces it. That
+needs `"override": True`, so a typo cannot quietly change what Filename means:
 
 ```python
 import locale, re
@@ -339,7 +339,7 @@ def by_system_order(entry):
     parts = re.split(r"(\d+)", entry.name)
     return [int(p) if i % 2 else locale.strxfrm(p) for i, p in enumerate(parts)]
 
-SORT_KEYS = {"name": {"key": by_system_order, "override": True}}
+SORT_KEYS = {"filename": {"key": by_system_order, "override": True}}
 ```
 
 A replaced sort keeps its row and its label unless you give it new ones.

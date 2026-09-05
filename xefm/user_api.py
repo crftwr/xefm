@@ -617,7 +617,7 @@ def _build_sort_key(name, spec) -> tuple[dict | None, str | None]:
         hotkey = str(hotkey)[:1].upper()
         if not hotkey.isalpha():
             return None, f"SORT_KEYS['{name}'] has a 'hotkey' that is not a letter"
-    return {"label": str(spec.get("label") or name),
+    return {"label": (str(spec["label"]) if spec.get("label") else None),
             "key": func,
             "explain": (str(spec["explain"]) if spec.get("explain") else None),
             "hotkey": hotkey}, None

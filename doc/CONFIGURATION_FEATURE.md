@@ -153,7 +153,7 @@ works. See [Text Encodings](TEXT_ENCODING_FEATURE.md).
 ## Sorting
 
 ```python
-DEFAULT_SORT_MODE    = 'name'   # 'name', 'size', or 'date'
+DEFAULT_SORT_MODE    = 'filename'  # 'filename', 'extension', 'size', 'timestamp'
 DEFAULT_SORT_REVERSE = False
 ```
 
@@ -162,7 +162,7 @@ Change sorting at runtime via the sort menu (`s`) or the quick-sort keys.
 Name sorting is **natural** (alphanumeric): embedded numbers are compared as
 numbers, so `file2` sorts before `file10`, and leading zeros (`Report001`,
 `Report010`) order as expected. It is case-insensitive, always applies to the
-`'name'` sort mode, and can't be turned off; the `'size'` and `'date'` modes are
+`'filename'` sort mode, and can't be turned off; the `'size'` and `'timestamp'` modes are
 unaffected. Directories are always listed before files regardless of sort mode.
 
 ## Confirmations

@@ -58,9 +58,9 @@ class SortDialog(Widget):
         self.title = "Sort By"
         self.on_result = on_result
         self._panel: Any = None
-        # 'type' (the pre-dialog menu's suffix sort) seeds as Extension — the
-        # same attribute, minus the display-matched length cap.
-        seed = "ext" if mode == "type" else mode
+        # An old spelling — 'name', 'ext', 'date', or 'type' from the pre-dialog
+        # menu — seeds the row it now names (xefm.sort_keys.ALIASES).
+        seed = sort_keys.canonical(mode)
         # Snapshotted at construction: the rows include whatever the config
         # registered, and a reload mid-dialog must not renumber them underneath
         # the selection (:mod:`xefm.sort_keys`).

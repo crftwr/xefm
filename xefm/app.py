@@ -1386,7 +1386,7 @@ class XeFMApp:
         # defined it was edited. Fall back rather than restore a mode nothing
         # answers to, which would leave the pane's own listing unsorted and the
         # status bar naming a key that no longer exists.
-        saved_mode = state.get('sort_mode', pane['sort_mode'])
+        saved_mode = sort_keys.canonical(state.get('sort_mode', pane['sort_mode']))
         pane['sort_mode'] = (saved_mode if sort_keys.is_known(saved_mode)
                              else pane['sort_mode'])
         pane['sort_reverse'] = state.get('sort_reverse', pane['sort_reverse'])
@@ -2202,10 +2202,10 @@ class XeFMApp:
                 # --- listing ---
                 "toggle_hidden": (self._act_toggle_hidden, True),
                 "toggle_color_scheme": (self._cycle_theme, True),
-                "quick_sort_name": (lambda: self._quick_sort("name"), True),
+                "quick_sort_name": (lambda: self._quick_sort("filename"), True),
                 "quick_sort_size": (lambda: self._quick_sort("size"), True),
-                "quick_sort_date": (lambda: self._quick_sort("date"), True),
-                "quick_sort_ext": (lambda: self._quick_sort("ext"), True),
+                "quick_sort_date": (lambda: self._quick_sort("timestamp"), True),
+                "quick_sort_ext": (lambda: self._quick_sort("extension"), True),
                 "sort": (self.show_sort_menu, False),
                 "clear_filter": (self._act_clear_filter, True),
                 "filter": (self.enter_filter, False),

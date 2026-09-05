@@ -105,24 +105,24 @@ def test_size_and_mtime_cost_no_filesystem_call(tree):
 # --- overriding a built-in ---------------------------------------------------
 
 def test_shadowing_a_builtin_needs_an_explicit_override(tree):
-    warnings, count = load(name=lambda e: e.name)
+    warnings, count = load(filename=lambda e: e.name)
     assert count == 0
     assert len(warnings) == 1 and "override" in warnings[0]
-    assert order(tree, "name") == ["zdir", "a.txt", "b.txt", "c.txt"]
+    assert order(tree, "filename") == ["zdir", "a.txt", "b.txt", "c.txt"]
 
 
 def test_an_explicit_override_replaces_the_builtin(tree):
-    warnings, count = load(name={"key": lambda e: [-ord(c) for c in e.name],
-                                 "override": True})
+    warnings, count = load(filename={"key": lambda e: [-ord(c) for c in e.name],
+                                     "override": True})
     assert (warnings, count) == ([], 1)
-    assert order(tree, "name") == ["zdir", "c.txt", "b.txt", "a.txt"]
+    assert order(tree, "filename") == ["zdir", "c.txt", "b.txt", "a.txt"]
 
 
 def test_an_override_keeps_the_builtin_row_in_place(tree):
-    load(name={"key": lambda e: e.name, "override": True})
+    load(filename={"key": lambda e: e.name, "override": True})
     modes = [m for m, _l, _h in sort_keys.rows()]
-    assert modes == ["name", "ext", "size", "date"]     # no extra row
-    assert sort_keys.label("name") == "Filename"        # and the same label
+    assert modes == ["filename", "extension", "size", "timestamp"]  # no extra row
+    assert sort_keys.label("filename") == "Filename"    # and the same label
 
 
 # --- being wrong -------------------------------------------------------------
@@ -167,8 +167,8 @@ def test_a_hotkey_is_offered_only_when_the_initial_is_free():
 
 
 def test_an_explicit_hotkey_wins():
-    load(name={"key": lambda e: e.name, "override": True, "hotkey": "n"})
-    assert ("name", "Filename", "N") in sort_keys.rows()
+    load(filename={"key": lambda e: e.name, "override": True, "hotkey": "n"})
+    assert ("filename", "Filename", "N") in sort_keys.rows()
 
 
 def test_the_dialog_explains_a_registered_key():
@@ -202,7 +202,22 @@ def test_a_reload_drops_a_key_the_config_no_longer_defines():
     assert not sort_keys.is_known("grouped")
 
 
-def test_is_known_covers_the_builtins_and_the_legacy_alias():
-    for mode in ("name", "ext", "size", "date", "type"):
+def test_is_known_covers_the_builtins_and_the_old_spellings():
+    for mode in ("filename", "extension", "size", "timestamp"):
         assert sort_keys.is_known(mode)
+    for old in ("name", "ext", "date", "type"):
+        assert sort_keys.is_known(old)
     assert not sort_keys.is_known("nope")
+
+
+def test_an_old_spelling_resolves_to_the_mode_it_now_names(tree):
+    """A config or a saved pane state written before the modes took the
+    dialog's own names still selects the sort it always did."""
+    assert sort_keys.canonical("date") == "timestamp"
+    assert sort_keys.canonical("type") == "extension"   # the pre-dialog menu
+    assert sort_keys.canonical("mine") == "mine"        # not a built-in: as-is
+    # Registering under an old spelling lands on the mode it now names.
+    load(date={"key": lambda e: -e.size, "override": True})
+    assert sort_keys.label("timestamp") == "Timestamp"
+    assert order(tree, "timestamp") == ["zdir", "a.txt", "c.txt", "b.txt"]
+    assert order(tree, "date") == ["zdir", "a.txt", "c.txt", "b.txt"]
