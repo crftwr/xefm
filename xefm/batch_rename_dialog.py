@@ -29,6 +29,7 @@ from puikit.panel import Rect
 from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 
+from xefm import name_key
 from xefm.dialog_geometry import animate_open, draw_title_bar
 
 #: Characters we refuse in a result name.
@@ -47,15 +48,32 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
     """Compute the ``original → new`` plan for ``files`` under the search/replace
     patterns. Returns one dict per file with ``original``, ``new``, ``valid``,
     ``conflict``, and ``file``. Pure (no filesystem writes), so it is unit-test
-    friendly and safe to call on every keystroke for the live preview."""
+    friendly and safe to call on every keystroke for the live preview.
+
+    Everything here runs on NFC: the name matched against, the pattern, the
+    replacement, and the name written back (:mod:`xefm.name_key`). Matching has
+    to, or a pattern typed at an IME — which emits composed text — silently finds
+    nothing in a decomposed name, which is the name the pane displays; Finder
+    normalizes before matching for the same reason. Writing NFC is where XeFM
+    parts company with Finder, which still composes *down* to NFD as HFS+ did:
+    the choice is cosmetic on APFS, whose lookup ignores the difference, and this
+    is one program on three platforms that copies files between them, where a
+    per-OS spelling of the same rename is not cosmetic at all.
+
+    A name the pattern does not match comes out equal to what went in, so it is
+    skipped by the apply loop: normalization only ever rides along with a rename
+    that was asked for, never on its own."""
     rows: list[dict] = []
     try:
-        pattern = re.compile(search) if search else None
+        # Metacharacters are ASCII, so composing the pattern only touches its
+        # literals — which is exactly the half that has to match the name.
+        pattern = re.compile(name_key.nfc(search)) if search else None
     except re.error:
         pattern = None  # invalid regex → everything shown unchanged
+    replace = name_key.nfc(replace)
 
     for i, entry in enumerate(files):
-        name = entry.name
+        name = name_key.nfc(entry.name)
         match = pattern.search(name) if pattern else None
         if match:
             repl = replace
@@ -69,7 +87,11 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
                     else:
                         repl = repl.replace(placeholder, "")
             repl = repl.replace("\\d", str(i + 1))
-            new = name[: match.start()] + repl + name[match.end():]
+            # Composed name spliced with composed replacement is very nearly
+            # composed already — but a replacement opening on a combining mark
+            # would join the character before it, so settle it here and let
+            # everything downstream, the collision key included, assume NFC.
+            new = name_key.nfc(name[: match.start()] + repl + name[match.end():])
             valid = _is_valid_name(new)
             conflict = (entry.parent / new).exists() and new != name
         else:
@@ -78,7 +100,11 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
                      "conflict": conflict, "file": entry})
 
     # Second pass: two rows producing the same new name in the same directory
-    # collide with each other, even if neither exists on disk yet.
+    # collide with each other, even if neither exists on disk yet. The names are
+    # NFC by construction, which is what makes this catch the collision that used
+    # to slip through — two rows landing on the same file under different
+    # spellings of one name. Finder catches it too, and disambiguates with a
+    # " 2"; here it is the conflict that blocks the rename.
     seen: dict[tuple, list[dict]] = {}
     for row in rows:
         if row["original"] == row["new"]:

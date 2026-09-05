@@ -4058,9 +4058,13 @@ class XeFMApp:
         self.panel.render()
 
     def _select_by_name(self, pane: dict, name: str) -> None:
-        """Land the cursor on the entry called ``name`` (after create/rename)."""
+        """Land the cursor on the entry called ``name`` (after create/rename).
+
+        Compared composed, because ``name`` came from a dialog field and the
+        listing holds whatever the filesystem stored."""
+        name = name_key.nfc(name)
         for i, entry in enumerate(pane["files"]):
-            if entry.name == name:
+            if name_key.nfc(entry.name) == name:
                 pane["focused_index"] = i
                 break
 
@@ -4150,7 +4154,11 @@ class XeFMApp:
             self.batch_rename(selected)
             return
         entry = files[pane["focused_index"]]
-        original = entry.name
+        # The name the pane shows, which is the composed one (xefm.name_key), so
+        # the field seeds with what the user is looking at and an untouched name
+        # compares equal below — no rename, no re-spelling. Editing it writes the
+        # composed form back, as a batch rename does.
+        original = name_key.nfc(entry.name)
         select_range = _stem_selection(original, entry.is_dir())
 
         def validate(name: str) -> str | None:

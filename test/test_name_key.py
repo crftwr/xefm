@@ -243,5 +243,52 @@ class ComparedNameIsNotAPath(_PaneCase):
         self.assertTrue(entry.exists())
 
 
+class BatchRename(_PaneCase):
+    """The rename preview runs on the same composed name the pane displays.
+
+    Finder settles two of these: it normalizes before matching, and it flags a
+    rename that lands on an existing file under a different spelling of one name.
+    It parts company on the third — it writes NFD, as HFS+ did, where XeFM writes
+    NFC on every platform.
+    """
+
+    def _preview(self, search, replace, names):
+        from xefm.batch_rename_dialog import compute_preview
+        files = [self._touch(n) for n in names]
+        return compute_preview(files, search, replace)
+
+    def test_an_ime_typed_pattern_matches_a_decomposed_name(self):
+        rows = self._preview(nfc("が"), "X", [nfd("が.txt")])
+        self.assertEqual(rows[0]["new"], "X.txt")
+
+    def test_a_pasted_decomposed_pattern_matches_a_composed_name(self):
+        rows = self._preview(nfd("が"), "X", [nfc("が.txt")])
+        self.assertEqual(rows[0]["new"], "X.txt")
+
+    def test_an_unmatched_name_is_left_exactly_as_it_was(self):
+        # The apply loop skips a row whose original equals its new name, so this
+        # is what keeps a rename from re-spelling files it was not asked about.
+        rows = self._preview("nomatch", "X", [nfd("が.txt")])
+        self.assertEqual(rows[0]["original"], rows[0]["new"])
+
+    def test_the_untouched_part_of_a_renamed_name_comes_out_composed(self):
+        rows = self._preview(r"\.txt$", ".md", [nfd("が.txt")])
+        self.assertEqual(rows[0]["new"], nfc("が.md"))
+        self.assertTrue(unicodedata.is_normalized("NFC", rows[0]["new"]))
+
+    def test_a_decomposed_replacement_does_not_make_a_mixed_name(self):
+        rows = self._preview("^a", nfd("が"), ["ab.txt"])
+        self.assertEqual(rows[0]["new"], nfc("が") + "b.txt")
+        self.assertTrue(unicodedata.is_normalized("NFC", rows[0]["new"]))
+
+    def test_two_rows_landing_on_one_file_collide(self):
+        # Before, these keyed apart and both renames ran: on APFS the second
+        # silently replaced the first, since the two spellings are one file.
+        rows = self._preview("^[XY]", "", ["X" + nfd("が.txt"),
+                                           "Y" + nfc("が.txt")])
+        self.assertEqual({r["new"] for r in rows}, {nfc("が.txt")})
+        self.assertTrue(all(r["conflict"] for r in rows))
+
+
 if __name__ == "__main__":
     unittest.main()
