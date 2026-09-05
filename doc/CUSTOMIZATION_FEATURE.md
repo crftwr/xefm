@@ -288,6 +288,89 @@ reloads all leave the pane where it is and stay quiet.
 
 ---
 
+## Your own sort order: `SORT_KEYS`
+
+XeFM orders names by their character codes, which is not how Explorer or Finder
+order a directory: they put symbols and digits in a different place and sort
+kanji by the system's own rules. Rather than pick one of those, XeFM lets you
+write the order you want.
+
+A sort key is a function that takes one entry and returns something sortable.
+XeFM sorts by whatever comes back:
+
+```python
+SORT_KEYS = {
+    "biggest": {"label": "Size, then name", "key": lambda e: (e.size, e.name)},
+}
+```
+
+That adds a **Size, then name** row to the sort dialog (`s`) and to the Sort By
+menu, alongside the four built-in ones.
+
+### What you get, and what you return
+
+Your function is handed one entry, with `name`, `path`, `is_dir`, `is_link`,
+`size` and `mtime`. Reading `size` or `mtime` is free — XeFM already collected
+them for the listing, so your key costs nothing extra even in a huge directory on
+a network drive.
+
+`name` is the name **as the pane shows it**, which is what you want to sort by:
+accented and Japanese characters come to you written one way whatever way the
+disk happens to store them, and on a search-results pane it is the whole path
+under the folder you searched, the same text the row displays. Use `path` when
+you need to reach the file itself.
+
+Return anything that can be compared: a string, a number, or a **tuple** for a
+multi-level order — tuples are compared item by item, so `(e.size, e.name)` means
+"by size, and by name within the same size". Whatever you return has to be
+comparable with what you return for every *other* entry: if one entry gives a
+number where another gives text, the sort cannot be done.
+
+Two things you do **not** need to handle: directories always come first, and
+ascending/descending is applied for you. Your key only decides the order inside
+one group.
+
+### Replacing a built-in
+
+Naming one of the four built-in sorts — `filename`, `extension`, `size`,
+`timestamp`, which are the dialog's own rows in lower case — replaces it. That
+needs `"override": True`, so a typo cannot quietly change what Filename means:
+
+```python
+import locale, re
+locale.setlocale(locale.LC_COLLATE, "")     # your system's own ordering
+
+def by_system_order(entry):
+    # digit runs as numbers, everything else through the system's ordering
+    parts = re.split(r"(\d+)", entry.name)
+    return [int(p) if i % 2 else locale.strxfrm(p) for i, p in enumerate(parts)]
+
+SORT_KEYS = {"filename": {"key": by_system_order, "override": True}}
+```
+
+A replaced sort keeps its row and its label unless you give it new ones.
+
+### The rest of the entry
+
+| | |
+|---|---|
+| `label` | the row text in the dialog and the menu (defaults to the name you gave it) |
+| `explain` | the example line the dialog shows under the order — say what the order looks like |
+| `hotkey` | a letter that applies the sort directly in the dialog. A new row gets its label's initial when no other row has claimed it, and otherwise none — the arrow keys always work |
+
+### If it goes wrong
+
+A key that fails, or returns things that cannot be compared with each other,
+loses the whole sort — the pane falls back to ordering by filename and says so
+once in the log pane. It never fails the listing, and it never floods the log
+with one message per file.
+
+Your key may run on a background thread, so it must not do anything that expects
+to be on the main one. Keep it to arithmetic and string handling over the entry
+you were given.
+
+---
+
 ## Things to know
 
 **Your code runs on the UI thread, and XeFM waits for it.** A slow action
@@ -328,8 +411,8 @@ desktop window.
 
 **Not in this version:** functions bound inside a *viewer* (viewer keys are
 rebindable, but the function you bind must be a file-list action), custom
-viewers and renderers, sort keys and filter predicates as functions, and any
-access to the widget tree. All are additive later.
+viewers and renderers, filter predicates as functions, and any access to the
+widget tree. All are additive later.
 
 ---
 

@@ -339,6 +339,15 @@ contract the built-in renderers use.
 Sort keys and filter predicates as user callables fit the same pattern and
 can follow once requested.
 
+**Sort keys have** — `SORT_KEYS`, shipped for #380, and the first of these to
+land. It went first precisely because it is *not* the renderer: a key returns
+data, so the machinery could be shaken down without committing to a PuiKit type
+crossing the façade. It also forced §6's threading rule to be answered rather
+than deferred — a sort key runs on a worker, the opposite of what actions and
+hooks promise. See
+[`CUSTOMIZATION_API_IMPLEMENTATION.md`](CUSTOMIZATION_API_IMPLEMENTATION.md)
+§8b.
+
 ---
 
 ## 6. Cross-cutting rules

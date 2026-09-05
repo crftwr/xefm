@@ -3,6 +3,7 @@
 XeFM Pane Manager - Handles dual pane management and navigation
 """
 
+from xefm import sort_keys
 from xefm.path import Path
 from collections import deque
 
@@ -23,7 +24,7 @@ class PaneManager:
             'scroll_offset': 0,
             'files': [],
             'selected_files': set(),  # Track selected files for batch operations
-            'sort_mode': config.DEFAULT_SORT_MODE,
+            'sort_mode': sort_keys.canonical(config.DEFAULT_SORT_MODE),
             'sort_reverse': config.DEFAULT_SORT_REVERSE,
             'filter_pattern': "",  # Filename filter pattern for this pane
             'virtual': None,  # When set, a search-results feed (see _feed_search_results)
@@ -34,7 +35,7 @@ class PaneManager:
             'scroll_offset': 0,
             'files': [],
             'selected_files': set(),  # Track selected files for batch operations
-            'sort_mode': config.DEFAULT_SORT_MODE,
+            'sort_mode': sort_keys.canonical(config.DEFAULT_SORT_MODE),
             'sort_reverse': config.DEFAULT_SORT_REVERSE,
             'filter_pattern': "",  # Filename filter pattern for this pane
             'virtual': None,  # When set, a search-results feed (see _feed_search_results)

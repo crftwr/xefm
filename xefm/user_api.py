@@ -54,11 +54,21 @@ warning that skips that entry, never a load failure.
 """
 
 import traceback
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping, NamedTuple
 
 from xefm import actions as _actions
+from xefm import name_key
+from xefm import sort_keys as _sort_keys
 from xefm.log_manager import getLogger
 from xefm.path import Path
+
+
+class _SeededStat(NamedTuple):
+    """The two fields :class:`EntryInfo` reads off a ``stat`` result, filled from
+    a listing's attribute record instead of a syscall."""
+
+    st_size: int
+    st_mtime: float
 
 
 logger = getLogger("UserAPI")
@@ -100,13 +110,29 @@ class EntryInfo:
     and are then remembered. A predicate that only looks at names therefore
     touches the filesystem not at all, which is what keeps
     :meth:`PaneApi.select` cheap over a large directory.
+
+    **``name`` is the name the pane shows, not the bytes on disk.** It is the
+    compared name (:mod:`xefm.name_key`): composed, and on a search-results pane
+    the whole path below the search root, exactly as the row reads and exactly
+    what the built-in sorts order by. Handing over the raw name instead would put
+    the bug that module exists to fix inside every config that touched
+    ``entry.name`` — a decomposed ``が`` never matching the ``が`` its author
+    typed. ``stem`` and ``suffix`` are composed for the same reason.
+
+    ``path`` is the one verbatim thing here, and is what a filesystem call must
+    use. On a volume that matches names byte for byte, opening ``entry.name``
+    would fail on precisely the entries this distinction exists for.
     """
 
     __slots__ = ("path", "name", "is_dir", "is_link", "_stat")
 
-    def __init__(self, path, *, is_dir: bool = False, is_link: bool = False):
+    def __init__(self, path, *, is_dir: bool = False, is_link: bool = False,
+                 name: str | None = None):
         self.path = path
-        self.name = path.name
+        #: The listing knows the compared name and passes it; a caller holding
+        #: only a path composes the basename, which is the same answer wherever
+        #: there is no pane root to be relative to.
+        self.name = name or name_key.compare_name(path)
         self.is_dir = is_dir
         self.is_link = is_link
         self._stat: Any = None
@@ -117,13 +143,35 @@ class EntryInfo:
 
     @property
     def suffix(self) -> str:
-        """The extension including its dot, ``''`` when there is none."""
-        return self.path.suffix
+        """The extension including its dot, ``''`` when there is none. Composed,
+        like :attr:`name` — a predicate comparing it is comparing text."""
+        return name_key.nfc(self.path.suffix)
 
     @property
     def stem(self) -> str:
-        """The name without its extension."""
-        return self.path.stem
+        """The name without its extension, composed. This is the *file's* own
+        stem even on a search-results pane, where :attr:`name` is the whole
+        relative path."""
+        return name_key.nfc(self.path.stem)
+
+    @classmethod
+    def from_attrs(cls, path, attrs: Mapping[str, Any]):
+        """An entry whose ``size`` and ``mtime`` come from a listing's attribute
+        record instead of a fresh ``stat``.
+
+        The sort hands user keys these. A key is called once per entry, and the
+        whole point of the listing snapshot is that it already read is_dir, size
+        and mtime for every one of them — letting a key go back to disk would put
+        10,000 round trips on a network mount behind an ordering that needs none.
+        An entry the listing could not read reports zeroes rather than retrying,
+        the same answer :meth:`_stat_result` gives for a broken symlink."""
+        entry = cls(path, is_dir=bool(attrs.get("is_dir")),
+                    is_link=bool(attrs.get("is_link")),
+                    name=attrs.get("cmp_name"))
+        entry._stat = (_SeededStat(int(attrs.get("size") or 0),
+                                   float(attrs.get("mtime") or 0.0))
+                       if attrs.get("ok") else False)
+        return entry
 
     def _stat_result(self):
         if self._stat is None:
@@ -223,7 +271,8 @@ class PaneApi:
             meta = info.get(str(entry)) or {}
             out.append(EntryInfo(entry,
                                  is_dir=bool(meta.get("is_dir")),
-                                 is_link=bool(meta.get("is_link"))))
+                                 is_link=bool(meta.get("is_link")),
+                                 name=meta.get("cmp_name")))
         return out
 
     @property
@@ -469,14 +518,14 @@ class EventHooks:
 hooks = EventHooks()
 
 
-def load_user_entries(config, registry=None) -> tuple[list[str], int, int]:
-    """Install a config's ``ACTIONS`` and ``EVENT_HOOKS``.
+def load_user_entries(config, registry=None) -> tuple[list[str], int, int, int]:
+    """Install a config's ``ACTIONS``, ``EVENT_HOOKS`` and ``SORT_KEYS``.
 
     Every previously loaded user entry is dropped first, so this doubles as the
     reload path: edit the config, reload, and the new definitions replace the old
     ones with no restart and no idempotence contract on the config's part.
 
-    Returns ``(warnings, action_count, hook_count)``. Warnings are the same kind
+    Returns ``(warnings, action_count, hook_count, sort_key_count)``. Warnings are the same kind
     of non-fatal, report-them-all diagnostics the rest of ``validate_config``
     produces; a warned entry is skipped, never fatal.
     """
@@ -489,11 +538,12 @@ def validate_user_entries(config, registry=None) -> list[str]:
     return _process_user_entries(config, registry, apply=False)[0]
 
 
-def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int]:
+def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int, int]:
     registry = registry if registry is not None else _actions.registry
     if apply:
         registry.unregister_source("user")
         hooks.clear()
+        _sort_keys.clear()
 
     warnings: list[str] = []
     count = 0
@@ -538,7 +588,18 @@ def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int
                 hooks.set(event, good)
             hook_count += len(good)
 
-    return warnings, count, hook_count
+    sort_count = 0
+    for name, spec in _items(getattr(config, "SORT_KEYS", None), "SORT_KEYS", warnings):
+        entry, problem = _build_sort_key(name, spec)
+        if problem:
+            warnings.append(problem)
+            continue
+        if apply:
+            _sort_keys.register(name, entry["key"], label=entry["label"],
+                                explain=entry["explain"], hotkey=entry["hotkey"])
+        sort_count += 1
+
+    return warnings, count, hook_count, sort_count
 
 
 def _items(value, label: str, warnings: list[str]):
@@ -549,6 +610,39 @@ def _items(value, label: str, warnings: list[str]):
         warnings.append(f"{label} must be a dictionary, not {type(value).__name__}")
         return []
     return list(value.items())
+
+
+def _build_sort_key(name, spec) -> tuple[dict | None, str | None]:
+    """Validate one ``SORT_KEYS`` entry, or explain why it cannot be one.
+
+    Shadowing a built-in mode needs ``"override": True``, as an action does: the
+    four built-in names are short and ordinary, and a config that meant to add
+    ``"size_then_name"`` and wrote ``"size"`` should hear about it rather than
+    quietly redefine what the Size row does."""
+    if not isinstance(name, str) or not name:
+        return None, f"SORT_KEYS keys must be non-empty strings; ignored {name!r}"
+    if callable(spec):
+        spec = {"key": spec}
+    if not isinstance(spec, dict):
+        return None, (f"SORT_KEYS['{name}'] must be a function or a dict with a "
+                      f"'key' key, not {type(spec).__name__}")
+    func = spec.get("key")
+    if not callable(func):
+        return None, f"SORT_KEYS['{name}'] has no callable 'key'"
+    if name in _sort_keys.BUILTIN_NAMES and not _override_requested(spec):
+        return None, (
+            f"SORT_KEYS['{name}'] would replace the built-in '{name}' sort and "
+            f"was ignored — pass {{'key': ..., 'override': True}} if that is "
+            f"intended")
+    hotkey = spec.get("hotkey")
+    if hotkey is not None:
+        hotkey = str(hotkey)[:1].upper()
+        if not hotkey.isalpha():
+            return None, f"SORT_KEYS['{name}'] has a 'hotkey' that is not a letter"
+    return {"label": (str(spec["label"]) if spec.get("label") else None),
+            "key": func,
+            "explain": (str(spec["explain"]) if spec.get("explain") else None),
+            "hotkey": hotkey}, None
 
 
 def _override_requested(spec) -> bool:
@@ -590,11 +684,14 @@ def _build_action(name, spec) -> tuple[_actions.Action | None, str | None]:
     ), None
 
 
-def preview_notice(action_count: int, hook_count: int) -> str | None:
+def preview_notice(action_count: int, hook_count: int,
+                   sort_key_count: int = 0) -> str | None:
     """The one line a config using this API gets in the log pane, or ``None``
     when it uses none of it."""
-    if not action_count and not hook_count:
+    if not action_count and not hook_count and not sort_key_count:
         return None
+    parts = [f"{action_count} action(s)", f"{hook_count} event hook(s)"]
+    if sort_key_count:
+        parts.append(f"{sort_key_count} sort key(s)")
     return (f"Customization API (Preview, API_VERSION {API_VERSION}): "
-            f"{action_count} action(s), {hook_count} event hook(s) loaded — "
-            f"this API may change without notice.")
+            f"{', '.join(parts)} loaded — this API may change without notice.")

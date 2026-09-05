@@ -82,7 +82,7 @@ which differ only in what they reset:
 | | `_relist(pane)` | `_refresh(pane)` | `_resort(pane)` |
 |---|---|---|---|
 | Meaning | re-list the **same** directory | the pane **navigated** | re-order what is already listed |
-| Reads the disk | yes, on a worker | yes, on a worker | **no** — rebuilds from the snapshot |
+| Reads the disk | yes, on a worker | yes, on a worker | **no** — rebuilds from the snapshot, on a worker |
 | Cursor / scroll | untouched (clamped when the result lands) | reset to the top | held on the same **file** |
 | History record | no | yes | no |
 | Used by | post-operation reload, startup, `show_hidden` | enter/leave a directory, jump, favorites | sort, filter |
@@ -95,15 +95,38 @@ drift.
 
 `_resort` is the one that does no I/O: a sort or filter change needs nothing the
 previous listing did not already collect, so it re-filters and re-sorts the
-snapshot on the current tick and falls back to `_relist` only when the pane has
-no snapshot to reuse. See
+snapshot, falling back to `_relist` only when the pane has no snapshot to reuse.
+See
 [`DIRECTORY_SCAN_SYSTEM.md`](DIRECTORY_SCAN_SYSTEM.md#sorting-and-filtering-without-re-reading).
+
+**It runs on a worker like the others**, and did not always. Reusing the snapshot
+took the disk read out of a sort; what was left was microseconds of arithmetic,
+so it landed on the tick, and landing on the tick was the point — `_relist`
+blanks the pane until a worker reports, which on a slow mount left it empty for
+the whole re-read. That argument stopped holding when a config could supply the
+sort key ([`SORT_KEYS`](CUSTOMIZATION_API_IMPLEMENTATION.md), and see
+[`FILENAME_NORMALIZATION_SYSTEM.md`](FILENAME_NORMALIZATION_SYSTEM.md) for why it
+can): the ordering became arbitrary code called once per entry, which must not be
+able to hold the UI thread.
+
+The flicker argument is answered differently rather than abandoned. `_resort`
+posts through the same queue as everything else but **does not blank the pane**,
+the way a filesystem-monitor reload does not: the current rows stay on screen and
+stay actionable for the whole re-sort. Two details follow from that:
+
+* The queue item carries `drop_if_unchanged` separately from `keep_visible`. They
+  used to be the same flag, because the only non-blanking listing was the monitor
+  reload, which *wants* to be dropped when it would redraw nothing. A re-sort
+  keeps the pane visible too but must never be dropped: a caller waiting on
+  `on_ready` has to hear back even when the new order is identical.
+* The cursor is held on the file that was focused **when the sort was asked
+  for**. The old rows stay live while the worker runs, so a cursor moved in the
+  meantime lands back on what the user was looking at when they pressed the key.
 
 Filter changes get a thin wrapper on top — `XeFMApp._apply_filter(pane, pattern,
 on_count=…)` — because the *count* the log line reports is a property of the
 listing, not of the pane state: `set_filter` lands immediately, and `on_count(n)`
-fires when the listing does (immediately via `_resort`, or when the worker
-reports back if it had to fall back to `_relist`).
+fires when the listing does.
 
 ---
 

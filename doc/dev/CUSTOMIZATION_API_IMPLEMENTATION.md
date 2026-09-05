@@ -440,14 +440,75 @@ leaving a search-results (virtual) pane.
 
 ---
 
+## 8b. `SORT_KEYS` — the first exposed registry
+
+Step 4's first customer, and deliberately not the one the design wrote up first.
+`VIEWER_RENDERERS` returns a PuiKit widget, the one place a PuiKit type must
+cross the façade; a sort key returns *data*, so it shook the machinery down
+without freezing anything hard to keep stable. It ships because #380 asked for
+it: XeFM's order is not the platform shell's, and the answer is to expose the
+choice rather than build one shell's collation in.
+
+`xefm/sort_keys.py` holds the table — the four built-in rows, and whatever a
+config registered, rebuilt wholesale on reload exactly as `EVENT_HOOKS` is.
+
+The built-in modes were renamed to the dialog's own labels in lower case
+(`filename` / `extension` / `size` / `timestamp`) as part of this. XeFM's
+shorthand — `name`, `ext`, `date` — cost nothing while it stayed internal and
+started costing something the moment a config had to write one: a user reads
+"Timestamp" in the dialog and has no way to guess `date`. `sort_keys.ALIASES`
+keeps the old spellings resolving, and `sort_keys.canonical` is applied wherever
+a mode arrives from outside — saved pane state, `DEFAULT_SORT_MODE`, a `SORT_KEYS`
+key, an action — so everything past that boundary compares one set of names. The
+`quick_sort_*` **action** names are untouched: those live in the key-binding
+namespace, which has its own rename mechanism (`Action.aliases`).
+`_process_user_entries` validates and loads it alongside the other two, and
+`_build_sort_key` mirrors `_build_action`: a bare callable is shorthand, a dict
+carries `label` / `explain` / `hotkey`, and naming a built-in needs
+`"override": True` for the same reason an action does.
+
+Four decisions worth keeping:
+
+**Key functions, not comparators.** A key is called O(N) times, a comparator
+O(N log N). That was a live tension while platform collation was still the plan
+for #380 — the native routes (`CompareStringW`, `localizedStandardCompare:`) are
+comparators, so a built-in would have wanted one contract and the registry
+another. Exposing the choice instead of building it in removed the tension: there
+is one contract, and a config that insists on a comparator wraps it in
+`functools.cmp_to_key` and owns the cost.
+
+**The key runs off the UI thread**, which is why `_resort` moved to a worker
+(see [`ASYNC_LISTING_SYSTEM.md`](ASYNC_LISTING_SYSTEM.md)). This is the opposite
+of the promise `ACTIONS` and `EVENT_HOOKS` make, and it is the promise §6's
+threading rule always said had to be made with the first registry rather than
+after: sorting *is* the slow per-entry work, so it is the one thing that cannot
+be pinned to the UI thread.
+
+**`EntryInfo.from_attrs` seeds size and mtime** from the listing's own attribute
+record. Without it a key reading `entry.size` would `stat` once per entry — 10,000
+round trips on a network mount, for information the listing already collected,
+behind an ordering that needs none.
+
+**Failure is isolated at the sort, not the entry.** `run_guarded`'s per-call
+granularity is right for an action and wrong here: a key that is broken is broken
+for every file, and would emit a traceback per row. `_sort_by_user_key` wraps the
+whole sort, falls back to the built-in name order, and logs once.
+
+Integration is wider than the table: a sort mode is a string that reaches the
+dialog's rows and explanations, the Sort By menu, the status-bar description, and
+`state_manager`'s saved pane state — where `sort_keys.is_known` guards the
+restore, because a config can stop defining a mode a previous session saved.
+
+---
+
 ## 9. Not implemented
 
-**Step 4, exposed registries.** `VIEWER_RENDERERS` feeding
-`viewer_registry.register()`, and sort keys / filter predicates as user
-callables. `xefm/viewer_registry.py` still anticipates it in its own docstring.
-The design flags the reason to wait: a renderer builder returns a PuiKit widget,
-which is the one place a PuiKit type must cross the façade, and that is the
-hardest part of this API to keep stable across PuiKit releases.
+**Step 4's remainder.** `VIEWER_RENDERERS` feeding `viewer_registry.register()`,
+and filter predicates as user callables. `xefm/viewer_registry.py` still
+anticipates it in its own docstring. The design flags the reason to wait: a
+renderer builder returns a PuiKit widget, which is the one place a PuiKit type
+must cross the façade, and that is the hardest part of this API to keep stable
+across PuiKit releases.
 
 **Add-ons (`~/.xefm/addons/`).** Out of scope by design — the same machinery
 plus discovery and lifecycle, and a stability promise to third parties that

@@ -77,6 +77,7 @@ from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
 from xefm.pane_manager import PaneManager
 from xefm.path import Path
 from xefm import search_match
+from xefm import sort_keys
 from xefm.state_manager import get_state_manager
 from xefm.str_format import abbreviate_path, format_size
 from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
@@ -1245,17 +1246,18 @@ class XeFMApp:
         self._start_initial_listings()
 
     def _load_user_entries(self, config) -> None:
-        """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` and report on them.
+        """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` / ``SORT_KEYS`` and
+        report on them.
 
         Shared by startup and reload — the loader drops every previously loaded
         user entry first, so re-running it *is* the reload. Problems are reported
         as ordinary log lines, one per bad entry, and a config that uses the API
         at all gets the one-line preview notice: this is not a stable surface
         yet, and the log pane is where a user finds that out."""
-        warnings, action_count, hook_count = load_user_entries(config)
+        warnings, action_count, hook_count, sort_count = load_user_entries(config)
         for warning in warnings:
             self.log_info(f"Config warning: {warning}")
-        notice = preview_notice(action_count, hook_count)
+        notice = preview_notice(action_count, hook_count, sort_count)
         if notice:
             self.log_info(notice)
         # Action names that have been corrected since this config was written.
@@ -1380,7 +1382,13 @@ class XeFMApp:
                     pane['path'] = saved
             except Exception:
                 pass
-        pane['sort_mode'] = state.get('sort_mode', pane['sort_mode'])
+        # A registered sort can disappear between sessions — the config that
+        # defined it was edited. Fall back rather than restore a mode nothing
+        # answers to, which would leave the pane's own listing unsorted and the
+        # status bar naming a key that no longer exists.
+        saved_mode = sort_keys.canonical(state.get('sort_mode', pane['sort_mode']))
+        pane['sort_mode'] = (saved_mode if sort_keys.is_known(saved_mode)
+                             else pane['sort_mode'])
         pane['sort_reverse'] = state.get('sort_reverse', pane['sort_reverse'])
         pane['filter_pattern'] = state.get('filter_pattern', pane['filter_pattern'])
 
@@ -1591,7 +1599,10 @@ class XeFMApp:
                 path, filter_pattern=filter_pattern,
                 sort_mode=sort_mode, sort_reverse=sort_reverse,
             )
-            self._result_queue.put((pane_name, gen, result, on_ready, keep_visible))
+            # drop_if_unchanged tracks keep_visible here: a re-list nobody
+            # asked for is the case worth dropping. The re-sort path posts False.
+            self._result_queue.put((pane_name, gen, result, on_ready,
+                                    keep_visible, keep_visible))
             self._wake_pump()  # wake the UI thread to install the listing
 
         threading.Thread(target=worker, name=f"xefm-list-{pane_name}", daemon=True).start()
@@ -1654,7 +1665,8 @@ class XeFMApp:
         applied = False
         while True:
             try:
-                pane_name, gen, result, on_ready, keep_visible = self._result_queue.get_nowait()
+                (pane_name, gen, result, on_ready, keep_visible,
+                 drop_if_unchanged) = self._result_queue.get_nowait()
             except queue.Empty:
                 break
             pane = self.pane(pane_name)
@@ -1669,7 +1681,8 @@ class XeFMApp:
             # blanked by an in-flight navigation must install the result even when
             # it compares equal (an empty directory would otherwise match the
             # blank pane and leave it stuck "loading" forever).
-            if keep_visible and not pane.get("loading") and self._listing_unchanged(pane, result):
+            if (drop_if_unchanged and not pane.get("loading")
+                    and self._listing_unchanged(pane, result)):
                 # Nothing to redraw, but the entries are a fresher snapshot than
                 # the one held — keep it current so a later sort or filter change
                 # rebuilds from what is on disk now, at no cost.
@@ -2001,14 +2014,23 @@ class XeFMApp:
 
         A sort change needs nothing the previous listing did not already read:
         the entry list and each entry's size, date and type are still in hand, so
-        the new order is computed in memory and installed on this tick. That
-        matters most where it used to hurt most — re-sorting a 1,680-entry
-        directory on a NAS cost a full re-read (tens of seconds of per-file round
-        trips, #183) to produce a list the pane could already have derived.
+        the new order is derived from that snapshot. That matters most where it
+        used to hurt most — re-sorting a 1,680-entry directory on a NAS cost a
+        full re-read (tens of seconds of per-file round trips, #183) to produce a
+        list the pane could already have derived.
 
-        Because it lands synchronously there is no blank-then-repopulate flicker:
-        ``_relist`` clears ``pane['files']`` until a worker reports back, which on
-        a slow mount left the pane empty for the whole re-read.
+        **On a worker thread**, like every other listing. It used to land
+        synchronously, because the work was microseconds of arithmetic over data
+        in hand and landing on the tick avoided the blank-then-repopulate flicker
+        of ``_relist``. A sort key can now come from a user's config
+        (``SORT_KEYS``), which makes it arbitrary code run once per entry — a
+        thing that must never be able to hold the UI thread. The flicker argument
+        still holds and is answered differently: this posts its result the way a
+        filesystem-monitor reload does, **without blanking the pane**, so the
+        current rows stay on screen and stay actionable for the whole re-sort
+        rather than the pane emptying. Unlike that reload it is never dropped as
+        an unchanged redraw, because a caller waiting on ``on_ready`` — the filter
+        path, reporting a count — must hear back even when the order is identical.
 
         Falls back to :meth:`_relist` when the pane has no snapshot (nothing
         listed yet, or the last listing failed), so behaviour is unchanged when
@@ -2017,16 +2039,25 @@ class XeFMApp:
         ``keep_cursor`` holds the cursor on the *same file* across the reorder
         rather than the same row number. Callers that deliberately reset the
         cursor — a filter change, via ``FileListManager.set_filter`` — pass
-        False."""
-        result = self.flm.recompute_listing(
-            pane,
-            filter_pattern=pane.get("filter_pattern"),
-            sort_mode=pane["sort_mode"],
-            sort_reverse=pane["sort_reverse"],
-        )
-        if result is None:
+        False. The file is the one focused when the sort was *asked for*: the old
+        rows stay live while the worker runs, so a cursor moved in the meantime
+        lands back on what the user was looking at when they pressed the key."""
+        entries = pane.get("_listing_entries")
+        if entries is None:
             self._relist(pane, on_ready=on_ready)
             return
+
+        pane_name = self._pane_name_of(pane)
+        gen = pane["_load_gen"] = pane.get("_load_gen", 0) + 1
+        pane["_load_pending"] = True
+
+        # Snapshot every input: the worker must not read the pane dict, which the
+        # UI thread owns and goes on mutating (cursor, selection) while it runs.
+        filter_pattern = pane.get("filter_pattern")
+        sort_mode = pane["sort_mode"]
+        sort_reverse = pane["sort_reverse"]
+        virtual = pane.get("virtual")
+        rel_root = virtual.get("root") if virtual else None
 
         focused = None
         if keep_cursor:
@@ -2035,18 +2066,25 @@ class XeFMApp:
             if 0 <= index < len(files):
                 focused = str(files[index])
 
-        self.flm.apply_listing(pane, result)
+        def landed(p: dict) -> None:
+            if focused is not None:
+                for i, entry in enumerate(p["files"]):
+                    if str(entry) == focused:
+                        p["focused_index"] = i
+                        break
+                self.pm.adjust_scroll_for_focus(p, self._display_height())
+            if on_ready is not None:
+                on_ready(p)
 
-        if focused is not None:
-            for i, entry in enumerate(pane["files"]):
-                if str(entry) == focused:
-                    pane["focused_index"] = i
-                    break
-            self.pm.adjust_scroll_for_focus(pane, self._display_height())
+        def worker() -> None:
+            result = self.flm.recompute_from_snapshot(
+                entries, filter_pattern=filter_pattern, sort_mode=sort_mode,
+                sort_reverse=sort_reverse, rel_root=rel_root)
+            self._result_queue.put((pane_name, gen, result, landed, True, False))
+            self._wake_pump()
 
-        self._animate_pane_text(self._pane_name_of(pane))
-        if on_ready is not None:
-            on_ready(pane)
+        threading.Thread(target=worker, name=f"xefm-sort-{pane_name}",
+                         daemon=True).start()
 
     def _refresh(self, pane: dict, *, on_ready=None) -> None:
         """Re-list ``pane`` after a directory change: reset the cursor, record
@@ -2164,10 +2202,10 @@ class XeFMApp:
                 # --- listing ---
                 "toggle_hidden": (self._act_toggle_hidden, True),
                 "toggle_color_scheme": (self._cycle_theme, True),
-                "quick_sort_name": (lambda: self._quick_sort("name"), True),
+                "quick_sort_name": (lambda: self._quick_sort("filename"), True),
                 "quick_sort_size": (lambda: self._quick_sort("size"), True),
-                "quick_sort_date": (lambda: self._quick_sort("date"), True),
-                "quick_sort_ext": (lambda: self._quick_sort("ext"), True),
+                "quick_sort_date": (lambda: self._quick_sort("timestamp"), True),
+                "quick_sort_ext": (lambda: self._quick_sort("extension"), True),
                 "sort": (self.show_sort_menu, False),
                 "clear_filter": (self._act_clear_filter, True),
                 "filter": (self.enter_filter, False),
@@ -3267,16 +3305,18 @@ class XeFMApp:
             self.log_info(f"Revealed {entry.name}")
 
     def _sort_menu(self) -> Menu:
-        """The menu-bar's 'Sort By' submenu, over the same four keys the sort
-        dialog offers (the keyboard path — ``show_sort_menu`` — opens the
-        specialized dialog instead, see :mod:`xefm.sort_dialog`). A live
-        ``checked`` predicate marks the active pane's current mode."""
-        sort_modes = (("Filename", "name"), ("Extension", "ext"),
-                      ("Size", "size"), ("Timestamp", "date"))
+        """The menu-bar's 'Sort By' submenu, over the same keys the sort dialog
+        offers (the keyboard path — ``show_sort_menu`` — opens the specialized
+        dialog instead, see :mod:`xefm.sort_dialog`). A live ``checked``
+        predicate marks the active pane's current mode.
+
+        Built from :func:`xefm.sort_keys.rows` rather than a fixed four, so a key
+        a config registered appears here as well as in the dialog. The menu is
+        rebuilt on demand, which is what makes a config reload show up in it."""
         return Menu(*[
             MenuItem(label, on_select=(lambda m=mode: self._set_sort(m)),
                      checked=(lambda m=mode: self.active_pane()["sort_mode"] == m))
-            for label, mode in sort_modes
+            for mode, label, _hotkey in sort_keys.rows()
         ], title="Sort By")
 
     def show_sort_menu(self) -> None:

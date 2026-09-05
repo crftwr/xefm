@@ -12,6 +12,7 @@ import os
 import platform
 import sys
 from xefm.path import Path
+from xefm import sort_keys
 from xefm.log_manager import getLogger
 
 
@@ -799,8 +800,11 @@ class ConfigManager:
             errors.append("DEFAULT_LOG_HEIGHT_RATIO must be between 0.1 and 0.5")
         
         # Validate sort mode
-        if config.DEFAULT_SORT_MODE not in ['name', 'ext', 'size', 'date']:
-            errors.append("DEFAULT_SORT_MODE must be 'name', 'ext', 'size', or 'date'")
+        # Old spellings still validate: a config on disk predating the rename
+        # says 'name' or 'date', and sort_keys.canonical resolves both.
+        if not sort_keys.is_known(config.DEFAULT_SORT_MODE):
+            errors.append("DEFAULT_SORT_MODE must be 'filename', 'extension', "
+                          "'size' or 'timestamp'")
 
         # Validate the text viewer's encoding picker list. Only the shape is
         # checked here — an unknown codec name is a per-entry warning when the

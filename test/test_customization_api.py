@@ -371,7 +371,7 @@ def test_a_bare_callable_is_the_simple_form(clean_registry):
     def mine(ctx):
         pass
 
-    warnings, actions_n, hooks_n = user_api.load_user_entries(config_with(ACTIONS={"mine": mine}))
+    warnings, actions_n, hooks_n, _ = user_api.load_user_entries(config_with(ACTIONS={"mine": mine}))
     assert warnings == []
     assert (actions_n, hooks_n) == (1, 0)
     loaded = xa.registry.resolve(xa.FILER, "mine")
@@ -382,12 +382,12 @@ def test_shadowing_a_builtin_needs_an_explicit_override(clean_registry):
     def mine(ctx):
         pass
 
-    warnings, actions_n, _ = user_api.load_user_entries(config_with(ACTIONS={"quit": mine}))
+    warnings, actions_n, _, _ = user_api.load_user_entries(config_with(ACTIONS={"quit": mine}))
     assert actions_n == 0
     assert len(warnings) == 1 and "override" in warnings[0]
     assert xa.registry.resolve(xa.FILER, "quit").source == "builtin"
 
-    warnings, actions_n, _ = user_api.load_user_entries(
+    warnings, actions_n, _, _ = user_api.load_user_entries(
         config_with(ACTIONS={"quit": {"func": mine, "override": True}}))
     assert warnings == [] and actions_n == 1
     assert xa.registry.resolve(xa.FILER, "quit").func is mine
@@ -407,7 +407,7 @@ def test_reloading_replaces_every_previous_user_entry(clean_registry):
     ({"func": lambda ctx: None, "context": "text_viewer"}, "accepted only in"),
 ])
 def test_a_malformed_action_is_one_warning_not_a_failure(spec, fragment, clean_registry):
-    warnings, actions_n, _ = user_api.load_user_entries(
+    warnings, actions_n, _, _ = user_api.load_user_entries(
         config_with(ACTIONS={"mine": spec, "fine": lambda ctx: None}))
     assert actions_n == 1  # the good one still loaded
     assert len(warnings) == 1 and fragment in warnings[0]
@@ -417,7 +417,7 @@ def test_hooks_load_and_unknown_events_warn(clean_registry):
     def hook(ctx):
         pass
 
-    warnings, _, hooks_n = user_api.load_user_entries(config_with(
+    warnings, _, hooks_n, _ = user_api.load_user_entries(config_with(
         EVENT_HOOKS={"startup": [hook], "quit": hook, "nope": [hook]}))
     assert hooks_n == 2  # a bare callable is accepted alongside a list
     assert len(warnings) == 1 and "not a known event" in warnings[0]
