@@ -230,6 +230,42 @@ satisfies both constraints on every backend, and so does the `Ctrl-A` of
 wanted (its select-all-text), taken deliberately and only in the Ctrl form, so
 `Cmd-A` still selects the text on macOS.
 
+## Key labels in the UI
+
+Every key a surface names on screen is read back from the same keymap that
+matched it — a hint is never a literal. A rebind that changes what a key does
+has to change what the UI calls it, or the two drift apart, which is exactly
+what issue #382 reported: `text_viewer.scroll_up`/`scroll_down` rebound to
+`K`/`J` showed `K / J` in the help dialog and `↑↓ scroll` in the footer.
+
+Two label shapes, for two audiences:
+
+- **Help dialogs list every binding**, `" / "`-joined — `_label()` / `_pair()`
+  in each viewer, `_keys_label()` / `_keys_pair()` in the directory-diff viewer
+  (which resolves against an injected `KeyBindings` when it has one).
+- **Footers name one key per action** — `footer_key()` and `footer_pair()` in
+  `xefm/text_viewer.py`, shared by all four viewers. The bar elides from the
+  right, so a second binding would spend width restating what the help dialog
+  already covers; `image_viewer.zoom_in` alone is bound to both `+` and `=`.
+  `footer_pair` collapses two plain arrows into a cluster (`↑↓`, `←→`) and
+  slash-joins anything else (`n/Shift-N`), which keeps a default keymap's bar
+  looking as it always has.
+
+An action left unbound yields an empty label, and the caller drops the whole
+segment rather than printing a word no key triggers — the same rule the main
+window's `StatusBar._isearch_hints()` follows.
+
+The one deliberate literal is the text viewer's **rich mode** footer
+(`_draw_rich`): keys there are forwarded straight to the embedded renderer,
+which scrolls on its own arrows, so `text_viewer.scroll_*` is inert and naming
+it would advertise a key that does nothing. It says `↑↓ scroll` because `↑↓` is
+what scrolls.
+
+A row about *another* surface's keys passes that surface's context: the
+viewers' "prev / next match (in search)" row resolves `isearch.prev_match` /
+`isearch.next_match` in `ISEARCH`, not in the viewer's own context, where those
+actions do not exist.
+
 ## Error handling
 
 Parsing is defensive — an unknown modifier or key token logs a warning and is
@@ -245,6 +281,8 @@ skipped rather than crashing; a missing `KEY_BINDINGS` config falls back to
 - `test/test_isearch_keys.py` — the isearch context: its defaults, the
   printable-binding notice, the bar's three-step routing, and Shift+Up/Down
   marking through a live file list.
+- `test/test_viewer_footer_keys.py` — the label helpers, and each viewer's
+  footer text under a rebind (issue #382).
 
 ## See Also
 

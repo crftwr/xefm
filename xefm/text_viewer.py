@@ -31,6 +31,7 @@ from puikit.text import display_width, elide, word_bounds, wrap_text
 from puikit.widgets._input import EdgeAutoScroll, MultiClickTracker
 from puikit.widgets.base import Widget
 
+from xefm.actions import ISEARCH
 from xefm.actions import TEXT_VIEWER as _CONTEXT
 from xefm.choice_dialog import show_choice_dialog
 from xefm.config import (find_action_for_event, format_key_for_display,
@@ -58,20 +59,59 @@ MONO = Font(monospace=True)
 _TAB = 8
 
 
-def _label(action: str, fallback: str = "") -> str:
+#: Arrow glyphs that read as one cluster when a pair of actions renders as a
+#: single footer label (``↑`` + ``↓`` -> ``↑↓``) — the shape the viewers' bars
+#: have shown since before the scroll keys were rebindable.
+_ARROWS = frozenset("↑↓←→")
+
+
+def _label(action: str, fallback: str = "", context: str = _CONTEXT) -> str:
     """Display label for ``action``'s keys **as this viewer resolves them** —
     in the ``text_viewer`` context, so a scoped rebind (``'text_viewer.quit'``)
     and the action's built-in defaults both show up, formatted for the UI
-    (``DOWN`` -> ↓). ``fallback`` covers an action left deliberately unbound."""
-    keys, _ = get_keys_for_action(action, _CONTEXT)
+    (``DOWN`` -> ↓). ``fallback`` covers an action left deliberately unbound.
+    ``context`` names another surface's context for a row about *its* keys —
+    the isearch bar's, say, which this viewer hands its search over to."""
+    keys, _ = get_keys_for_action(action, context)
     if not keys:
         return fallback
     return " / ".join(format_key_for_display(k) for k in keys)
 
 
-def _pair(first: str, second: str) -> str:
-    """One help row's label for two actions that read as a pair (``↑ / ↓``)."""
-    return f"{_label(first)} / {_label(second)}"
+def _pair(first: str, second: str, context: str = _CONTEXT) -> str:
+    """One help row's label for two actions that read as a pair (``↑ / ↓``).
+    A side left unbound drops out rather than printing a bare separator."""
+    labels = [lab for lab in (_label(first, context=context),
+                              _label(second, context=context)) if lab]
+    return " / ".join(labels)
+
+
+def footer_key(action: str, context: str, fallback: str = "", keys=None) -> str:
+    """The *first* key bound to ``action`` in ``context``, display-formatted.
+
+    A footer names one key per action: the bar elides from the right, and a
+    second binding would spend that width restating what the help dialog lists
+    in full. ``keys`` resolves against an injected ``KeyBindings`` (the
+    directory-diff viewer takes one) instead of the shared singleton."""
+    getter = keys.get_keys_for_action if keys is not None else get_keys_for_action
+    bound, _ = getter(action, context)
+    return format_key_for_display(bound[0]) if bound else fallback
+
+
+def footer_pair(first: str, second: str, context: str, keys=None) -> str:
+    """One compact footer label for two actions that read as a pair.
+
+    Two plain arrows collapse into a cluster (``↑↓``, ``←→``); anything else
+    reads as ``n/Shift-N``. A side left unbound drops out, and a pair with
+    neither side bound returns ``""`` — the caller then drops the whole
+    segment rather than printing a word no key triggers."""
+    first_k = footer_key(first, context, keys=keys)
+    second_k = footer_key(second, context, keys=keys)
+    if not first_k or not second_k:
+        return first_k or second_k
+    if first_k in _ARROWS and second_k in _ARROWS:
+        return first_k + second_k
+    return f"{first_k}/{second_k}"
 
 
 def span_x(line: str, col0: int, col: int) -> float:
@@ -916,15 +956,20 @@ class TextViewer(Widget):
         enc_k = _label("change_encoding", "Shift-E")
         quit_k = _label("quit", "q")
         edit_seg = self._edit_hint_segment()
+        # Scroll and pan read from the live keymap like every other hint on this
+        # bar: raw mode runs them as ``text_viewer.scroll_*`` actions, so a
+        # rebind has to read the same here as in the help dialog (issue #382).
+        scroll_seg = self._scroll_hint_segment()
+        pan_seg = self._pan_hint_segment()
         # When a rich renderer exists, advertise the toggle to it (e.g. "M markdown");
         # elide handles the longer hint on a narrow window.
         if self._rich is not None:
             view_k = _label("toggle_view_mode", "M")
-            hint = (f" ↑↓ scroll · {wrap_k} wrap · {search_k} search · "
+            hint = (f" {scroll_seg}{wrap_k} wrap · {search_k} search · "
                     f"{view_k} {self._rich.name.lower()} · {enc_k} encoding · "
                     f"{edit_seg}{quit_k}/Esc close ")
         else:
-            hint = (f" ↑↓ scroll · ←→ pan · {wrap_k} wrap · {search_k} search · "
+            hint = (f" {scroll_seg}{pan_seg}{wrap_k} wrap · {search_k} search · "
                     f"{enc_k} encoding · {edit_seg}{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
@@ -948,6 +993,10 @@ class TextViewer(Widget):
         wrap_seg = ""
         if hasattr(self._rich_widget, "toggle_wrap"):
             wrap_seg = f"{_label('toggle_wrap', 'w')} wrap · "
+        # ``↑↓`` is hardcoded here alone: rich mode forwards keys straight to the
+        # embedded renderer, which scrolls on its own arrows — a rebound
+        # ``text_viewer.scroll_down`` does nothing in this mode, so naming it
+        # would advertise a key that does not scroll.
         hint = (f" ↑↓ scroll · {wrap_seg}{search_k} search · {view_k} raw text · "
                 f"{enc_k} encoding · {self._edit_hint_segment()}{quit_k}/Esc close ")
         draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
@@ -1469,6 +1518,21 @@ class TextViewer(Widget):
             return ""
         return f"{_label('edit_file', 'E')} edit · "
 
+    def _scroll_hint_segment(self) -> str:
+        """The footer's vertical-scroll hint (with trailing separator), named
+        from the live bindings; empty when neither scroll key is bound."""
+        keys = footer_pair("text_viewer.scroll_up", "text_viewer.scroll_down",
+                           _CONTEXT)
+        return f"{keys} scroll · " if keys else ""
+
+    def _pan_hint_segment(self) -> str:
+        """The footer's horizontal-scroll hint, likewise. Shown in raw mode only
+        (the wrapped body has nothing off-screen to the side, but the keys stay
+        live for the moment wrap is toggled off)."""
+        keys = footer_pair("text_viewer.scroll_left", "text_viewer.scroll_right",
+                           _CONTEXT)
+        return f"{keys} pan · " if keys else ""
+
     def _edit_file(self) -> None:
         """Hand the viewed file to the app's editor machinery (the
         ``edit_file`` action — same key as the file list's), then re-read it so
@@ -1490,7 +1554,8 @@ class TextViewer(Widget):
              "scroll horizontally (no-wrap)"),
             (_label("toggle_wrap", "w"), "toggle line wrap"),
             (_label("isearch", "F"), "incremental search"),
-            ("↑ / ↓ (in search)", "next / prev match"),
+            (_pair("isearch.prev_match", "isearch.next_match", context=ISEARCH)
+             + " (in search)", "prev / next match"),
             (_label("change_encoding", "Shift-E"), "change text encoding"),
         ]
         if self._on_edit is not None:
