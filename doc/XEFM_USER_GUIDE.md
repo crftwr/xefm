@@ -834,7 +834,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | F | Incremental search (isearch) |
 | Shift+F | Filename search dialog |
 | Shift+G | Content (grep) search dialog |
-| ; | Filter the pane by pattern |
+| ; | Filter the pane by pattern (Shift+Delete forgets a saved pattern) |
 | : | Clear the filter |
 | S | Sort dialog (key + order) |
 | 1 / 2 / 3 / 4 | Quick sort by name / extension / size / date |
@@ -865,7 +865,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 |-----|--------|
 | J | Favorite directories |
 | Shift+J | Jump to a path — a file path goes to its directory and focuses it |
-| H | History for the current pane |
+| H | History for the current pane (Shift+Delete forgets an entry) |
 | D | Drives / storage selection dialog |
 
 ### Other

@@ -2137,6 +2137,33 @@ class XeFMApp:
             self._history.append(path)
             del self._history[:-_HISTORY_MAX]
 
+    def _forget_history_path(self, path: str) -> bool:
+        """Drop ``path`` from the recent-directory history (the History picker's
+        remove key). Returns whether anything went, which is what tells the
+        picker to drop the row.
+
+        *Every* occurrence goes. ``_history`` keeps one entry per visit and the
+        picker shows the de-duplicated view, so the single row the user is
+        looking at stands for all of them — removing only the last would leave
+        the row on screen, apparently untouched.
+
+        Persisted immediately rather than at quit, where the rest of the history
+        is written: a directory the user has just asked to forget must not come
+        back because the session ended badly. It can still return on the next
+        visit — this forgets where you have been, it does not blacklist.
+        """
+        remaining = [p for p in self._history if p != path]
+        if len(remaining) == len(self._history):
+            return False
+        self._history = remaining
+        try:
+            self.state_manager.save_recent_directories(
+                self._recent_dirs_most_recent_first(), _HISTORY_MAX)
+        except Exception as e:
+            self.log_info(f"Could not save directory history: {e}")
+        self.log_info(f"Removed from history: {path}")
+        return True
+
     def _recent_dirs_most_recent_first(self) -> list[str]:
         """The visited-directory history as a most-recent-first, de-duplicated
         list — the order the History picker shows and the form persisted to the
@@ -3942,7 +3969,10 @@ class XeFMApp:
 
     def show_history(self) -> None:
         """The recent-directory picker: pick a previously visited directory and
-        jump the active pane there. Shows most-recent-first, de-duplicated."""
+        jump the active pane there. Shows most-recent-first, de-duplicated.
+
+        Shift-Delete forgets the highlighted directory (#271) — see
+        :meth:`_forget_history_path`."""
         items = self._recent_dirs_most_recent_first()
         if not items:
             show_message_box(self.panel, "No directory history yet.",
@@ -3954,8 +3984,8 @@ class XeFMApp:
         # hides it (issue #211).
         show_filter_list(
             self.panel, items, title="History", to_label=lambda p: p,
-            on_accept=self._go_to_history, region=self._active_pane_region(),
-            elide_where="middle")
+            on_accept=self._go_to_history, on_remove=self._forget_history_path,
+            region=self._active_pane_region(), elide_where="middle")
         self.panel.render()
 
     def _go_to_history(self, path: str) -> None:
@@ -5154,7 +5184,8 @@ class XeFMApp:
         show_filter_list(
             self.panel, items, title="Filter", to_label=lambda v: v,
             on_accept=lambda v: apply("" if v == self._FILTER_CLEAR else v),
-            on_accept_text=apply, region=self._active_pane_region())
+            on_accept_text=apply, on_remove=self._forget_filter_pattern,
+            region=self._active_pane_region())
         self.panel.render()
 
     def enter_isearch(self) -> None:
@@ -5334,6 +5365,23 @@ class XeFMApp:
             self.state_manager.set_state(_FILTER_HISTORY_KEY, hist[:_FILTER_HISTORY_MAX])
         except Exception:
             pass
+
+    def _forget_filter_pattern(self, pattern: str) -> bool:
+        """Drop ``pattern`` from the saved filter history (the Filter picker's
+        remove key, #271). Returns whether anything went — which is also how the
+        picker's "clear filter" row survives the key: it is not a saved pattern,
+        so nothing matches it and the row stays."""
+        try:
+            hist = self._filter_history()
+            kept = [p for p in hist if p != pattern]
+            if len(kept) == len(hist):
+                return False
+            self.state_manager.set_state(_FILTER_HISTORY_KEY, kept)
+        except Exception as e:
+            self.log_info(f"Could not update filter history: {e}")
+            return False
+        self.log_info(f"Removed from filter history: {pattern}")
+        return True
 
     def _filter_history(self) -> list[str]:
         """The saved filter patterns, most-recent first (best-effort)."""
