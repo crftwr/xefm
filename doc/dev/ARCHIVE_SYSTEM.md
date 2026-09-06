@@ -125,12 +125,27 @@ below every name it needs.
 ### 1.2 The libarchive engine (`xefm/archive_libarchive.py`)
 
 `libarchive-c` is a pure-ctypes binding that carries no binary, so the shared
-library comes from one of three places, in the order `libarchive-c` itself
-searches: a **bundled copy** (the desktop builds set `LIBARCHIVE` before XeFM
-starts), the **`LIBARCHIVE` environment variable**, or
-**`find_library("archive")`** — the system copy. Nothing is required: with no
-usable library the registry simply has fewer entries and zip and tar are
-unaffected.
+library comes from one of three places, in this order: the **`LIBARCHIVE`
+environment variable**, a **bundled copy**, or **`find_library("archive")`** —
+the system copy. Nothing is required: with no usable library the registry simply
+has fewer entries and zip and tar are unaffected.
+
+The bundled copy is found by `bundled_library_path()`, which looks in
+`xefm/_bin/` — inside XeFM's own package, which is the one directory this module
+can locate from `__file__` without knowing anything about the bundle around it.
+A source checkout leaves it empty; `windows_app/build.ps1` fills it in the
+*copied* package (§ "Step 4b" of
+[WINDOWS_APP_BUILD_SYSTEM.md](WINDOWS_APP_BUILD_SYSTEM.md)) with a DLL downloaded
+from [crftwr/xefm-bin-deps](https://github.com/crftwr/xefm-bin-deps), pinned by
+release tag and SHA-256.
+
+Finding one is how `LIBARCHIVE` comes to be *set* when the user did not set it:
+`libarchive-c` reads that variable once, at import, and offers no other way to
+choose a library, so `_use_bundled_library()` puts the path there before
+`_probe()` imports the binding. That is also why this lives in the module that
+does the import rather than in XeFM's startup, where it would be one
+import-order mistake away from having no effect. A `LIBARCHIVE` the user set
+themselves is left alone — naming a library is answering exactly this question.
 
 Because two of those three paths are built by someone else, **capability is
 probed, never inferred from a version.** `archive_version_details()` names the
@@ -144,7 +159,7 @@ every filter symbol, *and* reports every codec.
 | `rar` | `.rar` | rar **and** rar5 readers | — |
 | `iso` | `.iso` | iso9660 reader | `iso9660` |
 | `cab` | `.cab` | cab reader, zlib (MSZIP is deflate) | — |
-| `cpio` | `.cpio` | cpio reader | `cpio_newc` |
+| `cpio` | `.cpio` | cpio reader | `cpio_newc`, `hdrcharset=UTF-8` |
 | `rpm` | `.rpm` | cpio reader, **rpm filter**, zlib + liblzma | — |
 
 RAR requires both generations because a `.rar` is RAR4 or RAR5 and offering the
@@ -248,6 +263,47 @@ It also answers storage-strategy queries the app uses elsewhere:
 `get_extended_metadata()` for the info dialog. A per-instance `_property_cache`
 memoizes `name` / `parts`; a `_metadata['entry']` slot caches the resolved
 `ArchiveEntry`.
+
+#### Filenames on Windows
+
+libarchive keeps an entry's pathname in both a wide and a narrow form, and
+converts between them using a code page it gets by calling
+`setlocale(LC_CTYPE, NULL)` in its own C runtime — `get_current_codepage()` in
+`archive_string.c`. On macOS and Linux that resolves to UTF-8 and none of this is
+visible. On Windows it is the ANSI code page, 1252 on a US install, and any name
+1252 cannot spell makes `archive_entry_pathname()` return NULL. What that does
+depends on who asked:
+
+- the **iso9660 writer** reads the NULL as its virtual root and drops the file
+  with no error at all — an ISO that silently lacks the file you put in it;
+- the **cpio writer** reports `Pathname required` and fails the whole archive;
+- **7z, RAR and ISO's Joliet** never notice, because they ask for the wide form.
+
+Two things answer this, and they are separate because they fix different halves.
+
+`_use_utf8_ctype()` puts the process's C locale on UTF-8 (Windows only, before
+the binding is imported). Python's own encodings are untouched — it derives those
+from `GetACP()`, not from the C locale — so the only code this reaches is
+libarchive's conversions. This is also why `crftwr/xefm-bin-deps` links the
+**shared** MSVC runtime: a statically linked one is private to `archive.dll` and
+cannot be reached from here at all.
+
+That fixes ISO but not cpio, whose default is the **OEM** code page (437), which
+libarchive derives from a table of locale *names* and which the `.UTF8` suffix
+therefore does not move. So cpio is told its charset outright, on both sides —
+`write_options='hdrcharset=UTF-8'` and the matching `_CHARSET_BY_LABEL` entry
+that `_open_reader()` reads.
+
+`_open_reader()` exists only for that: `hdrcharset` has to be set between
+`archive_read_new` and `archive_read_open`, and `libarchive-c`'s `file_reader`
+does both in one call. It rebuilds the reader from the same pieces, and falls
+back to plain `file_reader` if that package is ever rearranged.
+
+**`_CHARSET_BY_LABEL` deliberately holds only cpio and rpm.** Forcing UTF-8 on a
+CAB whose names are CP932 does not garble them — it makes every entry's pathname
+NULL, so the archive opens and looks *empty*. Mojibake is a bad listing; nothing
+at all is a broken one, and libarchive's own default is the better answer for
+every format that stores a legacy code page.
 
 ### 1.3 Copying a member out
 
