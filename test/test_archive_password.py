@@ -100,8 +100,8 @@ def test_status_path_none_on_bad_file(tmp_path):
 def test_status_path_none_on_unreadable_format(tmp_path):
     """A suffix no registered handler reads classifies as 'none' — the read path
     is what reports that it cannot be opened, not the password gate."""
-    other = tmp_path / "archive.rar"
-    other.write_bytes(b"Rar!\x1a\x07\x00")
+    other = tmp_path / "archive.notanarchive"
+    other.write_bytes(b"nope")
     assert archive_encryption_status_path(str(other)) == "none"
 
 

@@ -5,16 +5,25 @@ archives from selected files, **extract** them, and **browse** their contents
 in place — navigating into an archive as if it were a regular directory, without
 unpacking it to disk first.
 
-**Browse and extract:** **ZIP** (`.zip`), **TAR** (`.tar`), compressed TAR
-(`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`) and **7-Zip** (`.7z`).
+**Browse and extract:**
 
-**Create:** the same list. A `.7z` created by XeFM uses LZMA2, the same
-compression 7-Zip itself writes by default. It cannot be given a password —
-see [Supported encryption](#supported-encryption).
+| | Formats |
+| --- | --- |
+| Always | **ZIP** (`.zip`), **TAR** (`.tar`), compressed TAR (`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`) |
+| Python 3.14+ | **Zstandard TAR** (`.tar.zst`, `.tzst`) |
+| With libarchive | **7-Zip** (`.7z`), **RAR** (`.rar`), **ISO 9660** disc images (`.iso`), **Cabinet** (`.cab`), **cpio** (`.cpio`), **RPM packages** (`.rpm`) |
 
-7z support needs a system library (see
-[If `.7z` archives do not appear](#if-7z-archives-do-not-appear) below); the
-other formats need nothing at all.
+**Create:** everything above except `.rar`, `.cab` and `.rpm`, which XeFM can
+read but not write — nothing writes RAR but WinRAR, and libarchive has no writer
+for the other two. Typing one of those names at the create prompt says so rather
+than quietly making a `.tar.gz`. A `.7z` created by XeFM uses LZMA2, the same
+compression 7-Zip itself writes by default; no format can be given a password
+(see [Supported encryption](#supported-encryption)).
+
+The bottom row needs a system library (see
+[If those formats do not appear](#if-those-formats-do-not-appear) below). The
+rest need nothing at all — Zstandard included, which comes from Python itself
+rather than from libarchive.
 
 For the complete list of key bindings, see the
 [XeFM User Guide](XEFM_USER_GUIDE.md) or press **?** in XeFM.
@@ -202,31 +211,34 @@ Other notes:
 
 - **Nested archives** are shown as plain files; extract the inner archive first,
   then browse it.
-- **7z entries are read one at a time.** A 7z archive is usually one compressed
-  block, so opening a file near the end means decompressing what comes before it.
-  Browsing and viewing single files is fine; extracting the whole archive with
-  **U** is the efficient way to get everything out.
+- **7z and RAR entries are read one at a time.** Those archives are usually one
+  compressed block, so opening a file near the end means decompressing what comes
+  before it. Browsing and viewing single files is fine; extracting the whole
+  archive with **U** is the efficient way to get everything out.
 - **Symbolic links** inside archives are shown but may not extract correctly on
   all platforms, and file permissions may not be fully preserved.
 
-## If `.7z` archives do not appear
+## If those formats do not appear
 
-Unlike ZIP and TAR, 7z is not something Python can handle on its own: XeFM uses
-**libarchive**, a system library. If pressing Enter on a `.7z` file opens it in
-the viewer instead of browsing into it — or if typing a `.7z` name at the create
-prompt produces a `.tar.gz` — XeFM did not find a usable one.
+7z, RAR, ISO, CAB, cpio and RPM are not something Python can handle on its own:
+XeFM uses **libarchive**, a system library. If pressing Enter on one of those
+files opens it in the viewer instead of browsing into it — or if typing a `.7z`
+name at the create prompt produces a `.tar.gz` — XeFM did not find a usable one.
+(ZIP, TAR and `.tar.zst` are unaffected; they never go near it.)
 
 XeFM writes what it found to the log pane at startup (**L** shows the log). One
 of two lines is there:
 
 ```
-libarchive: libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 [/usr/lib/libarchive.dylib] reading .7z, writing .7z
+libarchive: libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 [/usr/lib/libarchive.dylib] reading .7z .rar .iso .cab .cpio .rpm, writing .7z .iso .cpio
 libarchive not loaded (...); zip and tar only
 ```
 
 The first line names the library XeFM is using and the formats it accepted —
 reading and writing are listed separately, because libarchive reads more formats
-than it writes. The
+than it writes. A format missing from that line is one the library was built
+without the pieces for; XeFM leaves it out rather than offering it and failing
+later. The
 second gives the reason it found none. What to do about it:
 
 - **macOS** — the built-in `/usr/lib/libarchive.dylib` is normally enough, and
@@ -245,7 +257,7 @@ export LIBARCHIVE=/opt/libarchive/lib/libarchive.so
 ```
 
 Nothing else changes when libarchive is missing — ZIP and TAR keep working
-exactly as before, and `.7z` files simply behave like ordinary files. You can
+exactly as before, and those files simply behave like ordinary files. You can
 still hand them to an external unpacker with a `FILE_ASSOCIATIONS` entry (see
 [File Associations](FILE_ASSOCIATIONS_FEATURE.md)) if you would rather not
 install anything.

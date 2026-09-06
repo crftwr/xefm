@@ -54,7 +54,7 @@ from xefm import actions as _ctx
 from xefm.actions import registry as _action_registry
 from xefm.archive import (ArchiveFormatError, archive_format_for_name,
                           archive_format_label, archive_strip_suffix,
-                          archive_writable_formats)
+                          archive_writable_formats, tar_zstd_supported)
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
@@ -4683,15 +4683,23 @@ class XeFMApp:
     # loaded, exactly as reading it does. ``_writable_formats`` is the union, and
     # the reason it is computed rather than written down.
 
-    #: Archive extensions zipfile / tarfile can create → format label.
+    #: Archive extensions zipfile / tarfile can create → format label. The
+    #: Zstandard rows appear only on a Python whose tarfile has it (3.14+), the
+    #: same condition the readable table applies — see
+    #: :func:`xefm.archive.tar_zstd_supported`.
     _ARCHIVE_EXTS = (
         (".tar.gz", "tar.gz"), (".tgz", "tar.gz"),
         (".tar.bz2", "tar.bz2"), (".tbz2", "tar.bz2"),
         (".tar.xz", "tar.xz"), (".txz", "tar.xz"),
         (".zip", "zip"), (".tar", "tar"),
+        *(((".tar.zst", "tar.zst"), (".tzst", "tar.zst"))
+          if tar_zstd_supported() else ()),
     )
     #: tarfile write modes per format label (zip is handled separately).
-    _TAR_MODES = {"tar": "w", "tar.gz": "w:gz", "tar.bz2": "w:bz2", "tar.xz": "w:xz"}
+    _TAR_MODES = {
+        "tar": "w", "tar.gz": "w:gz", "tar.bz2": "w:bz2", "tar.xz": "w:xz",
+        **({"tar.zst": "w:zst"} if tar_zstd_supported() else {}),
+    }
 
     @classmethod
     def _writable_formats(cls) -> list:

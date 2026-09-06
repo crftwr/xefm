@@ -343,6 +343,22 @@ def verify_zip_password(zf: zipfile.ZipFile, password: Optional[bytes]) -> None:
         fh.read(1)
 
 
+def tar_zstd_supported() -> bool:
+    """Whether this Python's ``tarfile`` reads and writes Zstandard tars.
+
+    Zstandard arrived in the standard library in 3.14 — ``compression.zstd``, and
+    a ``zst`` entry in ``TarFile.OPEN_METH``. Below that, ``.tar.zst`` is absent
+    from both the readable and the creatable table rather than half-supported.
+
+    It is deliberately *not* routed through libarchive instead. A libarchive
+    built without libzstd answers a ``.tar.zst`` by spawning the external
+    ``zstd`` program — the silent fallback the capability probe exists to keep
+    out of reach — and macOS's system build has no libzstd, so that is the
+    default outcome there, not an edge case. The standard library needs no
+    native dependency at all."""
+    return 'zst' in getattr(tarfile.TarFile, 'OPEN_METH', {})
+
+
 #: Block size for streaming one member out of an archive — matched to
 #: ``xefm.file_operations._CHUNK``, which is what consumes it.
 MEMBER_CHUNK = 1024 * 1024
@@ -1084,15 +1100,9 @@ class TarHandler(ArchiveHandler):
                     f"Archive file '{self._archive_path.name}' does not exist"
                 )
             
-            # Determine open mode
-            if self._compression == 'gz':
-                mode = 'r:gz'
-            elif self._compression == 'bz2':
-                mode = 'r:bz2'
-            elif self._compression == 'xz':
-                mode = 'r:xz'
-            else:
-                mode = 'r'
+            # tarfile names its modes after the compression, so the registry's
+            # suffix label is the mode — no chain to extend for the next one.
+            mode = f'r:{self._compression}' if self._compression else 'r'
             
             # For remote files, download to temp location
             if self._archive_path.is_remote():
@@ -1473,6 +1483,10 @@ def _register_builtin_formats() -> None:
         ('tar.gz', 'gz', ('.tar.gz', '.tgz'), 'TAR + gzip'),
         ('tar.bz2', 'bz2', ('.tar.bz2', '.tbz2'), 'TAR + bzip2'),
         ('tar.xz', 'xz', ('.tar.xz', '.txz'), 'TAR + xz'),
+        # Zstandard only where the standard library has it (3.14+); see
+        # tar_zstd_supported() for why it does not fall back to libarchive.
+        *((('tar.zst', 'zst', ('.tar.zst', '.tzst'), 'TAR + zstd'),)
+          if tar_zstd_supported() else ()),
     ):
         register_archive_format(ArchiveFormat(
             label=label, suffixes=suffixes,
@@ -2400,7 +2414,13 @@ class ArchivePathImpl(PathImpl):
             'tar.gz': 'GZIP',
             'tar.bz2': 'BZIP2',
             'tar.xz': 'LZMA/XZ',
+            'tar.zst': 'Zstandard',
             '7z': '7-Zip',
+            'rar': 'RAR',
+            'iso': 'ISO 9660',
+            'cab': 'Cabinet',
+            'cpio': 'cpio',
+            'rpm': 'RPM',
         }
         return compression_map.get(archive_type, archive_type.upper())
     

@@ -114,8 +114,11 @@ def test_cache_dispatches_through_the_table(tmp_path):
 
 
 def test_cache_rejects_an_unregistered_format(tmp_path):
-    p = tmp_path / "a.rar"
-    p.write_bytes(b"Rar!")
+    # A suffix nothing will ever register: .rar and friends became readable the
+    # moment libarchive contributed them, so a real format is no longer a safe
+    # stand-in for "unsupported".
+    p = tmp_path / "a.notanarchive"
+    p.write_bytes(b"nope")
     with pytest.raises(ArchiveFormatError):
         ArchiveCache()._create_handler(Path(str(p)))
 
@@ -253,3 +256,50 @@ def test_generic_iter_extract_refuses_an_escaping_member(tmp_path):
 
     assert extracted == ["fine.txt"]
     assert not (tmp_path / "escape.txt").exists()
+
+
+# --- Zstandard tar, conditional on the standard library -----------------------
+
+
+def test_zstd_support_follows_the_standard_library():
+    import tarfile
+    assert A.tar_zstd_supported() == ('zst' in tarfile.TarFile.OPEN_METH)
+
+
+def test_zstd_rows_appear_in_both_tables_together():
+    """Readable and creatable have to agree here: a .tar.zst XeFM offers to
+    create is one it must also be able to open again."""
+    readable = A.archive_format_label("x.tar.zst") == "tar.zst"
+    creatable = xefm_app.XeFMApp._archive_format("x.tar.zst") == "tar.zst"
+    assert readable == creatable == A.tar_zstd_supported()
+    if A.tar_zstd_supported():
+        assert A.archive_format_label("x.tzst") == "tar.zst"
+        assert xefm_app.XeFMApp._TAR_MODES["tar.zst"] == "w:zst"
+
+
+@pytest.mark.skipif(not A.tar_zstd_supported(),
+                    reason="this Python's tarfile has no zstd (needs 3.14+)")
+def test_zstd_tar_round_trips_through_the_stdlib(tmp_path):
+    """And through tarfile, not libarchive. That is the point of routing it
+    here: a libarchive without libzstd answers a .tar.zst by spawning the
+    external zstd program, one process per archive, and macOS's system build has
+    no libzstd — so the format would be "supported" by shelling out, or not at
+    all on Windows."""
+    src = tmp_path / "src"
+    (src / "sub").mkdir(parents=True)
+    (src / "a.txt").write_bytes(b"alpha")
+    (src / "sub" / "b.txt").write_bytes(b"beta")
+
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    archive = tmp_path / "bundle.tar.zst"
+    app._write_archive([Path(str(src))], Path(str(archive)), "tar.zst")
+    assert archive.exists()
+
+    handler = ArchiveCache().get_handler(Path(str(archive)))
+    assert isinstance(handler, TarHandler) and handler._compression == "zst"
+    assert handler.extract_to_bytes("src/sub/b.txt") == b"beta"
+    assert handler.get_entry_info("src/a.txt").archive_type == "tar.zst"
+
+    out = tmp_path / "out"
+    app._extract_archive(Path(str(archive)), Path(str(out)), "tar.zst")
+    assert (out / "src" / "a.txt").read_bytes() == b"alpha"

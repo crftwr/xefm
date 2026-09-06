@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""libarchive-backed archive formats — the engine behind ``.7z``.
+"""libarchive-backed archive formats — 7z, RAR, ISO, CAB, cpio and RPM.
 
 XeFM reads zip and tar through the Python standard library. Everything else
 comes from `libarchive <https://libarchive.org/>`_, reached through the pure
@@ -748,8 +748,10 @@ class _Candidate:
     label: str
     suffixes: Tuple[str, ...]
     description: str
-    #: The reader has to be compiled in — readers are ``#ifdef``-switched.
-    symbol: str
+    #: The readers that have to be compiled in — they are ``#ifdef``-switched,
+    #: and a format can need more than one (a ``.rar`` is RAR4 or RAR5, and
+    #: offering the suffix while only half of it reads would be a lie).
+    symbols: Tuple[str, ...]
     #: Codecs that must appear in ``archive_version_details()``. Registering a
     #: format whose codec is missing is what triggers libarchive's
     #: external-program fallback, so this is a hard requirement, not a hint.
@@ -764,22 +766,76 @@ class _Candidate:
     #: defaults to LZMA1, while 7-Zip itself has written LZMA2 for years, and an
     #: archive XeFM creates should look like the ones its users already have.
     write_options: str = ''
+    #: Filters the format needs on top of its reader — ``.rpm`` is the rpm
+    #: filter wrapped around a cpio, and is the only reason this exists.
+    filters: Tuple[str, ...] = ()
 
 
-#: Formats XeFM offers through libarchive. 7z is the only one for now — it is
-#: the format actually asked for, and the one that exercises every property of
-#: this path (the probe, the loader order, encrypted entries, and the cost of
-#: per-entry extraction inside a solid block). rar / lha / cab / iso / xar are
-#: additional rows here once 7z has proven the path, not separate projects:
-#: libarchive implements all of their readers itself.
+#: Formats XeFM offers through libarchive. 7z came first and is still the one
+#: that exercises every property of this path — the probe, the loader order,
+#: encrypted entries, and the cost of per-entry extraction inside a solid block
+#: — which is why the rest could arrive as rows rather than as projects:
+#: libarchive implements every one of these readers itself.
+#:
+#: Two formats are deliberately absent. **xar** looks attractive (a macOS .pkg
+#: is one) but libarchive 3.7.4 over-reads its entries — a 7-byte member comes
+#: back as 13 bytes, NUL-padded — so adding it needs the extraction loops to
+#: truncate at the declared size first. **lha** would need CP932 filename
+#: conversion, which the same library fails at fatally: an ASCII-named member
+#: reads and a Shift_JIS-named one aborts the whole archive, which is the
+#: wrong half to support for the archives that format is found in.
 _CANDIDATES: Tuple[_Candidate, ...] = (
     _Candidate(label='7z', suffixes=('.7z',), description='7-Zip',
-               symbol='archive_read_support_format_7zip',
+               symbols=('archive_read_support_format_7zip',),
                # LZMA/LZMA2 is what essentially every real 7z uses; liblzma
                # missing means the format would open and then fail per entry.
                codecs=('liblzma',),
                write_symbol='archive_write_set_format_7zip',
                write_format='7zip', write_options='compression=lzma2'),
+
+    # Read-only, and not for want of trying: nobody writes RAR but WinRAR. The
+    # win is that libarchive implements the reader itself, so XeFM needs none of
+    # the non-free ``unrar`` binary that the ``rarfile`` package shells out to.
+    # Both generations are required rather than one: a .rar offered on the
+    # strength of the RAR4 reader alone would fail on every modern archive.
+    _Candidate(label='rar', suffixes=('.rar',), description='RAR',
+               symbols=('archive_read_support_format_rar',
+                        'archive_read_support_format_rar5'),
+               codecs=()),
+
+    # Browsing a disc image without mounting it. Uncompressed, so no codec is
+    # required; zisofs would want zlib, and simply fails to decompress without
+    # it rather than reaching for a program.
+    _Candidate(label='iso', suffixes=('.iso',), description='ISO 9660',
+               symbols=('archive_read_support_format_iso9660',),
+               codecs=(),
+               write_symbol='archive_write_set_format_iso9660',
+               write_format='iso9660'),
+
+    # MSZIP, the common CAB compression, is deflate — hence zlib. LZX is
+    # libarchive's own.
+    _Candidate(label='cab', suffixes=('.cab',), description='Cabinet',
+               symbols=('archive_read_support_format_cab',),
+               codecs=('zlib',)),
+
+    _Candidate(label='cpio', suffixes=('.cpio',), description='cpio',
+               symbols=('archive_read_support_format_cpio',),
+               codecs=(),
+               write_symbol='archive_write_set_format_cpio_newc',
+               # SVR4 "newc" rather than the historic odc the plain ``cpio``
+               # writer produces: odc stores sizes in 8 octal digits, so it
+               # cannot hold a member over 8 GB.
+               write_format='cpio_newc'),
+
+    # An RPM is the rpm filter wrapped around a compressed cpio. The filter
+    # itself only skips the package header; the payload's codec is what has to
+    # be present, and modern packages use xz. A zstd payload on a library
+    # without libzstd is the one case that still reaches for an external
+    # program -- a container's inner codec cannot be probed from out here.
+    _Candidate(label='rpm', suffixes=('.rpm',), description='RPM package',
+               symbols=('archive_read_support_format_cpio',),
+               codecs=('zlib', 'liblzma'),
+               filters=('archive_read_support_filter_rpm',)),
 )
 
 
@@ -791,7 +847,9 @@ def libarchive_formats() -> List[ArchiveFormat]:
         return []
     formats = []
     for candidate in _CANDIDATES:
-        if not _has_symbol(candidate.symbol):
+        if any(not _has_symbol(name) for name in candidate.symbols):
+            continue
+        if any(not _has_symbol(name) for name in candidate.filters):
             continue
         if any(codec not in info.codecs for codec in candidate.codecs):
             continue

@@ -80,7 +80,7 @@ Three concrete handlers exist:
 - **`TarHandler(archive_path, compression=None)`** — tar and compressed variants
   (`gz`, `bz2`, `xz`) via `tarfile`, indexed through `_build_index`.
 - **`LibarchiveHandler(archive_path, label)`** — everything libarchive
-  contributes, `.7z` today (§1.2).
+  contributes: `.7z`, `.rar`, `.iso`, `.cab`, `.cpio`, `.rpm` (§1.2).
 
 All three download a remote archive (`is_remote()`) to a temp file on `open()`
 and delete it on `close()`.
@@ -135,11 +135,39 @@ unaffected.
 Because two of those three paths are built by someone else, **capability is
 probed, never inferred from a version.** `archive_version_details()` names the
 codecs actually compiled in; `_CANDIDATES` says what each format needs, and a
-format is registered only when the library exports its reader symbol *and*
-reports every codec on its list. That is also what keeps the silent
-external-program fallback out of reach: libarchive answers a missing stream codec
-by spawning `gzip -d` or `xz -d`, one process per entry, and on Windows those
-binaries do not exist — so a format whose codec is missing must never be offered.
+format registers only when the library exports every reader symbol it lists,
+every filter symbol, *and* reports every codec.
+
+| Label | Suffixes | Needs | Writer |
+| --- | --- | --- | --- |
+| `7z` | `.7z` | 7zip reader, liblzma | `7zip`, `compression=lzma2` |
+| `rar` | `.rar` | rar **and** rar5 readers | — |
+| `iso` | `.iso` | iso9660 reader | `iso9660` |
+| `cab` | `.cab` | cab reader, zlib (MSZIP is deflate) | — |
+| `cpio` | `.cpio` | cpio reader | `cpio_newc` |
+| `rpm` | `.rpm` | cpio reader, **rpm filter**, zlib + liblzma | — |
+
+RAR requires both generations because a `.rar` is RAR4 or RAR5 and offering the
+suffix on one reader would be a lie for half of them; the win over `rarfile` is
+that libarchive implements them itself, with none of the non-free `unrar` binary.
+`cpio_newc` rather than the plain `cpio` writer: the historic odc format stores
+sizes in eight octal digits and so cannot hold a member over 8 GB.
+
+Probing is also what keeps the silent external-program fallback out of reach:
+libarchive answers a missing stream codec by spawning `gzip -d` or `zstd -d`, one
+process per archive, and on Windows those binaries do not exist. **This is not
+hypothetical.** macOS's system libarchive reports no libzstd and still reads a
+`.tar.zst` — with `PATH` emptied it admits why:
+
+```
+ArchiveError Can't initialize filter; unable to run program "zstd -d -qq"
+```
+
+It had been shelling out to Homebrew's `zstd`. A format whose codec is missing
+must never be offered, which is why `.tar.zst` goes through the standard library
+instead (§2) and not through here. The one case the probe cannot cover is a codec
+*inside* a container: an RPM with a zstd payload can still reach for the external
+program, because nothing outside the file says what its payload uses.
 
 `register_libarchive_formats()` logs one line at import naming the library, its
 version, its codecs and the suffixes it contributed. With three supply paths, a
@@ -287,7 +315,13 @@ stdlib half is class data on `XeFMApp`:
 
 - `_ARCHIVE_EXTS` — the extensions zipfile / tarfile can create → format label.
 - `_TAR_MODES` — format label → `tarfile` write mode (`w`, `w:gz`, `w:bz2`,
-  `w:xz`); ZIP is handled separately.
+  `w:xz`, `w:zst`); ZIP is handled separately.
+
+Both grow a Zstandard row when `xefm.archive.tar_zstd_supported()` is true —
+`'zst' in TarFile.OPEN_METH`, which is Python 3.14 and up. The readable registry
+applies the same condition, so `.tar.zst` is creatable exactly when it is
+openable. Zstandard deliberately does **not** come from libarchive: see the
+external-program evidence in §1.2.
 
 The other half is the registry's writers (§1.1). `_writable_formats()` is their
 union, sorted longest-suffix-first — sorted rather than concatenated for the
@@ -405,9 +439,10 @@ for `.tar.xz` (the counting pass is 11 ms of it).
 
 ### Supported formats
 
-Create: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`) from the
-`_ARCHIVE_EXTS` table, all of it stdlib, plus `.7z` from the registry's writers.
-Ask `_writable_formats()`.
+Create: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`) and — on
+3.14+ — TAR.ZST (`.tzst`) from the `_ARCHIVE_EXTS` table, all of it stdlib, plus
+`.7z`, `.iso` and `.cpio` from the registry's writers. `.rar`, `.cab` and `.rpm`
+are readable and not creatable. Ask `_writable_formats()`.
 
 Extract and browse: those, plus whatever libarchive contributed (§1.2) — `.7z`
 where a usable library loaded. Ask `archive_readable_suffixes()`; do not restate
@@ -533,9 +568,15 @@ CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
   usable libarchive exists: browsing, extraction, creation, the count agreeing
   with the counting pass, both progress bars moving (a multi-block member has to
   report more than once and land on full), and cancellation mid-archive.
-  Fixtures are written with libarchive's own 7z writer, so no external `7z`
-  binary is needed; the encrypted one is a stored blob, because libarchive cannot
-  *write* an encrypted 7z. Its encryption assertions
+  Fixtures are written with libarchive's own writers, so no external `7z` binary
+  is needed; the encrypted one is a stored blob, because libarchive cannot
+  *write* an encrypted 7z. ISO and cpio round-trip through XeFM's own create and
+  extract, with a long name and a non-ASCII one in the tree because plain ISO
+  9660 would mangle both and only Rock Ridge / Joliet keep them. RAR, CAB and RPM
+  have **no content fixture** — libarchive writes none of them and there is no
+  way to generate one on the test machine — so what is pinned is their
+  registration and their read-only property; that a real `.rar` opens is a
+  hand-check. Its encryption assertions
   branch on `can_decrypt_7z()`, which is False on macOS's system library — so the
   correct-password case is exercised only where a crypto-capable build is loaded.
 - `test/test_archive_password.py` — classification, verification, the registry,

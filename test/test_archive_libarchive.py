@@ -386,6 +386,76 @@ def test_copy_out_of_a_7z_is_cancellable(tmp_path):
     assert not (tmp_path / "out.bin").exists()
 
 
+# --- the other formats libarchive contributes ---------------------------------
+
+
+@pytest.mark.parametrize("label, suffix", [("iso", ".iso"), ("cpio", ".cpio")])
+def test_read_write_formats_round_trip(label, suffix, tmp_path):
+    """The formats libarchive both reads and writes, driven through XeFM's own
+    create and extract so the registry's writer and handler are both exercised.
+
+    ISO 9660 is the one worth watching: plain ISO would upper-case and truncate
+    names, and only Rock Ridge / Joliet keep them, so a long name and a
+    non-ASCII one are in the tree deliberately."""
+    if A.archive_format_label("x" + suffix) != label:
+        pytest.skip(f"this libarchive does not offer {suffix}")
+
+    src = tmp_path / "src"
+    (src / "sub").mkdir(parents=True)
+    (src / "a.txt").write_bytes(b"alpha")
+    (src / "sub" / "a-rather-long-file-name.txt").write_bytes(b"long")
+    (src / "sub" / "日本語.txt").write_bytes("にほんご".encode())
+
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    archive = tmp_path / ("bundle" + suffix)
+    written = app._write_archive([Path(str(src))], Path(str(archive)), label)
+    assert archive.exists() and written >= 4
+
+    out = tmp_path / "out"
+    app._extract_archive(Path(str(archive)), Path(str(out)), label)
+    assert (out / "src" / "a.txt").read_bytes() == b"alpha"
+    assert (out / "src" / "sub" / "a-rather-long-file-name.txt").read_bytes() == b"long"
+    assert (out / "src" / "sub" / "日本語.txt").read_bytes() == "にほんご".encode()
+
+
+@pytest.mark.parametrize("suffix, label", [(".rar", "rar"), (".cab", "cab"),
+                                           (".rpm", "rpm")])
+def test_read_only_formats_register_without_a_writer(suffix, label):
+    """RAR, CAB and RPM are readable and not creatable, which is the case the
+    two-table split exists for: P refuses the name instead of appending
+    ``.tar.gz`` to it.
+
+    No content fixture. libarchive cannot write any of these, and unlike 7z
+    there is no way to generate one on the machine running the tests, so what is
+    pinned here is the registration and the read-only property. That a real
+    ``.rar`` opens is a hand-check, not something this suite claims."""
+    fmt = A.archive_format_for_name("sample" + suffix)
+    if fmt is None:
+        pytest.skip(f"this libarchive does not offer {suffix}")
+    assert fmt.label == label
+    assert fmt.writer is None
+    assert xefm_app.XeFMApp._readable_archive_format("sample" + suffix) == label
+    assert xefm_app.XeFMApp._archive_format("sample" + suffix) is None
+
+
+def test_rar_needs_both_generations():
+    """A .rar is RAR4 or RAR5, so offering the suffix on the strength of one
+    reader would be a lie for half the archives that carry it."""
+    from xefm.archive_libarchive import _CANDIDATES
+    rar = next(c for c in _CANDIDATES if c.label == "rar")
+    assert set(rar.symbols) == {"archive_read_support_format_rar",
+                                "archive_read_support_format_rar5"}
+
+
+def test_rpm_requires_its_filter_as_well_as_the_format():
+    """An RPM is the rpm filter wrapped around a compressed cpio: the format
+    symbol alone would register a suffix that cannot be opened."""
+    from xefm.archive_libarchive import _CANDIDATES
+    rpm = next(c for c in _CANDIDATES if c.label == "rpm")
+    assert rpm.filters == ("archive_read_support_filter_rpm",)
+    assert "liblzma" in rpm.codecs
+
+
 # --- encryption ---------------------------------------------------------------
 
 
