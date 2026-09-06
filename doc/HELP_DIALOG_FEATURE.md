@@ -27,6 +27,10 @@ configuration (including any customizations). It is organized into sections:
 - **Log Pane** — resize (bracket keys) and scroll (Shift+Up/Down)
 - **General** — help (?), quit (Q), cancel (ESC)
 - **Configuration** — where config lives and tips for customizing it
+- **Archive Formats** — which archive formats this copy of XeFM can browse,
+  extract and create, and the libarchive it found. Built when XeFM starts rather
+  than written down, because the list depends on what is installed (see
+  [Archives](ARCHIVE_FEATURE.md))
 
 ## Configuration
 

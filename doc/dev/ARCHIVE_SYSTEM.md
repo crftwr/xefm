@@ -12,9 +12,11 @@ Canonical developer reference for XeFM's archive support. Two independent paths:
 
 **Which formats are readable is decided at import, not written down.** Reading
 goes through a registry (§1.1) whose libarchive-backed entries depend on what the
-library that actually loaded can do, so anything enumerating formats — the user
-guide, a dialog, a message — has to be generated from
-`archive_readable_suffixes()` rather than kept as a list somewhere.
+library that actually loaded can do, so anything enumerating formats has to be
+generated from `archive_readable_formats()` rather than kept as a list
+somewhere. The Help dialog's "Archive Formats" table is the one place that
+enumerates them for a user; `XeFMApp._archive_help_section()` builds it, pairing
+that call with `_writable_formats()` for the "Create" column.
 
 Source of truth is the code; this document summarizes structure and intent, not
 every line.
@@ -98,7 +100,7 @@ replaced an if/elif chain in `ArchiveCache._create_handler` plus two
 | `archive_format_for_name(name)` | the matching `ArchiveFormat`, or `None` |
 | `archive_format_label(name)` | its label — `'zip'`, `'tar.gz'`, `'7z'` |
 | `archive_strip_suffix(name)` | the name with its archive suffix removed |
-| `archive_readable_suffixes()` | every readable suffix, longest first |
+| `archive_readable_formats()` | every registered format, for enumeration |
 | `archive_writable_formats()` | the formats that brought a writer with them |
 
 Three rules hold for anything registered:
@@ -180,13 +182,34 @@ ArchiveError Can't initialize filter; unable to run program "zstd -d -qq"
 
 It had been shelling out to Homebrew's `zstd`. A format whose codec is missing
 must never be offered, which is why `.tar.zst` goes through the standard library
-instead (§2) and not through here. The one case the probe cannot cover is a codec
-*inside* a container: an RPM with a zstd payload can still reach for the external
-program, because nothing outside the file says what its payload uses.
+instead (§2) and not through here.
 
-`register_libarchive_formats()` logs one line at import naming the library, its
-version, its codecs and the suffixes it contributed. With three supply paths, a
-bug report has to carry that automatically.
+**The fallback is a *filter* mechanism, not a format one**, and the difference
+matters because it is easy to over-generalize the paragraph above. A codec named
+by an entry *inside* a format is decoded by that format's reader, which cannot
+reach `__archive_read_program` at all. Measured on the same library, with the
+`zstd` binary present on PATH:
+
+| Archive | Result |
+| --- | --- |
+| a 7z whose entry is zstd-compressed | `ZSTD codec is unsupported` — a clean failure, no process |
+| a `.tar.zst` | `unable to run program "zstd -d -qq"` — the fallback |
+
+So a codec the library lacks costs a spawned process only where it applies to a
+*stream*: a bare compressed file, or a payload the filter chain sees. `.rpm` is
+the one registered format where that is reachable, since its payload is a
+filtered stream — nothing outside the file says which filter, so the probe cannot
+refuse it in advance. Everything an entry inside a 7z, RAR, ISO, CAB or cpio
+declares fails visibly instead, which is the behaviour we want and the reason the
+probe only has to cover what a format needs *to open at all*.
+
+`register_libarchive_formats()` says something only when the outcome is not the
+ordinary one. Success is `debug` — a full line at every startup was more than the
+normal case deserved, and the Help dialog's "Archive Formats" table carries the
+same information where a user can find it. What stays visible is the two
+outcomes worth acting on: no library at all, and a library that loaded and then
+justified *nothing*, which is the shape a mis-built or half-stripped copy takes
+and is easy to mistake for the first.
 
 **No random access.** libarchive is a forward stream of headers: `open()` makes
 one pass to build the index, and every later read re-opens the file and scans to
@@ -221,11 +244,17 @@ at the end of §2.
 **Encryption is two questions, not one.** Which entries are encrypted comes from
 `archive_entry_is_encrypted` on the headers read at `open()`. Whether they can be
 decrypted at all is `can_decrypt_7z()`, which decrypts a 183-byte AES-256 7z
-embedded in the module. libarchive compiles its AES support in behind
-`HAVE_LIBCRYPTO` / CNG / CommonCrypto, none of which `archive_version_details()`
-mentions, so there is no other way to ask — and macOS's system build (3.7.4,
-zlib + liblzma + bz2lib) has none of them. Without the probe an encrypted 7z
-would reject every password the user typed with no way to say why.
+embedded in the module.
+
+The answer today is no, everywhere: **through 3.8.9 libarchive decrypts ZIP and
+no other format**, and its 7z reader rejects an encrypted entry outright — not
+for want of a crypto library, which was the first and wrong reading of macOS's
+crypto-less 3.7.4. A 3.8.9 Windows build linked against CNG refuses the same
+archive, which is what settled it. The probe is kept for two reasons anyway: it
+is the difference between "not supported" and rejecting every password the user
+types, and the day a release does add 7z decryption it starts returning True with
+no change here. `archive_version_details()` could not answer this either way —
+it names codecs, not what the format readers do with them.
 
 ### ArchiveCache
 
@@ -501,7 +530,7 @@ Create: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`) and — on
 are readable and not creatable. Ask `_writable_formats()`.
 
 Extract and browse: those, plus whatever libarchive contributed (§1.2) — `.7z`
-where a usable library loaded. Ask `archive_readable_suffixes()`; do not restate
+where a usable library loaded. Ask `archive_readable_formats()`; do not restate
 the list.
 
 Both `_extract_archive` and `_write_archive` route a format that is neither

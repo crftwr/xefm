@@ -53,8 +53,9 @@ from xefm import __version__ as _VERSION
 from xefm import actions as _ctx
 from xefm.actions import registry as _action_registry
 from xefm.archive import (ArchiveFormatError, archive_format_for_name,
-                          archive_format_label, archive_strip_suffix,
-                          archive_writable_formats, tar_zstd_supported)
+                          archive_format_label, archive_readable_formats,
+                          archive_strip_suffix, archive_writable_formats,
+                          tar_zstd_supported)
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
@@ -4307,7 +4308,7 @@ class XeFMApp:
         For a file inside a password-protected archive with no password yet known,
         prompt (masked), verify, remember it for the session, then run
         ``on_ready()``. Archives whose encryption XeFM cannot decrypt at all — a
-        WinZip AES zip, or an encrypted 7z on a libarchive built without crypto —
+        WinZip AES zip, or any encrypted 7z, since libarchive decrypts only zip —
         are refused with a message instead of a prompt no password could satisfy.
         Ordinary files, unencrypted archive entries, and archives whose password is
         already known run ``on_ready()`` at once.
@@ -5917,8 +5918,48 @@ class XeFMApp:
                 keys = self._keys_label(action).replace("|", "\\|")
                 lines.append(f"| `{keys}` | {desc} |")
             lines.append("")
+        lines.append(self._archive_help_section())
         show_markdown(self.panel, "\n".join(lines), title="Help")
         self.panel.render()
+
+    def _archive_help_section(self) -> str:
+        """The archive formats *this run* supports, as a closing help section.
+
+        Generated rather than written down, because neither list is fixed: what
+        libarchive contributes depends on the library that loaded, and
+        ``.tar.zst`` on the Python version. A list kept anywhere else would drift
+        the moment either changed.
+
+        This is also where the loaded library is named. A bug report needs that
+        and it used to be an info line at every startup, which was more than the
+        normal case deserved — here it is one dialog away instead, and only when
+        someone goes looking."""
+        creatable = {label for _sfx, label in self._writable_formats()}
+        lines = ["## Archive Formats", "",
+                 "| Format | Extensions | Create |", "| --- | --- | --- |"]
+        for fmt in archive_readable_formats():
+            extensions = " ".join(f"`{sfx}`" for sfx in fmt.suffixes)
+            lines.append(f"| {fmt.description or fmt.label} | {extensions} | "
+                         f"{'yes' if fmt.label in creatable else '—'} |")
+        lines += ["", self._libarchive_help_line(), ""]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _libarchive_help_line() -> str:
+        """One sentence naming the libarchive behind the formats above, or saying
+        why there is none. The formats it would add are named in the negative
+        case so the sentence is useful to someone who does not know what
+        libarchive is for."""
+        missing = ("7z, RAR, ISO, CAB, cpio and RPM come from **libarchive**, "
+                   "which is not available here")
+        try:
+            from xefm.archive_libarchive import libarchive_info
+            info = libarchive_info()
+        except Exception as exc:  # noqa: BLE001 — the binding is optional
+            return f"{missing} ({exc})."
+        if not info.available:
+            return f"{missing} ({info.error})."
+        return f"Using {info.details} — `{info.library_path}`."
 
     def _user_help_sections(self) -> tuple:
         """The config's own actions as a final help section, or nothing when it

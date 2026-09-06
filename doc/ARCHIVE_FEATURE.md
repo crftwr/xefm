@@ -185,9 +185,10 @@ share the remembered password.
   supported.
 - **AES-encrypted ZIP** (WinZip AES) is **not** supported — the Python runtime
   XeFM builds on can't decrypt it.
-- **Encrypted 7z** can be *read* only where the libarchive on your machine was
-  built with encryption support. macOS's built-in copy has none, so an encrypted
-  `.7z` lists its filenames there but its contents cannot be read.
+- **Encrypted 7z** cannot be read on any platform. libarchive decrypts ZIP and
+  nothing else, so an encrypted `.7z` lists its filenames and then refuses its
+  contents. XeFM detects this and says so, rather than asking for a password no
+  answer would satisfy.
 - **Creating an encrypted archive is not supported in any format.** XeFM reads
   password-protected archives; it does not make them.
 
@@ -226,23 +227,21 @@ files opens it in the viewer instead of browsing into it — or if typing a `.7z
 name at the create prompt produces a `.tar.gz` — XeFM did not find a usable one.
 (ZIP, TAR and `.tar.zst` are unaffected; they never go near it.)
 
-XeFM writes what it found to the log pane at startup (**L** shows the log). One
-of two lines is there:
+**Press ? and scroll to "Archive Formats".** That table is built when XeFM
+starts, so it lists exactly what this copy can open and create, and the line
+under it names the libarchive in use:
 
 ```
-libarchive: libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 [/usr/lib/libarchive.dylib] reading .7z .rar .iso .cab .cpio .rpm, writing .7z .iso .cpio
-libarchive not loaded (...); zip and tar only
+Using libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 — /usr/lib/libarchive.dylib
 ```
 
-The first line names the library XeFM is using and the formats it accepted —
-reading and writing are listed separately, because libarchive reads more formats
-than it writes. A format missing from that line is one the library was built
-without the pieces for; XeFM leaves it out rather than offering it and failing
-later. The
-second gives the reason it found none. What to do about it:
+A format missing from the table is one the library was built without the pieces
+for; XeFM leaves it out rather than offering it and failing later. If no library
+was found the line says so instead, with the reason, and the log pane (**L**)
+carries the same message. What to do about it:
 
-- **macOS** — the built-in `/usr/lib/libarchive.dylib` is normally enough, and
-  the desktop app ships its own copy. Nothing to install.
+- **macOS** — nothing to install. The built-in `/usr/lib/libarchive.dylib` is
+  new enough, and the desktop app uses that same system copy.
 - **Linux** — install your distribution's libarchive package (`libarchive13`,
   `libarchive`, …) if it is not already present.
 - **Windows** — Windows has no system libarchive. The desktop app ships one and
