@@ -167,6 +167,16 @@ def gui_hint_bar_height(ctx: Any, style: Any) -> float:
     return ctx.line_height(style) + 2.0 * _GUI_TITLE_PAD
 
 
+#: Rows the hint band claims at the foot of the box: the rule, the line of keys,
+#: and the bottom border. The mirror of the three a grid spends on the header
+#: (border, title, rule), and the reserve a dialog that sizes itself *up front*
+#: — Sort, Choice, Compare & Select, the input prompt — has to add to its content
+#: height, since those never measure a stretchy body against
+#: :func:`hint_content_bottom`. A vector band is shorter than this (it is sized
+#: to a measured line box), so the grid figure is the safe reserve for both.
+HINT_ROWS = 3.0
+
+
 def hint_content_bottom(ctx: Any, surface_bg: Any) -> float:
     """The y a modal's content must stop at, above its hint bar.
 
@@ -177,11 +187,11 @@ def hint_content_bottom(ctx: Any, surface_bg: Any) -> float:
     if ctx.vector_shapes:
         bar_h = gui_hint_bar_height(ctx, hint_style(ctx, surface_bg))
         return hu - bar_h - _GUI_CONTENT_GAP
-    return hu - 3.0  # bottom border, hint row, rule
+    return hu - HINT_ROWS  # bottom border, hint row, rule
 
 
 def draw_hint_row(ctx: Any, text: str, *, surface_bg: Any, border: Any,
-                  x: float = 2.0) -> None:
+                  x: float = 2.0, right: str = "") -> None:
     """Draw a modal's key hint as a bar pinned to the bottom of the box — the
     mirror of :func:`draw_title_bar`, and the one place every XeFM modal names
     its keys.
@@ -192,18 +202,26 @@ def draw_hint_row(ctx: Any, text: str, *, surface_bg: Any, border: Any,
     at the bottom — with the content between them, instead of a hint floating in
     the client area with nothing to separate it from the content above.
 
-    Elided from the right, so a narrow box drops the tail of the line rather than
-    running under its own frame."""
+    ``right`` is an optional second reading pinned to the band's right end — the
+    Tip of the Day's position counter, the only thing a modal says down here that
+    is not a key. It keeps its whole width and the keys are elided against it, so
+    a narrow box drops the tail of the line rather than running the two together
+    or under its own frame."""
     wu, hu = ctx.size_units
     style = hint_style(ctx, surface_bg)
     rule_style = Style(fg=border, bg=surface_bg)
-    label = elide(text, max(1.0, wu - 2 * x), where="end", measure=ctx.measure_text)
+    right_w = (ctx.measure_text(right) + 2.0) if right else 0.0
+    label = elide(text, max(1.0, wu - 2 * x - right_w), where="end",
+                  measure=ctx.measure_text)
     if ctx.vector_shapes:
         # Center the hint's line box in the bar, the rule at the bar's top edge —
         # draw_title_bar's own layout, reflected.
         rule_y = hu - gui_hint_bar_height(ctx, style)
+        text_y = rule_y + _GUI_TITLE_PAD
         ctx.draw_frame_divider(rule_y, style=rule_style)
-        ctx.draw_text(x, rule_y + _GUI_TITLE_PAD, label, style)
-        return
-    ctx.draw_frame_divider(hu - 3.0, style=rule_style)
-    ctx.draw_text(x, hu - 2.0, label, style)
+    else:
+        text_y = hu - 2.0
+        ctx.draw_frame_divider(hu - HINT_ROWS, style=rule_style)
+    ctx.draw_text(x, text_y, label, style)
+    if right:
+        ctx.draw_text(wu - x - ctx.measure_text(right), text_y, right, style)

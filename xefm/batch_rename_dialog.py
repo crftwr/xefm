@@ -14,7 +14,9 @@ flags names that are invalid or that collide (with an existing file or with
 another row in the batch), and Enter refuses to run while any collision stands.
 
 Two ``TextEdit`` fields (Tab switches between them) sit above a ``ListView``
-preview. Push it with :func:`show_batch_rename`.
+preview. The macro legend stays with the fields it is a legend *for*; the keys
+go in the hint band along the bottom, mirroring the title bar, which is where
+every XeFM modal names them. Push it with :func:`show_batch_rename`.
 """
 
 from __future__ import annotations
@@ -30,7 +32,8 @@ from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 
 from xefm import name_key
-from xefm.dialog_geometry import animate_open, draw_title_bar
+from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
+                                  hint_content_bottom)
 
 #: Characters we refuse in a result name.
 _INVALID_CHARS = set('/\\:*?"<>|')
@@ -123,6 +126,8 @@ class BatchRenameDialog(FocusContainer, Widget):
 
     focusable = True
     focus_stop_when_empty = True
+
+    _HINT = "Tab switch field · ↑/↓ scroll preview · Enter rename · Esc cancel"
 
     def __init__(
         self,
@@ -234,7 +239,7 @@ class BatchRenameDialog(FocusContainer, Widget):
         self._panel = ctx.panel
         self._size = ctx.size_units
         theme = ctx.theme
-        wu, hu = ctx.size_units
+        wu, _hu = ctx.size_units
         surface_bg = theme.popup_bg if theme is not None else None
         muted = theme.muted_text if theme is not None else None
         box_style = Style(bg=surface_bg, fg=theme.popup_border if theme else None)
@@ -264,14 +269,17 @@ class BatchRenameDialog(FocusContainer, Widget):
                        hints={"focused": self.active is self.replace_edit})
         y += 2
 
-        ctx.draw_text(2, y, r"\0 match · \1-\9 groups · \d index · Tab switch · Enter rename · Esc cancel",
+        # The replace pattern's macros, directly under the field they are typed
+        # into — a syntax legend, not a key list, so it stays with its field
+        # rather than joining the keys in the band at the foot of the box.
+        ctx.draw_text(2, y, r"\0 match · \1-\9 groups · \d index",
                       Style(bg=surface_bg, fg=muted, attr=TextAttribute.DIM))
         y += 1
         if self._status:
             ctx.draw_text(2, y, self._status, Style(bg=surface_bg, fg=muted))
         y += 2
 
-        list_h = max(1.0, hu - y - pad)
+        list_h = max(1.0, hint_content_bottom(ctx, surface_bg) - y)
         self._list_rect = Rect(2.0, y, max(1.0, wu - 4.0), list_h)
         # The "bg" hint hands the list the popup surface as its inherited
         # background — otherwise its bg=None rows fall through to the terminal's
@@ -279,6 +287,9 @@ class BatchRenameDialog(FocusContainer, Widget):
         ctx.draw_child(self.preview_list, self._list_rect.x, self._list_rect.y,
                        self._list_rect.w, self._list_rect.h,
                        hints={"focused": False, "bg": surface_bg})
+
+        # Key hint as the bottom band, mirroring the title bar.
+        draw_hint_row(ctx, self._HINT, surface_bg=surface_bg, border=border)
 
     # --- events --------------------------------------------------------------
 
@@ -344,7 +355,9 @@ def show_batch_rename(
     dialog = BatchRenameDialog(files, on_done=on_done)
     sw, sh = panel.backend.size_units
     w = max(56.0, min(sw * 0.8, 110.0))
-    h = max(14.0, min(sh * 0.85, float(len(files) + 10)))
+    # rows + chrome: title band, the two fields, the macro legend, the status
+    # line, their gaps, and the hint band at the foot.
+    h = max(16.0, min(sh * 0.85, float(len(files) + 12)))
     dialog._panel = panel
     panel.push_layer(dialog, z=z, hints={"shadow": True, "w": w, "h": h})
     animate_open(panel, dialog)

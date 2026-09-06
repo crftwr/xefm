@@ -11,7 +11,8 @@ A compact, keyboard-first list (no Tab, no buttons):
   highlight — a rounded pill on a vector (GUI) backend, a background block on a
   character grid — never a font-weight change (which would resize proportional
   text). ``any`` = the checkbox is off, i.e. don't compare this attribute.
-- **Enter** accepts, **Esc** cancels.
+- **Enter** accepts, **Esc** cancels. The hint band along the bottom, mirroring
+  the title bar, names whichever of those the focused row actually answers to.
 
 The selection folds into the active pane, replacing the current selection unless
 Preserve is on. (The engine still supports orphan selection; this dialog does not
@@ -33,7 +34,8 @@ from puikit.widgets import Checkbox
 from puikit.widgets.base import Widget
 
 from xefm.compare_selection import CompareCriteria
-from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
+from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
+                                  draw_title_bar, pane_anchored_box)
 
 # (label, relation options). The Checkbox is the on/off; the options are the real
 # relations (no "any" — that is the box being unchecked). Values are CompareCriteria's.
@@ -205,17 +207,17 @@ class CompareSelectDialog(FocusContainer, Widget):
         cond_top = float(int(title_bottom) + 2)   # blank row under the intro
         return cond_top + len(self._conditions) * row_h + 1.0
 
-    def _hint_y(self, title_bottom: float, row_h: float) -> float:
-        """Row of the key-hint line for the top-down layout — the single source of
-        truth shared by :meth:`show` (sizing), :meth:`draw` (placement), and the
-        fit resize. Rows are ``row_h`` tall (a Checkbox — taller than a cell on
-        vector), and how many toggle rows there are depends on whether the
-        path-match option is offered."""
-        return (self._toggle_y0(title_bottom, row_h)
-                + len(self._toggles) * row_h + 1.0)   # toggles + a gap
+    def _content_bottom(self, title_bottom: float, row_h: float) -> float:
+        """Where the top-down layout ends — what :meth:`show` sizes the box from.
+        Rows are ``row_h`` tall (a Checkbox — taller than a cell on vector), and
+        how many toggle rows there are depends on whether the path-match option is
+        offered. The hint band is chrome and hangs off the bottom of the box, not
+        off the content."""
+        return self._toggle_y0(title_bottom, row_h) + len(self._toggles) * row_h
 
     def _box_height(self, title_bottom: float, row_h: float) -> float:
-        return self._hint_y(title_bottom, row_h) + 2.0  # hint row + bottom border/pad
+        # Content, a blank row of air, then the band's rule / keys / bottom border.
+        return self._content_bottom(title_bottom, row_h) + 1.0 + HINT_ROWS
 
     def _opt_gutter(self, measure) -> float:
         """x where the option segments start: past the widest checkbox (mark gutter
@@ -293,7 +295,6 @@ class CompareSelectDialog(FocusContainer, Widget):
         surface_bg = theme.popup_bg if theme is not None else None
         border = theme.popup_border if theme is not None else None
         text_fg = theme.text if theme is not None else None
-        muted_fg = theme.muted_text if theme is not None else None
         box_style = Style(bg=surface_bg, fg=border)
         box_w, box_h = ctx.size_units
         ctx.draw_box(0, 0, box_w, box_h, box_style, hints={"fill": True})
@@ -335,8 +336,9 @@ class CompareSelectDialog(FocusContainer, Widget):
                 (toggle, (2.0, box_w - 2.0, toggle_y, toggle_y + row_h)))
             toggle_y += row_h
 
-        hint_y = self._hint_y(y, row_h)
-        ctx.draw_text(2, hint_y, self._hint(), Style(bg=surface_bg, fg=muted_fg))
+        # Key hint as the bottom band, mirroring the title bar. What it names
+        # follows the focused row: a condition row answers to ←/→ as well.
+        draw_hint_row(ctx, self._hint(), surface_bg=surface_bg, border=border)
 
     def _hint(self) -> str:
         return self._HINT_COND if isinstance(self._focused, ConditionRow) else self._HINT_OTHER

@@ -16,7 +16,10 @@ re-implementing them:
 Interaction: typing edits the field; Enter accepts (the text is handed to
 ``on_accept``); Esc or an outside click cancels. An optional ``validate(text)``
 returning an error string keeps the dialog open and shows the message inline
-(empty / duplicate names), so a bad value never silently closes the dialog.
+(empty / duplicate names), so a bad value never silently closes the dialog. A
+hint band along the bottom, mirroring the title bar, names those keys — and Tab
+alongside them where a ``completer`` was given, since a prompt that completes
+paths (Jump to Path) is the one place the key is live.
 
 Push it with :func:`show_input`, which sizes and centers the layer with the
 shared drop-shadow intent the other PuiKit modals use, and can anchor it
@@ -34,7 +37,8 @@ from puikit.panel import Rect
 from puikit.widgets.base import Widget
 from puikit.widgets.text_edit import TextEdit
 
-from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
+from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
+                                  draw_title_bar, pane_anchored_box)
 from xefm.completion import Completer, CompletionController
 from xefm.candidate_list import CandidateListOverlay, overlay_geometry
 
@@ -269,8 +273,8 @@ class InputDialog(FocusContainer, Widget):
 
         pad = 1.0
         y = pad
+        border = theme.popup_border if theme else None
         if self.title:
-            border = theme.popup_border if theme else None
             y = draw_title_bar(ctx, self.title, surface_bg=surface_bg, border=border, y=y)
 
         # Prompt label + field on one row; the field fills the rest of the width.
@@ -319,6 +323,19 @@ class InputDialog(FocusContainer, Widget):
         if self._error:
             ctx.draw_text(2, y, self._error,
                           Style(bg=surface_bg, fg=(229, 110, 110), attr=TextAttribute.DIM))
+
+        # Key hint as the bottom band, mirroring the title bar.
+        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
+
+    def hint(self) -> str:
+        """The keys named in the bottom band. Enter and Esc are what every prompt
+        answers to; Tab joins them only where a completer is attached, so a prompt
+        that cannot complete never offers a key that does nothing."""
+        parts = ["Enter accept"]
+        if self._completion is not None:
+            parts.append("Tab complete")
+        parts.append("Esc cancel")
+        return " · ".join(parts)
 
     # --- events --------------------------------------------------------------
 
@@ -441,14 +458,17 @@ def show_input(
     dialog._z = z
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 64.0))
-    # pad + title bar + field + error row + pad. Error shares the row directly
-    # below the field, so no blank line is reserved for it. The compact GUI title
-    # bar pulls the field up ~1 row, so the box is one row shorter there to keep
-    # the bottom padding balanced (grid keeps the whole-row title bar).
+    # pad + title bar + field + error row, then the hint band down to the bottom
+    # border (``HINT_ROWS`` covers the rule, the keys, and the border, so the old
+    # bottom pad is folded into it). Error shares the row directly below the
+    # field, so no blank line is reserved for it. The compact GUI title bar pulls
+    # the field up ~1 row, so the box is one row shorter there to keep the two
+    # bands balanced (grid keeps the whole-row title bar).
     if title:
         h = 5.0 if panel.backend.capabilities.supports("vector_shapes") else 6.0
     else:
         h = 4.0
+    h += HINT_ROWS - 1.0  # the band replaces the bottom border row it now holds
     hints: dict[str, Any] = {"shadow": True, "w": w, "h": h}
     if anchor == "top":
         hints["y"] = 2.0

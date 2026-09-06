@@ -25,7 +25,10 @@ Threading model (mirrors the port's async pane listing):
 ``Tab`` switches between ``filename`` and ``content`` search in place and re-runs
 against the same root. Enter accepts the selected row via
 ``on_accept(mode, value)``; Esc (or an outside click) cancels and stops the
-worker. Push it with :func:`show_progressive_search`.
+worker. A hint band along the bottom, mirroring the title bar, names those keys
+— including which mode Tab would switch *to*, so the status line above the
+results is left to report only what the search itself is doing. Push it with
+:func:`show_progressive_search`.
 """
 
 from __future__ import annotations
@@ -43,7 +46,8 @@ from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 from puikit.widgets.text_edit import TextEdit
 
-from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
+from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
+                                  hint_content_bottom, pane_anchored_box)
 
 #: Navigation keys the *list* owns even while the query field holds focus.
 _LIST_KEYS = frozenset({"up", "down", "pageup", "pagedown"})
@@ -267,7 +271,7 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         self._panel = ctx.panel
         self._size = ctx.size_units
         theme = ctx.theme
-        wu, hu = ctx.size_units
+        wu, _hu = ctx.size_units
         surface_bg = theme.popup_bg if theme is not None else None
         box_style = Style(bg=surface_bg, fg=theme.popup_border if theme else None)
         ctx.draw_box(0, 0, *ctx.size_units, box_style, hints={"fill": True})
@@ -308,8 +312,8 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         ctx.draw_text(2.0, y, status, Style(fg=theme.text if theme else None, bg=surface_bg))
         y += 1.0
 
-        # Result list fills the rest, above the bottom padding.
-        list_h = max(1.0, hu - y - pad)
+        # Result list fills the rest, down to where the hint band starts.
+        list_h = max(1.0, hint_content_bottom(ctx, surface_bg) - y)
         frame = Rect(2.0, y, max(1.0, wu - 4.0), list_h)
         if vector:
             ctx.round_rect(
@@ -332,20 +336,30 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
             hints={"focused": False, "bg": surface_bg},
         )
 
-    def _status_text(self) -> str:
+        # Key hint as the bottom band, mirroring the title bar — the list's own
+        # left inset, so the three line up down the left edge.
+        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
+
+    def hint(self) -> str:
+        """The keys named in the bottom band. Tab names the mode it switches
+        *to*, which is the only part that changes as the dialog is used — it used
+        to ride along on the status line, where it was the one thing there that
+        was not about the search's progress."""
         other = "content" if self.mode == "filename" else "filename"
-        hint = f"  •  Tab: {other}"
+        return " · ".join(("↑/↓ select", "Enter open", f"Tab {other}", "Esc cancel"))
+
+    def _status_text(self) -> str:
         if self._error:
-            return self._error + hint
+            return self._error
         n = len(self.results)
         if self._searching:
             spin = _SPINNER[self._spin % len(_SPINNER)]
             capped = " (limit)" if n >= self.result_cap else ""
-            return f"{spin} Searching…  {n} found{capped}{hint}"
+            return f"{spin} Searching…  {n} found{capped}"
         if not self.query_edit.text.strip():
-            return f"Type to search{hint}"
+            return "Type to search"
         capped = " (limit reached)" if n >= self.result_cap else ""
-        return f"{n} result{'' if n == 1 else 's'}{capped}{hint}"
+        return f"{n} result{'' if n == 1 else 's'}{capped}"
 
     # --- events --------------------------------------------------------------
 

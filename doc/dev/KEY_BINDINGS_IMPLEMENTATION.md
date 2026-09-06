@@ -322,6 +322,41 @@ colour because the band's *height* is measured from the hint's own text style
 (`hint_style`), exactly as the title bar's is measured from the title's, so the
 two bands stay the same height as the font changes.
 
+A dialog that sizes its box **up front** — Sort, Choice, Compare & Select, the
+input prompt — never reaches a draw context to measure against, so it adds
+`HINT_ROWS` (the grid's rule + keys + border) to its content height instead. A
+vector band is shorter than that, so the grid figure is the safe reserve for
+both; the band is pinned to the frame either way, and any slack falls between
+the content and the rule rather than under the keys.
+
+`draw_hint_row` also takes an optional `right`, a second reading pinned to the
+band's right end and kept whole while the keys elide against it. Tip of the
+Day's `3/14` position counter is the only user: the one thing a modal says down
+here that is not a key.
+
+Every modal that owns its keyboard draws the band:
+
+| modal | what it names |
+|---|---|
+| filter-list picker | select / choose / remove (from the keymap) / cancel |
+| search (progressive) | select / open / `Tab` **to the other mode** / cancel |
+| input prompt | accept / `Tab` complete (only with a completer) / cancel |
+| batch rename | switch field / scroll preview / rename / cancel |
+| sort, choice, compare & select | that dialog's own axes |
+| tips | prev / next / toggle / close, plus the counter |
+| scroll modals (help, file details) | scroll / close |
+
+Two things a modal says *near* the bottom are deliberately not in the band,
+because they are not keys: the search dialog's status line (spinner, result
+count) and batch rename's `\0 / \1-\9 / \d` macro legend, which stays with the
+field it is a legend for. Both used to carry a `Tab …` fragment; that fragment
+moved into the band, where the keys live.
+
+Two modals draw no band. The overwrite-conflict dialog answers with a **button
+row** along its bottom — that row already is the band, and its labels name the
+choices. The task-progress dialog is not a picker: it takes one key (Esc, to ask
+about cancelling) and measures its byte bar up from the foot of the box.
+
 `TextDialog` (help, file details) used to carry its hint in the header instead,
 between the title and the body the title describes; it does not any more.
 
@@ -352,8 +387,8 @@ skipped rather than crashing; a missing `KEY_BINDINGS` config falls back to
   binding, Shift-Delete vs a plain Delete in the query field, the dialog's local
   row edit, and what each owner forgets (issue #271).
 - `test/test_dialog_hint_row.py` — the two bands mirroring each other on both
-  backends, both dialogs drawing the hint below their content, and the status
-  bar going quiet under a modal.
+  backends, every modal drawing its keys in the band below its content, and the
+  status bar going quiet under a modal.
 
 ## See Also
 

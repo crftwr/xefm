@@ -30,7 +30,7 @@ modality, focus, event routing, and drawing.
 Two supporting pieces are not dialogs themselves:
 
 - **`xefm/dialog_geometry.py`** — the shared sizing/chrome helpers every modal uses
-  (`draw_title_bar`, `pane_anchored_box`, `animate_open`).
+  (`draw_title_bar`, `draw_hint_row`, `pane_anchored_box`, `animate_open`).
 - **`show_message_box`** — a PuiKit widget primitive (from `puikit.widgets`) XeFM
   uses for confirmations, info, and error boxes (Quit, "No favorites configured",
   operation-error summaries). It follows the same layer model but ships with
@@ -150,6 +150,19 @@ looks and opens the same way.
   and content each take a whole row (`y`, `y+1`, `y+2`); on a vector backend the
   bar is sized to the *measured* title line (`gui_title_bar_height`) so it reads
   thin and balanced. Every modal calls this rather than drawing its own header.
+
+- **`draw_hint_row(ctx, text, *, surface_bg, border, x=2.0, right="")`** — the
+  title bar's mirror, and the one place a modal names its keys: a
+  frame-connecting rule, then the muted line of keys in the band beneath it, hard
+  against the bottom border. A modal is framed by two matched bands with its
+  content between them. Content measures against **`hint_content_bottom(ctx,
+  surface_bg)`** (the counterpart to what `draw_title_bar` returns); a dialog that
+  sizes its box up front, with no stretchy body to measure, adds **`HINT_ROWS`**
+  to its content height instead. `right` pins a second reading to the band's
+  right end — Tip of the Day's position counter is the only one — kept whole
+  while the keys elide against it. Every modal that owns the keyboard draws this;
+  see *Where a hint is drawn* in `doc/dev/KEY_BINDINGS_IMPLEMENTATION.md` for
+  which ones, and for the two that deliberately do not.
 
 - **`pane_anchored_box(desired_w, screen_w, region, *, margin=2.0) -> (w, x)`** —
   positions a pane-targeting picker over the pane it acts on. `region` is the
