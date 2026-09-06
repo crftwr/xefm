@@ -756,9 +756,9 @@ class LibarchiveHandler(ArchiveHandler):
         """``'none'``, ``'password'``, or ``'unsupported'``.
 
         Which entries are encrypted comes from the headers read at ``open()``;
-        whether they can be decrypted at all is :func:`can_decrypt_7z`, because a
-        libarchive built without crypto reads such an archive's names perfectly
-        well and then fails on every byte of its data."""
+        whether they can be decrypted at all is :func:`can_decrypt_7z`, which is
+        currently False on every libarchive there is — such an archive lists its
+        names perfectly well and then fails on every byte of its data."""
         if not self._is_open:
             self.open()
         if not self._encrypted:

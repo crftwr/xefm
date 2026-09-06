@@ -185,9 +185,10 @@ share the remembered password.
   supported.
 - **AES-encrypted ZIP** (WinZip AES) is **not** supported — the Python runtime
   XeFM builds on can't decrypt it.
-- **Encrypted 7z** can be *read* only where the libarchive on your machine was
-  built with encryption support. macOS's built-in copy has none, so an encrypted
-  `.7z` lists its filenames there but its contents cannot be read.
+- **Encrypted 7z** cannot be read on any platform. libarchive decrypts ZIP and
+  nothing else, so an encrypted `.7z` lists its filenames and then refuses its
+  contents. XeFM detects this and says so, rather than asking for a password no
+  answer would satisfy.
 - **Creating an encrypted archive is not supported in any format.** XeFM reads
   password-protected archives; it does not make them.
 
@@ -241,8 +242,8 @@ without the pieces for; XeFM leaves it out rather than offering it and failing
 later. The
 second gives the reason it found none. What to do about it:
 
-- **macOS** — the built-in `/usr/lib/libarchive.dylib` is normally enough, and
-  the desktop app ships its own copy. Nothing to install.
+- **macOS** — nothing to install. The built-in `/usr/lib/libarchive.dylib` is
+  new enough, and the desktop app uses that same system copy.
 - **Linux** — install your distribution's libarchive package (`libarchive13`,
   `libarchive`, …) if it is not already present.
 - **Windows** — Windows has no system libarchive. The desktop app ships one and

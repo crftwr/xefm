@@ -180,9 +180,26 @@ ArchiveError Can't initialize filter; unable to run program "zstd -d -qq"
 
 It had been shelling out to Homebrew's `zstd`. A format whose codec is missing
 must never be offered, which is why `.tar.zst` goes through the standard library
-instead (§2) and not through here. The one case the probe cannot cover is a codec
-*inside* a container: an RPM with a zstd payload can still reach for the external
-program, because nothing outside the file says what its payload uses.
+instead (§2) and not through here.
+
+**The fallback is a *filter* mechanism, not a format one**, and the difference
+matters because it is easy to over-generalize the paragraph above. A codec named
+by an entry *inside* a format is decoded by that format's reader, which cannot
+reach `__archive_read_program` at all. Measured on the same library, with the
+`zstd` binary present on PATH:
+
+| Archive | Result |
+| --- | --- |
+| a 7z whose entry is zstd-compressed | `ZSTD codec is unsupported` — a clean failure, no process |
+| a `.tar.zst` | `unable to run program "zstd -d -qq"` — the fallback |
+
+So a codec the library lacks costs a spawned process only where it applies to a
+*stream*: a bare compressed file, or a payload the filter chain sees. `.rpm` is
+the one registered format where that is reachable, since its payload is a
+filtered stream — nothing outside the file says which filter, so the probe cannot
+refuse it in advance. Everything an entry inside a 7z, RAR, ISO, CAB or cpio
+declares fails visibly instead, which is the behaviour we want and the reason the
+probe only has to cover what a format needs *to open at all*.
 
 `register_libarchive_formats()` logs one line at import naming the library, its
 version, its codecs and the suffixes it contributed. With three supply paths, a
@@ -221,11 +238,17 @@ at the end of §2.
 **Encryption is two questions, not one.** Which entries are encrypted comes from
 `archive_entry_is_encrypted` on the headers read at `open()`. Whether they can be
 decrypted at all is `can_decrypt_7z()`, which decrypts a 183-byte AES-256 7z
-embedded in the module. libarchive compiles its AES support in behind
-`HAVE_LIBCRYPTO` / CNG / CommonCrypto, none of which `archive_version_details()`
-mentions, so there is no other way to ask — and macOS's system build (3.7.4,
-zlib + liblzma + bz2lib) has none of them. Without the probe an encrypted 7z
-would reject every password the user typed with no way to say why.
+embedded in the module.
+
+The answer today is no, everywhere: **through 3.8.9 libarchive decrypts ZIP and
+no other format**, and its 7z reader rejects an encrypted entry outright — not
+for want of a crypto library, which was the first and wrong reading of macOS's
+crypto-less 3.7.4. A 3.8.9 Windows build linked against CNG refuses the same
+archive, which is what settled it. The probe is kept for two reasons anyway: it
+is the difference between "not supported" and rejecting every password the user
+types, and the day a release does add 7z decryption it starts returning True with
+no change here. `archive_version_details()` could not answer this either way —
+it names codecs, not what the format readers do with them.
 
 ### ArchiveCache
 

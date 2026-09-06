@@ -4307,7 +4307,7 @@ class XeFMApp:
         For a file inside a password-protected archive with no password yet known,
         prompt (masked), verify, remember it for the session, then run
         ``on_ready()``. Archives whose encryption XeFM cannot decrypt at all — a
-        WinZip AES zip, or an encrypted 7z on a libarchive built without crypto —
+        WinZip AES zip, or any encrypted 7z, since libarchive decrypts only zip —
         are refused with a message instead of a prompt no password could satisfy.
         Ordinary files, unencrypted archive entries, and archives whose password is
         already known run ``on_ready()`` at once.
