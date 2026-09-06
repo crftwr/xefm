@@ -245,9 +245,16 @@ second gives the reason it found none. What to do about it:
   the desktop app ships its own copy. Nothing to install.
 - **Linux** — install your distribution's libarchive package (`libarchive13`,
   `libarchive`, …) if it is not already present.
-- **Windows** — Windows has no system libarchive. The desktop app ships one; for
-  the terminal version, download the library and point XeFM at it with the
-  `LIBARCHIVE` environment variable.
+- **Windows** — Windows has no system libarchive. The desktop app ships one and
+  needs no setup. For the terminal version, download `archive.dll` from
+  [xefm-bin-deps](https://github.com/crftwr/xefm-bin-deps/releases) — the build
+  XeFM's own desktop app uses — and point XeFM at it:
+
+  ```powershell
+  setx LIBARCHIVE "C:\path\to\libarchive-3.8.9-windows-x64\bin\archive.dll"
+  ```
+
+  The variable is read when XeFM starts, so open a new terminal afterwards.
 
 To use a specific library rather than the system one, set `LIBARCHIVE` to its
 full path before starting XeFM:

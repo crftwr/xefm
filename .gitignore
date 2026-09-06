@@ -70,3 +70,8 @@ test/demo_*_test_*/
 # Note: test/test_edit.txt and test/test_syntax.json are test fixtures and should be tracked
 
 /profiling_output
+
+# The shared library the desktop builds bundle (windows_app/build.ps1 Step 4b
+# downloads it into the *copied* package; this covers a developer dropping one
+# into the working tree to test the bundled-lookup path).
+xefm/_bin/

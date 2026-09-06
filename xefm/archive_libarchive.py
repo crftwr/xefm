@@ -8,15 +8,20 @@ comes from `libarchive <https://libarchive.org/>`_, reached through the pure
 required: with no usable library the table simply has fewer formats in it and
 zip and tar carry on unchanged.
 
-**Three supply paths, one loader.** ``libarchive-c`` finds the shared library
-itself, in this order:
+**Three supply paths, one loader.** The library that answers is chosen in this
+order:
 
-1. a bundled copy, which the desktop builds point at by setting ``LIBARCHIVE``
-   before XeFM starts;
-2. the ``LIBARCHIVE`` environment variable, which a terminal user can set to a
+1. the ``LIBARCHIVE`` environment variable, which a terminal user can set to a
    library they downloaded or built;
+2. a bundled copy — :func:`bundled_library_path` looks in ``xefm/_bin/``, which
+   the desktop builds fill and a source checkout leaves empty. Finding one is
+   how ``LIBARCHIVE`` comes to be set when the user did not set it, because
+   ``libarchive-c`` reads that variable at import and offers no other way in;
 3. ``ctypes.util.find_library("archive")`` — the system copy, which is what
-   macOS and most Linux distributions already have.
+   macOS and most Linux distributions already have, and what Windows does not.
+
+The user's own ``LIBARCHIVE`` deliberately outranks the bundled copy: someone
+who names a library is answering exactly this question.
 
 Because two of those three are built by somebody else, **what a format needs is
 probed, never assumed from a version number**. ``archive_version_details()``
@@ -28,11 +33,13 @@ binaries are simply absent — so a format whose codec is missing must never be
 offered in the first place.
 
 macOS ships libarchive 3.7.4 with zlib, liblzma and bz2lib, which is enough to
-read ``.7z``; it is built without crypto, so AES-encrypted 7z entries cannot be
-decrypted on that library at any password. :func:`can_decrypt_7z` establishes
-which of the two applies by decrypting a known archive, rather than guessing
-from a version, so the UI can say "not supported" instead of rejecting every
-password the user types.
+read ``.7z``. AES-encrypted 7z entries are another matter: no libarchive built
+to date decrypts them, whatever crypto it was compiled against — through 3.8.9,
+zip is the only format libarchive decrypts, and the 7z reader rejects an
+encrypted entry unconditionally. :func:`can_decrypt_7z` settles it by actually
+decrypting a known archive rather than reasoning from a version or a build flag,
+so the UI can say "not supported" instead of rejecting every password the user
+types, and so the day a release does add it needs no change here.
 """
 
 import base64
@@ -42,6 +49,7 @@ import os
 import stat
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path as PathlibPath
@@ -96,12 +104,82 @@ _info_lock = threading.RLock()
 _info: Optional[LibarchiveInfo] = None
 
 
+#: Where the desktop builds put the shared library they bundle — inside XeFM's
+#: own package, the one directory this module can find without knowing anything
+#: about the bundle around it. Empty in a source checkout, which is why the
+#: system and ``LIBARCHIVE`` paths still exist.
+_BUNDLED_DIR = PathlibPath(__file__).resolve().parent / '_bin'
+
+#: Names to try in there, in order. Windows is the platform that needs this at
+#: all — macOS and most Linux distributions have a system library — but naming
+#: the others costs nothing and keeps the answer to "can this bundle one?" the
+#: same everywhere.
+_BUNDLED_NAMES = ('archive.dll', 'libarchive.dylib', 'libarchive.so')
+
+
+def bundled_library_path() -> str:
+    """The bundled shared library's path, or '' when this is not a desktop build."""
+    for name in _BUNDLED_NAMES:
+        candidate = _BUNDLED_DIR / name
+        if candidate.is_file():
+            return str(candidate)
+    return ''
+
+
+#: The charset a format's headers are read and written in, for the formats that
+#: get told — see :data:`_CHARSET_BY_LABEL`, which is where the list lives.
+_HDRCHARSET = 'UTF-8'
+
+
+def _use_utf8_ctype() -> None:
+    """Put this process's C locale on UTF-8, on Windows only.
+
+    libarchive decides how to convert a filename between its wide and narrow
+    forms by calling ``setlocale(LC_CTYPE, NULL)`` in the C runtime and reading a
+    code page out of the answer. On a Windows box whose locale is, say,
+    ``English_United States.1252``, that is code page 1252, and a name it cannot
+    spell — any CJK one — makes libarchive's narrow accessor return NULL. The
+    ISO 9660 writer reads that NULL as the virtual root and drops the file
+    silently; nothing surfaces but a missing entry.
+
+    macOS and Linux never hit this because their locale is already UTF-8, which
+    is what this makes Windows agree with. Python's own encodings are unaffected
+    — it derives those from ``GetACP()``, not from the C locale — so the only
+    code this reaches is exactly the code that has the problem."""
+    if os.name != 'nt':
+        return
+    import locale as _locale
+    try:
+        _locale.setlocale(_locale.LC_CTYPE, '.UTF8')
+    except Exception as exc:  # noqa: BLE001 — a locale XeFM can live without
+        logger.warning(f"Could not select a UTF-8 C locale ({exc}); "
+                       f"non-ASCII names may not survive being written to .iso")
+
+
+def _use_bundled_library() -> None:
+    """Point ``libarchive-c`` at the bundled library, if there is one and the user
+    has not named their own.
+
+    ``libarchive-c`` reads ``LIBARCHIVE`` once, at import, and loads whatever it
+    names; there is no API for choosing a library afterwards. So the choice has
+    to be made here, before :func:`_probe` imports it — which is also why this
+    lives in the module that does that import rather than in XeFM's startup,
+    where it would be one import-order mistake away from having no effect."""
+    if os.environ.get('LIBARCHIVE'):
+        return  # An explicit choice by the user outranks the bundled copy.
+    path = bundled_library_path()
+    if path:
+        os.environ['LIBARCHIVE'] = path
+
+
 def _probe() -> LibarchiveInfo:
     """Import ``libarchive-c`` and ask the library that loaded what it supports.
 
     Importing the binding is what loads the shared library, so an absent or
     unloadable library surfaces here as an import failure rather than later as a
     read failure."""
+    _use_bundled_library()
+    _use_utf8_ctype()
     try:
         import libarchive
         import libarchive.ffi as ffi
@@ -195,11 +273,12 @@ def _encryption_probe():
 
 # A 7z holding one AES-256 encrypted file, "secret.txt", whose contents are
 # _PROBE_PLAINTEXT under _PROBE_PASSWORD. Decrypting it is the only honest test
-# of whether the loaded library can decrypt 7z at all: libarchive compiles its
-# AES support in behind HAVE_LIBCRYPTO / CNG / CommonCrypto, none of which
-# ``archive_version_details()`` mentions, and macOS's system build has none of
-# them. Without this probe an encrypted 7z would reject every password the user
-# typed with no way to say why.
+# of whether the loaded library can decrypt 7z at all. Nothing else answers the
+# question: ``archive_version_details()`` reports the crypto backend (macOS's
+# build has none, XeFM's Windows build reports cng/2.0) but that says nothing
+# about 7z, which as of 3.8.9 refuses encrypted entries no matter what the
+# library was built with. Without this probe an encrypted 7z would reject every
+# password the user typed with no way to say why.
 _PROBE_7Z = base64.b64decode(
     'N3q8ryccAARfXI/4gwAAAAAAAAAUAAAAAAAAAA6xR+SEKLWDIBuLctmOWO0Ey2IM4ABu'
     'AGtdAACBMweuD87zck5PYtmjlC7665Rvo9JyRHNFzqR/1QdFG0fWqjQSpDRUacop7qQG'
@@ -234,6 +313,74 @@ def can_decrypt_7z() -> bool:
 
 
 # --- the handler --------------------------------------------------------------
+
+
+@contextmanager
+def _open_reader(path: str, passphrase: Optional[bytes] = None, charset: str = ''):
+    """``libarchive.file_reader``, plus an optional ``hdrcharset``.
+
+    The option has to be set between ``archive_read_new`` and
+    ``archive_read_open``, and ``libarchive-c``'s own ``file_reader`` does both
+    in one call with nothing in between — it takes a ``header_codec`` for its
+    own decoding but has no way to pass an option down to the library. So the
+    two halves are done here instead, out of the same pieces ``file_reader`` is
+    built from.
+
+    With no ``charset`` this is exactly ``file_reader``, which is what every
+    format but cpio wants. :data:`_CHARSET_BY_LABEL` says why."""
+    binding = _binding()
+    pieces = _reader_pieces() if charset else None
+    if pieces is None:
+        # No charset wanted, or libarchive-c rearranged under us. Reading is
+        # worth more than naming the charset, so fall back rather than fail.
+        with binding.file_reader(path, passphrase=passphrase) as archive:
+            yield archive
+        return
+    new_archive_read, archive_read_class, open_filename, set_options = pieces
+    with new_archive_read('all', 'all', passphrase) as archive_p:
+        set_options(archive_p, charset)
+        open_filename(archive_p, path, MEMBER_CHUNK)
+        yield archive_read_class(archive_p)
+
+
+_reader_pieces_cache = None
+_reader_pieces_resolved = False
+
+
+def _reader_pieces():
+    """The parts of ``libarchive-c`` :func:`_open_reader` builds a reader from,
+    resolved once, or None if this version does not have them under these
+    names."""
+    global _reader_pieces_cache, _reader_pieces_resolved
+    with _info_lock:
+        if not _reader_pieces_resolved:
+            _reader_pieces_resolved = True
+            _reader_pieces_cache = _resolve_reader_pieces()
+        return _reader_pieces_cache
+
+
+def _resolve_reader_pieces():
+    """Import those parts, or warn and give up on the charset."""
+    try:
+        import ctypes as _ctypes
+        import libarchive.ffi as ffi
+        from libarchive.read import ArchiveRead, new_archive_read
+
+        set_options_fn = ffi.libarchive.archive_read_set_options
+        set_options_fn.argtypes = [_ctypes.c_void_p, _ctypes.c_char_p]
+        set_options_fn.restype = _ctypes.c_int
+
+        def set_options(archive_p, charset: str) -> None:
+            # A bad option is not worth failing an archive over; the reader
+            # simply keeps its default charset.
+            set_options_fn(_ctypes.c_void_p(archive_p),
+                           f'hdrcharset={charset}'.encode())
+
+        return (new_archive_read, ArchiveRead, ffi.read_open_filename_w, set_options)
+    except Exception as exc:  # noqa: BLE001 — any absence means "use the plain reader"
+        logger.warning(f"libarchive-c internals not as expected ({exc}); "
+                       f"reading archives without an explicit header charset")
+        return None
 
 
 def clean_member_path(pathname: str) -> str:
@@ -343,7 +490,8 @@ class LibarchiveHandler(ArchiveHandler):
 
     def _reader(self, passphrase: Optional[bytes] = None):
         """A fresh libarchive reader over the local file."""
-        return _binding().file_reader(self._local_path, passphrase=passphrase or None)
+        return _open_reader(self._local_path, passphrase=passphrase or None,
+                            charset=_CHARSET_BY_LABEL.get(self._label, ''))
 
     def _to_entry(self, raw, internal_path: str) -> ArchiveEntry:
         """One libarchive header as an :class:`~xefm.archive.ArchiveEntry`."""
@@ -825,7 +973,9 @@ _CANDIDATES: Tuple[_Candidate, ...] = (
                # SVR4 "newc" rather than the historic odc the plain ``cpio``
                # writer produces: odc stores sizes in 8 octal digits, so it
                # cannot hold a member over 8 GB.
-               write_format='cpio_newc'),
+               write_format='cpio_newc',
+               # See _CHARSET_BY_LABEL for why cpio, alone, is told a charset.
+               write_options=f'hdrcharset={_HDRCHARSET}'),
 
     # An RPM is the rpm filter wrapped around a compressed cpio. The filter
     # itself only skips the package header; the payload's codec is what has to
@@ -837,6 +987,31 @@ _CANDIDATES: Tuple[_Candidate, ...] = (
                codecs=('zlib', 'liblzma'),
                filters=('archive_read_support_filter_rpm',)),
 )
+
+
+#: Formats whose reader is told outright what its header bytes mean, and what to
+#: tell it. Everything absent from here is read with libarchive's own default,
+#: and that is the important half of this table.
+#:
+#: **cpio** is told UTF-8 because its default on Windows is the *OEM* code page —
+#: 437 on a US install. That is not the ANSI one, so :func:`_use_utf8_ctype`
+#: cannot move it (libarchive maps a locale *name* to an OEM page through a
+#: table, ignoring the ``.UTF8`` suffix), and it cannot spell a CJK name: writing
+#: one gives question marks, reading one gives mojibake. UTF-8 is also what cpio
+#: archives actually contain, since they come from systems whose locale is UTF-8,
+#: and it is what libarchive already defaults to on macOS and Linux. ``.rpm`` is
+#: a cpio inside an rpm wrapper, so it gets the same.
+#:
+#: **CAB, RAR, 7z and ISO are deliberately not here.** Their names are either
+#: Unicode in the container already, or in a legacy code page that libarchive
+#: detects for itself — and forcing UTF-8 on a CAB whose names are CP932 does not
+#: garble them, it makes ``archive_entry_pathname`` return NULL for every entry,
+#: so the archive opens and appears to be empty. Mojibake is a bad listing;
+#: nothing at all is a broken one.
+_CHARSET_BY_LABEL = {c.label: c.write_options.split('=', 1)[1]
+                     for c in _CANDIDATES
+                     if c.write_options.startswith('hdrcharset=')}
+_CHARSET_BY_LABEL['rpm'] = _HDRCHARSET
 
 
 def libarchive_formats() -> List[ArchiveFormat]:

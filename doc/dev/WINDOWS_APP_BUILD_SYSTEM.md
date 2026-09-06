@@ -59,6 +59,7 @@ XeFM/                              <- bundle root = the .exe's directory (5 entr
 │   └── LICENSE.txt               embedded CPython's PSF license
 ├── app/                          XeFM's own code (mirror of macOS Resources/)
 │   ├── xefm/app.py                    entry script (imported as the `xefm` module)
+│   ├── xefm/_bin/archive.dll     libarchive, for .7z .rar .iso .cab .cpio .rpm
 │   ├── src/                      xefm_* business-logic modules
 │   └── puikit/                   PuiKit toolkit (copied from the sibling repo)
 └── Lib/
@@ -192,6 +193,7 @@ directly). Steps:
    (cached under `windows_app/.cache/`).
 4. **Assemble app code**: copy `xefm/` (as `app/xefm/`), the resolved `puikit/` package,
    and `LICENSE` into `app/`; `compileall` them.
+4b. **Fetch libarchive** into `app\xefm\_bin\archive.dll` — see below.
 5. **Collect dependencies** into `Lib\site-packages` via the shared
    `tools/collect_dependencies.py` (`--include-deps-of puikit`), then
    **generate `THIRD_PARTY_NOTICES.txt`** at the bundle root via
@@ -200,6 +202,37 @@ directly). Steps:
    `__version__`) and `XeFM.ico` (via `make_icon.py`); compile `XeFM.rc` → `XeFM.res`.
 7. **Compile** `launcher.c` + `XeFM.res` → `XeFM.exe` (GUI subsystem).
 8. **(optional)** `-Zip` → `build\XeFM-<version>-win64.zip` for distribution.
+
+### Step 4b: the bundled libarchive
+
+XeFM reads `.7z`, `.rar`, `.iso`, `.cab`, `.cpio` and `.rpm` through libarchive,
+via the pure-ctypes `libarchive-c` binding that Step 5 collects. That binding
+carries no binary of its own: on macOS and Linux it finds a system library, and
+Windows has none, so the bundle must carry one.
+
+The DLL comes from a **release asset** of
+[crftwr/xefm-bin-deps](https://github.com/crftwr/xefm-bin-deps), not from this
+repository. It statically links zlib, bzip2, liblzma and libzstd, four libraries
+with vulnerability cycles of their own; keeping them in a separate repository
+means a CVE in any of them is answered by re-releasing there rather than by
+cutting an XeFM release.
+
+It is pinned by **release tag and SHA-256**, never "latest" — a Store submission
+has to be reproducible, and a pin that moves when nobody is looking is not a pin.
+Bumping it means editing `$LibarchiveTag` and `$LibarchiveSha256` together.
+
+It lands **inside the copied package**, at `app\xefm\_bin\archive.dll`, rather
+than beside the exe. `xefm/archive_libarchive.py` finds it relative to its own
+`__file__`, so it needs no knowledge of the bundle layout and the same lookup
+would work from a wheel. The launcher is not involved.
+
+The step then **loads the DLL and checks its codec list**, and fails the build if
+`zlib`, `liblzma`, `bz2lib` or `libzstd` is missing. That check is not
+belt-and-braces: XeFM's capability probe answers a missing codec by not offering
+the format, so a truncated download or a wrongly configured library would
+otherwise ship as a perfectly working XeFM with `.7z` quietly absent. The
+licenses shipped in the asset are fed to Step 5b as `--extra` entries, since
+none of those components has a `.dist-info` for the scanner to find.
 
 ### Usage
 

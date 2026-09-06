@@ -319,6 +319,114 @@ if (Test-Path (Join-Path $ProjectRoot 'LICENSE')) {
 }
 
 # ---------------------------------------------------------------------------
+# Step 4b: Fetch the libarchive DLL and place it inside the copied xefm package
+# ---------------------------------------------------------------------------
+# XeFM reads .7z, .rar, .iso, .cab, .cpio and .rpm through libarchive, reached
+# by the pure-ctypes libarchive-c binding that Step 5 collects. That binding
+# carries no binary: on macOS and Linux it finds the system library, and on
+# Windows there is none to find, so the bundle has to carry one.
+#
+# It comes from crftwr/xefm-bin-deps rather than from this repository so that a
+# CVE in zlib, bzip2, liblzma or libzstd - all statically linked into that DLL -
+# is answered by re-releasing there, without an XeFM release.
+#
+# Pinned by tag AND checksum, not "latest": a Store submission has to be
+# reproducible, and the whole point of a pin is that it does not move when
+# nobody is looking.
+Info 'Step 4b: Fetching the bundled libarchive...'
+
+$LibarchiveTag     = 'libarchive-3.8.9-2'
+$LibarchivePkgName = 'libarchive-3.8.9-windows-x64'
+$LibarchiveSha256  = 'f481d48a63c8fcb28a5ad53d76999f60f0c5f89b90be36e1fb956c07f6a707cb'
+$LibarchiveUrl     = "https://github.com/crftwr/xefm-bin-deps/releases/download/$LibarchiveTag/$LibarchivePkgName.zip"
+
+$LibarchiveZip = Join-Path $CacheDir "$LibarchivePkgName.zip"
+if (Test-Path $LibarchiveZip) {
+    $have = (Get-FileHash -Algorithm SHA256 $LibarchiveZip).Hash.ToLower()
+    if ($have -ne $LibarchiveSha256) {
+        Warn "Cached $LibarchivePkgName.zip has the wrong hash; re-downloading."
+        Remove-Item -Force $LibarchiveZip
+    }
+}
+if (-not (Test-Path $LibarchiveZip)) {
+    Info "Downloading $LibarchiveUrl"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    try {
+        Invoke-WebRequest -Uri $LibarchiveUrl -OutFile $LibarchiveZip -UseBasicParsing
+    } catch {
+        Fail "Failed to download $LibarchiveUrl`n$($_.Exception.Message)"
+    }
+}
+$have = (Get-FileHash -Algorithm SHA256 $LibarchiveZip).Hash.ToLower()
+if ($have -ne $LibarchiveSha256) {
+    Remove-Item -Force $LibarchiveZip
+    Fail "SHA-256 mismatch for $LibarchivePkgName.zip`n  expected $LibarchiveSha256`n  got      $have"
+}
+
+$LibarchiveDir = Join-Path $CacheDir $LibarchivePkgName
+if (Test-Path $LibarchiveDir) { Remove-Item -Recurse -Force $LibarchiveDir }
+Expand-Archive -Path $LibarchiveZip -DestinationPath $CacheDir -Force
+
+$LibarchiveDll = Join-Path $LibarchiveDir 'bin\archive.dll'
+if (-not (Test-Path $LibarchiveDll)) { Fail "archive.dll missing from $LibarchivePkgName.zip" }
+
+# Into the package rather than beside the exe: xefm/archive_libarchive.py finds
+# it relative to its own __file__, so it needs no knowledge of the bundle layout
+# around it and the same lookup works if the DLL is ever shipped in a wheel.
+$LibarchiveDest = Join-Path $AppDir 'xefm\_bin'
+# Emptied first: Step 4 robocopies the whole xefm\ tree, so a library a developer
+# dropped into their working copy to test this path has already arrived here.
+# Overwriting archive.dll would not remove one saved under another of the names
+# bundled_library_path() accepts.
+if (Test-Path $LibarchiveDest) { Remove-Item -Recurse -Force $LibarchiveDest }
+New-Item -ItemType Directory -Force -Path $LibarchiveDest | Out-Null
+Copy-Item -Force $LibarchiveDll (Join-Path $LibarchiveDest 'archive.dll')
+
+# Prove the DLL is the one intended before it ships. This check exists because
+# the failure it catches is silent: XeFM's capability probe answers a missing
+# codec by not offering the format, so a truncated download or a library built
+# without liblzma yields a working XeFM with .7z quietly absent.
+$LibarchiveCheck = @'
+import ctypes, sys
+lib = ctypes.CDLL(sys.argv[1])
+lib.archive_version_details.restype = ctypes.c_char_p
+details = lib.archive_version_details().decode()
+print(details)
+missing = [c for c in ('zlib', 'liblzma', 'bz2lib', 'libzstd') if c + '/' not in details]
+if missing:
+    sys.exit('missing codecs: ' + ', '.join(missing))
+'@
+$LibarchiveCheckFile = Join-Path $CacheDir 'check_libarchive.py'
+Set-Content -Path $LibarchiveCheckFile -Value $LibarchiveCheck -Encoding utf8
+$details = & $VenvPy $LibarchiveCheckFile (Join-Path $LibarchiveDest 'archive.dll')
+if ($LASTEXITCODE -ne 0) {
+    Fail "The bundled libarchive is not usable: $details"
+}
+Info "Bundled libarchive: $details"
+
+# Everything statically linked into that DLL has to appear in the bundle's
+# notices, and none of it has a .dist-info for Step 5b's scanner to find - the
+# license text travels inside the release asset instead. Named explicitly rather
+# than by globbing licenses\, because which file is the right one is a judgement:
+# zstd is dual-licensed and ships the GPLv2 that covers its command-line tools
+# next to the BSD that covers the library, and only the library is here.
+$LibarchiveNotices = @(
+    @{ Name = 'libarchive 3.8.9 (New BSD License)';  File = 'libarchive-COPYING.txt' }
+    @{ Name = 'zlib 1.3.2 (zlib License)';           File = 'zlib-LICENSE.txt' }
+    @{ Name = 'bzip2 1.0.8 (BSD-style License)';     File = 'bzip2-LICENSE.txt' }
+    @{ Name = 'liblzma (xz) 5.8.3 (0BSD License)';   File = 'xz-COPYING.0BSD.txt' }
+    @{ Name = 'Zstandard 1.5.7 (BSD 3-Clause License)'; File = 'zstd-LICENSE.txt' }
+)
+$LibarchiveNoticeExtras = @()
+foreach ($n in $LibarchiveNotices) {
+    $p = Join-Path $LibarchiveDir "licenses\$($n.File)"
+    if (-not (Test-Path $p)) {
+        Fail "License $($n.File) missing from $LibarchivePkgName.zip; the bundle cannot ship $($n.Name) without it."
+    }
+    $LibarchiveNoticeExtras += @('--extra', "$($n.Name)=$p")
+}
+
+# ---------------------------------------------------------------------------
 # Step 5: Collect third-party dependencies into Lib\site-packages
 # ---------------------------------------------------------------------------
 # Uses the shared, platform-agnostic collector in tools/ (it makes no OS
@@ -395,6 +503,10 @@ if (Test-Path $FontsOfl) {
 } else {
     Fail "Font license OFL.txt not found at $FontsOfl"
 }
+
+# libarchive and the four compression libraries linked into it (built in Step 4b
+# from crftwr/xefm-bin-deps).
+$NoticesExtras += $LibarchiveNoticeExtras
 
 $NoticesArgs = @('--title', 'XeFM', '--scan', $SitePkgsDest) + $NoticesExtras + @('--output', $NoticesOut)
 & $VenvPy $NoticesScript @NoticesArgs
