@@ -7,7 +7,14 @@ Canonical developer reference for XeFM's archive support. Two independent paths:
   (`ArchivePathImpl` + handlers + cache), plugged into the `Path` abstraction.
 - **Create / extract** — build a new archive from a selection, or unpack one to a
   directory. Implemented in `xefm/app.py` (the `XeFMApp` create/extract methods), using
-  the stdlib `zipfile` / `tarfile` modules directly.
+  the stdlib `zipfile` / `tarfile` modules directly, and falling back to the
+  registered handler for anything they cannot read (§1.1).
+
+**Which formats are readable is decided at import, not written down.** Reading
+goes through a registry (§1.1) whose libarchive-backed entries depend on what the
+library that actually loaded can do, so anything enumerating formats — the user
+guide, a dialog, a message — has to be generated from
+`archive_readable_suffixes()` rather than kept as a list somewhere.
 
 Source of truth is the code; this document summarizes structure and intent, not
 every line.
@@ -50,25 +57,104 @@ A `@dataclass` giving a uniform view of an entry across formats: `name`,
 `ArchiveHandler` is the base interface for reading an archive: `open()`,
 `close()`, `list_entries(internal_path="")`, `get_entry_info(internal_path)`,
 `extract_to_bytes(internal_path)`, `extract_to_file(internal_path, target_path)`,
-plus context-manager support.
+`entry_count()`, `iter_extract(dest_dir, password=None)`, `encryption_status()`,
+`verify_password(pwd)`, plus context-manager support. The last four are what a
+third format needed and the first two did not have: extraction and encryption
+used to be answered by asking whether the handler *was a* `ZipHandler`.
 
-Two concrete handlers exist:
+`_build_index(entries, archive_type)` on the base class fills `_entry_cache` and
+`_directory_cache` and synthesizes a virtual directory entry for every parent an
+archive names only implicitly. `iter_extract` has a generic implementation there
+too, walking that index one entry at a time and refusing members whose path
+escapes the destination (`is_safe_member_path`).
+
+Three concrete handlers exist:
 
 - **`ZipHandler`** — ZIP via `zipfile`. Caches entries on open, with lazy loading
   for large archives (>1000 entries: only shallow structure is cached up front,
-  deeper entries load on demand via `getinfo`). Synthesizes virtual directory
-  entries for implicit directories. Also carries the encryption read path
-  (see §3).
+  deeper entries load on demand via `getinfo`). Keeps its own copy of the
+  indexing loop rather than calling `_build_index`, because that lazy policy is
+  zip-only. Also carries the encryption read path (see §3).
 - **`TarHandler(archive_path, compression=None)`** — tar and compressed variants
-  (`gz`, `bz2`, `xz`) via `tarfile`. Caches all entries on open and synthesizes
-  virtual directory entries the same way.
+  (`gz`, `bz2`, `xz`) via `tarfile`, indexed through `_build_index`.
+- **`LibarchiveHandler(archive_path, label)`** — everything libarchive
+  contributes, `.7z` today (§1.2).
 
-Both download a remote archive (`is_remote()`) to a temp file on `open()` and
-delete it on `close()`.
+All three download a remote archive (`is_remote()`) to a temp file on `open()`
+and delete it on `close()`.
 
-> There is no RAR / 7z handler in the codebase. To add a format you would write a
-> new `ArchiveHandler` subclass and register it in `ArchiveCache._create_handler`,
-> but nothing beyond ZIP and TAR is implemented today.
+### 1.1 The readable-format registry
+
+`ARCHIVE_HANDLERS` is a list of `ArchiveFormat(label, suffixes, factory,
+description)`, and it is the single answer to "can XeFM read this file". It
+replaced an if/elif chain in `ArchiveCache._create_handler` plus two
+`isinstance(handler, ZipHandler)` tests in the password gate.
+
+| Function | Answers |
+| --- | --- |
+| `register_archive_format(fmt)` | add, replacing any entry with the same label |
+| `archive_format_for_name(name)` | the matching `ArchiveFormat`, or `None` |
+| `archive_format_label(name)` | its label — `'zip'`, `'tar.gz'`, `'7z'` |
+| `archive_strip_suffix(name)` | the name with its archive suffix removed |
+| `archive_readable_suffixes()` | every readable suffix, longest first |
+
+Three rules hold for anything registered:
+
+- **Longest suffix wins**, independent of registration order. The old chain got
+  `.tar.gz` before `.tar` right only because of where the branches sat in the
+  source; matching now sorts by suffix length, and a test pins it both ways round.
+- **Read-only.** Creation is a separate, smaller table on `XeFMApp` (§2). The two
+  genuinely mean different things — 7z is readable and not writable — so they are
+  not merged.
+- **Worker-thread safe.** Handlers are built and driven from the listing worker,
+  so nothing reached through the registry may touch the UI, and handlers for
+  different archives run on different threads at once.
+
+Registration happens at import: `_register_builtin_formats()` at the bottom of
+`xefm/archive.py` for zip and tar, then `register_libarchive_formats()` for
+whatever the loaded library justifies. `xefm/archive_libarchive.py` imports
+`xefm/archive.py` in turn; the cycle resolves because the registration call sits
+below every name it needs.
+
+### 1.2 The libarchive engine (`xefm/archive_libarchive.py`)
+
+`libarchive-c` is a pure-ctypes binding that carries no binary, so the shared
+library comes from one of three places, in the order `libarchive-c` itself
+searches: a **bundled copy** (the desktop builds set `LIBARCHIVE` before XeFM
+starts), the **`LIBARCHIVE` environment variable**, or
+**`find_library("archive")`** — the system copy. Nothing is required: with no
+usable library the registry simply has fewer entries and zip and tar are
+unaffected.
+
+Because two of those three paths are built by someone else, **capability is
+probed, never inferred from a version.** `archive_version_details()` names the
+codecs actually compiled in; `_CANDIDATES` says what each format needs, and a
+format is registered only when the library exports its reader symbol *and*
+reports every codec on its list. That is also what keeps the silent
+external-program fallback out of reach: libarchive answers a missing stream codec
+by spawning `gzip -d` or `xz -d`, one process per entry, and on Windows those
+binaries do not exist — so a format whose codec is missing must never be offered.
+
+`register_libarchive_formats()` logs one line at import naming the library, its
+version, its codecs and the suffixes it contributed. With three supply paths, a
+bug report has to carry that automatically.
+
+**No random access.** libarchive is a forward stream of headers: `open()` makes
+one pass to build the index, and every later read re-opens the file and scans to
+its entry. Browsing suits that (the structure is cached once), but extracting *n*
+entries one at a time is O(n²) on a solid archive — which is why
+`LibarchiveHandler` overrides `iter_extract` with a single pass, and why
+`entry_count()` is overridden too: that pass yields the archive's *stored*
+members, not the directories the index invented for them.
+
+**Encryption is two questions, not one.** Which entries are encrypted comes from
+`archive_entry_is_encrypted` on the headers read at `open()`. Whether they can be
+decrypted at all is `can_decrypt_7z()`, which decrypts a 183-byte AES-256 7z
+embedded in the module. libarchive compiles its AES support in behind
+`HAVE_LIBCRYPTO` / CNG / CommonCrypto, none of which `archive_version_details()`
+mentions, so there is no other way to ask — and macOS's system build (3.7.4,
+zlib + liblzma + bz2lib) has none of them. Without the probe an encrypted 7z
+would reject every password the user typed with no way to say why.
 
 ### ArchiveCache
 
@@ -82,9 +168,9 @@ repeated navigation doesn't re-open the archive each time:
 - **Metrics** via `get_stats()` (`open_archives`, `cache_hits`, `cache_misses`,
   `hit_rate`, `evictions`, `avg_open_time`, …).
 
-`_create_handler` picks the handler by filename suffix (`.zip` → `ZipHandler`;
-`.tar` / `.tar.gz` / `.tgz` / `.tar.bz2` / `.tbz2` / `.tar.xz` / `.txz` →
-`TarHandler` with the matching compression). A process-wide instance is returned
+`_create_handler` is a lookup in the registry (§1.1) — `archive_format_for_name`
+then `fmt.factory(archive_path)` — raising `ArchiveFormatError` when nothing
+registered reads the name. A process-wide instance is returned
 by `get_archive_cache()`, which reads `ARCHIVE_CACHE_MAX_OPEN` /
 `ARCHIVE_CACHE_TTL` from config (falling back to 5 / 300).
 
@@ -138,16 +224,24 @@ There is no separate `ArchiveOperations`/`ArchiveUI` class.
 
 ### Format detection
 
-Class data on `XeFMApp`:
+Two tables, meaning two different things. The **write** side is class data on
+`XeFMApp`:
 
-- `_ARCHIVE_EXTS` — recognized extensions → format label, longest-suffix-first so
+- `_ARCHIVE_EXTS` — creatable extensions → format label, longest-suffix-first so
   `.tar.gz` wins over `.tar`. Covers `.zip`, `.tar`, `.tar.gz`/`.tgz`,
   `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz`.
 - `_TAR_MODES` — format label → `tarfile` write mode (`w`, `w:gz`, `w:bz2`,
   `w:xz`); ZIP is handled separately.
-- `_archive_format(name)` → format label or `None`.
-- `_archive_basename(name)` → name with the archive extension stripped (the
-  default extraction subdirectory name).
+- `_archive_format(name)` → the label P can *create*, or `None`.
+
+The **read** side is the registry (§1.1), reached through two thin accessors:
+
+- `_readable_archive_format(name)` → the label Enter browses and U extracts.
+- `_archive_basename(name)` → `archive_strip_suffix(name)`, the default
+  extraction subdirectory.
+
+A name whose format is readable but not writable (`foo.7z`) is refused by P with
+a message saying so, rather than silently gaining a `.tar.gz` suffix.
 
 ### Creation
 
@@ -252,7 +346,16 @@ for `.tar.xz` (the counting pass is 11 ms of it).
 
 ### Supported formats
 
-Multi-file: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`).
+Create: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`) — the
+`_ARCHIVE_EXTS` table, all of it stdlib.
+
+Extract and browse: those, plus whatever libarchive contributed (§1.2) — `.7z`
+where a usable library loaded. Ask `archive_readable_suffixes()`; do not restate
+the list. `_extract_archive` routes a format that is neither `"zip"` nor in
+`_TAR_MODES` to `_extract_via_handler`, which drives the handler's `iter_extract`
+and reports progress per entry (there is no byte-level bar on that path: an entry
+is already written by the time it is yielded).
+
 Single-file gzip/bzip2/xz streams are readable as members but are not first-class
 create targets in the flow above.
 
@@ -277,9 +380,18 @@ holding passwords for the session (in-memory only, nothing persisted):
 
 ### Classification / verification helpers
 
+The handler contract speaks a **format-neutral** vocabulary —
+`encryption_status()` → `'none' | 'password' | 'unsupported'` — because 7z is
+routinely encrypted and the gate could not go on naming zip's schemes. The
+zip-level names survive one level down, inside `ZipHandler`:
+
 - `zip_encryption_status(zf)` → `'none' | 'zipcrypto' | 'aes'` (AES wins if any
-  entry uses it). `zip_encryption_status_path(path)` does the same from a file
-  path (used by the extract flow, which works on a raw file, not a handler).
+  entry uses it). `ZipHandler.encryption_status()` maps `zipcrypto` → `'password'`
+  and `aes` → `'unsupported'`.
+- `archive_encryption_status_path(path)` — the same classification from a file
+  path, for the extract flow, which works on a raw file rather than a browsed
+  handler. It goes through the registry (so any format can answer) but not
+  through `ArchiveCache` (extraction is not browsing).
 - `verify_zip_password(zf, pwd)` — opens the smallest encrypted entry to validate
   the ZipCrypto header cheaply. No-op when nothing is encrypted; raises
   `RuntimeError` (missing/wrong password) or `NotImplementedError` (AES).
@@ -297,7 +409,7 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
 
 - `get_member_archive_path(path)` — the archive file behind an `archive://`
   member Path, else `None`.
-- `archive_password_state(path)` → `'ok' | 'need' | 'aes'`. Ordinary paths return
+- `archive_password_state(path)` → `'ok' | 'need' | 'unsupported'`. Ordinary paths return
   `'ok'` cheaply (nothing opened), so every read can route through it.
 - `try_archive_password(path, password)` — verify (UTF-8 encoded) and, on success,
   remember it; returns a bool.
@@ -343,6 +455,16 @@ CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
 
 - `test/test_archive_*.py` — entry conversion, handlers, cache (LRU/TTL), and
   `ArchivePathImpl`.
+- `test/test_archive_registry.py` — the readable-format table: longest-suffix
+  matching both ways round, replacement by label, dispatch through
+  `_create_handler`, the base class's unencrypted defaults, `is_safe_member_path`,
+  and the generic `iter_extract`.
+- `test/test_archive_libarchive.py` — the 7z path, skipped wholesale where no
+  usable libarchive exists. Fixtures are written with libarchive's own 7z writer,
+  so no external `7z` binary is needed; the encrypted one is a stored blob,
+  because libarchive cannot *write* an encrypted 7z. Its encryption assertions
+  branch on `can_decrypt_7z()`, which is False on macOS's system library — so the
+  correct-password case is exercised only where a crypto-capable build is loaded.
 - `test/test_archive_password.py` — classification, verification, the registry,
   the `ZipHandler` read path, and the gate helpers (hermetic base64 ZipCrypto
   fixture).

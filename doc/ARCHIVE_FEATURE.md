@@ -5,8 +5,16 @@ archives from selected files, **extract** them, and **browse** their contents
 in place — navigating into an archive as if it were a regular directory, without
 unpacking it to disk first.
 
-Supported formats: **ZIP** (`.zip`), **TAR** (`.tar`), and compressed TAR
-(`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`).
+**Browse and extract:** **ZIP** (`.zip`), **TAR** (`.tar`), compressed TAR
+(`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`) and **7-Zip** (`.7z`).
+
+**Create:** everything above except `.7z` — XeFM reads 7z archives but does not
+write them. Typing a `.7z` name at the create prompt says so rather than quietly
+making a `.tar.gz`.
+
+7z support needs a system library (see
+[If `.7z` archives do not open](#if-7z-archives-do-not-open) below); the other
+formats need nothing at all.
 
 For the complete list of key bindings, see the
 [XeFM User Guide](XEFM_USER_GUIDE.md) or press **?** in XeFM.
@@ -125,13 +133,15 @@ with archives too.
 
 ## Password-protected archives
 
-XeFM can extract and browse **password-protected ZIP** archives. When a password
-is needed, XeFM prompts for it in a masked field — typed characters show as `•`,
+XeFM can extract and browse password-protected archives — ZIP always, and 7z
+where the system library supports it (see
+[Supported encryption](#supported-encryption)). When a password is needed, XeFM
+prompts for it in a masked field — typed characters show as `•`,
 and the value can't be copied or cut from the field.
 
-### Extracting a password-protected ZIP
+### Extracting a password-protected archive
 
-1. Put the cursor on the encrypted `.zip` file and press **U** (Extract Archive).
+1. Put the cursor on the encrypted archive and press **U** (Extract Archive).
 2. Confirm the destination as usual.
 3. XeFM detects that the archive is encrypted and asks for its password.
 4. Enter the password and press **Enter**. The archive extracts into a
@@ -141,9 +151,9 @@ If the password is wrong, XeFM says so and asks again — nothing is written to
 disk until the password is confirmed correct, so a wrong password never leaves a
 half-extracted folder behind. Press **Esc** to cancel.
 
-### Viewing a file inside a password-protected ZIP
+### Viewing a file inside a password-protected archive
 
-1. Press **ENTER** on the `.zip` file to browse it. The file list is readable
+1. Press **ENTER** on the archive to browse it. The file list is readable
    without a password.
 2. Open a file inside it (**ENTER**, or **V** to view).
 3. XeFM asks for the archive's password the first time you open a file from it.
@@ -158,15 +168,19 @@ share the remembered password.
 - **Legacy ZipCrypto** (the "traditional PKWARE" encryption produced by
   `zip -e`, most OS "compress with password" tools, and many archivers) is fully
   supported.
-- **AES encryption** (WinZip AES / `7z -mem=AES256`) is **not** supported — the
-  Python runtime XeFM builds on can't decrypt it. XeFM detects this and shows a
-  clear "AES-encrypted zips are not supported" message instead of a cryptic
-  error.
+- **AES-encrypted ZIP** (WinZip AES) is **not** supported — the Python runtime
+  XeFM builds on can't decrypt it.
+- **Encrypted 7z** depends on how the libarchive on your machine was built. macOS's
+  built-in copy has no encryption support at all, so encrypted `.7z` files can be
+  listed but not read there.
 
-Only the ZIP format supports passwords; TAR archives (`.tar`, `.tar.gz`,
-`.tar.bz2`, `.tar.xz`) are not encrypted. Passwords are held only in memory for
-the running session — never written to disk or logged — and are sent to the
-archive as UTF-8 bytes (plain ASCII passwords always work).
+Where XeFM cannot decrypt an archive it says "its encryption is not supported"
+and does not prompt, rather than rejecting every password you type. TAR archives
+(`.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`) are never encrypted.
+
+Passwords are held only in memory for the running session — never written to disk
+or logged — and are sent to the archive as UTF-8 bytes (plain ASCII passwords
+always work).
 
 ## Read-only browsing
 
@@ -180,8 +194,50 @@ Other notes:
 
 - **Nested archives** are shown as plain files; extract the inner archive first,
   then browse it.
+- **7z entries are read one at a time.** A 7z archive is usually one compressed
+  block, so opening a file near the end means decompressing what comes before it.
+  Browsing and viewing single files is fine; extracting the whole archive with
+  **U** is the efficient way to get everything out.
 - **Symbolic links** inside archives are shown but may not extract correctly on
   all platforms, and file permissions may not be fully preserved.
+
+## If `.7z` archives do not open
+
+Unlike ZIP and TAR, 7z is not something Python can read on its own: XeFM uses
+**libarchive**, a system library. If pressing Enter on a `.7z` file opens it in
+the viewer instead of browsing into it, XeFM did not find a usable one.
+
+XeFM writes what it found to the log pane at startup (**L** shows the log). One
+of two lines is there:
+
+```
+libarchive: libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 [/usr/lib/libarchive.dylib] reading .7z
+libarchive not loaded (...); zip and tar only
+```
+
+The first line names the library XeFM is using and the formats it accepted. The
+second gives the reason it found none. What to do about it:
+
+- **macOS** — the built-in `/usr/lib/libarchive.dylib` is normally enough, and
+  the desktop app ships its own copy. Nothing to install.
+- **Linux** — install your distribution's libarchive package (`libarchive13`,
+  `libarchive`, …) if it is not already present.
+- **Windows** — Windows has no system libarchive. The desktop app ships one; for
+  the terminal version, download the library and point XeFM at it with the
+  `LIBARCHIVE` environment variable.
+
+To use a specific library rather than the system one, set `LIBARCHIVE` to its
+full path before starting XeFM:
+
+```bash
+export LIBARCHIVE=/opt/libarchive/lib/libarchive.so
+```
+
+Nothing else changes when libarchive is missing — ZIP and TAR keep working
+exactly as before, and `.7z` files simply behave like ordinary files. You can
+still hand them to an external unpacker with a `FILE_ASSOCIATIONS` entry (see
+[File Associations](FILE_ASSOCIATIONS_FEATURE.md)) if you would rather not
+install anything.
 
 ## Tips
 

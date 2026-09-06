@@ -52,6 +52,8 @@ from puikit.widgets.base import Widget
 from xefm import __version__ as _VERSION
 from xefm import actions as _ctx
 from xefm.actions import registry as _action_registry
+from xefm.archive import (ArchiveFormatError, archive_format_for_name,
+                          archive_format_label, archive_strip_suffix)
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
@@ -2545,7 +2547,7 @@ class XeFMApp:
                 pane["path"] = entry
                 self._refresh(pane, on_ready=self._restore_remembered_cursor)
                 self.log_info(f"Entered {entry.name}/")
-            elif self._archive_format(entry.name) and not self._is_archive(entry):
+            elif self._readable_archive_format(entry.name) and not self._is_archive(entry):
                 # A recognised archive file: browse it as a virtual directory via
                 # its archive:// URI. The listing/navigation machinery then treats
                 # it like any other (remote) directory — ArchivePathImpl backs
@@ -4299,13 +4301,15 @@ class XeFMApp:
         self.panel.render()
 
     def _ensure_archive_password(self, entry, on_ready) -> None:
-        """Gate opening ``entry`` when it lives inside an encrypted zip.
+        """Gate opening ``entry`` when it lives inside an encrypted archive.
 
-        For a file inside a password-protected ZipCrypto archive with no password
-        yet known, prompt (masked), verify, remember it for the session, then run
-        ``on_ready()``. AES-encrypted archives (which Python can't decrypt) are
-        refused with a clear message. Ordinary files, unencrypted archive entries,
-        and archives whose password is already known run ``on_ready()`` at once.
+        For a file inside a password-protected archive with no password yet known,
+        prompt (masked), verify, remember it for the session, then run
+        ``on_ready()``. Archives whose encryption XeFM cannot decrypt at all — a
+        WinZip AES zip, or an encrypted 7z on a libarchive built without crypto —
+        are refused with a message instead of a prompt no password could satisfy.
+        Ordinary files, unencrypted archive entries, and archives whose password is
+        already known run ``on_ready()`` at once.
 
         ``on_ready`` is responsible for its own redraw, since the prompt path
         reaches it from an asynchronous dialog callback."""
@@ -4315,11 +4319,11 @@ class XeFMApp:
         if state == "ok":
             on_ready()
             return
-        if state == "aes":
-            self.log_info(f"Cannot open {entry.name}: AES-encrypted zips are not supported")
+        if state == "unsupported":
+            self.log_info(f"Cannot open {entry.name}: its encryption is not supported")
             self.panel.render()
             return
-        # state == "need": prompt for the ZipCrypto password.
+        # state == "need": prompt for the password.
         archive = get_member_archive_path(entry)
         archive_name = archive.name if archive is not None else entry.name
 
@@ -4669,7 +4673,14 @@ class XeFMApp:
 
     # --- archives (create / extract) -----------------------------------------
 
-    #: Recognised archive extensions → format label, longest suffixes first so
+    # Two tables, meaning two different things. This one is the *write* side:
+    # what P can create, which is only what tarfile and zipfile can produce. What
+    # XeFM can *read* is the larger, separately registered
+    # ``xefm.archive.ARCHIVE_HANDLERS`` — it includes 7z, and it is built at
+    # import from what the loaded libarchive actually supports, so it could not be
+    # a literal here even if the two lists happened to agree.
+
+    #: Creatable archive extensions → format label, longest suffixes first so
     #: ``.tar.gz`` is matched before ``.tar`` when scanning a filename's end.
     _ARCHIVE_EXTS = (
         (".tar.gz", "tar.gz"), (".tgz", "tar.gz"),
@@ -4682,20 +4693,25 @@ class XeFMApp:
 
     @classmethod
     def _archive_format(cls, name: str) -> str | None:
-        """The format label for ``name`` by its extension, or None if it isn't a
-        recognised archive."""
+        """The format label XeFM can *create* ``name`` as, or None. The write
+        side — see :meth:`_readable_archive_format` for the other one."""
         low = name.lower()
         return next((fmt for ext, fmt in cls._ARCHIVE_EXTS if low.endswith(ext)), None)
 
-    @classmethod
-    def _archive_basename(cls, name: str) -> str:
+    @staticmethod
+    def _readable_archive_format(name: str) -> str | None:
+        """The format label XeFM can *read* ``name`` as, or None — what Enter
+        browses and what U extracts. Comes from the registry rather than a table
+        here, because which formats are readable depends on the libarchive that
+        loaded at startup."""
+        return archive_format_label(name)
+
+    @staticmethod
+    def _archive_basename(name: str) -> str:
         """``name`` with its recognised archive extension stripped (the default
-        extraction subdirectory), or unchanged if none matches."""
-        low = name.lower()
-        for ext, _fmt in cls._ARCHIVE_EXTS:
-            if low.endswith(ext):
-                return name[: -len(ext)]
-        return name
+        extraction subdirectory), or unchanged if none matches. Strips by the
+        readable table, since extraction is what asks."""
+        return archive_strip_suffix(name)
 
     @staticmethod
     def _entry_size(path) -> int:
@@ -4839,11 +4855,13 @@ class XeFMApp:
         the number of entries. Tar extraction uses the ``data`` filter where
         available (Python 3.12+) to reject unsafe member paths.
 
-        ``pwd`` (bytes) is the password for an encrypted zip; it is verified up
-        front (:func:`xefm.archive.verify_zip_password`) so a missing/wrong
-        password raises *before* any file is written, rather than leaving a
-        half-extracted directory behind. A missing/wrong password raises
-        ``RuntimeError``; AES encryption raises ``NotImplementedError``.
+        ``pwd`` (bytes) is the password for an encrypted archive; it is verified
+        up front — by :func:`xefm.archive.verify_zip_password` for a zip, by the
+        handler's own ``verify_password`` otherwise — so a missing/wrong password
+        raises *before* any file is written, rather than leaving a half-extracted
+        directory behind. A missing/wrong password raises ``RuntimeError``;
+        encryption XeFM cannot decrypt at all raises ``NotImplementedError``.
+        ``on_done`` dispatches on exactly those two types.
 
         ``task`` / ``prog``, when given, report each member and make it a
         cancellation point (see ``_reporting_members``); both default to None,
@@ -4852,6 +4870,9 @@ class XeFMApp:
         from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
         bytes_ = ByteProgress(prog) if prog is not None else None
         dest_dir.mkdir(parents=True, exist_ok=True)
+        if fmt != "zip" and fmt not in self._TAR_MODES:
+            return self._extract_via_handler(archive_path, dest_dir, pwd,
+                                             task=task, prog=prog)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
@@ -4884,6 +4905,48 @@ class XeFMApp:
                 # generator is touched, so a fresh one is the whole retry.
                 tf.extractall(str(dest_dir), members=reported())
             return len(members)
+
+    def _extract_via_handler(self, archive_path, dest_dir, pwd: bytes | None,
+                             *, task=None, prog=None) -> int:
+        """Extract a format neither zipfile nor tarfile reads — 7z, and whatever
+        else the loaded libarchive contributes — through its registered handler.
+
+        The handler extracts in a single forward pass and yields each entry as it
+        lands (:meth:`xefm.archive.ArchiveHandler.iter_extract`), so progress is
+        driven off what comes back rather than by asking for one entry at a time:
+        these formats have no random access, and a per-entry loop would rescan the
+        archive from the beginning for every member.
+
+        There is no byte-level bar here, unlike the zip and tar paths: an entry is
+        written by the time it is yielded, so a bar opened for it would only ever
+        show 100%. Entry-level progress is honest about what is known."""
+        fmt = archive_format_for_name(archive_path.name)
+        if fmt is None:  # guarded by the caller; a table change could still get here
+            raise ArchiveFormatError(f"Unsupported archive format: {archive_path.name}")
+        handler = fmt.factory(archive_path)
+        try:
+            handler.open()
+            # Same up-front verification the zip path does, and reported the same
+            # way so on_done's dispatch does not need to know the format.
+            status = handler.encryption_status()
+            if status == "unsupported":
+                raise NotImplementedError(
+                    f"{archive_path.name}: encryption XeFM cannot decrypt")
+            if status == "password" and (pwd is None or not handler.verify_password(pwd)):
+                raise RuntimeError(f"{archive_path.name}: password required")
+
+            if prog is not None:
+                prog.update_operation_total(handler.entry_count())
+            count = 0
+            for entry in handler.iter_extract(dest_dir, password=pwd):
+                if task is not None:
+                    task.checkpoint()
+                if prog is not None:
+                    prog.update_progress(entry.internal_path)
+                count += 1
+            return count
+        finally:
+            handler.close()
 
     @staticmethod
     def _unlink_quietly(path) -> bool:
@@ -4925,7 +4988,8 @@ class XeFMApp:
         """Create an archive from the active pane's selection (or cursor entry)
         in the other pane's directory (the 'P' key). Prompts for a filename whose
         extension picks the format; an unrecognised extension defaults to
-        ``.tar.gz``.
+        ``.tar.gz``, and an extension XeFM can only *read* (``.7z``) is refused
+        with a message rather than silently becoming a ``.tar.gz``.
 
         Returns True when a guard bailed out synchronously (see ``_transfer`` for
         why the caller then needs to redraw)."""
@@ -4953,8 +5017,17 @@ class XeFMApp:
                 self.panel.render()
                 return
             fmt = self._archive_format(name)
-            if fmt is None:  # no recognised extension → default to .tar.gz
-                name += ".tar.gz"
+            if fmt is None:
+                readable = self._readable_archive_format(name)
+                if readable is not None:
+                    # A format XeFM reads but cannot write — 7z, and whatever else
+                    # libarchive contributes. Better to say so than to append
+                    # ".tar.gz" to a name the user clearly meant as a 7z.
+                    self.log_info(f"Cannot create {readable} archives — "
+                                  f"XeFM reads that format but cannot write it")
+                    self.panel.render()
+                    return
+                name += ".tar.gz"  # no recognised extension → default to .tar.gz
                 fmt = "tar.gz"
             archive_path = dest_dir / name
 
@@ -5041,7 +5114,7 @@ class XeFMApp:
                 return True
         except Exception:
             pass
-        fmt = self._archive_format(entry.name)
+        fmt = self._readable_archive_format(entry.name)
         if fmt is None:
             self.log_info(f"'{entry.name}' is not a supported archive")
             return True
@@ -5102,22 +5175,23 @@ class XeFMApp:
                     self._relist(self.pm.get_inactive_pane())
                     self.panel.render()
                 elif isinstance(exc, NotImplementedError):
-                    # Defensive: AES is normally caught up front in go(); if a zip
-                    # slips through, report it clearly rather than as a raw traceback.
+                    # Defensive: an undecryptable archive is normally caught up
+                    # front in go(); if one slips through, report it clearly rather
+                    # than as a raw traceback.
                     self.log_info(
-                        f"Cannot extract {entry.name}: AES-encrypted zips are not supported")
+                        f"Cannot extract {entry.name}: its encryption is not supported")
                     self._relist(self.pm.get_inactive_pane())
                     self.panel.render()
                 elif isinstance(exc, RuntimeError):
-                    # Encrypted zip: the password was missing or wrong. Re-prompt
-                    # (nothing was written, thanks to the up-front verify).
+                    # Encrypted archive: the password was missing or wrong.
+                    # Re-prompt (nothing was written, thanks to the up-front verify).
                     prompt_password(error="Incorrect password — try again:")
                 elif exc is not None:
                     finish(exc, 0)
                 else:
                     if pwd is not None:
-                        # Remember the working password so browsing this same zip
-                        # later doesn't prompt again this session.
+                        # Remember the working password so browsing this same
+                        # archive later doesn't prompt again this session.
                         from xefm.archive import set_archive_password
                         set_archive_password(entry, pwd)
                     finish(None, res.get("count", 0))
@@ -5134,20 +5208,21 @@ class XeFMApp:
             self.panel.render()
 
         def go() -> None:
-            # A password-protected zip needs a password before extraction. AES is
-            # detected up front and refused with a clear message (Python's zipfile
-            # can only decrypt legacy ZipCrypto). Other formats extract directly.
-            if fmt == "zip":
-                from xefm.archive import zip_encryption_status_path
-                status = zip_encryption_status_path(str(entry))
-                if status == "aes":
-                    self.log_info(
-                        f"Cannot extract {entry.name}: AES-encrypted zips are not supported")
-                    self.panel.render()
-                    return
-                if status == "zipcrypto":
-                    prompt_password()
-                    return
+            # A password-protected archive needs a password before extraction, and
+            # a scheme XeFM cannot decrypt at all is refused up front rather than
+            # after a half-written directory. Which of the two applies is the
+            # format's own handler's answer now — this used to test for a zip and
+            # so could never report any other format's encryption.
+            from xefm.archive import archive_encryption_status_path
+            status = archive_encryption_status_path(str(entry))
+            if status == "unsupported":
+                self.log_info(
+                    f"Cannot extract {entry.name}: its encryption is not supported")
+                self.panel.render()
+                return
+            if status == "password":
+                prompt_password()
+                return
             do_extract(None)
 
         exists = target.exists()
