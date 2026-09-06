@@ -347,6 +347,45 @@ def test_extract_moves_the_byte_bar(tmp_path):
     assert (tmp_path / "out" / "src" / "empty").is_dir()
 
 
+@requires_7z
+def test_copy_out_of_a_browsed_7z_streams(tmp_path):
+    """The reported bug: a large member copied out of a browsed 7z showed no byte
+    progress and could not be cancelled, because ``Path.copy_to`` had no branch
+    for archive -> file and fell into the read-it-whole one."""
+    payload = bytes(range(256)) * 8192
+    archive = _write_7z(tmp_path / "big.7z", [("big.bin", payload)])
+    member = Path(f"archive://{os.path.abspath(str(archive))}#big.bin")
+
+    reports = []
+    dest = Path(str(tmp_path / "out.bin"))
+    member.copy_to(dest, overwrite=True,
+                   progress_callback=lambda done, total: reports.append((done, total)))
+
+    assert len(reports) > 1
+    assert reports[-1] == (len(payload), len(payload))
+    assert (tmp_path / "out.bin").read_bytes() == payload
+    # libarchive hands over ~16 KiB blocks; they are coalesced, or a gigabyte
+    # would take the progress lock sixty thousand times.
+    assert len(reports) <= len(payload) // (512 * 1024) + 2
+
+
+@requires_7z
+def test_copy_out_of_a_7z_is_cancellable(tmp_path):
+    class _Cancelled(Exception):
+        pass
+
+    payload = bytes(range(256)) * 8192
+    archive = _write_7z(tmp_path / "big.7z", [("big.bin", payload)])
+    member = Path(f"archive://{os.path.abspath(str(archive))}#big.bin")
+
+    dest = Path(str(tmp_path / "out.bin"))
+    with pytest.raises(_Cancelled):
+        def stop(done, total):
+            raise _Cancelled()
+        member.copy_to(dest, overwrite=True, progress_callback=stop)
+    assert not (tmp_path / "out.bin").exists()
+
+
 # --- encryption ---------------------------------------------------------------
 
 

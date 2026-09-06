@@ -50,7 +50,7 @@ from typing import Callable, Iterator, List, Optional, Set, Tuple
 from xefm.log_manager import getLogger
 from xefm.path import Path
 from xefm.archive import (
-    ArchiveCorruptedError, ArchiveEncryptionUnsupported, ArchiveEntry,
+    MEMBER_CHUNK, ArchiveCorruptedError, ArchiveEncryptionUnsupported, ArchiveEntry,
     ArchiveExtractionError, ArchiveFormat, ArchiveHandler, ArchiveNavigationError,
     ArchivePasswordRequired, ArchivePermissionError, ArchiveDiskSpaceError, ArchiveError,
     get_archive_password, is_safe_member_path, register_archive_format,
@@ -437,51 +437,62 @@ class LibarchiveHandler(ArchiveHandler):
             f"'{self._archive_path.name}' is password-protected — a valid "
             f"password is required")
 
-    def _require_file(self, internal_path: str) -> Tuple[str, ArchiveEntry]:
-        """The normalized path and cached entry for a member that must be a file."""
-        if not self._is_open:
-            self.open()
-        normalized_path = self._normalize_path(internal_path)
-        entry = self._entry_cache.get(normalized_path)
-        if not entry:
-            raise FileNotFoundError(
-                f"File not found in archive: {internal_path}",
-                f"File '{internal_path}' does not exist in archive")
-        if entry.is_dir:
-            raise ArchiveExtractionError(
-                f"Cannot extract directory as bytes: {internal_path}",
-                f"'{internal_path}' is a directory, not a file")
-        return normalized_path, entry
+    def iter_member_bytes(self, internal_path: str,
+                          chunk_size: int = MEMBER_CHUNK) -> Iterator[bytes]:
+        """Stream one member's contents in blocks of about ``chunk_size``.
 
-    def extract_to_bytes(self, internal_path: str) -> bytes:
-        """Extract a file's contents to memory.
+        libarchive hands data over in blocks of its own — around 16 KiB — which
+        are coalesced here rather than passed straight on. The consumer reports
+        progress and checks for a cancel once per block, both of which take a
+        lock on the UI's progress state, and a gigabyte at 16 KiB would do that
+        sixty thousand times. One report per megabyte is finer than any frame
+        rate can show, and matches what the local copy loop does.
 
         Scans from the start of the archive to the entry, because the format has
-        no index to seek with. On a solid archive that means decompressing
-        everything ahead of it as well."""
-        normalized_path, _entry = self._require_file(internal_path)
+        no index to seek with; on a solid archive that means decompressing
+        everything ahead of it as well. Streaming does not make that cheaper, but
+        it does mean the caller sees bytes moving throughout and can stop."""
+        entry = self._require_readable_file(internal_path)
+        normalized_path = self._normalize_path(internal_path)
+        found = False
         try:
             with self._reader(self._password()) as archive:
                 for raw in archive:
                     if clean_member_path(raw.pathname) != normalized_path:
                         continue
+                    found = True
                     try:
-                        return b''.join(raw.get_blocks())
+                        pending: List[bytes] = []
+                        held = 0
+                        for block in raw.get_blocks():
+                            pending.append(block)
+                            held += len(block)
+                            if held >= chunk_size:
+                                yield b''.join(pending)
+                                pending, held = [], 0
+                        if pending:
+                            yield b''.join(pending)
                     except Exception as exc:  # noqa: BLE001 — libarchive's error
                         if normalized_path in self._encrypted:
                             raise self._decryption_error(exc, normalized_path)
                         raise ArchiveExtractionError(
                             f"Error extracting {internal_path}: {exc}",
                             f"Cannot extract '{internal_path}': {exc}")
+                    break
         except ArchiveError:
             raise
         except Exception as exc:  # noqa: BLE001 — a failure opening the reader
             raise ArchiveExtractionError(
                 f"Error extracting file: {exc}",
                 f"Cannot extract '{internal_path}': {exc}")
-        raise FileNotFoundError(
-            f"File not found in archive: {internal_path}",
-            f"File '{internal_path}' does not exist in archive")
+        if not found:
+            raise FileNotFoundError(
+                f"File not found in archive: {internal_path}",
+                f"File '{entry.internal_path}' does not exist in archive")
+
+    def extract_to_bytes(self, internal_path: str) -> bytes:
+        """Extract a file's contents to memory — the streaming read, collected."""
+        return b''.join(self.iter_member_bytes(internal_path))
 
     def extract_to_file(self, internal_path: str, target_path: Path):
         """Extract a file to ``target_path``.

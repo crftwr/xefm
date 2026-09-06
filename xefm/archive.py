@@ -343,6 +343,11 @@ def verify_zip_password(zf: zipfile.ZipFile, password: Optional[bytes]) -> None:
         fh.read(1)
 
 
+#: Block size for streaming one member out of an archive — matched to
+#: ``xefm.file_operations._CHUNK``, which is what consumes it.
+MEMBER_CHUNK = 1024 * 1024
+
+
 def is_safe_member_path(internal_path: str) -> bool:
     """Whether an archive member can be written under an extraction root.
 
@@ -552,6 +557,42 @@ class ArchiveHandler:
         something other than ``'none'`` without implementing this.
         """
         return False
+
+    def _require_readable_file(self, internal_path: str) -> ArchiveEntry:
+        """The cached entry for a member that must exist and must be a file,
+        opening the archive first. The guard every read-one-member path repeats."""
+        if not self._is_open:
+            self.open()
+        normalized_path = self._normalize_path(internal_path)
+        entry = self.get_entry_info(normalized_path)
+        if not entry:
+            raise FileNotFoundError(
+                f"File not found in archive: {internal_path}",
+                f"File '{internal_path}' does not exist in archive"
+            )
+        if entry.is_dir:
+            raise ArchiveExtractionError(
+                f"Cannot extract directory as bytes: {internal_path}",
+                f"'{internal_path}' is a directory, not a file"
+            )
+        return entry
+
+    def iter_member_bytes(self, internal_path: str,
+                          chunk_size: int = MEMBER_CHUNK) -> Iterator[bytes]:
+        """The member's contents in blocks, so a caller can report bytes as they
+        arrive and interrupt between them.
+
+        Copying a file *out* of a browsed archive used to go through
+        ``read_bytes()`` — one opaque call that held the whole member in memory,
+        reported no progress, and could not be cancelled, because the cancel
+        checkpoint lives inside the progress callback it never reached. A large
+        member inside a 7z is exactly where all three of those are felt.
+
+        The default yields the member in one block, honest for a handler with
+        nothing finer to offer; every handler XeFM ships overrides it. Runs on a
+        worker thread.
+        """
+        yield self.extract_to_bytes(internal_path)
 
     def entry_count(self) -> int:
         """An upper bound on how many entries :meth:`iter_extract` will yield —
@@ -878,6 +919,32 @@ class ZipHandler(ArchiveHandler):
                 f"Cannot extract '{internal_path}': {e}"
             )
 
+    def iter_member_bytes(self, internal_path: str,
+                          chunk_size: int = MEMBER_CHUNK) -> Iterator[bytes]:
+        """Stream a member through ``ZipFile.open``, which is where the registered
+        password is applied and where a wrong one surfaces — mapped to the same
+        typed errors ``extract_to_bytes`` raises, so a caller cannot tell the two
+        paths apart by what goes wrong."""
+        entry = self._require_readable_file(internal_path)
+        try:
+            handle = self._archive_obj.open(
+                entry.internal_path, pwd=get_archive_password(self._archive_path))
+        except NotImplementedError as exc:
+            raise ArchiveEncryptionUnsupported(
+                f"Unsupported encryption reading {internal_path}: {exc}",
+                f"Cannot read '{internal_path}': its encryption (e.g. AES) is not supported")
+        except RuntimeError as exc:
+            raise self._read_runtime_error(exc, internal_path)
+        with handle:
+            while True:
+                try:
+                    chunk = handle.read(chunk_size)
+                except RuntimeError as exc:
+                    raise self._read_runtime_error(exc, internal_path)
+                if not chunk:
+                    return
+                yield chunk
+
     def _read_runtime_error(self, exc: RuntimeError, internal_path: str) -> ArchiveError:
         """Map a ``RuntimeError`` raised by a decryption read to a typed archive
         error. Python's zipfile signals a missing or wrong password with a
@@ -1139,6 +1206,24 @@ class TarHandler(ArchiveHandler):
         
         normalized_path = self._normalize_path(internal_path)
         return self._entry_cache.get(normalized_path)
+
+    def iter_member_bytes(self, internal_path: str,
+                          chunk_size: int = MEMBER_CHUNK) -> Iterator[bytes]:
+        """Stream a member through ``extractfile``, which decompresses lazily —
+        so a large member out of a .tar.xz never lands in memory whole."""
+        entry = self._require_readable_file(internal_path)
+        file_obj = self._archive_obj.extractfile(entry.internal_path)
+        if file_obj is None:
+            raise ArchiveExtractionError(
+                f"Cannot extract file: {internal_path}",
+                f"Cannot extract '{internal_path}' from archive"
+            )
+        with file_obj:
+            while True:
+                chunk = file_obj.read(chunk_size)
+                if not chunk:
+                    return
+                yield chunk
     
     def extract_to_bytes(self, internal_path: str) -> bytes:
         """Extract a file's contents to memory"""
@@ -2090,6 +2175,32 @@ class ArchivePathImpl(PathImpl):
             return handler.extract_to_bytes(self._internal_path)
         except Exception as e:
             raise OSError(f"Error reading bytes: {e}")
+
+    def extract_to_stream(self, stream, progress_callback=None) -> int:
+        """Write this member's contents into ``stream``, reporting bytes as they
+        arrive. Returns the number written.
+
+        The archive side of the contract ``S3PathImpl.download_to_stream``
+        implements, and it exists for the same reason: ``Path.copy_to`` reports
+        progress only through a callback, and for a cross-storage copy that
+        callback is also the *only* place the file operation can notice a cancel
+        (:meth:`xefm.file_operations.FileOperationService._remote_progress`).
+        Copying a member out through ``read_bytes`` reached neither — no byte
+        bar, no cancel, and the whole member in memory — which a large file
+        inside a 7z makes impossible to miss.
+
+        Anything the callback raises propagates: that is how a cancel gets out.
+        """
+        handler = self._get_archive_handler()
+        entry = handler.get_entry_info(self._internal_path)
+        total = entry.size if entry is not None else 0
+        written = 0
+        for block in handler.iter_member_bytes(self._internal_path):
+            stream.write(block)
+            written += len(block)
+            if progress_callback is not None:
+                progress_callback(written, total)
+        return written
     
     def write_text(self, data: str, encoding=None, errors=None, newline=None) -> int:
         """Open the file in text mode, write to it, and close the file."""

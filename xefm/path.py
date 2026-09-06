@@ -1621,6 +1621,25 @@ class Path:
                         pass
                     raise
 
+            elif source_scheme == 'archive' and dest_scheme == 'file':
+                # A member of a browsed archive → local disk. Streamed for the
+                # same reason the S3 leg above is: the callback it drives is the
+                # byte bar *and* the only place a cross-storage copy can notice a
+                # cancel. Reading the member whole reached neither, and held it
+                # all in memory besides — which a large file inside a 7z is
+                # exactly the case for.
+                try:
+                    with destination.open('wb') as dst:
+                        self._impl.extract_to_stream(dst, progress_callback)
+                except BaseException:
+                    # BaseException so a cancel (_CallbackAbort) also lands here
+                    # and the truncated file is still removed
+                    try:
+                        destination.unlink()
+                    except OSError:
+                        pass
+                    raise
+
             elif source_scheme == 'file' and dest_scheme == 'ssh':
                 # Local → SSH
                 # Read from local file and write to remote

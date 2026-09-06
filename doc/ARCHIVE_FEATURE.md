@@ -96,6 +96,12 @@ extracted recursively with its full structure. The destination can be a local
 directory or S3 — XeFM extracts and uploads directly. (Archive → archive is not
 supported, since archives are read-only.)
 
+Copying to a **local** destination shows a byte-level progress bar for each file
+and can be interrupted with **Esc** part way through a large one; the partly
+written file is removed. Copying straight to S3 does not yet report progress
+within a file — extract to a local directory first if you want to be able to
+stop it.
+
 ### File details
 
 Press **I** on an entry to see its details: name, uncompressed and compressed

@@ -57,10 +57,12 @@ A `@dataclass` giving a uniform view of an entry across formats: `name`,
 `ArchiveHandler` is the base interface for reading an archive: `open()`,
 `close()`, `list_entries(internal_path="")`, `get_entry_info(internal_path)`,
 `extract_to_bytes(internal_path)`, `extract_to_file(internal_path, target_path)`,
-`entry_count()`, `iter_extract(dest_dir, password=None)`, `encryption_status()`,
-`verify_password(pwd)`, plus context-manager support. The last four are what a
+`iter_member_bytes(internal_path, chunk_size)`, `entry_count()`,
+`iter_extract(dest_dir, password=None)`, `encryption_status()`,
+`verify_password(pwd)`, plus context-manager support. The last five are what a
 third format needed and the first two did not have: extraction and encryption
-used to be answered by asking whether the handler *was a* `ZipHandler`.
+used to be answered by asking whether the handler *was a* `ZipHandler`, and
+reading one member was a single opaque call (§1.3).
 
 `_build_index(entries, archive_type)` on the base class fills `_entry_cache` and
 `_directory_cache` and synthesizes a virtual directory entry for every parent an
@@ -210,12 +212,42 @@ queries (`exists`, `is_dir`, `is_file`, `stat`), directory traversal (`iterdir`,
 write/mutate operations (`write_*`, `mkdir`, `unlink`, `rename`, `chmod`, …)
 raise `OSError("Archive files are read-only")`.
 
+`extract_to_stream(stream, progress_callback)` is the copy-out path (§1.3).
+
 It also answers storage-strategy queries the app uses elsewhere:
 `get_scheme() == 'archive'`, `requires_extraction_for_reading() == True`,
 `supports_streaming_read() == False`, `get_search_strategy() == 'extracted'`, and
 `get_extended_metadata()` for the info dialog. A per-instance `_property_cache`
 memoizes `name` / `parts`; a `_metadata['entry']` slot caches the resolved
 `ArchiveEntry`.
+
+### 1.3 Copying a member out
+
+`Path.copy_to` has a branch for `archive` → `file` that streams the member into
+the destination through `ArchivePathImpl.extract_to_stream`, which walks
+`iter_member_bytes()` and calls the progress callback per block. Without it the
+copy fell into `copy_to`'s generic arm — `read_bytes()` then `write_bytes()` —
+and that one opaque call cost three things at once: the whole member in memory,
+no byte bar, and **no cancellation**, because for a cross-storage copy
+`FileOperationService._remote_progress` puts `task.checkpoint()` *inside* the
+progress callback and nothing ever called it. A large file inside a 7z is where
+that is unmissable, but zip and tar behaved identically.
+
+`LibarchiveHandler.iter_member_bytes` coalesces libarchive's own ~16 KiB blocks
+up to `chunk_size` (1 MiB, matching `file_operations._CHUNK`): the consumer takes
+a lock on the UI's progress state per block, and a gigabyte at 16 KiB would do
+that sixty thousand times.
+
+A cancel raised inside the callback propagates unchanged — `copy_to` guards the
+callback so it comes back as the caller's own exception rather than an `OSError`
+about a failed copy — and the branch removes the truncated destination on the way
+out.
+
+> **Still generic: `archive` → `s3` / `ssh`.** Those combinations have no branch
+> and fall through to `read_bytes()` / `write_bytes()`, so copying a member
+> straight from a browsed archive to remote storage still buffers it and still
+> cannot be cancelled. The fix is the same shape as the local one, needing a
+> file-like adapter over `iter_member_bytes()` for `upload_from_stream`.
 
 ### Navigation integration
 
@@ -488,6 +520,11 @@ CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
 
 - `test/test_archive_*.py` — entry conversion, handlers, cache (LRU/TTL), and
   `ArchivePathImpl`.
+- `test/test_archive_path_impl.py` — `ArchivePathImpl`, plus (in
+  `TestStreamingOutOfAnArchive`) the copy-out path of §1.3: that
+  `iter_member_bytes` really streams for zip and tar, that `copy_to` reports more
+  than once, and that a cancel raised from the callback propagates and leaves no
+  partial file.
 - `test/test_archive_registry.py` — the readable-format table: longest-suffix
   matching both ways round, replacement by label, dispatch through
   `_create_handler`, the base class's unencrypted defaults, `is_safe_member_path`,

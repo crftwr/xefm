@@ -285,3 +285,96 @@ class TestArchivePathImpl:
         
         assert not path.supports_directory_rename()
         assert not path.supports_file_editing()
+
+
+class TestStreamingOutOfAnArchive:
+    """Copying a member out of a browsed archive (xefm#396 follow-up).
+
+    ``Path.copy_to`` had no branch for ``archive`` → ``file``, so the copy fell
+    into the generic one — ``read_bytes()`` then ``write_bytes()``. That is one
+    opaque call: the whole member in memory, no byte progress, and no
+    cancellation, because for a cross-storage copy the progress callback is the
+    only place ``FileOperationService`` gets to check for one. A large file
+    inside a 7z is where that is felt, but zip and tar had it too.
+    """
+
+    #: Two chunks' worth, so a streamed copy has to report more than once.
+    PAYLOAD = bytes(range(256)) * 8192
+
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp(prefix='xefm_test_archive_stream_')
+        self.temp_path = PathlibPath(self.temp_dir)
+
+        self.zip_path = self.temp_path / 'big.zip'
+        with zipfile.ZipFile(str(self.zip_path), 'w', zipfile.ZIP_STORED) as zf:
+            zf.writestr('big.bin', self.PAYLOAD)
+
+        raw = self.temp_path / 'big.bin'
+        raw.write_bytes(self.PAYLOAD)
+        self.tar_path = self.temp_path / 'big.tar.gz'
+        with tarfile.open(str(self.tar_path), 'w:gz') as tf:
+            tf.add(str(raw), arcname='big.bin')
+        raw.unlink()
+
+    def teardown_method(self):
+        import shutil
+        if self.temp_path.exists():
+            shutil.rmtree(str(self.temp_path))
+
+    def _member(self, archive):
+        return Path(f"archive://{archive}#big.bin")
+
+    def test_iter_member_bytes_streams_zip(self):
+        from xefm.archive import ZipHandler
+        with ZipHandler(Path(str(self.zip_path))) as handler:
+            blocks = list(handler.iter_member_bytes('big.bin', chunk_size=64 * 1024))
+        assert len(blocks) > 1                       # streamed, not one blob
+        assert b''.join(blocks) == self.PAYLOAD
+
+    def test_iter_member_bytes_streams_tar(self):
+        from xefm.archive import TarHandler
+        with TarHandler(Path(str(self.tar_path)), compression='gz') as handler:
+            blocks = list(handler.iter_member_bytes('big.bin', chunk_size=64 * 1024))
+        assert len(blocks) > 1
+        assert b''.join(blocks) == self.PAYLOAD
+
+    def test_iter_member_bytes_rejects_a_directory(self):
+        import pytest
+        from xefm.archive import ArchiveExtractionError, ZipHandler
+        with zipfile.ZipFile(str(self.zip_path), 'a') as zf:
+            zf.writestr('sub/inner.txt', b'x')
+        with ZipHandler(Path(str(self.zip_path))) as handler:
+            with pytest.raises(ArchiveExtractionError):
+                list(handler.iter_member_bytes('sub'))
+            with pytest.raises(FileNotFoundError):
+                list(handler.iter_member_bytes('nope.bin'))
+
+    def test_copy_out_reports_progress(self):
+        for archive in (self.zip_path, self.tar_path):
+            reports = []
+            dest = Path(str(self.temp_path / f'out_{archive.suffix}.bin'))
+            self._member(archive).copy_to(
+                dest, overwrite=True,
+                progress_callback=lambda done, total: reports.append((done, total)))
+            assert len(reports) > 1, f"{archive.name} copied in one opaque call"
+            assert reports[-1] == (len(self.PAYLOAD), len(self.PAYLOAD))
+            assert PathlibPath(str(dest)).read_bytes() == self.PAYLOAD
+
+    def test_a_cancel_from_the_callback_leaves_no_partial_file(self):
+        import pytest
+
+        class _Cancelled(Exception):
+            """Stands in for xefm.task.Cancelled — copy_to must not relabel it."""
+
+        seen = []
+
+        def cancel_after_first(done, total):
+            seen.append(done)
+            raise _Cancelled()
+
+        dest = Path(str(self.temp_path / 'cancelled.bin'))
+        with pytest.raises(_Cancelled):
+            self._member(self.zip_path).copy_to(
+                dest, overwrite=True, progress_callback=cancel_after_first)
+        assert seen                                   # it did get called
+        assert not PathlibPath(str(dest)).exists()    # and left no stub
