@@ -1043,22 +1043,32 @@ def libarchive_formats() -> List[ArchiveFormat]:
 
 
 def register_libarchive_formats() -> None:
-    """Add every justified format to the readable-format table and log what
-    happened — with three possible supply paths behind the library, a bug report
-    has to say which one answered and what it could do."""
+    """Add every justified format to the readable-format table, saying something
+    only when the outcome is not the ordinary one.
+
+    Three supply paths mean a bug report has to be able to name the library that
+    answered, but a full line at every successful startup was a lot of noise for
+    the normal case, so success is ``debug`` and the Help dialog carries the same
+    information where a user can actually find it. What stays visible is the two
+    outcomes worth acting on: no library at all, and a library that loaded and
+    then justified nothing — the second being the shape a mis-built or
+    half-stripped copy takes, and easy to mistake for the first."""
     info = libarchive_info()
     if not info.available:
-        logger.info(f"libarchive not loaded ({info.error}); "
-                    f"zip and tar only")
+        logger.info(f"libarchive not loaded ({info.error}); zip and tar only")
         return
     formats = libarchive_formats()
     for fmt in formats:
         register_archive_format(fmt)
-    read = ' '.join(sfx for fmt in formats for sfx in fmt.suffixes) or '(none)'
+    if not formats:
+        logger.warning(f"libarchive loaded but supports none of the formats XeFM "
+                       f"offers: {info.details} [{info.library_path}]")
+        return
+    read = ' '.join(sfx for fmt in formats for sfx in fmt.suffixes)
     write = ' '.join(sfx for fmt in formats if fmt.writer is not None
                      for sfx in fmt.suffixes) or '(none)'
-    logger.info(f"libarchive: {info.details} [{info.library_path}] "
-                f"reading {read}, writing {write}")
+    logger.debug(f"libarchive: {info.details} [{info.library_path}] "
+                 f"reading {read}, writing {write}")
 
 
 # Registration runs here rather than in ``xefm/archive.py`` so that it happens

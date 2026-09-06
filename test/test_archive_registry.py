@@ -24,7 +24,7 @@ from xefm import archive as A  # noqa: E402
 from xefm.archive import (  # noqa: E402
     ArchiveCache, ArchiveFormat, ArchiveFormatError, ArchiveHandler, TarHandler,
     ZipHandler, archive_format_for_name, archive_format_label,
-    archive_readable_suffixes, archive_strip_suffix, is_safe_member_path,
+    archive_readable_formats, archive_strip_suffix, is_safe_member_path,
     register_archive_format,
 )
 from xefm.path import Path  # noqa: E402
@@ -88,11 +88,15 @@ def test_strip_suffix_uses_the_longest_match():
     assert archive_strip_suffix("notes.txt") == "notes.txt"
 
 
-def test_readable_suffixes_are_generated_longest_first():
-    suffixes = archive_readable_suffixes()
-    assert ".zip" in suffixes and ".tar.gz" in suffixes
-    assert suffixes.index(".tar.gz") < suffixes.index(".tar")
-    assert len(set(suffixes)) == len(suffixes)
+def test_readable_formats_enumerate_the_table():
+    """The hook anything listing formats to a user has to go through — the Help
+    dialog does — so that no such list can drift from what actually loaded."""
+    formats = archive_readable_formats()
+    labels = [fmt.label for fmt in formats]
+    assert labels == [fmt.label for fmt in A.ARCHIVE_HANDLERS]
+    assert {"zip", "tar", "tar.gz"} <= set(labels)
+    assert len(set(labels)) == len(labels)
+    assert all(fmt.description for fmt in formats)
 
 
 # --- dispatch -----------------------------------------------------------------
@@ -303,3 +307,76 @@ def test_zstd_tar_round_trips_through_the_stdlib(tmp_path):
     out = tmp_path / "out"
     app._extract_archive(Path(str(archive)), Path(str(out)), "tar.zst")
     assert (out / "src" / "a.txt").read_bytes() == b"alpha"
+
+
+# --- what the user is told, and when ------------------------------------------
+
+
+def _help_text(app=None):
+    """`show_help`'s Markdown, with the dialog stubbed out."""
+    import types
+    app = app or xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    app.panel = types.SimpleNamespace(render=lambda *a, **k: None)
+    app._keys_label = lambda action: "?"
+    shown = {}
+    original = xefm_app.show_markdown
+    xefm_app.show_markdown = lambda panel, text, **kw: shown.setdefault("text", text)
+    try:
+        app.show_help()
+    finally:
+        xefm_app.show_markdown = original
+    return shown["text"]
+
+
+def test_help_lists_the_formats_this_run_supports():
+    """The Help dialog is where an enumeration of formats lives, precisely
+    because it can be built when XeFM starts rather than written down."""
+    text = _help_text()
+    assert "## Archive Formats" in text
+    for fmt in archive_readable_formats():
+        assert (fmt.description or fmt.label) in text
+        for suffix in fmt.suffixes:
+            assert f"`{suffix}`" in text
+
+
+def test_help_marks_what_can_be_created(isolated_registry):
+    """The Create column is the two write tables' union, not `ArchiveFormat.writer`
+    — zip is creatable through zipfile and carries no writer here."""
+    register_archive_format(ArchiveFormat(
+        "readonly-sample", (".readonly-sample",), ZipHandler,
+        description="Read-only sample"))
+    rows = [line for line in _help_text().splitlines() if line.startswith("| ")]
+    zip_row = next(r for r in rows if r.startswith("| ZIP "))
+    sample_row = next(r for r in rows if "Read-only sample" in r)
+    assert zip_row.rstrip().endswith("yes |")
+    assert sample_row.rstrip().endswith("— |")
+
+
+def test_help_names_the_libarchive_in_use():
+    """The identity a bug report needs. It used to be an info line at every
+    startup; it is one dialog away now instead."""
+    from xefm.archive_libarchive import libarchive_info
+    info = libarchive_info()
+    text = _help_text()
+    if info.available:
+        assert info.details in text and info.library_path in text
+    else:
+        assert "libarchive" in text and "not available" in text
+
+
+def test_a_healthy_libarchive_says_nothing_at_startup(caplog):
+    """Success is debug: a full line every time was more than the normal case
+    deserved. The two abnormal outcomes stay visible, and they are different —
+    a library that loads and justifies nothing is not the same as none at all."""
+    import logging
+    from xefm import archive_libarchive as L
+    if not L.libarchive_formats():
+        pytest.skip("no usable libarchive on this machine")
+
+    with caplog.at_level(logging.INFO, logger="Archive"):
+        L.register_libarchive_formats()
+    assert not [r for r in caplog.records if "libarchive" in r.getMessage()]
+
+    with caplog.at_level(logging.DEBUG, logger="Archive"):
+        L.register_libarchive_formats()
+    assert any("libarchive:" in r.getMessage() for r in caplog.records)

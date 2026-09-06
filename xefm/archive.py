@@ -1465,12 +1465,15 @@ def archive_strip_suffix(name: str) -> str:
     return name[: -len(longest)] if longest else name
 
 
-def archive_readable_suffixes() -> Tuple[str, ...]:
-    """Every suffix a registered handler reads, longest first. Generated rather
-    than written down: what libarchive contributes depends on the library that
-    actually loaded, so any list of supported formats has to come from here."""
-    suffixes = {sfx for fmt in ARCHIVE_HANDLERS for sfx in fmt.suffixes}
-    return tuple(sorted(suffixes, key=lambda sfx: (-len(sfx), sfx)))
+def archive_readable_formats() -> Tuple[ArchiveFormat, ...]:
+    """Every registered format, in registration order.
+
+    The hook for anything that has to *enumerate* what XeFM reads — the Help
+    dialog does. Generated rather than written down: what libarchive contributes
+    depends on the library that actually loaded and ``.tar.zst`` on the Python
+    version, so a list kept anywhere else would drift the moment either
+    changed."""
+    return tuple(ARCHIVE_HANDLERS)
 
 
 def _register_builtin_formats() -> None:

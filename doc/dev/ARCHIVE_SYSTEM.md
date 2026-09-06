@@ -12,9 +12,11 @@ Canonical developer reference for XeFM's archive support. Two independent paths:
 
 **Which formats are readable is decided at import, not written down.** Reading
 goes through a registry (§1.1) whose libarchive-backed entries depend on what the
-library that actually loaded can do, so anything enumerating formats — the user
-guide, a dialog, a message — has to be generated from
-`archive_readable_suffixes()` rather than kept as a list somewhere.
+library that actually loaded can do, so anything enumerating formats has to be
+generated from `archive_readable_formats()` rather than kept as a list
+somewhere. The Help dialog's "Archive Formats" table is the one place that
+enumerates them for a user; `XeFMApp._archive_help_section()` builds it, pairing
+that call with `_writable_formats()` for the "Create" column.
 
 Source of truth is the code; this document summarizes structure and intent, not
 every line.
@@ -98,7 +100,7 @@ replaced an if/elif chain in `ArchiveCache._create_handler` plus two
 | `archive_format_for_name(name)` | the matching `ArchiveFormat`, or `None` |
 | `archive_format_label(name)` | its label — `'zip'`, `'tar.gz'`, `'7z'` |
 | `archive_strip_suffix(name)` | the name with its archive suffix removed |
-| `archive_readable_suffixes()` | every readable suffix, longest first |
+| `archive_readable_formats()` | every registered format, for enumeration |
 | `archive_writable_formats()` | the formats that brought a writer with them |
 
 Three rules hold for anything registered:
@@ -201,9 +203,13 @@ refuse it in advance. Everything an entry inside a 7z, RAR, ISO, CAB or cpio
 declares fails visibly instead, which is the behaviour we want and the reason the
 probe only has to cover what a format needs *to open at all*.
 
-`register_libarchive_formats()` logs one line at import naming the library, its
-version, its codecs and the suffixes it contributed. With three supply paths, a
-bug report has to carry that automatically.
+`register_libarchive_formats()` says something only when the outcome is not the
+ordinary one. Success is `debug` — a full line at every startup was more than the
+normal case deserved, and the Help dialog's "Archive Formats" table carries the
+same information where a user can find it. What stays visible is the two
+outcomes worth acting on: no library at all, and a library that loaded and then
+justified *nothing*, which is the shape a mis-built or half-stripped copy takes
+and is easy to mistake for the first.
 
 **No random access.** libarchive is a forward stream of headers: `open()` makes
 one pass to build the index, and every later read re-opens the file and scans to
@@ -524,7 +530,7 @@ Create: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`) and — on
 are readable and not creatable. Ask `_writable_formats()`.
 
 Extract and browse: those, plus whatever libarchive contributed (§1.2) — `.7z`
-where a usable library loaded. Ask `archive_readable_suffixes()`; do not restate
+where a usable library loaded. Ask `archive_readable_formats()`; do not restate
 the list.
 
 Both `_extract_archive` and `_write_archive` route a format that is neither
