@@ -1,0 +1,21 @@
+# The musl half of the Linux matrix, and the only thing it is for.
+#
+# Alpine is where ``ctypes.util.find_library('archive')`` gives up: musl's
+# ldconfig has no ``-p`` for it to read and its remaining strategies need a
+# compiler, so it answers None with libarchive installed at a standard path —
+# with the -dev symlink beside it or without. XeFM's soname fallback
+# (``_use_known_soname``) is what covers that, and this image is how it stays
+# covered.
+#
+# Deliberately minimal: libarchive-c and nothing else, because the probe must
+# not need the rest of XeFM's dependency set. The test suite itself runs on
+# glibc (Dockerfile) — what only Alpine can answer is whether the library is
+# found at all.
+#
+#   make test-linux-musl
+FROM python:3.13-alpine
+RUN apk add --no-cache libarchive
+RUN pip install --no-cache-dir --quiet libarchive-c
+ENV PYTHONDONTWRITEBYTECODE=1
+WORKDIR /src
+CMD ["python", "tools/docker/probe_libarchive.py"]

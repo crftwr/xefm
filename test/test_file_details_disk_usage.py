@@ -88,12 +88,18 @@ class FileDetailsDiskUsage(unittest.TestCase):
 
     def test_directory_rows_fill_in(self):
         dialog, sources = self._open_details("adir")
-        dialog.md.offset = 3.0
+        # Scroll by one line, not three. The widget clamps to what the content
+        # allows, and the content's height here turns on how many lines the
+        # temp directory's *path* wraps to — long under macOS's /var/folders
+        # TMPDIR, short under /tmp, so an offset of 3.0 survived on one machine
+        # and came back clamped to 2.0 on another. What the assertion is for is
+        # that the swap does not reset the position, and one line shows that.
+        dialog.md.offset = 1.0
         final = self._pump_until_settled(sources)
         self.assertIn("| Disk usage | 350 B (350 bytes) |", final)
         self.assertIn("| Contents | 3 files, 1 folders |", final)
         # The in-place swap must not yank the scroll position.
-        self.assertEqual(dialog.md.offset, 3.0)
+        self.assertEqual(dialog.md.offset, 1.0)
 
     def test_multi_selection_aggregates(self):
         dialog, sources = self._open_details(
