@@ -3,7 +3,8 @@
 A centered modal showing one tip from :mod:`xefm.tips` at a time:
 
 - **Left / Right** step to the previous / next tip (wrapping), with a
-  position counter in the footer showing where the rotation stands.
+  position counter at the right end of the hint band showing where the rotation
+  stands.
 - **Up / Down / PageUp / PageDown** scroll the body — a tip should not need it,
   but a small window must not clip one.
 - **Space** toggles the *Don't show tips at startup* checkbox (a click on it
@@ -33,7 +34,8 @@ from puikit.widgets import Checkbox
 from puikit.widgets.base import Widget
 from puikit.widgets.markdown_view import MarkdownView
 
-from xefm.dialog_geometry import animate_open, draw_title_bar
+from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
+                                  hint_content_bottom)
 from xefm.tips import render_tip, tip_count
 
 #: Keys the body consumes for scrolling while the dialog is open (backend key
@@ -84,7 +86,7 @@ class TipsDialog(FocusContainer, Widget):
         sw, sh = panel.backend.size_units
         # A fixed, content-independent size: tips differ in length, and a box
         # that resized on every Left/Right would jitter. Wide enough for the
-        # footer (hint + counter) and the checkbox; the body scrolls if a tip
+        # hint band (keys + counter) and the checkbox; the body scrolls if a tip
         # ever overflows. Measured through the backend with the proportional UI
         # font, like the other dialogs — a bare column count would over-size
         # the box on a GUI backend.
@@ -131,16 +133,12 @@ class TipsDialog(FocusContainer, Widget):
         # would fall back to the backend default, wrong on some palettes).
         self.md.style = Style(fg=theme.text, bg=surface_bg)
 
-        # Bottom-up footer: hint row inside the bottom border, checkbox above
-        # it, body filling the rest. Whole rows on a grid; measured line boxes
-        # with small pads on vector.
-        line_h = ctx.line_height()
+        # Bottom-up: the hint band is chrome pinned to the frame, the checkbox is
+        # the last thing the *content* says, and the body fills what is left above
+        # it. Whole rows on a grid; measured line boxes with small pads on vector.
         lc = ctx.layout_context()
         row_h = self.checkbox.measure(lc, "y", 0.0).preferred
-        pad_bottom = 0.5 if ctx.vector_shapes else 1.0
-        gap = 0.25 if ctx.vector_shapes else 0.0
-        hint_y = hu - pad_bottom - line_h
-        cb_y = hint_y - gap - row_h
+        cb_y = hint_content_bottom(ctx, surface_bg) - row_h
         body_gap = 0.5 if ctx.vector_shapes else 1.0
         body_h = max(1.0, cb_y - body_gap - y)
         self._body_rect = Rect(2.0, y, max(1.0, wu - 4.0), body_h)
@@ -153,10 +151,11 @@ class TipsDialog(FocusContainer, Widget):
                        hints={"focused": False, "bg": surface_bg})
         self._cb_rect = (2.0, 2.0 + cb_w, cb_y, cb_y + row_h)
 
-        muted = Style(fg=theme.muted_text, bg=surface_bg)
-        ctx.draw_text(2.0, hint_y, self._HINT, muted)
-        counter = f"{self.index + 1}/{tip_count()}"
-        ctx.draw_text(wu - 2.0 - ctx.measure_text(counter), hint_y, counter, muted)
+        # Key hint as the bottom band, mirroring the title bar, with the position
+        # counter pinned to its right end — where the rotation stands is the one
+        # thing this dialog says down here that is not a key.
+        draw_hint_row(ctx, self._HINT, surface_bg=surface_bg, border=border,
+                      right=f"{self.index + 1}/{tip_count()}")
 
     # --- events --------------------------------------------------------------
 

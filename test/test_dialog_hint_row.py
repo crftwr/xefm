@@ -11,6 +11,13 @@ mirror of ``draw_title_bar``: a frame-connecting rule, then the muted line of
 keys hard against the bottom border. A modal is framed by two matched bands with
 its content between them, on the grid and on a vector backend alike.
 
+Every modal that owns the keyboard draws it now, not just the two that started
+it: the search dialog, the input prompts, batch rename, sort, the choice picker,
+Compare & Select, and Tip of the Day. The band is where *keys* go — the search
+dialog's result count and batch rename's macro legend stay in the client area,
+each with the thing it describes, and each gave up the ``Tab …`` fragment it used
+to carry.
+
 **The status bar.** A modal owns the keyboard while it is up and names its own
 keys, so the window's bar listing the file list's keys was advertising keys that
 could not fire. It goes quiet — except under the search bar, which is a layer
@@ -22,6 +29,7 @@ Run with: python -m pytest test/test_dialog_hint_row.py -v
 import os
 import sys
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
@@ -29,8 +37,15 @@ from puikit import CapabilityProfile, Panel, PROFILE_GUI_DESKTOP  # noqa: E402
 from puikit.backends.memory_backend import MemoryBackend  # noqa: E402
 
 from xefm import dialog_geometry as dg  # noqa: E402
+from xefm.batch_rename_dialog import show_batch_rename  # noqa: E402
+from xefm.choice_dialog import show_choice_dialog  # noqa: E402
+from xefm.compare_dialog import show_compare_select  # noqa: E402
 from xefm.filter_list_dialog import show_filter_list  # noqa: E402
+from xefm.input_dialog import show_input  # noqa: E402
+from xefm.progressive_search_dialog import show_progressive_search  # noqa: E402
+from xefm.sort_dialog import show_sort_dialog  # noqa: E402
 from xefm.text_dialog import show_text  # noqa: E402
+from xefm.tips_dialog import show_tips_dialog  # noqa: E402
 
 
 class _Ctx:
@@ -180,6 +195,161 @@ class BandPlacement(unittest.TestCase):
             self.assertNotIn("┤", text)
         finally:
             b.close()
+
+
+# --------------------------------------------------------------------------- #
+# Every modal that owns the keyboard names its keys down there
+# --------------------------------------------------------------------------- #
+
+class EveryModalDrawsTheBand(unittest.TestCase):
+    """One test per modal, each asserting the same three things: the keys are on
+    screen, a frame-connecting rule sits directly above them, and the bottom
+    border directly below. That is what makes it a band rather than a line that
+    happens to be near the bottom."""
+
+    def setUp(self):
+        self.b = MemoryBackend(width=88, height=26)
+        self.b.open()
+        self.panel = Panel(self.b)
+
+    def tearDown(self):
+        self.b.close()
+
+    def _assert_banded(self, head):
+        rows = _rows(self.b)
+        hint = next((i for i, r in enumerate(rows) if head in r), None)
+        self.assertIsNotNone(hint, f"{head!r} is not on screen:\n" + "\n".join(rows))
+        self.assertIn("├", rows[hint - 1], "a frame-connecting rule separates it")
+        self.assertIn("└", rows[hint + 1], "and it sits hard against the bottom border")
+
+    def test_the_search_dialog(self):
+        show_progressive_search(
+            self.panel, search_iter=lambda m, q, c: iter(()),
+            to_label=lambda m, v: str(v))
+        _settle(self.b, self.panel)
+        self._assert_banded("↑/↓ select")
+
+    def test_the_search_dialog_names_the_mode_tab_switches_to(self):
+        """The one moving part of that line, and the fragment the status line
+        above the results used to carry."""
+        dlg = show_progressive_search(
+            self.panel, search_iter=lambda m, q, c: iter(()),
+            to_label=lambda m, v: str(v))
+        self.assertIn("Tab content", dlg.hint())
+        self.assertNotIn("Tab", dlg._status_text(), "the status line is about the search")
+        dlg._switch_mode()
+        self.assertIn("Tab filename", dlg.hint())
+
+    def test_an_input_prompt(self):
+        show_input(self.panel, title="New Directory", prompt="Name:")
+        _settle(self.b, self.panel)
+        self._assert_banded("Enter accept")
+
+    def test_a_prompt_offers_tab_only_where_it_completes(self):
+        """Jump to Path completes; New Directory does not, and must not name a
+        key that would do nothing."""
+        from xefm.completion import FilepathCompleter
+        plain = show_input(self.panel, title="New Directory", prompt="Name:")
+        self.assertNotIn("Tab", plain.hint())
+        plain._cancel()
+        jump = show_input(self.panel, title="Jump to Path", prompt="Path:",
+                          completer=FilepathCompleter())
+        self.assertIn("Tab complete", jump.hint())
+
+    def test_the_batch_rename_dialog(self):
+        show_batch_rename(self.panel, [Path("/tmp/a.txt"), Path("/tmp/b.txt")])
+        _settle(self.b, self.panel)
+        self._assert_banded("Tab switch field")
+
+    def test_batch_rename_keeps_its_macro_legend_with_the_field(self):
+        """A syntax legend for the replace pattern, not a key list: it stays in
+        the client area, and the keys it used to trail moved to the band."""
+        show_batch_rename(self.panel, [Path("/tmp/a.txt")])
+        _settle(self.b, self.panel)
+        rows = _rows(self.b)
+        legend = next(i for i, r in enumerate(rows) if r"\d index" in r)
+        hint = next(i for i, r in enumerate(rows) if "Tab switch field" in r)
+        self.assertLess(legend, hint)
+        self.assertNotIn("Esc cancel", rows[legend], "the keys left the legend")
+
+    def test_the_sort_dialog(self):
+        show_sort_dialog(self.panel)
+        _settle(self.b, self.panel)
+        self._assert_banded("↑/↓ key")
+
+    def test_the_choice_picker(self):
+        show_choice_dialog(self.panel, "Encoding",
+                           [("utf8", "UTF-8"), ("sjis", "Shift_JIS")])
+        _settle(self.b, self.panel)
+        self._assert_banded("↑/↓ or type to choose")
+
+    def test_the_choice_picker_shows_its_type_ahead_buffer_in_the_band(self):
+        """While a jump is being typed, what the dialog answers to *is* the
+        buffer — so the band shows that instead of the keys."""
+        dlg = show_choice_dialog(self.panel, "Encoding",
+                                 [("utf8", "UTF-8"), ("sjis", "Shift_JIS")])
+        dlg._typeahead("s")
+        _settle(self.b, self.panel)
+        self._assert_banded("Jump to: s")
+
+    def test_the_compare_dialog(self):
+        show_compare_select(self.panel, on_result=lambda r: None)
+        _settle(self.b, self.panel)
+        self._assert_banded("Space on/off")
+
+    def test_the_tips_dialog_puts_its_counter_at_the_bands_right_end(self):
+        show_tips_dialog(self.panel, index=2)
+        _settle(self.b, self.panel)
+        self._assert_banded("←/→ tip")
+        rows = _rows(self.b)
+        hint = next(i for i, r in enumerate(rows) if "←/→ tip" in r)
+        self.assertRegex(rows[hint], r"3/\d+\s*│$",
+                         "the counter is pinned to the right end of the same band")
+
+
+# --------------------------------------------------------------------------- #
+# The band's optional right-hand reading
+# --------------------------------------------------------------------------- #
+
+class TheRightHandReading(unittest.TestCase):
+    """``right`` is for the one thing a modal says down there that is not a key.
+    It keeps its whole width; the keys elide against it."""
+
+    def setUp(self):
+        self.b = MemoryBackend(width=40, height=10)
+        self.b.open()
+        self.panel = Panel(self.b)
+
+    def tearDown(self):
+        self.b.close()
+
+    #: Longer than the 24-unit box it is drawn into, so something has to give.
+    _KEYS = "a · b · c · d · e · f · g · h · i · j"
+
+    def _band(self, **kw):
+        """The hint row alone in a narrow box; returns the row it drew."""
+        from puikit.widgets.base import Widget
+
+        keys = self._KEYS
+
+        class _Box(Widget):
+            def draw(_self, ctx):
+                dg.draw_hint_row(ctx, keys, surface_bg=None, border=None, **kw)
+
+        self.panel.push_layer(_Box(), z=10, hints={"w": 24.0, "h": 6.0})
+        self.panel.render()
+        row = next(r for r in _rows(self.b) if "a · b" in r)
+        self.panel.pop_layer()
+        return row
+
+    def test_the_right_reading_survives_a_box_too_narrow_for_the_keys(self):
+        plain = self._band()
+        counted = self._band(right="12/47")
+
+        self.assertIn("12/47", counted, "the counter is never the part that elides")
+        self.assertIn("…", counted, "the keys give way to it instead")
+        self.assertLess(len(counted.split("12/47")[0].strip()), len(plain.strip()),
+                        "and give way by exactly as much as it takes")
 
 
 # --------------------------------------------------------------------------- #

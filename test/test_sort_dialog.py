@@ -91,12 +91,21 @@ class SortDialogApp(unittest.TestCase):
         self.app._settle_listings()
         return [os.path.basename(str(p)) for p in self.app.active_pane()["files"]]
 
+    def _screen(self):
+        """The window with the dialog at its *settled* size. The modal entrance
+        renders an inset frame first, and the box is a couple of rows shorter in
+        that frame than the layout it was sized for — reading the screen before
+        the animation lands snapshots the wrong box."""
+        for _ in range(40):
+            self.b.run_animation_ticks()
+        self.app.panel.render()
+        return "\n".join(self.b.snapshot())
+
     # --- draw / layout -------------------------------------------------------
 
     def test_dialog_draws_keys_orders_and_explanation(self):
         self._open()
-        self.app.panel.render()
-        screen = "\n".join(self.b.snapshot())
+        screen = self._screen()
         for token in ("Sort By", "Filename", "Extension", "Size", "Timestamp",
                       "Ascending", "Descending", "A to Z"):
             self.assertIn(token, screen, f"missing {token!r}")
@@ -115,8 +124,7 @@ class SortDialogApp(unittest.TestCase):
         self.assertIn("smallest first", dlg.explanation())
         dlg.handle_event(_key("down"))                  # -> Timestamp
         self.assertIn("oldest first", dlg.explanation())
-        self.app.panel.render()
-        screen = "\n".join(self.b.snapshot())
+        screen = self._screen()
         self.assertIn("oldest first", screen)           # the explanation is on screen
 
     def test_gui_rows_get_more_pitch_than_grid(self):

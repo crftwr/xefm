@@ -16,7 +16,8 @@ A compact, keyboard-first modal (no Tab, no buttons):
 Below the Ascending/Descending segments sits an **explanation line** — e.g.
 ``1 KB → 1 MB → 1 GB  (smallest first)`` — because Ascending/Descending is
 hard to grasp in the abstract, especially for size and timestamp. It follows
-the selected key and order live.
+the selected key and order live. The keys sit below *that*, in the hint band
+along the bottom edge that mirrors the title bar.
 """
 
 from __future__ import annotations
@@ -30,7 +31,8 @@ from puikit.theme import DEFAULT_THEME
 from puikit.widgets.base import Widget
 
 from xefm import sort_keys
-from xefm.dialog_geometry import animate_open, draw_title_bar, pane_anchored_box
+from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
+                                  draw_title_bar, pane_anchored_box)
 
 #: Order segments, indexed by ``sort_reverse`` (False = Ascending).
 _ORDERS = ("Ascending", "Descending")
@@ -91,11 +93,15 @@ class SortDialog(Widget):
     def _explain_y(self, title_bottom: float, pitch: float) -> float:
         return self._order_y(title_bottom, pitch) + 1.0  # right under the segments
 
-    def _hint_y(self, title_bottom: float, pitch: float) -> float:
-        return self._explain_y(title_bottom, pitch) + 2.0
+    def _content_bottom(self, title_bottom: float, pitch: float) -> float:
+        """Where the content ends: just under the explanation line, the last thing
+        the dialog says for itself. The hint band is chrome and hangs off the
+        bottom of the box, not off the content."""
+        return self._explain_y(title_bottom, pitch) + 1.0
 
     def _box_height(self, title_bottom: float, pitch: float) -> float:
-        return self._hint_y(title_bottom, pitch) + 2.0  # hint row + bottom border/pad
+        # Content, then the band's rule / keys / bottom border.
+        return self._content_bottom(title_bottom, pitch) + HINT_ROWS
 
     def _content_width(self, measure) -> float:
         """Width of the widest content line (base units, excluding the 2-unit
@@ -207,8 +213,9 @@ class SortDialog(Widget):
         ctx.draw_text(3.0, self._explain_y(title_bottom, pitch) + vy,
                       self.explanation(), Style(fg=theme.muted_text, bg=surface_bg))
 
-        ctx.draw_text(2.0, self._hint_y(title_bottom, pitch) + vy, self._HINT,
-                      Style(fg=theme.muted_text, bg=surface_bg))
+        # Key hint as the bottom band, mirroring the title bar.
+        draw_hint_row(ctx, self._HINT, surface_bg=surface_bg,
+                      border=theme.popup_border)
 
     def explanation(self) -> str:
         """The explanation line for the selected key and order."""

@@ -10,9 +10,9 @@ give it a row of its own, the way the encoding picker's Auto row does).
 
 Type-ahead: quickly typing a keyword jumps the selection — printable keys
 accumulate into a buffer matched case-insensitively against the labels, a
-prefix match winning over a substring match. The buffer shows in the footer
-while it is live, Backspace trims it, and a second of quiet resets it, so a
-mistyped jump costs a beat, not an Esc.
+prefix match winning over a substring match. The buffer shows in the hint band
+along the bottom while it is live, Backspace trims it, and a second of quiet
+resets it, so a mistyped jump costs a beat, not an Esc.
 
 First (and so far only) user: the text viewer's encoding picker. The Sort
 dialog predates this widget and keeps its own two-axis layout (key rows × an
@@ -30,7 +30,8 @@ from puikit.font import Font
 from puikit.theme import DEFAULT_THEME
 from puikit.widgets.base import Widget
 
-from xefm.dialog_geometry import animate_open, draw_title_bar
+from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
+                                  draw_title_bar)
 
 #: Quiet time after which the type-ahead buffer resets.
 _TYPEAHEAD_TIMEOUT_S = 1.0
@@ -78,11 +79,14 @@ class ChoiceDialog(Widget):
     def _rows_top(title_bottom: float) -> float:
         return title_bottom + 1.0  # a blank row under the title rule
 
-    def _hint_y(self, title_bottom: float, pitch: float) -> float:
-        return self._rows_top(title_bottom) + len(self._rows) * pitch + 1.0
+    def _content_bottom(self, title_bottom: float, pitch: float) -> float:
+        """Where the rows end. The hint band is chrome and hangs off the bottom of
+        the box, not off the content."""
+        return self._rows_top(title_bottom) + len(self._rows) * pitch
 
     def _box_height(self, title_bottom: float, pitch: float) -> float:
-        return self._hint_y(title_bottom, pitch) + 2.0  # hint row + bottom border/pad
+        # Rows, a blank row of air, then the band's rule / keys / bottom border.
+        return self._content_bottom(title_bottom, pitch) + 1.0 + HINT_ROWS
 
     def _content_width(self, measure) -> float:
         """Width of the widest content line (base units, excluding the 2-unit
@@ -173,7 +177,6 @@ class ChoiceDialog(Widget):
         line_h = ctx.line_height()
         pitch = self._row_pitch(ctx.vector_shapes)
         row_vy = max(0.0, (pitch - line_h) / 2.0)
-        vy = max(0.0, (1.0 - line_h) / 2.0)
 
         self._row_hits = []
         y = self._rows_top(title_bottom)
@@ -188,12 +191,12 @@ class ChoiceDialog(Widget):
             self._row_hits.append((i, y, y + pitch))
             y += pitch
 
-        # The footer shows the live type-ahead buffer while one is building
-        # (feedback for the jump — including a miss), else the key hint.
+        # The band shows the live type-ahead buffer while one is building
+        # (feedback for the jump — including a miss), else the key hint: what the
+        # dialog answers to, which for the moment you are typing *is* the buffer.
         buffer = self._typeahead_buffer()
-        footer = f"Jump to: {buffer}▏" if buffer else self._HINT
-        ctx.draw_text(2.0, self._hint_y(title_bottom, pitch) + vy, footer,
-                      Style(fg=theme.muted_text, bg=surface_bg))
+        draw_hint_row(ctx, f"Jump to: {buffer}▏" if buffer else self._HINT,
+                      surface_bg=surface_bg, border=theme.popup_border)
 
     # --- events --------------------------------------------------------------
 
