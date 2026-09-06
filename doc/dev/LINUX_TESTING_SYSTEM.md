@@ -7,9 +7,13 @@ as the platform nobody runs the suite on by hand — despite it being the one
 ```bash
 make test-linux        # the whole suite, on glibc (Debian)
 make test-linux-musl   # can libarchive be found on musl? and does its absence degrade cleanly?
+
+make run-linux         # XeFM's TUI, on glibc, interactively
+make run-linux-musl    # the same on musl
+make run-linux-shell   # a shell in that container
 ```
 
-Both need a running Docker daemon and nothing else.
+All of them need a running Docker daemon and nothing else.
 
 ---
 
@@ -21,14 +25,15 @@ the first.
 | | `tools/docker/Dockerfile` | `tools/docker/Dockerfile.musl` |
 | --- | --- | --- |
 | Base | `python:3.13-slim` (Debian, glibc) | `python:3.13-alpine` (musl) |
-| Installs | libarchive13 + all of `requirements.txt` + pytest | libarchive + `libarchive-c`, nothing else |
-| Runs | `pytest test/` | `tools/docker/probe_libarchive.py` |
+| Installs | libarchive13 + `requirements.txt` + pytest | libarchive + `requirements.txt` + `libarchive-c` |
+| `make test-…` runs | `pytest test/` | `tools/docker/probe_libarchive.py` |
 | Answers | does XeFM work on Linux | can the shared library be *found* |
 
-The musl image is deliberately not able to run the suite: installing XeFM's full
-dependency set on musl means compiling several C extensions, and none of that
-would tell us anything the glibc run does not. What only Alpine can tell us is
-whether the library is found at all — see below.
+The musl image carries XeFM's dependencies as well, but not to run the suite
+twice — every one of them has a musl wheel, so they cost about five seconds, and
+having them is what makes `make run-linux-musl` possible. What only Alpine can
+*tell* us is whether the library is found at all, so that is all
+`make test-linux-musl` asks.
 
 `libarchive-dev` is installed in neither. The runtime package alone is the state
 a user's machine is in, and coping with that state is part of what is being
@@ -48,6 +53,34 @@ build context.
 
 Overridable: `LINUX_PYTHON` (default 3.13), `DOCKER`, `LINUX_IMAGE`,
 `LINUX_MUSL_IMAGE`.
+
+## Running the TUI
+
+A suite that passes says the logic works; it says nothing about what the screen
+looks like under a different terminfo, a different libc's `wcwidth`, or a locale
+XeFM did not choose. `make run-linux` is for looking.
+
+```bash
+make run-linux                          # /src on the left, /work on the right
+make run-linux LEFT=/work RIGHT=/etc    # or wherever
+make run-linux-musl                     # the same, under musl
+make run-linux-shell TUI_IMAGE=xefm-test-linux-musl
+```
+
+The container gets `-it --init` — the second so Ctrl-C reaches XeFM instead of
+PID 1 — and `TERM` and `COLORTERM` are carried in from the host, because a TUI
+under the wrong terminfo tells you nothing about the TUI.
+
+Two directories, deliberately different:
+
+- **`/src`** is the working tree, **read-only**. A file manager is exactly the
+  program you do not want writing into your checkout by accident.
+- **`/work`** is empty and writable — the pane to copy into, delete from, and
+  make archives in.
+
+Config and state land in the container's `/root/.xefm` and go away with it, so
+every run starts from XeFM's defaults. That is useful for seeing what a new
+user sees, and it does mean your own `config.py` is not in play.
 
 ## What the first run found
 

@@ -7,15 +7,20 @@
 # (``_use_known_soname``) is what covers that, and this image is how it stays
 # covered.
 #
-# Deliberately minimal: libarchive-c and nothing else, because the probe must
-# not need the rest of XeFM's dependency set. The test suite itself runs on
-# glibc (Dockerfile) — what only Alpine can answer is whether the library is
-# found at all.
+# The suite itself runs on glibc (Dockerfile); what only Alpine can answer is
+# whether the library is found at all, so that is what `make test-linux-musl`
+# asks. XeFM's own dependencies are here too — every one has a musl wheel, so
+# they cost about five seconds — which makes `make run-linux-musl` possible:
+# a TUI under musl, where the terminfo and locale handling are not glibc's.
 #
-#   make test-linux-musl
+#   make test-linux-musl     the probe
+#   make run-linux-musl      the TUI
 FROM python:3.13-alpine
 RUN apk add --no-cache libarchive
-RUN pip install --no-cache-dir --quiet libarchive-c
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --quiet -r /tmp/requirements.txt \
+ && pip install --no-cache-dir --quiet libarchive-c \
+ && rm /tmp/requirements.txt
 ENV PYTHONDONTWRITEBYTECODE=1
 WORKDIR /src
 CMD ["python", "tools/docker/probe_libarchive.py"]
