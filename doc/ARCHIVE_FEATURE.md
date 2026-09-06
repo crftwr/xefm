@@ -8,13 +8,13 @@ unpacking it to disk first.
 **Browse and extract:** **ZIP** (`.zip`), **TAR** (`.tar`), compressed TAR
 (`.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`) and **7-Zip** (`.7z`).
 
-**Create:** everything above except `.7z` — XeFM reads 7z archives but does not
-write them. Typing a `.7z` name at the create prompt says so rather than quietly
-making a `.tar.gz`.
+**Create:** the same list. A `.7z` created by XeFM uses LZMA2, the same
+compression 7-Zip itself writes by default. It cannot be given a password —
+see [Supported encryption](#supported-encryption).
 
 7z support needs a system library (see
-[If `.7z` archives do not open](#if-7z-archives-do-not-open) below); the other
-formats need nothing at all.
+[If `.7z` archives do not appear](#if-7z-archives-do-not-appear) below); the
+other formats need nothing at all.
 
 For the complete list of key bindings, see the
 [XeFM User Guide](XEFM_USER_GUIDE.md) or press **?** in XeFM.
@@ -170,9 +170,11 @@ share the remembered password.
   supported.
 - **AES-encrypted ZIP** (WinZip AES) is **not** supported — the Python runtime
   XeFM builds on can't decrypt it.
-- **Encrypted 7z** depends on how the libarchive on your machine was built. macOS's
-  built-in copy has no encryption support at all, so encrypted `.7z` files can be
-  listed but not read there.
+- **Encrypted 7z** can be *read* only where the libarchive on your machine was
+  built with encryption support. macOS's built-in copy has none, so an encrypted
+  `.7z` lists its filenames there but its contents cannot be read.
+- **Creating an encrypted archive is not supported in any format.** XeFM reads
+  password-protected archives; it does not make them.
 
 Where XeFM cannot decrypt an archive it says "its encryption is not supported"
 and does not prompt, rather than rejecting every password you type. TAR archives
@@ -201,21 +203,24 @@ Other notes:
 - **Symbolic links** inside archives are shown but may not extract correctly on
   all platforms, and file permissions may not be fully preserved.
 
-## If `.7z` archives do not open
+## If `.7z` archives do not appear
 
-Unlike ZIP and TAR, 7z is not something Python can read on its own: XeFM uses
+Unlike ZIP and TAR, 7z is not something Python can handle on its own: XeFM uses
 **libarchive**, a system library. If pressing Enter on a `.7z` file opens it in
-the viewer instead of browsing into it, XeFM did not find a usable one.
+the viewer instead of browsing into it — or if typing a `.7z` name at the create
+prompt produces a `.tar.gz` — XeFM did not find a usable one.
 
 XeFM writes what it found to the log pane at startup (**L** shows the log). One
 of two lines is there:
 
 ```
-libarchive: libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 [/usr/lib/libarchive.dylib] reading .7z
+libarchive: libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 [/usr/lib/libarchive.dylib] reading .7z, writing .7z
 libarchive not loaded (...); zip and tar only
 ```
 
-The first line names the library XeFM is using and the formats it accepted. The
+The first line names the library XeFM is using and the formats it accepted —
+reading and writing are listed separately, because libarchive reads more formats
+than it writes. The
 second gives the reason it found none. What to do about it:
 
 - **macOS** — the built-in `/usr/lib/libarchive.dylib` is normally enough, and

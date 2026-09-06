@@ -97,15 +97,19 @@ replaced an if/elif chain in `ArchiveCache._create_handler` plus two
 | `archive_format_label(name)` | its label — `'zip'`, `'tar.gz'`, `'7z'` |
 | `archive_strip_suffix(name)` | the name with its archive suffix removed |
 | `archive_readable_suffixes()` | every readable suffix, longest first |
+| `archive_writable_formats()` | the formats that brought a writer with them |
 
 Three rules hold for anything registered:
 
 - **Longest suffix wins**, independent of registration order. The old chain got
   `.tar.gz` before `.tar` right only because of where the branches sat in the
   source; matching now sorts by suffix length, and a test pins it both ways round.
-- **Read-only.** Creation is a separate, smaller table on `XeFMApp` (§2). The two
-  genuinely mean different things — 7z is readable and not writable — so they are
-  not merged.
+- **Reading is the question it answers.** Whether a format can also be
+  *created* is a second, weaker property: `ArchiveFormat.writer`, set only where
+  the writer arrives with the engine that reads it. zip and tar leave it `None`
+  and are created by `XeFMApp` through zipfile / tarfile, so "what can P create"
+  is the union of two sources (§2) — libarchive reads strictly more formats than
+  it writes (rar, lha and cab are read-only), so the two lists cannot be one.
 - **Worker-thread safe.** Handlers are built and driven from the listing worker,
   so nothing reached through the registry may touch the UI, and handlers for
   different archives run on different threads at once.
@@ -146,6 +150,28 @@ entries one at a time is O(n²) on a solid archive — which is why
 `LibarchiveHandler` overrides `iter_extract` with a single pass, and why
 `entry_count()` is overridden too: that pass yields the archive's *stored*
 members, not the directories the index invented for them.
+
+**Writing** is `write_archive(archive_path, sources, format_name=…, options=…,
+on_entry=…, on_bytes=…)`, registered as the 7z format's `writer` when the library
+exports `archive_write_set_format_7zip`. `member_walk()` produces members
+depth-first, a directory before its children, deliberately matching
+`_count_archive_entries(include_dirs=True)` member for member — including
+counting an unlistable directory as itself and not descending — because that
+pass's total is the one the write has to reach. Directories are stored rather
+than implied, so an empty one survives. `options='compression=lzma2'` is
+explicit: libarchive's 7z writer defaults to LZMA1, while 7-Zip itself has
+written LZMA2 for years. libarchive's 7z writer has no encryption, so XeFM
+cannot create a password-protected 7z.
+
+**Progress, both directions.** Neither path uses libarchive's own
+`archive_read_extract_set_progress_callback`: XeFM does not use
+`archive_read_extract` at all, writing the blocks itself, which is what makes
+block-level granularity available for free. On extraction `iter_extract` yields
+each entry *before* writing its payload and calls `on_bytes(n)` per block; on
+creation `write_archive` calls `on_entry(arcname, size)` before each member and
+`on_bytes(n)` as the source is read. Both feed the same
+:class:`~xefm.archive_progress.ByteProgress` the stdlib paths use — see the note
+at the end of §2.
 
 **Encryption is two questions, not one.** Which entries are encrypted comes from
 `archive_entry_is_encrypted` on the headers read at `open()`. Whether they can be
@@ -224,24 +250,25 @@ There is no separate `ArchiveOperations`/`ArchiveUI` class.
 
 ### Format detection
 
-Two tables, meaning two different things. The **write** side is class data on
-`XeFMApp`:
+Creation has two implementations, so "what can P create" has two sources. The
+stdlib half is class data on `XeFMApp`:
 
-- `_ARCHIVE_EXTS` — creatable extensions → format label, longest-suffix-first so
-  `.tar.gz` wins over `.tar`. Covers `.zip`, `.tar`, `.tar.gz`/`.tgz`,
-  `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz`.
+- `_ARCHIVE_EXTS` — the extensions zipfile / tarfile can create → format label.
 - `_TAR_MODES` — format label → `tarfile` write mode (`w`, `w:gz`, `w:bz2`,
   `w:xz`); ZIP is handled separately.
+
+The other half is the registry's writers (§1.1). `_writable_formats()` is their
+union, sorted longest-suffix-first — sorted rather than concatenated for the
+same reason the read registry sorts, so `.tar.gz` beats `.tar` whichever list
+each came from. On top of it:
+
 - `_archive_format(name)` → the label P can *create*, or `None`.
-
-The **read** side is the registry (§1.1), reached through two thin accessors:
-
 - `_readable_archive_format(name)` → the label Enter browses and U extracts.
 - `_archive_basename(name)` → `archive_strip_suffix(name)`, the default
   extraction subdirectory.
 
-A name whose format is readable but not writable (`foo.7z`) is refused by P with
-a message saying so, rather than silently gaining a `.tar.gz` suffix.
+A name the registry reads but brought no writer for is refused by P with a
+message saying so, rather than silently gaining a `.tar.gz` suffix.
 
 ### Creation
 
@@ -346,15 +373,21 @@ for `.tar.xz` (the counting pass is 11 ms of it).
 
 ### Supported formats
 
-Create: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`) — the
-`_ARCHIVE_EXTS` table, all of it stdlib.
+Create: ZIP, TAR, TAR.GZ (`.tgz`), TAR.BZ2 (`.tbz2`), TAR.XZ (`.txz`) from the
+`_ARCHIVE_EXTS` table, all of it stdlib, plus `.7z` from the registry's writers.
+Ask `_writable_formats()`.
 
 Extract and browse: those, plus whatever libarchive contributed (§1.2) — `.7z`
 where a usable library loaded. Ask `archive_readable_suffixes()`; do not restate
-the list. `_extract_archive` routes a format that is neither `"zip"` nor in
-`_TAR_MODES` to `_extract_via_handler`, which drives the handler's `iter_extract`
-and reports progress per entry (there is no byte-level bar on that path: an entry
-is already written by the time it is yielded).
+the list.
+
+Both `_extract_archive` and `_write_archive` route a format that is neither
+`"zip"` nor in `_TAR_MODES` away from the stdlib: to `_extract_via_handler`,
+which drives the handler's `iter_extract`, and to `_write_via_handler`, which
+calls the registry entry's `writer`. Both supply the per-entry bookkeeping the
+stdlib paths get from `_reporting_members` / the tar `filter=report` hook —
+`task.checkpoint()`, `prog.update_progress(name)`, `bytes_.start(size)` — and
+hand `bytes_.advance` down as the block callback.
 
 Single-file gzip/bzip2/xz streams are readable as members but are not first-class
 create targets in the flow above.
@@ -460,9 +493,12 @@ CONFIRM_EXTRACT_ARCHIVE = True  # confirm before extracting
   `_create_handler`, the base class's unencrypted defaults, `is_safe_member_path`,
   and the generic `iter_extract`.
 - `test/test_archive_libarchive.py` — the 7z path, skipped wholesale where no
-  usable libarchive exists. Fixtures are written with libarchive's own 7z writer,
-  so no external `7z` binary is needed; the encrypted one is a stored blob,
-  because libarchive cannot *write* an encrypted 7z. Its encryption assertions
+  usable libarchive exists: browsing, extraction, creation, the count agreeing
+  with the counting pass, both progress bars moving (a multi-block member has to
+  report more than once and land on full), and cancellation mid-archive.
+  Fixtures are written with libarchive's own 7z writer, so no external `7z`
+  binary is needed; the encrypted one is a stored blob, because libarchive cannot
+  *write* an encrypted 7z. Its encryption assertions
   branch on `can_decrypt_7z()`, which is False on macOS's system library — so the
   correct-password case is exercised only where a crypto-capable build is loaded.
 - `test/test_archive_password.py` — classification, verification, the registry,

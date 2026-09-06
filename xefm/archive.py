@@ -565,9 +565,23 @@ class ArchiveHandler:
             self.open()
         return len(self._entry_cache)
 
-    def iter_extract(self, dest_dir, *,
-                     password: Optional[bytes] = None) -> Iterator[ArchiveEntry]:
-        """Extract every entry into ``dest_dir``, yielding each one as it lands.
+    def iter_extract(self, dest_dir, *, password: Optional[bytes] = None,
+                     on_bytes: Optional[Callable[[int], None]] = None
+                     ) -> Iterator[ArchiveEntry]:
+        """Extract every entry into ``dest_dir``, yielding each **before** its
+        payload is written.
+
+        That ordering is load-bearing, and it is the same one
+        ``XeFMApp._reporting_members`` gives the zip and tar paths: the caller
+        sees an entry, does its per-entry work — checkpoint, name the item, open
+        the byte bar at ``entry.size`` — and only when it resumes this generator
+        do the bytes flow. Yielding afterwards would leave every byte bar jumping
+        straight from nothing to full.
+
+        ``on_bytes(n)`` is called with the size of each block written, which is
+        what moves that bar. This generic implementation has no block loop of its
+        own — it goes through ``extract_to_file`` — so it reports each entry once,
+        when the entry is done; a handler that streams calls it per block.
 
         ``password`` unlocks an encrypted archive for this extraction alone,
         without the session-wide :func:`set_archive_password` — extraction is not
@@ -578,11 +592,10 @@ class ArchiveHandler:
         ``..``) are skipped rather than written — the same protection tarfile's
         ``data`` filter gives the tar path.
 
-        This generic implementation extracts one entry at a time. A format with
-        no random access overrides it with a single streaming pass, which is the
-        reason the caller drives progress off the yielded entries instead of
-        looping over ``extract_to_file`` itself: for a solid archive that loop is
-        quadratic.
+        A format with no random access overrides this with a single streaming
+        pass, which is why the caller drives progress from here at all rather
+        than looping over ``extract_to_file`` itself: for a solid archive that
+        loop is quadratic.
 
         Runs on a worker thread — it must not touch the UI, and the caller's
         per-entry work is where cancellation is checked.
@@ -593,13 +606,15 @@ class ArchiveHandler:
             entry = self._entry_cache[internal_path]
             if not internal_path or not is_safe_member_path(internal_path):
                 continue
+            yield entry
             target = dest_dir / internal_path
             if entry.is_dir:
                 target.mkdir(parents=True, exist_ok=True)
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 self.extract_to_file(internal_path, target)
-            yield entry
+                if on_bytes is not None:
+                    on_bytes(entry.size)
 
     def __enter__(self):
         """Context manager entry"""
@@ -1287,6 +1302,17 @@ class ArchiveFormat:
     factory: Callable[[Path], ArchiveHandler]
     #: Short human name for the format list in the UI and the docs.
     description: str = ''
+    #: ``writer(archive_path, sources, on_entry=…, on_bytes=…)`` -> entries
+    #: written, or None when this table does not know how to write the format.
+    #:
+    #: None does not mean "cannot be created": zip and tar are written by
+    #: ``XeFMApp._write_archive`` through ``zipfile`` / ``tarfile``, which is
+    #: where the byte-counting subclasses in :mod:`xefm.archive_progress` live
+    #: and where that code has always been. This slot is for formats whose
+    #: writer arrives with the engine that reads them, and
+    #: :func:`archive_writer_for_name` is the half of "can P create this" that
+    #: those formats answer.
+    writer: Optional[Callable[..., int]] = None
 
 
 #: Every readable format, in registration order. Read through the functions
@@ -1313,6 +1339,16 @@ def archive_format_for_name(name: str) -> Optional[ArchiveFormat]:
             if low.endswith(suffix) and (best is None or len(suffix) > best[0]):
                 best = (len(suffix), fmt)
     return best[1] if best else None
+
+
+def archive_writable_formats() -> Tuple[ArchiveFormat, ...]:
+    """The registered formats that brought a writer with them.
+
+    Not the same as "everything XeFM can create": zip and tar are created by
+    ``XeFMApp`` through zipfile / tarfile and carry no writer here. This is the
+    other half of that answer — the formats whose writer arrived with the engine
+    that reads them, and which therefore appear or vanish with it."""
+    return tuple(fmt for fmt in ARCHIVE_HANDLERS if fmt.writer is not None)
 
 
 def archive_format_label(name: str) -> Optional[str]:

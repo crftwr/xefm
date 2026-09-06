@@ -30,6 +30,12 @@ tar extract             ``TarFile.makefile`` (via ``fileobj``) reads
 All four are attribute lookups on ``self``, so the override is what the stdlib
 calls. With no :class:`ByteProgress` attached every subclass is a pure
 passthrough, byte for byte identical to its base.
+
+Formats read through libarchive (:mod:`xefm.archive_libarchive`) need none of
+this. There is no opaque stdlib call to work around there: XeFM writes each
+block itself in both directions, so it reports them directly and only
+:class:`ByteProgress` is shared. The subclasses below exist because of
+``zipfile`` and ``tarfile``, not because of the progress model.
 """
 
 from __future__ import annotations

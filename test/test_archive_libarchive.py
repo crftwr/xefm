@@ -12,7 +12,6 @@ Run with: python -m pytest test/test_archive_libarchive.py -v
 import base64
 import os
 import sys
-import types
 
 import pytest
 
@@ -26,6 +25,7 @@ from xefm.archive_libarchive import (  # noqa: E402
     libarchive_info,
 )
 from xefm.path import Path  # noqa: E402
+from xefm.task import Cancelled  # noqa: E402
 
 _HAS_7Z = any(fmt.label == "7z" for fmt in libarchive_formats())
 requires_7z = pytest.mark.skipif(
@@ -222,32 +222,129 @@ def test_app_extract_routes_a_7z_through_its_handler(sample_7z, tmp_path):
     assert (tmp_path / "dest" / "sub" / "b.txt").read_bytes() == b"beta"
 
 
+# --- creation -----------------------------------------------------------------
+
+
+class _Prog:
+    """Just enough ProgressManager to record what the two bars were told."""
+
+    def __init__(self):
+        self.total = None
+        self.items = []
+        self.byte_reports = []
+
+    def update_operation_total(self, total):
+        self.total = total
+
+    def update_progress(self, name, processed=None):
+        self.items.append(name)
+
+    def update_file_byte_progress(self, done, total):
+        self.byte_reports.append((done, total))
+
+
+class _Task:
+    """A task whose checkpoint can be made to cancel on the nth member."""
+
+    def __init__(self, cancel_after=None):
+        self.checkpoints = 0
+        self.cancel_after = cancel_after
+
+    def checkpoint(self):
+        self.checkpoints += 1
+        if self.cancel_after is not None and self.checkpoints > self.cancel_after:
+            raise Cancelled()
+
+
+def _tree(root):
+    """A small tree with an empty directory and one member big enough to be
+    written in several blocks."""
+    (root / "sub" / "deep").mkdir(parents=True)
+    (root / "empty").mkdir()
+    (root / "a.txt").write_bytes(b"alpha")
+    (root / "sub" / "b.txt").write_bytes(b"beta")
+    (root / "sub" / "deep" / "big.bin").write_bytes(bytes(range(256)) * 4000)
+    return root
+
+
 @requires_7z
-def test_create_refuses_a_format_it_can_only_read(tmp_path, monkeypatch):
-    """The two tables are deliberately different sizes. Typing a 7z name at the
-    create prompt has to say so, not quietly produce ``bundle.7z.tar.gz``."""
-    src = tmp_path / "src.txt"
-    src.write_bytes(b"x")
+def test_creates_a_7z_that_reads_back(tmp_path):
+    src = _tree(tmp_path / "src")
+    out = tmp_path / "bundle.7z"
     app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
-    app.logs = []
-    app.log_info = app.logs.append
-    app.panel = types.SimpleNamespace(render=lambda: None)
-    app.active_pane = lambda: {}
-    app._selected_or_focused = lambda pane: [Path(str(src))]
-    app._is_archive = lambda p: False
-    app.pm = types.SimpleNamespace(
-        get_inactive_pane=lambda: {"path": Path(str(tmp_path))})
-    app._active_pane_region = lambda: (0.0, 80.0)
-    app.flm = types.SimpleNamespace(show_hidden=False)
+    count = app._write_archive([Path(str(src))], Path(str(out)), "7z")
 
-    captured = []
-    monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: captured.append(kw))
-    app.create_archive()
-    captured[-1]["on_accept"]("bundle.7z")
+    assert out.exists()
+    with LibarchiveHandler(Path(str(out))) as handler:
+        got = {e.internal_path: e for e in handler._entry_cache.values()}
+        assert handler.extract_to_bytes("src/a.txt") == b"alpha"
+        assert handler.extract_to_bytes("src/sub/b.txt") == b"beta"
+        assert len(handler.extract_to_bytes("src/sub/deep/big.bin")) == 256 * 4000
+        # Directories are stored, not implied, so an empty one survives.
+        assert got["src/empty"].is_dir
+        assert count == len(got)
 
-    assert any("Cannot create 7z archives" in m for m in app.logs)
-    assert not (tmp_path / "bundle.7z.tar.gz").exists()
-    assert not (tmp_path / "bundle.7z").exists()
+
+@requires_7z
+def test_create_count_matches_the_counting_pass(tmp_path):
+    """The progress total is computed before the write by a separate walk. If the
+    two disagree the bar never reaches its end, so they are pinned together."""
+    src = _tree(tmp_path / "src")
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    counted = app._count_archive_entries([Path(str(src))], include_dirs=True)
+    written = app._write_archive([Path(str(src))], Path(str(tmp_path / "b.7z")), "7z")
+    assert written == counted
+
+
+@requires_7z
+def test_create_moves_both_bars(tmp_path):
+    """Item bar per member, byte bar within one — the second is what the block
+    loop exists for, and a multi-block member has to report more than once."""
+    src = _tree(tmp_path / "src")
+    prog = _Prog()
+    task = _Task()
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    app._write_archive([Path(str(src))], Path(str(tmp_path / "b.7z")), "7z",
+                       task=task, prog=prog)
+
+    assert "src/a.txt" in prog.items and "src/empty" in prog.items
+    assert task.checkpoints == len(prog.items)          # one per member
+    big = [r for r in prog.byte_reports if r[1] == 256 * 4000]
+    assert len(big) > 2                                  # streamed, not one jump
+    assert big[-1] == (256 * 4000, 256 * 4000)           # and it lands on full
+
+
+@requires_7z
+def test_create_is_cancellable_mid_archive(tmp_path):
+    """Cancel unwinds out through the writer; the partial file is left for
+    create_archive to remove, which is what the zip and tar paths do too."""
+    src = _tree(tmp_path / "src")
+    out = tmp_path / "partial.7z"
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    with pytest.raises(Cancelled):
+        app._write_archive([Path(str(src))], Path(str(out)), "7z",
+                           task=_Task(cancel_after=2))
+    assert out.exists()  # rubble, and the caller's job to clear
+
+
+@requires_7z
+def test_extract_moves_the_byte_bar(tmp_path):
+    """The other half of the same question: iter_extract yields before writing,
+    so the bar is opened at the member's size and then fed block by block."""
+    src = _tree(tmp_path / "src")
+    archive = tmp_path / "b.7z"
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    app._write_archive([Path(str(src))], Path(str(archive)), "7z")
+
+    prog = _Prog()
+    task = _Task()
+    count = app._extract_archive(Path(str(archive)), Path(str(tmp_path / "out")),
+                                 "7z", task=task, prog=prog)
+    assert count == prog.total
+    big = [r for r in prog.byte_reports if r[1] == 256 * 4000]
+    assert len(big) > 2 and big[-1] == (256 * 4000, 256 * 4000)
+    assert (tmp_path / "out" / "src" / "sub" / "b.txt").read_bytes() == b"beta"
+    assert (tmp_path / "out" / "src" / "empty").is_dir()
 
 
 # --- encryption ---------------------------------------------------------------

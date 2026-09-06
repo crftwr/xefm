@@ -39,11 +39,13 @@ import base64
 import ctypes
 import logging
 import os
+import stat
 import tempfile
 import threading
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path as PathlibPath
-from typing import Iterator, List, Optional, Set, Tuple
+from typing import Callable, Iterator, List, Optional, Set, Tuple
 
 from xefm.log_manager import getLogger
 from xefm.path import Path
@@ -508,8 +510,9 @@ class LibarchiveHandler(ArchiveHandler):
             except Exception:  # noqa: BLE001 — metadata is best effort
                 pass
 
-    def iter_extract(self, dest_dir, *,
-                     password: Optional[bytes] = None) -> Iterator[ArchiveEntry]:
+    def iter_extract(self, dest_dir, *, password: Optional[bytes] = None,
+                     on_bytes: Optional[Callable[[int], None]] = None
+                     ) -> Iterator[ArchiveEntry]:
         """Extract everything into ``dest_dir`` in one forward pass.
 
         The whole reason this is overridden: the generic implementation calls
@@ -517,6 +520,13 @@ class LibarchiveHandler(ArchiveHandler):
         rescans the archive from the beginning — quadratic on the solid archives
         7z produces by default. One pass writes every member as its header goes
         by instead.
+
+        The entry is yielded before its payload is written, and ``on_bytes`` is
+        called with each block as it is written, so the byte bar moves through a
+        large member rather than snapping to full at the end of it. We write the
+        blocks ourselves (``get_blocks()``) instead of handing the job to
+        ``archive_read_extract``, which is what makes that granularity available
+        without libarchive's own progress callback.
 
         Members that are neither a regular file nor a directory (symlinks,
         devices, sockets) are skipped and logged rather than recreated, as are
@@ -537,19 +547,22 @@ class LibarchiveHandler(ArchiveHandler):
                         continue
                     entry = (self._entry_cache.get(internal_path)
                              or self._to_entry(raw, internal_path))
-                    target = root.joinpath(*internal_path.split('/'))
-                    if entry.is_dir:
-                        target.mkdir(parents=True, exist_ok=True)
-                    elif not raw.isreg:
+                    if not entry.is_dir and not raw.isreg:
                         self.logger.info(
                             f"Skipping {internal_path}: not a regular file")
                         continue
+                    yield entry
+                    target = root.joinpath(*internal_path.split('/'))
+                    if entry.is_dir:
+                        target.mkdir(parents=True, exist_ok=True)
                     else:
                         target.parent.mkdir(parents=True, exist_ok=True)
                         try:
                             with open(target, 'wb') as fh:
                                 for block in raw.get_blocks():
                                     fh.write(block)
+                                    if on_bytes is not None:
+                                        on_bytes(len(block))
                         except ArchiveError:
                             raise
                         except OSError as exc:
@@ -571,7 +584,6 @@ class LibarchiveHandler(ArchiveHandler):
                             os.utime(str(target), (entry.mtime, entry.mtime))
                         except Exception:  # noqa: BLE001 — metadata is best effort
                             pass
-                    yield entry
         except ArchiveError:
             raise
         except Exception as exc:  # noqa: BLE001 — a failure opening the reader
@@ -616,6 +628,105 @@ class LibarchiveHandler(ArchiveHandler):
         return False
 
 
+# --- writing ------------------------------------------------------------------
+
+
+#: Chunk size for the create path's read-and-compress loop. Large enough that the
+#: per-call ctypes overhead disappears against the compression, small enough that
+#: the byte bar moves several times a second on a slow source.
+_WRITE_BLOCK = 256 * 1024
+
+
+def member_walk(sources) -> Iterator[Tuple[PathlibPath, str, bool]]:
+    """``(path, arcname, is_dir)`` for every member writing ``sources`` produces,
+    a directory before its children.
+
+    Deliberately member-for-member identical to
+    ``XeFMApp._count_archive_entries(include_dirs=True)``, down to counting a
+    directory that cannot be listed as itself and not descending into it — the
+    total that pass produced is the one this loop has to reach, or the progress
+    bar stops short. Directories are stored rather than left implicit, which is
+    what keeps an empty one in the archive.
+    """
+    def walk(path: PathlibPath, arcname: str):
+        is_dir = path.is_dir() and not path.is_symlink()
+        yield path, arcname, is_dir
+        if not is_dir:
+            return
+        try:
+            children = list(path.iterdir())
+        except OSError:  # the write is what surfaces the real error, not this
+            return
+        for child in children:
+            yield from walk(child, f"{arcname}/{child.name}")
+
+    for source in sources:
+        root = PathlibPath(str(source))
+        yield from walk(root, root.name)
+
+
+def _file_blocks(path: PathlibPath, on_bytes: Optional[Callable[[int], None]]):
+    """A file's contents in chunks, reporting each one as it goes past.
+
+    The count is of bytes *read*, before compression, which is the same thing
+    :class:`~xefm.archive_progress.ProgressTarFile` counts on the tar create path
+    and the only figure the member's size can be compared against."""
+    with open(path, 'rb') as handle:
+        while True:
+            chunk = handle.read(_WRITE_BLOCK)
+            if not chunk:
+                return
+            if on_bytes is not None:
+                on_bytes(len(chunk))
+            yield chunk
+
+
+def write_archive(archive_path, sources, *, format_name: str = '7zip',
+                  options: str = '',
+                  on_entry: Optional[Callable[[str, int], None]] = None,
+                  on_bytes: Optional[Callable[[int], None]] = None) -> int:
+    """Write ``sources`` into a new archive at ``archive_path``, returning the
+    number of members written.
+
+    ``on_entry(arcname, size)`` is called before each member, ``on_bytes(n)`` as
+    its payload goes past — the create side of the same two-level progress the
+    zip and tar paths get from :mod:`xefm.archive_progress`. libarchive-c takes
+    an *iterable* of blocks for a member's data, so the loop that feeds it is
+    also the loop that reports; no separate counting proxy is needed.
+
+    Callbacks rather than a generator, unlike
+    :meth:`~xefm.archive.ArchiveHandler.iter_extract`: the output archive stays
+    open for the whole run, and yielding control back mid-archive would tie that
+    file's lifetime to whether the caller finished iterating. A callback that
+    raises — ``Cancelled`` — unwinds through here, closing the partial file on
+    the way out for the caller to remove.
+
+    Local filesystem paths only, matching the rest of the create path. Symlinks
+    are followed and stored as their target's contents, which is what ``zipfile``
+    does; tar's link-preserving behaviour has no equivalent here.
+    """
+    from libarchive.entry import FileType
+
+    binding = _binding()
+    written = 0
+    with binding.file_writer(str(archive_path), format_name,
+                             options=options) as writer:
+        for path, arcname, is_dir in member_walk(sources):
+            info = path.stat()
+            size = 0 if is_dir else info.st_size
+            if on_entry is not None:
+                on_entry(arcname, size)
+            writer.add_file_from_memory(
+                arcname, size,
+                b'' if is_dir else _file_blocks(path, on_bytes),
+                filetype=FileType.DIRECTORY if is_dir else FileType.REGULAR_FILE,
+                permission=stat.S_IMODE(info.st_mode),
+                mtime=int(info.st_mtime),
+            )
+            written += 1
+    return written
+
+
 # --- registration -------------------------------------------------------------
 
 
@@ -632,6 +743,16 @@ class _Candidate:
     #: format whose codec is missing is what triggers libarchive's
     #: external-program fallback, so this is a hard requirement, not a hint.
     codecs: Tuple[str, ...]
+    #: The writer symbol, probed the same way and separately: libarchive reads
+    #: strictly more formats than it writes (rar, lha and cab are read-only), so
+    #: a format that arrives here readable is not thereby creatable.
+    write_symbol: str = ''
+    #: libarchive's own name for the format, passed to ``file_writer``.
+    write_format: str = ''
+    #: Writer options. Worth being explicit about: libarchive's 7z writer
+    #: defaults to LZMA1, while 7-Zip itself has written LZMA2 for years, and an
+    #: archive XeFM creates should look like the ones its users already have.
+    write_options: str = ''
 
 
 #: Formats XeFM offers through libarchive. 7z is the only one for now — it is
@@ -645,7 +766,9 @@ _CANDIDATES: Tuple[_Candidate, ...] = (
                symbol='archive_read_support_format_7zip',
                # LZMA/LZMA2 is what essentially every real 7z uses; liblzma
                # missing means the format would open and then fail per entry.
-               codecs=('liblzma',)),
+               codecs=('liblzma',),
+               write_symbol='archive_write_set_format_7zip',
+               write_format='7zip', write_options='compression=lzma2'),
 )
 
 
@@ -661,11 +784,16 @@ def libarchive_formats() -> List[ArchiveFormat]:
             continue
         if any(codec not in info.codecs for codec in candidate.codecs):
             continue
+        writer = None
+        if candidate.write_symbol and _has_symbol(candidate.write_symbol):
+            writer = partial(write_archive, format_name=candidate.write_format,
+                             options=candidate.write_options)
         formats.append(ArchiveFormat(
             label=candidate.label,
             suffixes=candidate.suffixes,
             factory=lambda path, label=candidate.label: LibarchiveHandler(path, label),
             description=candidate.description,
+            writer=writer,
         ))
     return formats
 
@@ -682,8 +810,11 @@ def register_libarchive_formats() -> None:
     formats = libarchive_formats()
     for fmt in formats:
         register_archive_format(fmt)
-    suffixes = ' '.join(sfx for fmt in formats for sfx in fmt.suffixes) or '(none)'
-    logger.info(f"libarchive: {info.details} [{info.library_path}] reading {suffixes}")
+    read = ' '.join(sfx for fmt in formats for sfx in fmt.suffixes) or '(none)'
+    write = ' '.join(sfx for fmt in formats if fmt.writer is not None
+                     for sfx in fmt.suffixes) or '(none)'
+    logger.info(f"libarchive: {info.details} [{info.library_path}] "
+                f"reading {read}, writing {write}")
 
 
 # Registration runs here rather than in ``xefm/archive.py`` so that it happens

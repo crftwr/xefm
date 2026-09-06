@@ -12,12 +12,14 @@ Run with: python -m pytest test/test_archive_registry.py -v
 import os
 import sys
 import tarfile
+import types
 
 import pytest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
+from xefm import app as xefm_app  # noqa: E402
 from xefm import archive as A  # noqa: E402
 from xefm.archive import (  # noqa: E402
     ArchiveCache, ArchiveFormat, ArchiveFormatError, ArchiveHandler, TarHandler,
@@ -141,6 +143,73 @@ def test_abc_defaults_are_the_unencrypted_answer():
 ])
 def test_is_safe_member_path(member, safe):
     assert is_safe_member_path(member) is safe
+
+
+def test_writable_formats_are_ordered_across_both_sources(isolated_registry, tmp_path):
+    """Creation has two tables behind it — the stdlib one on XeFMApp and the
+    registry's writers — and the same longest-suffix rule has to hold across
+    their union, not within each half."""
+    rows = xefm_app.XeFMApp._writable_formats()
+    lengths = [len(suffix) for suffix, _ in rows]
+    assert lengths == sorted(lengths, reverse=True)
+    assert dict(rows)[".tar.gz"] == "tar.gz" and dict(rows)[".tar"] == "tar"
+
+    # A registered writer whose suffix is longer than a stdlib one it contains
+    # must win, even though the stdlib table is the one listed first.
+    register_archive_format(ArchiveFormat(
+        "big-tar", (".big.tar",), TarHandler, writer=lambda *a, **kw: 0))
+    assert xefm_app.XeFMApp._archive_format("x.big.tar") == "big-tar"
+    assert xefm_app.XeFMApp._archive_format("x.tar") == "tar"
+
+
+def test_create_refuses_a_readable_format_with_no_writer(isolated_registry, tmp_path,
+                                                         monkeypatch):
+    """A format the registry reads but brought no writer for — a rar, or a
+    libarchive too old to write 7z. P has to say so rather than append .tar.gz to
+    a name the user clearly meant as something else."""
+    register_archive_format(ArchiveFormat("fake", (".fake",), ZipHandler))
+    src = tmp_path / "src.txt"
+    src.write_bytes(b"x")
+
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    app.logs = []
+    app.log_info = app.logs.append
+    app.panel = types.SimpleNamespace(render=lambda: None)
+    app.active_pane = lambda: {}
+    app._selected_or_focused = lambda pane: [Path(str(src))]
+    app._is_archive = lambda p: False
+    app.pm = types.SimpleNamespace(
+        get_inactive_pane=lambda: {"path": Path(str(tmp_path))})
+    app._active_pane_region = lambda: (0.0, 80.0)
+    app.flm = types.SimpleNamespace(show_hidden=False)
+
+    captured = []
+    monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: captured.append(kw))
+    app.create_archive()
+    captured[-1]["on_accept"]("bundle.fake")
+
+    assert any("Cannot create fake archives" in m for m in app.logs)
+    assert not (tmp_path / "bundle.fake.tar.gz").exists()
+    assert not (tmp_path / "bundle.fake").exists()
+
+
+def test_generic_iter_extract_yields_before_writing(tmp_path):
+    """The ordering the byte bar depends on: the caller must see an entry while
+    it can still open a bar at the right size, not after the bytes have gone."""
+    payload = tmp_path / "payload.txt"
+    payload.write_bytes(b"x" * 32)
+    tp = tmp_path / "t.tar"
+    with tarfile.open(str(tp), "w") as tf:
+        tf.add(str(payload), arcname="a.txt")
+
+    out = tmp_path / "out"
+    reported = []
+    with TarHandler(Path(str(tp)), compression=None) as handler:
+        for entry in handler.iter_extract(Path(str(out)), on_bytes=reported.append):
+            # Announced first: nothing of this member is on disk yet.
+            assert not (out / entry.internal_path).exists()
+    assert (out / "a.txt").read_bytes() == b"x" * 32
+    assert reported == [32]
 
 
 def test_generic_iter_extract_walks_the_cached_entries(tmp_path):

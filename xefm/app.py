@@ -53,7 +53,8 @@ from xefm import __version__ as _VERSION
 from xefm import actions as _ctx
 from xefm.actions import registry as _action_registry
 from xefm.archive import (ArchiveFormatError, archive_format_for_name,
-                          archive_format_label, archive_strip_suffix)
+                          archive_format_label, archive_strip_suffix,
+                          archive_writable_formats)
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
@@ -4673,15 +4674,16 @@ class XeFMApp:
 
     # --- archives (create / extract) -----------------------------------------
 
-    # Two tables, meaning two different things. This one is the *write* side:
-    # what P can create, which is only what tarfile and zipfile can produce. What
-    # XeFM can *read* is the larger, separately registered
-    # ``xefm.archive.ARCHIVE_HANDLERS`` — it includes 7z, and it is built at
-    # import from what the loaded libarchive actually supports, so it could not be
-    # a literal here even if the two lists happened to agree.
+    # Creation has two implementations, so "what can P create" has two sources.
+    # zip and tar are written right here through zipfile / tarfile — that is
+    # where the byte-counting subclasses in xefm.archive_progress attach and
+    # where this code has always lived — and the table below is theirs. Anything
+    # else is written by the engine that reads it and registers a writer with its
+    # format, so whether .7z can be created depends on the libarchive that
+    # loaded, exactly as reading it does. ``_writable_formats`` is the union, and
+    # the reason it is computed rather than written down.
 
-    #: Creatable archive extensions → format label, longest suffixes first so
-    #: ``.tar.gz`` is matched before ``.tar`` when scanning a filename's end.
+    #: Archive extensions zipfile / tarfile can create → format label.
     _ARCHIVE_EXTS = (
         (".tar.gz", "tar.gz"), (".tgz", "tar.gz"),
         (".tar.bz2", "tar.bz2"), (".tbz2", "tar.bz2"),
@@ -4692,11 +4694,27 @@ class XeFMApp:
     _TAR_MODES = {"tar": "w", "tar.gz": "w:gz", "tar.bz2": "w:bz2", "tar.xz": "w:xz"}
 
     @classmethod
+    def _writable_formats(cls) -> list:
+        """``(suffix, label)`` for every format P can create, longest suffix
+        first — the stdlib table plus whatever the registry's writers add.
+
+        Sorted rather than concatenated in a fixed order for the same reason the
+        read registry sorts: ``.tar.gz`` has to beat ``.tar`` whichever list each
+        came from, and a future format is exactly the thing that would otherwise
+        find the wrong one."""
+        rows = list(cls._ARCHIVE_EXTS)
+        rows += [(suffix, fmt.label) for fmt in archive_writable_formats()
+                 for suffix in fmt.suffixes]
+        rows.sort(key=lambda row: -len(row[0]))
+        return rows
+
+    @classmethod
     def _archive_format(cls, name: str) -> str | None:
         """The format label XeFM can *create* ``name`` as, or None. The write
         side — see :meth:`_readable_archive_format` for the other one."""
         low = name.lower()
-        return next((fmt for ext, fmt in cls._ARCHIVE_EXTS if low.endswith(ext)), None)
+        return next((label for suffix, label in cls._writable_formats()
+                     if low.endswith(suffix)), None)
 
     @staticmethod
     def _readable_archive_format(name: str) -> str | None:
@@ -4764,6 +4782,9 @@ class XeFMApp:
         import zipfile
         from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
         bytes_ = ByteProgress(prog) if prog is not None else None
+        if fmt != "zip" and fmt not in self._TAR_MODES:
+            return self._write_via_handler(sources, archive_path, task=task,
+                                           prog=prog, bytes_=bytes_)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.byte_progress = bytes_
@@ -4792,6 +4813,40 @@ class XeFMApp:
             for s in sources:
                 tf.add(str(s), arcname=s.name, filter=report)  # recurses into dirs
         return added
+
+    def _write_via_handler(self, sources: list, archive_path, *, task=None,
+                           prog=None, bytes_=None) -> int:
+        """Create a format neither zipfile nor tarfile can write — 7z — through
+        the writer its registry entry brought with it.
+
+        The writer takes two callbacks instead of being driven as a loop from
+        here, because it holds the output archive open for its whole run; what
+        this method supplies is the same per-entry bookkeeping ``report`` does for
+        tar, and ``bytes_.advance`` for the payload. ``task.checkpoint()`` inside
+        ``on_entry`` is what makes the create cancellable: ``Cancelled`` unwinds
+        through the writer, which closes the partial file on the way out for
+        ``create_archive`` to remove."""
+        fmt = archive_format_for_name(archive_path.name)
+        if fmt is None or fmt.writer is None:  # guarded by the caller
+            raise ArchiveFormatError(
+                f"Cannot create archive format: {archive_path.name}")
+        written = 0
+
+        def on_entry(arcname: str, size: int) -> None:
+            nonlocal written
+            if task is not None:
+                task.checkpoint()
+            written += 1
+            if prog is not None:
+                prog.update_progress(arcname, written)
+            if bytes_ is not None:
+                # After update_progress, which clears the byte fields for the
+                # incoming member — the same ordering _reporting_members keeps.
+                bytes_.start(size)
+
+        return fmt.writer(
+            archive_path, sources, on_entry=on_entry,
+            on_bytes=bytes_.advance if bytes_ is not None else None)
 
     @classmethod
     def _count_archive_entries(cls, sources: list, *, include_dirs: bool,
@@ -4872,7 +4927,7 @@ class XeFMApp:
         dest_dir.mkdir(parents=True, exist_ok=True)
         if fmt != "zip" and fmt not in self._TAR_MODES:
             return self._extract_via_handler(archive_path, dest_dir, pwd,
-                                             task=task, prog=prog)
+                                             task=task, prog=prog, bytes_=bytes_)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
@@ -4907,7 +4962,7 @@ class XeFMApp:
             return len(members)
 
     def _extract_via_handler(self, archive_path, dest_dir, pwd: bytes | None,
-                             *, task=None, prog=None) -> int:
+                             *, task=None, prog=None, bytes_=None) -> int:
         """Extract a format neither zipfile nor tarfile reads — 7z, and whatever
         else the loaded libarchive contributes — through its registered handler.
 
@@ -4917,9 +4972,10 @@ class XeFMApp:
         these formats have no random access, and a per-entry loop would rescan the
         archive from the beginning for every member.
 
-        There is no byte-level bar here, unlike the zip and tar paths: an entry is
-        written by the time it is yielded, so a bar opened for it would only ever
-        show 100%. Entry-level progress is honest about what is known."""
+        The byte bar works the same as on the zip and tar paths: ``iter_extract``
+        yields an entry *before* writing its payload, so the bar is opened at the
+        right size here and then fed block by block as libarchive hands them
+        over."""
         fmt = archive_format_for_name(archive_path.name)
         if fmt is None:  # guarded by the caller; a table change could still get here
             raise ArchiveFormatError(f"Unsupported archive format: {archive_path.name}")
@@ -4938,11 +4994,15 @@ class XeFMApp:
             if prog is not None:
                 prog.update_operation_total(handler.entry_count())
             count = 0
-            for entry in handler.iter_extract(dest_dir, password=pwd):
+            for entry in handler.iter_extract(
+                    dest_dir, password=pwd,
+                    on_bytes=bytes_.advance if bytes_ is not None else None):
                 if task is not None:
                     task.checkpoint()
                 if prog is not None:
                     prog.update_progress(entry.internal_path)
+                if bytes_ is not None:
+                    bytes_.start(0 if entry.is_dir else entry.size)
                 count += 1
             return count
         finally:
@@ -4988,8 +5048,8 @@ class XeFMApp:
         """Create an archive from the active pane's selection (or cursor entry)
         in the other pane's directory (the 'P' key). Prompts for a filename whose
         extension picks the format; an unrecognised extension defaults to
-        ``.tar.gz``, and an extension XeFM can only *read* (``.7z``) is refused
-        with a message rather than silently becoming a ``.tar.gz``.
+        ``.tar.gz``. An extension the registry reads but brought no writer for is
+        refused with a message rather than silently becoming a ``.tar.gz``.
 
         Returns True when a guard bailed out synchronously (see ``_transfer`` for
         why the caller then needs to redraw)."""
@@ -5020,9 +5080,10 @@ class XeFMApp:
             if fmt is None:
                 readable = self._readable_archive_format(name)
                 if readable is not None:
-                    # A format XeFM reads but cannot write — 7z, and whatever else
-                    # libarchive contributes. Better to say so than to append
-                    # ".tar.gz" to a name the user clearly meant as a 7z.
+                    # A format the registry reads but brought no writer for: a
+                    # read-only format like rar, or a libarchive whose 7z writer
+                    # is missing. Better to say so than to append ".tar.gz" to a
+                    # name the user clearly meant as something else.
                     self.log_info(f"Cannot create {readable} archives — "
                                   f"XeFM reads that format but cannot write it")
                     self.panel.render()
