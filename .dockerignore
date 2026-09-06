@@ -1,0 +1,16 @@
+# Everything the Linux test image does not need. Only requirements.txt is
+# actually COPYed in — the source is mounted at run time — so this is about not
+# handing Docker a build context with a macOS virtualenv and the whole history
+# in it.
+.venv/
+.git/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+temp/
+build/
+dist/
+*.egg-info/
+macos_app/build/
+windows_app/build/

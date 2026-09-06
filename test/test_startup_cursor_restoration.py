@@ -221,9 +221,15 @@ def test_startup_restoration_with_missing_files():
         fm1 = MockFileManager(config, test_dir, test_dir, state_manager)
         fm1.refresh_files()
         
-        # Set focus to file2.py (index 1)
-        fm1.pane_manager.left_pane['focused_index'] = 1
-        fm1.pane_manager.save_cursor_position(fm1.pane_manager.left_pane)
+        # Focus file2.py by finding it. refresh_files() here lists with
+        # iterdir(), which is in filesystem order, so a hard-coded index 1 was
+        # file2.py on one filesystem and something else on another — and when it
+        # was something else this test saved a file it then did not delete, so
+        # restoration succeeded and the assertion below failed for a reason that
+        # had nothing to do with what it tests.
+        pane = fm1.pane_manager.left_pane
+        pane['focused_index'] = [f.name for f in pane['files']].index("file2.py")
+        fm1.pane_manager.save_cursor_position(pane)
         
         print(f"Saved cursor position at: file2.py")
         

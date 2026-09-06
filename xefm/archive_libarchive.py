@@ -47,6 +47,7 @@ import ctypes
 import logging
 import os
 import stat
+import sys
 import tempfile
 import threading
 from contextlib import contextmanager
@@ -172,14 +173,71 @@ def _use_bundled_library() -> None:
         os.environ['LIBARCHIVE'] = path
 
 
+#: Sonames to try when ``ctypes.util.find_library`` comes up empty, per
+#: ``sys.platform``. Only the versioned name is worth much: the unversioned
+#: symlink beside it belongs to the ``-dev`` package on most distributions, while
+#: the soname is what the runtime package installs and what every binary linked
+#: against libarchive already asks for.
+_SONAMES = {
+    'linux': ('libarchive.so.13', 'libarchive.so'),
+    'darwin': ('libarchive.13.dylib', 'libarchive.dylib'),
+    'win32': ('archive.dll', 'libarchive.dll'),
+}
+
+
+def _use_known_soname() -> None:
+    """Name libarchive by soname when ``find_library`` cannot.
+
+    ``libarchive-c`` asks ``ctypes.util.find_library('archive')``, which is not a
+    question every platform can answer. **On musl — Alpine — it never can**:
+    musl's ``ldconfig`` has no ``-p`` for it to read, and its remaining strategies
+    need a compiler, so it returns None with libarchive installed at
+    ``/usr/lib/libarchive.so.13`` and returns None still with the ``-dev``
+    symlink beside it. ``dlopen`` finds that library immediately when handed its
+    soname; only ``find_library`` cannot say the name.
+
+    So this runs after ``find_library`` has already failed, and each candidate is
+    loaded before being chosen — naming one that does not exist would replace a
+    clear "no library" with an obscure import error from the binding. Loading it
+    twice costs nothing: ``dlopen`` is reference-counted and hands back the same
+    handle when :func:`_probe` imports the binding.
+    """
+    if os.environ.get('LIBARCHIVE'):
+        return
+    from ctypes.util import find_library
+    if find_library('archive'):
+        return  # find_library can answer here; leave the binding to its own way.
+    for soname in _SONAMES.get(sys.platform, ()):
+        try:
+            ctypes.CDLL(soname)
+        except OSError:
+            continue
+        logger.debug(f"find_library could not name libarchive; using {soname}")
+        os.environ['LIBARCHIVE'] = soname
+        return
+
+
 def _probe() -> LibarchiveInfo:
     """Import ``libarchive-c`` and ask the library that loaded what it supports.
 
     Importing the binding is what loads the shared library, so an absent or
     unloadable library surfaces here as an import failure rather than later as a
     read failure."""
+    from ctypes.util import find_library
+
     _use_bundled_library()
+    _use_known_soname()
     _use_utf8_ctype()
+    if not os.environ.get('LIBARCHIVE') and not find_library('archive'):
+        # Say this plainly rather than letting the binding say it badly. With no
+        # library named, ``libarchive-c`` calls LoadLibrary(None), which on POSIX
+        # succeeds — it opens the main program — and the failure then surfaces as
+        # "AttributeError: Symbol not found: archive_version_number", which is
+        # true and tells the reader nothing.
+        return LibarchiveInfo(
+            binding=None,
+            error="no libarchive found (set LIBARCHIVE to one, or install "
+                  "your platform's libarchive package)")
     try:
         import libarchive
         import libarchive.ffi as ffi
