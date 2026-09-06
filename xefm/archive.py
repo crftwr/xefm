@@ -19,10 +19,12 @@ import time
 import threading
 import fnmatch
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path as PathlibPath
+from xefm.log_manager import getLogger
 from xefm.path import Path, PathImpl
 from xefm.str_format import format_size
-from typing import List, Optional, Union, Tuple, Dict, Any, Iterator
+from typing import Callable, List, Optional, Union, Tuple, Dict, Any, Iterator
 
 
 def zip_date_time_to_timestamp(date_time) -> float:
@@ -341,6 +343,43 @@ def verify_zip_password(zf: zipfile.ZipFile, password: Optional[bytes]) -> None:
         fh.read(1)
 
 
+def tar_zstd_supported() -> bool:
+    """Whether this Python's ``tarfile`` reads and writes Zstandard tars.
+
+    Zstandard arrived in the standard library in 3.14 — ``compression.zstd``, and
+    a ``zst`` entry in ``TarFile.OPEN_METH``. Below that, ``.tar.zst`` is absent
+    from both the readable and the creatable table rather than half-supported.
+
+    It is deliberately *not* routed through libarchive instead. A libarchive
+    built without libzstd answers a ``.tar.zst`` by spawning the external
+    ``zstd`` program — the silent fallback the capability probe exists to keep
+    out of reach — and macOS's system build has no libzstd, so that is the
+    default outcome there, not an edge case. The standard library needs no
+    native dependency at all."""
+    return 'zst' in getattr(tarfile.TarFile, 'OPEN_METH', {})
+
+
+#: Block size for streaming one member out of an archive — matched to
+#: ``xefm.file_operations._CHUNK``, which is what consumes it.
+MEMBER_CHUNK = 1024 * 1024
+
+
+def is_safe_member_path(internal_path: str) -> bool:
+    """Whether an archive member can be written under an extraction root.
+
+    False for an absolute path, a Windows drive-letter path, and anything with a
+    ``..`` component — the three ways a crafted archive escapes the directory it
+    was told to extract into. tarfile's ``data`` filter refuses the same shapes;
+    this is that check for the paths XeFM writes itself."""
+    if not internal_path:
+        return False
+    if internal_path.startswith('/') or internal_path.startswith('\\'):
+        return False
+    if len(internal_path) > 1 and internal_path[1] == ':':
+        return False
+    return '..' not in internal_path.replace('\\', '/').split('/')
+
+
 class ArchiveHandler:
     """
     Base class for handling archive file access and caching of archive contents.
@@ -457,7 +496,183 @@ class ArchiveHandler:
         # Normalize path separators
         path = path.replace('\\', '/')
         return path
-    
+
+    def _build_index(self, entries: Iterator[ArchiveEntry], archive_type: str):
+        """Fill ``_entry_cache`` and ``_directory_cache`` from ``entries``, adding
+        a virtual directory entry for every parent the archive names only
+        implicitly (``a/b/c.txt`` with no ``a/`` member of its own).
+
+        Shared by the handlers whose formats hand over every member up front —
+        tar's and libarchive's. ZipHandler keeps a copy of this rather than
+        calling it because it additionally drops deep entries from the cache on
+        very large archives, which is a zip-only lazy-loading policy.
+        """
+        self._entry_cache.clear()
+        self._directory_cache.clear()
+
+        all_directories = set()
+        for entry in entries:
+            normalized_path = self._normalize_path(entry.internal_path)
+            self._entry_cache[normalized_path] = entry
+            if not normalized_path:
+                continue
+
+            parts = normalized_path.split('/')
+            for i in range(len(parts)):
+                parent = '' if i == 0 else '/'.join(parts[:i])
+
+                # Every component but the last names a directory; the last one
+                # does too when the entry is itself a directory.
+                if i < len(parts) - 1 or entry.is_dir:
+                    dir_path = ('/'.join(parts[:i + 1]) if i < len(parts) - 1
+                                else normalized_path)
+                    if dir_path:
+                        all_directories.add(dir_path)
+
+                child = '/'.join(parts[:i + 1])
+                children = self._directory_cache.setdefault(parent, [])
+                if child not in children:
+                    children.append(child)
+
+        for dir_path in all_directories:
+            if dir_path and dir_path not in self._entry_cache:
+                self._entry_cache[dir_path] = ArchiveEntry(
+                    name=dir_path.split('/')[-1],
+                    internal_path=dir_path,
+                    is_dir=True,
+                    size=0,
+                    compressed_size=0,
+                    mtime=0.0,
+                    mode=0o755,
+                    archive_type=archive_type
+                )
+
+    def encryption_status(self) -> str:
+        """How this archive's contents are protected:
+
+        - ``'none'``        — nothing is encrypted; reads need no password.
+        - ``'password'``    — encrypted with a scheme this handler can decrypt,
+                              given the right password.
+        - ``'unsupported'`` — encrypted with a scheme this handler cannot decrypt
+                              at all, so no password would help.
+
+        Deliberately format-neutral. The UI gate used to ask
+        ``isinstance(handler, ZipHandler)`` and then speak of ZipCrypto and AES
+        by name, which made every other format's encryption invisible to it;
+        7z is routinely encrypted, so the question had to move onto the contract.
+        Formats that are never encrypted inherit ``'none'`` and need no override.
+        """
+        return 'none'
+
+    def verify_password(self, password: bytes) -> bool:
+        """Whether ``password`` actually opens this archive's encrypted entries.
+
+        Asked before the password is remembered for the session, so a typo
+        re-prompts instead of surfacing later as a corrupt-file error. The
+        default is False, which a gate only reaches for a handler that reported
+        something other than ``'none'`` without implementing this.
+        """
+        return False
+
+    def _require_readable_file(self, internal_path: str) -> ArchiveEntry:
+        """The cached entry for a member that must exist and must be a file,
+        opening the archive first. The guard every read-one-member path repeats."""
+        if not self._is_open:
+            self.open()
+        normalized_path = self._normalize_path(internal_path)
+        entry = self.get_entry_info(normalized_path)
+        if not entry:
+            raise FileNotFoundError(
+                f"File not found in archive: {internal_path}",
+                f"File '{internal_path}' does not exist in archive"
+            )
+        if entry.is_dir:
+            raise ArchiveExtractionError(
+                f"Cannot extract directory as bytes: {internal_path}",
+                f"'{internal_path}' is a directory, not a file"
+            )
+        return entry
+
+    def iter_member_bytes(self, internal_path: str,
+                          chunk_size: int = MEMBER_CHUNK) -> Iterator[bytes]:
+        """The member's contents in blocks, so a caller can report bytes as they
+        arrive and interrupt between them.
+
+        Copying a file *out* of a browsed archive used to go through
+        ``read_bytes()`` — one opaque call that held the whole member in memory,
+        reported no progress, and could not be cancelled, because the cancel
+        checkpoint lives inside the progress callback it never reached. A large
+        member inside a 7z is exactly where all three of those are felt.
+
+        The default yields the member in one block, honest for a handler with
+        nothing finer to offer; every handler XeFM ships overrides it. Runs on a
+        worker thread.
+        """
+        yield self.extract_to_bytes(internal_path)
+
+    def entry_count(self) -> int:
+        """An upper bound on how many entries :meth:`iter_extract` will yield —
+        the progress total, needed before the first entry lands.
+
+        It is the whole index here, implied directories included, because that is
+        what the generic walk emits. A handler that extracts from the stored
+        members instead must override this to count those, or its progress bar
+        stops short of the end."""
+        if not self._is_open:
+            self.open()
+        return len(self._entry_cache)
+
+    def iter_extract(self, dest_dir, *, password: Optional[bytes] = None,
+                     on_bytes: Optional[Callable[[int], None]] = None
+                     ) -> Iterator[ArchiveEntry]:
+        """Extract every entry into ``dest_dir``, yielding each **before** its
+        payload is written.
+
+        That ordering is load-bearing, and it is the same one
+        ``XeFMApp._reporting_members`` gives the zip and tar paths: the caller
+        sees an entry, does its per-entry work — checkpoint, name the item, open
+        the byte bar at ``entry.size`` — and only when it resumes this generator
+        do the bytes flow. Yielding afterwards would leave every byte bar jumping
+        straight from nothing to full.
+
+        ``on_bytes(n)`` is called with the size of each block written, which is
+        what moves that bar. This generic implementation has no block loop of its
+        own — it goes through ``extract_to_file`` — so it reports each entry once,
+        when the entry is done; a handler that streams calls it per block.
+
+        ``password`` unlocks an encrypted archive for this extraction alone,
+        without the session-wide :func:`set_archive_password` — extraction is not
+        browsing, and a password that turns out to be wrong should not linger.
+        Handlers whose formats are never encrypted ignore it.
+
+        Entries whose path escapes ``dest_dir`` (absolute, or reached through
+        ``..``) are skipped rather than written — the same protection tarfile's
+        ``data`` filter gives the tar path.
+
+        A format with no random access overrides this with a single streaming
+        pass, which is why the caller drives progress from here at all rather
+        than looping over ``extract_to_file`` itself: for a solid archive that
+        loop is quadratic.
+
+        Runs on a worker thread — it must not touch the UI, and the caller's
+        per-entry work is where cancellation is checked.
+        """
+        if not self._is_open:
+            self.open()
+        for internal_path in sorted(self._entry_cache):
+            entry = self._entry_cache[internal_path]
+            if not internal_path or not is_safe_member_path(internal_path):
+                continue
+            yield entry
+            target = dest_dir / internal_path
+            if entry.is_dir:
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                self.extract_to_file(internal_path, target)
+                if on_bytes is not None:
+                    on_bytes(entry.size)
+
     def __enter__(self):
         """Context manager entry"""
         self.open()
@@ -720,6 +935,32 @@ class ZipHandler(ArchiveHandler):
                 f"Cannot extract '{internal_path}': {e}"
             )
 
+    def iter_member_bytes(self, internal_path: str,
+                          chunk_size: int = MEMBER_CHUNK) -> Iterator[bytes]:
+        """Stream a member through ``ZipFile.open``, which is where the registered
+        password is applied and where a wrong one surfaces — mapped to the same
+        typed errors ``extract_to_bytes`` raises, so a caller cannot tell the two
+        paths apart by what goes wrong."""
+        entry = self._require_readable_file(internal_path)
+        try:
+            handle = self._archive_obj.open(
+                entry.internal_path, pwd=get_archive_password(self._archive_path))
+        except NotImplementedError as exc:
+            raise ArchiveEncryptionUnsupported(
+                f"Unsupported encryption reading {internal_path}: {exc}",
+                f"Cannot read '{internal_path}': its encryption (e.g. AES) is not supported")
+        except RuntimeError as exc:
+            raise self._read_runtime_error(exc, internal_path)
+        with handle:
+            while True:
+                try:
+                    chunk = handle.read(chunk_size)
+                except RuntimeError as exc:
+                    raise self._read_runtime_error(exc, internal_path)
+                if not chunk:
+                    return
+                yield chunk
+
     def _read_runtime_error(self, exc: RuntimeError, internal_path: str) -> ArchiveError:
         """Map a ``RuntimeError`` raised by a decryption read to a typed archive
         error. Python's zipfile signals a missing or wrong password with a
@@ -737,13 +978,19 @@ class ZipHandler(ArchiveHandler):
         )
 
     def encryption_status(self) -> str:
-        """Classify this zip's encryption — ``'none'``, ``'zipcrypto'``, or
-        ``'aes'`` (see :func:`zip_encryption_status`). Opens the archive first."""
+        """This zip's encryption in the contract's neutral vocabulary: ``'none'``,
+        ``'password'`` for legacy ZipCrypto, or ``'unsupported'`` for WinZip AES,
+        which Python's zipfile cannot decrypt at any password.
+        :func:`zip_encryption_status` keeps the zip-level names, which the
+        extract path's message still uses. Opens the archive first."""
         if not self._is_open:
             self.open()
         if not self._archive_obj:
             return 'none'
-        return zip_encryption_status(self._archive_obj)
+        status = zip_encryption_status(self._archive_obj)
+        if status == 'aes':
+            return 'unsupported'
+        return 'password' if status == 'zipcrypto' else 'none'
 
     def verify_password(self, password: bytes) -> bool:
         """Return True if ``password`` correctly opens this zip's encrypted
@@ -853,15 +1100,9 @@ class TarHandler(ArchiveHandler):
                     f"Archive file '{self._archive_path.name}' does not exist"
                 )
             
-            # Determine open mode
-            if self._compression == 'gz':
-                mode = 'r:gz'
-            elif self._compression == 'bz2':
-                mode = 'r:bz2'
-            elif self._compression == 'xz':
-                mode = 'r:xz'
-            else:
-                mode = 'r'
+            # tarfile names its modes after the compression, so the registry's
+            # suffix label is the mode — no chain to extend for the next one.
+            mode = f'r:{self._compression}' if self._compression else 'r'
             
             # For remote files, download to temp location
             if self._archive_path.is_remote():
@@ -938,72 +1179,14 @@ class TarHandler(ArchiveHandler):
         """Cache all entries from the TAR file"""
         if not self._archive_obj:
             return
-        
-        # Clear caches
-        self._entry_cache.clear()
-        self._directory_cache.clear()
-        
-        # Determine archive type string
-        if self._compression == 'gz':
-            archive_type = 'tar.gz'
-        elif self._compression == 'bz2':
-            archive_type = 'tar.bz2'
-        elif self._compression == 'xz':
-            archive_type = 'tar.xz'
-        else:
-            archive_type = 'tar'
-        
-        # Track all directories we've seen (including virtual ones)
-        all_directories = set()
-        
-        # Process all entries
-        for tar_info in self._archive_obj.getmembers():
-            entry = ArchiveEntry.from_tar_info(tar_info, archive_type)
-            normalized_path = self._normalize_path(entry.internal_path)
-            
-            # Cache the entry
-            self._entry_cache[normalized_path] = entry
-            
-            # Build directory cache and track parent directories
-            if normalized_path:
-                # Get all parent directories
-                parts = normalized_path.split('/')
-                for i in range(len(parts)):
-                    if i == 0:
-                        parent = ''
-                    else:
-                        parent = '/'.join(parts[:i])
-                    
-                    # Track this directory
-                    if i < len(parts) - 1 or entry.is_dir:
-                        dir_path = '/'.join(parts[:i+1]) if i < len(parts) - 1 else normalized_path
-                        if dir_path:
-                            all_directories.add(dir_path)
-                    
-                    # Add to parent's children list
-                    if i < len(parts):
-                        child = '/'.join(parts[:i+1])
-                        if parent not in self._directory_cache:
-                            self._directory_cache[parent] = []
-                        if child not in self._directory_cache[parent]:
-                            self._directory_cache[parent].append(child)
-        
-        # Create virtual directory entries for directories that don't have explicit entries
-        for dir_path in all_directories:
-            if dir_path and dir_path not in self._entry_cache:
-                # Create a virtual directory entry
-                virtual_entry = ArchiveEntry(
-                    name=dir_path.split('/')[-1],
-                    internal_path=dir_path,
-                    is_dir=True,
-                    size=0,
-                    compressed_size=0,
-                    mtime=0.0,
-                    mode=0o755,
-                    archive_type=archive_type
-                )
-                self._entry_cache[dir_path] = virtual_entry
-    
+
+        archive_type = f'tar.{self._compression}' if self._compression else 'tar'
+        self._build_index(
+            (ArchiveEntry.from_tar_info(tar_info, archive_type)
+             for tar_info in self._archive_obj.getmembers()),
+            archive_type
+        )
+
     def list_entries(self, internal_path: str = "") -> List[ArchiveEntry]:
         """List entries at the given internal path"""
         if not self._is_open:
@@ -1033,6 +1216,24 @@ class TarHandler(ArchiveHandler):
         
         normalized_path = self._normalize_path(internal_path)
         return self._entry_cache.get(normalized_path)
+
+    def iter_member_bytes(self, internal_path: str,
+                          chunk_size: int = MEMBER_CHUNK) -> Iterator[bytes]:
+        """Stream a member through ``extractfile``, which decompresses lazily —
+        so a large member out of a .tar.xz never lands in memory whole."""
+        entry = self._require_readable_file(internal_path)
+        file_obj = self._archive_obj.extractfile(entry.internal_path)
+        if file_obj is None:
+            raise ArchiveExtractionError(
+                f"Cannot extract file: {internal_path}",
+                f"Cannot extract '{internal_path}' from archive"
+            )
+        with file_obj:
+            while True:
+                chunk = file_obj.read(chunk_size)
+                if not chunk:
+                    return
+                yield chunk
     
     def extract_to_bytes(self, internal_path: str) -> bytes:
         """Extract a file's contents to memory"""
@@ -1157,6 +1358,142 @@ class TarHandler(ArchiveHandler):
             )
 
 
+# --- readable-format registry ------------------------------------------------
+#
+# One table in place of what used to be an if/elif chain inside
+# ``ArchiveCache._create_handler`` plus ``isinstance(handler, ZipHandler)`` tests
+# in the password gate. A format is *readable* exactly when it is in here: the
+# browse path, the extract path and the password gate all ask this table instead
+# of matching suffixes or handler classes of their own.
+#
+# Three rules hold for anything registered:
+#
+# * **Longest suffix wins.** ``.tar.gz`` must beat ``.tar`` whatever order the
+#   entries were registered in, so matching sorts by suffix length rather than
+#   leaning on source order the way the old chain did — an ordering that a third
+#   format is exactly the thing to break.
+# * **Read-only.** Creating archives is a separate, deliberately smaller table on
+#   ``XeFMApp`` (``_ARCHIVE_EXTS`` / ``_TAR_MODES``); some readable formats
+#   cannot be written at all, so the two tables mean different things.
+# * **Worker-thread safe.** Handlers are built and driven from the listing
+#   worker, so nothing reached from here may touch the UI, and handlers for
+#   different archives may run on different threads at once.
+#
+# Registration happens at the bottom of this module (built-ins) and from
+# ``xefm.archive_libarchive`` (whatever the loaded libarchive can actually do),
+# which is why the table is a list filled at import rather than a literal.
+
+
+@dataclass(frozen=True)
+class ArchiveFormat:
+    """One readable archive format: how to recognise it and how to open it."""
+
+    #: Format label, also the ``ArchiveEntry.archive_type`` its handler stamps on
+    #: entries — ``'zip'``, ``'tar.gz'``, ``'7z'``.
+    label: str
+    #: Filename suffixes that name this format, lowercase and dotted.
+    suffixes: Tuple[str, ...]
+    #: ``factory(archive_path)`` -> a fresh, unopened :class:`ArchiveHandler`.
+    factory: Callable[[Path], ArchiveHandler]
+    #: Short human name for the format list in the UI and the docs.
+    description: str = ''
+    #: ``writer(archive_path, sources, on_entry=…, on_bytes=…)`` -> entries
+    #: written, or None when this table does not know how to write the format.
+    #:
+    #: None does not mean "cannot be created": zip and tar are written by
+    #: ``XeFMApp._write_archive`` through ``zipfile`` / ``tarfile``, which is
+    #: where the byte-counting subclasses in :mod:`xefm.archive_progress` live
+    #: and where that code has always been. This slot is for formats whose
+    #: writer arrives with the engine that reads them, and
+    #: :func:`archive_writer_for_name` is the half of "can P create this" that
+    #: those formats answer.
+    writer: Optional[Callable[..., int]] = None
+
+
+#: Every readable format, in registration order. Read through the functions
+#: below rather than indexed directly — matching is by longest suffix, not by
+#: position.
+ARCHIVE_HANDLERS: List[ArchiveFormat] = []
+
+
+def register_archive_format(fmt: ArchiveFormat) -> None:
+    """Add ``fmt`` to the readable-format table, replacing any earlier entry with
+    the same label (so a rebuilt libarchive registration supersedes its own)."""
+    global ARCHIVE_HANDLERS
+    ARCHIVE_HANDLERS = [f for f in ARCHIVE_HANDLERS if f.label != fmt.label]
+    ARCHIVE_HANDLERS.append(fmt)
+
+
+def archive_format_for_name(name: str) -> Optional[ArchiveFormat]:
+    """The registered format whose suffix ``name`` ends with, longest suffix
+    first, or None when nothing registered reads it."""
+    low = name.lower()
+    best: Optional[Tuple[int, ArchiveFormat]] = None
+    for fmt in ARCHIVE_HANDLERS:
+        for suffix in fmt.suffixes:
+            if low.endswith(suffix) and (best is None or len(suffix) > best[0]):
+                best = (len(suffix), fmt)
+    return best[1] if best else None
+
+
+def archive_writable_formats() -> Tuple[ArchiveFormat, ...]:
+    """The registered formats that brought a writer with them.
+
+    Not the same as "everything XeFM can create": zip and tar are created by
+    ``XeFMApp`` through zipfile / tarfile and carry no writer here. This is the
+    other half of that answer — the formats whose writer arrived with the engine
+    that reads them, and which therefore appear or vanish with it."""
+    return tuple(fmt for fmt in ARCHIVE_HANDLERS if fmt.writer is not None)
+
+
+def archive_format_label(name: str) -> Optional[str]:
+    """The format label for ``name`` — ``'zip'``, ``'tar.gz'``, ``'7z'`` — or None
+    if no registered handler reads it."""
+    fmt = archive_format_for_name(name)
+    return fmt.label if fmt else None
+
+
+def archive_strip_suffix(name: str) -> str:
+    """``name`` with its recognised archive suffix removed, or unchanged if none
+    matches — the default name for the directory an archive extracts into."""
+    low = name.lower()
+    longest = ''
+    for fmt in ARCHIVE_HANDLERS:
+        for suffix in fmt.suffixes:
+            if low.endswith(suffix) and len(suffix) > len(longest):
+                longest = suffix
+    return name[: -len(longest)] if longest else name
+
+
+def archive_readable_suffixes() -> Tuple[str, ...]:
+    """Every suffix a registered handler reads, longest first. Generated rather
+    than written down: what libarchive contributes depends on the library that
+    actually loaded, so any list of supported formats has to come from here."""
+    suffixes = {sfx for fmt in ARCHIVE_HANDLERS for sfx in fmt.suffixes}
+    return tuple(sorted(suffixes, key=lambda sfx: (-len(sfx), sfx)))
+
+
+def _register_builtin_formats() -> None:
+    """Register the formats the Python standard library reads — always present,
+    with no native dependency behind them."""
+    register_archive_format(ArchiveFormat(
+        label='zip', suffixes=('.zip',), factory=ZipHandler, description='ZIP'))
+    for label, compression, suffixes, description in (
+        ('tar', None, ('.tar',), 'TAR'),
+        ('tar.gz', 'gz', ('.tar.gz', '.tgz'), 'TAR + gzip'),
+        ('tar.bz2', 'bz2', ('.tar.bz2', '.tbz2'), 'TAR + bzip2'),
+        ('tar.xz', 'xz', ('.tar.xz', '.txz'), 'TAR + xz'),
+        # Zstandard only where the standard library has it (3.14+); see
+        # tar_zstd_supported() for why it does not fall back to libarchive.
+        *((('tar.zst', 'zst', ('.tar.zst', '.tzst'), 'TAR + zstd'),)
+          if tar_zstd_supported() else ()),
+    ):
+        register_archive_format(ArchiveFormat(
+            label=label, suffixes=suffixes,
+            factory=partial(TarHandler, compression=compression),
+            description=description))
+
+
 class ArchiveCache:
     """
     Cache for opened archives and their structures.
@@ -1264,24 +1601,11 @@ class ArchiveCache:
         Raises:
             ArchiveFormatError: If archive format is not supported
         """
-        filename = archive_path.name.lower()
-        
-        # Check for ZIP format
-        if filename.endswith('.zip'):
-            return ZipHandler(archive_path)
-        
-        # Check for TAR formats
-        if filename.endswith('.tar'):
-            return TarHandler(archive_path, compression=None)
-        elif filename.endswith('.tar.gz') or filename.endswith('.tgz'):
-            return TarHandler(archive_path, compression='gz')
-        elif filename.endswith('.tar.bz2') or filename.endswith('.tbz2'):
-            return TarHandler(archive_path, compression='bz2')
-        elif filename.endswith('.tar.xz') or filename.endswith('.txz'):
-            return TarHandler(archive_path, compression='xz')
-        
-        # Unsupported format
-        raise ArchiveFormatError(f"Unsupported archive format: {filename}")
+        fmt = archive_format_for_name(archive_path.name)
+        if fmt is None:
+            raise ArchiveFormatError(
+                f"Unsupported archive format: {archive_path.name.lower()}")
+        return fmt.factory(archive_path)
     
     def invalidate(self, archive_path: Path):
         """
@@ -1865,6 +2189,32 @@ class ArchivePathImpl(PathImpl):
             return handler.extract_to_bytes(self._internal_path)
         except Exception as e:
             raise OSError(f"Error reading bytes: {e}")
+
+    def extract_to_stream(self, stream, progress_callback=None) -> int:
+        """Write this member's contents into ``stream``, reporting bytes as they
+        arrive. Returns the number written.
+
+        The archive side of the contract ``S3PathImpl.download_to_stream``
+        implements, and it exists for the same reason: ``Path.copy_to`` reports
+        progress only through a callback, and for a cross-storage copy that
+        callback is also the *only* place the file operation can notice a cancel
+        (:meth:`xefm.file_operations.FileOperationService._remote_progress`).
+        Copying a member out through ``read_bytes`` reached neither — no byte
+        bar, no cancel, and the whole member in memory — which a large file
+        inside a 7z makes impossible to miss.
+
+        Anything the callback raises propagates: that is how a cancel gets out.
+        """
+        handler = self._get_archive_handler()
+        entry = handler.get_entry_info(self._internal_path)
+        total = entry.size if entry is not None else 0
+        written = 0
+        for block in handler.iter_member_bytes(self._internal_path):
+            stream.write(block)
+            written += len(block)
+            if progress_callback is not None:
+                progress_callback(written, total)
+        return written
     
     def write_text(self, data: str, encoding=None, errors=None, newline=None) -> int:
         """Open the file in text mode, write to it, and close the file."""
@@ -2064,6 +2414,13 @@ class ArchivePathImpl(PathImpl):
             'tar.gz': 'GZIP',
             'tar.bz2': 'BZIP2',
             'tar.xz': 'LZMA/XZ',
+            'tar.zst': 'Zstandard',
+            '7z': '7-Zip',
+            'rar': 'RAR',
+            'iso': 'ISO 9660',
+            'cab': 'Cabinet',
+            'cpio': 'cpio',
+            'rpm': 'RPM',
         }
         return compression_map.get(archive_type, archive_type.upper())
     
@@ -2115,13 +2472,18 @@ def get_member_archive_path(path) -> Optional[Path]:
 def archive_password_state(path) -> str:
     """Password gate state for a Path that may be a member of a browsed archive:
 
-    - ``'ok'``   — not an archive entry, not a zip, unencrypted, or a password is
-                   already known: reading can proceed.
-    - ``'need'`` — an encrypted ZipCrypto entry with no password yet: prompt.
-    - ``'aes'``  — encryption XeFM cannot decrypt (WinZip AES).
+    - ``'ok'``          — not an archive entry, unencrypted, or a password is
+                          already known: reading can proceed.
+    - ``'need'``        — encrypted with a scheme the handler can decrypt, and no
+                          password is known yet: prompt.
+    - ``'unsupported'`` — encrypted with a scheme the handler cannot decrypt at
+                          all, so prompting would be pointless.
 
     Ordinary filesystem paths always return ``'ok'`` cheaply (no archive is
-    opened), so callers can route every read through this gate."""
+    opened), so callers can route every read through this gate. Which formats can
+    be encrypted is the handler's business now, not this function's — it used to
+    test ``isinstance(handler, ZipHandler)`` here, which quietly meant that any
+    other format's encryption could not be reported at all."""
     archive_path = get_member_archive_path(path)
     if archive_path is None:
         return 'ok'
@@ -2130,15 +2492,13 @@ def archive_password_state(path) -> str:
     except Exception:
         # Can't classify (e.g. corrupt archive) — let the normal read path report.
         return 'ok'
-    if not isinstance(handler, ZipHandler):
-        return 'ok'  # only zip supports password-protected extraction here
     try:
         status = handler.encryption_status()
     except Exception:
         return 'ok'
-    if status == 'aes':
-        return 'aes'
-    if status == 'zipcrypto' and get_archive_password(archive_path) is None:
+    if status == 'unsupported':
+        return 'unsupported'
+    if status == 'password' and get_archive_password(archive_path) is None:
         return 'need'
     return 'ok'
 
@@ -2156,8 +2516,6 @@ def try_archive_password(path, password: str) -> bool:
         handler = get_archive_cache().get_handler(archive_path)
     except Exception:
         return False
-    if not isinstance(handler, ZipHandler):
-        return False
     pwd = password.encode('utf-8')
     try:
         if handler.verify_password(pwd):
@@ -2168,13 +2526,51 @@ def try_archive_password(path, password: str) -> bool:
     return False
 
 
-def zip_encryption_status_path(path: str) -> str:
-    """Classify a local ``.zip`` file by filesystem path — ``'none'``,
-    ``'zipcrypto'``, or ``'aes'`` (see :func:`zip_encryption_status`). Returns
-    ``'none'`` if the file can't be opened or classified."""
+def archive_encryption_status_path(path: str) -> str:
+    """Classify an archive *file* by filesystem path — ``'none'``, ``'password'``
+    or ``'unsupported'`` (see :meth:`ArchiveHandler.encryption_status`). Returns
+    ``'none'`` when the file can't be opened or nothing registered reads its
+    format, leaving the real read path to report the failure.
+
+    This is the extract side of the gate :func:`archive_password_state` serves
+    for browsing, and it replaces a zip-only predecessor that opened
+    ``zipfile.ZipFile`` directly: extraction now asks the format's own handler,
+    so a non-zip format can ask for a password too. It deliberately does not go
+    through :func:`get_archive_cache` — extraction is not browsing, and a handler
+    cached here would sit on a file the caller is about to read in full anyway."""
+    fmt = archive_format_for_name(PathlibPath(path).name)
+    if fmt is None:
+        return 'none'
+    handler = None
     try:
-        with zipfile.ZipFile(path) as zf:
-            return zip_encryption_status(zf)
+        handler = fmt.factory(Path(path))
+        return handler.encryption_status()
     except Exception:
         return 'none'
+    finally:
+        if handler is not None:
+            try:
+                handler.close()
+            except Exception:
+                pass
 
+
+# --- format registration -----------------------------------------------------
+#
+# At the bottom of the module because the table names the handler classes above
+# it. A libarchive that is missing, too old, or built without the codecs a format
+# needs simply registers nothing — zip and tar keep working, and the format is
+# absent rather than broken.
+_register_builtin_formats()
+
+# ``xefm.archive_libarchive`` imports this module (its handler subclasses
+# :class:`ArchiveHandler`) and registers its own formats from its own bottom, so
+# all this has to do is make sure the module runs. Importing the *module* rather
+# than a name from it is what makes the cycle safe in both directions: reached
+# the other way round, this line finds a half-initialized module in
+# ``sys.modules`` and returns it, and the registration happens moments later when
+# that module resumes.
+try:
+    import xefm.archive_libarchive  # noqa: F401 — imported for its registration
+except Exception as exc:  # noqa: BLE001 — an optional binding must never be fatal
+    getLogger('Archive').warning(f"libarchive support unavailable: {exc}")

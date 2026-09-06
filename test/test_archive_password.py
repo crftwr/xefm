@@ -24,7 +24,7 @@ from xefm.archive import (
     ArchivePasswordRequired,
     ArchiveEncryptionUnsupported,
     zip_encryption_status,
-    zip_encryption_status_path,
+    archive_encryption_status_path,
     verify_zip_password,
     set_archive_password,
     get_archive_password,
@@ -80,19 +80,29 @@ def plain_zip(tmp_path):
 def test_status_none_for_plain_zip(plain_zip):
     with zipfile.ZipFile(str(plain_zip)) as zf:
         assert zip_encryption_status(zf) == "none"
-    assert zip_encryption_status_path(str(plain_zip)) == "none"
+    assert archive_encryption_status_path(str(plain_zip)) == "none"
 
 
 def test_status_zipcrypto_for_encrypted_zip(enc_zip):
+    # The zip-level classifier keeps the scheme names; the path-level one speaks
+    # the handler contract's neutral vocabulary, so a non-zip format can answer.
     with zipfile.ZipFile(str(enc_zip)) as zf:
         assert zip_encryption_status(zf) == "zipcrypto"
-    assert zip_encryption_status_path(str(enc_zip)) == "zipcrypto"
+    assert archive_encryption_status_path(str(enc_zip)) == "password"
 
 
 def test_status_path_none_on_bad_file(tmp_path):
     bad = tmp_path / "notazip.zip"
     bad.write_bytes(b"not a zip at all")
-    assert zip_encryption_status_path(str(bad)) == "none"
+    assert archive_encryption_status_path(str(bad)) == "none"
+
+
+def test_status_path_none_on_unreadable_format(tmp_path):
+    """A suffix no registered handler reads classifies as 'none' — the read path
+    is what reports that it cannot be opened, not the password gate."""
+    other = tmp_path / "archive.notanarchive"
+    other.write_bytes(b"nope")
+    assert archive_encryption_status_path(str(other)) == "none"
 
 
 class _FakeInfo:
@@ -170,7 +180,9 @@ def test_handler_encryption_status(enc_zip):
     h = ZipHandler(Path(str(enc_zip)))
     h.open()
     try:
-        assert h.encryption_status() == "zipcrypto"
+        # The handler speaks the ABC's neutral vocabulary: ZipCrypto is a
+        # scheme a password unlocks, whatever the format calls it.
+        assert h.encryption_status() == "password"
     finally:
         h.close()
 

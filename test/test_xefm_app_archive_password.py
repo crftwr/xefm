@@ -155,18 +155,18 @@ def test_extract_flow_wrong_then_right_password(enc_zip, tmp_path, monkeypatch):
     assert (tmp_path / "dest" / "enc" / "message.txt").read_bytes() == _MESSAGE
 
 
-def test_extract_flow_refuses_aes(enc_zip, tmp_path, monkeypatch):
+def test_extract_flow_refuses_undecryptable(enc_zip, tmp_path, monkeypatch):
     out = Path(str(tmp_path / "dest"))
     (tmp_path / "dest").mkdir()
     app = _extract_app(Path(str(enc_zip)), out)
 
-    monkeypatch.setattr(A, "zip_encryption_status_path", lambda path: "aes")
+    monkeypatch.setattr(A, "archive_encryption_status_path", lambda path: "unsupported")
     prompted = []
     monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: prompted.append(kw))
 
     app.extract_archive()
-    assert prompted == []  # no password prompt for an unsupported scheme
-    assert any("AES-encrypted zips are not supported" in m for m in app.logs)
+    assert prompted == []  # no password prompt for a scheme no password unlocks
+    assert any("its encryption is not supported" in m for m in app.logs)
 
 
 def test_extract_flow_plain_zip_no_prompt(tmp_path, monkeypatch):
@@ -217,16 +217,16 @@ def test_gate_prompts_and_opens_on_correct_password(enc_zip, monkeypatch):
     assert A.get_archive_password(Path(zp)) == _PASSWORD.encode()
 
 
-def test_gate_refuses_aes(enc_zip, monkeypatch):
+def test_gate_refuses_undecryptable(enc_zip, monkeypatch):
     app = _app()
     member = Path(f"archive://{os.path.abspath(str(enc_zip))}#message.txt")
-    monkeypatch.setattr(A, "archive_password_state", lambda path: "aes")
+    monkeypatch.setattr(A, "archive_password_state", lambda path: "unsupported")
     prompted = []
     monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: prompted.append(kw))
     called = []
     app._ensure_archive_password(member, lambda: called.append(True))
     assert prompted == [] and called == []
-    assert any("AES-encrypted zips are not supported" in m for m in app.logs)
+    assert any("its encryption is not supported" in m for m in app.logs)
 
 
 def test_gate_ok_when_password_already_known(enc_zip):

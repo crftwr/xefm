@@ -124,7 +124,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "`FILE_ASSOCIATIONS` overrides it per file type."),
 
     ("Archives are directories",
-     "Press {key:open_item} on a zip or tar archive to browse *inside* it like "
+     "Press {key:open_item} on an archive to browse *inside* it like "
      "a directory. {key:create_archive} packs the selection into a new "
      "archive; {key:extract_archive} unpacks the focused one."),
 

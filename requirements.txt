@@ -4,6 +4,8 @@
 # watchdog for automatic file list reloading
 # pillow for the built-in image viewer (decode/crop/scale; the viewer degrades
 #   to a metadata card without it, and inline terminal images need it too)
+# libarchive-c for archive formats the standard library cannot read (.7z, .rar,
+#   .iso, .cab, .cpio, .rpm); see the note above the pin for why it is optional
 # pymigemo for Migemo (romaji -> Japanese) matching in incremental search
 #   (will fallback gracefully to plain matching if not available)
 #
@@ -34,6 +36,16 @@ pygments
 boto3
 watchdog
 pillow
+
+# The ctypes binding for libarchive, which is how XeFM reads .7z, .rar, .iso,
+# .cab, .cpio and .rpm. It is pure Python and carries no binary of its own, so
+# the shared library still has to come from somewhere: a bundled copy, the
+# LIBARCHIVE environment variable, or the system — macOS and most Linux
+# distributions already have one new enough. When none of those answers, XeFM
+# logs why at startup and offers zip and tar only; nothing else degrades, which
+# is why this is an ordinary requirement rather than a hard dependency with a
+# platform marker. See doc/dev/ARCHIVE_SYSTEM.md.
+libarchive-c
 
 # Pinned exactly: 0.0.1's dictionary reader breaks on LP64 platforms
 # (macOS/Linux) and xefm/migemo_search.py patches it at runtime — a future
