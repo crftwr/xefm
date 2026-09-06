@@ -203,6 +203,25 @@ refuse it in advance. Everything an entry inside a 7z, RAR, ISO, CAB or cpio
 declares fails visibly instead, which is the behaviour we want and the reason the
 probe only has to cover what a format needs *to open at all*.
 
+**The three builds are not the same library, and one difference is visible.**
+
+```
+macOS   3.7.4  system      zlib liblzma bz2lib
+Linux   3.8.x  distro      zlib liblzma bz2lib liblz4 libzstd (+ openssl, expat, …)
+Windows 3.8.9  bundled     zlib liblzma bz2lib libzstd cng libb2
+```
+
+Every one of them registers the same six formats, because the candidates need
+only zlib and liblzma. What differs is what an *entry* inside one can be
+compressed with: a zstd-compressed 7z member reads on Windows and Linux and
+fails on macOS with `ZSTD codec is unsupported`. That is the honest answer — the
+per-entry codec is named inside the file and cannot be probed at registration —
+but it does mean the same archive can open on one machine and not another, which
+is worth recognising in a bug report rather than rediscovering. The Windows
+build's `cng` is not a fourth difference: it spares the DLL an OpenSSL
+dependency and decrypts nothing, since through 3.8.9 zip is the only format
+libarchive decrypts at all.
+
 `register_libarchive_formats()` says something only when the outcome is not the
 ordinary one. Success is `debug` — a full line at every startup was more than the
 normal case deserved, and the Help dialog's "Archive Formats" table carries the
