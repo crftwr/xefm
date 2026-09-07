@@ -512,8 +512,10 @@ class Config:
         # query -- and the modified keys that remain are few enough to count, so
         # a dialog that spent three of them would leave nothing for the next one.
         # The options box has no query field, which is what makes every plain
-        # letter in it an accelerator: c for case, p for pattern, s for
-        # subfolders, however many an option list grows to.
+        # letter in it a key: an option is toggled by its label's initial (c, w,
+        # r, s here), however many an option list grows to. The letters are not
+        # drawn, for the reason the Sort dialog does not draw F/E/S/T -- the word
+        # already carries its initial.
         #
         # The name carries no context prefix, for the same reason
         # 'remove_list_item' above carries none: "open the options for the thing
@@ -530,8 +532,9 @@ class Config:
         # Each option also has an action of its own, deliberately UNBOUND, for the
         # one option you change hourly and would rather not open a box for:
         #
-        #   'search.toggle_case'      smart / always sensitive / always insensitive
-        #   'search.toggle_pattern'   regular expression / plain text
+        #   'search.toggle_case'      match capitals exactly
+        #   'search.toggle_word'      whole words only (content search)
+        #   'search.toggle_regex'     read the query as a regular expression
         #   'search.toggle_subdirs'   search subfolders, or this directory alone
         #
         # The printable-key rule from the search bar applies to all of these: the

@@ -2,8 +2,8 @@
 walks honouring them (xefm.app).
 
 The options are two kinds of thing and the tests are split the same way: how the
-query is *read* (case, regex vs literal), which can be derived from the query
-itself, and what is *walked* (subfolders), which cannot. Issue #312.
+query is *read* (case, whole word, regular expression) and what is *walked*
+(subfolders). Issue #312.
 
 Run with: python -m pytest test/test_search_options.py -v
 """
@@ -30,107 +30,71 @@ def _bare_app(show_hidden=False):
     return app
 
 
-class SmartCase(unittest.TestCase):
-    def test_all_lowercase_ignores_case(self):
-        self.assertFalse(so.case_sensitive("smart", "todo"))
+class ContentPattern(unittest.TestCase):
+    def _re(self, query, *, case=False, word=False, regex=True):
+        return so.content_regex(query, case=case, word=word, regex=regex)
 
-    def test_a_capital_makes_it_exact(self):
-        self.assertTrue(so.case_sensitive("smart", "TODO"))
-        self.assertTrue(so.case_sensitive("smart", "toDo"))
+    def test_defaults_match_what_content_search_always_did(self):
+        # Case-insensitive regular expression: the shipped behaviour, unchanged.
+        self.assertTrue(self._re("todo").search("TODO: fix"))
+        self.assertTrue(self._re("a.c").search("abc"))
 
-    def test_non_cased_text_stays_insensitive(self):
-        # Japanese has no case, so a CJK query must not trip the rule.
-        self.assertFalse(so.case_sensitive("smart", "検索"))
+    def test_case_on_distinguishes(self):
+        self.assertIsNone(self._re("TODO", case=True).search("todo"))
+        self.assertTrue(self._re("TODO", case=True).search("TODO"))
 
-    def test_explicit_settings_ignore_the_query(self):
-        self.assertTrue(so.case_sensitive("sensitive", "todo"))
-        self.assertFalse(so.case_sensitive("insensitive", "TODO"))
-
-
-class Metacharacters(unittest.TestCase):
-    def test_plain_words_hold_none(self):
-        self.assertFalse(so.has_meta("needle"))
-        self.assertFalse(so.has_meta("let clip"))
-
-    def test_regex_syntax_is_recognized(self):
-        for query in (".", "a.*b", "^start", "end$", "a|b", "[abc]", "x{2}",
-                      "(group)", "\\s"):
-            self.assertTrue(so.has_meta(query), query)
-
-    def test_the_chip_lights_when_the_query_starts_to_matter(self):
-        chip = dict((o.name, o) for o in so.SEARCH_OPTIONS)[so.PATTERN]
-        self.assertFalse(chip.is_active("regex", "needle"))
-        self.assertTrue(chip.is_active("regex", "need.e"))
-        self.assertTrue(chip.is_active("literal", "needle"))
-
-
-class ContentRegex(unittest.TestCase):
-    def test_regex_mode_keeps_metacharacters_live(self):
-        self.assertTrue(so.content_regex("a.c", case="smart", pattern="regex")
-                        .search("abc"))
-
-    def test_literal_mode_matches_the_characters_typed(self):
-        pattern = so.content_regex("a.c", case="smart", pattern="literal")
+    def test_regex_off_matches_the_characters_typed(self):
+        pattern = self._re("a.c", regex=False)
         self.assertIsNone(pattern.search("abc"))
         self.assertTrue(pattern.search("a.c"))
 
-    def test_literal_mode_cannot_raise_on_a_broken_pattern(self):
+    def test_regex_off_cannot_raise_on_a_broken_pattern(self):
         # The other half of #305: "C++(" is a search, not a syntax error.
-        self.assertTrue(so.content_regex("C++(", case="smart", pattern="literal")
-                        .search("void C++( x"))
+        self.assertTrue(self._re("C++(", regex=False).search("void C++( x"))
 
-    def test_case_follows_the_option(self):
-        self.assertTrue(so.content_regex("todo", case="smart", pattern="regex")
-                        .search("TODO"))
-        self.assertIsNone(so.content_regex("TODO", case="smart", pattern="regex")
-                          .search("todo"))
-        self.assertTrue(so.content_regex("TODO", case="insensitive", pattern="regex")
-                        .search("todo"))
+    def test_word_anchors_both_ends(self):
+        pattern = self._re("cat", word=True)
+        self.assertTrue(pattern.search("a cat sat"))
+        self.assertIsNone(pattern.search("concatenate"))
 
+    def test_word_groups_the_whole_query(self):
+        # Without the group, \b(?:a|b)\b would anchor only the first branch.
+        pattern = self._re("cat|dog", word=True)
+        self.assertIsNone(pattern.search("concatenate hotdogs"))
+        self.assertTrue(pattern.search("one dog"))
 
-class FilenameMatcher(unittest.TestCase):
-    def test_smart_case_lowercase_matches_either(self):
-        match = so.filename_matcher("readme*", case="smart")
-        self.assertTrue(match("README.md"))
-        self.assertTrue(match("readme.md"))
-
-    def test_smart_case_capital_is_exact(self):
-        match = so.filename_matcher("README*", case="smart")
-        self.assertTrue(match("README.md"))
-        self.assertFalse(match("readme.md"))
-
-    def test_exact_glob_rule_survives(self):
-        # Issue #231: matched against the whole name, wildcards are explicit.
-        match = so.filename_matcher("report", case="smart")
-        self.assertTrue(match("report"))
-        self.assertFalse(match("report.txt"))
+    def test_word_and_regex_off_compose(self):
+        pattern = self._re("a.c", word=True, regex=False)
+        self.assertTrue(pattern.search("say a.c here"))
+        self.assertIsNone(pattern.search("abc"))
 
 
 class Declarations(unittest.TestCase):
-    def test_pattern_is_content_only(self):
+    def test_the_query_language_options_are_content_only(self):
         options = OptionSet(so.SEARCH_OPTIONS)
         names = [o.name for o in options.visible("filename")]
-        self.assertNotIn(so.PATTERN, names)
-        self.assertIn(so.PATTERN, [o.name for o in options.visible("content")])
+        self.assertEqual(names, [so.CASE, so.SUBDIRS])
+        self.assertEqual([o.name for o in options.visible("content")],
+                         [so.CASE, so.WORD, so.REGEX, so.SUBDIRS])
 
     def test_defaults_change_nothing_that_shipped(self):
         # Content search has always been a case-insensitive regex over the whole
         # tree; #312 makes that visible, it does not change it.
         options = OptionSet(so.SEARCH_OPTIONS)
-        self.assertEqual(options[so.PATTERN], "regex")
-        self.assertEqual(options[so.CASE], "smart")
-        self.assertIs(options[so.SUBDIRS], True)
+        self.assertEqual(options.snapshot(), {
+            so.CASE: False, so.WORD: False, so.REGEX: True, so.SUBDIRS: True})
 
-    def test_accelerators_are_unique(self):
-        accels = [o.accel for o in so.SEARCH_OPTIONS]
-        self.assertEqual(len(accels), len(set(accels)))
+    def test_the_labels_initials_are_unique(self):
+        # They are the keys in the options box, which draws no letter column.
+        keys = [o.key for o in so.SEARCH_OPTIONS]
+        self.assertEqual(sorted(keys), ["c", "r", "s", "w"])
 
     def test_only_the_scope_option_is_transient(self):
         options = OptionSet(so.SEARCH_OPTIONS)
-        options.set(so.CASE, "sensitive")
+        options.set(so.CASE, True)
         options.set(so.SUBDIRS, False)
         options.reset_transient()
-        self.assertEqual(options[so.CASE], "sensitive")
+        self.assertIs(options[so.CASE], True)
         self.assertIs(options[so.SUBDIRS], True)
 
 
@@ -152,20 +116,19 @@ class Walks(unittest.TestCase):
         return sorted(e.name for e in app._iter_filename_matches(
             Path(self.tmp), pattern, threading.Event(), **kw))
 
-    def _grep(self, query, *, case="smart", pattern="regex", **kw):
+    def _grep(self, query, *, case=False, word=False, regex=True, **kw):
         app = _bare_app()
-        regex = so.content_regex(query, case=case, pattern=pattern)
+        pattern = so.content_regex(query, case=case, word=word, regex=regex)
         return [h["path"].name for h in app._iter_content_matches(
-            Path(self.tmp), regex, threading.Event(), **kw)]
+            Path(self.tmp), pattern, threading.Event(), **kw)]
 
-    def test_filename_walk_defaults_to_smart_case(self):
+    def test_filename_walk_ignores_case_by_default(self):
         self._write("README.md")
         self.assertEqual(self._names("readme*"), ["README.md"])
-        self.assertEqual(self._names("README*"), ["README.md"])
 
-    def test_filename_walk_can_be_forced_sensitive(self):
+    def test_filename_walk_can_be_made_case_sensitive(self):
         self._write("README.md")
-        self.assertEqual(self._names("readme*", case="sensitive"), [])
+        self.assertEqual(self._names("readme*", case=True), [])
 
     def test_filename_walk_stops_at_this_directory(self):
         self._write("top.txt")
@@ -184,17 +147,22 @@ class Walks(unittest.TestCase):
         self.assertEqual(sorted(self._grep("needle")), ["deep.txt", "top.txt"])
         self.assertEqual(self._grep("needle", recursive=False), ["top.txt"])
 
-    def test_content_walk_honours_smart_case(self):
+    def test_content_walk_honours_the_case_option(self):
         self._write("a.txt", "TODO: fix\n")
-        self.assertEqual(self._grep("todo"), ["a.txt"])
-        self.assertEqual(self._grep("TODO"), ["a.txt"])
         self._write("b.txt", "todo: fix\n")
-        self.assertEqual(self._grep("TODO"), ["a.txt"])   # capital means exact
+        self.assertEqual(sorted(self._grep("TODO")), ["a.txt", "b.txt"])
+        self.assertEqual(self._grep("TODO", case=True), ["a.txt"])
 
-    def test_content_walk_honours_a_literal_query(self):
+    def test_content_walk_honours_a_non_regex_query(self):
         self._write("a.txt", "cost is 3*4\n")
         self._write("b.txt", "3444\n")
-        self.assertEqual(self._grep("3*4", pattern="literal"), ["a.txt"])
+        self.assertEqual(self._grep("3*4", regex=False), ["a.txt"])
+
+    def test_content_walk_honours_whole_word(self):
+        self._write("a.txt", "one cat here\n")
+        self._write("b.txt", "concatenate\n")
+        self.assertEqual(sorted(self._grep("cat")), ["a.txt", "b.txt"])
+        self.assertEqual(self._grep("cat", word=True), ["a.txt"])
 
 
 if __name__ == "__main__":

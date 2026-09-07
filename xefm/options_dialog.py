@@ -2,16 +2,20 @@
 
 Every XeFM surface that grows live settings (:mod:`xefm.options`) reaches them
 through the same key and the same box: a titled list of its declared options,
-each row a letter, a name and the value it is on right now. Changes apply as
-they are made — the search behind the box re-runs while you watch — so the box
-has nothing to accept: Enter and Esc both simply close it, and the hint band
-says *done* rather than *cancel* so neither is mistaken for an undo.
+each row a name and whether it is on. Changes apply as they are made — the
+search behind the box re-runs while you watch — so the box has nothing to
+accept: Enter and Esc both simply close it, and the hint band says *done*
+rather than *cancel* so neither is mistaken for an undo.
 
 The point of it being a separate surface is the keyboard. There is no text field
-here, which means every plain letter is free: an option's accelerator is just
-its letter, and a surface can grow a tenth option without spending a tenth
+here, which means every plain letter is free: an option is toggled by its
+label's initial, and a surface can grow a tenth option without spending a tenth
 chord. That is the whole argument for one entry key over one key per option —
 see :mod:`xefm.options`.
+
+The letters are not drawn, for the reason the Sort dialog does not draw its
+own: the word already carries its initial, and a column of single letters costs
+more width than it explains.
 
 Built in :class:`~xefm.choice_dialog.ChoiceDialog`'s mold (self-sizing box,
 shared title/hint chrome, click-to-act rows), because a reader who has met one
@@ -30,16 +34,14 @@ from puikit.widgets.base import Widget
 
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
                                   draw_title_bar)
-from xefm.options import Option, OptionSet, accel_map
+from xefm.options import Option, OptionSet, accel_map, state_label
 
 #: Vertical pitch of a row — whole cells on a grid, extra air on a vector
 #: backend (matches ChoiceDialog / SortDialog).
 _GRID_ROW_PITCH = 1.0
 _GUI_ROW_PITCH = 1.3
 
-#: Gap between the accelerator column and the label, and between the label and
-#: the value column, in base units.
-_ACCEL_W = 3.0
+#: Least gap between a row's label and the on/off column at its right end.
 _VALUE_GAP = 3.0
 
 
@@ -50,7 +52,7 @@ class OptionsDialog(Widget):
     focusable = True
 
     _TITLE_ROWS = 3.0
-    _HINT = "↑/↓ select · Space change · letter picks · Esc done"
+    _HINT = "↑/↓ select · Space or letter toggles · Esc done"
 
     def __init__(self, options: OptionSet, *, title: str = "Options",
                  mode: str | None = None,
@@ -84,15 +86,13 @@ class OptionsDialog(Widget):
     def _content_width(self, measure) -> float:
         """Width of the widest content line (base units, excluding margins).
 
-        Every row is measured at its *widest* value, not its current one, so the
-        box does not resize as values are cycled — a box that breathed under the
-        cursor would make the list impossible to read.
+        The on/off column is measured at its widest word, not its current one,
+        so the box does not resize as an option is toggled — a box that breathed
+        under the cursor would make the list impossible to read.
         """
-        rows = 0.0
-        for option in self.rows:
-            widest = max(measure(option.label_for(v)) for v in option.values)
-            rows = max(rows, _ACCEL_W + measure(option.label) + _VALUE_GAP + widest)
-        return max(rows, measure(self._HINT))
+        widest_state = max(measure(state_label(v)) for v in (False, True))
+        rows = max((measure(o.label) for o in self.rows), default=0.0)
+        return max(rows + _VALUE_GAP + widest_state, measure(self._HINT))
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -116,21 +116,21 @@ class OptionsDialog(Widget):
 
     # --- changing ------------------------------------------------------------
 
-    def cycle_row(self, index: int, step: int = 1) -> None:
-        """Advance the option on row ``index``. The value change goes through
+    def toggle_row(self, index: int) -> None:
+        """Flip the option on row ``index``. The change goes through
         :class:`~xefm.options.OptionSet`, which is what notifies the surface —
         this dialog never re-runs anything itself."""
         if 0 <= index < len(self.rows):
             self._index = index
-            self.options.cycle(self.rows[index].name, step)
+            self.options.toggle(self.rows[index].name)
 
     def _accel(self, char: str) -> bool:
-        """Act on a plain letter: select that option's row and advance it.
-        Returns whether the letter belonged to an option."""
+        """Act on a plain letter: select that option's row and flip it. Returns
+        whether the letter belonged to an option."""
         option = self._accels.get(char.lower())
         if option is None:
             return False
-        self.cycle_row(self.rows.index(option))
+        self.toggle_row(self.rows.index(option))
         return True
 
     # --- drawing -------------------------------------------------------------
@@ -159,20 +159,15 @@ class OptionsDialog(Widget):
                                Style(bg=theme.selection_active_bg),
                                radius=None, hints={"fill": True})
             row_bg = theme.selection_active_bg if selected else surface_bg
-            value = self.options.get(option.name)
-            # The accelerator is drawn in the accent color: it is a key, and the
-            # only thing on the row that can be pressed.
-            ctx.draw_text(3.0, y + row_vy, option.accel,
-                          Style(fg=theme.accent, bg=row_bg))
-            ctx.draw_text(3.0 + _ACCEL_W, y + row_vy, option.label,
+            on = self.options.get(option.name)
+            ctx.draw_text(3.0, y + row_vy, option.label,
                           Style(fg=theme.text, bg=row_bg))
-            # The value carries the same lit/dim reading as the chip strip, so
-            # the two surfaces say the same thing about the same option.
-            lit = option.is_active(value, self.options.hint)
-            label = option.label_for(value)
-            ctx.draw_text(max(3.0 + _ACCEL_W, box_w - 3.0 - ctx.measure_text(label)),
-                          y + row_vy, label,
-                          Style(fg=theme.accent if lit else theme.muted_text, bg=row_bg))
+            # The on/off word carries the same accent/muted reading as the chip
+            # strip, so the two surfaces say the same thing about the same option.
+            state = state_label(on)
+            ctx.draw_text(max(3.0, box_w - 3.0 - ctx.measure_text(state)),
+                          y + row_vy, state,
+                          Style(fg=theme.accent if on else theme.muted_text, bg=row_bg))
             self._row_hits.append((i, y, y + pitch))
             y += pitch
 
@@ -204,10 +199,8 @@ class OptionsDialog(Widget):
             self._index = (self._index - 1) % len(self.rows)
         elif key == "down":
             self._index = (self._index + 1) % len(self.rows)
-        elif key in ("space", "right"):
-            self.cycle_row(self._index)
-        elif key == "left":
-            self.cycle_row(self._index, -1)
+        elif key in ("space", "left", "right"):
+            self.toggle_row(self._index)
         elif event.char and len(event.char) == 1 and event.char.isalpha() \
                 and not (event.modifiers - {"shift"}):
             self._accel(event.char)
@@ -222,7 +215,7 @@ class OptionsDialog(Widget):
             return
         for i, y0, y1 in self._row_hits:
             if 2.0 <= event.x < w - 2.0 and y0 <= event.y < y1:
-                self.cycle_row(i)  # a row click changes it and stays open
+                self.toggle_row(i)  # a row click flips it and stays open
                 self._render()
                 return
 

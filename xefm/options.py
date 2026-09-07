@@ -13,15 +13,22 @@ Ctrl, minus what the text field owns (A/C/X/V), minus what a terminal renames
 dialog's options leaves nothing for the next dialog that wants some. So options
 are not reached by a key each: they are reached by *one* key — ``options``,
 Ctrl-O — which opens :mod:`xefm.options_dialog`, a surface with no text field,
-where every plain letter is free to be an accelerator. One key, spent once, for
-as many options as any surface ever grows.
+where every plain letter is free. One key, spent once, for as many options as
+any surface ever grows.
+
+**Every option is on or off.** Not a simplification of a richer thing that was
+tried and cut down: two states is what makes the whole idiom legible. A chip can
+say "on" by being filled, a row can say it in a word, and a key can *toggle*
+rather than cycle through states a user has to press repeatedly to find. Where a
+setting has three answers, the surface owns three declared options or a picker of
+its own — it does not go here.
 
 **What one declaration feeds.** A surface declares its options once and four
 readers use that same list, so they cannot drift apart:
 
 1. the always-visible chip strip (:meth:`OptionSet.chips`), which is how an
    option is seen before anyone needs it;
-2. the options dialog's rows, labels and accelerators;
+2. the options dialog's rows and their letters;
 3. an unbound ``toggle_<name>`` action per option (``xefm.actions``), so a
    config can still put a direct chord on the one option it changes hourly;
 4. the search itself, which reads the values out of :class:`OptionSet`.
@@ -38,29 +45,18 @@ from typing import Any, Callable, Iterable, Sequence
 
 @dataclass(frozen=True)
 class Option:
-    """One declared option.
+    """One declared on/off option.
 
-    ``values`` is the cycle order and its **first entry is the default** — the
-    state a chip reads as "nothing unusual here". A plain on/off option leaves
-    it at ``(False, True)``.
-
-    ``flag`` names the chip in the strip. ``flags``, when given, names it *per
-    value* instead, which is how an option whose off-state needs saying ("no
-    sub") says it in the one place the user is looking. ``labels`` does the same
-    for the options dialog's value column.
+    ``flag`` names the chip in the strip; ``label`` names the row in the options
+    dialog, and **its initial is the key that toggles it** — the Sort dialog's
+    convention, where the hotkey is not drawn because the word already carries
+    it. ``accel`` overrides that initial for the case where two labels on one
+    surface start with the same letter.
 
     ``modes`` gates the option to the surface modes it applies to — the search
     dialog's ``"filename"`` / ``"content"`` — and empty means "always". A gated
     option is not dimmed but *absent*: an option that cannot do anything must
     not look like one that is merely off.
-
-    ``active`` decides whether the chip is lit. The default rule is "not at its
-    default value", which is what an on/off option wants. An option whose real
-    state depends on something else — smart case, which reads the query — passes
-    its own predicate, taking ``(value, hint)`` where ``hint`` is whatever the
-    surface hands :meth:`OptionSet.chips` (the query text, for the search
-    dialog). This is what lets the strip show *what the search is actually
-    doing* rather than which mode was selected.
 
     ``persist`` is whether the value outlives one opening of the surface.
     Options that change how a query is read persist for the session; options
@@ -70,56 +66,26 @@ class Option:
 
     name: str
     label: str
-    accel: str
     flag: str
-    values: tuple[Any, ...] = (False, True)
-    flags: tuple[str, ...] = ()
-    labels: tuple[str, ...] = ()
+    default: bool = False
     modes: tuple[str, ...] = ()
-    active: Callable[[Any, str], bool] | None = None
+    accel: str = ""
     persist: bool = True
 
     @property
-    def default(self) -> Any:
-        return self.values[0]
+    def key(self) -> str:
+        """The letter that toggles this option in the options box."""
+        return (self.accel or self.label[:1]).lower()
 
     def applies(self, mode: str | None) -> bool:
         """Whether this option means anything in ``mode`` (always, if it named
         no modes, or if the surface has none)."""
         return not self.modes or mode is None or mode in self.modes
 
-    def index_of(self, value: Any) -> int:
-        """Where ``value`` sits in the cycle — 0 for anything unrecognized, so a
-        stale persisted value degrades to the default instead of raising."""
-        try:
-            return self.values.index(value)
-        except ValueError:
-            return 0
 
-    def next_value(self, value: Any, step: int = 1) -> Any:
-        return self.values[(self.index_of(value) + step) % len(self.values)]
-
-    def flag_for(self, value: Any) -> str:
-        """The chip's text for ``value`` — the per-value name where one was
-        declared, the constant one otherwise."""
-        if self.flags:
-            return self.flags[self.index_of(value)]
-        return self.flag
-
-    def label_for(self, value: Any) -> str:
-        """The options dialog's value-column text. Booleans get on/off rather
-        than Python's True/False, which is not what a reader is looking for."""
-        if self.labels:
-            return self.labels[self.index_of(value)]
-        if isinstance(value, bool):
-            return "on" if value else "off"
-        return str(value)
-
-    def is_active(self, value: Any, hint: str = "") -> bool:
-        """Whether the chip is lit for ``value`` (see ``active``)."""
-        if self.active is not None:
-            return bool(self.active(value, hint))
-        return value != self.default
+def state_label(value: bool) -> str:
+    """How a value reads in the options dialog's right-hand column."""
+    return "on" if value else "off"
 
 
 class OptionSet:
@@ -132,19 +98,15 @@ class OptionSet:
     """
 
     def __init__(self, options: Iterable[Option],
-                 values: dict[str, Any] | None = None,
-                 on_change: Callable[[str, Any], None] | None = None):
+                 values: dict[str, bool] | None = None,
+                 on_change: Callable[[str, bool], None] | None = None):
         self.options: tuple[Option, ...] = tuple(options)
-        #: What ``Option.active`` predicates read — the surface's live query, for
-        #: the search dialog. Kept on the set rather than passed down every call
-        #: so the chip strip and the options dialog cannot disagree about it.
-        self.hint: str = ""
         self._by_name = {o.name: o for o in self.options}
-        self.values: dict[str, Any] = {o.name: o.default for o in self.options}
+        self.values: dict[str, bool] = {o.name: o.default for o in self.options}
         if values:
             for name, value in values.items():
                 if name in self._by_name:
-                    self.values[name] = value
+                    self.values[name] = bool(value)
         self.on_change = on_change
 
     # --- reading -------------------------------------------------------------
@@ -152,7 +114,7 @@ class OptionSet:
     def __contains__(self, name: str) -> bool:
         return name in self._by_name
 
-    def __getitem__(self, name: str) -> Any:
+    def __getitem__(self, name: str) -> bool:
         return self.values[name]
 
     def get(self, name: str, default: Any = None) -> Any:
@@ -165,24 +127,21 @@ class OptionSet:
         """The options that apply in ``mode``, in declaration order."""
         return [o for o in self.options if o.applies(mode)]
 
-    def chips(self, mode: str | None = None,
-              hint: str | None = None) -> list[tuple[str, bool]]:
-        """``(text, lit)`` for the strip — one entry per applicable option, in
+    def chips(self, mode: str | None = None) -> list[tuple[str, bool]]:
+        """``(text, on)`` for the strip — one entry per applicable option, in
         declaration order, so the strip never reorders itself under the eye."""
-        text = self.hint if hint is None else hint
-        return [(o.flag_for(self.values[o.name]),
-                 o.is_active(self.values[o.name], text))
-                for o in self.visible(mode)]
+        return [(o.flag, self.values[o.name]) for o in self.visible(mode)]
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self) -> dict[str, bool]:
         return dict(self.values)
 
     # --- writing -------------------------------------------------------------
 
-    def set(self, name: str, value: Any) -> bool:
+    def set(self, name: str, value: bool) -> bool:
         """Set one value. Returns whether it actually changed — the caller's cue
         to re-run, and what keeps a no-op keystroke from restarting a search."""
         option = self._by_name.get(name)
+        value = bool(value)
         if option is None or self.values[name] == value:
             return False
         self.values[name] = value
@@ -190,13 +149,12 @@ class OptionSet:
             self.on_change(name, value)
         return True
 
-    def cycle(self, name: str, step: int = 1) -> Any:
-        """Advance one option to its next value (``step=-1`` for the previous)
-        and return it."""
-        option = self._by_name.get(name)
-        if option is None:
-            return None
-        self.set(name, option.next_value(self.values[name], step))
+    def toggle(self, name: str) -> bool:
+        """Flip one option and return its new value (``False`` for a name this
+        set does not know, which is also what an unknown option is worth)."""
+        if name not in self._by_name:
+            return False
+        self.set(name, not self.values[name])
         return self.values[name]
 
     def reset_transient(self) -> None:
@@ -210,11 +168,11 @@ class OptionSet:
 
 def accel_map(options: Sequence[Option]) -> dict[str, Option]:
     """``{letter: option}`` for the options dialog. First declaration wins, so a
-    duplicated accelerator degrades to "the second one has no letter" rather
-    than stealing the first one's."""
+    duplicated initial degrades to "the second one has no letter" rather than
+    stealing the first one's — which is what ``Option.accel`` is for."""
     table: dict[str, Option] = {}
     for option in options:
-        key = option.accel.lower()
+        key = option.key
         if key and key not in table:
             table[key] = option
     return table

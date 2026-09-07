@@ -30,8 +30,20 @@ guarantee that the same option meant the same chord in two of them.
 
 So options are not reached by a key each. They are reached by **one** key —
 `options`, `Ctrl-O` — that opens a surface with *no text field*, where every
-plain letter is free to be an accelerator. One key, spent once, for as many
-options as any surface ever grows.
+plain letter is free. One key, spent once, for as many options as any surface
+ever grows.
+
+## Every option is on or off
+
+Two states is what makes the idiom legible, not a simplification of something
+richer. A chip can say "on" by being **filled**, a row can say it in a word, and
+a key can *toggle* rather than cycle through states a user has to press
+repeatedly to find. It also keeps a chip's name constant: a tri-state option
+ends up wanting its text to carry the state ("no sub"), which puts a space
+inside one chip while spaces are also what divide the chips from each other.
+
+Where a setting has three answers, the surface declares three options or opens a
+picker of its own — it does not go here.
 
 ## The parts
 
@@ -45,16 +57,19 @@ options as any surface ever grows.
 
 ## One declaration, four readers
 
-`Option` is frozen and says everything about one setting: its cycle of values
-(the **first is the default**), the chip text, the dialog label, its
-accelerator, which modes it applies to, when its chip is lit, and whether it
-outlives one opening of the surface.
+`Option` is frozen and says everything about one setting: its default, the chip
+text, the dialog label (whose initial is its key), which modes it applies to,
+and whether it outlives one opening of the surface.
 
 Four things read that same list, which is what keeps them from drifting:
 
-1. **The chip strip** — `OptionSet.chips(mode)` returns `(text, lit)` pairs,
-   drawn at the right end of the search dialog's status row.
-2. **The options dialog** — rows, labels, and `accel_map` for the letters.
+1. **The chip strip** — `OptionSet.chips(mode)` returns `(text, on)` pairs,
+   drawn at the right end of the search dialog's status row as filled blocks.
+2. **The options dialog** — rows, labels, and `accel_map` for the letters. The
+   letter is the label's **initial** (`Option.key`), and it is not drawn, for
+   the reason SortDialog does not draw F/E/S/T: the word already carries it, and
+   a column of single letters costs more width than it explains. `Option.accel`
+   overrides the initial where two labels on one surface start alike.
 3. **The action registry** — `_SEARCH_ACTIONS` generates one unbound
    `toggle_<name>` action per declared option, so the default keymap stays a
    single chord while a config can still bind a direct key. Generated rather
@@ -69,18 +84,6 @@ the box, and re-runs on a change; it never reads a value. The meaning lives with
 whoever wrote `search_iter` — the same division as `titles` and `accept_hint`,
 and why `search_iter`'s signature never changed: the closure that needs the
 values already has them.
-
-### The `active` hook
-
-The default lit rule is "not at its default value". An option whose real state
-depends on something else passes its own predicate, taking `(value, hint)` where
-`hint` is what the surface put on `OptionSet.hint` — the query text, for search.
-That is what lets the strip show *what the search is actually doing*:
-
-- the `Aa` chip lights when smart case has decided the query is case-sensitive,
-  which teaches the rule without a word of explanation;
-- the `.*` chip lights when the query contains a metacharacter, which is the
-  one thing issue #305's reporters could not have guessed.
 
 ## Naming: why `options` carries no context prefix
 
@@ -101,17 +104,29 @@ moves just the one.
 3. Build an `OptionSet` where the *state* should live — on the app for something
    that should survive closing the surface, on the widget otherwise — and call
    `reset_transient()` as the surface opens.
-4. In the widget: draw `options.chips(mode)`, route the key with
-   `is_action_for_event(event, "options", context=…)`, and read the key label
-   back from the keymap so a rebind is what the surface shows.
+4. In the widget: draw `options.chips(mode)` as filled blocks, route the key
+   with `is_action_for_event(event, "options", context=…)`, and name the key in
+   the hint band by reading it back from the keymap.
 
-One convention makes the key an idiom rather than trivia, and a new surface
-should keep it: **the key and then the chips, at the right end of the surface's
-status row**. The search dialog puts them there rather than naming the key in
-the hint band because that band already elides its fourth entry at the width a
-pane-anchored box gets — and because the key belongs against the things it
-changes anyway. A surface with no options shows no strip, so a strip on screen
-always means the key will do something.
+Two conventions make the key an idiom rather than trivia, and a new surface
+should keep both: **the chips at the right end of the status row**, and **the
+hint band naming the key just before `Esc`**. A surface with no options shows
+neither, so a strip on screen always means the key will do something.
+
+### Fitting the hint band
+
+`ProgressiveSearchDialog.hint(width, measure)` **drops whole entries** it cannot
+fit rather than letting `draw_hint_row` cut the last one in half — a truncated
+entry spends the width and says nothing, and it is always the rightmost that
+loses rather than the one that deserves to. Two entries are droppable, in order:
+`↑/↓ select` (arrows moving a list is the one thing nobody has to be told), then
+`Esc cancel` (every XeFM dialog answers to it). What survives to the narrowest
+box is what a user cannot guess — what Enter does, which mode Tab switches to,
+and the key that opens the options.
+
+That is also why `accept_hint` is one word. "Enter results to pane" was accurate
+and cost more width than the options key it was crowding out; the band names the
+verb and the feature doc explains it.
 
 ## Persistence
 
@@ -122,8 +137,9 @@ Three layers, and only the middle one exists today:
 - **A session value** — where an option lives now. `XeFMApp._search_option_set`
   builds the set once and keeps it, so a case choice survives closing and
   reopening the dialog.
-- **Derived from the query** — smart case, and the metacharacter check. No
-  storage at all, which is why they are the defaults.
+- **The declared default** — what every option starts at, chosen so the shipped
+  behaviour is unchanged: content search is still a case-insensitive regular
+  expression over the whole tree.
 
 `Option.persist=False` opts out of the middle layer: `reset_transient()` puts
 the value back as the surface opens. Everything that changes what gets *walked*

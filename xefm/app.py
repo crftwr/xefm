@@ -3728,11 +3728,12 @@ class XeFMApp:
             case = options[search_opts.CASE]
             recursive = options[search_opts.SUBDIRS]
             if mode == "content":
-                # re.error still surfaces in the dialog — and a literal search
-                # can no longer raise one at all.
-                regex = search_opts.content_regex(
-                    query, case=case, pattern=options[search_opts.PATTERN])
-                yield from self._iter_content_matches(root, regex, cancel,
+                # re.error still surfaces in the dialog — and a search with the
+                # regex option off can no longer raise one at all.
+                pattern = search_opts.content_regex(
+                    query, case=case, word=options[search_opts.WORD],
+                    regex=options[search_opts.REGEX])
+                yield from self._iter_content_matches(root, pattern, cancel,
                                                       name_filter=name_filter,
                                                       recursive=recursive)
             else:
@@ -3765,7 +3766,7 @@ class XeFMApp:
         dialog = show_progressive_search(
             self.panel, initial_mode=initial_mode,
             search_iter=search_iter, to_label=to_label, on_accept=on_accept,
-            titles=titles, accept_hint="results to pane", options=options,
+            titles=titles, accept_hint="feed", options=options,
             region=self._active_pane_region())
         self.panel.render()
 
@@ -3845,7 +3846,7 @@ class XeFMApp:
                 return
 
     def _iter_filename_matches(self, root, pattern, cancel, *,
-                               case: str = "smart", recursive: bool = True):
+                               case: bool = False, recursive: bool = True):
         """Depth-first walk under ``root`` yielding entries whose name matches
         ``pattern`` (a glob), checking ``cancel`` between entries so
         a superseded search stops promptly. The pattern is matched against the
@@ -3857,10 +3858,10 @@ class XeFMApp:
         result cap and cancellation are applied by the dialog consuming this
         generator.
 
-        ``case`` is the dialog's case option — smart case by default, so an
-        all-lowercase pattern matches either case and a capital means you typed
-        it deliberately. ``recursive=False`` searches this directory alone:
-        subdirectories still *match* by name, they are just not descended."""
+        ``case`` is the dialog's case option, off by default, so a pattern
+        matches either case unless it is turned on. ``recursive=False`` searches
+        this directory alone: subdirectories still *match* by name, they are
+        just not descended."""
         match = search_opts.filename_matcher(pattern, case=case)
         stack = [root]
         while stack:
@@ -3993,9 +3994,10 @@ class XeFMApp:
         alone — the dialog's subfolder option, and the one that changes what the
         search *costs* rather than how it reads the query.
 
-        Case sensitivity is not decided here: ``regex`` arrives compiled, which
-        is what lets one flag serve smart case, an explicit override, and a
-        literal search alike (:mod:`xefm.search_options`)."""
+        Case sensitivity, word boundaries and whether the query is a regular
+        expression at all are not decided here: the pattern arrives compiled,
+        which is what keeps three of the dialog's four options out of the walk
+        entirely (:mod:`xefm.search_options`)."""
         # The pane's filter, whichever kind it is — a typed glob or a filter the
         # config registered — applied to the same entries the pane would show.
         match = filters.matcher(name_filter) if name_filter else None

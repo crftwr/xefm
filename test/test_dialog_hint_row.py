@@ -227,7 +227,10 @@ class EveryModalDrawsTheBand(unittest.TestCase):
             self.panel, search_iter=lambda m, q, c: iter(()),
             to_label=lambda m, v: str(v))
         _settle(self.b, self.panel)
-        self._assert_banded("↑/↓ select")
+        # "Enter …" rather than the arrows: this band drops whole entries it
+        # cannot fit rather than letting one be cut in half, and the arrows are
+        # the first to go (see ProgressiveSearchDialog.hint).
+        self._assert_banded("Enter choose")
 
     def test_the_search_dialog_names_the_mode_tab_switches_to(self):
         """The one moving part of that line, and the fragment the status line

@@ -179,11 +179,6 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         self._searching = False
 
         query = self.query_edit.text.strip()
-        if self.options is not None:
-            # Options that read the query (smart case, and the ".*" chip that
-            # lights when a metacharacter appears) are told about it here, so
-            # the strip is right in the same frame the query changed.
-            self.options.hint = query
         if not query:
             self._render()
             return
@@ -339,7 +334,7 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
             return True
         for option in self.options.visible(self.mode):
             if is_action_for_event(event, f"toggle_{option.name}", context=SEARCH):
-                self.options.cycle(option.name)  # fires the re-run
+                self.options.toggle(option.name)  # fires the re-run
                 return True
         return False
 
@@ -421,19 +416,24 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         )
 
         # Key hint as the bottom band, mirroring the title bar — the list's own
-        # left inset, so the three line up down the left edge.
-        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
+        # left inset, so the three line up down the left edge. The band is
+        # measured against the same width draw_hint_row elides to, so it can
+        # drop an entry whole instead of handing one over to be cut.
+        draw_hint_row(ctx, self.hint(wu - 4.0, ctx.measure_text),
+                      surface_bg=surface_bg, border=border)
 
     def _draw_status_row(self, ctx, y: float, wu: float, surface_bg, theme) -> None:
         """Draw the status text and, at the right end, one chip per applicable
-        option — lit where the option is doing something other than the plain
-        thing.
+        option.
 
-        The strip opens with the key that changes them, which is what makes it
-        something to act on rather than a readout. That key is not in the hint
-        band below: four entries already elide at the width a pane-anchored box
-        gets, and a key nobody can see is not a key. Here it sits against the
-        things it changes, which is the better place for it anyway.
+        Each chip is a filled block — the accent when the option is on, the
+        control face when it is off — rather than coloured text on the dialog
+        surface. Two reasons, and they are the same reason: a space is not a
+        boundary. Chips separated only by spaces ran together with each other
+        and with the count beside them, and a chip whose *text* had to carry its
+        state ("no sub") put a space inside one word while spaces were also what
+        divided the words. Filling the block says on/off without spending a
+        syllable, so every chip can keep its short, constant name.
 
         The strip keeps its whole width and the status is elided against it
         (``draw_hint_row``'s rule for its ``right`` slot). That way round because
@@ -442,22 +442,30 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         narrow box would take the only sign that the options exist with it.
         """
         chips = self.options.chips(self.mode) if self.options is not None else []
-        muted = theme.muted_text if theme else None
-        key = self._options_key_label() if chips else ""
-        parts = ([(key, muted)] if key else []) + [
-            (text, (theme.accent if lit else muted) if theme else None)
-            for text, lit in chips]
-        gap = ctx.measure_text("  ") or 2.0
-        widths = [ctx.measure_text(text) for text, _fg in parts]
-        strip_w = sum(widths) + gap * (len(parts) - 1) if parts else 0.0
-        avail = max(1.0, wu - 4.0 - (strip_w + gap if parts else 0.0))
+        # One space of padding inside each block, one between them: the fill is
+        # the boundary, so the gap only has to keep two fills from touching.
+        labels = [f" {text} " for text, _on in chips]
+        gap = ctx.measure_text(" ") or 1.0
+        widths = [ctx.measure_text(label) for label in labels]
+        strip_w = sum(widths) + gap * (len(chips) - 1) if chips else 0.0
+        avail = max(1.0, wu - 4.0 - (strip_w + gap if chips else 0.0))
         status = elide(self._status_text(), avail, where="end",
                        measure=ctx.measure_text)
         ctx.draw_text(2.0, y, status,
                       Style(fg=theme.text if theme else None, bg=surface_bg))
+        line_h = ctx.line_height()
         x = wu - 2.0 - strip_w
-        for (text, fg), width in zip(parts, widths):
-            ctx.draw_text(x, y, text, Style(fg=fg, bg=surface_bg))
+        for (_text, on), label, width in zip(chips, labels, widths):
+            bg = fg = None
+            if theme is not None:
+                bg = theme.accent if on else theme.control_bg
+                fg = theme.button_text if on else theme.muted_text
+            # The fill as a shape, not just a text background: a vector backend
+            # paints no background behind a glyph run, so the block would be
+            # invisible there (the same pairing the row bands use).
+            ctx.round_rect(x, y, width, line_h, Style(bg=bg), radius=None,
+                           hints={"fill": True})
+            ctx.draw_text(x, y, label, Style(fg=fg, bg=bg))
             x += width + gap
 
     def _options_key_label(self) -> str:
@@ -472,7 +480,7 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
             self._options_key = format_key_for_display(keys[0]) if keys else ""
         return self._options_key
 
-    def hint(self) -> str:
+    def hint(self, width: float | None = None, measure=None) -> str:
         """The keys named in the bottom band. The key names are this widget's —
         they are structural — but what Enter *does* is the owner's, so it comes
         from ``accept_hint``. Tab names the mode it switches *to*, which is the
@@ -480,14 +488,42 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         the status line, where it was the one thing there that was not about the
         search's progress.
 
-        The options key is the one key this dialog answers to that is *not*
-        named here, and deliberately: four entries already elide at the width a
-        pane-anchored box gets, so a fifth would only truncate the fourth. It
-        rides on the chip strip instead — against the things it changes, which
-        is where it can actually be read (:meth:`_draw_status_row`)."""
+        Given ``width`` and a ``measure``, the band **drops whole entries** it
+        cannot fit rather than letting ``draw_hint_row`` cut the last one in
+        half. A truncated entry is the worst outcome available: it spends the
+        width and says nothing, and it is always the *rightmost* entry that
+        loses — never the one that deserves to.
+
+        Two entries are droppable, in this order. ``↑/↓ select`` goes first:
+        arrows moving a list is the one thing on this line nobody has to be
+        told. ``Esc cancel`` goes second, for the same reason one step later —
+        it is the key every XeFM dialog already answers to. What survives to the
+        narrowest box is what a user cannot guess: what Enter does here, which
+        mode Tab switches to, and the key that opens the options."""
         other = "content" if self.mode == "filename" else "filename"
-        return " · ".join(("↑/↓ select", f"Enter {self._accept_hint}",
-                           f"Tab {other}", "Esc cancel"))
+        #: (text, how readily it is dropped) — 0 never, then 1, then 2.
+        items: list[tuple[str, int]] = [
+            ("↑/↓ select", 2),
+            (f"Enter {self._accept_hint}", 0),
+            (f"Tab {other}", 0),
+        ]
+        key = self._options_key_label() if self.options is not None else ""
+        if key:
+            # Read back from the keymap so a rebind is what the line says, and
+            # dropped entirely where a config unbound it — the same rule the
+            # pickers apply to their remove key.
+            items.append((f"{key} options", 0))
+        items.append(("Esc cancel", 1))
+
+        line = " · ".join(text for text, _drop in items)
+        if width is None or measure is None:
+            return line
+        for droppable in (2, 1):
+            if measure(line) <= width:
+                return line
+            items = [entry for entry in items if entry[1] != droppable]
+            line = " · ".join(text for text, _drop in items)
+        return line
 
     def _status_text(self) -> str:
         if self._error:

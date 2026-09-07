@@ -159,26 +159,19 @@ class Options(unittest.TestCase):
 
     def test_chips_follow_the_mode(self):
         dlg = self._dialog(initial_mode="content")
-        self.assertEqual([text for text, _lit in dlg.options.chips(dlg.mode)],
-                         ["Aa", ".*", "sub"])
+        self.assertEqual([text for text, _on in dlg.options.chips(dlg.mode)],
+                         ["Aa", "Word", ".*", "Sub"])
         dlg._switch_mode()  # filename search speaks glob, not regex
-        self.assertEqual([text for text, _lit in dlg.options.chips(dlg.mode)],
-                         ["Aa", "sub"])
+        self.assertEqual([text for text, _on in dlg.options.chips(dlg.mode)],
+                         ["Aa", "Sub"])
 
-    def test_the_case_chip_lights_as_a_capital_is_typed(self):
-        # The strip is where smart case teaches itself: nothing explains the rule,
-        # the chip just moves while you type.
+    def test_a_chip_says_on_or_off_by_its_state_not_its_text(self):
+        # The fill carries the state, so the name stays put — no chip has to
+        # grow a space inside it to say it is off.
         dlg = self._dialog()
-        _run(dlg, "todo")
         self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", False))
-        _run(dlg, "TODO")
+        dlg.options.toggle(search_opts.CASE)
         self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", True))
-
-    def test_an_empty_query_settles_the_chips_back(self):
-        dlg = self._dialog()
-        _run(dlg, "TODO")
-        _run(dlg, "")
-        self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", False))
 
     def test_changing_an_option_reruns_the_search(self):
         runs = []
@@ -190,7 +183,7 @@ class Options(unittest.TestCase):
         )
         _run(dlg, "needle")
         self.assertEqual(runs, ["needle"])
-        dlg.options.cycle(search_opts.CASE)
+        dlg.options.toggle(search_opts.CASE)
         self.assertEqual(runs, ["needle", "needle"])  # same query, run again
 
     def test_a_closed_dialog_stops_answering_its_options(self):
@@ -204,18 +197,39 @@ class Options(unittest.TestCase):
         )
         _run(dlg, "needle")
         dlg._close()
-        dlg.options.cycle(search_opts.CASE)
+        dlg.options.toggle(search_opts.CASE)
         self.assertEqual(runs, ["needle"])
 
-    def test_the_strip_carries_the_key_that_changes_it(self):
-        # Not the hint band: four entries already elide at the width a
-        # pane-anchored box gets, so a fifth would only truncate the fourth.
-        self.assertEqual(self._dialog()._options_key_label(), "Ctrl-O")
-
-    def test_the_hint_band_did_not_grow(self):
+    def test_the_hint_band_names_the_options_key_before_esc(self):
         dlg = self._dialog(initial_mode="filename")
-        self.assertEqual(dlg.hint(),
-                         "↑/↓ select · Enter choose · Tab content · Esc cancel")
+        self.assertEqual(
+            dlg.hint(),
+            "↑/↓ select · Enter choose · Tab content · Ctrl-O options · Esc cancel")
+
+    def test_a_narrow_band_drops_whole_entries(self):
+        # A truncated entry spends the width and says nothing, and it is always
+        # the rightmost that loses — never the one that deserves to.
+        dlg = self._dialog(initial_mode="filename")
+        measure = len
+        full = dlg.hint()
+        self.assertEqual(dlg.hint(len(full), measure), full)
+        # Too narrow for the arrows: they go first, the rest survives intact.
+        tight = dlg.hint(len(full) - 1, measure)
+        self.assertEqual(tight,
+                         "Enter choose · Tab content · Ctrl-O options · Esc cancel")
+        # Narrower still: Esc goes, and what a user cannot guess is what is left.
+        tighter = dlg.hint(len(tight) - 1, measure)
+        self.assertEqual(tighter, "Enter choose · Tab content · Ctrl-O options")
+
+    def test_the_options_key_outlives_every_drop(self):
+        dlg = self._dialog(initial_mode="filename")
+        self.assertIn("Ctrl-O options", dlg.hint(1.0, len))
+
+    def test_a_dialog_without_options_names_no_key(self):
+        dlg = ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter(()),
+            to_label=lambda mode, v: str(v))
+        self.assertNotIn("options", dlg.hint())
 
     def test_the_key_label_follows_a_rebind(self):
         from xefm.config import KeyBindings, config_manager
@@ -259,9 +273,9 @@ class Options(unittest.TestCase):
         dlg = self._dialog()
         self.assertFalse(dlg._handle_option_key(
             Event(EventType.KEY, key="t", modifiers=frozenset({"ctrl"}))))
-        self.assertEqual(dlg.options[search_opts.CASE], "smart")
+        self.assertIs(dlg.options[search_opts.CASE], False)
 
-    def test_a_bound_option_chord_cycles_that_option(self):
+    def test_a_bound_option_chord_toggles_that_option(self):
         from xefm.config import KeyBindings, config_manager
 
         dlg = self._dialog()
@@ -274,7 +288,7 @@ class Options(unittest.TestCase):
         finally:
             config_manager._key_bindings = saved
         self.assertTrue(handled)
-        self.assertEqual(dlg.options[search_opts.CASE], "sensitive")
+        self.assertIs(dlg.options[search_opts.CASE], True)
 
 
 class AppIntegration(unittest.TestCase):
@@ -498,7 +512,7 @@ class AppIntegration(unittest.TestCase):
             self.assertEqual(settle(), ["deep.txt", "top.txt"])
 
             # Changing the option re-runs the same query on its own.
-            dlg.options.cycle(search_opts.SUBDIRS)
+            dlg.options.toggle(search_opts.SUBDIRS)
             self.assertEqual(settle(), ["top.txt"])
         finally:
             app.file_monitor.stop_monitoring()
@@ -514,14 +528,14 @@ class AppIntegration(unittest.TestCase):
         try:
             app._open_search("filename")
             dlg = app.panel._layers[-1].widget
-            dlg.options.cycle(search_opts.SUBDIRS)   # scope: transient
-            dlg.options.cycle(search_opts.CASE)      # reading: persists
+            dlg.options.toggle(search_opts.SUBDIRS)   # scope: transient
+            dlg.options.toggle(search_opts.CASE)      # reading: persists
             dlg._cancel_dialog()
 
             app._open_search("filename")
             reopened = app.panel._layers[-1].widget
             self.assertIs(reopened.options[search_opts.SUBDIRS], True)
-            self.assertEqual(reopened.options[search_opts.CASE], "sensitive")
+            self.assertIs(reopened.options[search_opts.CASE], True)
         finally:
             app.file_monitor.stop_monitoring()
             b.close()
