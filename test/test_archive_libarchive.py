@@ -154,6 +154,28 @@ def test_extract_to_file(sample_7z, tmp_path):
 
 
 @requires_7z
+def test_reads_past_the_first_member_of_a_solid_archive(tmp_path):
+    """Every member of a solid 7z is readable on its own, not just the first.
+
+    7z is solid by default: one compressed stream holds every member, and
+    libarchive can only *skip* a member's data inside its 64 KiB decompression
+    buffer. Past that the reader loses its place and the next member read comes
+    back as "Truncated 7-Zip file body", which is what browsing or copying one
+    file out of a real archive used to hit. The members here are incompressible
+    so they stay over that buffer — 4 KiB ones pass either way, which is why the
+    other fixtures never caught this."""
+    members = [(f"m{i}.bin", os.urandom(96 * 1024)) for i in range(3)]
+    path = _write_7z(tmp_path / "solid.7z", members)
+    A.get_archive_cache().clear()
+    try:
+        with LibarchiveHandler(Path(str(path))) as handler:
+            for name, data in members:
+                assert handler.extract_to_bytes(name) == data
+    finally:
+        A.get_archive_cache().clear()
+
+
+@requires_7z
 def test_a_missing_archive_is_reported_as_such(tmp_path):
     handler = LibarchiveHandler(Path(str(tmp_path / "nope.7z")))
     with pytest.raises(FileNotFoundError):

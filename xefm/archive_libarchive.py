@@ -457,6 +457,15 @@ def clean_member_path(pathname: str) -> str:
     return path.strip('/')
 
 
+class _SkipUnreachable(Exception):
+    """Internal: this member cannot be reached by skipping the ones ahead of it.
+
+    Raised on :meth:`LibarchiveHandler._member_chunks`' skipping pass and caught
+    one frame up, where it selects the draining pass instead. Never escapes the
+    handler, so it deliberately is not an :class:`~xefm.archive.ArchiveError`:
+    nothing outside should be able to catch it as one."""
+
+
 class LibarchiveHandler(ArchiveHandler):
     """Reads any format the loaded libarchive supports.
 
@@ -655,18 +664,56 @@ class LibarchiveHandler(ArchiveHandler):
         rate can show, and matches what the local copy loop does.
 
         Scans from the start of the archive to the entry, because the format has
-        no index to seek with; on a solid archive that means decompressing
-        everything ahead of it as well. Streaming does not make that cheaper, but
-        it does mean the caller sees bytes moving throughout and can stop."""
+        no index to seek with. Two passes are possible: the members ahead of the
+        target are *skipped* first, and only if that leaves the target unreadable
+        is the archive re-read *draining* them (see :meth:`_member_chunks`).
+        Skipping is what keeps reading one file out of a big ISO or cpio cheap,
+        so it stays the first thing tried; the retry is what makes a solid 7z
+        work at all."""
         entry = self._require_readable_file(internal_path)
         normalized_path = self._normalize_path(internal_path)
+        try:
+            yield from self._member_chunks(normalized_path, entry, chunk_size,
+                                           drain=False)
+            return
+        except _SkipUnreachable:
+            pass
+        self.logger.info(
+            f"{self._archive_path.name}: {internal_path} cannot be reached by "
+            f"skipping (solid archive) — re-reading from the start")
+        yield from self._member_chunks(normalized_path, entry, chunk_size,
+                                       drain=True)
+
+    def _member_chunks(self, normalized_path: str, entry: ArchiveEntry,
+                       chunk_size: int, *, drain: bool) -> Iterator[bytes]:
+        """One pass over the archive, yielding the target member in chunks.
+
+        ``drain`` decides what happens to the members *ahead* of the target.
+        Skipping their data costs nothing where the format allows it, but a
+        solid archive holds every member in one compressed stream and libarchive
+        can only skip within its 64 KiB decompression buffer: past that the
+        reader loses its place and the target reads back as "Truncated 7-Zip file
+        body". Draining reads and discards that data, which is the only way to
+        arrive at the target in step with the decoder.
+
+        Which one a given archive needs is not something the headers say, so it
+        is discovered rather than declared: on the skipping pass, a read that
+        fails *before yielding anything* raises :class:`_SkipUnreachable` for
+        :meth:`iter_member_bytes` to retry with. A failure after the first chunk
+        has gone out is a real error — the caller is already consuming those
+        bytes, and re-reading would hand it the member twice."""
+        internal_path = entry.internal_path
         found = False
         try:
             with self._reader(self._password()) as archive:
                 for raw in archive:
                     if clean_member_path(raw.pathname) != normalized_path:
+                        if drain and raw.isreg:
+                            for _ in raw.get_blocks():
+                                pass
                         continue
                     found = True
+                    started = False
                     try:
                         pending: List[bytes] = []
                         held = 0
@@ -674,18 +721,22 @@ class LibarchiveHandler(ArchiveHandler):
                             pending.append(block)
                             held += len(block)
                             if held >= chunk_size:
+                                started = True
                                 yield b''.join(pending)
                                 pending, held = [], 0
                         if pending:
+                            started = True
                             yield b''.join(pending)
                     except Exception as exc:  # noqa: BLE001 — libarchive's error
                         if normalized_path in self._encrypted:
                             raise self._decryption_error(exc, normalized_path)
+                        if not drain and not started:
+                            raise _SkipUnreachable from exc
                         raise ArchiveExtractionError(
                             f"Error extracting {internal_path}: {exc}",
                             f"Cannot extract '{internal_path}': {exc}")
                     break
-        except ArchiveError:
+        except (ArchiveError, _SkipUnreachable):
             raise
         except Exception as exc:  # noqa: BLE001 — a failure opening the reader
             raise ArchiveExtractionError(
