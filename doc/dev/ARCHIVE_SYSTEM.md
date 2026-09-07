@@ -478,11 +478,16 @@ message saying so, rather than silently gaining a `.tar.gz` suffix.
   hand-rolling the loop, so `extractall`'s deferred directory-permission fix-up (a
   read-only directory would otherwise block writing into it) and zipfile's member
   path sanitization both still run.
-- `extract_archive()` (the **U** key) — the UI flow: extracts the focused archive
-  into a subdirectory named after the archive (`_archive_basename`) in the other
-  pane's directory. Confirms when `CONFIRM_EXTRACT_ARCHIVE` is set or the
-  destination already exists. Refuses non-archives, nested archives, and
-  extracting into a read-only archive.
+- `extract_archive()` (the **U** key) — the UI flow: takes the active pane's
+  selection (or the focused entry) like every other file operation
+  (`_selected_or_focused`; U ignoring the selection was issue #408) and extracts
+  each archive into a subdirectory named after it (`_archive_basename`) in the
+  other pane's directory. Selected entries that are not readable archives are
+  dropped from the plan and reported as a count — a single target keeps its own
+  diagnosis ("is not a file" / "is not a supported archive"), which a count would
+  throw away. Confirms when `CONFIRM_EXTRACT_ARCHIVE` is set or a destination
+  already exists. Refuses nested archives and extracting into a read-only
+  archive.
 
 ### Running as a task
 
@@ -494,9 +499,14 @@ duration: no repaint, no keys, no way out.
 `_submit_archive_task(task, run, on_done, dest_dir)` is the shared submit. Each
 flow builds a `Task` (`kind="archive_create"` / `"archive_extract"`, progress
 started as `OperationType.ARCHIVE_CREATE` / `ARCHIVE_EXTRACT`) whose `run` body
-counts, then writes or extracts, and returns its outcome as a dict —
-`{"added": n}` / `{"count": n}`, `{"cancelled": True}`, or `{"error": exc}` —
-which `on_done` reports on the main thread. The submit also brackets `dest_dir`'s
+counts, then writes or extracts, and returns its outcome as a dict — `{"added":
+n}` for a create, `{"done": archives, "entries": n, "failures": [(entry, exc)]}`
+for an extract (plus `"cancelled": True` and the half-written `"partial"` when it
+was stopped), or `{"error": exc}` — which `on_done` reports on the main thread.
+A whole *batch* of archives extracts inside one `run`: `start_operation` is
+re-issued per archive (the bar restarts, named after the archive), `task.title`
+carries "archive i of N", and one archive's failure is collected rather than
+raised, so the rest of the batch still runs. The submit also brackets `dest_dir`'s
 filesystem watcher for the run, the same suppression copy/move/delete use so an
 operation's own writes don't re-list the watching pane throughout (issue #243).
 
@@ -508,8 +518,10 @@ a cancelled *extract* leaves what landed — the destination may be a directory 
 user already had files in, so removing it wholesale could take those with it.
 
 Extraction's failure dispatch is ordered most-specific-first, because
-`NotImplementedError` **is a** `RuntimeError`: AES is reported as unsupported, and
-only a plain `RuntimeError` re-opens the password prompt.
+`NotImplementedError` **is a** `RuntimeError`: encryption XeFM cannot decrypt is
+reported as unsupported, and only a plain `RuntimeError` counts as a wrong
+password. That dispatch lives on the worker now (see below), so a wrong password
+re-asks in place instead of unwinding the task and resubmitting it.
 
 ### The byte bar (`xefm/archive_progress.py`)
 
@@ -620,11 +632,16 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
 
 ### Flows (`xefm/app.py`)
 
-- **Extract** — `extract_archive` classifies the ZIP: `'aes'` stops with a
-  message; `'zipcrypto'` prompts for a password; otherwise extracts directly. The
-  up-front `verify_zip_password` means a wrong password re-prompts with an error
-  and never leaves a half-extracted directory. A working password is stored so a
-  later browse reuses it.
+- **Extract** — `extract_archive` asks each archive's own handler
+  (`archive_encryption_status_path`) *on the worker*, one archive at a time:
+  `'unsupported'` is recorded as a failure for that archive; `'password'` asks for
+  one through the task's UI bridge (`Task.ask`, the same seam the copy conflict
+  dialog uses — the masked prompt stacks at `z + 5`, above the progress dialog);
+  anything else extracts directly. The probe is a full open of the file, which is
+  why it is not done on the main thread. The up-front `verify_zip_password` means
+  a wrong password re-asks with an error and never leaves a half-extracted
+  directory; cancelling the prompt cancels the batch. A working password is stored
+  so a later browse reuses it.
 - **Browse / view** — `_ensure_archive_password` gates opening a file that may
   live in an encrypted ZIP: `'ok'` runs the open callback immediately; `'aes'`
   shows a message; `'need'` shows a masked prompt, verifies via

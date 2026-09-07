@@ -433,7 +433,7 @@ _FILER_ACTIONS = [
     _a("diff_directories", FILER, "Compare two directories recursively"),
     # Archives
     _a("create_archive", FILER, "Create an archive from the selection"),
-    _a("extract_archive", FILER, "Extract the focused archive"),
+    _a("extract_archive", FILER, "Extract the selected archive(s)"),
     # Search and filter
     _a("find_files", FILER, "Search for files by name",
        aliases=("search_dialog",)),

@@ -45,14 +45,21 @@ CONFIRM_ARCHIVE_CREATE = False   # default: True
 
 ## Extracting an archive
 
-1. Put the cursor on an archive file.
+1. Select the archives you want to unpack — or just put the cursor on one.
 2. Press **U**.
 3. Confirm the destination.
 
-The archive is extracted into a subdirectory (named after the archive) in the
-other pane. If that directory already exists, XeFM asks whether to overwrite,
-rename the extraction directory, or cancel. XeFM confirms before extracting by
-default:
+Each archive is extracted into its own subdirectory (named after the archive) in
+the other pane. Anything in the selection that is not an archive — an ordinary
+file, a directory — is skipped, and the log says how many were passed over. If a
+destination directory already exists, the confirmation says so before anything is
+written; files inside it may be overwritten.
+
+Several archives unpack as one operation: one progress dialog for the batch, and
+**Esc** stops it where it stands (what has already landed stays). If one archive
+turns out to be unreadable, it is reported by name and the rest still unpack.
+
+XeFM confirms before extracting by default:
 
 ```python
 CONFIRM_EXTRACT_ARCHIVE = False   # default: True
@@ -156,9 +163,12 @@ and the value can't be copied or cut from the field.
 
 ### Extracting a password-protected archive
 
-1. Put the cursor on the encrypted archive and press **U** (Extract Archive).
+1. Put the cursor on the encrypted archive (or select it among others) and
+   press **U** (Extract Archive).
 2. Confirm the destination as usual.
-3. XeFM detects that the archive is encrypted and asks for its password.
+3. XeFM detects that the archive is encrypted and asks for its password. In a
+   batch the prompt appears when that archive's turn comes, so each encrypted
+   archive is asked for separately.
 4. Enter the password and press **Enter**. The archive extracts into a
    subdirectory in the other pane.
 

@@ -126,7 +126,7 @@ TIPS: tuple[tuple[str, str], ...] = (
     ("Archives are directories",
      "Press {key:open_item} on an archive to browse *inside* it like "
      "a directory. {key:create_archive} packs the selection into a new "
-     "archive; {key:extract_archive} unpacks the focused one."),
+     "archive; {key:extract_archive} unpacks the selected ones."),
 
     ("Compare files and directories",
      "{key:diff_files} compares two selected files side by side in a diff "
