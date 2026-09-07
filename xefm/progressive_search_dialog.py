@@ -27,7 +27,14 @@ against the same root. Enter accepts the selected row via
 ``on_accept(mode, value)``; Esc (or an outside click) cancels and stops the
 worker. A hint band along the bottom, mirroring the title bar, names those keys
 — including which mode Tab would switch *to*, so the status line above the
-results is left to report only what the search itself is doing. Push it with
+results is left to report only what the search itself is doing.
+
+What Enter *means* is the owner's to say, not this widget's: it reports the
+accepted row and nothing more, so ``accept_hint`` is how the caller names the
+thing it then does. XeFM's search feeds the whole result set into the active
+pane (the accepted row only decides where the cursor lands), which is a very
+different promise from opening one file — see
+``doc/dev/SEARCH_RESULTS_PANE_IMPLEMENTATION.md``. Push it with
 :func:`show_progressive_search`.
 """
 
@@ -79,6 +86,7 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         on_accept: Callable[[str, Any], None] | None = None,
         on_cancel: Callable[[], None] | None = None,
         titles: dict[str, str] | None = None,
+        accept_hint: str = "choose",
         initial_mode: str = "filename",
         result_cap: int = _RESULT_CAP,
         ellipsis: str = "…",
@@ -89,6 +97,9 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         self.on_accept = on_accept
         self.on_cancel = on_cancel
         self._titles = titles or {"filename": "Search Files", "content": "Search Content"}
+        #: What the hint band says Enter does — the owner's knowledge, injected
+        #: like ``titles``, because this widget only reports the accepted row.
+        self._accept_hint = accept_hint
         self.mode = initial_mode
         self.result_cap = result_cap
 
@@ -341,12 +352,15 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
     def hint(self) -> str:
-        """The keys named in the bottom band. Tab names the mode it switches
-        *to*, which is the only part that changes as the dialog is used — it used
-        to ride along on the status line, where it was the one thing there that
-        was not about the search's progress."""
+        """The keys named in the bottom band. The key names are this widget's —
+        they are structural — but what Enter *does* is the owner's, so it comes
+        from ``accept_hint``. Tab names the mode it switches *to*, which is the
+        only part that changes as the dialog is used; it used to ride along on
+        the status line, where it was the one thing there that was not about the
+        search's progress."""
         other = "content" if self.mode == "filename" else "filename"
-        return " · ".join(("↑/↓ select", "Enter open", f"Tab {other}", "Esc cancel"))
+        return " · ".join(("↑/↓ select", f"Enter {self._accept_hint}",
+                           f"Tab {other}", "Esc cancel"))
 
     def _status_text(self) -> str:
         if self._error:
@@ -412,6 +426,7 @@ def show_progressive_search(
     on_accept: Callable[[str, Any], None] | None = None,
     on_cancel: Callable[[], None] | None = None,
     titles: dict[str, str] | None = None,
+    accept_hint: str = "choose",
     initial_mode: str = "filename",
     result_cap: int = _RESULT_CAP,
     region: tuple[float, float] | None = None,
@@ -424,14 +439,17 @@ def show_progressive_search(
     ``search_iter(mode, query, cancel)`` yields result values for the given mode
     (``"filename"`` / ``"content"``); it runs on a worker thread and should poll
     ``cancel`` and honor generation via early return. ``to_label(mode, value)``
-    renders a row; ``on_accept(mode, value)`` fires on Enter/click.
+    renders a row; ``on_accept(mode, value)`` fires on Enter/click, and
+    ``accept_hint`` is what the hint band says Enter does — pass the phrase that
+    matches what ``on_accept`` actually performs.
 
     ``region`` anchors the dialog over the active pane (see
     :func:`show_filter_list` for the same convention)."""
     dialog = ProgressiveSearchDialog(
         search_iter=search_iter, to_label=to_label, on_accept=on_accept,
-        on_cancel=on_cancel, titles=titles, initial_mode=initial_mode,
-        result_cap=result_cap, ellipsis=ellipsis, elide_where=elide_where,
+        on_cancel=on_cancel, titles=titles, accept_hint=accept_hint,
+        initial_mode=initial_mode, result_cap=result_cap, ellipsis=ellipsis,
+        elide_where=elide_where,
     )
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 72.0))

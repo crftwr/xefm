@@ -3685,15 +3685,18 @@ class XeFMApp:
         """Live filename search under the active pane (the Shift-F dialog): opens
         the progressive search dialog in filename mode. Typing walks the tree
         (bounded, honouring the hidden-file setting) and streams matching entries
-        into the list as you type; Tab switches to content search; picking a hit
-        navigates to its directory and lands the cursor on it."""
+        into the list as you type; Tab switches to content search; Enter feeds the
+        *whole* result set into the pane and lands the cursor on the hit you were
+        standing on (``_feed_search_results``)."""
         self._open_search("filename")
 
     def show_content_search(self) -> None:
         """Live content (grep) search under the active pane (the Shift-G dialog):
         opens the progressive search dialog in content mode. Typing walks the tree
         reading text files and streams each matching line; Tab switches to
-        filename search; picking a hit navigates to the file and lands on it."""
+        filename search; Enter feeds the *whole* result set into the pane —
+        collapsed to one row per file — and lands the cursor on the hit you were
+        standing on (``_feed_search_results``)."""
         self._open_search("content")
 
     def _open_search(self, initial_mode: str) -> None:
@@ -3745,7 +3748,8 @@ class XeFMApp:
         dialog = show_progressive_search(
             self.panel, initial_mode=initial_mode,
             search_iter=search_iter, to_label=to_label, on_accept=on_accept,
-            titles=titles, region=self._active_pane_region())
+            titles=titles, accept_hint="results to pane",
+            region=self._active_pane_region())
         self.panel.render()
 
     def _feed_search_results(self, mode: str, results: list, root, query: str,
