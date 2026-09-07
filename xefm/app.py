@@ -5219,141 +5219,213 @@ class XeFMApp:
         return False
 
     def extract_archive(self) -> bool:
-        """Extract the focused archive into a subdirectory (named after the
-        archive) in the other pane's directory (the 'U' key). Confirms when
-        ``CONFIRM_EXTRACT_ARCHIVE`` is set or the destination already exists.
+        """Extract the active pane's selected archives — or, with nothing
+        selected, the one under the cursor — each into a subdirectory named after
+        it in the other pane's directory (the 'U' key). Confirms when
+        ``CONFIRM_EXTRACT_ARCHIVE`` is set or a destination already exists.
+
+        The selection is what every other file operation acts on, and U ignoring
+        it was #408. Selected entries that are not readable archives are skipped
+        and reported rather than sinking the whole batch, and the batch runs as
+        *one* task: one progress dialog, one Cancel, one summary. Each archive's
+        password (when it needs one) is asked for from the worker through the
+        task's UI bridge, which is also what moves the encryption probe — a full
+        open of the file — off the main thread.
 
         Returns True when a guard bailed out synchronously (see ``_transfer`` for
         why the caller then needs to redraw)."""
-        entry = self._focused_entry()
-        if entry is None:
+        targets = self._selected_or_focused(self.active_pane())
+        if not targets:
             self.log_info("No file to extract")
             return True
-        try:
-            if not entry.is_file():
-                self.log_info(f"{entry.name} is not a file")
-                return True
-        except Exception:
-            pass
-        fmt = self._readable_archive_format(entry.name)
-        if fmt is None:
-            self.log_info(f"'{entry.name}' is not a supported archive")
-            return True
-        if self._is_archive(entry):
+        if any(self._is_archive(t) for t in targets):
             self.log_info("Cannot extract an archive nested inside another archive")
             return True
         dest_dir = self.pm.get_inactive_pane()["path"]
         if self._is_archive(dest_dir):
             self.log_info("Cannot extract into a read-only archive")
             return True
-        target = dest_dir / self._archive_basename(entry.name)
 
-        def finish(exc: Exception | None, count: int) -> None:
-            if exc is not None:
-                self.log_info(f"Extraction failed: {exc}")
-            else:
-                self.log_info(f"Extracted {entry.name} → {target.name}/ ({count} entries)")
-            self._relist(self.pm.get_inactive_pane())
-            self.panel.render()
+        plan: list[tuple] = []    # (entry, target, fmt) — what will be extracted
+        skipped: list[tuple] = []  # (entry, reason) — what the selection swept up
+        for entry in targets:
+            try:
+                is_file = entry.is_file()
+            except Exception:  # noqa: BLE001 — an unreadable stat is not a verdict
+                is_file = True
+            if not is_file:
+                skipped.append((entry, f"{entry.name} is not a file"))
+                continue
+            fmt = self._readable_archive_format(entry.name)
+            if fmt is None:
+                skipped.append((entry, f"'{entry.name}' is not a supported archive"))
+                continue
+            plan.append((entry, dest_dir / self._archive_basename(entry.name), fmt))
+        if not plan:
+            # A single target keeps its own diagnosis — it says *why* that file
+            # cannot be extracted, which a count would throw away.
+            self.log_info(skipped[0][1] if len(skipped) == 1 else
+                          f"None of the {len(skipped)} selected items is an archive")
+            return True
+        if skipped:
+            self.log_info(f"Skipping {len(skipped)} selected item(s) "
+                          f"that are not archives")
+        single = len(plan) == 1
 
-        def do_extract(pwd: bytes | None) -> None:
-            """Run the extraction with an optional zip password on the task worker
-            — decompressing a large archive would otherwise freeze the UI for its
-            whole duration, and building a compressed tar's member list (the
-            counting phase) is itself a full read of the file.
+        def password_prompt(entry, error: str | None):
+            """A ``show_fn(panel, deliver)`` for :meth:`Task.ask`: the masked
+            password field for ``entry``, stacked above the progress dialog (the
+            same ``z + 5`` the conflict dialog uses). Cancelling delivers None."""
+            def show(panel, deliver) -> None:
+                show_input(
+                    panel, title="Extract Archive",
+                    prompt=error or f"Password for {entry.name}:", password=True,
+                    on_accept=deliver, on_cancel=lambda: deliver(None),
+                    select_all=False, region=self._active_pane_region(), z=75)
+                panel.render()
+            return show
 
-            A wrong/missing password surfaces as ``RuntimeError`` (verified before
-            any file is written), which re-opens the password prompt with an
-            error."""
+        def go() -> None:
+            """Run the whole batch on the task worker — decompressing a large
+            archive would otherwise freeze the UI for its whole duration, and
+            building a compressed tar's member list (the counting phase) is itself
+            a full read of the file."""
             task = Task("Extracting archive…", config=self.config,
                         kind="archive_extract")
             task.progress.start_operation(OperationType.ARCHIVE_EXTRACT, 0,
-                                          description=entry.name)
+                                          description=plan[0][0].name)
 
             def run(t: Task) -> dict:
                 prog = t.progress
+                # The archive currently being written, for the cancel message:
+                # what landed stays (the destination may be a directory the user
+                # already had files in — the confirm box says as much — so
+                # removing it wholesale could take those with it).
+                partial = None
+
+                def extract_one(entry, target, fmt) -> int:
+                    """One archive, asking for its password if it needs one.
+
+                    A wrong password re-asks *here*, in place, rather than
+                    unwinding the task and resubmitting it: nothing is written
+                    until the password verifies (see ``_extract_archive``), so the
+                    retry costs only the prompt."""
+                    nonlocal partial
+                    from xefm.archive import (archive_encryption_status_path,
+                                              set_archive_password)
+                    # Which of "needs a password" and "XeFM cannot decrypt this at
+                    # all" applies is the format's own handler's answer — this used
+                    # to test for a zip and so could never report any other
+                    # format's encryption.
+                    status = archive_encryption_status_path(str(entry))
+                    if status == "unsupported":
+                        raise NotImplementedError(
+                            f"{entry.name}: encryption XeFM cannot decrypt")
+                    pwd = None
+                    error = None
+                    while True:
+                        if status == "password":
+                            answer = t.ask(password_prompt(entry, error),
+                                           headless=None)
+                            if not answer:  # Esc, or an empty password
+                                raise Cancelled()
+                            pwd = answer.encode("utf-8")
+                        partial = target
+                        try:
+                            count = self._extract_archive(entry, target, fmt,
+                                                          pwd=pwd, task=t, prog=prog)
+                        except NotImplementedError:
+                            # Defensive: the probe above already refused these, and
+                            # NotImplementedError *is* a RuntimeError, so it must
+                            # not fall into the wrong-password branch below.
+                            raise
+                        except RuntimeError:
+                            if status != "password":
+                                raise
+                            error = "Incorrect password — try again:"
+                            partial = None  # verified before anything was written
+                            continue
+                        partial = None
+                        if pwd is not None:
+                            # Remember the working password so browsing this same
+                            # archive later doesn't prompt again this session.
+                            set_archive_password(entry, pwd)
+                        return count
+
+                done = 0
+                entries = 0
+                failures: list[tuple] = []
                 try:
-                    count = self._extract_archive(entry, target, fmt, pwd=pwd,
-                                                  task=t, prog=prog)
+                    for index, (entry, target, fmt) in enumerate(plan, 1):
+                        t.checkpoint()
+                        if not single:
+                            # Read live by the progress dialog each frame.
+                            t.title = f"Extracting archive {index} of {len(plan)}…"
+                        prog.start_operation(OperationType.ARCHIVE_EXTRACT, 0,
+                                             description=entry.name)
+                        try:
+                            entries += extract_one(entry, target, fmt)
+                        except Cancelled:
+                            raise  # Cancel is the batch's, not this archive's
+                        except Exception as exc:  # noqa: BLE001 — on the main thread
+                            # One bad archive does not sink the rest of the batch;
+                            # every failure is reported when the task lands.
+                            failures.append((entry, exc))
+                            continue
+                        done += 1
                 except Cancelled:
-                    # What landed stays: the destination may be a directory the
-                    # user already had files in (the confirm box says as much), so
-                    # removing it wholesale could take those with it.
-                    return {"cancelled": True}
-                except Exception as exc:  # noqa: BLE001 — dispatched on the main thread
-                    return {"error": exc}
+                    return {"cancelled": True, "done": done, "entries": entries,
+                            "failures": failures, "partial": partial}
                 finally:
                     prog.finish_operation()
-                return {"count": count}
+                return {"done": done, "entries": entries, "failures": failures}
 
             def on_done(res: dict) -> None:
-                # Most specific first: NotImplementedError *is* a RuntimeError, so
-                # the other order would send an AES zip to the password prompt.
-                exc = res.get("error")
+                for entry, exc in res.get("failures") or []:
+                    if isinstance(exc, NotImplementedError):
+                        self.log_info(f"Cannot extract {entry.name}: "
+                                      f"its encryption is not supported")
+                    elif single:
+                        self.log_info(f"Extraction failed: {exc}")
+                    else:
+                        self.log_info(f"Extraction failed for {entry.name}: {exc}")
+                done = res.get("done", 0)
+                entries = res.get("entries", 0)
                 if res.get("cancelled"):
+                    partial = res.get("partial")
+                    detail = []
+                    if not single:
+                        detail.append(f"{done} of {len(plan)} archive(s) extracted")
+                    if partial is not None:
+                        detail.append(f"{partial.name}/ is partly written")
+                    self.log_info("Extraction cancelled" +
+                                  (" — " + ", ".join(detail) if detail else ""))
+                elif done and single:
+                    entry, target, _ = plan[0]
                     self.log_info(
-                        f"Extraction cancelled — {target.name}/ is partly written")
-                    self._relist(self.pm.get_inactive_pane())
-                    self.panel.render()
-                elif isinstance(exc, NotImplementedError):
-                    # Defensive: an undecryptable archive is normally caught up
-                    # front in go(); if one slips through, report it clearly rather
-                    # than as a raw traceback.
-                    self.log_info(
-                        f"Cannot extract {entry.name}: its encryption is not supported")
-                    self._relist(self.pm.get_inactive_pane())
-                    self.panel.render()
-                elif isinstance(exc, RuntimeError):
-                    # Encrypted archive: the password was missing or wrong.
-                    # Re-prompt (nothing was written, thanks to the up-front verify).
-                    prompt_password(error="Incorrect password — try again:")
-                elif exc is not None:
-                    finish(exc, 0)
-                else:
-                    if pwd is not None:
-                        # Remember the working password so browsing this same
-                        # archive later doesn't prompt again this session.
-                        from xefm.archive import set_archive_password
-                        set_archive_password(entry, pwd)
-                    finish(None, res.get("count", 0))
+                        f"Extracted {entry.name} → {target.name}/ ({entries} entries)")
+                elif done:
+                    self.log_info(f"Extracted {done} archive(s) → {dest_dir} "
+                                  f"({entries} entries)")
+                self._relist(self.pm.get_inactive_pane())
+                self.panel.render()
 
             self._submit_archive_task(task, run, on_done, dest_dir)
 
-        def prompt_password(error: str | None = None) -> None:
-            show_input(
-                self.panel, title="Extract Archive",
-                prompt=error or f"Password for {entry.name}:", password=True,
-                on_accept=lambda p: do_extract(p.encode("utf-8")) if p else self.panel.render(),
-                on_cancel=self.panel.render, select_all=False,
-                region=self._active_pane_region())
-            self.panel.render()
-
-        def go() -> None:
-            # A password-protected archive needs a password before extraction, and
-            # a scheme XeFM cannot decrypt at all is refused up front rather than
-            # after a half-written directory. Which of the two applies is the
-            # format's own handler's answer now — this used to test for a zip and
-            # so could never report any other format's encryption.
-            from xefm.archive import archive_encryption_status_path
-            status = archive_encryption_status_path(str(entry))
-            if status == "unsupported":
-                self.log_info(
-                    f"Cannot extract {entry.name}: its encryption is not supported")
-                self.panel.render()
-                return
-            if status == "password":
-                prompt_password()
-                return
-            do_extract(None)
-
-        exists = target.exists()
-        if exists or getattr(self.config, "CONFIRM_EXTRACT_ARCHIVE", True):
+        existing = [target for _, target, _ in plan if target.exists()]
+        if existing or getattr(self.config, "CONFIRM_EXTRACT_ARCHIVE", True):
             # Markdown message: the archive name and destination render as `code`
             # chips (backticks also shield a path's _ / * from markdown). A blank
             # line makes the warning a separate paragraph, not a folded-in clause.
-            message = f"Extract `{entry.name}` to `{target}`?"
-            if exists:
-                message += "\n\nThe destination exists; files may be overwritten."
+            if single:
+                message = f"Extract `{plan[0][0].name}` to `{plan[0][1]}`?"
+                if existing:
+                    message += "\n\nThe destination exists; files may be overwritten."
+            else:
+                message = f"Extract {len(plan)} archives to `{dest_dir}`?"
+                if existing:
+                    message += (f"\n\n{len(existing)} destination(s) exist; "
+                                f"files may be overwritten.")
             show_message_box(
                 self.panel, message, title="Extract Archive", icon="info",
                 buttons=("Extract", "Cancel"), default=0, cancel=1, markdown=True,
@@ -5880,7 +5952,7 @@ class XeFMApp:
             ("move_files", "Move selection to the other pane"),
             ("delete_files", "Delete selection"),
             ("create_archive", "Create archive from selection"),
-            ("extract_archive", "Extract the focused archive"),
+            ("extract_archive", "Extract the selected archive(s)"),
             ("file_details", "Show file details"),
             ("edit_file", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),

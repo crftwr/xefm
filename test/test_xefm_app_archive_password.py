@@ -12,6 +12,8 @@ Run with: python -m pytest test/test_xefm_app_archive_password.py -v
 import base64
 import os
 import sys
+import threading
+import time
 import types
 
 import pytest
@@ -22,7 +24,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 from xefm import app as xefm_app  # noqa: E402
 from xefm import archive as A  # noqa: E402
 from xefm.path import Path  # noqa: E402
-from xefm.task import TaskManager  # noqa: E402
+from xefm.task import TaskManager, TaskStatus  # noqa: E402
 
 # Same ZipCrypto fixture as test_archive_password.py: message.txt +
 # folder/note.txt, password "s3cr3t".
@@ -62,26 +64,63 @@ def _app():
     return app
 
 
-class _InlineTasks(TaskManager):
-    """The app's real task manager forced into synchronous mode: extraction runs
-    on a worker thread behind a progress dialog, and these flow tests drive a bare
-    app with no live panel to host one. Running the task inline keeps them about
-    the password flow; the worker path itself is covered in
-    test_archive_task.py."""
+class _ScriptedTasks(TaskManager):
+    """The real :class:`Task` bridge with a scripted main thread in place of the
+    progress dialog: the task runs on its own worker, and this pump services each
+    password request the worker posts, answering it from ``answers`` (a string is
+    typed and accepted, ``None`` is an Esc).
 
-    def submit(self, task, panel, **kw):
-        kw["background"] = False
-        return super().submit(task, panel, **kw)
+    The extraction password prompt lives on the worker now — a batch asks for one
+    archive's password while the dialog for the batch stays up — so these flow
+    tests need the bridge pumped rather than a bare app with no live panel to host
+    a dialog. The real dialog's own pumping is covered in test_archive_task.py."""
+
+    def __init__(self, prompts, answers):
+        super().__init__()
+        self.prompts = prompts    # filled by the patched show_input
+        self.answers = list(answers)
+
+    def submit(self, task, panel, *, run, on_done=None, **kw):
+        self.tasks.append(task)
+        task.status = TaskStatus.RUNNING
+        finished = threading.Event()
+
+        def worker():
+            try:
+                task.result = run(task)
+            except BaseException as exc:  # noqa: BLE001 — surfaced by the assert
+                task.error = exc
+            finally:
+                finished.set()
+
+        threading.Thread(target=worker, daemon=True).start()
+        deadline = time.time() + 5
+        while not finished.wait(0.005):
+            assert time.time() < deadline, "task did not finish"
+            req = task._next_request()
+            if req is None:
+                continue
+            req.show_fn(panel, req.deliver)
+            answer = self.answers.pop(0) if self.answers else None
+            kw_ = self.prompts[-1]
+            (kw_["on_accept"](answer) if answer is not None else kw_["on_cancel"]())
+        self._finish(task)
+        if task.error is not None:
+            raise task.error
+        if on_done is not None:
+            on_done(task.result or {})
+        return task
 
 
-def _extract_app(entry, dest_dir, *, confirm=False):
+def _extract_app(entry, dest_dir, *, confirm=False, prompts=None, answers=()):
     app = _app()
-    app._focused_entry = lambda: entry
+    app.active_pane = lambda: {"files": [entry], "selected_files": set(),
+                               "focused_index": 0}
     app.pm = types.SimpleNamespace(get_inactive_pane=lambda: {"path": dest_dir})
     app.refreshes = []
     app._relist = lambda pane, **kw: app.refreshes.append(pane)
     app.config = types.SimpleNamespace(CONFIRM_EXTRACT_ARCHIVE=confirm)
-    app.tasks = _InlineTasks()
+    app.tasks = _ScriptedTasks(prompts if prompts is not None else [], answers)
     return app
 
 
@@ -120,18 +159,13 @@ def test_extract_flow_prompts_and_extracts(enc_zip, tmp_path, monkeypatch):
     out = Path(str(tmp_path / "dest"))
     (tmp_path / "dest").mkdir()
     entry = Path(str(enc_zip))
-    app = _extract_app(entry, out)
-
     captured = []
+    app = _extract_app(entry, out, prompts=captured, answers=[_PASSWORD])
     monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: captured.append(kw))
 
     assert app.extract_archive() is False
-    # A password prompt was raised (masked), not an immediate extraction.
+    # A masked password prompt was raised, and answering it extracted.
     assert captured and captured[-1]["password"] is True
-    assert not (tmp_path / "dest" / "enc" / "message.txt").exists()
-
-    # Answer with the correct password → the extraction runs.
-    captured[-1]["on_accept"](_PASSWORD)
     assert (tmp_path / "dest" / "enc" / "message.txt").read_bytes() == _MESSAGE
     # The working password is remembered for the session.
     assert A.get_archive_password(entry) == _PASSWORD.encode()
@@ -140,28 +174,39 @@ def test_extract_flow_prompts_and_extracts(enc_zip, tmp_path, monkeypatch):
 def test_extract_flow_wrong_then_right_password(enc_zip, tmp_path, monkeypatch):
     out = Path(str(tmp_path / "dest"))
     (tmp_path / "dest").mkdir()
-    app = _extract_app(Path(str(enc_zip)), out)
-
     captured = []
+    app = _extract_app(Path(str(enc_zip)), out, prompts=captured,
+                       answers=["wrong", _PASSWORD])
     monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: captured.append(kw))
 
     app.extract_archive()
-    captured[-1]["on_accept"]("wrong")          # rejected → re-prompt
+    # The wrong password re-asked in place — no file was written for it — and the
+    # right one extracted.
     assert len(captured) == 2
     assert "Incorrect password" in captured[-1]["prompt"]
-    assert not (tmp_path / "dest" / "enc" / "message.txt").exists()
-
-    captured[-1]["on_accept"](_PASSWORD)        # accepted → extracts
     assert (tmp_path / "dest" / "enc" / "message.txt").read_bytes() == _MESSAGE
+
+
+def test_extract_flow_cancelled_prompt_extracts_nothing(enc_zip, tmp_path, monkeypatch):
+    out = Path(str(tmp_path / "dest"))
+    (tmp_path / "dest").mkdir()
+    captured = []
+    app = _extract_app(Path(str(enc_zip)), out, prompts=captured, answers=[None])
+    monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: captured.append(kw))
+
+    app.extract_archive()
+    assert len(captured) == 1
+    assert not (tmp_path / "dest" / "enc").exists()
+    assert any("Extraction cancelled" in m for m in app.logs)
 
 
 def test_extract_flow_refuses_undecryptable(enc_zip, tmp_path, monkeypatch):
     out = Path(str(tmp_path / "dest"))
     (tmp_path / "dest").mkdir()
-    app = _extract_app(Path(str(enc_zip)), out)
+    prompted = []
+    app = _extract_app(Path(str(enc_zip)), out, prompts=prompted)
 
     monkeypatch.setattr(A, "archive_encryption_status_path", lambda path: "unsupported")
-    prompted = []
     monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: prompted.append(kw))
 
     app.extract_archive()
@@ -176,9 +221,9 @@ def test_extract_flow_plain_zip_no_prompt(tmp_path, monkeypatch):
         zf.writestr("a.txt", b"hello")
     out = Path(str(tmp_path / "dest"))
     (tmp_path / "dest").mkdir()
-    app = _extract_app(Path(str(zp)), out)
-
     prompted = []
+    app = _extract_app(Path(str(zp)), out, prompts=prompted)
+
     monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: prompted.append(kw))
 
     app.extract_archive()

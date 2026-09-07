@@ -848,7 +848,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | Key | Action | Selection |
 |-----|--------|-----------|
 | P | Create an archive from the selection | required |
-| U | Extract the focused/selected archive | any |
+| U | Extract the selected archives (or the cursor entry) | any |
 
 ### Panes and Log
 
