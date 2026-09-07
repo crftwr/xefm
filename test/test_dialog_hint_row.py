@@ -240,6 +240,16 @@ class EveryModalDrawsTheBand(unittest.TestCase):
         dlg._switch_mode()
         self.assertIn("Tab filename", dlg.hint())
 
+    def test_the_owner_says_what_enter_does(self):
+        """The widget knows Enter is Enter; only its owner knows what accepting
+        performs. XeFM's search feeds the whole result set into the pane, so the
+        band must not promise the one highlighted file."""
+        dlg = show_progressive_search(
+            self.panel, search_iter=lambda m, q, c: iter(()),
+            to_label=lambda m, v: str(v), accept_hint="results to pane")
+        self.assertIn("Enter results to pane", dlg.hint())
+        self.assertNotIn("open", dlg.hint())
+
     def test_an_input_prompt(self):
         show_input(self.panel, title="New Directory", prompt="Name:")
         _settle(self.b, self.panel)

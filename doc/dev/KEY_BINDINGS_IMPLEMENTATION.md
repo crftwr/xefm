@@ -339,12 +339,20 @@ Every modal that owns its keyboard draws the band:
 | modal | what it names |
 |---|---|
 | filter-list picker | select / choose / remove (from the keymap) / cancel |
-| search (progressive) | select / open / `Tab` **to the other mode** / cancel |
+| search (progressive) | select / **what the owner does with Enter** / `Tab` **to the other mode** / cancel |
 | input prompt | accept / `Tab` complete (only with a completer) / cancel |
 | batch rename | switch field / scroll preview / rename / cancel |
 | sort, choice, compare & select | that dialog's own axes |
 | tips | prev / next / toggle / close, plus the counter |
 | scroll modals (help, file details) | scroll / close |
+
+A band names the key, but not always what the key *means*: a reusable picker
+knows Enter is Enter and nothing more. `ProgressiveSearchDialog` takes an
+`accept_hint` for that half, injected the way its `titles` are, because XeFM's
+search does not open the highlighted hit — it **feeds the whole result set into
+the pane** (`XeFMApp._open_search` passes `"results to pane"`; see
+[Search Results Pane](SEARCH_RESULTS_PANE_IMPLEMENTATION.md)). The band said
+"Enter open" until someone read it and expected a file to open.
 
 Two things a modal says *near* the bottom are deliberately not in the band,
 because they are not keys: the search dialog's status line (spinner, result

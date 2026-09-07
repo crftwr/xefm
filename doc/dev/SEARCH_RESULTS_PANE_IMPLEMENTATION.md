@@ -123,7 +123,13 @@ re-pointing renamed ones), re-applies sort + filter, and clamps `focused_index` 
 
 ## Entry & reveal UX
 
-**Entry — feed-by-default.** The dialog's `on_accept` closes it and calls
+**Entry — feed-by-default.** The dialog's hint band says so, in the owner's
+words: `ProgressiveSearchDialog` reports the accepted row and nothing more, so
+`_open_search` passes `accept_hint="results to pane"` and the band reads
+`Enter results to pane`. It used to read `Enter open`, which promised the one
+highlighted file — the opposite of what accepting does.
+
+The dialog's `on_accept` closes it and calls
 `_feed_search_results(mode, dialog.results, root, query, focus=value)` with the
 dialog's full result list *plus* the accepted hit. For **content** mode, results
 collapse to **one entry per file** (operations act on files, not lines), keeping
