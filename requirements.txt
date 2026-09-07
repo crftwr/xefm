@@ -17,11 +17,16 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.5.0 is the floor, and unlike the last one it is hard rather than cosmetic:
-# the TUI cursor cue passes ``Style(underline_color=...)``, a TypeError on any
-# older PuiKit, and reads the ``colored_underlines`` capability, an
-# AttributeError -- so a file pane cannot draw a row at all. Both arrived in
-# puikit 1.5.0 (issue #350).
+# 1.5.3 is the floor, and it is a soft one: it carries the UI-thread stall
+# detector ``--ui-watchdog`` turns on (issue #407), a developer diagnostic, so an
+# older PuiKit costs the switch and nothing else -- XeFM says so at startup
+# rather than staying silent. It also carries the fix that makes the switch work
+# on the TUI at all: VTBackend never recorded its UI thread, so the detector had
+# no subject there (and ``_assert_ui_thread`` nothing to check against).
+# 1.5.0 is the last hard floor: the TUI cursor cue passes
+# ``Style(underline_color=...)``, a TypeError on any older PuiKit, and reads the
+# ``colored_underlines`` capability, an AttributeError -- so a file pane cannot
+# draw a row at all. Both arrived in puikit 1.5.0 (issue #350).
 # The floors underneath it are recorded because they are still the answer to
 # "why not lower": 1.4.3 drew the CSV / TSV table viewer's header wrong, a
 # full-width (CJK) cell making PuiKit's TableView lay a row out wider than its
@@ -31,7 +36,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.5.0
+puikit>=1.5.3
 pygments
 boto3
 watchdog
