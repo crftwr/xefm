@@ -78,7 +78,7 @@ two **modes**:
 | `PAGE_UP`/`PAGEUP`, `PAGE_DOWN`/`PAGEDOWN` | `pageup` / `pagedown` | `key` + exact mods |
 | `F1`…`F12` | `f1`…`f12` | `key` + exact mods |
 | `ALT` (alone, not as a prefix) | `alt` — a *bare Alt tap*, delivered only by the Windows terminal (PuiKit keyboard contract §1); bound to `menu` alongside `F10` | `key` + exact mods |
-| named punctuation (`MINUS`, `EQUAL`, `LEFT_BRACKET`, `SEMICOLON`, `SLASH`, …) | base glyph (`-`, `=`, `[`, `;`, `/`, …) | `char` (ignore shift/alt) |
+| named punctuation — `MINUS`, `EQUAL`/`EQUALS`, `LEFT_BRACKET`, `RIGHT_BRACKET`, `BACKSLASH`, `SEMICOLON`, `QUOTE`/`APOSTROPHE`, `COMMA`, `PERIOD`/`DOT`, `SLASH`, `GRAVE`/`BACKTICK`/`BACKQUOTE` (the whole set) | base glyph (`-`, `=`, `[`, `]`, `\`, `;`, `'`, `,`, `.`, `/`, `` ` ``) | `char` (ignore shift/alt) |
 | digit / punctuation literal (`?`, `.`, `:`, `1`, …) | the produced glyph | `char` |
 | `Shift-<named punct / digit>` | the **shifted** glyph (`Shift-EQUAL` → `+`, `Shift-1` → `!`) | `char` |
 | `Shift-X` (letter) | `x` + `shift` | `key` + exact mods |
@@ -86,6 +86,13 @@ two **modes**:
 
 The maps that back this table live at the top of `xefm/config.py`:
 `_MODIFIER_ALIASES`, `_NAMED_KEYS`, `_PUNCT_NAMES`, `_SHIFT_SYMBOL`, `_KEY_ALIASES`.
+The table is exhaustive on purpose — a token outside it falls through
+`_parse_key_expression`'s tail, which logs `Unknown key in expression: …` and
+returns an identity nothing can ever match. Curses-era names (`PPAGE`, `NPAGE`)
+and `KEY_`-prefixed ones (`KEY_A`, `KEY_MINUS`) are exactly that: they were
+documented once and never parsed. The user-facing list is
+`doc/KEY_BINDINGS_FEATURE.md`, "Key Names" / "Punctuation by Name"; when this
+table changes, that one has to change with it.
 
 ## KeyBindings class
 

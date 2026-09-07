@@ -146,9 +146,27 @@ class ModeSwitch(unittest.TestCase):
         self.assertEqual(dlg.results, ["content:q"])
 
 
+def _install_default_keymap(case):
+    """Resolve actions against the keys XeFM *ships*, not against whatever is in
+    the developer's own ~/.xefm/config.py.
+
+    ``config_manager`` is process-wide and reads the real config, so a test that
+    asserts on a key name is otherwise asserting on the machine it runs on —
+    which is how a perfectly good rebinding of ``search.options`` turned these
+    red. Restored on teardown."""
+    from xefm.config import KeyBindings, config_manager
+
+    saved = config_manager._key_bindings
+    config_manager._key_bindings = KeyBindings({})
+    case.addCleanup(lambda: setattr(config_manager, "_key_bindings", saved))
+
+
 class Options(unittest.TestCase):
     """The dialog's half of the options contract (#312): it shows them, opens the
     box, and re-runs when one changes — and reads no value itself."""
+
+    def setUp(self):
+        _install_default_keymap(self)
 
     def _dialog(self, **kw):
         return ProgressiveSearchDialog(
@@ -269,27 +287,22 @@ class Options(unittest.TestCase):
             to_label=lambda mode, v: str(v))
         self.assertNotIn("options", dlg.hint())
 
-    def test_the_key_label_follows_a_rebind(self):
+    def _rebind(self, bindings):
         from xefm.config import KeyBindings, config_manager
 
-        dlg = self._dialog()
         saved = config_manager._key_bindings
-        config_manager._key_bindings = KeyBindings({"search.options": ["Ctrl-P"]})
-        try:
-            self.assertEqual(dlg._options_key_label(), "Ctrl-P")
-        finally:
-            config_manager._key_bindings = saved
+        config_manager._key_bindings = KeyBindings(bindings)
+        self.addCleanup(lambda: setattr(config_manager, "_key_bindings", saved))
+
+    def test_the_key_label_follows_a_rebind(self):
+        dlg = self._dialog()
+        self._rebind({"search.options": ["Ctrl-P"]})
+        self.assertEqual(dlg._options_key_label(), "Ctrl-P")
 
     def test_an_unbound_options_key_is_not_named(self):
-        from xefm.config import KeyBindings, config_manager
-
         dlg = self._dialog()
-        saved = config_manager._key_bindings
-        config_manager._key_bindings = KeyBindings({"search.options": []})
-        try:
-            self.assertEqual(dlg._options_key_label(), "")
-        finally:
-            config_manager._key_bindings = saved
+        self._rebind({"search.options": []})
+        self.assertEqual(dlg._options_key_label(), "")
 
     def test_the_options_key_is_resolved_by_action(self):
         # Ctrl-O reaches the dialog identically on all four backends: the TUI
@@ -314,17 +327,10 @@ class Options(unittest.TestCase):
         self.assertIs(dlg.options[search_opts.CASE], False)
 
     def test_a_bound_option_chord_toggles_that_option(self):
-        from xefm.config import KeyBindings, config_manager
-
         dlg = self._dialog()
-        saved = config_manager._key_bindings
-        config_manager._key_bindings = KeyBindings(
-            {"search.toggle_case": ["Ctrl-T"]})
-        try:
-            handled = dlg._handle_option_key(
-                Event(EventType.KEY, key="t", modifiers=frozenset({"ctrl"})))
-        finally:
-            config_manager._key_bindings = saved
+        self._rebind({"search.toggle_case": ["Ctrl-T"]})
+        handled = dlg._handle_option_key(
+            Event(EventType.KEY, key="t", modifiers=frozenset({"ctrl"})))
         self.assertTrue(handled)
         self.assertIs(dlg.options[search_opts.CASE], True)
 
@@ -334,6 +340,7 @@ class AppIntegration(unittest.TestCase):
     (search_iter/to_label/on_accept + the tick-driven drain) is covered too."""
 
     def setUp(self):
+        _install_default_keymap(self)
         self.tmp = tempfile.mkdtemp()
         self.state_dir = tempfile.mkdtemp()
         # Temp state DB, never the real ~/.xefm/state.db: the app restores each

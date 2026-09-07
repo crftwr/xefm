@@ -243,10 +243,18 @@ class Config:
     #    - 'required': only works when at least one item is explicitly selected
     #    - 'none': only works when no items are explicitly selected
     #
-    # Special key names (use these strings in the keys list):
-    #   'HOME', 'END', 'PPAGE', 'NPAGE', 'UP', 'DOWN',
-    #   'LEFT', 'RIGHT', 'BACKSPACE', 'DELETE', 'INSERT',
-    #   'F1' through 'F12'
+    # Every key name XeFM accepts, and what a modifier prefix does, is listed in
+    # doc/KEY_BINDINGS_FEATURE.md under "Key Expression Format". One of each,
+    # so the shape is visible here:
+    #
+    #   'Q'  '?'                    a character (a capital letter is not Shift)
+    #   'Shift-F'                   ...which is why Shift is written out
+    #   'ENTER'  'PAGE_UP'  'F10'   a named key
+    #   'BACKQUOTE'  'SEMICOLON'    a punctuation key by name
+    #   'Ctrl-O'  'Command-ENTER'   a chord
+    #
+    # A name XeFM does not know is not silently ignored: it logs
+    # "Unknown key in expression: ..." and that binding never fires.
     #
     KEY_BINDINGS = {
         # === Application Control ===

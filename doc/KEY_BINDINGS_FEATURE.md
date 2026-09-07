@@ -5,7 +5,8 @@
 XeFM's key bindings system allows you to customize keyboard shortcuts for all actions in the application. The system supports:
 
 - **Single-character keys**: Simple keys like 'q', 'a', '?'
-- **KeyCode names**: Special keys like 'ENTER', 'UP', 'PAGE_DOWN'
+- **Key names**: Keys with no glyph, like 'ENTER', 'UP', 'PAGE_DOWN', 'F10'
+- **Punctuation by name**: 'SEMICOLON', 'BACKQUOTE', 'LEFT_BRACKET'
 - **Modifier combinations**: Keys with modifiers like 'Shift-Down', 'Command-Q'
 - **Multiple keys per action**: Assign several keys to the same action
 - **Selection requirements**: Control when actions are available based on file selection
@@ -23,40 +24,78 @@ The simplest form - just a single character:
 ```
 
 **Important behavior:**
-- **Alphabet characters (a-z, A-Z)**: Case-insensitive. 'a' and 'A' are treated as the same key.
-- **Non-alphabet characters (?, /, ., etc.)**: Case-sensitive. '?' and '/' are different keys.
-- **To bind uppercase letters separately**: Use "Shift-A" instead of just "A"
+
+- **A letter is the same binding whichever case you write it in.** `'a'` and
+  `'A'` both mean the A key with no modifier.
+- **Writing a capital is not the same as pressing Shift.** A binding written
+  `'Q'` does *not* fire when you press Shift+Q — it is still the unshifted key.
+  Write `'Shift-Q'` when you mean the shifted one, which is why the defaults
+  spell out `'Shift-F'` next to `'F'`.
+- **Punctuation and digits are the glyph they produce**, so `?` and `/` are
+  different keys even though they share one physical key.
 
 Examples:
 ```python
-'quit': ['Q']           # 'Q' and 'q' are equivalent (alphabet, case-insensitive)
-'help': ['?']           # Matches only '?' (non-alphabet, case-sensitive)
-'isearch': ['F']         # 'F' and 'f' are equivalent (alphabet, case-insensitive)
-'find_files': ['Shift-F']  # Matches only Shift+F (explicit modifier)
+'quit': ['Q']              # the Q key; writing 'q' would mean the same
+'help': ['?']              # the '?' glyph, not the '/' key it shares
+'isearch': ['F']           # F on its own
+'find_files': ['Shift-F']  # Shift+F — a different binding from 'F'
 ```
 
-### KeyCode Names
+### Key Names
 
-For special keys, use the KeyCode name directly:
+A key with no glyph of its own is written by name:
 
 ```python
 'move_up': ['UP']
-'move_down': ['DOWN']
 'page_up': ['PAGE_UP']
-'page_down': ['PAGE_DOWN']
 'confirm': ['ENTER']
 'cancel': ['ESCAPE']
+'menu': ['F10']
 ```
 
-**Available KeyCode names:**
-- Navigation: `UP`, `DOWN`, `LEFT`, `RIGHT`, `HOME`, `END`, `PAGE_UP`, `PAGE_DOWN`
-- Editing: `ENTER`, `ESCAPE`, `TAB`, `BACKSPACE`, `DELETE`, `INSERT`, `SPACE`
-- Function keys: `F1` through `F12`
-- Letter keys: `KEY_A` through `KEY_Z`
-- Number keys: `KEY_0` through `KEY_9`
-- Symbol keys: `KEY_MINUS`, `KEY_EQUAL`, etc.
+**This is the complete list.** A name that is not here is not accepted: XeFM
+logs `Unknown key in expression: ...` and the binding never fires.
 
-KeyCode names are **case-insensitive**: `'ENTER'`, `'enter'`, and `'Enter'` all work.
+| Group | Names |
+|---|---|
+| Navigation | `UP`, `DOWN`, `LEFT`, `RIGHT`, `HOME`, `END`, `PAGE_UP` (or `PAGEUP`), `PAGE_DOWN` (or `PAGEDOWN`) |
+| Editing | `ENTER` (or `RETURN`), `ESCAPE` (or `ESC`), `TAB`, `BACKSPACE`, `DELETE` (or `DEL`), `INSERT`, `SPACE` |
+| Function keys | `F1` through `F12` |
+| Bare Alt tap | `ALT` on its own — Alt pressed and released with nothing in between. Delivered only by the Windows terminal, where it opens the menu bar. As a *prefix* (`Alt-X`) it is the modifier instead. |
+
+Names are **case-insensitive**: `'ENTER'`, `'enter'` and `'Enter'` all work.
+
+### Punctuation by Name
+
+Punctuation can be written as its glyph (`'-'`, `'['`, `';'`) or by name, which
+is easier to read in a config file:
+
+| Name(s) | Key | `Shift-` gives |
+|---|---|---|
+| `MINUS` | `-` | `_` |
+| `EQUAL`, `EQUALS` | `=` | `+` |
+| `LEFT_BRACKET` | `[` | `{` |
+| `RIGHT_BRACKET` | `]` | `}` |
+| `BACKSLASH` | `\` | `\|` |
+| `SEMICOLON` | `;` | `:` |
+| `QUOTE`, `APOSTROPHE` | `'` | `"` |
+| `COMMA` | `,` | `<` |
+| `PERIOD`, `DOT` | `.` | `>` |
+| `SLASH` | `/` | `?` |
+| `GRAVE`, `BACKTICK`, `BACKQUOTE` | `` ` `` | `~` |
+
+`Shift-` on a punctuation or digit key resolves to the character that key
+actually produces on a US layout — `'Shift-EQUAL'` is `+`, `'Shift-1'` is `!`,
+`'Shift-BACKQUOTE'` is `~` — so the two ways of writing it are the same binding:
+
+```python
+'go_root': ['BACKSLASH']          # same as ['\\']
+'adjust_log_up': ['Shift-LEFT_BRACKET']   # same as ['{']
+```
+
+On a non-US layout, write the glyph your keyboard produces rather than the
+shifted name.
 
 ### Modifier Key Combinations
 
@@ -89,10 +128,10 @@ For actions without selection requirements, use a list of keys:
 
 ```python
 KEY_BINDINGS = {
-    'quit': ['Q'],              # 'Q' and 'q' are equivalent (alphabet is case-insensitive)
-    'help': ['?'],              # Matches only '?' (non-alphabet is case-sensitive)
-    'move_up': ['UP', 'k'],     # 'k' and 'K' are equivalent
-    'move_down': ['DOWN', 'j'], # 'j' and 'J' are equivalent
+    'quit': ['Q'],              # the Q key ('q' would mean the same)
+    'help': ['?'],              # the '?' glyph
+    'move_up': ['UP', 'k'],     # two keys for one action
+    'move_down': ['DOWN', 'j'],
 }
 ```
 
@@ -274,21 +313,23 @@ KEY_BINDINGS = {
 
 ```python
 KEY_BINDINGS = {
-    'quit': ['Q'],                # Single entry, 'Q' and 'q' are equivalent
-    'copy_files': ['C'],          # Single entry, 'C' and 'c' are equivalent
-    'move_up': ['UP', 'k'],       # 'k' and 'K' are equivalent
-    'page_up': ['PAGE_UP', 'Shift-UP'],  # Use KeyCode name + modifier
+    'quit': ['Q'],                # one entry: 'Q' and 'q' are the same binding
+    'copy_files': ['C'],          # likewise
+    'move_up': ['UP', 'k'],       # a named key and a letter, both bound
+    'page_up': ['PAGE_UP', 'Shift-UP'],  # the current name, plus a chord
 }
 ```
 
 **Key changes:**
-- **Remove redundant uppercase letters**: 'q' alone matches both 'q' and 'Q'
-- **Use Shift modifier for uppercase-specific bindings**: 'Shift-F' for uppercase F only
-- **Non-alphabet characters remain case-sensitive**: '?' and '/' are different
-- `PPAGE` → `PAGE_UP`
-- `NPAGE` → `PAGE_DOWN`
-- All other KeyCode names remain the same
-- Add modifier combinations for enhanced functionality
+- **Remove the duplicated letter**: `'q'` and `'Q'` are one and the same
+  binding, so listing both does nothing.
+- **Use the Shift modifier when you mean the shifted key**: `'Shift-F'`, not
+  `'F'` — a capital in the token is not Shift.
+- **Punctuation stays the glyph it produces**: `?` and `/` are different.
+- `PPAGE` → `PAGE_UP`, `NPAGE` → `PAGE_DOWN`. The old curses names are **not
+  accepted** — a config still using them logs `Unknown key in expression` at
+  startup and that binding does nothing.
+- All other key names are unchanged.
 
 ## Tips and Best Practices
 
@@ -303,7 +344,9 @@ KEY_BINDINGS = {
 ### Key not working
 
 1. Check the key expression format is correct
-2. Verify the KeyCode name is valid (case doesn't matter)
+2. Verify the key name is one of those listed under "Key Names" and
+   "Punctuation by Name" above — a name outside those lists logs
+   `Unknown key in expression: ...` and never fires
 3. Make sure modifiers are spelled correctly
 4. Check for conflicts with other key bindings
 5. For an `isearch.*` action, check the key is not a printable one — the search
