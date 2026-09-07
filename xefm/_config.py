@@ -500,6 +500,49 @@ class Config:
         #
         # Example -- forget a row with Ctrl-D instead:
         # 'remove_list_item': ['Ctrl-D'],
+
+        # === Search dialog keys (rebindable, not listed above) ================
+        # The live search dialog (Shift-F / Shift-G) is a surface of its own,
+        # 'search'. Its one key opens the options for the search in front of you:
+        #
+        #   'options':  Ctrl-O, F9   case, pattern language, subfolders
+        #
+        # It is one key rather than one key per option on purpose. A surface with
+        # a query field has no keys to spare -- every printable key belongs to the
+        # query -- and the modified keys that remain are few enough to count, so
+        # a dialog that spent three of them would leave nothing for the next one.
+        # The options box has no query field, which is what makes every plain
+        # letter in it a key: an option is toggled by its label's initial (c, w,
+        # r, s here), however many an option list grows to. The letters are not
+        # drawn, for the reason the Sort dialog does not draw F/E/S/T -- the word
+        # already carries its initial.
+        #
+        # The name carries no context prefix, for the same reason
+        # 'remove_list_item' above carries none: "open the options for the thing
+        # in front of you" is an operation other surfaces will grow, and an
+        # unqualified entry rebinds it in all of them at once. Prefix it to move
+        # just one -- 'search.options'.
+        #
+        # Ctrl-O works in the terminal and in both native windows; F9 rides along
+        # next to F10 (the menu bar) where a keyboard has real function keys.
+        # Alt chords cannot carry this: macOS spends Option on glyphs and IME, and
+        # an Alt chord the terminal does not recognize arrives as ESCAPE, which
+        # would close the dialog instead of opening its options.
+        #
+        # Each option also has an action of its own, deliberately UNBOUND, for the
+        # one option you change hourly and would rather not open a box for:
+        #
+        #   'search.toggle_case'      match capitals exactly
+        #   'search.toggle_word'      whole words only (content search)
+        #   'search.toggle_regex'     read the query as a regular expression
+        #   'search.toggle_subdirs'   search subfolders, or this directory alone
+        #
+        # The printable-key rule from the search bar applies to all of these: the
+        # query field takes every character you type, so these must be modified or
+        # non-printable keys. XeFM says so in the log pane at startup if one is not.
+        #
+        # Example -- put case sensitivity on a direct chord:
+        # 'search.toggle_case': ['Ctrl-T'],
     }
 
     # Windows has no Command key, and Alt-Enter is the platform fullscreen-toggle

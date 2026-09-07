@@ -122,6 +122,40 @@ def test_defaults_and_chords_are_not_reported():
         dict(plain, **{"isearch.next_match": ["Ctrl-N"]})) == []
 
 
+# --- the same rule on every surface that takes typing ------------------------
+
+
+def test_printable_check_covers_every_text_surface():
+    """The check has to scan all of them together, because a binding can be
+    written unqualified: 'options': ['O'] silences one key on three surfaces at
+    once, and a check that knew only about isearch would report none of it."""
+    from xefm.config import printable_text_bindings, printable_text_notice
+
+    bindings = dict(_config.Config().KEY_BINDINGS, **{"options": ["O"]})
+    assert dict(printable_text_bindings(bindings)) == {"options": "O"}
+    assert "never fire" in printable_text_notice(bindings)
+    # The isearch-only view stays what it was: 'options' is not its action.
+    assert printable_isearch_bindings(bindings) == []
+
+
+def test_printable_check_reads_a_surface_qualified_binding():
+    from xefm.config import printable_text_bindings
+
+    bindings = dict(_config.Config().KEY_BINDINGS,
+                    **{"search.toggle_case": ["C"],
+                       "filter_list.remove_list_item": ["X"]})
+    assert dict(printable_text_bindings(bindings)) == {
+        "remove_list_item": "X", "toggle_case": "C"}
+
+
+def test_the_shipped_options_key_passes_the_rule():
+    """Ctrl-O and F9 are both things a query field lets through — the constraint
+    that ruled out every mnemonic plain key for this."""
+    from xefm.config import printable_text_bindings
+
+    assert printable_text_bindings(_config.Config().KEY_BINDINGS) == []
+
+
 # --- the bar's key routing ---------------------------------------------------
 
 

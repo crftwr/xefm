@@ -22,8 +22,15 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
+from puikit.event import Event, EventType  # noqa: E402
+from puikit.panel import Rect  # noqa: E402
+
 from xefm import app as xefm_app  # noqa: E402
+from xefm import search_options as search_opts  # noqa: E402
+from xefm.options import OptionSet  # noqa: E402
+from xefm.options_dialog import OptionsDialog  # noqa: E402
 from xefm.progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
+from xefm.search_options import SEARCH_OPTIONS  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 
 
@@ -137,6 +144,189 @@ class ModeSwitch(unittest.TestCase):
         dlg._switch_mode()  # Tab
         self.assertEqual(dlg.mode, "content")
         self.assertEqual(dlg.results, ["content:q"])
+
+
+class Options(unittest.TestCase):
+    """The dialog's half of the options contract (#312): it shows them, opens the
+    box, and re-runs when one changes — and reads no value itself."""
+
+    def _dialog(self, **kw):
+        return ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter([f"{mode}:{q}"]),
+            to_label=lambda mode, v: v,
+            options=OptionSet(SEARCH_OPTIONS),
+            **kw,
+        )
+
+    def test_chips_follow_the_mode(self):
+        dlg = self._dialog(initial_mode="content")
+        self.assertEqual([o.flag for o, _on in dlg.options.chips(dlg.mode)],
+                         ["Aa", "Word", ".*", "Sub"])
+        dlg._switch_mode()  # filename search speaks glob, not regex
+        self.assertEqual([o.flag for o, _on in dlg.options.chips(dlg.mode)],
+                         ["Aa", "Sub"])
+
+    def test_a_chip_says_on_or_off_by_its_state_not_its_text(self):
+        # The fill carries the state, so the name stays put — no chip has to
+        # grow a space inside it to say it is off.
+        dlg = self._dialog()
+        option, on = dlg.options.chips(dlg.mode)[0]
+        self.assertEqual((option.flag, on), ("Aa", False))
+        dlg.options.toggle(search_opts.CASE)
+        option, on = dlg.options.chips(dlg.mode)[0]
+        self.assertEqual((option.flag, on), ("Aa", True))
+
+    def test_changing_an_option_reruns_the_search(self):
+        runs = []
+
+        dlg = ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter([runs.append(q) or q]),
+            to_label=lambda mode, v: v,
+            options=OptionSet(SEARCH_OPTIONS),
+        )
+        _run(dlg, "needle")
+        self.assertEqual(runs, ["needle"])
+        dlg.options.toggle(search_opts.CASE)
+        self.assertEqual(runs, ["needle", "needle"])  # same query, run again
+
+    def test_a_closed_dialog_stops_answering_its_options(self):
+        # The set outlives the dialog (the app keeps it for the session), so a
+        # later change must not start a worker for a box that is gone.
+        runs = []
+        dlg = ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter([runs.append(q) or q]),
+            to_label=lambda mode, v: v,
+            options=OptionSet(SEARCH_OPTIONS),
+        )
+        _run(dlg, "needle")
+        dlg._close()
+        dlg.options.toggle(search_opts.CASE)
+        self.assertEqual(runs, ["needle"])
+
+    def test_a_click_on_a_chip_toggles_it(self):
+        # A chip is a switch, so it answers to the mouse like one.
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=41.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], True)
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=41.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], False)
+
+    def test_the_padding_inside_a_chip_is_part_of_its_target(self):
+        # What looks like the button is the button: the block is drawn with a
+        # space either side of the name, and both are live.
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=40.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], True)
+
+    def test_a_click_between_chips_toggles_nothing(self):
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=45.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], False)
+
+    def test_a_press_is_not_a_click(self):
+        # Press and drag belong to the field and the list; only a completed
+        # click flips a switch, as everywhere else in XeFM.
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_DOWN, x=41.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], False)
+
+    def test_the_hint_band_names_the_options_key_before_esc(self):
+        dlg = self._dialog(initial_mode="filename")
+        self.assertEqual(
+            dlg.hint(),
+            "↑/↓ select · Enter choose · Tab content · Ctrl-O options · Esc cancel")
+
+    def test_a_narrow_band_drops_whole_entries(self):
+        # A truncated entry spends the width and says nothing, and it is always
+        # the rightmost that loses — never the one that deserves to.
+        dlg = self._dialog(initial_mode="filename")
+        measure = len
+        full = dlg.hint()
+        self.assertEqual(dlg.hint(len(full), measure), full)
+        # Too narrow for the arrows: they go first, the rest survives intact.
+        tight = dlg.hint(len(full) - 1, measure)
+        self.assertEqual(tight,
+                         "Enter choose · Tab content · Ctrl-O options · Esc cancel")
+        # Narrower still: Esc goes, and what a user cannot guess is what is left.
+        tighter = dlg.hint(len(tight) - 1, measure)
+        self.assertEqual(tighter, "Enter choose · Tab content · Ctrl-O options")
+
+    def test_the_options_key_outlives_every_drop(self):
+        dlg = self._dialog(initial_mode="filename")
+        self.assertIn("Ctrl-O options", dlg.hint(1.0, len))
+
+    def test_a_dialog_without_options_names_no_key(self):
+        dlg = ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter(()),
+            to_label=lambda mode, v: str(v))
+        self.assertNotIn("options", dlg.hint())
+
+    def test_the_key_label_follows_a_rebind(self):
+        from xefm.config import KeyBindings, config_manager
+
+        dlg = self._dialog()
+        saved = config_manager._key_bindings
+        config_manager._key_bindings = KeyBindings({"search.options": ["Ctrl-P"]})
+        try:
+            self.assertEqual(dlg._options_key_label(), "Ctrl-P")
+        finally:
+            config_manager._key_bindings = saved
+
+    def test_an_unbound_options_key_is_not_named(self):
+        from xefm.config import KeyBindings, config_manager
+
+        dlg = self._dialog()
+        saved = config_manager._key_bindings
+        config_manager._key_bindings = KeyBindings({"search.options": []})
+        try:
+            self.assertEqual(dlg._options_key_label(), "")
+        finally:
+            config_manager._key_bindings = saved
+
+    def test_the_options_key_is_resolved_by_action(self):
+        # Ctrl-O reaches the dialog identically on all four backends: the TUI
+        # paths deliver key="o" with no char, so this must not be a char match.
+        dlg = self._dialog()
+        opened = []
+        dlg._open_options = lambda: opened.append(True)
+        handled = dlg._handle_option_key(
+            Event(EventType.KEY, key="o", modifiers=frozenset({"ctrl"})))
+        self.assertTrue(handled)
+        self.assertEqual(opened, [True])
+
+    def test_a_plain_letter_is_still_typing(self):
+        dlg = self._dialog()
+        self.assertFalse(dlg._handle_option_key(
+            Event(EventType.KEY, key="o", char="o", modifiers=frozenset())))
+
+    def test_an_option_chord_is_unbound_until_a_config_asks(self):
+        dlg = self._dialog()
+        self.assertFalse(dlg._handle_option_key(
+            Event(EventType.KEY, key="t", modifiers=frozenset({"ctrl"}))))
+        self.assertIs(dlg.options[search_opts.CASE], False)
+
+    def test_a_bound_option_chord_toggles_that_option(self):
+        from xefm.config import KeyBindings, config_manager
+
+        dlg = self._dialog()
+        saved = config_manager._key_bindings
+        config_manager._key_bindings = KeyBindings(
+            {"search.toggle_case": ["Ctrl-T"]})
+        try:
+            handled = dlg._handle_option_key(
+                Event(EventType.KEY, key="t", modifiers=frozenset({"ctrl"})))
+        finally:
+            config_manager._key_bindings = saved
+        self.assertTrue(handled)
+        self.assertIs(dlg.options[search_opts.CASE], True)
 
 
 class AppIntegration(unittest.TestCase):
@@ -300,6 +490,129 @@ class AppIntegration(unittest.TestCase):
             landed = pane["focused_index"]
             self.assertGreater(landed, 0)  # cursor moved off the top row
             self.assertEqual(str(pane["files"][landed]), str(picked))
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+
+    def _search_app(self, backend):
+        app = xefm_app.XeFMApp(backend, self.tmp, self.tmp, left_provided=True,
+                               right_provided=True, state_manager=self.sm)
+        app._settle_listings()
+        return app
+
+    def test_options_key_opens_the_box_over_the_search(self):
+        from puikit.backends import create_backend
+
+        self._write("a.txt")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("content")
+            dlg = app.panel._layers[-1].widget
+            dlg.handle_event(Event(EventType.KEY, key="o",
+                                   modifiers=frozenset({"ctrl"})))
+            box = app.panel._layers[-1].widget
+            self.assertIsInstance(box, OptionsDialog)
+
+            # A plain letter is an accelerator in here — the whole reason the
+            # options live behind one key rather than one chord each.
+            box.handle_event(Event(EventType.KEY, key="s", char="s"))
+            self.assertIs(dlg.options[search_opts.SUBDIRS], False)
+
+            box.handle_event(Event(EventType.KEY, key="escape"))
+            self.assertIs(app.panel._layers[-1].widget, dlg)  # search still up
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+    def test_turning_off_subfolders_narrows_the_search(self):
+        from puikit.backends import create_backend
+
+        self._write("top.txt", "needle\n")
+        self._write("sub/deep.txt", "needle\n")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("content")
+            dlg = app.panel._layers[-1].widget
+
+            def settle():
+                if dlg._thread is not None:
+                    dlg._thread.join(timeout=5)
+                b.run_animation_ticks()
+                return sorted(h["path"].name for h in dlg.results)
+
+            dlg.query_edit.text = "needle"
+            dlg._start_search()
+            self.assertEqual(settle(), ["deep.txt", "top.txt"])
+
+            # Changing the option re-runs the same query on its own.
+            dlg.options.toggle(search_opts.SUBDIRS)
+            self.assertEqual(settle(), ["top.txt"])
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+    def test_the_drawn_chips_are_where_the_clicks_land(self):
+        from puikit.backends import create_backend
+
+        self._write("top.txt", "needle\n")
+        self._write("sub/deep.txt", "needle\n")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("content")
+            dlg = app.panel._layers[-1].widget
+            dlg.query_edit.text = "needle"
+            dlg._start_search()
+
+            def settle():
+                if dlg._thread is not None:
+                    dlg._thread.join(timeout=5)
+                b.run_animation_ticks()
+                app.panel.render()
+                return sorted(h["path"].name for h in dlg.results)
+
+            self.assertEqual(settle(), ["deep.txt", "top.txt"])
+
+            # The rects come from the frame that was just drawn, so this clicks
+            # the block a user would be looking at.
+            hits = dict(dlg._chip_hits)
+            self.assertEqual(sorted(hits), sorted(
+                o.name for o in dlg.options.visible("content")))
+            rect = hits[search_opts.SUBDIRS]
+            dlg.handle_event(Event(EventType.MOUSE_CLICK,
+                                   x=rect.x + rect.w / 2, y=rect.y))
+
+            self.assertIs(dlg.options[search_opts.SUBDIRS], False)
+            self.assertEqual(settle(), ["top.txt"])   # the click re-ran it
+            self.assertIs(app.panel._layers[-1].widget, dlg)  # and stayed open
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+    def test_a_narrowed_scope_does_not_outlive_the_dialog(self):
+        from puikit.backends import create_backend
+
+        self._write("a.txt")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("filename")
+            dlg = app.panel._layers[-1].widget
+            dlg.options.toggle(search_opts.SUBDIRS)   # scope: transient
+            dlg.options.toggle(search_opts.CASE)      # reading: persists
+            dlg._cancel_dialog()
+
+            app._open_search("filename")
+            reopened = app.panel._layers[-1].widget
+            self.assertIs(reopened.options[search_opts.SUBDIRS], True)
+            self.assertIs(reopened.options[search_opts.CASE], True)
         finally:
             app.file_monitor.stop_monitoring()
             b.close()
