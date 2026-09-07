@@ -127,10 +127,14 @@ class OptionSet:
         """The options that apply in ``mode``, in declaration order."""
         return [o for o in self.options if o.applies(mode)]
 
-    def chips(self, mode: str | None = None) -> list[tuple[str, bool]]:
-        """``(text, on)`` for the strip — one entry per applicable option, in
-        declaration order, so the strip never reorders itself under the eye."""
-        return [(o.flag, self.values[o.name]) for o in self.visible(mode)]
+    def chips(self, mode: str | None = None) -> list[tuple[Option, bool]]:
+        """``(option, on)`` for the strip — one entry per applicable option, in
+        declaration order, so the strip never reorders itself under the eye.
+
+        The whole option rather than just its ``flag``: a chip is a control, not
+        a readout — the surface drawing it needs the name to hand back when one
+        is clicked."""
+        return [(o, self.values[o.name]) for o in self.visible(mode)]
 
     def snapshot(self) -> dict[str, bool]:
         return dict(self.values)

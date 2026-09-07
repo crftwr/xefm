@@ -91,19 +91,21 @@ class TestOptionSet:
             "case", "word", "regex", "subdirs"]
         assert [o.name for o in options.visible("filename")] == ["case", "subdirs"]
 
-    def test_chips_pair_the_flag_with_its_state(self):
+    def test_chips_pair_the_whole_option_with_its_state(self):
+        # The option, not just its flag: a chip is a control, and the surface
+        # drawing it needs the name to hand back when one is clicked.
         options = OptionSet(ALL)
-        assert options.chips("filename") == [("Aa", False), ("Sub", True)]
+        assert options.chips("filename") == [(CASE, False), (SUBDIRS, True)]
         options.toggle("case")
-        assert options.chips("filename") == [("Aa", True), ("Sub", True)]
+        assert options.chips("filename") == [(CASE, True), (SUBDIRS, True)]
 
     def test_a_chip_keeps_its_name_in_both_states(self):
         # The fill carries on/off, so the word never has to — which is what
         # keeps a chip from growing a space inside it ("no sub").
         options = OptionSet(ALL)
-        before = [text for text, _on in options.chips("filename")]
+        before = [o.flag for o, _on in options.chips("filename")]
         options.toggle("subdirs")
-        assert [text for text, _on in options.chips("filename")] == before
+        assert [o.flag for o, _on in options.chips("filename")] == before
 
     def test_reset_transient_restores_only_the_transient_ones(self):
         options = OptionSet(ALL)

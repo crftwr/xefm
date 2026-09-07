@@ -23,6 +23,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from puikit.event import Event, EventType  # noqa: E402
+from puikit.panel import Rect  # noqa: E402
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm import search_options as search_opts  # noqa: E402
@@ -159,19 +160,21 @@ class Options(unittest.TestCase):
 
     def test_chips_follow_the_mode(self):
         dlg = self._dialog(initial_mode="content")
-        self.assertEqual([text for text, _on in dlg.options.chips(dlg.mode)],
+        self.assertEqual([o.flag for o, _on in dlg.options.chips(dlg.mode)],
                          ["Aa", "Word", ".*", "Sub"])
         dlg._switch_mode()  # filename search speaks glob, not regex
-        self.assertEqual([text for text, _on in dlg.options.chips(dlg.mode)],
+        self.assertEqual([o.flag for o, _on in dlg.options.chips(dlg.mode)],
                          ["Aa", "Sub"])
 
     def test_a_chip_says_on_or_off_by_its_state_not_its_text(self):
         # The fill carries the state, so the name stays put — no chip has to
         # grow a space inside it to say it is off.
         dlg = self._dialog()
-        self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", False))
+        option, on = dlg.options.chips(dlg.mode)[0]
+        self.assertEqual((option.flag, on), ("Aa", False))
         dlg.options.toggle(search_opts.CASE)
-        self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", True))
+        option, on = dlg.options.chips(dlg.mode)[0]
+        self.assertEqual((option.flag, on), ("Aa", True))
 
     def test_changing_an_option_reruns_the_search(self):
         runs = []
@@ -199,6 +202,41 @@ class Options(unittest.TestCase):
         dlg._close()
         dlg.options.toggle(search_opts.CASE)
         self.assertEqual(runs, ["needle"])
+
+    def test_a_click_on_a_chip_toggles_it(self):
+        # A chip is a switch, so it answers to the mouse like one.
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=41.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], True)
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=41.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], False)
+
+    def test_the_padding_inside_a_chip_is_part_of_its_target(self):
+        # What looks like the button is the button: the block is drawn with a
+        # space either side of the name, and both are live.
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=40.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], True)
+
+    def test_a_click_between_chips_toggles_nothing(self):
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_CLICK, x=45.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], False)
+
+    def test_a_press_is_not_a_click(self):
+        # Press and drag belong to the field and the list; only a completed
+        # click flips a switch, as everywhere else in XeFM.
+        dlg = self._dialog(initial_mode="content")
+        dlg._size = (60.0, 20.0)
+        dlg._chip_hits = [(search_opts.CASE, Rect(40.0, 3.0, 4.0, 1.0))]
+        dlg.handle_event(Event(EventType.MOUSE_DOWN, x=41.0, y=3.0))
+        self.assertIs(dlg.options[search_opts.CASE], False)
 
     def test_the_hint_band_names_the_options_key_before_esc(self):
         dlg = self._dialog(initial_mode="filename")
@@ -514,6 +552,45 @@ class AppIntegration(unittest.TestCase):
             # Changing the option re-runs the same query on its own.
             dlg.options.toggle(search_opts.SUBDIRS)
             self.assertEqual(settle(), ["top.txt"])
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+    def test_the_drawn_chips_are_where_the_clicks_land(self):
+        from puikit.backends import create_backend
+
+        self._write("top.txt", "needle\n")
+        self._write("sub/deep.txt", "needle\n")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("content")
+            dlg = app.panel._layers[-1].widget
+            dlg.query_edit.text = "needle"
+            dlg._start_search()
+
+            def settle():
+                if dlg._thread is not None:
+                    dlg._thread.join(timeout=5)
+                b.run_animation_ticks()
+                app.panel.render()
+                return sorted(h["path"].name for h in dlg.results)
+
+            self.assertEqual(settle(), ["deep.txt", "top.txt"])
+
+            # The rects come from the frame that was just drawn, so this clicks
+            # the block a user would be looking at.
+            hits = dict(dlg._chip_hits)
+            self.assertEqual(sorted(hits), sorted(
+                o.name for o in dlg.options.visible("content")))
+            rect = hits[search_opts.SUBDIRS]
+            dlg.handle_event(Event(EventType.MOUSE_CLICK,
+                                   x=rect.x + rect.w / 2, y=rect.y))
+
+            self.assertIs(dlg.options[search_opts.SUBDIRS], False)
+            self.assertEqual(settle(), ["top.txt"])   # the click re-ran it
+            self.assertIs(app.panel._layers[-1].widget, dlg)  # and stayed open
         finally:
             app.file_monitor.stop_monitoring()
             b.close()

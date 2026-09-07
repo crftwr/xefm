@@ -63,8 +63,11 @@ and whether it outlives one opening of the surface.
 
 Four things read that same list, which is what keeps them from drifting:
 
-1. **The chip strip** — `OptionSet.chips(mode)` returns `(text, on)` pairs,
+1. **The chip strip** — `OptionSet.chips(mode)` returns `(Option, on)` pairs,
    drawn at the right end of the search dialog's status row as filled blocks.
+   The whole option rather than its flag, because a chip is a *control*: the
+   surface records a rect per block during draw (`_chip_hits`) and a click on
+   one toggles it, so the strip needs the name to hand back.
 2. **The options dialog** — rows, labels, and `accel_map` for the letters. The
    letter is the label's **initial** (`Option.key`), and it is not drawn, for
    the reason SortDialog does not draw F/E/S/T: the word already carries it, and
@@ -112,6 +115,11 @@ Two conventions make the key an idiom rather than trivia, and a new surface
 should keep both: **the chips at the right end of the status row**, and **the
 hint band naming the key just before `Esc`**. A surface with no options shows
 neither, so a strip on screen always means the key will do something.
+
+Chips are hit-tested from rects captured in the same pass that draws them, so
+what is on screen is what answers to the mouse — there is no second layout to
+keep in step. Only a completed `MOUSE_CLICK` toggles: press and drag belong to
+the text field and the list, which sit either side of the strip.
 
 ### Fitting the hint band
 

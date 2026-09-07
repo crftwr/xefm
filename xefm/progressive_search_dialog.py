@@ -157,6 +157,9 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         self._focused: Any = self.query_edit
         self._query_rect = Rect(0.0, 0.0, 0.0, 0.0)
         self._list_rect = Rect(0.0, 0.0, 0.0, 0.0)
+        #: ``(option name, rect)`` per chip, captured during draw — what makes
+        #: the strip clickable rather than a readout.
+        self._chip_hits: list[tuple[str, Rect]] = []
 
     # --- focus ---------------------------------------------------------------
 
@@ -435,6 +438,11 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         divided the words. Filling the block says on/off without spending a
         syllable, so every chip can keep its short, constant name.
 
+        Each block is also a click target — the chip is a switch, not a label,
+        and the strip is the only place an option can be flipped without opening
+        anything. The padding inside a block is part of its hit box, so what
+        looks like the button is the button.
+
         The strip keeps its whole width and the status is elided against it
         (``draw_hint_row``'s rule for its ``right`` slot). That way round because
         the strip says what this search *is*, which stays true, while the count
@@ -444,7 +452,7 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         chips = self.options.chips(self.mode) if self.options is not None else []
         # One space of padding inside each block, one between them: the fill is
         # the boundary, so the gap only has to keep two fills from touching.
-        labels = [f" {text} " for text, _on in chips]
+        labels = [f" {option.flag} " for option, _on in chips]
         gap = ctx.measure_text(" ") or 1.0
         widths = [ctx.measure_text(label) for label in labels]
         strip_w = sum(widths) + gap * (len(chips) - 1) if chips else 0.0
@@ -454,8 +462,9 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         ctx.draw_text(2.0, y, status,
                       Style(fg=theme.text if theme else None, bg=surface_bg))
         line_h = ctx.line_height()
+        self._chip_hits = []
         x = wu - 2.0 - strip_w
-        for (_text, on), label, width in zip(chips, labels, widths):
+        for (option, on), label, width in zip(chips, labels, widths):
             bg = fg = None
             if theme is not None:
                 bg = theme.accent if on else theme.control_bg
@@ -466,7 +475,20 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
             ctx.round_rect(x, y, width, line_h, Style(bg=bg), radius=None,
                            hints={"fill": True})
             ctx.draw_text(x, y, label, Style(fg=fg, bg=bg))
+            # The padding is inside the hit box: the block a reader sees is the
+            # target they get, rather than two columns of it being dead.
+            self._chip_hits.append((option.name, Rect(x, y, width, line_h)))
             x += width + gap
+
+    def _chip_at(self, event: Event) -> str | None:
+        """The option a mouse event lands on, or ``None``. The strip is drawn
+        every frame, so the rects it hit-tests are always the ones on screen."""
+        if event.x is None or event.y is None:
+            return None
+        for name, rect in self._chip_hits:
+            if rect.contains(event.x, event.y):
+                return name
+        return None
 
     def _options_key_label(self) -> str:
         """The key that opens the options, read back from the keymap so a rebind
@@ -567,7 +589,12 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
             EventType.MOUSE_DOWN, EventType.MOUSE_UP, EventType.MOUSE_CLICK,
             EventType.MOUSE_DRAG, EventType.MOUSE_SCROLL,
         ):
-            if event.x is not None and self._list_rect.contains(event.x, event.y):
+            chip = self._chip_at(event) if event.type is EventType.MOUSE_CLICK else None
+            if chip is not None:
+                # A chip is a switch, so clicking one flips it — the same
+                # gesture as a row in the options box, one layer up.
+                self.options.toggle(chip)
+            elif event.x is not None and self._list_rect.contains(event.x, event.y):
                 local = event.translated(-self._list_rect.x, -self._list_rect.y)
                 self.list.handle_event(local)
             elif event.x is not None and self._query_rect.contains(event.x, event.y):

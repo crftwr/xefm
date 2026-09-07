@@ -30,6 +30,10 @@ anything to find out.
 | `.*` | The query is a regular expression |
 | `Sub` | Subfolders are searched |
 
+**Click a chip to flip it.** The block you see is the button — the whole filled
+area, padding included — so the strip is the quickest way to change one option
+without opening anything. The search re-runs on the click.
+
 Filename search shows only `Aa` and `Sub`: filenames are matched as glob
 patterns, so whole-word and regular-expression do not apply there and are not
 listed at all.
@@ -48,6 +52,7 @@ option is toggled by the initial of its name**:
 
 - `c` / `w` / `r` / `s` — toggle that option straight away
 - `↑` `↓` — move, `Space` — toggle what is selected
+- a click on a row toggles it too, and the box stays open
 - `Esc` or `Enter` — close
 
 Changes apply the moment you make them; the search behind the box re-runs while
