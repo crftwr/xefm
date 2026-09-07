@@ -152,8 +152,16 @@ class ProgressManager:
         file at a time through :meth:`update_progress`). The copy engine's
         workers report through per-file slots instead — see :meth:`file_begin`.
 
+        The growth since the last report also accumulates into the operation's
+        ``processed_bytes``, exactly as :meth:`file_bytes` does for a slot, so
+        that an operation which publishes a ``total_bytes`` gets a primary bar
+        weighted by bytes rather than by item count alone (see
+        :meth:`get_progress_percentage`). ``update_progress`` zeroes the per-file
+        counter as it names the next item, which is what makes each file's first
+        report contribute its own bytes and not the previous file's again.
+
         Args:
-            bytes_copied: Number of bytes copied so far
+            bytes_copied: Bytes of this file copied so far (cumulative)
             bytes_total: Total number of bytes in the file
         """
         with self._lock:
@@ -161,8 +169,11 @@ class ProgressManager:
             if not op:
                 return
 
+            previous = op['file_bytes_copied']
             op['file_bytes_copied'] = bytes_copied
             op['file_bytes_total'] = bytes_total
+            if bytes_copied > previous:
+                op['processed_bytes'] += bytes_copied - previous
 
         # Call callback with updated state (with throttling)
         self._trigger_callback_if_needed()

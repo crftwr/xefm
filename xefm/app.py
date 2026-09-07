@@ -4966,7 +4966,7 @@ class XeFMApp:
             yield member
 
     def _extract_archive(self, archive_path, dest_dir, fmt: str, pwd: bytes | None = None,
-                         *, task=None, prog=None) -> int:
+                         *, task=None, prog=None, owns_total: bool = True) -> int:
         """Extract ``archive_path`` into ``dest_dir`` (created if absent). Returns
         the number of entries. Tar extraction uses the ``data`` filter where
         available (Python 3.12+) to reject unsafe member paths.
@@ -4981,21 +4981,29 @@ class XeFMApp:
 
         ``task`` / ``prog``, when given, report each member and make it a
         cancellation point (see ``_reporting_members``); both default to None,
-        which extracts exactly as before."""
+        which extracts exactly as before.
+
+        ``owns_total`` says whether this call may publish the operation's totals.
+        A batch counts every archive up front and publishes one total for the lot
+        (:meth:`_survey_archives`), which each archive must then not overwrite
+        with its own; a lone call keeps the default and scales the bar itself."""
         from xefm.archive import verify_zip_password
         from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
         bytes_ = ByteProgress(prog) if prog is not None else None
         dest_dir.mkdir(parents=True, exist_ok=True)
         if fmt != "zip" and fmt not in self._TAR_MODES:
             return self._extract_via_handler(archive_path, dest_dir, pwd,
-                                             task=task, prog=prog, bytes_=bytes_)
+                                             task=task, prog=prog, bytes_=bytes_,
+                                             owns_total=owns_total)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
                 zf.byte_progress = bytes_     # after the probe, which reads a little
                 members = zf.infolist()
-                if prog is not None:
-                    prog.update_operation_total(len(members))
+                if prog is not None and owns_total:
+                    prog.update_operation_total(
+                        len(members),
+                        total_bytes=sum(m.file_size for m in members))
                 zf.extractall(
                     str(dest_dir), pwd=pwd,
                     members=self._reporting_members(
@@ -5007,8 +5015,12 @@ class XeFMApp:
             # getmembers() reads the whole (compressed) archive to build the list;
             # that is the operation's counting phase, and why it runs on the worker.
             members = tf.getmembers()
-            if prog is not None:
-                prog.update_operation_total(len(members))
+            if prog is not None and owns_total:
+                # Only regular files report bytes on the way past, so only they
+                # may promise any — a directory member's size would never be paid.
+                prog.update_operation_total(
+                    len(members),
+                    total_bytes=sum(m.size for m in members if m.isreg()))
 
             def reported():
                 return self._reporting_members(
@@ -5023,7 +5035,8 @@ class XeFMApp:
             return len(members)
 
     def _extract_via_handler(self, archive_path, dest_dir, pwd: bytes | None,
-                             *, task=None, prog=None, bytes_=None) -> int:
+                             *, task=None, prog=None, bytes_=None,
+                             owns_total: bool = True) -> int:
         """Extract a format neither zipfile nor tarfile reads — 7z, and whatever
         else the loaded libarchive contributes — through its registered handler.
 
@@ -5052,8 +5065,9 @@ class XeFMApp:
             if status == "password" and (pwd is None or not handler.verify_password(pwd)):
                 raise RuntimeError(f"{archive_path.name}: password required")
 
-            if prog is not None:
-                prog.update_operation_total(handler.entry_count())
+            if prog is not None and owns_total:
+                items, size = handler.extraction_totals()
+                prog.update_operation_total(items, total_bytes=size)
             count = 0
             for entry in handler.iter_extract(
                     dest_dir, password=pwd,
@@ -5068,6 +5082,41 @@ class XeFMApp:
             return count
         finally:
             handler.close()
+
+    def _survey_archives(self, plan, task=None) -> list[tuple]:
+        """Open every archive in the batch once, up front, and report what
+        extracting it will cost: ``(encryption status, members, bytes)`` each.
+
+        One open per archive, not two. The encryption gate already had to open
+        each of them — ``archive_encryption_status_path`` did it inside the loop,
+        one archive at a time, just before extracting that one — and the same
+        open knows how many members it stores and how many bytes they hold. So
+        the batch's totals cost nothing beyond a probe that was happening
+        anyway, which is what lets the progress bar span the whole batch instead
+        of restarting at zero for each archive, and be weighted by bytes rather
+        than by member count alone.
+
+        An archive that will not open contributes nothing and is *not* recorded
+        as a failure: the extraction that follows opens it again and reports what
+        is wrong with it, in the place that can attribute the error to it. The
+        bar is then short by that archive's share, which is the right way round —
+        a bar that promised bytes nothing will deliver would end up stuck.
+
+        Runs on the task worker: for a compressed tar this is a full read of the
+        file, and even where it is only a header pass it is still I/O — and it is
+        a cancellation point per archive, so a batch aimed at the wrong pane can
+        be stopped before it opens all of them."""
+        from xefm.archive import archive_extraction_survey
+        surveys: list[tuple] = []
+        for entry, _target, _fmt in plan:
+            if task is not None:
+                task.checkpoint()
+            survey = archive_extraction_survey(str(entry))
+            surveys.append(survey)
+            if task is not None:
+                # What the progress dialog's "Preparing… (n items)" line reads.
+                task.counted += survey[1]
+        return surveys
 
     @staticmethod
     def _unlink_quietly(path) -> bool:
@@ -5304,21 +5353,21 @@ class XeFMApp:
                 # removing it wholesale could take those with it).
                 partial = None
 
-                def extract_one(entry, target, fmt) -> int:
+                def extract_one(entry, target, fmt, status) -> int:
                     """One archive, asking for its password if it needs one.
 
                     A wrong password re-asks *here*, in place, rather than
                     unwinding the task and resubmitting it: nothing is written
                     until the password verifies (see ``_extract_archive``), so the
-                    retry costs only the prompt."""
+                    retry costs only the prompt.
+
+                    ``status`` is the survey's verdict on this archive's
+                    encryption — which of "needs a password" and "XeFM cannot
+                    decrypt this at all" applies is the format's own handler's
+                    answer, taken during the counting pass because that opened
+                    every archive anyway."""
                     nonlocal partial
-                    from xefm.archive import (archive_encryption_status_path,
-                                              set_archive_password)
-                    # Which of "needs a password" and "XeFM cannot decrypt this at
-                    # all" applies is the format's own handler's answer — this used
-                    # to test for a zip and so could never report any other
-                    # format's encryption.
-                    status = archive_encryption_status_path(str(entry))
+                    from xefm.archive import set_archive_password
                     if status == "unsupported":
                         raise NotImplementedError(
                             f"{entry.name}: encryption XeFM cannot decrypt")
@@ -5334,7 +5383,8 @@ class XeFMApp:
                         partial = target
                         try:
                             count = self._extract_archive(entry, target, fmt,
-                                                          pwd=pwd, task=t, prog=prog)
+                                                          pwd=pwd, task=t, prog=prog,
+                                                          owns_total=False)
                         except NotImplementedError:
                             # Defensive: the probe above already refused these, and
                             # NotImplementedError *is* a RuntimeError, so it must
@@ -5357,15 +5407,25 @@ class XeFMApp:
                 entries = 0
                 failures: list[tuple] = []
                 try:
-                    for index, (entry, target, fmt) in enumerate(plan, 1):
+                    # Count the whole batch before writing any of it, and publish
+                    # it as one total. The operation started with the task and is
+                    # never restarted, so the bar runs once from end to end — it
+                    # used to be started afresh per archive and rewind to zero
+                    # each time — and it is weighted by bytes as well as members,
+                    # so a 4 GiB member no longer goes past at the same speed as
+                    # a 4 KiB one.
+                    surveys = self._survey_archives(plan, task=t)
+                    prog.update_operation_total(
+                        sum(items for _st, items, _by in surveys),
+                        total_bytes=sum(by for _st, _it, by in surveys))
+                    for index, ((entry, target, fmt), (status, _i, _b)) in enumerate(
+                            zip(plan, surveys), 1):
                         t.checkpoint()
                         if not single:
                             # Read live by the progress dialog each frame.
                             t.title = f"Extracting archive {index} of {len(plan)}…"
-                        prog.start_operation(OperationType.ARCHIVE_EXTRACT, 0,
-                                             description=entry.name)
                         try:
-                            entries += extract_one(entry, target, fmt)
+                            entries += extract_one(entry, target, fmt, status)
                         except Cancelled:
                             raise  # Cancel is the batch's, not this archive's
                         except Exception as exc:  # noqa: BLE001 — on the main thread

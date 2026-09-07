@@ -206,7 +206,8 @@ def test_extract_flow_refuses_undecryptable(enc_zip, tmp_path, monkeypatch):
     prompted = []
     app = _extract_app(Path(str(enc_zip)), out, prompts=prompted)
 
-    monkeypatch.setattr(A, "archive_encryption_status_path", lambda path: "unsupported")
+    monkeypatch.setattr(A, "archive_extraction_survey",
+                        lambda path: ("unsupported", 0, 0))
     monkeypatch.setattr(xefm_app, "show_input", lambda panel, **kw: prompted.append(kw))
 
     app.extract_archive()

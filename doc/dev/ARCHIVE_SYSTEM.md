@@ -605,9 +605,16 @@ zip-level names survive one level down, inside `ZipHandler`:
   entry uses it). `ZipHandler.encryption_status()` maps `zipcrypto` → `'password'`
   and `aes` → `'unsupported'`.
 - `archive_encryption_status_path(path)` — the same classification from a file
-  path, for the extract flow, which works on a raw file rather than a browsed
-  handler. It goes through the registry (so any format can answer) but not
-  through `ArchiveCache` (extraction is not browsing).
+  path, for a raw file rather than a browsed handler. It goes through the
+  registry (so any format can answer) but not through `ArchiveCache` (extraction
+  is not browsing).
+- `archive_extraction_survey(path)` → `(status, members, bytes)` — that same open
+  asked for the progress totals as well, and what the extract flow actually
+  calls. `members` / `bytes` come from `ArchiveHandler.extraction_totals()`,
+  which counts what an extraction *walks*: the archive's stored members, not the
+  browsable index, whose invented parent directories no member matches. A file
+  that will not open comes back `('none', 0, 0)` — missing from the bar rather
+  than promised to it, so the bar cannot end up stuck short of full.
 - `verify_zip_password(zf, pwd)` — opens the smallest encrypted entry to validate
   the ZipCrypto header cheaply. No-op when nothing is encrypted; raises
   `RuntimeError` (missing/wrong password) or `NotImplementedError` (AES).
@@ -632,16 +639,26 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
 
 ### Flows (`xefm/app.py`)
 
-- **Extract** — `extract_archive` asks each archive's own handler
-  (`archive_encryption_status_path`) *on the worker*, one archive at a time:
-  `'unsupported'` is recorded as a failure for that archive; `'password'` asks for
-  one through the task's UI bridge (`Task.ask`, the same seam the copy conflict
-  dialog uses — the masked prompt stacks at `z + 5`, above the progress dialog);
-  anything else extracts directly. The probe is a full open of the file, which is
-  why it is not done on the main thread. The up-front `verify_zip_password` means
-  a wrong password re-asks with an error and never leaves a half-extracted
-  directory; cancelling the prompt cancels the batch. A working password is stored
-  so a later browse reuses it.
+- **Extract** — `extract_archive` surveys the whole batch first, *on the worker*
+  (`_survey_archives` → `archive_extraction_survey` per archive, each a
+  cancellation point): one open per archive answers its encryption status and its
+  progress totals together. The probe is a full open of the file, which is why it
+  is not done on the main thread; the totals ride along on an open that had to
+  happen anyway.
+
+  The batch then runs as **one** progress operation, started with the task and
+  never restarted — it used to be started afresh per archive, so the bar rewound
+  to zero at every archive boundary — with `update_operation_total(items,
+  total_bytes=...)` published once for the lot. Each archive's own extraction is
+  passed `owns_total=False` so it does not rescale that bar to its own size.
+
+  On the surveyed status: `'unsupported'` is recorded as a failure for that
+  archive; `'password'` asks for one through the task's UI bridge (`Task.ask`, the
+  same seam the copy conflict dialog uses — the masked prompt stacks at `z + 5`,
+  above the progress dialog); anything else extracts directly. The up-front
+  `verify_zip_password` means a wrong password re-asks with an error and never
+  leaves a half-extracted directory; cancelling the prompt cancels the batch. A
+  working password is stored so a later browse reuses it.
 - **Browse / view** — `_ensure_archive_password` gates opening a file that may
   live in an encrypted ZIP: `'ok'` runs the open callback immediately; `'aes'`
   shows a message; `'need'` shows a masked prompt, verifies via

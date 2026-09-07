@@ -431,6 +431,25 @@ def test_finished_slots_are_reused_lowest_first():
     assert not dict(pm.get_transfers())[b]["done"]
 
 
+def test_the_single_file_path_also_feeds_the_operation_byte_total():
+    """Archives report one file at a time (update_progress + the byte bar), not
+    through slots, and their growth has to reach processed_bytes too — otherwise
+    an operation that publishes a total_bytes would weigh every archive member
+    at its fixed item cost and nothing more. update_progress zeroes the per-file
+    counter as it names the next member, which is what keeps the second member
+    from being credited with the first one's bytes again."""
+    pm = ProgressManager()
+    pm.start_operation(OperationType.ARCHIVE_EXTRACT, 0)
+    pm.update_operation_total(2, total_bytes=300)
+    pm.update_progress("a.bin")
+    pm.update_file_byte_progress(40, 100)
+    pm.update_file_byte_progress(100, 100)
+    assert pm.current_operation["processed_bytes"] == 100
+    pm.update_progress("b.bin")
+    pm.update_file_byte_progress(200, 200)
+    assert pm.current_operation["processed_bytes"] == 300
+
+
 def test_percentage_is_weighted_by_bytes():
     """One 800 KiB spread over two items: bytes dominate the bar, and each
     item adds its fixed _ITEM_WEIGHT so pure-item operations still advance."""

@@ -252,11 +252,13 @@ class _Prog:
 
     def __init__(self):
         self.total = None
+        self.total_bytes = None
         self.items = []
         self.byte_reports = []
 
-    def update_operation_total(self, total):
+    def update_operation_total(self, total, description="", total_bytes=0):
         self.total = total
+        self.total_bytes = total_bytes
 
     def update_progress(self, name, processed=None):
         self.items.append(name)
@@ -367,6 +369,32 @@ def test_extract_moves_the_byte_bar(tmp_path):
     assert len(big) > 2 and big[-1] == (256 * 4000, 256 * 4000)
     assert (tmp_path / "out" / "src" / "sub" / "b.txt").read_bytes() == b"beta"
     assert (tmp_path / "out" / "src" / "empty").is_dir()
+
+
+@requires_7z
+def test_the_survey_counts_stored_members_not_the_index(sample_7z, tmp_path):
+    """A 7z's totals come off the headers ``open()`` already walked, so a batch
+    can scale one bar across several archives for free.
+
+    They have to count the members the file *stores*, not the browsable index:
+    the index invents a parent directory for every path the archive left
+    implicit — ``sub`` and ``sub/deep`` here — and ``iter_extract`` never yields
+    those, so counting the index would leave the bar short of full for good."""
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    status, members, size = A.archive_extraction_survey(str(sample_7z))
+    assert status == "none"
+    assert (members, size) == (3, 5 + 4 + 1024)
+
+    with LibarchiveHandler(Path(str(sample_7z))) as handler:
+        assert (members, size) == handler.extraction_totals()
+        assert len(handler._entry_cache) == 5  # the two invented directories
+
+    prog = _Prog()
+    count = app._extract_archive(Path(str(sample_7z)), Path(str(tmp_path / "out")),
+                                 "7z", task=_Task(), prog=prog)
+    assert (count, prog.total, prog.total_bytes) == (members, members, size)
+    # Every member's byte bar landed on full, and they add up to what was promised.
+    assert sum(done for done, total in prog.byte_reports if done == total) == size
 
 
 @requires_7z

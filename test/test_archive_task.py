@@ -210,6 +210,40 @@ class ArchiveLoops(unittest.TestCase):
             self.app._extract_archive(arc, dest, "zip", task=task, prog=prog)
         self.assertEqual(len(seen), 2)
 
+    def test_a_survey_promises_what_the_extraction_delivers(self):
+        """``archive_extraction_survey`` is what a batch scales its one bar from,
+        before a byte is written — so its two numbers have to be the ones the
+        extraction then reports, or the bar is short of full for good.
+
+        The trap is the browsable index: its invented parent directories match no
+        stored member, so counting it would over-promise the item total. Each
+        handler's ``extraction_totals`` counts what extraction actually walks."""
+        from xefm.archive import archive_extraction_survey
+        for fmt in ("zip", "tar", "tar.gz"):
+            with self.subTest(fmt=fmt):
+                arc = self._make(fmt)
+                status, members, size = archive_extraction_survey(str(arc))
+                self.assertEqual(status, "none")
+                task, prog, seen = self._task()
+                dest = Path(os.path.join(self.tmp, f"out-{fmt}"))
+                self.app._extract_archive(arc, dest, fmt, task=task, prog=prog)
+                op = prog.get_current_operation()
+                self.assertEqual(members, op["total_items"])
+                self.assertEqual(members, len(seen))
+                self.assertEqual(size, op["processed_bytes"])
+
+    def test_a_batch_may_keep_the_total_it_published(self):
+        """``owns_total=False`` is a batch saying it has already counted every
+        archive; one archive must not then rescale the bar to its own size."""
+        arc = self._make("zip")
+        task, prog, _seen = self._task()
+        prog.update_operation_total(99, total_bytes=12345)
+        self.app._extract_archive(arc, Path(os.path.join(self.tmp, "kept")), "zip",
+                                  task=task, prog=prog, owns_total=False)
+        op = prog.get_current_operation()
+        self.assertEqual(op["total_items"], 99)
+        self.assertEqual(op["total_bytes"], 12345)
+
     def test_extract_without_a_task_is_unchanged(self):
         arc = self._make("tar.gz")
         dest = Path(os.path.join(self.tmp, "out"))
