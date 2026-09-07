@@ -64,7 +64,7 @@ from xefm.config import (KeyBindings, config_manager, deprecated_names_notice,
                          get_builtin_handler_for_file, get_config,
                          get_drive_locations, get_favorite_directories,
                          get_program_for_file, has_explicit_association,
-                         keys_label_for_action, printable_isearch_notice)
+                         keys_label_for_action, printable_text_notice)
 from xefm.dir_scan import is_hidden
 from xefm.disk_usage import UsageScan
 from xefm.file_list_manager import FileListManager
@@ -73,7 +73,9 @@ from xefm.file_pane import FilePane
 from xefm.filter_list_dialog import show_filter_list
 from xefm.completion import FilepathCompleter
 from xefm.input_dialog import show_input
+from xefm.options import OptionSet
 from xefm.progressive_search_dialog import show_progressive_search
+from xefm import search_options as search_opts
 from xefm.isearch_bar import ISearchBar
 from xefm import filters
 from xefm import name_key
@@ -1290,11 +1292,12 @@ class XeFMApp:
         renamed = deprecated_names_notice(getattr(config, "KEY_BINDINGS", None) or {})
         if renamed:
             self.log_info(f"Config warning: {renamed}")
-        # An isearch key bound to a printable one can never fire — the pattern
-        # field takes every glyph first — and would look like the binding was
+        # A key bound to a printable one on a surface that takes typing — the
+        # search bar, a list picker, the search dialog — can never fire, since
+        # the field takes every glyph first, and would look like the binding was
         # ignored at random. Say so once, for the same reason as the rename
         # nudge above: nothing else tells the author.
-        swallowed = printable_isearch_notice(
+        swallowed = printable_text_notice(
             getattr(config, "KEY_BINDINGS", None) or {})
         if swallowed:
             self.log_info(f"Config warning: {swallowed}")
@@ -3709,19 +3712,33 @@ class XeFMApp:
         An active pane filter narrows *content* search to the files it matches
         (issue #305) — the same files the user is looking at — and the dialog
         title names the pattern so the narrowing is visible. Filename search
-        ignores it: its query is itself a filename pattern."""
+        ignores it: its query is itself a filename pattern.
+
+        The dialog's live options (issue #312) are read here, in the closure the
+        dialog runs, rather than by the dialog itself: it shows them and re-runs
+        when one changes, and this is the only place that knows what they mean.
+        Their meaning is :mod:`xefm.search_options`."""
         pane = self.active_pane()
         root = pane["path"]
         root_str = str(root)
         name_filter = pane.get("filter_pattern") or ""
+        options = self._search_option_set()
 
         def search_iter(mode, query, cancel):
+            case = options[search_opts.CASE]
+            recursive = options[search_opts.SUBDIRS]
             if mode == "content":
-                regex = re.compile(query, re.IGNORECASE)  # re.error surfaces in the dialog
+                # re.error still surfaces in the dialog — and a literal search
+                # can no longer raise one at all.
+                regex = search_opts.content_regex(
+                    query, case=case, pattern=options[search_opts.PATTERN])
                 yield from self._iter_content_matches(root, regex, cancel,
-                                                      name_filter=name_filter)
+                                                      name_filter=name_filter,
+                                                      recursive=recursive)
             else:
-                yield from self._iter_filename_matches(root, query, cancel)
+                yield from self._iter_filename_matches(root, query, cancel,
+                                                       case=case,
+                                                       recursive=recursive)
 
         def to_label(mode, value):
             if mode == "content":
@@ -3748,9 +3765,25 @@ class XeFMApp:
         dialog = show_progressive_search(
             self.panel, initial_mode=initial_mode,
             search_iter=search_iter, to_label=to_label, on_accept=on_accept,
-            titles=titles, accept_hint="results to pane",
+            titles=titles, accept_hint="results to pane", options=options,
             region=self._active_pane_region())
         self.panel.render()
+
+    def _search_option_set(self) -> OptionSet:
+        """The search dialog's options, built once and kept for the session.
+
+        Kept on the app rather than on the dialog so a case choice survives
+        closing and reopening the search — the one thing a per-dialog set would
+        lose that anyone would miss. What does *not* survive is anything the
+        declaration marked transient: ``reset_transient`` puts the walk's scope
+        back to "everything under here" on every open, so a search narrowed to
+        one directory never silently narrows the next one
+        (:mod:`xefm.search_options`)."""
+        options = getattr(self, "_search_options", None)
+        if options is None:
+            options = self._search_options = OptionSet(search_opts.SEARCH_OPTIONS)
+        options.reset_transient()
+        return options
 
     def _feed_search_results(self, mode: str, results: list, root, query: str,
                              focus=None) -> None:
@@ -3811,9 +3844,10 @@ class XeFMApp:
                 self.pm.adjust_scroll_for_focus(pane, self._display_height())
                 return
 
-    def _iter_filename_matches(self, root, pattern, cancel):
+    def _iter_filename_matches(self, root, pattern, cancel, *,
+                               case: str = "smart", recursive: bool = True):
         """Depth-first walk under ``root`` yielding entries whose name matches
-        ``pattern`` (case-insensitive glob), checking ``cancel`` between entries so
+        ``pattern`` (a glob), checking ``cancel`` between entries so
         a superseded search stops promptly. The pattern is matched against the
         *whole* filename — an exact glob (issue #231): ``report.txt`` matches only
         that name, and wildcards are used explicitly for partial matches
@@ -3821,9 +3855,13 @@ class XeFMApp:
         Hidden entries are skipped unless the pane is showing them. The walk is
         unbounded (issue #305 — a size cap silently hid far-away matches); the
         result cap and cancellation are applied by the dialog consuming this
-        generator."""
-        import fnmatch
-        pat = name_key.nfc(pattern).lower()
+        generator.
+
+        ``case`` is the dialog's case option — smart case by default, so an
+        all-lowercase pattern matches either case and a capital means you typed
+        it deliberately. ``recursive=False`` searches this directory alone:
+        subdirectories still *match* by name, they are just not descended."""
+        match = search_opts.filename_matcher(pattern, case=case)
         stack = [root]
         while stack:
             if cancel.is_set():
@@ -3840,9 +3878,9 @@ class XeFMApp:
                     return
                 if not self.flm.show_hidden and is_hidden(e.name, attrs):
                     continue
-                if fnmatch.fnmatch(name_key.compare_name(e).lower(), pat):
+                if match(name_key.compare_name(e)):
                     yield e
-                if attrs["is_dir"]:
+                if attrs["is_dir"] and recursive:
                     stack.append(e)
 
     def _go_to_result(self, entry) -> None:
@@ -3939,7 +3977,7 @@ class XeFMApp:
         return "utf-8"
 
     def _iter_content_matches(self, root, regex, cancel, max_line: int = 200,
-                              name_filter: str = ""):
+                              name_filter: str = "", *, recursive: bool = True):
         """Depth-first walk under ``root`` yielding ``{path, line, text}`` for each
         line of a text file that matches ``regex`` (compiled), checking ``cancel``
         between entries so a superseded search stops promptly. ``name_filter`` is
@@ -3951,7 +3989,13 @@ class XeFMApp:
         deciding text-ness before the binary sniff (``_sniff_text_encoding``).
         The walk is unbounded (issue #305 — a size cap silently hid far-away
         matches); the result cap and cancellation are applied by the dialog
-        consuming this generator."""
+        consuming this generator. ``recursive=False`` greps this directory
+        alone — the dialog's subfolder option, and the one that changes what the
+        search *costs* rather than how it reads the query.
+
+        Case sensitivity is not decided here: ``regex`` arrives compiled, which
+        is what lets one flag serve smart case, an explicit override, and a
+        literal search alike (:mod:`xefm.search_options`)."""
         # The pane's filter, whichever kind it is — a typed glob or a filter the
         # config registered — applied to the same entries the pane would show.
         match = filters.matcher(name_filter) if name_filter else None
@@ -3970,7 +4014,8 @@ class XeFMApp:
                     continue
                 try:
                     if attrs["is_dir"]:
-                        stack.append(e)
+                        if recursive:
+                            stack.append(e)
                         continue
                     if match is not None and not match(e, attrs):
                         continue
@@ -5847,6 +5892,7 @@ class XeFMApp:
             ("clear_filter", "Clear the filename filter"),
             ("find_files", "Recursive filename search"),
             ("find_in_files", "Recursive content (grep) search"),
+            ("options", "In the search dialog: case, pattern, subfolders"),
         )),
         # The only non-file-list surface here, and deliberately: the search bar
         # sits on the pane rather than replacing it, so its keys are the ones a

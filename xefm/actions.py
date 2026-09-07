@@ -61,6 +61,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from xefm.log_manager import getLogger
+from xefm.search_options import SEARCH_OPTIONS
 
 
 logger = getLogger("Actions")
@@ -98,12 +99,22 @@ ISEARCH = "isearch"
 #: field holds focus and every printable key belongs to the query — so only
 #: modified or non-printable keys can reach an action here.
 FILTER_LIST = "filter_list"
+#: The modal live search dialog (``xefm.progressive_search_dialog``) behind
+#: Shift-F and Shift-G. A third surface whose keys compete with typing, for the
+#: same reason ``isearch``'s and ``filter_list``'s do — and the first one to
+#: carry live options, which is why it is where the ``options`` key starts.
+SEARCH = "search"
 
 #: Every context a binding or a user action may name, most-specific first.
 #: ``common`` is deliberately included: a config may bind (or a future release
 #: may allow overriding) an action there.
 CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, ISEARCH,
-            FILTER_LIST, COMMON)
+            FILTER_LIST, SEARCH, COMMON)
+
+#: The contexts whose keys compete with a text field. Every one of them is
+#: subject to the printable-key rule stated on ``isearch`` below, and
+#: ``xefm.config.printable_text_bindings`` reports a config that breaks it.
+TEXT_SURFACES = (ISEARCH, FILTER_LIST, SEARCH)
 
 
 # --------------------------------------------------------------------------- #
@@ -665,10 +676,48 @@ _FILTER_LIST_ACTIONS = [
        default_keys=("Shift-DELETE",)),
 ]
 
+_SEARCH_ACTIONS = [
+    # The one key that opens a surface's live options, and the reason there is
+    # only one: see xefm/options.py. Named unqualified on purpose — the same
+    # rationale as 'remove_list_item' above. "Open the options for the thing in
+    # front of you" is an operation other surfaces will grow (the diff viewers
+    # want it next), the registry keeps a table per context, so this exact name
+    # can be registered again elsewhere with its own default while a config
+    # naming it unqualified rebinds every one of them at once.
+    #
+    # Ctrl-O, and the same two constraints that shaped the isearch defaults:
+    #
+    # 1. Not a printable key -- the query field takes every glyph first.
+    # 2. It has to survive the terminal, which rules out more than it looks
+    #    like. Alt is out: macOS keyboards spend Option on glyphs and IME, and
+    #    an Alt chord the VT input path does not recognize arrives as ESCAPE,
+    #    which would *close the dialog* instead of opening its options.
+    #    Ctrl-comma (the desktop preferences chord) cannot be encoded by a
+    #    terminal at all, and on macOS Command-comma means the application's
+    #    settings -- a different promise from this one. Ctrl+letter is what is
+    #    left, and it arrives identically on all four backends.
+    #
+    # F10 already opens the menu bar, so F9 rides along as the second binding:
+    # on a keyboard where it is a plain function key it reads as "the options
+    # next to the menu", and where it is not (macOS ships F-keys as media keys)
+    # Ctrl-O is the one that works.
+    _a("options", SEARCH, "Open the search options",
+       default_keys=("Ctrl-O", "F9")),
+] + [
+    # One unbound action per declared option, so the default keymap stays a
+    # single chord while a config can still put a direct key on the option it
+    # changes hourly ('search.toggle_case': ['Ctrl-A']). Generated from the
+    # declarations rather than written out, because a hand-written list would be
+    # the one place that silently fell behind when an option is added.
+    _a(f"toggle_{option.name}", SEARCH, f"Change: {option.label}",
+       default_keys=())
+    for option in SEARCH_OPTIONS
+]
+
 _BUILTIN_ACTIONS = (_COMMON_ACTIONS + _FILER_ACTIONS + _TEXT_VIEWER_ACTIONS
                     + _IMAGE_VIEWER_ACTIONS + _FILE_DIFF_ACTIONS
                     + _DIR_DIFF_ACTIONS + _ISEARCH_ACTIONS
-                    + _FILTER_LIST_ACTIONS)
+                    + _FILTER_LIST_ACTIONS + _SEARCH_ACTIONS)
 
 
 #: The process-wide registry. Built-ins populate it at import; user actions are

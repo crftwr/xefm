@@ -22,6 +22,15 @@ Threading model (mirrors the port's async pane listing):
 - On a still backend with no animation ticks (chiefly tests), the search is
   settled synchronously: the worker is joined and the queue drained in one shot.
 
+Live options (case, pattern language, whether the walk descends) ride along as
+an :class:`~xefm.options.OptionSet` the owner declares and this dialog only
+*shows*: a chip strip pinned to the right end of the status row, and one key —
+``options``, Ctrl-O — that opens :mod:`xefm.options_dialog` over the top. The
+dialog re-runs the search whenever a value changes and never interprets one; the
+meaning of every option stays with the owner that wrote ``search_iter``, the same
+division as ``titles`` and ``accept_hint``. Why one key rather than one key per
+option is argued in :mod:`xefm.options`.
+
 ``Tab`` switches between ``filename`` and ``content`` search in place and re-runs
 against the same root. Enter accepts the selected row via
 ``on_accept(mode, value)``; Esc (or an outside click) cancels and stops the
@@ -49,12 +58,22 @@ from puikit.backend import Style
 from puikit.event import Event, EventType
 from puikit.focus import FocusContainer, focus_on_click
 from puikit.panel import Rect
+from puikit.text import elide
 from puikit.widgets.base import Widget
 from puikit.widgets.list import ListView
 from puikit.widgets.text_edit import TextEdit
 
+from xefm.actions import SEARCH
+from xefm.config import (format_key_for_display, get_keys_for_action,
+                         is_action_for_event)
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom, pane_anchored_box)
+from xefm.options import OptionSet
+from xefm.options_dialog import show_options_dialog
+
+#: The action that opens the options box — resolved by name, so a rebind in
+#: KEY_BINDINGS both works here and is what the chip strip names.
+_OPTIONS_ACTION = "options"
 
 #: Navigation keys the *list* owns even while the query field holds focus.
 _LIST_KEYS = frozenset({"up", "down", "pageup", "pagedown"})
@@ -89,6 +108,8 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         accept_hint: str = "choose",
         initial_mode: str = "filename",
         result_cap: int = _RESULT_CAP,
+        options: OptionSet | None = None,
+        options_title: str = "Search Options",
         ellipsis: str = "…",
         elide_where: str = "end",
     ):
@@ -102,6 +123,14 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         self._accept_hint = accept_hint
         self.mode = initial_mode
         self.result_cap = result_cap
+        #: The owner's declared options, or None for a dialog without any. The
+        #: set notifies *this* widget so the search re-runs, which is why the
+        #: callback is assigned here rather than passed in by whoever built it.
+        self.options = options
+        self._options_title = options_title
+        self._options_key: str | None = None  # lazily read back from the keymap
+        if options is not None:
+            options.on_change = self._on_option_change
 
         self._panel: Any = None
         self._size: tuple[float, float] = (0.0, 0.0)
@@ -150,6 +179,11 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         self._searching = False
 
         query = self.query_edit.text.strip()
+        if self.options is not None:
+            # Options that read the query (smart case, and the ".*" chip that
+            # lights when a metacharacter appears) are told about it here, so
+            # the strip is right in the same frame the query changed.
+            self.options.hint = query
         if not query:
             self._render()
             return
@@ -272,6 +306,43 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         self.mode = "content" if self.mode == "filename" else "filename"
         self._start_search()  # re-run against the same root in the new mode
 
+    # --- options -------------------------------------------------------------
+
+    def _on_option_change(self, _name: str, _value: Any) -> None:
+        """An option changed: re-run exactly as a keystroke does, so a toggle is
+        a live experiment rather than a commit — one code path, and the same
+        generation bump that supersedes the previous worker."""
+        if not self._closed:
+            self._start_search()
+
+    def _open_options(self) -> None:
+        """Push the shared options box over this dialog. It applies changes
+        live through the OptionSet, so there is nothing to hand back here."""
+        if self.options is None or self._panel is None:
+            return
+        show_options_dialog(self._panel, self.options, title=self._options_title,
+                            mode=self.mode, on_close=self._render)
+        self._render()
+
+    def _handle_option_key(self, event: Event) -> bool:
+        """Whether ``event`` was an options key — the one that opens the box, or
+        a chord a config put directly on a single option.
+
+        Resolved by *action* rather than by key, the way the pickers' remove key
+        is: a rebind keeps working, and an option's chord stays unbound (and so
+        keeps typing its letter) until someone asks for it.
+        """
+        if self.options is None:
+            return False
+        if is_action_for_event(event, _OPTIONS_ACTION, context=SEARCH):
+            self._open_options()
+            return True
+        for option in self.options.visible(self.mode):
+            if is_action_for_event(event, f"toggle_{option.name}", context=SEARCH):
+                self.options.cycle(option.name)  # fires the re-run
+                return True
+        return False
+
     def _render(self) -> None:
         if not self._closed and self._panel is not None:
             self._panel.render()
@@ -318,9 +389,11 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         )
         y += field_h + below_gap
 
-        # Status line: spinner + live count (or an error / mode hint).
-        status = self._status_text()
-        ctx.draw_text(2.0, y, status, Style(fg=theme.text if theme else None, bg=surface_bg))
+        # Status row: the search's own progress on the left, the option chips
+        # pinned to the right end — draw_hint_row's two-sided band, mirrored on
+        # the row above the results. Costs no row of its own, which matters:
+        # a 24-line terminal leaves this dialog about five rows of results.
+        self._draw_status_row(ctx, y, wu, surface_bg, theme)
         y += 1.0
 
         # Result list fills the rest, down to where the hint band starts.
@@ -351,13 +424,67 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         # left inset, so the three line up down the left edge.
         draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
+    def _draw_status_row(self, ctx, y: float, wu: float, surface_bg, theme) -> None:
+        """Draw the status text and, at the right end, one chip per applicable
+        option — lit where the option is doing something other than the plain
+        thing.
+
+        The strip opens with the key that changes them, which is what makes it
+        something to act on rather than a readout. That key is not in the hint
+        band below: four entries already elide at the width a pane-anchored box
+        gets, and a key nobody can see is not a key. Here it sits against the
+        things it changes, which is the better place for it anyway.
+
+        The strip keeps its whole width and the status is elided against it
+        (``draw_hint_row``'s rule for its ``right`` slot). That way round because
+        the strip says what this search *is*, which stays true, while the count
+        next to it changes every frame — and because a strip that vanished on a
+        narrow box would take the only sign that the options exist with it.
+        """
+        chips = self.options.chips(self.mode) if self.options is not None else []
+        muted = theme.muted_text if theme else None
+        key = self._options_key_label() if chips else ""
+        parts = ([(key, muted)] if key else []) + [
+            (text, (theme.accent if lit else muted) if theme else None)
+            for text, lit in chips]
+        gap = ctx.measure_text("  ") or 2.0
+        widths = [ctx.measure_text(text) for text, _fg in parts]
+        strip_w = sum(widths) + gap * (len(parts) - 1) if parts else 0.0
+        avail = max(1.0, wu - 4.0 - (strip_w + gap if parts else 0.0))
+        status = elide(self._status_text(), avail, where="end",
+                       measure=ctx.measure_text)
+        ctx.draw_text(2.0, y, status,
+                      Style(fg=theme.text if theme else None, bg=surface_bg))
+        x = wu - 2.0 - strip_w
+        for (text, fg), width in zip(parts, widths):
+            ctx.draw_text(x, y, text, Style(fg=fg, bg=surface_bg))
+            x += width + gap
+
+    def _options_key_label(self) -> str:
+        """The key that opens the options, read back from the keymap so a rebind
+        is what the strip shows — and empty where a config has unbound it, since
+        naming a key that does nothing is worse than naming none.
+
+        Cached: this runs on every animation frame while a search is in flight,
+        and the answer cannot change while one dialog is open."""
+        if self._options_key is None:
+            keys, _ = get_keys_for_action(_OPTIONS_ACTION, SEARCH)
+            self._options_key = format_key_for_display(keys[0]) if keys else ""
+        return self._options_key
+
     def hint(self) -> str:
         """The keys named in the bottom band. The key names are this widget's —
         they are structural — but what Enter *does* is the owner's, so it comes
         from ``accept_hint``. Tab names the mode it switches *to*, which is the
         only part that changes as the dialog is used; it used to ride along on
         the status line, where it was the one thing there that was not about the
-        search's progress."""
+        search's progress.
+
+        The options key is the one key this dialog answers to that is *not*
+        named here, and deliberately: four entries already elide at the width a
+        pane-anchored box gets, so a fifth would only truncate the fourth. It
+        rides on the chip strip instead — against the things it changes, which
+        is where it can actually be read (:meth:`_draw_status_row`)."""
         other = "content" if self.mode == "filename" else "filename"
         return " · ".join(("↑/↓ select", f"Enter {self._accept_hint}",
                            f"Tab {other}", "Esc cancel"))
@@ -392,6 +519,8 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
                 self._accept_index(self.list.selected)
             elif key == "tab":
                 self._switch_mode()
+            elif self._handle_option_key(event):
+                pass  # opened the options box, or changed one option in place
             elif key in _LIST_KEYS:
                 self.list.handle_event(event)
             else:
@@ -429,6 +558,8 @@ def show_progressive_search(
     accept_hint: str = "choose",
     initial_mode: str = "filename",
     result_cap: int = _RESULT_CAP,
+    options: OptionSet | None = None,
+    options_title: str = "Search Options",
     region: tuple[float, float] | None = None,
     ellipsis: str = "…",
     elide_where: str = "end",
@@ -443,13 +574,18 @@ def show_progressive_search(
     ``accept_hint`` is what the hint band says Enter does — pass the phrase that
     matches what ``on_accept`` actually performs.
 
+    ``options`` is the owner's declared :class:`~xefm.options.OptionSet`: the
+    dialog shows it as a chip strip, opens it on the ``options`` key, and re-runs
+    the search when a value changes — but reads no value itself, so ``search_iter``
+    is where the owner consults them.
+
     ``region`` anchors the dialog over the active pane (see
     :func:`show_filter_list` for the same convention)."""
     dialog = ProgressiveSearchDialog(
         search_iter=search_iter, to_label=to_label, on_accept=on_accept,
         on_cancel=on_cancel, titles=titles, accept_hint=accept_hint,
-        initial_mode=initial_mode, result_cap=result_cap, ellipsis=ellipsis,
-        elide_where=elide_where,
+        initial_mode=initial_mode, result_cap=result_cap, options=options,
+        options_title=options_title, ellipsis=ellipsis, elide_where=elide_where,
     )
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 72.0))

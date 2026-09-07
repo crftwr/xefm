@@ -1011,36 +1011,68 @@ def deprecated_names_notice(bindings: dict, limit: int = 3) -> str | None:
             f"See doc/KEY_BINDINGS_FEATURE.md for the full list.")
 
 
-def printable_isearch_bindings(bindings: dict) -> list[tuple[str, str]]:
-    """The ``(action, key)`` pairs where a config has bound an isearch key to a
-    key that types a character.
+def printable_text_bindings(bindings: dict,
+                            contexts: tuple = None) -> list[tuple[str, str]]:
+    """The ``(action, key)`` pairs where a config has bound an action on a
+    text-entry surface to a key that types a character.
 
-    The search bar gives the pattern field first refusal on every printable key
-    (that is what keeps ``Q``, ``?`` and SPACE typeable while ``quit``, ``help``
-    and ``toggle_select_down`` own them in the file list), so such a binding can
+    Those surfaces — the search bar, the list pickers, the search dialog — give
+    their text field first refusal on every printable key (that is what keeps
+    ``Q``, ``?`` and SPACE typeable while ``quit``, ``help`` and
+    ``toggle_select_down`` own them in the file list), so such a binding can
     never fire — and the character it names would go on being typed. Reported
     once at startup rather than silently ignored, because the config is
-    hand-written and this is the one mistake the isearch context invites.
+    hand-written and this is the mistake these contexts invite.
 
-    A chord holding Ctrl or Cmd is not printable and is not reported: the field
-    reads those as commands, so the bar sees them.
+    Scanning all of them together is what an *unqualified* binding requires: a
+    config writing ``'options': ['O']`` silences one key on three surfaces at
+    once, and a check that knew only about ``isearch`` would report none of it.
+
+    Only actions a context owns are checked; the ones it inherits from
+    ``common`` are the file list's and are bound for it. A chord holding Ctrl or
+    Cmd is not printable and is not reported: the field reads those as commands,
+    so the surface sees them.
     """
-    from xefm.actions import ISEARCH, registry
+    from xefm.actions import TEXT_SURFACES, registry
 
     key_bindings = KeyBindings(bindings)
     found: list[tuple[str, str]] = []
-    for action in registry.actions(ISEARCH):
-        if not action.name.startswith(ISEARCH + "."):
-            continue  # an inherited 'common' action; the bar never runs it here
-        keys, _ = key_bindings.get_keys_for_action(action.name, ISEARCH)
-        for expr in keys:
-            identity, mods, mode = key_bindings._parse_key_expression(expr)
-            if mods & {"ctrl", "cmd"}:
-                continue
-            if mode == "char" or identity == "space" or (
-                    len(identity) == 1 and identity.isprintable()):
-                found.append((action.name, expr))
+    for context in (TEXT_SURFACES if contexts is None else contexts):
+        for action in registry.actions(context):
+            if action.context != context:
+                continue  # inherited from 'common'; this surface never runs it
+            keys, _ = key_bindings.get_keys_for_action(action.name, context)
+            for expr in keys:
+                identity, mods, mode = key_bindings._parse_key_expression(expr)
+                if mods & {"ctrl", "cmd"}:
+                    continue
+                if mode == "char" or identity == "space" or (
+                        len(identity) == 1 and identity.isprintable()):
+                    found.append((action.name, expr))
     return found
+
+
+def printable_isearch_bindings(bindings: dict) -> list[tuple[str, str]]:
+    """The search bar's share of :func:`printable_text_bindings`."""
+    from xefm.actions import ISEARCH
+
+    return printable_text_bindings(bindings, (ISEARCH,))
+
+
+def printable_text_notice(bindings: dict, limit: int = 3) -> str | None:
+    """One line naming bindings that a typed character will swallow, or ``None``
+    (see :func:`printable_text_bindings`)."""
+    pairs = printable_text_bindings(bindings)
+    if not pairs:
+        return None
+    shown = ", ".join(f"'{action}' -> '{key}'" for action, key in pairs[:limit])
+    more = len(pairs) - limit
+    if more > 0:
+        shown += f", and {more} more"
+    return (f"KEY_BINDINGS binds {len(pairs)} action(s) on a surface that takes "
+            f"typing to a key that types a character, so they will never fire: "
+            f"{shown}. Use a modified or non-printable key "
+            f"(Shift-DOWN, F2, Ctrl-N).")
 
 
 def printable_isearch_notice(bindings: dict, limit: int = 3) -> str | None:

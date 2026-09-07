@@ -22,8 +22,14 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
+from puikit.event import Event, EventType  # noqa: E402
+
 from xefm import app as xefm_app  # noqa: E402
+from xefm import search_options as search_opts  # noqa: E402
+from xefm.options import OptionSet  # noqa: E402
+from xefm.options_dialog import OptionsDialog  # noqa: E402
 from xefm.progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
+from xefm.search_options import SEARCH_OPTIONS  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 
 
@@ -137,6 +143,138 @@ class ModeSwitch(unittest.TestCase):
         dlg._switch_mode()  # Tab
         self.assertEqual(dlg.mode, "content")
         self.assertEqual(dlg.results, ["content:q"])
+
+
+class Options(unittest.TestCase):
+    """The dialog's half of the options contract (#312): it shows them, opens the
+    box, and re-runs when one changes — and reads no value itself."""
+
+    def _dialog(self, **kw):
+        return ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter([f"{mode}:{q}"]),
+            to_label=lambda mode, v: v,
+            options=OptionSet(SEARCH_OPTIONS),
+            **kw,
+        )
+
+    def test_chips_follow_the_mode(self):
+        dlg = self._dialog(initial_mode="content")
+        self.assertEqual([text for text, _lit in dlg.options.chips(dlg.mode)],
+                         ["Aa", ".*", "sub"])
+        dlg._switch_mode()  # filename search speaks glob, not regex
+        self.assertEqual([text for text, _lit in dlg.options.chips(dlg.mode)],
+                         ["Aa", "sub"])
+
+    def test_the_case_chip_lights_as_a_capital_is_typed(self):
+        # The strip is where smart case teaches itself: nothing explains the rule,
+        # the chip just moves while you type.
+        dlg = self._dialog()
+        _run(dlg, "todo")
+        self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", False))
+        _run(dlg, "TODO")
+        self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", True))
+
+    def test_an_empty_query_settles_the_chips_back(self):
+        dlg = self._dialog()
+        _run(dlg, "TODO")
+        _run(dlg, "")
+        self.assertEqual(dlg.options.chips(dlg.mode)[0], ("Aa", False))
+
+    def test_changing_an_option_reruns_the_search(self):
+        runs = []
+
+        dlg = ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter([runs.append(q) or q]),
+            to_label=lambda mode, v: v,
+            options=OptionSet(SEARCH_OPTIONS),
+        )
+        _run(dlg, "needle")
+        self.assertEqual(runs, ["needle"])
+        dlg.options.cycle(search_opts.CASE)
+        self.assertEqual(runs, ["needle", "needle"])  # same query, run again
+
+    def test_a_closed_dialog_stops_answering_its_options(self):
+        # The set outlives the dialog (the app keeps it for the session), so a
+        # later change must not start a worker for a box that is gone.
+        runs = []
+        dlg = ProgressiveSearchDialog(
+            search_iter=lambda mode, q, cancel: iter([runs.append(q) or q]),
+            to_label=lambda mode, v: v,
+            options=OptionSet(SEARCH_OPTIONS),
+        )
+        _run(dlg, "needle")
+        dlg._close()
+        dlg.options.cycle(search_opts.CASE)
+        self.assertEqual(runs, ["needle"])
+
+    def test_the_strip_carries_the_key_that_changes_it(self):
+        # Not the hint band: four entries already elide at the width a
+        # pane-anchored box gets, so a fifth would only truncate the fourth.
+        self.assertEqual(self._dialog()._options_key_label(), "Ctrl-O")
+
+    def test_the_hint_band_did_not_grow(self):
+        dlg = self._dialog(initial_mode="filename")
+        self.assertEqual(dlg.hint(),
+                         "↑/↓ select · Enter choose · Tab content · Esc cancel")
+
+    def test_the_key_label_follows_a_rebind(self):
+        from xefm.config import KeyBindings, config_manager
+
+        dlg = self._dialog()
+        saved = config_manager._key_bindings
+        config_manager._key_bindings = KeyBindings({"search.options": ["Ctrl-P"]})
+        try:
+            self.assertEqual(dlg._options_key_label(), "Ctrl-P")
+        finally:
+            config_manager._key_bindings = saved
+
+    def test_an_unbound_options_key_is_not_named(self):
+        from xefm.config import KeyBindings, config_manager
+
+        dlg = self._dialog()
+        saved = config_manager._key_bindings
+        config_manager._key_bindings = KeyBindings({"search.options": []})
+        try:
+            self.assertEqual(dlg._options_key_label(), "")
+        finally:
+            config_manager._key_bindings = saved
+
+    def test_the_options_key_is_resolved_by_action(self):
+        # Ctrl-O reaches the dialog identically on all four backends: the TUI
+        # paths deliver key="o" with no char, so this must not be a char match.
+        dlg = self._dialog()
+        opened = []
+        dlg._open_options = lambda: opened.append(True)
+        handled = dlg._handle_option_key(
+            Event(EventType.KEY, key="o", modifiers=frozenset({"ctrl"})))
+        self.assertTrue(handled)
+        self.assertEqual(opened, [True])
+
+    def test_a_plain_letter_is_still_typing(self):
+        dlg = self._dialog()
+        self.assertFalse(dlg._handle_option_key(
+            Event(EventType.KEY, key="o", char="o", modifiers=frozenset())))
+
+    def test_an_option_chord_is_unbound_until_a_config_asks(self):
+        dlg = self._dialog()
+        self.assertFalse(dlg._handle_option_key(
+            Event(EventType.KEY, key="t", modifiers=frozenset({"ctrl"}))))
+        self.assertEqual(dlg.options[search_opts.CASE], "smart")
+
+    def test_a_bound_option_chord_cycles_that_option(self):
+        from xefm.config import KeyBindings, config_manager
+
+        dlg = self._dialog()
+        saved = config_manager._key_bindings
+        config_manager._key_bindings = KeyBindings(
+            {"search.toggle_case": ["Ctrl-T"]})
+        try:
+            handled = dlg._handle_option_key(
+                Event(EventType.KEY, key="t", modifiers=frozenset({"ctrl"})))
+        finally:
+            config_manager._key_bindings = saved
+        self.assertTrue(handled)
+        self.assertEqual(dlg.options[search_opts.CASE], "sensitive")
 
 
 class AppIntegration(unittest.TestCase):
@@ -300,6 +438,90 @@ class AppIntegration(unittest.TestCase):
             landed = pane["focused_index"]
             self.assertGreater(landed, 0)  # cursor moved off the top row
             self.assertEqual(str(pane["files"][landed]), str(picked))
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+
+    def _search_app(self, backend):
+        app = xefm_app.XeFMApp(backend, self.tmp, self.tmp, left_provided=True,
+                               right_provided=True, state_manager=self.sm)
+        app._settle_listings()
+        return app
+
+    def test_options_key_opens_the_box_over_the_search(self):
+        from puikit.backends import create_backend
+
+        self._write("a.txt")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("content")
+            dlg = app.panel._layers[-1].widget
+            dlg.handle_event(Event(EventType.KEY, key="o",
+                                   modifiers=frozenset({"ctrl"})))
+            box = app.panel._layers[-1].widget
+            self.assertIsInstance(box, OptionsDialog)
+
+            # A plain letter is an accelerator in here — the whole reason the
+            # options live behind one key rather than one chord each.
+            box.handle_event(Event(EventType.KEY, key="s", char="s"))
+            self.assertIs(dlg.options[search_opts.SUBDIRS], False)
+
+            box.handle_event(Event(EventType.KEY, key="escape"))
+            self.assertIs(app.panel._layers[-1].widget, dlg)  # search still up
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+    def test_turning_off_subfolders_narrows_the_search(self):
+        from puikit.backends import create_backend
+
+        self._write("top.txt", "needle\n")
+        self._write("sub/deep.txt", "needle\n")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("content")
+            dlg = app.panel._layers[-1].widget
+
+            def settle():
+                if dlg._thread is not None:
+                    dlg._thread.join(timeout=5)
+                b.run_animation_ticks()
+                return sorted(h["path"].name for h in dlg.results)
+
+            dlg.query_edit.text = "needle"
+            dlg._start_search()
+            self.assertEqual(settle(), ["deep.txt", "top.txt"])
+
+            # Changing the option re-runs the same query on its own.
+            dlg.options.cycle(search_opts.SUBDIRS)
+            self.assertEqual(settle(), ["top.txt"])
+        finally:
+            app.file_monitor.stop_monitoring()
+            b.close()
+
+    def test_a_narrowed_scope_does_not_outlive_the_dialog(self):
+        from puikit.backends import create_backend
+
+        self._write("a.txt")
+        b = create_backend("memory")
+        b.open()
+        app = self._search_app(b)
+        try:
+            app._open_search("filename")
+            dlg = app.panel._layers[-1].widget
+            dlg.options.cycle(search_opts.SUBDIRS)   # scope: transient
+            dlg.options.cycle(search_opts.CASE)      # reading: persists
+            dlg._cancel_dialog()
+
+            app._open_search("filename")
+            reopened = app.panel._layers[-1].widget
+            self.assertIs(reopened.options[search_opts.SUBDIRS], True)
+            self.assertEqual(reopened.options[search_opts.CASE], "sensitive")
         finally:
             app.file_monitor.stop_monitoring()
             b.close()
