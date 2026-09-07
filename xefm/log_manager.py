@@ -737,6 +737,27 @@ class _LogSinkHandler(logging.Handler):
 _sink_handler = _LogSinkHandler()
 
 
+def route_library_logger(name: str) -> logging.Logger:
+    """Carry a third-party library's records into XeFM's log pane as well.
+
+    XeFM's own loggers get the sink handler from :func:`getLogger`; a library
+    logging under its own name (PuiKit's ``puikit.*``, which is where its
+    UI-thread stall detector reports) has no handler at all, so Python falls
+    back to ``logging.lastResort`` - everything below WARNING dropped, the rest
+    written unformatted to a stderr the GUI backends do not have. Attaching the
+    same handler puts those records in the pane, formatted like every other line.
+
+    Idempotent, and safe to call before the pane exists: records buffer in the
+    sink's early-line queue and are replayed when the app installs its sink.
+    """
+    logger = logging.getLogger(name)
+    if _sink_handler not in logger.handlers:
+        logger.addHandler(_sink_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    return logger
+
+
 def set_log_sink(sink: Callable[[str, str], None]) -> None:
     """Route log records to ``sink(source, line)`` and replay what was buffered.
 

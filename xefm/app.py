@@ -25,6 +25,7 @@ archive browsing, and remote storage (S3 / SFTP).
 
 import argparse
 import getpass
+import importlib.util
 import os
 import platform
 import queue
@@ -80,7 +81,7 @@ from xefm.isearch_bar import ISearchBar
 from xefm import filters
 from xefm import name_key
 from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
-                              set_log_sink)
+                              getLogger, route_library_logger, set_log_sink)
 from xefm.pane_manager import PaneManager
 from xefm.path import Path
 from xefm import search_match
@@ -6442,6 +6443,11 @@ def create_parser() -> argparse.ArgumentParser:
                         version=f"XeFM {_VERSION}")
     parser.add_argument("--backend", default="tui",
                         help="tui (terminal, the default) | gui (native desktop, Windows/macOS) | web (browser tab)")
+    # A developer diagnostic, not a preference: it belongs on the command line
+    # of the run being investigated rather than in the config file.
+    parser.add_argument("--ui-watchdog", nargs="?", const="1", default=None, metavar="MS",
+                        help="log a stack trace whenever the UI thread stalls, with an "
+                             "optional threshold in milliseconds (default 250)")
     # ``default=None`` lets us tell an explicit ``--left .`` from no flag: an
     # explicitly given directory wins over the one saved from the last session.
     parser.add_argument("--left", default=None, help="left pane startup directory")
@@ -6482,6 +6488,22 @@ def main() -> None:
     # rather than re-sniffing sys.argv. Set before get_config()/XeFMApp load the
     # config below.
     os.environ["XEFM_BACKEND"] = backend_name
+    # PuiKit's UI-thread stall detector reports work that blocks the event loop
+    # (see doc/dev/UI_WATCHDOG_SYSTEM.md). Off unless asked for, and set here
+    # because PuiKit reads the variable when the backend opens, below.
+    if args.ui_watchdog is not None:
+        os.environ["PUIKIT_UI_WATCHDOG"] = args.ui_watchdog
+        if importlib.util.find_spec("puikit._watchdog") is None:
+            # An older PuiKit ignores the variable, and a switch that silently
+            # does nothing is worse than no switch at all when the thing being
+            # investigated is "why did nothing get reported?".
+            getLogger("Main").warning(
+                "--ui-watchdog needs a PuiKit with the UI-thread stall detector; "
+                "the installed one ignores it")
+    # Those reports - and PuiKit's own warnings - are logged under "puikit",
+    # which is not one of XeFM's loggers and so has no route into the log pane
+    # until it is given one.
+    route_library_logger("puikit")
     # The native GUI backend persists and restores the window's position and size
     # via the NSWindow frame-autosave feature; curses and the web backend (whose
     # window is a browser tab) ignore it, and WebBackend takes no such kwarg.
