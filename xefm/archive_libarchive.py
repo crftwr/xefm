@@ -658,6 +658,17 @@ class ExtractionPass:
             return _ClaimedMember(entry, raw, self)
         return None
 
+    def retire(self) -> None:
+        """No more members may be claimed from this pass.
+
+        Called as the reader is about to be freed. A worker parked on a pass
+        whose archive has already been closed then gets None back instead of
+        reaching into a freed reader — which matters because a pass can be
+        abandoned mid-stream (a cancel, another archive's failure), so
+        exhaustion is not the only way it ends."""
+        with self._lock:
+            self._done = True
+
     @staticmethod
     def _drain(raw) -> None:
         """Consume a passed-over member's payload so the stream stays in step."""
@@ -1032,7 +1043,14 @@ class LibarchiveHandler(ArchiveHandler):
                 raise ArchiveExtractionError(
                     f"Error extracting archive: {exc}",
                     f"Cannot extract '{self._archive_path.name}': {exc}")
-            yield ExtractionPass(self, archive)
+            pass_ = ExtractionPass(self, archive)
+            try:
+                yield pass_
+            finally:
+                # The reader dies with the stack below; retiring first means a
+                # worker still holding this pass is turned away rather than
+                # following a freed pointer.
+                pass_.retire()
 
     @staticmethod
     def extraction_root(dest_dir) -> PathlibPath:

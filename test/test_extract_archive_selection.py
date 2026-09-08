@@ -12,6 +12,7 @@ import io
 import os
 import sys
 import tarfile
+import threading
 import types
 import zipfile
 
@@ -21,6 +22,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
+from xefm import archive_libarchive as AL  # noqa: E402
+from xefm.archive_libarchive import libarchive_formats  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.progress_manager import ProgressManager  # noqa: E402
 from xefm.task import TaskManager  # noqa: E402
@@ -49,6 +52,21 @@ def _targz(tmp_path, name, member="a.txt", data=b"hello"):
         info = tarfile.TarInfo(name=member)
         info.size = len(data)
         tf.addfile(info, io.BytesIO(data))
+    return Path(str(p))
+
+
+requires_7z = pytest.mark.skipif(
+    not any(fmt.label == "7z" for fmt in libarchive_formats()),
+    reason="no libarchive able to read 7z on this machine")
+
+
+def _7z(tmp_path, name, members):
+    """``members`` as ``(name, bytes)`` pairs, in a 7z."""
+    import libarchive
+    p = tmp_path / name
+    with libarchive.file_writer(str(p), "7zip") as writer:
+        for member, data in members:
+            writer.add_file_from_memory(member, len(data), data)
     return Path(str(p))
 
 
@@ -154,6 +172,64 @@ def test_formats_with_different_totals_still_add_up(tmp_path, dest, monkeypatch)
     end = ends[-1]
     assert end["processed_items"] == end["total_items"] == 2
     assert end["processed_bytes"] == end["total_bytes"] == 350
+
+
+@requires_7z
+def test_the_next_archive_starts_while_this_one_is_still_landing(tmp_path, dest,
+                                                                 monkeypatch):
+    """The batch does not wait for an archive's files to land before opening the
+    next one.
+
+    Proved without reading a clock. The close of the first archive's big member
+    blocks until the second archive has *started reading*; if the batch still
+    drained at the boundary, that close could never be released — the second
+    archive would be waiting on it — and the wait would time out. Its small
+    member closes freely, which is what lets a worker come back, find the first
+    archive spent, and let the batch move on while the big one is still going."""
+    payload = os.urandom(64 * 1024)
+    first = _7z(tmp_path, "first.7z", [("big.bin", payload), ("small.bin", b"s")])
+    second = _7z(tmp_path, "second.7z", [("only.bin", b"x")])
+    app = _app([first, second], [first, second], dest)
+    app.config.ARCHIVE_EXTRACT_WORKERS = 2
+
+    reading_second = threading.Event()
+    timed_out = []
+
+    real_pass = AL.LibarchiveHandler.extraction_pass
+
+    def traced_pass(self, dest_dir_, **kw):
+        if self._archive_path.name == "second.7z":
+            reading_second.set()
+        return real_pass(self, dest_dir_, **kw)
+
+    real_open = open
+
+    class _WaitsForTheNextArchive:
+        def __init__(self, handle, path):
+            self._handle = handle
+            self._path = str(path)
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def close(self):
+            if self._path.endswith("big.bin"):
+                if not reading_second.wait(timeout=5):
+                    timed_out.append(self._path)
+            self._handle.close()
+
+    monkeypatch.setattr(AL.LibarchiveHandler, "extraction_pass", traced_pass)
+    monkeypatch.setattr(
+        AL, "open",
+        lambda p, *a, **kw: _WaitsForTheNextArchive(real_open(p, *a, **kw), p),
+        raising=False)
+
+    app.extract_archive()
+
+    assert timed_out == []
+    assert (tmp_path / "dest" / "first" / "big.bin").read_bytes() == payload
+    assert (tmp_path / "dest" / "second" / "only.bin").read_bytes() == b"x"
+    assert any("Extracted 2 archive(s)" in m for m in app.logs)
 
 
 def test_an_unreadable_archive_is_left_out_of_the_total(tmp_path, dest):

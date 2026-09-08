@@ -1010,6 +1010,157 @@ class _StreamToLog:
         return False
 
 
+class _ExtractionPool:
+    """Extraction workers that outlive any one archive of a batch.
+
+    Workers used to be started and joined per archive, and that boundary cost
+    the tail of every one of them: the last members' closes ran with the other
+    workers already idle, and the next archive could not begin reading until
+    they finished. Where the destination defers a file's transfer to its close,
+    that tail is the expensive part of the archive.
+
+    Here the workers are started once and *park* between archives. The batch's
+    own thread keeps everything it had — the password gate, the title, one
+    archive read at a time — because it still publishes one archive and waits.
+    What it waits for is that archive's **reading**: it moves on to open and
+    decompress the next while the previous one's files are still landing.
+
+    Concurrency stays at ``workers`` throughout, which is the point of the
+    setting — it says how many writes the destination will take, and a boundary
+    that briefly doubled it would be a worse bargain than the one it removed.
+
+    A member that fails takes its archive out of the batch and no more:
+    ``_retire`` ends that archive early, the error is kept against its key, and
+    the workers go on to the next archive. Cancellation is the batch's, so it
+    stops everything. Both are reported by :meth:`close`, because neither is
+    known while the archive that caused it is still being read."""
+
+    def __init__(self, workers: int, *, task=None, prog=None, log=None):
+        self._task = task
+        self._prog = prog
+        self._log = log
+        self._cond = threading.Condition()
+        self._job = None           # (key, pass, root, archive path, dest dir)
+        self._exhausted = True     # nothing published yet
+        self._closed = False
+        self._cancelled = None     # the Cancelled that ended the batch
+        self._results: dict = {}   # key -> [members written, first error]
+        self._threads = [
+            threading.Thread(target=self._work, name="xefm-extract", daemon=True)
+            for _ in range(max(1, workers))]
+        for thread in self._threads:
+            thread.start()
+
+    # --- the batch thread's side ---------------------------------------------
+
+    def run_archive(self, key, pass_, root, archive_path, dest_dir) -> None:
+        """Hand this archive to the workers and return once it has been *read*
+        to the end — or abandoned. Its files may still be landing."""
+        with self._cond:
+            self._results.setdefault(key, [0, None])
+            self._job = (key, pass_, root, archive_path, dest_dir)
+            self._exhausted = False
+            self._cond.notify_all()
+            while not self._exhausted and self._cancelled is None:
+                self._cond.wait()
+            self._job = None
+            cancelled = self._cancelled
+        if cancelled is not None:
+            raise cancelled
+
+    def close(self) -> dict:
+        """Stop the workers once their outstanding files have landed, and report
+        ``{key: (members written, first error)}`` — the tally no archive could
+        give while it was still being read."""
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+        for thread in self._threads:
+            thread.join()
+        return {key: tuple(value) for key, value in self._results.items()}
+
+    # --- a worker's side ------------------------------------------------------
+
+    def _work(self) -> None:
+        while True:
+            with self._cond:
+                while self._job is None or self._exhausted:
+                    if self._closed or self._cancelled is not None:
+                        return
+                    self._cond.wait()
+                job = self._job
+            self._one_member(job)
+
+    def _one_member(self, job) -> None:
+        """Claim one member and carry it to a closed file — the whole of its
+        life on this thread, which is what keeps its handle's lifetime local and
+        lets an error be raised where the member is still known."""
+        key, pass_, root, archive_path, dest_dir = job
+        name = archive_path.name if archive_path is not None else ""
+        pending = None
+        slot = -1
+        entry = None
+        try:
+            with pass_.claim_next() as member:
+                if member is None:
+                    self._retire(job)
+                    return
+                if self._task is not None:
+                    self._task.checkpoint()
+                entry = member.entry
+                written = 0
+                if self._prog is not None:
+                    slot = self._prog.file_begin(
+                        XeFMApp._member_label(name, entry.internal_path),
+                        0 if entry.is_dir else entry.size)
+
+                def on_bytes(count: int) -> None:
+                    nonlocal written
+                    written += count
+                    self._prog.file_bytes(slot, written)
+
+                pending = member.write_to(
+                    root, on_bytes if self._prog is not None else None)
+            # The claim is released; the rest is this member's alone.
+            if pending is not None:
+                if self._prog is not None:
+                    # Where the destination defers a file's transfer to its
+                    # close, everything below this line is that transfer — and
+                    # the row would otherwise hold at its total, showing none of
+                    # it.
+                    self._prog.file_closing(slot)
+                pending.finish()
+                pending = None
+            if self._prog is not None:
+                self._prog.file_end(slot)
+            if self._log is not None and not entry.is_dir:
+                self._log(XeFMApp._extracted_line(entry.internal_path,
+                                                  archive_path, dest_dir))
+            with self._cond:
+                self._results[key][0] += 1
+        except Cancelled as exc:
+            with self._cond:
+                if self._cancelled is None:
+                    self._cancelled = exc
+                self._cond.notify_all()
+        except BaseException as exc:  # noqa: BLE001 — reported by close()
+            with self._cond:
+                if self._results[key][1] is None:
+                    self._results[key][1] = exc
+            self._retire(job)  # this archive is over; the batch is not
+        finally:
+            if pending is not None:
+                pending.discard()
+
+    def _retire(self, job) -> None:
+        """This archive has no more members to give — read to the end, or ended
+        early by a failure. Releases the batch thread to publish the next one."""
+        with self._cond:
+            if self._job is job:
+                self._exhausted = True
+                self._cond.notify_all()
+
+
 class _StepBehindLog:
     """Logs one unit of work at a time, always one behind.
 
@@ -5053,7 +5204,7 @@ class XeFMApp:
 
     def _extract_archive(self, archive_path, dest_dir, fmt: str, pwd: bytes | None = None,
                          *, task=None, prog=None, owns_total: bool = True,
-                         log=None) -> int:
+                         log=None, pool=None, key=0) -> int:
         """Extract ``archive_path`` into ``dest_dir`` (created if absent). Returns
         the number of entries. Tar extraction uses the ``data`` filter where
         available (Python 3.12+) to reject unsafe member paths.
@@ -5087,7 +5238,8 @@ class XeFMApp:
         if fmt != "zip" and fmt not in self._TAR_MODES:
             return self._extract_via_handler(archive_path, dest_dir, pwd,
                                              task=task, prog=prog, bytes_=bytes_,
-                                             owns_total=owns_total, log=log)
+                                             owns_total=owns_total, log=log,
+                                             pool=pool, key=key)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
@@ -5139,7 +5291,8 @@ class XeFMApp:
 
     def _extract_via_handler(self, archive_path, dest_dir, pwd: bytes | None,
                              *, task=None, prog=None, bytes_=None,
-                             owns_total: bool = True, log=None) -> int:
+                             owns_total: bool = True, log=None,
+                             pool=None, key=0) -> int:
         """Extract a format neither zipfile nor tarfile reads — 7z, and whatever
         else the loaded libarchive contributes — through its registered handler.
 
@@ -5185,7 +5338,8 @@ class XeFMApp:
                 return count
             return self._extract_members(handler, dest_dir, pwd,
                                          task=task, prog=prog, log=log,
-                                         archive_path=archive_path)
+                                         archive_path=archive_path,
+                                         pool=pool, key=key)
         finally:
             handler.close()
 
@@ -5206,8 +5360,8 @@ class XeFMApp:
         return max(1, workers)
 
     def _extract_members(self, handler, dest_dir, pwd: bytes | None,
-                         *, task=None, prog=None, log=None,
-                         archive_path=None) -> int:
+                         *, task=None, prog=None, log=None, archive_path=None,
+                         pool=None, key=0) -> int:
         """Extract every member of ``handler``'s archive with symmetric workers.
 
         Each worker carries one member from claim to closed file, so a member's
@@ -5229,87 +5383,31 @@ class XeFMApp:
         single current-item fields: several members are in flight, so there is no
         one current member to name. The item is counted at ``file_end``, after
         the file is closed, so a member counts when it has actually landed — and
-        ``log`` gets its line there too, for the same reason. This path needs no
-        step-behind holding: a worker owns its member all the way to the closed
-        file, so it can simply say so afterwards. ``log`` must already be
-        serialised (:func:`~xefm.file_operations.serialized_log`)."""
+        ``log`` gets its line there too, for the same reason. ``log`` must
+        already be serialised (:func:`~xefm.file_operations.serialized_log`).
+
+        ``pool``, when a batch supplies one, is workers already running over its
+        other archives. This then returns once the archive has been *read*, its
+        files still landing, and the count and any failure are the pool's to
+        report when it closes — hence the 0 here. Without one, a pool is made for
+        this archive alone and joined before returning: the same code path with
+        the batch's overlap left out."""
         root = handler.extraction_root(dest_dir)
-        archive_name = archive_path.name if archive_path is not None else ""
-        workers = self._extract_workers()
-        counted = 0
-        errors: list = []
-        tally = threading.Lock()
-        stop = threading.Event()
-
-        def work(pass_) -> None:
-            nonlocal counted
-            while not stop.is_set():
-                pending = None
-                slot = -1
-                try:
-                    with pass_.claim_next() as member:
-                        if member is None:
-                            return
-                        if task is not None:
-                            task.checkpoint()
-                        entry = member.entry
-                        written = 0
-                        if prog is not None:
-                            slot = prog.file_begin(
-                                self._member_label(archive_name,
-                                                   entry.internal_path),
-                                0 if entry.is_dir else entry.size)
-
-                        def on_bytes(count: int) -> None:
-                            nonlocal written
-                            written += count
-                            prog.file_bytes(slot, written)
-
-                        pending = member.write_to(
-                            root, on_bytes if prog is not None else None)
-                    # The claim is released; the rest is this member's alone.
-                    if pending is not None:
-                        if prog is not None:
-                            # Where the destination defers a file's transfer to
-                            # its close, everything below this line is that
-                            # transfer — and the row would otherwise hold at its
-                            # total, showing none of it.
-                            prog.file_closing(slot)
-                        pending.finish()
-                        pending = None
-                    if prog is not None:
-                        prog.file_end(slot)
-                    if log is not None and not entry.is_dir:
-                        log(self._extracted_line(entry.internal_path,
-                                                 archive_path, dest_dir))
-                    with tally:
-                        counted += 1
-                except BaseException as exc:  # noqa: BLE001 — re-raised below
-                    with tally:
-                        errors.append(exc)
-                    stop.set()
-                    return
-                finally:
-                    if pending is not None:
-                        pending.discard()
-
-        with handler.extraction_pass(dest_dir, password=pwd) as pass_:
-            if workers == 1:
-                work(pass_)
-            else:
-                threads = [threading.Thread(target=work, args=(pass_,),
-                                            name="xefm-extract", daemon=True)
-                           for _ in range(workers)]
-                for thread in threads:
-                    thread.start()
-                for thread in threads:
-                    thread.join()
-        if errors:
-            # One failure ends the extraction; the first is the one that caused
-            # it, the others are workers noticing. Cancellation wins over it, so
-            # the batch above reports a cancel rather than an error.
-            raise next((e for e in errors if isinstance(e, Cancelled)), errors[0])
-        return counted
+        if pool is not None:
+            with handler.extraction_pass(dest_dir, password=pwd) as pass_:
+                pool.run_archive(key, pass_, root, archive_path, dest_dir)
+            return 0
+        own = _ExtractionPool(self._extract_workers(), task=task, prog=prog,
+                              log=log)
+        try:
+            with handler.extraction_pass(dest_dir, password=pwd) as pass_:
+                own.run_archive(key, pass_, root, archive_path, dest_dir)
+        finally:
+            results = own.close()
+        count, error = results.get(key, (0, None))
+        if error is not None:
+            raise error
+        return count
 
     def _survey_archives(self, plan, task=None) -> list[tuple]:
         """Open every archive in the batch once, up front, and report what
@@ -5580,13 +5678,17 @@ class XeFMApp:
                 # background writer and not several — the copy engine takes the
                 # same wrapper for the same reason.
                 log = serialized_log(self.log_info)
-                # The archive currently being written, for the cancel message:
-                # what landed stays (the destination may be a directory the user
-                # already had files in — the confirm box says as much — so
-                # removing it wholesale could take those with it).
+                # The archive being *read* when a cancel lands, for the cancel
+                # message: what landed stays (the destination may be a directory
+                # the user already had files in — the confirm box says as much —
+                # so removing it wholesale could take those with it). A hint
+                # rather than an inventory, and slightly more so now that the pool
+                # spans archives: the one before this may still have had files in
+                # flight. Naming the archive the cancel interrupted is the useful
+                # half.
                 partial = None
 
-                def extract_one(entry, target, fmt, status) -> int:
+                def extract_one(entry, target, fmt, status, key) -> int:
                     """One archive, asking for its password if it needs one.
 
                     A wrong password re-asks *here*, in place, rather than
@@ -5617,7 +5719,8 @@ class XeFMApp:
                         try:
                             count = self._extract_archive(entry, target, fmt,
                                                           pwd=pwd, task=t, prog=prog,
-                                                          owns_total=False, log=log)
+                                                          owns_total=False, log=log,
+                                                          pool=pool, key=key)
                         except NotImplementedError:
                             # Defensive: the probe above already refused these, and
                             # NotImplementedError *is* a RuntimeError, so it must
@@ -5636,9 +5739,17 @@ class XeFMApp:
                             set_archive_password(entry, pwd)
                         return count
 
-                done = 0
+                # One pool for the batch. Started here rather than per
+                # archive so no archive's tail is waited on before the next one
+                # is opened: on a destination that uploads at close, the last
+                # members of an archive were landing while every other worker sat
+                # idle and the next archive could not begin reading.
+                pool = _ExtractionPool(self._extract_workers(), task=t, prog=prog,
+                                       log=log)
                 entries = 0
                 failures: list[tuple] = []
+                started: list[tuple] = []
+                cancelled = False
                 try:
                     # Count the whole batch before writing any of it, and publish
                     # it as one total. The operation started with the task and is
@@ -5658,7 +5769,8 @@ class XeFMApp:
                             # Read live by the progress dialog each frame.
                             t.title = f"Extracting archive {index} of {len(plan)}…"
                         try:
-                            entries += extract_one(entry, target, fmt, status)
+                            entries += extract_one(entry, target, fmt, status,
+                                                   index)
                         except Cancelled:
                             raise  # Cancel is the batch's, not this archive's
                         except Exception as exc:  # noqa: BLE001 — on the main thread
@@ -5666,12 +5778,27 @@ class XeFMApp:
                             # every failure is reported when the task lands.
                             failures.append((entry, exc))
                             continue
-                        done += 1
+                        started.append((index, entry))
                 except Cancelled:
+                    cancelled = True
+                finally:
+                    # Draining the pool is what makes the tallies knowable: an
+                    # archive's last files land after its reading ended, so
+                    # neither its count nor its failure existed when the loop
+                    # moved on from it.
+                    results = pool.close()
+                    prog.finish_operation()
+                done = 0
+                for index, entry in started:
+                    count, error = results.get(index, (0, None))
+                    entries += count
+                    if error is not None:
+                        failures.append((entry, error))
+                    else:
+                        done += 1
+                if cancelled:
                     return {"cancelled": True, "done": done, "entries": entries,
                             "failures": failures, "partial": partial}
-                finally:
-                    prog.finish_operation()
                 return {"done": done, "entries": entries, "failures": failures}
 
             def on_done(res: dict) -> None:

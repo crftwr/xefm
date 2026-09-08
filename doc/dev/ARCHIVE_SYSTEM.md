@@ -652,7 +652,23 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
   total_bytes=...)` published once for the lot. Each archive's own extraction is
   passed `owns_total=False` so it does not rescale that bar to its own size.
 
-  Each archive is then read by `_extract_members`: **symmetric workers**
+  The workers are **one pool for the whole batch** (`_ExtractionPool`), started
+  once and parked between archives rather than joined at each boundary. That
+  boundary used to cost the tail of every archive: its last members' closes ran
+  with the other workers already idle, and the next archive could not begin
+  reading until they finished — on a destination that uploads at close, the
+  expensive part. The batch's own thread still publishes one archive at a time
+  and keeps the password gate, the title and per-archive attribution; what it
+  waits for is that archive's *reading*, not its writing. Concurrency stays at
+  `ARCHIVE_EXTRACT_WORKERS` throughout, since a boundary that briefly doubled it
+  would be a worse bargain than the one it removed.
+
+  Counts and failures therefore arrive late: an archive's last files land after
+  its reading ended, so neither its member count nor its failure exists when the
+  loop moves on. `close()` drains the pool and returns `{key: (written, error)}`,
+  which `run` folds into `done` / `entries` / `failures` after the loop.
+
+  Each archive is read by `_extract_members`: **symmetric workers**
   (`ARCHIVE_EXTRACT_WORKERS`, default 2) each take one member and carry it from
   claim to closed file, so a member's whole life — and its file handle's — stays
   on one thread. The archive is claimed one member at a time, but that lock
