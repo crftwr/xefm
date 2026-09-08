@@ -45,6 +45,7 @@ types, and so the day a release does add it needs no change here.
 import base64
 import ctypes
 import logging
+import errno
 import os
 import stat
 import sys
@@ -469,7 +470,14 @@ class _PendingWrite:
     ``finish`` is where a deferred write actually lands. On a filesystem that
     holds a file in a local cache until it is closed — WebDAV, and NFS's
     close-to-open flush — ``close`` is the upload, and an out-of-space or
-    transport failure surfaces from it rather than from any ``write``."""
+    transport failure surfaces from it rather than from any ``write``.
+
+    Including a timeout, which is why one is named apart from the rest. Several
+    workers close at once by design; if the destination's client overlaps fewer
+    transfers than there are workers, the extra closes queue *inside it*, where
+    a client- or server-side timeout can expire on one that has not started
+    transferring yet. The failure then reads as the network's rather than as
+    over-subscription, so the message says which knob it is."""
 
     __slots__ = ("target", "internal_path", "_handle", "_mtime")
 
@@ -492,6 +500,12 @@ class _PendingWrite:
                 raise ArchiveDiskSpaceError(
                     f"Insufficient disk space: {exc}",
                     "Insufficient disk space to extract archive")
+            if exc.errno in (errno.ETIMEDOUT, errno.ETIME):
+                raise ArchiveExtractionError(
+                    f"Timed out writing {self.internal_path}: {exc}",
+                    f"Timed out writing '{self.internal_path}' — if the "
+                    f"destination is a network volume, lowering "
+                    f"ARCHIVE_EXTRACT_WORKERS may help")
             raise ArchiveExtractionError(
                 f"Error writing {self.internal_path}: {exc}",
                 f"Cannot write '{self.internal_path}': {exc}")

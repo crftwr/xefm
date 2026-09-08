@@ -10,6 +10,7 @@ Run with: python -m pytest test/test_archive_libarchive.py -v
 """
 
 import base64
+import errno
 import os
 import sys
 import threading
@@ -559,6 +560,43 @@ def test_each_member_is_logged_as_it_lands(sample_7z, tmp_path):
     for line in logs:
         assert line.startswith("Extracted '")
         assert line.endswith(f"sample.7z → {out}")
+
+
+@requires_7z
+def test_a_close_that_times_out_names_the_worker_setting(tmp_path, monkeypatch):
+    """Several workers close at once by design. If the destination's client
+    overlaps fewer transfers than there are workers, the extra closes queue
+    inside it and a timeout can expire on one that never started transferring —
+    a failure that reads as the network's rather than as over-subscription, so
+    the message has to say which knob it is."""
+    archive = _write_7z(tmp_path / "slowlink.7z", [("m.bin", os.urandom(4096))])
+    A.get_archive_cache().clear()
+
+    class _TimesOut:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def close(self):
+            self._handle.close()
+            raise OSError(errno.ETIMEDOUT, "Operation timed out")
+
+    real_open = open
+    monkeypatch.setattr(AL, "open",
+                        lambda *a, **kw: _TimesOut(real_open(*a, **kw)),
+                        raising=False)
+    handler = LibarchiveHandler(Path(str(archive)))
+    try:
+        handler.open()
+        with pytest.raises(A.ArchiveExtractionError) as caught:
+            _bare_app(2)._extract_members(handler, Path(str(tmp_path / "out")), None)
+    finally:
+        handler.close()
+        A.get_archive_cache().clear()
+    assert "ARCHIVE_EXTRACT_WORKERS" in caught.value.user_message
+    assert "m.bin" in caught.value.user_message
 
 
 @requires_7z

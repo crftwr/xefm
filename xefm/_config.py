@@ -229,7 +229,12 @@ class Config:
     CONFIRM_ARCHIVE_CREATE = True   # Show confirmation dialog before creating archives
     FILE_OP_WORKERS_LOCAL = 4  # Copy/move worker threads, local disk (1 = sequential)
     FILE_OP_WORKERS_S3 = 8     # Copy/move worker threads when S3 is involved (ssh is always 1)
-    ARCHIVE_EXTRACT_WORKERS = 2  # Extraction worker threads (1 = sequential)
+    # Extraction worker threads (1 = sequential). Raising this past what the
+    # destination actually overlaps buys nothing and can cost: the extra writes
+    # queue inside its client, where a timeout can expire on one that has not
+    # started transferring. Two saturated a WebDAV mount; four and eight added
+    # nothing.
+    ARCHIVE_EXTRACT_WORKERS = 2
     
     # Key bindings - customize your shortcuts
     # Each action can have multiple keys assigned to it
