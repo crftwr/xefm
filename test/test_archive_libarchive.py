@@ -12,6 +12,8 @@ Run with: python -m pytest test/test_archive_libarchive.py -v
 import base64
 import os
 import sys
+import threading
+import types
 
 import pytest
 
@@ -19,6 +21,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
+from xefm import archive_libarchive as AL  # noqa: E402
 from xefm import archive as A  # noqa: E402
 from xefm.archive_libarchive import (  # noqa: E402
     LibarchiveHandler, can_decrypt_7z, clean_member_path, libarchive_formats,
@@ -248,13 +251,19 @@ def test_app_extract_routes_a_7z_through_its_handler(sample_7z, tmp_path):
 
 
 class _Prog:
-    """Just enough ProgressManager to record what the two bars were told."""
+    """Just enough ProgressManager to record what the bars were told.
+
+    Carries both reporting models: ``update_progress`` / the single byte bar for
+    the paths that work one member at a time, and the transfer slots the
+    extraction driver uses now that several members are in flight at once."""
 
     def __init__(self):
         self.total = None
         self.total_bytes = None
         self.items = []
         self.byte_reports = []
+        self.slots = {}
+        self.ended = []
 
     def update_operation_total(self, total, description="", total_bytes=0):
         self.total = total
@@ -265,6 +274,23 @@ class _Prog:
 
     def update_file_byte_progress(self, done, total):
         self.byte_reports.append((done, total))
+
+    def file_begin(self, item, total_bytes=0):
+        slot = len(self.slots)  # never reused, unlike the real one — fine here
+        self.slots[slot] = {"item": item, "total": total_bytes, "copied": 0}
+        self.items.append(item)
+        return slot
+
+    def file_bytes(self, slot, copied, total=None):
+        state = self.slots[slot]
+        if total is not None:
+            state["total"] = total
+        state["copied"] = copied
+        self.byte_reports.append((copied, state["total"]))
+
+    def file_end(self, slot):
+        self.slots[slot]["done"] = True
+        self.ended.append(slot)
 
 
 class _Task:
@@ -395,6 +421,166 @@ def test_the_survey_counts_stored_members_not_the_index(sample_7z, tmp_path):
     assert (count, prog.total, prog.total_bytes) == (members, members, size)
     # Every member's byte bar landed on full, and they add up to what was promised.
     assert sum(done for done, total in prog.byte_reports if done == total) == size
+
+
+@requires_7z
+def test_refused_members_do_not_desync_a_solid_archive(tmp_path):
+    """A member XeFM will not write still has to be read past, not skipped.
+
+    Passing over its header without consuming its payload leaves a solid
+    archive's decompressor out of step, and a later member comes back as a
+    truncated body — the same trap single-member reads hit. libarchive absorbs
+    one such skip; two in a row is where it breaks, which is why the fixture has
+    two adjacent escaping paths around a member that must still land."""
+    payload = os.urandom(96 * 1024)
+    archive = _write_7z(tmp_path / "escape.7z", [
+        ("../first.bin", payload),
+        ("../second.bin", payload),
+        ("kept.bin", payload),
+    ])
+    A.get_archive_cache().clear()
+    out = tmp_path / "out"
+    try:
+        with LibarchiveHandler(Path(str(archive))) as handler:
+            landed = [e.internal_path for e in handler.iter_extract(Path(str(out)))]
+        assert landed == ["kept.bin"]                 # both escapes refused
+        assert (out / "kept.bin").read_bytes() == payload
+        assert not (tmp_path / "first.bin").exists()  # nothing escaped the root
+    finally:
+        A.get_archive_cache().clear()
+
+
+def _extract_with_slow_close(tmp_path, monkeypatch, workers, wait):
+    """Extract six members onto a destination whose ``close`` is the slow part,
+    and report whether two of them were ever closed at the same time.
+
+    The barrier is the whole instrument: a close waits for a second close to
+    join it, so overlap is proved by the wait *succeeding* rather than by any
+    reading of the clock. If the design serialises, no partner arrives and the
+    wait breaks — which is what the one-worker case asserts, so that the
+    two-worker case is known to be measuring something."""
+    members = [(f"m{i}.bin", os.urandom(4096)) for i in range(6)]
+    archive = _write_7z(tmp_path / f"slow{workers}.7z", members)
+    A.get_archive_cache().clear()
+    barrier = threading.Barrier(2)
+    alone = []
+
+    class _SlowClose:
+        """A file whose close blocks until another close joins it."""
+
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def close(self):
+            try:
+                barrier.wait(timeout=wait)
+            except threading.BrokenBarrierError:
+                alone.append(True)
+            self._handle.close()
+
+    real_open = open
+    monkeypatch.setattr(AL, "open",
+                        lambda *a, **kw: _SlowClose(real_open(*a, **kw)),
+                        raising=False)
+
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    app.config = types.SimpleNamespace(ARCHIVE_EXTRACT_WORKERS=workers)
+    out = tmp_path / f"out{workers}"
+    handler = LibarchiveHandler(Path(str(archive)))
+    try:
+        handler.open()
+        count = app._extract_members(handler, Path(str(out)), None)
+    finally:
+        handler.close()
+        A.get_archive_cache().clear()
+    assert count == len(members)
+    for name, data in members:
+        assert (out / name).read_bytes() == data
+    return not alone
+
+
+@requires_7z
+def test_two_workers_close_two_members_at_once(tmp_path, monkeypatch):
+    """The point of the whole design, proved without a network.
+
+    Where a destination holds a file in a local cache until it is closed —
+    WebDAV, NFS's close-to-open flush — close *is* the transfer, and having more
+    than one in flight is the only thing that shortens the run. Extraction stays
+    single-file behind the archive's own claim, so this is what has to be true
+    for any of that to be worth anything."""
+    assert _extract_with_slow_close(tmp_path, monkeypatch, workers=2, wait=5)
+
+
+@requires_7z
+def test_one_worker_closes_them_one_at_a_time(tmp_path, monkeypatch):
+    """The control: with the workers turned down to one, no two closes ever
+    meet. Without this the test above would pass on a broken barrier."""
+    assert not _extract_with_slow_close(tmp_path, monkeypatch, workers=1,
+                                        wait=0.15)
+
+
+def _bare_app(workers):
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    app.config = types.SimpleNamespace(ARCHIVE_EXTRACT_WORKERS=workers)
+    return app
+
+
+@requires_7z
+def test_a_cancel_ends_the_extraction_for_every_worker(tmp_path):
+    """One worker taking the cancel stops the rest, and Cancelled is what comes
+    out — not whatever another worker happened to be doing when it noticed. The
+    batch above dispatches on that type to report a cancel rather than a
+    failure."""
+    members = [(f"m{i}.bin", os.urandom(4096)) for i in range(20)]
+    archive = _write_7z(tmp_path / "cancel.7z", members)
+    A.get_archive_cache().clear()
+    out = tmp_path / "out"
+    handler = LibarchiveHandler(Path(str(archive)))
+    try:
+        handler.open()
+        with pytest.raises(Cancelled):
+            _bare_app(2)._extract_members(handler, Path(str(out)), None,
+                                          task=_Task(cancel_after=3))
+    finally:
+        handler.close()
+        A.get_archive_cache().clear()
+    assert len(list(out.iterdir())) < len(members)  # what landed stays
+
+
+@requires_7z
+def test_the_disk_filling_up_at_close_is_still_recognised(tmp_path, monkeypatch):
+    """Where a file is uploaded at close, out of space arrives *from* close and
+    from no ``write`` before it — so that is where it has to be recognised. The
+    mapping moved with the close when the close moved off the archive claim."""
+    archive = _write_7z(tmp_path / "full.7z", [("m.bin", os.urandom(4096))])
+    A.get_archive_cache().clear()
+
+    class _FullDisk:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def close(self):
+            self._handle.close()
+            raise OSError("No space left on device")
+
+    real_open = open
+    monkeypatch.setattr(AL, "open",
+                        lambda *a, **kw: _FullDisk(real_open(*a, **kw)),
+                        raising=False)
+    handler = LibarchiveHandler(Path(str(archive)))
+    try:
+        handler.open()
+        with pytest.raises(A.ArchiveDiskSpaceError):
+            _bare_app(2)._extract_members(handler, Path(str(tmp_path / "out")), None)
+    finally:
+        handler.close()
+        A.get_archive_cache().clear()
 
 
 @requires_7z

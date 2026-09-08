@@ -50,7 +50,7 @@ import stat
 import sys
 import tempfile
 import threading
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path as PathlibPath
@@ -457,6 +457,205 @@ def clean_member_path(pathname: str) -> str:
     return path.strip('/')
 
 
+class _PendingWrite:
+    """A member written to its destination but not yet closed.
+
+    Handed back by :meth:`_ClaimedMember.write_to` so the slow half of the write
+    can happen after the archive claim is released. It never leaves the worker
+    that made it: one member, one thread, from ``open`` to ``close``, which is
+    what keeps the handle's lifetime a local matter and lets ``finish`` raise
+    where the member is still known.
+
+    ``finish`` is where a deferred write actually lands. On a filesystem that
+    holds a file in a local cache until it is closed — WebDAV, and NFS's
+    close-to-open flush — ``close`` is the upload, and an out-of-space or
+    transport failure surfaces from it rather than from any ``write``."""
+
+    __slots__ = ("target", "internal_path", "_handle", "_mtime")
+
+    def __init__(self, target, internal_path: str, handle, mtime):
+        self.target = target
+        self.internal_path = internal_path
+        self._handle = handle
+        self._mtime = mtime
+
+    def finish(self) -> None:
+        """Close the file and stamp its timestamp, mapping what close reports."""
+        handle, self._handle = self._handle, None
+        if handle is None:
+            return
+        try:
+            handle.close()
+        except OSError as exc:
+            if ("No space left on device" in str(exc)
+                    or "Disk quota exceeded" in str(exc)):
+                raise ArchiveDiskSpaceError(
+                    f"Insufficient disk space: {exc}",
+                    "Insufficient disk space to extract archive")
+            raise ArchiveExtractionError(
+                f"Error writing {self.internal_path}: {exc}",
+                f"Cannot write '{self.internal_path}': {exc}")
+        try:
+            os.utime(str(self.target), (self._mtime, self._mtime))
+        except Exception:  # noqa: BLE001 — metadata is best effort
+            pass
+
+    def discard(self) -> None:
+        """Close without stamping or reporting — the cleanup path, for a worker
+        unwinding on a cancel or another member's failure. What landed stays, the
+        same as every other partial extraction."""
+        handle, self._handle = self._handle, None
+        if handle is not None:
+            try:
+                handle.close()
+            except Exception:  # noqa: BLE001 — best effort
+                pass
+
+
+class _ClaimedMember:
+    """The member a worker holds for the life of its claim.
+
+    Its blocks come off the shared reader, so they must all be read before the
+    claim is released — :class:`ExtractionPass` is what enforces that by handing
+    one out at a time."""
+
+    __slots__ = ("entry", "_raw", "_pass")
+
+    def __init__(self, entry: ArchiveEntry, raw, owner):
+        self.entry = entry
+        self._raw = raw
+        self._pass = owner
+
+    def blocks(self) -> Iterator[bytes]:
+        """The member's payload, with libarchive's errors given XeFM's names —
+        the mapping stays here so no caller has to know the binding."""
+        try:
+            yield from self._raw.get_blocks()
+        except Exception as exc:  # noqa: BLE001 — libarchive's own error type
+            path = self.entry.internal_path
+            if path in self._pass.encrypted:
+                raise self._pass.decryption_error(exc, path)
+            raise ArchiveExtractionError(
+                f"Error extracting {path}: {exc}",
+                f"Cannot extract '{path}': {exc}")
+
+    def write_to(self, root: PathlibPath,
+                 on_bytes: Optional[Callable[[int], None]] = None
+                 ) -> Optional[_PendingWrite]:
+        """Create this member under ``root`` and write its payload, returning the
+        still-open file for the caller to :meth:`_PendingWrite.finish` *after* the
+        claim is released — None for a directory, which is finished here.
+
+        The split is the whole point: everything that touches the shared archive
+        happens under the claim, and everything that only touches this member's
+        own destination file can happen outside it. Where the destination makes
+        ``close`` the expensive part, that is what overlaps."""
+        target = root.joinpath(*self.entry.internal_path.split('/'))
+        if self.entry.is_dir:
+            target.mkdir(parents=True, exist_ok=True)
+            return None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            handle = open(target, 'wb')
+        except OSError as exc:
+            raise ArchiveExtractionError(
+                f"Error writing {self.entry.internal_path}: {exc}",
+                f"Cannot write '{self.entry.internal_path}': {exc}")
+        pending = _PendingWrite(target, self.entry.internal_path, handle,
+                                self.entry.mtime)
+        try:
+            for block in self.blocks():
+                handle.write(block)
+                if on_bytes is not None:
+                    on_bytes(len(block))
+        except BaseException:
+            pending.discard()
+            raise
+        return pending
+
+
+class ExtractionPass:
+    """One forward pass over an archive, claimable by any number of workers.
+
+    libarchive has no random access: the reader is a cursor, and reading a member
+    means advancing to its header and consuming its payload before anything may
+    advance again. On a solid archive those two are one indivisible step — the
+    decompressor only stays in step with the stream if every member's data is
+    actually read on the way past.
+
+    That invariant lives here, with the cursor. A caller running N workers over
+    :meth:`claim_next` never learns why the claims serialise, only that they do,
+    which is what lets the worker count be chosen for the *destination* — how
+    many concurrent writes it will accept — rather than for the archive."""
+
+    def __init__(self, handler: 'LibarchiveHandler', archive):
+        self._handler = handler
+        self._iter = iter(archive)
+        self._lock = threading.Lock()
+        self._done = False
+        self._name = handler._archive_path.name
+        self.encrypted = handler._encrypted
+        self.decryption_error = handler._decryption_error
+        self.logger = handler.logger
+
+    @contextmanager
+    def claim_next(self) -> Iterator[Optional[_ClaimedMember]]:
+        """Claim the next extractable member, or None once the archive is spent.
+
+        The claim is held for the whole ``with`` body, so the payload must be
+        read inside it. Members XeFM will not recreate — a path escaping the
+        destination, a symlink or device node — are passed over here rather than
+        handed out, and a regular file among them has its data *read and
+        discarded* rather than skipped: libarchive can only skip within its
+        64 KiB decompression buffer, and past that a solid archive's next member
+        comes back as a truncated body."""
+        with self._lock:
+            yield self._advance()
+
+    def _advance(self) -> Optional[_ClaimedMember]:
+        while not self._done:
+            try:
+                raw = next(self._iter)
+            except StopIteration:
+                self._done = True
+                return None
+            except ArchiveError:
+                self._done = True
+                raise
+            except Exception as exc:  # noqa: BLE001 — libarchive reading a header
+                self._done = True
+                raise ArchiveExtractionError(
+                    f"Error reading {self._name}: {exc}",
+                    f"Cannot extract '{self._name}': {exc}")
+            internal_path = clean_member_path(raw.pathname)
+            if not internal_path:
+                continue
+            if not is_safe_member_path(internal_path):
+                self.logger.warning(
+                    f"Skipping unsafe archive member: {internal_path}")
+                self._drain(raw)
+                continue
+            entry = (self._handler._entry_cache.get(internal_path)
+                     or self._handler._to_entry(raw, internal_path))
+            if not entry.is_dir and not raw.isreg:
+                self.logger.info(f"Skipping {internal_path}: not a regular file")
+                self._drain(raw)
+                continue
+            return _ClaimedMember(entry, raw, self)
+        return None
+
+    @staticmethod
+    def _drain(raw) -> None:
+        """Consume a passed-over member's payload so the stream stays in step."""
+        if not raw.isreg:
+            return
+        try:
+            for _ in raw.get_blocks():
+                pass
+        except Exception:  # noqa: BLE001 — a member being skipped anyway
+            pass
+
+
 class _SkipUnreachable(Exception):
     """Internal: this member cannot be reached by skipping the ones ahead of it.
 
@@ -791,6 +990,42 @@ class LibarchiveHandler(ArchiveHandler):
             except Exception:  # noqa: BLE001 — metadata is best effort
                 pass
 
+    @contextmanager
+    def extraction_pass(self, dest_dir, *, password: Optional[bytes] = None
+                        ) -> Iterator[ExtractionPass]:
+        """An :class:`ExtractionPass` over this archive, writing under ``dest_dir``.
+
+        The reader lives for the whole ``with``, so any number of workers may
+        claim from it; :meth:`iter_extract` is the one-worker case of exactly
+        this. Yields the pass and the destination root together because both are
+        needed by whoever drives it, and the root is created here so no worker
+        races another to make it."""
+        if not self._is_open:
+            self.open()
+        root = PathlibPath(str(dest_dir))
+        root.mkdir(parents=True, exist_ok=True)
+        with ExitStack() as stack:
+            # Only *opening* the reader is wrapped. Whatever the body raises —
+            # a mapped ArchiveError, or the driver's own cancellation, which this
+            # layer must not have to name — travels out untouched; the stack
+            # still closes the reader on its way past.
+            try:
+                archive = stack.enter_context(
+                    self._reader(password or self._password()))
+            except ArchiveError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — libarchive's own error type
+                raise ArchiveExtractionError(
+                    f"Error extracting archive: {exc}",
+                    f"Cannot extract '{self._archive_path.name}': {exc}")
+            yield ExtractionPass(self, archive)
+
+    @staticmethod
+    def extraction_root(dest_dir) -> PathlibPath:
+        """The destination as a plain filesystem path — what workers join member
+        paths onto. A separate call so a driver can hold it outside the pass."""
+        return PathlibPath(str(dest_dir))
+
     def iter_extract(self, dest_dir, *, password: Optional[bytes] = None,
                      on_bytes: Optional[Callable[[int], None]] = None
                      ) -> Iterator[ArchiveEntry]:
@@ -804,73 +1039,28 @@ class LibarchiveHandler(ArchiveHandler):
 
         The entry is yielded before its payload is written, and ``on_bytes`` is
         called with each block as it is written, so the byte bar moves through a
-        large member rather than snapping to full at the end of it. We write the
-        blocks ourselves (``get_blocks()``) instead of handing the job to
-        ``archive_read_extract``, which is what makes that granularity available
-        without libarchive's own progress callback.
+        large member rather than snapping to full at the end of it.
+
+        This is :meth:`extraction_pass` driven by a single claimer, which is what
+        keeps the sequential contract this method promises — one current member,
+        entries in archive order — available to callers that want it. A driver
+        wanting the destination's write concurrency runs several claimers over
+        the pass instead, and gives up that ordering in exchange.
 
         Members that are neither a regular file nor a directory (symlinks,
         devices, sockets) are skipped and logged rather than recreated, as are
         members whose path escapes ``dest_dir``."""
-        if not self._is_open:
-            self.open()
-        root = PathlibPath(str(dest_dir))
-        root.mkdir(parents=True, exist_ok=True)
-        try:
-            with self._reader(password or self._password()) as archive:
-                for raw in archive:
-                    internal_path = clean_member_path(raw.pathname)
-                    if not internal_path:
-                        continue
-                    if not is_safe_member_path(internal_path):
-                        self.logger.warning(
-                            f"Skipping unsafe archive member: {internal_path}")
-                        continue
-                    entry = (self._entry_cache.get(internal_path)
-                             or self._to_entry(raw, internal_path))
-                    if not entry.is_dir and not raw.isreg:
-                        self.logger.info(
-                            f"Skipping {internal_path}: not a regular file")
-                        continue
-                    yield entry
-                    target = root.joinpath(*internal_path.split('/'))
-                    if entry.is_dir:
-                        target.mkdir(parents=True, exist_ok=True)
-                    else:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        try:
-                            with open(target, 'wb') as fh:
-                                for block in raw.get_blocks():
-                                    fh.write(block)
-                                    if on_bytes is not None:
-                                        on_bytes(len(block))
-                        except ArchiveError:
-                            raise
-                        except OSError as exc:
-                            if ("No space left on device" in str(exc)
-                                    or "Disk quota exceeded" in str(exc)):
-                                raise ArchiveDiskSpaceError(
-                                    f"Insufficient disk space: {exc}",
-                                    "Insufficient disk space to extract archive")
-                            raise ArchiveExtractionError(
-                                f"Error writing {internal_path}: {exc}",
-                                f"Cannot write '{internal_path}': {exc}")
-                        except Exception as exc:  # noqa: BLE001 — libarchive's
-                            if internal_path in self._encrypted:
-                                raise self._decryption_error(exc, internal_path)
-                            raise ArchiveExtractionError(
-                                f"Error extracting {internal_path}: {exc}",
-                                f"Cannot extract '{internal_path}': {exc}")
-                        try:
-                            os.utime(str(target), (entry.mtime, entry.mtime))
-                        except Exception:  # noqa: BLE001 — metadata is best effort
-                            pass
-        except ArchiveError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — a failure opening the reader
-            raise ArchiveExtractionError(
-                f"Error extracting archive: {exc}",
-                f"Cannot extract '{self._archive_path.name}': {exc}")
+        root = self.extraction_root(dest_dir)
+        with self.extraction_pass(dest_dir, password=password) as pass_:
+            while True:
+                pending = None
+                with pass_.claim_next() as member:
+                    if member is None:
+                        return
+                    yield member.entry
+                    pending = member.write_to(root, on_bytes)
+                if pending is not None:
+                    pending.finish()
 
     # -- encryption ------------------------------------------------------------
 

@@ -5040,16 +5040,13 @@ class XeFMApp:
         """Extract a format neither zipfile nor tarfile reads — 7z, and whatever
         else the loaded libarchive contributes — through its registered handler.
 
-        The handler extracts in a single forward pass and yields each entry as it
-        lands (:meth:`xefm.archive.ArchiveHandler.iter_extract`), so progress is
-        driven off what comes back rather than by asking for one entry at a time:
-        these formats have no random access, and a per-entry loop would rescan the
-        archive from the beginning for every member.
-
-        The byte bar works the same as on the zip and tar paths: ``iter_extract``
-        yields an entry *before* writing its payload, so the bar is opened at the
-        right size here and then fed block by block as libarchive hands them
-        over."""
+        These formats have no random access, so the archive is read in a single
+        forward pass rather than one entry at a time: a per-entry loop would
+        rescan from the beginning for every member. Members are taken off that
+        pass by :meth:`_extract_members`' workers, each of which then carries its
+        own member to a closed file; the gate below runs first because nothing
+        should be written before it is known whether the archive can be read at
+        all."""
         fmt = archive_format_for_name(archive_path.name)
         if fmt is None:  # guarded by the caller; a table change could still get here
             raise ArchiveFormatError(f"Unsupported archive format: {archive_path.name}")
@@ -5068,20 +5065,131 @@ class XeFMApp:
             if prog is not None and owns_total:
                 items, size = handler.extraction_totals()
                 prog.update_operation_total(items, total_bytes=size)
-            count = 0
-            for entry in handler.iter_extract(
-                    dest_dir, password=pwd,
-                    on_bytes=bytes_.advance if bytes_ is not None else None):
-                if task is not None:
-                    task.checkpoint()
-                if prog is not None:
-                    prog.update_progress(entry.internal_path)
-                if bytes_ is not None:
-                    bytes_.start(0 if entry.is_dir else entry.size)
-                count += 1
-            return count
+            if getattr(handler, "extraction_pass", None) is None:
+                # A handler that offers no claimable pass — none XeFM registers
+                # today — keeps the one-member-at-a-time contract instead.
+                count = 0
+                for entry in handler.iter_extract(
+                        dest_dir, password=pwd,
+                        on_bytes=bytes_.advance if bytes_ is not None else None):
+                    if task is not None:
+                        task.checkpoint()
+                    if prog is not None:
+                        prog.update_progress(entry.internal_path)
+                    if bytes_ is not None:
+                        bytes_.start(0 if entry.is_dir else entry.size)
+                    count += 1
+                return count
+            return self._extract_members(handler, dest_dir, pwd,
+                                         task=task, prog=prog)
         finally:
             handler.close()
+
+    def _extract_workers(self) -> int:
+        """How many workers an extraction may run (``ARCHIVE_EXTRACT_WORKERS``).
+
+        Not derived from the destination, because it cannot be: a WebDAV or SMB
+        volume is a mounted filesystem and reports the same ``file`` scheme a
+        local disk does, so nothing in the path says how many concurrent writes
+        it will accept. The default is small for the same reason — measured
+        against one such mount, everything the client would overlap was already
+        overlapped at two."""
+        config = getattr(self, "config", None)
+        try:
+            workers = int(getattr(config, "ARCHIVE_EXTRACT_WORKERS", 2))
+        except (TypeError, ValueError):
+            workers = 2
+        return max(1, workers)
+
+    def _extract_members(self, handler, dest_dir, pwd: bytes | None,
+                         *, task=None, prog=None) -> int:
+        """Extract every member of ``handler``'s archive with symmetric workers.
+
+        Each worker carries one member from claim to closed file, so a member's
+        whole life — and its file handle's — stays on one thread. The archive is
+        claimed one member at a time because libarchive's reader is a cursor, but
+        that lock lives with the cursor, inside the handler
+        (``LibarchiveHandler.extraction_pass``): nothing here knows why claims
+        serialise, which is what lets the worker count be chosen for the
+        destination rather than for the archive.
+
+        What overlaps is therefore everything *after* the claim. On a filesystem
+        that holds a file in a local cache until it is closed — WebDAV, NFS's
+        close-to-open flush — that is the whole transfer, and two workers were
+        measured to halve a batch's wall clock. On one that does not, the workers
+        queue on the claim and the run is what it always was; the design does not
+        have to know which it is dealing with.
+
+        Progress goes through the copy engine's transfer slots rather than the
+        single current-item fields: several members are in flight, so there is no
+        one current member to name. The item is counted at ``file_end``, after
+        the file is closed, so a member counts when it has actually landed."""
+        root = handler.extraction_root(dest_dir)
+        workers = self._extract_workers()
+        counted = 0
+        errors: list = []
+        tally = threading.Lock()
+        stop = threading.Event()
+
+        def work(pass_) -> None:
+            nonlocal counted
+            while not stop.is_set():
+                pending = None
+                slot = -1
+                try:
+                    with pass_.claim_next() as member:
+                        if member is None:
+                            return
+                        if task is not None:
+                            task.checkpoint()
+                        entry = member.entry
+                        written = 0
+                        if prog is not None:
+                            slot = prog.file_begin(
+                                entry.internal_path,
+                                0 if entry.is_dir else entry.size)
+
+                        def on_bytes(count: int) -> None:
+                            nonlocal written
+                            written += count
+                            prog.file_bytes(slot, written)
+
+                        pending = member.write_to(
+                            root, on_bytes if prog is not None else None)
+                    # The claim is released; the rest is this member's alone.
+                    if pending is not None:
+                        pending.finish()
+                        pending = None
+                    if prog is not None:
+                        prog.file_end(slot)
+                    with tally:
+                        counted += 1
+                except BaseException as exc:  # noqa: BLE001 — re-raised below
+                    with tally:
+                        errors.append(exc)
+                    stop.set()
+                    return
+                finally:
+                    if pending is not None:
+                        pending.discard()
+
+        with handler.extraction_pass(dest_dir, password=pwd) as pass_:
+            if workers == 1:
+                work(pass_)
+            else:
+                threads = [threading.Thread(target=work, args=(pass_,),
+                                            name="xefm-extract", daemon=True)
+                           for _ in range(workers)]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+        if errors:
+            # One failure ends the extraction; the first is the one that caused
+            # it, the others are workers noticing. Cancellation wins over it, so
+            # the batch above reports a cancel rather than an error.
+            raise next((e for e in errors if isinstance(e, Cancelled)), errors[0])
+        return counted
 
     def _survey_archives(self, plan, task=None) -> list[tuple]:
         """Open every archive in the batch once, up front, and report what

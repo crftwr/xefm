@@ -652,6 +652,26 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
   total_bytes=...)` published once for the lot. Each archive's own extraction is
   passed `owns_total=False` so it does not rescale that bar to its own size.
 
+  Each archive is then read by `_extract_members`: **symmetric workers**
+  (`ARCHIVE_EXTRACT_WORKERS`, default 2) each take one member and carry it from
+  claim to closed file, so a member's whole life — and its file handle's — stays
+  on one thread. The archive is claimed one member at a time, but that lock
+  lives with the cursor it protects, inside
+  `LibarchiveHandler.extraction_pass`: `_extract_members` never learns why the
+  claims serialise. What overlaps is everything *after* the claim, which on a
+  filesystem that holds a file in a local cache until it is closed (WebDAV,
+  NFS's close-to-open flush) is the whole transfer — two workers halved a
+  batch's wall clock against one such mount. On a filesystem that does not, the
+  workers queue on the claim and the run is what it always was; the design does
+  not have to know which it is dealing with. The worker count cannot be derived
+  from the destination — a mounted volume reports the same `file` scheme a local
+  disk does — which is why it is a setting.
+
+  Progress there goes through the copy engine's transfer slots, not the single
+  current-item fields: several members are in flight, so there is no one current
+  member to name. `file_end` counts the item *after* the file is closed, so a
+  member counts when it has actually landed.
+
   On the surveyed status: `'unsupported'` is recorded as a failure for that
   archive; `'password'` asks for one through the task's UI bridge (`Task.ask`, the
   same seam the copy conflict dialog uses — the masked prompt stacks at `z + 5`,
