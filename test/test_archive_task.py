@@ -232,6 +232,26 @@ class ArchiveLoops(unittest.TestCase):
                 self.assertEqual(members, len(seen))
                 self.assertEqual(size, op["processed_bytes"])
 
+    def test_a_member_names_its_archive_as_well_as_itself(self):
+        """Each reported item says both which archive is open and where inside it
+        the work has got to.
+
+        Neither half is enough on its own: the archive name alone sits unchanged
+        for minutes on a big one, and the member alone does not say which archive
+        it came out of — which a batch needs, and which a single extraction
+        otherwise leaves to be read off the dialog's title."""
+        for fmt in ("zip", "tar"):
+            with self.subTest(fmt=fmt):
+                arc = self._make(fmt)
+                task, prog, seen = self._task()
+                self.app._extract_archive(
+                    arc, Path(os.path.join(self.tmp, f"named-{fmt}")), fmt,
+                    task=task, prog=prog)
+                self.assertTrue(seen)
+                for item in seen:
+                    self.assertTrue(item.startswith(f"arc.{fmt} \u203a "), item)
+                self.assertTrue(any(item.endswith("a.txt") for item in seen))
+
     def test_a_batch_may_keep_the_total_it_published(self):
         """``owns_total=False`` is a batch saying it has already counted every
         archive; one archive must not then rescale the bar to its own size."""

@@ -529,6 +529,22 @@ def _bare_app(workers):
 
 
 @requires_7z
+def test_a_7z_member_names_its_archive_as_well_as_itself(sample_7z, tmp_path):
+    """The worker path labels its slots the same way the zip and tar paths label
+    their single current item — the rows are what a batch is read from, so each
+    has to carry its own archive's name."""
+    prog = _Prog()
+    _bare_app(2)._extract_archive(Path(str(sample_7z)),
+                                  Path(str(tmp_path / "out")), "7z",
+                                  task=_Task(), prog=prog)
+    assert prog.items
+    for item in prog.items:
+        assert item.startswith("sample.7z \u203a "), item
+    assert {item.split(" \u203a ", 1)[1] for item in prog.items} == {
+        "a.txt", "sub/b.txt", "sub/deep/c.bin"}
+
+
+@requires_7z
 def test_a_cancel_ends_the_extraction_for_every_worker(tmp_path):
     """One worker taking the cancel stops the rest, and Cancelled is what comes
     out — not whatever another worker happened to be doing when it noticed. The

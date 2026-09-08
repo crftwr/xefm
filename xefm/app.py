@@ -4944,6 +4944,20 @@ class XeFMApp:
         return total
 
     @staticmethod
+    def _member_label(archive_name: str, internal_path: str) -> str:
+        """How a member names itself while it is being extracted:
+        ``photos.7z › 2019/summer/beach.jpg``.
+
+        Both halves are wanted. The archive alone cannot say what the operation
+        is doing right now — a big archive would sit on one unchanging line for
+        minutes — and the member alone cannot say which archive it came out of,
+        which a batch needs and even a single extraction has to be read out of
+        the dialog's title to know. The dialog abbreviates a row that will not
+        fit by cutting the middle, so a long label keeps the archive at one end
+        and the member's own name at the other."""
+        return f"{archive_name} \u203a {internal_path}" if archive_name else internal_path
+
+    @staticmethod
     def _reporting_members(members, describe, task, prog, bytes_=None):
         """Yield ``members`` one at a time, checkpointing and reporting each —
         ``describe(member)`` gives its ``(name, size)``.
@@ -5007,8 +5021,10 @@ class XeFMApp:
                 zf.extractall(
                     str(dest_dir), pwd=pwd,
                     members=self._reporting_members(
-                        members, lambda m: (m.filename, m.file_size), task, prog,
-                        bytes_))
+                        members,
+                        lambda m: (self._member_label(archive_path.name, m.filename),
+                                   m.file_size),
+                        task, prog, bytes_))
                 return len(members)
         with ProgressTarFile.open(str(archive_path)) as tf:
             tf.byte_progress = bytes_
@@ -5024,7 +5040,9 @@ class XeFMApp:
 
             def reported():
                 return self._reporting_members(
-                    members, lambda m: (m.name, m.size), task, prog, bytes_)
+                    members,
+                    lambda m: (self._member_label(archive_path.name, m.name), m.size),
+                    task, prog, bytes_)
 
             try:
                 tf.extractall(str(dest_dir), filter="data", members=reported())
@@ -5081,7 +5099,8 @@ class XeFMApp:
                     count += 1
                 return count
             return self._extract_members(handler, dest_dir, pwd,
-                                         task=task, prog=prog)
+                                         task=task, prog=prog,
+                                         archive_name=archive_path.name)
         finally:
             handler.close()
 
@@ -5102,7 +5121,7 @@ class XeFMApp:
         return max(1, workers)
 
     def _extract_members(self, handler, dest_dir, pwd: bytes | None,
-                         *, task=None, prog=None) -> int:
+                         *, task=None, prog=None, archive_name: str = "") -> int:
         """Extract every member of ``handler``'s archive with symmetric workers.
 
         Each worker carries one member from claim to closed file, so a member's
@@ -5146,7 +5165,8 @@ class XeFMApp:
                         written = 0
                         if prog is not None:
                             slot = prog.file_begin(
-                                entry.internal_path,
+                                self._member_label(archive_name,
+                                                   entry.internal_path),
                                 0 if entry.is_dir else entry.size)
 
                         def on_bytes(count: int) -> None:
