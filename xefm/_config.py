@@ -235,6 +235,16 @@ class Config:
     # started transferring. Two saturated a WebDAV mount; four and eight added
     # nothing.
     ARCHIVE_EXTRACT_WORKERS = 2
+    # Members at least this large are closed one at a time. Closing is where a
+    # network destination actually transfers a file, and overlapping two large
+    # ones gains nothing — one stream already saturated the link (12.2 MiB/s
+    # measured alone, 11.8 aggregate across four) — while asking a server to hold
+    # two large bodies at once. What overlapping *does* pay for is the fixed
+    # round trip per file, which only matters while the transfer is comparable to
+    # it: 0.55s at 12.2 MiB/s is about 6.7 MiB. 0 closes every member one at a
+    # time, which is the setting for a destination that has shown it cannot take
+    # two at once; a value past the largest member never does.
+    ARCHIVE_EXTRACT_SERIAL_ABOVE = 8 * 1024 * 1024
     
     # Key bindings - customize your shortcuts
     # Each action can have multiple keys assigned to it

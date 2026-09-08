@@ -14,6 +14,7 @@ import errno
 import os
 import sys
 import threading
+import time
 import types
 
 import pytest
@@ -565,6 +566,80 @@ def test_each_member_is_logged_as_it_lands(sample_7z, tmp_path):
     for line in logs:
         assert line.startswith("Extracted '")
         assert line.endswith(f"sample.7z → {out}")
+
+
+def _peak_concurrent_closes(tmp_path, monkeypatch, serial_above, size):
+    """Extract four members of ``size`` and report how many closes were ever in
+    flight at once."""
+    members = [(f"m{i}.bin", os.urandom(size)) for i in range(4)]
+    archive = _write_7z(tmp_path / f"c{serial_above}_{size}.7z", members)
+    A.get_archive_cache().clear()
+    live = [0]
+    peak = [0]
+    guard = threading.Lock()
+
+    class _Counted:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def close(self):
+            with guard:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.05)          # long enough for a second close to arrive
+            try:
+                self._handle.close()
+            finally:
+                with guard:
+                    live[0] -= 1
+
+    real_open = open
+    monkeypatch.setattr(AL, "open",
+                        lambda *a, **kw: _Counted(real_open(*a, **kw)),
+                        raising=False)
+    app = _bare_app(2)
+    app.config.ARCHIVE_EXTRACT_SERIAL_ABOVE = serial_above
+    handler = LibarchiveHandler(Path(str(archive)))
+    try:
+        handler.open()
+        count = app._extract_members(handler, Path(str(tmp_path / f"o{serial_above}")),
+                                     None)
+    finally:
+        handler.close()
+        A.get_archive_cache().clear()
+    assert count == len(members)
+    return peak[0]
+
+
+@requires_7z
+def test_large_members_are_closed_one_at_a_time(tmp_path, monkeypatch):
+    """Closing is where a network destination transfers a file, and two large
+    transfers at once move no more than one — a single stream already saturated
+    the link. So they are serialised: nothing measurable is given up, and the far
+    end is not asked to hold two large bodies at once, which is what one server
+    was seen to stop answering during."""
+    assert _peak_concurrent_closes(tmp_path, monkeypatch,
+                                   serial_above=32 * 1024, size=64 * 1024) == 1
+
+
+@requires_7z
+def test_small_members_still_overlap(tmp_path, monkeypatch):
+    """The other half, and the whole measured gain: a small member's cost is the
+    fixed round trip rather than its transfer, and overlapping those is what
+    halved a batch's wall clock. Serialising everything would throw that away."""
+    assert _peak_concurrent_closes(tmp_path, monkeypatch,
+                                   serial_above=32 * 1024, size=4096) == 2
+
+
+@requires_7z
+def test_zero_closes_every_member_on_its_own(tmp_path, monkeypatch):
+    """The setting for a destination that has shown it cannot take two at once:
+    every member, whatever its size, waits its turn."""
+    assert _peak_concurrent_closes(tmp_path, monkeypatch,
+                                   serial_above=0, size=4096) == 1
 
 
 @requires_7z
