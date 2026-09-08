@@ -264,6 +264,7 @@ class _Prog:
         self.items = []
         self.byte_reports = []
         self.slots = {}
+        self.closing = []
         self.ended = []
 
     def update_operation_total(self, total, description="", total_bytes=0):
@@ -288,6 +289,10 @@ class _Prog:
             state["total"] = total
         state["copied"] = copied
         self.byte_reports.append((copied, state["total"]))
+
+    def file_closing(self, slot):
+        self.slots[slot]["closing"] = True
+        self.closing.append(slot)
 
     def file_end(self, slot):
         self.slots[slot]["done"] = True
@@ -597,6 +602,51 @@ def test_a_close_that_times_out_names_the_worker_setting(tmp_path, monkeypatch):
         A.get_archive_cache().clear()
     assert "ARCHIVE_EXTRACT_WORKERS" in caught.value.user_message
     assert "m.bin" in caught.value.user_message
+
+
+@requires_7z
+def test_a_member_is_marked_finishing_around_its_close(sample_7z, tmp_path,
+                                                       monkeypatch):
+    """The row enters its finishing state *before* the close and leaves it
+    after, because the close is what the state is there to show. A destination
+    that uploads at close spends nearly all of a member's time in here."""
+    seen = []
+
+    class _Watched:
+        """Records what the row was saying when the close actually ran."""
+
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def close(self):
+            seen.append("close")
+            self._handle.close()
+
+    real_open = open
+    monkeypatch.setattr(AL, "open",
+                        lambda *a, **kw: _Watched(real_open(*a, **kw)),
+                        raising=False)
+
+    class _Prog2(_Prog):
+        def file_closing(self, slot):
+            seen.append("closing")
+            super().file_closing(slot)
+
+        def file_end(self, slot):
+            seen.append("end")
+            super().file_end(slot)
+
+    prog = _Prog2()
+    _bare_app(1)._extract_archive(Path(str(sample_7z)),
+                                  Path(str(tmp_path / "out")), "7z",
+                                  task=_Task(), prog=prog)
+    # One worker, so the sequence is unambiguous: every member announces itself
+    # as finishing, then closes, then ends.
+    assert seen == ["closing", "close", "end"] * 3
+    assert prog.closing == prog.ended
 
 
 @requires_7z

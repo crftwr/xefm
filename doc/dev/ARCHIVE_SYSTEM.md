@@ -670,7 +670,12 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
   Progress there goes through the copy engine's transfer slots, not the single
   current-item fields: several members are in flight, so there is no one current
   member to name. `file_end` counts the item *after* the file is closed, so a
-  member counts when it has actually landed.
+  member counts when it has actually landed, and `file_closing` marks the row
+  for the duration of that close — on a destination that uploads there, it is
+  most of the member's time and was previously shown as nothing at all. The zip
+  and tar paths cannot do the same: `extractall` opens and closes each
+  destination file itself, and reimplementing its loop to get at that seam was
+  ruled out (see `archive_progress`).
 
   Both flows also log at the grain a copy does — one line per **file**, none for
   a directory: `Extracted 'sub/b.txt': photos.7z → /dest/photos` and

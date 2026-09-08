@@ -244,6 +244,29 @@ class ProgressManager:
                 op['file_bytes_total'] = t['total']
         self._trigger_callback_if_needed()
 
+    def file_closing(self, slot: int):
+        """The file in ``slot`` is written and is now being closed.
+
+        On a filesystem that holds a file in a local cache until it is closed —
+        WebDAV, NFS's close-to-open flush — this is where its bytes actually
+        travel, and it can be nearly the whole of the file's cost: one measured
+        64 MiB spent 0.04s in the write loop and 5.25s in the close. Until this
+        existed, a row reached its total and then sat unchanged for the minutes
+        that were the operation's real work, which read as a hang.
+
+        From here the row says it is finishing, and for how long, until
+        :meth:`file_end`. Nothing about it is specific to a network volume: a
+        destination whose close is instant passes through in one frame."""
+        with self._lock:
+            op = self.current_operation
+            if not op:
+                return
+            t = op['transfers'].get(slot)
+            if t is None or t.get('done'):
+                return
+            t['closing_since'] = time.monotonic()  # a duration, so not wall clock
+        self._trigger_callback_if_needed(force=True)
+
     def file_end(self, slot: int):
         """The file in ``slot`` is done (copied, skipped, or failed): count the
         item, and credit any of its bytes that were never streamed — a small

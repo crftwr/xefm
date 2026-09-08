@@ -5269,6 +5269,12 @@ class XeFMApp:
                             root, on_bytes if prog is not None else None)
                     # The claim is released; the rest is this member's alone.
                     if pending is not None:
+                        if prog is not None:
+                            # Where the destination defers a file's transfer to
+                            # its close, everything below this line is that
+                            # transfer — and the row would otherwise hold at its
+                            # total, showing none of it.
+                            prog.file_closing(slot)
                         pending.finish()
                         pending = None
                     if prog is not None:

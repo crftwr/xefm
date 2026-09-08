@@ -119,6 +119,16 @@ instead of the single current-file fields:
 - `file_end(slot)` counts the item as processed and credits any bytes the copy
   path never streamed (a one-shot small file, an instant clone, a skip), so
   `processed_bytes` reaches `total_bytes` however the file traveled.
+- `file_closing(slot)` marks the file as written but not yet closed. Where the
+  destination holds a file in a local cache until close — WebDAV, NFS's
+  close-to-open flush — that close is where the bytes actually travel: one
+  measured 64 MiB spent 0.04s in the write loop and 5.25s in the close. Without
+  this the row reached its total and then sat unchanged for the whole of it,
+  which is the operation's real work rendered as a number that had stopped
+  moving. `transfer_bytes_text` (in `task.py`) renders such a row as
+  `finishing… 12s` in place of the counts. Nothing about it is specific to a
+  network volume — a destination whose close is instant passes through in one
+  frame — and it is optional: a caller that never calls it behaves as before.
 
 A finished file stays in its slot (`done: True`) until the worker's next
 `file_begin` reuses it — `ProgressDialog` keys its per-transfer rows by slot, so

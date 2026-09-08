@@ -450,6 +450,42 @@ def test_the_single_file_path_also_feeds_the_operation_byte_total():
     assert pm.current_operation["processed_bytes"] == 300
 
 
+def test_a_file_being_closed_says_so_instead_of_holding_at_its_total():
+    """What the row shows while a file is closing.
+
+    Where the destination holds a file in a local cache until close — WebDAV,
+    NFS's close-to-open flush — the close is where the bytes travel, and the row
+    used to hold at its total for the whole of it. One measured 64 MiB spent
+    0.04s writing and 5.25s closing, so that was almost the entire operation
+    shown as a number that had stopped moving."""
+    import time as _time
+    from xefm.task import transfer_bytes_text
+
+    pm = ProgressManager()
+    pm.start_operation(OperationType.ARCHIVE_EXTRACT, 0)
+    pm.update_operation_total(1, total_bytes=4 * 1024 * 1024)
+    slot = pm.file_begin("big.bin", 4 * 1024 * 1024)
+    pm.file_bytes(slot, 4 * 1024 * 1024)
+    row = dict(pm.get_transfers())[slot]
+    assert transfer_bytes_text(row) == "4.0M / 4.0M"
+
+    pm.file_closing(slot)
+    row = dict(pm.get_transfers())[slot]
+    assert transfer_bytes_text(row) == "finishing…"
+    row["closing_since"] = _time.monotonic() - 12.5
+    assert transfer_bytes_text(row) == "finishing… 12s"
+
+    pm.file_end(slot)                      # closed: back to the counts
+    row = dict(pm.get_transfers())[slot]
+    assert transfer_bytes_text(row) == "4.0M / 4.0M"
+
+
+def test_a_file_too_small_for_byte_counts_still_shows_none():
+    """The small-file case the closing state must not have broken."""
+    from xefm.task import transfer_bytes_text
+    assert transfer_bytes_text({"copied": 10, "total": 10}) == ""
+
+
 def test_percentage_is_weighted_by_bytes():
     """One 800 KiB spread over two items: bytes dominate the bar, and each
     item adds its fixed _ITEM_WEIGHT so pure-item operations still advance."""
