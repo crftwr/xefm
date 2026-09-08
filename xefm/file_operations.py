@@ -37,6 +37,7 @@ import shutil
 import sys
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from typing import Any, Callable, Optional
 
 from puikit.backend import Style
@@ -73,6 +74,8 @@ _BYTE_BAR_MIN = 1024 * 1024
 #: transfers share one control-master connection per host whose progress state
 #: is per-connection, not per-transfer.
 _WORKERS_LOCAL = 4
+#: Default for ``SERIAL_CLOSE_ABOVE`` — see :class:`LargeCloseGate`.
+_SERIAL_CLOSE_ABOVE = 8 * 1024 * 1024
 _WORKERS_REMOTE = 8
 
 #: macOS ``clonefile(2)``: a same-volume APFS copy is one copy-on-write
@@ -213,6 +216,9 @@ class FileOperationService:
         #: The app attaches this after construction (its monitor is built
         #: later); the diff viewer passes it here.
         self.monitor = monitor
+        #: One large file closed at a time — where the destination transfers a
+        #: file at its close, that is the only concurrency worth refusing.
+        self.close_gate = LargeCloseGate.from_config(config)
 
     # --- public API ----------------------------------------------------------
 
@@ -777,15 +783,30 @@ class FileOperationService:
         dest.parent.mkdir(parents=True, exist_ok=True)
         copied = 0
         try:
-            with open(str(src), "rb") as fi, open(str(dest), "wb") as fo:
-                while True:
-                    task.checkpoint()
-                    chunk = fi.read(_CHUNK)
-                    if not chunk:
-                        break
-                    fo.write(chunk)
-                    copied += len(chunk)
-                    prog.file_bytes(slot, copied, size)
+            with open(str(src), "rb") as fi:
+                # The destination is closed explicitly, and a big one under the
+                # gate: on a mounted volume that defers a file's transfer to its
+                # close, this loop only fills a local cache and the close below
+                # is the whole of the copy.
+                out = open(str(dest), "wb")
+                closed = False
+                try:
+                    while True:
+                        task.checkpoint()
+                        chunk = fi.read(_CHUNK)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        copied += len(chunk)
+                        prog.file_bytes(slot, copied, size)
+                    with self.close_gate.closing(size):
+                        out.close()
+                    closed = True
+                finally:
+                    if not closed:
+                        # Cancelled or failed: this file is about to be removed,
+                        # so it does not queue behind anyone else's transfer.
+                        out.close()
             shutil.copystat(str(src), str(dest))
         except Cancelled:
             try:
@@ -893,6 +914,57 @@ def _log_del(log, path: Path) -> None:
     """Log one delete compactly: the name once, then its directory."""
     if log is not None:
         log(f"Deleted '{path.name}': {path.parent}")
+
+
+class LargeCloseGate:
+    """Lets one large file be closed at a time, whoever is writing it.
+
+    Where a destination holds a file in a local cache until it is closed — a
+    WebDAV or SMB volume, NFS under close-to-open — that close *is* the
+    transfer. Two large ones at once move no more data than one, because a
+    single stream already saturates the link: 12.2 MiB/s measured alone against
+    11.8 aggregate across four workers. So the concurrency buys nothing there,
+    while asking the far end to hold two large bodies at the same time — and one
+    WebDAV server was seen to stop answering while two were in flight, and not
+    recover on a remount.
+
+    What concurrency *does* buy is the fixed round trip each file costs, around
+    0.55s against a link doing 12.2 MiB/s. That is worth having only while a
+    file's transfer is comparable to it, which is to say below roughly 7 MiB.
+    Above that the trade is all risk, so those files queue here and the smaller
+    ones go straight through — with each other and with a large one, since that
+    is where the whole measured gain lives.
+
+    ``above`` is the size at which a file starts queueing: 0 for every file, of
+    any size, and None to let everything through. Nothing here is specific to a
+    network volume; a destination whose close is instant passes through an
+    uncontended lock.
+
+    One gate per operation, not one per process: the progress dialog is modal,
+    so XeFM runs one file operation at a time and there is nothing else to
+    coordinate with."""
+
+    def __init__(self, above: Optional[int] = None):
+        self.above = above
+        self._lock = threading.Lock()
+
+    @contextmanager
+    def closing(self, size: int):
+        """Hold the gate for the duration of a file's close, if it is a big one."""
+        if self.above is None or size < self.above:
+            yield
+            return
+        with self._lock:
+            yield
+
+    @classmethod
+    def from_config(cls, config: Any) -> 'LargeCloseGate':
+        """The gate ``SERIAL_CLOSE_ABOVE`` asks for."""
+        try:
+            above = int(getattr(config, "SERIAL_CLOSE_ABOVE", _SERIAL_CLOSE_ABOVE))
+        except (TypeError, ValueError):
+            above = _SERIAL_CLOSE_ABOVE
+        return cls(max(0, above))
 
 
 def serialized_log(log: Callable[[str], None]) -> Callable[[str], None]:

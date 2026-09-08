@@ -97,8 +97,9 @@ from xefm.sort_dialog import show_sort_dialog
 from xefm.progress_manager import OperationType
 from xefm.diff_viewer import show_diff_viewer
 from xefm.directory_diff_viewer import show_directory_diff_viewer
-from xefm.file_operations import (FileOperationService, format_op_errors,
-                                  format_op_summary, serialized_log)
+from xefm.file_operations import (FileOperationService, LargeCloseGate,
+                                  format_op_errors, format_op_summary,
+                                  serialized_log)
 from xefm.task import Cancelled, Task, TaskManager
 from xefm.text_dialog import show_markdown
 from xefm.text_encoding import sniff_bom
@@ -1035,23 +1036,17 @@ class _ExtractionPool:
     stops everything. Both are reported by :meth:`close`, because neither is
     known while the archive that caused it is still being read.
 
-    ``serial_above`` closes members of at least that size one at a time — 0 for
-    every member, None (the default here) for none of them. Closing
-    is where a network destination transfers a file, and two large transfers at
-    once buy nothing — a single stream already saturated the link — while asking
-    the far end to hold two large bodies. Overlapping pays for the fixed round
-    trip each file costs, which only matters while the transfer is comparable to
-    it; past that the trade is all risk. Small members keep overlapping, with
-    each other and with a large one, because that is where the whole measured
-    gain lives."""
+    ``close_gate`` is the same :class:`~xefm.file_operations.LargeCloseGate` a
+    copy uses, and for the same reason: a large member's close is a transfer the
+    destination may not want two of. Which members it holds, and why, is its
+    own documentation."""
 
     def __init__(self, workers: int, *, task=None, prog=None, log=None,
-                 serial_above: int | None = None):
+                 close_gate=None):
         self._task = task
         self._prog = prog
         self._log = log
-        self._serial_above = serial_above
-        self._big_close = threading.Lock()
+        self._close_gate = close_gate or LargeCloseGate()
         self._cond = threading.Condition()
         self._job = None           # (key, pass, root, archive path, dest dir)
         self._exhausted = True     # nothing published yet
@@ -1143,10 +1138,7 @@ class _ExtractionPool:
                     # it. Marked before any queueing below, so the row accounts
                     # for the whole wait rather than only its own turn.
                     self._prog.file_closing(slot)
-                if self._serial_above is not None and entry.size >= self._serial_above:
-                    with self._big_close:   # one large transfer at a time
-                        pending.finish()
-                else:
+                with self._close_gate.closing(0 if entry.is_dir else entry.size):
                     pending.finish()
                 pending = None
             if self._prog is not None:
@@ -5377,20 +5369,11 @@ class XeFMApp:
             workers = 2
         return max(1, workers)
 
-    def _extract_serial_above(self) -> int:
-        """The size at which a member is closed on its own
-        (``ARCHIVE_EXTRACT_SERIAL_ABOVE``); 0 for every member.
-
-        A ceiling on risk rather than a tuning knob. Two large closes at once
-        were measured to move no more data than one, so serialising them costs
-        nothing that could be recovered — and a server was seen to stop
-        answering while two of them were in flight."""
-        config = getattr(self, "config", None)
-        try:
-            return max(0, int(getattr(config, "ARCHIVE_EXTRACT_SERIAL_ABOVE",
-                                      8 * 1024 * 1024)))
-        except (TypeError, ValueError):
-            return 8 * 1024 * 1024
+    def _close_gate(self) -> LargeCloseGate:
+        """This extraction's gate on closing large files — the copy engine's, and
+        governed by the same setting, because the constraint belongs to the
+        destination rather than to the operation writing it."""
+        return LargeCloseGate.from_config(getattr(self, "config", None))
 
     def _extract_members(self, handler, dest_dir, pwd: bytes | None,
                          *, task=None, prog=None, log=None, archive_path=None,
@@ -5431,7 +5414,7 @@ class XeFMApp:
                 pool.run_archive(key, pass_, root, archive_path, dest_dir)
             return 0
         own = _ExtractionPool(self._extract_workers(), task=task, prog=prog,
-                              log=log, serial_above=self._extract_serial_above())
+                              log=log, close_gate=self._close_gate())
         try:
             with handler.extraction_pass(dest_dir, password=pwd) as pass_:
                 own.run_archive(key, pass_, root, archive_path, dest_dir)
@@ -5779,7 +5762,7 @@ class XeFMApp:
                 # idle and the next archive could not begin reading.
                 pool = _ExtractionPool(
                     self._extract_workers(), task=t, prog=prog, log=log,
-                    serial_above=self._extract_serial_above())
+                    close_gate=self._close_gate())
                 entries = 0
                 failures: list[tuple] = []
                 started: list[tuple] = []

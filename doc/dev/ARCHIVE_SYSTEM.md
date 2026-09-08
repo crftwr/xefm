@@ -663,16 +663,11 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
   `ARCHIVE_EXTRACT_WORKERS` throughout, since a boundary that briefly doubled it
   would be a worse bargain than the one it removed.
 
-  **Large members are closed one at a time** (`ARCHIVE_EXTRACT_SERIAL_ABOVE`,
-  default 8 MiB; 0 serialises every member, a value past the largest never
-  does). Closing is where a network destination transfers a file, and two large
-  transfers at once move no more data than one — a single stream already
-  saturated the link (12.2 MiB/s measured alone, 11.8 aggregate across four) —
-  while asking the far end to hold two large bodies. One WebDAV server stopped
-  answering while two were in flight and did not recover on a remount, which is
-  correlation rather than proof but points the same way as the measurement.
-  Overlapping is kept for small members, whose cost is the fixed round trip
-  rather than the transfer: that is where the whole measured gain lives.
+  **Large members are closed one at a time**, through the same
+  `file_operations.LargeCloseGate` a copy uses and under the same setting
+  (`SERIAL_CLOSE_ABOVE`) — the constraint belongs to the destination, not to the
+  operation writing it. See `PARALLEL_COPY_IMPLEMENTATION.md` for the reasoning
+  and the numbers.
 
   Counts and failures therefore arrive late: an archive's last files land after
   its reading ended, so neither its member count nor its failure exists when the

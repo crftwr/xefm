@@ -601,7 +601,7 @@ def _peak_concurrent_closes(tmp_path, monkeypatch, serial_above, size):
                         lambda *a, **kw: _Counted(real_open(*a, **kw)),
                         raising=False)
     app = _bare_app(2)
-    app.config.ARCHIVE_EXTRACT_SERIAL_ABOVE = serial_above
+    app.config.SERIAL_CLOSE_ABOVE = serial_above
     handler = LibarchiveHandler(Path(str(archive)))
     try:
         handler.open()

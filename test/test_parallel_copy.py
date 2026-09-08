@@ -9,6 +9,7 @@ Run with: python -m pytest test/test_parallel_copy.py -v
 import os
 import sys
 import threading
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -370,6 +371,86 @@ def test_workers_one_takes_the_sequential_path(tmp_path, cfg, monkeypatch):
         (src / f"f{i}.txt").write_text("x")
     res = _run_sync(svc, svc.copy, [_P(src / f"f{i}.txt") for i in range(5)], _P(dst))
     assert res["done"] == 5
+
+
+# --- one large file closed at a time (the destination's limit, not ours) --------
+
+
+def _peak_concurrent_closes(svc, monkeypatch, tmp_path, size, count=4):
+    """Copy ``count`` files of ``size`` and report the most closes ever in
+    flight at once."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    _fake_devices(monkeypatch, dst)  # a second volume: no clone, so bytes stream
+    payload = os.urandom(size)
+    for i in range(count):
+        (src / f"f{i}.bin").write_bytes(payload)
+
+    live = [0]
+    peak = [0]
+    guard = threading.Lock()
+    real_open = open
+
+    class _Counted:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def read(self, *a):
+            return self._handle.read(*a)
+
+        def close(self):
+            with guard:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.05)
+            try:
+                self._handle.close()
+            finally:
+                with guard:
+                    live[0] -= 1
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._handle.__exit__(*exc)
+
+    def counted_open(path, mode="r", *a, **kw):
+        handle = real_open(path, mode, *a, **kw)
+        return _Counted(handle) if "w" in mode else handle
+
+    monkeypatch.setattr(F, "open", counted_open, raising=False)
+    res = _run_sync(svc, svc.copy, [_P(src / f"f{i}.bin") for i in range(count)],
+                    _P(dst))
+    assert res["done"] == count
+    return peak[0]
+
+
+def test_a_copy_closes_one_large_file_at_a_time(svc, monkeypatch, tmp_path):
+    """The copy engine faces exactly what extraction did, and harder: a mounted
+    WebDAV volume reports the same `file` scheme a local disk does, so a copy on
+    to one runs FILE_OP_WORKERS_LOCAL workers — four — each closing its own
+    destination file. Where that close is the transfer, four at once move no
+    more data than one and ask the server to hold four large bodies."""
+    # 3 MiB files against a 2 MiB gate. They have to clear _BYTE_BAR_MIN too,
+    # or the copy takes its one-shot path and never streams.
+    svc.close_gate.above = 2 * 1024 * 1024
+    assert _peak_concurrent_closes(svc, monkeypatch, tmp_path,
+                                   3 * 1024 * 1024) == 1
+
+
+def test_a_copy_still_overlaps_small_files(svc, monkeypatch, tmp_path):
+    """And keeps the concurrency that pays: a small file's cost is the fixed
+    round trip, not its transfer, so those still go at once."""
+    svc.close_gate.above = 2 * 1024 * 1024
+    assert _peak_concurrent_closes(svc, monkeypatch, tmp_path,
+                                   3 * 1024 * 1024 // 2) > 1
 
 
 # --- per-file transfer slots (issue #268) ----------------------------------------

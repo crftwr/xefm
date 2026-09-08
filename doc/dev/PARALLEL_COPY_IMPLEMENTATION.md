@@ -71,6 +71,39 @@ keep the semantics identical to the sequential path:
 - **Conflict resolution never runs on a worker** — `_resolve` completes before
   any copying starts, so `Task.ask` stays single-threaded.
 
+## One large file closed at a time
+
+A mounted network volume — WebDAV, SMB, NFS under close-to-open — reports the
+same `file` scheme a local disk does, so nothing in a path says the destination
+is remote and the pool sizes itself at `FILE_OP_WORKERS_LOCAL`. On such a volume
+the write loop only fills a local cache and **`close()` is the transfer**: one
+measured 64 MiB spent 0.04s writing and 5.25s closing. Four workers therefore
+meant four concurrent uploads.
+
+That concurrency was never buying throughput for large files. A single stream
+already saturated the link — 12.2 MiB/s alone against 11.8 MiB/s aggregate
+across four workers — so the only thing overlapping recovered was the fixed
+round trip each file costs, about 0.55s. That is worth having while a file's
+transfer is comparable to it, which is to say below roughly 7 MiB; past that the
+trade is all risk. And the risk is real: one WebDAV server stopped answering
+while two large uploads were in flight, and did not recover on a remount.
+
+So `LargeCloseGate` holds a lock across the close of any file of at least
+`SERIAL_CLOSE_ABOVE` (default 8 MiB), and lets smaller ones through — with each
+other and with a large one, because that is where the whole measured gain lives.
+`0` puts every file under the lock, for a destination that has shown it cannot
+take two at once; a value past the largest file restores the old behaviour.
+
+Archive extraction takes the same gate under the same setting: the constraint
+belongs to the destination, not to the operation writing it. One gate per
+operation rather than one per process is enough, because the progress dialog is
+modal and XeFM runs one file operation at a time.
+
+Nothing here is specific to a network volume. A destination whose close is
+instant passes through an uncontended lock, and a cancelled or failed copy
+closes outside the gate — that file is about to be removed, so it does not queue
+behind anyone else's transfer.
+
 ## Shared-state rules
 
 - `ProgressManager` mutators now hold a lock (several workers report into one
