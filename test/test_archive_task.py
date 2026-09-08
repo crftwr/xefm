@@ -252,6 +252,52 @@ class ArchiveLoops(unittest.TestCase):
                     self.assertTrue(item.startswith(f"arc.{fmt} \u203a "), item)
                 self.assertTrue(any(item.endswith("a.txt") for item in seen))
 
+    def test_every_file_is_logged_as_it_is_written(self):
+        """Archives log at the same grain a copy does: one line per file, none
+        for a directory, so the record says what was actually written and not
+        only how much of it there was."""
+        for fmt, verb in (("zip", "Added"), ("tar", "Added")):
+            with self.subTest(create=fmt):
+                logs = []
+                path = Path(os.path.join(self.tmp, f"logged.{fmt}"))
+                added = self.app._write_archive(self.sources, path, fmt,
+                                                log=logs.append)
+                self.assertTrue(all(line.startswith(f"{verb} '") for line in logs))
+                self.assertTrue(all(line.endswith(f"→ logged.{fmt}") for line in logs))
+                self.assertEqual(len(logs), 4)   # the tree's four files
+                if fmt == "tar":
+                    # tar stores a member per directory too, and those are not
+                    # logged — which is what makes the counts differ here.
+                    self.assertLess(len(logs), added)
+                else:
+                    self.assertEqual(len(logs), added)  # zip stores files only
+
+        for fmt in ("zip", "tar"):
+            with self.subTest(extract=fmt):
+                arc = self._make(fmt)
+                logs = []
+                dest = Path(os.path.join(self.tmp, f"logged-out-{fmt}"))
+                self.app._extract_archive(arc, dest, fmt, log=logs.append)
+                self.assertEqual(len(logs), 4)
+                for line in logs:
+                    self.assertTrue(line.startswith("Extracted '"), line)
+                    self.assertIn(f"arc.{fmt} → ", line)
+
+    def test_a_step_behind_log_never_claims_a_member_that_failed(self):
+        """The holding rule on its own: extractall and tar's add give a seam only
+        at the *start* of a member, so a line is held until the next one begins.
+        A run that dies mid-member simply never flushes that member's line."""
+        written = []
+        unit = xefm_app._StepBehindLog(written.append)
+        unit.announce("first")
+        self.assertEqual(written, [])        # nothing has landed yet
+        unit.announce("second")
+        self.assertEqual(written, ["first"])  # first landed when second started
+        unit.flush()
+        self.assertEqual(written, ["first", "second"])
+        unit.announce("third")               # and then the run dies
+        self.assertEqual(written, ["first", "second"])
+
     def test_a_batch_may_keep_the_total_it_published(self):
         """``owns_total=False`` is a batch saying it has already counted every
         archive; one archive must not then rescale the bar to its own size."""
@@ -508,7 +554,7 @@ class ArchiveFlowOutcomes(unittest.TestCase):
     def test_cancelled_create_removes_the_partial_archive(self):
         target = os.path.join(self.dest, "out.zip")
 
-        def half_write(sources, archive_path, fmt, *, task=None, prog=None):
+        def half_write(sources, archive_path, fmt, *, task=None, prog=None, log=None):
             with open(str(archive_path), "wb") as f:   # a truncated archive
                 f.write(b"PK\x03\x04partial")
             raise Cancelled()
@@ -529,7 +575,7 @@ class ArchiveFlowOutcomes(unittest.TestCase):
         self.assertIn("Archive creation cancelled", self.app.logs)
 
     def test_failed_create_is_reported(self):
-        def boom(sources, archive_path, fmt, *, task=None, prog=None):
+        def boom(sources, archive_path, fmt, *, task=None, prog=None, log=None):
             raise OSError("No space left on device")
 
         self._create("out.zip", monkeypatched=boom)

@@ -98,7 +98,7 @@ from xefm.progress_manager import OperationType
 from xefm.diff_viewer import show_diff_viewer
 from xefm.directory_diff_viewer import show_directory_diff_viewer
 from xefm.file_operations import (FileOperationService, format_op_errors,
-                                  format_op_summary)
+                                  format_op_summary, serialized_log)
 from xefm.task import Cancelled, Task, TaskManager
 from xefm.text_dialog import show_markdown
 from xefm.text_encoding import sniff_bom
@@ -1008,6 +1008,39 @@ class _StreamToLog:
 
     def isatty(self) -> bool:
         return False
+
+
+class _StepBehindLog:
+    """Logs one unit of work at a time, always one behind.
+
+    ``zipfile.extractall``, ``tarfile.add`` and libarchive's writer drive their
+    own member loop and hand out a seam only at the *start* of a member. A line
+    written there would call a member done before it was — and would call the
+    one that then failed done when it wasn't. Holding each line until the next
+    member begins, and flushing whatever is left when the run finishes, makes
+    every line mean what it says: what it names has landed. A run that dies
+    mid-member never flushes that member's line, which is the right silence.
+
+    Where a seam does exist after the member — the zip create loop, and the
+    extraction workers, which own their member from claim to closed file — the
+    line is written directly and this is not needed."""
+
+    __slots__ = ("_log", "_pending")
+
+    def __init__(self, log):
+        self._log = log
+        self._pending = None
+
+    def announce(self, message: str) -> None:
+        """The previous member landed; this one is starting."""
+        self.flush()
+        self._pending = message
+
+    def flush(self) -> None:
+        """The run ended cleanly — the member still held did land after all."""
+        pending, self._pending = self._pending, None
+        if pending is not None and self._log is not None:
+            self._log(pending)
 
 
 class XeFMApp:
@@ -4803,7 +4836,7 @@ class XeFMApp:
 
     @staticmethod
     def _add_to_zip(zf, path, arcname: str, *, task=None, prog=None,
-                    bytes_=None) -> int:
+                    bytes_=None, log=None, archive_path=None) -> int:
         """Add ``path`` to an open ZipFile under ``arcname``, recursing into
         directories (tarfile recurses on its own; zipfile does not). Returns the
         number of files written.
@@ -4816,7 +4849,8 @@ class XeFMApp:
             count = 0
             for child in path.iterdir():
                 count += XeFMApp._add_to_zip(zf, child, f"{arcname}/{child.name}",
-                                             task=task, prog=prog, bytes_=bytes_)
+                                             task=task, prog=prog, bytes_=bytes_,
+                                             log=log, archive_path=archive_path)
             return count
         if task is not None:
             task.checkpoint()
@@ -4826,10 +4860,12 @@ class XeFMApp:
             # After update_progress, which clears the byte fields for the new item.
             bytes_.start(XeFMApp._entry_size(path))
         zf.write(str(path), arcname)
+        if log is not None:
+            log(XeFMApp._added_line(arcname, archive_path))
         return 1
 
     def _write_archive(self, sources: list, archive_path, fmt: str, *,
-                       task=None, prog=None) -> int:
+                       task=None, prog=None, log=None) -> int:
         """Write ``sources`` into a new archive at ``archive_path`` in ``fmt``.
         Local filesystem paths (this phase); returns the number of files added.
 
@@ -4839,18 +4875,24 @@ class XeFMApp:
         :mod:`xefm.archive_progress` file subclasses, byte by byte within an
         entry, so a single huge member still moves something. ``Cancelled``
         unwinds out of here mid-archive, leaving the caller to drop the partial
-        file. Both default to None, which writes exactly as before."""
+        file. Both default to None, which writes exactly as before.
+
+        ``log``, when given, gets one line per file added, the same grain the
+        copy engine logs at. tar and 7z hand out a seam only at the start of a
+        member, so those lines are held one step behind (:class:`_StepBehindLog`)
+        and a member that fails is never claimed as added."""
         import zipfile
         from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
         bytes_ = ByteProgress(prog) if prog is not None else None
         if fmt != "zip" and fmt not in self._TAR_MODES:
             return self._write_via_handler(sources, archive_path, task=task,
-                                           prog=prog, bytes_=bytes_)
+                                           prog=prog, bytes_=bytes_, log=log)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.byte_progress = bytes_
                 return sum(self._add_to_zip(zf, s, s.name, task=task, prog=prog,
-                                            bytes_=bytes_)
+                                            bytes_=bytes_, log=log,
+                                            archive_path=archive_path)
                            for s in sources)
         added = 0
 
@@ -4867,16 +4909,20 @@ class XeFMApp:
                 prog.update_progress(tarinfo.name, added)
             if bytes_ is not None:
                 bytes_.start(tarinfo.size)
+            if tarinfo.isreg():
+                unit.announce(self._added_line(tarinfo.name, archive_path))
             return tarinfo
 
+        unit = _StepBehindLog(log)
         with ProgressTarFile.open(str(archive_path), self._TAR_MODES[fmt]) as tf:
             tf.byte_progress = bytes_
             for s in sources:
                 tf.add(str(s), arcname=s.name, filter=report)  # recurses into dirs
+        unit.flush()
         return added
 
     def _write_via_handler(self, sources: list, archive_path, *, task=None,
-                           prog=None, bytes_=None) -> int:
+                           prog=None, bytes_=None, log=None) -> int:
         """Create a format neither zipfile nor tarfile can write — 7z — through
         the writer its registry entry brought with it.
 
@@ -4893,7 +4939,7 @@ class XeFMApp:
                 f"Cannot create archive format: {archive_path.name}")
         written = 0
 
-        def on_entry(arcname: str, size: int) -> None:
+        def on_entry(arcname: str, size: int, is_dir: bool = False) -> None:
             nonlocal written
             if task is not None:
                 task.checkpoint()
@@ -4904,10 +4950,15 @@ class XeFMApp:
                 # After update_progress, which clears the byte fields for the
                 # incoming member — the same ordering _reporting_members keeps.
                 bytes_.start(size)
+            if not is_dir:
+                unit.announce(self._added_line(arcname, archive_path))
 
-        return fmt.writer(
+        unit = _StepBehindLog(log)
+        count = fmt.writer(
             archive_path, sources, on_entry=on_entry,
             on_bytes=bytes_.advance if bytes_ is not None else None)
+        unit.flush()
+        return count
 
     @classmethod
     def _count_archive_entries(cls, sources: list, *, include_dirs: bool,
@@ -4958,9 +5009,28 @@ class XeFMApp:
         return f"{archive_name} \u203a {internal_path}" if archive_name else internal_path
 
     @staticmethod
-    def _reporting_members(members, describe, task, prog, bytes_=None):
+    def _extracted_line(internal_path: str, archive_path, dest_dir) -> str:
+        """One extracted member, in the shape the copy engine logs a file in:
+        the thing once in quotes, then where it came from and where it went."""
+        return f"Extracted '{internal_path}': {archive_path.name} → {dest_dir}"
+
+    @staticmethod
+    def _added_line(arcname: str, archive_path) -> str:
+        """One member added to a new archive. No source directory: unlike a copy,
+        every member comes from the one pane the selection was made in, and the
+        arcname already carries its place in that tree."""
+        return f"Added '{arcname}' → {archive_path.name}"
+
+    @staticmethod
+    def _reporting_members(members, describe, task, prog, bytes_=None, unit=None):
         """Yield ``members`` one at a time, checkpointing and reporting each —
-        ``describe(member)`` gives its ``(name, size)``.
+        ``describe(member)`` gives its ``(name, size, log line)``, the last None
+        for a member that should not be logged (a directory, which the copy
+        engine does not log either).
+
+        ``unit`` is a :class:`_StepBehindLog`: extractall hands out no seam after
+        a member, so each line waits for the next member to start and the caller
+        flushes the last one when extractall returns.
 
         Handed to ``extractall(members=…)`` so extraction gets per-entry progress
         and cancellation *without* reimplementing its loop: tar's deferred
@@ -4972,15 +5042,18 @@ class XeFMApp:
         for member in members:
             if task is not None:
                 task.checkpoint()
-            name, size = describe(member)
+            name, size, logged = describe(member)
             if prog is not None:
                 prog.update_progress(name)
             if bytes_ is not None:
                 bytes_.start(size)
+            if unit is not None and logged is not None:
+                unit.announce(logged)
             yield member
 
     def _extract_archive(self, archive_path, dest_dir, fmt: str, pwd: bytes | None = None,
-                         *, task=None, prog=None, owns_total: bool = True) -> int:
+                         *, task=None, prog=None, owns_total: bool = True,
+                         log=None) -> int:
         """Extract ``archive_path`` into ``dest_dir`` (created if absent). Returns
         the number of entries. Tar extraction uses the ``data`` filter where
         available (Python 3.12+) to reject unsafe member paths.
@@ -5000,15 +5073,21 @@ class XeFMApp:
         ``owns_total`` says whether this call may publish the operation's totals.
         A batch counts every archive up front and publishes one total for the lot
         (:meth:`_survey_archives`), which each archive must then not overwrite
-        with its own; a lone call keeps the default and scales the bar itself."""
+        with its own; a lone call keeps the default and scales the bar itself.
+
+        ``log``, when given, gets one line per file member as it lands — the same
+        grain the copy engine logs at, and for the same reason: a run's record
+        should say what it actually wrote, not only how many things it wrote.
+        Directory members are not logged, again matching copy."""
         from xefm.archive import verify_zip_password
         from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
         bytes_ = ByteProgress(prog) if prog is not None else None
         dest_dir.mkdir(parents=True, exist_ok=True)
+        unit = _StepBehindLog(log)
         if fmt != "zip" and fmt not in self._TAR_MODES:
             return self._extract_via_handler(archive_path, dest_dir, pwd,
                                              task=task, prog=prog, bytes_=bytes_,
-                                             owns_total=owns_total)
+                                             owns_total=owns_total, log=log)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
@@ -5023,8 +5102,11 @@ class XeFMApp:
                     members=self._reporting_members(
                         members,
                         lambda m: (self._member_label(archive_path.name, m.filename),
-                                   m.file_size),
-                        task, prog, bytes_))
+                                   m.file_size,
+                                   None if m.is_dir() else self._extracted_line(
+                                       m.filename, archive_path, dest_dir)),
+                        task, prog, bytes_, unit))
+                unit.flush()
                 return len(members)
         with ProgressTarFile.open(str(archive_path)) as tf:
             tf.byte_progress = bytes_
@@ -5041,8 +5123,10 @@ class XeFMApp:
             def reported():
                 return self._reporting_members(
                     members,
-                    lambda m: (self._member_label(archive_path.name, m.name), m.size),
-                    task, prog, bytes_)
+                    lambda m: (self._member_label(archive_path.name, m.name), m.size,
+                               self._extracted_line(m.name, archive_path, dest_dir)
+                               if m.isreg() else None),
+                    task, prog, bytes_, unit)
 
             try:
                 tf.extractall(str(dest_dir), filter="data", members=reported())
@@ -5050,11 +5134,12 @@ class XeFMApp:
                 # Raised on the call itself (unknown keyword), before the members
                 # generator is touched, so a fresh one is the whole retry.
                 tf.extractall(str(dest_dir), members=reported())
+            unit.flush()
             return len(members)
 
     def _extract_via_handler(self, archive_path, dest_dir, pwd: bytes | None,
                              *, task=None, prog=None, bytes_=None,
-                             owns_total: bool = True) -> int:
+                             owns_total: bool = True, log=None) -> int:
         """Extract a format neither zipfile nor tarfile reads — 7z, and whatever
         else the loaded libarchive contributes — through its registered handler.
 
@@ -5099,8 +5184,8 @@ class XeFMApp:
                     count += 1
                 return count
             return self._extract_members(handler, dest_dir, pwd,
-                                         task=task, prog=prog,
-                                         archive_name=archive_path.name)
+                                         task=task, prog=prog, log=log,
+                                         archive_path=archive_path)
         finally:
             handler.close()
 
@@ -5121,7 +5206,8 @@ class XeFMApp:
         return max(1, workers)
 
     def _extract_members(self, handler, dest_dir, pwd: bytes | None,
-                         *, task=None, prog=None, archive_name: str = "") -> int:
+                         *, task=None, prog=None, log=None,
+                         archive_path=None) -> int:
         """Extract every member of ``handler``'s archive with symmetric workers.
 
         Each worker carries one member from claim to closed file, so a member's
@@ -5142,8 +5228,13 @@ class XeFMApp:
         Progress goes through the copy engine's transfer slots rather than the
         single current-item fields: several members are in flight, so there is no
         one current member to name. The item is counted at ``file_end``, after
-        the file is closed, so a member counts when it has actually landed."""
+        the file is closed, so a member counts when it has actually landed — and
+        ``log`` gets its line there too, for the same reason. This path needs no
+        step-behind holding: a worker owns its member all the way to the closed
+        file, so it can simply say so afterwards. ``log`` must already be
+        serialised (:func:`~xefm.file_operations.serialized_log`)."""
         root = handler.extraction_root(dest_dir)
+        archive_name = archive_path.name if archive_path is not None else ""
         workers = self._extract_workers()
         counted = 0
         errors: list = []
@@ -5182,6 +5273,9 @@ class XeFMApp:
                         pending = None
                     if prog is not None:
                         prog.file_end(slot)
+                    if log is not None and not entry.is_dir:
+                        log(self._extracted_line(entry.internal_path,
+                                                 archive_path, dest_dir))
                     with tally:
                         counted += 1
                 except BaseException as exc:  # noqa: BLE001 — re-raised below
@@ -5346,6 +5440,7 @@ class XeFMApp:
                         prog.update_operation_total(self._count_archive_entries(
                             sources, include_dirs=(fmt != "zip"), task=t))
                         added = self._write_archive(sources, archive_path, fmt,
+                                                    log=self.log_info,
                                                     task=t, prog=prog)
                     except Cancelled:
                         # A half-written archive is not a usable one, and the file
@@ -5475,6 +5570,10 @@ class XeFMApp:
 
             def run(t: Task) -> dict:
                 prog = t.progress
+                # Workers write into the same log sink, which copes with one
+                # background writer and not several — the copy engine takes the
+                # same wrapper for the same reason.
+                log = serialized_log(self.log_info)
                 # The archive currently being written, for the cancel message:
                 # what landed stays (the destination may be a directory the user
                 # already had files in — the confirm box says as much — so
@@ -5512,7 +5611,7 @@ class XeFMApp:
                         try:
                             count = self._extract_archive(entry, target, fmt,
                                                           pwd=pwd, task=t, prog=prog,
-                                                          owns_total=False)
+                                                          owns_total=False, log=log)
                         except NotImplementedError:
                             # Defensive: the probe above already refused these, and
                             # NotImplementedError *is* a RuntimeError, so it must

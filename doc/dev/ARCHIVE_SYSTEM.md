@@ -672,6 +672,17 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
   member to name. `file_end` counts the item *after* the file is closed, so a
   member counts when it has actually landed.
 
+  Both flows also log at the grain a copy does — one line per **file**, none for
+  a directory: `Extracted 'sub/b.txt': photos.7z → /dest/photos` and
+  `Added 'src/a.txt' → backup.7z`. Where a seam exists after the member (the zip
+  create loop; the extraction workers, which own theirs to the closed file) the
+  line is written there. `zipfile.extractall`, `tarfile.add` and libarchive's
+  writer drive their own member loop and offer a seam only at the *start* of one,
+  so those lines are held one step behind by `_StepBehindLog`: a member that then
+  fails is never claimed as written. Extraction workers share one sink, so the
+  flow wraps it in `file_operations.serialized_log` — the same wrapper, for the
+  same reason, as the parallel copy.
+
   On the surveyed status: `'unsupported'` is recorded as a failure for that
   archive; `'password'` asks for one through the task's UI bridge (`Task.ask`, the
   same seam the copy conflict dialog uses — the masked prompt stacks at `z + 5`,

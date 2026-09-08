@@ -559,7 +559,7 @@ class FileOperationService:
         the jobs that actually finished."""
         verb = {"move": "Moved", "duplicate": "Duplicated"}.get(kind, "Copied")
         if log is not None:
-            log = _serialized_log(log)
+            log = serialized_log(log)
         n = len(plan)
         sync_ok = [0] * n          # dirs + atomic renames, tallied by the walker
         per_async = [0] * n        # files, tallied from the jobs' futures
@@ -895,10 +895,13 @@ def _log_del(log, path: Path) -> None:
         log(f"Deleted '{path.name}': {path.parent}")
 
 
-def _serialized_log(log: Callable[[str], None]) -> Callable[[str], None]:
+def serialized_log(log: Callable[[str], None]) -> Callable[[str], None]:
     """Wrap a log sink so parallel workers take turns. The app's sink appends
     to a LogView — a line list plus an incremental wrap cache — which copes
-    with one background writer but was never built for several at once."""
+    with one background writer but was never built for several at once.
+
+    Shared with archive extraction, whose workers write into the same sink for
+    the same reason."""
     lock = threading.Lock()
 
     def write(message: str) -> None:

@@ -1154,13 +1154,15 @@ def _file_blocks(path: PathlibPath, on_bytes: Optional[Callable[[int], None]]):
 
 def write_archive(archive_path, sources, *, format_name: str = '7zip',
                   options: str = '',
-                  on_entry: Optional[Callable[[str, int], None]] = None,
+                  on_entry: Optional[Callable[[str, int, bool], None]] = None,
                   on_bytes: Optional[Callable[[int], None]] = None) -> int:
     """Write ``sources`` into a new archive at ``archive_path``, returning the
     number of members written.
 
-    ``on_entry(arcname, size)`` is called before each member, ``on_bytes(n)`` as
-    its payload goes past — the create side of the same two-level progress the
+    ``on_entry(arcname, size, is_dir)`` is called before each member,
+    ``on_bytes(n)`` as its payload goes past. The directory flag comes from the
+    walk rather than from the size, which cannot tell a directory from an empty
+    file — the create side of the same two-level progress the
     zip and tar paths get from :mod:`xefm.archive_progress`. libarchive-c takes
     an *iterable* of blocks for a member's data, so the loop that feeds it is
     also the loop that reports; no separate counting proxy is needed.
@@ -1186,7 +1188,7 @@ def write_archive(archive_path, sources, *, format_name: str = '7zip',
             info = path.stat()
             size = 0 if is_dir else info.st_size
             if on_entry is not None:
-                on_entry(arcname, size)
+                on_entry(arcname, size, is_dir)
             writer.add_file_from_memory(
                 arcname, size,
                 b'' if is_dir else _file_blocks(path, on_bytes),

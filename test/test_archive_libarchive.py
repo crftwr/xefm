@@ -545,6 +545,23 @@ def test_a_7z_member_names_its_archive_as_well_as_itself(sample_7z, tmp_path):
 
 
 @requires_7z
+def test_each_member_is_logged_as_it_lands(sample_7z, tmp_path):
+    """The worker path logs one line per file, written where the file actually
+    lands — after its close — so a line means the member is on disk and not
+    merely handed to the destination. Several workers share one sink, which is
+    why the flow above wraps it."""
+    logs = []
+    out = tmp_path / "out"
+    _bare_app(2)._extract_archive(Path(str(sample_7z)), Path(str(out)), "7z",
+                                  log=logs.append)
+    assert {line.split("'")[1] for line in logs} == {
+        "a.txt", "sub/b.txt", "sub/deep/c.bin"}
+    for line in logs:
+        assert line.startswith("Extracted '")
+        assert line.endswith(f"sample.7z → {out}")
+
+
+@requires_7z
 def test_a_cancel_ends_the_extraction_for_every_worker(tmp_path):
     """One worker taking the cancel stops the rest, and Cancelled is what comes
     out — not whatever another worker happened to be doing when it noticed. The
