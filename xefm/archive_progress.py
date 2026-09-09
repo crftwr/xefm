@@ -69,10 +69,19 @@ class ByteProgress:
         self._done = 0
         self._reported = 0
         self._step = self._MIN_STEP
+        self._slot = -1
 
-    def start(self, size: Optional[int]) -> None:
-        """Begin a member of ``size`` bytes (0 / None for one with no payload —
-        a directory, a symlink — which shows no byte bar at all)."""
+    def begin(self, item: str, size: Optional[int]) -> None:
+        """Name the member now being worked on and open its byte accounting.
+
+        Reports through a transfer slot rather than the single current-item
+        fields, so an archive operation looks like every other one: a primary
+        bar and a row per file in flight. There is one row here, because these
+        paths work through one member at a time — but a dialog that changed
+        shape depending on which format was being read was the alternative, and
+        the 7z extraction path, which really does have several members in
+        flight, was already on slots."""
+        self._close_slot()
         try:
             total = int(size or 0)
         except (TypeError, ValueError):
@@ -81,17 +90,37 @@ class ByteProgress:
         self._done = 0
         self._reported = 0
         self._step = max(self._MIN_STEP, self._total // self._TARGET_REPORTS)
-        if self.prog is not None and self._total:
-            self.prog.update_file_byte_progress(0, self._total)
+        if self.prog is not None:
+            self._slot = self.prog.file_begin(item, self._total)
+            if self._total:
+                # file_begin only names the row; this is what opens its bar at
+                # zero, so a member is seen to start rather than appearing part
+                # way through at the first report.
+                self.prog.file_bytes(self._slot, 0)
 
     def advance(self, count: int) -> None:
-        if self.prog is None or not self._total or count <= 0:
+        if self.prog is None or not self._total or count <= 0 or self._slot < 0:
             return
         self._done = min(self._done + count, self._total)
         if self._done - self._reported < self._step and self._done < self._total:
             return
         self._reported = self._done
-        self.prog.update_file_byte_progress(self._done, self._total)
+        self.prog.file_bytes(self._slot, self._done)
+
+    def closing(self) -> None:
+        """The member is written and is being closed — see
+        :meth:`~xefm.progress_manager.ProgressManager.file_closing`."""
+        if self.prog is not None and self._slot >= 0:
+            self.prog.file_closing(self._slot)
+
+    def finish(self) -> None:
+        """No more members: close the last row so its item is counted."""
+        self._close_slot()
+
+    def _close_slot(self) -> None:
+        if self.prog is not None and self._slot >= 0:
+            self.prog.file_end(self._slot)
+        self._slot = -1
 
 
 class _CountingFile:

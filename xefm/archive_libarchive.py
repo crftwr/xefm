@@ -1187,9 +1187,15 @@ def _file_blocks(path: PathlibPath, on_bytes: Optional[Callable[[int], None]]):
 def write_archive(archive_path, sources, *, format_name: str = '7zip',
                   options: str = '',
                   on_entry: Optional[Callable[[str, int, bool], None]] = None,
-                  on_bytes: Optional[Callable[[int], None]] = None) -> int:
+                  on_bytes: Optional[Callable[[int], None]] = None,
+                  on_finish: Optional[Callable[[], None]] = None) -> int:
     """Write ``sources`` into a new archive at ``archive_path``, returning the
     number of members written.
+
+    ``on_finish()`` is called once every member is written and before the
+    archive itself is closed — which, on a destination that holds a file until
+    close, is where the whole archive is uploaded and the only part of the run
+    with nothing left to report. The caller uses it to say so.
 
     ``on_entry(arcname, size, is_dir)`` is called before each member,
     ``on_bytes(n)`` as its payload goes past. The directory flag comes from the
@@ -1229,6 +1235,11 @@ def write_archive(archive_path, sources, *, format_name: str = '7zip',
                 mtime=int(info.st_mtime),
             )
             written += 1
+        # Still inside the writer's `with`: its close, below, is where the
+        # archive itself lands — one transfer of the whole thing on a
+        # destination that holds a file until it is closed.
+        if on_finish is not None:
+            on_finish()
     return written
 
 

@@ -5015,11 +5015,8 @@ class XeFMApp:
             return count
         if task is not None:
             task.checkpoint()
-        if prog is not None:
-            prog.update_progress(arcname)
         if bytes_ is not None:
-            # After update_progress, which clears the byte fields for the new item.
-            bytes_.start(XeFMApp._entry_size(path))
+            bytes_.begin(arcname, XeFMApp._entry_size(path))
         zf.write(str(path), arcname)
         if log is not None:
             log(XeFMApp._added_line(arcname, archive_path))
@@ -5051,10 +5048,12 @@ class XeFMApp:
         if fmt == "zip":
             with ProgressZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.byte_progress = bytes_
-                return sum(self._add_to_zip(zf, s, s.name, task=task, prog=prog,
-                                            bytes_=bytes_, log=log,
-                                            archive_path=archive_path)
-                           for s in sources)
+                count = sum(self._add_to_zip(zf, s, s.name, task=task, prog=prog,
+                                             bytes_=bytes_, log=log,
+                                             archive_path=archive_path)
+                            for s in sources)
+                self._writing_out(task, bytes_, archive_path)
+            return count
         added = 0
 
         def report(tarinfo):
@@ -5066,10 +5065,8 @@ class XeFMApp:
             if task is not None:
                 task.checkpoint()
             added += 1
-            if prog is not None:
-                prog.update_progress(tarinfo.name, added)
             if bytes_ is not None:
-                bytes_.start(tarinfo.size)
+                bytes_.begin(tarinfo.name, tarinfo.size)
             if tarinfo.isreg():
                 unit.announce(self._added_line(tarinfo.name, archive_path))
             return tarinfo
@@ -5079,6 +5076,7 @@ class XeFMApp:
             tf.byte_progress = bytes_
             for s in sources:
                 tf.add(str(s), arcname=s.name, filter=report)  # recurses into dirs
+            self._writing_out(task, bytes_, archive_path)
         unit.flush()
         return added
 
@@ -5105,19 +5103,16 @@ class XeFMApp:
             if task is not None:
                 task.checkpoint()
             written += 1
-            if prog is not None:
-                prog.update_progress(arcname, written)
             if bytes_ is not None:
-                # After update_progress, which clears the byte fields for the
-                # incoming member — the same ordering _reporting_members keeps.
-                bytes_.start(size)
+                bytes_.begin(arcname, size)
             if not is_dir:
                 unit.announce(self._added_line(arcname, archive_path))
 
         unit = _StepBehindLog(log)
         count = fmt.writer(
             archive_path, sources, on_entry=on_entry,
-            on_bytes=bytes_.advance if bytes_ is not None else None)
+            on_bytes=bytes_.advance if bytes_ is not None else None,
+            on_finish=lambda: self._writing_out(task, bytes_, archive_path))
         unit.flush()
         return count
 
@@ -5170,6 +5165,20 @@ class XeFMApp:
         return f"{archive_name} \u203a {internal_path}" if archive_name else internal_path
 
     @staticmethod
+    def _writing_out(task, bytes_, archive_path) -> None:
+        """Every member is in; the archive itself is now being written.
+
+        On a mounted volume that holds a file until it is closed, this is one
+        transfer of the whole archive and the only part of the run with no
+        member left to report — the bars have nothing more to say, so the title
+        does. Closes the last member's row first, so its item is counted before
+        the wait rather than after it."""
+        if bytes_ is not None:
+            bytes_.finish()
+        if task is not None:
+            task.title = f"Writing {archive_path.name}…"
+
+    @staticmethod
     def _extracted_line(internal_path: str, archive_path, dest_dir) -> str:
         """One extracted member, in the shape the copy engine logs a file in:
         the thing once in quotes, then where it came from and where it went."""
@@ -5204,10 +5213,8 @@ class XeFMApp:
             if task is not None:
                 task.checkpoint()
             name, size, logged = describe(member)
-            if prog is not None:
-                prog.update_progress(name)
             if bytes_ is not None:
-                bytes_.start(size)
+                bytes_.begin(name, size)
             if unit is not None and logged is not None:
                 unit.announce(logged)
             yield member
@@ -5269,6 +5276,8 @@ class XeFMApp:
                                        m.filename, archive_path, dest_dir)),
                         task, prog, bytes_, unit))
                 unit.flush()
+                if bytes_ is not None:
+                    bytes_.finish()
                 return len(members)
         with ProgressTarFile.open(str(archive_path)) as tf:
             tf.byte_progress = bytes_
@@ -5297,6 +5306,8 @@ class XeFMApp:
                 # generator is touched, so a fresh one is the whole retry.
                 tf.extractall(str(dest_dir), members=reported())
             unit.flush()
+            if bytes_ is not None:
+                bytes_.finish()
             return len(members)
 
     def _extract_via_handler(self, archive_path, dest_dir, pwd: bytes | None,
@@ -5340,11 +5351,12 @@ class XeFMApp:
                         on_bytes=bytes_.advance if bytes_ is not None else None):
                     if task is not None:
                         task.checkpoint()
-                    if prog is not None:
-                        prog.update_progress(entry.internal_path)
                     if bytes_ is not None:
-                        bytes_.start(0 if entry.is_dir else entry.size)
+                        bytes_.begin(entry.internal_path,
+                                     0 if entry.is_dir else entry.size)
                     count += 1
+                if bytes_ is not None:
+                    bytes_.finish()
                 return count
             return self._extract_members(handler, dest_dir, pwd,
                                          task=task, prog=prog, log=log,
