@@ -95,6 +95,14 @@ clears `counting` as a safety net.
 file. It is only surfaced for files larger than 1 MiB (`file_bytes_total > 1024*1024`),
 rendered compactly (e.g. `[15M/32.0G]`); small files show no byte bar.
 
+`copied` is *cumulative* for the current file, and the growth since the last
+report also accumulates into the operation-wide `processed_bytes` — the same
+thing `file_bytes` does for a slot. That is what lets an operation which works
+one file at a time (archives) have a byte-weighted primary bar too.
+`update_progress` zeroes the per-file counter as it names the next item, which is
+what keeps each file's first report from being credited with the previous one's
+bytes again.
+
 ### Transfer slots (the copy engine's path, issue #268)
 
 The copy engine — sequential or parallel — reports each file through a **slot**
@@ -111,6 +119,16 @@ instead of the single current-file fields:
 - `file_end(slot)` counts the item as processed and credits any bytes the copy
   path never streamed (a one-shot small file, an instant clone, a skip), so
   `processed_bytes` reaches `total_bytes` however the file traveled.
+- `file_closing(slot)` marks the file as written but not yet closed. Where the
+  destination holds a file in a local cache until close — WebDAV, NFS's
+  close-to-open flush — that close is where the bytes actually travel: one
+  measured 64 MiB spent 0.04s in the write loop and 5.25s in the close. Without
+  this the row reached its total and then sat unchanged for the whole of it,
+  which is the operation's real work rendered as a number that had stopped
+  moving. `transfer_bytes_text` (in `task.py`) renders such a row as
+  `finishing… 12s` in place of the counts. Nothing about it is specific to a
+  network volume — a destination whose close is instant passes through in one
+  frame — and it is optional: a caller that never calls it behaves as before.
 
 A finished file stays in its slot (`done: True`) until the worker's next
 `file_begin` reuses it — `ProgressDialog` keys its per-transfer rows by slot, so
@@ -122,10 +140,15 @@ copied under the manager's lock for exactly that consumer.
 `get_progress_percentage()` computes
 `(processed_bytes + W·processed_items) / (total_bytes + W·total_items)` with
 `W = _ITEM_WEIGHT` (8 KiB per item). Operations that never report byte totals
-(delete, archives) reduce to the old pure item ratio; for copies, one 4 GiB
-file among a dozen small ones holds the bar back for the time it will actually
-take. `update_operation_total(..., total_bytes=...)` supplies the denominator —
-the counting pass already measures it.
+(delete) reduce to the old pure item ratio; for copies and archive extraction,
+one 4 GiB file among a dozen small ones holds the bar back for the time it will
+actually take. `update_operation_total(..., total_bytes=...)` supplies the
+denominator — the counting pass already measures it.
+
+The fixed per-item weight is not a rounding detail: on a destination where every
+file costs a round trip whatever its size (a WebDAV or SMB mount), it is the only
+part of the estimate that represents that cost, and a pure byte ratio would
+collapse on an archive of thousands of tiny members.
 
 ### Rendering
 

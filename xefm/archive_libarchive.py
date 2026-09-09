@@ -45,12 +45,13 @@ types, and so the day a release does add it needs no change here.
 import base64
 import ctypes
 import logging
+import errno
 import os
 import stat
 import sys
 import tempfile
 import threading
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path as PathlibPath
@@ -457,6 +458,238 @@ def clean_member_path(pathname: str) -> str:
     return path.strip('/')
 
 
+class _PendingWrite:
+    """A member written to its destination but not yet closed.
+
+    Handed back by :meth:`_ClaimedMember.write_to` so the slow half of the write
+    can happen after the archive claim is released. It never leaves the worker
+    that made it: one member, one thread, from ``open`` to ``close``, which is
+    what keeps the handle's lifetime a local matter and lets ``finish`` raise
+    where the member is still known.
+
+    ``finish`` is where a deferred write actually lands. On a filesystem that
+    holds a file in a local cache until it is closed — WebDAV, and NFS's
+    close-to-open flush — ``close`` is the upload, and an out-of-space or
+    transport failure surfaces from it rather than from any ``write``.
+
+    Including a timeout, which is why one is named apart from the rest. Several
+    workers close at once by design; if the destination's client overlaps fewer
+    transfers than there are workers, the extra closes queue *inside it*, where
+    a client- or server-side timeout can expire on one that has not started
+    transferring yet. The failure then reads as the network's rather than as
+    over-subscription, so the message says which knob it is."""
+
+    __slots__ = ("target", "internal_path", "_handle", "_mtime")
+
+    def __init__(self, target, internal_path: str, handle, mtime):
+        self.target = target
+        self.internal_path = internal_path
+        self._handle = handle
+        self._mtime = mtime
+
+    def finish(self) -> None:
+        """Close the file and stamp its timestamp, mapping what close reports."""
+        handle, self._handle = self._handle, None
+        if handle is None:
+            return
+        try:
+            handle.close()
+        except OSError as exc:
+            if ("No space left on device" in str(exc)
+                    or "Disk quota exceeded" in str(exc)):
+                raise ArchiveDiskSpaceError(
+                    f"Insufficient disk space: {exc}",
+                    "Insufficient disk space to extract archive")
+            if exc.errno in (errno.ETIMEDOUT, errno.ETIME):
+                raise ArchiveExtractionError(
+                    f"Timed out writing {self.internal_path}: {exc}",
+                    f"Timed out writing '{self.internal_path}' — if the "
+                    f"destination is a network volume, lowering "
+                    f"ARCHIVE_EXTRACT_WORKERS may help")
+            raise ArchiveExtractionError(
+                f"Error writing {self.internal_path}: {exc}",
+                f"Cannot write '{self.internal_path}': {exc}")
+        try:
+            os.utime(str(self.target), (self._mtime, self._mtime))
+        except Exception:  # noqa: BLE001 — metadata is best effort
+            pass
+
+    def discard(self) -> None:
+        """Close without stamping or reporting — the cleanup path, for a worker
+        unwinding on a cancel or another member's failure. What landed stays, the
+        same as every other partial extraction."""
+        handle, self._handle = self._handle, None
+        if handle is not None:
+            try:
+                handle.close()
+            except Exception:  # noqa: BLE001 — best effort
+                pass
+
+
+class _ClaimedMember:
+    """The member a worker holds for the life of its claim.
+
+    Its blocks come off the shared reader, so they must all be read before the
+    claim is released — :class:`ExtractionPass` is what enforces that by handing
+    one out at a time."""
+
+    __slots__ = ("entry", "_raw", "_pass")
+
+    def __init__(self, entry: ArchiveEntry, raw, owner):
+        self.entry = entry
+        self._raw = raw
+        self._pass = owner
+
+    def blocks(self) -> Iterator[bytes]:
+        """The member's payload, with libarchive's errors given XeFM's names —
+        the mapping stays here so no caller has to know the binding."""
+        try:
+            yield from self._raw.get_blocks()
+        except Exception as exc:  # noqa: BLE001 — libarchive's own error type
+            path = self.entry.internal_path
+            if path in self._pass.encrypted:
+                raise self._pass.decryption_error(exc, path)
+            raise ArchiveExtractionError(
+                f"Error extracting {path}: {exc}",
+                f"Cannot extract '{path}': {exc}")
+
+    def write_to(self, root: PathlibPath,
+                 on_bytes: Optional[Callable[[int], None]] = None
+                 ) -> Optional[_PendingWrite]:
+        """Create this member under ``root`` and write its payload, returning the
+        still-open file for the caller to :meth:`_PendingWrite.finish` *after* the
+        claim is released — None for a directory, which is finished here.
+
+        The split is the whole point: everything that touches the shared archive
+        happens under the claim, and everything that only touches this member's
+        own destination file can happen outside it. Where the destination makes
+        ``close`` the expensive part, that is what overlaps."""
+        target = root.joinpath(*self.entry.internal_path.split('/'))
+        if self.entry.is_dir:
+            target.mkdir(parents=True, exist_ok=True)
+            return None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            handle = open(target, 'wb')
+        except OSError as exc:
+            raise ArchiveExtractionError(
+                f"Error writing {self.entry.internal_path}: {exc}",
+                f"Cannot write '{self.entry.internal_path}': {exc}")
+        pending = _PendingWrite(target, self.entry.internal_path, handle,
+                                self.entry.mtime)
+        try:
+            for block in self.blocks():
+                handle.write(block)
+                if on_bytes is not None:
+                    on_bytes(len(block))
+        except BaseException:
+            pending.discard()
+            raise
+        return pending
+
+
+class ExtractionPass:
+    """One forward pass over an archive, claimable by any number of workers.
+
+    libarchive has no random access: the reader is a cursor, and reading a member
+    means advancing to its header and consuming its payload before anything may
+    advance again. On a solid archive those two are one indivisible step — the
+    decompressor only stays in step with the stream if every member's data is
+    actually read on the way past.
+
+    That invariant lives here, with the cursor. A caller running N workers over
+    :meth:`claim_next` never learns why the claims serialise, only that they do,
+    which is what lets the worker count be chosen for the *destination* — how
+    many concurrent writes it will accept — rather than for the archive."""
+
+    def __init__(self, handler: 'LibarchiveHandler', archive):
+        self._handler = handler
+        self._iter = iter(archive)
+        self._lock = threading.Lock()
+        self._done = False
+        self._name = handler._archive_path.name
+        self.encrypted = handler._encrypted
+        self.decryption_error = handler._decryption_error
+        self.logger = handler.logger
+
+    @contextmanager
+    def claim_next(self) -> Iterator[Optional[_ClaimedMember]]:
+        """Claim the next extractable member, or None once the archive is spent.
+
+        The claim is held for the whole ``with`` body, so the payload must be
+        read inside it. Members XeFM will not recreate — a path escaping the
+        destination, a symlink or device node — are passed over here rather than
+        handed out, and a regular file among them has its data *read and
+        discarded* rather than skipped: libarchive can only skip within its
+        64 KiB decompression buffer, and past that a solid archive's next member
+        comes back as a truncated body."""
+        with self._lock:
+            yield self._advance()
+
+    def _advance(self) -> Optional[_ClaimedMember]:
+        while not self._done:
+            try:
+                raw = next(self._iter)
+            except StopIteration:
+                self._done = True
+                return None
+            except ArchiveError:
+                self._done = True
+                raise
+            except Exception as exc:  # noqa: BLE001 — libarchive reading a header
+                self._done = True
+                raise ArchiveExtractionError(
+                    f"Error reading {self._name}: {exc}",
+                    f"Cannot extract '{self._name}': {exc}")
+            internal_path = clean_member_path(raw.pathname)
+            if not internal_path:
+                continue
+            if not is_safe_member_path(internal_path):
+                self.logger.warning(
+                    f"Skipping unsafe archive member: {internal_path}")
+                self._drain(raw)
+                continue
+            entry = (self._handler._entry_cache.get(internal_path)
+                     or self._handler._to_entry(raw, internal_path))
+            if not entry.is_dir and not raw.isreg:
+                self.logger.info(f"Skipping {internal_path}: not a regular file")
+                self._drain(raw)
+                continue
+            return _ClaimedMember(entry, raw, self)
+        return None
+
+    def retire(self) -> None:
+        """No more members may be claimed from this pass.
+
+        Called as the reader is about to be freed. A worker parked on a pass
+        whose archive has already been closed then gets None back instead of
+        reaching into a freed reader — which matters because a pass can be
+        abandoned mid-stream (a cancel, another archive's failure), so
+        exhaustion is not the only way it ends."""
+        with self._lock:
+            self._done = True
+
+    @staticmethod
+    def _drain(raw) -> None:
+        """Consume a passed-over member's payload so the stream stays in step."""
+        if not raw.isreg:
+            return
+        try:
+            for _ in raw.get_blocks():
+                pass
+        except Exception:  # noqa: BLE001 — a member being skipped anyway
+            pass
+
+
+class _SkipUnreachable(Exception):
+    """Internal: this member cannot be reached by skipping the ones ahead of it.
+
+    Raised on :meth:`LibarchiveHandler._member_chunks`' skipping pass and caught
+    one frame up, where it selects the draining pass instead. Never escapes the
+    handler, so it deliberately is not an :class:`~xefm.archive.ArchiveError`:
+    nothing outside should be able to catch it as one."""
+
+
 class LibarchiveHandler(ArchiveHandler):
     """Reads any format the loaded libarchive supports.
 
@@ -475,6 +708,7 @@ class LibarchiveHandler(ArchiveHandler):
         self._local_path: Optional[str] = None
         self._encrypted: Set[str] = set()
         self._member_count = 0
+        self._member_bytes = 0
         self.logger = logger
 
     # -- opening ---------------------------------------------------------------
@@ -589,6 +823,7 @@ class LibarchiveHandler(ArchiveHandler):
                     encrypted.add(internal_path)
         self._encrypted = encrypted
         self._member_count = len(entries)
+        self._member_bytes = sum(e.size for e in entries if not e.is_dir)
         self._build_index(iter(entries), self._label)
 
     def entry_count(self) -> int:
@@ -602,6 +837,17 @@ class LibarchiveHandler(ArchiveHandler):
         if not self._is_open:
             self.open()
         return self._member_count
+
+    def extraction_totals(self) -> Tuple[int, int]:
+        """The members the archive stores and the uncompressed bytes they hold.
+
+        Both come off the headers :meth:`_cache_entries` already walked, so
+        asking costs nothing — measured at 0.00s against the 1.55s the same
+        archive takes to actually decompress. Counted from the stored members
+        rather than the index for the reason :meth:`entry_count` gives."""
+        if not self._is_open:
+            self.open()
+        return self._member_count, self._member_bytes
 
     # -- reading ---------------------------------------------------------------
 
@@ -655,18 +901,56 @@ class LibarchiveHandler(ArchiveHandler):
         rate can show, and matches what the local copy loop does.
 
         Scans from the start of the archive to the entry, because the format has
-        no index to seek with; on a solid archive that means decompressing
-        everything ahead of it as well. Streaming does not make that cheaper, but
-        it does mean the caller sees bytes moving throughout and can stop."""
+        no index to seek with. Two passes are possible: the members ahead of the
+        target are *skipped* first, and only if that leaves the target unreadable
+        is the archive re-read *draining* them (see :meth:`_member_chunks`).
+        Skipping is what keeps reading one file out of a big ISO or cpio cheap,
+        so it stays the first thing tried; the retry is what makes a solid 7z
+        work at all."""
         entry = self._require_readable_file(internal_path)
         normalized_path = self._normalize_path(internal_path)
+        try:
+            yield from self._member_chunks(normalized_path, entry, chunk_size,
+                                           drain=False)
+            return
+        except _SkipUnreachable:
+            pass
+        self.logger.info(
+            f"{self._archive_path.name}: {internal_path} cannot be reached by "
+            f"skipping (solid archive) — re-reading from the start")
+        yield from self._member_chunks(normalized_path, entry, chunk_size,
+                                       drain=True)
+
+    def _member_chunks(self, normalized_path: str, entry: ArchiveEntry,
+                       chunk_size: int, *, drain: bool) -> Iterator[bytes]:
+        """One pass over the archive, yielding the target member in chunks.
+
+        ``drain`` decides what happens to the members *ahead* of the target.
+        Skipping their data costs nothing where the format allows it, but a
+        solid archive holds every member in one compressed stream and libarchive
+        can only skip within its 64 KiB decompression buffer: past that the
+        reader loses its place and the target reads back as "Truncated 7-Zip file
+        body". Draining reads and discards that data, which is the only way to
+        arrive at the target in step with the decoder.
+
+        Which one a given archive needs is not something the headers say, so it
+        is discovered rather than declared: on the skipping pass, a read that
+        fails *before yielding anything* raises :class:`_SkipUnreachable` for
+        :meth:`iter_member_bytes` to retry with. A failure after the first chunk
+        has gone out is a real error — the caller is already consuming those
+        bytes, and re-reading would hand it the member twice."""
+        internal_path = entry.internal_path
         found = False
         try:
             with self._reader(self._password()) as archive:
                 for raw in archive:
                     if clean_member_path(raw.pathname) != normalized_path:
+                        if drain and raw.isreg:
+                            for _ in raw.get_blocks():
+                                pass
                         continue
                     found = True
+                    started = False
                     try:
                         pending: List[bytes] = []
                         held = 0
@@ -674,18 +958,22 @@ class LibarchiveHandler(ArchiveHandler):
                             pending.append(block)
                             held += len(block)
                             if held >= chunk_size:
+                                started = True
                                 yield b''.join(pending)
                                 pending, held = [], 0
                         if pending:
+                            started = True
                             yield b''.join(pending)
                     except Exception as exc:  # noqa: BLE001 — libarchive's error
                         if normalized_path in self._encrypted:
                             raise self._decryption_error(exc, normalized_path)
+                        if not drain and not started:
+                            raise _SkipUnreachable from exc
                         raise ArchiveExtractionError(
                             f"Error extracting {internal_path}: {exc}",
                             f"Cannot extract '{internal_path}': {exc}")
                     break
-        except ArchiveError:
+        except (ArchiveError, _SkipUnreachable):
             raise
         except Exception as exc:  # noqa: BLE001 — a failure opening the reader
             raise ArchiveExtractionError(
@@ -727,6 +1015,49 @@ class LibarchiveHandler(ArchiveHandler):
             except Exception:  # noqa: BLE001 — metadata is best effort
                 pass
 
+    @contextmanager
+    def extraction_pass(self, dest_dir, *, password: Optional[bytes] = None
+                        ) -> Iterator[ExtractionPass]:
+        """An :class:`ExtractionPass` over this archive, writing under ``dest_dir``.
+
+        The reader lives for the whole ``with``, so any number of workers may
+        claim from it; :meth:`iter_extract` is the one-worker case of exactly
+        this. Yields the pass and the destination root together because both are
+        needed by whoever drives it, and the root is created here so no worker
+        races another to make it."""
+        if not self._is_open:
+            self.open()
+        root = PathlibPath(str(dest_dir))
+        root.mkdir(parents=True, exist_ok=True)
+        with ExitStack() as stack:
+            # Only *opening* the reader is wrapped. Whatever the body raises —
+            # a mapped ArchiveError, or the driver's own cancellation, which this
+            # layer must not have to name — travels out untouched; the stack
+            # still closes the reader on its way past.
+            try:
+                archive = stack.enter_context(
+                    self._reader(password or self._password()))
+            except ArchiveError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — libarchive's own error type
+                raise ArchiveExtractionError(
+                    f"Error extracting archive: {exc}",
+                    f"Cannot extract '{self._archive_path.name}': {exc}")
+            pass_ = ExtractionPass(self, archive)
+            try:
+                yield pass_
+            finally:
+                # The reader dies with the stack below; retiring first means a
+                # worker still holding this pass is turned away rather than
+                # following a freed pointer.
+                pass_.retire()
+
+    @staticmethod
+    def extraction_root(dest_dir) -> PathlibPath:
+        """The destination as a plain filesystem path — what workers join member
+        paths onto. A separate call so a driver can hold it outside the pass."""
+        return PathlibPath(str(dest_dir))
+
     def iter_extract(self, dest_dir, *, password: Optional[bytes] = None,
                      on_bytes: Optional[Callable[[int], None]] = None
                      ) -> Iterator[ArchiveEntry]:
@@ -740,73 +1071,28 @@ class LibarchiveHandler(ArchiveHandler):
 
         The entry is yielded before its payload is written, and ``on_bytes`` is
         called with each block as it is written, so the byte bar moves through a
-        large member rather than snapping to full at the end of it. We write the
-        blocks ourselves (``get_blocks()``) instead of handing the job to
-        ``archive_read_extract``, which is what makes that granularity available
-        without libarchive's own progress callback.
+        large member rather than snapping to full at the end of it.
+
+        This is :meth:`extraction_pass` driven by a single claimer, which is what
+        keeps the sequential contract this method promises — one current member,
+        entries in archive order — available to callers that want it. A driver
+        wanting the destination's write concurrency runs several claimers over
+        the pass instead, and gives up that ordering in exchange.
 
         Members that are neither a regular file nor a directory (symlinks,
         devices, sockets) are skipped and logged rather than recreated, as are
         members whose path escapes ``dest_dir``."""
-        if not self._is_open:
-            self.open()
-        root = PathlibPath(str(dest_dir))
-        root.mkdir(parents=True, exist_ok=True)
-        try:
-            with self._reader(password or self._password()) as archive:
-                for raw in archive:
-                    internal_path = clean_member_path(raw.pathname)
-                    if not internal_path:
-                        continue
-                    if not is_safe_member_path(internal_path):
-                        self.logger.warning(
-                            f"Skipping unsafe archive member: {internal_path}")
-                        continue
-                    entry = (self._entry_cache.get(internal_path)
-                             or self._to_entry(raw, internal_path))
-                    if not entry.is_dir and not raw.isreg:
-                        self.logger.info(
-                            f"Skipping {internal_path}: not a regular file")
-                        continue
-                    yield entry
-                    target = root.joinpath(*internal_path.split('/'))
-                    if entry.is_dir:
-                        target.mkdir(parents=True, exist_ok=True)
-                    else:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        try:
-                            with open(target, 'wb') as fh:
-                                for block in raw.get_blocks():
-                                    fh.write(block)
-                                    if on_bytes is not None:
-                                        on_bytes(len(block))
-                        except ArchiveError:
-                            raise
-                        except OSError as exc:
-                            if ("No space left on device" in str(exc)
-                                    or "Disk quota exceeded" in str(exc)):
-                                raise ArchiveDiskSpaceError(
-                                    f"Insufficient disk space: {exc}",
-                                    "Insufficient disk space to extract archive")
-                            raise ArchiveExtractionError(
-                                f"Error writing {internal_path}: {exc}",
-                                f"Cannot write '{internal_path}': {exc}")
-                        except Exception as exc:  # noqa: BLE001 — libarchive's
-                            if internal_path in self._encrypted:
-                                raise self._decryption_error(exc, internal_path)
-                            raise ArchiveExtractionError(
-                                f"Error extracting {internal_path}: {exc}",
-                                f"Cannot extract '{internal_path}': {exc}")
-                        try:
-                            os.utime(str(target), (entry.mtime, entry.mtime))
-                        except Exception:  # noqa: BLE001 — metadata is best effort
-                            pass
-        except ArchiveError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — a failure opening the reader
-            raise ArchiveExtractionError(
-                f"Error extracting archive: {exc}",
-                f"Cannot extract '{self._archive_path.name}': {exc}")
+        root = self.extraction_root(dest_dir)
+        with self.extraction_pass(dest_dir, password=password) as pass_:
+            while True:
+                pending = None
+                with pass_.claim_next() as member:
+                    if member is None:
+                        return
+                    yield member.entry
+                    pending = member.write_to(root, on_bytes)
+                if pending is not None:
+                    pending.finish()
 
     # -- encryption ------------------------------------------------------------
 
@@ -900,13 +1186,15 @@ def _file_blocks(path: PathlibPath, on_bytes: Optional[Callable[[int], None]]):
 
 def write_archive(archive_path, sources, *, format_name: str = '7zip',
                   options: str = '',
-                  on_entry: Optional[Callable[[str, int], None]] = None,
+                  on_entry: Optional[Callable[[str, int, bool], None]] = None,
                   on_bytes: Optional[Callable[[int], None]] = None) -> int:
     """Write ``sources`` into a new archive at ``archive_path``, returning the
     number of members written.
 
-    ``on_entry(arcname, size)`` is called before each member, ``on_bytes(n)`` as
-    its payload goes past — the create side of the same two-level progress the
+    ``on_entry(arcname, size, is_dir)`` is called before each member,
+    ``on_bytes(n)`` as its payload goes past. The directory flag comes from the
+    walk rather than from the size, which cannot tell a directory from an empty
+    file — the create side of the same two-level progress the
     zip and tar paths get from :mod:`xefm.archive_progress`. libarchive-c takes
     an *iterable* of blocks for a member's data, so the loop that feeds it is
     also the loop that reports; no separate counting proxy is needed.
@@ -932,7 +1220,7 @@ def write_archive(archive_path, sources, *, format_name: str = '7zip',
             info = path.stat()
             size = 0 if is_dir else info.st_size
             if on_entry is not None:
-                on_entry(arcname, size)
+                on_entry(arcname, size, is_dir)
             writer.add_file_from_memory(
                 arcname, size,
                 b'' if is_dir else _file_blocks(path, on_bytes),

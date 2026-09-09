@@ -8,8 +8,11 @@ does not sink the rest of the batch.
 Run with: python -m pytest test/test_extract_archive_selection.py -v
 """
 
+import io
 import os
 import sys
+import tarfile
+import threading
 import types
 import zipfile
 
@@ -19,7 +22,10 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
+from xefm import archive_libarchive as AL  # noqa: E402
+from xefm.archive_libarchive import libarchive_formats  # noqa: E402
 from xefm.path import Path  # noqa: E402
+from xefm.progress_manager import ProgressManager  # noqa: E402
 from xefm.task import TaskManager  # noqa: E402
 
 
@@ -37,6 +43,30 @@ def _zip(tmp_path, name, member="a.txt", data=b"hello"):
     p = tmp_path / name
     with zipfile.ZipFile(str(p), "w") as zf:
         zf.writestr(member, data)
+    return Path(str(p))
+
+
+def _targz(tmp_path, name, member="a.txt", data=b"hello"):
+    p = tmp_path / name
+    with tarfile.open(str(p), "w:gz") as tf:
+        info = tarfile.TarInfo(name=member)
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    return Path(str(p))
+
+
+requires_7z = pytest.mark.skipif(
+    not any(fmt.label == "7z" for fmt in libarchive_formats()),
+    reason="no libarchive able to read 7z on this machine")
+
+
+def _7z(tmp_path, name, members):
+    """``members`` as ``(name, bytes)`` pairs, in a 7z."""
+    import libarchive
+    p = tmp_path / name
+    with libarchive.file_writer(str(p), "7zip") as writer:
+        for member, data in members:
+            writer.add_file_from_memory(member, len(data), data)
     return Path(str(p))
 
 
@@ -75,6 +105,149 @@ def test_every_selected_archive_is_extracted(tmp_path, dest):
     assert (tmp_path / "dest" / "one" / "x.txt").read_bytes() == b"1"
     assert (tmp_path / "dest" / "two" / "y.txt").read_bytes() == b"2"
     assert any("Extracted 2 archive(s)" in m for m in app.logs)
+
+
+def test_the_batch_runs_as_one_operation_counted_up_front(tmp_path, dest, monkeypatch):
+    """A batch is counted once, in full, before any of it is written.
+
+    The bar used to be restarted for each archive and rewind to zero every time,
+    with a total that was a member count — so one 4 GiB member went past at the
+    same speed as a 4 KiB one. Now the survey opens every archive first (the
+    encryption gate had to open them anyway), one total covers the lot, and the
+    bytes published alongside it weight the bar. It lands exactly on full."""
+    one = _zip(tmp_path, "one.zip", "x.txt", b"1" * 100)
+    two = _zip(tmp_path, "two.zip", "y.txt", b"2" * 250)
+    app = _app([one, two], [one, two], dest)
+
+    starts, totals, finished = [], [], []
+    real_start = ProgressManager.start_operation
+    real_total = ProgressManager.update_operation_total
+    real_finish = ProgressManager.finish_operation
+
+    def start_operation(self, *a, **kw):
+        starts.append(a)
+        return real_start(self, *a, **kw)
+
+    def update_operation_total(self, items, description="", total_bytes=0):
+        totals.append((items, total_bytes))
+        return real_total(self, items, description, total_bytes)
+
+    def finish_operation(self):
+        finished.append(dict(self.current_operation or {}))
+        return real_finish(self)
+
+    monkeypatch.setattr(ProgressManager, "start_operation", start_operation)
+    monkeypatch.setattr(ProgressManager, "update_operation_total",
+                        update_operation_total)
+    monkeypatch.setattr(ProgressManager, "finish_operation", finish_operation)
+
+    app.extract_archive()
+
+    assert len(starts) == 1                 # one operation, not one per archive
+    assert totals == [(2, 350)]             # both archives' members and payloads
+    end = finished[-1]
+    assert end["processed_items"] == end["total_items"] == 2
+    assert end["processed_bytes"] == end["total_bytes"] == 350
+
+
+def test_formats_with_different_totals_still_add_up(tmp_path, dest, monkeypatch):
+    """Each format counts its own members its own way — a zip from ``infolist()``,
+    a tar from ``getmembers()``, a 7z off the headers it walked at open. One
+    batch bar is scaled from the *sum*, so any one of them over- or
+    under-promising leaves it stuck short of full or clipped at it."""
+    z = _zip(tmp_path, "one.zip", "x.txt", b"1" * 100)
+    t = _targz(tmp_path, "two.tar.gz", "y.bin", b"2" * 250)
+    app = _app([z, t], [z, t], dest)
+
+    ends = []
+    real_finish = ProgressManager.finish_operation
+
+    def finish_operation(self):
+        ends.append(dict(self.current_operation or {}))
+        return real_finish(self)
+
+    monkeypatch.setattr(ProgressManager, "finish_operation", finish_operation)
+
+    app.extract_archive()
+    end = ends[-1]
+    assert end["processed_items"] == end["total_items"] == 2
+    assert end["processed_bytes"] == end["total_bytes"] == 350
+
+
+@requires_7z
+def test_the_next_archive_starts_while_this_one_is_still_landing(tmp_path, dest,
+                                                                 monkeypatch):
+    """The batch does not wait for an archive's files to land before opening the
+    next one.
+
+    Proved without reading a clock. The close of the first archive's big member
+    blocks until the second archive has *started reading*; if the batch still
+    drained at the boundary, that close could never be released — the second
+    archive would be waiting on it — and the wait would time out. Its small
+    member closes freely, which is what lets a worker come back, find the first
+    archive spent, and let the batch move on while the big one is still going."""
+    payload = os.urandom(64 * 1024)
+    first = _7z(tmp_path, "first.7z", [("big.bin", payload), ("small.bin", b"s")])
+    second = _7z(tmp_path, "second.7z", [("only.bin", b"x")])
+    app = _app([first, second], [first, second], dest)
+    app.config.ARCHIVE_EXTRACT_WORKERS = 2
+
+    reading_second = threading.Event()
+    timed_out = []
+
+    real_pass = AL.LibarchiveHandler.extraction_pass
+
+    def traced_pass(self, dest_dir_, **kw):
+        if self._archive_path.name == "second.7z":
+            reading_second.set()
+        return real_pass(self, dest_dir_, **kw)
+
+    real_open = open
+
+    class _WaitsForTheNextArchive:
+        def __init__(self, handle, path):
+            self._handle = handle
+            self._path = str(path)
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def close(self):
+            if self._path.endswith("big.bin"):
+                if not reading_second.wait(timeout=5):
+                    timed_out.append(self._path)
+            self._handle.close()
+
+    monkeypatch.setattr(AL.LibarchiveHandler, "extraction_pass", traced_pass)
+    monkeypatch.setattr(
+        AL, "open",
+        lambda p, *a, **kw: _WaitsForTheNextArchive(real_open(p, *a, **kw), p),
+        raising=False)
+
+    app.extract_archive()
+
+    assert timed_out == []
+    assert (tmp_path / "dest" / "first" / "big.bin").read_bytes() == payload
+    assert (tmp_path / "dest" / "second" / "only.bin").read_bytes() == b"x"
+    assert any("Extracted 2 archive(s)" in m for m in app.logs)
+
+
+def test_an_unreadable_archive_is_left_out_of_the_total(tmp_path, dest):
+    """A file the survey cannot open promises nothing rather than promising
+    bytes that will never arrive — a bar told about them would stick short of
+    full. The extraction that follows is what reports why it failed."""
+    good = _zip(tmp_path, "good.zip", "x.txt", b"1" * 100)
+    bad = tmp_path / "broken.zip"
+    bad.write_bytes(b"not a zip at all")
+    app = _app([good, Path(str(bad))], [good, Path(str(bad))], dest)
+
+    surveys = app._survey_archives([(good, None, "zip"),
+                                    (Path(str(bad)), None, "zip")])
+    assert surveys == [("none", 1, 100), ("none", 0, 0)]
+
+    app.extract_archive()
+    assert (tmp_path / "dest" / "good" / "x.txt").read_bytes() == b"1" * 100
+    assert any("Extraction failed for broken.zip" in m for m in app.logs)
 
 
 def test_cursor_entry_is_used_when_nothing_is_selected(tmp_path, dest):

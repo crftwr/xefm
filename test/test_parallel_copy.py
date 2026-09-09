@@ -9,6 +9,7 @@ Run with: python -m pytest test/test_parallel_copy.py -v
 import os
 import sys
 import threading
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -372,6 +373,86 @@ def test_workers_one_takes_the_sequential_path(tmp_path, cfg, monkeypatch):
     assert res["done"] == 5
 
 
+# --- one large file closed at a time (the destination's limit, not ours) --------
+
+
+def _peak_concurrent_closes(svc, monkeypatch, tmp_path, size, count=4):
+    """Copy ``count`` files of ``size`` and report the most closes ever in
+    flight at once."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    _fake_devices(monkeypatch, dst)  # a second volume: no clone, so bytes stream
+    payload = os.urandom(size)
+    for i in range(count):
+        (src / f"f{i}.bin").write_bytes(payload)
+
+    live = [0]
+    peak = [0]
+    guard = threading.Lock()
+    real_open = open
+
+    class _Counted:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def write(self, data):
+            return self._handle.write(data)
+
+        def read(self, *a):
+            return self._handle.read(*a)
+
+        def close(self):
+            with guard:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.05)
+            try:
+                self._handle.close()
+            finally:
+                with guard:
+                    live[0] -= 1
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._handle.__exit__(*exc)
+
+    def counted_open(path, mode="r", *a, **kw):
+        handle = real_open(path, mode, *a, **kw)
+        return _Counted(handle) if "w" in mode else handle
+
+    monkeypatch.setattr(F, "open", counted_open, raising=False)
+    res = _run_sync(svc, svc.copy, [_P(src / f"f{i}.bin") for i in range(count)],
+                    _P(dst))
+    assert res["done"] == count
+    return peak[0]
+
+
+def test_a_copy_closes_one_large_file_at_a_time(svc, monkeypatch, tmp_path):
+    """The copy engine faces exactly what extraction did, and harder: a mounted
+    WebDAV volume reports the same `file` scheme a local disk does, so a copy on
+    to one runs FILE_OP_WORKERS_LOCAL workers — four — each closing its own
+    destination file. Where that close is the transfer, four at once move no
+    more data than one and ask the server to hold four large bodies."""
+    # 3 MiB files against a 2 MiB gate. They have to clear _BYTE_BAR_MIN too,
+    # or the copy takes its one-shot path and never streams.
+    svc.close_gate.above = 2 * 1024 * 1024
+    assert _peak_concurrent_closes(svc, monkeypatch, tmp_path,
+                                   3 * 1024 * 1024) == 1
+
+
+def test_a_copy_still_overlaps_small_files(svc, monkeypatch, tmp_path):
+    """And keeps the concurrency that pays: a small file's cost is the fixed
+    round trip, not its transfer, so those still go at once."""
+    svc.close_gate.above = 2 * 1024 * 1024
+    assert _peak_concurrent_closes(svc, monkeypatch, tmp_path,
+                                   3 * 1024 * 1024 // 2) > 1
+
+
 # --- per-file transfer slots (issue #268) ----------------------------------------
 
 def test_items_are_counted_at_completion_not_start():
@@ -429,6 +510,61 @@ def test_finished_slots_are_reused_lowest_first():
     assert c == a  # a's row, taken over
     assert dict(pm.get_transfers())[a]["item"] == "c.bin"
     assert not dict(pm.get_transfers())[b]["done"]
+
+
+def test_the_single_file_path_also_feeds_the_operation_byte_total():
+    """Archives report one file at a time (update_progress + the byte bar), not
+    through slots, and their growth has to reach processed_bytes too — otherwise
+    an operation that publishes a total_bytes would weigh every archive member
+    at its fixed item cost and nothing more. update_progress zeroes the per-file
+    counter as it names the next member, which is what keeps the second member
+    from being credited with the first one's bytes again."""
+    pm = ProgressManager()
+    pm.start_operation(OperationType.ARCHIVE_EXTRACT, 0)
+    pm.update_operation_total(2, total_bytes=300)
+    pm.update_progress("a.bin")
+    pm.update_file_byte_progress(40, 100)
+    pm.update_file_byte_progress(100, 100)
+    assert pm.current_operation["processed_bytes"] == 100
+    pm.update_progress("b.bin")
+    pm.update_file_byte_progress(200, 200)
+    assert pm.current_operation["processed_bytes"] == 300
+
+
+def test_a_file_being_closed_says_so_instead_of_holding_at_its_total():
+    """What the row shows while a file is closing.
+
+    Where the destination holds a file in a local cache until close — WebDAV,
+    NFS's close-to-open flush — the close is where the bytes travel, and the row
+    used to hold at its total for the whole of it. One measured 64 MiB spent
+    0.04s writing and 5.25s closing, so that was almost the entire operation
+    shown as a number that had stopped moving."""
+    import time as _time
+    from xefm.task import transfer_bytes_text
+
+    pm = ProgressManager()
+    pm.start_operation(OperationType.ARCHIVE_EXTRACT, 0)
+    pm.update_operation_total(1, total_bytes=4 * 1024 * 1024)
+    slot = pm.file_begin("big.bin", 4 * 1024 * 1024)
+    pm.file_bytes(slot, 4 * 1024 * 1024)
+    row = dict(pm.get_transfers())[slot]
+    assert transfer_bytes_text(row) == "4.0M / 4.0M"
+
+    pm.file_closing(slot)
+    row = dict(pm.get_transfers())[slot]
+    assert transfer_bytes_text(row) == "finishing…"
+    row["closing_since"] = _time.monotonic() - 12.5
+    assert transfer_bytes_text(row) == "finishing… 12s"
+
+    pm.file_end(slot)                      # closed: back to the counts
+    row = dict(pm.get_transfers())[slot]
+    assert transfer_bytes_text(row) == "4.0M / 4.0M"
+
+
+def test_a_file_too_small_for_byte_counts_still_shows_none():
+    """The small-file case the closing state must not have broken."""
+    from xefm.task import transfer_bytes_text
+    assert transfer_bytes_text({"copied": 10, "total": 10}) == ""
 
 
 def test_percentage_is_weighted_by_bytes():

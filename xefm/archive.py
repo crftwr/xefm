@@ -622,6 +622,24 @@ class ArchiveHandler:
             self.open()
         return len(self._entry_cache)
 
+    def extraction_totals(self) -> Tuple[int, int]:
+        """``(members, bytes)`` an extraction of this archive will report — both
+        progress totals, needed before the first entry lands.
+
+        Counts what the extraction actually walks, so the bar it scales lands on
+        full: the whole index here, implied directories included, because that is
+        what the generic :meth:`iter_extract` emits. A handler that extracts from
+        the archive's *stored* members must override this for the reason
+        :meth:`entry_count` gives, and now for the bytes as well.
+
+        The byte total is the uncompressed size — the same unit the byte reports
+        during extraction are counted in, which is what lets the two be weighed
+        against each other."""
+        if not self._is_open:
+            self.open()
+        return (len(self._entry_cache),
+                sum(e.size for e in self._entry_cache.values() if not e.is_dir))
+
     def iter_extract(self, dest_dir, *, password: Optional[bytes] = None,
                      on_bytes: Optional[Callable[[int], None]] = None
                      ) -> Iterator[ArchiveEntry]:
@@ -977,6 +995,18 @@ class ZipHandler(ArchiveHandler):
             f"Cannot extract '{internal_path}': {exc}"
         )
 
+    def extraction_totals(self) -> Tuple[int, int]:
+        """The members the zip stores and their uncompressed size.
+
+        Extraction runs ``ZipFile.extractall`` over ``infolist()``, so that list
+        is what the bar has to be scaled to — not the index, whose invented
+        parent directories no member matches and which would leave the bar short
+        of full by however many the archive left implicit."""
+        if not self._is_open:
+            self.open()
+        members = self._archive_obj.infolist()
+        return len(members), sum(m.file_size for m in members)
+
     def encryption_status(self) -> str:
         """This zip's encryption in the contract's neutral vocabulary: ``'none'``,
         ``'password'`` for legacy ZipCrypto, or ``'unsupported'`` for WinZip AES,
@@ -1091,6 +1121,20 @@ class TarHandler(ArchiveHandler):
         super().__init__(archive_path)
         self._compression = compression
     
+    def extraction_totals(self) -> Tuple[int, int]:
+        """The members the tar stores and the bytes they hold.
+
+        ``getmembers()`` is the list extraction walks, and ``open()`` has already
+        built it — for a compressed tar that was a full read of the file, and
+        this is the pass that gets paid back for it. Only regular files
+        contribute bytes: a directory or a symlink member reports none while
+        being extracted either, and counting their sizes would leave the bar
+        stuck short of full."""
+        if not self._is_open:
+            self.open()
+        members = self._archive_obj.getmembers()
+        return len(members), sum(m.size for m in members if m.isreg())
+
     def open(self):
         """Open the TAR archive and cache its structure"""
         try:
@@ -2529,6 +2573,47 @@ def try_archive_password(path, password: str) -> bool:
     return False
 
 
+def archive_extraction_survey(path: str) -> Tuple[str, int, int]:
+    """What extracting the archive *file* at ``path`` will cost, from one open:
+    ``(encryption status, members, bytes)``.
+
+    Asked before any of the batch is written. The encryption status is the gate
+    (see :meth:`ArchiveHandler.encryption_status`) and has to be checked anyway;
+    the totals are :meth:`ArchiveHandler.extraction_totals`, which the same open
+    has already measured. Answering all three together is what lets a batch of
+    archives publish a single progress total without a second pass over each
+    file.
+
+    Best effort throughout: a file that will not open, or whose format nothing
+    registered reads, comes back ``('none', 0, 0)`` and leaves the real read path
+    to report the failure. Its share is then missing from the bar, which is the
+    right way round — a bar promised bytes that never arrive would stick short of
+    full.
+
+    Deliberately not through :func:`get_archive_cache`: extraction is not
+    browsing, and a handler cached here would sit on a file the caller is about
+    to read in full anyway."""
+    fmt = archive_format_for_name(PathlibPath(path).name)
+    if fmt is None:
+        return 'none', 0, 0
+    handler = None
+    status, members, size = 'none', 0, 0
+    try:
+        handler = fmt.factory(Path(path))
+        status = handler.encryption_status()
+        members, size = handler.extraction_totals()
+    except Exception as exc:  # noqa: BLE001 — the extraction reports it properly
+        getLogger('Archive').info(
+            f"Cannot survey {PathlibPath(path).name} before extracting: {exc}")
+    finally:
+        if handler is not None:
+            try:
+                handler.close()
+            except Exception:  # noqa: BLE001 — best effort
+                pass
+    return status, members, size
+
+
 def archive_encryption_status_path(path: str) -> str:
     """Classify an archive *file* by filesystem path — ``'none'``, ``'password'``
     or ``'unsupported'`` (see :meth:`ArchiveHandler.encryption_status`). Returns
@@ -2538,24 +2623,10 @@ def archive_encryption_status_path(path: str) -> str:
     This is the extract side of the gate :func:`archive_password_state` serves
     for browsing, and it replaces a zip-only predecessor that opened
     ``zipfile.ZipFile`` directly: extraction now asks the format's own handler,
-    so a non-zip format can ask for a password too. It deliberately does not go
-    through :func:`get_archive_cache` — extraction is not browsing, and a handler
-    cached here would sit on a file the caller is about to read in full anyway."""
-    fmt = archive_format_for_name(PathlibPath(path).name)
-    if fmt is None:
-        return 'none'
-    handler = None
-    try:
-        handler = fmt.factory(Path(path))
-        return handler.encryption_status()
-    except Exception:
-        return 'none'
-    finally:
-        if handler is not None:
-            try:
-                handler.close()
-            except Exception:
-                pass
+    so a non-zip format can ask for a password too. The classification alone —
+    :func:`archive_extraction_survey` is the same open asked for the progress
+    totals as well, which is what the extract path itself now uses."""
+    return archive_extraction_survey(path)[0]
 
 
 # --- format registration -----------------------------------------------------

@@ -605,9 +605,16 @@ zip-level names survive one level down, inside `ZipHandler`:
   entry uses it). `ZipHandler.encryption_status()` maps `zipcrypto` → `'password'`
   and `aes` → `'unsupported'`.
 - `archive_encryption_status_path(path)` — the same classification from a file
-  path, for the extract flow, which works on a raw file rather than a browsed
-  handler. It goes through the registry (so any format can answer) but not
-  through `ArchiveCache` (extraction is not browsing).
+  path, for a raw file rather than a browsed handler. It goes through the
+  registry (so any format can answer) but not through `ArchiveCache` (extraction
+  is not browsing).
+- `archive_extraction_survey(path)` → `(status, members, bytes)` — that same open
+  asked for the progress totals as well, and what the extract flow actually
+  calls. `members` / `bytes` come from `ArchiveHandler.extraction_totals()`,
+  which counts what an extraction *walks*: the archive's stored members, not the
+  browsable index, whose invented parent directories no member matches. A file
+  that will not open comes back `('none', 0, 0)` — missing from the bar rather
+  than promised to it, so the bar cannot end up stuck short of full.
 - `verify_zip_password(zf, pwd)` — opens the smallest encrypted entry to validate
   the ZipCrypto header cheaply. No-op when nothing is encrypted; raises
   `RuntimeError` (missing/wrong password) or `NotImplementedError` (AES).
@@ -632,16 +639,84 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
 
 ### Flows (`xefm/app.py`)
 
-- **Extract** — `extract_archive` asks each archive's own handler
-  (`archive_encryption_status_path`) *on the worker*, one archive at a time:
-  `'unsupported'` is recorded as a failure for that archive; `'password'` asks for
-  one through the task's UI bridge (`Task.ask`, the same seam the copy conflict
-  dialog uses — the masked prompt stacks at `z + 5`, above the progress dialog);
-  anything else extracts directly. The probe is a full open of the file, which is
-  why it is not done on the main thread. The up-front `verify_zip_password` means
-  a wrong password re-asks with an error and never leaves a half-extracted
-  directory; cancelling the prompt cancels the batch. A working password is stored
-  so a later browse reuses it.
+- **Extract** — `extract_archive` surveys the whole batch first, *on the worker*
+  (`_survey_archives` → `archive_extraction_survey` per archive, each a
+  cancellation point): one open per archive answers its encryption status and its
+  progress totals together. The probe is a full open of the file, which is why it
+  is not done on the main thread; the totals ride along on an open that had to
+  happen anyway.
+
+  The batch then runs as **one** progress operation, started with the task and
+  never restarted — it used to be started afresh per archive, so the bar rewound
+  to zero at every archive boundary — with `update_operation_total(items,
+  total_bytes=...)` published once for the lot. Each archive's own extraction is
+  passed `owns_total=False` so it does not rescale that bar to its own size.
+
+  The workers are **one pool for the whole batch** (`_ExtractionPool`), started
+  once and parked between archives rather than joined at each boundary. That
+  boundary used to cost the tail of every archive: its last members' closes ran
+  with the other workers already idle, and the next archive could not begin
+  reading until they finished — on a destination that uploads at close, the
+  expensive part. The batch's own thread still publishes one archive at a time
+  and keeps the password gate, the title and per-archive attribution; what it
+  waits for is that archive's *reading*, not its writing. Concurrency stays at
+  `ARCHIVE_EXTRACT_WORKERS` throughout, since a boundary that briefly doubled it
+  would be a worse bargain than the one it removed.
+
+  **Large members are closed one at a time**, through the same
+  `file_operations.LargeCloseGate` a copy uses and under the same setting
+  (`SERIAL_CLOSE_ABOVE`) — the constraint belongs to the destination, not to the
+  operation writing it. See `PARALLEL_COPY_IMPLEMENTATION.md` for the reasoning
+  and the numbers.
+
+  Counts and failures therefore arrive late: an archive's last files land after
+  its reading ended, so neither its member count nor its failure exists when the
+  loop moves on. `close()` drains the pool and returns `{key: (written, error)}`,
+  which `run` folds into `done` / `entries` / `failures` after the loop.
+
+  Each archive is read by `_extract_members`: **symmetric workers**
+  (`ARCHIVE_EXTRACT_WORKERS`, default 2) each take one member and carry it from
+  claim to closed file, so a member's whole life — and its file handle's — stays
+  on one thread. The archive is claimed one member at a time, but that lock
+  lives with the cursor it protects, inside
+  `LibarchiveHandler.extraction_pass`: `_extract_members` never learns why the
+  claims serialise. What overlaps is everything *after* the claim, which on a
+  filesystem that holds a file in a local cache until it is closed (WebDAV,
+  NFS's close-to-open flush) is the whole transfer — two workers halved a
+  batch's wall clock against one such mount. On a filesystem that does not, the
+  workers queue on the claim and the run is what it always was; the design does
+  not have to know which it is dealing with. The worker count cannot be derived
+  from the destination — a mounted volume reports the same `file` scheme a local
+  disk does — which is why it is a setting.
+
+  Progress there goes through the copy engine's transfer slots, not the single
+  current-item fields: several members are in flight, so there is no one current
+  member to name. `file_end` counts the item *after* the file is closed, so a
+  member counts when it has actually landed, and `file_closing` marks the row
+  for the duration of that close — on a destination that uploads there, it is
+  most of the member's time and was previously shown as nothing at all. The zip
+  and tar paths cannot do the same: `extractall` opens and closes each
+  destination file itself, and reimplementing its loop to get at that seam was
+  ruled out (see `archive_progress`).
+
+  Both flows also log at the grain a copy does — one line per **file**, none for
+  a directory: `Extracted 'sub/b.txt': photos.7z → /dest/photos` and
+  `Added 'src/a.txt' → backup.7z`. Where a seam exists after the member (the zip
+  create loop; the extraction workers, which own theirs to the closed file) the
+  line is written there. `zipfile.extractall`, `tarfile.add` and libarchive's
+  writer drive their own member loop and offer a seam only at the *start* of one,
+  so those lines are held one step behind by `_StepBehindLog`: a member that then
+  fails is never claimed as written. Extraction workers share one sink, so the
+  flow wraps it in `file_operations.serialized_log` — the same wrapper, for the
+  same reason, as the parallel copy.
+
+  On the surveyed status: `'unsupported'` is recorded as a failure for that
+  archive; `'password'` asks for one through the task's UI bridge (`Task.ask`, the
+  same seam the copy conflict dialog uses — the masked prompt stacks at `z + 5`,
+  above the progress dialog); anything else extracts directly. The up-front
+  `verify_zip_password` means a wrong password re-asks with an error and never
+  leaves a half-extracted directory; cancelling the prompt cancels the batch. A
+  working password is stored so a later browse reuses it.
 - **Browse / view** — `_ensure_archive_password` gates opening a file that may
   live in an encrypted ZIP: `'ok'` runs the open callback immediately; `'aes'`
   shows a message; `'need'` shows a masked prompt, verifies via

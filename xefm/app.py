@@ -97,8 +97,9 @@ from xefm.sort_dialog import show_sort_dialog
 from xefm.progress_manager import OperationType
 from xefm.diff_viewer import show_diff_viewer
 from xefm.directory_diff_viewer import show_directory_diff_viewer
-from xefm.file_operations import (FileOperationService, format_op_errors,
-                                  format_op_summary)
+from xefm.file_operations import (FileOperationService, LargeCloseGate,
+                                  format_op_errors, format_op_summary,
+                                  serialized_log)
 from xefm.task import Cancelled, Task, TaskManager
 from xefm.text_dialog import show_markdown
 from xefm.text_encoding import sniff_bom
@@ -1008,6 +1009,199 @@ class _StreamToLog:
 
     def isatty(self) -> bool:
         return False
+
+
+class _ExtractionPool:
+    """Extraction workers that outlive any one archive of a batch.
+
+    Workers used to be started and joined per archive, and that boundary cost
+    the tail of every one of them: the last members' closes ran with the other
+    workers already idle, and the next archive could not begin reading until
+    they finished. Where the destination defers a file's transfer to its close,
+    that tail is the expensive part of the archive.
+
+    Here the workers are started once and *park* between archives. The batch's
+    own thread keeps everything it had — the password gate, the title, one
+    archive read at a time — because it still publishes one archive and waits.
+    What it waits for is that archive's **reading**: it moves on to open and
+    decompress the next while the previous one's files are still landing.
+
+    Concurrency stays at ``workers`` throughout, which is the point of the
+    setting — it says how many writes the destination will take, and a boundary
+    that briefly doubled it would be a worse bargain than the one it removed.
+
+    A member that fails takes its archive out of the batch and no more:
+    ``_retire`` ends that archive early, the error is kept against its key, and
+    the workers go on to the next archive. Cancellation is the batch's, so it
+    stops everything. Both are reported by :meth:`close`, because neither is
+    known while the archive that caused it is still being read.
+
+    ``close_gate`` is the same :class:`~xefm.file_operations.LargeCloseGate` a
+    copy uses, and for the same reason: a large member's close is a transfer the
+    destination may not want two of. Which members it holds, and why, is its
+    own documentation."""
+
+    def __init__(self, workers: int, *, task=None, prog=None, log=None,
+                 close_gate=None):
+        self._task = task
+        self._prog = prog
+        self._log = log
+        self._close_gate = close_gate or LargeCloseGate()
+        self._cond = threading.Condition()
+        self._job = None           # (key, pass, root, archive path, dest dir)
+        self._exhausted = True     # nothing published yet
+        self._closed = False
+        self._cancelled = None     # the Cancelled that ended the batch
+        self._results: dict = {}   # key -> [members written, first error]
+        self._threads = [
+            threading.Thread(target=self._work, name="xefm-extract", daemon=True)
+            for _ in range(max(1, workers))]
+        for thread in self._threads:
+            thread.start()
+
+    # --- the batch thread's side ---------------------------------------------
+
+    def run_archive(self, key, pass_, root, archive_path, dest_dir) -> None:
+        """Hand this archive to the workers and return once it has been *read*
+        to the end — or abandoned. Its files may still be landing."""
+        with self._cond:
+            self._results.setdefault(key, [0, None])
+            self._job = (key, pass_, root, archive_path, dest_dir)
+            self._exhausted = False
+            self._cond.notify_all()
+            while not self._exhausted and self._cancelled is None:
+                self._cond.wait()
+            self._job = None
+            cancelled = self._cancelled
+        if cancelled is not None:
+            raise cancelled
+
+    def close(self) -> dict:
+        """Stop the workers once their outstanding files have landed, and report
+        ``{key: (members written, first error)}`` — the tally no archive could
+        give while it was still being read."""
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+        for thread in self._threads:
+            thread.join()
+        return {key: tuple(value) for key, value in self._results.items()}
+
+    # --- a worker's side ------------------------------------------------------
+
+    def _work(self) -> None:
+        while True:
+            with self._cond:
+                while self._job is None or self._exhausted:
+                    if self._closed or self._cancelled is not None:
+                        return
+                    self._cond.wait()
+                job = self._job
+            self._one_member(job)
+
+    def _one_member(self, job) -> None:
+        """Claim one member and carry it to a closed file — the whole of its
+        life on this thread, which is what keeps its handle's lifetime local and
+        lets an error be raised where the member is still known."""
+        key, pass_, root, archive_path, dest_dir = job
+        name = archive_path.name if archive_path is not None else ""
+        pending = None
+        slot = -1
+        entry = None
+        try:
+            with pass_.claim_next() as member:
+                if member is None:
+                    self._retire(job)
+                    return
+                if self._task is not None:
+                    self._task.checkpoint()
+                entry = member.entry
+                written = 0
+                if self._prog is not None:
+                    slot = self._prog.file_begin(
+                        XeFMApp._member_label(name, entry.internal_path),
+                        0 if entry.is_dir else entry.size)
+
+                def on_bytes(count: int) -> None:
+                    nonlocal written
+                    written += count
+                    self._prog.file_bytes(slot, written)
+
+                pending = member.write_to(
+                    root, on_bytes if self._prog is not None else None)
+            # The claim is released; the rest is this member's alone.
+            if pending is not None:
+                if self._prog is not None:
+                    # Where the destination defers a file's transfer to its
+                    # close, everything below this line is that transfer — and
+                    # the row would otherwise hold at its total, showing none of
+                    # it. Marked before any queueing below, so the row accounts
+                    # for the whole wait rather than only its own turn.
+                    self._prog.file_closing(slot)
+                with self._close_gate.closing(0 if entry.is_dir else entry.size):
+                    pending.finish()
+                pending = None
+            if self._prog is not None:
+                self._prog.file_end(slot)
+            if self._log is not None and not entry.is_dir:
+                self._log(XeFMApp._extracted_line(entry.internal_path,
+                                                  archive_path, dest_dir))
+            with self._cond:
+                self._results[key][0] += 1
+        except Cancelled as exc:
+            with self._cond:
+                if self._cancelled is None:
+                    self._cancelled = exc
+                self._cond.notify_all()
+        except BaseException as exc:  # noqa: BLE001 — reported by close()
+            with self._cond:
+                if self._results[key][1] is None:
+                    self._results[key][1] = exc
+            self._retire(job)  # this archive is over; the batch is not
+        finally:
+            if pending is not None:
+                pending.discard()
+
+    def _retire(self, job) -> None:
+        """This archive has no more members to give — read to the end, or ended
+        early by a failure. Releases the batch thread to publish the next one."""
+        with self._cond:
+            if self._job is job:
+                self._exhausted = True
+                self._cond.notify_all()
+
+
+class _StepBehindLog:
+    """Logs one unit of work at a time, always one behind.
+
+    ``zipfile.extractall``, ``tarfile.add`` and libarchive's writer drive their
+    own member loop and hand out a seam only at the *start* of a member. A line
+    written there would call a member done before it was — and would call the
+    one that then failed done when it wasn't. Holding each line until the next
+    member begins, and flushing whatever is left when the run finishes, makes
+    every line mean what it says: what it names has landed. A run that dies
+    mid-member never flushes that member's line, which is the right silence.
+
+    Where a seam does exist after the member — the zip create loop, and the
+    extraction workers, which own their member from claim to closed file — the
+    line is written directly and this is not needed."""
+
+    __slots__ = ("_log", "_pending")
+
+    def __init__(self, log):
+        self._log = log
+        self._pending = None
+
+    def announce(self, message: str) -> None:
+        """The previous member landed; this one is starting."""
+        self.flush()
+        self._pending = message
+
+    def flush(self) -> None:
+        """The run ended cleanly — the member still held did land after all."""
+        pending, self._pending = self._pending, None
+        if pending is not None and self._log is not None:
+            self._log(pending)
 
 
 class XeFMApp:
@@ -4803,7 +4997,7 @@ class XeFMApp:
 
     @staticmethod
     def _add_to_zip(zf, path, arcname: str, *, task=None, prog=None,
-                    bytes_=None) -> int:
+                    bytes_=None, log=None, archive_path=None) -> int:
         """Add ``path`` to an open ZipFile under ``arcname``, recursing into
         directories (tarfile recurses on its own; zipfile does not). Returns the
         number of files written.
@@ -4816,7 +5010,8 @@ class XeFMApp:
             count = 0
             for child in path.iterdir():
                 count += XeFMApp._add_to_zip(zf, child, f"{arcname}/{child.name}",
-                                             task=task, prog=prog, bytes_=bytes_)
+                                             task=task, prog=prog, bytes_=bytes_,
+                                             log=log, archive_path=archive_path)
             return count
         if task is not None:
             task.checkpoint()
@@ -4826,10 +5021,12 @@ class XeFMApp:
             # After update_progress, which clears the byte fields for the new item.
             bytes_.start(XeFMApp._entry_size(path))
         zf.write(str(path), arcname)
+        if log is not None:
+            log(XeFMApp._added_line(arcname, archive_path))
         return 1
 
     def _write_archive(self, sources: list, archive_path, fmt: str, *,
-                       task=None, prog=None) -> int:
+                       task=None, prog=None, log=None) -> int:
         """Write ``sources`` into a new archive at ``archive_path`` in ``fmt``.
         Local filesystem paths (this phase); returns the number of files added.
 
@@ -4839,18 +5036,24 @@ class XeFMApp:
         :mod:`xefm.archive_progress` file subclasses, byte by byte within an
         entry, so a single huge member still moves something. ``Cancelled``
         unwinds out of here mid-archive, leaving the caller to drop the partial
-        file. Both default to None, which writes exactly as before."""
+        file. Both default to None, which writes exactly as before.
+
+        ``log``, when given, gets one line per file added, the same grain the
+        copy engine logs at. tar and 7z hand out a seam only at the start of a
+        member, so those lines are held one step behind (:class:`_StepBehindLog`)
+        and a member that fails is never claimed as added."""
         import zipfile
         from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
         bytes_ = ByteProgress(prog) if prog is not None else None
         if fmt != "zip" and fmt not in self._TAR_MODES:
             return self._write_via_handler(sources, archive_path, task=task,
-                                           prog=prog, bytes_=bytes_)
+                                           prog=prog, bytes_=bytes_, log=log)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path), "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.byte_progress = bytes_
                 return sum(self._add_to_zip(zf, s, s.name, task=task, prog=prog,
-                                            bytes_=bytes_)
+                                            bytes_=bytes_, log=log,
+                                            archive_path=archive_path)
                            for s in sources)
         added = 0
 
@@ -4867,16 +5070,20 @@ class XeFMApp:
                 prog.update_progress(tarinfo.name, added)
             if bytes_ is not None:
                 bytes_.start(tarinfo.size)
+            if tarinfo.isreg():
+                unit.announce(self._added_line(tarinfo.name, archive_path))
             return tarinfo
 
+        unit = _StepBehindLog(log)
         with ProgressTarFile.open(str(archive_path), self._TAR_MODES[fmt]) as tf:
             tf.byte_progress = bytes_
             for s in sources:
                 tf.add(str(s), arcname=s.name, filter=report)  # recurses into dirs
+        unit.flush()
         return added
 
     def _write_via_handler(self, sources: list, archive_path, *, task=None,
-                           prog=None, bytes_=None) -> int:
+                           prog=None, bytes_=None, log=None) -> int:
         """Create a format neither zipfile nor tarfile can write — 7z — through
         the writer its registry entry brought with it.
 
@@ -4893,7 +5100,7 @@ class XeFMApp:
                 f"Cannot create archive format: {archive_path.name}")
         written = 0
 
-        def on_entry(arcname: str, size: int) -> None:
+        def on_entry(arcname: str, size: int, is_dir: bool = False) -> None:
             nonlocal written
             if task is not None:
                 task.checkpoint()
@@ -4904,10 +5111,15 @@ class XeFMApp:
                 # After update_progress, which clears the byte fields for the
                 # incoming member — the same ordering _reporting_members keeps.
                 bytes_.start(size)
+            if not is_dir:
+                unit.announce(self._added_line(arcname, archive_path))
 
-        return fmt.writer(
+        unit = _StepBehindLog(log)
+        count = fmt.writer(
             archive_path, sources, on_entry=on_entry,
             on_bytes=bytes_.advance if bytes_ is not None else None)
+        unit.flush()
+        return count
 
     @classmethod
     def _count_archive_entries(cls, sources: list, *, include_dirs: bool,
@@ -4944,9 +5156,42 @@ class XeFMApp:
         return total
 
     @staticmethod
-    def _reporting_members(members, describe, task, prog, bytes_=None):
+    def _member_label(archive_name: str, internal_path: str) -> str:
+        """How a member names itself while it is being extracted:
+        ``photos.7z › 2019/summer/beach.jpg``.
+
+        Both halves are wanted. The archive alone cannot say what the operation
+        is doing right now — a big archive would sit on one unchanging line for
+        minutes — and the member alone cannot say which archive it came out of,
+        which a batch needs and even a single extraction has to be read out of
+        the dialog's title to know. The dialog abbreviates a row that will not
+        fit by cutting the middle, so a long label keeps the archive at one end
+        and the member's own name at the other."""
+        return f"{archive_name} \u203a {internal_path}" if archive_name else internal_path
+
+    @staticmethod
+    def _extracted_line(internal_path: str, archive_path, dest_dir) -> str:
+        """One extracted member, in the shape the copy engine logs a file in:
+        the thing once in quotes, then where it came from and where it went."""
+        return f"Extracted '{internal_path}': {archive_path.name} → {dest_dir}"
+
+    @staticmethod
+    def _added_line(arcname: str, archive_path) -> str:
+        """One member added to a new archive. No source directory: unlike a copy,
+        every member comes from the one pane the selection was made in, and the
+        arcname already carries its place in that tree."""
+        return f"Added '{arcname}' → {archive_path.name}"
+
+    @staticmethod
+    def _reporting_members(members, describe, task, prog, bytes_=None, unit=None):
         """Yield ``members`` one at a time, checkpointing and reporting each —
-        ``describe(member)`` gives its ``(name, size)``.
+        ``describe(member)`` gives its ``(name, size, log line)``, the last None
+        for a member that should not be logged (a directory, which the copy
+        engine does not log either).
+
+        ``unit`` is a :class:`_StepBehindLog`: extractall hands out no seam after
+        a member, so each line waits for the next member to start and the caller
+        flushes the last one when extractall returns.
 
         Handed to ``extractall(members=…)`` so extraction gets per-entry progress
         and cancellation *without* reimplementing its loop: tar's deferred
@@ -4958,15 +5203,18 @@ class XeFMApp:
         for member in members:
             if task is not None:
                 task.checkpoint()
-            name, size = describe(member)
+            name, size, logged = describe(member)
             if prog is not None:
                 prog.update_progress(name)
             if bytes_ is not None:
                 bytes_.start(size)
+            if unit is not None and logged is not None:
+                unit.announce(logged)
             yield member
 
     def _extract_archive(self, archive_path, dest_dir, fmt: str, pwd: bytes | None = None,
-                         *, task=None, prog=None) -> int:
+                         *, task=None, prog=None, owns_total: bool = True,
+                         log=None, pool=None, key=0) -> int:
         """Extract ``archive_path`` into ``dest_dir`` (created if absent). Returns
         the number of entries. Tar extraction uses the ``data`` filter where
         available (Python 3.12+) to reject unsafe member paths.
@@ -4981,38 +5229,66 @@ class XeFMApp:
 
         ``task`` / ``prog``, when given, report each member and make it a
         cancellation point (see ``_reporting_members``); both default to None,
-        which extracts exactly as before."""
+        which extracts exactly as before.
+
+        ``owns_total`` says whether this call may publish the operation's totals.
+        A batch counts every archive up front and publishes one total for the lot
+        (:meth:`_survey_archives`), which each archive must then not overwrite
+        with its own; a lone call keeps the default and scales the bar itself.
+
+        ``log``, when given, gets one line per file member as it lands — the same
+        grain the copy engine logs at, and for the same reason: a run's record
+        should say what it actually wrote, not only how many things it wrote.
+        Directory members are not logged, again matching copy."""
         from xefm.archive import verify_zip_password
         from xefm.archive_progress import ByteProgress, ProgressTarFile, ProgressZipFile
         bytes_ = ByteProgress(prog) if prog is not None else None
         dest_dir.mkdir(parents=True, exist_ok=True)
+        unit = _StepBehindLog(log)
         if fmt != "zip" and fmt not in self._TAR_MODES:
             return self._extract_via_handler(archive_path, dest_dir, pwd,
-                                             task=task, prog=prog, bytes_=bytes_)
+                                             task=task, prog=prog, bytes_=bytes_,
+                                             owns_total=owns_total, log=log,
+                                             pool=pool, key=key)
         if fmt == "zip":
             with ProgressZipFile(str(archive_path)) as zf:
                 verify_zip_password(zf, pwd)  # no-op unless the zip is encrypted
                 zf.byte_progress = bytes_     # after the probe, which reads a little
                 members = zf.infolist()
-                if prog is not None:
-                    prog.update_operation_total(len(members))
+                if prog is not None and owns_total:
+                    prog.update_operation_total(
+                        len(members),
+                        total_bytes=sum(m.file_size for m in members))
                 zf.extractall(
                     str(dest_dir), pwd=pwd,
                     members=self._reporting_members(
-                        members, lambda m: (m.filename, m.file_size), task, prog,
-                        bytes_))
+                        members,
+                        lambda m: (self._member_label(archive_path.name, m.filename),
+                                   m.file_size,
+                                   None if m.is_dir() else self._extracted_line(
+                                       m.filename, archive_path, dest_dir)),
+                        task, prog, bytes_, unit))
+                unit.flush()
                 return len(members)
         with ProgressTarFile.open(str(archive_path)) as tf:
             tf.byte_progress = bytes_
             # getmembers() reads the whole (compressed) archive to build the list;
             # that is the operation's counting phase, and why it runs on the worker.
             members = tf.getmembers()
-            if prog is not None:
-                prog.update_operation_total(len(members))
+            if prog is not None and owns_total:
+                # Only regular files report bytes on the way past, so only they
+                # may promise any — a directory member's size would never be paid.
+                prog.update_operation_total(
+                    len(members),
+                    total_bytes=sum(m.size for m in members if m.isreg()))
 
             def reported():
                 return self._reporting_members(
-                    members, lambda m: (m.name, m.size), task, prog, bytes_)
+                    members,
+                    lambda m: (self._member_label(archive_path.name, m.name), m.size,
+                               self._extracted_line(m.name, archive_path, dest_dir)
+                               if m.isreg() else None),
+                    task, prog, bytes_, unit)
 
             try:
                 tf.extractall(str(dest_dir), filter="data", members=reported())
@@ -5020,23 +5296,23 @@ class XeFMApp:
                 # Raised on the call itself (unknown keyword), before the members
                 # generator is touched, so a fresh one is the whole retry.
                 tf.extractall(str(dest_dir), members=reported())
+            unit.flush()
             return len(members)
 
     def _extract_via_handler(self, archive_path, dest_dir, pwd: bytes | None,
-                             *, task=None, prog=None, bytes_=None) -> int:
+                             *, task=None, prog=None, bytes_=None,
+                             owns_total: bool = True, log=None,
+                             pool=None, key=0) -> int:
         """Extract a format neither zipfile nor tarfile reads — 7z, and whatever
         else the loaded libarchive contributes — through its registered handler.
 
-        The handler extracts in a single forward pass and yields each entry as it
-        lands (:meth:`xefm.archive.ArchiveHandler.iter_extract`), so progress is
-        driven off what comes back rather than by asking for one entry at a time:
-        these formats have no random access, and a per-entry loop would rescan the
-        archive from the beginning for every member.
-
-        The byte bar works the same as on the zip and tar paths: ``iter_extract``
-        yields an entry *before* writing its payload, so the bar is opened at the
-        right size here and then fed block by block as libarchive hands them
-        over."""
+        These formats have no random access, so the archive is read in a single
+        forward pass rather than one entry at a time: a per-entry loop would
+        rescan from the beginning for every member. Members are taken off that
+        pass by :meth:`_extract_members`' workers, each of which then carries its
+        own member to a closed file; the gate below runs first because nothing
+        should be written before it is known whether the archive can be read at
+        all."""
         fmt = archive_format_for_name(archive_path.name)
         if fmt is None:  # guarded by the caller; a table change could still get here
             raise ArchiveFormatError(f"Unsupported archive format: {archive_path.name}")
@@ -5052,22 +5328,137 @@ class XeFMApp:
             if status == "password" and (pwd is None or not handler.verify_password(pwd)):
                 raise RuntimeError(f"{archive_path.name}: password required")
 
-            if prog is not None:
-                prog.update_operation_total(handler.entry_count())
-            count = 0
-            for entry in handler.iter_extract(
-                    dest_dir, password=pwd,
-                    on_bytes=bytes_.advance if bytes_ is not None else None):
-                if task is not None:
-                    task.checkpoint()
-                if prog is not None:
-                    prog.update_progress(entry.internal_path)
-                if bytes_ is not None:
-                    bytes_.start(0 if entry.is_dir else entry.size)
-                count += 1
-            return count
+            if prog is not None and owns_total:
+                items, size = handler.extraction_totals()
+                prog.update_operation_total(items, total_bytes=size)
+            if getattr(handler, "extraction_pass", None) is None:
+                # A handler that offers no claimable pass — none XeFM registers
+                # today — keeps the one-member-at-a-time contract instead.
+                count = 0
+                for entry in handler.iter_extract(
+                        dest_dir, password=pwd,
+                        on_bytes=bytes_.advance if bytes_ is not None else None):
+                    if task is not None:
+                        task.checkpoint()
+                    if prog is not None:
+                        prog.update_progress(entry.internal_path)
+                    if bytes_ is not None:
+                        bytes_.start(0 if entry.is_dir else entry.size)
+                    count += 1
+                return count
+            return self._extract_members(handler, dest_dir, pwd,
+                                         task=task, prog=prog, log=log,
+                                         archive_path=archive_path,
+                                         pool=pool, key=key)
         finally:
             handler.close()
+
+    def _extract_workers(self) -> int:
+        """How many workers an extraction may run (``ARCHIVE_EXTRACT_WORKERS``).
+
+        Not derived from the destination, because it cannot be: a WebDAV or SMB
+        volume is a mounted filesystem and reports the same ``file`` scheme a
+        local disk does, so nothing in the path says how many concurrent writes
+        it will accept. The default is small for the same reason — measured
+        against one such mount, everything the client would overlap was already
+        overlapped at two."""
+        config = getattr(self, "config", None)
+        try:
+            workers = int(getattr(config, "ARCHIVE_EXTRACT_WORKERS", 2))
+        except (TypeError, ValueError):
+            workers = 2
+        return max(1, workers)
+
+    def _close_gate(self) -> LargeCloseGate:
+        """This extraction's gate on closing large files — the copy engine's, and
+        governed by the same setting, because the constraint belongs to the
+        destination rather than to the operation writing it."""
+        return LargeCloseGate.from_config(getattr(self, "config", None))
+
+    def _extract_members(self, handler, dest_dir, pwd: bytes | None,
+                         *, task=None, prog=None, log=None, archive_path=None,
+                         pool=None, key=0) -> int:
+        """Extract every member of ``handler``'s archive with symmetric workers.
+
+        Each worker carries one member from claim to closed file, so a member's
+        whole life — and its file handle's — stays on one thread. The archive is
+        claimed one member at a time because libarchive's reader is a cursor, but
+        that lock lives with the cursor, inside the handler
+        (``LibarchiveHandler.extraction_pass``): nothing here knows why claims
+        serialise, which is what lets the worker count be chosen for the
+        destination rather than for the archive.
+
+        What overlaps is therefore everything *after* the claim. On a filesystem
+        that holds a file in a local cache until it is closed — WebDAV, NFS's
+        close-to-open flush — that is the whole transfer, and two workers were
+        measured to halve a batch's wall clock. On one that does not, the workers
+        queue on the claim and the run is what it always was; the design does not
+        have to know which it is dealing with.
+
+        Progress goes through the copy engine's transfer slots rather than the
+        single current-item fields: several members are in flight, so there is no
+        one current member to name. The item is counted at ``file_end``, after
+        the file is closed, so a member counts when it has actually landed — and
+        ``log`` gets its line there too, for the same reason. ``log`` must
+        already be serialised (:func:`~xefm.file_operations.serialized_log`).
+
+        ``pool``, when a batch supplies one, is workers already running over its
+        other archives. This then returns once the archive has been *read*, its
+        files still landing, and the count and any failure are the pool's to
+        report when it closes — hence the 0 here. Without one, a pool is made for
+        this archive alone and joined before returning: the same code path with
+        the batch's overlap left out."""
+        root = handler.extraction_root(dest_dir)
+        if pool is not None:
+            with handler.extraction_pass(dest_dir, password=pwd) as pass_:
+                pool.run_archive(key, pass_, root, archive_path, dest_dir)
+            return 0
+        own = _ExtractionPool(self._extract_workers(), task=task, prog=prog,
+                              log=log, close_gate=self._close_gate())
+        try:
+            with handler.extraction_pass(dest_dir, password=pwd) as pass_:
+                own.run_archive(key, pass_, root, archive_path, dest_dir)
+        finally:
+            results = own.close()
+        count, error = results.get(key, (0, None))
+        if error is not None:
+            raise error
+        return count
+
+    def _survey_archives(self, plan, task=None) -> list[tuple]:
+        """Open every archive in the batch once, up front, and report what
+        extracting it will cost: ``(encryption status, members, bytes)`` each.
+
+        One open per archive, not two. The encryption gate already had to open
+        each of them — ``archive_encryption_status_path`` did it inside the loop,
+        one archive at a time, just before extracting that one — and the same
+        open knows how many members it stores and how many bytes they hold. So
+        the batch's totals cost nothing beyond a probe that was happening
+        anyway, which is what lets the progress bar span the whole batch instead
+        of restarting at zero for each archive, and be weighted by bytes rather
+        than by member count alone.
+
+        An archive that will not open contributes nothing and is *not* recorded
+        as a failure: the extraction that follows opens it again and reports what
+        is wrong with it, in the place that can attribute the error to it. The
+        bar is then short by that archive's share, which is the right way round —
+        a bar that promised bytes nothing will deliver would end up stuck.
+
+        Runs on the task worker: for a compressed tar this is a full read of the
+        file, and even where it is only a header pass it is still I/O — and it is
+        a cancellation point per archive, so a batch aimed at the wrong pane can
+        be stopped before it opens all of them."""
+        from xefm.archive import archive_extraction_survey
+        surveys: list[tuple] = []
+        for entry, _target, _fmt in plan:
+            if task is not None:
+                task.checkpoint()
+            survey = archive_extraction_survey(str(entry))
+            surveys.append(survey)
+            if task is not None:
+                # What the progress dialog's "Preparing… (n items)" line reads.
+                task.counted += survey[1]
+        return surveys
 
     @staticmethod
     def _unlink_quietly(path) -> bool:
@@ -5169,6 +5560,7 @@ class XeFMApp:
                         prog.update_operation_total(self._count_archive_entries(
                             sources, include_dirs=(fmt != "zip"), task=t))
                         added = self._write_archive(sources, archive_path, fmt,
+                                                    log=self.log_info,
                                                     task=t, prog=prog)
                     except Cancelled:
                         # A half-written archive is not a usable one, and the file
@@ -5298,27 +5690,35 @@ class XeFMApp:
 
             def run(t: Task) -> dict:
                 prog = t.progress
-                # The archive currently being written, for the cancel message:
-                # what landed stays (the destination may be a directory the user
-                # already had files in — the confirm box says as much — so
-                # removing it wholesale could take those with it).
+                # Workers write into the same log sink, which copes with one
+                # background writer and not several — the copy engine takes the
+                # same wrapper for the same reason.
+                log = serialized_log(self.log_info)
+                # The archive being *read* when a cancel lands, for the cancel
+                # message: what landed stays (the destination may be a directory
+                # the user already had files in — the confirm box says as much —
+                # so removing it wholesale could take those with it). A hint
+                # rather than an inventory, and slightly more so now that the pool
+                # spans archives: the one before this may still have had files in
+                # flight. Naming the archive the cancel interrupted is the useful
+                # half.
                 partial = None
 
-                def extract_one(entry, target, fmt) -> int:
+                def extract_one(entry, target, fmt, status, key) -> int:
                     """One archive, asking for its password if it needs one.
 
                     A wrong password re-asks *here*, in place, rather than
                     unwinding the task and resubmitting it: nothing is written
                     until the password verifies (see ``_extract_archive``), so the
-                    retry costs only the prompt."""
+                    retry costs only the prompt.
+
+                    ``status`` is the survey's verdict on this archive's
+                    encryption — which of "needs a password" and "XeFM cannot
+                    decrypt this at all" applies is the format's own handler's
+                    answer, taken during the counting pass because that opened
+                    every archive anyway."""
                     nonlocal partial
-                    from xefm.archive import (archive_encryption_status_path,
-                                              set_archive_password)
-                    # Which of "needs a password" and "XeFM cannot decrypt this at
-                    # all" applies is the format's own handler's answer — this used
-                    # to test for a zip and so could never report any other
-                    # format's encryption.
-                    status = archive_encryption_status_path(str(entry))
+                    from xefm.archive import set_archive_password
                     if status == "unsupported":
                         raise NotImplementedError(
                             f"{entry.name}: encryption XeFM cannot decrypt")
@@ -5334,7 +5734,9 @@ class XeFMApp:
                         partial = target
                         try:
                             count = self._extract_archive(entry, target, fmt,
-                                                          pwd=pwd, task=t, prog=prog)
+                                                          pwd=pwd, task=t, prog=prog,
+                                                          owns_total=False, log=log,
+                                                          pool=pool, key=key)
                         except NotImplementedError:
                             # Defensive: the probe above already refused these, and
                             # NotImplementedError *is* a RuntimeError, so it must
@@ -5353,19 +5755,39 @@ class XeFMApp:
                             set_archive_password(entry, pwd)
                         return count
 
-                done = 0
+                # One pool for the batch. Started here rather than per
+                # archive so no archive's tail is waited on before the next one
+                # is opened: on a destination that uploads at close, the last
+                # members of an archive were landing while every other worker sat
+                # idle and the next archive could not begin reading.
+                pool = _ExtractionPool(
+                    self._extract_workers(), task=t, prog=prog, log=log,
+                    close_gate=self._close_gate())
                 entries = 0
                 failures: list[tuple] = []
+                started: list[tuple] = []
+                cancelled = False
                 try:
-                    for index, (entry, target, fmt) in enumerate(plan, 1):
+                    # Count the whole batch before writing any of it, and publish
+                    # it as one total. The operation started with the task and is
+                    # never restarted, so the bar runs once from end to end — it
+                    # used to be started afresh per archive and rewind to zero
+                    # each time — and it is weighted by bytes as well as members,
+                    # so a 4 GiB member no longer goes past at the same speed as
+                    # a 4 KiB one.
+                    surveys = self._survey_archives(plan, task=t)
+                    prog.update_operation_total(
+                        sum(items for _st, items, _by in surveys),
+                        total_bytes=sum(by for _st, _it, by in surveys))
+                    for index, ((entry, target, fmt), (status, _i, _b)) in enumerate(
+                            zip(plan, surveys), 1):
                         t.checkpoint()
                         if not single:
                             # Read live by the progress dialog each frame.
                             t.title = f"Extracting archive {index} of {len(plan)}…"
-                        prog.start_operation(OperationType.ARCHIVE_EXTRACT, 0,
-                                             description=entry.name)
                         try:
-                            entries += extract_one(entry, target, fmt)
+                            entries += extract_one(entry, target, fmt, status,
+                                                   index)
                         except Cancelled:
                             raise  # Cancel is the batch's, not this archive's
                         except Exception as exc:  # noqa: BLE001 — on the main thread
@@ -5373,12 +5795,27 @@ class XeFMApp:
                             # every failure is reported when the task lands.
                             failures.append((entry, exc))
                             continue
-                        done += 1
+                        started.append((index, entry))
                 except Cancelled:
+                    cancelled = True
+                finally:
+                    # Draining the pool is what makes the tallies knowable: an
+                    # archive's last files land after its reading ended, so
+                    # neither its count nor its failure existed when the loop
+                    # moved on from it.
+                    results = pool.close()
+                    prog.finish_operation()
+                done = 0
+                for index, entry in started:
+                    count, error = results.get(index, (0, None))
+                    entries += count
+                    if error is not None:
+                        failures.append((entry, error))
+                    else:
+                        done += 1
+                if cancelled:
                     return {"cancelled": True, "done": done, "entries": entries,
                             "failures": failures, "partial": partial}
-                finally:
-                    prog.finish_operation()
                 return {"done": done, "entries": entries, "failures": failures}
 
             def on_done(res: dict) -> None:

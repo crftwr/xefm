@@ -25,6 +25,7 @@ from __future__ import annotations
 import itertools
 import queue
 import threading
+import time
 from enum import Enum
 from typing import Any, Callable, Optional
 
@@ -269,6 +270,29 @@ def _empty_result() -> dict:
     return {"done": 0, "skipped": 0, "failed": 0, "cancelled": False}
 
 
+def transfer_bytes_text(transfer: dict) -> str:
+    """The right-hand column of one transfer row.
+
+    Normally the file's byte counts, and nothing at all for a file too small
+    for them to be worth the width. While the file is being *closed* it says so
+    instead, with the seconds it has been at it.
+
+    That last case is the one that earns this its own function. Where the
+    destination holds a file in a local cache until it is closed — WebDAV, and
+    NFS's close-to-open flush — the close is where the bytes actually travel,
+    and the row would otherwise hold at its total for the whole of it: the
+    operation's real work, shown as a number that had stopped moving. Nothing
+    here is specific to such a destination, though. One whose close is instant
+    passes through this in a single frame."""
+    if transfer.get("closing_since") and not transfer.get("done"):
+        waited = int(max(0.0, time.monotonic() - transfer["closing_since"]))
+        return f"finishing… {waited}s" if waited else "finishing…"
+    if transfer["total"] >= _BYTE_TEXT_MIN:
+        return (f"{format_size(transfer['copied'], compact=True)}"
+                f" / {format_size(transfer['total'], compact=True)}")
+    return ""
+
+
 class ProgressDialog(Widget):
     """Modal progress surface for a running :class:`Task`. Generic — it renders
     only from ``task.title`` + ``task.progress`` (the :class:`ProgressManager`), so
@@ -450,10 +474,7 @@ class ProgressDialog(Widget):
             rows = rows[:_TRANSFER_ROWS - 1]
         for i, (_slot, t) in enumerate(rows):
             y = first_row + i * 0.9
-            bytes_text = ""
-            if t["total"] >= _BYTE_TEXT_MIN:
-                bytes_text = (f"{format_size(t['copied'], compact=True)}"
-                              f" / {format_size(t['total'], compact=True)}")
+            bytes_text = transfer_bytes_text(t)
             bytes_w = ctx.measure_text(bytes_text) if bytes_text else 0.0
             name_w = max(1.0, width - (bytes_w + 2.0 if bytes_text else 0.0))
             ctx.draw_text(2, y, abbreviate_path(t["item"], name_w,

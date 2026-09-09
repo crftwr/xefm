@@ -229,6 +229,23 @@ class Config:
     CONFIRM_ARCHIVE_CREATE = True   # Show confirmation dialog before creating archives
     FILE_OP_WORKERS_LOCAL = 4  # Copy/move worker threads, local disk (1 = sequential)
     FILE_OP_WORKERS_S3 = 8     # Copy/move worker threads when S3 is involved (ssh is always 1)
+    # Extraction worker threads (1 = sequential). Raising this past what the
+    # destination actually overlaps buys nothing and can cost: the extra writes
+    # queue inside its client, where a timeout can expire on one that has not
+    # started transferring. Two saturated a WebDAV mount; four and eight added
+    # nothing.
+    ARCHIVE_EXTRACT_WORKERS = 2
+    # Files at least this large are written to their destination one at a time.
+    # Closing is where a mounted network volume actually transfers a file, and
+    # two large ones at once move no more data than one — a single stream
+    # already saturated the link (12.2 MiB/s measured alone, 11.8 aggregate
+    # across four) — while asking the server to hold two large bodies. What
+    # overlapping does pay for is the fixed round trip per file, which only
+    # matters while the transfer is comparable to it: 0.55s at 12.2 MiB/s is
+    # about 6.7 MiB. Applies to copy/move and to archive extraction alike. 0
+    # serialises every file, whatever its size, for a destination that has shown
+    # it cannot take two at once; a value past the largest file never does.
+    SERIAL_CLOSE_ABOVE = 8 * 1024 * 1024
     
     # Key bindings - customize your shortcuts
     # Each action can have multiple keys assigned to it
