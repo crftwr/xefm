@@ -1150,11 +1150,23 @@ def member_walk(sources) -> Iterator[Tuple[PathlibPath, str, bool]]:
     total that pass produced is the one this loop has to reach, or the progress
     bar stops short. Directories are stored rather than left implicit, which is
     what keeps an empty one in the archive.
+
+    A symlink to a directory is stored *as* a directory, empty, and is not
+    descended into. Following it would be the natural reading of "symlinks are
+    followed", but a tree of them — a macOS framework's ``bin`` ->
+    ``Versions/Current/bin``, with ``Current`` -> ``A`` — is a graph with
+    cycles, and duplicating the target under every name that reaches it is not
+    what anyone means by archiving the directory. Storing the link itself is not
+    open either: libarchive's 7z writer segfaults on a symlink entry. This is
+    also what ``zipfile.write`` already does with one, so the two create paths
+    agree.
     """
     def walk(path: PathlibPath, arcname: str):
-        is_dir = path.is_dir() and not path.is_symlink()
-        yield path, arcname, is_dir
-        if not is_dir:
+        link = path.is_symlink()
+        # is_dir() follows the link, matching the stat the writer then takes.
+        stored_as_dir = path.is_dir()
+        yield path, arcname, stored_as_dir
+        if link or not stored_as_dir:
             return
         try:
             children = list(path.iterdir())
@@ -1212,9 +1224,11 @@ def write_archive(archive_path, sources, *, format_name: str = '7zip',
     raises — ``Cancelled`` — unwinds through here, closing the partial file on
     the way out for the caller to remove.
 
-    Local filesystem paths only, matching the rest of the create path. Symlinks
-    are followed and stored as their target's contents, which is what ``zipfile``
-    does; tar's link-preserving behaviour has no equivalent here.
+    Local filesystem paths only, matching the rest of the create path. A symlink
+    to a file is followed and stored as its target's contents, which is what
+    ``zipfile`` does; one to a directory is stored as an empty directory, for the
+    reasons :func:`member_walk` gives. tar's link-preserving behaviour has no
+    equivalent here — libarchive's 7z writer segfaults on a symlink entry.
     """
     from libarchive.entry import FileType
 

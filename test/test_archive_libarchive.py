@@ -372,6 +372,41 @@ def test_create_moves_both_bars(tmp_path):
 
 
 @requires_7z
+def test_a_symlinked_directory_does_not_stop_the_write(tmp_path):
+    """A macOS framework is a graph of directory symlinks, and archiving one
+    used to die on the first: `bin` -> `Versions/Current/bin` was taken for a
+    file and opened, which is a directory, which is `[Errno 21]`.
+
+    It is stored as an empty directory instead and not descended into. Following
+    it would duplicate the target under every name that reaches it, and the
+    graph has cycles; storing the link itself is not open either, because
+    libarchive's 7z writer segfaults on a symlink entry. The member count has to
+    stay in step with the counting pass, or the progress bar stops short."""
+    root = tmp_path / "fw"
+    (root / "Versions" / "A" / "bin").mkdir(parents=True)
+    (root / "Versions" / "A" / "bin" / "python").write_bytes(b"x" * 100)
+    os.symlink("A", root / "Versions" / "Current")            # dir -> dir
+    os.symlink("Versions/Current/bin", root / "bin")          # the reported one
+    os.symlink("Versions/A/bin/python", root / "python")      # link to a file
+
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    archive = tmp_path / "fw.7z"
+    written = app._write_archive([Path(str(root))], Path(str(archive)), "7z")
+    assert written == app._count_archive_entries([Path(str(root))],
+                                                 include_dirs=True)
+    A.get_archive_cache().clear()
+    out = tmp_path / "out"
+    try:
+        app._extract_archive(Path(str(archive)), Path(str(out)), "7z")
+    finally:
+        A.get_archive_cache().clear()
+    assert (out / "fw" / "bin").is_dir()                      # stored as a directory
+    assert not any((out / "fw" / "bin").iterdir())            # and left empty
+    assert (out / "fw" / "python").read_bytes() == b"x" * 100  # the link was followed
+    assert (out / "fw" / "Versions" / "A" / "bin" / "python").read_bytes() == b"x" * 100
+
+
+@requires_7z
 def test_create_is_cancellable_mid_archive(tmp_path):
     """Cancel unwinds out through the writer; the partial file is left for
     create_archive to remove, which is what the zip and tar paths do too."""
