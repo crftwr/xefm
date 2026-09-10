@@ -492,81 +492,10 @@ def test_refused_members_do_not_desync_a_solid_archive(tmp_path):
         A.get_archive_cache().clear()
 
 
-def _extract_with_slow_close(tmp_path, monkeypatch, workers, wait):
-    """Extract six members onto a destination whose ``close`` is the slow part,
-    and report whether two of them were ever closed at the same time.
-
-    The barrier is the whole instrument: a close waits for a second close to
-    join it, so overlap is proved by the wait *succeeding* rather than by any
-    reading of the clock. If the design serialises, no partner arrives and the
-    wait breaks — which is what the one-worker case asserts, so that the
-    two-worker case is known to be measuring something."""
-    members = [(f"m{i}.bin", os.urandom(4096)) for i in range(6)]
-    archive = _write_7z(tmp_path / f"slow{workers}.7z", members)
-    A.get_archive_cache().clear()
-    barrier = threading.Barrier(2)
-    alone = []
-
-    class _SlowClose:
-        """A file whose close blocks until another close joins it."""
-
-        def __init__(self, handle):
-            self._handle = handle
-
-        def write(self, data):
-            return self._handle.write(data)
-
-        def close(self):
-            try:
-                barrier.wait(timeout=wait)
-            except threading.BrokenBarrierError:
-                alone.append(True)
-            self._handle.close()
-
-    real_open = open
-    monkeypatch.setattr(AL, "open",
-                        lambda *a, **kw: _SlowClose(real_open(*a, **kw)),
-                        raising=False)
-
-    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
-    app.config = types.SimpleNamespace(ARCHIVE_EXTRACT_WORKERS=workers)
-    out = tmp_path / f"out{workers}"
-    handler = LibarchiveHandler(Path(str(archive)))
-    try:
-        handler.open()
-        count = app._extract_members(handler, Path(str(out)), None)
-    finally:
-        handler.close()
-        A.get_archive_cache().clear()
-    assert count == len(members)
-    for name, data in members:
-        assert (out / name).read_bytes() == data
-    return not alone
-
-
-@requires_7z
-def test_two_workers_close_two_members_at_once(tmp_path, monkeypatch):
-    """The point of the whole design, proved without a network.
-
-    Where a destination holds a file in a local cache until it is closed —
-    WebDAV, NFS's close-to-open flush — close *is* the transfer, and having more
-    than one in flight is the only thing that shortens the run. Extraction stays
-    single-file behind the archive's own claim, so this is what has to be true
-    for any of that to be worth anything."""
-    assert _extract_with_slow_close(tmp_path, monkeypatch, workers=2, wait=5)
-
-
-@requires_7z
-def test_one_worker_closes_them_one_at_a_time(tmp_path, monkeypatch):
-    """The control: with the workers turned down to one, no two closes ever
-    meet. Without this the test above would pass on a broken barrier."""
-    assert not _extract_with_slow_close(tmp_path, monkeypatch, workers=1,
-                                        wait=0.15)
-
 
 def _bare_app(workers):
     app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
-    app.config = types.SimpleNamespace(ARCHIVE_EXTRACT_WORKERS=workers)
+    app.config = types.SimpleNamespace(TRANSFER_CONCURRENCY=workers)
     return app
 
 
@@ -603,11 +532,11 @@ def test_each_member_is_logged_as_it_lands(sample_7z, tmp_path):
         assert line.endswith(f"sample.7z → {out}")
 
 
-def _peak_concurrent_closes(tmp_path, monkeypatch, serial_above, size):
+def _peak_concurrent_closes(tmp_path, monkeypatch, size):
     """Extract four members of ``size`` and report how many closes were ever in
     flight at once."""
     members = [(f"m{i}.bin", os.urandom(size)) for i in range(4)]
-    archive = _write_7z(tmp_path / f"c{serial_above}_{size}.7z", members)
+    archive = _write_7z(tmp_path / f"c{size}.7z", members)
     A.get_archive_cache().clear()
     live = [0]
     peak = [0]
@@ -635,13 +564,11 @@ def _peak_concurrent_closes(tmp_path, monkeypatch, serial_above, size):
     monkeypatch.setattr(AL, "open",
                         lambda *a, **kw: _Counted(real_open(*a, **kw)),
                         raising=False)
-    app = _bare_app(2)
-    app.config.SERIAL_CLOSE_ABOVE = serial_above
     handler = LibarchiveHandler(Path(str(archive)))
     try:
         handler.open()
-        count = app._extract_members(handler, Path(str(tmp_path / f"o{serial_above}")),
-                                     None)
+        count = _bare_app(4)._extract_members(
+            handler, Path(str(tmp_path / f"o{size}")), None)
     finally:
         handler.close()
         A.get_archive_cache().clear()
@@ -650,31 +577,61 @@ def _peak_concurrent_closes(tmp_path, monkeypatch, serial_above, size):
 
 
 @requires_7z
-def test_large_members_are_closed_one_at_a_time(tmp_path, monkeypatch):
-    """Closing is where a network destination transfers a file, and two large
-    transfers at once move no more than one — a single stream already saturated
-    the link. So they are serialised: nothing measurable is given up, and the far
-    end is not asked to hold two large bodies at once, which is what one server
-    was seen to stop answering during."""
-    assert _peak_concurrent_closes(tmp_path, monkeypatch,
-                                   serial_above=32 * 1024, size=64 * 1024) == 1
+@pytest.mark.parametrize("size", [4096, 64 * 1024])
+def test_no_two_members_are_closed_at_once(tmp_path, monkeypatch, size):
+    """Whatever the size, and however many workers. Closing is where a network
+    destination transfers a file, and two at once move no more data than one — a
+    single stream already saturated the link — while asking the far end to hold
+    two bodies, which is what one server was seen to stop answering during.
+
+    Serialising every close rather than only the large ones costs about 8%: the
+    overlap that pays is between one file's close and the *next* file's read and
+    write, and that is untouched by this."""
+    assert _peak_concurrent_closes(tmp_path, monkeypatch, size) == 1
 
 
 @requires_7z
-def test_small_members_still_overlap(tmp_path, monkeypatch):
-    """The other half, and the whole measured gain: a small member's cost is the
-    fixed round trip rather than its transfer, and overlapping those is what
-    halved a batch's wall clock. Serialising everything would throw that away."""
-    assert _peak_concurrent_closes(tmp_path, monkeypatch,
-                                   serial_above=32 * 1024, size=4096) == 2
+def test_a_close_overlaps_the_next_member_being_written(tmp_path, monkeypatch):
+    """And that overlap is the one worth having, proved without a clock.
 
+    The first close blocks until another worker has begun writing a different
+    member. If the workers only ever took turns end to end, no one would arrive
+    and the wait would time out."""
+    members = [(f"m{i}.bin", os.urandom(4096)) for i in range(6)]
+    archive = _write_7z(tmp_path / "overlap.7z", members)
+    A.get_archive_cache().clear()
+    writing = threading.Event()
+    first_close = threading.Lock()
+    alone = []
 
-@requires_7z
-def test_zero_closes_every_member_on_its_own(tmp_path, monkeypatch):
-    """The setting for a destination that has shown it cannot take two at once:
-    every member, whatever its size, waits its turn."""
-    assert _peak_concurrent_closes(tmp_path, monkeypatch,
-                                   serial_above=0, size=4096) == 1
+    real_open = open
+
+    class _Watched:
+        def __init__(self, handle):
+            self._handle = handle
+            self._mine = first_close.acquire(blocking=False)
+
+        def write(self, data):
+            if not self._mine:
+                writing.set()       # somebody else got on with a member
+            return self._handle.write(data)
+
+        def close(self):
+            if self._mine and not writing.wait(timeout=5):
+                alone.append(True)
+            self._handle.close()
+
+    monkeypatch.setattr(AL, "open",
+                        lambda *a, **kw: _Watched(real_open(*a, **kw)),
+                        raising=False)
+    handler = LibarchiveHandler(Path(str(archive)))
+    try:
+        handler.open()
+        _bare_app(2)._extract_members(handler, Path(str(tmp_path / "out")), None)
+    finally:
+        handler.close()
+        A.get_archive_cache().clear()
+    assert alone == []
 
 
 @requires_7z
@@ -710,7 +667,7 @@ def test_a_close_that_times_out_names_the_worker_setting(tmp_path, monkeypatch):
     finally:
         handler.close()
         A.get_archive_cache().clear()
-    assert "ARCHIVE_EXTRACT_WORKERS" in caught.value.user_message
+    assert "TRANSFER_CONCURRENCY" in caught.value.user_message
     assert "m.bin" in caught.value.user_message
 
 

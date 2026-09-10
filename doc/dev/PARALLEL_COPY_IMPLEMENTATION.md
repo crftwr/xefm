@@ -42,8 +42,8 @@ more than 1 **and** the operation covers more than one item:
 
 | Schemes involved       | Workers | Why |
 |------------------------|---------|-----|
-| `file` only            | `FILE_OP_WORKERS_LOCAL` (default 4) | local disk saturates fast; >4 measured slower |
-| `file` + `s3`          | `FILE_OP_WORKERS_S3` (default 8) | per-object latency dominates; boto3 clients are thread-safe (creation serialized in `s3.py`) |
+| `file` only            | 4 | local disk saturates fast — ~1.3–1.9x at 2–4 workers on an APFS SSD, worse beyond |
+| `file` + `s3`          | 8 (the larger end wins) | per-object latency dominates; boto3 clients are thread-safe (creation serialized in `s3.py`). The one number here with no measurement behind it |
 | anything else (`ssh`, archives) | 1 — sequential path | ssh transfers share one control-master connection per host with per-connection progress state |
 
 The two knobs are independent because the sweet spots genuinely differ: local
@@ -75,7 +75,7 @@ keep the semantics identical to the sequential path:
 
 A mounted network volume — WebDAV, SMB, NFS under close-to-open — reports the
 same `file` scheme a local disk does, so nothing in a path says the destination
-is remote and the pool sizes itself at `FILE_OP_WORKERS_LOCAL`. On such a volume
+is remote and the pool sizes itself for a local disk. On such a volume
 the write loop only fills a local cache and **`close()` is the transfer**: one
 measured 64 MiB spent 0.04s writing and 5.25s closing. Four workers therefore
 meant four concurrent uploads.
@@ -88,16 +88,19 @@ transfer is comparable to it, which is to say below roughly 7 MiB; past that the
 trade is all risk. And the risk is real: one WebDAV server stopped answering
 while two large uploads were in flight, and did not recover on a remount.
 
-So `LargeCloseGate` holds a lock across the close of any file of at least
-`SERIAL_CLOSE_ABOVE` (default 8 MiB), and lets smaller ones through — with each
-other and with a large one, because that is where the whole measured gain lives.
-`0` puts every file under the lock, for a destination that has shown it cannot
-take two at once; a value past the largest file restores the old behaviour.
+So `CloseGate` holds a lock across **every** close, of any size. Serialising all
+of them rather than only the large ones costs about 8% — the same file set went
+11.89s with one closer thread against 10.98s with closes overlapping — because
+the overlap that pays is not between two closes but between one file's close and
+the *next* file's open and write, which the gate does not touch. 8% is a small
+price for not having to decide, per file and per destination, which closes are
+safe together; it is also what lets the worker table below not care whether a
+`file` path is a local disk or a mounted volume.
 
-Archive extraction takes the same gate under the same setting: the constraint
-belongs to the destination, not to the operation writing it. One gate per
-operation rather than one per process is enough, because the progress dialog is
-modal and XeFM runs one file operation at a time.
+Archive extraction takes the same gate: the constraint belongs to the
+destination, not to the operation writing it. One gate per operation rather than
+one per process is enough, because the progress dialog is modal and XeFM runs
+one file operation at a time.
 
 Nothing here is specific to a network volume. A destination whose close is
 instant passes through an uncontended lock, and a cancelled or failed copy

@@ -97,9 +97,9 @@ from xefm.sort_dialog import show_sort_dialog
 from xefm.progress_manager import OperationType
 from xefm.diff_viewer import show_diff_viewer
 from xefm.directory_diff_viewer import show_directory_diff_viewer
-from xefm.file_operations import (FileOperationService, LargeCloseGate,
+from xefm.file_operations import (CloseGate, FileOperationService,
                                   format_op_errors, format_op_summary,
-                                  serialized_log)
+                                  serialized_log, transfer_workers)
 from xefm.task import Cancelled, Task, TaskManager
 from xefm.text_dialog import show_markdown
 from xefm.text_encoding import sniff_bom
@@ -1036,17 +1036,16 @@ class _ExtractionPool:
     stops everything. Both are reported by :meth:`close`, because neither is
     known while the archive that caused it is still being read.
 
-    ``close_gate`` is the same :class:`~xefm.file_operations.LargeCloseGate` a
-    copy uses, and for the same reason: a large member's close is a transfer the
-    destination may not want two of. Which members it holds, and why, is its
-    own documentation."""
+    ``close_gate`` is the same :class:`~xefm.file_operations.CloseGate` a copy
+    uses, and for the same reason: a member's close is a transfer the
+    destination may not want two of. Its own documentation says why."""
 
     def __init__(self, workers: int, *, task=None, prog=None, log=None,
                  close_gate=None):
         self._task = task
         self._prog = prog
         self._log = log
-        self._close_gate = close_gate or LargeCloseGate()
+        self._close_gate = close_gate or CloseGate()
         self._cond = threading.Condition()
         self._job = None           # (key, pass, root, archive path, dest dir)
         self._exhausted = True     # nothing published yet
@@ -1138,7 +1137,7 @@ class _ExtractionPool:
                     # it. Marked before any queueing below, so the row accounts
                     # for the whole wait rather than only its own turn.
                     self._prog.file_closing(slot)
-                with self._close_gate.closing(0 if entry.is_dir else entry.size):
+                with self._close_gate.closing():
                     pending.finish()
                 pending = None
             if self._prog is not None:
@@ -5365,27 +5364,22 @@ class XeFMApp:
         finally:
             handler.close()
 
-    def _extract_workers(self) -> int:
-        """How many workers an extraction may run (``ARCHIVE_EXTRACT_WORKERS``).
+    def _extract_workers(self, dest_dir=None) -> int:
+        """How many members an extraction may have in flight.
 
-        Not derived from the destination, because it cannot be: a WebDAV or SMB
-        volume is a mounted filesystem and reports the same ``file`` scheme a
-        local disk does, so nothing in the path says how many concurrent writes
-        it will accept. The default is small for the same reason — measured
-        against one such mount, everything the client would overlap was already
-        overlapped at two."""
-        config = getattr(self, "config", None)
-        try:
-            workers = int(getattr(config, "ARCHIVE_EXTRACT_WORKERS", 2))
-        except (TypeError, ValueError):
-            workers = 2
-        return max(1, workers)
+        The destination's number, from the same table a copy uses
+        (:func:`~xefm.file_operations.transfer_workers`) — the archive's own end
+        is not in it, because the reader is serialised by the handler's claim
+        whatever this returns, so the only thing a worker count can overlap here
+        is the writing."""
+        schemes = {dest_dir.get_scheme()} if dest_dir is not None else {"file"}
+        return transfer_workers(getattr(self, "config", None), schemes)
 
-    def _close_gate(self) -> LargeCloseGate:
-        """This extraction's gate on closing large files — the copy engine's, and
-        governed by the same setting, because the constraint belongs to the
-        destination rather than to the operation writing it."""
-        return LargeCloseGate.from_config(getattr(self, "config", None))
+    def _close_gate(self) -> CloseGate:
+        """This extraction's gate on closing files — the copy engine's, because
+        the constraint belongs to the destination rather than to the operation
+        writing it."""
+        return CloseGate()
 
     def _extract_members(self, handler, dest_dir, pwd: bytes | None,
                          *, task=None, prog=None, log=None, archive_path=None,
@@ -5425,8 +5419,8 @@ class XeFMApp:
             with handler.extraction_pass(dest_dir, password=pwd) as pass_:
                 pool.run_archive(key, pass_, root, archive_path, dest_dir)
             return 0
-        own = _ExtractionPool(self._extract_workers(), task=task, prog=prog,
-                              log=log, close_gate=self._close_gate())
+        own = _ExtractionPool(self._extract_workers(dest_dir), task=task,
+                              prog=prog, log=log, close_gate=self._close_gate())
         try:
             with handler.extraction_pass(dest_dir, password=pwd) as pass_:
                 own.run_archive(key, pass_, root, archive_path, dest_dir)
@@ -5773,7 +5767,7 @@ class XeFMApp:
                 # members of an archive were landing while every other worker sat
                 # idle and the next archive could not begin reading.
                 pool = _ExtractionPool(
-                    self._extract_workers(), task=t, prog=prog, log=log,
+                    self._extract_workers(dest_dir), task=t, prog=prog, log=log,
                     close_gate=self._close_gate())
                 entries = 0
                 failures: list[tuple] = []

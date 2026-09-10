@@ -660,14 +660,13 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
   expensive part. The batch's own thread still publishes one archive at a time
   and keeps the password gate, the title and per-archive attribution; what it
   waits for is that archive's *reading*, not its writing. Concurrency stays at
-  `ARCHIVE_EXTRACT_WORKERS` throughout, since a boundary that briefly doubled it
+  the operation's worker count throughout, since a boundary that briefly doubled it
   would be a worse bargain than the one it removed.
 
-  **Large members are closed one at a time**, through the same
-  `file_operations.LargeCloseGate` a copy uses and under the same setting
-  (`SERIAL_CLOSE_ABOVE`) — the constraint belongs to the destination, not to the
-  operation writing it. See `PARALLEL_COPY_IMPLEMENTATION.md` for the reasoning
-  and the numbers.
+  **Members are closed one at a time**, through the same
+  `file_operations.CloseGate` a copy uses — the constraint belongs to the
+  destination, not to the operation writing it. See
+  `PARALLEL_COPY_IMPLEMENTATION.md` for the reasoning and the numbers.
 
   Counts and failures therefore arrive late: an archive's last files land after
   its reading ended, so neither its member count nor its failure exists when the
@@ -675,7 +674,7 @@ Thin wrappers so the app never reaches into `_impl` / cache internals:
   which `run` folds into `done` / `entries` / `failures` after the loop.
 
   Each archive is read by `_extract_members`: **symmetric workers**
-  (`ARCHIVE_EXTRACT_WORKERS`, default 2) each take one member and carry it from
+  (`transfer_workers` on the destination's scheme) each take one member and carry it from
   claim to closed file, so a member's whole life — and its file handle's — stays
   on one thread. The archive is claimed one member at a time, but that lock
   lives with the cursor it protects, inside

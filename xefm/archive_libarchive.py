@@ -504,8 +504,8 @@ class _PendingWrite:
                 raise ArchiveExtractionError(
                     f"Timed out writing {self.internal_path}: {exc}",
                     f"Timed out writing '{self.internal_path}' — if the "
-                    f"destination is a network volume, lowering "
-                    f"ARCHIVE_EXTRACT_WORKERS may help")
+                    f"destination is a network volume, setting "
+                    f"TRANSFER_CONCURRENCY to \"none\" may help")
             raise ArchiveExtractionError(
                 f"Error writing {self.internal_path}: {exc}",
                 f"Cannot write '{self.internal_path}': {exc}")
