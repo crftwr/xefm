@@ -13,6 +13,7 @@ import os
 import sys
 import tarfile
 import threading
+import time
 import types
 import zipfile
 
@@ -180,53 +181,57 @@ def test_the_next_archive_starts_while_this_one_is_still_landing(tmp_path, dest,
     """The batch does not wait for an archive's files to land before opening the
     next one.
 
-    Proved without reading a clock. The close of the first archive's big member
-    blocks until the second archive has *started reading*; if the batch still
-    drained at the boundary, that close could never be released — the second
-    archive would be waiting on it — and the wait would time out. Its small
-    member closes freely, which is what lets a worker come back, find the first
-    archive spent, and let the batch move on while the big one is still going."""
+    Asserted as a state and not a duration: at the moment the second archive's
+    reader is opened, is one of the first archive's files still being closed?
+    A close cannot be made to *block* on the second archive starting, because
+    every close takes one gate — the blocked one would hold it, no other member
+    could finish, and the archive would never be retired for the batch to move
+    on. So the closes are merely slow, and what is checked is what was still in
+    flight when the next reader opened."""
     payload = os.urandom(64 * 1024)
     first = _7z(tmp_path, "first.7z", [("big.bin", payload), ("small.bin", b"s")])
     second = _7z(tmp_path, "second.7z", [("only.bin", b"x")])
     app = _app([first, second], [first, second], dest)
-    app.config.ARCHIVE_EXTRACT_WORKERS = 2
+    app.config.TRANSFER_CONCURRENCY = 2
 
-    reading_second = threading.Event()
-    timed_out = []
-
+    live = [0]
+    guard = threading.Lock()
+    overlapped = []
     real_pass = AL.LibarchiveHandler.extraction_pass
 
     def traced_pass(self, dest_dir_, **kw):
         if self._archive_path.name == "second.7z":
-            reading_second.set()
+            with guard:
+                overlapped.append(live[0] > 0)
         return real_pass(self, dest_dir_, **kw)
 
     real_open = open
 
-    class _WaitsForTheNextArchive:
-        def __init__(self, handle, path):
+    class _SlowClose:
+        def __init__(self, handle):
             self._handle = handle
-            self._path = str(path)
 
         def write(self, data):
             return self._handle.write(data)
 
         def close(self):
-            if self._path.endswith("big.bin"):
-                if not reading_second.wait(timeout=5):
-                    timed_out.append(self._path)
-            self._handle.close()
+            with guard:
+                live[0] += 1
+            time.sleep(0.5)
+            try:
+                self._handle.close()
+            finally:
+                with guard:
+                    live[0] -= 1
 
     monkeypatch.setattr(AL.LibarchiveHandler, "extraction_pass", traced_pass)
-    monkeypatch.setattr(
-        AL, "open",
-        lambda p, *a, **kw: _WaitsForTheNextArchive(real_open(p, *a, **kw), p),
-        raising=False)
+    monkeypatch.setattr(AL, "open",
+                        lambda *a, **kw: _SlowClose(real_open(*a, **kw)),
+                        raising=False)
 
     app.extract_archive()
 
-    assert timed_out == []
+    assert overlapped == [True]
     assert (tmp_path / "dest" / "first" / "big.bin").read_bytes() == payload
     assert (tmp_path / "dest" / "second" / "only.bin").read_bytes() == b"x"
     assert any("Extracted 2 archive(s)" in m for m in app.logs)

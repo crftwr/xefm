@@ -283,6 +283,26 @@ class ArchiveLoops(unittest.TestCase):
                     self.assertTrue(line.startswith("Extracted '"), line)
                     self.assertIn(f"arc.{fmt} → ", line)
 
+    def test_the_final_write_out_of_the_archive_says_so(self):
+        """Once every member is in, the archive itself still has to be written —
+        on a mounted volume that holds a file until close, that is one transfer
+        of the whole thing and the only part of the run with no member left to
+        report. The bars have nothing more to say, so the title does.
+
+        The last member's row is closed first, so its item is counted before the
+        wait rather than after it."""
+        for fmt in ("zip", "tar", "tar.gz"):
+            with self.subTest(fmt=fmt):
+                task, prog, _seen = self._task()
+                path = Path(os.path.join(self.tmp, f"final.{fmt}"))
+                added = self.app._write_archive(self.sources, path, fmt,
+                                                task=task, prog=prog)
+                self.assertEqual(task.title, f"Writing final.{fmt}…")
+                op = prog.get_current_operation()
+                self.assertEqual(op["processed_items"], added)
+                self.assertFalse([t for _s, t in prog.get_transfers()
+                                  if not t.get("done")])
+
     def test_a_step_behind_log_never_claims_a_member_that_failed(self):
         """The holding rule on its own: extractall and tar's add give a seam only
         at the *start* of a member, so a line is held until the next one begins.

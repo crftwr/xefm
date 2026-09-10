@@ -504,8 +504,8 @@ class _PendingWrite:
                 raise ArchiveExtractionError(
                     f"Timed out writing {self.internal_path}: {exc}",
                     f"Timed out writing '{self.internal_path}' — if the "
-                    f"destination is a network volume, lowering "
-                    f"ARCHIVE_EXTRACT_WORKERS may help")
+                    f"destination is a network volume, setting "
+                    f"TRANSFER_CONCURRENCY to \"none\" may help")
             raise ArchiveExtractionError(
                 f"Error writing {self.internal_path}: {exc}",
                 f"Cannot write '{self.internal_path}': {exc}")
@@ -1150,11 +1150,23 @@ def member_walk(sources) -> Iterator[Tuple[PathlibPath, str, bool]]:
     total that pass produced is the one this loop has to reach, or the progress
     bar stops short. Directories are stored rather than left implicit, which is
     what keeps an empty one in the archive.
+
+    A symlink to a directory is stored *as* a directory, empty, and is not
+    descended into. Following it would be the natural reading of "symlinks are
+    followed", but a tree of them — a macOS framework's ``bin`` ->
+    ``Versions/Current/bin``, with ``Current`` -> ``A`` — is a graph with
+    cycles, and duplicating the target under every name that reaches it is not
+    what anyone means by archiving the directory. Storing the link itself is not
+    open either: libarchive's 7z writer segfaults on a symlink entry. This is
+    also what ``zipfile.write`` already does with one, so the two create paths
+    agree.
     """
     def walk(path: PathlibPath, arcname: str):
-        is_dir = path.is_dir() and not path.is_symlink()
-        yield path, arcname, is_dir
-        if not is_dir:
+        link = path.is_symlink()
+        # is_dir() follows the link, matching the stat the writer then takes.
+        stored_as_dir = path.is_dir()
+        yield path, arcname, stored_as_dir
+        if link or not stored_as_dir:
             return
         try:
             children = list(path.iterdir())
@@ -1187,9 +1199,15 @@ def _file_blocks(path: PathlibPath, on_bytes: Optional[Callable[[int], None]]):
 def write_archive(archive_path, sources, *, format_name: str = '7zip',
                   options: str = '',
                   on_entry: Optional[Callable[[str, int, bool], None]] = None,
-                  on_bytes: Optional[Callable[[int], None]] = None) -> int:
+                  on_bytes: Optional[Callable[[int], None]] = None,
+                  on_finish: Optional[Callable[[], None]] = None) -> int:
     """Write ``sources`` into a new archive at ``archive_path``, returning the
     number of members written.
+
+    ``on_finish()`` is called once every member is written and before the
+    archive itself is closed — which, on a destination that holds a file until
+    close, is where the whole archive is uploaded and the only part of the run
+    with nothing left to report. The caller uses it to say so.
 
     ``on_entry(arcname, size, is_dir)`` is called before each member,
     ``on_bytes(n)`` as its payload goes past. The directory flag comes from the
@@ -1206,9 +1224,11 @@ def write_archive(archive_path, sources, *, format_name: str = '7zip',
     raises — ``Cancelled`` — unwinds through here, closing the partial file on
     the way out for the caller to remove.
 
-    Local filesystem paths only, matching the rest of the create path. Symlinks
-    are followed and stored as their target's contents, which is what ``zipfile``
-    does; tar's link-preserving behaviour has no equivalent here.
+    Local filesystem paths only, matching the rest of the create path. A symlink
+    to a file is followed and stored as its target's contents, which is what
+    ``zipfile`` does; one to a directory is stored as an empty directory, for the
+    reasons :func:`member_walk` gives. tar's link-preserving behaviour has no
+    equivalent here — libarchive's 7z writer segfaults on a symlink entry.
     """
     from libarchive.entry import FileType
 
@@ -1229,6 +1249,11 @@ def write_archive(archive_path, sources, *, format_name: str = '7zip',
                 mtime=int(info.st_mtime),
             )
             written += 1
+        # Still inside the writer's `with`: its close, below, is where the
+        # archive itself lands — one transfer of the whole thing on a
+        # destination that holds a file until it is closed.
+        if on_finish is not None:
+            on_finish()
     return written
 
 

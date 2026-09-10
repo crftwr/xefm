@@ -322,12 +322,17 @@ def _plan(*schemes):
 
 
 def test_copy_workers_local(svc):
-    assert svc._copy_workers("copy", _plan("file", "file"), _Scheme("file")) == F._WORKERS_LOCAL
+    assert (svc._copy_workers("copy", _plan("file", "file"), _Scheme("file"))
+            == F._SCHEME_WORKERS["file"])
 
 
-def test_copy_workers_s3(svc):
-    assert svc._copy_workers("copy", _plan("file"), _Scheme("s3")) == F._WORKERS_REMOTE
-    assert svc._copy_workers("copy", _plan("s3"), _Scheme("file")) == F._WORKERS_REMOTE
+def test_copy_workers_takes_the_larger_end(svc):
+    """The smaller end is not the bottleneck: reading four files off a local
+    disk while S3 accepts eight is no strain, so the operation is sized by
+    whichever side is slower to take work."""
+    for plan, dest in ((_plan("file"), _Scheme("s3")),
+                       (_plan("s3"), _Scheme("file"))):
+        assert svc._copy_workers("copy", plan, dest) == F._SCHEME_WORKERS["s3"]
 
 
 def test_copy_workers_ssh_stays_sequential(svc):
@@ -339,26 +344,32 @@ def test_copy_workers_delete_stays_sequential(svc):
     assert svc._copy_workers("delete", _plan("file"), None) == 1
 
 
-def test_copy_workers_config_knobs_are_independent(cfg):
+def test_an_unknown_scheme_is_assumed_to_allow_one(svc):
+    """Guessing upwards is the guess that hurts, so a scheme not in the table is
+    treated like the ones known to allow a single transfer."""
+    assert svc._copy_workers("copy", _plan("ftp"), _Scheme("file")) == 1
+
+
+def test_transfer_concurrency_overrides_the_table(cfg):
     svc = FileOperationService(cfg)
-    cfg.FILE_OP_WORKERS_LOCAL = 2
-    cfg.FILE_OP_WORKERS_S3 = 12
-    assert svc._copy_workers("copy", _plan("file"), _Scheme("file")) == 2
-    assert svc._copy_workers("copy", _plan("file"), _Scheme("s3")) == 12
-    # ...but neither knob ever forces a scheme that isn't thread-safe.
+    cfg.TRANSFER_CONCURRENCY = "none"
+    assert svc._copy_workers("copy", _plan("file"), _Scheme("file")) == 1
+    cfg.TRANSFER_CONCURRENCY = 3
+    assert svc._copy_workers("copy", _plan("file"), _Scheme("s3")) == 3
+    # ...but never past an endpoint that allows only one transfer.
     assert svc._copy_workers("copy", _plan("ssh"), _Scheme("file")) == 1
 
 
-def test_copy_workers_nonsense_knob_falls_back_to_default(cfg):
+def test_a_nonsense_setting_falls_back_to_the_table(cfg):
     svc = FileOperationService(cfg)
-    cfg.FILE_OP_WORKERS_LOCAL = 0
-    assert svc._copy_workers("copy", _plan("file"), _Scheme("file")) == F._WORKERS_LOCAL
-    cfg.FILE_OP_WORKERS_LOCAL = "many"
-    assert svc._copy_workers("copy", _plan("file"), _Scheme("file")) == F._WORKERS_LOCAL
+    for value in (0, "many", None):
+        cfg.TRANSFER_CONCURRENCY = value
+        assert (svc._copy_workers("copy", _plan("file"), _Scheme("file"))
+                == F._SCHEME_WORKERS["file"])
 
 
 def test_workers_one_takes_the_sequential_path(tmp_path, cfg, monkeypatch):
-    cfg.FILE_OP_WORKERS_LOCAL = 1
+    cfg.TRANSFER_CONCURRENCY = "none"
     svc = FileOperationService(cfg)
 
     def boom(*a, **kw):
@@ -432,25 +443,17 @@ def _peak_concurrent_closes(svc, monkeypatch, tmp_path, size, count=4):
     return peak[0]
 
 
-def test_a_copy_closes_one_large_file_at_a_time(svc, monkeypatch, tmp_path):
-    """The copy engine faces exactly what extraction did, and harder: a mounted
-    WebDAV volume reports the same `file` scheme a local disk does, so a copy on
-    to one runs FILE_OP_WORKERS_LOCAL workers — four — each closing its own
-    destination file. Where that close is the transfer, four at once move no
-    more data than one and ask the server to hold four large bodies."""
-    # 3 MiB files against a 2 MiB gate. They have to clear _BYTE_BAR_MIN too,
-    # or the copy takes its one-shot path and never streams.
-    svc.close_gate.above = 2 * 1024 * 1024
-    assert _peak_concurrent_closes(svc, monkeypatch, tmp_path,
-                                   3 * 1024 * 1024) == 1
+@pytest.mark.parametrize("size", [3 * 1024 * 1024 // 2, 3 * 1024 * 1024])
+def test_a_copy_closes_one_file_at_a_time(svc, monkeypatch, tmp_path, size):
+    """The copy engine faces what extraction does, and harder: a mounted WebDAV
+    volume reports the same `file` scheme a local disk does, so a copy on to one
+    sizes its pool from the table and each worker closes its own destination
+    file. Where that close is the transfer, four at once move no more data than
+    one and ask the server to hold four bodies.
 
-
-def test_a_copy_still_overlaps_small_files(svc, monkeypatch, tmp_path):
-    """And keeps the concurrency that pays: a small file's cost is the fixed
-    round trip, not its transfer, so those still go at once."""
-    svc.close_gate.above = 2 * 1024 * 1024
-    assert _peak_concurrent_closes(svc, monkeypatch, tmp_path,
-                                   3 * 1024 * 1024 // 2) > 1
+    Sizes here clear _BYTE_BAR_MIN, or the copy takes its one-shot path and
+    never streams."""
+    assert _peak_concurrent_closes(svc, monkeypatch, tmp_path, size) == 1
 
 
 # --- per-file transfer slots (issue #268) ----------------------------------------

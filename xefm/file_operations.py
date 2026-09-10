@@ -66,17 +66,26 @@ _OP_TYPE = {
 _CHUNK = 1024 * 1024
 _BYTE_BAR_MIN = 1024 * 1024
 
-#: Copy-worker pool sizes by storage latency class — the fallbacks behind
-#: ``config.FILE_OP_WORKERS_LOCAL`` / ``FILE_OP_WORKERS_S3``. Local disk
-#: saturates fast — measured ~1.3–1.9× at 2–4 workers on APFS SSD, and *worse*
-#: beyond that (GIL + filesystem metadata serialization). S3 is per-object
-#: round-trip latency, so more concurrency keeps paying. ssh stays at 1:
-#: transfers share one control-master connection per host whose progress state
-#: is per-connection, not per-transfer.
-_WORKERS_LOCAL = 4
-#: Default for ``SERIAL_CLOSE_ABOVE`` — see :class:`LargeCloseGate`.
-_SERIAL_CLOSE_ABOVE = 8 * 1024 * 1024
-_WORKERS_REMOTE = 8
+#: How many transfers each kind of endpoint is worth running at once. A scheme
+#: missing from here allows exactly one: ``ssh`` shares a control-master
+#: connection per host whose progress state is per-connection rather than
+#: per-transfer, ``archive`` is a single forward stream, and a scheme XeFM does
+#: not know had better be assumed to be one of those.
+#:
+#: ``file`` covers a mounted network volume as well as a local disk, and
+#: deliberately does not distinguish them. Nothing in a path says which it is,
+#: and after :class:`CloseGate` nothing needs to: this number governs how many
+#: files are *worked on* at once, while the transfer a mounted volume defers to
+#: close happens one at a time regardless. 4 is where a local disk stopped
+#: gaining — measured ~1.3–1.9x at 2–4 workers on an APFS SSD and *worse* beyond
+#: that, between the GIL and filesystem metadata serialisation. A WebDAV mount
+#: gained nothing past 2, and loses nothing by being given 4 it will queue.
+#:
+#: The 8 for ``s3`` is the one number here with no measurement behind it, only
+#: the reasoning that per-object round-trip latency dominates. It also does not
+#: pass through CloseGate, since boto3 does the transfer rather than a POSIX
+#: close — so it is left alone until someone measures it.
+_SCHEME_WORKERS = {"file": 4, "s3": 8}
 
 #: macOS ``clonefile(2)``: a same-volume APFS copy is one copy-on-write
 #: syscall — instant regardless of size, sharing data blocks until either side
@@ -218,7 +227,7 @@ class FileOperationService:
         self.monitor = monitor
         #: One large file closed at a time — where the destination transfers a
         #: file at its close, that is the only concurrency worth refusing.
-        self.close_gate = LargeCloseGate.from_config(config)
+        self.close_gate = CloseGate()
 
     # --- public API ----------------------------------------------------------
 
@@ -518,32 +527,15 @@ class FileOperationService:
     def _copy_workers(self, kind: str, plan: list,
                       dest_dir: Optional[Path]) -> int:
         """How many pool workers this operation may use; 1 means the sequential
-        path runs unchanged. Local↔local gets a small pool
-        (``config.FILE_OP_WORKERS_LOCAL``), S3 a larger one
-        (``config.FILE_OP_WORKERS_S3`` — per-object round-trip latency
-        dominates there, and boto3 clients are thread-safe). Anything else
-        stays sequential regardless of the knobs: ssh transfers share one
-        control-master connection per host whose progress state is
-        per-connection, not per-transfer, and archive/unknown schemes make no
-        thread-safety promises."""
+        path runs unchanged. Only copy-shaped work is parallel at all; the number
+        itself is :func:`transfer_workers`' to decide, from the schemes at both
+        ends."""
         if kind not in ("copy", "duplicate", "move"):
             return 1
         schemes = {t.get_scheme() for t, _dest, _ow in plan}
         if dest_dir is not None:
             schemes.add(dest_dir.get_scheme())
-        if not schemes <= {"file", "s3"}:
-            return 1
-        if "s3" in schemes:
-            workers = getattr(self.config, "FILE_OP_WORKERS_S3", _WORKERS_REMOTE)
-            fallback = _WORKERS_REMOTE
-        else:
-            workers = getattr(self.config, "FILE_OP_WORKERS_LOCAL", _WORKERS_LOCAL)
-            fallback = _WORKERS_LOCAL
-        try:
-            workers = int(workers)
-        except (TypeError, ValueError):
-            workers = fallback
-        return workers if workers >= 1 else fallback
+        return transfer_workers(self.config, schemes)
 
     def _run_parallel(self, task: Task, kind: str, plan: list,
                       dest_dir: Optional[Path], prog: ProgressManager, log,
@@ -799,7 +791,7 @@ class FileOperationService:
                         out.write(chunk)
                         copied += len(chunk)
                         prog.file_bytes(slot, copied, size)
-                    with self.close_gate.closing(size):
+                    with self.close_gate.closing():
                         out.close()
                     closed = True
                 finally:
@@ -916,55 +908,77 @@ def _log_del(log, path: Path) -> None:
         log(f"Deleted '{path.name}': {path.parent}")
 
 
-class LargeCloseGate:
-    """Lets one large file be closed at a time, whoever is writing it.
+class CloseGate:
+    """Lets one file be closed at a time, whoever is writing it.
 
     Where a destination holds a file in a local cache until it is closed — a
     WebDAV or SMB volume, NFS under close-to-open — that close *is* the
-    transfer. Two large ones at once move no more data than one, because a
-    single stream already saturates the link: 12.2 MiB/s measured alone against
-    11.8 aggregate across four workers. So the concurrency buys nothing there,
-    while asking the far end to hold two large bodies at the same time — and one
-    WebDAV server was seen to stop answering while two were in flight, and not
-    recover on a remount.
+    transfer. Two at once move no more data than one, because a single stream
+    already saturates the link: 12.2 MiB/s measured alone against 11.8 aggregate
+    across four workers. And one WebDAV server stopped answering while two large
+    uploads were in flight, and did not recover on a remount.
 
-    What concurrency *does* buy is the fixed round trip each file costs, around
-    0.55s against a link doing 12.2 MiB/s. That is worth having only while a
-    file's transfer is comparable to it, which is to say below roughly 7 MiB.
-    Above that the trade is all risk, so those files queue here and the smaller
-    ones go straight through — with each other and with a large one, since that
-    is where the whole measured gain lives.
+    Serialising every close, not merely the large ones, costs about 8%: the same
+    file set went 11.89s with one closer thread against 10.98s with closes
+    overlapping. The overlap that pays is not between two closes — it is between
+    one file's close and the *next* file's open and write, and that is untouched
+    by this. 8% is a small price for not having to decide, per file and per
+    destination, which closes are safe to run together.
 
-    ``above`` is the size at which a file starts queueing: 0 for every file, of
-    any size, and None to let everything through. Nothing here is specific to a
-    network volume; a destination whose close is instant passes through an
-    uncontended lock.
+    Nothing here is specific to a network volume: a destination whose close is
+    instant passes through an uncontended lock in microseconds. One gate per
+    operation is enough, because the progress dialog is modal and XeFM runs one
+    file operation at a time.
 
-    One gate per operation, not one per process: the progress dialog is modal,
-    so XeFM runs one file operation at a time and there is nothing else to
-    coordinate with."""
+    Known limit: on a link fast enough that one stream does not saturate it,
+    this gives up throughput that is really there. The measurements behind it
+    come from a 12.2 MiB/s link. A knob to lift it belongs to whoever measures
+    such a destination, not here in advance of one."""
 
-    def __init__(self, above: Optional[int] = None):
-        self.above = above
+    def __init__(self):
         self._lock = threading.Lock()
 
     @contextmanager
-    def closing(self, size: int):
-        """Hold the gate for the duration of a file's close, if it is a big one."""
-        if self.above is None or size < self.above:
-            yield
-            return
+    def closing(self):
+        """Hold the gate for the duration of one file's close."""
         with self._lock:
             yield
 
-    @classmethod
-    def from_config(cls, config: Any) -> 'LargeCloseGate':
-        """The gate ``SERIAL_CLOSE_ABOVE`` asks for."""
+
+def transfer_workers(config: Any, schemes) -> int:
+    """How many files an operation between ``schemes`` may have in flight.
+
+    Three lines, in order:
+
+    1. An endpoint that allows only one transfer caps the whole operation at
+       one — and a scheme missing from :data:`_SCHEME_WORKERS` is treated as
+       one of those, because guessing upwards is the guess that hurts.
+    2. ``TRANSFER_CONCURRENCY`` overrides what follows: ``"none"`` for one, an
+       integer of at least one for that many, ``"auto"`` (the default) for
+       neither. Anything else is not a worker count and the table answers.
+    3. Otherwise the larger of the ends. The smaller end is not the bottleneck:
+       a local disk saturates at four *writes*, but reading four files off it
+       while S3 takes eight is no strain, and the operation is limited by
+       whichever side is slower to accept work.
+
+    This is the whole worker-count decision. Safety is not part of it — that is
+    :class:`CloseGate`'s, unconditionally — which is why the table can afford
+    not to know whether a ``file`` path is a local disk or a mounted volume."""
+    if not set(schemes) <= set(_SCHEME_WORKERS):
+        return 1
+    setting = getattr(config, "TRANSFER_CONCURRENCY", "auto")
+    if setting == "none":
+        return 1
+    if setting != "auto":
         try:
-            above = int(getattr(config, "SERIAL_CLOSE_ABOVE", _SERIAL_CLOSE_ABOVE))
+            value = int(setting)
         except (TypeError, ValueError):
-            above = _SERIAL_CLOSE_ABOVE
-        return cls(max(0, above))
+            value = 0
+        if value >= 1:
+            return value
+        # 0, a negative, or something that is not a number at all: nothing a
+        # worker count can mean, so the table answers instead.
+    return max((_SCHEME_WORKERS[s] for s in schemes), default=1)
 
 
 def serialized_log(log: Callable[[str], None]) -> Callable[[str], None]:

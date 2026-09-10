@@ -130,6 +130,17 @@ instead of the single current-file fields:
   network volume — a destination whose close is instant passes through in one
   frame — and it is optional: a caller that never calls it behaves as before.
 
+Archive operations report through the same slots, via
+`archive_progress.ByteProgress` — `begin` / `advance` / `finish` around each
+member — even though most of their paths work through one member at a time and
+so fill one row. A dialog that changed shape depending on which format was being
+read was the alternative: 7z extraction really does have several members in
+flight, and everything else would have kept the older item-name-plus-second-bar
+layout. Creation has one more state to show, since after the last member the
+archive itself is still being written out — one transfer of the whole file on a
+volume that holds it until close, and nothing left for the bars to say. The task
+title carries that.
+
 A finished file stays in its slot (`done: True`) until the worker's next
 `file_begin` reuses it — `ProgressDialog` keys its per-transfer rows by slot, so
 rows update in place instead of blinking. `get_transfers()` returns a snapshot
