@@ -57,6 +57,13 @@ class FakePanel:
             self.on_render()
 
 
+class FakeMonitor:
+    """The pump asks its watchers for a sign of life on every drain (#416)."""
+
+    def check_observer_health(self):
+        pass
+
+
 def _app():
     """A XeFMApp with the real pump + captured-output machinery, nothing else."""
     app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
@@ -71,6 +78,7 @@ def _app():
     # Only the captured-output branch of the pump is under test; the rest report
     # "nothing changed" so any re-render is attributable to captured output.
     app._sync_monitored_dirs = lambda: None
+    app.file_monitor = FakeMonitor()
     app._process_reload_queue = lambda: False
     app._process_result_queue = lambda: False
     app._pump_loading_indicator = lambda: False

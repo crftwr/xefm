@@ -14,6 +14,12 @@ from xefm.log_manager import getLogger
 from xefm.file_monitor_observer import FileMonitorObserver, WATCHDOG_AVAILABLE
 
 
+#: How often check_observer_health() really looks at the observers. The UI pump
+#: calls it on every drain — many times a second while the user works — and a
+#: dead observer is not something that becomes true between two keystrokes.
+HEALTH_CHECK_INTERVAL_S = 5.0
+
+
 class FileMonitorManager:
     """
     Manages filesystem monitoring for XeFM directories.
@@ -43,7 +49,11 @@ class FileMonitorManager:
         self.reload_queue = file_manager.reload_queue
         
         # Initialize monitoring state dictionaries for left and right panes
-        # Each pane has its own monitoring state to track independently
+        # Each pane has its own monitoring state to track independently.
+        # 'failed_path' is the directory that used up every retry and the polling
+        # fallback, not a verdict on the pane: a directory that vanished under
+        # the watcher must not cost the pane its monitoring for the rest of the
+        # session, so the pane resumes the moment it points anywhere else (#416).
         self.monitoring_state = {
             'left': {
                 'path': None,
@@ -53,7 +63,7 @@ class FileMonitorManager:
                 'error_count': 0,
                 'retry_count': 0,
                 'last_successful_start': 0.0,
-                'failed_permanently': False
+                'failed_path': None
             },
             'right': {
                 'path': None,
@@ -63,7 +73,7 @@ class FileMonitorManager:
                 'error_count': 0,
                 'retry_count': 0,
                 'last_successful_start': 0.0,
-                'failed_permanently': False
+                'failed_path': None
             }
         }
         
@@ -90,6 +100,9 @@ class FileMonitorManager:
         
         # Lock for thread-safe access to internal state
         self.state_lock = threading.Lock()
+        
+        # When check_observer_health() last really looked (see its docstring)
+        self._last_health_check = 0.0
         
         # Read monitoring enabled flag from configuration (requirement 11.1)
         self.enabled = config.FILE_MONITORING_ENABLED
@@ -151,10 +164,17 @@ class FileMonitorManager:
             other_pane = 'right' if pane_name == 'left' else 'left'
             other_state = self.monitoring_state[other_pane]
             
-            # Check if this pane has failed permanently
-            if state['failed_permanently']:
-                self.logger.warning(f"Monitoring for {pane_name} pane has failed permanently, not retrying")
-                return
+            # This directory exhausted its retries and its polling fallback.
+            # While the pane stays on it there is nothing new to try; moving
+            # anywhere else clears the verdict, which is what the directory-scoped
+            # 'failed_path' buys over a per-pane flag (#416).
+            if state['failed_path'] is not None:
+                if state['failed_path'] == path:
+                    self.logger.debug(f"Monitoring for {pane_name} pane already failed for {path}, not retrying")
+                    return
+                self.logger.debug(f"Leaving unwatchable directory, {pane_name} pane resumes monitoring: {path}")
+                state['failed_path'] = None
+                state['retry_count'] = 0
             
             # Check if the other pane is already monitoring this same directory
             # If so, share the observer instead of creating a new one
@@ -252,10 +272,11 @@ class FileMonitorManager:
         if state['retry_count'] >= 3:
             self.logger.error(f"Monitoring initialization failed 3 times for {pane_name} pane at {path}")
             self.logger.debug(f"Mode transition: native -> polling (reason: 3 consecutive initialization failures)")
-            self.logger.debug(f"Marking {pane_name} pane as failed permanently, attempting final polling fallback")
-            state['failed_permanently'] = True
+            self.logger.debug(f"Attempting final polling fallback for {pane_name} pane")
             
-            # Try one last time with polling mode explicitly
+            # Try one last time with polling mode explicitly. That attempt owns
+            # the verdict: only if polling fails too is the directory recorded
+            # as unwatchable.
             self._attempt_polling_fallback(pane_name, path)
             return
         
@@ -269,6 +290,15 @@ class FileMonitorManager:
         def retry_monitoring():
             self.logger.debug(f"Executing retry attempt {state['retry_count']}/3 for {pane_name} pane at {path}")
             with self.state_lock:
+                # The pane navigated away while this retry waited out its
+                # backoff. Whatever it watches now was started for the directory
+                # it actually shows; installing an observer for the old one here
+                # would swap that out without stopping it — a leaked observer
+                # thread - and feed the pane a stale directory's events (#416).
+                if state['path'] != path:
+                    self.logger.debug(f"Abandoning retry for {pane_name} pane: {path} is no longer its directory")
+                    return
+                
                 # Create event callback for this pane
                 def event_callback(event_type: str, filename: str):
                     self._on_filesystem_event(pane_name, event_type, filename)
@@ -293,7 +323,7 @@ class FileMonitorManager:
                     else:
                         # Final failure - fall back to polling
                         self.logger.error(f"All retry attempts exhausted for {pane_name} pane")
-                        self._schedule_retry(pane_name, path)  # This will trigger permanent failure
+                        self._schedule_retry(pane_name, path)  # Falls through to the polling fallback
         
         timer = threading.Timer(backoff_delay, retry_monitoring)
         timer.daemon = True
@@ -324,13 +354,16 @@ class FileMonitorManager:
         if observer.start():
             state['observer'] = observer
             state['error_count'] = 0
+            state['retry_count'] = 0
+            state['failed_path'] = None
             state['last_successful_start'] = time.time()
             self.logger.debug(f"Polling mode fallback successful for {pane_name} pane: {path}")
             self.logger.debug(f"Fallback mode activated: using polling observer after repeated native monitoring failures")
         else:
             self.logger.error(f"Polling mode fallback failed for {pane_name} pane at {path}")
-            self.logger.error(f"Monitoring completely disabled for {pane_name} pane - all monitoring methods exhausted")
+            self.logger.error(f"Monitoring disabled for {pane_name} pane while it stays at {path} - all monitoring methods exhausted")
             state['observer'] = None
+            state['failed_path'] = path
     
     def _detect_monitoring_mode(self, path: Path) -> str:
         """
@@ -656,15 +689,31 @@ class FileMonitorManager:
         """
         Check if observers are still alive and attempt recovery if needed.
         
-        This method should be called periodically to detect connection loss
-        and trigger reinitialization (requirement 9.2).
+        Called from the UI pump on every drain (issue #416): a watcher that dies
+        takes the pane's freshness with it and announces nothing — silence is
+        exactly what a dead watcher looks like - so nothing else would ever
+        notice. Rate-limited to HEALTH_CHECK_INTERVAL_S so that a caller on the
+        UI thread's hot path costs nothing.
         """
+        if not self.enabled:
+            return
+        
+        now = time.time()
         with self.state_lock:
+            if now - self._last_health_check < HEALTH_CHECK_INTERVAL_S:
+                return
+            self._last_health_check = now
+            
+            # Both panes reach a shared observer; stop it once (see stop_monitoring)
+            stopped = []
+            
             for pane_name in ['left', 'right']:
                 state = self.monitoring_state[pane_name]
                 
-                # Skip if no observer or already failed permanently
-                if state['observer'] is None or state['failed_permanently']:
+                # No observer means monitoring is deliberately off for this pane
+                # — an unwatchable backend, or a directory that used up its
+                # retries — and starting one is navigation's job, not ours.
+                if state['observer'] is None:
                     continue
                 
                 # Check if observer is still alive
@@ -674,7 +723,9 @@ class FileMonitorManager:
                     self.logger.debug(f"Connection loss detected for {pane_name} pane, attempting recovery")
                     
                     # Stop the dead observer (off-thread; see _stop_observer_async)
-                    self._stop_observer_async(state['observer'])
+                    if state['observer'] not in stopped:
+                        stopped.append(state['observer'])
+                        self._stop_observer_async(state['observer'])
                     state['observer'] = None
                     state['error_count'] += 1
                     
