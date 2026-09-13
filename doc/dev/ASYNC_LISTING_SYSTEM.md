@@ -83,15 +83,55 @@ which differ only in what they reset:
 |---|---|---|---|
 | Meaning | re-list the **same** directory | the pane **navigated** | re-order what is already listed |
 | Reads the disk | yes, on a worker | yes, on a worker | **no** — rebuilds from the snapshot, on a worker |
-| Cursor / scroll | untouched (clamped when the result lands) | reset to the top | held on the same **file** |
+| Cursor / scroll | held on the same **file** | reset to the top | held on the same **file** |
 | History record | no | yes | no |
-| Used by | post-operation reload, startup, `show_hidden` | enter/leave a directory, jump, favorites | sort, filter |
+| Used by | delete/copy/move/create/rename reload, startup, `show_hidden` | enter/leave a directory, jump, favorites | sort, filter |
 
 Both re-reading wrappers are virtual-pane aware: a search-results feed has no
 directory to read, so it is rebuilt from its in-memory result set
 (`flm.refresh_files`) and `on_ready` fires synchronously. `_refresh` is literally
 `_relist` plus the cursor reset and the history record, so the two can never
 drift.
+
+---
+
+## Holding the cursor across a re-list
+
+Everything that re-lists a directory the user did not navigate to — a delete, a
+copy, a move, a create, a rename, a sort, `show_hidden`, a filesystem-monitor
+reload — holds the cursor on the **file** it was on, never on its row number. A
+row number means something different the moment an entry above it comes or goes,
+which is why deleting a file used to send the cursor back to the top of the pane
+([#414](https://github.com/crftwr/xefm/issues/414)): the post-operation reload
+went through `_refresh`, the *navigation* path, whose cursor reset only makes
+sense for a directory the pane has not seen before.
+
+One pair of helpers does it for all of them:
+
+* `_cursor_anchor(pane)` snapshots the focused row **and the order around it**,
+  before the listing that is about to replace it.
+* `_apply_cursor_anchor(pane, anchor)` puts the cursor back when the result
+  lands, and clamps the scroll offset to a listing that may have shrunk.
+
+The whole order goes into the snapshot because the focused file is often
+precisely what the re-list will not find — it was the file just deleted, moved or
+renamed. The cursor then walks the old order outward from it, down first, and
+lands on the first row that survived: the entry that took its place, or the one
+above it when the tail is gone. That rule is what makes it correct under **any**
+sort order. The monitor reload used to guess alphabetically ("where would this
+name have sorted?"), which is only right for a name-sorted pane — on one sorted
+by size, by date, or reversed, it lands somewhere arbitrary.
+
+Two callers still place the cursor themselves, and win: `on_ready` runs after
+the anchor, so create/rename land on the new entry by name, and a batch rename
+follows the focused file to whichever new name the dialog gave it (the dialog
+reports an old-path → new-name map for exactly that).
+
+The deliberate exception is a **filter change**, which resets the cursor to the
+top along with the selection (`FileListManager.set_filter`, reached through
+`_apply_filter` → `_resort(keep_cursor=False)`).
+
+---
 
 `_resort` is the one that does no I/O: a sort or filter change needs nothing the
 previous listing did not already collect, so it re-filters and re-sorts the

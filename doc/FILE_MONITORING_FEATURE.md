@@ -111,9 +111,11 @@ During automatic updates, XeFM preserves your context:
 - Your scroll position is maintained
 - Your workflow continues uninterrupted
 
-**If the selected file was deleted:**
-- The cursor moves to the nearest remaining file alphabetically
-- If the deleted file was "document.txt", the cursor moves to the next file alphabetically (e.g., "image.png")
+**If the file under the cursor was deleted:**
+- The cursor drops to the entry that took its place — the next row down in the
+  order the pane is actually showing, whether that is by name, size or date, and
+  whether or not the order is reversed
+- At the end of the listing it moves up to the new last entry instead
 - The scroll position adjusts to keep the cursor visible
 
 ## Troubleshooting
