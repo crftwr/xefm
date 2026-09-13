@@ -166,6 +166,24 @@ class S3Drives(unittest.TestCase):
 
         self.assertEqual([r["name"] for r in rows], ["kept"])
 
+    def test_listed_buckets_remember_where_they_live(self):
+        """ListBuckets says which region each bucket is in. Recording it spares
+        the first request to that bucket a cross-region redirect (issue #418);
+        an SDK that doesn't report it simply leaves the bucket unrecorded."""
+        client = MagicMock()
+        client.can_paginate.return_value = False
+        client.list_buckets.return_value = {"Buckets": [
+            {"Name": "tokyo", "BucketRegion": "ap-northeast-1"},
+            {"Name": "old-sdk"},  # pre-BucketRegion listing
+        ]}
+        with patch("boto3.client", return_value=client), \
+             patch("xefm.s3.note_bucket_region") as note:
+            rows = list(_bare_app()._s3_drives_iter(threading.Event()))
+
+        self.assertEqual([r["name"] for r in rows], ["tokyo", "old-sdk"])
+        self.assertEqual([c.args for c in note.call_args_list],
+                         [("tokyo", "ap-northeast-1"), ("old-sdk", None)])
+
     def test_empty_on_aws_error(self):
         client = MagicMock()
         client.can_paginate.return_value = False

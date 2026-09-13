@@ -75,7 +75,7 @@ src/
 - **Key Features**:
   - Full pathlib-compatible interface
   - boto3 integration for AWS S3 operations
-  - Lazy S3 client initialization
+  - Shared, per-region S3 clients (never one per path object)
   - Integrated caching system
   - Proper error handling for AWS-specific errors
 
@@ -103,6 +103,60 @@ def _create_implementation(self, path_str: str) -> PathImpl:
         return S3PathImpl(path_str)
     return LocalPathImpl(PathlibPath(path_str))
 ```
+
+### Client Sharing
+
+A boto3 client owns a pool of HTTPS connections. `S3PathImpl` used to build one
+per instance, and since a copy touches one path object per node in the tree —
+`FileOperations._count` alone calls `is_dir()`, `iterdir()` and `stat()` on every
+node — that meant a TLS handshake per node and a pool left behind, unclosed, for
+each. A single copy reached 2100 sockets, 2093 of them in `CLOSE_WAIT`, and RSS
+grew 1.9 GB → 3.2 GB while the progress dialog still said "Preparing…" (issue
+#418). Left alone it runs into the fd limit.
+
+Clients are now created once and shared for the life of the process:
+
+```python
+get_s3_client(region=None)        # the shared client for a region
+get_s3_client_for_bucket(bucket)  # ...routed by what we know of the bucket
+note_bucket_region(bucket, region)
+get_s3_probe_client()             # the drives picker's own, short deadlines
+clear_s3_clients()                # tests only: close and forget
+```
+
+`S3PathImpl._client` returns `get_s3_client_for_bucket(self._bucket)`. The
+instance attribute `_s3_client` survives only as an override for tests that
+attach a stub to one path; nothing in the app assigns it.
+
+Sharing is safe because boto3 clients are thread-safe to *use* — only
+construction isn't, which is what `_s3_client_create_lock` serializes.
+
+**Why per region.** A request for a bucket outside the client's region is
+answered by the wrong endpoint with a redirect, and botocore has to send it
+again to the right one. It caches the bucket's region per client, so on a shared
+client the redirect costs one extra round trip per bucket for the whole process
+rather than per request — the correctness case needs nothing more. A client
+already bound to the bucket's region skips even that, and each region keeps its
+own connection pool, so the split is kept for where regions are known for free:
+`ListBuckets` reports `BucketRegion` for every bucket, and the drives picker
+feeds those to `note_bucket_region` as it lists them. A bucket nobody has told
+us about simply rides the session's client. The session client is also filed
+under the region name it resolved to, so learning that a bucket sits in the
+session's own region doesn't open a second pool to an endpoint already connected.
+
+**Pool size.** `S3_MAX_POOL_CONNECTIONS` (16) is passed as
+`botocore.config.Config(max_pool_connections=...)`. botocore's default of 10 is
+under what a copy asks for: up to 8 workers transfer at once
+(`_SCHEME_WORKERS["s3"]` in `file_operations`) while the pane's listing and the
+UI hit the same bucket, and a request that finds the pool full opens a
+connection and then discards it — a fresh handshake, which is the cost the
+sharing exists to avoid. The pool is per host, and S3 addresses buckets as
+hosts, so this is 16 per bucket rather than 16 in total.
+
+**The drives picker** uses its own shared client (`get_s3_probe_client`) rather
+than the transfer one: it must fail fast while the dialog is open
+(`connect_timeout=2`, `read_timeout=3`, no retries), and a transfer must not
+inherit those deadlines.
 
 ### Cache Architecture
 ```

@@ -16,6 +16,7 @@ import hashlib
 import json
 from datetime import datetime
 from typing import Iterator, List, Dict, Any, Optional, Tuple
+from xefm.log_manager import getLogger
 from xefm.str_format import format_size
 
 # Import the PathImpl base class
@@ -27,13 +28,17 @@ except ImportError:
 # AWS S3 support - import boto3 with fallback
 try:
     import boto3
+    from botocore.config import Config as BotoConfig
     from botocore.exceptions import ClientError, NoCredentialsError
     HAS_BOTO3 = True
 except ImportError:
     HAS_BOTO3 = False
     boto3 = None
+    BotoConfig = None
     ClientError = Exception
     NoCredentialsError = Exception
+
+logger = getLogger("S3")
 
 
 class S3Cache:
@@ -182,8 +187,136 @@ class S3Cache:
 # Global S3 cache instance
 _s3_cache = None
 
-#: Serializes boto3 client creation (see S3PathImpl._client).
+#: The shared boto3 S3 clients, keyed by the region they are bound to — ``None``
+#: meaning "whichever region the session resolves". One client per region, and
+#: never one per path object: a client owns a connection pool, and a path object
+#: that built its own left that pool behind unclosed when it was collected. A
+#: single copy walks thousands of path objects, so that cost a TLS handshake per
+#: node and piled up thousands of sockets stuck in CLOSE_WAIT (issue #418).
+_s3_clients: Dict[Optional[str], Any] = {}
+
+#: The client the drives picker lists buckets with. Shared for the same reason,
+#: separate because its deadlines are opposite: the picker must never block on a
+#: slow endpoint, while a transfer must be allowed to take as long as it takes.
+_s3_probe_client = None
+
+#: Which region each bucket lives in, where something has told us for free —
+#: ``ListBuckets`` reports ``BucketRegion`` for every bucket in the account. Only
+#: ever a hint: a bucket that isn't in here is reached through the session's own
+#: region, which still works (see :func:`get_s3_client`), so this needs no lock
+#: of its own — a whole-key write is atomic, and a reader that misses one simply
+#: takes the session's client.
+_bucket_regions: Dict[str, str] = {}
+
+#: Serializes boto3 client creation and guards the client caches above. Parallel
+#: copy workers ask for a client at once, and while boto3 clients are thread-safe
+#: to *use*, building one goes through the shared default session's loader, which
+#: is not safe to enter from two threads at the same time.
 _s3_client_create_lock = threading.Lock()
+
+#: How many connections a shared client keeps alive per S3 host. botocore's
+#: default of 10 is under what a copy asks for: up to 8 workers transfer at once
+#: (``_SCHEME_WORKERS["s3"]`` in file_operations) while the pane's listing and
+#: whatever the user is doing in the UI hit the same bucket. A request that finds
+#: the pool full opens a connection and then discards it — a fresh TLS handshake
+#: each time, which is the cost this whole module is trying not to pay.
+S3_MAX_POOL_CONNECTIONS = 16
+
+
+def _new_s3_client(region: Optional[str] = None, **config_kwargs):
+    """Build a boto3 S3 client bound to *region*. Callers want one of the
+    ``get_s3_client*`` functions instead — clients are shared, not built."""
+    if not HAS_BOTO3:
+        raise ImportError("boto3 is required for S3 support. Install with: pip install boto3")
+    config = BotoConfig(max_pool_connections=S3_MAX_POOL_CONNECTIONS, **config_kwargs)
+    try:
+        return boto3.client('s3', region_name=region, config=config)
+    except NoCredentialsError:
+        raise RuntimeError("AWS credentials not found. Configure AWS credentials using AWS CLI, environment variables, or IAM roles.")
+
+
+def get_s3_client(region: Optional[str] = None):
+    """The shared S3 client for *region* (``None`` = whatever the session resolves).
+
+    Created once and kept for the life of the process. Sharing is the point:
+    a client owns a pool of connections, so every caller that reuses one reuses
+    a warm TLS connection instead of opening — and leaking — another (#418).
+
+    Why one *per region* rather than one altogether: a request for a bucket that
+    lives elsewhere is answered by the wrong regional endpoint with a redirect,
+    and botocore has to send it again to the right one. It remembers where that
+    bucket was per client, so the redirect costs one extra round trip per bucket
+    rather than per request — but a client already bound to the bucket's region
+    doesn't pay it at all, and each region keeps its own pool. Regions are
+    learned for free where a response carries them (:func:`note_bucket_region`),
+    so this is an optimization on top of a path that works without it."""
+    with _s3_client_create_lock:
+        client = _s3_clients.get(region)
+        if client is None:
+            client = _new_s3_client(region)
+            _s3_clients[region] = client
+            # The session-default client *is* the client for the region it
+            # resolved to. Filing it under that name as well keeps a bucket
+            # whose region we later learn from opening a second pool to an
+            # endpoint we are already connected to.
+            resolved = getattr(getattr(client, 'meta', None), 'region_name', None)
+            if isinstance(resolved, str) and resolved:
+                _s3_clients.setdefault(resolved, client)
+        return client
+
+
+def get_s3_client_for_bucket(bucket: str):
+    """The shared client to reach *bucket* through: the one bound to its own
+    region when that is known, the session's otherwise."""
+    return get_s3_client(_bucket_regions.get(bucket))
+
+
+def note_bucket_region(bucket: str, region: Optional[str]) -> None:
+    """Record that *bucket* lives in *region*, learned from a response that
+    already carried it. Nothing depends on being told — it only lets the next
+    request for that bucket start at the right endpoint instead of being
+    redirected there."""
+    if not bucket or not isinstance(region, str) or not region:
+        return
+    _bucket_regions[bucket] = region
+
+
+def get_s3_probe_client():
+    """The shared client for the drives picker's bucket scan.
+
+    Bounded by short timeouts and no retries, because the picker shows buckets
+    while the user is already looking at the dialog and must fail quickly rather
+    than hold the row open. Kept between openings so reopening the dialog
+    reuses the connection rather than handshaking again."""
+    global _s3_probe_client
+    with _s3_client_create_lock:
+        if _s3_probe_client is None:
+            _s3_probe_client = _new_s3_client(
+                connect_timeout=2, read_timeout=3, retries={"max_attempts": 0})
+        return _s3_probe_client
+
+
+def clear_s3_clients() -> None:
+    """Drop every shared client, closing the connections it pooled.
+
+    The app never needs this — the clients are meant to live as long as the
+    process — but a test that stubs boto3 must not be handed the stub the
+    previous test cached."""
+    global _s3_probe_client
+    with _s3_client_create_lock:
+        # By identity: one client is filed under both ``None`` and its region.
+        clients = {id(c): c for c in _s3_clients.values()}
+        if _s3_probe_client is not None:
+            clients[id(_s3_probe_client)] = _s3_probe_client
+        clients = list(clients.values())
+        _s3_clients.clear()
+        _bucket_regions.clear()
+        _s3_probe_client = None
+    for client in clients:
+        try:
+            client.close()
+        except Exception as e:
+            logger.error(f"Failed to close S3 client: {e}")
 
 
 def get_s3_cache() -> S3Cache:
@@ -324,6 +457,8 @@ class S3PathImpl(PathImpl):
         
         self._uri = s3_uri
         self._parse_uri()
+        # A client attached to this one path, overriding the shared one. Nothing
+        # in the app sets it; tests attach a stub here (see _client).
         self._s3_client = None
         
         # Store metadata to avoid API calls
@@ -351,20 +486,17 @@ class S3PathImpl(PathImpl):
     
     @property
     def _client(self):
-        """Lazy initialization of S3 client.
+        """The S3 client for this path's bucket.
 
-        Creation is serialized: parallel copy workers touch many path objects
-        at once, and while boto3 clients are thread-safe to *use*, building one
-        goes through the shared default session's loader, which is not safe to
-        enter from two threads at the same time."""
-        if self._s3_client is None:
-            with _s3_client_create_lock:
-                if self._s3_client is None:
-                    try:
-                        self._s3_client = boto3.client('s3')
-                    except NoCredentialsError:
-                        raise RuntimeError("AWS credentials not found. Configure AWS credentials using AWS CLI, environment variables, or IAM roles.")
-        return self._s3_client
+        Shared process-wide, per region (see :func:`get_s3_client`). A path
+        object deliberately does not own one: a client owns a connection pool,
+        and one copy touches a path object per node in the tree, so a client per
+        path meant a TLS handshake per node and a pool left behind for each
+        (#418). ``self._s3_client``, when something has attached a client to
+        this one path, wins — that is how tests inject a stub."""
+        if self._s3_client is not None:
+            return self._s3_client
+        return get_s3_client_for_bucket(self._bucket)
     
     @property
     def _cache(self) -> S3Cache:
