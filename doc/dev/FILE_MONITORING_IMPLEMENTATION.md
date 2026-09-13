@@ -285,6 +285,68 @@ def _on_filesystem_change(self, pane_name: str):
     self.file_manager.reload_queue.put(pane_name)
 ```
 
+### The Monitor Worker
+
+Starting a watcher is filesystem work, and watchdog does it on whichever thread
+calls `observer.start()`: `BaseThread.start()` runs `on_thread_start()` in the
+*caller*, which stats the directory and, in polling mode, `scandir`s all of it
+for the emitter's first snapshot. On a slow or unreachable mount that is
+seconds.
+
+Until #410 it ran on the UI thread. `_sync_monitored_dirs()` re-points a pane's
+watcher from the animation tick whenever that pane's path has changed — so no
+navigation site has to know about monitoring — and the re-point called
+`_start_pane_monitoring()` inline. Navigating into an SMB share froze the whole
+app: the stall detector from #407 caught 4.2 s inside a single
+`os.path.exists()`, on the frame that noticed the pane had moved. The listing
+itself had been off the UI thread since ASYNC_LISTING_SYSTEM.md; the watcher
+that follows it had not.
+
+Now `update_monitored_directory()` only records the pane's new directory and
+posts a job:
+
+```
+UI thread (animation tick)          Monitor worker ("xefm-monitor")
+------------------------------------------------------------------
+_sync_monitored_dirs()
+  update_monitored_directory()
+    _requested_paths[pane] = path
+    _post_job("point", ...)  ------>  _start_pane_monitoring()
+  returns immediately                   detach old observer (state_lock)
+                                        _detect_monitoring_mode()   <- stats
+                                        observer.start()            <- blocks
+                                        install it   (state_lock)
+```
+
+One worker thread, FIFO, so a burst of navigation queues attempts instead of
+racing them. Two rules keep that honest:
+
+- **`state_lock` is never held across a start.** The UI thread takes that same
+  lock on its own hot path (`check_observer_health()`), so holding it across a
+  slow start would relocate the freeze rather than fix it. The lock is taken for
+  the bookkeeping at either end and released around the start — see
+  `_start_and_adopt()`.
+- **Each attempt claims the pane by number.** Every attempt to start an observer
+  — a re-point, a retry, the polling fallback — bumps `state['attempt']` and
+  remembers the value; only an attempt whose number still matches installs what
+  it started, and the rest stop theirs. That is what stops a start that finished
+  late from swapping out a newer one and leaking its thread.
+
+A queued re-point the user has already navigated past is dropped unstarted
+(`_requested_paths` runs ahead of `state['path']`), so walking down a tree on a
+slow mount starts one observer for the directory the user stopped on, not one
+per directory passed through. Because that skipped visit is never started, the
+give-up verdict of #416 is cleared in `update_monitored_directory()` itself:
+leaving an unwatchable directory has to count even when the leaving is coalesced
+away.
+
+Retries go the same way: the `threading.Timer` only posts a `"retry"` job when
+its backoff elapses, and the attempt itself runs on the worker.
+
+`wait_for_idle(timeout)` waits for the worker to run every job posted so far.
+It exists for tests, which used to be able to call `update_monitored_directory()`
+and look at `state['observer']` on the next line.
+
 ### Thread Safety Guarantees
 
 - `queue.Queue` is thread-safe for put/get operations
@@ -292,6 +354,8 @@ def _on_filesystem_change(self, pane_name: str):
 - Main thread is sole consumer of queue (processes reloads)
 - All UI operations (`refresh_files`, `draw_interface`) occur on main thread
 - FileMonitorManager uses locks only for its own state management
+- No observer is started or stopped on the UI thread, and `state_lock` is never
+  held while one is (#410)
 - No direct callback invocation from monitor thread to UI code
 
 
@@ -604,6 +668,18 @@ def _attempt_polling_fallback(self, pane_name: str, path: Path) -> None:
     else:
         self.logger.error(f"Polling mode failed for {pane_name} pane")
 ```
+
+#### What Counts as a Failed Start
+
+`FileMonitorObserver.start()` checks `path.is_dir()` before it hands the
+directory to watchdog. That looks like it only buys a nicer error message, and
+#410 proposed dropping it to take a blocking stat off the re-point path — but it
+is load-bearing on macOS: FSEvents accepts a path that does not exist and
+watches it silently forever, so without the check a vanished directory would
+report a healthy observer and never reach the retry chain below. (Polling and
+the Windows API both fail loudly on their own.) It is one stat rather than the
+two it used to be, and it now runs on the monitor worker, where blocking on a
+slow mount costs nothing.
 
 #### Giving Up, and Resuming
 
@@ -1004,8 +1080,11 @@ doc/
 #### FileMonitorManager
 
 **Public Methods**:
-- `start_monitoring(left_path, right_path)` - Start monitoring both panes
-- `update_monitored_directory(pane_name, new_path)` - Update monitored directory
+- `start_monitoring(left_path, right_path)` - Start monitoring both panes, on the
+  calling thread (not for the UI thread; see The Monitor Worker)
+- `update_monitored_directory(pane_name, new_path)` - Point a pane's watcher at a
+  new directory; returns immediately, the worker does the work
+- `wait_for_idle(timeout)` - Wait for the monitor worker to run its queued jobs
 - `stop_monitoring()` - Stop all monitoring
 - `is_monitoring_enabled()` - Check if monitoring is enabled
 - `get_monitoring_mode(path)` - Get monitoring mode for path
@@ -1014,8 +1093,12 @@ doc/
 - `is_in_fallback_mode()` - Check if any pane is in fallback mode
 
 **Private Methods**:
+- `_post_job(kind, pane_name, path)` / `_run_jobs()` - The monitor worker
 - `_start_pane_monitoring(pane_name, path)` - Start monitoring single pane
+- `_start_and_adopt(pane_name, path, attempt, ...)` - Start an observer with no
+  lock held, install it if the attempt still owns the pane
 - `_schedule_retry(pane_name, path)` - Schedule monitoring retry
+- `_retry_pane_monitoring(pane_name, path)` - Run one retry, on the worker
 - `_attempt_polling_fallback(pane_name, path)` - Fall back to polling
 - `_detect_monitoring_mode(path)` - Detect appropriate mode for path
 - `_on_filesystem_event(pane_name, event_type, filename)` - Handle events
