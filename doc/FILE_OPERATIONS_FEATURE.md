@@ -225,6 +225,28 @@ always on and adapts automatically to file size, file count, and terminal width.
 Both check that the current directory is writable and refuse to overwrite an
 existing name.
 
+## Where the cursor ends up
+
+An operation never sends the cursor back to the top of the pane. After a delete,
+a copy, a move, a duplicate or a rename, the cursor is still on the file it was
+on — even though rows above it have come or gone, and even on a pane sorted by
+size or date, or sorted in reverse.
+
+When the file under the cursor is the one that disappeared — you deleted it,
+moved it out, or deleted a whole block of selected files — the cursor drops to
+the entry that took its place, so pressing **K** repeatedly deletes down through
+a directory. At the end of the listing it moves up to the new last entry
+instead, and in a directory you have just emptied it returns to the top.
+
+A rename keeps the cursor on the renamed file under its new name, whether you
+renamed one file or ran a [batch rename](BATCH_RENAME_FEATURE.md) over many, and
+a duplicate leaves the cursor on the new copy. The same holds for changes XeFM
+did not make itself: a file appearing or vanishing in a directory another program
+is writing to moves the rows, not your cursor.
+
+The one place the cursor deliberately does return to the top is a **filter**
+change (**;**), which clears the selection and starts the narrowed listing fresh.
+
 ## See Also
 
 - [Batch Rename](BATCH_RENAME_FEATURE.md) — rename many files with regex patterns

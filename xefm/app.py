@@ -2065,8 +2065,9 @@ class XeFMApp:
 
     def _handle_reload_request(self, pane_name: str) -> bool:
         """Reload one pane's file list while preserving user context: keep the
-        cursor on the same filename if it survives, otherwise the nearest name
-        alphabetically, and hold the scroll offset where it can still show it.
+        cursor on the same file if it survives, otherwise on the row that took
+        its place (:meth:`_apply_cursor_anchor`), and hold the scroll offset
+        where it can still show it.
 
         Re-lists with ``keep_visible``: the pane nobody asked to reload keeps
         showing its entries throughout, and the result is dropped outright unless
@@ -2086,7 +2087,8 @@ class XeFMApp:
         # A virtual (search-results) pane isn't a directory listing — a
         # filesystem event on its old watched root must not re-list and blow the
         # result set away. Monitoring is effectively suspended while it is virtual;
-        # a mutating op reconciles it explicitly via _refresh -> _refresh_virtual.
+        # a mutating op reconciles it explicitly via _relist, which rebuilds the
+        # result set in memory rather than reading a directory.
         if pane.get("virtual"):
             return False
 
@@ -2097,39 +2099,10 @@ class XeFMApp:
         if pane.get("loading"):
             return False
 
-        old_focused = pane["focused_index"]
-        old_scroll = pane["scroll_offset"]
-        selected_filename = None
-        if pane["files"] and 0 <= old_focused < len(pane["files"]):
-            selected_filename = pane["files"][old_focused].name
+        anchor = self._cursor_anchor(pane)
 
         def restore(pane: dict) -> None:
-            files = pane["files"]
-            if selected_filename and files:
-                idx = next((i for i, f in enumerate(files)
-                            if f.name == selected_filename), None)
-                if idx is None:
-                    # Selected file is gone: land on where it would have sorted, so
-                    # the cursor stays near its old neighbours (list is name-sorted).
-                    idx = 0
-                    for i, f in enumerate(files):
-                        if f.name < selected_filename:
-                            idx = i + 1
-                        else:
-                            break
-                    idx = min(idx, len(files) - 1)
-                pane["focused_index"] = idx
-
-                display_height = self._display_height()
-                max_offset = max(0, len(files) - display_height)
-                pane["scroll_offset"] = min(old_scroll, max_offset)
-                if pane["focused_index"] < pane["scroll_offset"]:
-                    pane["scroll_offset"] = pane["focused_index"]
-                elif pane["focused_index"] >= pane["scroll_offset"] + display_height:
-                    pane["scroll_offset"] = pane["focused_index"] - display_height + 1
-            else:
-                pane["focused_index"] = 0
-                pane["scroll_offset"] = 0
+            self._apply_cursor_anchor(pane, anchor)
 
         # Always on a worker, local or remote, so a reload nobody asked for can
         # never block the tick. ``restore`` runs on the UI thread when the result
@@ -2209,14 +2182,74 @@ class XeFMApp:
         if index >= 0:
             self.active_pane()["focused_index"] = index
 
-    def _relist(self, pane: dict, *, on_ready=None) -> None:
-        """Re-list ``pane`` **in place** — same directory, cursor and scroll left
-        alone — on a worker thread (see ``_list_pane``), so a sort change, a
-        filter change or a post-operation reload never blocks the UI on a slow
-        mount. ``on_ready(pane)`` runs once the files are in place, on the UI
-        thread; anything that reads the new listing (an item count, a cursor
-        placed by name) belongs there, because ``pane['files']`` is empty from
-        here until the result lands.
+    @staticmethod
+    def _cursor_anchor(pane: dict):
+        """Snapshot what the cursor is on — the focused row *and the rows around
+        it*, in the order they are shown — so a re-list can put it back.
+
+        The whole order goes in, not just the focused entry, because the focused
+        entry may be precisely what the re-list will not find: it was the file
+        just deleted, moved or renamed. What the cursor should then fall to is
+        defined by the order the user was looking at, which only this snapshot
+        still holds. Returns None when there is no cursor to restore — an empty
+        pane, or one already blanked by a listing in flight."""
+        files = pane.get("files") or []
+        index = pane.get("focused_index", 0)
+        if not files or not 0 <= index < len(files):
+            return None
+        return ([str(f) for f in files], index)
+
+    def _apply_cursor_anchor(self, pane: dict, anchor) -> None:
+        """Put the cursor back where :meth:`_cursor_anchor` found it.
+
+        Exact when the focused entry is still listed. When it is gone the cursor
+        walks the *old* order outward from it — the first surviving row below it,
+        then the first above — which is the "next item" a delete should land on,
+        and is right under any sort order. Guessing by name instead would only be
+        right for a name-sorted pane, and this one may be sorted by size or date,
+        or reversed. Falls back to the old row number when nothing around it
+        survived, and to the top when the directory is now empty."""
+        files = pane.get("files") or []
+        if not files:
+            pane["focused_index"] = 0
+            pane["scroll_offset"] = 0
+            return
+        if anchor is None:
+            return
+        old, index = anchor
+        row_of = {str(f): i for i, f in enumerate(files)}
+        # Outward from the anchor: down first (the row that took its place),
+        # then up, so the first survivor found is the nearest one below it.
+        outward = list(range(index, len(old))) + list(range(index - 1, -1, -1))
+        landing = next((row_of[old[j]] for j in outward if old[j] in row_of), None)
+        pane["focused_index"] = (landing if landing is not None
+                                 else min(index, len(files) - 1))
+        self._scroll_to_focus(pane)
+
+    def _scroll_to_focus(self, pane: dict) -> None:
+        """Clamp the pane's scroll offset to a listing that may have shrunk, then
+        pull the focused row back into view."""
+        height = self._display_height()
+        max_offset = max(0, len(pane.get("files") or []) - height)
+        pane["scroll_offset"] = max(0, min(pane.get("scroll_offset", 0), max_offset))
+        self.pm.adjust_scroll_for_focus(pane, height)
+
+    def _relist(self, pane: dict, *, keep_cursor: bool = True, on_ready=None) -> None:
+        """Re-list ``pane`` **in place** — same directory, cursor held on the same
+        file — on a worker thread (see ``_list_pane``), so a sort change, a filter
+        change or a post-operation reload never blocks the UI on a slow mount.
+        ``on_ready(pane)`` runs once the files are in place, on the UI thread;
+        anything that reads the new listing (an item count, a cursor placed by
+        name) belongs there, because ``pane['files']`` is empty from here until
+        the result lands — and it runs *after* the cursor is restored, so a
+        caller that places the cursor itself still wins.
+
+        ``keep_cursor`` anchors the cursor to the focused **file** rather than to
+        its row number (:meth:`_cursor_anchor`): the listing this re-reads is
+        usually one an operation just changed, and a row number means something
+        different once entries above it have come or gone. False is for the two
+        callers that reset the cursor on purpose — :meth:`_refresh`, and a filter
+        change reaching here through :meth:`_resort`.
 
         For a **virtual pane** (a search-results feed) there is no directory to
         read: rebuild the flat listing from the result set in memory (re-stat
@@ -2225,12 +2258,19 @@ class XeFMApp:
 
         This is the "no directory change" sibling of :meth:`_refresh`, which adds
         the cursor reset and the history record a navigation needs."""
+        anchor = self._cursor_anchor(pane) if keep_cursor else None
+
+        def landed(p: dict) -> None:
+            if keep_cursor:
+                self._apply_cursor_anchor(p, anchor)
+            if on_ready is not None:
+                on_ready(p)
+
         if pane.get("virtual"):
             self.flm.refresh_files(pane)
-            if on_ready is not None:
-                on_ready(pane)
+            landed(pane)
             return
-        self._list_pane(self._pane_name_of(pane), on_ready=on_ready)
+        self._list_pane(self._pane_name_of(pane), on_ready=landed)
 
     def _resort(self, pane: dict, *, keep_cursor: bool = True, on_ready=None) -> None:
         """Re-sort / re-filter ``pane`` from the snapshot its last listing left
@@ -2269,7 +2309,7 @@ class XeFMApp:
         lands back on what the user was looking at when they pressed the key."""
         entries = pane.get("_listing_entries")
         if entries is None:
-            self._relist(pane, on_ready=on_ready)
+            self._relist(pane, keep_cursor=keep_cursor, on_ready=on_ready)
             return
 
         pane_name = self._pane_name_of(pane)
@@ -2284,20 +2324,11 @@ class XeFMApp:
         virtual = pane.get("virtual")
         rel_root = virtual.get("root") if virtual else None
 
-        focused = None
-        if keep_cursor:
-            files = pane.get("files") or []
-            index = pane.get("focused_index", 0)
-            if 0 <= index < len(files):
-                focused = str(files[index])
+        anchor = self._cursor_anchor(pane) if keep_cursor else None
 
         def landed(p: dict) -> None:
-            if focused is not None:
-                for i, entry in enumerate(p["files"]):
-                    if str(entry) == focused:
-                        p["focused_index"] = i
-                        break
-                self.pm.adjust_scroll_for_focus(p, self._display_height())
+            if keep_cursor:
+                self._apply_cursor_anchor(p, anchor)
             if on_ready is not None:
                 on_ready(p)
 
@@ -2322,11 +2353,15 @@ class XeFMApp:
         there is no directory here to have navigated to. This is the post-op
         reconciliation path — every existing ``self._refresh(pane)`` call site
         keeps working after a mutating op."""
-        if not pane.get("virtual"):
-            pane["focused_index"] = 0
-            pane["scroll_offset"] = 0
-            self._record_history_path(str(pane["path"]))
-        self._relist(pane, on_ready=on_ready)
+        if pane.get("virtual"):
+            # Nothing navigated: hold the cursor on its file, the way every other
+            # post-operation reload does.
+            self._relist(pane, on_ready=on_ready)
+            return
+        pane["focused_index"] = 0
+        pane["scroll_offset"] = 0
+        self._record_history_path(str(pane["path"]))
+        self._relist(pane, keep_cursor=False, on_ready=on_ready)
 
     def _apply_filter(self, pane: dict, pattern: str, *, on_count=None) -> None:
         """Set ``pane``'s filename filter and re-list it off the UI thread — the
@@ -4440,7 +4475,7 @@ class XeFMApp:
                 # mkdir(parents=True) accepts "a/b"; the entry that appears in
                 # this pane is the first component.
                 top = _StdPath(name).parts[0]
-                self._refresh(pane, on_ready=lambda p: self._select_by_name(p, top))
+                self._relist(pane, on_ready=lambda p: self._select_by_name(p, top))
             self.panel.render()
 
         show_input(self.panel, title="New Directory", prompt="Name:",
@@ -4473,7 +4508,7 @@ class XeFMApp:
                 self.log_info(f"Failed to create file '{name}': {exc}")
             else:
                 self.log_info(f"Created file: {name}")
-                self._refresh(pane, on_ready=lambda p: self._select_by_name(p, name))
+                self._relist(pane, on_ready=lambda p: self._select_by_name(p, name))
             self.panel.render()
 
         show_input(self.panel, title="New File", prompt="Name:",
@@ -4527,7 +4562,7 @@ class XeFMApp:
                 self.log_info(f"Failed to rename '{original}': {exc}")
             else:
                 self.log_info(f"Renamed '{original}' to '{name}'")
-                self._refresh(pane, on_ready=lambda p: self._select_by_name(p, name))
+                self._relist(pane, on_ready=lambda p: self._select_by_name(p, name))
             self.panel.render()
 
         show_input(self.panel, title="Rename", prompt="Rename to:", text=original,
@@ -4540,14 +4575,23 @@ class XeFMApp:
     def batch_rename(self, files: list) -> None:
         """Open the regex batch-rename dialog over the given selected files."""
         pane = self.active_pane()
+        # The cursor entry, captured before the modal opens (it owns the keyboard
+        # until it closes, so this is still the row the cursor is on then).
+        entry = self._focused_entry()
+        focused = str(entry) if entry is not None else None
 
-        def done(success: int, errors: list[str]) -> None:
+        def done(success: int, errors: list[str], renamed: dict[str, str]) -> None:
             for err in errors:
                 self.log_info(f"Rename failed: {err}")
             self.log_info(f"Batch rename: {success} file(s) renamed"
                           + (f", {len(errors)} failed" if errors else ""))
             pane["selected_files"].clear()
-            self._refresh(pane)
+            # The focused file is usually one of the renamed ones, so the generic
+            # "same file" anchor cannot find it — follow it to its new name, and
+            # leave the rest to the anchor (#414).
+            new_name = renamed.get(focused) if focused else None
+            self._relist(pane, on_ready=(
+                (lambda p: self._select_by_name(p, new_name)) if new_name else None))
             self.panel.render()
 
         show_batch_rename(self.panel, files, on_done=done)
@@ -4824,7 +4868,7 @@ class XeFMApp:
             pane["selected_files"].clear()
             created = result.get("created") or []
             on_ready = (lambda p: self._select_by_name(p, created[0])) if created else None
-            self._refresh(pane, on_ready=on_ready)
+            self._relist(pane, on_ready=on_ready)
             self.log_info(format_op_summary("Duplicate", result))
             self._report_op_failures("Duplicate", result)
             self.panel.render()
@@ -4916,7 +4960,10 @@ class XeFMApp:
 
         def on_complete(result: dict) -> None:
             pane["selected_files"].clear()
-            self._refresh(pane)
+            # _relist, not _refresh: nothing navigated, so the cursor stays on
+            # what it was on — or, when that was one of the files just deleted,
+            # on the entry that took its place (#414).
+            self._relist(pane)
             self.log_info(format_op_summary("Delete", result))
             self._report_op_failures("Delete", result)
             self.panel.render()

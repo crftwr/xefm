@@ -133,7 +133,7 @@ class BatchRenameDialog(FocusContainer, Widget):
         self,
         files: Sequence[Any],
         *,
-        on_done: Callable[[int, list[str]], None] | None = None,
+        on_done: Callable[[int, list[str], dict[str, str]], None] | None = None,
     ):
         from puikit.widgets.text_edit import TextEdit
         self.files = list(files)
@@ -209,17 +209,23 @@ class BatchRenameDialog(FocusContainer, Widget):
             return
         success = 0
         errors: list[str] = []
+        # Old path → new name, for every rename that actually happened. The
+        # caller needs it to keep its cursor on the file it was on: after a batch
+        # rename that file is still there, under a name only this loop knows
+        # (issue #414).
+        renamed: dict[str, str] = {}
         for row in self.preview:
             if row["original"] == row["new"]:
                 continue
             try:
                 row["file"].rename(row["file"].parent / row["new"])
                 success += 1
+                renamed[str(row["file"])] = row["new"]
             except OSError as exc:
                 errors.append(f"{row['original']}: {exc}")
         self._close()
         if self.on_done is not None:
-            self.on_done(success, errors)
+            self.on_done(success, errors, renamed)
 
     def _cancel(self) -> None:
         self._close()
@@ -344,14 +350,15 @@ def show_batch_rename(
     panel: Any,
     files: Sequence[Any],
     *,
-    on_done: Callable[[int, list[str]], None] | None = None,
+    on_done: Callable[[int, list[str], dict[str, str]], None] | None = None,
     z: int = 70,
 ) -> BatchRenameDialog:
     """Push a modal :class:`BatchRenameDialog` over ``panel`` and return it.
 
     Sized large (the preview wants room) and centered, with the shared drop-shadow
-    modal intent. ``on_done(success_count, errors)`` fires after a successful run;
-    the dialog reports nothing on cancel."""
+    modal intent. ``on_done(success_count, errors, renamed)`` fires after a
+    successful run — ``renamed`` maps each renamed file's old path (as a string)
+    to its new name. The dialog reports nothing on cancel."""
     dialog = BatchRenameDialog(files, on_done=on_done)
     sw, sh = panel.backend.size_units
     w = max(56.0, min(sw * 0.8, 110.0))

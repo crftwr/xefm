@@ -385,14 +385,11 @@ External Change → watchdog → XeFMFileSystemEventHandler → FileMonitorManag
    def _handle_reload_request(self, pane_name):
        # Get pane data
        pane_data = self.pane_manager.left_pane if pane_name == "left" else self.pane_manager.right_pane
-       
+
        # Store current context
-       selected_filename = pane_data['files'][pane_data['focused_index']].name
-       
-       # Refresh file list
-       self.refresh_files(pane_data)
-       
-       # Restore cursor position
+       anchor = self._cursor_anchor(pane_data)
+
+       # Re-list on a worker, restoring the cursor when the result lands
        # ... (see Context Preservation section)
    ```
 
@@ -486,83 +483,44 @@ entirely.
 
 When a reload does install a change, XeFM preserves the user's context to avoid disrupting their workflow:
 
-1. **Cursor Position**: Stays on the same filename if it still exists
+1. **Cursor Position**: Stays on the same file if it still exists
 2. **Scroll Position**: Maintained when possible
-3. **Selection**: Moves to nearest file if selected file was deleted
+3. **A vanished cursor entry**: Falls to the row that took its place
 
 A reload that installs nothing leaves cursor and scroll exactly where the user put
 them — the restore callback never runs.
 
 ### Implementation
 
+Nothing here is specific to monitoring: a reload restores the cursor through the
+same pair of helpers every in-place re-list uses — a delete, a copy, a sort,
+`show_hidden` (see
+[`ASYNC_LISTING_SYSTEM.md`](ASYNC_LISTING_SYSTEM.md#holding-the-cursor-across-a-re-list)).
+
 ```python
 def _handle_reload_request(self, pane_name):
-    # Get pane data
-    pane_data = self.pane_manager.left_pane if pane_name == "left" else self.pane_manager.right_pane
-    
-    # Store current context before reload
-    old_focused_index = pane_data['focused_index']
-    old_scroll_offset = pane_data['scroll_offset']
-    selected_filename = None
-    
-    # Get currently selected filename (if any files exist)
-    if pane_data['files'] and 0 <= old_focused_index < len(pane_data['files']):
-        selected_file = pane_data['files'][old_focused_index]
-        selected_filename = selected_file.name
-    
-    # Refresh the file list for this pane
-    self.refresh_files(pane_data)
-    
-    # Restore cursor position after reload
-    if selected_filename and pane_data['files']:
-        # Try to find the same file in the refreshed list
-        found = False
-        for i, file_path in enumerate(pane_data['files']):
-            if file_path.name == selected_filename:
-                # File still exists - restore cursor to it
-                pane_data['focused_index'] = i
-                found = True
-                break
-        
-        if not found:
-            # Selected file no longer exists - find nearest file alphabetically
-            filenames = [f.name for f in pane_data['files']]
-            
-            # Find insertion point where selected_filename would go
-            nearest_index = 0
-            for i, filename in enumerate(filenames):
-                if filename < selected_filename:
-                    nearest_index = i + 1
-                else:
-                    break
-            
-            # Clamp to valid range
-            if nearest_index >= len(pane_data['files']):
-                nearest_index = len(pane_data['files']) - 1
-            
-            pane_data['focused_index'] = nearest_index
-        
-        # Preserve scroll position when possible
-        max_offset = max(0, len(pane_data['files']) - display_height)
-        pane_data['scroll_offset'] = min(old_scroll_offset, max_offset)
-        
-        # Ensure focused item is visible
-        if pane_data['focused_index'] < pane_data['scroll_offset']:
-            pane_data['scroll_offset'] = pane_data['focused_index']
-        elif pane_data['focused_index'] >= pane_data['scroll_offset'] + display_height:
-            pane_data['scroll_offset'] = pane_data['focused_index'] - display_height + 1
+    ...
+    # Snapshot the focused row *and the order around it*, before the listing
+    # that is about to replace it.
+    anchor = self._cursor_anchor(pane)
+
+    def restore(pane):
+        self._apply_cursor_anchor(pane, anchor)
+
+    self._list_pane(pane_name, on_ready=restore, keep_visible=True)
 ```
 
-### Nearest File Algorithm
+### Where a vanished cursor entry lands
 
-When the selected file is deleted, XeFM positions the cursor on the nearest remaining file by alphabetical order:
+`_apply_cursor_anchor` walks the **old** order outward from the anchored row,
+down first, and lands on the first entry that survived: the row that took its
+place, or the one above it when the tail is gone. Because the walk is over the
+order the pane was showing, it is right for any sort — by name, size or date,
+forward or reversed.
 
-1. Build sorted list of filenames
-2. Find insertion point where deleted filename would have been
-3. Use that index as the new cursor position
-4. Clamp to valid range if at end of list
-
-This provides intuitive behavior where the cursor stays in approximately the same position in the list.
+This replaced an alphabetical guess ("where would this name have sorted?"), which
+was only ever right for a name-sorted pane and landed somewhere arbitrary on the
+others.
 
 
 ## Error Handling and Recovery
@@ -1283,13 +1241,12 @@ INFO [FileMonitor] Monitoring mode changed: native -> polling (reason: connectio
 **Symptoms**: Cursor moves to unexpected file after automatic reload
 
 **Diagnosis**:
-1. Check if selected file was deleted
-2. Check log for "Selected file deleted, moved cursor to nearest file"
-3. Verify nearest file algorithm is working correctly
+1. Check if the file under the cursor was deleted
+2. Verify the cursor anchor is being applied (`_apply_cursor_anchor`)
 
 **Solutions**:
-- This is expected behavior when selected file is deleted
-- Cursor moves to nearest file alphabetically
+- This is expected behavior when the cursor entry is deleted
+- The cursor drops to the row that took its place in the pane's own order
 - If unexpected, check for race conditions in file operations
 
 ### Diagnostic Commands
