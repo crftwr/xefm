@@ -280,7 +280,12 @@ class FileMonitorObserver:
     def start(self) -> bool:
         """
         Start monitoring the directory.
-        
+
+        Blocking: the liveness check below and watchdog's own setup both stat the
+        directory, and a polling start scandirs all of it — seconds on a slow or
+        unreachable mount. Call it from a worker, never from the UI thread; the
+        manager's monitor worker is the one place that does (#410).
+
         Returns:
             True if monitoring started successfully, False otherwise
         """
@@ -288,13 +293,14 @@ class FileMonitorObserver:
             self.logger.error("watchdog library not available - cannot start monitoring")
             return False
         
-        # Check if directory exists
-        if not self.path.exists():
-            self.logger.error(f"Cannot monitor non-existent directory: {self.path}")
-            return False
-        
+        # One stat, not two: is_dir() is False for a directory that is gone as
+        # well as for a path that was never one, and both end here. The check
+        # cannot go away, though it looks like it only buys a better message:
+        # macOS FSEvents accepts a path that does not exist and watches it
+        # silently forever, so without this a vanished directory would report a
+        # healthy observer and never reach the retry/fallback chain (#416).
         if not self.path.is_dir():
-            self.logger.error(f"Cannot monitor non-directory path: {self.path}")
+            self.logger.error(f"Cannot monitor - not an existing directory: {self.path}")
             return False
         
         # Detect platform and monitoring API (Requirement 5.1, 5.2, 5.3)

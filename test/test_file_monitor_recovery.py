@@ -57,7 +57,13 @@ class RecoveryTestBase(unittest.TestCase):
         state['retry_count'] = 3
         with patch.object(FileMonitorObserver, 'start', lambda self: False):
             self.manager._schedule_retry(pane_name, path)
+            self._settle()
         self.assertEqual(state['failed_path'], path)
+
+    def _settle(self):
+        """Wait for the monitor worker, which every start now runs on (#410)."""
+        self.assertTrue(self.manager.wait_for_idle(5.0),
+                        "the monitor worker never finished its jobs")
 
 
 class TestFailureIsScopedToDirectory(RecoveryTestBase):
@@ -68,6 +74,7 @@ class TestFailureIsScopedToDirectory(RecoveryTestBase):
         self._give_up_on('right', gone)
 
         self.manager.update_monitored_directory('right', self.temp_path)
+        self._settle()
 
         state = self.manager.monitoring_state['right']
         self.assertIsNotNone(state['observer'], "pane must monitor again after leaving")
@@ -81,6 +88,7 @@ class TestFailureIsScopedToDirectory(RecoveryTestBase):
 
         with patch.object(FileMonitorObserver, 'start') as start:
             self.manager.update_monitored_directory('right', gone)
+            self._settle()
             start.assert_not_called()
 
     def test_returning_to_the_directory_gets_a_fresh_chance(self):
@@ -89,9 +97,11 @@ class TestFailureIsScopedToDirectory(RecoveryTestBase):
         gone = self.temp_path / "remounted"
         self._give_up_on('right', gone)
         self.manager.update_monitored_directory('right', self.temp_path)
+        self._settle()
 
         gone.mkdir()
         self.manager.update_monitored_directory('right', gone)
+        self._settle()
 
         state = self.manager.monitoring_state['right']
         self.assertIsNotNone(state['observer'])
@@ -102,6 +112,7 @@ class TestFailureIsScopedToDirectory(RecoveryTestBase):
         self._give_up_on('right', gone)
 
         self.manager.update_monitored_directory('left', self.temp_path)
+        self._settle()
 
         self.assertIsNotNone(self.manager.monitoring_state['left']['observer'])
 
@@ -116,13 +127,16 @@ class TestRetryDoesNotOutliveNavigation(RecoveryTestBase):
 
         # Fails: "old" does not exist yet, so a retry chain starts for it
         self.manager.update_monitored_directory('right', old)
+        self._settle()
         # ... the user navigates on before the first backoff elapses
         self.manager.update_monitored_directory('right', new)
+        self._settle()
         current = self.manager.monitoring_state['right']['observer']
         self.assertIsNotNone(current)
 
         old.mkdir()          # the old directory comes back; the retry would succeed
         time.sleep(1.5)      # let the 1s retry fire
+        self._settle()       # ... and let the worker run it
 
         state = self.manager.monitoring_state['right']
         self.assertIs(state['observer'], current,
@@ -136,12 +150,14 @@ class TestObserverHealthCheck(RecoveryTestBase):
 
     def test_dead_observer_is_restarted(self):
         self.manager.update_monitored_directory('left', self.temp_path)
+        self._settle()
         dead = self.manager.monitoring_state['left']['observer']
         dead.stop()                       # as if the OS dropped the stream
         self.assertFalse(dead.is_alive())
 
         self.manager.check_observer_health()
         time.sleep(1.5)                   # recovery goes through the 1s backoff
+        self._settle()
 
         state = self.manager.monitoring_state['left']
         self.assertIsNotNone(state['observer'])
@@ -152,6 +168,7 @@ class TestObserverHealthCheck(RecoveryTestBase):
         """The UI pump calls this on every drain, so it must not walk the state
         (nor take the lock's work) at that rate."""
         self.manager.update_monitored_directory('left', self.temp_path)
+        self._settle()
         observer = self.manager.monitoring_state['left']['observer']
 
         with patch.object(observer, 'is_alive', return_value=True) as is_alive:
@@ -162,6 +179,7 @@ class TestObserverHealthCheck(RecoveryTestBase):
     def test_shared_observer_is_stopped_once(self):
         self.manager.update_monitored_directory('left', self.temp_path)
         self.manager.update_monitored_directory('right', self.temp_path)
+        self._settle()
         shared = self.manager.monitoring_state['left']['observer']
         self.assertIs(self.manager.monitoring_state['right']['observer'], shared)
 

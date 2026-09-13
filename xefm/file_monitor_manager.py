@@ -7,7 +7,8 @@ and triggering file list reloads via a thread-safe queue mechanism.
 """
 
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
+import queue
 import threading
 import time
 from xefm.log_manager import getLogger
@@ -54,6 +55,13 @@ class FileMonitorManager:
         # fallback, not a verdict on the pane: a directory that vanished under
         # the watcher must not cost the pane its monitoring for the rest of the
         # session, so the pane resumes the moment it points anywhere else (#416).
+        # 'attempt' is this pane's current claim on an observer. Every attempt
+        # to start one — a re-point, a retry, the polling fallback — bumps it
+        # and remembers the value; the start itself runs with no lock held
+        # (#410), so by the time it returns another attempt may own the pane.
+        # Only the attempt whose number still matches installs what it started;
+        # the rest stop theirs, so a burst of navigation leaves exactly one
+        # observer running.
         self.monitoring_state = {
             'left': {
                 'path': None,
@@ -63,7 +71,8 @@ class FileMonitorManager:
                 'error_count': 0,
                 'retry_count': 0,
                 'last_successful_start': 0.0,
-                'failed_path': None
+                'failed_path': None,
+                'attempt': 0
             },
             'right': {
                 'path': None,
@@ -73,7 +82,8 @@ class FileMonitorManager:
                 'error_count': 0,
                 'retry_count': 0,
                 'last_successful_start': 0.0,
-                'failed_path': None
+                'failed_path': None,
+                'attempt': 0
             }
         }
         
@@ -100,6 +110,28 @@ class FileMonitorManager:
         
         # Lock for thread-safe access to internal state
         self.state_lock = threading.Lock()
+
+        # Starting a watcher is filesystem work, and watchdog does it on
+        # whichever thread calls observer.start(): its BaseThread.start() runs
+        # on_thread_start() in the *caller*, which stats the directory and, in
+        # polling mode, scandirs all of it for the first snapshot. On a slow or
+        # unreachable mount that is seconds — and it used to run on the UI
+        # thread, on the frame that noticed the pane had moved, freezing the app
+        # (#410). Navigation now only posts the pane's new directory here;
+        # this worker does the starting and stopping. One thread, FIFO, so
+        # navigating fast queues attempts instead of racing them.
+        self._job_queue: queue.Queue = queue.Queue()
+        self._worker: Optional[threading.Thread] = None
+        self._worker_running = False
+        # The directory each pane last *asked* for. It runs ahead of
+        # state['path'] while jobs wait behind a slow start, so a queued
+        # re-point the user has already navigated past is dropped unstarted
+        # rather than watched for the moment until the next job undoes it.
+        self._requested_paths: Dict[str, Optional[Path]] = {'left': None, 'right': None}
+        # Outstanding jobs, so wait_for_idle() can wait for the worker to settle
+        # instead of sleeping for a guessed interval.
+        self._idle = threading.Condition()
+        self._pending_jobs = 0
         
         # When check_observer_health() last really looked (see its docstring)
         self._last_health_check = 0.0
@@ -126,8 +158,13 @@ class FileMonitorManager:
     
     def start_monitoring(self, left_path: Path, right_path: Path) -> None:
         """
-        Start monitoring both pane directories.
-        
+        Start monitoring both pane directories, on the calling thread.
+
+        Not for the UI thread: the start blocks for as long as the directory
+        takes to stat and snapshot, which is seconds on a slow mount (#410).
+        Navigation uses update_monitored_directory(), which hands that to the
+        monitor worker and returns.
+
         Args:
             left_path: Path object for left pane directory
             right_path: Path object for right pane directory
@@ -145,6 +182,111 @@ class FileMonitorManager:
         # Start monitoring for right pane
         self._start_pane_monitoring('right', right_path)
     
+    # --- monitor worker ------------------------------------------------------
+    #
+    # Everything that starts or stops an observer runs here rather than on the
+    # UI thread (#410). A job is (kind, pane_name, path):
+    #   "point"     the pane navigated; watch its new directory
+    #   "retry"     a backoff attempt after a start that failed
+    #   "fallback"  the last-resort polling attempt once the retries ran out
+
+    def _post_job(self, kind: str, pane_name: str, path: Path) -> None:
+        """Queue work for the monitor worker, starting the worker on first use."""
+        with self._idle:
+            self._pending_jobs += 1
+            if not self._worker_running:
+                self._worker_running = True
+                self._worker = threading.Thread(target=self._run_jobs,
+                                                name="xefm-monitor", daemon=True)
+                self._worker.start()
+        self._job_queue.put((kind, pane_name, path))
+
+    def _run_jobs(self) -> None:
+        """Drain the job queue until stop_monitoring() retires this worker."""
+        while True:
+            job = self._job_queue.get()
+            if job is None:
+                return
+            kind, pane_name, path = job
+            try:
+                if kind == "point":
+                    # Overtaken while it waited behind a slow start: the pane has
+                    # asked for somewhere else since, and watching this directory
+                    # now would only cost another start/stop pair.
+                    with self.state_lock:
+                        requested = self._requested_paths[pane_name]
+                    if requested != path:
+                        self.logger.debug(
+                            f"Skipping re-point of {pane_name} pane to {path}: "
+                            f"the pane has moved on to {requested}")
+                        continue
+                    self._start_pane_monitoring(pane_name, path)
+                elif kind == "retry":
+                    self._retry_pane_monitoring(pane_name, path)
+                else:
+                    self._attempt_polling_fallback(pane_name, path)
+            except Exception as e:
+                self.logger.error(
+                    f"Error running {kind} job for {pane_name} pane at {path}: {e}")
+            finally:
+                with self._idle:
+                    self._pending_jobs -= 1
+                    self._idle.notify_all()
+
+    def wait_for_idle(self, timeout: float = 5.0) -> bool:
+        """Block until the monitor worker has run every job posted so far.
+
+        Re-pointing a watcher is asynchronous (#410), so anything that needs the
+        watcher actually in place before it looks — tests, mostly — has to wait
+        for it. A retry still waiting out its backoff has not been posted yet and
+        so does not count; wait out the backoff first, then call this to let the
+        worker run it. Returns True if the worker settled within ``timeout``.
+        """
+        with self._idle:
+            return self._idle.wait_for(lambda: self._pending_jobs == 0, timeout)
+
+    def _start_and_adopt(self, pane_name: str, path: Path, attempt: int,
+                         *, force_polling: bool) -> Tuple[str, Optional[FileMonitorObserver]]:
+        """Start an observer for ``path`` with no lock held, then install it if
+        this attempt still owns the pane.
+
+        The start is the blocking part — a stat, and a full scandir in polling
+        mode — so it may not run under state_lock either: the UI thread takes
+        that lock on its own hot path (check_observer_health), and holding it
+        across a slow start would freeze the app just as surely as doing the work
+        there (#410). By the time the start returns the pane may have navigated
+        on, or a retry may have overtaken this attempt; the observer is then
+        stopped instead of installed, so no thread is left running for a
+        directory nobody is looking at.
+
+        Returns ("started" | "failed" | "superseded", observer-or-None).
+        """
+        def event_callback(event_type: str, filename: str):
+            self._on_filesystem_event(pane_name, event_type, filename)
+
+        polling_interval = self.config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S
+        observer = FileMonitorObserver(path, event_callback, self.logger,
+                                       force_polling=force_polling,
+                                       polling_interval=polling_interval)
+        started = observer.start()
+
+        with self.state_lock:
+            state = self.monitoring_state[pane_name]
+            if state['attempt'] != attempt:
+                self.logger.debug(
+                    f"Discarding monitoring attempt for {pane_name} pane at {path}: superseded")
+                if started:
+                    self._stop_observer_async(observer)
+                return ("superseded", None)
+            if not started:
+                return ("failed", None)
+            state['observer'] = observer
+            state['error_count'] = 0
+            state['retry_count'] = 0
+            state['failed_path'] = None
+            state['last_successful_start'] = time.time()
+        return ("started", observer)
+
     def _start_pane_monitoring(self, pane_name: str, path: Path) -> None:
         """
         Start monitoring for a specific pane.
@@ -154,7 +296,12 @@ class FileMonitorManager:
         
         If both panes are monitoring the same directory, they will share the same observer
         to avoid FSEvents "already scheduled" errors.
-        
+
+        Runs on the monitor worker — or, for start_monitoring(), on whatever
+        thread called it — but never on the UI thread. state_lock is taken only
+        for the bookkeeping at either end and released around the start itself;
+        see _start_and_adopt() for why (#410).
+
         Args:
             pane_name: "left" or "right"
             path: Directory path to monitor
@@ -193,6 +340,7 @@ class FileMonitorManager:
                 state['path'] = path
                 state['error_count'] = 0
                 state['retry_count'] = 0
+                state['attempt'] += 1
                 state['last_successful_start'] = time.time()
                 self.logger.debug(f"Successfully started monitoring for {pane_name} pane: {path} (shared observer, mode: {state['observer'].get_monitoring_mode()})")
                 return
@@ -207,53 +355,53 @@ class FileMonitorManager:
             
             # Update path
             state['path'] = path
+            attempt = state['attempt'] = state['attempt'] + 1
 
-            # Check if this is an unsupported backend (S3, SSH/SFTP, network mounts)
-            # Requirements 6.4, 6.5
-            monitoring_mode = self._detect_monitoring_mode(path)
+        # No lock held from here on: _detect_monitoring_mode() stats the path for
+        # its network-mount heuristic and the start below stats or scandirs the
+        # directory, and either is seconds on a slow mount (#410).
 
-            # Remote/virtual backends (S3, SSH/SFTP, archives) cannot be watched
-            # by watchdog at all — not even in polling mode, which still stats the
-            # raw path and raises [Errno 2] on e.g. "s3://bucket/" (issue #181).
-            # Skip monitoring cleanly instead of cascading through failing retries
-            # and polling fallbacks that all log errors and end up disabled anyway.
-            if monitoring_mode == "disabled":
-                self.logger.debug(
-                    f"Filesystem monitoring not supported for {pane_name} pane backend: {path} "
-                    f"- skipping (watchdog only monitors local paths)"
-                )
-                state['observer'] = None
-                state['error_count'] = 0
-                state['retry_count'] = 0
-                return
+        # Check if this is an unsupported backend (S3, SSH/SFTP, network mounts)
+        # Requirements 6.4, 6.5
+        monitoring_mode = self._detect_monitoring_mode(path)
 
-            force_polling = (monitoring_mode == "polling")
+        # Remote/virtual backends (S3, SSH/SFTP, archives) cannot be watched
+        # by watchdog at all — not even in polling mode, which still stats the
+        # raw path and raises [Errno 2] on e.g. "s3://bucket/" (issue #181).
+        # Skip monitoring cleanly instead of cascading through failing retries
+        # and polling fallbacks that all log errors and end up disabled anyway.
+        if monitoring_mode == "disabled":
+            self.logger.debug(
+                f"Filesystem monitoring not supported for {pane_name} pane backend: {path} "
+                f"- skipping (watchdog only monitors local paths)"
+            )
+            with self.state_lock:
+                if state['attempt'] == attempt:
+                    state['observer'] = None
+                    state['error_count'] = 0
+                    state['retry_count'] = 0
+            return
 
-            if force_polling:
-                self.logger.debug(f"Unsupported backend detected for {pane_name} pane: {path} - forcing polling mode")
-            
-            # Create event callback for this pane
-            def event_callback(event_type: str, filename: str):
-                self._on_filesystem_event(pane_name, event_type, filename)
-            
-            # Create and start observer with configured polling interval
-            polling_interval = self.config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S
-            observer = FileMonitorObserver(path, event_callback, self.logger, force_polling=force_polling, polling_interval=polling_interval)
-            
-            if observer.start():
-                state['observer'] = observer
-                state['error_count'] = 0
-                state['retry_count'] = 0
-                state['last_successful_start'] = time.time()
-                self.logger.debug(f"Successfully started monitoring for {pane_name} pane: {path} (mode: {observer.get_monitoring_mode()})")
-            else:
-                self.logger.error(f"Failed to start monitoring for {pane_name} pane: {path} (error_count: {state['error_count'] + 1})")
-                state['observer'] = None
-                state['error_count'] += 1
-                
-                # Attempt reinitialization with retry logic (requirement 9.2)
-                self.logger.debug(f"Scheduling retry for {pane_name} pane (attempt will be {state['retry_count'] + 1}/3)")
-                self._schedule_retry(pane_name, path)
+        force_polling = (monitoring_mode == "polling")
+
+        if force_polling:
+            self.logger.debug(f"Unsupported backend detected for {pane_name} pane: {path} - forcing polling mode")
+
+        status, observer = self._start_and_adopt(pane_name, path, attempt,
+                                                 force_polling=force_polling)
+        if status == "superseded":
+            return
+        if status == "started":
+            self.logger.debug(f"Successfully started monitoring for {pane_name} pane: {path} (mode: {observer.get_monitoring_mode()})")
+            return
+
+        with self.state_lock:
+            self.logger.error(f"Failed to start monitoring for {pane_name} pane: {path} (error_count: {state['error_count'] + 1})")
+            state['error_count'] += 1
+
+            # Attempt reinitialization with retry logic (requirement 9.2)
+            self.logger.debug(f"Scheduling retry for {pane_name} pane (attempt will be {state['retry_count'] + 1}/3)")
+            self._schedule_retry(pane_name, path)
     
     def _schedule_retry(self, pane_name: str, path: Path) -> None:
         """
@@ -276,8 +424,10 @@ class FileMonitorManager:
             
             # Try one last time with polling mode explicitly. That attempt owns
             # the verdict: only if polling fails too is the directory recorded
-            # as unwatchable.
-            self._attempt_polling_fallback(pane_name, path)
+            # as unwatchable. On the worker, like every other start (#410) —
+            # this runs under state_lock from _start_pane_monitoring's failure
+            # branch, and a polling start snapshots the whole directory.
+            self._post_job("fallback", pane_name, path)
             return
         
         # Calculate backoff delay: 1s, 2s, 4s
@@ -286,84 +436,88 @@ class FileMonitorManager:
         
         self.logger.debug(f"Retry attempt {state['retry_count']}/3 scheduled for {pane_name} pane in {backoff_delay}s (exponential backoff)")
         
-        # Schedule retry with exponential backoff
-        def retry_monitoring():
-            self.logger.debug(f"Executing retry attempt {state['retry_count']}/3 for {pane_name} pane at {path}")
-            with self.state_lock:
-                # The pane navigated away while this retry waited out its
-                # backoff. Whatever it watches now was started for the directory
-                # it actually shows; installing an observer for the old one here
-                # would swap that out without stopping it — a leaked observer
-                # thread - and feed the pane a stale directory's events (#416).
-                if state['path'] != path:
-                    self.logger.debug(f"Abandoning retry for {pane_name} pane: {path} is no longer its directory")
-                    return
-                
-                # Create event callback for this pane
-                def event_callback(event_type: str, filename: str):
-                    self._on_filesystem_event(pane_name, event_type, filename)
-                
-                # Create and start observer with configured polling interval
-                polling_interval = self.config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S
-                observer = FileMonitorObserver(path, event_callback, self.logger, polling_interval=polling_interval)
-                
-                if observer.start():
-                    state['observer'] = observer
-                    state['error_count'] = 0
-                    state['retry_count'] = 0
-                    state['last_successful_start'] = time.time()
-                    self.logger.debug(f"Retry {state['retry_count']}/3 successful for {pane_name} pane: {path} (mode: {observer.get_monitoring_mode()})")
-                else:
-                    self.logger.error(f"Retry {state['retry_count']}/3 failed for {pane_name} pane at {path}")
-                    state['error_count'] += 1
-                    
-                    # Schedule next retry if we haven't exceeded the limit
-                    if state['retry_count'] < 3:
-                        self._schedule_retry(pane_name, path)
-                    else:
-                        # Final failure - fall back to polling
-                        self.logger.error(f"All retry attempts exhausted for {pane_name} pane")
-                        self._schedule_retry(pane_name, path)  # Falls through to the polling fallback
-        
-        timer = threading.Timer(backoff_delay, retry_monitoring)
+        # Schedule retry with exponential backoff. The timer thread only posts
+        # the job; the attempt itself runs on the monitor worker, where a start
+        # that blocks on a slow mount blocks nothing else (#410).
+        timer = threading.Timer(
+            backoff_delay, lambda: self._post_job("retry", pane_name, path))
         timer.daemon = True
         timer.start()
-    
-    def _attempt_polling_fallback(self, pane_name: str, path: Path) -> None:
-        """
-        Attempt to start monitoring in polling mode as a last resort.
-        
-        This is called after all retry attempts have failed.
-        
+
+    def _retry_pane_monitoring(self, pane_name: str, path: Path) -> None:
+        """One backoff attempt at restarting a pane's observer, on the worker.
+
         Args:
             pane_name: "left" or "right"
             path: Directory path to monitor
         """
         state = self.monitoring_state[pane_name]
+        self.logger.debug(f"Executing retry attempt {state['retry_count']}/3 for {pane_name} pane at {path}")
+        with self.state_lock:
+            # The pane navigated away while this retry waited out its
+            # backoff. Whatever it watches now was started for the directory
+            # it actually shows; installing an observer for the old one here
+            # would swap that out without stopping it — a leaked observer
+            # thread - and feed the pane a stale directory's events (#416).
+            if state['path'] != path:
+                self.logger.debug(f"Abandoning retry for {pane_name} pane: {path} is no longer its directory")
+                return
+            attempt = state['attempt'] = state['attempt'] + 1
+            retry_count = state['retry_count']
+
+        status, observer = self._start_and_adopt(pane_name, path, attempt,
+                                                 force_polling=False)
+        if status == "superseded":
+            return
+        if status == "started":
+            self.logger.debug(f"Retry {retry_count}/3 successful for {pane_name} pane: {path} (mode: {observer.get_monitoring_mode()})")
+            return
+
+        self.logger.error(f"Retry {retry_count}/3 failed for {pane_name} pane at {path}")
+        with self.state_lock:
+            state['error_count'] += 1
+
+            # Schedule next retry if we haven't exceeded the limit
+            if state['retry_count'] < 3:
+                self._schedule_retry(pane_name, path)
+            else:
+                # Final failure - fall back to polling
+                self.logger.error(f"All retry attempts exhausted for {pane_name} pane")
+                self._schedule_retry(pane_name, path)  # Falls through to the polling fallback
+    
+    def _attempt_polling_fallback(self, pane_name: str, path: Path) -> None:
+        """
+        Attempt to start monitoring in polling mode as a last resort.
         
+        This is called after all retry attempts have failed, on the monitor
+        worker (a polling start snapshots the whole directory; see #410).
+
+        Args:
+            pane_name: "left" or "right"
+            path: Directory path to monitor
+        """
+        state = self.monitoring_state[pane_name]
+
         self.logger.debug(f"Attempting polling mode fallback for {pane_name} pane at {path}")
-        
-        # Create event callback for this pane
-        def event_callback(event_type: str, filename: str):
-            self._on_filesystem_event(pane_name, event_type, filename)
-        
-        # Create observer with force_polling flag and configured polling interval
-        polling_interval = self.config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S
-        observer = FileMonitorObserver(path, event_callback, self.logger, force_polling=True, polling_interval=polling_interval)
-        
-        if observer.start():
-            state['observer'] = observer
-            state['error_count'] = 0
-            state['retry_count'] = 0
-            state['failed_path'] = None
-            state['last_successful_start'] = time.time()
+
+        with self.state_lock:
+            attempt = state['attempt'] = state['attempt'] + 1
+
+        status, _observer = self._start_and_adopt(pane_name, path, attempt,
+                                                  force_polling=True)
+        if status == "superseded":
+            return
+        if status == "started":
             self.logger.debug(f"Polling mode fallback successful for {pane_name} pane: {path}")
             self.logger.debug(f"Fallback mode activated: using polling observer after repeated native monitoring failures")
-        else:
-            self.logger.error(f"Polling mode fallback failed for {pane_name} pane at {path}")
-            self.logger.error(f"Monitoring disabled for {pane_name} pane while it stays at {path} - all monitoring methods exhausted")
-            state['observer'] = None
-            state['failed_path'] = path
+            return
+
+        self.logger.error(f"Polling mode fallback failed for {pane_name} pane at {path}")
+        self.logger.error(f"Monitoring disabled for {pane_name} pane while it stays at {path} - all monitoring methods exhausted")
+        with self.state_lock:
+            if state['attempt'] == attempt:
+                state['observer'] = None
+                state['failed_path'] = path
     
     def _detect_monitoring_mode(self, path: Path) -> str:
         """
@@ -588,7 +742,13 @@ class FileMonitorManager:
     def update_monitored_directory(self, pane_name: str, new_path: Path) -> None:
         """
         Update the monitored directory for a specific pane.
-        
+
+        Returns immediately. The UI thread calls this on the frame that notices
+        a pane has moved, and pointing a watcher at a directory is filesystem
+        work — seconds on a slow or unreachable mount, which froze the whole app
+        (#410). The monitor worker does the stopping and starting; wait_for_idle()
+        waits for it to land.
+
         Args:
             pane_name: "left" or "right"
             new_path: New directory path to monitor
@@ -599,7 +759,19 @@ class FileMonitorManager:
         self.logger.debug(f"Updating monitored directory: pane={pane_name}, path={new_path}")
         
         # Stop monitoring the old directory and start monitoring the new one
-        self._start_pane_monitoring(pane_name, new_path)
+        with self.state_lock:
+            self._requested_paths[pane_name] = new_path
+            state = self.monitoring_state[pane_name]
+            # Leaving a directory that gave up clears its verdict here rather
+            # than in _start_pane_monitoring, because the visit that does the
+            # leaving may never be started: navigate away and straight back and
+            # the intermediate job is skipped as superseded, yet the pane did
+            # leave, and the directory deserves the fresh attempt it would get
+            # from a slower user (#416).
+            if state['failed_path'] is not None and state['failed_path'] != new_path:
+                state['failed_path'] = None
+                state['retry_count'] = 0
+        self._post_job("point", pane_name, new_path)
 
     def _stop_observer_async(self, observer) -> None:
         """Stop a detached observer on a background thread.
@@ -643,6 +815,17 @@ class FileMonitorManager:
                 # Clear state
                 state['path'] = None
                 state['pending_reload'] = False
+                self._requested_paths[pane_name] = None
+                # Anything the worker is in the middle of starting stops itself
+                # instead of installing, rather than leaving a watcher thread
+                # running for a pane that is going away.
+                state['attempt'] += 1
+
+        # Retire the worker (a queued job still runs, finds its attempt stale
+        # and drops out). A later post starts a fresh one.
+        with self._idle:
+            self._worker_running = False
+        self._job_queue.put(None)
 
         for observer in observers_to_stop:
             observer.stop()

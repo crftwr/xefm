@@ -12,9 +12,10 @@ the MS Store v1.0.1 build; the mechanism is platform-independent).
 The test recreates that exact interleaving with a mock observer whose stop()
 blocks on a stand-in for watchdog's dispatch lock while a fake dispatch thread,
 holding that lock, delivers an event into _on_filesystem_event. With the fix
-(observers are detached under state_lock but stopped off-thread),
-update_monitored_directory completes; with the old code it deadlocks forever,
-which the join timeout turns into a failure.
+(observers are detached under state_lock but stopped off-thread), the re-point
+completes; with the old code it deadlocks forever, which the timeout turns into
+a failure. The re-point itself moved to the monitor worker since (#410), so the
+wait is for that worker to settle rather than for the caller to return.
 """
 
 import unittest
@@ -90,15 +91,11 @@ class TestStopObserverDeadlock(unittest.TestCase):
         while not dispatch_lock.locked():
             pass
 
-        navigator = threading.Thread(
-            target=self.manager.update_monitored_directory,
-            args=('left', self.new_path), daemon=True)
-        navigator.start()
-        navigator.join(timeout=5.0)
+        self.manager.update_monitored_directory('left', self.new_path)
 
-        self.deadlocked = navigator.is_alive()
+        self.deadlocked = not self.manager.wait_for_idle(5.0)
         self.assertFalse(self.deadlocked,
-                         "update_monitored_directory deadlocked against an "
+                         "re-pointing the watcher deadlocked against an "
                          "in-flight filesystem event")
         dispatcher.join(timeout=5.0)
         self.assertFalse(dispatcher.is_alive())
