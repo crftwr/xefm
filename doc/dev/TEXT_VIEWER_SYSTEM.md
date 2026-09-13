@@ -53,6 +53,17 @@ supported. Lexer selection is:
    `.go`, `.rs`, `.php`, `.rb`, `.sql`, `.ini`/`.cfg`/`.conf`, `.toml`).
 3. Otherwise `TextLexer` (plain, uncolored).
 
+Whichever lexer is chosen, it is built with `_LEXER_OPTS` (`stripnl=False`,
+`stripall=False`). Pygments preprocesses its input before lexing and by default
+strips the blank lines off the top and bottom of the file; the viewer's own
+`lines` keep them, so the token stream would start at the first non-blank line
+and every row below it would draw the *next* line's text — under the wrong
+gutter number, and handing a click, a search hit or a copy the wrong source
+line (issue #417). `_highlight` then checks the invariant it depends on — row
+*i* reconstructs line *i* — and drops to plain, uncolored rows if a lexer
+reshapes its input anyway: losing the colors is recoverable, drawing a shifted
+document is not.
+
 Token categories are mapped to a small palette (`DEFAULT_SYNTAX`, VS Code Dark+)
 that a theme may override via `extras['syntax']`. Structured formats such as
 JSON and CSV also have dedicated *rich* renderers (see
