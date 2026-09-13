@@ -116,6 +116,9 @@ class _FakeMonitor:
     def update_monitored_directory(self, *args):
         pass
 
+    def check_observer_health(self):
+        pass
+
     def stop_monitoring(self):
         pass
 

@@ -42,12 +42,16 @@ class FakeMonitor:
         self.stopped = False
         self.suppressed = []       # str paths, from suppress_path (#243)
         self.released = []
+        self.health_checks = 0     # the pump asks on every drain (#416)
 
     def is_monitoring_enabled(self):
         return self.enabled
 
     def update_monitored_directory(self, pane_name, path):
         self.updated.append((pane_name, str(path)))
+
+    def check_observer_health(self):
+        self.health_checks += 1
 
     def stop_monitoring(self):
         self.stopped = True

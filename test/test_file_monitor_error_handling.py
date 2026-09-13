@@ -222,8 +222,11 @@ class TestFallbackToPolling(unittest.TestCase):
             # Wait for retry to execute
             time.sleep(0.5)
             
-            # Should have marked as failed permanently and attempted polling
-            self.assertTrue(state['failed_permanently'])
+            # Polling carried the directory, so nothing is written off: the pane
+            # is monitored, and re-pointing it here is not refused (#416)
+            self.assertIsNotNone(state['observer'])
+            self.assertEqual(state['observer'].get_monitoring_mode(), "polling")
+            self.assertIsNone(state['failed_path'])
     
     def test_polling_fallback_logs_mode_transition(self):
         """Test that fallback to polling logs mode transition."""
@@ -364,12 +367,12 @@ class TestObserverHealthCheck(unittest.TestCase):
                 state['observer'].stop()
     
     def test_health_check_skips_permanently_failed(self):
-        """Test that health check skips permanently failed observers."""
+        """Test that health check skips a pane whose directory gave up."""
         manager = FileMonitorManager(self.config, self.file_manager)
         
-        # Mark as permanently failed
+        # Mark this pane's directory as unwatchable
         state = manager.monitoring_state['left']
-        state['failed_permanently'] = True
+        state['failed_path'] = self.temp_path
         state['observer'] = None
         
         # Health check should not attempt recovery

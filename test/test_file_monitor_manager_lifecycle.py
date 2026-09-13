@@ -232,7 +232,7 @@ class TestFileMonitorManagerLifecycle(unittest.TestCase):
         self.assertIsNone(state['observer'])
         self.assertEqual(state['error_count'], 0)
         self.assertEqual(state['retry_count'], 0)
-        self.assertFalse(state['failed_permanently'])
+        self.assertIsNone(state['failed_path'])
     
     def test_event_callback_posts_to_queue(self):
         """Test that filesystem events post reload requests to queue"""

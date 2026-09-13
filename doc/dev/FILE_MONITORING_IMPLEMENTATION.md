@@ -647,6 +647,28 @@ def _attempt_polling_fallback(self, pane_name: str, path: Path) -> None:
         self.logger.error(f"Polling mode failed for {pane_name} pane")
 ```
 
+#### Giving Up, and Resuming
+
+When the polling fallback fails too, the manager records the *directory* that
+could not be watched (`state['failed_path']`) rather than writing off the pane:
+
+- while the pane stays there nothing is retried — there is nothing new to try;
+- pointing the pane anywhere else clears the record and monitoring resumes;
+- browsing back to it later gets a fresh set of attempts, since the directory may
+  have been remounted or recreated in the meantime.
+
+Before #416 this was a per-pane `failed_permanently` flag that nothing ever
+cleared. One directory that vanished under the watcher — an unmounted volume, a
+directory deleted while the pane sat in it — left that pane unmonitored for the
+rest of the session, answering every later navigation with
+`Monitoring for right pane has failed permanently, not retrying`.
+
+A pending retry is also abandoned if the pane navigated away while it waited out
+its backoff (1s + 2s + 4s is ample time to move on). Installing an observer for
+the directory the pane has left would swap out the live one *without stopping
+it* — a leaked observer thread — and then feed the pane a stale directory's
+events.
+
 ### Health Monitoring
 
 FileMonitorManager includes a health check mechanism:
@@ -660,7 +682,11 @@ def check_observer_health(self) -> None:
             self._schedule_retry(pane_name, state.path)
 ```
 
-This is called periodically from the main event loop to detect and recover from observer failures.
+`XeFMApp._pump_monitoring()` calls this on every drain: a watcher that dies is
+silent about it — no events is exactly what a dead watcher looks like — so
+nothing else would ever notice. The real work is rate-limited to
+`HEALTH_CHECK_INTERVAL_S` (5s), which is what makes it free to ask for from the
+UI thread's hot path.
 
 
 ## Platform-Specific Monitoring

@@ -1698,6 +1698,11 @@ class XeFMApp:
         listings that have completed. Returns True if a pane changed (so the
         caller re-renders)."""
         self._sync_monitored_dirs()
+        # A watcher can die under a pane (a volume goes away, the OS drops the
+        # stream) and say nothing about it, leaving the pane quietly stale for
+        # the rest of the session. Only a liveness check finds that; the manager
+        # rate-limits itself, so asking on every drain is free (#416).
+        self.file_monitor.check_observer_health()
         # Drained for its side effect only — *starting* a reload no longer changes
         # anything on screen, because the pane keeps its entries throughout the
         # re-read (see _list_pane's keep_visible). Whether a frame is owed is
