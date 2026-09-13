@@ -297,6 +297,15 @@ _EXT_LEXERS = {
     ".cfg": "ini", ".conf": "ini", ".toml": "toml",
 }
 
+#: Lexer construction options, on every lexer :func:`_highlight` builds. Pygments
+#: preprocesses its input before lexing, and ``stripnl`` — on by default — eats
+#: the blank lines at the top and bottom of a file, so the token stream would
+#: start at the first non-blank line while the viewer's own ``lines`` still hold
+#: the blanks: every row below would draw the *next* line's text (issue #417).
+#: ``stripall`` would do the same to leading indentation. Tabs are already
+#: expanded by :func:`_read_lines`, so ``tabsize`` (off by default) is left alone.
+_LEXER_OPTS = {"stripnl": False, "stripall": False}
+
 
 def _expand_tabs(line: str) -> str:
     """Column-aware tab expansion to ``_TAB`` stops."""
@@ -416,10 +425,10 @@ def _highlight(lines: list[str], path, palette: dict | None = None) -> list[list
         return plain
     try:
         try:
-            lexer = get_lexer_for_filename(path.name)
+            lexer = get_lexer_for_filename(path.name, **_LEXER_OPTS)
         except ClassNotFound:
-            lexer = get_lexer_by_name(_EXT_LEXERS[path.suffix.lower()]) \
-                if path.suffix.lower() in _EXT_LEXERS else TextLexer()
+            lexer = get_lexer_by_name(_EXT_LEXERS[path.suffix.lower()], **_LEXER_OPTS) \
+                if path.suffix.lower() in _EXT_LEXERS else TextLexer(**_LEXER_OPTS)
         text = "\n".join(lines)
         result: list[list[tuple[str, Any]]] = []
         current: list[tuple[str, Any]] = []
@@ -445,6 +454,14 @@ def _highlight(lines: list[str], path, palette: dict | None = None) -> list[list
         # by self.lines, then indexes self.highlighted, so a short list crashes).
         result = result[:len(lines)]
         result += [[] for _ in range(len(lines) - len(result))]
+        # Row i must *be* line i: everything but the text itself — the gutter
+        # number, the selection, the search highlight, the copied text — indexes
+        # self.lines, so a row that carries another line's text draws that line
+        # under the wrong number and hands a click the wrong source (issue #417).
+        # A lexer that reshapes its input despite _LEXER_OPTS loses its colors
+        # here rather than shifting the document.
+        if any("".join(t for t, _ in row) != line for row, line in zip(result, lines)):
+            return plain
         return result
     except Exception:
         return plain
