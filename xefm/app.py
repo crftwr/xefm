@@ -3840,10 +3840,8 @@ class XeFMApp:
         probed — ``_s3_scan_available`` requires an env var or ``~/.aws`` file —
         so that endpoint is never waited on."""
         try:
-            import boto3
-            from botocore.config import Config as _BotoConfig
-            client = boto3.client("s3", config=_BotoConfig(
-                connect_timeout=2, read_timeout=3, retries={"max_attempts": 0}))
+            from xefm.s3 import get_s3_probe_client, note_bucket_region
+            client = get_s3_probe_client()
             if client.can_paginate("list_buckets"):
                 pages = client.get_paginator("list_buckets").paginate()
             else:  # older botocore: ListBuckets has no paginator — one full call
@@ -3852,6 +3850,9 @@ class XeFMApp:
                 if cancel.is_set():
                     return
                 for b in page.get("Buckets", []):
+                    # ListBuckets says where each bucket lives, which spares the
+                    # first request to it a cross-region redirect (issue #418).
+                    note_bucket_region(b["Name"], b.get("BucketRegion"))
                     yield {"name": b["Name"], "path": f"s3://{b['Name']}/"}
         except Exception:
             return
