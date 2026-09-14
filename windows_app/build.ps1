@@ -197,8 +197,22 @@ Info "Bundle version: $Version"
 # ---------------------------------------------------------------------------
 Info 'Step 2: Locating the MSVC toolchain...'
 
+# vswhere.exe always installs under the 32-bit Program Files, whatever the host
+# architecture. Read that root from the environment when it is there and
+# construct it when it is not: a process launched from a shell whose MSYS
+# runtime differs from the one its parent was built against inherits only a
+# handful of variables, and ProgramFiles(x86) is not among them (Git Bash ->
+# C:\msys64 make, on this project's Windows box). An empty root made the path
+# below a bare "\Microsoft Visual Studio\...", so an installed toolchain looked
+# absent and the error told you to install Build Tools you already had.
+function Get-ProgramFilesX86 {
+    if (${env:ProgramFiles(x86)}) { return ${env:ProgramFiles(x86)} }
+    $drive = if ($env:SystemDrive) { $env:SystemDrive } else { 'C:' }
+    return (Join-Path $drive 'Program Files (x86)')
+}
+
 function Import-VsDevEnv {
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $vswhere = Join-Path (Get-ProgramFilesX86) 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path $vswhere)) { return $false }
     $vsPath = & $vswhere -latest -products * `
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `

@@ -20,6 +20,64 @@ PYTHON := $(abspath .venv/$(VENV_BINDIR)/python)
 endif
 PIP := $(PYTHON) -m pip
 
+# --- Windows: restore the environment a mismatched shell handoff dropped ------
+# Reaching make through a shell whose MSYS runtime differs from the one make was
+# built against costs almost the whole Windows environment: a recipe sees eight
+# variables where a native shell passes ninety. On this project's Windows box
+# that is exactly the handoff -- Git Bash (Git for Windows' own msys) invoking
+# C:\msys64's make -- and two separate things break because of it.
+#
+#   * APPDATA is gone, and with it the config and stored token `gh` looks up
+#     through it. Every release target answers "To get started with GitHub CLI,
+#     please run: gh auth login", and `make release-status` calls a Release that
+#     exists missing, while the identical gh command run straight from the shell
+#     works. `msstore` reads the same variable.
+#   * PATHEXT arrives mangled rather than missing: the conversion layer takes its
+#     ";"-separated value for a path list, and what reaches PowerShell is a bare
+#     ".CPL". PowerShell consults PATHEXT to decide whether a file is executable,
+#     so with .EXE absent `& $venvPy ...` inside windows_app\*.ps1 does nothing
+#     whatsoever -- no output, no error, $LASTEXITCODE never even set. That is
+#     the whole of build.ps1's "Failed to probe the venv interpreter" and
+#     build_msix.ps1's "make_store_assets.py failed ()": two errors that blame a
+#     venv and a script, neither of which is broken.
+#
+# Ask the system rather than the environment. GetFolderPath reads the user's
+# token and GetEnvironmentVariable(...,'Machine') the registry, so both answer
+# correctly from inside the very process that lost the values -- where deriving
+# from HOME would not, make seeing MSYS2's own /home/craft there while its own
+# recipes report /c/Users/craft. All of it goes missing together, so one guard
+# covers the lot and a build from a native shell pays nothing at all.
+# ProgramFiles(x86) cannot be restored alongside them: make accepts
+# `export ProgramFiles(x86) := ...` and then silently keeps it out of the
+# environment it hands to children, so windows_app\*.ps1 derive that root
+# themselves from SystemDrive.
+#
+# One PowerShell start costs the better part of a second and this runs before
+# every target, so ask once for all four rather than four times for one. The
+# values can hold spaces (C:\Users\John Smith), which rules out splitting the
+# answer on whitespace, so PowerShell returns finished make assignments joined
+# by "|" -- a character Windows forbids in a path -- and $(subst) turns those
+# back into lines for $(eval). The findstring guard means a PowerShell that
+# failed or printed something unexpected leaves the variables unset, rather than
+# feeding $(eval) garbage and failing the build with a make syntax error.
+ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S))$(findstring CYGWIN,$(UNAME_S)))
+ifeq ($(APPDATA),)
+define WIN_ENV_NL
+
+
+endef
+WIN_ENV := $(shell powershell -NoProfile -Command \
+	"'export USERPROFILE := '  + [Environment]::GetFolderPath('UserProfile') + \
+	'|export APPDATA := '      + [Environment]::GetFolderPath('ApplicationData') + \
+	'|export LOCALAPPDATA := ' + [Environment]::GetFolderPath('LocalApplicationData') + \
+	'|export PATHEXT := '      + [Environment]::GetEnvironmentVariable('PATHEXT','Machine')" \
+	| tr -d '\r')
+ifneq (,$(findstring export APPDATA,$(WIN_ENV)))
+$(eval $(subst |,$(WIN_ENV_NL),$(WIN_ENV)))
+endif
+endif
+endif
+
 # --- PuiKit source: PyPI by default, local editable checkout on opt-in ---------
 # PuiKit is released on PyPI, so `make venv` installs it from there by default.
 # To develop against a local PuiKit checkout, set PUIKIT_DIR to its path — PuiKit
@@ -972,6 +1030,13 @@ uninstall-windows-msix:
 # so this is the path the pack above just wrote.
 WINDOWS_MSIX := windows_app/build/XeFM-$(XEFM_VERSION).0-x64.msix
 
+# -ut 900 is not optional at XeFM's package size. msstore's upload timeout
+# defaults to 100 seconds and the MSIX is ~90 MB, so the default expires
+# mid-upload and the CLI reports a bare "Error while uploading the
+# application package." at 0% -- naming neither the timeout nor the size,
+# so it reads as a network or auth failure and sends you debugging the wrong
+# thing. A failed publish deletes the pending submission and opens a fresh
+# one, so re-running after a timeout leaves no orphan draft behind.
 release-windows-msix: windows-msix
 	@command -v msstore >/dev/null 2>&1 || { \
 		echo "ERROR: msstore CLI not found on PATH."; \
@@ -990,5 +1055,5 @@ release-windows-msix: windows-msix
 		echo "ERROR: $(WINDOWS_MSIX) missing after packing."; \
 		exit 1; }; \
 	echo "Submitting $(WINDOWS_MSIX) to the Microsoft Store ($$XEFM_STORE_PRODUCT_ID)..."; \
-	msstore publish "$(WINDOWS_MSIX)" -id "$$XEFM_STORE_PRODUCT_ID"
+	msstore publish "$(WINDOWS_MSIX)" -id "$$XEFM_STORE_PRODUCT_ID" -ut 900
 
