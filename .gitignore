@@ -49,6 +49,12 @@ windows_app/store.env
 *~
 *.code-workspace
 
+# gh's telemetry device id, written here rather than under LOCALAPPDATA when
+# gh runs with a stripped environment (some sandboxed shells drop it). Stray,
+# but it has to be ignored: release_preflight refuses to tag on any untracked
+# file, so this would block a release rather than merely add noise.
+.local/
+
 # OS
 .DS_Store
 Thumbs.db
