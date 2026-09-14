@@ -317,6 +317,10 @@ def _help_text(app=None):
     import types
     app = app or xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
     app.panel = types.SimpleNamespace(render=lambda *a, **k: None)
+    # The help drops rows this frontend cannot perform, so it asks the menu bar
+    # whether its activation key opens anything; these tests read the archive
+    # section only.
+    app.menu_bar = types.SimpleNamespace(takes_activation_key=True)
     app._keys_label = lambda action: "?"
     shown = {}
     original = xefm_app.show_markdown

@@ -128,6 +128,11 @@ _HISTORY_MAX = 100
 #: enabled (the dialog's "Don't show tips at startup" checkbox writes it), the
 #: index of the next unseen tip, and the local date it last opened at startup —
 #: several launches in one day surface at most one tip.
+#: What a key label reads when no context binds the action — the help dialog
+#: and the tips both render this, and the help tells it apart from a real
+#: binding by comparing against it rather than by how it looks.
+UNBOUND_KEYS = "—"
+
 _TIPS_ENABLED_KEY = "tips.enabled"
 _TIPS_INDEX_KEY = "tips.index"
 _TIPS_LAST_SHOWN_KEY = "tips.last_shown"
@@ -6482,7 +6487,7 @@ class XeFMApp:
             ("view_file", "View file (text viewer)"),
             ("diff_files", "Compare two selected files"),
             ("toggle_hidden", "Toggle hidden files"),
-            ("toggle_color_scheme", "Cycle color theme"),
+            ("toggle_color_scheme", "Cycle color theme (View menu)"),
             ("sort", "Sort dialog (key F/E/S/T + order)"),
             ("quick_sort_name", "Quick-sort by name (repeat: reverse)"),
             ("quick_sort_size", "Quick-sort by size (repeat: reverse)"),
@@ -6498,16 +6503,42 @@ class XeFMApp:
             ("adjust_log_down", "Make the log pane smaller"),
             ("reset_log_height", "Reset the log pane height"),
             ("copy_log_selection", "Copy the log's selected text (drag to select)"),
-            ("copy_log_all", "Copy the whole log (Edit menu; unbound by default)"),
+            # These three carry their menu: nothing binds them out of the box,
+            # so a row saying only "—" would name a feature and then withhold
+            # the one way to reach it. The menu is stated rather than "unbound
+            # by default", which stops being true the moment a config binds it.
+            ("copy_log_all", "Copy the whole log (Edit menu)"),
         )),
         ("Other", (
             ("menu", "Open the menu bar (←/→ walk it, Esc closes)"),
-            ("edit_config", "Edit ~/.xefm/config.py, then reload"),
-            ("reload_config", "Reload ~/.xefm/config.py"),
+            ("edit_config", "Edit ~/.xefm/config.py, then reload (Tools menu)"),
+            ("reload_config", "Reload ~/.xefm/config.py (Tools menu)"),
             ("help", "Show this help"),
             ("quit", "Quit XeFM"),
         )),
     )
+
+    #: Rows of :data:`_HELP_SECTIONS` that only some frontends can honor, each
+    #: mapped to the test for "this one can". The help is one table for two
+    #: frontends, and an action the running one refuses is worse than a missing
+    #: row: ``menu`` answers nothing once an OS menu bar has taken the menu over,
+    #: and ``subshell`` needs a terminal to hand over. Both stay in the sections
+    #: above — they are real actions, and the *other* frontend lists them — so
+    #: the filter lives here rather than as a branch in the table.
+    #:
+    #: The menu bar is asked about itself, not the backend about its
+    #: capabilities: which menus a platform has is PuiKit's business, and XeFM
+    #: only wants to know whether the key it would print does anything.
+    _BACKEND_GATED = {
+        "menu": lambda self: self.menu_bar.takes_activation_key,
+        "subshell": lambda self: not is_desktop_mode(),
+    }
+
+    def _help_entries(self, entries):
+        """``entries`` minus the rows this backend cannot perform."""
+        return [(action, desc) for action, desc in entries
+                if action not in self._BACKEND_GATED
+                or self._BACKEND_GATED[action](self)]
 
     def _keys_label(self, action: str) -> str:
         """Comma-joined, display-formatted key(s) bound to ``action`` ("—" if
@@ -6523,25 +6554,41 @@ class XeFMApp:
             keys, _ = self.keys.get_keys_for_action(action, context)
             if keys:
                 return ", ".join(self.keys.format_key_for_display(k) for k in keys)
-        return "—"
+        return UNBOUND_KEYS
 
     def show_help(self) -> None:
-        """A scrollable key-binding reference, built live from the port's keymap.
+        """A scrollable key-binding reference, built live from the port's keymap."""
+        show_markdown(self.panel, self._help_markdown(), title="Help")
+        self.panel.render()
+
+    def _help_markdown(self) -> str:
+        """The help dialog's whole body.
 
         Each section renders as a Markdown heading over a two-column table
         (Key(s) / Action), so bindings align in a real column and the section
-        titles stand out."""
+        titles stand out.
+
+        Split from :meth:`show_help` so the content can be built — and checked —
+        without a panel to push it onto."""
         from xefm.const import VERSION
         lines = ["# XeFM", f"Version {VERSION}", ""]
         for title, entries in self._HELP_SECTIONS + self._user_help_sections():
+            rows = self._help_entries(entries)
+            if not rows:
+                continue
             lines += [f"## {title}", "", "| Key(s) | Action |", "| --- | --- |"]
-            for action, desc in entries:
-                keys = self._keys_label(action).replace("|", "\\|")
-                lines.append(f"| `{keys}` | {desc} |")
+            for action, desc in rows:
+                label = self._keys_label(action)
+                # Only a real binding is set as code. An unbound action's "—" in
+                # the same code style reads as a key you could press — and next
+                # to reset_log_height, whose binding *is* an underscore, the two
+                # are a glyph apart.
+                keys = UNBOUND_KEYS if label == UNBOUND_KEYS else \
+                    "`" + label.replace("|", "\\|") + "`"
+                lines.append(f"| {keys} | {desc} |")
             lines.append("")
         lines.append(self._archive_help_section())
-        show_markdown(self.panel, "\n".join(lines), title="Help")
-        self.panel.render()
+        return "\n".join(lines)
 
     def _archive_help_section(self) -> str:
         """The archive formats *this run* supports, as a closing help section.
