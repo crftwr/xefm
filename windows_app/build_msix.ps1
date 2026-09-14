@@ -134,10 +134,27 @@ $pfx     = "$OutDir\XeFM-proto-test.pfx"
 $cer     = "$OutDir\XeFM-proto-test.cer"
 $pfxPassword = "prototest"
 
+# The two "Program Files" roots, derived rather than read from the environment.
+# ProgramFiles / ProgramFiles(x86) are set in any normal Windows session, but a
+# process launched from a shell whose MSYS runtime differs from the one its
+# parent was built against inherits only a handful of variables, and neither of
+# these survives -- on this project's Windows box that handoff is Git Bash (Git
+# for Windows' own msys) invoking C:\msys64's make, which leaves a recipe with
+# eight variables. An empty root turned the search paths below into a bare
+# "\Windows Kits\10\bin", so the SDK read as missing and the error blamed an
+# uninstalled Windows SDK that was in fact sitting right there. Both directory
+# names are fixed under the system drive, so construct them when asking fails.
+function Get-ProgramFilesRoot([switch]$X86) {
+    $fromEnv = if ($X86) { ${env:ProgramFiles(x86)} } else { ${env:ProgramFiles} }
+    if ($fromEnv) { return $fromEnv }
+    $drive = if ($env:SystemDrive) { $env:SystemDrive } else { 'C:' }
+    return (Join-Path $drive $(if ($X86) { 'Program Files (x86)' } else { 'Program Files' }))
+}
+
 function Find-SdkTool([string]$name) {
     $roots = @(
-        "${env:ProgramFiles(x86)}\Windows Kits\10\bin",
-        "${env:ProgramFiles}\Windows Kits\10\bin"
+        "$(Get-ProgramFilesRoot -X86)\Windows Kits\10\bin",
+        "$(Get-ProgramFilesRoot)\Windows Kits\10\bin"
     )
     foreach ($root in $roots) {
         if (-not (Test-Path $root)) { continue }
