@@ -4810,8 +4810,18 @@ class XeFMApp:
         """Copy the active pane's selected file name(s) — or the cursor entry's
         name when nothing is selected — to the system clipboard, one per line
         (Cmd-Shift-C). On the curses backend the clipboard is process-
-        local, but the copy still succeeds."""
-        self._copy_to_clipboard(lambda f: f.name, "name")
+        local, but the copy still succeeds.
+
+        The name copied is the one the pane *shows*: on a virtual (search-results)
+        pane that is the path relative to the search root — ``sub/dir/a.txt``,
+        not a bare, location-less ``a.txt`` that says nothing about which of
+        several hits it was (issue #433). Verbatim, though, not the NFC form the
+        name column renders: a copied name gets pasted into a shell or an editor,
+        where it has to address the file that is actually on disk (see
+        :mod:`xefm.name_key`)."""
+        virtual = self.active_pane().get("virtual")
+        root = virtual["root"] if virtual else None
+        self._copy_to_clipboard(lambda f: name_key.rel_name(f, root), "name")
 
     def copy_paths_to_clipboard(self) -> None:
         """Copy the active pane's selected full path(s) — or the cursor entry's
