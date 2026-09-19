@@ -306,6 +306,28 @@ viewers' "prev / next match (in search)" row resolves `isearch.prev_match` /
 `isearch.next_match` in `ISEARCH`, not in the viewer's own context, where those
 actions do not exist.
 
+### Labels built once, and the reload that has to redo them
+
+Two surfaces cannot afford a lookup per draw and hold a resolved string instead:
+
+- `StatusBar._hints()` and `_isearch_hints()` (`xefm/app.py`) cache their line.
+  The bar redraws every frame, and a dozen keymap lookups a frame buy nothing.
+- The menu resolves every `shortcut=` once, when `_build_menu()` runs — and on
+  a `native_menus` backend `MenuBar` then hands that menu to the OS, which owns
+  it from there.
+
+Both were written when the keymap really was fixed for the process lifetime.
+`reload_config` is what made that untrue: it rebuilds `self.keys`, and the help
+dialog — which looks up every time — went on to say `D` while the bar and the
+menu still said `K`. That is the second half of issue #382, reported against
+`delete_files`. The reload therefore also calls `StatusBar.invalidate()` and
+`MenuBar.set_menu(self._build_menu())`; the latter is a PuiKit method for
+exactly this case, redrawing the in-window bar from the new menu and
+re-registering an OS bar, since installing is the only way to replace one.
+
+The rule for anything added later: **a key label resolved outside a draw is
+`reload_config`'s to refresh.**
+
 ### Where a hint is drawn, and who is allowed to speak
 
 `dialog_geometry.draw_hint_row` is the one place a modal names its keys, and it

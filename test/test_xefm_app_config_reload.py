@@ -168,5 +168,73 @@ class ReloadConfig(ConfigReloadBase):
         self.assertEqual(self.app.config.DEFAULT_SORT_MODE, 'bogus')
 
 
+class ReloadRefreshesKeyLabels(ConfigReloadBase):
+    """Issue #382. Two surfaces quote a key name rather than reading one on
+    demand — the status bar caches its hint line, the menu holds the shortcut
+    strings resolved when it was built — so both were left naming the key the
+    user had just rebound away from. The help dialog, which looks up every
+    time, was already right, which is how the mismatch showed."""
+
+    def _menu_shortcut(self, label: str) -> str | None:
+        """The shortcut hint the live menu bar shows for item ``label``."""
+        for entry in self.app.menu_bar.menu.items:
+            for item in (entry.submenu.items if entry.submenu else ()):
+                if getattr(item, "label", None) == label:
+                    return item.shortcut
+        self.fail(f"no menu item labelled {label!r}")
+
+    def test_the_status_bar_says_the_key_the_user_just_bound(self):
+        bar = self.app.status
+        self.assertIn("K delete", bar._text(), "the default binding, cached")
+
+        self._write_config("""
+            class Config:
+                KEY_BINDINGS = {'delete_files': {'keys': ['D'],
+                                                 'selection': 'required'}}
+        """)
+        self.app.reload_config()
+
+        self.assertIn("D delete", bar._text())
+        self.assertNotIn("K delete", bar._text())
+
+    def test_the_isearch_hint_line_is_dropped_too(self):
+        # The bar's other cached line, built from the isearch context's keymap.
+        bar = self.app.status
+        self.assertIn("Enter stop", bar._isearch_hints())
+
+        self._write_config("""
+            class Config:
+                KEY_BINDINGS = {'isearch.accept': ['F2']}
+        """)
+        self.app.reload_config()
+
+        self.assertIn("F2 stop", bar._isearch_hints())
+
+    def test_the_menu_says_it_too(self):
+        self.assertEqual(self._menu_shortcut("Delete…"), "K")
+
+        self._write_config("""
+            class Config:
+                KEY_BINDINGS = {'delete_files': {'keys': ['D'],
+                                                 'selection': 'required'}}
+        """)
+        self.app.reload_config()
+
+        self.assertEqual(self._menu_shortcut("Delete…"), "D")
+
+    def test_an_action_left_unbound_loses_its_hint_rather_than_keeping_the_old(self):
+        # Unbinding is a rebinding too: the bar drops the segment and the menu
+        # item shows no accelerator, instead of advertising the old key.
+        self._write_config("""
+            class Config:
+                KEY_BINDINGS = {'delete_files': {'keys': [],
+                                                 'selection': 'required'}}
+        """)
+        self.app.reload_config()
+
+        self.assertNotIn("delete", self.app.status._text())
+        self.assertIsNone(self._menu_shortcut("Delete…"))
+
+
 if __name__ == "__main__":
     unittest.main()
