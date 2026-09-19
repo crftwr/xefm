@@ -95,10 +95,28 @@ class MountTarget:
 
     @property
     def url(self) -> str:
-        """The address in canonical form — no credentials, no trailing slash.
-        This is the key saved servers and stored passwords are matched on, so it
-        must stay stable for a given server."""
+        """The address as the user wrote it, minus any credentials and trailing
+        slash. **This is for showing and for saving**, so it keeps the case that
+        was typed: a row that reads ``smb://synologynas/Videos`` when the user
+        typed ``SynologyNAS`` is XeFM's bookkeeping leaking into their screen.
+        Use :attr:`key` to compare two addresses."""
         host = f"{self.host}:{self.port}" if self.port else self.host
+        base = f"{self.scheme}://{host}"
+        return f"{base}/{self.share}" if self.share else base
+
+    @property
+    def key(self) -> str:
+        """The address as an **identity**, for deduplicating saved servers and
+        for naming a stored password.
+
+        The host is folded to lower case because DNS, mDNS and NetBIOS all are:
+        ``SynologyNAS`` and ``synologynas`` are one machine, and treating them
+        as two would put the same server in the list twice and stash two
+        passwords for it. The share is left alone — SMB share names preserve
+        case, and the mount path is built from them.
+        """
+        host = self.host.lower()
+        host = f"{host}:{self.port}" if self.port else host
         base = f"{self.scheme}://{host}"
         return f"{base}/{self.share}" if self.share else base
 
@@ -204,7 +222,7 @@ def parse_address(text: str) -> Optional[MountTarget]:
             user, _, host = host.rpartition("@")
         if not host or not share:
             return None
-        return MountTarget(scheme="smb", host=host.lower(), share=share, user=user)
+        return MountTarget(scheme="smb", host=host, share=share, user=user)
 
     m = _URL_RE.match(text)
     if m is None:
@@ -219,7 +237,9 @@ def parse_address(text: str) -> Optional[MountTarget]:
     if scheme in _SHARE_REQUIRED and not share:
         return None
     port = int(m.group("port")) if m.group("port") else 0
-    return MountTarget(scheme=scheme, host=host.lower(), share=share,
+    # The host keeps the case it was typed in; see MountTarget.key for where
+    # it is folded and why that is not the same place.
+    return MountTarget(scheme=scheme, host=host, share=share,
                        user=m.group("user") or "", port=port)
 
 

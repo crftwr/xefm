@@ -86,11 +86,29 @@ the Drives dialog switches on to decide between disconnect, eject and nothing.
 ### Addresses
 
 `parse_address` accepts a URL (`smb://me@nas/photo`) or a UNC path
-(`\\nas\photo`, and the `//nas/photo` spelling macOS writes), and returns the scheme, host, share, and any embedded user
-name. It returns `None` for anything that is not plausibly an address, which is
+(`\\nas\photo`, and the `//nas/photo` spelling macOS writes), and returns
+the scheme, host, share, and any embedded user name. It returns `None` for anything that is not plausibly an address, which is
 how the picker's filter line decides whether **Enter** on unmatched text means
 "connect to this" or "nothing matched" — so it must stay strict. A bare word is
 not an address.
+
+`MountTarget` then offers the address in **two forms, and the distinction is
+load-bearing**:
+
+- `url` keeps the case the user typed. It is what the picker shows, what a
+  saved row stores, and what goes into a log line or a message.
+- `key` folds the host to lower case. It is what two addresses are compared
+  by: deduplicating saved servers, and naming a stored password.
+
+The host folds because DNS, mDNS and NetBIOS all ignore case — `SynologyNAS`
+and `synologynas` are one machine, and treating them as two would put the
+server in the list twice and stash two passwords for it. The share does **not**
+fold: SMB share names preserve case, and the mount path is built from them.
+
+Folding in `url` as well, which is how this first shipped, meant someone who
+typed `SynologyNAS` saw `smb://synologynas/Videos` in the list and in the log.
+Nothing broke; it just put XeFM's bookkeeping on their screen. So: anything
+that compares two addresses uses `key`, anything that shows one uses `url`.
 
 ## macOS — `xefm/netmount_macos.py`
 

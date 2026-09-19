@@ -459,7 +459,7 @@ def _credential_target(target, user: str) -> str:
     the program that wrote it, so a credential of that type could be saved but
     never read — and reading it back to prefill the form is the whole point.
     """
-    return f"XeFM:{target.url}#{user}" if user else f"XeFM:{target.url}"
+    return f"XeFM:{target.key}#{user}" if user else f"XeFM:{target.key}"
 
 
 def save_password(target, user: str, password: str) -> None:

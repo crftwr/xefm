@@ -76,11 +76,29 @@ class ParseAddress(unittest.TestCase):
         self.assertEqual(netmount.parse_address("smb://nas/photo/2026").unc,
                          r"\\nas\photo\2026")
 
-    def test_the_host_is_folded_to_lower_case(self):
-        self.assertEqual(netmount.parse_address("SMB://NAS/Photo").host, "nas")
-        # ...but the share is not: SMB share names are case-preserving, and the
-        # mount path is built from what the user typed.
-        self.assertEqual(netmount.parse_address("SMB://NAS/Photo").share, "Photo")
+    def test_the_address_keeps_the_case_it_was_typed_in(self):
+        """What is shown and what is saved is what the user wrote. Folding the
+        host for display put ``smb://synologynas/Videos`` on screen for someone
+        who had typed ``SynologyNAS`` — bookkeeping leaking onto their screen."""
+        target = netmount.parse_address("smb://SynologyNAS/Videos")
+        self.assertEqual(target.host, "SynologyNAS")
+        self.assertEqual(target.url, "smb://SynologyNAS/Videos")
+
+    def test_the_identity_folds_the_host_but_not_the_share(self):
+        """DNS, mDNS and NetBIOS are all case-insensitive, so two spellings of
+        a host are one machine and must not become two saved rows or two stored
+        passwords. SMB share names do preserve case, and the mount path is
+        built from them."""
+        a = netmount.parse_address("smb://SynologyNAS/Videos")
+        b = netmount.parse_address("smb://synologynas/Videos")
+        self.assertEqual(a.key, b.key)
+        self.assertEqual(a.key, "smb://synologynas/Videos")
+        self.assertNotEqual(netmount.parse_address("smb://nas/Photo").key,
+                            netmount.parse_address("smb://nas/photo").key)
+
+    def test_the_identity_keeps_the_port(self):
+        target = netmount.parse_address("https://DAV.example.com:8443/files")
+        self.assertEqual(target.key, "https://dav.example.com:8443/files")
 
     def test_things_that_are_not_addresses(self):
         for text in ("", "   ", "nas", "photo", "/Volumes/photo", "C:\\Users",

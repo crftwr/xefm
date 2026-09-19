@@ -397,7 +397,7 @@ def _keychain_keys(target, user: str) -> list[str]:
     — one password per account per server is how the login Keychain already
     holds these, and it is what lets a second share on the same NAS connect
     without asking again."""
-    return ["-a", user or "", "-s", target.host,
+    return ["-a", user or "", "-s", target.host.lower(),
             "-r", _KEYCHAIN_PROTOCOLS.get(target.scheme, "smb ")]
 
 

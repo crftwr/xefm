@@ -74,6 +74,19 @@ class ServerListTest(unittest.TestCase):
         self.assertEqual([e.name for e in entries], ["Promoted"])
         self.assertEqual(entries[0].origin, server_list.CONFIG)
 
+    def test_the_same_server_typed_in_two_cases_is_one_row(self):
+        server_list.save_server("NAS", "smb://SynologyNAS/Videos", "me")
+        server_list.save_server("NAS again", "smb://synologynas/Videos", "me")
+        entries = server_list.get_servers()
+        self.assertEqual(len(entries), 1)
+        # ...and the row shows the address as most recently typed, not folded.
+        self.assertEqual(entries[0].url, "smb://synologynas/Videos")
+
+    def test_the_case_the_user_typed_survives_being_saved(self):
+        server_list.save_server("NAS", "smb://SynologyNAS/Videos", "me")
+        self.assertEqual(server_list.get_servers()[0].url,
+                         "smb://SynologyNAS/Videos")
+
     def test_saving_something_the_config_already_has_is_declined(self):
         """Otherwise the state DB keeps a shadow copy that outlives the config
         entry it was hiding behind."""

@@ -70,7 +70,7 @@ def _key(url: str) -> str:
     to the row it came from. The parsed canonical URL where the address is
     valid, and the raw text lowercased where it is not."""
     target = netmount.parse_address(url)
-    return target.url if target is not None else url.strip().rstrip("/").lower()
+    return target.key if target is not None else url.strip().rstrip("/").lower()
 
 
 def _from_config() -> list[ServerEntry]:
