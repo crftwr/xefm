@@ -573,6 +573,70 @@ def test_rescan_during_a_slow_compare_does_not_break_the_new_queues(tmp_path, mo
     assert view._compared == view._compare_total
 
 
+def test_scan_level_stops_between_entries_when_cancelled():
+    """A level being listed is one ``iterdir()`` plus a ``stat()`` per entry; over
+    SSH or on a woken disk that is the slow part, so ``cancel()`` has to land
+    inside it and not only between levels (issue #438)."""
+    scanner = DirectoryScanner()
+    stated = []
+
+    class _Child:
+        def __init__(self, name):
+            self.name = name
+
+        def stat(self):
+            stated.append(self.name)
+            if len(stated) == 2:
+                scanner.cancel()        # the viewer closes mid-listing
+            return os.stat_result((0,) * 10)
+
+        def is_dir(self):
+            return False
+
+    class _Dir:
+        def iterdir(self):
+            return [_Child(f"f{i}") for i in range(10)]
+
+    files = scanner.scan_level(_Dir())
+    assert len(stated) == 2, "kept stat-ing entries after the cancel"
+    assert len(files) == 2   # partial by design — the caller discards it
+
+    # Already cancelled: it does not even list the directory.
+    assert scanner.scan_level(_Dir()) == {}
+
+
+def test_background_run_registers_the_lister_cancel_reaches(trees):
+    view = DirectoryDiffView(*trees, background=True)
+    view.join()
+    assert view._scanners, "the background run must register its lister"
+    view.cancel()
+    assert all(s._cancel for s in view._scanners)
+
+
+def test_rescan_retires_the_old_lister_and_installs_a_fresh_one(trees):
+    view = DirectoryDiffView(*trees, background=True)
+    view.join()
+    retired = view._scanners[0]
+    view._restart_scan()
+    view.join()
+    assert retired._cancel, "the retired run's listing was left running"
+    assert view._scanners[0] is not retired
+    assert not view._scanners[0]._cancel
+
+
+def test_a_cancelled_level_is_not_inserted_into_the_tree(trees):
+    """`scan_level` hands back what it had when it stopped; the staleness check
+    is what keeps that partial level out of the tree."""
+    view = DirectoryDiffView(*trees, background=True)
+    view.join()
+    sub = _find(view.root, "sub")
+    sub.children.clear()
+    sub.children_scanned = False
+    view.cancel()
+    view._scan_node(sub, view._run, view._scanners[0])
+    assert not sub.children
+
+
 def test_help_pushes_message_box(backend, trees):
     panel = Panel(backend)
     view = show_directory_diff_viewer(panel, *trees, background=False)
