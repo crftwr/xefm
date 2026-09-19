@@ -896,9 +896,17 @@ class StatusBar(Widget):
         self._hints_cache: str | None = None
         self._isearch_cache: str | None = None
 
+    def invalidate(self) -> None:
+        """Drop both cached lines, so the next draw rebuilds them from the
+        keymap as it stands now. Called when a config reload rebinds keys —
+        the one moment the keymap changes under a running bar (issue #382)."""
+        self._hints_cache = None
+        self._isearch_cache = None
+
     def _hints(self) -> str:
-        """Build (and cache) the hint line from the keymap. The keymap is fixed
-        for the process lifetime, so this is computed once."""
+        """Build (and cache) the hint line from the keymap — the bar redraws
+        every frame, so the lookups are done once and kept until
+        :meth:`invalidate` says the keymap has moved."""
         if self._hints_cache is None:
             parts = []
             for action, label in self._HINTS:
@@ -916,9 +924,9 @@ class StatusBar(Widget):
         return self.app.keys.format_key_for_display(keys[0]) if keys else ""
 
     def _isearch_hints(self) -> str:
-        """The isearch hint line, built (once) from the isearch keymap. An
-        unbound action drops out of the line entirely rather than printing a
-        label nothing triggers."""
+        """The isearch hint line, cached from the isearch keymap like
+        :meth:`_hints`. An unbound action drops out of the line entirely rather
+        than printing a label nothing triggers."""
         if self._isearch_cache is None:
             parts = ["I-Search"]
             for first, second, label in self._ISEARCH_HINTS:
@@ -3339,6 +3347,13 @@ class XeFMApp:
         self.config = new_config
         # Rebuild the keymap from the (possibly rebound) KEY_BINDINGS.
         self.keys = KeyBindings(new_config.KEY_BINDINGS)
+        # The two surfaces that quote a key name instead of reading one on
+        # demand: the status bar caches its hint line, and the menu holds the
+        # shortcut strings resolved when it was built. Both were left naming the
+        # pre-reload key — the help dialog said 'D' while the bar and the menu
+        # still said 'K' (issue #382). Rebuild them from the keymap just made.
+        self.status.invalidate()
+        self.menu_bar.set_menu(self._build_menu())
         # Re-point the config reference every long-lived subsystem holds so
         # their on-demand reads pick up the new values without a rebuild.
         for holder in (self._fileops, self.flm, self.pm, self.file_monitor,
