@@ -42,8 +42,15 @@ class EditSubshellBase(unittest.TestCase):
                               left_provided=True, right_provided=True,
                               state_manager=self.sm)
         self.app._settle_listings()  # startup lists on workers; wait for it
+        # ``app.config`` *is* the process-wide config singleton, not a copy of
+        # it, and several tests here set TEXT_EDITOR to exercise one spelling.
+        # Left alone, the last such test decides the editor for everything that
+        # runs after it: `TEXT_EDITOR = None` leaked out of EditorSetting and
+        # launched nothing in EditSelectedFiles, three tests that pass alone.
+        self._saved_editor = self.app.config.TEXT_EDITOR
 
     def tearDown(self):
+        self.app.config.TEXT_EDITOR = self._saved_editor
         try:
             self.app.file_monitor.stop_monitoring()
             self.backend.close()
