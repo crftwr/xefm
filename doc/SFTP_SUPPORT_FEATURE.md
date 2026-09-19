@@ -207,15 +207,16 @@ Add frequently-used SFTP paths to favorites:
 
 ```python
 FAVORITE_DIRECTORIES = [
-    ('Local Projects', '~/projects'),
-    ('Dev Server', 'ssh://devbox/var/www'),
-    ('Production Logs', 'ssh://prod-web1/var/log/nginx'),
-    ('Backup Server', 'ssh://backup/mnt/backups'),
-    ('S3 Bucket', 's3://my-bucket/data'),
+    {'name': 'Local Projects', 'path': '~/projects'},
+    {'name': 'Dev Server', 'path': 'ssh://devbox/var/www'},
+    {'name': 'Production Logs', 'path': 'ssh://prod-web1/var/log/nginx'},
+    {'name': 'Backup Server', 'path': 'ssh://backup/mnt/backups'},
+    {'name': 'S3 Bucket', 'path': 's3://my-bucket/data'},
 ]
 ```
 
-Access with `j` key.
+Access with `j` key. The list is drawn from the config alone — no connection is
+opened to any of these until you select one.
 
 ## Advanced Usage
 

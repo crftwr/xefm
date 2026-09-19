@@ -145,12 +145,19 @@ class FileListManager:
             user_msg = getattr(e, 'user_message', str(e))
             self.logger.error(f"Archive error: {user_msg}")
             self.logger.error(f"Archive error: {path}: {e}")
-        except PermissionError as e:
-            self.logger.error(f"Permission denied accessing directory {path}: {e}")
-        except FileNotFoundError as e:
-            self.logger.error(f"Directory not found: {path}: {e}")
+        # One line, and the path in it once. These reach the log pane, where a
+        # failed navigation should read as a single fact — not as the three
+        # copies of the path that ``{path}: {e}`` produced, the errno text
+        # having already named it twice.
+        except PermissionError:
+            self.logger.error(f"Permission denied: {path}")
+        except FileNotFoundError:
+            self.logger.error(f"Directory not found: {path}")
         except OSError as e:
-            self.logger.error(f"System error reading directory {path}: {e}")
+            # Here the errno text is the whole story ("Operation timed out",
+            # "Host is down"), so it stays — but on its own, without the
+            # filename pathlib appends to it.
+            self.logger.error(f"Cannot read directory {path}: {e.strerror or e}")
         except Exception as e:
             self.logger.error(f"Unexpected error reading directory {path}: {e}")
         return {"ok": False, "files": [], "file_info": {}}
@@ -315,6 +322,12 @@ class FileListManager:
         run on the UI thread. On an error result (``ok`` False) the pane is
         emptied and the cursor reset, matching the old ``refresh_files`` error
         path (selection is left untouched)."""
+        # Whether the directory could be read at all. A caller cannot infer it
+        # from the installed listing — an empty directory and an unreadable one
+        # both leave ``files`` empty — and a navigation needs to know, because
+        # one that failed should not have moved the pane (see
+        # ``XeFMApp._jump_pane_to``).
+        pane_data['listing_ok'] = bool(result.get("ok"))
         if not result.get("ok"):
             pane_data['files'] = []
             pane_data['focused_index'] = 0

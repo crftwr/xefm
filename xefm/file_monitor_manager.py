@@ -396,7 +396,9 @@ class FileMonitorManager:
             return
 
         with self.state_lock:
-            self.logger.error(f"Failed to start monitoring for {pane_name} pane: {path} (error_count: {state['error_count'] + 1})")
+            # Each rung of the ladder is debug; only its verdict is worth a
+            # line in the log pane (see _attempt_polling_fallback).
+            self.logger.debug(f"Failed to start monitoring for {pane_name} pane: {path} (error_count: {state['error_count'] + 1})")
             state['error_count'] += 1
 
             # Attempt reinitialization with retry logic (requirement 9.2)
@@ -418,7 +420,7 @@ class FileMonitorManager:
         
         # Check if we've exceeded retry limit
         if state['retry_count'] >= 3:
-            self.logger.error(f"Monitoring initialization failed 3 times for {pane_name} pane at {path}")
+            self.logger.debug(f"Monitoring initialization failed 3 times for {pane_name} pane at {path}")
             self.logger.debug(f"Mode transition: native -> polling (reason: 3 consecutive initialization failures)")
             self.logger.debug(f"Attempting final polling fallback for {pane_name} pane")
             
@@ -473,7 +475,7 @@ class FileMonitorManager:
             self.logger.debug(f"Retry {retry_count}/3 successful for {pane_name} pane: {path} (mode: {observer.get_monitoring_mode()})")
             return
 
-        self.logger.error(f"Retry {retry_count}/3 failed for {pane_name} pane at {path}")
+        self.logger.debug(f"Retry {retry_count}/3 failed for {pane_name} pane at {path}")
         with self.state_lock:
             state['error_count'] += 1
 
@@ -482,7 +484,7 @@ class FileMonitorManager:
                 self._schedule_retry(pane_name, path)
             else:
                 # Final failure - fall back to polling
-                self.logger.error(f"All retry attempts exhausted for {pane_name} pane")
+                self.logger.debug(f"All retry attempts exhausted for {pane_name} pane")
                 self._schedule_retry(pane_name, path)  # Falls through to the polling fallback
     
     def _attempt_polling_fallback(self, pane_name: str, path: Path) -> None:
@@ -512,8 +514,11 @@ class FileMonitorManager:
             self.logger.debug(f"Fallback mode activated: using polling observer after repeated native monitoring failures")
             return
 
-        self.logger.error(f"Polling mode fallback failed for {pane_name} pane at {path}")
-        self.logger.error(f"Monitoring disabled for {pane_name} pane while it stays at {path} - all monitoring methods exhausted")
+        self.logger.debug(f"Polling mode fallback failed for {pane_name} pane at {path}")
+        # The one line the ladder is allowed. Warning, not error: the pane still
+        # lists, it just will not notice changes by itself until it moves — which
+        # is degraded behaviour worth knowing about, not a failure.
+        self.logger.warning(f"Monitoring disabled for {pane_name} pane while it stays at {path} - all monitoring methods exhausted")
         with self.state_lock:
             if state['attempt'] == attempt:
                 state['observer'] = None

@@ -41,18 +41,33 @@ bound if you rebound it.
 ## Favorites (J)
 
 Press **J** to open a searchable list of your favorite directories and jump to
-any of them instantly. Only directories that actually exist are shown.
+any of them instantly.
+
+The list opens immediately, whatever is on it. XeFM does not go and look at your
+favorites before showing them — checking a network share that is asleep, offline
+or behind a VPN you have not connected can take the better part of a minute per
+entry, and a few of those turned opening the list into a stall (issue #430). So
+nothing is contacted until you pick a row.
+
+Pick one that is not there and **the pane does not move**. It keeps the
+directory it was showing, with your cursor where you left it, and the log says
+`Directory not found: …` — one line, once. The same goes for the Drives and
+History pickers, which also name directories you cannot see from where you are.
+
+That means a favorite can be anywhere: a NAS, a USB disk you plug in on
+Tuesdays, an `ssh://` or `s3://` location. It sits quietly in the list whether
+or not it is reachable today.
 
 ### Default favorites
 
-XeFM ships with these defaults: Home, Documents, Downloads, Desktop, Projects,
-Root (`/`), Temp (`/tmp`), and Config (`~/.config`).
+XeFM ships with four — Home, Documents, Downloads and Desktop — and they are
+yours to edit from the first run; your `~/.xefm/config.py` holds its own copy.
 
-Each entry is shown with its resolved path, e.g.:
+Each entry is shown with the path you wrote (with `~` expanded), e.g.:
 
 ```
 Home (/Users/username)
-Projects (/Users/username/Projects)
+Projects (/Users/username/dev)
 Web Server (/var/www)
 ```
 

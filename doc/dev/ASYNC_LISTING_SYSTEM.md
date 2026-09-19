@@ -170,6 +170,77 @@ fires when the listing does.
 
 ---
 
+## Pickers do not probe
+
+The rule above — no filesystem I/O on the UI thread — has a quieter sibling that
+is easy to miss, because the I/O is not a listing and does not look like one.
+
+A picker built from config rows (favorites, the drives dialog's fixed
+locations) is tempted to check each row before drawing it, so a path that is not
+there can be left out. That check is a `stat`, it is per row, and it runs on the
+UI thread *before the dialog exists* — so it has no worker to hide in, no
+`Loading…` indicator, and no way for the user to escape it. On a local disk it
+costs nothing; against an SMB share that is asleep, offline, or behind a VPN
+nobody has connected, each row costs a full network timeout, and a handful of
+them stacked into minutes of dead UI (issue #430).
+
+So neither picker probes:
+
+- `config.get_favorite_directories()` lists every configured entry as written,
+  expanding `~` (string work) and nothing else. It does not even construct a
+  `Path` for a `_REMOTE_SCHEMES` row — that alone pulls in the row's backend
+  module, and `import boto3` behind an `s3://` row is not cheap.
+- `config.get_drive_locations()` passes remote rows through unprobed for the
+  same reason. It still checks *local* rows, and that difference is deliberate
+  rather than an oversight: its built-in set is a menu XeFM proposes (Documents
+  / Downloads / Desktop drop out on a machine without them), not a list the user
+  wrote. Favorites are always the user's own.
+
+The verification did not disappear — it moved to where the user is already
+waiting on purpose. Selecting a row navigates, the navigation lists on a worker
+thread like every other, and a failure surfaces from `compute_listing`'s
+`logger.error` into the log pane. The History picker has always worked this way.
+
+### The move is provisional
+
+A row that names a directory nobody checked can name one that is not there, so
+`XeFMApp._jump_pane_to()` — the single move behind all three pickers — does not
+commit to the destination until it has been read. It snapshots what the pane is
+showing (`_PANE_VIEW_KEYS`: path, virtual state, entries, info cache, cursor),
+sets the new path, and lists. If the listing comes back `ok: False` the snapshot
+goes straight back, with no second read: the listing the pane had was never
+thrown away, only covered.
+
+Two things make that decidable. `FileListManager.apply_listing()` records
+`pane['listing_ok']`, because a caller cannot infer it — an empty directory and
+an unreadable one both leave `files` empty. And `_refresh()` now writes the
+history entry from its `on_ready`, on success only, so a directory that could
+not be read does not end up in the History picker to fail again later.
+
+What the user sees is one line. `compute_listing()`'s messages name the path
+once (`Directory not found: {path}` — the errno text repeated it twice more),
+the optimistic "Jumped to …" waits for the jump to have happened, and the
+filesystem watcher's retry ladder went quiet: every rung in
+`file_monitor_manager.py` logs at debug, and only the verdict — "Monitoring
+disabled … all monitoring methods exhausted", once everything including the
+polling fallback is spent — is a warning. Before that, one missing favorite
+produced fourteen lines, thirteen of them from a watcher retrying a path the
+pane had already given up on.
+
+Tests:
+[`test/test_jump_to_missing_directory.py`](../../test/test_jump_to_missing_directory.py).
+
+`get_favorite_directories()` also stopped calling `resolve()`, which was I/O
+*and* a display bug: it printed a symlinked favorite's target rather than the
+path the user wrote, while no other navigation in XeFM resolves the path it
+lands on.
+
+Tests:
+[`test/test_favorite_directories.py`](../../test/test_favorite_directories.py)
+bans `os.stat` and friends outright for the duration of the call.
+
+---
+
 ## Startup is deferred, not synchronous
 
 The two first listings cannot be started where the panes are created: the panel,
