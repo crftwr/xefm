@@ -24,10 +24,13 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import queue
 import subprocess
+import time
 
 from xefm.log_manager import getLogger
-from xefm.netmount import NETWORK, OTHER, REMOVABLE, MountError, MountInfo
+from xefm.netmount import (NETWORK, OTHER, REMOVABLE, DiscoveredServer,
+                           MountError, MountInfo)
 
 logger = getLogger("NetMountMac")
 
@@ -447,3 +450,203 @@ def _decode_password(raw: str) -> str:
     if decoded.isprintable() and any(ord(c) > 127 for c in decoded):
         return decoded
     return raw
+
+
+# --- finding servers ---------------------------------------------------------
+
+#: Bonjour service types browsed for, mapped to the scheme a hit becomes.
+#: These are the two Finder's Network view is built on.
+_BONJOUR_SERVICES = {"_smb._tcp.": "smb", "_afpovertcp._tcp.": "afp"}
+
+#: Stop browsing after this long even if the picker is still open. Discovery is
+#: meant to run for as long as the dialog is up — a NAS that wakes later should
+#: still appear — but a dialog left open overnight need not keep a run loop
+#: turning until morning.
+_DISCOVERY_SECONDS = 300.0
+
+#: How long each turn of the run loop waits before the cancel flag is looked at.
+_POLL = 0.2
+
+#: Resolution is a local mDNS query; this is generous for one.
+_RESOLVE_SECONDS = 5.0
+
+
+def _bonjour():
+    """The Foundation names discovery needs, or ``None`` where they cannot be
+    imported. Imported lazily and behind a guard for the same reason the NetFS
+    binding is: a machine that cannot browse should lose the feature, not raise
+    at the moment the picker opens."""
+    try:
+        from Foundation import (NSDate, NSDefaultRunLoopMode,
+                                NSNetServiceBrowser, NSObject, NSRunLoop)
+    except Exception as e:  # pragma: no cover - a Mac without Foundation
+        logger.error(f"Bonjour browsing unavailable: {e}")
+        return None
+    return NSDate, NSDefaultRunLoopMode, NSNetServiceBrowser, NSObject, NSRunLoop
+
+
+def _collector_class(NSObject):
+    """The browser/resolver delegate, built once and cached.
+
+    Defined inside a function because it subclasses ``NSObject``, which cannot
+    be imported at module scope on a machine without PyObjC — and this module
+    is imported for :func:`list_mounts` long before anyone browses.
+
+    It does both jobs. A found service is **resolved immediately**, on this
+    same run loop, and only reaches the caller once it has a host name. That is
+    what keeps the NSNetService objects on one thread: resolving later, from
+    whichever worker the user's choice lands on, would mean two threads sharing
+    an object Apple does not document as thread-safe.
+    """
+    global _Collector
+    if _Collector is not None:
+        return _Collector
+
+    class _ServiceCollector(NSObject):
+        def netServiceBrowser_didFindService_moreComing_(self, browser, service,
+                                                         more):
+            # Held in ``keep``: the browser does not retain the service, and a
+            # resolution in flight against a collected object crashes rather
+            # than fails.
+            self.keep.append(service)
+            service.setDelegate_(self)
+            service.scheduleInRunLoop_forMode_(self.loop, self.mode)
+            service.resolveWithTimeout_(_RESOLVE_SECONDS)
+
+        def netServiceDidResolveAddress_(self, service):
+            host = (service.hostName() or "").rstrip(".")
+            if host:
+                self.out.put((str(service.name()), host, str(service.type())))
+
+        def netService_didNotResolve_(self, service, error):
+            # Dropped rather than listed. The advertised name is not a host
+            # name (a Mac announces "Anna's MacBook Pro"), so without the
+            # resolution there is nothing to connect to, and a row that cannot
+            # be connected to is worse than no row.
+            logger.debug(f"Could not resolve {service.name()}: {error}")
+
+    _Collector = _ServiceCollector
+    return _Collector
+
+
+#: Cached delegate class (see :func:`_collector_class`).
+_Collector = None
+
+
+def discover_servers(cancel):
+    """Browse Bonjour for file servers, yielding each once it has resolved.
+
+    This is the query behind Finder's Network view, and like it, it never
+    finishes on its own: a NAS that wakes up ten seconds from now is a new row
+    on an already-open list. So the run loop is turned in short slices with the
+    cancel flag checked between them, and the browsers are stopped when the
+    picker closes.
+
+    ``NSNetServiceBrowser`` rather than ``dns-sd``: the command-line tool
+    full-buffers its output when it is talking to a pipe instead of a
+    terminal, so its announcements arrive in 4 KB lumps or not at all — the
+    first line of a browse and then silence.
+
+    Runs entirely on the calling thread (the picker's loader), including the
+    run loop it pumps.
+    """
+    names = _bonjour()
+    if names is None:
+        return
+    NSDate, mode, NSNetServiceBrowser, NSObject, NSRunLoop = names
+
+    out: queue.Queue = queue.Queue()
+    loop = NSRunLoop.currentRunLoop()
+    delegate = _collector_class(NSObject).alloc().init()
+    delegate.out, delegate.keep, delegate.loop, delegate.mode = out, [], loop, mode
+
+    browsers = []
+    for service_type in _BONJOUR_SERVICES:
+        browser = NSNetServiceBrowser.alloc().init()
+        browser.setDelegate_(delegate)
+        browser.scheduleInRunLoop_forMode_(loop, mode)
+        browser.searchForServicesOfType_inDomain_(service_type, "local.")
+        browsers.append(browser)
+
+    seen = set()
+    deadline = time.monotonic() + _DISCOVERY_SECONDS
+    try:
+        while not cancel.is_set() and time.monotonic() < deadline:
+            loop.runMode_beforeDate_(
+                mode, NSDate.dateWithTimeIntervalSinceNow_(_POLL))
+            while True:
+                try:
+                    name, host, service_type = out.get_nowait()
+                except queue.Empty:
+                    break
+                scheme = _BONJOUR_SERVICES.get(service_type, "smb")
+                if (scheme, host.lower()) in seen:
+                    continue
+                seen.add((scheme, host.lower()))
+                yield DiscoveredServer(name=name, host=host, scheme=scheme)
+    finally:
+        for browser in browsers:
+            browser.stop()
+
+
+# --- listing shares ----------------------------------------------------------
+
+def list_shares(target) -> list[str]:
+    """The disk shares a server offers, via ``smbutil view``.
+
+    Asked as a **guest** (``-g``), and with stdin closed. That is not a
+    limitation being shrugged at: ``smbutil`` takes a password only on its
+    command line, where every user on the machine could read it, and otherwise
+    prompts on ``/dev/tty`` — which in the TUI is the terminal XeFM is drawing
+    on. A prompt there would write into the file list and eat the user's
+    keystrokes. Guest or nothing.
+
+    A server that refuses an anonymous query raises, and the caller lets the
+    user type the share name instead.
+    """
+    if target.scheme != "smb":
+        raise MountError(f"XeFM cannot list shares over {target.scheme}.")
+    try:
+        proc = subprocess.run(
+            ["/usr/bin/smbutil", "view", "-g", f"//{target.host}"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            timeout=20)
+    except subprocess.TimeoutExpired:
+        raise MountError(f"{target.host} did not answer.") from None
+    except OSError as e:
+        raise MountError(f"Could not run smbutil: {e}") from None
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        message = detail[-1] if detail else "the server refused the request"
+        raise MountError(f"{target.host}: {message}", auth=True)
+    return _parse_shares(proc.stdout)
+
+
+def _parse_shares(output: str) -> list[str]:
+    """Share names out of ``smbutil view``'s table.
+
+    The columns are fixed-width and the header says where they start, so the
+    offsets are read from it rather than hard-coded — and the name is sliced
+    rather than split, because a share name may contain spaces while the
+    Comments column beside it certainly does.
+    """
+    lines = output.splitlines()
+    head = next((i for i, line in enumerate(lines)
+                 if line.startswith("Share") and "Type" in line), -1)
+    if head < 0:
+        return []
+    type_at = lines[head].index("Type")
+    shares = []
+    for line in lines[head + 1:]:
+        if not line.strip() or line.startswith("-"):
+            continue
+        if line.lstrip()[:1].isdigit() and "shares listed" in line:
+            break
+        name = line[:type_at].strip()
+        kind = line[type_at:].split(None, 1)
+        if not name or not kind or kind[0] != "Disk":
+            continue
+        if name.endswith("$"):
+            continue  # administrative share; Finder hides these too
+        shares.append(name)
+    return shares

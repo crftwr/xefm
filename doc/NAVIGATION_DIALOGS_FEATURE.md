@@ -10,7 +10,7 @@ and choosing an entry. Five keys open five flavors of that picker:
 | **Shift-J** | Jump | Directories found by scanning from the current directory |
 | **H** | History | Directories you have already visited in this pane |
 | **D** | Drives | Storage locations and volumes (and S3 buckets, if available) |
-| **Shift-D** | Connect to Server | Network servers you can mount (macOS and Windows) |
+| **Shift-D** | Connect to Server | Saved servers, plus the ones found on the network (macOS and Windows) |
 
 Whichever one you open, pressing **Enter** navigates the current pane to the
 selected location.

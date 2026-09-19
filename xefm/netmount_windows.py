@@ -21,7 +21,8 @@ import string
 from ctypes import wintypes
 
 from xefm.log_manager import getLogger
-from xefm.netmount import NETWORK, OTHER, REMOVABLE, MountError, MountInfo
+from xefm.netmount import (NETWORK, OTHER, REMOVABLE, DiscoveredServer,
+                           MountError, MountInfo)
 
 logger = getLogger("NetMountWin")
 
@@ -35,8 +36,15 @@ _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
 
 RESOURCE_CONNECTED = 0x00000001
+RESOURCE_GLOBALNET = 0x00000002
 RESOURCETYPE_DISK = 0x00000001
+RESOURCEUSAGE_CONTAINER = 0x00000002
+RESOURCEDISPLAYTYPE_SERVER = 0x00000002
 CONNECT_UPDATE_PROFILE = 0x00000001
+
+#: How deep the network walk goes: provider -> domain/workgroup -> server.
+#: Deeper levels are shares, which :func:`list_shares` asks for by name.
+_DISCOVERY_DEPTH = 3
 
 DRIVE_REMOVABLE = 2
 DRIVE_FIXED = 3
@@ -306,17 +314,25 @@ def list_mounts() -> list[MountInfo]:
     return mounts
 
 
-def _connections() -> list[tuple[str, str]]:
-    """``(local name, remote name)`` for every current network connection.
-    ``local`` is empty for a deviceless one — which is exactly why this
-    enumeration is needed: those appear in no drive-letter listing."""
+def _enum(scope: int, resource=None) -> list[tuple[str, str, int, int]]:
+    """``(local, remote, usage, display type)`` for one level of a network
+    enumeration.
+
+    One helper for three callers — current connections, the servers on the
+    network, and one server's shares — because the fiddly part is the same
+    every time: ``WNetEnumResourceW`` writes an array of structures *plus the
+    strings they point at* into a single caller-supplied buffer, which it
+    reuses on the next call. Every string therefore has to be copied out
+    before the loop turns, which is what the tuple here is.
+    """
     handle = wintypes.HANDLE()
-    result = _mpr.WNetOpenEnumW(RESOURCE_CONNECTED, RESOURCETYPE_DISK, 0,
-                                None, ctypes.byref(handle))
+    result = _mpr.WNetOpenEnumW(scope, RESOURCETYPE_DISK, 0,
+                                ctypes.byref(resource) if resource else None,
+                                ctypes.byref(handle))
     if result != ERROR_SUCCESS:
         return []
 
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, str, int, int]] = []
     size = 16384
     buf = ctypes.create_string_buffer(size)
     try:
@@ -337,13 +353,21 @@ def _connections() -> list[tuple[str, str]]:
             entries = ctypes.cast(buf, ctypes.POINTER(NETRESOURCEW))
             for i in range(count.value):
                 entry = entries[i]
-                remote = entry.lpRemoteName or ""
-                if not remote:
-                    continue
-                found.append(((entry.lpLocalName or "").rstrip("\\/"), remote))
+                found.append(((entry.lpLocalName or "").rstrip("\\/"),
+                              entry.lpRemoteName or "",
+                              int(entry.dwUsage), int(entry.dwDisplayType)))
     finally:
         _mpr.WNetCloseEnum(handle)
     return found
+
+
+def _connections() -> list[tuple[str, str]]:
+    """``(local name, remote name)`` for every current network connection.
+    ``local`` is empty for a deviceless one — which is exactly why this
+    enumeration is needed: those appear in no drive-letter listing."""
+    return [(local, remote)
+            for local, remote, _usage, _display in _enum(RESOURCE_CONNECTED)
+            if remote]
 
 
 def _logical_drives() -> list[str]:
@@ -405,6 +429,88 @@ def _is_hotplug(root: str) -> bool:
         return False
     finally:
         _kernel32.CloseHandle(handle)
+
+
+# --- finding servers and shares ----------------------------------------------
+
+def discover_servers(cancel):
+    """Walk the network the way Explorer's Network folder does, yielding each
+    server found.
+
+    **This is the weak half of the feature on Windows, and knowingly so.**
+    ``WNetEnumResource`` over the global scope asks the installed network
+    providers what they can see, and the answer on a modern Windows is
+    whatever WS-Discovery happens to have collected — often nothing at all,
+    where the same machines are reachable perfectly well by name. An empty
+    result is therefore not treated as an error; the picker simply shows no
+    discovered rows, and typing the address still works.
+
+    Each level is walked breadth-first with the cancel flag checked between
+    containers, because a domain that is not answering can take seconds and
+    the picker must stay closable.
+    """
+    seen = set()
+    level = [None]
+    for _depth in range(_DISCOVERY_DEPTH):
+        if cancel.is_set():
+            return
+        below = []
+        for container in level:
+            if cancel.is_set():
+                return
+            for _local, remote, usage, display in _enum(RESOURCE_GLOBALNET,
+                                                        container):
+                if not remote:
+                    continue
+                if display == RESOURCEDISPLAYTYPE_SERVER:
+                    host = remote.lstrip("\\\\")
+                    if host and host.lower() not in seen:
+                        seen.add(host.lower())
+                        yield DiscoveredServer(name=host, host=host,
+                                               scheme="smb")
+                elif usage & RESOURCEUSAGE_CONTAINER:
+                    below.append(_container(remote))
+        level = below
+        if not level:
+            return
+
+
+def _container(remote: str) -> NETRESOURCEW:
+    """A NETRESOURCE naming one container, to enumerate the level below it."""
+    resource = NETRESOURCEW()
+    resource.dwScope = RESOURCE_GLOBALNET
+    resource.dwType = RESOURCETYPE_DISK
+    resource.dwUsage = RESOURCEUSAGE_CONTAINER
+    resource.lpRemoteName = remote
+    return resource
+
+
+def list_shares(target) -> list[str]:
+    """The disk shares a server offers.
+
+    The same enumeration, one level down from a server — so it uses whatever
+    credentials the session already has, and needs none of its own. That makes
+    it the reliable half on Windows, where discovery is the unreliable one.
+
+    Administrative shares (``C$``, ``ADMIN$``, ``IPC$``) are left out, as they
+    are in Explorer.
+    """
+    if target.scheme != "smb":
+        raise MountError(f"XeFM cannot list shares over {target.scheme}.")
+    server = f"\\\\{target.host}"
+    shares = []
+    for _local, remote, _usage, _display in _enum(RESOURCE_GLOBALNET,
+                                                  _container(server)):
+        name = remote.rsplit("\\", 1)[-1] if "\\" in remote else remote
+        if not name or name.endswith("$"):
+            continue
+        shares.append(name)
+    if not shares:
+        # An empty answer here is far more likely to be a refused query than a
+        # server with no shares, and the caller's fallback (type the name) is
+        # the right response to both.
+        raise MountError(f"{target.host} did not list any shares.", auth=True)
+    return shares
 
 
 # --- eject -------------------------------------------------------------------

@@ -16,6 +16,7 @@ from puikit.event import Event, EventType
 
 from xefm import connect_dialog as cd
 from xefm import netmount
+from xefm import server_list
 from xefm.server_list import CONFIG, ServerEntry
 
 
@@ -62,8 +63,56 @@ class RowLabels(unittest.TestCase):
         self.assertFalse(cd._forget_row(cd.NEW_CONNECTION))
 
 
+class DiscoveredRows(unittest.TestCase):
+    def _row(self, name="SynologyNas", host="SynologyNas.local"):
+        return cd._DiscoveredRow(netmount.DiscoveredServer(name, host))
+
+    def test_a_discovered_row_says_where_it_came_from(self):
+        label = cd._row_label(self._row())
+        self.assertIn("SynologyNas", label)
+        self.assertIn("on the network", label)
+
+    def test_a_discovered_row_declines_the_remove_key(self):
+        """Nothing was remembered about it, so there is nothing to forget."""
+        self.assertFalse(cd._forget_row(self._row()))
+
+    def test_local_comes_off_when_matching_a_host(self):
+        """Bonjour answers `SynologyNas.local`; a saved row says
+        `synologynas`. One machine, one row."""
+        self.assertEqual(cd._host_key("smb://synologynas/Videos"),
+                         cd._host_key("SynologyNas.local"))
+
+    def test_different_servers_do_not_collide(self):
+        self.assertNotEqual(cd._host_key("smb://nas-a/x"),
+                            cd._host_key("smb://nas-b/x"))
+
+
+class _FakeState:
+    """The two ``StateManager`` methods the server list uses, over a dict.
+
+    Every test that lets a connection succeed goes through ``save_server``, and
+    ``ConnectRequest.save_server`` defaults to True — so without this the suite
+    writes test servers into the developer's own ``~/.xefm/state.db``. It did,
+    once.
+    """
+
+    def __init__(self):
+        self.store = {}
+
+    def get_state(self, key, default=None):
+        return self.store.get(key, default)
+
+    def set_state(self, key, value):
+        self.store[key] = value
+        return True
+
+
 class Flow(unittest.TestCase):
     def setUp(self):
+        state = _FakeState()
+        patcher = patch("xefm.server_list.get_state_manager", lambda: state)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.panel = _Panel()
         self.connected = []
         self.flow = cd.ConnectFlow(
@@ -226,6 +275,84 @@ class Flow(unittest.TestCase):
             self.flow.connect(cd.ConnectRequest(address="nonsense"))
         mount.assert_not_called()
         box.assert_called_once()
+
+    def test_choosing_a_discovered_server_browses_it(self):
+        row = cd._DiscoveredRow(
+            netmount.DiscoveredServer("SynologyNas", "SynologyNas.local"))
+        with patch.object(netmount, "list_shares",
+                          return_value=["Videos", "Documents"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list") as show, \
+             patch.object(netmount, "mount") as mount:
+            self.flow._chosen(row)
+        mount.assert_not_called()          # a server is not something to mount
+        shares.assert_called_once()
+        self.assertEqual(shares.call_args.args[0].url,
+                         "smb://SynologyNas.local")
+        self.assertEqual(list(show.call_args.args[1]), ["Videos", "Documents"])
+
+    def test_picking_a_share_mounts_that_share(self):
+        target = netmount.parse_address("smb://SynologyNas.local")
+        with patch("xefm.filter_list_dialog.show_filter_list") as show:
+            self.flow._show_shares(target, ["Videos"], name="SynologyNas",
+                                   user="me", password="secret")
+        chosen = show.call_args.kwargs["on_accept"]
+        with patch.object(netmount, "mount",
+                          return_value="/Volumes/Videos") as mount:
+            chosen("Videos")
+        self.assertEqual(mount.call_args.args[0].url,
+                         "smb://SynologyNas.local/Videos")
+        self.assertEqual(mount.call_args.kwargs["password"], "secret")
+        self.assertEqual(self.connected[0][0], "/Volumes/Videos")
+
+    def test_a_server_that_will_not_list_sends_you_to_the_form(self):
+        """The listing is anonymous, so a locked-down server refuses it. The
+        share name is then the one thing the user can supply and XeFM cannot."""
+        row = cd._DiscoveredRow(
+            netmount.DiscoveredServer("SynologyNas", "SynologyNas.local"))
+        error = netmount.MountError("SynologyNas.local: refused", auth=True)
+        with patch.object(netmount, "list_shares", side_effect=error), \
+             patch.object(cd, "show_message_box") as box:
+            self.flow._chosen(row)
+        box.assert_not_called()
+        request, message = self.forms[0]
+        self.assertEqual(request.address, "smb://SynologyNas.local/")
+        self.assertIn("Add the share name", message)
+
+    def test_a_server_typed_by_hand_is_browsed_not_mounted(self):
+        with patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"), \
+             patch.object(netmount, "mount") as mount:
+            self.flow.connect(cd.ConnectRequest(address="smb://nas"))
+        mount.assert_not_called()
+        shares.assert_called_once()
+
+    def test_discovery_skips_a_server_already_in_the_list(self):
+        entries = [server_list.ServerEntry("NAS", "smb://synologynas")]
+        found = [netmount.DiscoveredServer("SynologyNas", "SynologyNas.local"),
+                 netmount.DiscoveredServer("Other", "other.local")]
+        with patch("xefm.server_list.get_servers", return_value=entries), \
+             patch.object(netmount, "list_mounts", return_value=[]), \
+             patch.object(netmount, "can_discover", return_value=True), \
+             patch.object(netmount, "discover_servers", return_value=iter(found)), \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.open()
+            streamed = list(self.flow._discover(threading.Event()))
+        self.assertEqual([r.server.name for r in streamed], ["Other"])
+
+    def test_a_saved_share_does_not_hide_its_server(self):
+        """Saving one share is not a reason to stop offering the machine: the
+        rows do different things."""
+        entries = [server_list.ServerEntry("Videos", "smb://synologynas/Videos")]
+        found = [netmount.DiscoveredServer("SynologyNas", "SynologyNas.local")]
+        with patch("xefm.server_list.get_servers", return_value=entries), \
+             patch.object(netmount, "list_mounts", return_value=[]), \
+             patch.object(netmount, "can_discover", return_value=True), \
+             patch.object(netmount, "discover_servers", return_value=iter(found)), \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.open()
+            streamed = list(self.flow._discover(threading.Event()))
+        self.assertEqual([r.server.name for r in streamed], ["SynologyNas"])
 
     def test_the_picker_lists_saved_servers_and_the_action_row(self):
         entries = [ServerEntry("Work", "smb://work/share", origin=CONFIG)]

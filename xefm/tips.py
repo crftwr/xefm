@@ -162,8 +162,9 @@ TIPS: tuple[tuple[str, str], ...] = (
      "and your configured SSH hosts and S3 buckets — one list, one jump."),
 
     ("Connect to a NAS without leaving XeFM",
-     "{key:connect_server} mounts an SMB or WebDAV share — `smb://nas/photo` — "
-     "through the operating system, so the pane lands in an ordinary "
+     "{key:connect_server} lists the file servers it can see on the network, "
+     "asks the one you pick which shares it offers, and mounts your choice "
+     "through the operating system — so the pane lands in an ordinary "
      "directory. No Finder, no Explorer. macOS and Windows."),
 
     ("Disconnect and eject from the drives picker",

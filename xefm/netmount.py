@@ -54,7 +54,9 @@ _SCHEME_ALIASES = {
     "ftp": "ftp",
 }
 
-#: Schemes whose address is meaningless without a share/export name.
+#: Schemes that need a share/export name before anything can be *mounted*.
+#: An address without one still parses — ``smb://nas`` is a server to browse,
+#: which is what :func:`list_shares` is for — but :func:`mount` refuses it.
 _SHARE_REQUIRED = frozenset({"smb", "afp", "nfs"})
 
 _URL_RE = re.compile(
@@ -194,7 +196,8 @@ def parse_address(text: str) -> Optional[MountTarget]:
     """Parse a server address, or return ``None`` if it is not one.
 
     Accepts a URL (``smb://me@nas/photo``) and a UNC path (``\\\\nas\\photo``,
-    or ``//nas/photo``).
+    or ``//nas/photo``). The share may be missing (``smb://nas``): that is a
+    *server*, which the picker browses for its shares rather than mounts.
 
     Returning ``None`` for everything else is load-bearing, not defensive: the
     Connect picker hands its filter text here to decide whether **Enter** on an
@@ -234,8 +237,6 @@ def parse_address(text: str) -> Optional[MountTarget]:
     if not host:
         return None
     share = (m.group("path") or "").strip("/")
-    if scheme in _SHARE_REQUIRED and not share:
-        return None
     port = int(m.group("port")) if m.group("port") else 0
     # The host keeps the case it was typed in; see MountTarget.key for where
     # it is folded and why that is not the same place.
@@ -282,6 +283,80 @@ def classify(path: str) -> Optional[MountInfo]:
     return None
 
 
+# --- finding servers and shares ----------------------------------------------
+
+@dataclass(frozen=True)
+class DiscoveredServer:
+    """A file server the machine can see on the local network.
+
+    ``name`` is what the server advertises itself as, and is what the picker
+    shows — the string Finder's Network view puts on screen. ``host`` is what
+    XeFM connects to, and the two are often **not** the same: a Mac announces
+    "Anna's MacBook Pro" while answering to ``Annas-MacBook-Pro.local``. A
+    server is only reported once the second one is known, so every row in the
+    list is a row that can be opened.
+    """
+
+    name: str
+    host: str
+    scheme: str = "smb"
+
+    @property
+    def target(self) -> "MountTarget":
+        """The server as a share-less address, ready to be browsed."""
+        return MountTarget(scheme=self.scheme, host=self.host, share="")
+
+
+def can_discover() -> bool:
+    """Whether this platform can look for servers at all.
+
+    Discovery is the part that degrades: macOS browses Bonjour, Windows asks
+    the network provider and may well get nothing back (modern Windows dropped
+    the browser service in favour of WS-Discovery). The UI treats an empty
+    answer as "found none" either way.
+    """
+    backend = _backend()
+    return backend is not None and hasattr(backend, "discover_servers")
+
+
+def discover_servers(cancel: threading.Event):
+    """Yield :class:`DiscoveredServer` s as they are found, until ``cancel``.
+
+    Runs on the picker's background loader thread, exactly like the S3 bucket
+    scan: the dialog is already open and rows arrive underneath it. Discovery
+    has no natural end — a NAS that wakes up ten seconds later is a new row —
+    so this runs until the dialog closes and sets ``cancel``.
+
+    Best effort in every direction: no discovery support, a missing framework
+    or a silent network all end the scan with whatever was found by then.
+    """
+    backend = _backend()
+    if backend is None or not hasattr(backend, "discover_servers"):
+        return
+    try:
+        yield from backend.discover_servers(cancel)
+    except Exception as e:
+        logger.warning(f"Looking for servers stopped: {e}")
+
+
+def list_shares(target: MountTarget) -> list[str]:
+    """The shares ``target``'s server offers, for the picker that follows
+    choosing a server.
+
+    Asked **as a guest**, because that is what the platform tools can be driven
+    to do without being handed a password (see the system doc). A server that
+    will not answer an anonymous query raises :class:`MountError`, and the
+    caller falls back to letting the user type the share name. Administrative
+    shares (``C$``, ``IPC$``) are left out, as they are in Finder and Explorer.
+
+    Blocks on the network; call it from a worker.
+    """
+    backend = _backend()
+    if backend is None:
+        raise MountError("Listing shares is not available on this system.")
+    return backend.list_shares(target)
+
+
 # --- operations --------------------------------------------------------------
 
 def mount(target: MountTarget, user: str = "", password: str = "", *,
@@ -310,6 +385,10 @@ def mount(target: MountTarget, user: str = "", password: str = "", *,
     if target.scheme not in backend.SCHEMES:
         raise MountError(
             f"{target.scheme}:// cannot be mounted on {platform.system()}.")
+    if target.scheme in _SHARE_REQUIRED and not target.share:
+        # The flow browses a share-less address instead of mounting it; this is
+        # the guard for anything that reaches here another way.
+        raise MountError(f"Choose a share on {target.host}.")
 
     path = backend.mount(target, user=user, password=password,
                          drive_letter=drive_letter)

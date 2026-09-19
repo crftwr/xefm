@@ -55,8 +55,11 @@ class ParseAddress(unittest.TestCase):
         self.assertIsNotNone(target)
         self.assertEqual(target.share, "")
 
-    def test_smb_without_a_share_is_not_enough(self):
-        self.assertIsNone(netmount.parse_address("smb://nas"))
+    def test_smb_without_a_share_is_a_server_to_browse(self):
+        """It parses, because it names something real — a server — and the
+        picker asks it for its shares. What it is not is mountable."""
+        target = netmount.parse_address("smb://nas")
+        self.assertEqual((target.host, target.share), ("nas", ""))
 
     def test_a_unc_path(self):
         target = netmount.parse_address(r"\\nas\photo")
@@ -115,6 +118,36 @@ class ParseAddress(unittest.TestCase):
         worse way to reach the same place."""
         self.assertIsNone(netmount.parse_address("ssh://devbox/var/www"))
         self.assertIsNone(netmount.parse_address("s3://bucket/key"))
+
+
+class Discovery(unittest.TestCase):
+    def test_a_discovered_server_becomes_a_share_less_address(self):
+        """The advertised name is not the host — a Mac announces "Anna's
+        MacBook Pro" and answers to Annas-MacBook-Pro.local — so the address is
+        built from the resolved host, and the name is only ever shown."""
+        server = netmount.DiscoveredServer(name="Anna's MacBook Pro",
+                                           host="Annas-MacBook-Pro.local")
+        self.assertEqual(server.target.url, "smb://Annas-MacBook-Pro.local")
+        self.assertEqual(server.target.share, "")
+
+    def test_discovery_is_silent_where_it_is_unsupported(self):
+        with patch.object(netmount, "_backend", return_value=None):
+            self.assertFalse(netmount.can_discover())
+            self.assertEqual(list(netmount.discover_servers(threading.Event())),
+                             [])
+
+    def test_a_backend_that_throws_mid_scan_keeps_what_it_found(self):
+        """A browse that dies halfway is a shorter list, not an error dialog
+        over a picker the user is already reading."""
+        def half(cancel):
+            yield netmount.DiscoveredServer("A", "a.local")
+            raise OSError("network went away")
+
+        backend = _FakeBackend()
+        backend.discover_servers = half
+        with patch.object(netmount, "_backend", return_value=backend):
+            found = list(netmount.discover_servers(threading.Event()))
+        self.assertEqual([s.name for s in found], ["A"])
 
 
 class Classify(unittest.TestCase):
@@ -185,6 +218,12 @@ class MountWrapper(unittest.TestCase):
         point whose name is taken, and the pane has to go to the real one."""
         self.backend.path = "/Volumes/photo-1"
         self.assertEqual(netmount.mount(self.target), "/Volumes/photo-1")
+
+    def test_a_server_with_no_share_cannot_be_mounted(self):
+        target = netmount.parse_address("smb://nas")
+        with self.assertRaises(netmount.MountError) as caught:
+            netmount.mount(target)
+        self.assertIn("Choose a share", str(caught.exception))
 
     def test_an_unsupported_scheme_is_refused_before_any_call(self):
         target = netmount.parse_address("https://dav.example.com/files")
@@ -325,6 +364,34 @@ class MacBackend(unittest.TestCase):
         target = netmount.parse_address("smb://synologynas/Videos")
         self.assertTrue(
             self.mac._describe(65, target).startswith("synologynas:"))
+
+    def test_share_listing_reads_the_real_smbutil_table(self):
+        """Captured from ``smbutil view -g //synologynas``. The columns are
+        fixed-width, so the name is sliced at the offset the header gives
+        rather than split — a share name may contain spaces, and the Comments
+        column beside it certainly does."""
+        output = (
+            "Share                                           Type    Comments\n"
+            "-------------------------------\n"
+            "home                                            Disk    Home directory of crftwr\n"
+            "Videos                                          Disk    \n"
+            "IPC$                                            Pipe    IPC Service ()\n"
+            "Documents                                       Disk    \n"
+            "Time Machine                                    Disk    a name with spaces\n"
+            "C$                                              Disk    admin share\n"
+            "\n"
+            "6 shares listed\n")
+        self.assertEqual(
+            self.mac._parse_shares(output),
+            ["home", "Videos", "Documents", "Time Machine"])
+
+    def test_share_listing_survives_output_it_does_not_recognise(self):
+        self.assertEqual(self.mac._parse_shares(""), [])
+        self.assertEqual(self.mac._parse_shares("smbutil: something went wrong"), [])
+
+    def test_the_browse_services_are_the_two_finder_shows(self):
+        self.assertEqual(set(self.mac._BONJOUR_SERVICES.values()),
+                         {"smb", "afp"})
 
     def test_finding_an_already_mounted_share(self):
         mounts = [netmount.MountInfo("/Volumes/photo", netmount.NETWORK,

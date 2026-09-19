@@ -33,20 +33,59 @@ filter, **Up/Down** to move, **Enter** to choose, **Esc** to close.
 │ ● NAS Photo      smb://nas/photo               │
 │ ○ NAS Backup     smb://nas/backup              │
 │ ○ Documents      https://dav.example.com/files │
-│ ───────────────────────────────────────────    │
 │ ＋ New connection…                             │
+│ · SynologyNas    on the network                │
+│ · Anna's iMac    on the network                │
 └────────────────────────────────────────────────┘
 ```
 
-A filled marker (**●**) means the server is mounted right now; **Enter** on it
-just moves the pane there, with no network round trip. An open marker (**○**)
-means it is saved but not mounted; **Enter** connects first, then moves the
-pane.
+| | |
+|-|-|
+| **●** | Mounted right now. **Enter** just moves the pane there — no network, no password, no waiting. |
+| **○** | Saved, not mounted. **Enter** connects, then moves the pane. |
+| **·** | Found on the network just now (see below). **Enter** asks it which shares it offers. |
 
 **Shift-Delete** forgets the highlighted server. It does not disconnect
 anything — it removes the entry from the list, along with any password saved for
 it. Servers written into your config file cannot be forgotten this way; edit the
 config instead.
+
+## Servers found on the network
+
+XeFM looks for file servers while the dialog is open, the same way Finder's
+**Network** view does, and they appear at the bottom of the list as they are
+found — marked **·**, with the name the server announces itself as. Nothing is
+contacted until you choose one.
+
+Choosing one asks it what it offers and shows a second list:
+
+```
+┌ Shares on SynologyNas ─────────────────────────┐
+│ home                                           │
+│ Videos                                         │
+│ Documents                                      │
+│ PlexMediaServer                                │
+└────────────────────────────────────────────────┘
+```
+
+Pick a share and it mounts. That is the whole path from "the NAS is on" to "the
+pane is in it", without typing anything.
+
+This works best on **macOS**, where discovery is Bonjour — the same mechanism
+Finder uses, so XeFM finds what Finder finds. On **Windows** it asks the
+network providers, and modern Windows often answers with nothing even when the
+machines are reachable by name; there the address is still typed or saved.
+
+A server you have already saved as a *server* is not listed twice. A saved
+*share* does not hide its server, because the two rows do different things: one
+goes straight to that share, the other browses the machine.
+
+### When a server will not list its shares
+
+The share list is asked for anonymously, so a server that refuses guests
+refuses the question too. XeFM then opens the connection form with the server
+filled in and the share left for you to add — `smb://nas/` becomes
+`smb://nas/Videos`. Everything after that is the same.
 
 ### Connecting to an address you have not saved
 
@@ -91,9 +130,9 @@ and without a way out you would be waiting for the network's own timeout.
 A user name can be written into the address (`smb://me@nas/photo`) instead of
 into the **User name** field; XeFM splits it out and fills the field for you.
 
-Leaving the share off the end (`smb://nas`) is not enough — XeFM needs to know
-which share to mount. Browsing a server for the shares it offers is not
-implemented yet.
+Leaving the share off the end (`smb://nas`) is not an error: an address that
+names a server and no share is a request to **browse** it, and you get the share
+list described above.
 
 ## Saved servers
 
@@ -185,6 +224,12 @@ use, and the mapping is not remembered across sign-ins (see
 **"The server may not exist, or it is not responding"** — the name did not
 resolve or nothing answered. Check the spelling, and check that the machine is
 awake; a NAS that has spun down can take a few seconds.
+
+**A server you can see in Finder is not in XeFM's list** — on macOS both use
+Bonjour, so this usually means it had not announced itself yet; the list fills
+as answers arrive, so give it a few seconds. A server that advertises nothing
+(some Windows machines, and NAS boxes with Bonjour switched off) will not
+appear in either, and is reached by typing its address.
 
 **"<server> needs a user name and password"** — XeFM tried to connect as a
 guest, because no account was given and none was saved, and the server does not

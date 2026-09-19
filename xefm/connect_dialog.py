@@ -58,6 +58,9 @@ NEW_CONNECTION = object()
 
 _MOUNTED_MARK = "●"
 _UNMOUNTED_MARK = "○"
+#: A server found on the network, which is neither of the above: nothing is
+#: mounted and nothing was saved, so it reads as the faintest of the three.
+_FOUND_MARK = "·"
 
 
 # --- the form ----------------------------------------------------------------
@@ -463,6 +466,9 @@ class ConnectFlow:
         #: in the log line. Navigation is the app's business, not this module's.
         self.on_connected = on_connected
         self.region = region
+        #: Hosts already represented in the list, so discovery does not add a
+        #: second row for one. Filled by :meth:`open`, added to by the loader.
+        self._known: set[str] = set()
 
     # --- the picker ---------------------------------------------------------
 
@@ -474,6 +480,11 @@ class ConnectFlow:
         rows: list[Any] = [_PickerRow(entry, server_list.mounted_at(entry, mounts))
                            for entry in entries]
         rows.append(NEW_CONNECTION)
+        # Servers already in the list as a *server* (not as one of its shares)
+        # are not worth a second row. A saved share is different: the row goes
+        # to that share, the discovered row browses the whole machine.
+        self._known = {_host_key(entry.url) for entry in entries
+                       if (entry.target is not None and not entry.target.share)}
 
         show_filter_list(
             self.panel, rows, title="Connect to Server",
@@ -484,12 +495,30 @@ class ConnectFlow:
             remove_label="forget",
             region=self.region,
             elide_where="middle",
+            load_more=self._discover if netmount.can_discover() else None,
         )
         self.panel.render()
+
+    def _discover(self, cancel: threading.Event):
+        """Servers found on the network, streamed into the open picker.
+
+        The same background-loader seam the drives picker uses for S3 buckets:
+        the dialog is up before this starts, rows arrive underneath it, and
+        closing the dialog sets ``cancel`` and stops the browse.
+        """
+        for server in netmount.discover_servers(cancel):
+            if _host_key(server.host) in self._known:
+                continue
+            self._known.add(_host_key(server.host))
+            yield _DiscoveredRow(server)
 
     def _chosen(self, row: Any) -> None:
         if row is NEW_CONNECTION:
             self.show_form(ConnectRequest(address=""))
+            return
+        if isinstance(row, _DiscoveredRow):
+            # A server, not a share: ask it what it offers.
+            self.browse_shares(row.server.target, name=row.server.name)
             return
         if row.mounted_at:
             # Already there: no network, no password, no waiting.
@@ -535,6 +564,13 @@ class ConnectFlow:
             return
 
         user = request.user or target.user
+        if not target.share and target.scheme in ("smb", "afp", "nfs"):
+            # An address that names a server and no share is a request to
+            # browse it. This is also what makes the form double as the way in
+            # for a server typed by hand: it comes back here either way.
+            self.browse_shares(target, name=request.name, user=user,
+                               password=request.password)
+            return
 
         def work(cancel: threading.Event) -> str:
             password = request.password
@@ -560,6 +596,61 @@ class ConnectFlow:
             self._failed(request, target, user, error)
 
         run_connecting(self.panel, f"Connecting to {target.host}…", work, done)
+
+    # --- browsing a server --------------------------------------------------
+
+    def browse_shares(self, target, *, name: str = "", user: str = "",
+                      password: str = "") -> None:
+        """Ask a server what it offers and let the user pick one.
+
+        Finder's flow, and for the same reason: a server is not something to
+        open, it is a list of shares, and nobody remembers the spelling of the
+        third one. The listing is anonymous (see
+        :func:`xefm.netmount.list_shares`), so a server that will not answer a
+        guest query ends up back at the form — where the address can simply be
+        finished by hand.
+        """
+        def work(cancel: threading.Event) -> list:
+            return netmount.list_shares(target)
+
+        def done(shares: Any, error: Optional[BaseException],
+                 cancelled: bool) -> None:
+            if cancelled:
+                return
+            if error is not None or not shares:
+                self._cannot_browse(target, name, user, error)
+                return
+            self._show_shares(target, shares, name=name, user=user,
+                              password=password)
+
+        run_connecting(self.panel, f"Asking {target.host} for its shares…",
+                       work, done, title="Connect to Server")
+
+    def _show_shares(self, target, shares: list, *, name: str, user: str,
+                     password: str) -> None:
+        from xefm.filter_list_dialog import show_filter_list
+
+        def chosen(share: str) -> None:
+            self.connect(ConnectRequest(
+                address=f"{target.url}/{share}", user=user, password=password,
+                name=f"{name or target.host} — {share}"))
+
+        show_filter_list(
+            self.panel, list(shares),
+            title=f"Shares on {name or target.host}",
+            on_accept=chosen, region=self.region, elide_where="middle")
+        self.panel.render()
+
+    def _cannot_browse(self, target, name: str, user: str,
+                       error: Optional[BaseException]) -> None:
+        """A server that would not list its shares. The form reopens with the
+        server address, and the message says what to add to it — which is the
+        one thing the user can do that XeFM cannot."""
+        detail = str(error) if error else f"{target.host} listed no shares."
+        logger.info(f"Could not list shares on {target.host}: {detail}")
+        self.show_form(
+            ConnectRequest(address=target.url + "/", user=user, name=name),
+            error=f"{detail} Add the share name after the server.")
 
     def _failed(self, request: ConnectRequest, target, user: str,
                 error: Optional[BaseException]) -> None:
@@ -588,9 +679,29 @@ class _PickerRow:
     mounted_at: str
 
 
+@dataclass(frozen=True)
+class _DiscoveredRow:
+    """A server found on the network rather than saved. It has no share yet,
+    so choosing it browses instead of connecting."""
+
+    server: netmount.DiscoveredServer
+
+
+def _host_key(text: str) -> str:
+    """A host as an identity, for telling a discovered server apart from one
+    already in the list. ``.local`` comes off because Bonjour answers with it
+    and a saved row almost never has it — ``synologynas`` and
+    ``SynologyNas.local`` are the same machine."""
+    target = netmount.parse_address(text)
+    host = (target.host if target is not None else text).lower()
+    return host[:-6] if host.endswith(".local") else host
+
+
 def _row_label(row: Any) -> str:
     if row is NEW_CONNECTION:
         return "＋  New connection…"
+    if isinstance(row, _DiscoveredRow):
+        return f"{_FOUND_MARK}  {row.server.name}  —  on the network"
     mark = _MOUNTED_MARK if row.mounted_at else _UNMOUNTED_MARK
     label = f"{mark}  {row.entry.name}"
     if row.entry.name != row.entry.url:
@@ -601,9 +712,10 @@ def _row_label(row: Any) -> str:
 
 
 def _forget_row(row: Any) -> bool:
-    """The picker's remove hook. The form row and the config rows decline it,
-    and declining is what leaves them in the list."""
-    if row is NEW_CONNECTION:
+    """The picker's remove hook. The form row and the discovered rows decline
+    it — nothing was remembered about them to forget — and so do config rows;
+    declining is what leaves all three in the list."""
+    if row is NEW_CONNECTION or isinstance(row, _DiscoveredRow):
         return False
     return server_list.forget_server(row.entry)
 

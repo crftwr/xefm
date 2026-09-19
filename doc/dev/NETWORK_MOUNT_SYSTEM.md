@@ -7,7 +7,8 @@ to undo by accident.
 
 Related code:
 - `xefm/netmount.py` — the platform-neutral API and the `MountInfo` record
-- `xefm/netmount_macos.py` — NetFS.framework, `getmntinfo`, `diskutil eject`
+- `xefm/netmount_macos.py` — NetFS.framework, `getmntinfo`, Bonjour browsing,
+  `smbutil view`, `diskutil eject`
 - `xefm/netmount_windows.py` — `mpr.dll` (WNet\*), volume eject IOCTLs
 - `xefm/server_list.py` — the saved-server list and the credential store
 - `xefm/connect_dialog.py` — the server picker and the connection form
@@ -279,6 +280,84 @@ itself fixed and Explorer still ejects it. `IOCTL_STORAGE_GET_HOTPLUG_INFO`
 answers it from the storage stack's cached device information, over a handle
 opened with **no access rights** — a property query, not I/O, so it neither
 reads nor spins up the device and stays safe on the UI thread.
+
+## Finding servers, and asking one what it offers
+
+Two separate capabilities, and they degrade differently, which is why they are
+separate calls: `discover_servers` (what is out there) and `list_shares` (what
+one of them offers).
+
+### macOS discovery is Bonjour, through Foundation
+
+`NSNetServiceBrowser` browsing `_smb._tcp.` and `_afpovertcp._tcp.` — the two
+service types Finder's Network view is built on, so XeFM finds what Finder
+finds.
+
+**Not `dns-sd`.** The command-line tool was the obvious choice and does not
+work: it full-buffers stdout when it is talking to a pipe rather than a
+terminal, so a browse delivers its first line and then nothing until 4 KB have
+accumulated, which for a handful of servers is never. That is a property of the
+tool, not of the network, and no amount of reading harder fixes it.
+
+The browser runs on **the picker's loader thread**, run loop and all:
+`discover_servers` is a generator that turns `NSRunLoop` in 200 ms slices,
+checks the cancel flag between them, and yields whatever the delegate has
+collected. Browsing has no natural end — a NAS that wakes up ten seconds later
+is a new row — so it runs until the dialog closes, with a 300-second cap so a
+window left open overnight does not keep a run loop turning until morning.
+
+**Each service is resolved before it is reported.** The advertised name is not
+a host name: a Mac announces "Anna's MacBook Pro" and answers to
+`Annas-MacBook-Pro.local`. Resolving on the same run loop, as each service
+arrives, is what keeps every `NSNetService` on one thread — resolving later,
+from whichever worker the user's choice lands on, would mean two threads
+sharing an object Apple does not document as thread-safe. It also means every
+row in the list is a row that can actually be opened: a service that will not
+resolve is dropped rather than shown.
+
+The found services are held in a list on the delegate. The browser does not
+retain them, and a resolution in flight against a collected object is a crash
+rather than a failure.
+
+### Windows discovery is the weak half, knowingly
+
+`WNetEnumResource` over `RESOURCE_GLOBALNET`, walked three levels — provider,
+domain/workgroup, server. What comes back on a modern Windows is whatever
+WS-Discovery has collected, which is frequently nothing at all for machines
+that are perfectly reachable by name; Microsoft retired the browser service
+that used to answer this. So an empty result is not an error, the picker simply
+shows no discovered rows, and typing the address still works. The walk checks
+the cancel flag between containers, because a domain that is not answering
+takes seconds and the picker has to stay closable.
+
+### Listing shares
+
+macOS runs `smbutil view -g`, **as a guest and with stdin closed**, and that is
+not a limitation being shrugged at. `smbutil` takes a password only on its
+command line, where every user on the machine can read it, and otherwise
+prompts on `/dev/tty` — which in the TUI is the terminal XeFM is drawing on. A
+prompt there would write into the file list and eat the user's keystrokes.
+Guest or nothing, and a server that refuses an anonymous query sends the user
+to the form to finish the address by hand.
+
+Its output is a fixed-width table, and the header says where the columns start,
+so the share name is **sliced at that offset rather than split**: a share name
+may contain spaces, and the Comments column beside it certainly does.
+Administrative shares (`IPC$`, `C$`) are dropped, as they are in Finder.
+
+Windows has it easier: the same `WNetEnumResource`, one level below a server,
+using the credentials the session already has. No separate authentication, and
+no anonymous-query problem — which makes it the reliable half on the platform
+whose discovery is the unreliable one.
+
+### What the flow does with them
+
+`smb://nas` — an address with a server and no share — **parses**, and
+`parse_address` no longer rejects it. It is not mountable (`mount` refuses it,
+naming the missing share), but it is meaningful: it is a server to browse. That
+one change is what lets the form double as the way in for a server typed by
+hand, since `connect()` sends any share-less address to `browse_shares` and
+everything converges on the same path.
 
 ## Saved servers and credentials — `xefm/server_list.py`
 

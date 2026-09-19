@@ -872,7 +872,7 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | Shift+J | Jump to a path — a file path goes to its directory and focuses it |
 | H | History for the current pane (Shift+Delete forgets an entry) |
 | D | Drives / storage selection dialog (Shift+Delete disconnects or ejects) |
-| Shift+D | Connect to a network server (macOS and Windows) |
+| Shift+D | Connect to a network server — lists what it finds (macOS and Windows) |
 
 ### Other
 

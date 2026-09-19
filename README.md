@@ -27,7 +27,7 @@ XeFM — short for *Xenolith File Manager* — is a powerful file manager that r
 - **Archive browsing** - Navigate ZIP, TAR, and compressed archives as virtual directories
 - **SFTP support** - Browse and manage remote servers via SSH with optimized performance
 - **AWS S3 support** for cloud storage operations
-- **Connect to Server** - Mount a NAS or WebDAV share from inside XeFM, with no Finder or Explorer detour (macOS and Windows)
+- **Connect to Server** - Find file servers on the network, browse their shares, and mount one from inside XeFM, with no Finder or Explorer detour (macOS and Windows)
 - **Advanced search** with real-time filtering, background processing, and multi-selection bulk operations
 - **Rich built-in viewers** - Syntax-highlighted text, images, Markdown, JSON, and CSV/TSV
 - **Themes & visual effects** - A dozen built-in themes; desktop mode adds GPU background animations, CRT/phosphor screen effects, and text-reveal animations
