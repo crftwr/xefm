@@ -402,6 +402,10 @@ class DirectoryDiffView(Widget):
         self._scan_q: queue.PriorityQueue = queue.PriorityQueue()
         self._cmp_q: queue.PriorityQueue = queue.PriorityQueue()
         self._seq = itertools.count()
+        # Which scan run owns the state above. A rescan bumps it and hands the
+        # next coordinator fresh queues; everything still running under the old
+        # number is stale and stops touching the view (see _stale).
+        self._run = 0
         # Progress counters surfaced in the footer / status screen.
         self._scanned = 0        # files + dirs discovered
         self._dirs_scanned = 0   # directories whose level has been listed
@@ -415,8 +419,7 @@ class DirectoryDiffView(Widget):
         self._restore_expanded: Optional[set[str]] = None
         self._restore_cursor_path: Optional[str] = None
         if background:
-            self._thread = threading.Thread(target=self._scan_coordinator, daemon=True)
-            self._thread.start()
+            self._start_coordinator()
         else:
             self._scan_sync()
 
@@ -454,39 +457,65 @@ class DirectoryDiffView(Widget):
     def _enqueue_cmp(self, node: TreeNode, priority: int) -> None:
         self._cmp_q.put((-priority, next(self._seq), node))
 
-    def _scan_coordinator(self) -> None:
+    def _stale(self, run: int) -> bool:
+        """Whether a scan run has been cancelled or superseded by a rescan. Every
+        background step asks this before it touches the view: ``_cancel`` alone
+        cannot answer it, because a rescan clears that flag for its own run while
+        the previous run's threads are still finishing (issue #429)."""
+        return self._cancel or run != self._run
+
+    def _start_coordinator(self) -> None:
+        """Spawn the coordinator for the current run, handing it the queues that
+        run owns so a later rescan swapping in fresh ones cannot reach it."""
+        self._thread = threading.Thread(
+            target=self._scan_coordinator, daemon=True,
+            args=(self._run, self._scan_q, self._cmp_q))
+        self._thread.start()
+
+    def _scan_coordinator(self, run: int, scan_q: queue.PriorityQueue,
+                          cmp_q: queue.PriorityQueue) -> None:
         """Background driver (the joinable thread). Scans the roots' top level so
         items appear immediately, starts the scanner + comparator workers, waits
-        for both queues to drain (breadth-first, visible-first), then finalises."""
+        for both queues to drain (breadth-first, visible-first), then finalises.
+
+        The queues arrive as arguments rather than being read off ``self`` each
+        time: this run's threads must live and die on the pair they started with,
+        whatever a rescan has since installed."""
         try:
-            self._seed_root()
-            if self._cancel:
+            self._seed_root(run)
+            if self._stale(run):
                 return
-            scanner = threading.Thread(target=self._scanner_worker, daemon=True)
-            comparator = threading.Thread(target=self._comparator_worker, daemon=True)
+            scanner = threading.Thread(target=self._scanner_worker, daemon=True,
+                                       args=(run, scan_q))
+            comparator = threading.Thread(target=self._comparator_worker, daemon=True,
+                                          args=(run, cmp_q))
             self._workers = [scanner, comparator]
             scanner.start()
             comparator.start()
-            self._scan_q.join()          # every directory level listed
-            if self._cancel:
+            scan_q.join()                # every directory level listed
+            if self._stale(run):
                 return
             self._phase = "compare"
-            self._cmp_q.join()           # every two-sided file compared
+            cmp_q.join()                 # every two-sided file compared
         finally:
             # Dirty *before* clearing scanning so the tick paints the final state
-            # before it unregisters (see _tick).
+            # before it unregisters (see _tick). A superseded run leaves all of
+            # this to the run that replaced it.
             with self._lock:
-                if not self._cancel:
-                    self._finalize_locked()
-                self._dirty = True
-                self._scanning = False
+                if run == self._run:
+                    if not self._cancel:
+                        self._finalize_locked()
+                    self._dirty = True
+                    self._scanning = False
 
-    def _seed_root(self) -> None:
+    def _seed_root(self, run: int) -> None:
         """Build the top level of the unified tree (both roots' immediate
         children) and queue every two-sided subdirectory for background scanning."""
         left = DirectoryScanner(self.show_hidden).scan_level(self.left_path)
         right = DirectoryScanner(self.show_hidden).scan_level(self.right_path)
         with self._lock:
+            if self._stale(run):          # a rescan already seeded its own root
+                return
             self.root = TreeNode("", self.left_path, self.right_path, True,
                                  DifferenceType.PENDING, 0, True)
             self.root.children_scanned = True
@@ -494,32 +523,36 @@ class DirectoryDiffView(Widget):
             self._reflow_locked()
             self._dirty = True
 
-    def _scanner_worker(self) -> None:
-        """Pull directories off ``_scan_q`` and list one level each, enqueuing
-        child directories (breadth-first) and file comparisons as it goes."""
-        while self._scanning:
+    def _scanner_worker(self, run: int, q: queue.PriorityQueue) -> None:
+        """Pull directories off this run's scan queue and list one level each,
+        enqueuing child directories (breadth-first) and file comparisons as it
+        goes. ``q`` is the queue the run started with, so ``get`` and
+        ``task_done`` always name the same object (issue #429); once the run is
+        stale the loop just drains it — its ``join`` is waiting on that — and
+        leaves the tree to whoever superseded it."""
+        while self._scanning or run != self._run:
             try:
-                _, _, node = self._scan_q.get(timeout=0.1)
+                _, _, node = q.get(timeout=0.1)
             except queue.Empty:
-                if self._cancel:
+                if self._stale(run):
                     return
                 continue
             try:
-                if not self._cancel:
-                    self._scan_node(node)
+                if not self._stale(run):
+                    self._scan_node(node, run)
             finally:
-                self._scan_q.task_done()
+                q.task_done()
 
-    def _scan_node(self, node: TreeNode) -> None:
+    def _scan_node(self, node: TreeNode, run: int) -> None:
         with self._lock:
-            if node.children_scanned or self._cancel:
+            if node.children_scanned or self._stale(run):
                 return
             node.children_scanned = True      # claim it so duplicates skip
             left_root, right_root = node.left_path, node.right_path
         left = DirectoryScanner(self.show_hidden).scan_level(left_root) if left_root else {}
         right = DirectoryScanner(self.show_hidden).scan_level(right_root) if right_root else {}
         with self._lock:
-            if self._cancel:
+            if self._stale(run):
                 return
             self._insert_children_locked(node, left, right)
             self._dirs_scanned += 1
@@ -528,28 +561,31 @@ class DirectoryDiffView(Widget):
                 self._reflow_locked()
             self._dirty = True
 
-    def _comparator_worker(self) -> None:
-        """Resolve two-sided files' content verdicts off ``_cmp_q``, decoupled
-        from directory scanning so neither blocks the other."""
-        while self._scanning:
+    def _comparator_worker(self, run: int, q: queue.PriorityQueue) -> None:
+        """Resolve two-sided files' content verdicts off this run's comparison
+        queue, decoupled from directory scanning so neither blocks the other.
+        Same queue discipline as :meth:`_scanner_worker`: a file compare cannot
+        be interrupted mid-read, so this thread may well outlive the rescan that
+        retired it, and must not report into the run that replaced it."""
+        while self._scanning or run != self._run:
             try:
-                _, _, node = self._cmp_q.get(timeout=0.1)
+                _, _, node = q.get(timeout=0.1)
             except queue.Empty:
-                if self._cancel:
+                if self._stale(run):
                     return
                 continue
             try:
-                if not self._cancel:
-                    self._compare_node(node)
+                if not self._stale(run):
+                    self._compare_node(node, run)
             finally:
-                self._cmp_q.task_done()
+                q.task_done()
 
-    def _compare_node(self, node: TreeNode) -> None:
+    def _compare_node(self, node: TreeNode, run: int) -> None:
         if node.left_path is None or node.right_path is None:
             return
         identical = DiffEngine.compare_file_content(node.left_path, node.right_path)
         with self._lock:
-            if self._cancel:
+            if self._stale(run):
                 return
             node.difference_type = (DifferenceType.IDENTICAL if identical
                                     else DifferenceType.CONTENT_DIFFERENT)
@@ -706,25 +742,25 @@ class DirectoryDiffView(Widget):
         self._restore_expanded = self._save_expansion()
         node = self._current()
         self._restore_cursor_path = self._node_rel_path(node) if node is not None else None
-        # Tear the old coordinator + workers down before swapping in fresh queues
-        # (the workers read ``self._scan_q`` each loop, so they must be stopped).
+        # Retire the old run rather than waiting for it: this is the UI thread,
+        # and a comparator part-way through a large file cannot be interrupted,
+        # so joining it would freeze the view for as long as that read takes. The
+        # new run number is what makes the old threads harmless — they hold their
+        # own queues and stop reporting into the view (see _stale).
         self.cancel()
-        if self._thread is not None:
-            self._thread.join(1.0)
-        for worker in self._workers:
-            worker.join(1.0)
-        self._cancel = False
-        self._scanning = True
-        self._dirty = True
-        self._phase = "scan"
-        self._scan_q = queue.PriorityQueue()
-        self._cmp_q = queue.PriorityQueue()
-        self._scanned = self._dirs_scanned = self._dirs_total = 0
-        self._compared = self._compare_total = 0
-        self._scanners = []
-        self._workers = []
-        self._thread = threading.Thread(target=self._scan_coordinator, daemon=True)
-        self._thread.start()
+        with self._lock:
+            self._run += 1
+            self._cancel = False
+            self._scanning = True
+            self._dirty = True
+            self._phase = "scan"
+            self._scan_q = queue.PriorityQueue()
+            self._cmp_q = queue.PriorityQueue()
+            self._scanned = self._dirs_scanned = self._dirs_total = 0
+            self._compared = self._compare_total = 0
+            self._scanners = []
+            self._workers = []
+        self._start_coordinator()
         if self._panel is not None:
             self._panel.request_animation_ticks(self._tick)
 
