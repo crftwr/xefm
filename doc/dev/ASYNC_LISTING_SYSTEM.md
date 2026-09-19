@@ -170,6 +170,48 @@ fires when the listing does.
 
 ---
 
+## Pickers do not probe
+
+The rule above — no filesystem I/O on the UI thread — has a quieter sibling that
+is easy to miss, because the I/O is not a listing and does not look like one.
+
+A picker built from config rows (favorites, the drives dialog's fixed
+locations) is tempted to check each row before drawing it, so a path that is not
+there can be left out. That check is a `stat`, it is per row, and it runs on the
+UI thread *before the dialog exists* — so it has no worker to hide in, no
+`Loading…` indicator, and no way for the user to escape it. On a local disk it
+costs nothing; against an SMB share that is asleep, offline, or behind a VPN
+nobody has connected, each row costs a full network timeout, and a handful of
+them stacked into minutes of dead UI (issue #430).
+
+So neither picker probes:
+
+- `config.get_favorite_directories()` lists every configured entry as written,
+  expanding `~` (string work) and nothing else. It does not even construct a
+  `Path` for a `_REMOTE_SCHEMES` row — that alone pulls in the row's backend
+  module, and `import boto3` behind an `s3://` row is not cheap.
+- `config.get_drive_locations()` passes remote rows through unprobed for the
+  same reason. It still checks *local* rows, and that difference is deliberate
+  rather than an oversight: its built-in set is a menu XeFM proposes (Documents
+  / Downloads / Desktop drop out on a machine without them), not a list the user
+  wrote. Favorites are always the user's own.
+
+The verification did not disappear — it moved to where the user is already
+waiting on purpose. Selecting a row navigates, the navigation lists on a worker
+thread like every other, and a failure surfaces from `compute_listing`'s
+`logger.error` into the log pane. The History picker has always worked this way.
+
+`get_favorite_directories()` also stopped calling `resolve()`, which was I/O
+*and* a display bug: it printed a symlinked favorite's target rather than the
+path the user wrote, while no other navigation in XeFM resolves the path it
+lands on.
+
+Tests:
+[`test/test_favorite_directories.py`](../../test/test_favorite_directories.py)
+bans `os.stat` and friends outright for the duration of the call.
+
+---
+
 ## Startup is deferred, not synchronous
 
 The two first listings cannot be started where the panes are created: the panel,

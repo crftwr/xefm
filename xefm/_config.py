@@ -766,20 +766,27 @@ class Config:
     FILTERS = {}
 
 
-    # Favorite directories - customize your frequently used directories
-    # Each entry should have 'name' and 'path' keys
+    # Favorite directories (J) - the places you jump to by name.
+    #
+    # Each entry needs 'name' and 'path'. Every entry is listed as written -
+    # XeFM does not check that a favorite exists before showing it, so a network
+    # share, a removable volume or an ssh:// / s3:// location can live here
+    # without the picker stalling on it. Nothing connects until you select a
+    # row; if the place turns out to be unreachable, the pane says so then.
+    #
+    # The four below are the ones almost every machine has. Delete what you do
+    # not use - a favorite you never selected costs nothing, but it is a row
+    # between you and the one you want.
     FAVORITE_DIRECTORIES = [
         {'name': 'Home', 'path': '~'},
         {'name': 'Documents', 'path': '~/Documents'},
         {'name': 'Downloads', 'path': '~/Downloads'},
         {'name': 'Desktop', 'path': '~/Desktop'},
-        {'name': 'Projects', 'path': '~/Projects'},
-        {'name': 'Root', 'path': '/'},
-        {'name': 'Temp', 'path': '/tmp'},
-        {'name': 'Config', 'path': '~/.config'},
         # Add your own favorites here:
         # {'name': 'Work', 'path': '/path/to/work'},
         # {'name': 'Scripts', 'path': '~/bin'},
+        # {'name': 'NAS', 'path': '/Volumes/share'},
+        # {'name': 'Dev Server', 'path': 'ssh://devbox/var/www'},
     ]
     
     # Drives dialog (D) - the fixed locations listed above everything the picker

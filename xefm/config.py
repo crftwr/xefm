@@ -1147,35 +1147,58 @@ def format_key_for_display(key_expr: str) -> str:
 
 
 
-def get_favorite_directories():
-    """Get the list of favorite directories from configuration"""
-    config = get_config()
-    
-    favorites = []
-    
-    for fav in config.FAVORITE_DIRECTORIES:
-        if isinstance(fav, dict) and 'name' in fav and 'path' in fav:
-            try:
-                # Expand user path and resolve
-                path = Path(fav['path']).expanduser().resolve()
-                if path.exists() and path.is_dir():
-                    favorites.append({
-                        'name': fav['name'],
-                        'path': str(path)
-                    })
-                else:
-                    logger.warning(f"Favorite directory does not exist: {fav['name']} -> {fav['path']}")
-            except Exception as e:
-                logger.warning(f"Invalid favorite directory path: {fav['name']} -> {fav['path']}: {e}")
-    
-    return favorites
-
-
 #: Path prefixes that name a remote or virtual location (see ``xefm.path``).
-#: A drive location written with one of these is listed exactly as configured:
-#: probing it would mean a network round-trip on the UI thread, and the drives
-#: picker exists to *offer* a connection, not to make one.
+#: A location written with one of these is listed exactly as configured:
+#: probing it would mean a network round-trip on the UI thread, and a picker
+#: exists to *offer* a connection, not to make one.
 _REMOTE_SCHEMES = ('archive://', 's3://', 'ssh://', 'scp://', 'ftp://')
+
+
+def get_favorite_directories():
+    """The rows the favorites picker shows — listed exactly as configured, with
+    **no filesystem access at all**.
+
+    Nothing here is probed. A favorite is as likely to be a network share, a
+    removable volume or an ``ssh://`` URL as a local directory, and confirming
+    one exists costs a round trip that lands on the UI thread *before* the
+    picker can be drawn: a few unreachable shares used to stack their timeouts
+    into minutes of dead UI just to open a list (issue #430). It was three round
+    trips per row, too — ``resolve()``, ``exists()``, ``is_dir()``.
+
+    A favorite is proved by being *used*. Selecting a row lists the directory on
+    a worker thread, where the wait is one the user asked for and can walk away
+    from, and a failure is reported from there (the listing logs it, and the log
+    pane shows it). This is how the History picker has always worked, and how
+    the drives picker already treats its remote rows.
+
+    ``~`` is still expanded, which is string work, not I/O. What is *not* done
+    any more is ``resolve()``: it was I/O, and it also changed what the picker
+    showed, printing a symlinked favorite's target instead of the path the user
+    wrote. No other navigation in XeFM resolves the path it lands on.
+    """
+    config = get_config()
+
+    favorites = []
+
+    for fav in config.FAVORITE_DIRECTORIES:
+        if not (isinstance(fav, dict) and 'name' in fav and 'path' in fav):
+            logger.warning(f"Invalid favorite directory entry: {fav!r}")
+            continue
+        name, raw = str(fav['name']), str(fav['path'])
+        try:
+            # A remote location goes through as written. Even *constructing*
+            # a Path for one pulls in its backend module — ``import boto3`` for
+            # an s3:// row, which is not a cheap import — for a row that may
+            # never be selected.
+            if raw.startswith(_REMOTE_SCHEMES):
+                favorites.append({'name': name, 'path': raw})
+            else:
+                favorites.append({'name': name,
+                                  'path': str(Path(raw).expanduser())})
+        except Exception as e:
+            logger.warning(f"Invalid favorite directory path: {name} -> {raw}: {e}")
+
+    return favorites
 
 
 def _default_drive_locations():
