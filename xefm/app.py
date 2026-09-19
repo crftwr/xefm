@@ -30,7 +30,6 @@ import os
 import platform
 import queue
 import re
-import shlex
 import shutil
 import socket
 import subprocess
@@ -2598,7 +2597,10 @@ class XeFMApp:
         handler, redraw = self._filer_handlers().get(action, (None, False))
         if handler is None:
             return False
-        result = handler()
+        # Guarded like a user action, and for the same reason: a built-in
+        # handler reads the config too, so a mistake there (#428) must cost one
+        # logged traceback in the log pane, not the running file manager.
+        result = run_guarded(f"action '{action}'", handler)
         return bool(result) if redraw is None else redraw
 
     # --- filer action handlers ------------------------------------------------
@@ -3187,6 +3189,15 @@ class XeFMApp:
         one, a count for several."""
         return entries[0].name if len(entries) == 1 else f"{len(entries)} files"
 
+    def _editor_argv(self) -> list:
+        """The configured ``TEXT_EDITOR`` as an argv list — a string command
+        line (``'code --wait'``) or a list already in argv form
+        (``['wt', 'nt', 'vim']``), both of which the config template offers.
+        Empty when the setting is unset; see :func:`command_argv` for why we
+        do not hand that straight to shlex."""
+        from xefm.external_programs import command_argv
+        return command_argv(getattr(self.config, "TEXT_EDITOR", "vim"))
+
     def edit_file(self) -> None:
         """Open the selected files — or the focused file when nothing is
         selected — for editing (#273). See :meth:`_edit_entries`."""
@@ -3240,8 +3251,12 @@ class XeFMApp:
             else:
                 fallback.extend(batch)
         if fallback:
-            editor = getattr(self.config, "TEXT_EDITOR", "vim")
-            self._run_in_terminal(shlex.split(editor) + [str(e) for e in fallback])
+            argv = self._editor_argv()
+            if not argv:
+                self.log_info("No editor configured: set TEXT_EDITOR in "
+                              "~/.xefm/config.py")
+                return
+            self._run_in_terminal(argv + [str(e) for e in fallback])
             self.log_info(f"Edited {self._files_label(fallback)}")
 
     def subshell(self) -> None:
@@ -3293,8 +3308,11 @@ class XeFMApp:
             else:
                 self.log_info(f"Could not create config file at {path}")
                 return
-        editor = getattr(self.config, "TEXT_EDITOR", "vim")
-        self._run_in_terminal(shlex.split(editor) + [str(path)])
+        argv = self._editor_argv()
+        if not argv:
+            self.log_info(f"No editor configured: set TEXT_EDITOR in {path}")
+            return
+        self._run_in_terminal(argv + [str(path)])
         if is_desktop_mode():
             self.log_info("Opened config — use Tools ▸ Reload Configuration to "
                           "apply your changes once saved.")

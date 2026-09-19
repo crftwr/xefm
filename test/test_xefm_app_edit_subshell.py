@@ -20,6 +20,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
+from xefm.external_programs import command_argv  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
@@ -69,7 +70,7 @@ class EditFile(EditSubshellBase):
         run.assert_called_once()
         argv = run.call_args.args[0]
         self.assertEqual(argv[-1], str(entry))
-        self.assertIn(self.app.config.TEXT_EDITOR.split()[0], argv[0])
+        self.assertIn(command_argv(self.app.config.TEXT_EDITOR)[0], argv[0])
 
     def test_launches_the_editor_by_the_path_PATH_answers_with(self):
         """CreateProcess only ever appends .exe, so a bare TEXT_EDITOR never
@@ -120,6 +121,56 @@ class EditFile(EditSubshellBase):
         run.assert_not_called()
 
 
+class EditorSetting(EditSubshellBase):
+    """``TEXT_EDITOR`` in either spelling the config template documents.
+
+    The list spelling is what lets an editor carry arguments a shlex split
+    would mangle — ``['wt', 'nt', 'vim']`` runs vim in a new Windows Terminal
+    tab. It used to reach ``shlex.split`` all the same and take XeFM down with
+    it (#428).
+    """
+
+    def _edit(self, editor):
+        self._focus("note.txt")
+        self.app.config.TEXT_EDITOR = editor
+        entry = self.app._focused_entry()
+        with patch("shutil.which", return_value=None),              patch("xefm.app.is_desktop_mode", return_value=False),              patch("subprocess.run") as run:
+            self.app.edit_file()
+        return run, str(entry)
+
+    def test_a_list_editor_launches_as_written(self):
+        run, path = self._edit(["wt", "nt", "vim"])
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], ["wt", "nt", "vim", path])
+
+    def test_a_string_editor_still_carries_its_arguments(self):
+        run, path = self._edit("code --wait")
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], ["code", "--wait", path])
+
+    def test_no_editor_configured_launches_nothing(self):
+        """And in particular does not hand None to ``shlex.split``, which
+        would read from stdin with the display suspended."""
+        run, _ = self._edit(None)
+        run.assert_not_called()
+
+    def test_edit_config_honors_the_list_spelling(self):
+        self.app.config.TEXT_EDITOR = ["wt", "nt", "vim"]
+        with patch("shutil.which", return_value=None),              patch("xefm.app.is_desktop_mode", return_value=False),              patch.object(self.app, "reload_config"),              patch("subprocess.run") as run:
+            self.app.edit_config()
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0][:3], ["wt", "nt", "vim"])
+
+    def test_a_bad_editor_setting_does_not_take_the_app_down(self):
+        """The report's failure mode: the action raised out of dispatch and
+        the file manager went with it. A config mistake is one logged line."""
+        self._focus("note.txt")
+        self.app.config.TEXT_EDITOR = "vim"
+        with patch.object(self.app, "_editor_argv",
+                          side_effect=RuntimeError("boom")):
+            self.assertTrue(self.app.dispatch("edit_file") in (True, False))
+
+
 class EditSelectedFiles(EditSubshellBase):
     """E opens *all* selected files, not just the focused one (#273)."""
 
@@ -144,7 +195,7 @@ class EditSelectedFiles(EditSubshellBase):
         run.assert_called_once()
         argv = run.call_args.args[0]
         self.assertEqual(argv[-2:], expected)
-        self.assertIn(self.app.config.TEXT_EDITOR.split()[0], argv[0])
+        self.assertIn(command_argv(self.app.config.TEXT_EDITOR)[0], argv[0])
 
     def test_selection_skips_directories(self):
         self._make("a.txt")

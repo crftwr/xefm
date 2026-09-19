@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm.config import config_manager  # noqa: E402
+from xefm.external_programs import command_argv  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
@@ -82,7 +83,7 @@ class EditConfig(ConfigReloadBase):
         run.assert_called_once()
         argv = run.call_args.args[0]
         self.assertEqual(argv[-1], str(config_manager.config_file))
-        self.assertIn(self.app.config.TEXT_EDITOR.split()[0], argv[0])
+        self.assertIn(command_argv(self.app.config.TEXT_EDITOR)[0], argv[0])
         reload.assert_called_once()
 
     def test_gui_mode_launches_editor_but_does_not_auto_reload(self):

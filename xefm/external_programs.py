@@ -292,6 +292,31 @@ def ensure_common_paths_in_env(env):
         env['PATH'] = ':'.join(path_components)
 
 
+def command_argv(command) -> list:
+    r"""A command configured in ``config.py`` (``TEXT_EDITOR``, ``TEXT_DIFF``)
+    as an argv list, in either spelling the config template documents for
+    those settings.
+
+    A string is a command line and is shlex-split, so ``'code --wait'`` carries
+    its flag. A list or tuple is already argv and is taken as written:
+    ``['wt', 'nt', 'vim']`` opens the editor in a new Windows Terminal tab
+    (#428), and it is also the spelling a Windows path needs, since a POSIX
+    shlex split eats the backslashes in ``C:\Program Files\...``.
+
+    Anything empty — unset, ``None``, ``[]`` — gives ``[]`` so the caller can
+    say the setting is unset rather than launch something. That matters more
+    than it looks: ``shlex.split(None)`` reads a command line from *stdin*,
+    which in terminal mode would hang XeFM with its display already suspended.
+    """
+    if not command:
+        return []
+    if isinstance(command, (list, tuple)):
+        return [str(part) for part in command]
+    if isinstance(command, str):
+        return shlex.split(command)
+    return [str(command)]
+
+
 def resolve_command(command, env=None):
     r"""``command`` with its program resolved to a full path, when PATH holds one.
 
