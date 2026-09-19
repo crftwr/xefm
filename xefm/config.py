@@ -1249,6 +1249,38 @@ def get_drive_locations():
     return locations
 
 
+def get_network_servers():
+    """The servers listed in ``NETWORK_SERVERS``, as ``{name, url, user}`` rows
+    for the Connect to Server picker.
+
+    Nothing is probed and nothing is connected — the same rule the favorites
+    picker follows (issue #430). These are addresses of machines that may be
+    switched off, and the list has to open instantly either way.
+
+    A row with no ``url`` is dropped with a warning; a row with no ``name`` is
+    named after its address, since an unnamed server is a typo in the label and
+    not a reason to hide the entry. Only ``xefm.server_list`` reads this —
+    passwords are never part of it, and a ``password`` key is ignored with a
+    warning rather than silently honoured.
+    """
+    config = get_config()
+    servers = []
+    for entry in getattr(config, 'NETWORK_SERVERS', None) or []:
+        if not (isinstance(entry, dict) and entry.get('url')):
+            logger.warning(f"Invalid network server entry: {entry!r}")
+            continue
+        if 'password' in entry:
+            logger.warning(
+                "NETWORK_SERVERS entries cannot carry a password; ignoring it "
+                f"for {entry.get('name') or entry['url']}. Tick 'Save password' "
+                "in the connection form to keep it in the system keychain.")
+        url = str(entry['url']).strip()
+        servers.append({'name': str(entry.get('name') or url),
+                        'url': url,
+                        'user': str(entry.get('user') or '')})
+    return servers
+
+
 def get_programs():
     """Get the list of external programs from configuration"""
     config = get_config()
