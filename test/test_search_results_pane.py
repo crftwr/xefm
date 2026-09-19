@@ -278,6 +278,41 @@ class AppVirtual(unittest.TestCase):
         names = {fp._display_name(e) for e in self.app.active_pane()["files"]}
         self.assertEqual(names, {"a/b/deep.txt", "top.txt"})
 
+    def test_copy_names_copies_root_relative_paths(self):
+        # Issue #433: the name column of a results pane shows a/b/deep.txt, so
+        # "Copy Name(s)" hands over that same string. A bare "deep.txt" on the
+        # clipboard says nothing about which of several scattered hits it was.
+        deep = self._write("a/b/deep.txt")
+        top = self._write("top.txt")
+        self.app._feed_search_results("filename", [deep, top], Path(self.tmp), "txt")
+        pane = self.app.active_pane()
+        pane["selected_files"].update(str(f) for f in pane["files"])
+        self.app.copy_names_to_clipboard()
+        lines = self.app.panel.get_clipboard().splitlines()
+        fp = self.app._active_view()
+        # Exactly the names on screen, one per row, in row order.
+        self.assertEqual(lines, [fp._display_name(f) for f in pane["files"]])
+        self.assertNotIn("deep.txt", lines)   # the basename alone, never again
+
+    def test_copy_names_on_ordinary_pane_stays_basenames(self):
+        # The other half of #433: a directory pane's rows *are* basenames, and
+        # nothing about them changes.
+        self._write("sub/a.txt")
+        pane = self.app.active_pane()
+        self.app._refresh(pane)
+        self.app._settle_listings()
+        pane["focused_index"] = [f.name for f in pane["files"]].index("sub")
+        self.app.copy_names_to_clipboard()
+        self.assertEqual(self.app.panel.get_clipboard(), "sub")
+
+    def test_copy_paths_on_results_pane_still_absolute(self):
+        # Copy Full Path(s) is the other clipboard action and keeps its meaning:
+        # the whole path, not the root-relative one.
+        deep = self._write("a/b/deep.txt")
+        self.app._feed_search_results("filename", [deep], Path(self.tmp), "txt")
+        self.app.copy_paths_to_clipboard()
+        self.assertEqual(self.app.panel.get_clipboard(), str(deep))
+
     def test_monitoring_reload_suspended_while_virtual(self):
         a = self._write("sub/a.txt")
         self.app._feed_search_results("filename", [a], Path(self.tmp), "txt")

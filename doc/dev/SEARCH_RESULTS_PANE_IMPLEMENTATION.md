@@ -171,6 +171,16 @@ now come from one string — see
 [Filename Normalization System](FILENAME_NORMALIZATION_SYSTEM.md), which also
 covers the Compare and Select checkbox that extends the same choice to pairing.
 
+**Copy Name(s)** (`copy_names_to_clipboard`) hands over that same root-relative
+path (#433). A bare `a.txt` on the clipboard says nothing about which of several
+scattered hits it was, and the point of the command is to carry off what the row
+says. It copies `name_key.rel_name`, **not** `compare_name`: a pasted name gets
+typed at a shell or an editor, where it has to address the file that is on disk,
+so it goes out verbatim instead of in the NFC form the column renders. On an
+ordinary directory pane `rel_name` *is* the basename, so nothing changes there.
+**Copy Full Path(s)** keeps its own meaning on both kinds of pane — the whole
+path, never the relative one.
+
 ---
 
 ## Scope
