@@ -107,17 +107,28 @@ class MountTarget:
         return f"{base}/{self.share}" if self.share else base
 
     @property
-    def key(self) -> str:
-        """The address as an **identity**, for deduplicating saved servers and
-        for naming a stored password.
+    def canonical_host(self) -> str:
+        """The host as an identity: lower case, and without a trailing
+        ``.local``.
 
-        The host is folded to lower case because DNS, mDNS and NetBIOS all are:
-        ``SynologyNAS`` and ``synologynas`` are one machine, and treating them
-        as two would put the same server in the list twice and stash two
-        passwords for it. The share is left alone — SMB share names preserve
-        case, and the mount path is built from them.
+        Both foldings are about one machine wearing several names. DNS, mDNS
+        and NetBIOS all ignore case, so ``SynologyNAS`` and ``synologynas``
+        are the same host. And Bonjour answers with the mDNS name —
+        ``SynologyNas.local`` — where a hand-typed address and the mount table
+        both say ``synologynas``. Left unfolded, the same NAS reached two ways
+        gets two rows in the list, two entries in the keychain, and a mounted
+        share that the list does not recognise as mounted.
         """
         host = self.host.lower()
+        return host[:-6] if host.endswith(".local") else host
+
+    @property
+    def key(self) -> str:
+        """The address as an **identity**, for deduplicating saved servers, for
+        naming a stored password, and for recognising a share in the mount
+        table. Built on :attr:`canonical_host`; the share is left alone, since
+        SMB share names preserve case and the mount path is built from them."""
+        host = self.canonical_host
         host = f"{host}:{self.port}" if self.port else host
         base = f"{self.scheme}://{host}"
         return f"{base}/{self.share}" if self.share else base
@@ -127,6 +138,13 @@ class MountTarget:
         """The Windows UNC form (``\\\\nas\\photo``) of an SMB address."""
         return "\\\\" + self.host + "".join(
             "\\" + part for part in self.share.split("/") if part)
+
+
+def canonical_host(host: str) -> str:
+    """:attr:`MountTarget.canonical_host` for a bare host string — what the
+    mount table and the discovery rows hand over."""
+    host = (host or "").strip().rstrip(".").lower()
+    return host[:-6] if host.endswith(".local") else host
 
 
 @dataclass(frozen=True)

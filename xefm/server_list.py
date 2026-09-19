@@ -167,14 +167,16 @@ def with_user(entry: ServerEntry, user: str) -> ServerEntry:
 def mounted_at(entry: ServerEntry, mounts: list[netmount.MountInfo]) -> str:
     """Where ``entry`` is mounted right now, or ``""``.
 
-    Matching is on host and share, with the account and the case ignored,
-    because the mount table writes the source its own way — macOS reports an SMB
-    mount as ``//me@nas/photo`` and Windows as ``\\\\nas\\photo``.
+    Matching is on host and share, with the account ignored and the host
+    canonicalised, because every party spells it differently: the user types
+    ``SynologyNAS``, Bonjour answers ``SynologyNas.local``, and the mount table
+    reports ``//me@synologynas/Videos`` on macOS or ``\\\\nas\\photo`` on
+    Windows.
     """
     target = entry.target
     if target is None:
         return ""
-    host = target.host.lower()
+    host = target.canonical_host
     share = target.share.strip("/").lower()
     for info in mounts:
         if info.kind != netmount.NETWORK:
@@ -183,6 +185,7 @@ def mounted_at(entry: ServerEntry, mounts: list[netmount.MountInfo]) -> str:
         if "@" in source:
             source = source.split("@", 1)[1]
         source_host, _, source_share = source.partition("/")
-        if source_host == host and source_share.strip("/") == share:
+        if (netmount.canonical_host(source_host) == host
+                and source_share.strip("/") == share):
             return info.path
     return ""

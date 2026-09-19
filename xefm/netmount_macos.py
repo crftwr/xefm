@@ -30,7 +30,7 @@ import time
 
 from xefm.log_manager import getLogger
 from xefm.netmount import (NETWORK, OTHER, REMOVABLE, DiscoveredServer,
-                           MountError, MountInfo)
+                           MountError, MountInfo, canonical_host)
 
 logger = getLogger("NetMountMac")
 
@@ -286,14 +286,15 @@ def _find_mount(target) -> str:
     ``f_mntfromname`` for an SMB mount reads ``//user@nas/photo``, so the match
     is on host and share with the user part and the case ignored.
     """
-    host = target.host.lower()
+    host = target.canonical_host
     share = target.share.strip("/").lower()
     for info in list_mounts():
         source = info.source.replace("\\", "/").lstrip("/").lower()
         if "@" in source:
             source = source.split("@", 1)[1]
         source_host, _, source_share = source.partition("/")
-        if source_host == host and source_share.strip("/") == share:
+        if (canonical_host(source_host) == host
+                and source_share.strip("/") == share):
             return info.path
     return ""
 
@@ -416,11 +417,14 @@ def _run_tool(argv: list[str], *, input: str = "", timeout: float = 20
 
 def _keychain_keys(target, user: str) -> list[str]:
     """The ``security`` arguments that identify one stored password: the account,
-    the server and the protocol. The share is deliberately *not* part of the key
-    — one password per account per server is how the login Keychain already
-    holds these, and it is what lets a second share on the same NAS connect
-    without asking again."""
-    return ["-a", user or "", "-s", target.host.lower(),
+    the server and the protocol.
+
+    The share is deliberately *not* part of the key — one password per account
+    per server is how the login Keychain already holds these, and it is what
+    lets a second share on the same NAS connect without asking again. The host
+    is the canonical one, so a password saved for ``synologynas`` is found
+    again when Bonjour hands back ``SynologyNas.local``."""
+    return ["-a", user or "", "-s", target.canonical_host,
             "-r", _KEYCHAIN_PROTOCOLS.get(target.scheme, "smb ")]
 
 

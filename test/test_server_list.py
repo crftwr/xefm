@@ -132,6 +132,12 @@ class ServerListTest(unittest.TestCase):
                                      "\\\\nas\\photo", "smb")]
         self.assertEqual(server_list.mounted_at(entry, mounts), "\\\\nas\\photo")
 
+    def test_a_bonjour_address_matches_a_mount_reported_without_local(self):
+        entry = server_list.ServerEntry("NAS", "smb://SynologyNas.local/Videos")
+        mounts = [netmount.MountInfo("/Volumes/Videos", netmount.NETWORK,
+                                     "//crftwr@synologynas/Videos", "smbfs")]
+        self.assertEqual(server_list.mounted_at(entry, mounts), "/Volumes/Videos")
+
     def test_another_share_on_the_same_server_is_not_a_match(self):
         entry = server_list.ServerEntry("NAS", "smb://nas/backup")
         mounts = [netmount.MountInfo("/Volumes/photo", netmount.NETWORK,

@@ -99,6 +99,28 @@ class ParseAddress(unittest.TestCase):
         self.assertNotEqual(netmount.parse_address("smb://nas/Photo").key,
                             netmount.parse_address("smb://nas/photo").key)
 
+    def test_local_comes_off_the_identity(self):
+        """Bonjour answers `SynologyNas.local`, a hand-typed address says
+        `synologynas`, and the mount table reports `//me@synologynas/Videos`.
+        One machine. Left unfolded it was two rows, two keychain entries, and a
+        mounted share the list did not recognise as mounted."""
+        bonjour = netmount.parse_address("smb://SynologyNas.local/Videos")
+        typed = netmount.parse_address("smb://synologynas/Videos")
+        self.assertEqual(bonjour.key, typed.key)
+        self.assertEqual(bonjour.canonical_host, "synologynas")
+        # ...and the address still shows and connects as Bonjour gave it, since
+        # the mDNS name is the one guaranteed to resolve.
+        self.assertEqual(bonjour.url, "smb://SynologyNas.local/Videos")
+
+    def test_canonical_host_on_a_bare_string(self):
+        for raw, expected in (("SynologyNas.local", "synologynas"),
+                              ("SynologyNas.local.", "synologynas"),
+                              ("NAS", "nas"),
+                              ("host.localdomain", "host.localdomain"),
+                              ("", "")):
+            with self.subTest(raw=raw):
+                self.assertEqual(netmount.canonical_host(raw), expected)
+
     def test_the_identity_keeps_the_port(self):
         target = netmount.parse_address("https://DAV.example.com:8443/files")
         self.assertEqual(target.key, "https://dav.example.com:8443/files")
@@ -449,6 +471,23 @@ class MacBackend(unittest.TestCase):
         target = netmount.parse_address("smb://nas/photo")
         with patch.object(self.mac, "list_mounts", return_value=mounts):
             self.assertEqual(self.mac._find_mount(target), "/Volumes/photo")
+
+    def test_a_bonjour_address_matches_the_mount_table(self):
+        """The mount table says `synologynas`; the address came from Bonjour
+        and says `SynologyNas.local`. The share is mounted either way."""
+        mounts = [netmount.MountInfo("/Volumes/Videos", netmount.NETWORK,
+                                     "//crftwr@synologynas/Videos", "smbfs")]
+        target = netmount.parse_address("smb://SynologyNas.local/Videos")
+        with patch.object(self.mac, "list_mounts", return_value=mounts):
+            self.assertEqual(self.mac._find_mount(target), "/Volumes/Videos")
+
+    def test_the_keychain_is_keyed_on_the_canonical_host(self):
+        """A password saved when the address was typed by hand has to be found
+        again when the address comes from Bonjour."""
+        typed = netmount.parse_address("smb://synologynas/Videos")
+        bonjour = netmount.parse_address("smb://SynologyNas.local/Documents")
+        self.assertEqual(self.mac._keychain_keys(typed, "me"),
+                         self.mac._keychain_keys(bonjour, "me"))
 
     def test_a_different_share_on_the_same_server_is_not_a_match(self):
         mounts = [netmount.MountInfo("/Volumes/photo", netmount.NETWORK,

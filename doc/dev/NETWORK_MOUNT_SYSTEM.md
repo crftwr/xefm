@@ -101,10 +101,23 @@ load-bearing**:
 - `key` folds the host to lower case. It is what two addresses are compared
   by: deduplicating saved servers, and naming a stored password.
 
-The host folds because DNS, mDNS and NetBIOS all ignore case — `SynologyNAS`
-and `synologynas` are one machine, and treating them as two would put the
-server in the list twice and stash two passwords for it. The share does **not**
-fold: SMB share names preserve case, and the mount path is built from them.
+`key` is built on `canonical_host`, which folds **two** things, both of them
+one machine wearing several names:
+
+- **case**, because DNS, mDNS and NetBIOS all ignore it; and
+- **a trailing `.local`**, because Bonjour answers with the mDNS name
+  (`SynologyNas.local`) where a hand-typed address and the mount table both say
+  `synologynas`.
+
+The share does **not** fold: SMB share names preserve case, and the mount path
+is built from them.
+
+The `.local` half was missed first time round and cost three separate things at
+once: the same NAS reached two ways got two rows in the picker, a password
+saved under one spelling was not found under the other, and a share mounted
+through a discovered row showed as *not* mounted because the mount table
+reports it without the suffix. One rule, applied in `key`, in the keychain
+arguments and in both mount-table matches, is what keeps those three honest.
 
 Folding in `url` as well, which is how this first shipped, meant someone who
 typed `SynologyNAS` saw `smb://synologynas/Videos` in the list and in the log.

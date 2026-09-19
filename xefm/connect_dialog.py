@@ -689,12 +689,10 @@ class _DiscoveredRow:
 
 def _host_key(text: str) -> str:
     """A host as an identity, for telling a discovered server apart from one
-    already in the list. ``.local`` comes off because Bonjour answers with it
-    and a saved row almost never has it — ``synologynas`` and
-    ``SynologyNas.local`` are the same machine."""
+    already in the list. The rule lives in :func:`xefm.netmount.canonical_host`
+    — the same one the keychain and the mount table are matched by."""
     target = netmount.parse_address(text)
-    host = (target.host if target is not None else text).lower()
-    return host[:-6] if host.endswith(".local") else host
+    return netmount.canonical_host(target.host if target is not None else text)
 
 
 def _row_label(row: Any) -> str:
