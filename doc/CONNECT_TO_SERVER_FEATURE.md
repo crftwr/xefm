@@ -186,6 +186,10 @@ use, and the mapping is not remembered across sign-ins (see
 resolve or nothing answered. Check the spelling, and check that the machine is
 awake; a NAS that has spun down can take a few seconds.
 
+**"<server> needs a user name and password"** — XeFM tried to connect as a
+guest, because no account was given and none was saved, and the server does not
+allow that. Most NAS boxes do not. Fill in the account and try again.
+
 **Authentication keeps failing on a Windows server** — try the user name
 qualified with the domain or the machine name (`WORKGROUP\me`, `nas\admin`).
 

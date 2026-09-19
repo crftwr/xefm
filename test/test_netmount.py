@@ -286,6 +286,28 @@ class MacBackend(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(self.mac._decode_password(raw), raw)
 
+    def test_the_error_an_smb_server_actually_answers_with_is_an_auth_error(self):
+        """EAUTH (80) is what a Synology — and most SMB servers — return for a
+        refused login. Leaving it out of the auth set sent the user to a
+        message box instead of back to the password field, which is a dead end
+        for the one failure that has an obvious next step."""
+        self.assertIn(80, self.mac._AUTH_ERRORS)
+        self.assertIn(81, self.mac._AUTH_ERRORS)
+
+    def test_a_refused_guest_connection_names_what_is_missing(self):
+        target = netmount.parse_address("smb://synologynas/Videos")
+        self.assertEqual(self.mac._describe(80, target, guest=True),
+                         "synologynas needs a user name and password.")
+
+    def test_a_refused_password_says_so(self):
+        target = netmount.parse_address("smb://synologynas/Videos")
+        self.assertIn("rejected", self.mac._describe(80, target, guest=False))
+
+    def test_an_unreachable_server_is_named(self):
+        target = netmount.parse_address("smb://synologynas/Videos")
+        self.assertTrue(
+            self.mac._describe(65, target).startswith("synologynas:"))
+
     def test_finding_an_already_mounted_share(self):
         mounts = [netmount.MountInfo("/Volumes/photo", netmount.NETWORK,
                                      "//me@NAS/Photo", "smbfs")]

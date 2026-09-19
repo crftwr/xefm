@@ -165,6 +165,8 @@ def is_available() -> bool:
 _AUTH_ERRORS = {
     1,       # EPERM
     13,      # EACCES
+    80,      # EAUTH — what an SMB server actually answers with
+    81,      # ENEEDAUTH
     -5045,   # ENETFSPWDNEEDSCHANGE
     -5046,   # ENETFSPWDPOLICY
     -5999,   # ENETFSACCOUNTRESTRICTED
@@ -177,6 +179,8 @@ _MESSAGES = {
     13: "The server rejected the user name or password.",
     1: "The server rejected the user name or password.",
     17: "That share is already mounted.",
+    80: "The server rejected the user name or password.",
+    81: "The server wants a user name and password.",
     51: "The network is unreachable.",
     60: "The server took too long to answer.",
     61: "The server refused the connection.",
@@ -210,15 +214,18 @@ def mount(target, user: str = "", password: str = "",
     if url is None:
         raise MountError(f"{target.url} is not an address macOS understands.")
 
+    # No credentials at all is a request to connect as a guest, which is what
+    # Finder's Guest button does — and what most NAS boxes refuse, so the
+    # failure message has to distinguish it from a wrong password.
+    guest = not user and not password
+
     open_options = NSMutableDictionary.dictionary()
     # XeFM collects the credentials itself, so the system's own authentication
     # sheet must stay shut: it cannot be driven from the TUI backend at all (no
     # window server session), and one code path for both backends is worth more
     # than the sheet's polish.
     open_options["UIOption"] = "NoUI"
-    if not user and not password:
-        # Nothing to authenticate with is a request to connect as a guest,
-        # which is what Finder's Guest button does.
+    if guest:
         open_options["Guest"] = True
 
     mount_options = NSMutableDictionary.dictionary()
@@ -241,7 +248,7 @@ def mount(target, user: str = "", password: str = "",
             existing = _find_mount(target)
             if existing:
                 return existing
-        raise MountError(_describe(status, target),
+        raise MountError(_describe(status, target, guest=guest),
                          auth=status in _AUTH_ERRORS)
 
     if mountpoints:
@@ -254,9 +261,14 @@ def mount(target, user: str = "", password: str = "",
     raise MountError("The share was mounted, but macOS did not say where.")
 
 
-def _describe(status: int, target) -> str:
+def _describe(status: int, target, *, guest: bool = False) -> str:
     """The sentence shown for a mount status, with the server named where that
     is the useful half of the message."""
+    if guest and status in _AUTH_ERRORS:
+        # Nothing was typed, so "rejected the user name or password" would be
+        # accusing the user of getting wrong something they were never asked
+        # for. Name what is actually missing.
+        return f"{target.host} needs a user name and password."
     message = _MESSAGES.get(status)
     if message is None:
         return f"Could not connect to {target.host} (error {status})."

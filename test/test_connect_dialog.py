@@ -191,6 +191,35 @@ class Flow(unittest.TestCase):
         save_pw.assert_not_called()
         save_server.assert_not_called()
 
+    def test_a_password_typed_into_the_form_reaches_the_mount(self):
+        """The whole chain, since an authentication failure looks identical
+        whether the server refused the password or XeFM never sent it."""
+        with patch.object(netmount, "supported_schemes", return_value=("smb",)), \
+             patch.object(netmount, "mount", return_value="/Volumes/Videos") as mount:
+            form = cd.ConnectFormDialog(
+                cd.ConnectRequest(address="smb://synologynas/Videos"),
+                on_accept=self.flow.connect)
+            form.user.text = "crftwr"
+            form.password.text = "hunter2"
+            form._accept()
+        self.assertEqual(mount.call_args.kwargs["user"], "crftwr")
+        self.assertEqual(mount.call_args.kwargs["password"], "hunter2")
+
+    def test_a_refused_guest_connection_reopens_the_form(self):
+        """Choosing a saved server with no stored password tries guest first;
+        a NAS refuses that, and the next thing the user sees has to be the
+        password field, not a dead end (EAUTH, error 80)."""
+        row = cd._PickerRow(ServerEntry("NAS", "smb://synologynas/Videos"), "")
+        error = netmount.MountError("synologynas needs a user name and "
+                                    "password.", auth=True)
+        with patch.object(netmount, "load_password", return_value=""), \
+             patch.object(netmount, "mount", side_effect=error), \
+             patch.object(cd, "show_message_box") as box:
+            self.flow._chosen(row)
+        box.assert_not_called()
+        self.assertEqual(len(self.forms), 1)
+        self.assertEqual(self.forms[0][0].address, "smb://synologynas/Videos")
+
     def test_an_address_the_form_could_not_have_produced_is_refused(self):
         with patch.object(cd, "show_message_box") as box, \
              patch.object(netmount, "mount") as mount:
