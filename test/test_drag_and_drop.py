@@ -10,6 +10,10 @@ Two directions, both GUI-only in practice but driven here headlessly:
   under the pointer; the FilePane calls ``on_drop`` and ``XeFMApp._on_drop``
   copies the dropped files into the target directory (a folder row targets that
   folder), refusing read-only / virtual destinations.
+
+Plus the window style that lets a drag-out begin at all when XeFM is not the
+front application (issue #431): the press the gesture starts on has to reach the
+window rather than being spent on bringing it forward.
 """
 
 import os
@@ -17,11 +21,13 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
+from xefm.config import config_manager  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.file_pane import FilePane, DRAG_THRESHOLD  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
@@ -291,6 +297,64 @@ class AppDragDrop(unittest.TestCase):
         self.app._on_drop("left", -1, ["/x/f.txt"])
         self.assertEqual(calls, [])
         self.assertTrue(any("search-results" in m for m in logs))
+
+
+class InactiveWindowStartsADrag(unittest.TestCase):
+    """A drag begins on the press, so the press has to arrive. macOS spends the
+    click that activates an application on activation alone unless the window
+    says otherwise, which left the first drag out of a background XeFM doing
+    nothing at all (issue #431). ``main`` asks the GUI window to take that click.
+    """
+
+    def setUp(self):
+        # main() publishes the resolved backend in the environment and (for GUI)
+        # loads the config through the process-wide manager, which reads it. Both
+        # are restored so a "gui" run here cannot leave later tests in desktop
+        # mode.
+        self._saved_env = os.environ.get("XEFM_BACKEND")
+        self._saved_config = (config_manager.config, config_manager._key_bindings)
+
+    def tearDown(self):
+        if self._saved_env is None:
+            os.environ.pop("XEFM_BACKEND", None)
+        else:
+            os.environ["XEFM_BACKEND"] = self._saved_env
+        config_manager.config, config_manager._key_bindings = self._saved_config
+
+    def _style(self, argv):
+        """The WindowStyle ``main`` hands the backend for ``argv`` (None when it
+        passes none)."""
+        seen = {}
+
+        def create_backend(name, **kwargs):
+            seen["style"] = kwargs.get("style")
+            return mock.MagicMock()
+
+        with mock.patch("sys.argv", ["xefm"] + argv), \
+                mock.patch("xefm.app.create_backend", create_backend), \
+                mock.patch("xefm.app.XeFMApp"):
+            xefm_app.main()
+        return seen["style"]
+
+    def test_the_gui_window_takes_the_first_click(self):
+        style = self._style(["--backend", "gui"])
+        self.assertIsNotNone(style)
+        self.assertTrue(style.takes_first_click)
+
+    def test_nothing_else_about_the_window_changes(self):
+        # The style is only there for that one axis: every other field still
+        # describes the ordinary resizable app window XeFM has always opened.
+        style = self._style(["--backend", "gui"])
+        self.assertFalse(style.frameless)
+        self.assertFalse(style.topmost)
+        self.assertTrue(style.activates)
+        self.assertTrue(style.resizable)
+
+    def test_the_terminal_backend_is_handed_no_style(self):
+        # A terminal cannot be an OS drag source and VTBackend takes no such
+        # kwarg; the window style is the native window's business.
+        self.assertIsNone(self._style(["--backend", "tui"]))
+
 
 
 if __name__ == "__main__":

@@ -264,6 +264,31 @@ The interface, its capability gating, the per-platform implementations and the
 `docs/drag_drop.md` and `puikit/backends/`. XeFM never branches on the backend,
 so nothing below depends on which one is active.
 
+### 5. The press the gesture starts on (issue #431)
+
+A drag has no separate "begin" event: it begins on a press that later travels
+far enough. So the press has to arrive, and on macOS the press that brings an
+application forward does not — AppKit spends it on activation unless the view
+answers `acceptsFirstMouse:` with YES. The symptom is precise: with XeFM in the
+background, the first press-and-drag on a row did nothing at all (`FilePane`
+never saw the `MOUSE_DOWN`, so `_press_index` stayed `-1` and no `MOUSE_DRAG`
+crossed the threshold); the user let go, pressed again, and only that second
+gesture dragged.
+
+That answer belongs to the window, not to a widget, so it is a `WindowStyle`
+axis in PuiKit — `takes_first_click` (puikit `docs/window_management.md`) — and
+XeFM asks for it where it builds the GUI backend in `main()`:
+
+```python
+backend_kwargs["style"] = WindowStyle(takes_first_click=True)
+```
+
+Nothing else about the window changes, and the terminal backend is handed no
+style at all. The cost is Finder's: the activating click now also lands on the
+row it is over, moving the cursor there as it raises the window. Windows already
+delivered that click (`DefWindowProc` answers `WM_MOUSEACTIVATE` with
+`MA_ACTIVATE`), so the field changes nothing there.
+
 ## FileManager Integration
 
 **Module**: `xefm/app.py`

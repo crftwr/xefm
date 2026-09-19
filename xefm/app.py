@@ -39,7 +39,7 @@ import sys
 from pathlib import Path as _StdPath
 from urllib.parse import urlsplit
 
-from puikit import EventType, Font, Item, Panel, PostEffect, Style, TextAttribute, Theme, VSplit, derive_theme, mix
+from puikit import EventType, Font, Item, Panel, PostEffect, Style, TextAttribute, Theme, VSplit, WindowStyle, derive_theme, mix
 from puikit.background import Shader, Wallpaper
 from puikit.posteffect import PRESETS as _POST_EFFECT_PRESETS
 from puikit.backends import create_backend
@@ -7090,10 +7090,22 @@ def main() -> None:
     # which is not one of XeFM's loggers and so has no route into the log pane
     # until it is given one.
     route_library_logger("puikit")
-    # The native GUI backend persists and restores the window's position and size
-    # via the NSWindow frame-autosave feature; curses and the web backend (whose
-    # window is a browser tab) ignore it, and WebBackend takes no such kwarg.
-    backend_kwargs = {"frame_autosave_name": "XeFMMainWindow"} if backend_name == "gui" else {}
+    backend_kwargs = {}
+    if backend_name == "gui":
+        # Both kwargs are the native window's business, which is why they are
+        # only passed here: the terminal has no window to speak of and the web
+        # backend's is a browser tab (WebBackend takes neither).
+        #
+        # Position and size persist and are restored across runs, via the
+        # NSWindow frame-autosave feature.
+        backend_kwargs["frame_autosave_name"] = "XeFMMainWindow"
+        # Take the click that brings XeFM forward, rather than letting the window
+        # system spend it on activation alone. A drag starts on the press, so a
+        # swallowed press started nothing: the first drag out of a background XeFM
+        # did nothing at all, and the user had to click the window forward and
+        # begin again (issue #431). Finder's bargain, and Finder's cost — that
+        # click now also lands on the row it is over.
+        backend_kwargs["style"] = WindowStyle(takes_first_click=True)
     # Ground the pixel backends' base (grid) font in the user's config: the base
     # unit — hence the on-screen text size — is derived from this font's glyph
     # box, so MONO_FONT_NAME and FONT_SIZE take effect here. The base font must be

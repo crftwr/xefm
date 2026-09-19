@@ -105,6 +105,12 @@ In Desktop mode you can drag files out of XeFM and drop them onto other applicat
 5. **Drag over** the target application or location
 6. **Release the mouse button** to drop the files
 
+### Dragging From a Background Window
+
+You do not have to bring XeFM forward first. Press on a row in an inactive XeFM window and drag, and the drag starts on that first gesture — the window comes forward at the same time.
+
+The same click also lands where you pressed, the way Finder behaves: clicking a file in a background XeFM window both raises the window and moves the cursor to that file.
+
 ### What Gets Dragged
 
 - **With a selection**: all selected files are dragged together
