@@ -219,6 +219,23 @@ poll `_scan_q.get(timeout=0.1)` and check `_cancel`, so they wind down promptly.
 Tests construct with `background=False`, running a full recursive walk plus
 one-shot classification synchronously (`_scan_sync`) — no threads, deterministic.
 
+The flag alone is only read *between* levels, and one level is an `iterdir()`
+plus a `stat()` per entry — the slow part on a remote pane or a woken disk. So
+`scan_level()` polls `_cancel` between entries too, and each run gets a single
+`DirectoryScanner` (its *lister*), registered in `_scanners` by
+`_start_coordinator` and passed down to `_seed_root` / `_scan_node` the same way
+the queues are. Before #438 neither half existed: the background path built a
+throwaway scanner per call, so `cancel()`'s loop had nothing to cancel, and
+`scan_level()` had nothing to check — a cancelled viewer kept listing to the end
+(400 entries and 4.4s past the cancel, in a 10ms-per-entry repro; 41 and 0.00s
+after). `iterdir()` is a single call and stays uninterruptible.
+
+A cancelled `scan_level()` returns a **partial** level. Nothing may insert that:
+`_scan_node` drops it on the `_stale(run)` check that follows, which is the only
+reason returning early is safe. `_lazy_scan` still builds its own scanner — it
+runs on the UI thread after the background pass is done, so there is no one to
+cancel it.
+
 **Scan runs.** `_cancel` alone cannot say whether a thread still owns the view,
 because a rescan (`_restart_scan`) clears it again for its own run while the
 previous run's threads are still finishing — and a byte-compare part-way through

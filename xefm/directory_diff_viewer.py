@@ -182,13 +182,23 @@ class DirectoryScanner:
         """List only the *immediate* children of ``directory`` (non-recursive),
         keyed by bare filename. Powers the progressive breadth-first scan: each
         level is scanned on demand so the tree can grow top-down without a full
-        upfront walk. Inaccessible entries are recorded, not raised."""
+        upfront walk. Inaccessible entries are recorded, not raised.
+
+        Honours :meth:`cancel` between entries, so a viewer closing mid-listing
+        stops rather than stat-ing the rest of a large or remote directory
+        (issue #438). The result is then **partial** and the caller must discard
+        it — the progressive workers do, via their staleness check. ``iterdir()``
+        is a single call and stays uninterruptible."""
         files: dict[str, FileInfo] = {}
+        if self._cancel:
+            return files
         try:
             children = list(directory.iterdir())
         except (OSError, PermissionError):
             return files
         for child in children:
+            if self._cancel:
+                return files
             name = child.name
             if not self.show_hidden and is_hidden_path(child):
                 continue
@@ -465,28 +475,35 @@ class DirectoryDiffView(Widget):
         return self._cancel or run != self._run
 
     def _start_coordinator(self) -> None:
-        """Spawn the coordinator for the current run, handing it the queues that
-        run owns so a later rescan swapping in fresh ones cannot reach it."""
+        """Spawn the coordinator for the current run, handing it the queues and
+        the :class:`DirectoryScanner` that run owns, so a later rescan swapping in
+        fresh ones cannot reach it. Registering the scanner is what gives
+        ``cancel()`` something to cancel: the listing in flight stops between
+        entries instead of running to completion (issue #438)."""
+        lister = DirectoryScanner(self.show_hidden)
+        self._scanners = [lister]
         self._thread = threading.Thread(
             target=self._scan_coordinator, daemon=True,
-            args=(self._run, self._scan_q, self._cmp_q))
+            args=(self._run, self._scan_q, self._cmp_q, lister))
         self._thread.start()
 
     def _scan_coordinator(self, run: int, scan_q: queue.PriorityQueue,
-                          cmp_q: queue.PriorityQueue) -> None:
+                          cmp_q: queue.PriorityQueue, lister: DirectoryScanner) -> None:
         """Background driver (the joinable thread). Scans the roots' top level so
         items appear immediately, starts the scanner + comparator workers, waits
         for both queues to drain (breadth-first, visible-first), then finalises.
 
-        The queues arrive as arguments rather than being read off ``self`` each
-        time: this run's threads must live and die on the pair they started with,
-        whatever a rescan has since installed."""
+        The queues and the lister arrive as arguments rather than being read off
+        ``self`` each time: this run's threads must live and die on the set they
+        started with, whatever a rescan has since installed. One lister serves the
+        whole run — it holds nothing but ``show_hidden`` and its cancel flag, and
+        the seed finishes before the worker that follows it starts."""
         try:
-            self._seed_root(run)
+            self._seed_root(run, lister)
             if self._stale(run):
                 return
             scanner = threading.Thread(target=self._scanner_worker, daemon=True,
-                                       args=(run, scan_q))
+                                       args=(run, scan_q, lister))
             comparator = threading.Thread(target=self._comparator_worker, daemon=True,
                                           args=(run, cmp_q))
             self._workers = [scanner, comparator]
@@ -508,11 +525,11 @@ class DirectoryDiffView(Widget):
                     self._dirty = True
                     self._scanning = False
 
-    def _seed_root(self, run: int) -> None:
+    def _seed_root(self, run: int, lister: DirectoryScanner) -> None:
         """Build the top level of the unified tree (both roots' immediate
         children) and queue every two-sided subdirectory for background scanning."""
-        left = DirectoryScanner(self.show_hidden).scan_level(self.left_path)
-        right = DirectoryScanner(self.show_hidden).scan_level(self.right_path)
+        left = lister.scan_level(self.left_path)
+        right = lister.scan_level(self.right_path)
         with self._lock:
             if self._stale(run):          # a rescan already seeded its own root
                 return
@@ -523,7 +540,8 @@ class DirectoryDiffView(Widget):
             self._reflow_locked()
             self._dirty = True
 
-    def _scanner_worker(self, run: int, q: queue.PriorityQueue) -> None:
+    def _scanner_worker(self, run: int, q: queue.PriorityQueue,
+                        lister: DirectoryScanner) -> None:
         """Pull directories off this run's scan queue and list one level each,
         enqueuing child directories (breadth-first) and file comparisons as it
         goes. ``q`` is the queue the run started with, so ``get`` and
@@ -539,19 +557,21 @@ class DirectoryDiffView(Widget):
                 continue
             try:
                 if not self._stale(run):
-                    self._scan_node(node, run)
+                    self._scan_node(node, run, lister)
             finally:
                 q.task_done()
 
-    def _scan_node(self, node: TreeNode, run: int) -> None:
+    def _scan_node(self, node: TreeNode, run: int, lister: DirectoryScanner) -> None:
         with self._lock:
             if node.children_scanned or self._stale(run):
                 return
             node.children_scanned = True      # claim it so duplicates skip
             left_root, right_root = node.left_path, node.right_path
-        left = DirectoryScanner(self.show_hidden).scan_level(left_root) if left_root else {}
-        right = DirectoryScanner(self.show_hidden).scan_level(right_root) if right_root else {}
+        left = lister.scan_level(left_root) if left_root else {}
+        right = lister.scan_level(right_root) if right_root else {}
         with self._lock:
+            # A cancelled listing returns a partial level, so this check is what
+            # keeps it out of the tree (see DirectoryScanner.scan_level).
             if self._stale(run):
                 return
             self._insert_children_locked(node, left, right)
@@ -732,6 +752,9 @@ class DirectoryDiffView(Widget):
             self._thread.join(timeout)
 
     def cancel(self) -> None:
+        """Stop the current run: the flag the threads poll, plus the listers they
+        are inside right now — a directory level can be a network round trip, and
+        the flag alone is only read between levels (issue #438)."""
         self._cancel = True
         for scanner in self._scanners:
             scanner.cancel()
@@ -746,7 +769,9 @@ class DirectoryDiffView(Widget):
         # and a comparator part-way through a large file cannot be interrupted,
         # so joining it would freeze the view for as long as that read takes. The
         # new run number is what makes the old threads harmless — they hold their
-        # own queues and stop reporting into the view (see _stale).
+        # own queues and stop reporting into the view (see _stale). cancel() also
+        # cuts short the level the old run is listing, before _start_coordinator
+        # registers a fresh lister for the new one.
         self.cancel()
         with self._lock:
             self._run += 1
@@ -758,9 +783,8 @@ class DirectoryDiffView(Widget):
             self._cmp_q = queue.PriorityQueue()
             self._scanned = self._dirs_scanned = self._dirs_total = 0
             self._compared = self._compare_total = 0
-            self._scanners = []
             self._workers = []
-        self._start_coordinator()
+        self._start_coordinator()   # installs this run's lister in _scanners
         if self._panel is not None:
             self._panel.request_animation_ticks(self._tick)
 
