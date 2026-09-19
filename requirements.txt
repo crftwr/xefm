@@ -17,14 +17,24 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.5.4 is the floor, and a hard one: before printing the menu-bar row the help
-# dialog asks ``MenuBar.takes_activation_key`` whether that key opens anything,
-# an AttributeError on any older PuiKit -- so opening help raises instead of
-# drawing. 1.5.4 also carries the Markdown fix the same dialog depends on: a
-# table cell holding a lone backslash (what ``go_root`` is bound to) came back an
-# empty code span, the backslash and its closing backtick both eaten as an
-# escape (issue #389).
-# 1.5.3 was the previous floor, and a soft one: it carries the UI-thread stall
+# 1.6.0 is the floor, and a hard one: on the macOS GUI the main window is
+# opened with ``WindowStyle(takes_first_click=True)`` so that a drag out of a
+# background XeFM starts on the first press rather than being spent bringing
+# the window forward (issue #431) -- an unexpected keyword, so a TypeError at
+# startup, on any older PuiKit. 1.6.0 also carries ``MenuBar.set_menu``, which
+# a config reload hands the rebuilt menu so it stops naming the key the user
+# just bound away from (issue #382), an AttributeError before it existed; and
+# the gate that quiets an OS menu bar under a modal layer, which XeFM never
+# calls but relies on -- without it a menu item stays live under an open dialog
+# and drives the file list behind it (issue #388).
+# 1.5.4 was the previous floor, and a hard one: before printing the menu-bar
+# row the help dialog asks ``MenuBar.takes_activation_key`` whether that key
+# opens anything, an AttributeError on any older PuiKit -- so opening help
+# raises instead of drawing. 1.5.4 also carries the Markdown fix the same
+# dialog depends on: a table cell holding a lone backslash (what ``go_root``
+# is bound to) came back an empty code span, the backslash and its closing
+# backtick both eaten as an escape (issue #389).
+# 1.5.3 was the floor before that, and a soft one: it carries the UI-thread stall
 # detector ``--ui-watchdog`` turns on (issue #407), a developer diagnostic, so an
 # older PuiKit costs the switch and nothing else -- XeFM says so at startup
 # rather than staying silent. It also carries the fix that makes the switch work
@@ -43,7 +53,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.5.4
+puikit>=1.6.0
 pygments
 boto3
 watchdog
