@@ -57,7 +57,13 @@ class StubFLM:
         self.last_filter = filter_pattern
         return self._result
 
+    def fail_next(self):
+        """Make the next listing come back unreadable, the way a directory that
+        is gone or off the network does."""
+        self._result = {"ok": False, "files": [], "file_info": {}}
+
     def apply_listing(self, pane, result):
+        pane["listing_ok"] = bool(result.get("ok"))
         pane["files"] = result["files"]
         pane["file_info"] = result["file_info"]
         if pane["files"]:
@@ -233,10 +239,25 @@ class RelistKeepsThePaneInPlace(unittest.TestCase):
         app = _app(left, _pane(FakePath("/tmp")), ["a", "b"])
         app._history = []
         app._refresh(left)
+        # The cursor resets immediately — that is pane state, not a listing.
         self.assertEqual(left["focused_index"], 0)
         self.assertEqual(left["scroll_offset"], 0)
-        self.assertEqual(app._history, ["/dir/new"])
+        # History waits for the listing: it is the record of where the user has
+        # been, so it is written once the directory has proved readable.
+        self.assertEqual(app._history, [])
         self.assertTrue(_drain_next(app))
+        self.assertEqual(app._history, ["/dir/new"])
+
+    def test_a_directory_that_cannot_be_read_never_enters_history(self):
+        """Otherwise the History picker fills up with paths that fail the moment
+        they are chosen."""
+        left = _pane(FakePath("/dir/gone"))
+        app = _app(left, _pane(FakePath("/tmp")), ["a", "b"])
+        app._history = []
+        app.flm.fail_next()
+        app._refresh(left)
+        self.assertTrue(_drain_next(app))
+        self.assertEqual(app._history, [])
 
     def test_virtual_pane_rebuilds_in_memory_with_no_worker(self):
         # A search-results feed has no directory to read: it must not be listed.

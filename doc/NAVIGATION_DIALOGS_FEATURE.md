@@ -47,8 +47,12 @@ The list opens immediately, whatever is on it. XeFM does not go and look at your
 favorites before showing them — checking a network share that is asleep, offline
 or behind a VPN you have not connected can take the better part of a minute per
 entry, and a few of those turned opening the list into a stall (issue #430). So
-nothing is contacted until you pick a row. Select an unreachable one and the
-pane says so in the log instead.
+nothing is contacted until you pick a row.
+
+Pick one that is not there and **the pane does not move**. It keeps the
+directory it was showing, with your cursor where you left it, and the log says
+`Directory not found: …` — one line, once. The same goes for the Drives and
+History pickers, which also name directories you cannot see from where you are.
 
 That means a favorite can be anywhere: a NAS, a USB disk you plug in on
 Tuesdays, an `ssh://` or `s3://` location. It sits quietly in the list whether

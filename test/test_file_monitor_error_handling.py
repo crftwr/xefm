@@ -267,27 +267,34 @@ class TestErrorLogging(unittest.TestCase):
         """Clean up test fixtures."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
-    def test_initialization_failure_logged(self):
-        """Test that initialization failures are logged with context."""
+    def test_initialization_failure_logged_quietly(self):
+        """A start that failed is a rung of the retry ladder, not a verdict.
+
+        It is recorded with context, at DEBUG — the log pane stays quiet until
+        the ladder has actually run out (see below). A single unreachable
+        directory used to put a dozen ERROR lines in front of the user for a
+        situation the pane had already reported in one.
+        """
         manager = FileMonitorManager(self.config, self.file_manager)
-        
+
         # Mock FileMonitorObserver to fail
         with patch('xefm.file_monitor_manager.FileMonitorObserver') as mock_observer_class:
             mock_observer = Mock()
             mock_observer.start.return_value = False
             mock_observer_class.return_value = mock_observer
-            
-            # Mock logger to capture error messages
-            with patch.object(manager.logger, 'error') as mock_error:
-                # Try to start monitoring
+
+            with patch.object(manager.logger, 'debug') as mock_debug, \
+                 patch.object(manager.logger, 'error') as mock_error, \
+                 patch.object(manager.logger, 'warning') as mock_warning:
                 manager._start_pane_monitoring('left', self.temp_path)
-                
-                # Should have logged error
-                mock_error.assert_called()
-                
-                # Check that error message contains context
-                error_call = mock_error.call_args[0][0]
-                self.assertIn('left', error_call.lower())
+
+                mock_error.assert_not_called()
+                mock_warning.assert_not_called()
+
+                failures = [c[0][0] for c in mock_debug.call_args_list
+                            if 'failed to start monitoring' in c[0][0].lower()]
+                self.assertTrue(failures, "Should record the failed start")
+                self.assertIn('left', failures[0].lower())
     
     def test_retry_attempt_logged(self):
         """Test that retry attempts are logged."""
@@ -307,24 +314,26 @@ class TestErrorLogging(unittest.TestCase):
             has_retry_log = any('retry' in str(call).lower() for call in debug_calls)
             self.assertTrue(has_retry_log, "Should log retry scheduling")
     
-    def test_permanent_failure_logged(self):
-        """Test that permanent failure after 3 retries is logged."""
+    def test_permanent_failure_is_the_one_line_the_ladder_prints(self):
+        """When retries *and* the polling fallback are spent, the user hears
+        about it exactly once — as a warning, because the pane still lists, it
+        just stops noticing changes until it moves."""
         manager = FileMonitorManager(self.config, self.file_manager)
-        
-        # Set up state for final failure
-        state = manager.monitoring_state['left']
-        state['retry_count'] = 3
-        
-        # Mock logger to capture error messages
-        with patch.object(manager.logger, 'error') as mock_error:
-            # This should trigger permanent failure
-            manager._schedule_retry('left', self.temp_path)
-            
-            # Should have logged permanent failure
-            error_calls = [str(call) for call in mock_error.call_args_list]
-            has_permanent_failure_log = any('permanently' in str(call).lower() or 'failed 3' in str(call).lower()
-                                           for call in error_calls)
-            self.assertTrue(has_permanent_failure_log, "Should log permanent failure")
+
+        with patch('xefm.file_monitor_manager.FileMonitorObserver') as mock_observer_class:
+            mock_observer = Mock()
+            mock_observer.start.return_value = False
+            mock_observer_class.return_value = mock_observer
+
+            with patch.object(manager.logger, 'warning') as mock_warning, \
+                 patch.object(manager.logger, 'error') as mock_error:
+                manager._attempt_polling_fallback('left', self.temp_path)
+
+                mock_error.assert_not_called()
+                self.assertEqual(len(mock_warning.call_args_list), 1)
+                said = mock_warning.call_args[0][0].lower()
+                self.assertIn('monitoring disabled', said)
+                self.assertIn('left', said)
 
 
 class TestObserverHealthCheck(unittest.TestCase):

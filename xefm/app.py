@@ -2372,8 +2372,18 @@ class XeFMApp:
             return
         pane["focused_index"] = 0
         pane["scroll_offset"] = 0
-        self._record_history_path(str(pane["path"]))
-        self._relist(pane, keep_cursor=False, on_ready=on_ready)
+
+        def landed(p: dict) -> None:
+            # History is the list of directories the user has *been* in, and a
+            # directory that could not be read is not one of them — recording it
+            # before the listing landed put unreachable paths in the History
+            # picker, where selecting one would fail all over again.
+            if p.get("listing_ok", True):
+                self._record_history_path(str(p["path"]))
+            if on_ready is not None:
+                on_ready(p)
+
+        self._relist(pane, keep_cursor=False, on_ready=landed)
 
     def _apply_filter(self, pane: dict, pattern: str, *, on_count=None) -> None:
         """Set ``pane``'s filename filter and re-list it off the UI thread — the
@@ -2777,6 +2787,56 @@ class XeFMApp:
         ``_refresh`` lists a real directory. Called by every navigation that sets
         a real ``pane['path']``; a no-op on a normal pane."""
         pane["virtual"] = None
+
+    #: The pane state a provisional jump puts back when the destination turns
+    #: out to be unreadable — everything the pane was showing, which is enough
+    #: to restore it without reading the old directory again.
+    _PANE_VIEW_KEYS = ("path", "virtual", "files", "file_info",
+                       "_listing_entries", "focused_index", "scroll_offset")
+
+    def _jump_pane_to(self, pane: dict, path: Path, *, log: str) -> None:
+        """Send ``pane`` to ``path`` — the move behind every picker that names a
+        directory the user cannot see: favorites, drives, history.
+
+        The destination is not probed first. Probing is what made the pickers
+        themselves slow to open (#430), and it would be the wrong place for the
+        wait anyway. So the move is **provisional**: the pane goes to ``path``,
+        the directory is read on a worker thread like any other, and if it
+        cannot be read the pane goes back to exactly what it was showing —
+        directory, entries, cursor and all, with no second read, because the
+        listing it had was never thrown away.
+
+        Without that, picking a favorite that is gone left the pane parked on a
+        path that was never there: no entries, no way to tell why, and a
+        filesystem watcher working its way down a retry ladder against it. The
+        one line the user gets now is the listing's own ("Directory not found:
+        …"), which is the whole story.
+
+        ``log`` is the line to write once the move has actually happened.
+        """
+        before = {k: pane.get(k) for k in self._PANE_VIEW_KEYS}
+        # Copied, not referenced: the clear() below empties the very set the
+        # pane holds, so a restore has to have its own.
+        marked = set(pane["selected_files"])
+        self._remember_cursor(pane)
+        self._exit_virtual(pane)
+        pane["path"] = path
+        pane["selected_files"].clear()
+
+        def landed(p: dict) -> None:
+            if p.get("listing_ok", True):
+                self.log_info(log)
+                self._restore_remembered_cursor(p)
+            else:
+                # The navigation did not happen — so nothing about it happened,
+                # marked files included. compute_listing has already said why,
+                # in one line, and nothing is added to it here.
+                p.update(before)
+                p["selected_files"].update(marked)
+            self.panel.render()
+
+        self._refresh(pane, on_ready=landed)
+        self.panel.render()
 
     def _open(self, pane: dict) -> None:
         files = pane["files"]
@@ -3948,14 +4008,8 @@ class XeFMApp:
         self.panel.render()
 
     def _go_to_drive(self, drive: dict) -> None:
-        pane = self.active_pane()
-        self._remember_cursor(pane)
-        self._exit_virtual(pane)
-        pane["path"] = Path(drive["path"])
-        pane["selected_files"].clear()
-        self._refresh(pane, on_ready=self._restore_remembered_cursor)
-        self.log_info(f"Drive: {drive['path']}")
-        self.panel.render()
+        self._jump_pane_to(self.active_pane(), Path(drive["path"]),
+                           log=f"Drive: {drive['path']}")
 
     def show_search(self) -> None:
         """Live filename search under the active pane (the Shift-F dialog): opens
@@ -4337,14 +4391,8 @@ class XeFMApp:
         self.panel.render()
 
     def _go_to_history(self, path: str) -> None:
-        pane = self.active_pane()
-        self._remember_cursor(pane)
-        self._exit_virtual(pane)
-        pane["path"] = Path(path)
-        pane["selected_files"].clear()
-        self._refresh(pane, on_ready=self._restore_remembered_cursor)
-        self.log_info(f"History: {path}")
-        self.panel.render()
+        self._jump_pane_to(self.active_pane(), Path(path),
+                           log=f"History: {path}")
 
     def show_programs(self) -> None:
         """The external-programs picker: choose a configured program and launch it
@@ -4467,13 +4515,8 @@ class XeFMApp:
                          daemon=True).start()
 
     def _jump_to_favorite(self, fav: dict) -> None:
-        pane = self.active_pane()
-        self._remember_cursor(pane)
-        self._exit_virtual(pane)
-        pane["path"] = Path(fav["path"])
-        self._refresh(pane, on_ready=self._restore_remembered_cursor)
-        self.log_info(f"Jumped to {fav['name']} ({fav['path']})")
-        self.panel.render()
+        self._jump_pane_to(self.active_pane(), Path(fav["path"]),
+                           log=f"Jumped to {fav['name']} ({fav['path']})")
 
     def _select_by_name(self, pane: dict, name: str) -> None:
         """Land the cursor on the entry called ``name`` (after create/rename).

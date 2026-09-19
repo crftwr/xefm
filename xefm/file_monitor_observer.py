@@ -300,7 +300,13 @@ class FileMonitorObserver:
         # silently forever, so without this a vanished directory would report a
         # healthy observer and never reach the retry/fallback chain (#416).
         if not self.path.is_dir():
-            self.logger.error(f"Cannot monitor - not an existing directory: {self.path}")
+            # Debug, not error: this is one rung of a ladder that has its own
+            # ending. The caller retries, falls back to polling, and says so
+            # once if everything is exhausted — while this line fired on every
+            # attempt, so a single missing directory produced five copies of it
+            # among a dozen other ERROR lines, for a fact the pane's own
+            # "Directory not found" had already stated.
+            self.logger.debug(f"Cannot monitor - not an existing directory: {self.path}")
             return False
         
         # Detect platform and monitoring API (Requirement 5.1, 5.2, 5.3)
