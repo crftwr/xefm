@@ -21,7 +21,7 @@ import sys
 
 import pytest
 
-from xefm.external_programs import resolve_command
+from xefm.external_programs import command_argv, resolve_command
 
 
 @pytest.fixture
@@ -78,3 +78,44 @@ def test_the_configured_command_is_never_mutated(on_path):
 def test_an_empty_command_is_handed_back_empty(on_path):
     env, _ = on_path
     assert resolve_command([], env) == []
+
+
+class TestCommandArgv:
+    """``command_argv`` — the config's two spellings of a command, one argv.
+
+    ``TEXT_EDITOR``/``TEXT_DIFF`` are documented in the config template as
+    "string or list", but the editor path only ever shlex-split them, so the
+    documented list spelling — ``['wt', 'nt', 'vim']``, an editor in a new
+    Windows Terminal tab — took XeFM down with an AttributeError instead
+    (#428).
+    """
+
+    def test_a_string_is_a_command_line(self):
+        assert command_argv("code --wait") == ["code", "--wait"]
+
+    def test_a_bare_name_is_one_argument(self):
+        assert command_argv("vim") == ["vim"]
+
+    def test_a_list_is_argv_as_written(self):
+        assert command_argv(["wt", "nt", "vim"]) == ["wt", "nt", "vim"]
+
+    def test_a_list_keeps_a_windows_path_intact(self):
+        """The reason the list spelling exists: a POSIX shlex split would eat
+        the backslashes of a path like this one."""
+        assert command_argv([r"C:\Program Files\Vim\vim.exe", "-p"]) == [
+            r"C:\Program Files\Vim\vim.exe", "-p"]
+
+    def test_a_tuple_is_a_list(self):
+        assert command_argv(("vim", "-p")) == ["vim", "-p"]
+
+    def test_the_configured_list_is_never_mutated(self):
+        configured = ["wt", "nt", "vim"]
+        argv = command_argv(configured)
+        argv.append("note.txt")
+        assert configured == ["wt", "nt", "vim"]
+
+    @pytest.mark.parametrize("unset", [None, "", []])
+    def test_nothing_configured_is_no_command(self, unset):
+        """Not ``shlex.split(None)``, which reads a command line from *stdin*
+        and would hang XeFM with its display already suspended."""
+        assert command_argv(unset) == []

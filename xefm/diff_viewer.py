@@ -22,7 +22,6 @@ of search); Esc closes.
 from __future__ import annotations
 
 import difflib
-import shlex
 import subprocess
 from typing import Any
 
@@ -37,7 +36,7 @@ from xefm.actions import ISEARCH
 from xefm.actions import FILE_DIFF as _CONTEXT
 from xefm.config import (find_action_for_event, format_key_for_display,
                          get_config, get_keys_for_action)
-from xefm.external_programs import resolve_command
+from xefm.external_programs import command_argv, resolve_command
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
@@ -447,7 +446,7 @@ class DiffViewer(Widget):
         if not tool:
             self._notify("No TEXT_DIFF tool is configured.")
             return
-        argv = (shlex.split(tool) if isinstance(tool, str) else list(tool))
+        argv = command_argv(tool)
         argv = argv + [str(self.path1), str(self.path2)]
         backend = getattr(self._panel, "backend", None)
         try:

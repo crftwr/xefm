@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import itertools
 import queue
-import shlex
 import subprocess
 import threading
 import time
@@ -45,7 +44,7 @@ from puikit.widgets import DragBar, show_message_box
 from puikit.widgets.base import Widget
 
 from xefm.dir_scan import is_hidden_path
-from xefm.external_programs import resolve_command
+from xefm.external_programs import command_argv, resolve_command
 from xefm.path import Path
 from xefm.str_format import abbreviate_path, format_size
 from xefm.text_viewer import (MONO, _ScrollBody, _header_bg, draw_status_bar,
@@ -1022,7 +1021,7 @@ class DirectoryDiffView(Widget):
         if not tool:
             self._notify("No TEXT_DIFF tool is configured.")
             return
-        argv = (shlex.split(tool) if isinstance(tool, str) else list(tool))
+        argv = command_argv(tool)
         argv = argv + [str(node.left_path), str(node.right_path)]
         backend = getattr(self._panel, "backend", None)
         try:
