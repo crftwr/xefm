@@ -383,6 +383,19 @@ Passwords are never in either store. They go to the OS:
 prompts for it, and then asks a second time to confirm, so it is written twice.
 Passing it as an argument instead would put it in the process list for every
 user on the machine to read, which is what makes the odd double-write worth it.
+
+**Every system tool here runs with `start_new_session=True`**, and that is not
+hygiene, it is the fix for a real failure. `security -w` does not read the
+stdin it is handed if it can open `/dev/tty` instead — and in the TUI
+`/dev/tty` is the terminal XeFM is drawing on. Saving a password printed
+`password data for new item:` over the file pane, waited for keystrokes that
+were going to XeFM, and timed out twenty seconds later. With no controlling
+terminal, `readpassphrase(3)` cannot open `/dev/tty` and falls back to stdin,
+which is where the password already was. The same reasoning covers `smbutil`,
+`umount` and `diskutil`, so they are all detached through the same wrapper —
+the invariant is "nothing in this module may reach for a terminal", and
+`test_netmount` asserts it for every call rather than for the one that was
+caught.
 Reading it back has its own wrinkle: `security -w` prints a password that is not
 plain ASCII as hex, and `123456` is also valid hex, so the hex is only undone
 when it decodes to printable text containing a non-ASCII character.

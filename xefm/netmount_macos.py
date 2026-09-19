@@ -364,7 +364,7 @@ def _run(argv: list[str], path: str) -> None:
     what the user needs in order to do something about it.
     """
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        proc = _run_tool(argv, timeout=30)
     except subprocess.TimeoutExpired:
         raise MountError(f"{os.path.basename(argv[0])} did not finish.") from None
     except OSError as e:
@@ -390,8 +390,28 @@ _KEYCHAIN_PROTOCOLS = {
 
 
 def _security(args: list[str], stdin: str = "") -> subprocess.CompletedProcess:
-    return subprocess.run(["/usr/bin/security", *args], input=stdin,
-                          capture_output=True, text=True, timeout=20)
+    return _run_tool(["/usr/bin/security", *args], input=stdin, timeout=20)
+
+
+def _run_tool(argv: list[str], *, input: str = "", timeout: float = 20
+              ) -> subprocess.CompletedProcess:
+    """Run one of the system tools, **with no controlling terminal**.
+
+    ``start_new_session`` is the whole point of this wrapper. Several of these
+    tools ask for input by opening ``/dev/tty`` rather than reading stdin —
+    ``security -w`` prompts for a password that way — and in the TUI
+    ``/dev/tty`` is the terminal XeFM is drawing on. The prompt lands in the
+    middle of the file list, the keystrokes meant for it go to XeFM, and the
+    tool waits until its timeout. Observed: saving a password took 20 seconds
+    and failed, with ``password data for new item:`` written over the pane.
+
+    Detached from the terminal, ``readpassphrase(3)`` cannot open ``/dev/tty``
+    and falls back to stdin, which is where the password already is. It is also
+    why the password is not passed as an argument: the process list is readable
+    by every user on the machine.
+    """
+    return subprocess.run(argv, input=input, capture_output=True, text=True,
+                          timeout=timeout, start_new_session=True)
 
 
 def _keychain_keys(target, user: str) -> list[str]:
@@ -594,12 +614,11 @@ def discover_servers(cancel):
 def list_shares(target) -> list[str]:
     """The disk shares a server offers, via ``smbutil view``.
 
-    Asked as a **guest** (``-g``), and with stdin closed. That is not a
-    limitation being shrugged at: ``smbutil`` takes a password only on its
-    command line, where every user on the machine could read it, and otherwise
-    prompts on ``/dev/tty`` — which in the TUI is the terminal XeFM is drawing
-    on. A prompt there would write into the file list and eat the user's
-    keystrokes. Guest or nothing.
+    Asked as a **guest** (``-g``). That is not a limitation being shrugged at:
+    ``smbutil`` takes a password only on its command line, where every user on
+    the machine could read it, and otherwise prompts on ``/dev/tty`` — see
+    :func:`_run_tool` for why nothing here is allowed near a terminal. Guest or
+    nothing.
 
     A server that refuses an anonymous query raises, and the caller lets the
     user type the share name instead.
@@ -607,10 +626,7 @@ def list_shares(target) -> list[str]:
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
     try:
-        proc = subprocess.run(
-            ["/usr/bin/smbutil", "view", "-g", f"//{target.host}"],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=20)
+        proc = _run_tool(["/usr/bin/smbutil", "view", "-g", f"//{target.host}"])
     except subprocess.TimeoutExpired:
         raise MountError(f"{target.host} did not answer.") from None
     except OSError as e:

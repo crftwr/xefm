@@ -393,6 +393,56 @@ class MacBackend(unittest.TestCase):
         self.assertEqual(set(self.mac._BONJOUR_SERVICES.values()),
                          {"smb", "afp"})
 
+    def test_no_system_tool_is_run_with_a_terminal(self):
+        """Every one of these must be detached from the controlling terminal.
+
+        ``security -w`` reads its password from ``/dev/tty`` when it can, not
+        from the stdin it was handed — so in the TUI it printed "password data
+        for new item:" over the file pane, waited for keystrokes that were
+        going to XeFM, and timed out twenty seconds later. Reproduced under a
+        real pty before this was fixed. The guard is ``start_new_session``, and
+        it belongs on every tool here, not just the one that was caught.
+        """
+        import subprocess
+
+        target = netmount.parse_address("smb://nas/photo")
+        calls = []
+
+        def record(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        with patch.object(self.mac.subprocess, "run", record):
+            self.mac.save_password(target, "me", "secret")
+            self.mac.load_password(target, "me")
+            self.mac.forget_password(target, "me")
+            self.mac.unmount("/Volumes/photo")
+            self.mac.eject("/Volumes/USB")
+            self.mac.list_shares(target)
+
+        self.assertEqual(len(calls), 6)
+        for argv, kwargs in calls:
+            with self.subTest(tool=argv[0]):
+                self.assertTrue(kwargs.get("start_new_session"),
+                                f"{argv[0]} may reach for /dev/tty")
+
+    def test_a_password_never_reaches_the_command_line(self):
+        """The process list is readable by every user on the machine."""
+        import subprocess
+
+        target = netmount.parse_address("smb://nas/photo")
+        seen = {}
+
+        def record(argv, **kwargs):
+            seen["argv"], seen["input"] = argv, kwargs.get("input", "")
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        with patch.object(self.mac.subprocess, "run", record):
+            self.mac.save_password(target, "me", "hunter2")
+        self.assertNotIn("hunter2", " ".join(seen["argv"]))
+        # It goes on stdin instead — twice, because -w prompts and confirms.
+        self.assertEqual(seen["input"], "hunter2\nhunter2\n")
+
     def test_finding_an_already_mounted_share(self):
         mounts = [netmount.MountInfo("/Volumes/photo", netmount.NETWORK,
                                      "//me@NAS/Photo", "smbfs")]

@@ -170,6 +170,9 @@ To remove a saved password, either forget the server with **Shift-Delete** (the
 password goes with it) or delete the entry in Keychain Access / Credential
 Manager directly.
 
+Saving happens after the connection succeeds, so a failure to save is reported
+in the log and costs you the saved password, not the connection.
+
 If the server rejects the credentials, XeFM says so and reopens the form with
 the address and account you typed — the password field comes back empty, ready
 for another attempt. Any other failure (no such server, no such share) is
