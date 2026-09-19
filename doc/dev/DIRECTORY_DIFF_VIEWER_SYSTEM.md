@@ -219,6 +219,27 @@ poll `_scan_q.get(timeout=0.1)` and check `_cancel`, so they wind down promptly.
 Tests construct with `background=False`, running a full recursive walk plus
 one-shot classification synchronously (`_scan_sync`) — no threads, deterministic.
 
+**Scan runs.** `_cancel` alone cannot say whether a thread still owns the view,
+because a rescan (`_restart_scan`) clears it again for its own run while the
+previous run's threads are still finishing — and a byte-compare part-way through
+a large file cannot be interrupted at all. So each run carries a number, `_run`,
+bumped by `_restart_scan`; the coordinator and both workers take it plus **their
+own queue objects** as arguments, and ask `_stale(run)` (cancelled *or*
+superseded) before touching the tree, the counters or the scan flags. Two
+consequences worth keeping:
+
+- A worker's `get` and its `task_done` always name the same queue. Reading
+  `self._cmp_q` for both let a rescan land in between, so `task_done` decremented
+  the queue the rescan had just installed — `ValueError: task_done() called too
+  many times` on the worker thread, and a `join` that returned before the new run
+  had actually finished (issue #429).
+- `_restart_scan` retires the old run instead of joining it. It runs on the UI
+  thread, and the joins it used to do (1s each for the coordinator and both
+  workers) froze the view for as long as the in-flight compare took.
+
+A retired worker drains its own queue without doing the work, so its
+coordinator's `join` returns and that thread exits too; nothing leaks.
+
 ## Active Side and Cross-Side File Operations
 
 The viewer tracks an **active side** (`self.active`, `"left"` or `"right"`),

@@ -7,8 +7,11 @@ navigation + rendering on the MemoryBackend (TUI + GUI profiles); see
 doc/dev/DIRECTORY_DIFF_VIEWER_SYSTEM.md.
 """
 
+import itertools
 import os
 import sys
+import threading
+import time
 
 import pytest
 
@@ -520,6 +523,54 @@ def test_rescan_preserves_expanded_state(trees):
     view._restart_scan()
     view.join()
     assert _find(view.root, "sub").is_expanded  # expansion survived the rescan
+
+
+def test_rescan_during_a_slow_compare_does_not_break_the_new_queues(tmp_path, monkeypatch):
+    """A rescan that lands while a file compare is still reading must not leave
+    the retired comparator reporting into the run that replaced it (issue #429).
+
+    It used to: the worker re-read ``self._cmp_q`` for its ``task_done``, so the
+    call landed on the queue the rescan had just installed —
+    ``ValueError: task_done() called too many times``, raised on the worker
+    thread, plus a ``join`` that returned before the new run had finished."""
+    left, right = tmp_path / "L", tmp_path / "R"
+    for side in (left, right):
+        side.mkdir()
+        for i in range(12):
+            (side / f"f{i}.txt").write_text("same")
+
+    started = threading.Event()
+    release = threading.Event()
+    real = DiffEngine.compare_file_content
+    first = itertools.count()
+
+    def slow(left_path, right_path):
+        # Only the first compare blocks — one big (or remote) file is enough.
+        if next(first) == 0:
+            started.set()
+            release.wait(10.0)
+        return real(left_path, right_path)
+
+    monkeypatch.setattr(DiffEngine, "compare_file_content", staticmethod(slow))
+
+    errors = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: errors.append(args))
+
+    view = DirectoryDiffView(Path(str(left)), Path(str(right)), background=True)
+    assert started.wait(10.0), "the comparator never reached the slow file"
+    view._restart_scan()          # what a copy/delete/'r' does, on the UI thread
+    view.join()                   # the new run finishes without waiting for it
+    assert not view._scanning
+    release.set()                 # now let the retired compare return
+    for worker in view._workers:
+        worker.join(5.0)
+    time.sleep(0.2)               # the retired thread's task_done, if any
+
+    assert not errors, f"worker thread raised: {[e.exc_value for e in errors]}"
+    # The new run's verdicts are complete and were not counted twice.
+    assert not any(n.difference_type is DifferenceType.PENDING
+                   for n in view._iter_nodes(view.root))
+    assert view._compared == view._compare_total
 
 
 def test_help_pushes_message_box(backend, trees):
