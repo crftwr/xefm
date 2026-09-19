@@ -98,6 +98,7 @@ class FilterListDialog(FocusContainer, Widget):
         ellipsis: str = "",
         elide_where: str = "end",
         on_remove: Callable[[Any], bool] | None = None,
+        remove_label: str = "remove",
         load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
     ):
         self.all_items = list(items)
@@ -117,6 +118,10 @@ class FilterListDialog(FocusContainer, Widget):
         #: how a row that is *not* removable (the Filter picker's "clear filter")
         #: stays put. ``None`` leaves the dialog with no remove key at all.
         self.on_remove = on_remove
+        #: The verb the hint line uses for the remove key. "remove" is right for
+        #: a list of remembered rows, and wrong for the Drives picker, where the
+        #: same key disconnects a share or ejects a disk.
+        self.remove_label = remove_label
         self._hint_cache: str | None = None
         self._panel: Any = None
         # Values currently passing the filter, parallel to ``self.list.items``.
@@ -238,7 +243,8 @@ class FilterListDialog(FocusContainer, Widget):
             if self.on_remove is not None:
                 keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
                 if keys:
-                    parts.append(f"{format_key_for_display(keys[0])} remove")
+                    parts.append(
+                        f"{format_key_for_display(keys[0])} {self.remove_label}")
             parts.append("Esc cancel")
             self._hint_cache = " · ".join(parts)
         return self._hint_cache
@@ -506,6 +512,7 @@ def show_filter_list(
     on_cancel: Callable[[], None] | None = None,
     on_accept_text: Callable[[str], None] | None = None,
     on_remove: Callable[[Any], bool] | None = None,
+    remove_label: str = "remove",
     region: tuple[float, float] | None = None,
     ellipsis: str = "…",
     elide_where: str = "end",
@@ -537,6 +544,9 @@ def show_filter_list(
     all. For the pickers whose rows accumulate — History and the ';' Filter
     prompt (#271); a list that comes from the config or from the system has
     nothing to forget, and without this hook shows no remove key.
+    ``remove_label`` names the key in the hint line: the Drives picker's
+    Shift-Delete disconnects a share or ejects a disk, which "remove" describes
+    badly enough to be worth a word of its own.
 
     ``load_more`` optionally streams extra rows in after the dialog opens: it is
     called once on a daemon worker thread with a ``threading.Event`` that is set
@@ -547,6 +557,7 @@ def show_filter_list(
     dialog = FilterListDialog(
         items, title=title, to_label=to_label, on_accept=on_accept, on_cancel=on_cancel,
         on_accept_text=on_accept_text, on_remove=on_remove,
+        remove_label=remove_label,
         ellipsis=ellipsis, elide_where=elide_where, load_more=load_more,
     )
     sw, sh = panel.backend.size_units

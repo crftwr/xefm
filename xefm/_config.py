@@ -340,6 +340,7 @@ class Config:
         'jump_to_path': ['Shift-J'],           # Jump to path
         'history': ['H'],                      # Show history for current pane
         'drives': ['D'],                # Show drives/volumes dialog
+        'connect_server': ['Shift-D'],  # Connect to a network server (macOS/Windows)
         
         # === Pane Management ===
         'sync_current_to_other': ['O'],        # Sync current pane directory to other pane
@@ -610,7 +611,7 @@ class Config:
     #     'go-to-sibling': go_to_sibling,
     # }
     # ...and bind them in KEY_BINDINGS above, like any built-in action:
-    #     'select-documents': ['Shift-D'],
+    #     'select-documents': ['Shift-Y'],
     #
     # An action name that already exists is ignored unless you say you meant it,
     # which also keeps the built-in reachable so you can wrap it:
@@ -808,6 +809,27 @@ class Config:
     #     {'name': 'NAS', 'path': 'ssh://nas/'},
     # ]
     DRIVE_LOCATIONS = None
+
+    # Connect to Server (Shift-D) - network servers you connect to often.
+    # macOS and Windows only; on Linux the dialog is not offered.
+    #
+    # These are listed above the servers you save from the dialog itself, and
+    # cannot be removed with Shift-Delete (this file is where they live, so
+    # delete them here). Nothing is contacted until you pick a row.
+    #
+    # Each entry needs 'url'; 'name' labels the row (the URL is used when it is
+    # missing) and 'user' prefills the account.
+    #
+    # NEVER put a password here. There is no field for one, and XeFM will not
+    # read one. Tick "Save password" in the connection form instead - it goes
+    # into the login keychain (macOS) or Credential Manager (Windows).
+    #
+    # NETWORK_SERVERS = [
+    #     {'name': 'NAS Photo',  'url': 'smb://nas/photo', 'user': 'me'},
+    #     {'name': 'NAS Backup', 'url': 'smb://nas/backup'},
+    #     {'name': 'Docs',       'url': 'https://dav.example.com/files'},
+    # ]
+    NETWORK_SERVERS = []
 
     # Performance settings
     MAX_LOG_MESSAGES = 1000

@@ -93,7 +93,8 @@ def test_local_drives_starts_from_the_configured_rows(with_drive_locations):
     with tempfile.TemporaryDirectory() as tmp:
         with_drive_locations([{"name": "Work", "path": tmp}])
         rows = xefm_app.XeFMApp._local_drives(
-            SimpleNamespace(_windows_drive_roots=lambda: []))
+            SimpleNamespace(_windows_drive_roots=lambda: [],
+                            _network_mount_drives=lambda: []))
 
     assert rows[0] == {"name": "Work", "path": tmp}
     assert "Home" not in [r["name"] for r in rows]

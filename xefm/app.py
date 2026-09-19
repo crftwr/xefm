@@ -72,7 +72,9 @@ from xefm.file_monitor_manager import FileMonitorManager
 from xefm.file_pane import FilePane
 from xefm.filter_list_dialog import show_filter_list
 from xefm.completion import FilepathCompleter
+from xefm.connect_dialog import open_connect_server, run_connecting
 from xefm.input_dialog import show_input
+from xefm import netmount
 from xefm.options import OptionSet
 from xefm.progressive_search_dialog import show_progressive_search
 from xefm import search_options as search_opts
@@ -2541,6 +2543,7 @@ class XeFMApp:
                 # --- dialogs and pickers ---
                 "file_details": (self.file_details, False),
                 "drives": (self.show_drives, False),
+                "connect_server": (self.show_connect_server, False),
                 "find_files": (self.show_search, False),
                 "find_in_files": (self.show_content_search, False),
                 "history": (self.show_history, False),
@@ -3080,6 +3083,14 @@ class XeFMApp:
             MenuItem("Go to Favorite…", on_select=self.show_favorites, shortcut=sc("favorites")),
             MenuItem("Jump to Path…", on_select=self.jump_to_path, shortcut=sc("jump_to_path")),
             MenuItem("Drives…", on_select=self.show_drives, shortcut=sc("drives")),
+            MenuItem("Connect to Server…", on_select=self.show_connect_server,
+                     shortcut=sc("connect_server"),
+                     # The cheap platform test rather than
+                     # ``netmount.is_supported()``: this predicate runs while
+                     # the menu is built, and the real check loads a system
+                     # framework the user may never need. The action itself
+                     # asks properly, and says so if the answer is no.
+                     enabled=lambda: platform.system() in ("Darwin", "Windows")),
             MenuItem("History…", on_select=self.show_history, shortcut=sc("history")),
             title="Go",
         )
@@ -3891,12 +3902,47 @@ class XeFMApp:
                                 drives.append({"name": v.name, "path": str(v)})
                 except Exception:
                     pass
+        drives.extend(self._network_mount_drives())
         seen, out = set(), []
         for d in drives:
             if d["path"] not in seen:
                 seen.add(d["path"])
                 out.append(d)
         return out
+
+    @staticmethod
+    def _network_mount_drives() -> list[dict]:
+        """Live network mounts as picker rows (issue #406).
+
+        On macOS these are already in the ``/Volumes`` scan above and dedupe
+        away. Windows is why this exists: XeFM connects **deviceless** by
+        default, and a connection with no drive letter appears in no
+        drive-letter listing — so without this row the picker could neither
+        reach the share nor offer to disconnect it.
+
+        Cheap by contract (``netmount.list_mounts`` is one syscall on macOS and
+        the mount table on Windows); nothing here may grow into a probe.
+        """
+        rows = []
+        for info in netmount.list_mounts():
+            if info.kind != netmount.NETWORK:
+                continue
+            rows.append({"name": XeFMApp._volume_name(info.path),
+                         "path": info.path})
+        return rows
+
+    @staticmethod
+    def _volume_name(path: str) -> str:
+        """The last component of a mount path, for a label.
+
+        Both separators are handled rather than ``os.path.basename``: the paths
+        that reach here include Windows UNC connections, and on a POSIX host
+        ``basename`` would hand back the whole ``\\\\nas\\photo`` unsplit.
+        That matters for the tests as much as for a machine — the naming is
+        worth being able to check anywhere.
+        """
+        trimmed = path.rstrip("/\\")
+        return trimmed.replace("\\", "/").rsplit("/", 1)[-1] or path
 
     @staticmethod
     def _windows_drive_roots() -> list[str]:
@@ -3996,20 +4042,165 @@ class XeFMApp:
         like favorites). Local and SSH rows are ready instantly; S3 buckets — a
         credentialed network scan — stream in on the dialog's background loader
         while it is already open (issue #274). Selecting an ``ssh://`` or
-        ``s3://`` row connects on first listing."""
+        ``s3://`` row connects on first listing.
+
+        Shift-Delete here **disconnects** a network mount or **ejects** a
+        removable volume (issue #406). That rides the picker's existing remove
+        hook: a row it declines stays put, which is exactly the behaviour every
+        other row needs.
+        """
         drives = self._local_drives() + self._ssh_drives()
-        show_filter_list(
+        if platform.system() in ("Darwin", "Windows"):
+            # First row, because it is the one thing in this list that is not
+            # already reachable — everything else is somewhere the machine can
+            # already go.
+            drives.insert(0, {"name": "Connect to Server…", "path": "",
+                              "action": "connect_server"})
+        self._drives_dialog = show_filter_list(
             self.panel, drives, title="Drives",
-            to_label=lambda d: f"{d['name']}  —  {d['path']}",
+            to_label=self._drive_label,
             on_accept=self._go_to_drive,
+            on_remove=self._drive_remove,
+            remove_label="disconnect",
             region=self._active_pane_region(),
             elide_where="middle",  # keep the path tail visible (issue #211)
             load_more=self._s3_drives_iter if self._s3_scan_available() else None)
         self.panel.render()
 
+    @staticmethod
+    def _drive_label(drive: dict) -> str:
+        """``name — path``, or just the name for the action row, which has no
+        path to show."""
+        path = drive.get("path") or ""
+        return f"{drive['name']}  —  {path}" if path else drive["name"]
+
     def _go_to_drive(self, drive: dict) -> None:
+        if drive.get("action") == "connect_server":
+            self.show_connect_server()
+            return
         self._jump_pane_to(self.active_pane(), Path(drive["path"]),
                            log=f"Drive: {drive['path']}")
+
+    # --- connecting to a server (issue #406) ---------------------------------
+
+    def show_connect_server(self) -> None:
+        """The Connect to Server picker: saved servers, which of them are
+        mounted, and a way to reach one that is not in the list yet. Mounting is
+        the operating system's (``xefm.netmount``), so what comes back is an
+        ordinary local path and the pane goes there like any other."""
+        if not netmount.is_supported():
+            show_message_box(
+                self.panel,
+                "Connecting to a server is only available on macOS and Windows.",
+                title="Connect to Server", icon="info")
+            self.panel.render()
+            return
+        open_connect_server(self.panel, on_connected=self._connected_to_server,
+                            region=self._active_pane_region())
+
+    def _connected_to_server(self, path: str, label: str) -> None:
+        """A share is mounted (or already was): send the pane into it."""
+        self._jump_pane_to(self.active_pane(), Path(path),
+                           log=f"Connected: {label} — {path}")
+
+    def _drive_remove(self, drive: dict) -> bool:
+        """Shift-Delete in the drives picker: disconnect a share, eject a disk,
+        or decline the row.
+
+        Always returns False, for two different reasons. A row that is neither a
+        network mount nor a removable volume — Home, a drive letter, an S3
+        bucket, an SSH host — has nothing to remove, and declining is what
+        leaves it in the list. A row that *does* have something to remove is not removed here
+        either: unmounting can take real time (a server that has gone away is
+        precisely when someone reaches for this), so it runs on a worker thread,
+        and a row that vanished before the work finished would be claiming an
+        outcome nobody knows yet. The picker closes instead, and the log says
+        what happened.
+        """
+        path = drive.get("path") or ""
+        info = netmount.classify(path) if path else None
+        if info is None or info.kind not in (netmount.NETWORK, netmount.REMOVABLE):
+            return False
+        dialog = getattr(self, "_drives_dialog", None)
+        if dialog is not None:
+            self.panel.remove_layer(dialog)
+            self._drives_dialog = None
+        self._release_volume(info)
+        return False
+
+    def _release_volume(self, info) -> None:
+        """Let go of a volume, then unmount or eject it on a worker thread.
+
+        XeFM's own hold on the volume is the likeliest reason for a "resource
+        busy" refusal, and the only one XeFM can do something about: a pane
+        sitting inside it and the filesystem watcher pointed at that directory.
+        So the panes are moved out first — to the volume's parent, which is
+        where the user would have gone anyway — and the watcher is re-pointed
+        before the unmount is attempted. Re-pointing is asynchronous (#410), so
+        the worker waits for the monitor to settle rather than racing it.
+        """
+        ejecting = info.kind == netmount.REMOVABLE
+        name = self._volume_name(info.path)
+        escape = Path(self._volume_parent(info.path))
+        for pane in (self.pm.left_pane, self.pm.right_pane):
+            if self._inside_volume(pane.get("path"), info.path):
+                self._jump_pane_to(pane, escape,
+                                   log=f"Left {info.path} before disconnecting")
+        self._sync_monitored_dirs()
+
+        def work(_cancel) -> str:
+            self.file_monitor.wait_for_idle(2.0)
+            if ejecting:
+                netmount.eject(info.path)
+            else:
+                netmount.unmount(info.path)
+            return info.path
+
+        def done(_result, error, cancelled) -> None:
+            if cancelled:
+                return
+            if error is None:
+                self.log_info(f"{'Ejected' if ejecting else 'Disconnected'}: "
+                              f"{info.path}")
+            else:
+                show_message_box(self.panel, str(error),
+                                 title="Eject" if ejecting else "Disconnect",
+                                 icon="error")
+            self.panel.render()
+
+        run_connecting(self.panel,
+                       f"{'Ejecting' if ejecting else 'Disconnecting'} {name}…",
+                       work, done, title="Eject" if ejecting else "Disconnect")
+
+    @staticmethod
+    def _volume_parent(volume: str) -> str:
+        """Where to send a pane that is standing on a volume about to go away.
+
+        ``/Volumes`` for a Mac volume: local, instant, and where the user would
+        have gone anyway. Home for everything else, because the alternatives are
+        not directories to stand in — the parent of a deviceless UNC connection
+        is the *server* (``\\\\nas``), and listing that would be a network
+        round trip against the very machine being disconnected from, while the
+        parent of ``Z:\\`` is nothing at all.
+        """
+        parent = os.path.dirname(volume.rstrip("/\\"))
+        if parent and not parent.startswith("\\\\"):
+            return parent
+        return os.path.expanduser("~")
+
+    @staticmethod
+    def _inside_volume(pane_path, volume: str) -> bool:
+        """Whether a pane is standing on the volume or somewhere below it.
+        String comparison, not ``resolve()``: this is asked about a volume that
+        may be half gone already, and no navigation in XeFM resolves paths."""
+        try:
+            path = str(pane_path)
+        except Exception:
+            return False
+        root = volume.rstrip("/\\")
+        if not root:
+            return False
+        return path == root or path == volume or path.startswith(root + os.sep)
 
     def show_search(self) -> None:
         """Live filename search under the active pane (the Shift-F dialog): opens

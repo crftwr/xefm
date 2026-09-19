@@ -211,6 +211,44 @@ class S3Drives(unittest.TestCase):
             self.assertTrue(xefm_app.XeFMApp._aws_configured())
 
 
+class NetworkMountRows(unittest.TestCase):
+    """Live network mounts become picker rows. On Windows this is the only way
+    a deviceless connection is reachable at all — it has no drive letter, so
+    the letter scan cannot see it."""
+
+    def _rows(self, mounts):
+        from xefm import netmount
+        with patch.object(netmount, "list_mounts", return_value=mounts):
+            return xefm_app.XeFMApp._network_mount_drives()
+
+    def test_a_deviceless_unc_connection_becomes_a_row(self):
+        from xefm import netmount
+        rows = self._rows([netmount.MountInfo("\\\\nas\\photo",
+                                              netmount.NETWORK,
+                                              "\\\\nas\\photo")])
+        self.assertEqual(rows, [{"name": "photo", "path": "\\\\nas\\photo"}])
+
+    def test_local_volumes_are_not_network_rows(self):
+        from xefm import netmount
+        self.assertEqual(
+            self._rows([netmount.MountInfo("/Volumes/USB", netmount.REMOVABLE),
+                        netmount.MountInfo("/", netmount.OTHER)]), [])
+
+    def test_a_mac_share_dedupes_against_the_volumes_scan(self):
+        """It is already there from ``/Volumes``; the row must not double up."""
+        from xefm import netmount
+        app = _bare_app()
+        mounts = [netmount.MountInfo("/Volumes/photo", netmount.NETWORK,
+                                     "//me@nas/photo", "smbfs")]
+        with patch("xefm.app.platform.system", return_value="Darwin"), \
+             patch("xefm.app.get_drive_locations", return_value=[]), \
+             patch.object(netmount, "list_mounts", return_value=mounts), \
+             patch("xefm.app.Path") as path_cls:
+            path_cls.return_value.exists.return_value = False
+            paths = [d["path"] for d in app._local_drives()]
+        self.assertEqual(paths.count("/Volumes/photo"), 1)
+
+
 class DrivesPickerWiring(unittest.TestCase):
     """``show_drives`` opens with only the instant (local + SSH) rows; the S3
     scan rides the dialog's background loader — or is absent entirely when AWS
@@ -231,7 +269,27 @@ class DrivesPickerWiring(unittest.TestCase):
 
     def test_eager_rows_never_include_s3(self):
         _app, call = self._show(True)
-        self.assertEqual([r["path"] for r in call.args[1]], ["/h"])
+        # The action row (Connect to Server, no path) is not a drive; what this
+        # is about is that no bucket was scanned before the dialog opened.
+        self.assertEqual([r["path"] for r in call.args[1] if r["path"]], ["/h"])
+
+    def test_connect_to_server_is_the_first_row(self):
+        with patch("xefm.app.platform.system", return_value="Darwin"):
+            _app, call = self._show(False)
+        first = call.args[1][0]
+        self.assertEqual(first["action"], "connect_server")
+        self.assertEqual(first["path"], "")
+
+    def test_no_connect_row_on_linux(self):
+        with patch("xefm.app.platform.system", return_value="Linux"):
+            _app, call = self._show(False)
+        self.assertNotIn("connect_server",
+                         [r.get("action") for r in call.args[1]])
+
+    def test_the_remove_key_is_offered_as_disconnect(self):
+        _app, call = self._show(False)
+        self.assertEqual(call.kwargs.get("remove_label"), "disconnect")
+        self.assertIsNotNone(call.kwargs.get("on_remove"))
 
     def test_s3_scan_attached_as_background_loader(self):
         app, call = self._show(True)
