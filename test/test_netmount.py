@@ -533,55 +533,69 @@ class MacBackend(unittest.TestCase):
         self.assertEqual(calls, ["//nas", "//me@nas",
                                  "//nas.local", "//me@nas.local"])
 
-    def test_a_typed_password_beats_the_one_already_stored(self):
-        """The reported bug, and the reason it looked like the form was
-        ignoring what was typed: a stored password that has stopped working
-        made a *correct* one unusable. Standing aside for the stored entry
-        meant the listing failed on it, the failure reopened the form, and the
-        password typed there was discarded in favour of the same stale entry —
-        with the mount that would have replaced it never reached."""
-        lent = []
-        target = netmount.parse_address("smb://nas/x")
-        with patch.object(self.mac, "load_password", return_value="stale"), \
-             patch.object(self.mac, "save_password",
-                          side_effect=lambda t, u, p: lent.append(p)), \
-             patch.object(self.mac, "forget_password") as forget:
-            with self.mac._lend_to_the_keychain(target, "me", "fresh"):
-                self.assertEqual(lent, ["fresh"])
-        # ...and what was there is put back, not deleted.
-        self.assertEqual(lent, ["fresh", "stale"])
-        forget.assert_not_called()
+    def test_the_guest_attempt_comes_before_any_password(self):
+        """A server that answers anonymously never sees a password on a
+        command line at all."""
+        import subprocess
 
-    def test_a_lent_password_is_removed_where_there_was_nothing(self):
-        target = netmount.parse_address("smb://nas/x")
-        with patch.object(self.mac, "load_password", return_value=""), \
-             patch.object(self.mac, "save_password") as save, \
-             patch.object(self.mac, "forget_password") as forget:
-            with self.mac._lend_to_the_keychain(target, "me", "fresh"):
-                save.assert_called_once()
-            forget.assert_called_once()
+        calls = []
 
-    def test_nothing_is_touched_when_the_stored_password_is_the_typed_one(self):
-        target = netmount.parse_address("smb://nas/x")
-        with patch.object(self.mac, "load_password", return_value="same"), \
-             patch.object(self.mac, "save_password") as save, \
-             patch.object(self.mac, "forget_password") as forget:
-            with self.mac._lend_to_the_keychain(target, "me", "same"):
-                pass
-        save.assert_not_called()
-        forget.assert_not_called()
+        def fake(argv, **kwargs):
+            calls.append(list(argv))
+            return subprocess.CompletedProcess(argv, 68, stdout="", stderr="no")
 
-    def test_the_keychain_is_put_back_even_when_the_listing_raises(self):
-        lent = []
-        target = netmount.parse_address("smb://nas/x")
-        with patch.object(self.mac, "load_password", return_value="stale"), \
-             patch.object(self.mac, "save_password",
-                          side_effect=lambda t, u, p: lent.append(p)), \
-             patch.object(self.mac, "forget_password"):
-            with self.assertRaises(RuntimeError):
-                with self.mac._lend_to_the_keychain(target, "me", "fresh"):
-                    raise RuntimeError("the server hung up")
-        self.assertEqual(lent, ["fresh", "stale"])
+        target = netmount.parse_address("smb://nas")
+        with patch.object(self.mac, "_run_tool", fake):
+            with self.assertRaises(netmount.MountError):
+                self.mac.list_shares(target, "me", "secret")
+        self.assertIn("-g", calls[0])
+        self.assertNotIn("secret", " ".join(calls[0]))
+        self.assertTrue(any("secret" in " ".join(c) for c in calls[1:]),
+                        "the credentialed attempt never ran")
+
+    def test_the_credential_url_escapes_what_would_reparse(self):
+        """A password holding @ : or / would otherwise be read as part of the
+        URL's structure and the wrong thing sent."""
+        self.assertEqual(self.mac._credential_url("me", "p@ss:w/rd", "nas"),
+                         "//me:p%40ss%3Aw%2Frd@nas")
+        self.assertEqual(self.mac._credential_url("dom\\me", "x", "nas"),
+                         "//dom%5Cme:x@nas")
+
+    def test_no_password_means_no_credential_url(self):
+        """With only an account there is nothing to put on a command line —
+        and the attempt is still worth making, because a session already open
+        to that server is reused."""
+        import subprocess
+
+        calls = []
+
+        def fake(argv, **kwargs):
+            calls.append(argv[-1])
+            return subprocess.CompletedProcess(argv, 68, stdout="", stderr="no")
+
+        target = netmount.parse_address("smb://nas")
+        with patch.object(self.mac, "_run_tool", fake):
+            with self.assertRaises(netmount.MountError):
+                self.mac.list_shares(target, "me")
+        self.assertIn("//me@nas", calls)
+        self.assertFalse(any(":" in c.split("@")[0] for c in calls if "@" in c))
+
+    def test_a_password_is_kept_out_of_the_error(self):
+        """The tool's message is the one thing from this call that reaches a
+        log line and a dialog."""
+        import subprocess
+
+        def fake(argv, **kwargs):
+            return subprocess.CompletedProcess(
+                argv, 68, stdout="",
+                stderr="smbutil: could not open //me:hunter2@nas")
+
+        target = netmount.parse_address("smb://nas")
+        with patch.object(self.mac, "_run_tool", fake):
+            with self.assertRaises(netmount.MountError) as caught:
+                self.mac.list_shares(target, "me", "hunter2")
+        self.assertNotIn("hunter2", str(caught.exception))
+        self.assertIn("***", str(caught.exception))
 
     def test_the_keychain_is_searched_under_finder_s_spelling_first(self):
         """Finder files a Bonjour-discovered server under its *service* name,

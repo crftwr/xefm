@@ -21,12 +21,12 @@ Only :mod:`xefm.netmount` imports this module.
 
 from __future__ import annotations
 
-import contextlib
 import ctypes
 import ctypes.util
 import os
 import queue
 import re
+import urllib.parse
 import subprocess
 import time
 
@@ -710,29 +710,36 @@ def discover_servers(cancel):
 def list_shares(target, user: str = "", password: str = "") -> list[str]:
     """The disk shares a server offers, via ``smbutil view``.
 
-    Two attempts, because two things work and a third does not:
+    Attempted as a guest first, and then — where credentials were given — as
+    that account. A server that answers neither way raises, and the caller
+    falls back to letting the user type the share name. Administrative shares
+    (``C$``, ``IPC$``) are left out, as they are in Finder.
 
-    - ``-g``, as a guest. Right for an open share, and refused outright by a
-      NAS with accounts — a Synology answers ``Authentication error``.
-    - ``//user@host``, which authenticates out of the **login Keychain**, or
-      out of a session already open to that server.
+    **The password goes on the command line, and that is a deliberate choice
+    with a real cost.** ``smbutil`` has no other channel for one: it does not
+    read stdin (measured — an unknown account failed in 0.3 s without touching
+    the pipe), and it does not authenticate from the login Keychain either.
+    That second point cost a long investigation to establish, because every
+    measurement that appeared to show the Keychain working turned out to have
+    been made with a share from that server still mounted, where ``smbutil``
+    reuses the open session and needs no credentials at all. Tested with the
+    correct password placed in the Keychain by hand, under exactly the key
+    XeFM writes, with no session open: refused. So the Keychain is not a
+    channel XeFM can use here.
 
-    A password cannot be handed to ``smbutil`` directly. Its only argument for
-    one is on the command line, where the process list carries it to every
-    user on the machine, and it does not read one from stdin — measured: an
-    unknown account failed in 0.3 s without ever reading the pipe. So a
-    password given here is spent on the Keychain, by
-    :func:`_lend_to_the_keychain`, which is the one channel left.
+    What that costs: for as long as the process lives — about two seconds —
+    the password is in its argument vector, which on macOS any user of the
+    machine can read out of ``ps``. Finder does not have to make this trade
+    because it has private API for it. The exposure is kept as small as the
+    tool allows:
 
-    **What is not established** is whether the Keychain alone is enough
-    against a server with no session open to it. Every measurement that
-    appeared to show it working was made either with a share from that NAS
-    still mounted — ``smbutil`` reuses the session and needs no credentials at
-    all — or with a password the server had stopped accepting. The two look
-    identical from here, and telling them apart needs a password known to be
-    current, which this end cannot supply. If the lend turns out not to be
-    read, the remaining options are the command line (rejected above) and
-    dropping authenticated listing on macOS.
+    - the **guest** attempt goes first, so a server that answers anonymously
+      never sees a password on a command line at all;
+    - the credentialed form is built in one place, :func:`_credential_url`,
+      and the argument vector is never logged, never put in an exception
+      message, and never returned;
+    - it is only ever built when the caller actually has a password, which
+      means the user typed one into the form for this connection.
     """
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
@@ -740,71 +747,61 @@ def list_shares(target, user: str = "", password: str = "") -> list[str]:
     attempts = []
     for host in _mdns_alternatives(target.host):
         attempts.append(["-g", f"//{host}"])
-        if user:
+        if user and password:
+            attempts.append([_credential_url(user, password, host)])
+        elif user:
+            # No password to offer, but a session already open to this server
+            # is reused, which is the one case this still succeeds in.
             attempts.append([f"//{user}@{host}"])
+
     last = "the server refused the request"
-    with _lend_to_the_keychain(target, user, password):
-        for args in attempts:
-            try:
-                proc = _run_tool(["/usr/bin/smbutil", "view", *args])
-            except subprocess.TimeoutExpired:
-                raise MountError(f"{target.host} did not answer.") from None
-            except OSError as e:
-                raise MountError(f"Could not run smbutil: {e}") from None
-            if proc.returncode == 0:
-                return _parse_shares(proc.stdout)
-            detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-            if detail:
-                last = detail[-1]
+    for args in attempts:
+        try:
+            proc = _run_tool(["/usr/bin/smbutil", "view", *args])
+        except subprocess.TimeoutExpired:
+            # Deliberately not naming the command: its arguments carry the
+            # password, and TimeoutExpired carries its command.
+            raise MountError(f"{target.host} did not answer.") from None
+        except OSError:
+            raise MountError("Could not run smbutil.") from None
+        if proc.returncode == 0:
+            return _parse_shares(proc.stdout)
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        if detail:
+            last = _scrubbed(detail[-1], password)
     raise MountError(f"{target.host}: {last}", auth=True)
 
 
-@contextlib.contextmanager
-def _lend_to_the_keychain(target, user: str, password: str):
-    """Put ``password`` where ``smbutil`` will look, for the listing only.
+def _scrubbed(message: str, password: str) -> str:
+    """A tool's own words, with the password taken out of them.
 
-    **What the user just typed wins.** It is the newest thing anyone knows
-    about this account, so it goes in even when the Keychain already holds
-    something — and *especially* then, because what it usually holds in that
-    case is a password that has stopped working. Standing aside for the stored
-    one made a stale entry unfixable: the listing failed on it, the failure
-    reopened the form, the password typed there was discarded in favour of the
-    same stale entry, and the mount that would have saved a corrected one was
-    never reached. Observed on a real NAS.
-
-    **The Keychain is left exactly as it was found.** Whatever was there is
-    read first and written back on the way out; where there was nothing, the
-    lent entry is removed. Browsing a server neither leaves a credential the
-    user did not ask to keep nor destroys one they did. Keeping a password is
-    still the mount's job, on success, and still only when asked.
+    Belt and braces: the messages seen so far name no URL, but they are the
+    one thing from this call that reaches a log line and a dialog, and a
+    future ``smbutil`` that echoes what it was given would put the password
+    in both.
     """
-    if not (password and user):
-        yield
-        return
-    try:
-        existing = load_password(target, user)
-    except Exception as e:  # noqa: BLE001 — a Keychain that will not answer
-        logger.warning(f"Could not read the keychain for {target.host}: {e}")
-        yield
-        return
-    if existing == password:
-        yield  # already what we would write; touching it changes nothing
-        return
-    save_password(target, user, password)
-    try:
-        yield
-    finally:
-        try:
-            if existing:
-                save_password(target, user, existing)
-            else:
-                forget_password(target, user)
-        except Exception as e:  # noqa: BLE001
-            # Loud: the user's own stored password is what is at stake, and
-            # this is the one path that can lose it.
-            logger.error(
-                f"Could not put the keychain entry for {target.host} back as "
-                f"it was: {e}")
+    if not password:
+        return message
+    for form in (password, urllib.parse.quote(password, safe="")):
+        if form:
+            message = message.replace(form, "***")
+    return message
+
+
+def _credential_url(user: str, password: str, host: str) -> str:
+    """``//user:password@host`` for ``smbutil``, percent-encoded.
+
+    Encoding is not decoration: a password containing ``@``, ``:`` or ``/``
+    would otherwise be parsed as part of the URL's structure and the wrong
+    thing sent. Everything outside the unreserved set is escaped, which is
+    what the SMB URL scheme asks for.
+
+    The one place the password is put on a command line. Keep it that way:
+    the argument vector this builds must not reach a log line, an exception
+    message or a return value — see :func:`list_shares` for why.
+    """
+    return (f"//{urllib.parse.quote(user, safe='')}:"
+            f"{urllib.parse.quote(password, safe='')}@{host}")
 
 
 def _parse_shares(output: str) -> list[str]:

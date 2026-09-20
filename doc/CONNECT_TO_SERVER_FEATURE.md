@@ -108,10 +108,16 @@ share list appears — you do not have to know a share name, and you do not have
 to tick anything. **Save password** only decides whether the password is kept
 for next time.
 
-What you type there is used even when a password for that account is already
-saved. It has to be: a saved password that has stopped working is exactly when
-you would be typing one, and deferring to the stored one made a correct
-password unusable. Your keychain is left as it was either way.
+What you type there is used directly, not looked up: on macOS the tool that
+asks the server for its share list takes a password only as a command-line
+argument, so for the couple of seconds that request takes, **another user of
+the same Mac could read your password out of the process list**. Nothing is
+written down and nothing is kept. If that matters on your machine — a Mac
+other people have accounts on — connect by typing the full address including
+the share name instead, which does not go through that tool at all.
+
+Servers that answer anonymously are asked as a guest first, so this only
+happens for a server that requires an account.
 
 A few servers refuse to list their shares even for an account they know. There
 the form comes back a second time, now with the server's own reason and the

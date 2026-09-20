@@ -473,114 +473,50 @@ here.
 
 ### Listing shares
 
-macOS runs `smbutil view`, twice at most, because two things work and a third
-does not:
+macOS runs `smbutil view`, as a guest first and then — where the user gave
+credentials — as that account, **with the password on the command line**.
 
-- **`-g`, as a guest.** Right for an open share; a Synology refuses it
-  outright with `Authentication error`, which is the common case.
-- **`//user@host`**, which makes `smbutil` look the account up in the **login
-  Keychain** and connect with what it finds. This is what works against a real
-  NAS, and it needs no password from XeFM at all.
+That last part is a deliberate trade with a real cost, made after the
+alternatives were measured and found not to exist:
 
-What does not work is handing `smbutil` a password. It takes one only on its
-command line, where the process list carries it to every user on the machine
-(verified: a normal user can read root's `argv` here), and it does **not** read
-one from stdin — measured, not assumed. A deliberately wrong password piped to
-a known account was ignored and the Keychain entry used instead; an unknown
-account failed in 0.3 s without ever reading the pipe.
+- **stdin**: not read. An unknown account failed in 0.3 s without touching
+  the pipe.
+- **the login Keychain**: not read either, which took a long investigation to
+  establish because every measurement that appeared to show it working had a
+  share from that server still mounted — `smbutil` reuses the open session and
+  needs no credentials at all. Tested finally with the correct password placed
+  in the Keychain by hand, under exactly the key XeFM writes, with no session
+  open: refused. The same test refused a NetFS mount, so this is not something
+  the spelling of the key can fix.
 
-So the password cannot be an **argument** — but it is still needed, and
-`list_shares` takes one. What each backend does with it is spend it on the
-credential channel its listing *does* read: macOS lends it to the Keychain
-for the duration of the call (`_lend_to_the_keychain`), Windows opens a
-session with it (below). The account is looked for in three places, in order:
-what the user typed, `server_list.user_for_host` (the account last used for
-that machine), and finally `find_account`, which asks the Keychain.
+So for about two seconds the password is in the argument vector of a child
+process, where any user of the machine can read it out of `ps` (verified: a
+normal user can read root's `argv` here). Finder makes no such trade because
+it has private API for this. The exposure is held to the minimum the tool
+allows:
 
-`_lend_to_the_keychain` **overwrites nothing**. An entry already there —
-XeFM's, or one Finder wrote years ago — is what gets used; replacing it would
-mean a typed password quietly editing the user's Keychain as a side effect of
-browsing, and a stale stored password is fixed by ticking *Save password*,
-which is what that checkbox is for. What XeFM lends it takes back: an entry
-written for a listing is removed afterwards, so browsing does not leave a
-credential the user never asked to keep. A password they did ask to keep was
-already saved by the caller before this runs, so it is found and left alone.
+- the **guest attempt goes first**, so a server that answers anonymously never
+  sees a password on a command line at all;
+- the credentialed form is built in one place, `_credential_url`, and
+  percent-encoded — a password holding `@`, `:` or `/` would otherwise be
+  reparsed as URL structure and the wrong thing sent;
+- the argument vector is never logged, never returned, and never put in an
+  exception message: the `TimeoutExpired` path deliberately does not name the
+  command it timed out on, because that exception carries it;
+- `_scrubbed` takes the password out of the tool's own message before it
+  reaches a log line or a dialog, in case a future `smbutil` echoes what it
+  was given;
+- it is only built when the caller actually holds a password, which means the
+  user typed one into the form for this connection.
 
-That last one is what makes a freshly-discovered server work on a machine
-with no saved servers at all, and it has a spelling trap in it. Finder files
-a Bonjour-discovered server under its **service** name —
-`SynologyNas._smb._tcp.local`, not `SynologyNas.local` and not `synologynas` —
-so a lookup by host name finds nothing on exactly the machines the user has
-already connected to. `_keychain_servers` tries the service form first, then
-the host as written, then the canonical host. The lookup reads attributes
-only (no `-w`), so nothing is decrypted and no access prompt can appear for a
-server the user has merely highlighted.
+Its output is a fixed-width table, and the header says where the columns
+start, so the share name is **sliced at that offset rather than split**: a
+share name may contain spaces, and the Comments column beside it certainly
+does. Administrative shares (`IPC$`, `C$`) are dropped, as they are in Finder.
 
-Until the password was passed here, ticking *Save password* was the **only**
-way to browse a locked-down server: the password landed in the Keychain, which
-is where the tool looks, and with the box clear the typed password reached
-nothing at all. A checkbox named after remembering was load-bearing for
-browsing, which nothing told the user — and Windows had the same dead end by
-its own route. Reported from a Mac: name and password entered, no share list;
-mount one share by hand, and the list starts working from then on.
-
-The first version of this asked as a guest and nothing else, and looked
-correct because it was tested while a share from that very NAS was still
-mounted — an authenticated session `smbutil` quietly reused. Unmounted, the
-same call failed. The version after it, account-and-no-password, was wrong
-for the same reason one layer along: an account is enough only once the
-password is *already* in the Keychain, which on a machine that has not
-connected yet is never. Three checks in this subsystem have now been wrong
-this way (the third being `security` and the controlling terminal), so:
-**test these against the state the user will be in, not the state the last
-experiment left behind.** For this subsystem that means: disconnect
-everything first.
-
-Its output is a fixed-width table, and the header says where the columns start,
-so the share name is **sliced at that offset rather than split**: a share name
-may contain spaces, and the Comments column beside it certainly does.
-Administrative shares (`IPC$`, `C$`) are dropped, as they are in Finder.
-
-Windows enumerates one level below a server with the same
-`WNetEnumResource`, on the credentials **the session** has — and there is no
-way to hand credentials to the enumeration itself. So the password is spent
-before it: `_open_session` connects to the server's `IPC$`, the
-administrative pipe every SMB server has and the one thing that can be
-connected to without knowing a share name, which is exactly what is missing
-at this point. The session then exists and the enumeration inherits it. It is
-the sequence Explorer performs when opening a server asks for a password and
-then shows its shares.
-
-That call is best effort and its failure is logged, not raised. A domain
-member answers the listing on the user's own logon with no session of ours at
-all, and a second attempt is met with `ERROR_SESSION_CREDENTIAL_CONFLICT`,
-which means *there is already a session* rather than *you may not have one* —
-measured against the NAS, and the listing succeeded on the existing session
-immediately afterwards.
-
-**What XeFM opens here, XeFM closes.** Leaving the session behind looked
-harmless — the mount that usually follows would reuse it — and is not: browse
-a server once, even a browse then cancelled, and the machine stays
-authenticated to it until the user logs out, so the next XeFM reaches the NAS
-with no password and nothing on screen explaining why. That is not the same
-as the mount, which the user asked for and which XeFM deliberately leaves
-alone; nobody asks for a session. A session that was already open is somebody
-else's and is left where it is, which is what checking for success rather
-than for "is there one now" distinguishes. The mount carries its own
-credentials, so it loses nothing.
-
-It takes the account argument anyway and ignores it. `netmount.list_shares`
-passes one to whichever backend is loaded, and a backend that cannot *receive*
-it raises `TypeError` on the worker thread — which the picker, unable to tell
-one failure from another, reports as the server refusing to list its shares.
-Windows spent a release that way. The two modules' signatures are now compared
-against each other by a test that reads them with `ast`, since neither can be
-imported on the other's platform.
-
-Both spellings are tried, `host_spellings`' order, which is where "the
-credentials the session has" stops being free — see
-[One machine, two names](#one-machine-two-names--which-one-the-redirector-is-asked).
-`mount` does the same, and for the same reason.
+Windows needs none of this: the same `WNetEnumResource`, one level below a
+server, runs on a session the backend opens to `IPC$` with the credentials it
+was given — no command line involved.
 
 ### What the flow does with them
 
