@@ -357,13 +357,18 @@ def discover_servers(cancel: threading.Event):
         logger.warning(f"Looking for servers stopped: {e}")
 
 
-def list_shares(target: MountTarget) -> list[str]:
+def list_shares(target: MountTarget, user: str = "") -> list[str]:
     """The shares ``target``'s server offers, for the picker that follows
     choosing a server.
 
-    Asked **as a guest**, because that is what the platform tools can be driven
-    to do without being handed a password (see the system doc). A server that
-    will not answer an anonymous query raises :class:`MountError`, and the
+    Tried as a **guest** first, and then — where an account is known — as that
+    account. There is no password parameter on purpose: neither platform's tool
+    will take one safely (see the system doc), and neither needs to. macOS
+    looks the account up in the login Keychain, Windows uses the session's own
+    credentials. So what makes an authenticated listing possible is XeFM
+    knowing *which account*, not knowing the password.
+
+    A server that answers neither way raises :class:`MountError`, and the
     caller falls back to letting the user type the share name. Administrative
     shares (``C$``, ``IPC$``) are left out, as they are in Finder and Explorer.
 
@@ -372,7 +377,7 @@ def list_shares(target: MountTarget) -> list[str]:
     backend = _backend()
     if backend is None:
         raise MountError("Listing shares is not available on this system.")
-    return backend.list_shares(target)
+    return backend.list_shares(target, user)
 
 
 # --- operations --------------------------------------------------------------

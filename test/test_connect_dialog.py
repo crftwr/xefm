@@ -304,6 +304,42 @@ class Flow(unittest.TestCase):
         self.assertEqual(mount.call_args.kwargs["password"], "secret")
         self.assertEqual(self.connected[0][0], "/Volumes/Videos")
 
+    def test_browsing_uses_the_account_already_saved_for_that_machine(self):
+        """The screenshot case: a discovered server has no account, the guest
+        query is refused, and the account the user connected with before is
+        what makes the listing work."""
+        row = cd._DiscoveredRow(
+            netmount.DiscoveredServer("SynologyNas", "SynologyNas.local"))
+        with patch("xefm.server_list.user_for_host", return_value="crftwr"), \
+             patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow._chosen(row)
+        self.assertEqual(shares.call_args.args[1], "crftwr")
+
+    def test_a_password_to_be_saved_is_saved_before_the_listing(self):
+        """`smbutil` authenticates out of the Keychain, so storing the password
+        is what makes it usable — the order is the point."""
+        order = []
+        with patch.object(netmount, "save_password",
+                          side_effect=lambda *a: order.append("save")), \
+             patch.object(netmount, "list_shares",
+                          side_effect=lambda *a: order.append("list") or ["Videos"]), \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.connect(cd.ConnectRequest(
+                address="smb://nas", user="me", password="secret",
+                save_password=True))
+        self.assertEqual(order, ["save", "list"])
+
+    def test_a_password_not_to_be_saved_is_not_saved(self):
+        with patch.object(netmount, "save_password") as save, \
+             patch.object(netmount, "list_shares", return_value=["Videos"]), \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.connect(cd.ConnectRequest(
+                address="smb://nas", user="me", password="secret",
+                save_password=False))
+        save.assert_not_called()
+
     def test_a_server_that_will_not_list_sends_you_to_the_form(self):
         """The listing is anonymous, so a locked-down server refuses it. The
         share name is then the one thing the user can supply and XeFM cannot."""
@@ -494,6 +530,30 @@ class Drawing(unittest.TestCase):
     def test_the_form_draws_empty(self):
         cd.show_connect_form(self.panel, cd.ConnectRequest(address=""))
         self.panel.render()
+
+    def test_a_long_error_stays_inside_the_form(self):
+        """A server's message is as long as the server felt like making it.
+        Both things it must not do — run off the right edge, and land on the
+        line of keys — it did, leaving half a sentence across the hint band."""
+        from xefm.dialog_geometry import draw_title_bar, hint_content_bottom
+
+        measured = {}
+        original = cd.ConnectFormDialog.draw
+
+        def traced(dialog, ctx):
+            y = draw_title_bar(ctx, dialog.title, surface_bg=ctx.theme.popup_bg,
+                               border=ctx.theme.popup_border, y=1.0)
+            measured["error_y"] = y + len(dialog.rows)
+            measured["floor"] = hint_content_bottom(ctx, ctx.theme.popup_bg)
+            return original(dialog, ctx)
+
+        with patch.object(cd.ConnectFormDialog, "draw", traced):
+            cd.show_connect_form(
+                self.panel, cd.ConnectRequest(address="smb://SynologyNas.local/"),
+                error="SynologyNas.local: smbutil: server connection failed: "
+                      "Authentication error. Add the share name after the server.")
+            self.panel.render()
+        self.assertLessEqual(measured["error_y"], measured["floor"])
 
     def test_the_picker_draws(self):
         entries = [ServerEntry("NAS Photo", "smb://nas/photo", "me"),

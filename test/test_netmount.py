@@ -407,6 +407,51 @@ class MacBackend(unittest.TestCase):
             self.mac._parse_shares(output),
             ["home", "Videos", "Documents", "Time Machine"])
 
+    def test_share_listing_tries_guest_then_the_account(self):
+        """A Synology refuses the guest query outright, so the account is the
+        attempt that matters — and `smbutil` finds its password in the login
+        Keychain, which is why no password is passed here."""
+        import subprocess
+
+        calls = []
+
+        def fake(argv, **kwargs):
+            calls.append(argv)
+            failed = subprocess.CompletedProcess(
+                argv, 68, stdout="",
+                stderr="smbutil: server connection failed: Authentication error")
+            ok = subprocess.CompletedProcess(
+                argv, 0,
+                stdout="Share                                           Type    Comments\n"
+                       "----\nVideos                                          Disk\n",
+                stderr="")
+            return ok if "@" in argv[-1] else failed
+
+        target = netmount.parse_address("smb://synologynas")
+        with patch.object(self.mac, "_run_tool", fake):
+            self.assertEqual(self.mac.list_shares(target, "crftwr"), ["Videos"])
+        self.assertEqual([c[-1] for c in calls],
+                         ["//synologynas", "//crftwr@synologynas"])
+        self.assertIn("-g", calls[0])
+        # The password is never an argument, and there is no password to pass.
+        self.assertNotIn("crftwr@synologynas", " ".join(calls[0]))
+
+    def test_share_listing_without_an_account_only_asks_as_a_guest(self):
+        import subprocess
+
+        calls = []
+
+        def fake(argv, **kwargs):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 68, stdout="", stderr="nope")
+
+        target = netmount.parse_address("smb://synologynas")
+        with patch.object(self.mac, "_run_tool", fake):
+            with self.assertRaises(netmount.MountError) as caught:
+                self.mac.list_shares(target)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(caught.exception.auth)
+
     def test_share_listing_survives_output_it_does_not_recognise(self):
         self.assertEqual(self.mac._parse_shares(""), [])
         self.assertEqual(self.mac._parse_shares("smbutil: something went wrong"), [])

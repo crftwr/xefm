@@ -45,9 +45,11 @@ from puikit.widgets.checkbox import Checkbox
 from puikit.widgets.text_edit import TextEdit
 
 from xefm import netmount, server_list
+from puikit.text import elide
+
 from xefm.dialog_geometry import (HINT_ROWS, OPEN_MS_DIALOG, animate_open,
                                   draw_hint_row, draw_title_bar,
-                                  pane_anchored_box)
+                                  hint_content_bottom, pane_anchored_box)
 from xefm.log_manager import getLogger
 
 logger = getLogger("Connect")
@@ -177,7 +179,17 @@ class ConnectFormDialog(FocusContainer, Widget):
             y += 1.0
 
         if self._error:
-            ctx.draw_text(2.0, y, self._error,
+            # Elided and clamped. A message from a server is as long as the
+            # server felt like making it, and the two things it must not do are
+            # run off the right edge and land on the hint band — both of which
+            # it did (issue #406), leaving a half-sentence written across the
+            # line of keys.
+            # The floor is the last row content may use, not the first it may
+            # not — the input prompt draws its own error exactly there.
+            floor = hint_content_bottom(ctx, surface_bg)
+            text = elide(self._error, max(1.0, box_w - 4.0), where="end",
+                         measure=ctx.measure_text)
+            ctx.draw_text(2.0, min(y, floor), text,
                           Style(bg=surface_bg, fg=(229, 110, 110),
                                 attr=TextAttribute.DIM))
 
@@ -305,12 +317,14 @@ def show_connect_form(panel: Any, request: ConnectRequest, *, error: str = "",
                                on_accept=on_accept, on_cancel=on_cancel)
     sw, sh = panel.backend.size_units
     w = max(40.0, min(sw * 0.7, 66.0))
-    # One row per field, plus the same chrome the single-field input prompt
-    # reserves: pad, title band, the error line under the last field, and the
-    # hint band. The compact GUI title bar pulls everything up a row, which is
-    # why the constant differs by backend exactly as it does there.
-    chrome = 4.0 if panel.backend.capabilities.supports("vector_shapes") else 5.0
-    h = len(dialog.rows) + chrome
+    # One row per field, plus the chrome around them: the top pad and title
+    # band (3 rows on a character grid), the error line under the last field,
+    # and the hint band. Measured rather than guessed — the first attempt copied
+    # the single-field prompt's constant and came up three rows short, so the
+    # fields themselves were drawn over the line of keys. The grid figure is
+    # used on both backends: a vector title band is shorter, so this leaves a
+    # little slack there, which is the harmless direction to be wrong in.
+    h = 3.0 + len(dialog.rows) + 1.0 + HINT_ROWS
     hints: dict[str, Any] = {"shadow": True, "w": w, "h": h}
     if region is not None:
         w, x = pane_anchored_box(w, sw, region)
@@ -569,7 +583,8 @@ class ConnectFlow:
             # browse it. This is also what makes the form double as the way in
             # for a server typed by hand: it comes back here either way.
             self.browse_shares(target, name=request.name, user=user,
-                               password=request.password)
+                               password=request.password,
+                               save_password=request.save_password)
             return
 
         def work(cancel: threading.Event) -> str:
@@ -600,27 +615,39 @@ class ConnectFlow:
     # --- browsing a server --------------------------------------------------
 
     def browse_shares(self, target, *, name: str = "", user: str = "",
-                      password: str = "") -> None:
+                      password: str = "", save_password: bool = False) -> None:
         """Ask a server what it offers and let the user pick one.
 
         Finder's flow, and for the same reason: a server is not something to
         open, it is a list of shares, and nobody remembers the spelling of the
-        third one. The listing is anonymous (see
-        :func:`xefm.netmount.list_shares`), so a server that will not answer a
-        guest query ends up back at the form — where the address can simply be
-        finished by hand.
+        third one.
+
+        **The account is what makes this work**, not the password. A server
+        found on the network arrives with none attached, so one is looked up
+        from the saved servers — the machine has very likely been connected to
+        before — and handed to the listing, which authenticates out of the
+        system credential store (see :func:`xefm.netmount.list_shares`). A
+        password typed with *Save password* ticked is stored first, because
+        storing it is what makes it available to the tool doing the asking.
+
+        A server that answers neither as a guest nor as that account ends up
+        back at the form, where the address can be finished by hand.
         """
+        account = user or server_list.user_for_host(target.host)
+
         def work(cancel: threading.Event) -> list:
-            return netmount.list_shares(target)
+            if save_password and password and account:
+                netmount.save_password(target, account, password)
+            return netmount.list_shares(target, account)
 
         def done(shares: Any, error: Optional[BaseException],
                  cancelled: bool) -> None:
             if cancelled:
                 return
             if error is not None or not shares:
-                self._cannot_browse(target, name, user, error)
+                self._cannot_browse(target, name, account, error)
                 return
-            self._show_shares(target, shares, name=name, user=user,
+            self._show_shares(target, shares, name=name, user=account,
                               password=password)
 
         run_connecting(self.panel, f"Asking {target.host} for its shares…",

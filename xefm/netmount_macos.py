@@ -615,31 +615,49 @@ def discover_servers(cancel):
 
 # --- listing shares ----------------------------------------------------------
 
-def list_shares(target) -> list[str]:
+def list_shares(target, user: str = "") -> list[str]:
     """The disk shares a server offers, via ``smbutil view``.
 
-    Asked as a **guest** (``-g``). That is not a limitation being shrugged at:
-    ``smbutil`` takes a password only on its command line, where every user on
-    the machine could read it, and otherwise prompts on ``/dev/tty`` — see
-    :func:`_run_tool` for why nothing here is allowed near a terminal. Guest or
-    nothing.
+    Two attempts, because two things work and a third does not:
 
-    A server that refuses an anonymous query raises, and the caller lets the
-    user type the share name instead.
+    - ``-g``, as a guest. Right for an open share, and refused outright by a
+      NAS with accounts — a Synology answers ``Authentication error``.
+    - ``//user@host``, which makes ``smbutil`` look the account up in the
+      **login Keychain** and connect with what it finds. This is the one that
+      works against a real NAS, and it needs no password from XeFM at all.
+
+    What does **not** work is handing ``smbutil`` a password. It takes one only
+    on its command line, where the process list carries it to every user on the
+    machine, and it does not read one from stdin — measured, not assumed: a
+    deliberately wrong password piped in was ignored (the Keychain entry was
+    used instead), and an unknown account failed in a fifth of a second without
+    ever reading the pipe. So the *account* is what XeFM passes, and the
+    Keychain supplies the rest.
+
+    That is also why ticking **Save password** makes a locked-down server
+    browsable on the next attempt: the password lands in the Keychain, which is
+    where ``smbutil`` looks.
     """
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
-    try:
-        proc = _run_tool(["/usr/bin/smbutil", "view", "-g", f"//{target.host}"])
-    except subprocess.TimeoutExpired:
-        raise MountError(f"{target.host} did not answer.") from None
-    except OSError as e:
-        raise MountError(f"Could not run smbutil: {e}") from None
-    if proc.returncode != 0:
+
+    attempts = [["-g", f"//{target.host}"]]
+    if user:
+        attempts.append([f"//{user}@{target.host}"])
+    last = "the server refused the request"
+    for args in attempts:
+        try:
+            proc = _run_tool(["/usr/bin/smbutil", "view", *args])
+        except subprocess.TimeoutExpired:
+            raise MountError(f"{target.host} did not answer.") from None
+        except OSError as e:
+            raise MountError(f"Could not run smbutil: {e}") from None
+        if proc.returncode == 0:
+            return _parse_shares(proc.stdout)
         detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-        message = detail[-1] if detail else "the server refused the request"
-        raise MountError(f"{target.host}: {message}", auth=True)
-    return _parse_shares(proc.stdout)
+        if detail:
+            last = detail[-1]
+    raise MountError(f"{target.host}: {last}", auth=True)
 
 
 def _parse_shares(output: str) -> list[str]:

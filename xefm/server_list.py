@@ -164,6 +164,23 @@ def with_user(entry: ServerEntry, user: str) -> ServerEntry:
     return replace(entry, user=user)
 
 
+def user_for_host(host: str) -> str:
+    """The account last used for a machine, from the saved servers.
+
+    A server found on the network arrives with no account attached, and
+    without one a share listing can only be attempted as a guest — which a NAS
+    refuses. But the user has very likely connected to this machine before,
+    under some account, and that is the one to try. Newest saved entry wins,
+    which is the order :func:`get_servers` already returns.
+    """
+    wanted = netmount.canonical_host(host)
+    for entry in get_servers():
+        target = entry.target
+        if target is not None and entry.user and target.canonical_host == wanted:
+            return entry.user
+    return ""
+
+
 def mounted_at(entry: ServerEntry, mounts: list[netmount.MountInfo]) -> str:
     """Where ``entry`` is mounted right now, or ``""``.
 

@@ -144,6 +144,21 @@ class ServerListTest(unittest.TestCase):
                                      "//me@nas/photo", "smbfs")]
         self.assertEqual(server_list.mounted_at(entry, mounts), "")
 
+    def test_the_account_last_used_for_a_machine_is_found(self):
+        """A discovered server carries no account, and without one a listing
+        can only be tried as a guest — which a NAS refuses. The account the
+        user already connected with is the one to try."""
+        server_list.save_server("NAS", "smb://synologynas/Videos", "crftwr")
+        self.assertEqual(server_list.user_for_host("SynologyNas.local"),
+                         "crftwr")
+
+    def test_no_account_for_a_machine_never_seen(self):
+        self.assertEqual(server_list.user_for_host("other.local"), "")
+
+    def test_a_saved_row_without_an_account_is_not_an_answer(self):
+        server_list.save_server("NAS", "smb://synologynas/Videos")
+        self.assertEqual(server_list.user_for_host("synologynas"), "")
+
     def test_a_local_volume_is_never_a_match(self):
         entry = server_list.ServerEntry("NAS", "smb://nas/photo")
         mounts = [netmount.MountInfo("/Volumes/photo", netmount.REMOVABLE,

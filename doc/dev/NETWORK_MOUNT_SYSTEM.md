@@ -345,13 +345,37 @@ takes seconds and the picker has to stay closable.
 
 ### Listing shares
 
-macOS runs `smbutil view -g`, **as a guest and with stdin closed**, and that is
-not a limitation being shrugged at. `smbutil` takes a password only on its
-command line, where every user on the machine can read it, and otherwise
-prompts on `/dev/tty` — which in the TUI is the terminal XeFM is drawing on. A
-prompt there would write into the file list and eat the user's keystrokes.
-Guest or nothing, and a server that refuses an anonymous query sends the user
-to the form to finish the address by hand.
+macOS runs `smbutil view`, twice at most, because two things work and a third
+does not:
+
+- **`-g`, as a guest.** Right for an open share; a Synology refuses it
+  outright with `Authentication error`, which is the common case.
+- **`//user@host`**, which makes `smbutil` look the account up in the **login
+  Keychain** and connect with what it finds. This is what works against a real
+  NAS, and it needs no password from XeFM at all.
+
+What does not work is handing `smbutil` a password. It takes one only on its
+command line, where the process list carries it to every user on the machine
+(verified: a normal user can read root's `argv` here), and it does **not** read
+one from stdin — measured, not assumed. A deliberately wrong password piped to
+a known account was ignored and the Keychain entry used instead; an unknown
+account failed in 0.3 s without ever reading the pipe.
+
+So **the account is the thing XeFM has to supply**, not the password, and
+`list_shares` takes a user and no password at all. A server found on the
+network arrives without one, so `server_list.user_for_host` supplies the
+account last used for that machine — the user has almost certainly connected
+to it before. It is also why ticking *Save password* is what makes a
+locked-down server browsable next time: the password lands in the Keychain,
+which is where the tool looks.
+
+The first version of this asked as a guest and nothing else, and looked
+correct because it was tested while a share from that very NAS was still
+mounted — an authenticated session `smbutil` quietly reused. Unmounted, the
+same call failed. Two checks in this subsystem have now been wrong for that
+kind of reason (the other being `security` and the controlling terminal), so:
+**test these against the state the user will be in, not the state the last
+experiment left behind.**
 
 Its output is a fixed-width table, and the header says where the columns start,
 so the share name is **sliced at that offset rather than split**: a share name

@@ -80,12 +80,21 @@ A server you have already saved as a *server* is not listed twice. A saved
 *share* does not hide its server, because the two rows do different things: one
 goes straight to that share, the other browses the machine.
 
-### When a server will not list its shares
+### Which account the share list is asked under
 
-The share list is asked for anonymously, so a server that refuses guests
-refuses the question too. XeFM then opens the connection form with the server
-filled in and the share left for you to add — `smb://nas/` becomes
-`smb://nas/Videos`. Everything after that is the same.
+A NAS will not tell a guest what it offers, so the question has to be asked
+under an account. XeFM finds one without asking you:
+
+1. As a **guest** first, which is enough for an open share.
+2. Otherwise under the **account you last used for that machine**, taken from
+   your saved servers. The password comes from the keychain, not from XeFM —
+   which is why a server you have connected to before, or one you have opened
+   in Finder, lists its shares immediately.
+
+If neither works, the connection form opens with the server filled in and the
+share left for you to add — `smb://nas/` becomes `smb://nas/Videos`. Filling in
+the account there and ticking **Save password** also fixes it for next time:
+the password goes into the keychain, which is where the share list looks.
 
 ### Connecting to an address you have not saved
 
