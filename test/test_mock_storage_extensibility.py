@@ -4,339 +4,159 @@ Test mock storage implementation for extensibility validation.
 This test validates that new storage types can be added without any UI changes
 by implementing a MockPathImpl and verifying it works with all UI components.
 
+It is also #426's acceptance measure for ``xefm.path_base``. ``MockPathImpl``
+used to subclass ``PathImpl`` directly, which meant **384 lines and 61
+methods** for a backend that keeps three files in a dictionary — the concrete
+demonstration that registering a scheme would have given a third party nothing
+usable. On ``UriPathImpl`` the same backend is the fourteen methods below, and
+``ReadOnlyMockPathImpl`` — a backend that only browses — is five.
+
 Run with: python -m pytest test/test_mock_storage_extensibility.py -v
 """
 
-import os
 import io
-from pathlib import Path as PathlibPath
-from typing import Iterator, List
 
-from xefm.path import PathImpl, Path
+from xefm.path import Path, PathImpl
+from xefm.path_base import ReadOnlyPathImpl, UriPathImpl, UriStatResult
 
 
-class MockPathImpl(PathImpl):
-    """
-    Mock storage implementation for testing extensibility.
-    
-    This implementation simulates a fictional storage backend to validate
-    that UI code works with any PathImpl subclass without modifications.
+#: The whole of mock storage: directories, and files with their content.
+_DIRS = {'', 'test', 'data', 'documents', 'project', 'project/data'}
+_FILES = {
+    'test/file.txt': 'Mock content for test/file.txt',
+    'data/document.txt': 'Mock content for data/document.txt',
+    'data/file.txt': 'Mock content for data/file.txt',
+    'data/test.txt': 'Mock content for data/test.txt',
+    'documents/report.txt': 'Mock content for documents/report.txt',
+    'project/data/report.txt': 'Mock content for project/data/report.txt',
+}
+
+
+class MockPathImpl(UriPathImpl):
+    """A fictional ``mock://`` backend, to prove UI code works with any
+    ``PathImpl`` subclass without modification.
+
+    Writable, so it inherits ``UriPathImpl`` rather than ``ReadOnlyPathImpl``
+    — the split exists precisely so that the string arithmetic is available to
+    a backend that can also be written to.
     """
 
     SCHEME = 'mock'
-    IS_REMOTE = True
-    CAPABILITIES = frozenset({'extraction_for_reading', 'cache_for_search'})
+    CAPABILITIES = frozenset({'write_operations', 'extraction_for_reading',
+                              'cache_for_search'})
     SEARCH_STRATEGY = 'buffered'
     DISPLAY_PREFIX = 'MOCK: '
-    
-    def __init__(self, path_str: str):
-        """Initialize mock path from string"""
-        # Parse mock:// URI
-        if path_str.startswith('mock://'):
-            self._uri = path_str
-            self._path_str = path_str[7:]  # Remove 'mock://' prefix
-        else:
-            self._path_str = path_str
-            self._uri = f'mock://{path_str}'
-        
-        # Parse path components
-        self._parts = tuple(self._path_str.split('/'))
-        self._name = self._parts[-1] if self._parts else ''
-        
-        # Mock file system state (in-memory)
-        self._is_dir = self._path_str.endswith('/')
-        self._exists = True  # Mock paths always exist for testing
-        self._content = f"Mock content for {self._path_str}"
-        self._size = len(self._content)
-    
-    def __str__(self) -> str:
-        """String representation of the path"""
-        return self._uri
-    
-    def __eq__(self, other) -> bool:
-        """Equality comparison"""
-        if isinstance(other, MockPathImpl):
-            return self._uri == other._uri
-        return str(self) == str(other)
-    
-    def __hash__(self) -> int:
-        """Hash support for use in sets and dicts"""
-        return hash(self._uri)
-    
-    def __lt__(self, other) -> bool:
-        """Less than comparison for sorting"""
-        return self._uri < str(other)
-    
-    # Properties
-    @property
-    def name(self) -> str:
-        """The final component of the path"""
-        return self._name
-    
-    @property
-    def stem(self) -> str:
-        """The final component without its suffix"""
-        if '.' in self._name:
-            return self._name.rsplit('.', 1)[0]
-        return self._name
-    
-    @property
-    def suffix(self) -> str:
-        """The file extension of the final component"""
-        if '.' in self._name:
-            return '.' + self._name.rsplit('.', 1)[1]
-        return ''
-    
-    @property
-    def suffixes(self) -> List[str]:
-        """A list of the path's suffixes"""
-        if '.' in self._name:
-            parts = self._name.split('.')[1:]
-            return ['.' + p for p in parts]
-        return []
-    
-    @property
-    def parent(self) -> 'Path':
-        """The logical parent of the path"""
-        if '/' in self._path_str:
-            parent_str = '/'.join(self._path_str.rstrip('/').split('/')[:-1])
-            if parent_str:
-                return Path(f'mock://{parent_str}/')
-        return Path('mock:///')
-    
-    @property
-    def parents(self):
-        """A sequence providing access to the logical ancestors of the path"""
-        parents = []
-        current = self.parent
-        while str(current) != 'mock:///':
-            parents.append(current)
-            current = current.parent
-        return parents
-    
-    @property
-    def parts(self) -> tuple:
-        """A tuple giving access to the path's components"""
-        return self._parts
-    
-    @property
-    def anchor(self) -> str:
-        """The concatenation of the drive and root"""
-        return 'mock:///'
-    
-    # Path manipulation methods
-    def absolute(self) -> 'Path':
-        """Return an absolute version of this path"""
-        return Path(self._uri)
-    
-    def resolve(self, strict: bool = False) -> 'Path':
-        """Make the path absolute, resolving any symlinks"""
-        return Path(self._uri)
-    
-    def expanduser(self) -> 'Path':
-        """Return a new path with expanded ~ and ~user constructs"""
-        return Path(self._uri)
-    
-    def joinpath(self, *args) -> 'Path':
-        """Combine this path with one or several arguments"""
-        joined = self._path_str.rstrip('/')
-        for arg in args:
-            joined = f"{joined}/{str(arg)}"
-        return Path(f'mock://{joined}')
-    
-    def with_name(self, name: str) -> 'Path':
-        """Return a new path with the name changed"""
-        if '/' in self._path_str:
-            parent = '/'.join(self._path_str.rstrip('/').split('/')[:-1])
-            return Path(f'mock://{parent}/{name}')
-        return Path(f'mock://{name}')
-    
-    def with_stem(self, stem: str) -> 'Path':
-        """Return a new path with the stem changed"""
-        new_name = stem + self.suffix
-        return self.with_name(new_name)
-    
-    def with_suffix(self, suffix: str) -> 'Path':
-        """Return a new path with the suffix changed"""
-        new_name = self.stem + suffix
-        return self.with_name(new_name)
-    
-    def relative_to(self, other) -> 'Path':
-        """Return a version of this path relative to the other path"""
-        other_str = str(other).replace('mock://', '')
-        if self._path_str.startswith(other_str):
-            relative = self._path_str[len(other_str):].lstrip('/')
-            return Path(f'mock://{relative}')
-        raise ValueError(f"{self._path_str} is not relative to {other_str}")
-    
-    # File system query methods
+
     def exists(self) -> bool:
-        """Whether this path exists"""
-        return self._exists
-    
+        return self._key in _DIRS or self._key in _FILES
+
     def is_dir(self) -> bool:
-        """Whether this path is a directory"""
-        return self._is_dir
-    
-    def is_file(self) -> bool:
-        """Whether this path is a regular file"""
-        return not self._is_dir
-    
-    def is_symlink(self) -> bool:
-        """Whether this path is a symbolic link"""
-        return False  # Mock storage doesn't support symlinks
-    
-    def is_absolute(self) -> bool:
-        """Whether this path is absolute"""
-        return True  # All mock:// paths are absolute
-    
+        return self._key in _DIRS
+
+    def iterdir(self):
+        prefix = f'{self._key}/' if self._key else ''
+        seen = set()
+        for key in list(_DIRS | set(_FILES)):
+            if key.startswith(prefix) and key != self._key:
+                name = key[len(prefix):].split('/')[0]
+                if name and name not in seen:
+                    seen.add(name)
+                    yield self._child(name)
+
     def stat(self):
-        """Return the result of os.stat() on this path"""
-        # Return a mock stat result
-        import time
-        class MockStat:
-            st_mode = 0o644
-            st_size = len(self._content) if hasattr(self, '_content') else 0
-            st_mtime = time.time()
-            st_atime = time.time()
-            st_ctime = time.time()
-        return MockStat()
-    
-    def lstat(self):
-        """Return the result of os.lstat() on this path"""
-        return self.stat()
-    
-    # Directory operations
-    def iterdir(self) -> Iterator['Path']:
-        """Iterate over the files in this directory"""
-        # Mock directory listing
-        if self._is_dir:
-            yield Path(f'mock://{self._path_str}file1.txt')
-            yield Path(f'mock://{self._path_str}file2.txt')
-            yield Path(f'mock://{self._path_str}subdir/')
-    
-    def glob(self, pattern: str) -> Iterator['Path']:
-        """Iterate over this subtree and yield all existing files matching pattern"""
-        # Simple mock glob - just return some matching files
-        import fnmatch
-        for item in self.iterdir():
-            if fnmatch.fnmatch(item.name, pattern):
-                yield item
-    
-    def rglob(self, pattern: str) -> Iterator['Path']:
-        """Recursively iterate over this subtree and yield all existing files matching pattern"""
-        # Simple mock rglob
-        for item in self.glob(pattern):
-            yield item
-    
-    def match(self, pattern: str) -> bool:
-        """Return True if this path matches the given pattern"""
-        import fnmatch
-        return fnmatch.fnmatch(self._path_str, pattern)
-    
-    # File I/O operations
-    def open(self, mode='r', buffering=-1, encoding=None, errors=None, newline=None):
-        """Open the file pointed to by this path"""
-        # Return a StringIO or BytesIO for mock content
-        if 'b' in mode:
-            return io.BytesIO(self._content.encode('utf-8'))
-        else:
-            return io.StringIO(self._content)
-    
-    def read_text(self, encoding=None, errors=None) -> str:
-        """Open the file in text mode, read it, and close the file"""
-        return self._content
-    
-    def read_bytes(self) -> bytes:
-        """Open the file in bytes mode, read it, and close the file"""
-        return self._content.encode('utf-8')
-    
-    def write_text(self, data: str, encoding=None, errors=None, newline=None) -> int:
-        """Open the file in text mode, write to it, and close the file"""
-        self._content = data
-        return len(data)
-    
-    def write_bytes(self, data: bytes) -> int:
-        """Open the file in bytes mode, write to it, and close the file"""
-        self._content = data.decode('utf-8')
-        return len(data)
-    
-    # File system modification operations
+        return UriStatResult(size=len(_FILES.get(self._key, '')), mtime=1700000000.0,
+                             is_dir=self.is_dir())
+
+    def open(self, mode='r', buffering=-1, encoding=None, errors=None,
+             newline=None):
+        if 'w' in mode or 'a' in mode:
+            return _MockWriter(self._key)
+        return io.StringIO(_FILES.get(self._key, ''))
+
+    # Write operations. ``write_text`` / ``write_bytes`` come free from
+    # ``open`` above; these are the ones that are not a file write.
     def mkdir(self, mode=0o777, parents=False, exist_ok=False):
-        """Create a new directory at this given path"""
-        self._is_dir = True
-        self._exists = True
-    
+        _DIRS.add(self._key)
+
     def rmdir(self):
-        """Remove this directory"""
-        self._exists = False
-    
+        _DIRS.discard(self._key)
+
     def unlink(self, missing_ok=False):
-        """Remove this file or symbolic link"""
-        self._exists = False
-    
-    def rename(self, target) -> 'Path':
-        """Rename this file or directory to the given target"""
-        return Path(str(target))
-    
-    def replace(self, target) -> 'Path':
-        """Replace this file or directory with the given target"""
-        return Path(str(target))
-    
+        _FILES.pop(self._key, None)
+
+    def rename(self, target) -> Path:
+        _FILES[str(target).removeprefix('mock://')] = _FILES.pop(self._key, '')
+        return Path(target) if isinstance(target, str) else target
+
+    def replace(self, target) -> Path:
+        return self.rename(target)
+
     def symlink_to(self, target, target_is_directory=False):
-        """Make this path a symlink pointing to the target path"""
-        raise NotImplementedError("Mock storage doesn't support symlinks")
-    
+        raise OSError('mock storage has no symlinks')
+
     def hardlink_to(self, target):
-        """Make this path a hard link pointing to the same file as target"""
-        raise NotImplementedError("Mock storage doesn't support hard links")
-    
+        raise OSError('mock storage has no hard links')
+
     def touch(self, mode=0o666, exist_ok=True):
-        """Create this file with the given access mode, if it doesn't exist"""
-        self._exists = True
-        self._is_dir = False
-    
+        _FILES.setdefault(self._key, '')
+
     def chmod(self, mode):
-        """Change the permissions of the path"""
         pass  # Mock storage doesn't enforce permissions
-    
-    # Storage-specific methods
-    def as_uri(self) -> str:
-        """Return the path as a URI"""
-        return self._uri
-    
-    # Display methods for UI presentation
-    # Content reading strategy methods
-    # Metadata method for info dialogs
+
     def get_extended_metadata(self) -> dict:
-        """Return storage-specific metadata for display in info dialogs.
-        
-        Returns:
-            dict: Metadata dictionary with mock storage details
-        """
-        details = [
-            ('Storage Type', 'Mock Storage'),
-            ('URI', self._uri),
-            ('Path', self._path_str),
-            ('Type', 'Directory' if self._is_dir else 'File'),
-            ('Size', f'{self._size} bytes'),
-            ('Status', 'Exists' if self._exists else 'Does not exist')
-        ]
-        
+        """The one display method worth overriding: it has something to say."""
         return {
             'type': 'mock',
-            'details': details,
-            'format_hint': 'remote'
+            'details': [
+                ('Storage Type', 'Mock Storage'),
+                ('URI', str(self)),
+                ('Path', self._key),
+                ('Type', 'Directory' if self.is_dir() else 'File'),
+                ('Size', f'{self.stat().st_size} bytes'),
+                ('Status', 'Exists' if self.exists() else 'Does not exist'),
+            ],
+            'format_hint': 'remote',
         }
-    
-    # Compatibility methods
-    def samefile(self, other_path) -> bool:
-        """Return whether other_path is the same or not as this file"""
-        return str(self) == str(other_path)
-    
-    def as_posix(self) -> str:
-        """Return the string representation with forward slashes"""
-        return self._uri
+
+
+class _MockWriter(io.StringIO):
+    """Writes back into ``_FILES`` when closed, so ``write_text`` round-trips."""
+
+    def __init__(self, key: str):
+        super().__init__()
+        self._key = key
+
+    def close(self):
+        if not self.closed:
+            _FILES[self._key] = self.getvalue()
+        super().close()
+
+
+class ReadOnlyMockPathImpl(ReadOnlyPathImpl):
+    """The same storage, browsed only — and the whole of what #426 promises a
+    third party has to write. Five methods."""
+
+    SCHEME = 'romock'
+
+    def exists(self) -> bool:
+        return self._key in _DIRS or self._key in _FILES
+
+    def is_dir(self) -> bool:
+        return self._key in _DIRS
+
+    def iterdir(self):
+        prefix = f'{self._key}/' if self._key else ''
+        for key in sorted(_FILES):
+            if key.startswith(prefix) and '/' not in key[len(prefix):]:
+                yield self._child(key[len(prefix):])
+
+    def stat(self):
+        return UriStatResult(size=len(_FILES.get(self._key, '')),
+                             mtime=1700000000.0, is_dir=self.is_dir())
+
+    def open(self, mode='r', buffering=-1, encoding=None, errors=None,
+             newline=None):
+        return io.StringIO(_FILES.get(self._key, ''))
 
 
 def test_mock_path_creation():
