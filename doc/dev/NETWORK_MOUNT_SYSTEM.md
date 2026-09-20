@@ -563,8 +563,20 @@ ending up with two rows.
 
 Passwords are never in either store. They go to the OS:
 
-**And they are stored under the key of the thing that was connected**, which
-is not a detail. `browse_shares` used to store one the moment it had it,
+**One password per server and account**, on both platforms — the share is no
+part of the key. Three things rest on that: a second share on the same NAS
+connects without asking, a browse can use the password a mount saved, and
+`_still_needed` below means what it says. Windows keyed its entry by the full
+URL for a while, share and all, and all three quietly stopped being true
+there: the mount filed a password under `XeFM:smb://nas/Documents#me` while
+the browse looked for `XeFM:smb://nas#me` and found nothing, and forgetting a
+row kept a credential no other row could ever use or remove. Confirmed with
+`cmdkey /list` against the real store, which is also where the fix was
+checked. `test_netmount.OnePasswordPerServer` asks each backend in its own
+terms, since the two name their entries in ways that share no code.
+
+**Where a password is stored is also decided per connection**, which is not a
+detail either. `browse_shares` used to store one the moment it had it,
 because storing it was how it reached the listing — but its target is the
 *server*, so the entry landed under `smb://nas` while the row the connection
 then saved was the share, `smb://nas/Videos`. Forgetting that row looked for a
@@ -581,7 +593,7 @@ were correct throughout; the code had stopped keeping them.
 | | Store | Mechanism |
 |-|-------|-----------|
 | macOS | login Keychain | `/usr/bin/security add-internet-password` / `find-internet-password`, keyed by protocol + host + account |
-| Windows | Credential Manager | `CredWriteW` / `CredReadW`, `CRED_TYPE_GENERIC`, target name `XeFM:<url>#<user>` |
+| Windows | Credential Manager | `CredWriteW` / `CredReadW`, `CRED_TYPE_GENERIC`, target name `XeFM:<scheme>://<canonical host>#<user>` |
 
 `security` is invoked with the password on **stdin** — `-w` with no value
 prompts for it, and then asks a second time to confirm, so it is written twice.
