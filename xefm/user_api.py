@@ -16,11 +16,13 @@ object through which they read and manipulate the panes.
         KEY_BINDINGS = {"select-docs": ["U"], ...}
 
 It may also define what the panes *show*: ``SORT_KEYS`` and ``FILTERS`` are
-functions over one entry, and ``PATH_SCHEMES`` is a browsable location that is
-not a directory at all — a class, named by its scheme, that XeFM then treats as
-a place.
+functions over one entry, ``IMAGE_DECODERS`` is how a picture in a format XeFM
+does not read becomes one it does, and ``PATH_SCHEMES`` is a browsable location
+that is not a directory at all — a class, named by its scheme, that XeFM then
+treats as a place.
 
     class Config:
+        IMAGE_DECODERS = {".dcm": open_dicom}
         PATH_SCHEMES = {"reg": RegistryPathImpl}
 
 The class to inherit is :class:`xefm.path_base.ReadOnlyPathImpl`, never
@@ -72,6 +74,7 @@ from typing import Any, Callable, Iterable, Mapping, NamedTuple
 
 from xefm import actions as _actions
 from xefm import filters as _filters
+from xefm import image_decoders as _image_decoders
 from xefm import name_key
 from xefm import path_schemes as _path_schemes
 from xefm import sort_keys as _sort_keys
@@ -547,16 +550,16 @@ class EventHooks:
 hooks = EventHooks()
 
 
-def load_user_entries(config, registry=None) -> tuple[list[str], int, int, int, int, int]:
-    """Install a config's ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS``, ``FILTERS``
-    and ``PATH_SCHEMES``.
+def load_user_entries(config, registry=None) -> tuple[list[str], int, int, int, int, int, int]:
+    """Install a config's ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS``,
+    ``FILTERS``, ``IMAGE_DECODERS`` and ``PATH_SCHEMES``.
 
     Every previously loaded user entry is dropped first, so this doubles as the
     reload path: edit the config, reload, and the new definitions replace the old
     ones with no restart and no idempotence contract on the config's part.
 
     Returns ``(warnings, action_count, hook_count, sort_key_count,
-    filter_count, path_scheme_count)``. Warnings are the same kind
+    filter_count, image_decoder_count, path_scheme_count)``. Warnings are the same kind
     of non-fatal, report-them-all diagnostics the rest of ``validate_config``
     produces; a warned entry is skipped, never fatal.
     """
@@ -569,13 +572,14 @@ def validate_user_entries(config, registry=None) -> list[str]:
     return _process_user_entries(config, registry, apply=False)[0]
 
 
-def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int, int, int, int]:
+def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int, int, int, int, int]:
     registry = registry if registry is not None else _actions.registry
     if apply:
         registry.unregister_source("user")
         hooks.clear()
         _sort_keys.clear()
         _filters.clear()
+        _image_decoders.clear()
         _path_schemes.unregister_source("user")
 
     warnings: list[str] = []
@@ -643,6 +647,18 @@ def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int
                               label=entry["label"])
         filter_count += 1
 
+    decoder_count = 0
+    for name, spec in _items(getattr(config, "IMAGE_DECODERS", None),
+                             "IMAGE_DECODERS", warnings):
+        entry, problem = _build_image_decoder(name, spec)
+        if problem:
+            warnings.append(problem)
+            continue
+        if apply:
+            _image_decoders.register(entry["suffix"], entry["open"],
+                                     label=entry["label"])
+        decoder_count += 1
+
     scheme_count = 0
     for name, spec in _items(getattr(config, "PATH_SCHEMES", None), "PATH_SCHEMES", warnings):
         impl, problem = _build_path_scheme(name, spec)
@@ -653,7 +669,8 @@ def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int
             _path_schemes.register(name, impl, source="user")
         scheme_count += 1
 
-    return warnings, count, hook_count, sort_count, filter_count, scheme_count
+    return (warnings, count, hook_count, sort_count, filter_count,
+            decoder_count, scheme_count)
 
 
 def _items(value, label: str, warnings: list[str]):
@@ -741,6 +758,35 @@ def _build_filter(name, spec) -> tuple[dict | None, str | None]:
                           f"non-empty string or list of them")
     return {"label": (str(spec["label"]) if spec.get("label") else None),
             "match": match, "globs": globs}, None
+
+
+def _build_image_decoder(name, spec) -> tuple[dict | None, str | None]:
+    """Validate one ``IMAGE_DECODERS`` entry, or explain why it cannot be one.
+
+    The key is a file suffix, normalized the way :mod:`xefm.image_decoders`
+    normalizes every suffix it is asked about, so ``'heic'``, ``'.heic'`` and
+    ``'.HEIC'`` are one entry and a config need not know which spelling is meant.
+    There is no ``override`` here: registering a decoder for a format XeFM
+    already reads *is* the statement that yours should be used — that is the only
+    way to replace Pillow's reading of one — so asking a second time would be
+    asking about the thing the entry says.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return None, f"IMAGE_DECODERS keys must be file suffixes; ignored {name!r}"
+    suffix = _image_decoders.normalize(name)
+    if len(suffix) < 2 or not suffix[1:].replace(".", "").isalnum():
+        return None, (f"IMAGE_DECODERS['{name}'] is not a file suffix — it must "
+                      f"read like '.heic', letters and digits after the dot")
+    if callable(spec):
+        spec = {"open": spec}
+    if not isinstance(spec, dict):
+        return None, (f"IMAGE_DECODERS['{name}'] must be a function or a dict "
+                      f"with an 'open' key, not {type(spec).__name__}")
+    func = spec.get("open")
+    if not callable(func):
+        return None, f"IMAGE_DECODERS['{name}'] has no callable 'open'"
+    return {"suffix": suffix, "open": func,
+            "label": (str(spec["label"]) if spec.get("label") else None)}, None
 
 
 def _override_requested(spec) -> bool:
@@ -833,17 +879,20 @@ def _build_path_scheme(name, spec) -> tuple[type | None, str | None]:
 
 def preview_notice(action_count: int, hook_count: int,
                    sort_key_count: int = 0, filter_count: int = 0,
+                   image_decoder_count: int = 0,
                    path_scheme_count: int = 0) -> str | None:
     """The one line a config using this API gets in the log pane, or ``None``
     when it uses none of it."""
     if not any((action_count, hook_count, sort_key_count, filter_count,
-                path_scheme_count)):
+                image_decoder_count, path_scheme_count)):
         return None
     parts = [f"{action_count} action(s)", f"{hook_count} event hook(s)"]
     if sort_key_count:
         parts.append(f"{sort_key_count} sort key(s)")
     if filter_count:
         parts.append(f"{filter_count} filter(s)")
+    if image_decoder_count:
+        parts.append(f"{image_decoder_count} image decoder(s)")
     if path_scheme_count:
         parts.append(f"{path_scheme_count} path scheme(s)")
     return (f"Customization API (Preview, API_VERSION {API_VERSION}): "

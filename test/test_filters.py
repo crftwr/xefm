@@ -46,7 +46,8 @@ def tree(tmp_path):
 
 def load(**filters_table):
     cfg = types.SimpleNamespace(FILTERS=filters_table)
-    warnings, _actions, _hooks, _sorts, count, _schemes = user_api.load_user_entries(cfg)
+    (warnings, _actions, _hooks, _sorts, count,
+     _decoders, _schemes) = user_api.load_user_entries(cfg)
     return warnings, count
 
 

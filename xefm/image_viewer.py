@@ -20,30 +20,37 @@ Three interactions, all resolved as *geometry* rather than re-encoded pixels:
   opened from, so navigation walks the file list the user was already looking
   at, in the order they see it.
 
-Non-local files (S3, SSH, inside an archive) have no filesystem path for the
-backend or Pillow to open, so their bytes are materialized to a temp file for
-the life of the viewer and cleaned up on close (see :meth:`_resolve`).
+Which formats open here, and who decodes each one, is :mod:`xefm.image_decoders`
+— and the answer depends on the machine, not on this file. :meth:`_resolve`
+picks between the two routes it offers: a format the backend reads itself is
+handed over as a **path** (nothing is read here and nothing decoded), and
+anything else is decoded from the file's bytes into pixels the backend is given
+directly. The second route is why a non-local file — on S3 or SFTP, or inside an
+archive — usually needs no temporary copy any more: its bytes go straight to the
+decoder. One case still does, and stages a temp file for the life of the viewer:
+a format *only* the backend can read, whose bytes are not on a disk it can open.
 
 Where the picture cannot be drawn at all — a terminal with no inline-image
-protocol, or a missing Pillow — the viewer shows a metadata card (format,
-dimensions, file size) instead of the Panel's lone alt glyph, so opening an
-image still tells you something about it. Zoom and pan are hidden in that mode;
-prev/next still work.
+protocol, a missing Pillow, or a format nothing on this machine decodes — the
+viewer shows a metadata card (format, dimensions, file size) instead of the
+Panel's lone alt glyph, so opening an image still tells you something about it.
+Zoom and pan are hidden in that mode; prev/next still work.
 """
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 from typing import Any, Sequence
 
 from puikit.backend import Style, TextAttribute
 from puikit.event import Event, EventType
-from puikit.image import image_size
 from puikit.panel import Rect
 from puikit.text import elide
 from puikit.widgets.base import Widget
 
+from xefm import image_decoders
 from xefm.actions import IMAGE_VIEWER as _CONTEXT
 from xefm.config import (find_action_for_event, format_key_for_display,
                         get_keys_for_action)
@@ -54,13 +61,6 @@ from xefm.text_viewer import (_content_bg, _header_bg, draw_status_bar,
                              footer_pair, viewer_layer_hints, viewer_pad)
 
 logger = getLogger("ImageViewer")
-
-#: Extensions the built-in viewer claims. Kept to formats Pillow decodes out of
-#: the box (no plugin install) so a file that opens here always renders.
-IMAGE_SUFFIXES = frozenset({
-    ".png", ".jpg", ".jpeg", ".jpe", ".gif", ".bmp", ".webp", ".tif", ".tiff",
-    ".ico", ".ppm", ".pgm", ".pbm", ".pnm", ".tga", ".jfif",
-})
 
 #: Each zoom step multiplies (or divides) by this — a geometric ramp, so the
 #: perceived change is constant whether you are at 1x or 20x.
@@ -114,9 +114,14 @@ def _pan_keys_label() -> str:
 def is_image_file(path: Any) -> bool:
     """Whether ``path``'s extension is one the built-in image viewer handles.
     ``path`` is any object exposing ``suffix`` (``xefm.path.Path`` / ``pathlib``);
-    anything else is not an image."""
+    anything else is not an image.
+
+    The set is computed rather than written down — see
+    :func:`xefm.image_decoders.claimed_suffixes`. It is only ever formats
+    something on this machine can actually decode, so the old promise holds:
+    a file that opens here shows a picture."""
     try:
-        return path.suffix.lower() in IMAGE_SUFFIXES
+        return image_decoders.normalize(path.suffix) in image_decoders.claimed_suffixes()
     except AttributeError:
         return False
 
@@ -130,6 +135,17 @@ def _have_pillow() -> bool:
     except ImportError:
         return False
     return True
+
+
+def _no_decoder_message(suffix: str) -> str:
+    """What the card says when nothing on this machine reads the format.
+
+    Reachable in one way only — a config registered a decoder for the suffix and
+    that decoder returned ``None``, or the backend named a format it then could
+    not open. A suffix nothing claims never opens this viewer at all (see
+    :func:`is_image_file`), which is the point of computing that list."""
+    name = (suffix or "").lstrip(".").upper() or "this format"
+    return f"No decoder on this machine reads {name}"
 
 
 def _format_size(count: int) -> str:
@@ -148,7 +164,7 @@ class ImageViewer(Widget):
     focusable = True
 
     def __init__(self, path, siblings: Sequence | None = None, index: int = 0,
-                 on_close=None, on_navigate=None):
+                 on_close=None, on_navigate=None, panel: Any = None):
         # The sibling list is a snapshot taken at open time, never a live
         # reference to the pane's list: the file monitor mutates that in place on
         # refresh, which would shift the index out from under the viewer.
@@ -170,12 +186,15 @@ class ImageViewer(Widget):
         # another image. The app uses it to keep the pane's cursor on the file
         # being shown, so closing the viewer leaves the user where they looked.
         self._on_navigate = on_navigate
-        self._panel: Any = None
+        # Set before _resolve runs, not after the layer is pushed: resolving asks
+        # the backend which formats it reads and how big this one is, so the
+        # viewer has to be holding the panel by the time it opens its first file.
+        self._panel: Any = panel
         self._child_z = 90
-        # Local filesystem path for the current image (a temp copy for a remote
-        # or in-archive file), its pixel size, and its byte size — all resolved
-        # lazily by _resolve and dropped when the index moves.
-        self._local: str | None = None
+        # What the backend is handed for the current image: a filesystem path it
+        # opens itself, or a puikit RasterImage of pixels decoded here. None
+        # until _resolve settles it, and again whenever the index moves.
+        self._source: Any = None
         self._temp: str | None = None
         self._size: tuple[int, int] | None = None
         self._bytes: int | None = None
@@ -190,6 +209,11 @@ class ImageViewer(Widget):
         # base_h), the first two in base units and the last two the pixel size of
         # a base unit — so pan clamping knows the real client area between frames.
         self._view: tuple[float, float, float, float] | None = None
+        # The panel the current resolution was made against. Which route an
+        # image takes is the backend's answer, so a viewer built before its
+        # panel was known — or moved onto another one — has to ask again; draw()
+        # compares this against the live panel and re-resolves when they differ.
+        self._resolved_panel: Any = None
         self._resolve()
 
     # --- current image --------------------------------------------------------
@@ -200,47 +224,162 @@ class ImageViewer(Widget):
         return self.paths[self.index]
 
     def _resolve(self) -> None:
-        """Materialize the current image to a local path and read its size.
+        """Settle what the backend will be handed for the current image, and how
+        big it is. Recorded in ``_source`` / ``_size``; any failure lands in
+        ``_error`` and is surfaced on the card rather than raised, because a
+        directory of images should not become unbrowsable over one corrupt file.
 
-        The backend's ``draw_image`` and Pillow both take a filesystem path, so a
-        non-local file (S3 / SSH / inside an archive) is copied to a temp file
-        that lives until the viewer moves on or closes. Any failure is recorded
-        in ``_error`` and surfaced on the card rather than raised — a directory
-        of images should not become unbrowsable because one of them is corrupt."""
+        Four outcomes, in the order they are tried:
+
+        1. **The backend reads this format from a path** and the file is on a
+           disk it can open — hand over the path. Nothing is read here, nothing
+           decoded, no pixels copied. This is where HEIC and camera RAW land on
+           macOS, and everything ordinary lands everywhere.
+        2. **Something here can decode it** — Pillow, or a decoder a config
+           registered — so the bytes go straight to it and the pixels come back
+           as a ``RasterImage``. The bytes may come from anywhere, which is what
+           spares an S3 or in-archive file the temporary copy it used to need.
+        3. **Only the backend can read it, and the bytes are not on a disk.**
+           Stage them in a temp file for the life of the viewer. A HEIC inside a
+           zip, on a machine with no Pillow HEIF plugin.
+        4. **Nothing can read it** — the card says so.
+
+        Between 1 and 2 sits the one thing worth spelling out: when the backend
+        cannot draw pictures at all, no decode is attempted. The dimensions still
+        come out, by the cheapest route available, because the card shows them.
+        """
         self._release_temp()
-        self._local = self._size = self._bytes = self._error = None
+        self._resolved_panel = self._panel
+        self._source = self._size = self._bytes = self._error = None
         path = self.path
+        suffix = image_decoders.normalize(getattr(path, "suffix", ""))
         try:
-            if getattr(path, "is_remote", lambda: False)() or not os.path.exists(str(path)):
-                data = path.read_bytes()
-                suffix = path.suffix or ".img"
-                handle, temp = tempfile.mkstemp(prefix="xefm_img_", suffix=suffix)
-                with os.fdopen(handle, "wb") as out:
-                    out.write(data)
-                self._temp = self._local = temp
-                self._bytes = len(data)
-            else:
-                self._local = str(path)
-                self._bytes = os.path.getsize(self._local)
+            local = self._local_path(path)
         except Exception as e:
-            self._error = f"Cannot read: {e}"
-            logger.error(f"Cannot read image {path}: {e}")
+            self._fail(f"Cannot read: {e}", path)
             return
-        # The header parse covers PNG/GIF/BMP/JPEG without decoding; Pillow fills
-        # in the rest (WebP, TIFF, ICO...) when it is installed.
-        self._size = image_size(self._local)
-        if self._size is None and _have_pillow():
-            try:
-                from PIL import Image
 
-                with Image.open(self._local) as image:
-                    self._size = image.size
+        # 1. The fast lane.
+        if local is not None and image_decoders.is_native(suffix):
+            size = self._backend_size(local)
+            if size is not None:
+                self._source, self._size = local, size
+                return
+            # The backend names the format but could not read this particular
+            # file. Fall through: a decoder here may still manage it.
+
+        # No picture is going to be drawn, so decoding one would be waste — but
+        # the card still names the dimensions, so they are worth a cheap probe.
+        if not self._draws_pictures():
+            self._size = self._probe_size(path, local)
+            return
+
+        # 2. Decode it here.
+        if image_decoders.decoder_for(suffix) is not None:
+            try:
+                raster = image_decoders.decode(suffix, self._read(path, local))
             except Exception as e:
-                self._error = f"Cannot decode: {e}"
-                logger.error(f"Cannot decode image {path}: {e}")
+                self._fail(f"Cannot decode: {e}", path)
+                return
+            if raster is not None:
+                self._source, self._size = raster, raster.size
+                return
+
+        # 3. The backend's format, somewhere the backend cannot reach.
+        if local is None and suffix in image_decoders.native_suffixes():
+            staged = self._stage_temp(path, suffix)
+            if staged is not None:
+                size = self._backend_size(staged)
+                if size is not None:
+                    self._source, self._size = staged, size
+                    return
+
+        # 4. Nothing read it.
+        if self._error is None:
+            self._error = _no_decoder_message(suffix)
+
+    # --- the pieces _resolve is built from ------------------------------------
+
+    def _local_path(self, path) -> str | None:
+        """The image's path on a filesystem the backend can open, or ``None``
+        when it lives somewhere else (S3, SFTP, inside an archive). Records the
+        file's size on the way past, which is free for a local file and the only
+        cheap chance to learn it."""
+        if getattr(path, "is_remote", lambda: False)():
+            return None
+        local = str(path)
+        if not os.path.exists(local):
+            return None
+        self._bytes = os.path.getsize(local)
+        return local
+
+    def _read(self, path, local: str | None) -> bytes:
+        """The image's bytes, from wherever it lives, recording the byte count if
+        nothing has yet."""
+        data = path.read_bytes()
+        if self._bytes is None:
+            self._bytes = len(data)
+        return data
+
+    def _stage_temp(self, path, suffix: str) -> str | None:
+        """Write a non-local image to a temp file the backend can open, kept
+        until the viewer moves on or closes. The last resort, for a format only
+        the backend reads."""
+        try:
+            data = self._read(path, None)
+            handle, temp = tempfile.mkstemp(prefix="xefm_img_", suffix=suffix or ".img")
+            with os.fdopen(handle, "wb") as out:
+                out.write(data)
+        except Exception as e:
+            self._fail(f"Cannot read: {e}", path)
+            return None
+        self._temp = temp
+        return temp
+
+    def _draws_pictures(self) -> bool:
+        """Whether the backend draws real pixels at all. Asked here rather than
+        at draw time because it decides whether a decode is worth spending."""
+        return self._panel is not None and self._panel.images
+
+    def _backend_size(self, local: str) -> tuple[int, int] | None:
+        """The backend's own reading of the file's pixel size — ImageIO on macOS,
+        WIC on Windows, Pillow in a terminal. ``None`` means it could not read
+        the file, which is also the answer to "will this draw?"."""
+        if self._panel is None:
+            return None
+        try:
+            return self._panel.backend.image_size(local)
+        except Exception as e:
+            logger.error(f"Could not measure {local}: {e}")
+            return None
+
+    def _probe_size(self, path, local: str | None) -> tuple[int, int] | None:
+        """Dimensions for the metadata card when no picture will be drawn.
+
+        Pillow's ``open`` parses the header and stops, so this costs a few
+        hundred bytes rather than a decode — which is the whole point of asking
+        separately instead of reusing the decode path."""
+        size = self._backend_size(local) if local is not None else None
+        if size is not None:
+            return size
+        try:
+            from PIL import Image
+
+            source = local if local is not None else io.BytesIO(self._read(path, None))
+            with Image.open(source) as image:
+                return image.size
+        except Exception:
+            return None
+
+    def _fail(self, message: str, path) -> None:
+        """Record a failure for the card and the log. Everything that can go
+        wrong here is somebody else's file being unreadable, so it is reported
+        rather than raised."""
+        self._error = message
+        logger.error(f"{message.rstrip('.')}: {path}")
 
     def _release_temp(self) -> None:
-        """Delete the temp copy of a remote / in-archive image, if there is one."""
+        """Delete the staged copy of a non-local image, if one was needed."""
         if self._temp is None:
             return
         try:
@@ -355,13 +494,16 @@ class ImageViewer(Widget):
 
     def _can_render(self, ctx) -> bool:
         """Whether a real picture can be drawn: the backend must support images
-        and the size must be known. Otherwise the metadata card stands in."""
-        return ctx.images and self._size is not None and self._error is None
+        and ``_resolve`` must have settled on something to hand it. Otherwise the
+        metadata card stands in."""
+        return ctx.images and self._source is not None and self._error is None
 
     # --- drawing --------------------------------------------------------------
 
     def draw(self, ctx) -> None:
         self._panel = ctx.panel
+        if self._resolved_panel is not self._panel:
+            self._resolve()
         theme = ctx.theme
         wu, hu = ctx.size_units
         pad_x, pad_y = viewer_pad(ctx)
@@ -423,12 +565,12 @@ class ImageViewer(Widget):
         proportional, so ``fit="fill"`` draws them undistorted."""
         geom = self._fill_geometry(body_w, body_h, base_w, base_h)
         if geom is None:  # size unknown — let the backend contain the whole image
-            ctx.draw_image(x, y, self._local,
+            ctx.draw_image(x, y, self._source,
                            hints={"w": body_w, "h": body_h, "fit": "contain",
                                   "src": None, "alt": "🖼"})
             return
         (dx, dy, dw, dh), src = geom
-        ctx.draw_image(x + dx, y + dy, self._local,
+        ctx.draw_image(x + dx, y + dy, self._source,
                        hints={"w": dw, "h": dh, "fit": "fill", "src": src,
                               "alt": "🖼"})
 
@@ -442,6 +584,20 @@ class ImageViewer(Widget):
             parts.append(_format_size(self._bytes))
         return "  ".join(parts)
 
+    def _card_reason(self, ctx) -> list[str]:
+        """Why the picture is not on screen, in the order the reasons actually
+        apply. A file that failed says so; a format nothing here reads says what
+        would read it; otherwise it is the terminal that cannot show pictures at
+        all, whatever the file is."""
+        if self._error is not None:
+            return [self._error]
+        if not _have_pillow():
+            return ["Install pillow to view images"]
+        if not ctx.images:
+            return ["This terminal cannot display images",
+                    "Try kitty, iTerm2, WezTerm or a sixel terminal"]
+        return ["This image could not be decoded"]
+
     def _draw_card(self, ctx, x: float, y: float, w: float, h: float,
                    text_fg, muted, bg) -> None:
         """The fallback shown when the picture cannot be drawn: the file's format,
@@ -452,13 +608,8 @@ class ImageViewer(Widget):
         label = self._dimensions_label()
         if label:
             rows.append((label, text_fg))
-        if self._error is not None:
-            rows.append((self._error, muted))
-        elif not _have_pillow():
-            rows.append(("Install pillow to view images", muted))
-        else:
-            rows.append(("This terminal cannot display images", muted))
-            rows.append(("Try kitty, iTerm2, WezTerm or a sixel terminal", muted))
+        for line in self._card_reason(ctx):
+            rows.append((line, muted))
         top = y + max(0.0, (h - len(rows)) / 2.0)
         for offset, (line, color) in enumerate(rows):
             text = elide(line, w, where="end", measure=ctx.measure_text)
@@ -622,10 +773,11 @@ def show_image_viewer(panel: Any, path, siblings: Sequence | None = None,
     pane's cursor on the shown file). Like the other viewers, ``reflow``
     re-derives the layer rect from the live window size each render, so it
     follows resizes."""
+    # The panel goes in through the constructor, not after it: resolving the
+    # first image asks the backend what it can read and how big this one is.
     viewer = ImageViewer(path, siblings=siblings, index=index, on_close=on_close,
-                         on_navigate=on_navigate)
+                         on_navigate=on_navigate, panel=panel)
     sw, sh = panel.backend.size_units
-    viewer._panel = panel
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer
     panel.push_layer(viewer, z=z, hints=viewer_layer_hints(sw, sh),
                      reflow=lambda sw, sh: Rect(0, 0, sw, sh))

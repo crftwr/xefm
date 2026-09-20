@@ -3,7 +3,14 @@
 # boto3 for AWS S3 support
 # watchdog for automatic file list reloading
 # pillow for the built-in image viewer (decode/crop/scale; the viewer degrades
-#   to a metadata card without it, and inline terminal images need it too)
+#   to a metadata card without it, and inline terminal images need it too).
+#   Pillow's own format registry is half of what the viewer claims to open --
+#   11.3+ bundles libavif, so AVIF needs nothing else -- and any Pillow plugin
+#   installed alongside it (pillow-heif, pillow-jxl-plugin) is picked up with no
+#   entry here and no XeFM-side switch. None of those plugins is required:
+#   their wheels bundle LGPL codecs the DMG and MSIX would have to attribute, to
+#   serve formats macOS and Windows already read natively. See
+#   xefm/image_decoders.py.
 # libarchive-c for archive formats the standard library cannot read (.7z, .rar,
 #   .iso, .cab, .cpio, .rpm); see the note above the pin for why it is optional
 # pymigemo for Migemo (romaji -> Japanese) matching in incremental search
@@ -17,7 +24,22 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.6.0 is the floor, and a hard one: on the macOS GUI the main window is
+# 1.7.0 is the floor, and a hard one: the image viewer asks the backend which
+# formats it draws from a path (``Panel.image_formats()``) and hands it decoded
+# pixels for the ones it does not (``puikit.image.RasterImage``) -- an
+# AttributeError at startup and an ImportError at import on any older PuiKit.
+# That pairing is what widened the supported image formats: HEIC, JPEG XL and
+# camera RAW are drawn by the OS's own decoder where there is one, and a format
+# only XeFM can decode (a config's IMAGE_DECODERS entry, a Pillow plugin) is
+# handed over as pixels rather than written back out as a PNG. 1.7.0 also makes
+# every backend answer ``image_size`` through that same native decoder, which is
+# what makes the size -- and so the picture -- available for those formats at
+# all; and it lets a *terminal* borrow the OS decoder too, which is the whole
+# reason the terminal app shows a HEIC the desktop app on the same machine was
+# already showing. None of that last part is a floor of its own: on an older
+# PuiKit the formats simply are not claimed. See discussion #378 and
+# doc/dev/IMAGE_VIEWER_IMPLEMENTATION.md.
+# 1.6.0 was the previous floor, and a hard one: on the macOS GUI the main window is
 # opened with ``WindowStyle(takes_first_click=True)`` so that a drag out of a
 # background XeFM starts on the first press rather than being spent bringing
 # the window forward (issue #431) -- an unexpected keyword, so a TypeError at
@@ -53,7 +75,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.6.0
+puikit>=1.7.0
 pygments
 boto3
 watchdog

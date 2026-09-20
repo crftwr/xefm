@@ -85,7 +85,7 @@ def clean_schemes():
 def load(**attrs):
     """``(warnings, path_scheme_count)`` for one config."""
     result = user_api.load_user_entries(config_with(**attrs))
-    return result[0], result[5]
+    return result[0], result[-1]
 
 
 # --------------------------------------------------------------------------- #
@@ -156,7 +156,7 @@ def test_no_path_schemes_at_all_is_not_a_problem(clean_schemes):
 
 
 def test_the_preview_notice_counts_them(clean_schemes):
-    notice = user_api.preview_notice(0, 0, 0, 0, 2)
+    notice = user_api.preview_notice(0, 0, 0, 0, 0, 2)
     assert '2 path scheme(s)' in notice
     assert 'Preview' in notice
 

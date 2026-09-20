@@ -553,6 +553,56 @@ asymmetry.
 
 ---
 
+## 8d. `IMAGE_DECODERS` — the third, and the first where the registry is not the point
+
+`xefm/image_decoders.py`. Written up in full in
+`doc/dev/IMAGE_VIEWER_IMPLEMENTATION.md`; what belongs here is what it did to the
+machinery and what it settled.
+
+**It rode the rails unchanged.** `_build_image_decoder` sits beside
+`_build_sort_key` and `_build_filter`; one more loop in `_process_user_entries`,
+one more clause in `preview_notice`, one more `clear()` in the reload path. The
+"build one mechanism, not ten `register_*` functions" bet from discussion #378 §5
+held for the third table running, and the whole of the config-side work was under
+fifty lines.
+
+**The interesting part was elsewhere.** Unlike `SORT_KEYS` and `FILTERS`, this
+registry was not the answer on its own. A decoder returns *pixels*, and until
+PuiKit's `draw_image` accepted pixels (`RasterImage`, puikit 1.7.0) the only way
+to hand them over was to write a PNG back out and pass its path — an encode and a
+decode to move data the backend was about to be given. So the registry arrived
+with three PuiKit pieces under it: `RasterImage`, `Backend.image_formats()`, and
+each GUI backend answering `image_size()` through its *own* decoder.
+
+That last one is the part that generalizes. **Exposing a registry is not the same
+as knowing when to use it**, and `image_formats()` is what answers the second
+question: the app decodes a format only when the backend cannot, which on macOS
+means HEIC and camera RAW cost nothing at all. A registry with no such answer
+would have made every picture take the slow path.
+
+**Three decisions worth keeping:**
+
+**No `override`.** A sort key or an action can shadow a built-in by accident, so
+both ask for `{'override': True}`. A decoder cannot: registering one for a format
+XeFM already reads *is* the only way to replace how it is read, and there is no
+other reason to write the entry. Asking twice would be asking about the thing the
+entry already says.
+
+**Failure fails closed.** A sort key that fails falls back to a different order;
+a filter that fails shows everything. A decoder that fails shows **no picture** —
+the card names the reason and the log takes the traceback. Failing open has no
+meaning here: there is no honest stand-in for a picture that would not decode.
+Confirms §8c's point that the safe direction is decided per registry rather than
+inherited.
+
+**Registering claims the format.** `claimed_suffixes()` folds the registered
+suffixes in, so `IMAGE_DECODERS` is the whole of "make `.svg` open in the image
+viewer" — the user never edits a second list. The general shape: a registry whose
+entries also widen *what the feature applies to* is worth more than one that only
+changes how it behaves.
+
+---
+
 ## 9. Not implemented
 
 **Step 4's remainder.** `VIEWER_RENDERERS` feeding `viewer_registry.register()`.

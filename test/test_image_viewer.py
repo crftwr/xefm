@@ -28,9 +28,9 @@ from puikit.widgets.base import Widget
 
 from xefm._config import Config as DefaultConfig
 from xefm.config import config_manager
-from xefm.image_viewer import (IMAGE_SUFFIXES, MAX_ZOOM, MIN_ZOOM, PAN_STEP,
-                              ZOOM_STEP, ImageViewer, is_image_file,
-                              show_image_viewer)
+from xefm import image_decoders
+from xefm.image_viewer import (MAX_ZOOM, MIN_ZOOM, PAN_STEP, ZOOM_STEP,
+                              ImageViewer, is_image_file, show_image_viewer)
 from xefm.path import Path
 
 # Imported at module scope, not inside a test: both the repo root and test/ are
@@ -136,7 +136,7 @@ def test_is_image_file_tolerates_objects_without_a_suffix():
 
 def test_claimed_suffixes_are_normalized():
     # Every entry must be lower-case and dotted, or the lookup silently misses.
-    for suffix in IMAGE_SUFFIXES:
+    for suffix in image_decoders.claimed_suffixes():
         assert suffix.startswith(".") and suffix == suffix.lower()
 
 
@@ -755,14 +755,13 @@ def test_post_effect_untouched_when_theme_has_none(images):
 # --- remote / in-archive files ----------------------------------------------
 
 
-def test_non_local_image_is_materialized_to_a_temp_file(images, monkeypatch):
-    # A remote path has no filesystem path for Pillow or the backend to open, so
-    # the bytes are copied to a temp file for the life of the viewer.
-    source = images[0]
-    data = open(str(source), "rb").read()
+def _remote(data, name="remote.png", suffix=".png", uri="s3://bucket/remote.png"):
+    """A path that lives somewhere the backend cannot open a file — S3, SFTP, or
+    inside an archive. Only the three things ``_resolve`` asks of one."""
 
     class RemotePath:
-        name, suffix = "remote.png", ".png"
+        def __init__(self):
+            self.name, self.suffix = name, suffix
 
         def is_remote(self):
             return True
@@ -771,12 +770,136 @@ def test_non_local_image_is_materialized_to_a_temp_file(images, monkeypatch):
             return data
 
         def __str__(self):
-            return "s3://bucket/remote.png"
+            return uri
 
-    viewer = ImageViewer(RemotePath())
-    assert viewer._temp is not None
-    assert os.path.exists(viewer._temp)
+    return RemotePath()
+
+
+def test_a_non_local_image_is_decoded_from_its_bytes(images):
+    # It used to be copied to a temp file, because the backend and Pillow both
+    # took a path. Pillow takes the bytes, and the pixels go to the backend
+    # directly, so the copy is gone — along with the disk write and the second
+    # read it cost for every S3 or in-archive picture.
+    pytest.importorskip("PIL")
+    data = open(str(images[0]), "rb").read()
+
+    viewer = ImageViewer(_remote(data), panel=Panel(MemoryBackend(
+        width=60, height=20, capabilities=PROFILE_GUI_DESKTOP)))
+
+    assert viewer._temp is None
     assert viewer._size == (200, 100)
-    temp = viewer._temp
-    viewer._release_temp()
-    assert not os.path.exists(temp)
+    assert viewer._bytes == len(data)
+    from puikit.image import is_raster
+
+    assert is_raster(viewer._source)
+
+
+def test_a_non_local_image_only_the_backend_reads_is_staged(images):
+    # The one case a temp file survives for: a format nothing here decodes but
+    # the backend does, whose bytes are not on a disk the backend can open. A
+    # HEIC inside a zip, on a machine with no Pillow HEIF plugin.
+    data = open(str(images[0]), "rb").read()
+    backend = MemoryBackend(width=60, height=20, capabilities=PROFILE_GUI_DESKTOP)
+    backend.supported_image_formats = frozenset({".heic"})
+    image_decoders.set_native_suffixes(backend.image_formats)
+    try:
+        # The staged file is a PNG whatever it is called, so the memory
+        # backend's header parse can measure it and the route runs to the end.
+        viewer = ImageViewer(_remote(data, name="r.heic", suffix=".heic",
+                                     uri="archive://photos.zip/r.heic"),
+                             panel=Panel(backend))
+
+        assert viewer._temp is not None and os.path.exists(viewer._temp)
+        assert viewer._source == viewer._temp
+        assert viewer._size == (200, 100)
+
+        temp = viewer._temp
+        viewer._release_temp()
+        assert not os.path.exists(temp)
+    finally:
+        image_decoders.set_native_suffixes(None)
+
+
+def test_a_local_image_the_backend_reads_is_handed_over_as_a_path(images):
+    # The fast lane: nothing read here, nothing decoded, no pixels copied.
+    backend = MemoryBackend(width=60, height=20, capabilities=PROFILE_GUI_DESKTOP)
+    backend.supported_image_formats = frozenset({".png"})
+    # Handed over uncalled, the way the app hands over Panel.image_formats.
+    image_decoders.set_native_suffixes(backend.image_formats)
+    try:
+        viewer = ImageViewer(images[0], panel=Panel(backend))
+        assert viewer._source == str(images[0])
+        assert viewer._size == (200, 100)
+    finally:
+        image_decoders.set_native_suffixes(None)
+
+
+def test_a_format_nothing_reads_is_never_offered(tmp_path):
+    # The guarantee the computed claim list exists to keep: the viewer opens
+    # only files something on this machine can decode, so it never opens onto
+    # its own "cannot decode" card.
+    assert not is_image_file(Path(str(tmp_path / "scan.dcm")))
+    assert not is_image_file(Path(str(tmp_path / "paper.pdf")))
+
+
+def test_a_registered_decoder_claims_its_format(tmp_path):
+    def open_fake(data):
+        from puikit.image import RasterImage
+
+        return RasterImage(2, 3, b"\xff" * 24)
+
+    image_decoders.register(".dcm", open_fake)
+    try:
+        assert is_image_file(Path(str(tmp_path / "scan.dcm")))
+        assert image_decoders.decoder_for(".DCM") is open_fake
+        raster = image_decoders.decode(".dcm", b"anything")
+        assert raster.size == (2, 3)
+    finally:
+        image_decoders.clear()
+    assert not is_image_file(Path(str(tmp_path / "scan.dcm")))
+
+
+def test_a_registered_decoder_overrides_the_backends_own(images):
+    # Registering one is a statement that yours should be used, even for a
+    # format the backend would have read from a path.
+    image_decoders.set_native_suffixes((".png",))
+    image_decoders.register(".png", lambda data: None)
+    try:
+        assert not image_decoders.is_native(".png")
+    finally:
+        image_decoders.clear()
+        image_decoders.set_native_suffixes(None)
+
+
+def test_a_decoder_that_fails_shows_the_reason_not_a_traceback(images):
+    def explode(data):
+        raise ValueError("bad frame")
+
+    image_decoders.register(".png", explode)
+    try:
+        viewer = ImageViewer(images[0], panel=Panel(MemoryBackend(
+            width=60, height=20, capabilities=PROFILE_GUI_DESKTOP)))
+        assert viewer._source is None
+        assert "bad frame" in viewer._error
+    finally:
+        image_decoders.clear()
+
+
+def test_no_decode_is_spent_where_no_picture_can_be_drawn(images, monkeypatch):
+    # A terminal with no inline-image protocol shows a metadata card. Decoding a
+    # picture for it would be pure waste — but the card names the dimensions, so
+    # they still have to come out.
+    calls = []
+    real = image_decoders.decoder_for
+
+    def counting(suffix):
+        calls.append(suffix)
+        return real(suffix)
+
+    monkeypatch.setattr(image_decoders, "decoder_for", counting)
+    viewer = ImageViewer(images[0], panel=Panel(MemoryBackend(
+        width=60, height=20, capabilities=PROFILE_TUI)))
+
+    assert calls == []
+    assert viewer._source is None
+    assert viewer._size == (200, 100)   # still on the card

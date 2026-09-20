@@ -18,9 +18,19 @@ Rendering is PuiKit's job (per `CLAUDE.md`), so the work divides:
 | PuiKit | `src` hint on `draw_image` — the crop the backend samples |
 | PuiKit | `backends/_terminal_graphics.py` — kitty / iTerm2 / sixel |
 | PuiKit | `CursesBackend` phase-3 image emission; `images` capability |
-| PuiKit | `DrawContext.images` — lets a widget pick a richer fallback |
+| PuiKit | `DrawContext.images` / `Panel.images` — lets a widget pick a richer fallback |
+| PuiKit | `image.RasterImage` — decoded pixels as an image source |
+| PuiKit | `Backend.image_formats()` — which formats this machine draws from a path |
+| PuiKit | `Backend.image_size()` through each backend's *native* decoder |
+| XeFM | `xefm/image_decoders.py` — the claim list and the decoder registry |
 | XeFM | `xefm/image_viewer.py` — the modal, state, keys, chrome, navigation |
 | XeFM | dispatch in `xefm/app.py`, bindings + associations in `_config.py` |
+
+The last four arrived together, for one reason: **a format is only worth
+claiming if something can decode it**, and both halves of that — what the OS
+reads, and what XeFM can decode itself — had to become answerable before the
+list of supported formats could stop being a guess. See *Which formats open*
+below. PuiKit side: `puikit/docs/images.md` §5 and §8.
 
 ## Zoom and pan are geometry, not pixels
 
@@ -39,7 +49,7 @@ drawn `fit="fill"`. One code path covers every zoom level:
 
 ```python
 (dx, dy, dw, dh), src = self._fill_geometry(body_w, body_h, base_w, base_h)
-ctx.draw_image(x + dx, y + dy, self._local,
+ctx.draw_image(x + dx, y + dy, self._source,
                hints={"w": dw, "h": dh, "fit": "fill", "src": src, "alt": "🖼"})
 ```
 
@@ -253,8 +263,9 @@ to the source (`test_sixel_round_trips_to_the_original_pixels`).
 
 ## Pillow
 
-Pillow is a **hard** dependency of the XeFM viewer's picture rendering and an
-**optional** one for PuiKit:
+Pillow is a **hard** dependency of the XeFM viewer's picture rendering — except
+on the fast lane, where the backend's own decoder does the work and Pillow is
+never asked (see *Which formats open*) — and an **optional** one for PuiKit:
 
 - It crops (`src`), scales to the target's pixel box, and re-encodes to the wire
   format — the terminal protocols have no backend-side source rect, so the crop
@@ -298,13 +309,111 @@ disagrees, so a stale index cannot land the viewer on a different file.
 Moving to another image resets zoom and pan — carrying a 20× crop across would
 open the next file on an arbitrary corner of it.
 
-## Non-local images
+## Which formats open, and who decodes each one
 
-`draw_image` and Pillow both take a filesystem path, which an S3 / SSH /
-in-archive `xefm.path.Path` does not have. `_resolve()` materializes those via
-`read_bytes()` into a temp file for the life of the viewer, released on
-navigation and on close. Failures are recorded in `_error` and shown on the card
-rather than raised — one corrupt file should not make a directory unbrowsable.
+`xefm/image_decoders.py`. The viewer used to gate on a frozen `IMAGE_SUFFIXES`,
+kept deliberately small so that **a file it opened always showed a picture**.
+That promise is the thing worth keeping; the frozen list is not.
+
+Two things can decode a picture, and both are properties of the machine:
+
+- **The backend's own decoder**, reported by `Backend.image_formats()`. ImageIO
+  on macOS (HEIC, JPEG XL, camera RAW, sixty-odd types); the *installed* WIC
+  codecs on Windows, so HEIC appears only where the Store extension is; Pillow's
+  registry in a terminal, plugins included.
+- **A decoder registered here** — Pillow as the built-in one, plus whatever a
+  config's `IMAGE_DECODERS` adds — which returns pixels XeFM hands over as a
+  `RasterImage`.
+
+`claimed_suffixes()` is `CANDIDATE_SUFFIXES ∩ (native ∪ pillow) ∪ registered`.
+The intersection is what keeps the promise; the curated `CANDIDATE_SUFFIXES` is
+what keeps it *sane*, because ImageIO will cheerfully also read a PDF, and a
+`.dcm` wants window/level controls this viewer does not have. A registered
+suffix bypasses the curation — registering a decoder *is* the statement that the
+format should open here.
+
+The claim is memoized and invalidated by `register()` / `clear()` /
+`set_native_suffixes()`, because `is_image_file` is asked once per entry for
+every directory listed.
+
+`set_native_suffixes` takes the backend's answer **or a callable for it**, and
+`XeFMApp.__init__` passes `Panel.image_formats` uncalled. That matters on
+Windows: asking at construction would have the backend build its WIC factory —
+and initialize the COM apartment under it — before its window is open. Deferred,
+the backend is asked once, at the first directory listing. A backend that raises
+there costs the fast lane and a few formats, never the viewer.
+
+`BASELINE_SUFFIXES` (`.png`, `.jpg`, `.gif`, …) is the one deliberate hole in
+"only claim what something can read". Reaching it takes no Pillow *and* no
+backend decoder, where every picture is unshowable anyway; what it buys is that
+`Enter` on a `.png` still opens the viewer, whose card says "Install pillow to
+view images", rather than silently routing the file to the binary viewer.
+
+### `_resolve()` picks the route
+
+Four outcomes, in order:
+
+1. **Native + on a disk** → hand the backend the **path**. Nothing read here,
+   nothing decoded, no pixels copied. Size from `backend.image_size()`, which
+   each GUI backend now answers through its own decoder rather than the
+   four-format header parse — an unknown size is what the viewer reads as "this
+   cannot be shown", so the two answers had to be made to agree.
+2. **A decoder claims it** → its bytes go straight in, pixels come back as a
+   `RasterImage`.
+3. **Native only, bytes not on a disk** → stage a temp file. The one remaining
+   case for one: a HEIC inside a zip, on a machine with no Pillow HEIF plugin.
+4. **Nothing reads it** → the card says so. Only reachable when a registered
+   decoder returns `None` or the backend named a format it then could not open;
+   a suffix nothing claims never opens the viewer at all.
+
+Between 1 and 2 sits a guard worth naming: when the backend cannot draw pictures
+at all (a terminal with no inline-image protocol), **no decode is attempted**.
+The card still wants the dimensions, so `_probe_size` reads them from Pillow's
+lazy `open` — a header read, not a decode.
+
+`_resolve` needs the panel, because the strategy is the backend's answer. It is
+handed in through the constructor, and `draw()` re-resolves if the live panel is
+not the one the resolution was made against (`_resolved_panel`), which keeps a
+viewer built before its panel was known working.
+
+### Non-local images
+
+This is where step 2 pays off. `read_bytes()` on an S3 / SSH / in-archive
+`xefm.path.Path` used to be written to a temp file so `draw_image` and Pillow
+could both open a *path*; now the bytes go straight to the decoder and the pixels
+straight to the backend, so the disk write and the second read are gone for every
+such picture. Only case 3 still stages one, released on navigation and on close.
+
+Failures are recorded in `_error` and shown on the card rather than raised — one
+corrupt file should not make a directory unbrowsable.
+
+### The terminal reaches the OS decoder too
+
+For a while it did not, and the seam showed: on the same Mac, the desktop app
+opened a HEIC and the terminal app said `No built-in viewer for …`. The cause was
+that `Backend.image_formats()` was answering two questions — "what can *you* draw
+from a path?" and "what can this *machine* decode?" — which coincide for a GUI
+backend and do not for a terminal, whose decoder is Pillow.
+
+Closed in PuiKit, not here: `puikit/_platform_image.py` asks the second question
+separately (ImageIO on macOS, WIC on Windows, nothing on Linux), and
+`_terminal_graphics` unions it into `extensions()` and falls through to it in
+`_open()`. **XeFM did not change at all** — `set_native_suffixes` is handed
+`Panel.image_formats` uncalled, so the wider answer simply arrives. See
+`puikit/docs/images.md` §9.
+
+So the table in the feature doc is per *machine*, not per backend, and
+`IMAGE_DECODERS` keeps its own job: formats nothing on the machine reads.
+
+### Optional Pillow plugins
+
+`_OPTIONAL_PILLOW_PLUGINS` registers `pillow-heif`, `pillow-avif` and
+`pillow-jxl` when they happen to be importable. None is in `requirements.txt`:
+their wheels bundle LGPL codecs that would have to be attributed in the DMG and
+the MSIX, to serve formats the two platforms shipping those installers already
+read natively. `pip install pillow-heif` is the whole of "turn HEIC on" anywhere
+else, and it needs no XeFM-side switch — the plugin lands in Pillow's registry,
+which is where `claimed_suffixes()` is already looking.
 
 ## Dispatch and config
 
@@ -327,20 +436,60 @@ rather than raised — one corrupt file should not make a directory unbrowsable.
 
 ## Testing
 
-`test/test_image_viewer.py` (41 tests) covers the file-type claim, zoom/pan
-arithmetic and clamping, navigation and its snapshot semantics, the hints that
-reach the backend, the TUI metadata card, modal behavior, app-level dispatch,
-and remote-file materialization. Drawing is asserted against `MemoryBackend`
-under both `PROFILE_TUI` and `PROFILE_GUI_DESKTOP`.
+`test/test_image_viewer.py` covers zoom/pan arithmetic and clamping, navigation
+and its snapshot semantics, the hints that reach the backend, the TUI metadata
+card, modal behavior, app-level dispatch, and each of `_resolve`'s four routes —
+including that no decode is spent where no picture can be drawn. Drawing is
+asserted against `MemoryBackend` under both `PROFILE_TUI` and
+`PROFILE_GUI_DESKTOP`; `MemoryBackend.supported_image_formats` is the knob that
+stands in for a backend with a native decoder.
 
-On the PuiKit side, `tests/test_terminal_graphics.py` and the additions to
-`tests/test_image_widgets.py` cover detection, crop/scale, the three encoders,
-and the sixel round-trip.
+`test/test_image_decoders.py` covers the claim list — what a current Pillow adds,
+what the backend adds, and the curation that keeps `.pdf` and `.dcm` out of it —
+the route each format takes, decoding, and loading `IMAGE_DECODERS` from a
+config.
+
+On the PuiKit side, `tests/test_raster_image.py` covers `RasterImage`,
+`source_key`, the budgeted cache and each backend's `image_formats()` (the macOS
+ones build a real `NSImage` and read its pixels back);
+`tests/test_terminal_graphics.py` and `tests/test_vt_mouse_images.py` cover
+detection, crop/scale, the three encoders, the sixel round-trip, and re-emission
+when a raster is painted into.
 
 ```bash
-python -m pytest test/test_image_viewer.py -v
-(cd ../puikit && pytest tests/test_terminal_graphics.py tests/test_image_widgets.py -v)
+python -m pytest test/test_image_viewer.py test/test_image_decoders.py -v
+(cd ../puikit && pytest tests/test_raster_image.py tests/test_terminal_graphics.py -v)
 ```
+
+**Verified by hand on Windows**, since the Windows backend's raster path and its
+WIC decoder enumeration could only be written on macOS, not run. On Windows 11
+build 26200 (ARM64, under x64 emulation), with the HEIF, HEVC, Raw, WebP and AV1
+extensions installed:
+
+- `wic_decoder_extensions()` enumerates fourteen decoders and 65 extensions. The
+  three derived vtable indices were cross-checked by walking the same enumeration
+  with `IWICComponentInfo::GetFriendlyName[10]` beside `GetFileExtensions[17]` —
+  fourteen names each agreeing with its own extension list, which a wrong index
+  could not produce.
+- `rt_create_bitmap_from_raster()` was drawn onto a real `ID2D1DCRenderTarget`
+  and the pixels read back from the DIB: red, green and blue in that order (so
+  the RGBA→BGRA swizzle is the right way round) and a 50% black bar compositing
+  to 127 on white (so the premultiply is right). The same four pixels through
+  the WIC path and the raster path come out byte-identical.
+- A real 886x426 HEIC decodes through `wic_load_bitmap_source` to a full BGRA
+  buffer — the codec is genuinely present, not merely registered.
+
+Two findings worth keeping. **The `.lower()` in `wic_decoder_extensions` is
+load-bearing**: Microsoft's Raw and JPEG XL decoders answer `GetFileExtensions`
+in upper case (`.CR2`, `.JXL`) where every other decoder answers in lower, so
+dropping it would silently lose every camera RAW and JPEG XL. And **the package
+that registers the HEIC decoder is HEIF Image Extensions**, not HEVC Video
+Extensions — HEVC decodes what the container holds, so both are needed, and the
+user doc named only the second until `b065d32`.
+
+COM vtable indices are declaration order, identical on every architecture, so
+the ARM64-under-emulation caveat on that run does not weaken the result; what is
+architecture-specific is only which codec packages happen to be installed.
 
 Note that `test/test_image_viewer.py` binds `import xefm` at module scope. Both
 the repo root and `test/` are packages, so once pytest prepends the repo's
