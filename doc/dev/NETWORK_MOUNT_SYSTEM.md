@@ -508,6 +508,27 @@ one change is what lets the form double as the way in for a server typed by
 hand, since `connect()` sends any share-less address to `browse_shares` and
 everything converges on the same path.
 
+### Try first, ask second — and what that obliges
+
+Every connection is attempted **before** anyone is asked for anything: with
+the stored password if there is one, with nothing if there is not. That is
+what makes a share allowing guests open with no prompt at all, and it means
+**the first refusal of every connection arrives with no credentials behind
+it**. Two things follow, and each was got wrong once:
+
+- **The message must name what is missing, not blame what was given.** With
+  nothing supplied, "the server rejected the user name or password" accuses
+  the user of getting wrong something they were never asked for. Both backends
+  say `<host> needs a user name and password.` instead, which is the sentence
+  the feature doc's troubleshooting section quotes. macOS distinguished the
+  guest attempt from the start; Windows said "rejected" for both until the
+  Windows backend learned the same rule.
+- **It is not an error.** The form opening next is the flow working, so
+  `ConnectFlow._failed` logs an auth refusal at *info* and keeps `error` for
+  what ends in a message box — a server that is switched off, a name that
+  does not resolve. `_cannot_browse`, the same shape one step earlier, always
+  did this.
+
 ## Saved servers and credentials — `xefm/server_list.py`
 
 The list the picker shows is the **merge** of two sources, in this order:

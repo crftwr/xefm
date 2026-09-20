@@ -775,6 +775,42 @@ class WindowsBackend(unittest.TestCase):
             self.assertEqual(self.win.list_shares(target, "crftwr"), ["photo"])
             self.assertEqual(self.win.list_shares(target), ["photo"])
 
+    def test_a_refusal_with_nothing_supplied_names_what_is_missing(self):
+        """XeFM tries once before it asks — that is what opens a guest share
+        with no prompt — so the first refusal of every connection arrives with
+        no user name and no password behind it. Saying the server "rejected
+        the user name or password" there accuses the user of getting wrong
+        something they were never asked for. macOS has said the other sentence
+        for its guest attempt all along, and the feature doc quotes it."""
+        target = netmount.parse_address("smb://SynologyNas.local/Documents")
+        access_denied = 5
+
+        with patch.object(self.win._mpr, "WNetAddConnection2W",
+                          lambda *a: access_denied):
+            with self.assertRaises(netmount.MountError) as nothing_typed:
+                self.win.mount(target)
+            with self.assertRaises(netmount.MountError) as rejected:
+                self.win.mount(target, user="me", password="wrong")
+
+        self.assertEqual(str(nothing_typed.exception),
+                         "SynologyNas.local needs a user name and password.")
+        self.assertIn("rejected", str(rejected.exception))
+        # Both send the flow to the form rather than to a message box.
+        self.assertTrue(nothing_typed.exception.auth)
+        self.assertTrue(rejected.exception.auth)
+
+    def test_a_failure_that_is_not_about_credentials_is_unchanged(self):
+        """Only an auth refusal is reworded. A server that cannot be found has
+        nothing to do with the account, and saying it needs one would send the
+        user to type credentials at a machine that is switched off."""
+        target = netmount.parse_address("smb://nas/photo")
+        with patch.object(self.win._mpr, "WNetAddConnection2W",
+                          lambda *a: 53):  # ERROR_BAD_NETPATH
+            with self.assertRaises(netmount.MountError) as caught:
+                self.win.mount(target)
+        self.assertIn("could not be found", str(caught.exception))
+        self.assertFalse(caught.exception.auth)
+
     # --- mDNS discovery --------------------------------------------------
 
     def test_the_label_is_taken_off_the_service_type(self):

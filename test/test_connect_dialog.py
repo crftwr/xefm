@@ -225,6 +225,30 @@ class Flow(unittest.TestCase):
         self.assertEqual(self.forms, [])
         box.assert_called_once()
 
+    def test_being_asked_for_credentials_is_not_logged_as_a_failure(self):
+        """The first attempt is deliberately made with whatever is stored —
+        which is what opens a guest share with no prompt — so a refusal is the
+        flow working and the form opens next. A server that is switched off is
+        the failure, and keeps the error line."""
+        refused = netmount.MountError("nas needs a user name and password.",
+                                      auth=True)
+        unreachable = netmount.MountError("nas: The server cannot be reached.")
+        request = cd.ConnectRequest(address="smb://nas/photo")
+        with patch.object(netmount, "mount", side_effect=refused), \
+             patch.object(cd.logger, "info") as info, \
+             patch.object(cd.logger, "error") as error:
+            self.flow.connect(request)
+        info.assert_called_once()
+        error.assert_not_called()
+
+        with patch.object(netmount, "mount", side_effect=unreachable), \
+             patch.object(cd, "show_message_box"), \
+             patch.object(cd.logger, "info") as info, \
+             patch.object(cd.logger, "error") as error:
+            self.flow.connect(request)
+        error.assert_called_once()
+        info.assert_not_called()
+
     def test_a_cancelled_connection_is_silent(self):
         def cancelling(panel, message, work, on_done, **kw):
             on_done(None, netmount.MountError("Cancelled."), True)

@@ -362,12 +362,25 @@ def mount(target, user: str = "", password: str = "",
             raise MountError(
                 f"{remote} was not found. If this is a WebDAV address, check "
                 "that the WebClient service is running.")
+        auth = result in _AUTH_ERRORS
+        if auth and not user and not password:
+            # Nothing was handed over, so "rejected the user name or password"
+            # accuses the user of getting wrong something they were never
+            # asked for. Name what is actually missing. This is the first
+            # attempt of every connection — XeFM tries once with what it has,
+            # so that a share allowing guests opens with no prompt at all —
+            # and on Windows "nothing" still means the session's own
+            # credentials, which is why a domain share gets that far and a NAS
+            # does not. The macOS backend says the same sentence for its guest
+            # attempt, and the feature doc quotes it.
+            raise MountError(f"{target.host} needs a user name and password.",
+                             auth=True)
         message = _MESSAGES.get(result)
         if message is None:
             message = f"Could not connect to {target.host} (error {result})."
         elif result in (53, 55, 64):
             message = f"{target.host}: {message}"
-        raise MountError(message, auth=result in _AUTH_ERRORS)
+        raise MountError(message, auth=auth)
 
     return f"{local}\\" if local else remote
 

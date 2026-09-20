@@ -712,7 +712,16 @@ class ConnectFlow:
                 error: Optional[BaseException]) -> None:
         message = str(error) if error else "The connection did not happen."
         auth = isinstance(error, netmount.MountError) and error.auth
-        logger.error(f"Could not connect to {target.url}: {message}")
+        # Being turned down for credentials is the flow working, not a
+        # failure. The first attempt is deliberately made with whatever is
+        # stored — which is what opens a guest share with no prompt — so a
+        # refusal is how XeFM learns to ask, and the form opens next.
+        # :meth:`_cannot_browse` logs its own "the server would not answer, so
+        # ask the user" at info for the same reason. What is left — a server
+        # that is switched off, a name that does not resolve — ends in a
+        # message box, and is an error.
+        (logger.info if auth else logger.error)(
+            f"Could not connect to {target.url}: {message}")
         if auth or not error:
             # Reopened with what was typed, so the password can be corrected
             # without retyping the address — and so that a saved server whose
