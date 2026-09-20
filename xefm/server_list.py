@@ -140,7 +140,15 @@ def save_server(name: str, url: str, user: str = "") -> bool:
 
 
 def forget_server(entry: ServerEntry) -> bool:
-    """Forget a saved server and its stored password.
+    """Forget a saved server, and its stored password where nothing else
+    still needs it.
+
+    A row names a *share*; a password is kept per **server and account**,
+    because that is what lets a second share on the same NAS connect without
+    asking again. So the two do not line up, and deleting the password with
+    every row deleted the one the machine's other rows were relying on —
+    forget ``smb://nas/Documents`` and ``smb://nas/Videos`` would start asking
+    again. It goes when the last row that could use it goes.
 
     Returns False for a config row, which is also what the picker needs from
     its remove hook to leave that row alone.
@@ -152,11 +160,24 @@ def forget_server(entry: ServerEntry) -> bool:
     if not _write_state(kept):
         return False
     target = entry.target
-    if target is not None:
-        # The password is the user's, not the row's — but a server they have
-        # said to forget should not leave its password behind either.
+    if target is not None and not _still_needed(target, entry.user, kept):
         netmount.forget_password(target, entry.user)
     return True
+
+
+def _still_needed(target, user: str, kept: list) -> bool:
+    """Whether a saved row other than the one being forgotten would use this
+    server's password. Config rows count: they are not removable here, and a
+    password deleted out from under one is a password the user cannot restore
+    from this dialog."""
+    host = target.canonical_host
+    for other in list(kept) + _from_config():
+        other_target = other.target
+        if (other_target is not None
+                and other_target.canonical_host == host
+                and other.user == user):
+            return True
+    return False
 
 
 def with_user(entry: ServerEntry, user: str) -> ServerEntry:

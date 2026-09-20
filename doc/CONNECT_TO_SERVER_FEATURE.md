@@ -48,9 +48,11 @@ Each row says what it is, and **Enter** does the obvious thing with it:
 | `— on the network` | Found just now (see below). **Enter** asks it which shares it offers. |
 
 **Shift-Delete** forgets the highlighted server. It does not disconnect
-anything — it removes the entry from the list, along with any password saved for
-it. Servers written into your config file cannot be forgotten this way; edit the
-config instead.
+anything — it removes the entry from the list, along with any password saved
+for it. A password is kept per server and account rather than per share, so if
+another saved row still uses the same account on that machine, the password
+stays for that row's sake. Servers written into your config file cannot be
+forgotten this way; edit the config instead.
 
 ## Servers found on the network
 
@@ -212,8 +214,8 @@ the login **Keychain** on macOS, **Credential Manager** on Windows — never int
 the config file or XeFM's own state. On the next connection the field comes up
 already filled.
 
-To remove a saved password, either forget the server with **Shift-Delete** (the
-password goes with it) or delete the entry in Keychain Access / Credential
+To remove a saved password, either forget every saved row that uses that
+server and account (the password goes with the last of them) or delete the entry in Keychain Access / Credential
 Manager directly.
 
 Saving happens after the connection succeeds, so a failure to save is reported

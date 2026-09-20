@@ -66,6 +66,39 @@ class ServerListTest(unittest.TestCase):
         self.assertEqual(server_list.get_servers(), [])
         self.assertEqual(self.forgotten, [("smb://nas/photo", "me")])
 
+    def test_forgetting_one_share_keeps_the_password_another_still_needs(self):
+        """A row names a share; a password is kept per server and account, so
+        the two do not line up. Deleting it with every row took away the one
+        the machine's other rows were relying on."""
+        server_list.save_server("Docs", "smb://nas/Documents", "me")
+        server_list.save_server("Vids", "smb://nas/Videos", "me")
+        docs = next(e for e in server_list.get_servers() if "Documents" in e.url)
+        self.assertTrue(server_list.forget_server(docs))
+        self.assertEqual(self.forgotten, [])
+
+    def test_forgetting_the_last_share_takes_the_password_with_it(self):
+        server_list.save_server("Docs", "smb://nas/Documents", "me")
+        docs = server_list.get_servers()[0]
+        self.assertTrue(server_list.forget_server(docs))
+        self.assertEqual(self.forgotten, [("smb://nas/Documents", "me")])
+
+    def test_a_different_account_on_the_same_server_is_not_a_reason_to_keep(self):
+        server_list.save_server("Mine", "smb://nas/Documents", "me")
+        server_list.save_server("Theirs", "smb://nas/Videos", "someone-else")
+        mine = next(e for e in server_list.get_servers() if e.user == "me")
+        self.assertTrue(server_list.forget_server(mine))
+        self.assertEqual(self.forgotten, [("smb://nas/Documents", "me")])
+
+    def test_a_config_row_keeps_the_password_alive_too(self):
+        """It cannot be removed from the dialog, so a password deleted out
+        from under it is one the user cannot restore from there either."""
+        self.config_rows = [{"name": "Vids", "url": "smb://nas/Videos",
+                             "user": "me"}]
+        server_list.save_server("Docs", "smb://nas/Documents", "me")
+        docs = next(e for e in server_list.get_servers() if e.removable)
+        self.assertTrue(server_list.forget_server(docs))
+        self.assertEqual(self.forgotten, [])
+
     def test_the_same_server_in_both_places_appears_once(self):
         server_list.save_server("NAS", "smb://nas/photo", "me")
         self.config_rows = [{"name": "Promoted", "url": "smb://NAS/photo/",
