@@ -85,17 +85,77 @@ PUIKIT_TERM_GRAPHICS=none xefm     # never try to draw images inline
 PUIKIT_TERM_GRAPHICS=sixel xefm    # force sixel
 ```
 
+## Formats
+
+PNG, JPEG, GIF, BMP, WebP, TIFF, ICO, TGA and the PNM family, plus **AVIF**,
+**JPEG 2000**, **PSD**, **QOI**, **ICNS**, **DDS**, **CUR**, **APNG** and
+**PCX**. Those all come from [Pillow](https://python-pillow.org/), which ships
+with XeFM, so they work the same on every platform.
+
+**HEIC, JPEG XL and camera RAW depend on your machine**, because XeFM asks the
+system rather than carrying a decoder for them:
+
+| | macOS | Windows | Linux / terminal |
+|---|---|---|---|
+| HEIC / HEIF | yes, built in | with the *HEVC Video Extensions* from the Store | `pip install pillow-heif` |
+| AVIF | yes | yes | yes |
+| JPEG XL | yes, built in | — | `pip install pillow-jxl-plugin` |
+| Camera RAW (DNG, CR2, NEF, ARW…) | see below | see below | see below |
+
+On macOS the pictures are drawn by the same decoder Preview and Quick Look use;
+on Windows by whichever imaging codecs are installed. So a HEIC off your phone
+opens with nothing to set up on a Mac, and on a Windows machine with the Store
+extension installed. Everywhere else, one `pip install` is the whole of it.
+
+**XeFM only ever offers a format something on your machine can read.** If a
+`.heic` opens in the image viewer, you get a picture — never a "cannot show
+this" card. On a machine with no HEIC decoder the file simply is not treated as
+an image, and `V` falls back to whatever else you have set up for it (see
+*Opening in an external viewer instead*, below).
+
+### Adding a format yourself
+
+Camera RAW, SVG, DICOM and anything else are a few lines in your config. Write a
+function that turns the file's bytes into a picture and name the suffix:
+
+```python
+import io
+
+def open_raw(data):
+    import rawpy                      # pip install rawpy
+    from PIL import Image
+    with rawpy.imread(io.BytesIO(data)) as raw:
+        return Image.fromarray(raw.postprocess())
+
+class Config:
+    IMAGE_DECODERS = {
+        '.dng': open_raw,
+        '.cr2': open_raw,
+        '.nef': open_raw,
+    }
+```
+
+Registering a suffix is also what makes the viewer *offer* that format, so
+`Enter` on a `.dng` now opens the picture. Your function gets the file's bytes —
+not a path — so the same decoder works on a picture inside a zip or on an S3
+bucket. Naming a suffix XeFM already reads replaces its decoder with yours.
+
+Full details in `doc/CUSTOMIZATION_FEATURE.md`; your config file has a worked
+example in its `IMAGE_DECODERS` section.
+
 ## Requirements
 
-Decoding is done by [Pillow](https://python-pillow.org/), which ships with XeFM.
-If it is somehow missing, the viewer still opens and still navigates, but shows
-the metadata card instead of the picture.
+Pillow ships with XeFM and decodes most of the list above. If it is somehow
+missing, the viewer still opens and still navigates, but shows the metadata card
+instead of the picture.
 
 ## Remote and archived images
 
-Images on S3 or over SSH, and images inside an archive, open like any other —
-their bytes are fetched to a temporary file for the life of the viewer and
-removed when it closes.
+Images on S3 or over SSH, and images inside an archive, open like any other, and
+nothing is written to disk on the way — their bytes go straight to the decoder.
+(The one exception is a format only your operating system can read, such as a
+HEIC inside a zip on a machine with no `pillow-heif`: that one is staged in a
+temporary file for the life of the viewer and removed when it closes.)
 
 ## Opening in an external viewer instead
 
@@ -149,4 +209,6 @@ the current defaults.
 ## See also
 
 - `doc/dev/IMAGE_VIEWER_IMPLEMENTATION.md` — how it works internally
+- `doc/CUSTOMIZATION_FEATURE.md` — `IMAGE_DECODERS` among the other things a
+  config can define
 - `doc/TEXT_VIEWER_FEATURE.md` — the viewer for everything that is not an image

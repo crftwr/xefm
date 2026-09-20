@@ -108,6 +108,7 @@ from xefm.text_dialog import show_markdown
 from xefm.text_encoding import sniff_bom
 from xefm.tips import tip_count
 from xefm.tips_dialog import show_tips_dialog
+from xefm import image_decoders
 from xefm.image_viewer import is_image_file, show_image_viewer
 from xefm.text_viewer import looks_binary, show_text_viewer
 from xefm.viewer_registry import rich_renderer_for
@@ -1302,6 +1303,14 @@ class XeFMApp:
         self._drag_cancelled_in_place = False
 
         self.panel = Panel(backend)
+        # Where to learn which image formats this backend draws from a path —
+        # ImageIO's list on macOS, the installed WIC codecs on Windows, Pillow's
+        # registry in a terminal. It decides both which files the image viewer
+        # offers to open and which of them XeFM has to decode itself, and it is a
+        # fact about the machine, so it is read from the backend rather than
+        # assumed. Handed over *uncalled*: the backend is asked at the first
+        # question anyone has, not while it is still starting up.
+        image_decoders.set_native_suffixes(self.panel.image_formats)
         # Guarantee text legibility across every theme: each run is lifted to a
         # readability floor against its own background at draw time (floor-only,
         # so designed colors that already read are untouched). This is what keeps
@@ -1481,7 +1490,7 @@ class XeFMApp:
 
     def _load_user_entries(self, config) -> None:
         """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` / ``SORT_KEYS`` /
-        ``FILTERS`` / ``PATH_SCHEMES`` and report on them.
+        ``FILTERS`` / ``IMAGE_DECODERS`` / ``PATH_SCHEMES`` and report on them.
 
         Shared by startup and reload — the loader drops every previously loaded
         user entry first, so re-running it *is* the reload. Problems are reported
@@ -1489,11 +1498,11 @@ class XeFMApp:
         at all gets the one-line preview notice: this is not a stable surface
         yet, and the log pane is where a user finds that out."""
         (warnings, action_count, hook_count, sort_count,
-         filter_count, scheme_count) = load_user_entries(config)
+         filter_count, decoder_count, scheme_count) = load_user_entries(config)
         for warning in warnings:
             self.log_info(f"Config warning: {warning}")
         notice = preview_notice(action_count, hook_count, sort_count,
-                                filter_count, scheme_count)
+                                filter_count, decoder_count, scheme_count)
         if notice:
             self.log_info(notice)
         # Action names that have been corrected since this config was written.

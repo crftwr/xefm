@@ -444,6 +444,65 @@ arithmetic, strings and quick filesystem questions.
 
 ---
 
+## Your own picture formats: `IMAGE_DECODERS`
+
+The image viewer already reads more than XeFM ships a decoder for, because it
+asks your machine: on macOS the system decoder handles HEIC, JPEG XL and camera
+RAW; on Windows, whichever imaging codecs are installed; in a terminal, Pillow
+and any Pillow plugin you added. `pip install pillow-heif` is the whole of
+adding HEIC anywhere it is not already there.
+
+What is left is the formats only a library XeFM does not ship can read. Write a
+function from the file's bytes to a picture, and name the suffix:
+
+```python
+import io
+
+def open_svg(data):
+    import cairosvg                   # pip install cairosvg
+    from PIL import Image
+    return Image.open(io.BytesIO(cairosvg.svg2png(bytestring=data)))
+
+class Config:
+    IMAGE_DECODERS = {'.svg': open_svg}
+```
+
+### What you get, and what you return
+
+Your function is handed the file's **bytes** — not a path — so one decoder
+covers a picture on disk, inside a zip, and on an S3 bucket alike, with nothing
+copied to a temporary file. Return a `PIL.Image`, or `None` for "I cannot read
+this one". (A `puikit.image.RasterImage` is also accepted, if you already have
+raw pixels and would rather not build a `PIL.Image` for XeFM to take apart
+again.)
+
+### Registering is also claiming
+
+XeFM offers the image viewer only for formats something on the machine can
+actually decode — so a file that opens in it always shows a picture, never a
+"cannot show this" card. Registering a suffix adds it to that set, which is what
+makes `Enter` on a `.svg` open the picture rather than the text.
+
+Naming a suffix XeFM already reads **replaces** its decoder with yours. That is
+the only way to change how a format is read, so no extra `override` flag is
+asked for — writing the entry is the statement.
+
+### If it goes wrong
+
+A decoder that fails costs that picture and nothing else: the viewer shows the
+reason on its metadata card and the log pane gets the traceback. Failing to a
+card is the right direction here — unlike a filter, a picture that cannot be
+decoded has no honest stand-in.
+
+Like a sort key, a decoder may run on a background thread, so it must not touch
+the UI. It is also the slowest thing in this document: a RAW decode takes
+seconds.
+
+More, including the format table per platform, in
+[`doc/IMAGE_VIEWER_FEATURE.md`](IMAGE_VIEWER_FEATURE.md).
+
+---
+
 ## Your own places: `PATH_SCHEMES`
 
 A config can add a browsable location that is not a directory — the Windows
