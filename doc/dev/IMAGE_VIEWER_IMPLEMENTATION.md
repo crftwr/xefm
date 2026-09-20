@@ -443,9 +443,35 @@ python -m pytest test/test_image_viewer.py test/test_image_decoders.py -v
 (cd ../puikit && pytest tests/test_raster_image.py tests/test_terminal_graphics.py -v)
 ```
 
-**Not covered here:** the Windows backend's raster path (`CreateBitmap` over a
-swizzled, premultiplied buffer) and its WIC decoder enumeration both need a live
-Direct2D render target, so they are verified by hand on the Windows machine.
+**Verified by hand on Windows**, since the Windows backend's raster path and its
+WIC decoder enumeration could only be written on macOS, not run. On Windows 11
+build 26200 (ARM64, under x64 emulation), with the HEIF, HEVC, Raw, WebP and AV1
+extensions installed:
+
+- `wic_decoder_extensions()` enumerates fourteen decoders and 65 extensions. The
+  three derived vtable indices were cross-checked by walking the same enumeration
+  with `IWICComponentInfo::GetFriendlyName[10]` beside `GetFileExtensions[17]` —
+  fourteen names each agreeing with its own extension list, which a wrong index
+  could not produce.
+- `rt_create_bitmap_from_raster()` was drawn onto a real `ID2D1DCRenderTarget`
+  and the pixels read back from the DIB: red, green and blue in that order (so
+  the RGBA→BGRA swizzle is the right way round) and a 50% black bar compositing
+  to 127 on white (so the premultiply is right). The same four pixels through
+  the WIC path and the raster path come out byte-identical.
+- A real 886x426 HEIC decodes through `wic_load_bitmap_source` to a full BGRA
+  buffer — the codec is genuinely present, not merely registered.
+
+Two findings worth keeping. **The `.lower()` in `wic_decoder_extensions` is
+load-bearing**: Microsoft's Raw and JPEG XL decoders answer `GetFileExtensions`
+in upper case (`.CR2`, `.JXL`) where every other decoder answers in lower, so
+dropping it would silently lose every camera RAW and JPEG XL. And **the package
+that registers the HEIC decoder is HEIF Image Extensions**, not HEVC Video
+Extensions — HEVC decodes what the container holds, so both are needed, and the
+user doc named only the second until `b065d32`.
+
+COM vtable indices are declaration order, identical on every architecture, so
+the ARM64-under-emulation caveat on that run does not weaken the result; what is
+architecture-specific is only which codec packages happen to be installed.
 
 Note that `test/test_image_viewer.py` binds `import xefm` at module scope. Both
 the repo root and `test/` are packages, so once pytest prepends the repo's

@@ -99,13 +99,21 @@ system rather than carrying a decoder for them:
 |---|---|---|---|
 | HEIC / HEIF | yes, built in | with *HEIF Image Extensions* from the Store — plus *HEVC Video Extensions*, which decodes what a HEIC actually holds | `pip install pillow-heif` |
 | AVIF | yes | yes | yes |
-| JPEG XL | yes, built in | — | `pip install pillow-jxl-plugin` |
+| JPEG XL | yes, built in | if your Windows has the codec — recent builds do | `pip install pillow-jxl-plugin` |
 | Camera RAW (DNG, CR2, NEF, ARW…) | see below | see below | see below |
 
 On macOS the pictures are drawn by the same decoder Preview and Quick Look use;
 on Windows by whichever imaging codecs are installed. So a HEIC off your phone
 opens with nothing to set up on a Mac, and on a Windows machine with the Store
-extension installed. Everywhere else, one `pip install` is the whole of it.
+extensions installed. Everywhere else, one `pip install` is the whole of it.
+
+**The Windows column is not a version list.** What XeFM offers there is
+whichever WIC imaging codecs the machine actually has, which depends on the
+Windows build *and* on which Store extensions are installed — so two machines
+running the same XeFM can honestly differ. XeFM asks at startup rather than
+assuming, which is why this table can only tell you where to look. (Measured on
+one Windows 11 build 26200 machine: fourteen decoders, 65 extensions, JPEG XL
+among them with no Store package installed for it.)
 
 **XeFM only ever offers a format something on your machine can read.** If a
 `.heic` opens in the image viewer, you get a picture — never a "cannot show
