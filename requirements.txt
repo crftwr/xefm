@@ -32,9 +32,13 @@
 # camera RAW are drawn by the OS's own decoder where there is one, and a format
 # only XeFM can decode (a config's IMAGE_DECODERS entry, a Pillow plugin) is
 # handed over as pixels rather than written back out as a PNG. 1.7.0 also makes
-# each GUI backend answer ``image_size`` through that same native decoder, which
-# is what makes the size -- and so the picture -- available for those formats at
-# all. See discussion #378 and doc/dev/IMAGE_VIEWER_IMPLEMENTATION.md.
+# every backend answer ``image_size`` through that same native decoder, which is
+# what makes the size -- and so the picture -- available for those formats at
+# all; and it lets a *terminal* borrow the OS decoder too, which is the whole
+# reason the terminal app shows a HEIC the desktop app on the same machine was
+# already showing. None of that last part is a floor of its own: on an older
+# PuiKit the formats simply are not claimed. See discussion #378 and
+# doc/dev/IMAGE_VIEWER_IMPLEMENTATION.md.
 # 1.6.0 was the previous floor, and a hard one: on the macOS GUI the main window is
 # opened with ``WindowStyle(takes_first_click=True)`` so that a drag out of a
 # background XeFM starts on the first press rather than being spent bringing
