@@ -174,7 +174,15 @@ class ConnectFormDialog(FocusContainer, Widget):
             w = max(1.0, box_w - x - 2.0)
             if isinstance(widget, TextEdit):
                 widget.width = w
-            ctx.draw_child(widget, x, y, w, 1.0, hints={"focused": focused})
+            # The "bg" hint is how a parent tells a child what surface it is
+            # on: it sets the child context's background, which is what a
+            # ``bg=None`` glyph run resolves against. Without it a checkbox
+            # drew its mark and label on the *terminal's* default, a black bar
+            # across the dialog — ``draw_box`` paints pixels but establishes no
+            # background for the children (issue #406). Compare & Select does
+            # the same for its rows.
+            ctx.draw_child(widget, x, y, w, 1.0,
+                           hints={"focused": focused, "bg": surface_bg})
             self._row_rects.append((index, Rect(x, y, w, 1.0)))
             y += 1.0
 

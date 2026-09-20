@@ -590,6 +590,23 @@ class Drawing(unittest.TestCase):
             self.panel.render()
         self.assertLessEqual(measured["error_y"], measured["floor"])
 
+    def test_the_checkboxes_sit_on_the_dialog_surface(self):
+        """A control drawn with no background takes the terminal's default on
+        a grid backend, which on this dialog read as a black bar behind each
+        checkbox label. The widget is told what it sits on; this checks it
+        arrived."""
+        cd.show_connect_form(self.panel, cd.ConnectRequest(address="smb://nas/x"))
+        self.panel.render()
+        rows = [(y, line) for y, line in enumerate(self.backend.snapshot())
+                if "Save password" in line or "Save this server" in line]
+        self.assertEqual(len(rows), 2)
+        for y, line in rows:
+            start = line.index("[")
+            backgrounds = {self.backend._styles[y][x].bg
+                           for x in range(start, start + len("[x] Save password"))}
+            self.assertNotIn(None, backgrounds, f"a hole in row {y}: {line!r}")
+            self.assertEqual(len(backgrounds), 1, "the row is not one surface")
+
     def test_the_picker_draws(self):
         entries = [ServerEntry("NAS Photo", "smb://nas/photo", "me"),
                    ServerEntry("Work", "smb://work/share", origin=CONFIG)]
