@@ -69,6 +69,28 @@ class SettledStreaming(unittest.TestCase):
         self.assertIsNone(d._load_thread)
         self.assertFalse(d._loading)
 
+    def test_an_endless_loader_is_stopped_rather_than_waited_on(self):
+        """Network discovery keeps browsing until the dialog closes, and with
+        no animation ticks there is nothing to close it — so joining without a
+        bound waits on a thread that has no reason to finish. The rows that
+        arrived still land, and the spinner does not stick."""
+        started = threading.Event()
+
+        def load(cancel):
+            yield "beta"
+            started.set()
+            cancel.wait(30.0)  # a subscription: it ends when the dialog does
+
+        d = FilterListDialog(["alpha"], load_more=load)
+        d.SETTLE_SECONDS = 0.2
+        d._start_load_more()
+
+        self.assertTrue(started.is_set())
+        self.assertEqual(d.list.items, ["alpha", "beta"])
+        self.assertTrue(d._load_cancel.is_set())
+        self.assertFalse(d._loading)
+        self.assertFalse(d._load_thread.is_alive())
+
 
 class CloseCancelsLoader(unittest.TestCase):
     def test_close_sets_cancel_and_the_worker_stops(self):

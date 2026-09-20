@@ -21,7 +21,9 @@ model — with whatever filter text is active re-applied and a small spinner in
 the title while the scan runs. The drives picker uses this for S3 buckets, a
 credentialed network scan that must not delay the dialog (issue #274). On a
 still backend with no animation ticks (chiefly tests) the loader is settled
-synchronously: the worker is joined and its rows drained in one shot.
+synchronously: the worker is joined and its rows drained in one shot, with the
+join bounded because a loader is allowed to run until the dialog closes and on
+a still backend nothing ever closes it (see :meth:`FilterListDialog._settle`).
 
 Interaction: typing filters the list with the same query the file pane's
 incremental search takes (``xefm.search_match``) — whitespace-separated tokens
@@ -290,11 +292,33 @@ class FilterListDialog(FocusContainer, Widget):
             self._ticking = False
             self._settle()
 
+    #: How long :meth:`_settle` waits before it stops an unfinished loader.
+    #: Only an endless one ever reaches it, so this is not a budget for slow
+    #: work — a loader that ends on its own is joined the moment it does.
+    SETTLE_SECONDS = 2.0
+
     def _settle(self) -> None:
-        """Join the loader and drain its rows in one shot (still backends)."""
+        """Join the loader and drain its rows in one shot (still backends).
+
+        **The join is bounded, because a loader is allowed to be endless.** A
+        bucket listing ends when the buckets run out, but network discovery
+        keeps browsing on purpose — a NAS that wakes up ten seconds later is a
+        new row — and what it watches for is the cancel flag the dialog sets
+        when it closes. Here there are no animation ticks and so no dialog
+        lifecycle to speak of: nothing will ever set that flag, and an
+        unqualified join waits for a thread with no reason to finish. So the
+        wait is bounded, the loader is then told to stop, and what arrived
+        inside the wait is what the picker shows.
+        """
         thread = self._load_thread
         if thread is not None:
-            thread.join()
+            thread.join(self.SETTLE_SECONDS)
+            if thread.is_alive():
+                self._load_cancel.set()
+                thread.join(self.SETTLE_SECONDS)
+                # No sentinel is coming -- the worker only sends one when it
+                # was not cancelled -- so the spinner is cleared here instead.
+                self._loading = False
         self._drain()
 
     def _drain(self) -> bool:
