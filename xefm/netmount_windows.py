@@ -21,6 +21,7 @@ import queue
 import string
 import time
 from ctypes import wintypes
+from dataclasses import replace
 from typing import NamedTuple
 
 from xefm.log_manager import getLogger
@@ -330,12 +331,39 @@ _MESSAGES = {
 def mount(target, user: str = "", password: str = "",
           drive_letter: str = "") -> str:
     """Connect to ``target`` and return the path to browse it at — the UNC path
-    for a deviceless connection, ``X:\\`` for a lettered one."""
-    remote = _remote_name(target)
+    for a deviceless connection, ``X:\\`` for a lettered one.
+
+    The path returned is the one the connection actually landed on, which is
+    not always built from the address given: see :func:`_mount_targets`.
+    """
     local = ""
     if drive_letter:
         local = drive_letter.rstrip(":\\/").upper() + ":"
 
+    #: The failure of the address as asked for. The fallback is an internal
+    #: detail, so a short name that does not resolve must not become the
+    #: sentence the user reads about a NAS that wanted a password.
+    first = ERROR_SUCCESS
+    for attempt in _mount_targets(target, user, password):
+        remote = _remote_name(attempt)
+        result = _connect(remote, local, user, password)
+        if result == ERROR_SUCCESS:
+            return f"{local}\\" if local else remote
+        # Already connected to exactly this share is not a failure; it is the
+        # state the caller wanted. (Windows reports it on the lettered path;
+        # a deviceless repeat usually just succeeds.)
+        if result in (85, 1202) and not drive_letter:
+            return remote
+        if first == ERROR_SUCCESS:
+            first = result
+        if result not in _AUTH_ERRORS:
+            break  # nothing another spelling of the name can help with
+
+    raise _mount_error(target, first, user, password)
+
+
+def _connect(remote: str, local: str, user: str, password: str) -> int:
+    """One ``WNetAddConnection2W`` call."""
     resource = NETRESOURCEW()
     resource.dwType = RESOURCETYPE_DISK
     resource.lpLocalName = local or None
@@ -347,42 +375,67 @@ def mount(target, user: str = "", password: str = "",
     # have Windows reconnect it behind XeFM's back at every sign-in.
     # CONNECT_INTERACTIVE / CONNECT_PROMPT are likewise omitted — XeFM collects
     # the credentials itself so the TUI backend behaves the same as the GUI.
-    result = _mpr.WNetAddConnection2W(ctypes.byref(resource),
-                                      password or None, user or None, 0)
+    return _mpr.WNetAddConnection2W(ctypes.byref(resource),
+                                    password or None, user or None, 0)
 
-    if result != ERROR_SUCCESS:
-        # Already connected to exactly this share is not a failure; it is the
-        # state the caller wanted. (Windows reports it on the lettered path;
-        # a deviceless repeat usually just succeeds.)
-        if result in (85, 1202) and not drive_letter:
-            return remote
-        if result == 67:  # ERROR_BAD_NET_NAME
-            # The WebDAV redirector reports a stopped WebClient service the same
-            # way it reports a misspelled share, so the message names both.
-            raise MountError(
-                f"{remote} was not found. If this is a WebDAV address, check "
-                "that the WebClient service is running.")
-        auth = result in _AUTH_ERRORS
-        if auth and not user and not password:
-            # Nothing was handed over, so "rejected the user name or password"
-            # accuses the user of getting wrong something they were never
-            # asked for. Name what is actually missing. This is the first
-            # attempt of every connection — XeFM tries once with what it has,
-            # so that a share allowing guests opens with no prompt at all —
-            # and on Windows "nothing" still means the session's own
-            # credentials, which is why a domain share gets that far and a NAS
-            # does not. The macOS backend says the same sentence for its guest
-            # attempt, and the feature doc quotes it.
-            raise MountError(f"{target.host} needs a user name and password.",
-                             auth=True)
-        message = _MESSAGES.get(result)
-        if message is None:
-            message = f"Could not connect to {target.host} (error {result})."
-        elif result in (53, 55, 64):
-            message = f"{target.host}: {message}"
-        raise MountError(message, auth=auth)
 
-    return f"{local}\\" if local else remote
+def _mount_targets(target, user: str, password: str) -> list:
+    """The addresses to try, in order: the one asked for, then the same
+    machine under its short name.
+
+    **Only when nothing was supplied**, because the short name is worth trying
+    for exactly one reason — a session the machine already holds. The
+    redirector keys a session on the server name as written, so a NAS
+    connected and authenticated as ``\\\\SynologyNas`` is a stranger as
+    ``\\\\SynologyNas.local`` and refuses an anonymous request, and the user is
+    asked for a password to a server their other pane is already sitting in.
+    Discovery is mDNS, so ``.local`` is the spelling every discovered row
+    carries: this is the common path, not the corner.
+
+    Credentials that *were* supplied are honoured against the address as
+    written. Retrying those elsewhere would open a second session to the same
+    machine under a second name, which is how ``ERROR_SESSION_CREDENTIAL_
+    CONFLICT`` is earned, and the user has by then said which server they mean.
+
+    :func:`~xefm.netmount.canonical_host` already declares the two names to be
+    one machine; this is that rule applied to the redirector, as it is in
+    :func:`_spellings` for the share listing. The caller navigates to what
+    ``mount`` returns, so landing on the short name is already within
+    contract — and it is the same path the existing connection uses.
+    """
+    if user or password:
+        return [target]
+    return [target if host == target.host else replace(target, host=host)
+            for host in _spellings(target.host)]
+
+
+def _mount_error(target, result: int, user: str, password: str) -> MountError:
+    """The exception for a connection that did not happen."""
+    if result == 67:  # ERROR_BAD_NET_NAME
+        # The WebDAV redirector reports a stopped WebClient service the same
+        # way it reports a misspelled share, so the message names both.
+        return MountError(
+            f"{_remote_name(target)} was not found. If this is a WebDAV "
+            "address, check that the WebClient service is running.")
+    auth = result in _AUTH_ERRORS
+    if auth and not user and not password:
+        # Nothing was handed over, so "rejected the user name or password"
+        # accuses the user of getting wrong something they were never asked
+        # for. Name what is actually missing. This is the first attempt of
+        # every connection — XeFM tries once with what it has, so that a share
+        # allowing guests opens with no prompt at all — and on Windows
+        # "nothing" still means the session's own credentials, which is why a
+        # domain share gets that far and a NAS does not. The macOS backend
+        # says the same sentence for its guest attempt, and the feature doc
+        # quotes it.
+        return MountError(f"{target.host} needs a user name and password.",
+                          auth=True)
+    message = _MESSAGES.get(result)
+    if message is None:
+        message = f"Could not connect to {target.host} (error {result})."
+    elif result in (53, 55, 64):
+        message = f"{target.host}: {message}"
+    return MountError(message, auth=auth)
 
 
 def unmount(path: str) -> None:

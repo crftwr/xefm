@@ -255,6 +255,41 @@ WebDAV goes through the same call and depends on the **WebClient** service
 running; when it is stopped the error is `ERROR_BAD_NET_NAME`, which is
 indistinguishable from a bad address, so the message mentions both.
 
+### One machine, two names — which one the redirector is asked
+
+**The redirector keys a session on the server name as written.** With
+`\\SynologyNas` connected and authenticated, the same NAS asked for as
+`\\SynologyNas.local` is a machine it has never heard of: the request goes
+anonymously and comes back `ERROR_ACCESS_DENIED`. Nothing about the two names
+being one machine is visible to it.
+
+That stops being a corner case the moment discovery is mDNS, because mDNS is
+where `.local` comes from. Every discovered row carries it, while the session
+the user already has — from Explorer, or from XeFM's own last mount — is
+almost always under the short name. Left alone it produced the complaint this
+rule exists for: a pane already sitting in `\\SynologyNas\Videos`, and a
+password prompt for `smb://SynologyNas.local/Documents`.
+
+So both callers try the address as written and then the short name behind it:
+`_mount_targets` for `mount`, `_spellings` for `list_shares`. `mount` returns
+the spelling that worked, which is within its contract — the caller navigates
+to what it returns — and is the same path the existing connection uses, so
+the two panes agree.
+
+**Only when nothing was supplied.** A second name is worth trying for exactly
+one reason, a session the machine already holds, and credentials in hand mean
+there is no such session to find. Retrying those elsewhere would open a second
+session to one machine under two names, which is how
+`ERROR_SESSION_CREDENTIAL_CONFLICT` is earned; and by then the user has said
+which server they mean.
+
+macOS has the same two-spellings shape in `_mdns_alternatives` and states the
+rule the other way round — *an authentication failure is never retried* —
+which reads like a contradiction and is not. Both refuse to retry a rejection
+of credentials that were given. What differs is the empty-handed case, and
+only because the Windows redirector's per-name sessions make the other
+spelling worth one more call there.
+
 ### Cancellation
 
 `WNetAddConnection2W` has no cancel. **Esc** therefore releases the UI and
@@ -488,16 +523,10 @@ Windows spent a release that way. The two modules' signatures are now compared
 against each other by a test that reads them with `ast`, since neither can be
 imported on the other's platform.
 
-Two spellings are tried, `.local` and then the short name, and this is the
-seam where "the session's credentials" stops being free. The redirector keys a
-session on **the server name as written**: with `\SynologyNas` connected and
-authenticated, the same NAS asked for as `\SynologyNas.local` is a machine it
-has never heard of, so the query goes anonymously and comes back
-`ERROR_ACCESS_DENIED`. That is not a corner case now that discovery is mDNS,
-because mDNS is where `.local` comes from: every discovered row carries it,
-while the session the user already has is almost always under the short name.
-`canonical_host` already declares the two to be one machine; this is that rule
-applied to the one place that talks to the redirector rather than to a key.
+Two spellings are tried, `.local` and then the short name, which is where
+"the credentials the session already has" stops being free — see
+[One machine, two names](#one-machine-two-names--which-one-the-redirector-is-asked).
+`mount` does the same, and for the same reason.
 
 ### What the flow does with them
 

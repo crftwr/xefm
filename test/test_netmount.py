@@ -799,6 +799,57 @@ class WindowsBackend(unittest.TestCase):
         self.assertTrue(nothing_typed.exception.auth)
         self.assertTrue(rejected.exception.auth)
 
+    def test_a_mount_refused_under_local_is_tried_under_the_short_name(self):
+        """The share list already folds the two names, so browsing a
+        discovered NAS works — and then mounting a share off that very list
+        asked for a password to a server the other pane was already sitting
+        in. The redirector keys a session on the name as written; mDNS always
+        writes `.local`."""
+        tried = []
+
+        def connect(remote, local, user, password):
+            tried.append(remote)
+            return 0 if remote == r"\\SynologyNas\Documents" else 5
+
+        target = netmount.parse_address("smb://SynologyNas.local/Documents")
+        with patch.object(self.win, "_connect", connect):
+            self.assertEqual(self.win.mount(target),
+                             r"\\SynologyNas\Documents")
+        self.assertEqual(tried, [r"\\SynologyNas.local\Documents",
+                                 r"\\SynologyNas\Documents"])
+
+    def test_credentials_that_were_typed_are_used_where_they_were_typed(self):
+        """A second name is worth trying for one reason — a session the
+        machine already holds. With a password in hand there is no such
+        session to find, and a second connection to one machine under two
+        names is how ERROR_SESSION_CREDENTIAL_CONFLICT is earned."""
+        tried = []
+
+        def connect(remote, local, user, password):
+            tried.append(remote)
+            return 5
+
+        target = netmount.parse_address("smb://SynologyNas.local/Documents")
+        with patch.object(self.win, "_connect", connect):
+            with self.assertRaises(netmount.MountError) as caught:
+                self.win.mount(target, user="me", password="hunter2")
+        self.assertEqual(tried, [r"\\SynologyNas.local\Documents"])
+        self.assertIn("rejected", str(caught.exception))
+
+    def test_the_message_is_about_the_address_that_was_asked_for(self):
+        """The fallback is an internal detail. A short name that does not
+        resolve must not become the sentence shown about a NAS that wanted a
+        password."""
+        def connect(remote, local, user, password):
+            return 5 if remote.startswith(r"\\SynologyNas.local") else 53
+
+        target = netmount.parse_address("smb://SynologyNas.local/Documents")
+        with patch.object(self.win, "_connect", connect):
+            with self.assertRaises(netmount.MountError) as caught:
+                self.win.mount(target)
+        self.assertEqual(str(caught.exception),
+                         "SynologyNas.local needs a user name and password.")
+
     def test_a_failure_that_is_not_about_credentials_is_unchanged(self):
         """Only an auth refusal is reworded. A server that cannot be found has
         nothing to do with the account, and saying it needs one would send the
