@@ -491,6 +491,32 @@ class Flow(unittest.TestCase):
                                                 user="me", password="hunter2"))
         shares.assert_called_once_with(ANY, "me", "hunter2")
 
+    def test_a_saved_password_is_used_for_the_next_browse(self):
+        """Ticking *Save password* stored one, and then nothing on this path
+        read it back: the next browse ran with the account alone, failed, and
+        asked for the password again — which is what "it did not save" looks
+        like from the outside."""
+        row = cd._DiscoveredRow(
+            netmount.DiscoveredServer("SynologyNas", "SynologyNas.local"))
+        with patch("xefm.server_list.user_for_host", return_value="crftwr"), \
+             patch.object(netmount, "load_password", return_value="stored") as load, \
+             patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow._chosen(row)
+        load.assert_called_once()
+        shares.assert_called_once_with(ANY, "crftwr", "stored")
+
+    def test_a_typed_password_is_not_replaced_by_a_stored_one(self):
+        with patch.object(netmount, "load_password") as load, \
+             patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.connect(cd.ConnectRequest(address="smb://nas", user="me",
+                                                password="typed"))
+        load.assert_not_called()
+        shares.assert_called_once_with(ANY, "me", "typed")
+
     def test_a_server_typed_by_hand_is_browsed_not_mounted(self):
         with patch.object(netmount, "list_shares",
                           return_value=["Videos"]) as shares, \

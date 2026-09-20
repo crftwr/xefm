@@ -644,8 +644,8 @@ class ConnectFlow:
         open, it is a list of shares, and nobody remembers the spelling of the
         third one.
 
-        **Both halves of the credentials matter**, which took a while to
-        learn. A server found on the network arrives with neither, so an
+        **Both halves of the credentials matter**, and both are looked for
+        before the user is asked for either. A server found on the network arrives with neither, so an
         account is looked up from the saved servers — the machine has very
         likely been connected to before. The password, where the user has
         typed one, goes with it: neither platform's listing tool takes a
@@ -653,6 +653,10 @@ class ConnectFlow:
         its listing does read (see :func:`xefm.netmount.list_shares`). Handing
         over the account alone worked only against a server something else had
         already authenticated to.
+
+        A stored password is used where one was not typed — the mount saves it
+        under the server's key, which is the key this reads — so a server
+        connected to once is browsed without being asked again.
 
         A server that answers neither as a guest nor as that account ends up
         back at the form — asking for credentials if none were tried, and
@@ -677,7 +681,13 @@ class ConnectFlow:
             # reach it. Storing early was only ever a way to get the password
             # to the listing; the listing takes it directly now, and the
             # mount saves it on success under the key the row can remove.
-            return netmount.list_shares(target, account, password)
+            # A password that was saved is a password meant to be used again,
+            # and browsing is the one path that never looked for it: with
+            # nothing typed the listing ran with the account alone, failed,
+            # and asked for the password a second time — so ticking *Save
+            # password* appeared not to have saved anything (issue #406).
+            secret = password or netmount.load_password(target, account)
+            return netmount.list_shares(target, account, secret)
 
         def done(shares: Any, error: Optional[BaseException],
                  cancelled: bool) -> None:
