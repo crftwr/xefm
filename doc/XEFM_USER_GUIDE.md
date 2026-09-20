@@ -779,6 +779,7 @@ For detailed information about specific features, see these dedicated guides:
 
 ### Integration and Extensions
 - [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md) - Custom program integration (incl. the VSCode recipe)
+- [Virtual Folders (Preview)](VIRTUAL_FOLDERS_FEATURE.md) - Browse something that is not a directory - a registry, a database, an API - as if it were one
 
 ---
 

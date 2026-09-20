@@ -1480,7 +1480,7 @@ class XeFMApp:
 
     def _load_user_entries(self, config) -> None:
         """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` / ``SORT_KEYS`` /
-        ``FILTERS`` and report on them.
+        ``FILTERS`` / ``PATH_SCHEMES`` and report on them.
 
         Shared by startup and reload — the loader drops every previously loaded
         user entry first, so re-running it *is* the reload. Problems are reported
@@ -1488,10 +1488,11 @@ class XeFMApp:
         at all gets the one-line preview notice: this is not a stable surface
         yet, and the log pane is where a user finds that out."""
         (warnings, action_count, hook_count, sort_count,
-         filter_count) = load_user_entries(config)
+         filter_count, scheme_count) = load_user_entries(config)
         for warning in warnings:
             self.log_info(f"Config warning: {warning}")
-        notice = preview_notice(action_count, hook_count, sort_count, filter_count)
+        notice = preview_notice(action_count, hook_count, sort_count,
+                                filter_count, scheme_count)
         if notice:
             self.log_info(notice)
         # Action names that have been corrected since this config was written.

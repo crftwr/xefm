@@ -15,13 +15,27 @@ object through which they read and manipulate the panes.
         ACTIONS = {"select-docs": select_docs}
         KEY_BINDINGS = {"select-docs": ["U"], ...}
 
+It may also define what the panes *show*: ``SORT_KEYS`` and ``FILTERS`` are
+functions over one entry, and ``PATH_SCHEMES`` is a browsable location that is
+not a directory at all — a class, named by its scheme, that XeFM then treats as
+a place.
+
+    class Config:
+        PATH_SCHEMES = {"reg": RegistryPathImpl}
+
+The class to inherit is :class:`xefm.path_base.ReadOnlyPathImpl`, never
+:class:`~xefm.path.PathImpl`: the intermediate class is where a method added to
+the storage interface later arrives carrying a default, so a config written
+against today's XeFM keeps loading. See ``doc/VIRTUAL_FOLDERS_FEATURE.md``.
+
 Preview status
 --------------
 
 ``API_VERSION`` is ``0``: everything here may change — signatures, config
-variable formats, the set of events — until it reaches ``1``. A config that uses
-``ACTIONS`` or ``EVENT_HOOKS`` gets one line in the log pane saying so at load
-time; nothing else gates it, and nothing about the rest of the config changes.
+variable formats, the set of events, the storage base class — until it reaches
+``1``. A config that uses any of these variables gets one line in the log pane
+saying so at load time; nothing else gates it, and nothing about the rest of the
+config changes.
 
 The firewall
 ------------
@@ -49,7 +63,7 @@ Failure isolation
 
 An exception raised by a user action or hook is caught at the boundary, logged
 with its traceback, and dropped — a crashing action never takes the file manager
-down with it. A malformed ``ACTIONS`` / ``EVENT_HOOKS`` entry is a validation
+down with it. A malformed entry in any of the tables above is a validation
 warning that skips that entry, never a load failure.
 """
 
@@ -59,9 +73,10 @@ from typing import Any, Callable, Iterable, Mapping, NamedTuple
 from xefm import actions as _actions
 from xefm import filters as _filters
 from xefm import name_key
+from xefm import path_schemes as _path_schemes
 from xefm import sort_keys as _sort_keys
 from xefm.log_manager import getLogger
-from xefm.path import Path
+from xefm.path import Path, PathImpl
 
 
 class _SeededStat(NamedTuple):
@@ -519,14 +534,16 @@ class EventHooks:
 hooks = EventHooks()
 
 
-def load_user_entries(config, registry=None) -> tuple[list[str], int, int, int, int]:
-    """Install a config's ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS`` and ``FILTERS``.
+def load_user_entries(config, registry=None) -> tuple[list[str], int, int, int, int, int]:
+    """Install a config's ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS``, ``FILTERS``
+    and ``PATH_SCHEMES``.
 
     Every previously loaded user entry is dropped first, so this doubles as the
     reload path: edit the config, reload, and the new definitions replace the old
     ones with no restart and no idempotence contract on the config's part.
 
-    Returns ``(warnings, action_count, hook_count, sort_key_count, filter_count)``. Warnings are the same kind
+    Returns ``(warnings, action_count, hook_count, sort_key_count,
+    filter_count, path_scheme_count)``. Warnings are the same kind
     of non-fatal, report-them-all diagnostics the rest of ``validate_config``
     produces; a warned entry is skipped, never fatal.
     """
@@ -539,13 +556,14 @@ def validate_user_entries(config, registry=None) -> list[str]:
     return _process_user_entries(config, registry, apply=False)[0]
 
 
-def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int, int, int]:
+def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int, int, int, int, int]:
     registry = registry if registry is not None else _actions.registry
     if apply:
         registry.unregister_source("user")
         hooks.clear()
         _sort_keys.clear()
         _filters.clear()
+        _path_schemes.unregister_source("user")
 
     warnings: list[str] = []
     count = 0
@@ -612,7 +630,17 @@ def _process_user_entries(config, registry, apply: bool) -> tuple[list[str], int
                               label=entry["label"])
         filter_count += 1
 
-    return warnings, count, hook_count, sort_count, filter_count
+    scheme_count = 0
+    for name, spec in _items(getattr(config, "PATH_SCHEMES", None), "PATH_SCHEMES", warnings):
+        impl, problem = _build_path_scheme(name, spec)
+        if problem:
+            warnings.append(problem)
+            continue
+        if apply:
+            _path_schemes.register(name, impl, source="user")
+        scheme_count += 1
+
+    return warnings, count, hook_count, sort_count, filter_count, scheme_count
 
 
 def _items(value, label: str, warnings: list[str]):
@@ -741,16 +769,69 @@ def _build_action(name, spec) -> tuple[_actions.Action | None, str | None]:
     ), None
 
 
+def _build_path_scheme(name, spec) -> tuple[type | None, str | None]:
+    """Validate one ``PATH_SCHEMES`` entry, or explain why it cannot be one.
+
+    The failures worth catching here are the ones that would otherwise show up
+    as something else entirely: an abstract class raises ``TypeError`` from
+    whichever pane first tries to list it, and a class whose ``SCHEME``
+    disagrees with the key it is registered under builds paths under a prefix
+    the registry does not answer to — so its own ``parent`` leaves the folder.
+    """
+    problem = _path_schemes.validate_scheme(name)
+    if problem:
+        return None, f"PATH_SCHEMES keys must be schemes: {problem}"
+
+    override = _override_requested(spec)
+    if isinstance(spec, dict):
+        spec = spec.get("class", spec.get("impl"))
+
+    if not isinstance(spec, type) or not issubclass(spec, PathImpl):
+        return None, (f"PATH_SCHEMES['{name}'] must be a PathImpl subclass, or "
+                      f"a dict with a 'class' key, not {type(spec).__name__} — "
+                      f"see xefm.path_base.ReadOnlyPathImpl")
+
+    missing = sorted(getattr(spec, "__abstractmethods__", ()))
+    if missing:
+        return None, (f"PATH_SCHEMES['{name}'] cannot be used: "
+                      f"{spec.__name__} does not implement "
+                      f"{', '.join(missing)}")
+
+    if name in _path_schemes.schemes() and not override:
+        return None, (f"PATH_SCHEMES['{name}'] would replace the built-in "
+                      f"'{name}://' backend and was ignored — pass "
+                      f"{{'class': ..., 'override': True}} if that is intended")
+
+    declared = getattr(spec, "SCHEME", "")
+    if declared and declared != name:
+        return None, (f"PATH_SCHEMES['{name}'] is {spec.__name__}, whose SCHEME "
+                      f"is '{declared}' — a class registered under one scheme "
+                      f"cannot build paths under another")
+    if not declared:
+        # The key already said it. Filling it in beats asking for the same
+        # word twice, and a class left with the empty default reports its
+        # scheme as '' — which file operations read as "same storage as
+        # everything else that forgot".
+        if "get_scheme" not in vars(spec):
+            spec.SCHEME = name
+
+    return spec, None
+
+
 def preview_notice(action_count: int, hook_count: int,
-                   sort_key_count: int = 0, filter_count: int = 0) -> str | None:
+                   sort_key_count: int = 0, filter_count: int = 0,
+                   path_scheme_count: int = 0) -> str | None:
     """The one line a config using this API gets in the log pane, or ``None``
     when it uses none of it."""
-    if not action_count and not hook_count and not sort_key_count and not filter_count:
+    if not any((action_count, hook_count, sort_key_count, filter_count,
+                path_scheme_count)):
         return None
     parts = [f"{action_count} action(s)", f"{hook_count} event hook(s)"]
     if sort_key_count:
         parts.append(f"{sort_key_count} sort key(s)")
     if filter_count:
         parts.append(f"{filter_count} filter(s)")
+    if path_scheme_count:
+        parts.append(f"{path_scheme_count} path scheme(s)")
     return (f"Customization API (Preview, API_VERSION {API_VERSION}): "
             f"{', '.join(parts)} loaded — this API may change without notice.")
