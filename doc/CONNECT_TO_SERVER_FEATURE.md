@@ -29,21 +29,23 @@ The dialog is the same searchable picker as Favorites and Drives — type to
 filter, **Up/Down** to move, **Enter** to choose, **Esc** to close.
 
 ```
-┌ Connect to Server ─────────────────────────────┐
-│ ● NAS Photo      smb://nas/photo               │
-│ ○ NAS Backup     smb://nas/backup              │
-│ ○ Documents      https://dav.example.com/files │
-│ ＋ New connection…                             │
-│ · SynologyNas    on the network                │
-│ · Anna's iMac    on the network                │
-└────────────────────────────────────────────────┘
+┌ Connect to Server ────────────────────────────────────────────┐
+│ NAS Photo  —  smb://nas/photo  →  /Volumes/photo              │
+│ NAS Backup  —  smb://nas/backup                               │
+│ Documents  —  https://dav.example.com/files                   │
+│ New connection…                                               │
+│ SynologyNas  —  on the network                                │
+│ Anna's iMac  —  on the network                                │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-| | |
+Each row says what it is, and **Enter** does the obvious thing with it:
+
+| Row ends with | |
 |-|-|
-| **●** | Mounted right now. **Enter** just moves the pane there — no network, no password, no waiting. |
-| **○** | Saved, not mounted. **Enter** connects, then moves the pane. |
-| **·** | Found on the network just now (see below). **Enter** asks it which shares it offers. |
+| `→ /Volumes/photo` | Mounted right now. **Enter** just moves the pane there — no network, no password, no waiting. |
+| an address | Saved, not mounted. **Enter** connects, then moves the pane. |
+| `— on the network` | Found just now (see below). **Enter** asks it which shares it offers. |
 
 **Shift-Delete** forgets the highlighted server. It does not disconnect
 anything — it removes the entry from the list, along with any password saved for
@@ -54,8 +56,9 @@ config instead.
 
 XeFM looks for file servers while the dialog is open, the same way Finder's
 **Network** view does, and they appear at the bottom of the list as they are
-found — marked **·**, with the name the server announces itself as. Nothing is
-contacted until you choose one.
+found — named as the server announces itself, and marked *on the network*
+because there is no saved address for them yet. Nothing is contacted until you
+choose one.
 
 Choosing one asks it what it offers and shows a second list:
 

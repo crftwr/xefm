@@ -58,11 +58,8 @@ logger = getLogger("Connect")
 #: compared by identity rather than sniffed out of a label.
 NEW_CONNECTION = object()
 
-_MOUNTED_MARK = "●"
-_UNMOUNTED_MARK = "○"
-#: A server found on the network, which is neither of the above: nothing is
-#: mounted and nothing was saved, so it reads as the faintest of the three.
-_FOUND_MARK = "·"
+#: What a discovered row says instead of an address, since it has none yet.
+_ON_THE_NETWORK = "on the network"
 
 
 # --- the form ----------------------------------------------------------------
@@ -738,12 +735,22 @@ def _host_key(text: str) -> str:
 
 
 def _row_label(row: Any) -> str:
+    """``name — address — where it is mounted``, in the shape every other XeFM
+    picker uses.
+
+    No leading glyph. The first version marked each row with ``●``/``○``/``·``
+    and ``＋``, which do not line up: the circles and the middle dot are East
+    Asian Width *ambiguous* (one cell in a Latin terminal, two in a CJK one)
+    while the fullwidth plus is always two, so the labels started at three
+    different columns on a grid — and at three different offsets again in the
+    GUI's proportional font, where every glyph has its own advance. Words cost
+    nothing to align, and each row already says what it is.
+    """
     if row is NEW_CONNECTION:
-        return "＋  New connection…"
+        return "New connection…"
     if isinstance(row, _DiscoveredRow):
-        return f"{_FOUND_MARK}  {row.server.name}  —  on the network"
-    mark = _MOUNTED_MARK if row.mounted_at else _UNMOUNTED_MARK
-    label = f"{mark}  {row.entry.name}"
+        return f"{row.server.name}  —  {_ON_THE_NETWORK}"
+    label = row.entry.name
     if row.entry.name != row.entry.url:
         label += f"  —  {row.entry.url}"
     if row.mounted_at:

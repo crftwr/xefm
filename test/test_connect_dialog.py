@@ -43,14 +43,33 @@ class RowLabels(unittest.TestCase):
     def test_a_mounted_row_says_where(self):
         row = cd._PickerRow(ServerEntry("NAS Photo", "smb://nas/photo"),
                             "/Volumes/photo")
-        label = cd._row_label(row)
-        self.assertIn("●", label)
-        self.assertIn("/Volumes/photo", label)
+        self.assertIn("/Volumes/photo", cd._row_label(row))
 
     def test_an_unmounted_row_does_not(self):
         row = cd._PickerRow(ServerEntry("NAS Photo", "smb://nas/photo"), "")
-        self.assertIn("○", cd._row_label(row))
         self.assertNotIn("→", cd._row_label(row))
+
+    def test_no_row_starts_with_a_glyph_of_its_own(self):
+        """Marks like ``●``/``○``/``·``/``＋`` do not line up. The circles and
+        the middle dot are East Asian Width *ambiguous* — one cell in a Latin
+        terminal, two in a CJK one — while the fullwidth plus is always two, so
+        the labels began at three different columns; and in the GUI's
+        proportional font at three different offsets again. No other picker in
+        XeFM puts a glyph in front of a row either."""
+        rows = [
+            cd._PickerRow(ServerEntry("A", "smb://a/x"), "/Volumes/x"),
+            cd._PickerRow(ServerEntry("B", "smb://b/x"), ""),
+            cd.NEW_CONNECTION,
+            self._row(),
+        ]
+        for row in rows:
+            label = cd._row_label(row)
+            with self.subTest(label=label):
+                self.assertTrue(label[0].isalnum(),
+                                f"row starts with {label[0]!r}")
+
+    def _row(self, name="SynologyNas", host="SynologyNas.local"):
+        return cd._DiscoveredRow(netmount.DiscoveredServer(name, host))
 
     def test_an_unnamed_row_does_not_print_its_address_twice(self):
         row = cd._PickerRow(ServerEntry("smb://nas/x", "smb://nas/x"), "")
