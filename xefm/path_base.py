@@ -489,3 +489,58 @@ class ReadOnlyPathImpl(UriPathImpl):
 
     def chmod(self, mode):
         self._refuse()
+
+
+class UnsupportedPathImpl(ReadOnlyPathImpl):
+    """A scheme XeFM recognises but has no backend for — ``scp://``, ``ftp://``.
+
+    Both sat in every list of remote schemes with no branch in the factory that
+    builds backends, so they resolved to a *local* path: ``Path('ftp://h/p')``
+    became ``PathlibPath('ftp:/h/p')``, with the ``//`` collapsed, and reported
+    itself missing. The URI survived nowhere, and the report named a path the
+    user had not typed.
+
+    This keeps the URI intact and says what is actually wrong. It is also the
+    smallest backend in the repository — five methods and no state — which
+    makes it the in-tree demonstration that the base above is enough.
+    """
+
+    #: One class for every unimplemented scheme, so the scheme comes off the
+    #: URI rather than off the class.
+    SCHEME = ''
+
+    def _parse(self, uri: str) -> str:
+        scheme, separator, key = uri.partition('://')
+        if not separator:
+            raise ValueError(f'not a URI: {uri!r}')
+        self._scheme = scheme
+        return key
+
+    def _root_prefix(self) -> str:
+        return f'{self._scheme}://'
+
+    def get_scheme(self) -> str:
+        return self._scheme
+
+    def _unsupported(self):
+        raise OSError(errno.ENOSYS,
+                      f'{self._scheme}:// is not supported by this version of XeFM',
+                      str(self))
+
+    def exists(self) -> bool:
+        """False — there is nothing here to find, and saying so lets a caller
+        report a missing path instead of raising out of a probe."""
+        return False
+
+    def is_dir(self) -> bool:
+        return False
+
+    def iterdir(self):
+        self._unsupported()
+
+    def stat(self):
+        self._unsupported()
+
+    def open(self, mode='r', buffering=-1, encoding=None, errors=None,
+             newline=None):
+        self._unsupported()

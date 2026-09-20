@@ -14,6 +14,7 @@ from pathlib import Path as PathlibPath, PurePath
 from datetime import datetime
 from typing import Union, Iterator, List, Optional, Any
 from xefm import dir_scan
+from xefm import path_schemes
 from xefm.log_manager import getLogger
 from xefm.str_format import format_size
 
@@ -884,9 +885,11 @@ class Path:
             # Wrap existing pathlib.Path
             self._impl = LocalPathImpl(args[0])
         else:
-            # Create new path from string arguments
-            # Check for remote schemes first before using PathlibPath
-            if len(args) == 1 and isinstance(args[0], str) and args[0].startswith(('archive://', 's3://', 'ssh://', 'scp://', 'ftp://')):
+            # Create new path from string arguments. A URI has to survive
+            # verbatim: PathlibPath would collapse its 'scheme://' to
+            # 'scheme:/'. Which prefixes those are is xefm.path_schemes'
+            # business, not a list repeated here.
+            if len(args) == 1 and path_schemes.is_uri(args[0]):
                 path_str = args[0]
             else:
                 path_str = str(PathlibPath(*args))
@@ -910,44 +913,11 @@ class Path:
         return path
 
     def _create_implementation(self, path_str: str) -> PathImpl:
-        """Create the appropriate implementation based on the path string"""
-        # Detect archive URIs
-        if path_str.startswith('archive://'):
-            try:
-                # Try relative import first, then absolute
-                try:
-                    from .xefm.archive import ArchivePathImpl
-                except ImportError:
-                    from xefm.archive import ArchivePathImpl
-                return ArchivePathImpl(path_str)
-            except ImportError as e:
-                raise ImportError(f"Archive support not available: {e}")
-        
-        # Detect S3 URIs
-        if path_str.startswith('s3://'):
-            try:
-                # Try relative import first, then absolute
-                try:
-                    from .xefm.s3 import S3PathImpl
-                except ImportError:
-                    from xefm.s3 import S3PathImpl
-                return S3PathImpl(path_str)
-            except ImportError as e:
-                raise ImportError(f"S3 support not available: {e}")
-        
-        # Detect SSH URIs
-        if path_str.startswith('ssh://'):
-            try:
-                # Try relative import first, then absolute
-                try:
-                    from .xefm.ssh import SSHPathImpl
-                except ImportError:
-                    from xefm.ssh import SSHPathImpl
-                return SSHPathImpl(path_str)
-            except ImportError as e:
-                raise ImportError(f"SSH support not available: {e}")
-        
-        # Default to local file system
+        """The backend for ``path_str`` — whichever scheme claims it in
+        :mod:`xefm.path_schemes`, or the local filesystem if none does."""
+        impl = path_schemes.create(path_str)
+        if impl is not None:
+            return impl
         return LocalPathImpl(PathlibPath(path_str))
     
     def __str__(self):

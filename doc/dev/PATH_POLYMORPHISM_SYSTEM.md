@@ -64,11 +64,11 @@ The polymorphism system is built on a three-layer split in `xefm/path.py`:
   implementation via **`Path._create_implementation(path_str)`**, which dispatches
   by URI scheme.
 
-`_create_implementation` is the real entry point for backend selection (there is
-no `Path()`): it returns an `ArchivePathImpl`, `S3PathImpl`, or
-`SSHPathImpl` for the matching scheme, and falls back to `LocalPathImpl` for
-ordinary paths. `Path.__init__` also keeps the raw URI intact (instead of running
-it through `PathlibPath`) for any registered remote scheme.
+`_create_implementation` is the real entry point for backend selection: it asks
+`xefm.path_schemes` which backend claims the URI's scheme and falls back to
+`LocalPathImpl` when none does. `Path.__init__` asks the same module whether the
+string is a URI at all, so that it survives instead of being run through
+`PathlibPath` — see "The Scheme Registry" below.
 
 ### pathlib Compatibility
 
@@ -302,12 +302,76 @@ coming back as a *local* path. Going through the implementation it already has
 keeps the arithmetic closed over the class that produced it — and keeps this
 layer testable without the scheme registry existing at all.
 
+## The Scheme Registry
+
+`xefm/path_schemes.py` is the one list of URI schemes XeFM understands. Before
+it, the same knowledge lived in four places that had to agree:
+
+| | what it decided |
+|---|---|
+| `Path.__init__` | whether a string survives verbatim instead of going through `PathlibPath` |
+| `Path._create_implementation` | which backend to build |
+| `XeFMApp._REMOTE_SCHEMES` | what Jump to Path resolves as a URI, and what a subshell refuses |
+| `config._REMOTE_SCHEMES` | what `FAVORITE_DIRECTORIES` / `DRIVE_LOCATIONS` list without probing |
+
+Patch only the first two — which is what a monkeypatch naturally does — and
+Jump to Path treats the new URI as a path relative to the current directory and
+reports "Path does not exist". That report is accurate.
+
+```python
+from xefm import path_schemes
+
+path_schemes.register('reg', RegistryPathImpl, source='user')
+path_schemes.is_uri('reg://HKEY_CURRENT_USER')   # True, everywhere
+path_schemes.unregister_source('user')           # a config reload's other half
+```
+
+| function | |
+|---|---|
+| `register(scheme, factory, *, source)` | `factory(uri) -> PathImpl` |
+| `unregister_source(source)` | drop one source's registrations, keep the rest |
+| `prefixes()` | `('archive://', 's3://', …)`, for a `startswith` test |
+| `is_uri(text)` / `scheme_of(text)` | what the four call sites above ask |
+| `create(path_str)` | the backend, or `None` so the caller falls back to local |
+| `validate_scheme(scheme)` | `None`, or why the name cannot be a scheme |
+
+**The contract is the one the if-chain already kept**: a URI string goes in, a
+`PathImpl` comes out, with the parsing inside the class. Nothing here looks at
+a URI beyond its scheme, which is what lets a backend be written and tested
+with this module nowhere in sight.
+
+**Registration is lazy.** A factory imports its backend the first time it is
+asked for one, so listing the schemes — which the favourites picker does on
+every open, to decide whether a row needs probing — never pulls in `boto3` for
+an `s3://` row nobody selected. `test_path_schemes.py` checks that in a
+subprocess.
+
+`source` groups registrations the way `actions.registry` does, so a config
+reload drops its own schemes without touching the built-ins. A registration
+that *shadows* another keeps what it covered: overriding `s3://` and then
+reloading gives `s3://` back rather than taking it away, and re-registering the
+same source over itself — which is what a reload is — does not stack.
+
+### `scp://` and `ftp://`
+
+Both sat in all three scheme lists with no branch in the factory, so they
+resolved to a **local** path: `Path('ftp://h/p')` became
+`PathlibPath('ftp:/h/p')` — the `//` collapsed — which then reported itself
+missing, naming a path the user had not typed.
+
+They are registered to `UnsupportedPathImpl` (in `xefm/path_base.py`, and the
+smallest backend in the repository at five methods and no state). The URI stays
+intact, `get_scheme()` says `'ftp'`, `is_remote()` says True so a subshell still
+refuses it, `exists()` says False so a probe reports a missing path rather than
+raising — and anything that tries to *read* one gets
+`OSError(ENOSYS, 'ftp:// is not supported by this version of XeFM')`.
+
 ## Adding a Storage Type Inside This Repository
 
 A backend that ships here subclasses `PathImpl` directly, declares the five
-attributes, implements the operations, and is returned from
-`Path._create_implementation` for its scheme. Inheriting the strict ABC is the
-point: a missing method should fail at import for code in this repository.
+attributes, implements the operations, and is registered in
+`xefm/path_schemes.py` for its scheme. Inheriting the strict ABC is the point:
+a missing method should fail at import for code in this repository.
 
 ```python
 class CustomPathImpl(PathImpl):
@@ -361,12 +425,14 @@ loses only the one it could not have acted on anyway.
 |---|---|
 | `test/test_path_capabilities.py` | the capability matrix, the validation rules, the list of retired methods |
 | `test/test_published_base.py` | the arithmetic, the read-only policy, and the five-method promise |
+| `test/test_path_schemes.py` | that one registration reaches all four call sites |
 | `test/test_mock_storage_extensibility.py` | a whole backend, written twice — writable and read-only — to prove the UI needs no change for either |
 
 ## References
 
 - `xefm/path.py` — `PathImpl`, `LocalPathImpl`, `Path`, `KNOWN_CAPABILITIES`
 - `xefm/path_base.py` — `UriPathImpl`, `ReadOnlyPathImpl`, `UriStatResult`
+- `xefm/path_schemes.py` — the scheme registry
 - `xefm/s3.py`, `xefm/ssh.py`, `xefm/archive.py` — the three remote backends
 - `doc/dev/S3_SUPPORT_SYSTEM.md`, `doc/dev/SSH_SYSTEM.md`,
   `doc/dev/ARCHIVE_SYSTEM.md` — per-backend detail
