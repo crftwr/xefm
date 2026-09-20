@@ -95,7 +95,7 @@ with XeFM, so they work the same on every platform.
 **HEIC, JPEG XL and camera RAW depend on your machine**, because XeFM asks the
 system rather than carrying a decoder for them:
 
-| | macOS | Windows | Linux / terminal |
+| | macOS | Windows | Linux |
 |---|---|---|---|
 | HEIC / HEIF | yes, built in | with *HEIF Image Extensions* from the Store — plus *HEVC Video Extensions*, which decodes what a HEIC actually holds | `pip install pillow-heif` |
 | AVIF | yes | yes | yes |
@@ -105,7 +105,13 @@ system rather than carrying a decoder for them:
 On macOS the pictures are drawn by the same decoder Preview and Quick Look use;
 on Windows by whichever imaging codecs are installed. So a HEIC off your phone
 opens with nothing to set up on a Mac, and on a Windows machine with the Store
-extensions installed. Everywhere else, one `pip install` is the whole of it.
+extensions installed. On Linux, one `pip install` is the whole of it.
+
+**These are per machine, not per version of XeFM.** The desktop app and the
+terminal app answer alike: run XeFM in a terminal on a Mac and a HEIC still
+opens, drawn by the system decoder and handed to your terminal's inline-image
+protocol. (A terminal that cannot show pictures at all is a separate matter —
+see *Terminal support* above.)
 
 **The Windows column is not a version list.** What XeFM offers there is
 whichever WIC imaging codecs the machine actually has, which depends on the

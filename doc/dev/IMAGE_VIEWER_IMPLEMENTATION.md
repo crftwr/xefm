@@ -387,6 +387,24 @@ such picture. Only case 3 still stages one, released on navigation and on close.
 Failures are recorded in `_error` and shown on the card rather than raised — one
 corrupt file should not make a directory unbrowsable.
 
+### The terminal reaches the OS decoder too
+
+For a while it did not, and the seam showed: on the same Mac, the desktop app
+opened a HEIC and the terminal app said `No built-in viewer for …`. The cause was
+that `Backend.image_formats()` was answering two questions — "what can *you* draw
+from a path?" and "what can this *machine* decode?" — which coincide for a GUI
+backend and do not for a terminal, whose decoder is Pillow.
+
+Closed in PuiKit, not here: `puikit/_platform_image.py` asks the second question
+separately (ImageIO on macOS, WIC on Windows, nothing on Linux), and
+`_terminal_graphics` unions it into `extensions()` and falls through to it in
+`_open()`. **XeFM did not change at all** — `set_native_suffixes` is handed
+`Panel.image_formats` uncalled, so the wider answer simply arrives. See
+`puikit/docs/images.md` §9.
+
+So the table in the feature doc is per *machine*, not per backend, and
+`IMAGE_DECODERS` keeps its own job: formats nothing on the machine reads.
+
 ### Optional Pillow plugins
 
 `_OPTIONAL_PILLOW_PLUGINS` registers `pillow-heif`, `pillow-avif` and

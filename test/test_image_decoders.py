@@ -290,8 +290,8 @@ def test_heic_is_claimed_and_handed_straight_to_the_system(tmp_path):
     # nothing installed, nothing decoded here, and the picture is drawn by the
     # same decoder Preview uses.
     from puikit import PROFILE_GUI_DESKTOP, Panel
-    from puikit.backends.macos_backend import (_appkit_image_extensions,
-                                               _imageio_pixel_size)
+    from puikit._platform_image import extensions as platform_extensions
+    from puikit.backends.macos_backend import _imageio_pixel_size
     from puikit.backends.memory_backend import MemoryBackend
 
     from xefm.image_viewer import ImageViewer
@@ -302,7 +302,7 @@ def test_heic_is_claimed_and_handed_straight_to_the_system(tmp_path):
         for it because the real one wants a window and a run loop."""
 
         def image_formats(self):
-            return _appkit_image_extensions()
+            return platform_extensions()
 
         def image_size(self, source):
             return _imageio_pixel_size(source) or super().image_size(source)
@@ -326,9 +326,9 @@ def test_the_system_decoder_does_not_make_a_pdf_an_image(tmp_path):
     # ImageIO reads PDFs. The viewer must not offer them — this is the case the
     # curated candidate list exists for, and the one a naive union would get
     # wrong on every Mac.
-    from puikit.backends.macos_backend import _appkit_image_extensions
+    from puikit._platform_image import extensions as platform_extensions
 
-    image_decoders.set_native_suffixes(_appkit_image_extensions())
+    image_decoders.set_native_suffixes(platform_extensions())
     assert ".pdf" in image_decoders.native_suffixes()
     assert not is_image_file(Path(str(tmp_path / "paper.pdf")))
 
