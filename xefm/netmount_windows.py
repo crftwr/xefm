@@ -1025,8 +1025,20 @@ def _credential_target(target, user: str) -> str:
     as a domain password. Windows will not hand a domain password's blob back to
     the program that wrote it, so a credential of that type could be saved but
     never read — and reading it back to prefill the form is the whole point.
+
+    **The share is not part of the key**, so one password is held per server
+    and account — the same rule the login Keychain follows on macOS, and the
+    one the rest of XeFM was written against. It is what lets a second share
+    on the same NAS connect without asking again, what lets a browse use the
+    password a mount saved, and what makes `server_list._still_needed` mean
+    what it says. Keyed by share instead, all three quietly stopped being
+    true on Windows alone: the mount filed a password under
+    ``smb://nas/Documents`` while the browse looked for ``smb://nas`` and
+    found nothing, and forgetting a row kept a credential no other row could
+    ever use or remove.
     """
-    return f"XeFM:{target.key}#{user}" if user else f"XeFM:{target.key}"
+    key = replace(target, share="").key
+    return f"XeFM:{key}#{user}" if user else f"XeFM:{key}"
 
 
 def save_password(target, user: str, password: str) -> None:

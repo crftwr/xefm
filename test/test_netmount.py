@@ -736,6 +736,54 @@ class MacBackend(unittest.TestCase):
             self.assertEqual(self.mac._find_mount(target), "")
 
 
+class OnePasswordPerServer(unittest.TestCase):
+    """A stored password is held per **server and account**, on both
+    platforms, and the rest of XeFM is written against that.
+
+    Three things rest on it: a second share on the same NAS connects without
+    asking, a browse can use the password a mount saved, and
+    ``server_list._still_needed`` — which decides whether forgetting a row may
+    delete the password — means what its docstring says. Windows keyed the
+    entry by the full URL instead, share and all, so all three quietly stopped
+    being true there: the mount filed under ``smb://nas/Documents`` while the
+    browse looked for ``smb://nas``, and forgetting a row kept a credential no
+    other row could use or remove.
+
+    The two backends name their entries in ways that share no code, so this
+    asks each in its own terms rather than comparing strings.
+    """
+
+    SHARE = "smb://SynologyNas/Documents"
+    OTHER = "smb://SynologyNas/Videos"
+    SERVER = "smb://SynologyNas"
+
+    def _targets(self):
+        return (netmount.parse_address(self.SHARE),
+                netmount.parse_address(self.OTHER),
+                netmount.parse_address(self.SERVER))
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows backend")
+    def test_windows(self):
+        from xefm import netmount_windows
+        share, other, server = self._targets()
+        name = netmount_windows._credential_target
+        self.assertEqual(name(share, "me"), name(server, "me"))
+        self.assertEqual(name(share, "me"), name(other, "me"))
+        # ...and two machines still get two entries.
+        self.assertNotEqual(name(share, "me"),
+                            name(netmount.parse_address("smb://other/x"), "me"))
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS backend")
+    def test_macos(self):
+        from xefm import netmount_macos
+        share, other, server = self._targets()
+        keys = netmount_macos._keychain_keys
+        self.assertEqual(keys(share, "me"), keys(server, "me"))
+        self.assertEqual(keys(share, "me"), keys(other, "me"))
+        self.assertNotEqual(keys(share, "me"),
+                            keys(netmount.parse_address("smb://other/x"), "me"))
+
+
 class BackendParity(unittest.TestCase):
     """Both platform modules are called through the same wrapper, so a
     function they both declare has to take the same arguments.
