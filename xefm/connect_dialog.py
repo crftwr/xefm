@@ -82,7 +82,9 @@ class ConnectRequest:
 class ConnectFormDialog(FocusContainer, Widget):
     """The connection form: three text fields and two or three checkboxes.
 
-    Focus moves with Tab / Shift-Tab and the arrow keys, Space toggles the
+    Focus moves with Tab / Shift-Tab and with Up / Down, both wrapping. The
+    arrows work inside the text fields too: the fields are single-line, so
+    there is no caret movement for them to mean instead. Space toggles the
     checkbox under focus, Enter connects from anywhere in the form, and Esc
     cancels. Enter is *not* routed to the focused widget — a form where Enter
     means different things depending on which row you are standing on is a form
@@ -201,7 +203,11 @@ class ConnectFormDialog(FocusContainer, Widget):
         draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
     def hint(self) -> str:
-        return " · ".join(["Tab next field", "Space toggle",
+        # Tab is not named, though it works: this box is narrower than the
+        # pickers' and naming it pushed "Esc cancel" off the end even on a
+        # wide terminal. The arrows are the keys worth naming — Tab in a form
+        # is universal.
+        return " · ".join(["↑/↓ move", "Space toggle",
                            "Enter connect", "Esc cancel"])
 
     # --- events --------------------------------------------------------------
@@ -232,9 +238,11 @@ class ConnectFormDialog(FocusContainer, Widget):
             return
         if key == "tab":
             move_focus(self, -1 if "shift" in event.modifiers else 1, wrap=True)
-        elif key in ("up", "down") and not isinstance(self._focused, TextEdit):
-            # Inside a text field the arrows belong to the caret; on a checkbox
-            # there is nothing else for them to do, so they step rows.
+        elif key in ("up", "down"):
+            # The arrows step rows everywhere in the form, text fields
+            # included: these fields are single-line, so up and down mean
+            # nothing to the caret and would otherwise be keys that do nothing
+            # on three of the five rows.
             move_focus(self, -1 if key == "up" else 1, wrap=True)
         elif key == "space" and isinstance(self._focused, Checkbox):
             self._toggle(self._focused)

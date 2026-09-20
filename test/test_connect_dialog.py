@@ -540,14 +540,27 @@ class FormKeys(unittest.TestCase):
         self._key("space", char=" ")
         self.assertEqual(self.dialog.save_password.checked, before)
 
-    def test_the_arrows_step_rows_only_outside_a_text_field(self):
-        self.dialog._focused = self.dialog.save_password
-        self._key("down")
-        self.assertIs(self.dialog._focused, self.dialog.save_server)
-        # In a field the arrows belong to the caret, so focus stays put.
+    def test_the_arrows_step_rows_everywhere_in_the_form(self):
+        """Including inside the text fields: they are single-line, so up and
+        down mean nothing to the caret and would otherwise be dead keys on
+        three of the five rows."""
+        order = [w for _label, w in self.dialog.rows]
+        self.dialog._focused = order[0]
+        for expected in order[1:] + order[:1]:
+            self._key("down")
+            self.assertIs(self.dialog._focused, expected)
+
+    def test_up_steps_back_and_wraps(self):
+        order = [w for _label, w in self.dialog.rows]
+        self.dialog._focused = order[0]
+        self._key("up")
+        self.assertIs(self.dialog._focused, order[-1])
+
+    def test_typing_still_reaches_the_focused_field(self):
+        """The arrows were the only keys taken away from the fields."""
         self.dialog._focused = self.dialog.user
-        self._key("down")
-        self.assertIs(self.dialog._focused, self.dialog.user)
+        self._key("a", char="a")
+        self.assertEqual(self.dialog.user.text, "mea")  # caret was at the end
 
     def test_enter_connects_from_a_checkbox_too(self):
         self.dialog._focused = self.dialog.save_server

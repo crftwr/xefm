@@ -120,8 +120,9 @@ word that matched no row — nothing happens, because it was a search.
 | **Save this server** | On by default — adds it to the list for next time |
 | **Drive letter** (Windows) | Empty by default. See [Drive letters](#drive-letters-windows) |
 
-**Tab** moves between fields, **Space** ticks the checkbox you are standing on,
-**Enter** connects from anywhere in the form, and **Esc** cancels.
+**Up/Down** moves between the rows — **Tab** and **Shift-Tab** do the same —
+**Space** ticks the checkbox you are standing on, **Enter** connects from
+anywhere in the form, and **Esc** cancels.
 
 Leaving both **User name** and **Password** empty connects as a guest, which is
 how a share that needs no account is reached.
