@@ -22,6 +22,16 @@ class SSHPathImpl(PathImpl):
     Represents paths on remote systems accessible via SSH/SFTP.
     URI format: ssh://hostname/path/to/file
     """
+
+    SCHEME = 'ssh'
+    IS_REMOTE = True
+    # SFTP renames a directory server-side, so 'directory_rename' holds here
+    # where it does not for S3. No 'file_editing': a terminal editor cannot
+    # open a path that is not on this filesystem.
+    CAPABILITIES = frozenset({'write_operations', 'directory_rename',
+                              'extraction_for_reading', 'cache_for_search'})
+    SEARCH_STRATEGY = 'buffered'
+    DISPLAY_PREFIX = 'SSH: '
     
     def __init__(self, uri: str):
         """
@@ -593,56 +603,12 @@ class SSHPathImpl(PathImpl):
         raise NotImplementedError("chmod not supported for SSH paths via SFTP")
     
     # Storage-specific methods
-    def is_remote(self) -> bool:
-        """Return True if this path represents a remote resource"""
-        return True
-    
-    def get_scheme(self) -> str:
-        """Return the scheme of the path (e.g., 'file', 's3', 'ssh')"""
-        return 'ssh'
-    
     def as_uri(self) -> str:
         """Return the path as a URI"""
         return self._uri
     
-    def supports_directory_rename(self) -> bool:
-        """Return True if this storage implementation supports directory renaming"""
-        return True
-    
-    def supports_file_editing(self) -> bool:
-        """Return True if this storage implementation supports external editor editing"""
-        return False  # No external editor support for remote files
-    
-    def supports_write_operations(self) -> bool:
-        """Return True if this storage implementation supports write operations"""
-        return True
-    
     # Display methods for UI presentation
-    def get_display_prefix(self) -> str:
-        """Return a prefix for display purposes in UI components"""
-        return "SSH: "
-    
-    def get_display_title(self) -> str:
-        """Return a formatted title for display in viewers and dialogs"""
-        return self._uri
-    
     # Content reading strategy methods
-    def requires_extraction_for_reading(self) -> bool:
-        """Return True if content must be extracted before reading"""
-        return True  # SSH files must be downloaded before reading
-    
-    def supports_streaming_read(self) -> bool:
-        """Return True if file can be read line-by-line without full extraction"""
-        return False  # Must download entire file first
-    
-    def get_search_strategy(self) -> str:
-        """Return recommended search strategy for this storage type"""
-        return 'buffered'  # Download to buffer then search
-    
-    def should_cache_for_search(self) -> bool:
-        """Return True if content should be cached during search operations"""
-        return True  # Download is expensive, caching recommended
-    
     # Metadata method for info dialogs
     def get_extended_metadata(self) -> dict:
         """Return storage-specific metadata for display in info dialogs"""

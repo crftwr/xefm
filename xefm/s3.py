@@ -414,6 +414,16 @@ class S3PathImpl(PathImpl):
     This class provides S3 operations while implementing the PathImpl interface.
     S3 paths are expected in the format: s3://bucket-name/key/path
     """
+
+    SCHEME = 's3'
+    IS_REMOTE = True
+    # No 'directory_rename': a directory is a key prefix, so renaming one means
+    # copying and deleting every object under it. No 'file_editing': an editor
+    # would have to download, watch and re-upload, which nothing here does yet.
+    CAPABILITIES = frozenset({'write_operations', 'extraction_for_reading',
+                              'cache_for_search'})
+    SEARCH_STRATEGY = 'buffered'
+    DISPLAY_PREFIX = 'S3: '
     
     @classmethod
     def create_path_with_metadata(cls, s3_uri: str, metadata: Dict[str, Any]) -> 'Path':
@@ -1528,14 +1538,6 @@ class S3PathImpl(PathImpl):
         pass
     
     # Storage-specific methods
-    def is_remote(self) -> bool:
-        """Return True if this path represents a remote resource"""
-        return True
-    
-    def get_scheme(self) -> str:
-        """Return the scheme of the path (e.g., 'file', 's3', 'scp')"""
-        return 's3'
-    
     def as_uri(self) -> str:
         """Return the path as a URI"""
         return self._uri
@@ -1556,73 +1558,8 @@ class S3PathImpl(PathImpl):
         """Return the string representation with forward slashes"""
         return self._uri
     
-    def supports_directory_rename(self) -> bool:
-        """Return True if this storage implementation supports directory renaming"""
-        return False  # S3 does not support directory renaming due to performance and cost considerations
-    
-    def supports_file_editing(self) -> bool:
-        """Return True if this storage implementation supports external editor editing (vim, nano, etc.)"""
-        return False  # S3 file editing is not supported for now
-    
-    def supports_write_operations(self) -> bool:
-        """Return True if this storage implementation supports write operations (copy, move, create, delete)"""
-        return True  # S3 supports write operations (copy, move, create, delete)
-    
     # Display methods
-    def get_display_prefix(self) -> str:
-        """Return a prefix for display purposes.
-        
-        Returns:
-            str: Display prefix 'S3: ' (with trailing space)
-        """
-        return 'S3: '
-    
-    def get_display_title(self) -> str:
-        """Return a formatted title for display in viewers/dialogs.
-        
-        Returns:
-            str: S3 URI (e.g., 's3://bucket/key')
-        """
-        return self._uri
-    
     # Content reading strategy methods
-    def requires_extraction_for_reading(self) -> bool:
-        """Return True if content must be extracted before reading.
-        
-        This affects how content is accessed - whether it can be read
-        directly or must be extracted to memory/disk first.
-        
-        Returns:
-            bool: True - S3 objects must be downloaded before reading
-        """
-        return True
-    
-    def supports_streaming_read(self) -> bool:
-        """Return True if file can be read line-by-line without full extraction.
-        
-        This affects memory usage during operations like search.
-        
-        Returns:
-            bool: False - S3 objects must be fully downloaded, cannot stream line-by-line
-        """
-        return False
-    
-    def get_search_strategy(self) -> str:
-        """Return recommended search strategy.
-        
-        Returns:
-            str: 'buffered' - Download to buffer for S3 objects
-        """
-        return 'buffered'
-    
-    def should_cache_for_search(self) -> bool:
-        """Return True if content should be cached during search operations.
-        
-        Returns:
-            bool: True - Caching is recommended for S3 to avoid repeated downloads
-        """
-        return True
-    
     # Metadata method
     def get_extended_metadata(self) -> Dict[str, Any]:
         """Return storage-specific metadata for display in info dialogs.

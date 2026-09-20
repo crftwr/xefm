@@ -1781,6 +1781,16 @@ class ArchivePathImpl(PathImpl):
     
     The '#' separator distinguishes the archive file path from the internal path.
     """
+
+    SCHEME = 'archive'
+    # An archive is read-only here, so every write capability is absent; the
+    # whole entry has to be unpacked before it can be read, and unpacking is
+    # expensive enough to keep. ``is_remote`` stays a method below: it is the
+    # one answer in this group that varies per path, since an archive on S3 is
+    # remote and the same archive on disk is not.
+    CAPABILITIES = frozenset({'extraction_for_reading', 'cache_for_search'})
+    SEARCH_STRATEGY = 'extracted'
+    DISPLAY_PREFIX = 'ARCHIVE: '
     
     def __init__(self, archive_uri: str, metadata: Optional[Dict[str, Any]] = None):
         """
@@ -2314,99 +2324,12 @@ class ArchivePathImpl(PathImpl):
         # Archive paths are virtual, but the underlying archive might be remote
         return self._archive_path.is_remote()
     
-    def get_scheme(self) -> str:
-        """Return the scheme of the path (e.g., 'file', 's3', 'scp')."""
-        return 'archive'
-    
     def as_uri(self) -> str:
         """Return the path as a URI."""
         return self._uri
     
-    def supports_directory_rename(self) -> bool:
-        """Return True if this storage implementation supports directory renaming."""
-        return False  # Archives are read-only
-    
-    def supports_file_editing(self) -> bool:
-        """Return True if this storage implementation supports external editor editing (vim, nano, etc.)"""
-        return False  # Archives are read-only
-    
-    def supports_write_operations(self) -> bool:
-        """Return True if this storage implementation supports write operations (copy, move, create, delete)"""
-        return False  # Archives are read-only
-    
     # Display methods for UI presentation
-    def get_display_prefix(self) -> str:
-        """Return a prefix for display purposes.
-        
-        For archive entries, returns 'ARCHIVE: ' to indicate the storage type
-        in UI components like text viewers and info dialogs.
-        
-        Returns:
-            str: 'ARCHIVE: ' (with trailing space)
-        """
-        return 'ARCHIVE: '
-    
-    def get_display_title(self) -> str:
-        """Return a formatted title for display in viewers and dialogs.
-        
-        For archive entries, returns the full archive URI which includes both
-        the archive file path and the internal path within the archive.
-        
-        Returns:
-            str: Full archive URI in format 'archive://path/to/file.zip#internal/path'
-        """
-        return self._uri
-    
     # Content reading strategy methods
-    def requires_extraction_for_reading(self) -> bool:
-        """Return True if content must be extracted before reading.
-        
-        Archive files must be extracted from the archive container before their
-        content can be read. This affects how content is accessed - it cannot be
-        read directly and must be extracted to memory or disk first.
-        
-        Returns:
-            bool: True - archive content always requires extraction
-        """
-        return True
-    
-    def supports_streaming_read(self) -> bool:
-        """Return True if file can be read line-by-line without full extraction.
-        
-        Archive files do not support streaming reads. The entire file must be
-        extracted from the archive before it can be accessed. This affects memory
-        usage during operations like search, as the full content must be loaded.
-        
-        Returns:
-            bool: False - archive content cannot be streamed
-        """
-        return False
-    
-    def get_search_strategy(self) -> str:
-        """Return recommended search strategy for this storage type.
-        
-        Archive files require the 'extracted' strategy, meaning the entire file
-        content must be extracted from the archive before searching can begin.
-        This is necessary because archive formats don't support random access
-        or streaming reads of individual files.
-        
-        Returns:
-            str: 'extracted' - must extract entire content before searching
-        """
-        return 'extracted'
-    
-    def should_cache_for_search(self) -> bool:
-        """Return True if content should be cached during search operations.
-        
-        Archive content should be cached during search operations because
-        extraction is expensive. Caching the extracted content allows multiple
-        search operations or result viewing without repeated extraction overhead.
-        
-        Returns:
-            bool: True - caching is recommended for archive content
-        """
-        return True
-    
     # Metadata method for info dialogs
     def get_extended_metadata(self) -> dict:
         """Return storage-specific metadata for display in info dialogs.

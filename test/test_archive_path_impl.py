@@ -278,13 +278,14 @@ class TestArchivePathImpl:
         except OSError:
             pass
     
-    def test_archive_supports_methods(self):
-        """Test supports_* methods"""
+    def test_archive_declares_no_write_capability(self):
+        """An archive is read-only, so it declares none of the write group."""
         archive_uri = f"archive://{self.zip_path}#file1.txt"
         path = Path(archive_uri)
-        
-        assert not path.supports_directory_rename()
-        assert not path.supports_file_editing()
+
+        assert not path.supports('directory_rename')
+        assert not path.supports('file_editing')
+        assert not path.supports('write_operations')
 
 
 class TestStreamingOutOfAnArchive:

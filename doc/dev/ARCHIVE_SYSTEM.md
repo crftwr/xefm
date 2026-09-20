@@ -305,10 +305,12 @@ raise `OSError("Archive files are read-only")`.
 
 `extract_to_stream(stream, progress_callback)` is the copy-out path (§1.3).
 
-It also answers storage-strategy queries the app uses elsewhere:
-`get_scheme() == 'archive'`, `requires_extraction_for_reading() == True`,
-`supports_streaming_read() == False`, `get_search_strategy() == 'extracted'`, and
-`get_extended_metadata()` for the info dialog. A per-instance `_property_cache`
+It declares what an archive *is* rather than answering it method by method:
+`SCHEME = 'archive'`, `CAPABILITIES = {'extraction_for_reading',
+'cache_for_search'}` (no write capability — archives are read-only here),
+`SEARCH_STRATEGY = 'extracted'`, and `get_extended_metadata()` for the info
+dialog. `is_remote()` stays a method, because an archive's remoteness is its
+container's. See `doc/dev/PATH_POLYMORPHISM_SYSTEM.md`. A per-instance `_property_cache`
 memoizes `name` / `parts`; a `_metadata['entry']` slot caches the resolved
 `ArchiveEntry`.
 
