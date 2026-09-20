@@ -163,6 +163,45 @@ def is_available() -> bool:
 
 # --- mount -------------------------------------------------------------------
 
+#: Mount statuses that mean the host was never reached — no such name, or
+#: nothing answering at it. These are the failures worth retrying under the
+#: mDNS name, and the auth failures are deliberately not among them.
+_UNREACHABLE = {2, 51, 60, 61, 64, 65}
+
+
+def _host_label(hostname) -> str:
+    """The bare label out of an mDNS host name: ``SynologyNas.local.`` ->
+    ``SynologyNas``.
+
+    Discovery reports this rather than the full name, because macOS records
+    the server under whatever spelling it was mounted with — so connecting as
+    ``SynologyNas.local`` makes Finder list the same NAS twice, once as it
+    advertises itself and once as XeFM mounted it. The suffix is put back by
+    :func:`_mdns_alternatives` if the bare label turns out to reach nothing.
+    """
+    host = (hostname or "").rstrip(".")
+    return host[:-6] if host.lower().endswith(".local") else host
+
+
+def _mdns_alternatives(host: str) -> list[str]:
+    """``[host]``, plus ``host.local`` where that is a different name to try.
+
+    A single-label host is the interesting case, and it is not academic: on
+    this network ``SynologyNas`` is reachable only because the NAS answers
+    NetBIOS, while a Mac sharing its disk answers **only** mDNS and is reached
+    only as ``Annas-MacBook-Pro.local``. The system resolver knows nothing
+    about the first case (``getaddrinfo("SynologyNas")`` fails outright), so
+    there is no cheap way to pick correctly in advance — and trying is cheap:
+    an unreachable name fails in well under the time a real connection takes.
+
+    The bare name goes first because it is the one that keeps the machine a
+    single server in the mount table, and therefore a single row in Finder.
+    """
+    if "." in host or not host:
+        return [host]
+    return [host, f"{host}.local"]
+
+
 #: Mount statuses that mean "the credentials were wrong", so the form should
 #: reopen with what the user typed rather than sending them back to the list.
 #: Positive values are errno, negative ones OSStatus (see NetFS.h).
@@ -200,21 +239,50 @@ _MESSAGES = {
 }
 
 
+def _url_for(target, host: str) -> str:
+    """``target``'s URL with the host swapped, for the fallback attempt."""
+    if host == target.host:
+        return target.url
+    port = f":{target.port}" if target.port else ""
+    base = f"{target.scheme}://{host}{port}"
+    return f"{base}/{target.share}" if target.share else base
+
+
 def mount(target, user: str = "", password: str = "",
           drive_letter: str = "") -> str:
     """Mount ``target`` through NetFS and return the resulting mount point.
+
+    A single-label host is tried as written and then, if nothing answered at
+    that name, as ``<host>.local`` — see :func:`_mdns_alternatives` for why
+    that order and not the other. An authentication failure is *not* retried:
+    the server was reached, and asking it again under a different name would
+    only produce a second rejection and a worse message.
 
     ``drive_letter`` is accepted and ignored — it is a Windows concept, and
     keeping the signature identical is what lets :mod:`xefm.netmount` call
     either backend without branching.
     """
+    last = None
+    for host in _mdns_alternatives(target.host):
+        try:
+            return _mount_once(target, host, user, password)
+        except MountError as e:
+            if e.auth or not getattr(e, "unreachable", False):
+                raise
+            last = e
+    raise last if last is not None else MountError(
+        f"Could not connect to {target.host}.")
+
+
+def _mount_once(target, host: str, user: str, password: str) -> str:
+    """One NetFS attempt against one spelling of the host."""
     ns = _load_netfs()
     if ns is None:
         raise MountError("Connect to Server is not available on this system.")
 
     from Foundation import NSMutableDictionary, NSURL
 
-    url = NSURL.URLWithString_(target.url)
+    url = NSURL.URLWithString_(_url_for(target, host))
     if url is None:
         raise MountError(f"{target.url} is not an address macOS understands.")
 
@@ -252,8 +320,12 @@ def mount(target, user: str = "", password: str = "",
             existing = _find_mount(target)
             if existing:
                 return existing
-        raise MountError(_describe(status, target, guest=guest),
-                         auth=status in _AUTH_ERRORS)
+        error = MountError(_describe(status, target, guest=guest),
+                           auth=status in _AUTH_ERRORS)
+        # Only a host that was never reached is worth trying under another
+        # name; everything else answered, and the answer stands.
+        error.unreachable = status in _UNREACHABLE
+        raise error
 
     if mountpoints:
         return str(mountpoints[0])
@@ -582,7 +654,7 @@ def _collector_class(NSObject):
             service.resolveWithTimeout_(_RESOLVE_SECONDS)
 
         def netServiceDidResolveAddress_(self, service):
-            host = (service.hostName() or "").rstrip(".")
+            host = _host_label(service.hostName())
             if host:
                 self.out.put((str(service.name()), host, str(service.type())))
 
@@ -685,9 +757,11 @@ def list_shares(target, user: str = "") -> list[str]:
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
 
-    attempts = [["-g", f"//{target.host}"]]
-    if user:
-        attempts.append([f"//{user}@{target.host}"])
+    attempts = []
+    for host in _mdns_alternatives(target.host):
+        attempts.append(["-g", f"//{host}"])
+        if user:
+            attempts.append([f"//{user}@{host}"])
     last = "the server refused the request"
     for args in attempts:
         try:

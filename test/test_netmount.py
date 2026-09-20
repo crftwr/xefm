@@ -449,8 +449,87 @@ class MacBackend(unittest.TestCase):
         with patch.object(self.mac, "_run_tool", fake):
             with self.assertRaises(netmount.MountError) as caught:
                 self.mac.list_shares(target)
-        self.assertEqual(len(calls), 1)
+        # Both spellings of the host are tried, but every attempt is a guest
+        # one: with no account there is nothing to authenticate as.
+        self.assertTrue(calls)
+        for argv in calls:
+            self.assertIn("-g", argv)
+            self.assertNotIn("@", argv[-1])
         self.assertTrue(caught.exception.auth)
+
+    def test_discovery_reports_the_bare_host_label(self):
+        """macOS records a server under the spelling it was mounted with, so
+        mounting "SynologyNas.local" makes Finder list the NAS twice — once as
+        it advertises itself, once as XeFM connected to it."""
+        for raw, expected in (("SynologyNas.local.", "SynologyNas"),
+                              ("Annas-MacBook-Pro.local", "Annas-MacBook-Pro"),
+                              ("nas.example.com.", "nas.example.com"),
+                              ("", "")):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.mac._host_label(raw), expected)
+
+    def test_a_single_label_host_is_also_tried_as_mdns(self):
+        """The bare name first, because it is the one that keeps the machine a
+        single row in Finder — and `.local` behind it, because a Mac sharing
+        its disk answers to nothing else."""
+        self.assertEqual(self.mac._mdns_alternatives("SynologyNas"),
+                         ["SynologyNas", "SynologyNas.local"])
+        self.assertEqual(self.mac._mdns_alternatives("nas.example.com"),
+                         ["nas.example.com"])
+        self.assertEqual(self.mac._mdns_alternatives("SynologyNas.local"),
+                         ["SynologyNas.local"])
+
+    def test_the_fallback_swaps_only_the_host(self):
+        target = netmount.parse_address("smb://nas:4450/share/sub")
+        self.assertEqual(self.mac._url_for(target, "nas.local"),
+                         "smb://nas.local:4450/share/sub")
+
+    def test_a_host_that_answers_nothing_is_retried_as_mdns(self):
+        tried = []
+
+        def attempt(target, host, user, password):
+            tried.append(host)
+            if host == "nas.local":
+                return "/Volumes/share"
+            error = netmount.MountError("nas: The server cannot be reached.")
+            error.unreachable = True
+            raise error
+
+        target = netmount.parse_address("smb://nas/share")
+        with patch.object(self.mac, "_mount_once", attempt):
+            self.assertEqual(self.mac.mount(target), "/Volumes/share")
+        self.assertEqual(tried, ["nas", "nas.local"])
+
+    def test_a_rejected_password_is_not_retried_under_another_name(self):
+        """The server answered. Asking it again under a different name only
+        earns a second rejection and a worse message."""
+        tried = []
+
+        def attempt(target, host, user, password):
+            tried.append(host)
+            raise netmount.MountError("rejected", auth=True)
+
+        target = netmount.parse_address("smb://nas/share")
+        with patch.object(self.mac, "_mount_once", attempt):
+            with self.assertRaises(netmount.MountError):
+                self.mac.mount(target)
+        self.assertEqual(tried, ["nas"])
+
+    def test_share_listing_tries_both_spellings(self):
+        import subprocess
+
+        calls = []
+
+        def fake(argv, **kwargs):
+            calls.append(argv[-1])
+            return subprocess.CompletedProcess(argv, 68, stdout="", stderr="no")
+
+        target = netmount.parse_address("smb://nas")
+        with patch.object(self.mac, "_run_tool", fake):
+            with self.assertRaises(netmount.MountError):
+                self.mac.list_shares(target, "me")
+        self.assertEqual(calls, ["//nas", "//me@nas",
+                                 "//nas.local", "//me@nas.local"])
 
     def test_the_keychain_is_searched_under_finder_s_spelling_first(self):
         """Finder files a Bonjour-discovered server under its *service* name,

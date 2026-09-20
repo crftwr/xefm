@@ -140,6 +140,11 @@ and without a way out you would be waiting for the network's own timeout.
 A user name can be written into the address (`smb://me@nas/photo`) instead of
 into the **User name** field; XeFM splits it out and fills the field for you.
 
+A short server name that your network does not resolve is also tried as
+`name.local`, which is how Macs and many NAS boxes announce themselves. So
+`smb://nas/photo` finds the machine whether it answers to plain `nas` or only
+to `nas.local`, and the volume is named after whichever one worked.
+
 Leaving the share off the end (`smb://nas`) is not an error: an address that
 names a server and no share is a request to **browse** it, and you get the share
 list described above.

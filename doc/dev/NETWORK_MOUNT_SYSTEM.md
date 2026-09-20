@@ -328,6 +328,35 @@ sharing an object Apple does not document as thread-safe. It also means every
 row in the list is a row that can actually be opened: a service that will not
 resolve is dropped rather than shown.
 
+### Which spelling of the host to connect with
+
+What is reported is the **bare label** — `SynologyNas`, not
+`SynologyNas.local` — and the reason is visible in Finder. macOS records a
+server in the mount table under whatever spelling it was mounted with
+(measured: mounting `smb://SynologyNas.local/home` produces
+`//crftwr@SynologyNas.local/home`, and the Bonjour service form produces the
+service name, which is worse). Finder's Network view then lists the same NAS
+**twice** — once as it advertises itself, once as XeFM connected to it.
+
+The bare label cannot simply be trusted, though, and the reason is not
+obvious. On this network `smb://SynologyNas` works, but *not* because the
+system resolves it: `getaddrinfo("SynologyNas")` fails outright, and the SMB
+client reaches it over **NetBIOS**, which the Synology answers and a Mac does
+not. A Mac sharing its disk is reachable only as `Annas-MacBook-Pro.local`. So
+neither name is right in general, and no cheap probe distinguishes them — the
+system resolver says "no" to a name SMB can use perfectly well.
+
+`_mdns_alternatives` therefore tries **both, bare first**: the spelling that
+keeps the machine one row in Finder, and `<host>.local` behind it for the
+machines that answer only mDNS. It costs nothing when the first works, and an
+unreachable name fails in well under a second to three seconds (measured)
+when it does not. An **authentication** failure is never retried — the server
+was reached, and asking again under another name would only earn a second
+rejection and a worse message. `list_shares` walks the same list.
+
+Because the successful address is what gets saved, a server pays this at most
+once.
+
 The found services are held in a list on the delegate. The browser does not
 retain them, and a resolution in flight against a collected object is a crash
 rather than a failure.
