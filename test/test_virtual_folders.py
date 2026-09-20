@@ -224,6 +224,86 @@ def test_validation_reports_without_registering(clean_schemes):
     assert not path_schemes.is_uri('reg://x')
 
 
+# --------------------------------------------------------------------------- #
+# A backend that raises
+# --------------------------------------------------------------------------- #
+
+class Exploding(ReadOnlyPathImpl):
+    """What a config written inside ``class Config:`` behaves like.
+
+    Registration cannot catch it: the class has all five methods, so nothing is
+    abstract and nothing warns. ``NOTES`` is simply not visible from a method
+    defined in a class body, and the NameError arrives on the first call.
+    """
+
+    def _boom(self):
+        raise NameError("name 'NOTES' is not defined")
+
+    def exists(self): self._boom()
+    def is_dir(self): self._boom()
+    def iterdir(self): self._boom()
+    def stat(self): self._boom()
+    def open(self, mode='r', **kwargs): self._boom()
+
+
+def _jump_dialog(app_attrs=None):
+    """The arguments ``jump_to_path`` hands to the input dialog, without a UI."""
+    from unittest.mock import MagicMock
+    from xefm import app as xefm_app
+
+    app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
+    app.active_pane = lambda: {"path": "/tmp"}
+    app.log_info = lambda message: None
+    app.panel = MagicMock()
+    app.flm = MagicMock(show_hidden=False)
+    app._active_pane_region = lambda: None
+    app.navigated = []
+    app._go_to_dir = lambda pane, d, name: app.navigated.append((str(d), name))
+
+    captured = {}
+    original, xefm_app.show_input = xefm_app.show_input, (
+        lambda panel, **kwargs: captured.update(kwargs))
+    try:
+        app.jump_to_path()
+    finally:
+        xefm_app.show_input = original
+    return app, captured
+
+
+def test_a_raising_backend_is_reported_not_thrown(clean_schemes):
+    """Left unguarded, whatever a hand-written backend raises leaves through
+    the dialog's key handler: Enter does nothing and nothing says why. That is
+    how this bug was found."""
+    load(PATH_SCHEMES={'notes': Exploding})
+    _app, dialog = _jump_dialog()
+
+    message = dialog['validate']('notes://todo/')
+    assert message is not None
+    assert 'NameError' in message
+    assert 'NOTES' in message
+
+
+def test_accepting_a_raising_backend_navigates_nowhere(clean_schemes):
+    load(PATH_SCHEMES={'notes': Exploding})
+    app, dialog = _jump_dialog()
+
+    assert dialog['on_accept']('notes://todo/') is None
+    assert app.navigated == []
+
+
+def test_a_working_backend_still_jumps(clean_schemes):
+    """The other half: the guard must not swallow the success case."""
+    load(PATH_SCHEMES={'reg': RegistryPathImpl})
+    app, dialog = _jump_dialog()
+
+    assert dialog['validate']('reg://HKEY_CURRENT_USER') is None
+    assert dialog['validate']('reg://HKEY_CURRENT_USER/') is None   # trailing /
+    assert dialog['validate']('reg://nope') == 'Path does not exist: reg://nope'
+
+    dialog['on_accept']('reg://HKEY_CURRENT_USER/')
+    assert app.navigated == [('reg://HKEY_CURRENT_USER', None)]
+
+
 def test_a_plain_pathimpl_subclass_is_accepted_too(clean_schemes):
     """``ReadOnlyPathImpl`` is the recommendation, not the requirement — the
     registry's contract is ``PathImpl``."""

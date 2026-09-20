@@ -18,7 +18,7 @@ PATH_SCHEMES = {'notes': NotesPathImpl}
 ```
 
 After that, `notes://` is a place: you can open it in a pane, jump to it with
-Ctrl-J, put it in `FAVORITE_DIRECTORIES`, and walk into it and back out.
+Shift-J, put it in `FAVORITE_DIRECTORIES`, and walk into it and back out.
 
 ---
 
@@ -68,6 +68,21 @@ class NotesPathImpl(ReadOnlyPathImpl):
 class Config:
     PATH_SCHEMES = {'notes': NotesPathImpl}
 ```
+
+### Where it goes
+
+**The class and anything it reads go above `class Config:`,** at module level,
+as they are above. Written inside the class body it *loads* fine — nothing
+warns — and then fails on every call:
+
+```
+Config warning: ... NameError: name 'NOTES' is not defined
+```
+
+A class body is not a scope that the functions defined in it can see. Python
+looks up `NOTES` in the method's own locals, then any enclosing *function*, then
+the module — and skips the class body in between. Only the
+`PATH_SCHEMES = {...}` line belongs inside `class Config:`.
 
 | method | returns |
 |---|---|
@@ -213,7 +228,7 @@ class Config:
     ]
 ```
 
-Ctrl-J and `reg://HKEY_CURRENT_USER` now open the registry in a pane. Enter
+Shift-J and `reg://HKEY_CURRENT_USER` now open the registry in a pane. Enter
 walks into a key, Backspace walks back out, `;` filters, and the viewer shows a
 value's content.
 
@@ -267,9 +282,18 @@ Config warning: PATH_SCHEMES['s3'] would replace the built-in 's3://' backend
 and was ignored — pass {'class': ..., 'override': True} if that is intended
 ```
 
-An exception raised *inside* your methods is reported the way any other
-listing failure is: the pane says it could not read the directory, and the log
-pane has the detail. It never takes XeFM down.
+An exception raised *inside* your methods is reported with its traceback,
+naming the line in your `config.py`, and never takes XeFM down:
+
+```
+Config warning: Jump to Path 'notes://todo/' failed: NameError: name 'NOTES' is not defined
+  ...
+  File "/Users/you/.xefm/config.py", line 785, in exists
+  NameError: name 'NOTES' is not defined
+```
+
+Jump to Path shows the same message in the dialog, so a folder that cannot
+answer says so where you typed it.
 
 Virtual folders reload with the rest of the config (**Reload Configuration**),
 so iterating on one is edit-then-reload with no restart. A scheme you remove

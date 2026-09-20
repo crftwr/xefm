@@ -482,6 +482,21 @@ def _guard(what: str, func: Callable | None, *, arity: int) -> Callable | None:
     return wrapper
 
 
+def report_user_failure(what: str, exc: BaseException) -> None:
+    """Log a failure in config-supplied code, with its traceback.
+
+    Split out of :func:`run_guarded` because not every crossing into user code
+    can be a call-and-discard: a ``PATH_SCHEMES`` backend is asked questions
+    whose *answer* the caller needs — does this path exist, is it a directory —
+    so the caller has to see that the question failed, and only the reporting is
+    shared. Must be called while the exception is being handled; the traceback
+    comes from :func:`sys.exc_info`.
+    """
+    logger.error(f"{what} failed: {exc.__class__.__name__}: {exc}")
+    for line in traceback.format_exc().rstrip().splitlines():
+        logger.error(f"  {line}")
+
+
 def run_guarded(what: str, func: Callable, *args) -> Any:
     """Call ``func``, reporting any exception instead of letting it escape.
 
@@ -491,9 +506,7 @@ def run_guarded(what: str, func: Callable, *args) -> Any:
     try:
         return func(*args)
     except Exception as exc:
-        logger.error(f"{what} failed: {exc.__class__.__name__}: {exc}")
-        for line in traceback.format_exc().rstrip().splitlines():
-            logger.error(f"  {line}")
+        report_user_failure(what, exc)
         return None
 
 

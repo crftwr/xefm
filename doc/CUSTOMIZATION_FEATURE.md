@@ -449,7 +449,7 @@ arithmetic, strings and quick filesystem questions.
 A config can add a browsable location that is not a directory — the Windows
 registry, a bookmark database, a device list, anything you can present as
 folders and files. Write one class, name it, and `reg://` is somewhere a pane
-can open, Ctrl-J can jump to, and `FAVORITE_DIRECTORIES` can hold.
+can open, Shift-J can jump to, and `FAVORITE_DIRECTORIES` can hold.
 
 ```python
 import io
