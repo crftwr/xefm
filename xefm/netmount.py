@@ -147,6 +147,51 @@ def canonical_host(host: str) -> str:
     return host[:-6] if host.endswith(".local") else host
 
 
+def host_label(hostname: str) -> str:
+    """The bare label out of an mDNS host name: ``SynologyNas.local.`` ->
+    ``SynologyNas``. What **discovery reports**, on both platforms.
+
+    The suffix is dropped because a server is recorded under the spelling it
+    was connected with, and the two spellings are then two machines to
+    everything that does not fold them: macOS lists the NAS twice in Finder,
+    once as it advertises itself and once as XeFM mounted it, and the Windows
+    redirector keys a *session* on the name as written, so a NAS reached as
+    ``.local`` cannot use the credentials already established for the bare
+    name. :func:`host_spellings` puts the suffix back when the bare label
+    turns out to reach nothing.
+    """
+    host = (hostname or "").rstrip(".")
+    return host[:-6] if host.lower().endswith(".local") else host
+
+
+def host_spellings(host: str) -> list[str]:
+    """The names to try for one machine, **the one given first**.
+
+    One machine wears two names and no cheap probe tells them apart in
+    advance. On this network ``SynologyNas`` resolves only because the NAS
+    answers NetBIOS — ``getaddrinfo("SynologyNas")`` fails outright — while a
+    Mac sharing its disk answers only mDNS and is reached solely as
+    ``Annas-MacBook-Pro.local``. So neither name is right in general and both
+    are tried; an unreachable one fails in well under the time a real
+    connection takes.
+
+    Shared by both backends, which is the point: it is pure string rule with
+    no platform API in it, and the one time each platform had its own copy
+    they disagreed about which spelling discovery reports — the same NAS
+    showed as ``smb://SynologyNas`` on macOS and ``smb://SynologyNas.local``
+    on Windows.
+    """
+    host = (host or "").strip().rstrip(".")
+    if not host:
+        return [host]
+    bare = host_label(host)
+    if bare != host:          # a .local name: the bare label behind it
+        return [host, bare]
+    if "." in host:           # an ordinary FQDN: nothing to add
+        return [host]
+    return [host, f"{host}.local"]
+
+
 @dataclass(frozen=True)
 class MountInfo:
     """One entry of the machine's mount table, classified."""
@@ -380,27 +425,42 @@ def find_account(target: MountTarget) -> str:
         return ""
 
 
-def list_shares(target: MountTarget, user: str = "") -> list[str]:
+def list_shares(target: MountTarget, user: str = "",
+                password: str = "") -> list[str]:
     """The shares ``target``'s server offers, for the picker that follows
     choosing a server.
 
-    Tried as a **guest** first, and then — where an account is known — as that
-    account. There is no password parameter on purpose: neither platform's tool
-    will take one safely (see the system doc), and neither needs to. macOS
-    looks the account up in the login Keychain, Windows uses the session's own
-    credentials. So what makes an authenticated listing possible is XeFM
-    knowing *which account*, not knowing the password.
+    Tried as a **guest** first, and then as the account given.
+
+    **The password is needed here, and used indirectly on both platforms.**
+    Neither platform's listing tool takes one: ``smbutil`` accepts a password
+    only on its command line, where the process list carries it to every user
+    on the machine, and the Windows enumeration takes none at all. So each
+    backend spends it on the credential channel its listing *does* read —
+    macOS puts it in the login Keychain, Windows opens a session to the
+    server's ``IPC$`` — and then asks.
+
+    This used to take the account alone, on the reasoning that the account is
+    all the tools need. That was wrong in a way only a real NAS shows: the
+    account is enough only once the password is *already* in the Keychain or a
+    session is *already* open, which on a machine that has not connected yet
+    is never. Both platforms therefore refused every first browse of a
+    locked-down server, and the user was sent off to type a share name from
+    memory — with a form in front of them collecting a password that reached
+    nothing.
 
     A server that answers neither way raises :class:`MountError`, and the
-    caller falls back to letting the user type the share name. Administrative
-    shares (``C$``, ``IPC$``) are left out, as they are in Finder and Explorer.
+    caller falls back to letting the user type the share name — which is still
+    the right answer for a server that refuses enumeration even to an
+    authenticated user. Administrative shares (``C$``, ``IPC$``) are left out,
+    as they are in Finder and Explorer.
 
     Blocks on the network; call it from a worker.
     """
     backend = _backend()
     if backend is None:
         raise MountError("Listing shares is not available on this system.")
-    return backend.list_shares(target, user)
+    return backend.list_shares(target, user, password)
 
 
 # --- operations --------------------------------------------------------------

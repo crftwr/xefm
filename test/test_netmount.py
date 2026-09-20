@@ -471,13 +471,15 @@ class MacBackend(unittest.TestCase):
     def test_a_single_label_host_is_also_tried_as_mdns(self):
         """The bare name first, because it is the one that keeps the machine a
         single row in Finder — and `.local` behind it, because a Mac sharing
-        its disk answers to nothing else."""
+        its disk answers to nothing else. Both backends now read this off the
+        same rule, so a `.local` typed by hand gets the bare name behind it
+        too."""
         self.assertEqual(self.mac._mdns_alternatives("SynologyNas"),
                          ["SynologyNas", "SynologyNas.local"])
         self.assertEqual(self.mac._mdns_alternatives("nas.example.com"),
                          ["nas.example.com"])
         self.assertEqual(self.mac._mdns_alternatives("SynologyNas.local"),
-                         ["SynologyNas.local"])
+                         ["SynologyNas.local", "SynologyNas"])
 
     def test_the_fallback_swaps_only_the_host(self):
         target = netmount.parse_address("smb://nas:4450/share/sub")
@@ -862,6 +864,46 @@ class WindowsBackend(unittest.TestCase):
         self.assertIn("could not be found", str(caught.exception))
         self.assertFalse(caught.exception.auth)
 
+    def test_a_password_is_spent_on_a_session_before_the_listing(self):
+        """The enumeration takes no credentials, so the password goes on the
+        one thing that can be connected to without knowing a share name —
+        IPC$ — and the listing inherits the session. Without this a NAS could
+        not be browsed until something else had authenticated to it, and the
+        form collecting the password passed it nowhere."""
+        calls = []
+
+        def connect(remote, local, user, password):
+            calls.append((remote, user, password))
+            return 0
+
+        target = netmount.parse_address("smb://SynologyNas")
+        rows = [self._row(r"\\SynologyNas\Videos")]
+        with patch.object(self.win, "_connect", connect),              patch.object(self.win, "_enum", lambda scope, resource=None: rows):
+            self.assertEqual(self.win.list_shares(target, "me", "hunter2"),
+                             ["Videos"])
+        self.assertEqual(calls, [(r"\\SynologyNas\IPC$", "me", "hunter2")])
+
+    def test_no_password_means_no_session_to_open(self):
+        """A guest listing, and a saved server whose password XeFM does not
+        have, must not turn into a pointless authentication attempt."""
+        calls = []
+        rows = [self._row(r"\\nas\photo")]
+        with patch.object(self.win, "_connect",
+                          lambda *a: calls.append(a) or 0),              patch.object(self.win, "_enum", lambda scope, resource=None: rows):
+            self.win.list_shares(netmount.parse_address("smb://nas"), "me")
+        self.assertEqual(calls, [])
+
+    def test_a_session_that_will_not_open_still_lets_the_listing_try(self):
+        """A domain member answers the listing on the user's own logon, and a
+        second attempt is told the session already exists. Neither is a reason
+        to refuse to ask."""
+        rows = [self._row(r"\\nas\photo")]
+        with patch.object(self.win, "_connect", lambda *a: 1219),              patch.object(self.win, "_enum", lambda scope, resource=None: rows):
+            self.assertEqual(
+                self.win.list_shares(netmount.parse_address("smb://nas"),
+                                     "me", "hunter2"),
+                ["photo"])
+
     # --- mDNS discovery --------------------------------------------------
 
     def test_the_label_is_taken_off_the_service_type(self):
@@ -892,8 +934,11 @@ class WindowsBackend(unittest.TestCase):
         ptr.pNext = ctypes.pointer(srv)
 
         browse = self.win._ServiceBrowse(self.win._SMB_SERVICE)
+        # The bare label, as macOS reports it: the `.local` spelling is a
+        # server the redirector has never heard of, so a row carrying it
+        # cannot use the session the user already has.
         self.assertEqual(list(browse._servers(ctypes.pointer(ptr))),
-                         [("SynologyNas", "SynologyNas.local")])
+                         [("SynologyNas", "SynologyNas")])
 
     def test_a_discovered_local_name_falls_back_to_the_short_one(self):
         """The enumeration runs on the session's own credentials and the
@@ -914,10 +959,19 @@ class WindowsBackend(unittest.TestCase):
             self.assertEqual(self.win.list_shares(target), ["Videos"])
         self.assertEqual(asked, [r"\\SynologyNas.local", r"\\SynologyNas"])
 
-    def test_a_plain_host_is_asked_for_once(self):
-        self.assertEqual(self.win._spellings("nas"), ["nas"])
-        self.assertEqual(self.win._spellings("SynologyNas.local"),
+    def test_both_spellings_are_tried_whichever_way_round(self):
+        """One rule, in the neutral layer, because the two backends each had
+        their own and disagreed: the same NAS was `smb://SynologyNas` on macOS
+        and `smb://SynologyNas.local` on Windows."""
+        self.assertEqual(netmount.host_spellings("nas"), ["nas", "nas.local"])
+        self.assertEqual(netmount.host_spellings("SynologyNas.local"),
                          ["SynologyNas.local", "SynologyNas"])
+        self.assertEqual(netmount.host_spellings("nas.example.com"),
+                         ["nas.example.com"])
+        self.assertEqual([t.host for t in
+                          self.win._mount_targets(
+                              netmount.parse_address("smb://nas/photo"), "", "")],
+                         ["nas", "nas.local"])
 
     def test_the_two_sources_are_merged_and_one_machine_is_one_row(self):
         """mDNS says `SynologyNas.local`, the provider walk says

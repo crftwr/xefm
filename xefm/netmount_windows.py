@@ -26,7 +26,8 @@ from typing import NamedTuple
 
 from xefm.log_manager import getLogger
 from xefm.netmount import (NETWORK, OTHER, REMOVABLE, DiscoveredServer,
-                           MountError, MountInfo, canonical_host)
+                           MountError, MountInfo, canonical_host, host_label,
+                           host_spellings)
 
 logger = getLogger("NetMountWin")
 
@@ -399,14 +400,14 @@ def _mount_targets(target, user: str, password: str) -> list:
 
     :func:`~xefm.netmount.canonical_host` already declares the two names to be
     one machine; this is that rule applied to the redirector, as it is in
-    :func:`_spellings` for the share listing. The caller navigates to what
+    :func:`list_shares` for the share listing. The caller navigates to what
     ``mount`` returns, so landing on the short name is already within
     contract — and it is the same path the existing connection uses.
     """
     if user or password:
         return [target]
     return [target if host == target.host else replace(target, host=host)
-            for host in _spellings(target.host)]
+            for host in host_spellings(target.host)]
 
 
 def _mount_error(target, result: int, user: str, password: str) -> MountError:
@@ -832,7 +833,12 @@ class _ServiceBrowse:
         while node:
             record = node.contents
             if record.wType == DNS_TYPE_SRV:
-                host = (record.Data.Srv.pNameTarget or "").rstrip(".")
+                # The bare label, not the SRV target as it stands: see
+                # xefm.netmount.host_label. Reported as `.local`, the NAS the
+                # user is already connected to as `SynologyNas` became a
+                # server the redirector had never heard of, and the picker
+                # offered an address macOS spells the other way.
+                host = host_label(record.Data.Srv.pNameTarget or "")
                 label = _instance_label(record.pName or "", self.service)
                 if host:
                     yield label or host, host
@@ -879,28 +885,31 @@ def _container(row: _Resource) -> NETRESOURCEW:
     return resource
 
 
-def list_shares(target, user: str = "") -> list[str]:
+def list_shares(target, user: str = "", password: str = "") -> list[str]:
     """The disk shares a server offers.
 
-    The same enumeration, one level down from a server — so it uses whatever
-    credentials the session already has, and needs none of its own. That makes
-    it the reliable half on Windows, where discovery is the unreliable one.
+    The same enumeration, one level down from a server. It runs on **the
+    session's credentials**, and there is no way to hand credentials to the
+    enumeration itself — which is why a password is taken here and spent
+    *before* it: :func:`_open_session` connects to the server's ``IPC$``
+    share, the administrative pipe every SMB server has and the one thing
+    that can be connected to without knowing a share name. Once that
+    succeeds, the session exists and the enumeration inherits it. It is the
+    sequence Explorer performs when opening a server asks for a password and
+    then shows its shares.
+
+    Without it a NAS could not be browsed at all until something else had
+    authenticated to it. XeFM's own picker asked for a name and a password,
+    passed them nowhere, and sent the user off to type a share name from
+    memory — the very thing browsing exists to avoid.
 
     Administrative shares (``C$``, ``ADMIN$``, ``IPC$``) are left out, as they
     are in Explorer.
-
-    ``user`` is accepted and deliberately unused. The macOS backend needs it —
-    it has to name an account for ``smbutil`` to look up in the Keychain —
-    and :func:`xefm.netmount.list_shares` passes it to whichever backend is
-    loaded. Windows has no use for it, but it must still be *taken*: without
-    this parameter every attempt to browse a server on Windows died on a
-    TypeError inside the worker thread, which the picker reported as the
-    server refusing to list its shares.
     """
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
-    for host in _spellings(target.host):
-        shares = _shares_of(host)
+    for host in host_spellings(target.host):
+        shares = _shares_of(host, user, password)
         if shares:
             return shares
     # An empty answer here is far more likely to be a refused query than a
@@ -909,33 +918,10 @@ def list_shares(target, user: str = "") -> list[str]:
     raise MountError(f"{target.host} did not list any shares.", auth=True)
 
 
-def _spellings(host: str) -> list[str]:
-    """The names to try for one machine, in order.
-
-    The enumeration runs on **the session's own credentials**, and the
-    redirector keys a session on the server name as written: with
-    ``\\\\SynologyNas`` already connected and authenticated, the very same NAS
-    asked for as ``\\\\SynologyNas.local`` is a server it has never heard of,
-    answers anonymously, and is refused with ``ERROR_ACCESS_DENIED``.
-
-    That is not a corner case now that discovery is mDNS, because mDNS is
-    where the ``.local`` spelling comes from: every discovered row carries it,
-    while the session the user already has — from Explorer, or from XeFM's own
-    last mount — is almost always under the short name. So the short name is
-    tried as well. :func:`~xefm.netmount.canonical_host` already declares the
-    two to be one machine; this is the same rule, applied to the one place
-    that talks to the redirector rather than to a key.
-    """
-    spellings = [host]
-    if host.lower().endswith(".local"):
-        short = host[:-len(".local")]
-        if short:
-            spellings.append(short)
-    return spellings
-
-
-def _shares_of(host: str) -> list[str]:
+def _shares_of(host: str, user: str = "", password: str = "") -> list[str]:
     """One enumeration of one spelling of a server, admin shares dropped."""
+    if password:
+        _open_session(host, user, password)
     server = _Resource(local="", remote=f"\\\\{host}", provider="",
                        usage=RESOURCEUSAGE_CONTAINER,
                        display=RESOURCEDISPLAYTYPE_SERVER,
@@ -948,6 +934,26 @@ def _shares_of(host: str) -> list[str]:
             continue
         shares.append(name)
     return shares
+
+
+def _open_session(host: str, user: str, password: str) -> None:
+    """Authenticate to ``host`` so the enumeration that follows has a session.
+
+    Best effort, and deliberately quiet: the enumeration is attempted either
+    way, because there are servers this fails against that still answer the
+    listing — a domain member where the user's own logon is what counts, or a
+    second attempt where the session is already open (Windows answers
+    ``ERROR_SESSION_CREDENTIAL_CONFLICT``, which means *there is already a
+    session*, not *you may not have one*).
+
+    The session is left in place. It is what the mount that almost always
+    follows will reuse, and it is lighter than the mount itself — which XeFM
+    also leaves alone, on the principle that a connection it made belongs to
+    the machine, the same as one Explorer made.
+    """
+    result = _connect(f"\\\\{host}\\IPC$", "", user, password)
+    if result != ERROR_SUCCESS:
+        logger.info(f"Could not authenticate to {host}: {_net_error(result)}")
 
 
 # --- eject -------------------------------------------------------------------

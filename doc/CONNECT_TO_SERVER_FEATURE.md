@@ -94,19 +94,24 @@ goes straight to that share, the other browses the machine.
 ### Which account the share list is asked under
 
 A NAS will not tell a guest what it offers, so the question has to be asked
-under an account. XeFM finds one without asking you:
+under an account. XeFM tries what it already has before it asks you anything:
 
 1. As a **guest** first, which is enough for an open share.
 2. Otherwise under the **account you last used for that machine** — from your
-   saved servers, or failing that from the keychain itself, which remembers
-   the account for every server you have ever connected to, including the ones
-   you opened in Finder. The password never leaves the keychain; XeFM only
-   needs to know which account to ask under.
+   saved servers, or failing that from the system's own credential store,
+   which remembers the account for every server you have ever connected to,
+   including the ones you opened in Finder or Explorer.
 
-If neither works, the connection form opens with the server filled in and the
-share left for you to add — `smb://nas/` becomes `smb://nas/Videos`. Filling in
-the account there and ticking **Save password** also fixes it for next time:
-the password goes into the keychain, which is where the share list looks.
+If that gets nowhere, the connection form opens on the server and says
+*«server» needs a user name and password*. Fill them in, press Enter, and the
+share list appears — you do not have to know a share name, and you do not have
+to tick anything. **Save password** only decides whether the password is kept
+for next time.
+
+A few servers refuse to list their shares even for an account they know. There
+the form comes back a second time, now with the server's own reason and the
+address ending in a slash for you to add the share to: `smb://nas/` becomes
+`smb://nas/Videos`.
 
 ### Connecting to an address you have not saved
 

@@ -644,16 +644,20 @@ class ConnectFlow:
         open, it is a list of shares, and nobody remembers the spelling of the
         third one.
 
-        **The account is what makes this work**, not the password. A server
-        found on the network arrives with none attached, so one is looked up
-        from the saved servers — the machine has very likely been connected to
-        before — and handed to the listing, which authenticates out of the
-        system credential store (see :func:`xefm.netmount.list_shares`). A
-        password typed with *Save password* ticked is stored first, because
-        storing it is what makes it available to the tool doing the asking.
+        **Both halves of the credentials matter**, which took a while to
+        learn. A server found on the network arrives with neither, so an
+        account is looked up from the saved servers — the machine has very
+        likely been connected to before. The password, where the user has
+        typed one, goes with it: neither platform's listing tool takes a
+        password as an argument, so each spends it on the credential channel
+        its listing does read (see :func:`xefm.netmount.list_shares`). Handing
+        over the account alone worked only against a server something else had
+        already authenticated to.
 
         A server that answers neither as a guest nor as that account ends up
-        back at the form, where the address can be finished by hand.
+        back at the form — asking for credentials if none were tried, and
+        otherwise for the share name, which is the only thing left when a
+        server refuses to enumerate even for someone it knows.
         """
         found: dict = {"account": user}
         def work(cancel: threading.Event) -> list:
@@ -666,7 +670,7 @@ class ConnectFlow:
             found["account"] = account
             if save_password and password and account:
                 netmount.save_password(target, account, password)
-            return netmount.list_shares(target, account)
+            return netmount.list_shares(target, account, password)
 
         def done(shares: Any, error: Optional[BaseException],
                  cancelled: bool) -> None:
@@ -674,7 +678,8 @@ class ConnectFlow:
                 return
             account = found["account"]
             if error is not None or not shares:
-                self._cannot_browse(target, name, account, error)
+                self._cannot_browse(target, name, account, error,
+                                    tried=bool(password))
                 return
             self._show_shares(target, shares, name=name, user=account,
                               password=password)
@@ -698,12 +703,32 @@ class ConnectFlow:
         self.panel.render()
 
     def _cannot_browse(self, target, name: str, user: str,
-                       error: Optional[BaseException]) -> None:
-        """A server that would not list its shares. The form reopens with the
-        server address, and the message says what to add to it — which is the
-        one thing the user can do that XeFM cannot."""
+                       error: Optional[BaseException], *,
+                       tried: bool = False) -> None:
+        """A server that would not list its shares. The form reopens on the
+        server, saying which of the two things the user can supply is worth
+        supplying.
+
+        ``tried`` is whether a password went into the attempt. Branching on
+        that rather than on the error is what keeps the advice honest: a
+        listing failure is reported as an auth failure almost whatever went
+        wrong, so the error cannot distinguish "ask for a password" from "the
+        password did not help". It is the same rule the mount path follows —
+        name what is missing while nothing has been supplied, report the
+        refusal once it has.
+        """
         detail = str(error) if error else f"{target.host} listed no shares."
         logger.info(f"Could not list shares on {target.host}: {detail}")
+        if not tried:
+            # Nothing has been asked of the user yet, and the form they are
+            # about to see is the credential prompt: the address is filled, so
+            # focus lands on the first empty field, which is the account.
+            self.show_form(
+                ConnectRequest(address=target.url, user=user, name=name),
+                error=f"{target.host} needs a user name and password.")
+            return
+        # The credentials did not open it, so the share name is the one thing
+        # left that the user can supply and XeFM cannot.
         self.show_form(
             ConnectRequest(address=target.url + "/", user=user, name=name),
             error=f"{detail} Add the share name after the server.")

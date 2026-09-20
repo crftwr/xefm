@@ -10,7 +10,7 @@ mistaken for a search.
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from puikit.event import Event, EventType
 
@@ -418,19 +418,50 @@ class Flow(unittest.TestCase):
                 save_password=False))
         save.assert_not_called()
 
-    def test_a_server_that_will_not_list_sends_you_to_the_form(self):
-        """The listing is anonymous, so a locked-down server refuses it. The
-        share name is then the one thing the user can supply and XeFM cannot."""
+    def test_a_server_that_will_not_list_asks_for_credentials_first(self):
+        """The first listing is made with whatever XeFM has, which for a
+        discovered NAS is nothing, and a locked-down server refuses it. What
+        the user can supply then is an account and a password — so that is
+        what the form asks for, and the address stays the bare server."""
         row = cd._DiscoveredRow(
-            netmount.DiscoveredServer("SynologyNas", "SynologyNas.local"))
-        error = netmount.MountError("SynologyNas.local: refused", auth=True)
+            netmount.DiscoveredServer("SynologyNas", "SynologyNas"))
+        error = netmount.MountError("SynologyNas: refused", auth=True)
         with patch.object(netmount, "list_shares", side_effect=error), \
              patch.object(cd, "show_message_box") as box:
             self.flow._chosen(row)
         box.assert_not_called()
         request, message = self.forms[0]
-        self.assertEqual(request.address, "smb://SynologyNas.local/")
+        self.assertEqual(request.address, "smb://SynologyNas")
+        self.assertEqual(message,
+                         "SynologyNas needs a user name and password.")
+
+    def test_credentials_that_did_not_open_it_send_you_to_the_share_name(self):
+        """A server can refuse to enumerate even for someone it knows. Once
+        the password has been tried, the share name is the one thing left
+        that the user can supply and XeFM cannot — and the address grows the
+        slash to put it after."""
+        error = netmount.MountError("SynologyNas: refused", auth=True)
+        with patch.object(netmount, "list_shares", side_effect=error), \
+             patch.object(cd, "show_message_box") as box:
+            self.flow.connect(cd.ConnectRequest(address="smb://SynologyNas",
+                                                user="me", password="hunter2"))
+        box.assert_not_called()
+        request, message = self.forms[0]
+        self.assertEqual(request.address, "smb://SynologyNas/")
         self.assertIn("Add the share name", message)
+
+    def test_the_password_reaches_the_listing(self):
+        """Neither platform's listing tool takes a password as an argument,
+        so each spends it on the credential channel its listing does read.
+        Passing only the account meant a NAS could not be browsed until
+        something else had authenticated to it — with the form collecting a
+        password that went nowhere."""
+        with patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.connect(cd.ConnectRequest(address="smb://SynologyNas",
+                                                user="me", password="hunter2"))
+        shares.assert_called_once_with(ANY, "me", "hunter2")
 
     def test_a_server_typed_by_hand_is_browsed_not_mounted(self):
         with patch.object(netmount, "list_shares",

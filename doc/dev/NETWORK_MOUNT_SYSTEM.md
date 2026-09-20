@@ -66,6 +66,7 @@ is_supported() -> bool
 parse_address(text) -> MountTarget | None
 list_mounts() -> list[MountInfo]
 mount(target, user, password, *, drive_letter="", cancel=None) -> str
+list_shares(target, user, password) -> list[str]
 unmount(path) -> None
 eject(path) -> None
 ```
@@ -381,13 +382,23 @@ not. A Mac sharing its disk is reachable only as `Annas-MacBook-Pro.local`. So
 neither name is right in general, and no cheap probe distinguishes them — the
 system resolver says "no" to a name SMB can use perfectly well.
 
-`_mdns_alternatives` therefore tries **both, bare first**: the spelling that
-keeps the machine one row in Finder, and `<host>.local` behind it for the
-machines that answer only mDNS. It costs nothing when the first works, and an
-unreachable name fails in well under a second to three seconds (measured)
-when it does not. An **authentication** failure is never retried — the server
-was reached, and asking again under another name would only earn a second
-rejection and a worse message. `list_shares` walks the same list.
+`host_spellings` therefore tries **both, the one given first**: for a
+discovered server that is the bare label, which keeps the machine one row in
+Finder, with `<host>.local` behind it for the machines that answer only mDNS.
+It costs nothing when the first works, and an unreachable name fails in well
+under a second to three seconds (measured) when it does not. An
+**authentication** failure is never retried here — the server was reached, and
+asking again under another name would only earn a second rejection and a worse
+message. `list_shares` walks the same list.
+
+**Both rules live in `xefm/netmount.py`**, as `host_label` and
+`host_spellings`, and both backends read them from there. They are pure string
+rules with no platform API in them, and the one time each platform had its own
+copy they drifted: macOS reported the bare label and Windows the `.local` name
+the SRV record carries, so the same NAS was `smb://SynologyNas` in one and
+`smb://SynologyNas.local` in the other — and on Windows the second spelling
+also cost the session (see
+[One machine, two names](#one-machine-two-names--which-one-the-redirector-is-asked)).
 
 Because the successful address is what gets saved, a server pays this at most
 once.
@@ -478,11 +489,22 @@ one from stdin — measured, not assumed. A deliberately wrong password piped to
 a known account was ignored and the Keychain entry used instead; an unknown
 account failed in 0.3 s without ever reading the pipe.
 
-So **the account is the thing XeFM has to supply**, not the password, and
-`list_shares` takes a user and no password at all. A server found on the
-network arrives without one, so it is looked for in three places, in order:
+So the password cannot be an **argument** — but it is still needed, and
+`list_shares` takes one. What each backend does with it is spend it on the
+credential channel its listing *does* read: macOS lends it to the Keychain
+for the duration of the call (`_lend_to_the_keychain`), Windows opens a
+session with it (below). The account is looked for in three places, in order:
 what the user typed, `server_list.user_for_host` (the account last used for
 that machine), and finally `find_account`, which asks the Keychain.
+
+`_lend_to_the_keychain` **overwrites nothing**. An entry already there —
+XeFM's, or one Finder wrote years ago — is what gets used; replacing it would
+mean a typed password quietly editing the user's Keychain as a side effect of
+browsing, and a stale stored password is fixed by ticking *Save password*,
+which is what that checkbox is for. What XeFM lends it takes back: an entry
+written for a listing is removed afterwards, so browsing does not leave a
+credential the user never asked to keep. A password they did ask to keep was
+already saved by the caller before this runs, so it is found and left alone.
 
 That last one is what makes a freshly-discovered server work on a machine
 with no saved servers at all, and it has a spelling trap in it. Finder files
@@ -494,26 +516,49 @@ the host as written, then the canonical host. The lookup reads attributes
 only (no `-w`), so nothing is decrypted and no access prompt can appear for a
 server the user has merely highlighted.
 
-Ticking *Save password* also makes a locked-down server browsable next time,
-for the same underlying reason: the password lands in the Keychain, which is
-where the tool looks.
+Until the password was passed here, ticking *Save password* was the **only**
+way to browse a locked-down server: the password landed in the Keychain, which
+is where the tool looks, and with the box clear the typed password reached
+nothing at all. A checkbox named after remembering was load-bearing for
+browsing, which nothing told the user — and Windows had the same dead end by
+its own route. Reported from a Mac: name and password entered, no share list;
+mount one share by hand, and the list starts working from then on.
 
 The first version of this asked as a guest and nothing else, and looked
 correct because it was tested while a share from that very NAS was still
 mounted — an authenticated session `smbutil` quietly reused. Unmounted, the
-same call failed. Two checks in this subsystem have now been wrong for that
-kind of reason (the other being `security` and the controlling terminal), so:
+same call failed. The version after it, account-and-no-password, was wrong
+for the same reason one layer along: an account is enough only once the
+password is *already* in the Keychain, which on a machine that has not
+connected yet is never. Three checks in this subsystem have now been wrong
+this way (the third being `security` and the controlling terminal), so:
 **test these against the state the user will be in, not the state the last
-experiment left behind.**
+experiment left behind.** For this subsystem that means: disconnect
+everything first.
 
 Its output is a fixed-width table, and the header says where the columns start,
 so the share name is **sliced at that offset rather than split**: a share name
 may contain spaces, and the Comments column beside it certainly does.
 Administrative shares (`IPC$`, `C$`) are dropped, as they are in Finder.
 
-Windows has it easier: the same `WNetEnumResource`, one level below a server,
-using the credentials the session already has. No separate authentication, and
-no anonymous-query problem.
+Windows enumerates one level below a server with the same
+`WNetEnumResource`, on the credentials **the session** has — and there is no
+way to hand credentials to the enumeration itself. So the password is spent
+before it: `_open_session` connects to the server's `IPC$`, the
+administrative pipe every SMB server has and the one thing that can be
+connected to without knowing a share name, which is exactly what is missing
+at this point. The session then exists and the enumeration inherits it. It is
+the sequence Explorer performs when opening a server asks for a password and
+then shows its shares.
+
+That call is best effort and its failure is logged, not raised. A domain
+member answers the listing on the user's own logon with no session of ours at
+all, and a second attempt is met with `ERROR_SESSION_CREDENTIAL_CONFLICT`,
+which means *there is already a session* rather than *you may not have one* —
+measured against the NAS, and the listing succeeded on the existing session
+immediately afterwards. The session is left in place: the mount that almost
+always follows reuses it, and it is lighter than the mount, which XeFM also
+leaves alone.
 
 It takes the account argument anyway and ignores it. `netmount.list_shares`
 passes one to whichever backend is loaded, and a backend that cannot *receive*
@@ -523,8 +568,8 @@ Windows spent a release that way. The two modules' signatures are now compared
 against each other by a test that reads them with `ast`, since neither can be
 imported on the other's platform.
 
-Two spellings are tried, `.local` and then the short name, which is where
-"the credentials the session already has" stops being free — see
+Both spellings are tried, `host_spellings`' order, which is where "the
+credentials the session has" stops being free — see
 [One machine, two names](#one-machine-two-names--which-one-the-redirector-is-asked).
 `mount` does the same, and for the same reason.
 

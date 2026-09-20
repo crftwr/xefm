@@ -21,6 +21,7 @@ Only :mod:`xefm.netmount` imports this module.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.util
 import os
@@ -31,7 +32,8 @@ import time
 
 from xefm.log_manager import getLogger
 from xefm.netmount import (NETWORK, OTHER, REMOVABLE, DiscoveredServer,
-                           MountError, MountInfo, canonical_host)
+                           MountError, MountInfo, canonical_host, host_label,
+                           host_spellings)
 
 logger = getLogger("NetMountMac")
 
@@ -169,37 +171,11 @@ def is_available() -> bool:
 _UNREACHABLE = {2, 51, 60, 61, 64, 65}
 
 
-def _host_label(hostname) -> str:
-    """The bare label out of an mDNS host name: ``SynologyNas.local.`` ->
-    ``SynologyNas``.
-
-    Discovery reports this rather than the full name, because macOS records
-    the server under whatever spelling it was mounted with — so connecting as
-    ``SynologyNas.local`` makes Finder list the same NAS twice, once as it
-    advertises itself and once as XeFM mounted it. The suffix is put back by
-    :func:`_mdns_alternatives` if the bare label turns out to reach nothing.
-    """
-    host = (hostname or "").rstrip(".")
-    return host[:-6] if host.lower().endswith(".local") else host
-
-
-def _mdns_alternatives(host: str) -> list[str]:
-    """``[host]``, plus ``host.local`` where that is a different name to try.
-
-    A single-label host is the interesting case, and it is not academic: on
-    this network ``SynologyNas`` is reachable only because the NAS answers
-    NetBIOS, while a Mac sharing its disk answers **only** mDNS and is reached
-    only as ``Annas-MacBook-Pro.local``. The system resolver knows nothing
-    about the first case (``getaddrinfo("SynologyNas")`` fails outright), so
-    there is no cheap way to pick correctly in advance — and trying is cheap:
-    an unreachable name fails in well under the time a real connection takes.
-
-    The bare name goes first because it is the one that keeps the machine a
-    single server in the mount table, and therefore a single row in Finder.
-    """
-    if "." in host or not host:
-        return [host]
-    return [host, f"{host}.local"]
+#: The two host rules both backends follow, kept in the neutral layer so
+#: they cannot drift apart again: what discovery reports, and what a failed
+#: name is retried as. See :func:`xefm.netmount.host_spellings`.
+_host_label = host_label
+_mdns_alternatives = host_spellings
 
 
 #: Mount statuses that mean "the credentials were wrong", so the form should
@@ -731,7 +707,7 @@ def discover_servers(cancel):
 
 # --- listing shares ----------------------------------------------------------
 
-def list_shares(target, user: str = "") -> list[str]:
+def list_shares(target, user: str = "", password: str = "") -> list[str]:
     """The disk shares a server offers, via ``smbutil view``.
 
     Two attempts, because two things work and a third does not:
@@ -747,12 +723,14 @@ def list_shares(target, user: str = "") -> list[str]:
     machine, and it does not read one from stdin — measured, not assumed: a
     deliberately wrong password piped in was ignored (the Keychain entry was
     used instead), and an unknown account failed in a fifth of a second without
-    ever reading the pipe. So the *account* is what XeFM passes, and the
-    Keychain supplies the rest.
+    ever reading the pipe.
 
-    That is also why ticking **Save password** makes a locked-down server
-    browsable on the next attempt: the password lands in the Keychain, which is
-    where ``smbutil`` looks.
+    So a password given here is spent on **the Keychain**, which is the one
+    channel ``smbutil`` reads, by :func:`_lend_to_the_keychain`. Until that
+    was done, browsing a locked-down server worked only if the user had
+    ticked *Save password* — the checkbox was load-bearing for a feature it
+    does not name, and with it clear the typed password reached nothing at
+    all. That is the same dead end Windows had by a different route.
     """
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
@@ -763,19 +741,55 @@ def list_shares(target, user: str = "") -> list[str]:
         if user:
             attempts.append([f"//{user}@{host}"])
     last = "the server refused the request"
-    for args in attempts:
-        try:
-            proc = _run_tool(["/usr/bin/smbutil", "view", *args])
-        except subprocess.TimeoutExpired:
-            raise MountError(f"{target.host} did not answer.") from None
-        except OSError as e:
-            raise MountError(f"Could not run smbutil: {e}") from None
-        if proc.returncode == 0:
-            return _parse_shares(proc.stdout)
-        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-        if detail:
-            last = detail[-1]
+    with _lend_to_the_keychain(target, user, password):
+        for args in attempts:
+            try:
+                proc = _run_tool(["/usr/bin/smbutil", "view", *args])
+            except subprocess.TimeoutExpired:
+                raise MountError(f"{target.host} did not answer.") from None
+            except OSError as e:
+                raise MountError(f"Could not run smbutil: {e}") from None
+            if proc.returncode == 0:
+                return _parse_shares(proc.stdout)
+            detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+            if detail:
+                last = detail[-1]
     raise MountError(f"{target.host}: {last}", auth=True)
+
+
+@contextlib.contextmanager
+def _lend_to_the_keychain(target, user: str, password: str):
+    """Put ``password`` where ``smbutil`` will look, for the listing only.
+
+    **Nothing is overwritten.** If the Keychain already holds something for
+    this server and account — saved by XeFM, or by Finder years ago — that is
+    what is used, and this does nothing. Replacing it silently would mean a
+    typed password quietly editing the user's Keychain as a side effect of
+    browsing; a stored password that has gone stale is fixed by ticking *Save
+    password*, which is what that checkbox is for.
+
+    What XeFM lends, XeFM takes back. An entry written here is removed on the
+    way out, so browsing a server does not leave a credential behind that the
+    user never asked to keep. A password they *did* ask to keep was already
+    saved by the caller before this runs, so it is found and left alone.
+    """
+    if not (password and user):
+        yield
+        return
+    try:
+        existing = load_password(target, user)
+    except Exception as e:  # noqa: BLE001 — a Keychain that will not answer
+        logger.warning(f"Could not read the keychain for {target.host}: {e}")
+        yield
+        return
+    if existing:
+        yield
+        return
+    save_password(target, user, password)
+    try:
+        yield
+    finally:
+        forget_password(target, user)
 
 
 def _parse_shares(output: str) -> list[str]:
