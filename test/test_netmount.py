@@ -670,5 +670,111 @@ class MacBackend(unittest.TestCase):
             self.assertEqual(self.mac._find_mount(target), "")
 
 
+class BackendParity(unittest.TestCase):
+    """Both platform modules are called through the same wrapper, so a
+    function they both declare has to take the same arguments.
+
+    Read out of the source with ``ast`` rather than imported, because neither
+    module can be imported on the other's platform — which is exactly how this
+    went wrong: ``list_shares`` grew a ``user`` argument on macOS and on the
+    wrapper, the Windows one kept its single parameter, and every attempt to
+    browse a server on Windows died on a TypeError inside a worker thread. The
+    picker reported that as the server refusing to list its shares.
+    """
+
+    #: Declared by one platform only, and reached through ``hasattr`` or from
+    #: Windows-only code. Everything else must match.
+    ONLY_ONE_PLATFORM = {"find_account", "free_drive_letters"}
+
+    def _signatures(self, path: str) -> dict:
+        import ast
+        import io
+
+        tree = ast.parse(io.open(path, encoding="utf-8").read())
+        return {node.name: [a.arg for a in node.args.posonlyargs
+                            + node.args.args + node.args.kwonlyargs]
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and not node.name.startswith("_")}
+
+    def test_both_backends_take_the_same_arguments(self):
+        windows = self._signatures("xefm/netmount_windows.py")
+        mac = self._signatures("xefm/netmount_macos.py")
+        shared = (set(windows) & set(mac)) | (
+            (set(windows) ^ set(mac)) - self.ONLY_ONE_PLATFORM)
+        self.assertIn("list_shares", shared)
+        for name in sorted(shared):
+            with self.subTest(function=name):
+                self.assertEqual(windows.get(name), mac.get(name))
+
+
+@unittest.skipUnless(sys.platform == "win32", "Windows backend")
+class WindowsBackend(unittest.TestCase):
+    def setUp(self):
+        from xefm import netmount_windows
+        self.win = netmount_windows
+
+    def _row(self, remote, provider="", *, display=0, usage=0, type=1):
+        return self.win._Resource(local="", remote=remote, provider=provider,
+                                  usage=usage, display=display, type=type)
+
+    def test_a_container_keeps_the_provider_it_came_from(self):
+        """The top level of the network is the installed providers, and a
+        provider's remote name is a display name — "Microsoft Windows Network"
+        — not a path. Rebuilt from that name alone, as this once was, the
+        NETRESOURCE belongs to no provider and Windows refuses it with
+        ERROR_NO_NET_OR_BAD_PATH."""
+        row = self._row("Microsoft Windows Network",
+                        "Microsoft Windows Network",
+                        display=6, usage=self.win.RESOURCEUSAGE_CONTAINER,
+                        type=0)
+        resource = self.win._container(row)
+        self.assertEqual(resource.lpProvider, "Microsoft Windows Network")
+        self.assertEqual(resource.lpRemoteName, "Microsoft Windows Network")
+        self.assertEqual(resource.dwUsage, self.win.RESOURCEUSAGE_CONTAINER)
+        self.assertEqual(resource.dwDisplayType, 6)
+        self.assertEqual(resource.dwScope, self.win.RESOURCE_GLOBALNET)
+
+    def test_a_server_named_by_hand_has_no_provider(self):
+        """NULL, not an empty string — which would name a provider called ""."""
+        self.assertIsNone(self.win._container(self._row("//nas")).lpProvider)
+
+    def test_the_walk_asks_the_provider_for_the_level_below_it(self):
+        """The regression: with the provider dropped, the second level was
+        refused every time, the walk ended at the providers, and discovery
+        found nothing on any machine — silently, since an empty answer is a
+        legitimate one here."""
+        provider = self._row("Microsoft Windows Network",
+                             "Microsoft Windows Network", display=6,
+                             usage=self.win.RESOURCEUSAGE_CONTAINER, type=0)
+        server = self._row(r"\\nas", "Microsoft Windows Network",
+                           display=self.win.RESOURCEDISPLAYTYPE_SERVER)
+        asked = []
+
+        def enum(scope, resource=None):
+            asked.append(resource)
+            if resource is None:
+                return [provider]
+            if resource.lpRemoteName == provider.remote:
+                return [server]
+            return []
+
+        with patch.object(self.win, "_enum", enum):
+            found = list(self.win.discover_servers(threading.Event()))
+
+        self.assertEqual([s.host for s in found], ["nas"])
+        self.assertEqual(asked[1].lpProvider, "Microsoft Windows Network")
+
+    def test_share_listing_takes_the_account_the_wrapper_passes(self):
+        """Windows authenticates a share listing with the session's own
+        credentials, so the account is unused — but it is still passed, and
+        being unable to receive it is what broke browsing entirely."""
+        rows = [self._row(rf"\\nas\{name}") for name in ("photo", "C$", "IPC$")]
+        target = netmount.parse_address("smb://nas")
+        with patch.object(self.win, "_enum", lambda scope, resource=None: rows):
+            self.assertEqual(self.win.list_shares(target, "crftwr"), ["photo"])
+            self.assertEqual(self.win.list_shares(target), ["photo"])
+
+
 if __name__ == "__main__":
     unittest.main()

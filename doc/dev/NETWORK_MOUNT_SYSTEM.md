@@ -372,6 +372,25 @@ shows no discovered rows, and typing the address still works. The walk checks
 the cancel flag between containers, because a domain that is not answering
 takes seconds and the picker has to stay closable.
 
+**The NETRESOURCE that opens a level has to be the one the enumeration handed
+back**, not one rebuilt from its name. The top level of the network is the
+installed providers, and a provider's `lpRemoteName` is a display name —
+"Microsoft Windows Network" — so a structure carrying only that belongs to no
+provider and is refused with `ERROR_NO_NET_OR_BAD_PATH`. That is what the first
+version built, and it meant the walk ended at the providers on every machine:
+discovery had never once returned a server, and the result was indistinguishable
+from a network with nothing on it. `_enum` therefore yields whole `_Resource`
+rows — `lpProvider`, usage, type and display type — and `_container` copies one.
+
+That indistinguishability is also why a refused level is logged. An empty answer
+is legitimate here, so nothing on screen can separate "found none" from "asked
+nobody", and the log line is the only place the difference exists.
+`ERROR_EXTENDED_ERROR` (1208) is unwrapped with `WNetGetLastError`, because the
+number carries nothing and the provider's own message carries everything: a
+workgroup machine answers *the list of servers for this workgroup is not
+currently available*, which is true, and is not something XeFM can fix from
+here.
+
 ### Listing shares
 
 macOS runs `smbutil view`, twice at most, because two things work and a third
@@ -427,6 +446,14 @@ Windows has it easier: the same `WNetEnumResource`, one level below a server,
 using the credentials the session already has. No separate authentication, and
 no anonymous-query problem — which makes it the reliable half on the platform
 whose discovery is the unreliable one.
+
+It takes the account argument anyway and ignores it. `netmount.list_shares`
+passes one to whichever backend is loaded, and a backend that cannot *receive*
+it raises `TypeError` on the worker thread — which the picker, unable to tell
+one failure from another, reports as the server refusing to list its shares.
+Windows spent a release that way. The two modules' signatures are now compared
+against each other by a test that reads them with `ast`, since neither can be
+imported on the other's platform.
 
 ### What the flow does with them
 

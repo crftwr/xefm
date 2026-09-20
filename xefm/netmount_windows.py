@@ -19,6 +19,7 @@ from __future__ import annotations
 import ctypes
 import string
 from ctypes import wintypes
+from typing import NamedTuple
 
 from xefm.log_manager import getLogger
 from xefm.netmount import (NETWORK, OTHER, REMOVABLE, DiscoveredServer,
@@ -52,6 +53,7 @@ DRIVE_REMOTE = 4
 DRIVE_CDROM = 5
 
 ERROR_SUCCESS = 0
+ERROR_EXTENDED_ERROR = 1208
 ERROR_MORE_DATA = 234
 ERROR_NO_MORE_ITEMS = 259
 
@@ -131,6 +133,10 @@ _mpr.WNetEnumResourceW.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWOR
 _mpr.WNetEnumResourceW.restype = wintypes.DWORD
 _mpr.WNetCloseEnum.argtypes = [wintypes.HANDLE]
 _mpr.WNetCloseEnum.restype = wintypes.DWORD
+_mpr.WNetGetLastErrorW.argtypes = [ctypes.POINTER(wintypes.DWORD),
+                                   wintypes.LPWSTR, wintypes.DWORD,
+                                   wintypes.LPWSTR, wintypes.DWORD]
+_mpr.WNetGetLastErrorW.restype = wintypes.DWORD
 _mpr.WNetGetConnectionW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR,
                                     ctypes.POINTER(wintypes.DWORD)]
 _mpr.WNetGetConnectionW.restype = wintypes.DWORD
@@ -314,25 +320,72 @@ def list_mounts() -> list[MountInfo]:
     return mounts
 
 
-def _enum(scope: int, resource=None) -> list[tuple[str, str, int, int]]:
-    """``(local, remote, usage, display type)`` for one level of a network
-    enumeration.
+class _Resource(NamedTuple):
+    """One row of a network enumeration, copied out of the buffer.
+
+    ``WNetEnumResourceW`` writes an array of structures *plus the strings they
+    point at* into a single caller-supplied buffer and reuses it on the next
+    call, so everything has to be taken out before the loop turns — which is
+    what this record is.
+
+    It keeps **the whole row, not just the name**, because opening the level
+    below a container needs the NETRESOURCE the enumeration handed back. See
+    :func:`_container`.
+    """
+
+    local: str
+    remote: str
+    provider: str
+    usage: int
+    display: int
+    type: int
+
+
+def _net_error(result: int) -> str:
+    """A network error code as text, unwrapping ``ERROR_EXTENDED_ERROR``.
+
+    1208 does not say what went wrong, it says *the provider knows*; without
+    asking, the only thing in the log is a number that means nothing. This is
+    what turns a silently empty server list into "the list of servers for this
+    workgroup is not currently available" — the answer a machine with no
+    browser service gives, and the reason discovery finds nothing there.
+    """
+    if result != ERROR_EXTENDED_ERROR:
+        return f"error {result}"
+    code = wintypes.DWORD()
+    description = ctypes.create_unicode_buffer(512)
+    provider = ctypes.create_unicode_buffer(512)
+    if _mpr.WNetGetLastErrorW(ctypes.byref(code), description, 512,
+                              provider, 512) != ERROR_SUCCESS:
+        return f"error {result}"
+    return f"{provider.value} error {code.value}: {description.value}"
+
+
+def _enum(scope: int, resource=None) -> list[_Resource]:
+    """One level of a network enumeration, as :class:`_Resource` rows.
 
     One helper for three callers — current connections, the servers on the
     network, and one server's shares — because the fiddly part is the same
-    every time: ``WNetEnumResourceW`` writes an array of structures *plus the
-    strings they point at* into a single caller-supplied buffer, which it
-    reuses on the next call. Every string therefore has to be copied out
-    before the loop turns, which is what the tuple here is.
+    every time (see :class:`_Resource`).
     """
     handle = wintypes.HANDLE()
     result = _mpr.WNetOpenEnumW(scope, RESOURCETYPE_DISK, 0,
                                 ctypes.byref(resource) if resource else None,
                                 ctypes.byref(handle))
     if result != ERROR_SUCCESS:
+        # Returning [] and saying nothing is what let a walk that was refused
+        # at every level look exactly like a network with nothing on it. An
+        # empty list is still the right answer — this is best effort — but
+        # which container refused, and why, belongs in the log.
+        if resource is not None:
+            where = resource.lpRemoteName or "?"
+        else:
+            where = ("the current connections" if scope == RESOURCE_CONNECTED
+                     else "the network")
+        logger.info(f"Could not enumerate {where}: {_net_error(result)}")
         return []
 
-    found: list[tuple[str, str, int, int]] = []
+    found: list[_Resource] = []
     size = 16384
     buf = ctypes.create_string_buffer(size)
     try:
@@ -353,9 +406,13 @@ def _enum(scope: int, resource=None) -> list[tuple[str, str, int, int]]:
             entries = ctypes.cast(buf, ctypes.POINTER(NETRESOURCEW))
             for i in range(count.value):
                 entry = entries[i]
-                found.append(((entry.lpLocalName or "").rstrip("\\/"),
-                              entry.lpRemoteName or "",
-                              int(entry.dwUsage), int(entry.dwDisplayType)))
+                found.append(_Resource(
+                    local=(entry.lpLocalName or "").rstrip("\\/"),
+                    remote=entry.lpRemoteName or "",
+                    provider=entry.lpProvider or "",
+                    usage=int(entry.dwUsage),
+                    display=int(entry.dwDisplayType),
+                    type=int(entry.dwType)))
     finally:
         _mpr.WNetCloseEnum(handle)
     return found
@@ -365,9 +422,8 @@ def _connections() -> list[tuple[str, str]]:
     """``(local name, remote name)`` for every current network connection.
     ``local`` is empty for a deviceless one — which is exactly why this
     enumeration is needed: those appear in no drive-letter listing."""
-    return [(local, remote)
-            for local, remote, _usage, _display in _enum(RESOURCE_CONNECTED)
-            if remote]
+    return [(row.local, row.remote) for row in _enum(RESOURCE_CONNECTED)
+            if row.remote]
 
 
 def _logical_drives() -> list[str]:
@@ -458,34 +514,50 @@ def discover_servers(cancel):
         for container in level:
             if cancel.is_set():
                 return
-            for _local, remote, usage, display in _enum(RESOURCE_GLOBALNET,
-                                                        container):
-                if not remote:
+            for row in _enum(RESOURCE_GLOBALNET, container):
+                if not row.remote:
                     continue
-                if display == RESOURCEDISPLAYTYPE_SERVER:
-                    host = remote.lstrip("\\\\")
+                if row.display == RESOURCEDISPLAYTYPE_SERVER:
+                    host = row.remote.lstrip("\\\\")
                     if host and host.lower() not in seen:
                         seen.add(host.lower())
                         yield DiscoveredServer(name=host, host=host,
                                                scheme="smb")
-                elif usage & RESOURCEUSAGE_CONTAINER:
-                    below.append(_container(remote))
+                elif row.usage & RESOURCEUSAGE_CONTAINER:
+                    below.append(_container(row))
         level = below
         if not level:
             return
 
 
-def _container(remote: str) -> NETRESOURCEW:
-    """A NETRESOURCE naming one container, to enumerate the level below it."""
+def _container(row: _Resource) -> NETRESOURCEW:
+    """The NETRESOURCE that opens the level below ``row``.
+
+    **Copied from the row the enumeration returned, not rebuilt from its
+    name.** The top level of the network is the installed providers, and a
+    provider's ``lpRemoteName`` is a display name — "Microsoft Windows
+    Network" — not a path. A NETRESOURCE carrying only that, which is what
+    this used to build, belongs to no provider and is refused with
+    ERROR_NO_NET_OR_BAD_PATH every time. The walk therefore ended one level
+    in, silently, and discovery found nothing on any Windows machine at all.
+
+    ``lpProvider`` is the field that was missing and is the reason; the type,
+    usage and display type are copied for the same reason, so that what is
+    handed back is the row as it was given.
+    """
     resource = NETRESOURCEW()
     resource.dwScope = RESOURCE_GLOBALNET
-    resource.dwType = RESOURCETYPE_DISK
-    resource.dwUsage = RESOURCEUSAGE_CONTAINER
-    resource.lpRemoteName = remote
+    resource.dwType = row.type
+    resource.dwDisplayType = row.display
+    resource.dwUsage = row.usage
+    resource.lpRemoteName = row.remote
+    # A server named by hand has no provider, and NULL is how that is said —
+    # an empty string is a provider whose name is "".
+    resource.lpProvider = row.provider or None
     return resource
 
 
-def list_shares(target) -> list[str]:
+def list_shares(target, user: str = "") -> list[str]:
     """The disk shares a server offers.
 
     The same enumeration, one level down from a server — so it uses whatever
@@ -494,13 +566,24 @@ def list_shares(target) -> list[str]:
 
     Administrative shares (``C$``, ``ADMIN$``, ``IPC$``) are left out, as they
     are in Explorer.
+
+    ``user`` is accepted and deliberately unused. The macOS backend needs it —
+    it has to name an account for ``smbutil`` to look up in the Keychain —
+    and :func:`xefm.netmount.list_shares` passes it to whichever backend is
+    loaded. Windows has no use for it, but it must still be *taken*: without
+    this parameter every attempt to browse a server on Windows died on a
+    TypeError inside the worker thread, which the picker reported as the
+    server refusing to list its shares.
     """
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
-    server = f"\\\\{target.host}"
+    server = _Resource(local="", remote=f"\\\\{target.host}", provider="",
+                       usage=RESOURCEUSAGE_CONTAINER,
+                       display=RESOURCEDISPLAYTYPE_SERVER,
+                       type=RESOURCETYPE_DISK)
     shares = []
-    for _local, remote, _usage, _display in _enum(RESOURCE_GLOBALNET,
-                                                  _container(server)):
+    for row in _enum(RESOURCE_GLOBALNET, _container(server)):
+        remote = row.remote
         name = remote.rsplit("\\", 1)[-1] if "\\" in remote else remote
         if not name or name.endswith("$"):
             continue
