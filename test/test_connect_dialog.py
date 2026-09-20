@@ -491,6 +491,38 @@ class Flow(unittest.TestCase):
                                                 user="me", password="hunter2"))
         shares.assert_called_once_with(ANY, "me", "hunter2")
 
+    def test_mounting_a_new_share_uses_the_stored_password_too(self):
+        """The listing may have run on a password nobody typed. Picking a
+        share off that list must not then ask for one the machine already
+        has."""
+        target = netmount.parse_address("smb://nas")
+        with patch("xefm.filter_list_dialog.show_filter_list") as show:
+            self.flow._show_shares(target, ["Videos"], name="NAS", user="me",
+                                   password="")          # nothing was typed
+        chosen = show.call_args.kwargs["on_accept"]
+        with patch.object(netmount, "load_password", return_value="stored"), \
+             patch.object(netmount, "mount",
+                          return_value="/Volumes/Videos") as mount, \
+             patch("xefm.server_list.save_server"):
+            chosen("Videos")
+        self.assertEqual(mount.call_args.kwargs["password"], "stored")
+        self.assertEqual(self.connected[0][0], "/Volumes/Videos")
+
+    def test_a_typed_password_still_wins_at_the_mount(self):
+        target = netmount.parse_address("smb://nas")
+        with patch("xefm.filter_list_dialog.show_filter_list") as show:
+            self.flow._show_shares(target, ["Videos"], name="NAS", user="me",
+                                   password="typed")
+        chosen = show.call_args.kwargs["on_accept"]
+        with patch.object(netmount, "load_password",
+                          return_value="stored") as load, \
+             patch.object(netmount, "mount",
+                          return_value="/Volumes/Videos") as mount, \
+             patch("xefm.server_list.save_server"):
+            chosen("Videos")
+        load.assert_not_called()
+        self.assertEqual(mount.call_args.kwargs["password"], "typed")
+
     def test_a_saved_password_is_used_for_the_next_browse(self):
         """Ticking *Save password* stored one, and then nothing on this path
         read it back: the next browse ran with the account alone, failed, and

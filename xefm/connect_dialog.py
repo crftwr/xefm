@@ -712,10 +712,18 @@ class ConnectFlow:
             # *Save password* is carried the whole way here rather than acted
             # on when it was ticked. The mount is what saves it, under the
             # share's key, which is the key the saved row can later forget.
+            #
+            # ``stored_password`` because the listing may well have run on a
+            # password nobody typed: it looks one up when the form supplied
+            # none, and the mount has to be allowed to do the same or picking
+            # a *new* share on a server already saved would ask for a password
+            # the machine already had (issue #406). The lookup stays on the
+            # worker, and a typed password still wins over it.
             self.connect(ConnectRequest(
                 address=f"{target.url}/{share}", user=user, password=password,
                 save_password=save_password,
-                name=f"{name or target.host} — {share}"))
+                name=f"{name or target.host} — {share}"),
+                stored_password=True)
 
         show_filter_list(
             self.panel, list(shares),

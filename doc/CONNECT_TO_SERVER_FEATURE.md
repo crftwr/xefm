@@ -122,7 +122,9 @@ Servers that answer anonymously are asked as a guest first, so this only
 happens for a server that requires an account.
 
 Tick **Save password** and you are not asked again: the next time you pick
-that server, its share list comes up without a prompt.
+that server, its share list comes up without a prompt — and so does any
+share on it you have not opened before, since the password belongs to the
+machine and the account, not to the one share you first used it on.
 
 A few servers refuse to list their shares even for an account they know. There
 the form comes back a second time, now with the server's own reason and the
