@@ -404,7 +404,10 @@ class _BusyDialog(Widget):
                      hints={"fill": True})
         y = draw_title_bar(ctx, self.title, surface_bg=surface_bg,
                            border=theme.popup_border, y=1.0)
-        ctx.draw_child(self.busy, 2.0, y, 2.0, 1.0)
+        # The "bg" hint, for the same reason the form's checkboxes need it: a
+        # child that names no background draws on the terminal's default,
+        # which on this surface is a black cell under the spinner.
+        ctx.draw_child(self.busy, 2.0, y, 2.0, 1.0, hints={"bg": surface_bg})
         ctx.draw_text(4.5, y, self.message, Style(bg=surface_bg, fg=theme.text))
         draw_hint_row(ctx, "Esc stop waiting", surface_bg=surface_bg,
                       border=theme.popup_border)

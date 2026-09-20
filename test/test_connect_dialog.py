@@ -630,6 +630,23 @@ class Drawing(unittest.TestCase):
         for line in self.backend.snapshot():
             self.assertLessEqual(len(line.rstrip()), 100)
 
+    def test_the_busy_modal_sits_on_the_dialog_surface(self):
+        """Including the spinner. A child that names no background draws on
+        the terminal's default, which showed as a black cell beside the
+        message."""
+        cd.run_connecting(self.panel, "Asking SynologyNas for its shares…",
+                          lambda cancel: "x", lambda *a: None)
+        self.panel.render()
+        rows = [(y, line) for y, line in enumerate(self.backend.snapshot())
+                if "Asking SynologyNas" in line]
+        self.assertEqual(len(rows), 1)
+        y, line = rows[0]
+        start = line.index("│") + 1
+        backgrounds = {self.backend._styles[y][x].bg
+                       for x in range(start, start + 24)}
+        self.assertNotIn(None, backgrounds, f"a hole in {line!r}")
+        self.assertEqual(len(backgrounds), 1, f"not one surface: {line!r}")
+
     def test_the_busy_modal_shows_what_it_is_waiting_for(self):
         """It showed a title, a blank line and "Esc stop waiting": the box was
         one row short, so the spinner and the message were painted over by the
