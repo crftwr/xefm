@@ -16,6 +16,7 @@ file adds no dependency. Only :mod:`xefm.netmount` imports it.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import queue
 import string
@@ -920,40 +921,57 @@ def list_shares(target, user: str = "", password: str = "") -> list[str]:
 
 def _shares_of(host: str, user: str = "", password: str = "") -> list[str]:
     """One enumeration of one spelling of a server, admin shares dropped."""
-    if password:
-        _open_session(host, user, password)
-    server = _Resource(local="", remote=f"\\\\{host}", provider="",
-                       usage=RESOURCEUSAGE_CONTAINER,
-                       display=RESOURCEDISPLAYTYPE_SERVER,
-                       type=RESOURCETYPE_DISK)
-    shares = []
-    for row in _enum(RESOURCE_GLOBALNET, _container(server)):
-        remote = row.remote
-        name = remote.rsplit("\\", 1)[-1] if "\\" in remote else remote
-        if not name or name.endswith("$"):
-            continue
-        shares.append(name)
-    return shares
+    with _session(host, user, password):
+        server = _Resource(local="", remote=f"\\\\{host}", provider="",
+                           usage=RESOURCEUSAGE_CONTAINER,
+                           display=RESOURCEDISPLAYTYPE_SERVER,
+                           type=RESOURCETYPE_DISK)
+        shares = []
+        for row in _enum(RESOURCE_GLOBALNET, _container(server)):
+            remote = row.remote
+            name = remote.rsplit("\\", 1)[-1] if "\\" in remote else remote
+            if not name or name.endswith("$"):
+                continue
+            shares.append(name)
+        return shares
 
 
-def _open_session(host: str, user: str, password: str) -> None:
-    """Authenticate to ``host`` so the enumeration that follows has a session.
+@contextlib.contextmanager
+def _session(host: str, user: str, password: str):
+    """Authenticate to ``host`` for the enumeration inside, then let go.
 
-    Best effort, and deliberately quiet: the enumeration is attempted either
-    way, because there are servers this fails against that still answer the
-    listing — a domain member where the user's own logon is what counts, or a
-    second attempt where the session is already open (Windows answers
-    ``ERROR_SESSION_CREDENTIAL_CONFLICT``, which means *there is already a
-    session*, not *you may not have one*).
+    Opening is best effort and deliberately quiet: the enumeration is
+    attempted either way, because there are servers this fails against that
+    still answer the listing — a domain member where the user's own logon is
+    what counts, or a second attempt where the session is already open
+    (Windows answers ``ERROR_SESSION_CREDENTIAL_CONFLICT``, which means
+    *there is already a session*, not *you may not have one*).
 
-    The session is left in place. It is what the mount that almost always
-    follows will reuse, and it is lighter than the mount itself — which XeFM
-    also leaves alone, on the principle that a connection it made belongs to
-    the machine, the same as one Explorer made.
+    **What XeFM opens, XeFM closes.** Leaving it would mean that browsing a
+    server once — even a browse the user then cancelled — leaves the machine
+    authenticated to that server until they log out, so the next XeFM reaches
+    the NAS with no password and no memory of why. That is not the same as
+    the mount, which the user asked for and which XeFM deliberately leaves
+    alone; nobody asks for a session. A session that was already there is
+    somebody else's and is left where it is, which is what the success check
+    distinguishes. The mount that usually follows carries its own
+    credentials, so it loses nothing by this.
     """
-    result = _connect(f"\\\\{host}\\IPC$", "", user, password)
-    if result != ERROR_SUCCESS:
-        logger.info(f"Could not authenticate to {host}: {_net_error(result)}")
+    opened = False
+    if password:
+        result = _connect(f"\\\\{host}\\IPC$", "", user, password)
+        opened = result == ERROR_SUCCESS
+        if not opened:
+            logger.info(f"Could not authenticate to {host}: "
+                        f"{_net_error(result)}")
+    try:
+        yield
+    finally:
+        if opened:
+            result = _mpr.WNetCancelConnection2W(f"\\\\{host}\\IPC$", 0, False)
+            if result != ERROR_SUCCESS:
+                logger.info(f"Could not close the session to {host}: "
+                            f"{_net_error(result)}")
 
 
 # --- eject -------------------------------------------------------------------

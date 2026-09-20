@@ -668,8 +668,15 @@ class ConnectFlow:
                        or server_list.user_for_host(target.host)
                        or netmount.find_account(target))
             found["account"] = account
-            if save_password and password and account:
-                netmount.save_password(target, account, password)
+            # No password is stored here, and the reason is that it was:
+            # this target is the *server*, so the entry landed under
+            # `smb://nas`, while the row the connection goes on to save is the
+            # share, `smb://nas/Videos`. Forgetting that row then looked for a
+            # password under a key nothing had ever written, and the real one
+            # stayed in the credential store with nothing in the UI able to
+            # reach it. Storing early was only ever a way to get the password
+            # to the listing; the listing takes it directly now, and the
+            # mount saves it on success under the key the row can remove.
             return netmount.list_shares(target, account, password)
 
         def done(shares: Any, error: Optional[BaseException],
@@ -682,18 +689,22 @@ class ConnectFlow:
                                     tried=bool(password))
                 return
             self._show_shares(target, shares, name=name, user=account,
-                              password=password)
+                              password=password, save_password=save_password)
 
         run_connecting(self.panel, f"Asking {target.host} for its shares…",
                        work, done, title="Connect to Server")
 
     def _show_shares(self, target, shares: list, *, name: str, user: str,
-                     password: str) -> None:
+                     password: str, save_password: bool = False) -> None:
         from xefm.filter_list_dialog import show_filter_list
 
         def chosen(share: str) -> None:
+            # *Save password* is carried the whole way here rather than acted
+            # on when it was ticked. The mount is what saves it, under the
+            # share's key, which is the key the saved row can later forget.
             self.connect(ConnectRequest(
                 address=f"{target.url}/{share}", user=user, password=password,
+                save_password=save_password,
                 name=f"{name or target.host} — {share}"))
 
         show_filter_list(

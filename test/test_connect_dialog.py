@@ -395,19 +395,47 @@ class Flow(unittest.TestCase):
         self.assertEqual(shares.call_args.args[1], "saved")
         kc.assert_not_called()
 
-    def test_a_password_to_be_saved_is_saved_before_the_listing(self):
-        """`smbutil` authenticates out of the Keychain, so storing the password
-        is what makes it usable — the order is the point."""
-        order = []
-        with patch.object(netmount, "save_password",
-                          side_effect=lambda *a: order.append("save")), \
-             patch.object(netmount, "list_shares",
-                          side_effect=lambda *a: order.append("list") or ["Videos"]), \
-             patch("xefm.filter_list_dialog.show_filter_list"):
+    def test_browsing_stores_no_password_however_the_box_is_ticked(self):
+        """Storing it here was how it reached the listing, and the listing
+        takes it directly now. What is left is harm: this target is the
+        *server*, so the entry landed under `smb://nas` while the row the
+        connection goes on to save is the share — and forgetting that row
+        looked for a password under a key nothing had written, leaving the
+        real one in the credential store with nothing in the UI able to reach
+        it."""
+        for ticked in (True, False):
+            with self.subTest(save_password=ticked):
+                with patch.object(netmount, "save_password") as save, \
+                     patch.object(netmount, "list_shares",
+                                  return_value=["Videos"]), \
+                     patch("xefm.filter_list_dialog.show_filter_list"):
+                    self.flow.connect(cd.ConnectRequest(
+                        address="smb://nas", user="me", password="secret",
+                        save_password=ticked))
+                save.assert_not_called()
+
+    def test_the_tick_rides_through_the_share_picker_to_the_mount(self):
+        """Browsing no longer saves, so the mount has to — and it only knows
+        to if the choice made two dialogs ago is still attached. Otherwise
+        ticking the box on the way in would silently do nothing."""
+        picked = {}
+
+        def show(panel, shares, **kwargs):
+            picked["accept"] = kwargs["on_accept"]
+
+        with patch.object(netmount, "list_shares", return_value=["Videos"]), \
+             patch("xefm.filter_list_dialog.show_filter_list", show):
             self.flow.connect(cd.ConnectRequest(
                 address="smb://nas", user="me", password="secret",
                 save_password=True))
-        self.assertEqual(order, ["save", "list"])
+        with patch.object(netmount, "mount", return_value=r"\\nas\Videos"), \
+             patch.object(netmount, "save_password") as save, \
+             patch.object(cd.server_list, "save_server"):
+            picked["accept"]("Videos")
+        save.assert_called_once()
+        target, user, password = save.call_args.args
+        self.assertEqual((target.url, user, password),
+                         ("smb://nas/Videos", "me", "secret"))
 
     def test_a_password_not_to_be_saved_is_not_saved(self):
         with patch.object(netmount, "save_password") as save, \

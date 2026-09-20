@@ -883,6 +883,22 @@ class WindowsBackend(unittest.TestCase):
                              ["Videos"])
         self.assertEqual(calls, [(r"\\SynologyNas\IPC$", "me", "hunter2")])
 
+    def test_the_session_is_closed_again_and_a_borrowed_one_is_not(self):
+        """Left open, browsing a server once — even a browse the user then
+        cancelled — leaves the machine authenticated to it until they log
+        out, so the next XeFM reaches the NAS with no password and no memory
+        of why. A session that was already there is somebody else's."""
+        for opened, expected in ((0, [r"\\nas\IPC$"]), (1219, [])):
+            with self.subTest(result=opened):
+                closed = []
+                with patch.object(self.win, "_connect", lambda *a: opened), \
+                     patch.object(self.win._mpr, "WNetCancelConnection2W",
+                                  lambda remote, flags, force:
+                                      closed.append(remote) or 0):
+                    with self.win._session("nas", "me", "hunter2"):
+                        pass
+                self.assertEqual(closed, expected)
+
     def test_no_password_means_no_session_to_open(self):
         """A guest listing, and a saved server whose password XeFM does not
         have, must not turn into a pointless authentication attempt."""

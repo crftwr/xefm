@@ -556,9 +556,18 @@ member answers the listing on the user's own logon with no session of ours at
 all, and a second attempt is met with `ERROR_SESSION_CREDENTIAL_CONFLICT`,
 which means *there is already a session* rather than *you may not have one* —
 measured against the NAS, and the listing succeeded on the existing session
-immediately afterwards. The session is left in place: the mount that almost
-always follows reuses it, and it is lighter than the mount, which XeFM also
-leaves alone.
+immediately afterwards.
+
+**What XeFM opens here, XeFM closes.** Leaving the session behind looked
+harmless — the mount that usually follows would reuse it — and is not: browse
+a server once, even a browse then cancelled, and the machine stays
+authenticated to it until the user logs out, so the next XeFM reaches the NAS
+with no password and nothing on screen explaining why. That is not the same
+as the mount, which the user asked for and which XeFM deliberately leaves
+alone; nobody asks for a session. A session that was already open is somebody
+else's and is left where it is, which is what checking for success rather
+than for "is there one now" distinguishes. The mount carries its own
+credentials, so it loses nothing.
 
 It takes the account argument anyway and ignores it. `netmount.list_shares`
 passes one to whichever backend is loaded, and a backend that cannot *receive*
@@ -617,6 +626,21 @@ promote a server they first saved from the dialog into their config without
 ending up with two rows.
 
 Passwords are never in either store. They go to the OS:
+
+**And they are stored under the key of the thing that was connected**, which
+is not a detail. `browse_shares` used to store one the moment it had it,
+because storing it was how it reached the listing — but its target is the
+*server*, so the entry landed under `smb://nas` while the row the connection
+then saved was the share, `smb://nas/Videos`. Forgetting that row looked for a
+password under a key nothing had ever written, and the real one stayed in the
+credential store with nothing in the UI able to reach it. It surfaced as "XeFM
+reconnects without asking, and I never ticked Save password", and
+`cmdkey /list` showed the orphan. The listing takes the password directly now,
+so only the **mount** saves one — on success, under the key the saved row can
+remove. The *Save password* tick is carried through the share picker to get
+there. The user-facing doc's two promises, that saving happens after the
+connection succeeds and that Shift-Delete takes the password with the row,
+were correct throughout; the code had stopped keeping them.
 
 | | Store | Mechanism |
 |-|-------|-----------|
