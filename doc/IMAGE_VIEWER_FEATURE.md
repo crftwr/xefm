@@ -97,7 +97,7 @@ system rather than carrying a decoder for them:
 
 | | macOS | Windows | Linux / terminal |
 |---|---|---|---|
-| HEIC / HEIF | yes, built in | with the *HEVC Video Extensions* from the Store | `pip install pillow-heif` |
+| HEIC / HEIF | yes, built in | with *HEIF Image Extensions* from the Store — plus *HEVC Video Extensions*, which decodes what a HEIC actually holds | `pip install pillow-heif` |
 | AVIF | yes | yes | yes |
 | JPEG XL | yes, built in | — | `pip install pillow-jxl-plugin` |
 | Camera RAW (DNG, CR2, NEF, ARW…) | see below | see below | see below |
