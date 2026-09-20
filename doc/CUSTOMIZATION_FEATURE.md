@@ -1,8 +1,8 @@
 # Customization — Preview
 
 > **Preview.** Everything on this page is subject to change. The objects your
-> functions receive and the shape of the `ACTIONS` and `EVENT_HOOKS` variables
-> may change in any release until `xefm.user_api.API_VERSION` reaches `1` (it is
+> functions receive and the shape of the `ACTIONS`, `EVENT_HOOKS`, `SORT_KEYS`,
+> `FILTERS` and `PATH_SCHEMES` variables may change in any release until `xefm.user_api.API_VERSION` reaches `1` (it is
 > `0` today). XeFM writes one line to the log pane saying so whenever a config
 > uses them. Nothing else in `config.py` is affected.
 
@@ -444,6 +444,36 @@ arithmetic, strings and quick filesystem questions.
 
 ---
 
+## Your own places: `PATH_SCHEMES`
+
+A config can add a browsable location that is not a directory — the Windows
+registry, a bookmark database, a device list, anything you can present as
+folders and files. Write one class, name it, and `reg://` is somewhere a pane
+can open, Shift-J can jump to, and `FAVORITE_DIRECTORIES` can hold.
+
+```python
+import io
+from xefm.path_base import ReadOnlyPathImpl, UriStatResult
+
+class NotesPathImpl(ReadOnlyPathImpl):
+    def exists(self):  ...
+    def is_dir(self):  ...
+    def iterdir(self): ...      # yield self._child(name)
+    def stat(self):    ...      # return UriStatResult(size=…, mtime=…, is_dir=…)
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None): ...
+
+class Config:
+    PATH_SCHEMES = {'notes': NotesPathImpl}
+```
+
+Five methods is the whole requirement — path arithmetic, parents, names,
+globbing and refusing writes come with the base class. Full walkthrough,
+including a registry browser, in
+[`doc/VIRTUAL_FOLDERS_FEATURE.md`](VIRTUAL_FOLDERS_FEATURE.md).
+
+---
+
 ## Things to know
 
 **Your code runs on the UI thread, and XeFM waits for it.** A slow action
@@ -497,5 +527,7 @@ widget tree. All are additive later.
   `config.py`
 - [`doc/EXTERNAL_PROGRAMS_FEATURE.md`](EXTERNAL_PROGRAMS_FEATURE.md) — running
   external programs, the other way to extend XeFM
+- [`doc/VIRTUAL_FOLDERS_FEATURE.md`](VIRTUAL_FOLDERS_FEATURE.md) — `PATH_SCHEMES`
+  in full, with a worked registry browser
 - [`doc/dev/CUSTOMIZATION_API_IMPLEMENTATION.md`](dev/CUSTOMIZATION_API_IMPLEMENTATION.md)
   — how it is built

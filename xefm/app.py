@@ -91,7 +91,8 @@ from xefm import sort_keys
 from xefm.state_manager import get_state_manager
 from xefm.str_format import abbreviate_path, format_size
 from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
-                           load_user_entries, preview_notice, run_guarded)
+                           load_user_entries, preview_notice,
+                           report_user_failure, run_guarded)
 from xefm.batch_rename_dialog import show_batch_rename
 from xefm.compare_dialog import show_compare_select
 from xefm.compare_selection import compute_compare_selection
@@ -1480,7 +1481,7 @@ class XeFMApp:
 
     def _load_user_entries(self, config) -> None:
         """Install the config's ``ACTIONS`` / ``EVENT_HOOKS`` / ``SORT_KEYS`` /
-        ``FILTERS`` and report on them.
+        ``FILTERS`` / ``PATH_SCHEMES`` and report on them.
 
         Shared by startup and reload — the loader drops every previously loaded
         user entry first, so re-running it *is* the reload. Problems are reported
@@ -1488,10 +1489,11 @@ class XeFMApp:
         at all gets the one-line preview notice: this is not a stable surface
         yet, and the log pane is where a user finds that out."""
         (warnings, action_count, hook_count, sort_count,
-         filter_count) = load_user_entries(config)
+         filter_count, scheme_count) = load_user_entries(config)
         for warning in warnings:
             self.log_info(f"Config warning: {warning}")
-        notice = preview_notice(action_count, hook_count, sort_count, filter_count)
+        notice = preview_notice(action_count, hook_count, sort_count,
+                                filter_count, scheme_count)
         if notice:
             self.log_info(notice)
         # Action names that have been corrected since this config was written.
@@ -6517,19 +6519,38 @@ class XeFMApp:
         def resolve(text: str) -> Path:
             return self._resolve_jump_target(text, current)
 
+        def probe(text: str, question):
+            """Ask a path one question, reporting a backend that cannot answer.
+
+            A scheme from ``PATH_SCHEMES`` is code someone wrote by hand, and
+            this prompt is the first place a typed URI reaches it. Left
+            unguarded, whatever it raises leaves through the dialog's key
+            handler: Enter does nothing, and nothing says why. Returns
+            ``(ok, answer)``."""
+            try:
+                return True, question(resolve(text))
+            except Exception as exc:
+                report_user_failure(f"Jump to Path {text!r}", exc)
+                return False, f"{exc.__class__.__name__}: {exc}"
+
         def validate(text: str) -> str | None:
             if not text.strip():
                 return "Path cannot be empty"
-            target = resolve(text)
-            if not target.exists():
-                return f"Path does not exist: {target}"
+            ok, exists = probe(text, lambda target: target.exists())
+            if not ok:
+                return exists            # the message, not an answer
+            if not exists:
+                return f"Path does not exist: {resolve(text)}"
             return None
 
         def accept(text: str) -> None:
-            target = resolve(text)
             # A file names where to *go* and what to land on; a directory only
             # the former. is_dir() is the one filesystem call either way.
-            if target.is_dir():
+            ok, is_dir = probe(text, lambda target: target.is_dir())
+            if not ok:
+                return                   # already reported, with its traceback
+            target = resolve(text)
+            if is_dir:
                 target_dir, target_name = target, None
             else:
                 target_dir, target_name = target.parent, target.name
