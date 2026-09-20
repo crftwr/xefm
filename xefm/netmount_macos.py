@@ -25,6 +25,7 @@ import ctypes
 import ctypes.util
 import os
 import queue
+import re
 import subprocess
 import time
 
@@ -457,6 +458,49 @@ def forget_password(target, user: str) -> None:
     """Delete the stored password. A missing item is not an error — forgetting a
     server that never saved one is normal."""
     _security(["delete-internet-password", *_keychain_keys(target, user)])
+
+
+def _keychain_servers(target) -> list[str]:
+    """The names this server's keychain entry might be filed under, most
+    likely first.
+
+    Finder files a Bonjour-discovered server under its **service** name —
+    ``SynologyNas._smb._tcp.local``, not ``SynologyNas.local`` and not
+    ``synologynas`` — so a lookup by host name finds nothing at all on exactly
+    the machines the user has already connected to. XeFM's own entries use the
+    canonical host. Both spellings are tried, plus the host as written.
+    """
+    bare = target.host
+    if bare.lower().endswith(".local"):
+        bare = bare[:-6]
+    names = [f"{bare}._{target.scheme}._tcp.local", target.host,
+             target.canonical_host]
+    seen, out = set(), []
+    for name in names:
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            out.append(name)
+    return out
+
+
+def find_account(target) -> str:
+    """The account the login Keychain holds for this server, or ``""``.
+
+    Attributes only — no ``-w`` — so nothing is decrypted and no access prompt
+    can appear. Which matters: this runs for a server the user merely
+    highlighted, not one they asked to connect to.
+    """
+    protocol = _KEYCHAIN_PROTOCOLS.get(target.scheme, "smb ")
+    for server in _keychain_servers(target):
+        proc = _security(["find-internet-password", "-s", server,
+                          "-r", protocol])
+        if proc.returncode != 0:
+            continue
+        match = re.search(r'"acct"<blob>="([^"]*)"',
+                          (proc.stdout or "") + (proc.stderr or ""))
+        if match and match.group(1):
+            return match.group(1)
+    return ""
 
 
 def _decode_password(raw: str) -> str:

@@ -317,6 +317,41 @@ class Flow(unittest.TestCase):
             self.flow._chosen(row)
         self.assertEqual(shares.call_args.args[1], "crftwr")
 
+    def test_the_keychain_supplies_the_account_when_nothing_is_saved(self):
+        """With the saved servers forgotten there is no account to remember —
+        but the machine has been connected to before, and the system credential
+        store knows under what name. That is what Finder uses too."""
+        row = cd._DiscoveredRow(
+            netmount.DiscoveredServer("SynologyNas", "SynologyNas.local"))
+        with patch("xefm.server_list.user_for_host", return_value=""), \
+             patch.object(netmount, "find_account", return_value="crftwr"), \
+             patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow._chosen(row)
+        self.assertEqual(shares.call_args.args[1], "crftwr")
+
+    def test_a_typed_account_beats_both_lookups(self):
+        with patch("xefm.server_list.user_for_host", return_value="saved") as saved, \
+             patch.object(netmount, "find_account", return_value="keychain") as kc, \
+             patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.connect(cd.ConnectRequest(address="smb://nas", user="typed"))
+        self.assertEqual(shares.call_args.args[1], "typed")
+        saved.assert_not_called()
+        kc.assert_not_called()
+
+    def test_a_saved_account_beats_the_keychain(self):
+        with patch("xefm.server_list.user_for_host", return_value="saved"), \
+             patch.object(netmount, "find_account", return_value="keychain") as kc, \
+             patch.object(netmount, "list_shares",
+                          return_value=["Videos"]) as shares, \
+             patch("xefm.filter_list_dialog.show_filter_list"):
+            self.flow.connect(cd.ConnectRequest(address="smb://nas"))
+        self.assertEqual(shares.call_args.args[1], "saved")
+        kc.assert_not_called()
+
     def test_a_password_to_be_saved_is_saved_before_the_listing(self):
         """`smbutil` authenticates out of the Keychain, so storing the password
         is what makes it usable — the order is the point."""

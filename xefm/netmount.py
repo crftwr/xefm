@@ -357,6 +357,28 @@ def discover_servers(cancel: threading.Event):
         logger.warning(f"Looking for servers stopped: {e}")
 
 
+def find_account(target: MountTarget) -> str:
+    """The account the system credential store already holds for this server,
+    or ``""``.
+
+    The missing half of browsing a server found on the network: the listing
+    needs an account, the discovered row carries none, and the machine has
+    very likely been connected to before — by Finder, if not by XeFM. This is
+    where that shows up. Reads the account only, never the password, so it
+    cannot provoke a keychain access prompt.
+
+    Blocks briefly; call it from a worker.
+    """
+    backend = _backend()
+    if backend is None or not hasattr(backend, "find_account"):
+        return ""
+    try:
+        return backend.find_account(target)
+    except Exception as e:
+        logger.warning(f"Could not look up an account for {target.host}: {e}")
+        return ""
+
+
 def list_shares(target: MountTarget, user: str = "") -> list[str]:
     """The shares ``target``'s server offers, for the picker that follows
     choosing a server.

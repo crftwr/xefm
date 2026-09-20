@@ -452,6 +452,55 @@ class MacBackend(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertTrue(caught.exception.auth)
 
+    def test_the_keychain_is_searched_under_finder_s_spelling_first(self):
+        """Finder files a Bonjour-discovered server under its *service* name,
+        so a lookup by host name finds nothing on exactly the machines the user
+        has already connected to."""
+        target = netmount.parse_address("smb://SynologyNas.local")
+        self.assertEqual(
+            self.mac._keychain_servers(target),
+            ["SynologyNas._smb._tcp.local", "SynologyNas.local", "synologynas"])
+
+    def test_the_keychain_spellings_do_not_repeat(self):
+        target = netmount.parse_address("smb://nas")
+        self.assertEqual(self.mac._keychain_servers(target),
+                         ["nas._smb._tcp.local", "nas"])
+
+    def test_an_account_is_read_out_of_the_keychain(self):
+        import subprocess
+
+        asked = []
+
+        def fake(args, stdin=""):
+            asked.append(args)
+            if args[2] != "SynologyNas._smb._tcp.local":
+                return subprocess.CompletedProcess(args, 44, stdout="",
+                                                   stderr="not found")
+            return subprocess.CompletedProcess(
+                args, 0,
+                stdout='    "acct"<blob>="crftwr"\n    "ptcl"<uint32>="smb "\n',
+                stderr="")
+
+        target = netmount.parse_address("smb://SynologyNas.local")
+        with patch.object(self.mac, "_security", fake):
+            self.assertEqual(self.mac.find_account(target), "crftwr")
+        # Attributes only: -w would decrypt the password and can raise an
+        # access prompt, for a server the user has merely highlighted.
+        self.assertTrue(asked)
+        for args in asked:
+            self.assertNotIn("-w", args)
+
+    def test_no_account_is_not_an_error(self):
+        import subprocess
+
+        def fake(args, stdin=""):
+            return subprocess.CompletedProcess(args, 44, stdout="",
+                                               stderr="not found")
+
+        target = netmount.parse_address("smb://nas")
+        with patch.object(self.mac, "_security", fake):
+            self.assertEqual(self.mac.find_account(target), "")
+
     def test_share_listing_survives_output_it_does_not_recognise(self):
         self.assertEqual(self.mac._parse_shares(""), [])
         self.assertEqual(self.mac._parse_shares("smbutil: something went wrong"), [])

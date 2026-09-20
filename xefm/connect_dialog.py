@@ -633,9 +633,15 @@ class ConnectFlow:
         A server that answers neither as a guest nor as that account ends up
         back at the form, where the address can be finished by hand.
         """
-        account = user or server_list.user_for_host(target.host)
-
+        found: dict = {"account": user}
         def work(cancel: threading.Event) -> list:
+            # The account is looked up here, on the worker, because the last
+            # source of one is a keychain query. Typed beats remembered beats
+            # whatever the system already holds for this machine.
+            account = (user
+                       or server_list.user_for_host(target.host)
+                       or netmount.find_account(target))
+            found["account"] = account
             if save_password and password and account:
                 netmount.save_password(target, account, password)
             return netmount.list_shares(target, account)
@@ -644,6 +650,7 @@ class ConnectFlow:
                  cancelled: bool) -> None:
             if cancelled:
                 return
+            account = found["account"]
             if error is not None or not shares:
                 self._cannot_browse(target, name, account, error)
                 return

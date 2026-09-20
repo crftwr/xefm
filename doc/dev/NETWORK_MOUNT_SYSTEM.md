@@ -363,11 +363,23 @@ account failed in 0.3 s without ever reading the pipe.
 
 So **the account is the thing XeFM has to supply**, not the password, and
 `list_shares` takes a user and no password at all. A server found on the
-network arrives without one, so `server_list.user_for_host` supplies the
-account last used for that machine — the user has almost certainly connected
-to it before. It is also why ticking *Save password* is what makes a
-locked-down server browsable next time: the password lands in the Keychain,
-which is where the tool looks.
+network arrives without one, so it is looked for in three places, in order:
+what the user typed, `server_list.user_for_host` (the account last used for
+that machine), and finally `find_account`, which asks the Keychain.
+
+That last one is what makes a freshly-discovered server work on a machine
+with no saved servers at all, and it has a spelling trap in it. Finder files
+a Bonjour-discovered server under its **service** name —
+`SynologyNas._smb._tcp.local`, not `SynologyNas.local` and not `synologynas` —
+so a lookup by host name finds nothing on exactly the machines the user has
+already connected to. `_keychain_servers` tries the service form first, then
+the host as written, then the canonical host. The lookup reads attributes
+only (no `-w`), so nothing is decrypted and no access prompt can appear for a
+server the user has merely highlighted.
+
+Ticking *Save password* also makes a locked-down server browsable next time,
+for the same underlying reason: the password lands in the Keychain, which is
+where the tool looks.
 
 The first version of this asked as a guest and nothing else, and looked
 correct because it was tested while a share from that very NAS was still
