@@ -21,7 +21,9 @@ model — with whatever filter text is active re-applied and a small spinner in
 the title while the scan runs. The drives picker uses this for S3 buckets, a
 credentialed network scan that must not delay the dialog (issue #274). On a
 still backend with no animation ticks (chiefly tests) the loader is settled
-synchronously: the worker is joined and its rows drained in one shot.
+synchronously: the worker is joined and its rows drained in one shot, with the
+join bounded because a loader is allowed to run until the dialog closes and on
+a still backend nothing ever closes it (see :meth:`FilterListDialog._settle`).
 
 Interaction: typing filters the list with the same query the file pane's
 incremental search takes (``xefm.search_match``) — whitespace-separated tokens
@@ -98,6 +100,7 @@ class FilterListDialog(FocusContainer, Widget):
         ellipsis: str = "",
         elide_where: str = "end",
         on_remove: Callable[[Any], bool] | None = None,
+        remove_label: str = "remove",
         load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
     ):
         self.all_items = list(items)
@@ -117,6 +120,10 @@ class FilterListDialog(FocusContainer, Widget):
         #: how a row that is *not* removable (the Filter picker's "clear filter")
         #: stays put. ``None`` leaves the dialog with no remove key at all.
         self.on_remove = on_remove
+        #: The verb the hint line uses for the remove key. "remove" is right for
+        #: a list of remembered rows, and wrong for the Drives picker, where the
+        #: same key disconnects a share or ejects a disk.
+        self.remove_label = remove_label
         self._hint_cache: str | None = None
         self._panel: Any = None
         # Values currently passing the filter, parallel to ``self.list.items``.
@@ -238,7 +245,8 @@ class FilterListDialog(FocusContainer, Widget):
             if self.on_remove is not None:
                 keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
                 if keys:
-                    parts.append(f"{format_key_for_display(keys[0])} remove")
+                    parts.append(
+                        f"{format_key_for_display(keys[0])} {self.remove_label}")
             parts.append("Esc cancel")
             self._hint_cache = " · ".join(parts)
         return self._hint_cache
@@ -284,11 +292,33 @@ class FilterListDialog(FocusContainer, Widget):
             self._ticking = False
             self._settle()
 
+    #: How long :meth:`_settle` waits before it stops an unfinished loader.
+    #: Only an endless one ever reaches it, so this is not a budget for slow
+    #: work — a loader that ends on its own is joined the moment it does.
+    SETTLE_SECONDS = 2.0
+
     def _settle(self) -> None:
-        """Join the loader and drain its rows in one shot (still backends)."""
+        """Join the loader and drain its rows in one shot (still backends).
+
+        **The join is bounded, because a loader is allowed to be endless.** A
+        bucket listing ends when the buckets run out, but network discovery
+        keeps browsing on purpose — a NAS that wakes up ten seconds later is a
+        new row — and what it watches for is the cancel flag the dialog sets
+        when it closes. Here there are no animation ticks and so no dialog
+        lifecycle to speak of: nothing will ever set that flag, and an
+        unqualified join waits for a thread with no reason to finish. So the
+        wait is bounded, the loader is then told to stop, and what arrived
+        inside the wait is what the picker shows.
+        """
         thread = self._load_thread
         if thread is not None:
-            thread.join()
+            thread.join(self.SETTLE_SECONDS)
+            if thread.is_alive():
+                self._load_cancel.set()
+                thread.join(self.SETTLE_SECONDS)
+                # No sentinel is coming -- the worker only sends one when it
+                # was not cancelled -- so the spinner is cleared here instead.
+                self._loading = False
         self._drain()
 
     def _drain(self) -> bool:
@@ -506,6 +536,7 @@ def show_filter_list(
     on_cancel: Callable[[], None] | None = None,
     on_accept_text: Callable[[str], None] | None = None,
     on_remove: Callable[[Any], bool] | None = None,
+    remove_label: str = "remove",
     region: tuple[float, float] | None = None,
     ellipsis: str = "…",
     elide_where: str = "end",
@@ -537,6 +568,9 @@ def show_filter_list(
     all. For the pickers whose rows accumulate — History and the ';' Filter
     prompt (#271); a list that comes from the config or from the system has
     nothing to forget, and without this hook shows no remove key.
+    ``remove_label`` names the key in the hint line: the Drives picker's
+    Shift-Delete disconnects a share or ejects a disk, which "remove" describes
+    badly enough to be worth a word of its own.
 
     ``load_more`` optionally streams extra rows in after the dialog opens: it is
     called once on a daemon worker thread with a ``threading.Event`` that is set
@@ -547,6 +581,7 @@ def show_filter_list(
     dialog = FilterListDialog(
         items, title=title, to_label=to_label, on_accept=on_accept, on_cancel=on_cancel,
         on_accept_text=on_accept_text, on_remove=on_remove,
+        remove_label=remove_label,
         ellipsis=ellipsis, elide_where=elide_where, load_more=load_more,
     )
     sw, sh = panel.backend.size_units

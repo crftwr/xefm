@@ -180,6 +180,13 @@ HINT_ROWS = 3.0
 def hint_content_bottom(ctx: Any, surface_bg: Any) -> float:
     """The y a modal's content must stop at, above its hint bar.
 
+    **Exclusive**: this is the row the band's *rule* is drawn on, so the last
+    row of content goes at ``hint_content_bottom(...) - 1``, and a box sized as
+    though this row were usable loses its last line without saying so. Two
+    dialogs shipped that way — the single-field prompt's validation error and
+    the Connect to Server wait's message — which is why the rule is written
+    down here rather than rediscovered at each call site.
+
     The mirror of what :func:`draw_title_bar` returns: the content lives between
     the two rules, a ``_GUI_CONTENT_GAP`` clear of each on a vector backend and
     flush against the rule row on a grid, which spends no fractions of a row."""

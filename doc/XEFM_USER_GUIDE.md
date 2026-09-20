@@ -749,6 +749,7 @@ For detailed information about specific features, see these dedicated guides:
 
 ### Navigation and Search
 - [Navigation Dialogs Feature](NAVIGATION_DIALOGS_FEATURE.md) - Favorites, jump, history, and drives pickers
+- [Connect to Server](CONNECT_TO_SERVER_FEATURE.md) - Mount a NAS or file server from inside XeFM
 - [Tab Completion Feature](TAB_COMPLETION_FEATURE.md) - Path completion in input dialogs
 - [Migemo Search Feature](MIGEMO_SEARCH_FEATURE.md) - Japanese matching from typed romaji in incremental search
 - [Search Animation Feature](SEARCH_ANIMATION_FEATURE.md) - Progress indicators during search
@@ -870,7 +871,8 @@ XeFM provides extensive keyboard shortcuts for efficient file management. All sh
 | J | Favorite directories |
 | Shift+J | Jump to a path — a file path goes to its directory and focuses it |
 | H | History for the current pane (Shift+Delete forgets an entry) |
-| D | Drives / storage selection dialog |
+| D | Drives / storage selection dialog (Shift+Delete disconnects or ejects) |
+| Shift+D | Connect to a network server — lists what it finds (macOS and Windows) |
 
 ### Other
 

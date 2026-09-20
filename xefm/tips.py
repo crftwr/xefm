@@ -161,6 +161,17 @@ TIPS: tuple[tuple[str, str], ...] = (
      "{key:drives} opens a picker of mounted volumes, common locations, "
      "and your configured SSH hosts and S3 buckets — one list, one jump."),
 
+    ("Connect to a NAS without leaving XeFM",
+     "{key:connect_server} lists the file servers it can see on the network, "
+     "asks the one you pick which shares it offers, and mounts your choice "
+     "through the operating system — so the pane lands in an ordinary "
+     "directory. No Finder, no Explorer. macOS and Windows."),
+
+    ("Disconnect and eject from the drives picker",
+     "Shift-Delete in the drives picker ({key:drives}) disconnects the "
+     "highlighted network share, or ejects a USB disk so it is safe to "
+     "unplug. On any other row it does nothing."),
+
     ("Rich viewers for data files",
      "{key:view_file} knows more than plain text: Markdown (`.md`) renders "
      "with headings and tables, JSON (`.json`, `.jsonl`) opens as a "

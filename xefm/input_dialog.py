@@ -465,9 +465,9 @@ def show_input(
     # the field up ~1 row, so the box is one row shorter there to keep the two
     # bands balanced (grid keeps the whole-row title bar).
     if title:
-        h = 5.0 if panel.backend.capabilities.supports("vector_shapes") else 6.0
+        h = 6.0 if panel.backend.capabilities.supports("vector_shapes") else 7.0
     else:
-        h = 4.0
+        h = 5.0
     h += HINT_ROWS - 1.0  # the band replaces the bottom border row it now holds
     hints: dict[str, Any] = {"shadow": True, "w": w, "h": h}
     if anchor == "top":

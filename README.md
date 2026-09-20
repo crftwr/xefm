@@ -27,6 +27,7 @@ XeFM — short for *Xenolith File Manager* — is a powerful file manager that r
 - **Archive browsing** - Navigate ZIP, TAR, and compressed archives as virtual directories
 - **SFTP support** - Browse and manage remote servers via SSH with optimized performance
 - **AWS S3 support** for cloud storage operations
+- **Connect to Server** - Find file servers on the network, browse their shares, and mount one from inside XeFM, with no Finder or Explorer detour (macOS and Windows)
 - **Advanced search** with real-time filtering, background processing, and multi-selection bulk operations
 - **Rich built-in viewers** - Syntax-highlighted text, images, Markdown, JSON, and CSV/TSV
 - **Themes & visual effects** - A dozen built-in themes; desktop mode adds GPU background animations, CRT/phosphor screen effects, and text-reveal animations
@@ -127,6 +128,7 @@ macOS / Windows app bundles.
 - **[Diff Viewer](doc/DIFF_VIEWER_FEATURE.md)** & **[Batch Rename](doc/BATCH_RENAME_FEATURE.md)** - File / directory diffs and regex-based multi-file renaming
 - **[SFTP Support](doc/SFTP_SUPPORT_FEATURE.md)** - Remote server access via SSH with file operations and search
 - **[AWS S3 Support](doc/S3_SUPPORT_FEATURE.md)** - Cloud storage integration and S3 bucket management
+- **[Connect to Server](doc/CONNECT_TO_SERVER_FEATURE.md)** - Mount SMB / WebDAV shares, and disconnect or eject volumes, without leaving XeFM
 - **[Archives](doc/ARCHIVE_FEATURE.md)** - Create, extract, and browse archives as directories
 - **[Migemo Search](doc/MIGEMO_SEARCH_FEATURE.md)** - Japanese matching from typed romaji in incremental search
 - **[Search Animation](doc/SEARCH_ANIMATION_FEATURE.md)** - Advanced search features and visual feedback

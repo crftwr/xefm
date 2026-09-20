@@ -454,6 +454,8 @@ _FILER_ACTIONS = [
     _a("history", FILER, "Go to a recently visited directory"),
     _a("drives", FILER, "Show drives and volumes",
        aliases=("drives_dialog",)),
+    _a("connect_server", FILER, "Connect to a network server",
+       aliases=("connect_to_server",)),
     # Panes
     _a("sync_current_to_other", FILER, "Go to the other pane's directory"),
     _a("sync_other_to_current", FILER, "Send this directory to the other pane"),

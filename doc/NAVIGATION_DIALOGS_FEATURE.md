@@ -2,7 +2,7 @@
 
 XeFM's directory navigation dialogs all share one searchable-list picker: a
 scrollable list you filter by typing, with the same keys for moving through it
-and choosing an entry. Four keys open four flavors of that picker:
+and choosing an entry. Five keys open five flavors of that picker:
 
 | Key | Dialog | What it lists |
 |-----|--------|---------------|
@@ -10,6 +10,7 @@ and choosing an entry. Four keys open four flavors of that picker:
 | **Shift-J** | Jump | Directories found by scanning from the current directory |
 | **H** | History | Directories you have already visited in this pane |
 | **D** | Drives | Storage locations and volumes (and S3 buckets, if available) |
+| **Shift-D** | Connect to Server | Saved servers, plus the ones found on the network (macOS and Windows) |
 
 Whichever one you open, pressing **Enter** navigates the current pane to the
 selected location.
@@ -28,10 +29,11 @@ Every navigation dialog uses the same list-picker controls:
 - **Page Up/Page Down** to scroll by page
 - **Home/End** to jump to the first/last result
 - **Enter** to navigate to the selected entry
-- **Shift+Delete** to forget the highlighted entry, in the lists XeFM built by
-  watching you — History and the Filter prompt. Favorites, Drives and External
-  Programs come from your config or from the machine, so there is nothing there
-  to forget and the key does nothing
+- **Shift+Delete** to remove the highlighted entry, where there is something to
+  remove: it forgets a directory in History or the Filter prompt, forgets a
+  saved server in Connect to Server, and disconnects or ejects a volume in
+  Drives. Favorites and External Programs come from your config, so there is
+  nothing there to remove and the key does nothing
 - **Escape** or **q** to cancel and close
 
 A line along the bottom of each dialog names the keys that are live in it, so
@@ -128,7 +130,9 @@ The number of remembered entries is set by `MAX_HISTORY_ENTRIES` in
 
 ## Drives dialog (D)
 
-Press **D** to open a searchable list of storage locations and jump to one.
+Press **D** to open a searchable list of storage locations and jump to one. On
+macOS and Windows its first row is **Connect to Server…**, which opens the
+[Connect to Server](CONNECT_TO_SERVER_FEATURE.md) dialog.
 
 ### Local locations
 
@@ -180,14 +184,29 @@ If buckets do not appear, check that credentials work (`aws s3 ls`), network
 connectivity, and your IAM permissions for `ListBuckets`. A "No credentials
 configured" message points at the step above.
 
+### Disconnecting and ejecting
+
+**Shift+Delete** disconnects the highlighted network mount, or ejects the
+highlighted external volume so the device is safe to unplug. On any other row —
+Home, `C:\`, an S3 bucket, an SSH host — it does nothing.
+
+If a pane is inside the volume, XeFM moves it out first. If something else on
+the machine is using the volume, the operating system refuses and XeFM says so
+rather than forcing it.
+
 ## Choosing between them
 
 - **Favorites (J)** — instant, for a handful of directories you use constantly
 - **History (H)** — instant, for somewhere you were a moment ago
 - **Jump (Shift-J)** — slower (scans the disk), for finding a directory you
   don't have memorized
-- **Drives (D)** — for switching between volumes, drives, or S3 buckets
+- **Drives (D)** — for switching between volumes, drives, or S3 buckets, and
+  for disconnecting or ejecting one
+- **Connect to Server (Shift-D)** — for mounting a NAS or file server in the
+  first place
 
 ## See Also
 
+- [Connect to Server](CONNECT_TO_SERVER_FEATURE.md) — mounting a NAS or file
+  server from inside XeFM
 - [S3 Integration](XEFM_USER_GUIDE.md#s3-integration) (in User Guide)

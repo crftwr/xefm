@@ -507,10 +507,10 @@ def test_a_user_action_runs_from_the_key_it_is_bound_to(app_with):
     def select_docs(ctx):
         ctx.pane.select(lambda e: e.suffix == ".docx")
 
-    bindings = dict(DefaultConfig.KEY_BINDINGS, **{"select-docs": ["Shift-D"]})
+    bindings = dict(DefaultConfig.KEY_BINDINGS, **{"select-docs": ["Shift-Y"]})
     app, tmp = app_with(ACTIONS={"select-docs": select_docs}, KEY_BINDINGS=bindings)
 
-    app.on_event(key("d", "D", {"shift"}))
+    app.on_event(key("y", "Y", {"shift"}))
     chosen = sorted(os.path.basename(p) for p in app.active_pane()["selected_files"])
     assert chosen == ["b.docx", "c.docx"]
 
@@ -687,7 +687,7 @@ def test_the_help_dialog_lists_the_config_s_own_actions(app_with):
 
     app, _ = app_with(
         ACTIONS={"select-docs": {"func": mine, "description": "Select documents"}},
-        KEY_BINDINGS=dict(DefaultConfig.KEY_BINDINGS, **{"select-docs": ["Shift-D"]}))
+        KEY_BINDINGS=dict(DefaultConfig.KEY_BINDINGS, **{"select-docs": ["Shift-Y"]}))
     app.panel.render = lambda *a, **k: None
     import xefm.app as module
     original = module.show_markdown
@@ -698,7 +698,7 @@ def test_the_help_dialog_lists_the_config_s_own_actions(app_with):
         module.show_markdown = original
     assert "Your Actions (config.py)" in shown["text"]
     assert "Select documents" in shown["text"]
-    assert "Shift-D" in shown["text"]
+    assert "Shift-Y" in shown["text"]
 
 
 def test_the_help_dialog_has_no_user_section_without_user_actions(app_with):
