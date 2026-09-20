@@ -208,10 +208,106 @@ defaults are `str(self)` and `{'type': SCHEME, 'details': [], 'format_hint':
 already returning by hand. An outside implementation overrides them if it has
 something to show, and is not asked a question otherwise.
 
-## Adding a New Storage Type
+## Two Base Classes, and Which One to Use
 
-Subclass `PathImpl`, declare the five attributes, implement the operations, and
-return the class from `Path._create_implementation` for its scheme.
+`xefm/path_base.py` holds two classes between `PathImpl` and a backend:
+
+```
+PathImpl (strict ABC, 48 abstract methods)
+  └─ UriPathImpl          27 methods of string arithmetic; 14 still abstract
+       └─ ReadOnlyPathImpl  the 11 writes refuse;  5 still abstract
+```
+
+**`UriPathImpl`** fills in everything that is string arithmetic. Every
+URI-addressed backend splits the same way — a root naming the container, a
+`/`-separated key inside it — so the class keeps one invariant:
+
+```python
+str(self) == self._root_prefix() + self._key
+```
+
+and derives `parent`, `parents`, `parts`, `name`, `stem`, `suffix`, `anchor`,
+`joinpath`, `with_name`, `with_stem`, `with_suffix`, `relative_to`, `glob`,
+`rglob`, `match`, `__eq__`, `__hash__`, `__lt__` and the rest from it. A
+subclass overrides at most two hooks — `_parse(uri)` (store what names the
+root, return the key) and `_root_prefix()` — and gets the arithmetic.
+
+**`ReadOnlyPathImpl`** adds a *policy*, not more shared code: the eleven write
+operations raise `OSError(errno.EROFS, …)` and the capability declaration says
+so in advance. This is the class a virtual folder inherits.
+
+Keeping the two apart matters because `UriPathImpl` is not read-only-specific.
+`s3.py` and `ssh.py` carry roughly 290 lines between them implementing the same
+17 arithmetic methods twice — a debt `UriPathImpl` can absorb, and could not if
+the same class had also decided that writing raises.
+
+### The Cost of a Backend
+
+| base | what it asks for |
+|---|---|
+| `PathImpl` | 48 abstract methods |
+| `UriPathImpl` | 14 — the 5 below, plus the 9 write operations |
+| `ReadOnlyPathImpl` | **5** — `exists`, `is_dir`, `iterdir`, `stat`, `open` |
+
+```python
+from xefm.path_base import ReadOnlyPathImpl, UriStatResult
+
+class RegistryPathImpl(ReadOnlyPathImpl):
+    SCHEME = 'reg'
+
+    def exists(self): ...
+    def is_dir(self): ...
+    def iterdir(self): ...           # yield self._child(name)
+    def stat(self): ...              # return UriStatResult(size=…, mtime=…, is_dir=…)
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None): ...
+```
+
+`UriStatResult` is there because all three shipped backends hand-roll a
+stat-result class — `S3StatResult`, a local class inside `SSHPathImpl.stat`,
+`ArchiveEntry.to_stat_result`. A virtual folder should not have to.
+
+`test/test_mock_storage_extensibility.py` is the measure: its `MockPathImpl`
+was 384 lines and 61 methods on `PathImpl`, and is 85 lines and 15 on
+`UriPathImpl`. The read-only backend beside it is 25 lines and 5.
+
+### Why the Published Base Is Not `PathImpl`
+
+`PathImpl` has never changed a signature. It has *grown*: +8 methods in v1.0.1,
++1 in v1.0.4. The failure mode for a backend defined outside this repository is
+not a changed signature, it is a new `@abstractmethod` — and the moment one
+lands, every external subclass raises `TypeError` at **import**. For a class
+defined in `~/.xefm/config.py`, that means the user's entire configuration
+stops loading.
+
+So the published extension point is `ReadOnlyPathImpl`, where a method that
+arrives carrying a default is invisible to code outside. **The intermediate
+class is the compatibility buffer; the ergonomics are a side effect.**
+
+`test/test_published_base.py` enforces it: it asserts that
+`ReadOnlyPathImpl.__abstractmethods__` is exactly those five names, so a new
+abstract method that reaches `PathImpl` without a default here fails the suite
+rather than a user's config.
+
+De-abstracting `PathImpl` itself would be the one-class version of this, and it
+would cost the check that catches an *internal* backend forgetting a method at
+import time. The ABC stays strict; leniency belongs in the published subclass.
+
+### Arithmetic Stays Inside the Class
+
+`UriPathImpl._at(key)` builds a sibling through `Path._from_impl(type(self)(…))`
+rather than `Path(uri)`. `Path(uri)` asks the scheme factory which class to
+build, so a backend the factory has never heard of would find its own `parent`
+coming back as a *local* path. Going through the implementation it already has
+keeps the arithmetic closed over the class that produced it — and keeps this
+layer testable without the scheme registry existing at all.
+
+## Adding a Storage Type Inside This Repository
+
+A backend that ships here subclasses `PathImpl` directly, declares the five
+attributes, implements the operations, and is returned from
+`Path._create_implementation` for its scheme. Inheriting the strict ABC is the
+point: a missing method should fail at import for code in this repository.
 
 ```python
 class CustomPathImpl(PathImpl):
@@ -233,9 +329,8 @@ class CustomPathImpl(PathImpl):
 
 `PathImpl` is a strict ABC on purpose: every operation stays abstract so that a
 backend inside this repository which forgets one fails at import, not in a
-pane. That same strictness is why `PathImpl` is not a class to hand to code
-outside this repository: a method added to it later would break every external
-subclass at import.
+pane. That same strictness is why `PathImpl` is not the class to hand to code
+outside this repository — see "Why the Published Base Is Not `PathImpl`" above.
 
 The one thing the ABC cannot check is a *declaration*: a class attribute left
 at its default is not a missing method. `test/test_path_capabilities.py`
@@ -262,13 +357,16 @@ loses only the one it could not have acted on anyway.
 
 ## Testing
 
-`test/test_path_capabilities.py` holds the matrix, the validation rules, and
-the list of retired methods. `test/test_mock_storage_extensibility.py` proves
-the UI needs no change for a new backend by writing one.
+| file | what it holds |
+|---|---|
+| `test/test_path_capabilities.py` | the capability matrix, the validation rules, the list of retired methods |
+| `test/test_published_base.py` | the arithmetic, the read-only policy, and the five-method promise |
+| `test/test_mock_storage_extensibility.py` | a whole backend, written twice — writable and read-only — to prove the UI needs no change for either |
 
 ## References
 
 - `xefm/path.py` — `PathImpl`, `LocalPathImpl`, `Path`, `KNOWN_CAPABILITIES`
+- `xefm/path_base.py` — `UriPathImpl`, `ReadOnlyPathImpl`, `UriStatResult`
 - `xefm/s3.py`, `xefm/ssh.py`, `xefm/archive.py` — the three remote backends
 - `doc/dev/S3_SUPPORT_SYSTEM.md`, `doc/dev/SSH_SYSTEM.md`,
   `doc/dev/ARCHIVE_SYSTEM.md` — per-backend detail

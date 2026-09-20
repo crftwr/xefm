@@ -892,6 +892,23 @@ class Path:
                 path_str = str(PathlibPath(*args))
             self._impl = self._create_implementation(path_str)
     
+    @classmethod
+    def _from_impl(cls, impl: PathImpl) -> 'Path':
+        """Wrap an implementation that is already built, without asking
+        :meth:`_create_implementation` which one to build.
+
+        A backend's string arithmetic — ``parent``, ``joinpath``, ``with_name``
+        — has to hand back a ``Path``, and every backend here does it by
+        formatting a URI and calling ``Path(uri)``. That works only for a
+        scheme the factory knows, so a backend defined outside this repository
+        could not use it: its own ``parent`` would come back as a local path.
+        Going through the implementation it already has keeps the arithmetic
+        closed over the class that produced it.
+        """
+        path = cls.__new__(cls)
+        path._impl = impl
+        return path
+
     def _create_implementation(self, path_str: str) -> PathImpl:
         """Create the appropriate implementation based on the path string"""
         # Detect archive URIs
