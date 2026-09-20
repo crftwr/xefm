@@ -582,11 +582,21 @@ class Drawing(unittest.TestCase):
         from puikit.backends import create_backend
         from puikit.panel import Panel
 
-        self.backend = create_backend("memory")
+        self.backend = create_backend("memory", width=100, height=30)
         self.backend.open()
         self.panel = Panel(self.backend)
         self.panel.set_text_effect(False)
+        # Off for the same reason the text effect is: the entrance scales the
+        # box to 92% on its first frames, so a dialog measured mid-animation
+        # is a dialog measured at the wrong size — which is how a row that
+        # does not fit went unnoticed once already.
+        self.panel.set_reduced_motion(True)
         self.addCleanup(self.backend.close)
+
+    def _shows(self, needle):
+        self.panel.render()
+        lines = self.backend.snapshot()
+        return any(needle in line for line in lines), lines
 
     def test_the_form_draws_with_an_error_and_a_filled_address(self):
         cd.show_connect_form(
@@ -598,29 +608,36 @@ class Drawing(unittest.TestCase):
         cd.show_connect_form(self.panel, cd.ConnectRequest(address=""))
         self.panel.render()
 
-    def test_a_long_error_stays_inside_the_form(self):
-        """A server's message is as long as the server felt like making it.
-        Both things it must not do — run off the right edge, and land on the
-        line of keys — it did, leaving half a sentence across the hint band."""
-        from xefm.dialog_geometry import draw_title_bar, hint_content_bottom
+    def test_the_form_error_is_on_screen(self):
+        """Asserted by reading the screen, not by comparing coordinates. The
+        first version of this compared the error's row against
+        ``hint_content_bottom`` and passed while the line was invisible —
+        content has to end one row *above* that, since the hint band's rule is
+        drawn on it."""
+        cd.show_connect_form(
+            self.panel, cd.ConnectRequest(address="smb://nas/x"),
+            error="DISTINCTIVE-ERROR-TEXT")
+        shown, lines = self._shows("DISTINCTIVE-ERROR-TEXT")
+        self.assertTrue(shown, "\n".join(lines))
 
-        measured = {}
-        original = cd.ConnectFormDialog.draw
+    def test_a_long_error_does_not_run_off_the_edge(self):
+        """A server's message is as long as the server felt like making it."""
+        cd.show_connect_form(
+            self.panel, cd.ConnectRequest(address="smb://SynologyNas/"),
+            error="SynologyNas: smbutil: server connection failed: "
+                  "Authentication error. Add the share name after the server.")
+        self.panel.render()
+        for line in self.backend.snapshot():
+            self.assertLessEqual(len(line.rstrip()), 100)
 
-        def traced(dialog, ctx):
-            y = draw_title_bar(ctx, dialog.title, surface_bg=ctx.theme.popup_bg,
-                               border=ctx.theme.popup_border, y=1.0)
-            measured["error_y"] = y + len(dialog.rows)
-            measured["floor"] = hint_content_bottom(ctx, ctx.theme.popup_bg)
-            return original(dialog, ctx)
-
-        with patch.object(cd.ConnectFormDialog, "draw", traced):
-            cd.show_connect_form(
-                self.panel, cd.ConnectRequest(address="smb://SynologyNas.local/"),
-                error="SynologyNas.local: smbutil: server connection failed: "
-                      "Authentication error. Add the share name after the server.")
-            self.panel.render()
-        self.assertLessEqual(measured["error_y"], measured["floor"])
+    def test_the_busy_modal_shows_what_it_is_waiting_for(self):
+        """It showed a title, a blank line and "Esc stop waiting": the box was
+        one row short, so the spinner and the message were painted over by the
+        hint band's rule (issue #406)."""
+        cd.run_connecting(self.panel, "Asking SynologyNas for its shares…",
+                          lambda cancel: "x", lambda *a: None)
+        shown, lines = self._shows("Asking SynologyNas")
+        self.assertTrue(shown, "\n".join(lines))
 
     def test_the_checkboxes_sit_on_the_dialog_surface(self):
         """A control drawn with no background takes the terminal's default on

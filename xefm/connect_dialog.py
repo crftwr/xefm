@@ -191,9 +191,10 @@ class ConnectFormDialog(FocusContainer, Widget):
             # run off the right edge and land on the hint band — both of which
             # it did (issue #406), leaving a half-sentence written across the
             # line of keys.
-            # The floor is the last row content may use, not the first it may
-            # not — the input prompt draws its own error exactly there.
-            floor = hint_content_bottom(ctx, surface_bg)
+            # One row above the band: hint_content_bottom() reports the row
+            # the band's rule is drawn on, so content that lands there is
+            # painted over rather than shown.
+            floor = hint_content_bottom(ctx, surface_bg) - 1.0
             text = elide(self._error, max(1.0, box_w - 4.0), where="end",
                          measure=ctx.measure_text)
             ctx.draw_text(2.0, min(y, floor), text,
@@ -337,7 +338,7 @@ def show_connect_form(panel: Any, request: ConnectRequest, *, error: str = "",
     # fields themselves were drawn over the line of keys. The grid figure is
     # used on both backends: a vector title band is shorter, so this leaves a
     # little slack there, which is the harmless direction to be wrong in.
-    h = 3.0 + len(dialog.rows) + 1.0 + HINT_ROWS
+    h = 4.0 + len(dialog.rows) + 1.0 + HINT_ROWS
     hints: dict[str, Any] = {"shadow": True, "w": w, "h": h}
     if region is not None:
         w, x = pane_anchored_box(w, sw, region)
@@ -445,8 +446,13 @@ def run_connecting(panel: Any, message: str, work: Callable[[threading.Event], A
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 60.0))
     dialog._panel = panel
+    # Pad + title band + the message row + the hint band. The message row has
+    # to end *above* the band, not on it: the band's rule is drawn at the row
+    # hint_content_bottom() reports, so content ends one row earlier. Short by
+    # exactly that row, this dialog showed a title, a blank line and "Esc stop
+    # waiting" — the spinner and the message wiped by the rule (issue #406).
     panel.push_layer(dialog, z=z, hints={"shadow": True, "w": w,
-                                         "h": 2.0 + 1.0 + HINT_ROWS})
+                                         "h": 3.0 + 1.0 + HINT_ROWS})
 
     def finish(result: Any, error: Optional[BaseException]) -> None:
         dialog.close()

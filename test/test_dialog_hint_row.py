@@ -79,6 +79,52 @@ class _Vector(MemoryBackend):
 
 
 # --------------------------------------------------------------------------- #
+# A dialog's last content row clears the band
+# --------------------------------------------------------------------------- #
+
+class ContentClearsTheBand(unittest.TestCase):
+    """``hint_content_bottom`` reports the row the band's **rule** is drawn on,
+    so content that lands exactly there is painted over. A box sized as though
+    that row were usable loses its last line — silently, which is how the
+    single-field prompt shipped with a validation error nobody could read.
+    """
+
+    def _shown(self, make, needle):
+        backend = MemoryBackend(width=100, height=30)
+        backend.open()
+        panel = Panel(backend)
+        panel.set_text_effect(False)
+        panel.set_reduced_motion(True)   # the entrance scales the box to 92%
+        try:
+            make(panel)
+            panel.render()
+            rows = _rows(backend)
+            return any(needle in row for row in rows), rows
+        finally:
+            backend.close()
+
+    def test_the_input_prompt_shows_its_validation_error(self):
+        """Rename and Create File report an empty or duplicate name through
+        this line. It was drawn on the rule row and never reached the screen."""
+        def make(panel):
+            dialog = show_input(panel, title="Rename", prompt="Name:",
+                                text="notes.txt")
+            dialog._error = "DISTINCTIVE-ERROR-TEXT"
+
+        shown, rows = self._shown(make, "DISTINCTIVE-ERROR-TEXT")
+        self.assertTrue(shown, "\n".join(rows))
+
+    def test_the_prompt_still_shows_its_field_and_keys(self):
+        def make(panel):
+            show_input(panel, title="Rename", prompt="Name:", text="notes.txt")
+
+        shown, rows = self._shown(make, "notes.txt")
+        self.assertTrue(shown, "\n".join(rows))
+        self.assertTrue(any("Esc cancel" in row for row in rows),
+                        "\n".join(rows))
+
+
+# --------------------------------------------------------------------------- #
 # The band metrics mirror the title bar's
 # --------------------------------------------------------------------------- #
 
