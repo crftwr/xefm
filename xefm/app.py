@@ -84,6 +84,7 @@ from xefm import name_key
 from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
                               getLogger, route_library_logger, set_log_sink)
 from xefm.pane_manager import PaneManager
+from xefm import path_schemes
 from xefm.path import Path
 from xefm import search_match
 from xefm import sort_keys
@@ -3182,13 +3183,15 @@ class XeFMApp:
             return None
         return files[pane["focused_index"]]
 
-    _REMOTE_SCHEMES = ("ssh://", "s3://", "scp://", "ftp://", "archive://")
-
     @classmethod
     def _is_local(cls, path) -> bool:
         """Whether ``path`` is a plain local-filesystem path — the only kind a
-        terminal editor or subshell can operate on directly."""
-        return not str(path).startswith(cls._REMOTE_SCHEMES)
+        terminal editor or subshell can operate on directly.
+
+        Which prefixes are not is :mod:`xefm.path_schemes`' business. Keeping a
+        second copy here is how ``reg://`` used to reach Jump to Path as a
+        *relative* path and come back "does not exist"."""
+        return not path_schemes.is_uri(str(path))
 
     @staticmethod
     def _is_archive(path) -> bool:
@@ -6485,7 +6488,7 @@ class XeFMApp:
         ``os.path.normpath``, which would collapse its ``scheme://`` separator
         to ``scheme:/`` (#318)."""
         text = text.strip()
-        if text.startswith(cls._REMOTE_SCHEMES):
+        if path_schemes.is_uri(text):
             return Path(text)
         if text.startswith("~"):
             target = Path.home() / text[1:].lstrip("/")

@@ -12,6 +12,7 @@ import os
 import platform
 import sys
 from xefm.path import Path
+from xefm import path_schemes
 from xefm import sort_keys
 from xefm.log_manager import getLogger
 
@@ -1147,13 +1148,6 @@ def format_key_for_display(key_expr: str) -> str:
 
 
 
-#: Path prefixes that name a remote or virtual location (see ``xefm.path``).
-#: A location written with one of these is listed exactly as configured:
-#: probing it would mean a network round-trip on the UI thread, and a picker
-#: exists to *offer* a connection, not to make one.
-_REMOTE_SCHEMES = ('archive://', 's3://', 'ssh://', 'scp://', 'ftp://')
-
-
 def get_favorite_directories():
     """The rows the favorites picker shows — listed exactly as configured, with
     **no filesystem access at all**.
@@ -1190,7 +1184,7 @@ def get_favorite_directories():
             # a Path for one pulls in its backend module — ``import boto3`` for
             # an s3:// row, which is not a cheap import — for a row that may
             # never be selected.
-            if raw.startswith(_REMOTE_SCHEMES):
+            if path_schemes.is_uri(raw):
                 favorites.append({'name': name, 'path': raw})
             else:
                 favorites.append({'name': name,
@@ -1235,7 +1229,7 @@ def get_drive_locations():
             continue
         name, raw = str(entry['name']), str(entry['path'])
         try:
-            if raw.startswith(_REMOTE_SCHEMES):
+            if path_schemes.is_uri(raw):
                 locations.append({'name': name, 'path': raw})
                 continue
             path = Path(raw).expanduser()
