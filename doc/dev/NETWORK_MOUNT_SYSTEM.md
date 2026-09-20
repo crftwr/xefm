@@ -361,16 +361,50 @@ The found services are held in a list on the delegate. The browser does not
 retain them, and a resolution in flight against a collected object is a crash
 rather than a failure.
 
-### Windows discovery is the weak half, knowingly
+### Windows discovery is mDNS first, the provider walk second
 
-`WNetEnumResource` over `RESOURCE_GLOBALNET`, walked three levels — provider,
-domain/workgroup, server. What comes back on a modern Windows is whatever
-WS-Discovery has collected, which is frequently nothing at all for machines
-that are perfectly reachable by name; Microsoft retired the browser service
-that used to answer this. So an empty result is not an error, the picker simply
-shows no discovered rows, and typing the address still works. The walk checks
-the cancel flag between containers, because a domain that is not answering
-takes seconds and the picker has to stay closable.
+`DnsServiceBrowse` on `_smb._tcp.local`, and then `WNetEnumResource` behind it.
+
+**The multicast half is the one that works, and it is the same protocol macOS
+browses.** A NAS, a Mac and a Samba box all advertise `_smb._tcp`, so the two
+backends now find the same machines by the same means and `discover_servers`
+means one thing on both platforms. The DNS client's own DNS-SD is used rather
+than a multicast socket of XeFM's, for the reason the whole subsystem exists:
+the firewall, the interface selection, the retry schedule and the record cache
+are then the operating system's problem. It has shipped since Windows 10 1703,
+so the entry points are looked up when a browse starts and an older Windows
+falls through to the walk alone.
+
+A browse is a subscription: it returns `DNS_REQUEST_PENDING` and then calls
+back on a thread pool thread, again on every re-announcement. What crosses into
+the generator is a queue, and the generator does the de-duplication. **Only the
+SRV record is read.** A batch carries PTR, SRV, TXT and the addresses together,
+so `DnsServiceResolve` is never needed — and SRV is where the host is: an
+instance name is a label, and a Mac announcing "Anna's MacBook Pro" answers to
+`Annas-MacBook-Pro.local`.
+
+The `WNetEnumResource` walk — provider, domain/workgroup, server — is kept
+behind it because it answers where mDNS does not: a domain, and a Windows box
+that shares files without advertising the service. On a workgroup machine it
+reliably answers *the list of servers for this workgroup is not currently
+available*, Microsoft having retired the browser service that used to know, so
+it is no longer what the feature rests on. The walk checks the cancel flag
+between containers, because a domain that is not answering takes seconds and
+the picker has to stay closable.
+
+Order is latency, not preference: multicast answers in a fraction of a second
+and the walk can take twenty, so what the browse has collected is yielded
+before the walk starts. Duplicates across the two are dropped on
+`canonical_host`, which is what makes `SYNOLOGYNAS` from the walk and
+`SynologyNas.local` from mDNS one row.
+
+**UPnP is not a source.** A Synology with WS-Discovery switched off still
+announces itself over SSDP, and Explorer lists it under *Other Devices* — where
+double-clicking opens the DSM web page, because that is the device's
+presentation URL. Enumerating what Explorer shows was considered and rejected:
+it is a COM dependency, and a UPnP device says a machine is there and nothing
+about file sharing, so every row would need a port 445 probe before it could be
+offered. `_smb._tcp` *is* the statement that the machine shares files.
 
 **The NETRESOURCE that opens a level has to be the one the enumeration handed
 back**, not one rebuilt from its name. The top level of the network is the
@@ -444,8 +478,7 @@ Administrative shares (`IPC$`, `C$`) are dropped, as they are in Finder.
 
 Windows has it easier: the same `WNetEnumResource`, one level below a server,
 using the credentials the session already has. No separate authentication, and
-no anonymous-query problem — which makes it the reliable half on the platform
-whose discovery is the unreliable one.
+no anonymous-query problem.
 
 It takes the account argument anyway and ignores it. `netmount.list_shares`
 passes one to whichever backend is loaded, and a backend that cannot *receive*
@@ -454,6 +487,17 @@ one failure from another, reports as the server refusing to list its shares.
 Windows spent a release that way. The two modules' signatures are now compared
 against each other by a test that reads them with `ast`, since neither can be
 imported on the other's platform.
+
+Two spellings are tried, `.local` and then the short name, and this is the
+seam where "the session's credentials" stops being free. The redirector keys a
+session on **the server name as written**: with `\SynologyNas` connected and
+authenticated, the same NAS asked for as `\SynologyNas.local` is a machine it
+has never heard of, so the query goes anonymously and comes back
+`ERROR_ACCESS_DENIED`. That is not a corner case now that discovery is mDNS,
+because mDNS is where `.local` comes from: every discovered row carries it,
+while the session the user already has is almost always under the short name.
+`canonical_host` already declares the two to be one machine; this is that rule
+applied to the one place that talks to the redirector rather than to a key.
 
 ### What the flow does with them
 

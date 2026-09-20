@@ -74,10 +74,18 @@ Choosing one asks it what it offers and shows a second list:
 Pick a share and it mounts. That is the whole path from "the NAS is on" to "the
 pane is in it", without typing anything.
 
-This works best on **macOS**, where discovery is Bonjour — the same mechanism
-Finder uses, so XeFM finds what Finder finds. On **Windows** it asks the
-network providers, and modern Windows often answers with nothing even when the
-machines are reachable by name; there the address is still typed or saved.
+Both platforms find servers the same way: the machines that announce file
+sharing on the local network — which is what a NAS, a Mac and a Samba box all
+do out of the box. So XeFM finds what Finder finds on macOS, and on Windows it
+generally finds more than Explorer's *Network* folder shows.
+
+Windows additionally asks the network providers, which is the only way a
+domain, or a Windows machine that shares files without announcing it, turns
+up. That half frequently answers with nothing on a home network and is not
+what the list rests on.
+
+A machine that announces nothing at all will not appear on either platform,
+and is reached by typing its address.
 
 A server you have already saved as a *server* is not listed twice. A saved
 *share* does not hide its server, because the two rows do different things: one
@@ -247,11 +255,18 @@ use, and the mapping is not remembered across sign-ins (see
 resolve or nothing answered. Check the spelling, and check that the machine is
 awake; a NAS that has spun down can take a few seconds.
 
-**A server you can see in Finder is not in XeFM's list** — on macOS both use
-Bonjour, so this usually means it had not announced itself yet; the list fills
-as answers arrive, so give it a few seconds. A server that advertises nothing
-(some Windows machines, and NAS boxes with Bonjour switched off) will not
-appear in either, and is reached by typing its address.
+**A server you can see in Finder is not in XeFM's list** — both use the same
+announcements, so this usually means it had not announced itself yet; the list
+fills as answers arrive, so give it a few seconds. A server that advertises
+nothing (some Windows machines, and NAS boxes with Bonjour switched off) will
+not appear in either, and is reached by typing its address.
+
+**A device in Explorer's *Network* folder is not in XeFM's list** — look at
+which group Explorer puts it in. Something under *Other Devices* was found by
+UPnP, which says a device is there and nothing about file sharing; Explorer
+opens its web page rather than its shares, and XeFM does not offer it as a
+server. If the machine does share files, it will appear in XeFM's list on its
+own announcement, whatever Explorer makes of it.
 
 **"<server> needs a user name and password"** — XeFM tried to connect as a
 guest, because no account was given and none was saved, and the server does not

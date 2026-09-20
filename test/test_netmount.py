@@ -760,7 +760,7 @@ class WindowsBackend(unittest.TestCase):
             return []
 
         with patch.object(self.win, "_enum", enum):
-            found = list(self.win.discover_servers(threading.Event()))
+            found = list(self.win._walk_the_providers(threading.Event(), set()))
 
         self.assertEqual([s.host for s in found], ["nas"])
         self.assertEqual(asked[1].lpProvider, "Microsoft Windows Network")
@@ -774,6 +774,117 @@ class WindowsBackend(unittest.TestCase):
         with patch.object(self.win, "_enum", lambda scope, resource=None: rows):
             self.assertEqual(self.win.list_shares(target, "crftwr"), ["photo"])
             self.assertEqual(self.win.list_shares(target), ["photo"])
+
+    # --- mDNS discovery --------------------------------------------------
+
+    def test_the_label_is_taken_off_the_service_type(self):
+        label = self.win._instance_label("SynologyNas._smb._tcp.local",
+                                         self.win._SMB_SERVICE)
+        self.assertEqual(label, "SynologyNas")
+        # A trailing root dot, and a label with a space in it: both are
+        # ordinary DNS-SD, and neither is a host name.
+        self.assertEqual(
+            self.win._instance_label("Annas MacBook Pro._smb._tcp.local.",
+                                     self.win._SMB_SERVICE),
+            "Annas MacBook Pro")
+
+    def test_only_the_srv_record_names_a_server(self):
+        """A batch carries PTR, SRV, TXT and addresses. The host lives in the
+        SRV target and nowhere else — an instance name is a label, so a row
+        built from the PTR would be a row that cannot be opened."""
+        import ctypes
+
+        srv = self.win.DNS_RECORDW()
+        srv.pName = "SynologyNas._smb._tcp.local"
+        srv.wType = self.win.DNS_TYPE_SRV
+        srv.Data.Srv.pNameTarget = "SynologyNas.local."
+        srv.Data.Srv.wPort = 445
+        ptr = self.win.DNS_RECORDW()
+        ptr.pName = "_smb._tcp.local"
+        ptr.wType = 12
+        ptr.pNext = ctypes.pointer(srv)
+
+        browse = self.win._ServiceBrowse(self.win._SMB_SERVICE)
+        self.assertEqual(list(browse._servers(ctypes.pointer(ptr))),
+                         [("SynologyNas", "SynologyNas.local")])
+
+    def test_a_discovered_local_name_falls_back_to_the_short_one(self):
+        """The enumeration runs on the session's own credentials and the
+        redirector keys a session on the name as written, so a NAS already
+        connected as `\\\\SynologyNas` is a stranger as `\\\\SynologyNas.local`
+        and answers ERROR_ACCESS_DENIED. Discovery is mDNS, so `.local` is the
+        spelling every discovered row carries."""
+        asked = []
+
+        def enum(scope, resource=None):
+            asked.append(resource.lpRemoteName)
+            if resource.lpRemoteName.endswith(".local"):
+                return []  # refused, as an anonymous session is
+            return [self._row(r"\\SynologyNas\Videos")]
+
+        target = netmount.parse_address("smb://SynologyNas.local")
+        with patch.object(self.win, "_enum", enum):
+            self.assertEqual(self.win.list_shares(target), ["Videos"])
+        self.assertEqual(asked, [r"\\SynologyNas.local", r"\\SynologyNas"])
+
+    def test_a_plain_host_is_asked_for_once(self):
+        self.assertEqual(self.win._spellings("nas"), ["nas"])
+        self.assertEqual(self.win._spellings("SynologyNas.local"),
+                         ["SynologyNas.local", "SynologyNas"])
+
+    def test_the_two_sources_are_merged_and_one_machine_is_one_row(self):
+        """mDNS says `SynologyNas.local`, the provider walk says
+        `SYNOLOGYNAS`, and they are the same NAS — folded by canonical_host,
+        the same rule the keychain and the mount table are matched by. The
+        multicast answer comes first because it arrives in a fraction of the
+        time the walk takes."""
+        import itertools
+        import queue as queue_module
+
+        class FakeBrowse:
+            def __init__(self, service):
+                self.service = service
+                self.queue = queue_module.Queue()
+                self.queue.put(("SynologyNas", "SynologyNas.local"))
+                self.stopped = False
+
+            def start(self):
+                return True
+
+            def stop(self):
+                self.stopped = True
+
+        browses = []
+        provider = self._row("Microsoft Windows Network",
+                             "Microsoft Windows Network", display=6,
+                             usage=self.win.RESOURCEUSAGE_CONTAINER, type=0)
+
+        def enum(scope, resource=None):
+            if resource is None:
+                return [provider]
+            if resource.lpRemoteName == provider.remote:
+                return [self._row(r"\\SYNOLOGYNAS", display=2),
+                        self._row(r"\\OLDBOX", display=2)]
+            return []
+
+        def make(service):
+            browses.append(FakeBrowse(service))
+            return browses[-1]
+
+        with patch.object(self.win, "_ServiceBrowse", make), \
+             patch.object(self.win, "_MDNS_SETTLE", 0.05), \
+             patch.object(self.win, "_enum", enum):
+            found = self.win.discover_servers(threading.Event())
+            rows = list(itertools.islice(found, 2))
+            found.close()
+
+        self.assertEqual([(s.name, s.host) for s in rows],
+                         [("SynologyNas", "SynologyNas.local"),
+                          ("OLDBOX", "OLDBOX")])
+        self.assertEqual(browses[0].service, self.win._SMB_SERVICE)
+        # Closing the picker stops the browse; a subscription left running is
+        # multicast traffic nobody is reading.
+        self.assertTrue(browses[0].stopped)
 
 
 if __name__ == "__main__":

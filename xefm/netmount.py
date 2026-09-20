@@ -328,10 +328,11 @@ class DiscoveredServer:
 def can_discover() -> bool:
     """Whether this platform can look for servers at all.
 
-    Discovery is the part that degrades: macOS browses Bonjour, Windows asks
-    the network provider and may well get nothing back (modern Windows dropped
-    the browser service in favour of WS-Discovery). The UI treats an empty
-    answer as "found none" either way.
+    Both platforms browse the same announcement — ``_smb._tcp`` over multicast
+    DNS, through Bonjour on macOS and the DNS client's own DNS-SD on Windows —
+    and Windows asks its network providers as well. Discovery is still the
+    part that degrades, since a machine that announces nothing is found by
+    neither, so the UI treats an empty answer as "found none".
     """
     backend = _backend()
     return backend is not None and hasattr(backend, "discover_servers")

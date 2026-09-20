@@ -17,13 +17,15 @@ file adds no dependency. Only :mod:`xefm.netmount` imports it.
 from __future__ import annotations
 
 import ctypes
+import queue
 import string
+import time
 from ctypes import wintypes
 from typing import NamedTuple
 
 from xefm.log_manager import getLogger
 from xefm.netmount import (NETWORK, OTHER, REMOVABLE, DiscoveredServer,
-                           MountError, MountInfo)
+                           MountError, MountInfo, canonical_host)
 
 logger = getLogger("NetMountWin")
 
@@ -35,6 +37,11 @@ SCHEMES = ("smb", "http", "https")
 _mpr = ctypes.WinDLL("mpr", use_last_error=True)
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+#: The DNS client, for the DNS-SD browse behind :class:`_ServiceBrowse`. Its
+#: DNS-SD entry points arrived in Windows 10 1703, so they are looked up when
+#: the browse starts rather than bound here — an older Windows must still
+#: import this module and mount shares.
+_dnsapi = ctypes.WinDLL("dnsapi", use_last_error=True)
 
 RESOURCE_CONNECTED = 0x00000001
 RESOURCE_GLOBALNET = 0x00000002
@@ -42,6 +49,25 @@ RESOURCETYPE_DISK = 0x00000001
 RESOURCEUSAGE_CONTAINER = 0x00000002
 RESOURCEDISPLAYTYPE_SERVER = 0x00000002
 CONNECT_UPDATE_PROFILE = 0x00000001
+
+#: The DNS-SD service type file servers advertise themselves with, and the one
+#: the macOS backend browses through Bonjour. ``_afpovertcp._tcp`` is browsed
+#: there too and is not here: Windows has no AFP client to offer the row to.
+_SMB_SERVICE = "_smb._tcp.local"
+
+#: How long the first pass waits for multicast answers before the provider
+#: walk begins. Long enough for a NAS on the same switch, short enough that a
+#: network with nothing on it does not feel like a stall.
+_MDNS_SETTLE = 1.5
+
+#: How often the browse queue is looked at, which is also how quickly the
+#: generator notices the picker has closed.
+_MDNS_POLL = 0.25
+
+DNS_QUERY_REQUEST_VERSION1 = 1
+DNS_REQUEST_PENDING = 9506
+DNS_TYPE_SRV = 33
+DnsFreeRecordList = 1
 
 #: How deep the network walk goes: provider -> domain/workgroup -> server.
 #: Deeper levels are shares, which :func:`list_shares` asks for by name.
@@ -97,6 +123,65 @@ class STORAGE_HOTPLUG_INFO(ctypes.Structure):
     ]
 
 
+class DNS_SRV_DATAW(ctypes.Structure):
+    _fields_ = [
+        ("pNameTarget", wintypes.LPWSTR),
+        ("wPriority", wintypes.WORD),
+        ("wWeight", wintypes.WORD),
+        ("wPort", wintypes.WORD),
+        ("Pad", wintypes.WORD),
+    ]
+
+
+class DNS_RECORD_DATA(ctypes.Union):
+    """Only the arm this module reads is declared.
+
+    A ``DNS_RECORD``'s payload is a union of some forty record types, and the
+    union is as large as its largest arm. Declaring one arm is safe because
+    nothing here *writes* it and the record is read through ``wType``: an
+    answer that is not an SRV is stepped over by the list walk. What must be
+    right is the offset the union starts at, which is fixed by the fields
+    ahead of it, not by what is declared inside it.
+    """
+
+    _fields_ = [("Srv", DNS_SRV_DATAW)]
+
+
+class DNS_RECORDW(ctypes.Structure):
+    pass
+
+
+DNS_RECORDW._fields_ = [
+    ("pNext", ctypes.POINTER(DNS_RECORDW)),
+    ("pName", wintypes.LPWSTR),
+    ("wType", wintypes.WORD),
+    ("wDataLength", wintypes.WORD),
+    ("Flags", wintypes.DWORD),
+    ("dwTtl", wintypes.DWORD),
+    ("dwReserved", wintypes.DWORD),
+    ("Data", DNS_RECORD_DATA),
+]
+
+#: ``VOID (DWORD Status, PVOID pQueryContext, PDNS_RECORD pDnsRecord)``, called
+#: on a thread pool thread of the DNS client's choosing.
+_BROWSE_CALLBACK = ctypes.WINFUNCTYPE(None, wintypes.DWORD, ctypes.c_void_p,
+                                      ctypes.POINTER(DNS_RECORDW))
+
+
+class DNS_SERVICE_BROWSE_REQUEST(ctypes.Structure):
+    _fields_ = [
+        ("Version", wintypes.DWORD),
+        ("InterfaceIndex", wintypes.DWORD),
+        ("QueryName", wintypes.LPCWSTR),
+        ("pBrowseCallback", _BROWSE_CALLBACK),
+        ("pQueryContext", ctypes.c_void_p),
+    ]
+
+
+class DNS_SERVICE_CANCEL(ctypes.Structure):
+    _fields_ = [("reserved", ctypes.c_void_p)]
+
+
 class FILETIME(ctypes.Structure):
     _fields_ = [("dwLowDateTime", wintypes.DWORD),
                 ("dwHighDateTime", wintypes.DWORD)]
@@ -140,6 +225,16 @@ _mpr.WNetGetLastErrorW.restype = wintypes.DWORD
 _mpr.WNetGetConnectionW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR,
                                     ctypes.POINTER(wintypes.DWORD)]
 _mpr.WNetGetConnectionW.restype = wintypes.DWORD
+
+_dnsapi.DnsFree.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_dnsapi.DnsFree.restype = None
+if hasattr(_dnsapi, "DnsServiceBrowse"):
+    _dnsapi.DnsServiceBrowse.argtypes = [
+        ctypes.POINTER(DNS_SERVICE_BROWSE_REQUEST),
+        ctypes.POINTER(DNS_SERVICE_CANCEL)]
+    _dnsapi.DnsServiceBrowse.restype = wintypes.DWORD
+    _dnsapi.DnsServiceBrowseCancel.argtypes = [ctypes.POINTER(DNS_SERVICE_CANCEL)]
+    _dnsapi.DnsServiceBrowseCancel.restype = wintypes.DWORD
 
 _kernel32.GetLogicalDriveStringsW.argtypes = [wintypes.DWORD, wintypes.LPWSTR]
 _kernel32.GetLogicalDriveStringsW.restype = wintypes.DWORD
@@ -490,22 +585,77 @@ def _is_hotplug(root: str) -> bool:
 # --- finding servers and shares ----------------------------------------------
 
 def discover_servers(cancel):
-    """Walk the network the way Explorer's Network folder does, yielding each
-    server found.
+    """Servers on the local network, from the two sources Windows offers.
 
-    **This is the weak half of the feature on Windows, and knowingly so.**
-    ``WNetEnumResource`` over the global scope asks the installed network
-    providers what they can see, and the answer on a modern Windows is
-    whatever WS-Discovery happens to have collected — often nothing at all,
-    where the same machines are reachable perfectly well by name. An empty
-    result is therefore not treated as an error; the picker simply shows no
-    discovered rows, and typing the address still works.
+    **mDNS first, and it is the one that works.** ``_smb._tcp`` over multicast
+    DNS is what a NAS, a Mac and a Samba box all advertise themselves with, and
+    it is the same protocol the macOS backend browses through Bonjour — so the
+    two platforms now find the same machines by the same means, rather than
+    Windows having a weaker idea of what discovery is.
 
-    Each level is walked breadth-first with the cancel flag checked between
-    containers, because a domain that is not answering can take seconds and
-    the picker must stay closable.
+    The ``WNetEnumResource`` walk is kept behind it because it answers where
+    mDNS does not: a domain, and a Windows box that shares files without
+    advertising the service. On a workgroup machine it reliably answers *the
+    list of servers for this workgroup is not currently available* — Microsoft
+    retired the browser service that used to know — so it is no longer what
+    this feature rests on. Anything it does find that mDNS already reported is
+    dropped, host names being folded by :func:`~xefm.netmount.canonical_host`
+    because the two sources spell the same machine ``SYNOLOGYNAS`` and
+    ``SynologyNas.local``.
+
+    Order is about latency, not preference: mDNS answers in well under a
+    second and the walk can take twenty, so what the multicast brought back is
+    yielded before the walk starts and the picker fills immediately.
+
+    Discovery has no natural end — a NAS that wakes up ten seconds later is a
+    new row — so this runs until ``cancel``, which the picker sets when it
+    closes.
     """
-    seen = set()
+    seen: set = set()
+    browse = _ServiceBrowse(_SMB_SERVICE)
+    try:
+        browsing = browse.start()
+        if browsing:
+            yield from _found_so_far(browse, seen, cancel, _MDNS_SETTLE)
+        yield from _walk_the_providers(cancel, seen)
+        # Where there is no browse to wait on there is nothing left to do:
+        # the walk has run once and has no second answer in it.
+        while browsing and not cancel.is_set():
+            yield from _found_so_far(browse, seen, cancel, _MDNS_POLL)
+    finally:
+        browse.stop()
+
+
+def _found_so_far(browse, seen: set, cancel, timeout: float):
+    """Whatever the browse has collected within ``timeout``, each server once.
+
+    The callback runs on a thread pool thread of the DNS client's choosing, so
+    what crosses into the generator is a queue and nothing else.
+    """
+    deadline = time.monotonic() + timeout
+    while not cancel.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            name, host = browse.queue.get(timeout=min(remaining, _MDNS_POLL))
+        except queue.Empty:
+            continue
+        key = canonical_host(host)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        logger.info(f"Found {name} at {host} over mDNS")
+        yield DiscoveredServer(name=name, host=host, scheme="smb")
+
+
+def _walk_the_providers(cancel, seen: set):
+    """The ``WNetEnumResource`` half: provider, domain/workgroup, server.
+
+    Walked breadth-first with the cancel flag checked between containers,
+    because a domain that is not answering can take seconds and the picker
+    must stay closable.
+    """
     level = [None]
     for _depth in range(_DISCOVERY_DEPTH):
         if cancel.is_set():
@@ -519,8 +669,9 @@ def discover_servers(cancel):
                     continue
                 if row.display == RESOURCEDISPLAYTYPE_SERVER:
                     host = row.remote.lstrip("\\\\")
-                    if host and host.lower() not in seen:
-                        seen.add(host.lower())
+                    key = canonical_host(host)
+                    if key and key not in seen:
+                        seen.add(key)
                         yield DiscoveredServer(name=host, host=host,
                                                scheme="smb")
                 elif row.usage & RESOURCEUSAGE_CONTAINER:
@@ -528,6 +679,111 @@ def discover_servers(cancel):
         level = below
         if not level:
             return
+
+
+class _ServiceBrowse:
+    """A running mDNS browse for one service type, feeding :attr:`queue`.
+
+    ``DnsServiceBrowse`` is the DNS-SD client that has shipped in the Windows
+    DNS client since Windows 10 1703. It is used rather than a multicast
+    socket of XeFM's own for the reason the whole subsystem exists: the
+    machinery is the operating system's, so the firewall, the interface
+    selection, the retry schedule and the record cache are not XeFM's problem.
+
+    The call returns immediately with ``DNS_REQUEST_PENDING`` and the answers
+    arrive on a thread pool thread, repeatedly — a browse is a subscription,
+    and every re-announcement calls back again with the same records. So the
+    callback puts ``(name, host)`` on a queue and the caller does the
+    de-duplication; the callback itself does as little as it can and raises
+    nothing, because it is returning into C.
+
+    A batch carries the whole answer — PTR, SRV, TXT and the addresses — so
+    the **SRV record alone is read** and ``DnsServiceResolve`` is never
+    needed. That matters beyond saving a call: SRV is where the host lives,
+    and an instance name is a label, not a host. A Mac announces "Anna's
+    MacBook Pro" and answers to ``Annas-MacBook-Pro.local``, so a row built
+    from the PTR name alone would be a row that cannot be opened.
+    """
+
+    def __init__(self, service: str):
+        self.service = service
+        self.queue: queue.Queue = queue.Queue()
+        self._callback = None
+        self._cancel = None
+
+    def start(self) -> bool:
+        """Begin browsing. False where the DNS client has no DNS-SD in it,
+        which is every Windows before 10 1703 — the caller carries on with
+        the provider walk alone."""
+        browse = getattr(_dnsapi, "DnsServiceBrowse", None)
+        if browse is None:
+            return False
+        # Held on the instance because the DNS client keeps pointers to both:
+        # a callback collected while the browse is live is a crash, not a
+        # missed row.
+        self._callback = _BROWSE_CALLBACK(self._on_records)
+        self._cancel = DNS_SERVICE_CANCEL()
+        request = DNS_SERVICE_BROWSE_REQUEST()
+        request.Version = DNS_QUERY_REQUEST_VERSION1
+        request.InterfaceIndex = 0
+        request.QueryName = self.service
+        request.pBrowseCallback = self._callback
+        request.pQueryContext = None
+        result = browse(ctypes.byref(request), ctypes.byref(self._cancel))
+        if result != DNS_REQUEST_PENDING:
+            logger.info(f"Browsing {self.service} did not start: error {result}")
+            self._callback = self._cancel = None
+            return False
+        return True
+
+    def stop(self) -> None:
+        if self._cancel is None:
+            return
+        cancel, self._cancel = self._cancel, None
+        try:
+            _dnsapi.DnsServiceBrowseCancel(ctypes.byref(cancel))
+        except Exception as e:
+            logger.error(f"Could not stop browsing {self.service}: {e}")
+        finally:
+            # Only now: the callback cannot be called again once the browse is
+            # cancelled, and not before.
+            self._callback = None
+
+    def _on_records(self, status, context, records) -> None:
+        try:
+            if status != ERROR_SUCCESS or not records:
+                return
+            try:
+                for name, host in self._servers(records):
+                    self.queue.put((name, host))
+            finally:
+                _dnsapi.DnsFree(records, DnsFreeRecordList)
+        except Exception as e:  # noqa: BLE001 — this returns into C
+            logger.error(f"Browsing {self.service} raised: {e}")
+
+    def _servers(self, records):
+        node = records
+        while node:
+            record = node.contents
+            if record.wType == DNS_TYPE_SRV:
+                host = (record.Data.Srv.pNameTarget or "").rstrip(".")
+                label = _instance_label(record.pName or "", self.service)
+                if host:
+                    yield label or host, host
+            node = record.pNext
+
+
+def _instance_label(instance: str, service: str) -> str:
+    """``SynologyNas`` out of ``SynologyNas._smb._tcp.local``.
+
+    The label is what the machine calls itself and is all the picker shows;
+    the host comes from the SRV record, never from here.
+    """
+    suffix = "." + service
+    name = instance.rstrip(".")
+    if name.lower().endswith(suffix.lower()):
+        name = name[:-len(suffix)]
+    return name
 
 
 def _container(row: _Resource) -> NETRESOURCEW:
@@ -577,7 +833,44 @@ def list_shares(target, user: str = "") -> list[str]:
     """
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
-    server = _Resource(local="", remote=f"\\\\{target.host}", provider="",
+    for host in _spellings(target.host):
+        shares = _shares_of(host)
+        if shares:
+            return shares
+    # An empty answer here is far more likely to be a refused query than a
+    # server with no shares, and the caller's fallback (type the name) is the
+    # right response to both.
+    raise MountError(f"{target.host} did not list any shares.", auth=True)
+
+
+def _spellings(host: str) -> list[str]:
+    """The names to try for one machine, in order.
+
+    The enumeration runs on **the session's own credentials**, and the
+    redirector keys a session on the server name as written: with
+    ``\\\\SynologyNas`` already connected and authenticated, the very same NAS
+    asked for as ``\\\\SynologyNas.local`` is a server it has never heard of,
+    answers anonymously, and is refused with ``ERROR_ACCESS_DENIED``.
+
+    That is not a corner case now that discovery is mDNS, because mDNS is
+    where the ``.local`` spelling comes from: every discovered row carries it,
+    while the session the user already has — from Explorer, or from XeFM's own
+    last mount — is almost always under the short name. So the short name is
+    tried as well. :func:`~xefm.netmount.canonical_host` already declares the
+    two to be one machine; this is the same rule, applied to the one place
+    that talks to the redirector rather than to a key.
+    """
+    spellings = [host]
+    if host.lower().endswith(".local"):
+        short = host[:-len(".local")]
+        if short:
+            spellings.append(short)
+    return spellings
+
+
+def _shares_of(host: str) -> list[str]:
+    """One enumeration of one spelling of a server, admin shares dropped."""
+    server = _Resource(local="", remote=f"\\\\{host}", provider="",
                        usage=RESOURCEUSAGE_CONTAINER,
                        display=RESOURCEDISPLAYTYPE_SERVER,
                        type=RESOURCETYPE_DISK)
@@ -588,11 +881,6 @@ def list_shares(target, user: str = "") -> list[str]:
         if not name or name.endswith("$"):
             continue
         shares.append(name)
-    if not shares:
-        # An empty answer here is far more likely to be a refused query than a
-        # server with no shares, and the caller's fallback (type the name) is
-        # the right response to both.
-        raise MountError(f"{target.host} did not list any shares.", auth=True)
     return shares
 
 
