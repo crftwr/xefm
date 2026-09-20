@@ -22,6 +22,12 @@ class MockPathImpl(PathImpl):
     This implementation simulates a fictional storage backend to validate
     that UI code works with any PathImpl subclass without modifications.
     """
+
+    SCHEME = 'mock'
+    IS_REMOTE = True
+    CAPABILITIES = frozenset({'extraction_for_reading', 'cache_for_search'})
+    SEARCH_STRATEGY = 'buffered'
+    DISPLAY_PREFIX = 'MOCK: '
     
     def __init__(self, path_str: str):
         """Initialize mock path from string"""
@@ -295,80 +301,12 @@ class MockPathImpl(PathImpl):
         pass  # Mock storage doesn't enforce permissions
     
     # Storage-specific methods
-    def is_remote(self) -> bool:
-        """Return True if this path represents a remote resource"""
-        return True  # Mock storage is considered "remote"
-    
-    def get_scheme(self) -> str:
-        """Return the scheme of the path (e.g., 'file', 's3', 'scp')"""
-        return 'mock'
-    
     def as_uri(self) -> str:
         """Return the path as a URI"""
         return self._uri
     
-    def supports_directory_rename(self) -> bool:
-        """Return True if this storage implementation supports directory renaming"""
-        return False  # Mock storage is read-only for directories
-    
-    def supports_file_editing(self) -> bool:
-        """Return True if this storage implementation supports file editing"""
-        return False  # Mock storage is read-only
-
-    def supports_write_operations(self) -> bool:
-        """Return True if this storage implementation supports write operations"""
-        return False  # Mock storage is read-only
-
     # Display methods for UI presentation
-    def get_display_prefix(self) -> str:
-        """Return a prefix for display purposes.
-        
-        Returns:
-            str: 'MOCK: ' prefix to identify mock storage
-        """
-        return 'MOCK: '
-    
-    def get_display_title(self) -> str:
-        """Return a formatted title for display in viewers and dialogs.
-        
-        Returns:
-            str: Full mock:// URI
-        """
-        return self._uri
-    
     # Content reading strategy methods
-    def requires_extraction_for_reading(self) -> bool:
-        """Return True if content must be extracted before reading.
-        
-        Returns:
-            bool: True (mock storage requires "extraction")
-        """
-        return True
-    
-    def supports_streaming_read(self) -> bool:
-        """Return True if file can be read line-by-line without full extraction.
-        
-        Returns:
-            bool: False (mock storage requires full content read)
-        """
-        return False
-    
-    def get_search_strategy(self) -> str:
-        """Return recommended search strategy for this storage type.
-        
-        Returns:
-            str: 'buffered' (mock storage uses buffered strategy)
-        """
-        return 'buffered'
-    
-    def should_cache_for_search(self) -> bool:
-        """Return True if content should be cached during search operations.
-        
-        Returns:
-            bool: True (mock storage benefits from caching)
-        """
-        return True
-    
     # Metadata method for info dialogs
     def get_extended_metadata(self) -> dict:
         """Return storage-specific metadata for display in info dialogs.
@@ -422,7 +360,7 @@ def test_mock_path_display_methods():
     mock_path = MockPathImpl('mock://data/document.txt')
     
     # Test display methods
-    prefix = mock_path.get_display_prefix()
+    prefix = mock_path.DISPLAY_PREFIX
     title = mock_path.get_display_title()
     
     assert prefix == 'MOCK: ', f"Expected 'MOCK: ', got '{prefix}'"
@@ -436,10 +374,10 @@ def test_mock_path_content_reading_methods():
     mock_path = MockPathImpl('mock://data/file.txt')
     
     # Test content reading methods
-    assert mock_path.requires_extraction_for_reading() == True
-    assert mock_path.supports_streaming_read() == False
-    assert mock_path.get_search_strategy() == 'buffered'
-    assert mock_path.should_cache_for_search() == True
+    assert mock_path.supports('extraction_for_reading')
+    assert not mock_path.supports('streaming_read')
+    assert mock_path.SEARCH_STRATEGY == 'buffered'
+    assert mock_path.supports('cache_for_search')
     
     print("✓ Mock path content reading methods work")
 
@@ -470,8 +408,8 @@ def test_mock_path_capability_methods():
     mock_path = MockPathImpl('mock://data/file.txt')
     
     # Test capability methods
-    assert mock_path.supports_file_editing() == False
-    assert mock_path.supports_directory_rename() == False
+    assert not mock_path.supports('file_editing')
+    assert not mock_path.supports('directory_rename')
     
     print("✓ Mock path capability methods work")
 
@@ -501,7 +439,7 @@ def test_mock_path_with_text_viewer():
     mock_path = MockPathImpl('mock://documents/report.txt')
     
     # Simulate text viewer title display logic
-    prefix = mock_path.get_display_prefix()
+    prefix = mock_path.DISPLAY_PREFIX
     title = mock_path.get_display_title()
     display_title = f"{prefix}{title}"
     
@@ -537,8 +475,8 @@ def test_mock_path_with_search_dialog():
     mock_path = MockPathImpl('mock://data/')
     
     # Simulate search dialog strategy selection logic
-    strategy = mock_path.get_search_strategy()
-    should_cache = mock_path.should_cache_for_search()
+    strategy = mock_path.SEARCH_STRATEGY
+    should_cache = mock_path.supports('cache_for_search')
     
     # Verify strategy is one of the expected values
     assert strategy in ['streaming', 'extracted', 'buffered']
@@ -558,8 +496,8 @@ def test_mock_path_with_file_operations():
     mock_path = MockPathImpl('mock://data/file.txt')
     
     # Simulate file operations validation logic
-    can_edit = mock_path.supports_file_editing()
-    can_rename_dir = mock_path.supports_directory_rename()
+    can_edit = mock_path.supports('file_editing')
+    can_rename_dir = mock_path.supports('directory_rename')
     
     # Verify validation works
     assert isinstance(can_edit, bool)
@@ -587,7 +525,7 @@ def test_extensibility_validation():
     
     # Test 1: Text Viewer Integration
     print("Testing Text Viewer integration...")
-    prefix = mock_path.get_display_prefix()
+    prefix = mock_path.DISPLAY_PREFIX
     title = mock_path.get_display_title()
     assert prefix == 'MOCK: '
     assert 'mock://' in title
@@ -606,24 +544,24 @@ def test_extensibility_validation():
     
     # Test 3: Search Dialog Integration
     print("\nTesting Search Dialog integration...")
-    strategy = mock_path.get_search_strategy()
-    should_cache = mock_path.should_cache_for_search()
+    strategy = mock_path.SEARCH_STRATEGY
+    should_cache = mock_path.supports('cache_for_search')
     print(f"  Search strategy: {strategy}")
     print(f"  Should cache: {should_cache}")
     print("  ✓ Search dialog would use correct strategy")
     
     # Test 4: File Operations Integration
     print("\nTesting File Operations integration...")
-    can_edit = mock_path.supports_file_editing()
-    can_rename = mock_path.supports_directory_rename()
+    can_edit = mock_path.supports('file_editing')
+    can_rename = mock_path.supports('directory_rename')
     print(f"  Supports editing: {can_edit}")
     print(f"  Supports directory rename: {can_rename}")
     print("  ✓ File operations would validate correctly")
     
     # Test 5: Content Reading
     print("\nTesting Content Reading...")
-    requires_extraction = mock_path.requires_extraction_for_reading()
-    supports_streaming = mock_path.supports_streaming_read()
+    requires_extraction = mock_path.supports('extraction_for_reading')
+    supports_streaming = mock_path.supports('streaming_read')
     print(f"  Requires extraction: {requires_extraction}")
     print(f"  Supports streaming: {supports_streaming}")
     content = mock_path.read_text()

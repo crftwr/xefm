@@ -25,9 +25,9 @@ class TestS3FileEditingCapability(unittest.TestCase):
             with patch('xefm.s3.HAS_BOTO3', True):
                 self.s3_path = S3PathImpl('s3://test-bucket/test-file.txt')
     
-    def test_supports_file_editing_returns_false(self):
-        """Test that supports_file_editing returns False for S3"""
-        self.assertFalse(self.s3_path.supports_file_editing())
+    def test_file_editing_is_not_declared(self):
+        """S3 does not declare 'file_editing', so an editor is never offered"""
+        self.assertFalse(self.s3_path.supports('file_editing'))
     
     def test_open_write_mode_works(self):
         """Test that opening S3 file in write mode works (returns S3WriteFile)"""

@@ -14,7 +14,29 @@ from pathlib import Path as PathlibPath, PurePath
 from datetime import datetime
 from typing import Union, Iterator, List, Optional, Any
 from xefm import dir_scan
+from xefm.log_manager import getLogger
 from xefm.str_format import format_size
+
+logger = getLogger("Path")
+
+#: Every capability name a :class:`PathImpl` may declare in its
+#: ``CAPABILITIES`` set. A backend names the ones it has; anything left out is
+#: absent. The set form is what makes the vocabulary safe to grow — a name
+#: added here is simply undeclared by every class written before it, so adding
+#: one cannot break a backend that lives outside this repository.
+KNOWN_CAPABILITIES = frozenset({
+    'write_operations',        # copy, move, create, delete
+    'directory_rename',        # renaming a directory, not just a file
+    'file_editing',            # handing the file to an external editor
+    'streaming_read',          # readable line by line, without a full fetch
+    'extraction_for_reading',  # content must be fetched or extracted first
+    'cache_for_search',        # that fetch is expensive enough to keep
+})
+
+#: The values ``SEARCH_STRATEGY`` may take. ``'streaming'`` reads line by line,
+#: ``'buffered'`` downloads to a buffer first, ``'extracted'`` unpacks the whole
+#: entry before searching it.
+SEARCH_STRATEGIES = frozenset({'streaming', 'buffered', 'extracted'})
 
 
 class _CallbackAbort(CancelledError):
@@ -95,8 +117,80 @@ class PathImpl(ABC):
 
     This defines the interface that all storage implementations must provide.
     Subclasses implement specific storage backends (local, S3, SCP, etc.).
+
+    What a backend *does* stays abstract below. What a backend *is* is declared
+    instead, in the five class attributes that follow: they are compile-time
+    constants for every backend in this repository, so asking for them through
+    twelve overridden methods only obliged each new implementation to answer
+    twelve questions in prose. A declaration answers them in one line each, and
+    an implementation that declares nothing still gets a usable, conservative
+    answer — which is what lets this class's published subclasses in
+    :mod:`xefm.path_base` promise not to break when the vocabulary grows.
     """
-    
+
+    #: The URI scheme this backend answers to, without ``://`` — ``'file'``,
+    #: ``'s3'``, ``'ssh'``, ``'archive'``. Every concrete implementation must
+    #: set it; ``test_path_capabilities.py`` fails when one does not.
+    SCHEME: str = ''
+
+    #: Whether paths of this backend live outside the local filesystem. A
+    #: backend whose answer varies from one path to the next overrides
+    #: :meth:`is_remote` instead — ``ArchivePathImpl`` does, because an archive
+    #: held on S3 is remote and the same archive on disk is not.
+    IS_REMOTE: bool = False
+
+    #: The capabilities this backend has, named from :data:`KNOWN_CAPABILITIES`.
+    #: Undeclared means absent, so the default below is the safe one: a backend
+    #: that says nothing is treated as read-only, unstreamable and uneditable.
+    CAPABILITIES: frozenset = frozenset()
+
+    #: How content in this backend is best searched, from
+    #: :data:`SEARCH_STRATEGIES`. ``'buffered'`` is the default because it is
+    #: the one that works everywhere.
+    SEARCH_STRATEGY: str = 'buffered'
+
+    #: A storage-type indicator a UI may prepend to a path, with its trailing
+    #: space (``'S3: '``). Empty for local files, which need no marking.
+    DISPLAY_PREFIX: str = ''
+
+    def __init_subclass__(cls, **kwargs):
+        """Validate a backend's declarations as it is defined.
+
+        Warn-and-ignore, matching how ``EVENT_HOOKS`` treats an unknown event:
+        a backend that names a capability this version has never heard of keeps
+        the ones it got right and loses only the name nobody can act on. That
+        is the direction of compatibility that matters — a class written
+        against a *later* XeFM must still load here.
+        """
+        super().__init_subclass__(**kwargs)
+
+        declared = frozenset(cls.CAPABILITIES)
+        unknown = declared - KNOWN_CAPABILITIES
+        if unknown:
+            logger.warning(
+                f"{cls.__name__}.CAPABILITIES names unknown "
+                f"{'capabilities' if len(unknown) > 1 else 'capability'} "
+                f"{', '.join(sorted(unknown))} — ignored; known names: "
+                f"{', '.join(sorted(KNOWN_CAPABILITIES))}")
+        cls.CAPABILITIES = declared & KNOWN_CAPABILITIES
+
+        if cls.SEARCH_STRATEGY not in SEARCH_STRATEGIES:
+            logger.warning(
+                f"{cls.__name__}.SEARCH_STRATEGY is {cls.SEARCH_STRATEGY!r}, "
+                f"which is not one of {', '.join(sorted(SEARCH_STRATEGIES))} — "
+                f"using {PathImpl.SEARCH_STRATEGY!r}")
+            cls.SEARCH_STRATEGY = PathImpl.SEARCH_STRATEGY
+
+    def supports(self, capability: str) -> bool:
+        """Whether this backend has ``capability``.
+
+        The single reader of :attr:`CAPABILITIES`, and the whole query surface
+        that six ``supports_*`` / ``requires_*`` / ``should_*`` methods used to
+        be. An unknown name is simply absent, so a caller written against a
+        later vocabulary gets ``False`` here rather than an ``AttributeError``.
+        """
+        return capability in self.CAPABILITIES
+
     @abstractmethod
     def __str__(self) -> str:
         """String representation of the path"""
@@ -355,255 +449,50 @@ class PathImpl(ABC):
         pass
     
     # Storage-specific methods
-    @abstractmethod
     def is_remote(self) -> bool:
-        """Return True if this path represents a remote resource"""
-        pass
-    
-    @abstractmethod
+        """Whether this path names a resource outside the local filesystem.
+
+        Reads :attr:`IS_REMOTE`. A backend whose answer differs from one path
+        to the next overrides this instead of declaring the attribute.
+        """
+        return self.IS_REMOTE
+
     def get_scheme(self) -> str:
-        """Return the scheme of the path (e.g., 'file', 's3', 'scp')"""
-        pass
-    
+        """The URI scheme of this path — ``'file'``, ``'s3'``, ``'archive'``.
+
+        Reads :attr:`SCHEME`. File operations compare two paths' schemes to
+        decide whether a move can be a rename, so a backend that leaves
+        :attr:`SCHEME` empty is a bug, not a default.
+        """
+        return self.SCHEME
+
     @abstractmethod
     def as_uri(self) -> str:
         """Return the path as a URI"""
         pass
-    
-    @abstractmethod
-    def supports_directory_rename(self) -> bool:
-        """Return True if this storage implementation supports directory renaming"""
-        pass
-    
-    @abstractmethod
-    def supports_file_editing(self) -> bool:
-        """Return True if this storage implementation supports external editor editing (vim, nano, etc.)"""
-        pass
-    
-    @abstractmethod
-    def supports_write_operations(self) -> bool:
-        """Return True if this storage implementation supports write operations (copy, move, create, delete)"""
-        pass
-    
+
     # Display methods for UI presentation
-    @abstractmethod
-    def get_display_prefix(self) -> str:
-        """Return a prefix for display purposes in UI components.
-        
-        This method provides a storage-type indicator that UI components can
-        prepend to path displays to help users identify the storage type.
-        
-        Returns:
-            str: Display prefix with trailing space for special storage types,
-                 or empty string for local files.
-                 
-        Examples:
-            - Local files: '' (empty string)
-            - Archive entries: 'ARCHIVE: '
-            - S3 objects: 'S3: '
-            - Remote paths: 'REMOTE: '
-        
-        Note:
-            If non-empty, the prefix should include a trailing space for
-            proper formatting when concatenated with the title.
-        """
-        pass
-    
-    @abstractmethod
     def get_display_title(self) -> str:
-        """Return a formatted title for display in viewers and dialogs.
-        
-        This method provides a human-readable representation of the path
-        appropriate for display in UI components like text viewers, info
-        dialogs, and title bars.
-        
-        Returns:
-            str: Formatted path string appropriate for display.
-            
-        Examples:
-            - Local files: '/home/user/document.txt'
-            - Archive entries: 'archive:///path/to/file.zip#internal/path.txt'
-            - S3 objects: 's3://bucket-name/key/path'
-        
-        Note:
-            The title should be complete and unambiguous, allowing users
-            to identify the exact resource being displayed.
+        """A human-readable title for viewers, info dialogs and title bars.
+
+        Every remote backend here returns its own URI, which is what
+        ``str(self)`` already is. Only a backend that wants to show something
+        other than the path it is needs to override this.
         """
-        pass
-    
-    # Content reading strategy methods
-    @abstractmethod
-    def requires_extraction_for_reading(self) -> bool:
-        """Return True if content must be extracted before reading.
-        
-        This method indicates whether the storage implementation requires
-        content to be extracted or downloaded to memory/disk before it can
-        be read. This affects how operations like search and viewing are
-        implemented.
-        
-        Returns:
-            bool: True if extraction/download required (archives, S3, remote),
-                  False if direct access possible (local files).
-                  
-        Examples:
-            - Local files: False (can open() and read directly)
-            - Archive entries: True (must extract from archive first)
-            - S3 objects: True (must download from S3 first)
-        
-        Note:
-            This is used to determine the appropriate reading strategy and
-            whether caching might be beneficial.
-        """
-        pass
-    
-    @abstractmethod
-    def supports_streaming_read(self) -> bool:
-        """Return True if file can be read line-by-line without full extraction.
-        
-        This method indicates whether the storage implementation supports
-        efficient streaming reads (line-by-line iteration) or requires
-        reading the entire content into memory first.
-        
-        Returns:
-            bool: True if can use open() and iterate line-by-line (local files),
-                  False if must read_text() entire content (archives, S3).
-                  
-        Examples:
-            - Local files: True (can iterate with for line in file)
-            - Archive entries: False (must extract full content)
-            - S3 objects: False (must download full object)
-        
-        Note:
-            This affects memory usage during operations like search. Streaming
-            reads are more memory-efficient for large files.
-        """
-        pass
-    
-    @abstractmethod
-    def get_search_strategy(self) -> str:
-        """Return recommended search strategy for this storage type.
-        
-        This method provides a hint about the most efficient way to search
-        content in this storage type. UI components use this to optimize
-        search operations.
-        
-        Returns:
-            str: One of the following strategy identifiers:
-                 - 'streaming': Read and search line-by-line (local files)
-                 - 'extracted': Extract entire content then search (archives)
-                 - 'buffered': Download to buffer then search (S3, remote)
-                 
-        Examples:
-            - Local files: 'streaming' (memory-efficient line-by-line)
-            - Archive entries: 'extracted' (must extract full content)
-            - S3 objects: 'buffered' (download then search)
-        
-        Note:
-            The strategy hint helps UI code choose between different search
-            implementations without knowing the specific storage type.
-        """
-        pass
-    
-    @abstractmethod
-    def should_cache_for_search(self) -> bool:
-        """Return True if content should be cached during search operations.
-        
-        This method indicates whether caching extracted/downloaded content
-        is recommended for this storage type. Caching improves performance
-        for repeated searches but uses more memory.
-        
-        Returns:
-            bool: True if caching recommended (archives, S3, remote),
-                  False if direct access is efficient (local files).
-                  
-        Examples:
-            - Local files: False (direct access is fast)
-            - Archive entries: True (extraction is expensive)
-            - S3 objects: True (download is expensive)
-        
-        Note:
-            This is a recommendation; the actual caching decision may depend
-            on available memory and other factors.
-        """
-        pass
-    
+        return str(self)
+
     # Metadata method for info dialogs
-    @abstractmethod
     def get_extended_metadata(self) -> dict:
-        """Return storage-specific metadata for display in info dialogs.
-        
-        This method provides detailed metadata appropriate for the storage
-        type. The metadata is returned in a structured format that info
-        dialogs can display without knowing the specific storage type.
-        
-        Returns:
-            dict: Metadata dictionary with the following structure:
-                {
-                    'type': str,              # Storage type identifier
-                    'details': List[Tuple[str, str]],  # List of (label, value) pairs
-                    'format_hint': str        # Display format hint
-                }
-                
-        Storage type identifiers:
-            - 'local': Local file system
-            - 'archive': Archive entry
-            - 's3': S3 object
-            - 'remote': Other remote storage
-            
-        Format hints:
-            - 'standard': Standard file metadata display
-            - 'archive': Archive-specific display format
-            - 'remote': Remote storage display format
-            
-        Examples:
-            Local file:
-                {
-                    'type': 'local',
-                    'details': [
-                        ('Type', 'File'),
-                        ('Size', '1.2 MB'),
-                        ('Permissions', 'rw-r--r--'),
-                        ('Modified', '2024-01-15 10:30:00')
-                    ],
-                    'format_hint': 'standard'
-                }
-                
-            Archive entry:
-                {
-                    'type': 'archive',
-                    'details': [
-                        ('Archive', 'data.zip'),
-                        ('Internal Path', 'folder/file.txt'),
-                        ('Type', 'File'),
-                        ('Compressed Size', '512 KB'),
-                        ('Uncompressed Size', '1.2 MB'),
-                        ('Compression', 'Deflated'),
-                        ('Modified', '2024-01-15 10:30:00')
-                    ],
-                    'format_hint': 'archive'
-                }
-                
-            S3 object:
-                {
-                    'type': 's3',
-                    'details': [
-                        ('Bucket', 'my-bucket'),
-                        ('Key', 'path/to/object.txt'),
-                        ('Type', 'Object'),
-                        ('Size', '1.2 MB'),
-                        ('Storage Class', 'STANDARD'),
-                        ('Last Modified', '2024-01-15 10:30:00')
-                    ],
-                    'format_hint': 'remote'
-                }
-        
-        Note:
-            The 'details' list should contain all relevant metadata for the
-            storage type. Common fields like 'Type' and 'Size' should be
-            included when applicable. The order of fields in the list
-            determines the display order in info dialogs.
+        """Storage-specific detail for an info dialog.
+
+        Returns ``{'type': str, 'details': [(label, value), ...],
+        'format_hint': str}``. The default carries nothing beyond the storage
+        type, which is the honest answer for a backend nobody has written one
+        for — an empty ``details`` list displays as no extra rows, not as a
+        row full of blanks.
         """
-        pass
+        return {'type': self.SCHEME or 'unknown', 'details': [],
+                'format_hint': 'standard'}
     
     # Compatibility methods
     @abstractmethod
@@ -624,7 +513,14 @@ class LocalPathImpl(PathImpl):
     This class wraps pathlib.Path to provide local file system operations
     while implementing the PathImpl interface.
     """
-    
+
+    SCHEME = 'file'
+    IS_REMOTE = False
+    CAPABILITIES = frozenset({'write_operations', 'directory_rename',
+                              'file_editing', 'streaming_read'})
+    SEARCH_STRATEGY = 'streaming'
+    DISPLAY_PREFIX = ''
+
     def __init__(self, path_obj: PathlibPath):
         """Initialize with a pathlib.Path object"""
         self._path = path_obj
@@ -865,14 +761,6 @@ class LocalPathImpl(PathImpl):
         return self._path.chmod(mode)
     
     # Storage-specific methods
-    def is_remote(self) -> bool:
-        """Return True if this path represents a remote resource"""
-        return False
-    
-    def get_scheme(self) -> str:
-        """Return the scheme of the path (e.g., 'file', 's3', 'scp')"""
-        return 'file'
-    
     def as_uri(self) -> str:
         """Return the path as a URI"""
         return self._path.as_uri()
@@ -889,82 +777,6 @@ class LocalPathImpl(PathImpl):
     def as_posix(self) -> str:
         """Return the string representation with forward slashes"""
         return self._path.as_posix()
-    
-    def supports_directory_rename(self) -> bool:
-        """Return True if this storage implementation supports directory renaming"""
-        return True  # Local file system supports directory renaming
-    
-    def supports_file_editing(self) -> bool:
-        """Return True if this storage implementation supports external editor editing (vim, nano, etc.)"""
-        return True  # Local file system supports file editing
-    
-    def supports_write_operations(self) -> bool:
-        """Return True if this storage implementation supports write operations (copy, move, create, delete)"""
-        return True  # Local file system supports all write operations
-    
-    # Display methods for UI presentation
-    def get_display_prefix(self) -> str:
-        """Return a prefix for display purposes.
-        
-        For local files, no prefix is needed as they are the default/standard
-        storage type.
-        
-        Returns:
-            str: Empty string (no prefix for local files)
-        """
-        return ''
-    
-    def get_display_title(self) -> str:
-        """Return a formatted title for display in viewers and dialogs.
-        
-        For local files, the standard path string representation is appropriate.
-        
-        Returns:
-            str: String representation of the path
-        """
-        return str(self._path)
-    
-    # Content reading strategy methods
-    def requires_extraction_for_reading(self) -> bool:
-        """Return True if content must be extracted before reading.
-        
-        Local files can be read directly without extraction.
-        
-        Returns:
-            bool: False (local files support direct access)
-        """
-        return False
-    
-    def supports_streaming_read(self) -> bool:
-        """Return True if file can be read line-by-line without full extraction.
-        
-        Local files support efficient streaming reads using open() and iteration.
-        
-        Returns:
-            bool: True (local files support streaming)
-        """
-        return True
-    
-    def get_search_strategy(self) -> str:
-        """Return recommended search strategy for this storage type.
-        
-        Local files are best searched using streaming (line-by-line) approach
-        for memory efficiency.
-        
-        Returns:
-            str: 'streaming' (memory-efficient line-by-line search)
-        """
-        return 'streaming'
-    
-    def should_cache_for_search(self) -> bool:
-        """Return True if content should be cached during search operations.
-        
-        Local files don't need caching as direct access is already efficient.
-        
-        Returns:
-            bool: False (direct access is efficient, no caching needed)
-        """
-        return False
     
     # Metadata method for info dialogs
     def get_extended_metadata(self) -> dict:
@@ -1374,44 +1186,19 @@ class Path:
         """Return the string representation with forward slashes"""
         return self._impl.as_posix()
     
-    def supports_directory_rename(self) -> bool:
-        """Return True if this storage implementation supports directory renaming"""
-        return self._impl.supports_directory_rename()
-    
-    def supports_file_editing(self) -> bool:
-        """Return True if this storage implementation supports external editor editing (vim, nano, etc.)"""
-        return self._impl.supports_file_editing()
-    
-    def supports_write_operations(self) -> bool:
-        """Return True if this storage implementation supports write operations (copy, move, create, delete)"""
-        return self._impl.supports_write_operations()
-    
+    # Capability delegation
+    def supports(self, capability: str) -> bool:
+        """Whether this path's storage backend has ``capability`` — a name out
+        of :data:`KNOWN_CAPABILITIES`, such as ``'write_operations'`` or
+        ``'directory_rename'``. Anything undeclared, including a name this
+        version has never heard of, is ``False``."""
+        return self._impl.supports(capability)
+
     # Display methods delegation
-    def get_display_prefix(self) -> str:
-        """Return a prefix for display purposes"""
-        return self._impl.get_display_prefix()
-    
     def get_display_title(self) -> str:
         """Return a formatted title for display in viewers and dialogs"""
         return self._impl.get_display_title()
-    
-    # Content reading strategy methods delegation
-    def requires_extraction_for_reading(self) -> bool:
-        """Return True if content must be extracted before reading"""
-        return self._impl.requires_extraction_for_reading()
-    
-    def supports_streaming_read(self) -> bool:
-        """Return True if file can be read line-by-line without full extraction"""
-        return self._impl.supports_streaming_read()
-    
-    def get_search_strategy(self) -> str:
-        """Return recommended search strategy for this storage type"""
-        return self._impl.get_search_strategy()
-    
-    def should_cache_for_search(self) -> bool:
-        """Return True if content should be cached during search operations"""
-        return self._impl.should_cache_for_search()
-    
+
     # Metadata method delegation
     def get_extended_metadata(self) -> dict:
         """Return storage-specific metadata for display in info dialogs"""

@@ -13,13 +13,13 @@ flowchart TB
     subgraph UI["UI / Dialog Layer — storage-agnostic (zero if/elif on storage type)"]
         direction LR
         TV["TextViewer"]
-        ID["InfoDialog"]
-        SD["SearchDialog"]
+        FLM["FileListManager"]
+        EP["ExternalPrograms"]
         FO["FileOperationService"]
     end
 
     Path["Path — facade (xefm.path)<br/>delegates every call to self._impl"]
-    Impl["PathImpl — abstract base (xefm.path)<br/>Display: get_display_prefix / get_display_title<br/>Content strategy: get_search_strategy · supports_streaming_read · requires_extraction_for_reading<br/>Capability: supports_write_operations · is_remote · supports_directory_rename<br/>Metadata: get_extended_metadata"]
+    Impl["PathImpl — abstract base (xefm.path)<br/>Operations (abstract): exists · is_dir · iterdir · stat · open · rename · …<br/>Declarations: SCHEME · IS_REMOTE · CAPABILITIES · SEARCH_STRATEGY · DISPLAY_PREFIX<br/>Read through: get_scheme() · is_remote() · supports(name)<br/>Per instance: get_display_title() · get_extended_metadata()"]
     Local["LocalPathImpl<br/>xefm.path"]
     SSH["SSHPathImpl<br/>xefm.ssh"]
     S3["S3PathImpl<br/>xefm.s3"]
@@ -94,703 +94,182 @@ archive (`xefm.archive.ArchivePathImpl`), S3 (`xefm.s3.S3PathImpl`), and SSH/SFT
 `_create_implementation`. Additional schemes (FTP, WebDAV, etc.) can be added the
 same way — see "Adding New Storage Types" below.
 
-## PathImpl Virtual Methods
+## What a Backend Does, and What a Backend Is
 
-The `PathImpl` abstract base class defines 7 strategic virtual methods that encapsulate all storage-specific behavior:
+`PathImpl` splits in two. The **operations** — `exists`, `is_dir`, `iterdir`,
+`stat`, `open`, `rename`, … — stay abstract: they are code, and only the backend
+can write them. What a backend *is* — its scheme, whether it is remote, what it
+can be asked to do, how its content is best searched — is not code. For every
+backend XeFM ships it is a compile-time constant, so it is declared rather than
+implemented.
 
-### Display Methods
+### The Five Declarations
 
-#### `get_display_prefix() -> str`
-
-Returns a prefix string for display purposes in viewers and dialogs.
-
-**Purpose**: Allows each storage type to identify itself visually without UI code needing to check storage types.
-
-**Return Values**:
-- Local files: `""` (empty string)
-- Archive files: `"ARCHIVE: "` (with trailing space)
-- S3 objects: `"S3: "` (with trailing space)
-
-**Usage Example**:
 ```python
-# In text viewer
-title = path.get_display_prefix() + path.get_display_title()
+class S3PathImpl(PathImpl):
+    SCHEME = 's3'
+    IS_REMOTE = True
+    CAPABILITIES = frozenset({'write_operations', 'extraction_for_reading',
+                              'cache_for_search'})
+    SEARCH_STRATEGY = 'buffered'
+    DISPLAY_PREFIX = 'S3: '
 ```
 
-**Implementation Requirements**:
-- Must return a string (never None)
-- If non-empty, should include trailing space for formatting
-- Should be short and recognizable
+| attribute | type | read through | default |
+|---|---|---|---|
+| `SCHEME` | `str` | `get_scheme()` | `''` — every concrete backend must set it |
+| `IS_REMOTE` | `bool` | `is_remote()` | `False` |
+| `CAPABILITIES` | set of names | `supports(name)` | empty — nothing is assumed |
+| `SEARCH_STRATEGY` | `'streaming'` / `'buffered'` / `'extracted'` | the attribute | `'buffered'` |
+| `DISPLAY_PREFIX` | `str`, with trailing space | the attribute | `''` |
 
-#### `get_display_title() -> str`
+`KNOWN_CAPABILITIES` in `xefm/path.py` is the vocabulary:
 
-Returns a formatted title string appropriate for display.
+| name | means |
+|---|---|
+| `write_operations` | copy, move, create, delete |
+| `directory_rename` | renaming a directory, not just a file |
+| `file_editing` | handing the file to an external editor |
+| `streaming_read` | readable line by line, without a full fetch |
+| `extraction_for_reading` | content must be fetched or extracted first |
+| `cache_for_search` | that fetch is expensive enough to keep |
 
-**Purpose**: Provides storage-appropriate formatting for path display without UI code parsing URIs.
+### As Shipped
 
-**Return Values**:
-- Local files: Standard path string (e.g., `/home/user/file.txt`)
-- Archive files: Full archive URI (e.g., `archive:///path/to/file.zip#internal/path.txt`)
-- S3 objects: S3 URI (e.g., `s3://bucket/key`)
+| | Local | S3 | SSH | Archive |
+|---|---|---|---|---|
+| `SCHEME` | `file` | `s3` | `ssh` | `archive` |
+| `IS_REMOTE` | False | True | True | *per path* |
+| `write_operations` | ● | ● | ● | |
+| `directory_rename` | ● | | ● | |
+| `file_editing` | ● | | | |
+| `streaming_read` | ● | | | |
+| `extraction_for_reading` | | ● | ● | ● |
+| `cache_for_search` | | ● | ● | ● |
+| `SEARCH_STRATEGY` | `streaming` | `buffered` | `buffered` | `extracted` |
+| `DISPLAY_PREFIX` | `''` | `'S3: '` | `'SSH: '` | `'ARCHIVE: '` |
 
-**Usage Example**:
+`ArchivePathImpl.is_remote()` is the one entry in this table that is still a
+method. An archive's remoteness is its container's: `archive://` over a file on
+disk is local, the same URI over an object in S3 is not. It overrides the
+method and ignores `IS_REMOTE`; that is what the method is for.
+
+### Why Declarations and Not Methods
+
+Before #426 each of these was an `@abstractmethod` that every backend answered
+with a one-line `return`. Twelve of them, four backends — and **ten of the
+twelve had no caller anywhere in the application**. One abstract declaration,
+four implementations, one façade delegation, a handful of tests, and nothing
+that read the answer. Publishing that interface would have meant asking an
+outside implementer ten questions and discarding every answer.
+
+Three things follow from declaring them instead:
+
+- **An implementer answers in one line, or not at all.** A backend that
+  declares nothing gets the conservative reading: read-only, unstreamable,
+  uneditable. Never a capability it did not claim.
+- **The vocabulary can grow.** Adding a name to `KNOWN_CAPABILITIES` cannot
+  break a class written before it, because that class simply does not declare
+  it. A new `@abstractmethod` would break every such class at *import* — which
+  is exactly the hazard that keeps `PathImpl` itself from being a published
+  extension point.
+- **A capability nobody asked about is `False`, not an `AttributeError`.**
+  `supports()` takes a string, so a caller written against a later XeFM asking
+  `supports('time_travel')` here gets a plain `False`.
+
+### Reading Them Back
+
 ```python
-# In info dialog
-dialog.add_line(f"Path: {path.get_display_title()}")
+path.get_scheme()                    # 's3'
+path.is_remote()                     # True
+path.supports('write_operations')    # True
+path.supports('directory_rename')    # False
+path._impl.SEARCH_STRATEGY           # 'buffered'
+path._impl.DISPLAY_PREFIX            # 'S3: '
 ```
 
-**Implementation Requirements**:
-- Must return a string (never None)
-- Should be human-readable
-- Should uniquely identify the resource
+`Path` delegates `get_scheme`, `is_remote` and `supports`; those have callers.
+`SEARCH_STRATEGY` and `DISPLAY_PREFIX` are read off the implementation class,
+and deliberately have no façade accessor: adding one is a two-line change for
+whoever finds the first real caller, and until then the codebase does not carry
+a method that nothing calls. The eight façade methods this replaced
+(`supports_directory_rename`, `supports_file_editing`,
+`supports_write_operations`, `requires_extraction_for_reading`,
+`supports_streaming_read`, `should_cache_for_search`, `get_search_strategy`,
+`get_display_prefix`) are gone; `test/test_path_capabilities.py` fails if one
+comes back.
 
-### Content Reading Strategy Methods
+### The Two That Stayed Methods
 
-#### `requires_extraction_for_reading() -> bool`
+`get_display_title()` and `get_extended_metadata()` compute something per
+instance, so they remain methods — but they are **no longer abstract**. Their
+defaults are `str(self)` and `{'type': SCHEME, 'details': [], 'format_hint':
+'standard'}`, which is what every shipped backend except `LocalPathImpl` was
+already returning by hand. An outside implementation overrides them if it has
+something to show, and is not asked a question otherwise.
 
-Indicates whether content must be extracted before reading.
+## Adding a New Storage Type
 
-**Purpose**: Informs code whether direct file access is possible or if extraction/download is needed.
-
-**Return Values**:
-- Local files: `False` (direct access via filesystem)
-- Archive files: `True` (must extract from archive)
-- S3 objects: `True` (must download from S3)
-
-**Usage Example**:
-```python
-if path.requires_extraction_for_reading():
-    content = path.read_text()  # Full extraction
-else:
-    with open(path) as f:  # Direct access
-        content = f.read()
-```
-
-**Implementation Requirements**:
-- Must return boolean
-- Should reflect actual access requirements
-- Affects memory usage and performance
-
-#### `supports_streaming_read() -> bool`
-
-Indicates whether file can be read line-by-line without full extraction.
-
-**Purpose**: Enables memory-efficient operations like search for storage types that support streaming.
-
-**Return Values**:
-- Local files: `True` (can iterate line-by-line)
-- Archive files: `False` (must read entire content)
-- S3 objects: `False` (must download entire object)
-
-**Usage Example**:
-```python
-if path.supports_streaming_read():
-    with open(path) as f:
-        for line in f:  # Memory-efficient
-            process_line(line)
-else:
-    content = path.read_text()  # Must load all
-    for line in content.splitlines():
-        process_line(line)
-```
-
-**Implementation Requirements**:
-- Must return boolean
-- Should be consistent with `requires_extraction_for_reading()`
-- Affects search performance and memory usage
-
-#### `get_search_strategy() -> str`
-
-Returns the recommended search strategy for this storage type.
-
-**Purpose**: Allows each storage type to specify optimal search approach without search code containing storage-specific logic.
-
-**Return Values**:
-- Local files: `"streaming"` (line-by-line reading)
-- Archive files: `"extracted"` (extract entire content)
-- S3 objects: `"buffered"` (download to buffer)
-
-**Usage Example**:
-```python
-strategy = path.get_search_strategy()
-if strategy == 'streaming':
-    search_streaming(path, pattern)
-elif strategy == 'extracted':
-    search_extracted(path, pattern)
-elif strategy == 'buffered':
-    search_buffered(path, pattern)
-```
-
-**Implementation Requirements**:
-- Must return one of: `"streaming"`, `"extracted"`, `"buffered"`
-- Should match the storage type's capabilities
-- Should optimize for performance and memory
-
-#### `should_cache_for_search() -> bool`
-
-Indicates whether content should be cached during search operations.
-
-**Purpose**: Allows storage types to specify caching behavior for performance optimization.
-
-**Return Values**:
-- Local files: `False` (direct access is efficient)
-- Archive files: `True` (extraction is expensive)
-- S3 objects: `True` (download is expensive)
-
-**Usage Example**:
-```python
-if path.should_cache_for_search():
-    if path not in cache:
-        cache[path] = path.read_text()
-    content = cache[path]
-else:
-    content = path.read_text()
-```
-
-**Implementation Requirements**:
-- Must return boolean
-- Should consider extraction/download cost
-- Should balance memory vs. performance
-
-### Metadata Method
-
-#### `get_extended_metadata() -> Dict[str, any]`
-
-Returns storage-specific metadata for display in info dialogs.
-
-**Purpose**: Provides structured metadata appropriate for each storage type without info dialog containing storage-specific code.
-
-**Return Structure**:
-```python
-{
-    'type': str,              # Storage type: 'local', 'archive', 's3'
-    'details': [              # List of (label, value) tuples
-        (str, str),           # e.g., ('Size', '1.2 MB')
-        (str, str),           # e.g., ('Modified', '2024-01-15 10:30:00')
-        ...
-    ],
-    'format_hint': str        # Display format: 'standard', 'archive', 'remote'
-}
-```
-
-**Storage-Specific Details**:
-
-**Local Files**:
-```python
-{
-    'type': 'local',
-    'details': [
-        ('Type', 'File' or 'Directory'),
-        ('Size', '1.2 MB'),
-        ('Permissions', 'rwxr-xr-x'),
-        ('Modified', '2024-01-15 10:30:00')
-    ],
-    'format_hint': 'standard'
-}
-```
-
-**Archive Files**:
-```python
-{
-    'type': 'archive',
-    'details': [
-        ('Archive', 'data.zip'),
-        ('Internal Path', 'folder/file.txt'),
-        ('Type', 'File'),
-        ('Compressed Size', '1.2 MB'),
-        ('Uncompressed Size', '3.4 MB'),
-        ('Compression', 'Deflated'),
-        ('Modified', '2024-01-15 10:30:00')
-    ],
-    'format_hint': 'archive'
-}
-```
-
-**S3 Objects**:
-```python
-{
-    'type': 's3',
-    'details': [
-        ('Bucket', 'my-bucket'),
-        ('Key', 'path/to/object'),
-        ('Type', 'Object'),
-        ('Size', '1.2 MB'),
-        ('Storage Class', 'STANDARD'),
-        ('Last Modified', '2024-01-15 10:30:00')
-    ],
-    'format_hint': 'remote'
-}
-```
-
-**Usage Example**:
-```python
-metadata = path.get_extended_metadata()
-for label, value in metadata['details']:
-    dialog.add_line(f"{label}: {value}")
-```
-
-**Implementation Requirements**:
-- Must return dict with required keys: `type`, `details`, `format_hint`
-- `details` must be list of (str, str) tuples
-- `type` must be one of: `'local'`, `'archive'`, `'s3'`, or custom type name
-- `format_hint` should guide display formatting
-- Values should be human-readable strings
-
-## Adding New Storage Types
-
-Adding a new storage type to XeFM requires zero changes to UI code. Follow these steps:
-
-### Step 1: Create PathImpl Subclass
-
-Create a new class that inherits from `PathImpl` and implements all abstract methods:
+Subclass `PathImpl`, declare the five attributes, implement the operations, and
+return the class from `Path._create_implementation` for its scheme.
 
 ```python
-from src.xefm.path import PathImpl
-from typing import Dict, List, Tuple
-
 class CustomPathImpl(PathImpl):
-    """Implementation for custom storage type."""
-    
+    """A backend for custom://resource/path."""
+
+    SCHEME = 'custom'
+    IS_REMOTE = True
+    CAPABILITIES = frozenset({'extraction_for_reading', 'cache_for_search'})
+    SEARCH_STRATEGY = 'buffered'
+    DISPLAY_PREFIX = 'CUSTOM: '
+
     def __init__(self, uri: str):
         self._uri = uri
-        # Initialize storage-specific state
-    
-    # Implement all abstract methods from PathImpl
-    # (exists, is_dir, is_file, iterdir, stat, etc.)
-    
-    # Implement the 7 virtual methods
-    
-    def get_display_prefix(self) -> str:
-        return "CUSTOM: "
-    
-    def get_display_title(self) -> str:
-        return self._uri
-    
-    def requires_extraction_for_reading(self) -> bool:
-        return True  # or False based on your storage
-    
-    def supports_streaming_read(self) -> bool:
-        return False  # or True based on your storage
-    
-    def get_search_strategy(self) -> str:
-        return 'buffered'  # or 'streaming' or 'extracted'
-    
-    def should_cache_for_search(self) -> bool:
-        return True  # or False based on performance
-    
-    def get_extended_metadata(self) -> Dict[str, any]:
-        return {
-            'type': 'custom',
-            'details': [
-                ('Custom Field 1', 'value1'),
-                ('Custom Field 2', 'value2'),
-                # Add storage-specific fields
-            ],
-            'format_hint': 'remote'  # or 'standard' or 'archive'
-        }
+        # parse the URI here; the contract is "URI string in, PathImpl out"
+
+    # … then the abstract operations: __str__, __eq__, __hash__, __lt__,
+    # name/stem/suffix/parent/parts, exists, is_dir, iterdir, stat, open, …
 ```
 
-### Step 2: Register with the Path Factory
-
-Add your scheme to the `Path._create_implementation()` method in `xefm/path.py`.
-This instance method is called from `Path.__init__` and selects the implementation
-by URI scheme:
-
-```python
-def _create_implementation(self, path_str: str) -> PathImpl:
-    """Create the appropriate implementation based on the path string"""
-    if path_str.startswith('custom://'):
-        from xefm_custom import CustomPathImpl
-        return CustomPathImpl(path_str)
-    if path_str.startswith('archive://'):
-        # ... existing archive handling
-    if path_str.startswith('s3://'):
-        # ... existing S3 handling
-    if path_str.startswith('ssh://'):
-        # ... existing SSH handling
-    # Default to the local file system
-    return LocalPathImpl(PathlibPath(path_str))
-```
-
-Also add the scheme to the prefix tuple in `Path.__init__`, so the raw URI is
-passed through untouched instead of being normalized by `PathlibPath`:
-
-```python
-if len(args) == 1 and isinstance(args[0], str) and args[0].startswith(
-        ('archive://', 's3://', 'ssh://', 'scp://', 'ftp://', 'custom://')):
-    path_str = args[0]
-```
-
-### Step 3: Add Capability Methods (if needed)
-
-If your storage type has specific capabilities, add methods to your PathImpl:
-
-```python
-class CustomPathImpl(PathImpl):
-    # ... other methods ...
-    
-    def supports_file_editing(self) -> bool:
-        return False  # Custom storage is read-only
-    
-    def supports_directory_rename(self) -> bool:
-        return False  # Custom storage doesn't support rename
-```
-
-### Step 4: Test Your Implementation
-
-Create unit tests for your new PathImpl:
-
-```python
-def test_custom_path_display():
-    path = Path('custom://resource')
-    assert path.get_display_prefix() == "CUSTOM: "
-    assert path.get_display_title() == 'custom://resource'
-
-def test_custom_path_metadata():
-    path = Path('custom://resource')
-    metadata = path.get_extended_metadata()
-    assert metadata['type'] == 'custom'
-    assert len(metadata['details']) > 0
-```
-
-### Step 5: Verify UI Integration
-
-Run existing UI tests to verify your storage type works:
-
-```bash
-# Text viewer should work automatically
-python -m pytest test/test_text_viewer_refactoring.py
-
-# Info dialog should work automatically
-python -m pytest test/test_info_dialog_refactoring.py
-
-# Search dialog should work automatically
-python -m pytest test/test_archive_search_integration.py
-```
-
-**That's it!** No UI code changes needed. The polymorphic architecture handles everything.
-
-## Implementation Checklist
-
-When implementing a new storage type:
-
-- [ ] Create PathImpl subclass with all abstract methods
-- [ ] Implement `get_display_prefix()` - return appropriate prefix
-- [ ] Implement `get_display_title()` - return formatted title
-- [ ] Implement `requires_extraction_for_reading()` - return True/False
-- [ ] Implement `supports_streaming_read()` - return True/False
-- [ ] Implement `get_search_strategy()` - return strategy string
-- [ ] Implement `should_cache_for_search()` - return True/False
-- [ ] Implement `get_extended_metadata()` - return metadata dict
-- [ ] Add capability methods if needed (supports_file_editing, etc.)
-- [ ] Register with Path factory
-- [ ] Write unit tests for all methods
-- [ ] Run integration tests to verify UI compatibility
-- [ ] Test with real storage operations
-
-## Common Patterns
-
-### Read-Only Storage
-
-For read-only storage types (archives, remote filesystems):
-
-```python
-def supports_file_editing(self) -> bool:
-    return False
-
-def supports_directory_rename(self) -> bool:
-    return False
-```
-
-### Remote Storage
-
-For remote storage types (S3, SFTP, WebDAV):
-
-```python
-def requires_extraction_for_reading(self) -> bool:
-    return True  # Must download
-
-def supports_streaming_read(self) -> bool:
-    return False  # Must download entire file
-
-def get_search_strategy(self) -> str:
-    return 'buffered'  # Download to buffer
-
-def should_cache_for_search(self) -> bool:
-    return True  # Download is expensive
-```
-
-### Local-Like Storage
-
-For storage types with direct filesystem access:
-
-```python
-def requires_extraction_for_reading(self) -> bool:
-    return False  # Direct access
-
-def supports_streaming_read(self) -> bool:
-    return True  # Can iterate line-by-line
-
-def get_search_strategy(self) -> str:
-    return 'streaming'  # Memory-efficient
-
-def should_cache_for_search(self) -> bool:
-    return False  # Direct access is fast
-```
-
-## Migration Guide
-
-### For Existing Code
-
-If you have existing code that checks storage types, migrate it to use virtual methods:
-
-#### Before (Storage-Specific Conditionals):
-```python
-# Bad - checks storage type
-if path.scheme == 'archive':
-    title = f"ARCHIVE: {path.uri}"
-else:
-    title = str(path)
-```
-
-#### After (Polymorphic):
-```python
-# Good - uses virtual methods
-title = path.get_display_prefix() + path.get_display_title()
-```
-
-#### Before (String Parsing):
-```python
-# Bad - parses URI string
-if path.uri.startswith('archive://'):
-    metadata = get_archive_metadata(path)
-else:
-    metadata = get_local_metadata(path)
-```
-
-#### After (Polymorphic):
-```python
-# Good - uses virtual method
-metadata = path.get_extended_metadata()
-```
-
-#### Before (isinstance Checks):
-```python
-# Bad - checks concrete type
-from src.xefm.archive import ArchivePathImpl
-if isinstance(path._impl, ArchivePathImpl):
-    strategy = 'extracted'
-else:
-    strategy = 'streaming'
-```
-
-#### After (Polymorphic):
-```python
-# Good - uses virtual method
-strategy = path.get_search_strategy()
-```
-
-### Migration Checklist
-
-When refactoring existing code:
-
-- [ ] Remove all `if scheme == 'archive'` checks
-- [ ] Remove all `if scheme == 's3'` checks
-- [ ] Remove all `uri.startswith('archive://')` checks
-- [ ] Remove all `isinstance(path._impl, ArchivePathImpl)` checks
-- [ ] Remove imports of concrete PathImpl classes from UI code
-- [ ] Replace with virtual method calls
-- [ ] Update error messages to be storage-agnostic
-- [ ] Test with all storage types
-
-## Performance Considerations
-
-### Virtual Method Overhead
-
-Virtual method calls in Python have negligible overhead:
-- Method lookup is cached by Python's attribute resolution
-- No measurable performance impact in practice
-- Benefits of clean architecture far outweigh any theoretical cost
-
-### Caching Strategies
-
-Use `should_cache_for_search()` to implement smart caching:
-
-```python
-class SearchDialog:
-    def __init__(self):
-        self._content_cache = {}
-    
-    def search_file(self, path, pattern):
-        if path.should_cache_for_search():
-            if path not in self._content_cache:
-                self._content_cache[path] = path.read_text()
-            content = self._content_cache[path]
-        else:
-            content = path.read_text()
-        
-        return self._search_content(content, pattern)
-```
-
-### Memory Management
-
-Use `supports_streaming_read()` for memory-efficient operations:
-
-```python
-def search_large_file(path, pattern):
-    if path.supports_streaming_read():
-        # Memory-efficient: process line by line
-        with open(path) as f:
-            for line_num, line in enumerate(f, 1):
-                if pattern in line:
-                    yield (line_num, line)
-    else:
-        # Must load entire file
-        content = path.read_text()
-        for line_num, line in enumerate(content.splitlines(), 1):
-            if pattern in line:
-                yield (line_num, line)
-```
-
-## Testing Guidelines
-
-### Unit Tests
-
-Test each virtual method independently:
-
-```python
-def test_display_prefix():
-    """Test get_display_prefix() returns correct value."""
-    path = create_test_path()
-    prefix = path.get_display_prefix()
-    assert isinstance(prefix, str)
-    assert prefix == expected_prefix
-
-def test_metadata_structure():
-    """Test get_extended_metadata() returns valid structure."""
-    path = create_test_path()
-    metadata = path.get_extended_metadata()
-    assert 'type' in metadata
-    assert 'details' in metadata
-    assert 'format_hint' in metadata
-    assert isinstance(metadata['details'], list)
-    for label, value in metadata['details']:
-        assert isinstance(label, str)
-        assert isinstance(value, str)
-```
-
-### Integration Tests
-
-Test UI components work with your storage type:
-
-```python
-def test_text_viewer_with_custom_storage():
-    """Test text viewer displays custom storage correctly."""
-    path = Path('custom://resource')
-    viewer = TextViewer(path)
-    title = viewer.get_title()
-    assert 'CUSTOM:' in title
-
-def test_info_dialog_with_custom_storage():
-    """Test info dialog shows custom metadata."""
-    path = Path('custom://resource')
-    dialog = InfoDialog(path)
-    content = dialog.get_content()
-    assert 'Custom Field 1' in content
-```
-
-### Property-Based Tests
-
-Use Hypothesis to test properties across many inputs:
-
-```python
-from hypothesis import given, strategies as st
-
-@given(st.text())
-def test_display_methods_never_none(uri):
-    """Test display methods never return None."""
-    path = Path(f'custom://{uri}')
-    assert path.get_display_prefix() is not None
-    assert path.get_display_title() is not None
-
-@given(st.text())
-def test_metadata_structure_valid(uri):
-    """Test metadata structure is always valid."""
-    path = Path(f'custom://{uri}')
-    metadata = path.get_extended_metadata()
-    assert isinstance(metadata, dict)
-    assert 'type' in metadata
-    assert 'details' in metadata
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: UI code still has storage-specific conditionals
-**Solution**: Search for `if scheme ==`, `if uri.startswith`, `isinstance(path._impl` and replace with virtual method calls
-
-**Issue**: New storage type not recognized
-**Solution**: Verify `Path._create_implementation()` includes your URI scheme
-
-**Issue**: Metadata not displaying correctly
-**Solution**: Verify `get_extended_metadata()` returns dict with required keys and proper structure
-
-**Issue**: Search not working with new storage type
-**Solution**: Verify `get_search_strategy()` returns valid strategy string and implement corresponding search logic
-
-### Debugging Tips
-
-Enable verbose logging to see virtual method calls:
-
-```python
-class Path:
-    def get_display_prefix(self) -> str:
-        result = self._impl.get_display_prefix()
-        print(f"get_display_prefix() -> {result!r}")
-        return result
-```
-
-Verify PathImpl implementation:
-
-```python
-from abc import ABC
-import inspect
-
-def verify_pathimpl(impl_class):
-    """Verify PathImpl subclass implements all required methods."""
-    abstract_methods = {
-        name for name, method in inspect.getmembers(PathImpl)
-        if getattr(method, '__isabstractmethod__', False)
-    }
-    
-    implemented = set(dir(impl_class))
-    missing = abstract_methods - implemented
-    
-    if missing:
-        print(f"Missing methods: {missing}")
-    else:
-        print("All abstract methods implemented!")
-```
-
-## Best Practices
-
-1. **Never check storage type in UI code** - Always use virtual methods
-2. **Keep virtual methods simple** - They should return data, not perform complex operations
-3. **Document return values** - Be explicit about what each method returns
-4. **Test thoroughly** - Verify all virtual methods work correctly
-5. **Follow naming conventions** - Use descriptive method names that indicate purpose
-6. **Handle errors gracefully** - Return sensible defaults if operations fail
-7. **Optimize for common case** - Make frequent operations efficient
-8. **Cache expensive operations** - Use `should_cache_for_search()` appropriately
-9. **Keep metadata human-readable** - Format values for display
-10. **Maintain consistency** - Similar storage types should behave similarly
+`PathImpl` is a strict ABC on purpose: every operation stays abstract so that a
+backend inside this repository which forgets one fails at import, not in a
+pane. That same strictness is why `PathImpl` is not a class to hand to code
+outside this repository: a method added to it later would break every external
+subclass at import.
+
+The one thing the ABC cannot check is a *declaration*: a class attribute left
+at its default is not a missing method. `test/test_path_capabilities.py`
+carries that check instead — it fails when a shipped backend leaves `SCHEME`
+empty, and it holds the matrix above so a change to any row has to be a change
+to the table too.
+
+## Validation
+
+`PathImpl.__init_subclass__` checks the declarations as each subclass is
+defined, and **warns and ignores** rather than raising — the same treatment
+`EVENT_HOOKS` gives an unknown event name:
+
+- a capability name outside `KNOWN_CAPABILITIES` is dropped, with a warning
+  naming it and listing the known names;
+- a `SEARCH_STRATEGY` outside `SEARCH_STRATEGIES` falls back to `'buffered'`,
+  with a warning;
+- `CAPABILITIES` is normalised to a `frozenset`, so a config may write a plain
+  `{'streaming_read'}`.
+
+Warn-and-ignore is the direction of compatibility that matters here: a backend
+written against a *later* XeFM keeps the names this version understands and
+loses only the one it could not have acted on anyway.
+
+## Testing
+
+`test/test_path_capabilities.py` holds the matrix, the validation rules, and
+the list of retired methods. `test/test_mock_storage_extensibility.py` proves
+the UI needs no change for a new backend by writing one.
 
 ## References
 
-- **Source Code**: `xefm/path.py` - PathImpl interface and Path facade
-- **Implementations**: `xefm/path.py` (Local), `xefm/archive.py` (Archive), `xefm/s3.py` (S3), `xefm/ssh.py` (SSH/SFTP)
-- **UI Integration**: `xefm/text_viewer.py`, `xefm/text_dialog.py`, `xefm/progressive_search_dialog.py`
-- **Tests**: `test/test_virtual_methods_checkpoint.py`, `test/test_info_dialog_refactoring.py`
-- **Design Document**: `.kiro/specs/path-polymorphism-refactoring/design.md`
-- **Requirements**: `.kiro/specs/path-polymorphism-refactoring/requirements.md`
+- `xefm/path.py` — `PathImpl`, `LocalPathImpl`, `Path`, `KNOWN_CAPABILITIES`
+- `xefm/s3.py`, `xefm/ssh.py`, `xefm/archive.py` — the three remote backends
+- `doc/dev/S3_SUPPORT_SYSTEM.md`, `doc/dev/SSH_SYSTEM.md`,
+  `doc/dev/ARCHIVE_SYSTEM.md` — per-backend detail
+- Discussion #426 — why the capability group became a declaration

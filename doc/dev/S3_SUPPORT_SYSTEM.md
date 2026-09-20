@@ -522,7 +522,7 @@ The restriction is implemented at two levels:
 def enter_rename_mode(self):
     # Check if this storage implementation supports directory renaming
     try:
-        if selected_file.is_dir() and not selected_file.supports_directory_rename():
+        if selected_file.is_dir() and not selected_file.supports('directory_rename'):
             print("Directory renaming is not supported on this storage type due to performance and cost considerations")
             return
     except Exception as e:
@@ -545,29 +545,33 @@ def rename(self, target) -> 'Path':
 
 ### File Editing Capability Indicator
 
-XeFM provides a capability indicator for S3 file editing operations through the `supports_file_editing()` method. This allows applications to check whether a storage implementation supports file editing characteristics, without blocking the operations.
+S3 does not declare the `file_editing` capability. This lets applications check
+whether a storage type expects to be handed to an external editor, without
+blocking the underlying operations.
 
 #### Implementation
 ```python
-# S3PathImpl returns False to indicate different editing characteristics
-def supports_file_editing(self) -> bool:
-    return False
+# S3PathImpl leaves 'file_editing' out of its declaration
+class S3PathImpl(PathImpl):
+    CAPABILITIES = frozenset({'write_operations', 'extraction_for_reading',
+                              'cache_for_search'})
 
-# LocalPathImpl returns True for full editing support
-def supports_file_editing(self) -> bool:
-    return True
+# LocalPathImpl declares it, along with the rest of the local set
+class LocalPathImpl(PathImpl):
+    CAPABILITIES = frozenset({'write_operations', 'directory_rename',
+                              'file_editing', 'streaming_read'})
 ```
 
 #### Behavior
 - **All S3 file operations work normally**: `open()`, `write_text()`, `write_bytes()`, etc.
-- **Capability indicator**: Applications can check `path.supports_file_editing()` to understand storage characteristics
+- **Capability indicator**: Applications can check `path.supports('file_editing')` to understand storage characteristics
 - **FileManager integration**: XeFM shows message "Editing S3 files is not supported for now" when launching external editors
 - **Non-blocking**: The capability is purely informational - operations work regardless
 
 #### Usage Example
 ```python
 path = Path('s3://bucket/file.txt')
-if path.supports_file_editing():
+if path.supports('file_editing'):
     # Local file system - full editing support expected
     path.write_text("new content")
 else:
