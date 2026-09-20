@@ -533,6 +533,56 @@ class MacBackend(unittest.TestCase):
         self.assertEqual(calls, ["//nas", "//me@nas",
                                  "//nas.local", "//me@nas.local"])
 
+    def test_a_typed_password_beats_the_one_already_stored(self):
+        """The reported bug, and the reason it looked like the form was
+        ignoring what was typed: a stored password that has stopped working
+        made a *correct* one unusable. Standing aside for the stored entry
+        meant the listing failed on it, the failure reopened the form, and the
+        password typed there was discarded in favour of the same stale entry —
+        with the mount that would have replaced it never reached."""
+        lent = []
+        target = netmount.parse_address("smb://nas/x")
+        with patch.object(self.mac, "load_password", return_value="stale"), \
+             patch.object(self.mac, "save_password",
+                          side_effect=lambda t, u, p: lent.append(p)), \
+             patch.object(self.mac, "forget_password") as forget:
+            with self.mac._lend_to_the_keychain(target, "me", "fresh"):
+                self.assertEqual(lent, ["fresh"])
+        # ...and what was there is put back, not deleted.
+        self.assertEqual(lent, ["fresh", "stale"])
+        forget.assert_not_called()
+
+    def test_a_lent_password_is_removed_where_there_was_nothing(self):
+        target = netmount.parse_address("smb://nas/x")
+        with patch.object(self.mac, "load_password", return_value=""), \
+             patch.object(self.mac, "save_password") as save, \
+             patch.object(self.mac, "forget_password") as forget:
+            with self.mac._lend_to_the_keychain(target, "me", "fresh"):
+                save.assert_called_once()
+            forget.assert_called_once()
+
+    def test_nothing_is_touched_when_the_stored_password_is_the_typed_one(self):
+        target = netmount.parse_address("smb://nas/x")
+        with patch.object(self.mac, "load_password", return_value="same"), \
+             patch.object(self.mac, "save_password") as save, \
+             patch.object(self.mac, "forget_password") as forget:
+            with self.mac._lend_to_the_keychain(target, "me", "same"):
+                pass
+        save.assert_not_called()
+        forget.assert_not_called()
+
+    def test_the_keychain_is_put_back_even_when_the_listing_raises(self):
+        lent = []
+        target = netmount.parse_address("smb://nas/x")
+        with patch.object(self.mac, "load_password", return_value="stale"), \
+             patch.object(self.mac, "save_password",
+                          side_effect=lambda t, u, p: lent.append(p)), \
+             patch.object(self.mac, "forget_password"):
+            with self.assertRaises(RuntimeError):
+                with self.mac._lend_to_the_keychain(target, "me", "fresh"):
+                    raise RuntimeError("the server hung up")
+        self.assertEqual(lent, ["fresh", "stale"])
+
     def test_the_keychain_is_searched_under_finder_s_spelling_first(self):
         """Finder files a Bonjour-discovered server under its *service* name,
         so a lookup by host name finds nothing on exactly the machines the user

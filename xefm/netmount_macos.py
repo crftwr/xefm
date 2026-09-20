@@ -714,23 +714,25 @@ def list_shares(target, user: str = "", password: str = "") -> list[str]:
 
     - ``-g``, as a guest. Right for an open share, and refused outright by a
       NAS with accounts — a Synology answers ``Authentication error``.
-    - ``//user@host``, which makes ``smbutil`` look the account up in the
-      **login Keychain** and connect with what it finds. This is the one that
-      works against a real NAS, and it needs no password from XeFM at all.
+    - ``//user@host``, which authenticates out of the **login Keychain**, or
+      out of a session already open to that server.
 
-    What does **not** work is handing ``smbutil`` a password. It takes one only
-    on its command line, where the process list carries it to every user on the
-    machine, and it does not read one from stdin — measured, not assumed: a
-    deliberately wrong password piped in was ignored (the Keychain entry was
-    used instead), and an unknown account failed in a fifth of a second without
-    ever reading the pipe.
+    A password cannot be handed to ``smbutil`` directly. Its only argument for
+    one is on the command line, where the process list carries it to every
+    user on the machine, and it does not read one from stdin — measured: an
+    unknown account failed in 0.3 s without ever reading the pipe. So a
+    password given here is spent on the Keychain, by
+    :func:`_lend_to_the_keychain`, which is the one channel left.
 
-    So a password given here is spent on **the Keychain**, which is the one
-    channel ``smbutil`` reads, by :func:`_lend_to_the_keychain`. Until that
-    was done, browsing a locked-down server worked only if the user had
-    ticked *Save password* — the checkbox was load-bearing for a feature it
-    does not name, and with it clear the typed password reached nothing at
-    all. That is the same dead end Windows had by a different route.
+    **What is not established** is whether the Keychain alone is enough
+    against a server with no session open to it. Every measurement that
+    appeared to show it working was made either with a share from that NAS
+    still mounted — ``smbutil`` reuses the session and needs no credentials at
+    all — or with a password the server had stopped accepting. The two look
+    identical from here, and telling them apart needs a password known to be
+    current, which this end cannot supply. If the lend turns out not to be
+    read, the remaining options are the command line (rejected above) and
+    dropping authenticated listing on macOS.
     """
     if target.scheme != "smb":
         raise MountError(f"XeFM cannot list shares over {target.scheme}.")
@@ -761,17 +763,20 @@ def list_shares(target, user: str = "", password: str = "") -> list[str]:
 def _lend_to_the_keychain(target, user: str, password: str):
     """Put ``password`` where ``smbutil`` will look, for the listing only.
 
-    **Nothing is overwritten.** If the Keychain already holds something for
-    this server and account — saved by XeFM, or by Finder years ago — that is
-    what is used, and this does nothing. Replacing it silently would mean a
-    typed password quietly editing the user's Keychain as a side effect of
-    browsing; a stored password that has gone stale is fixed by ticking *Save
-    password*, which is what that checkbox is for.
+    **What the user just typed wins.** It is the newest thing anyone knows
+    about this account, so it goes in even when the Keychain already holds
+    something — and *especially* then, because what it usually holds in that
+    case is a password that has stopped working. Standing aside for the stored
+    one made a stale entry unfixable: the listing failed on it, the failure
+    reopened the form, the password typed there was discarded in favour of the
+    same stale entry, and the mount that would have saved a corrected one was
+    never reached. Observed on a real NAS.
 
-    What XeFM lends, XeFM takes back. An entry written here is removed on the
-    way out, so browsing a server does not leave a credential behind that the
-    user never asked to keep. A password they *did* ask to keep was already
-    saved by the caller before this runs, so it is found and left alone.
+    **The Keychain is left exactly as it was found.** Whatever was there is
+    read first and written back on the way out; where there was nothing, the
+    lent entry is removed. Browsing a server neither leaves a credential the
+    user did not ask to keep nor destroys one they did. Keeping a password is
+    still the mount's job, on success, and still only when asked.
     """
     if not (password and user):
         yield
@@ -782,14 +787,24 @@ def _lend_to_the_keychain(target, user: str, password: str):
         logger.warning(f"Could not read the keychain for {target.host}: {e}")
         yield
         return
-    if existing:
-        yield
+    if existing == password:
+        yield  # already what we would write; touching it changes nothing
         return
     save_password(target, user, password)
     try:
         yield
     finally:
-        forget_password(target, user)
+        try:
+            if existing:
+                save_password(target, user, existing)
+            else:
+                forget_password(target, user)
+        except Exception as e:  # noqa: BLE001
+            # Loud: the user's own stored password is what is at stake, and
+            # this is the one path that can lose it.
+            logger.error(
+                f"Could not put the keychain entry for {target.host} back as "
+                f"it was: {e}")
 
 
 def _parse_shares(output: str) -> list[str]:

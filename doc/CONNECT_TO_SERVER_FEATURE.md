@@ -108,6 +108,11 @@ share list appears — you do not have to know a share name, and you do not have
 to tick anything. **Save password** only decides whether the password is kept
 for next time.
 
+What you type there is used even when a password for that account is already
+saved. It has to be: a saved password that has stopped working is exactly when
+you would be typing one, and deferring to the stored one made a correct
+password unusable. Your keychain is left as it was either way.
+
 A few servers refuse to list their shares even for an account they know. There
 the form comes back a second time, now with the server's own reason and the
 address ending in a slash for you to add the share to: `smb://nas/` becomes
