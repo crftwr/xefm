@@ -58,7 +58,9 @@ make run-gui                    # the same thing, through .venv
 | Windows 10/11 x64 | `XeFM-<version>-win64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
 | macOS 26+ (Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
 
-Every stable release attaches the ready-to-run DMG and zip; the
+A stable release attaches the ready-to-run DMG and zip, but one that only
+fixes a single platform may carry just that platform's build, so the newest zip
+or DMG can sit on an earlier tag. The
 [latest-release link](https://github.com/crftwr/xefm/releases/latest) always
 resolves to the newest stable release. You can also link straight to a specific
 release, e.g. `https://github.com/crftwr/xefm/releases/tag/v1.0.1`.
