@@ -28,6 +28,25 @@ log_success() {
     echo "[SUCCESS] $1"
 }
 
+# Oldest macOS a Mach-O file declares it can run on, across all its slices.
+# Modern binaries say so in LC_BUILD_VERSION ("minos"), older ones in
+# LC_VERSION_MIN_MACOSX ("version"); -show-build prints both, alongside a
+# "version" line of its own for the linker that produced the file, which is why
+# the fields are read per load command rather than grepped for.
+macho_min_os() {
+    vtool -show-build "$1" 2>/dev/null | awk '
+        /cmd LC_BUILD_VERSION/      { build = 1; vmin = 0; next }
+        /cmd LC_VERSION_MIN_MACOSX/ { vmin = 1; build = 0; next }
+        build && $1 == "minos"      { print $2; build = 0 }
+        vmin  && $1 == "version"    { print $2; vmin = 0 }
+    ' | sort -V | tail -1
+}
+
+# True when macOS version $1 is newer than $2.
+version_gt() {
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
+}
+
 # ============================================================================
 # Build Configuration
 # ============================================================================
@@ -81,6 +100,17 @@ fi
 # Compiler settings
 CC="clang"
 CFLAGS="-framework Cocoa"
+
+# Oldest macOS the bundle is built to run on. Without this clang targets the
+# machine doing the build, so the floor silently followed whoever ran the
+# release - a 1.5.0 built on macOS 27 refused to launch on macOS 26 with "You
+# can't use this version of the application with this version of macOS"
+# (issue #455). Pinning it keeps the floor a decision rather than an accident.
+# 11.0 is the oldest macOS any arm64 Mac runs, and every bundled wheel already
+# targets it; the embedded Homebrew Python is currently the one component that
+# sits higher, so the bundle's real floor is what Step 5 reads back from it.
+MACOS_MIN_VERSION="11.0"
+CFLAGS="${CFLAGS} -mmacosx-version-min=${MACOS_MIN_VERSION}"
 
 # Configure compiler flags based on Python installation type
 if [ "$USE_FRAMEWORK" = true ]; then
@@ -746,6 +776,34 @@ if [ -d "${LIB_DYNLOAD}" ]; then
     else
         log_success "  All C-extension modules are self-contained"
     fi
+
+    # delocate copies these libraries straight out of Homebrew, and a Homebrew
+    # binary carries the minimum OS of whatever machine compiled it: the bottle
+    # builder's, or this one when brew had no bottle and built from source.
+    # That is how macOS 27 got into 1.5.0 - libcrypto, libssl and liblzma were
+    # source builds - and dyld refuses such a library on an older Mac with
+    # "built for macOS 27.0 which is newer than running OS", so _ssl, _hashlib
+    # and _lzma would fail to import even once the launcher itself is pinned.
+    # Only the load command is rewritten: these are portable C libraries that
+    # call nothing newer than the floor, and the SDK and linker fields are kept
+    # as they were so the file still looks to notarization like what built it.
+    # The rewrite invalidates the copied signature, which Step 6 replaces.
+    VENDORED_DYLIBS="${LIB_DYNLOAD}/.dylibs"
+    if [ -d "${VENDORED_DYLIBS}" ]; then
+        for lib in "${VENDORED_DYLIBS}"/*.dylib; do
+            [ -f "${lib}" ] || continue
+            LIB_MIN=$(macho_min_os "${lib}")
+            [ -n "${LIB_MIN}" ] || continue
+            version_gt "${LIB_MIN}" "${MACOS_MIN_VERSION}" || continue
+            LIB_SDK=$(vtool -show-build "${lib}" 2>/dev/null | awk '$1 == "sdk" { print $2; exit }')
+            log_info "  Lowering $(basename "${lib}") from macOS ${LIB_MIN} to ${MACOS_MIN_VERSION}"
+            if ! vtool -set-build-version macos "${MACOS_MIN_VERSION}" "${LIB_SDK:-${MACOS_MIN_VERSION}}" \
+                    -replace -output "${lib}" "${lib}" > /dev/null 2>&1; then
+                log_error "Failed to lower the minimum OS of ${lib}"
+                exit 1
+            fi
+        done
+    fi
 else
     log_warning "  lib-dynload not found at ${LIB_DYNLOAD}; skipping delocate"
 fi
@@ -838,9 +896,43 @@ if [ ! -f "${TEMPLATE_FILE}" ]; then
     exit 1
 fi
 
-# Substitute version number
+# LSMinimumSystemVersion has to match what the bundle can actually honor, so it
+# is read back off the finished bundle rather than written by hand. The value
+# used to be a hardcoded 10.13 that no release ever met - every DMG so far has
+# in fact required the macOS of the machine that built it - and a plist that
+# claims too much turns a clean "you can't use this version" dialog into a dyld
+# crash. The floor is the highest minimum any Mach-O in the bundle declares,
+# which today is the embedded Homebrew Python; moving off Homebrew is what
+# would bring it down to MACOS_MIN_VERSION.
+log_info "Reading the bundle's minimum macOS version back off its binaries..."
+
+BUNDLE_MIN_OS="${MACOS_MIN_VERSION}"
+BUNDLE_MIN_OS_FILE=""
+while IFS= read -r macho; do
+    [ -n "${macho}" ] || continue
+    file -b "${macho}" | grep -q "Mach-O" || continue
+    MACHO_MIN=$(macho_min_os "${macho}")
+    [ -n "${MACHO_MIN}" ] || continue
+    if version_gt "${MACHO_MIN}" "${BUNDLE_MIN_OS}"; then
+        BUNDLE_MIN_OS="${MACHO_MIN}"
+        BUNDLE_MIN_OS_FILE="${macho}"
+    fi
+done <<MACHO_LIST
+$(find "${APP_BUNDLE}" -type f \( -perm -u+x -o -name "*.so" -o -name "*.dylib" \) 2>/dev/null)
+MACHO_LIST
+
+if [ -n "${BUNDLE_MIN_OS_FILE}" ]; then
+    log_warning "  Floor is macOS ${BUNDLE_MIN_OS}, above the ${MACOS_MIN_VERSION} this build targets"
+    log_warning "  Raised by: ${BUNDLE_MIN_OS_FILE#${APP_BUNDLE}/}"
+else
+    log_success "  Every binary runs on macOS ${BUNDLE_MIN_OS}"
+fi
+
+# Substitute version number and the minimum OS just measured
 log_info "Substituting version: ${VERSION}"
-sed "s/{{VERSION}}/${VERSION}/g" "${TEMPLATE_FILE}" > "${PLIST_FILE}"
+sed -e "s/{{VERSION}}/${VERSION}/g" \
+    -e "s/{{MIN_OS}}/${BUNDLE_MIN_OS}/g" \
+    "${TEMPLATE_FILE}" > "${PLIST_FILE}"
 
 # Validate Info.plist is valid XML
 if ! plutil -lint "${PLIST_FILE}" > /dev/null 2>&1; then

@@ -56,7 +56,7 @@ make run-gui                    # the same thing, through .venv
 |---|---|---|
 | Windows 10/11 x64 | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** (recommended) | Yes — signed by Microsoft |
 | Windows 10/11 x64 | `XeFM-<version>-win64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
-| macOS 10.13+ (Intel & Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
+| macOS 26+ (Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
 
 Every stable release attaches the ready-to-run DMG and zip; the
 [latest-release link](https://github.com/crftwr/xefm/releases/latest) always
@@ -324,7 +324,7 @@ See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
    ```bash
    python3 -m xefm --backend tui
    ```
-3. Check macOS version (10.13+ required)
+3. Check macOS version (26+ required)
 4. Restart your Mac and try again
 
 ### Font Not Found
