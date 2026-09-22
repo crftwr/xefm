@@ -277,7 +277,7 @@ XeFM.app/
     │                           # - Executable name: XeFM
     │                           # - Version: {version} (from xefm/__init__.py)
     │                           # - Icon file: XeFM.icns
-    │                           # - Minimum macOS: 10.13
+    │                           # - Minimum macOS: measured off the built bundle
     │
     ├── MacOS/                  # Executable directory
     │   └── XeFM                 # Objective-C launcher executable
@@ -440,7 +440,10 @@ Edit `resources/Info.plist.template` to change:
 - **CFBundleVersion**: Build version number
 - **CFBundleShortVersionString**: User-visible version
 - **NSHumanReadableCopyright**: Copyright notice
-- **LSMinimumSystemVersion**: Minimum macOS version
+- **LSMinimumSystemVersion**: Minimum macOS version. Not edited by hand -
+  `build.sh` substitutes `{{MIN_OS}}` with the highest minimum any Mach-O in
+  the finished bundle declares, so the plist cannot claim more than the
+  bundle delivers. The embedded Homebrew Python is what currently sets it.
 
 After editing, rebuild with `./build.sh`.
 
