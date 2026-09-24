@@ -24,7 +24,17 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.7.0 is the floor, and a hard one: the image viewer asks the backend which
+# 1.7.1 is the floor, and a soft one: XeFM calls nothing new for it. It is what
+# makes the image viewer's own overlays land in FRONT of the picture on the TUI.
+# A terminal has no compositor, so a picture is written out of band and has to
+# go out after the cell grid -- which put it in front of everything, whatever
+# layer each came from, so pressing ``?`` over an image drew the help dialog
+# behind it and then re-sent the picture over what little showed (issue #458).
+# PuiKit 1.7.1 makes the VT backend follow draw order instead, the rule the GUI
+# backends already followed, so the layer z XeFM already sets is honoured there
+# too. On an older PuiKit the viewer still works and the help is still reachable
+# -- it is simply unreadable while a picture is under it.
+# 1.7.0 was the previous floor, and a hard one: the image viewer asks the backend which
 # formats it draws from a path (``Panel.image_formats()``) and hands it decoded
 # pixels for the ones it does not (``puikit.image.RasterImage``) -- an
 # AttributeError at startup and an ImportError at import on any older PuiKit.
@@ -75,7 +85,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.7.0
+puikit>=1.7.1
 pygments
 boto3
 watchdog
