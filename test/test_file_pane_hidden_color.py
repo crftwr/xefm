@@ -35,7 +35,8 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 from xefm import app as xefm_app  # noqa: E402
 from xefm.file_list_manager import FileListManager  # noqa: E402
 from xefm.file_pane import (  # noqa: E402
-    DIRECTORY_FG_DEFAULT, HIDDEN_DIM, HIDDEN_LC, LINK_FG_DEFAULT, FilePane, _mix,
+    DIRECTORY_FG_DEFAULT, HIDDEN_DIM, HIDDEN_LC, LINK_FG_DEFAULT, FilePane,
+    _mix_oklab,
 )
 from puikit import PROFILE_GUI_DESKTOP, Panel  # noqa: E402
 from puikit.backends.memory_backend import MemoryBackend  # noqa: E402
@@ -84,7 +85,7 @@ class HiddenKeepsItsType(unittest.TestCase):
                 self.assertNotEqual(plain, faded, "a hidden entry must look different")
                 # Exactly the wash, with nothing between the theme's color and
                 # the row: keeping a faint name findable is the draw site's job.
-                self.assertEqual(faded, _mix(plain, BG, HIDDEN_DIM))
+                self.assertEqual(faded, _mix_oklab(plain, BG, HIDDEN_DIM))
                 self.assertLess(abs(apca_lc(faded, BG)), abs(apca_lc(plain, BG)))
                 # Between the type color and the background, on every channel:
                 # receded, not recolored.
@@ -113,7 +114,7 @@ class HiddenKeepsItsType(unittest.TestCase):
         """Type precedence is unchanged by the fade."""
         theme = _theme()
         both = FilePane._type_fg(theme, True, True, True, BG)
-        self.assertEqual(both, _mix(LINK_FG_DEFAULT, BG, HIDDEN_DIM))
+        self.assertEqual(both, _mix_oklab(LINK_FG_DEFAULT, BG, HIDDEN_DIM))
 
     def test_a_visible_entry_is_untouched(self):
         """The whole feature is invisible to a pane with nothing hidden in it."""
@@ -132,7 +133,7 @@ class TheThemeCanOverrideIt(unittest.TestCase):
         for amount in (0.05, 0.6, 0.9):
             with self.subTest(amount=amount):
                 self.assertEqual(_fg(_theme(hidden=amount), "file", hidden=True),
-                                 _mix(TEXT, BG, amount))
+                                 _mix_oklab(TEXT, BG, amount))
 
     def test_zero_turns_the_fade_off(self):
         for spec in (0, 0.0, False):
@@ -147,7 +148,7 @@ class TheThemeCanOverrideIt(unittest.TestCase):
     def test_nonsense_falls_back_to_the_default(self):
         """A config typo dims by the default rather than taking the pane down."""
         self.assertEqual(_fg(_theme(hidden="dim"), "file", hidden=True),
-                         _mix(TEXT, BG, HIDDEN_DIM))
+                         _mix_oklab(TEXT, BG, HIDDEN_DIM))
 
     def test_a_color_replaces_the_type_color_for_every_type(self):
         """What a monochrome theme wants: one flat hidden color, type and all."""
@@ -166,7 +167,7 @@ class TheThemeCanOverrideIt(unittest.TestCase):
     def test_the_type_colors_still_come_from_the_theme(self):
         theme = _theme(directory=(10, 200, 10), hidden=0.5)
         self.assertEqual(_fg(theme, "directory", hidden=True),
-                         _mix((10, 200, 10), BG, 0.5))
+                         _mix_oklab((10, 200, 10), BG, 0.5))
 
 
 #: Built-ins that name their own ``hidden``. None do yet — the default covers
@@ -190,7 +191,7 @@ class EveryBuiltInThemeFadesHiddenEntries(unittest.TestCase):
                     continue
                 plain = FilePane._type_fg(theme, False, False, False, BG)
                 faded = FilePane._type_fg(theme, False, False, True, BG)
-                self.assertEqual(faded, _mix(plain, BG, HIDDEN_DIM))
+                self.assertEqual(faded, _mix_oklab(plain, BG, HIDDEN_DIM))
 
 
 class TheFlagComesFromTheListing(unittest.TestCase):
@@ -361,16 +362,20 @@ class HiddenRowsDoNotAllTurnGrey(unittest.TestCase):
     """
 
     #: A hidden row spends chroma — that is half of what makes it read as faded —
-    #: but it may not spend nearly all of it. The built-ins keep 69% at worst
-    #: (Shinagawa's symlinks). The failure this guards against is not the wash
-    #: but the *lift*: auto-ink restoring contrast by mixing toward white left
-    #: directories on 42% of their chroma and symlinks on 56%, every type pulled
-    #: toward the same off-white.
-    MIN_CHROMA_KEPT = 0.6
+    #: but it may not spend nearly all of it. The built-ins keep 58% at worst
+    #: (Shinagawa's directories, whose gold is washed toward a navy background).
+    #: A loose bound, and knowingly so: the perceptual wash spends enough chroma
+    #: that this no longer separates cleanly from the failure it was written for
+    #: (auto-ink's lift toward white left directories on 42% and symlinks on
+    #: 56%). ``test_hidden_entries_stay_apart_from_each_other`` is the sharp
+    #: instrument now — the lift collapsed the types toward one off-white, and
+    #: that shows up as separation, not as chroma.
+    MIN_CHROMA_KEPT = 0.5
     #: How much of the visible types' separation the hidden ones must keep. The
-    #: wash scales a pane's colors down together, so the types stay in the same
-    #: arrangement: the built-ins keep 63% at worst. The washed-out failure this
-    #: guards against kept 18–42%, having pushed every type toward one off-white.
+    #: wash moves a pane's colors toward one point but does not merge them, so
+    #: the types stay in the same arrangement: the built-ins keep 70% at worst.
+    #: The washed-out failure this guards against kept 18–42%, having pushed
+    #: every type toward one off-white. This is the test with the clean gap.
     MIN_SEPARATION_KEPT = 0.55
     #: Below this, two rendered colors are near enough to the same that comparing
     #: them says nothing — a theme whose types genuinely share a color (Segment

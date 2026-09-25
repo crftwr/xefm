@@ -100,7 +100,9 @@ LINK_FG_DEFAULT = (86, 194, 214)
 #: together, which is what the eye knows as faded. Keeping the chroma and only
 #: darkening — which an earlier cut did, to survive a legibility lift that
 #: ``_draw_row`` now opts out of — leaves a deeper, more vivid color, and vivid
-#: reads as prominent. It made the hidden rows the loud ones.
+#: reads as prominent. It made the hidden rows the loud ones. The wash is
+#: perceptual (``_mix_oklab``) for the same reason: an sRGB blend toward a dark
+#: background leaves more color standing than the eye expects of a fade.
 HIDDEN_DIM = 0.40
 #: The one thing the wash above may not do: vanish. A hidden name is floored
 #: here, where a visible one is floored as body text (``LC_BODY``, Lc 75) — a
@@ -206,6 +208,39 @@ def _neutral(color):
     saturated blue into a gray far darker than the blue looked."""
     lightness, _a, _b = rgb_to_oklab(color)
     return oklab_to_rgb((lightness, 0.0, 0.0))
+
+
+def _mix_oklab(color, bg, amount: float):
+    """``color`` blended toward ``bg`` by ``amount``, in OKLab rather than in
+    sRGB — the fade a hidden entry gets.
+
+    The difference is what is left of the color at the end. Blending gamma-
+    encoded sRGB toward a dark background spends lightness fast and leaves the
+    hue and much of the chroma standing, so a faded orange arrives as a *dark
+    orange*: Shinagawa's directory gold, washed 40% toward its navy background,
+    keeps chroma 0.079 of 0.147 and rotates 3 degrees. It reads as a different
+    shade rather than as the same name, quieter — which is what was reported.
+
+    Interpolating perceptually lands the same lightness with a quarter less
+    chroma left (0.059) and the hue a further 6 degrees toward the background's.
+    That is also what "40% of the way to the background" is supposed to mean:
+    OKLab is the space where equal steps look equal, and the fade is a statement
+    about appearance.
+
+    Neither ends up *blue*, at 40% of anything; the question is only how much
+    color survives. Note that this is not alpha compositing, which happens in
+    linear light and would arrive lighter still (207, 137, 76) — a hidden entry
+    is faded further than 40% transparency would fade it.
+    """
+    if amount <= 0.0:
+        return color
+    if amount >= 1.0:
+        return tuple(bg)
+    la, aa, ba = rgb_to_oklab(color)
+    lb, ab, bb = rgb_to_oklab(bg)
+    return oklab_to_rgb((la + (lb - la) * amount,
+                         aa + (ab - aa) * amount,
+                         ba + (bb - ba) * amount))
 
 
 def _dim_ink(color, bg, amount: float):
@@ -337,7 +372,7 @@ class FilePane(Widget):
                 amount = max(0.0, min(1.0, float(spec)))
             except (TypeError, ValueError):
                 amount = HIDDEN_DIM
-        return _dim_ink(fg, base, amount)
+        return _mix_oklab(fg, base, amount)
 
     def _cursor_fg(self, theme, base=None):
         """The cursor-cue color for this pane's focus state, from the theme's
