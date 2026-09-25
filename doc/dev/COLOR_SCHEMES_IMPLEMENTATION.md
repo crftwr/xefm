@@ -22,7 +22,9 @@ XeFM's colors come from two layers today:
 
 The module defines integer constants for every semantic UI slot — e.g.
 `COLOR_REGULAR_FILE`, `COLOR_DIRECTORIES`, `COLOR_EXECUTABLES` (with focused and
-focused-inactive variants), `COLOR_HEADER` / `COLOR_FOOTER` / `COLOR_STATUS` /
+focused-inactive variants, all vestigial: the file-type slots have had no reader
+since the panes moved to the theme palette below, and `get_file_color()` — which
+was the only one — is gone), `COLOR_HEADER` / `COLOR_FOOTER` / `COLOR_STATUS` /
 `COLOR_BOUNDARY` / `COLOR_ERROR`, the log colors, the syntax-highlighting
 colors, the search-highlight colors, the diff-viewer colors, the scrollbar
 color, and the Matrix-animation colors used by the About dialog. Widgets refer
@@ -68,7 +70,6 @@ Widgets fetch a slot plus attributes rather than raw numbers. Each helper
 returns a `(color_pair, attributes)` tuple, where `attributes` is a
 `puikit.TextAttribute` (`NORMAL`, `BOLD`, `UNDERLINE`, `REVERSE`):
 
-- `get_file_color(is_dir, is_executable, is_focused, is_active)`
 - `get_header_color(is_active)`, `get_footer_color(is_active)`,
   `get_status_color()`, `get_error_color()`, `get_boundary_color()`
 - `get_log_color(source)`, `get_line_number_color()`
@@ -121,6 +122,127 @@ framework seam, the authoritative reference is PuiKit's `docs/color_system.md`
 (in the separate PuiKit repo). For how per-theme motion/effects are wired on the
 XeFM side, see [MOTION_IMPLEMENTATION.md](MOTION_IMPLEMENTATION.md); the built-in
 palettes themselves live in `_THEME_SPECS` in `xefm/app.py`.
+
+## The file-type palette
+
+`extras['file_types']` is what actually colors a filename, read by
+`FilePane._type_fg()` in `xefm/file_pane.py`. Three type entries, resolved in
+this order:
+
+- `link` — a symlink wins over a directory, so a link *to* a folder still reads
+  as a link (default: cyan, the `ls` convention).
+- `directory` — default a soft yellow. The legacy flat `extras['directory']` is
+  still honored as a shorthand, with an explicit `file_types` entry winning.
+- `file` — default the theme's own `text`.
+
+There is deliberately **no executables entry**. The pane's types are the ones
+every platform has; Windows has no execute bit, so an executables color would
+decay into a hardcoded extension list on one platform and a mode check on the
+other (issue #354). The old `colors.py` slot named above is what the feature doc
+used to promise, and neither has painted a pane in a long time.
+
+### `hidden` is a treatment, not a fourth type
+
+A hidden entry is still a directory or still a link — the property is orthogonal
+to type, so giving it its own color would mean a second entry per type and a
+2×N palette that grows every time a type is added. Instead `_type_fg()` resolves
+the type color first and then, for a hidden entry, washes it toward the pane
+background by `HIDDEN_DIM` (0.40) through the same `_dim_ink()` the resting pane
+uses. The two compose: a hidden file in a resting pane is washed twice toward the
+same background, which is exactly `1-(1-a)(1-b)`, and `ctx.ink` floors the result
+once at the draw site.
+
+### The wash, and the one floor under it
+
+A hidden name is `_dim_ink(color, bg, HIDDEN_DIM)` — the plain wash toward the
+pane background, 0.40 by default — and nothing else. Washing toward the
+background is what makes it read as hidden rather than as a second palette: it
+spends lightness *and* chroma together, which is what the eye knows as faded.
+
+Under it sits `HIDDEN_LC` (Lc 30), a backstop rather than a design level. Names
+and directories land clear of it (Lc 34–41 across the built-ins); it catches the
+symlink hues, mid-luminance aquas that cross the line under a full wash, and the
+two palettes whose own ink starts near their background. It cannot be the floor
+a *visible* name gets: `LC_BODY` sits above where the wash lands — a dark
+palette's text clears Lc 75 by a hair, Dark+ being at 78.7 — so applying it would
+undo the wash entirely, handing back 206 grey for 212 grey.
+
+An earlier cut did something far more elaborate here: wash only as far as the
+floor allows, bisecting on `apca_lc`, so that the lift never ran and the hue came
+through intact. That was scaffolding for the lift described in the next section,
+and once the pane opted out of the lift it was not merely redundant but wrong.
+Preserving chroma while darkening leaves a *deeper, more vivid* color, and vivid
+reads as prominent — measured against a visible name that auto-ink had lifted
+toward white, the hidden row was the louder of the two. Gruvbox's hidden
+directory came out at chroma 0.127 against the visible row's 0.123, a difference
+of nothing; the plain wash puts it at 0.110. Fading is supposed to cost chroma.
+
+### There are two ink passes, and only one of them is the pane's
+
+`ctx.ink` is the pane asking for a floor. `Panel.auto_ink` — which `XeFMApp`
+turns on — is the framework applying one to *every* text run whose background is
+concrete, at a weight-aware target that is `LC_BODY` for ordinary text. The
+second pass does not know the first happened, so it lifted every faded name
+straight back to body weight: Gruvbox drew hidden entries at (213, 209, 196)
+against (235, 219, 178) for visible ones. Pale, not dim — the washing-out again,
+one layer further down.
+
+It skipped one row. A run drawing over a *transparent* background is left alone,
+because the glyphs land on whatever the widget painted underneath and the widget
+owns that contrast — and on a GUI backend the row that fills and then draws
+transparently is the cursor row. So the fade survived under the cursor and
+nowhere else, which is how this was reported: a hidden file under the cursor
+drawn visibly darker than the hidden files around it.
+
+The name run of a hidden entry therefore passes `ink=False`, PuiKit's opt-out
+for "this widget owns this color deliberately". `TextAttribute.DIM` would also
+have lowered the target (auto-ink floors dimmed text at `LC_MIN_NONTEXT`), but
+it is a real attribute: the curses backend maps it to `A_DIM` and the terminal
+would dim an already-faded color a second time.
+
+The size and date columns opt out for the same reason, and had been wanting to
+for longer: `_draw_row` inks them at `LC_LARGE` to sit a tier under the
+filenames, and auto-ink had been raising them to body weight — Gruvbox's muted
+(146, 131, 116) reached the row as (214, 208, 201), a hair off the filename's
+own color — so a pane's numbers read as loud as its names, except on a GUI
+cursor row. They now land where the pane put them: (191, 182, 172), Lc 60
+against the name's 82. See `test_file_pane_column_weight.py`.
+
+One thing follows for anyone testing a pane's colors: a `Panel` under test must
+set `auto_ink = True` or it is not the app's pipeline. The version of this
+feature that lifted every hidden name back to body weight passed a full suite
+that had left it off.
+
+Rendered across the built-ins, hidden names land at Lc 30–41 against Lc 75–103
+for visible ones, keep at least 60% of their chroma, and hold at least 55% of the
+separation the visible types have from each other.
+
+`test_file_pane_hidden_color.py` renders a pane per theme for all of this,
+because none of it is visible from `_type_fg`'s return value — the arithmetic was
+right in both broken versions. It also renders the cursor row on a
+GUI-capable backend, the one place the two ink passes disagreed. One thing it
+deliberately does not defend: the configured amount is a *ceiling*, not a
+target. On the dark themes the floor
+binds first (Dark+ reaches Lc 45 at a wash of 0.32, under the 0.40 default), and
+a theme asking for less than the floor allows is the range where the knob means
+anything.
+
+`file_types['hidden']` overrides it in either of two spellings — a number (or
+`False`) for a different wash, or an `(r, g, b)` that replaces the type color
+outright for every hidden entry. The color form exists for the monochrome themes
+(Phosphor, Segment LCD), which have no second hue to spend and would rather say
+"hidden is this dimmer green" than fade a color they only have one of. It is
+floored the same way, so it moves the hue freely and the lightness only down to
+the quiet tier.
+
+Where the flag comes from costs nothing: `dir_scan`'s per-entry record already
+carries `hidden` for the hidden-files toggle (issue #284), so
+`FileListManager._build_file_info()` just copies it into the display cache the
+pane renders from — through `is_hidden()`, the same predicate the toggle filters
+on, so "hidden enough to be filtered out" and "hidden enough to be faded" can
+never disagree. Rendering issues no `stat`. The one exception is
+`FilePane._info()`'s fallback for an entry missing from that cache, which was
+already stat'ing and now also calls `is_hidden_path()`.
 
 ## The cursor cue
 
@@ -206,4 +328,6 @@ that palette goes. A user's `config.py` names one the same way.
 - `xefm/log_manager.py`, `xefm/logging_handlers.py` — live consumers of the log/status colors
 - `xefm/external_programs.py` — re-initializes color pairs after a subprocess
 - `xefm/app.py` — `_THEME_SPECS` and the PuiKit `Theme` wiring (modern theme system)
+- `xefm/file_pane.py` — `_type_fg()`, `HIDDEN_DIM`: the palette that colors filenames
+- `xefm/file_list_manager.py` — `_build_file_info()`, the display cache the pane reads
 - PuiKit `docs/color_system.md` — the modern theme / auto-ink color system

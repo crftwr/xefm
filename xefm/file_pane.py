@@ -36,6 +36,7 @@ from puikit.text import elide
 from puikit.widgets.base import Widget
 
 from xefm import name_key
+from xefm.dir_scan import is_hidden_path
 
 #: Size and date are numeric columns: pin them to a fixed-advance face so digits
 #: line up in their right-aligned columns. (Names keep the Panel's default
@@ -75,6 +76,47 @@ MATCH_TINT = 0.28
 #: still honored as a shorthand for ``file_types['directory']``.
 DIRECTORY_FG_DEFAULT = (204, 204, 120)
 LINK_FG_DEFAULT = (86, 194, 214)
+#: How far a **hidden** entry's name is washed toward the pane background, when
+#: the theme leaves ``file_types['hidden']`` unset. Hidden is orthogonal to type
+#: — a hidden directory is still a directory — so it is spent on the one channel
+#: that composes with a type color instead of replacing it, the way Explorer
+#: ghosts a hidden icon rather than recoloring it. That also keeps the palette
+#: from needing a second entry per type.
+#:
+#: It earns its keep mainly on Windows, where hidden is a file attribute rather
+#: than a leading dot (issue #284): with hidden files shown, nothing in the name
+#: tells the two apart, while a dotfile announces itself (issue #354).
+#:
+#: A theme overrides it through ``file_types['hidden']`` in either spelling:
+#:
+#:   ``0.55`` / ``False``  — a different wash, or none at all
+#:   ``(r, g, b)``         — one flat color for every hidden entry, type and all.
+#:                           The escape hatch for a monochrome theme, which has
+#:                           no second hue to spend and would rather say "hidden
+#:                           is this dimmer green" outright.
+#:
+#: Washing toward the background is what makes it read as hidden rather than as
+#: a second palette: it takes the name's lightness *and* its chroma down
+#: together, which is what the eye knows as faded. Keeping the chroma and only
+#: darkening — which an earlier cut did, to survive a legibility lift that
+#: ``_draw_row`` now opts out of — leaves a deeper, more vivid color, and vivid
+#: reads as prominent. It made the hidden rows the loud ones.
+HIDDEN_DIM = 0.40
+#: The one thing the wash above may not do: vanish. A hidden name is floored
+#: here, where a visible one is floored as body text (``LC_BODY``, Lc 75) — a
+#: backstop, not a design level. Names and directories land clear of it (Lc
+#: 34–41 across the built-ins); it catches the symlink colors, which are mid-
+#: luminance aquas and cyans that cross the line under a full wash, mostly by a
+#: point or so, and the two palettes whose own ink starts close to their
+#: background (Solarized's cream, Solarized Light's aqua, both around Lc 22).
+#: The lift that rescues them costs some chroma, which is the price of the
+#: guarantee and is why it is set as low as it is.
+#:
+#: Well below the APCA minimum for body text, deliberately: these are entries the
+#: user turned on and can turn off, de-emphasized on purpose the way a disabled
+#: control is. Lc 30 is APCA's floor for incidental text — enough to find a name,
+#: not enough to read a column of them, which is the right bargain here.
+HIDDEN_LC = 30.0
 #: Cursor-position cue color for the **focused** pane when a theme names no
 #: ``cursor`` palette (its ``extras['cursor']`` sub-dict of ``active`` /
 #: ``inactive``, the same shape as the ``file_types`` palette). It colors the
@@ -240,8 +282,8 @@ class FilePane(Widget):
     # --- helpers -------------------------------------------------------------
 
     def _info(self, entry) -> dict:
-        """Cached (size_str, date_str, is_dir, is_link) for an entry, or a stat
-        fallback."""
+        """Cached (size_str, date_str, is_dir, is_link, hidden) for an entry, or a
+        stat fallback."""
         info = self.pane.get("file_info", {}).get(str(entry))
         if info is not None:
             return info
@@ -253,24 +295,49 @@ class FilePane(Widget):
             is_link = entry.is_symlink()
         except Exception:
             is_link = False
+        try:
+            hidden = is_hidden_path(entry)
+        except Exception:
+            hidden = False
         return {"size_str": "<DIR>" if is_dir else "", "date_str": "",
-                "is_dir": is_dir, "is_link": is_link}
+                "is_dir": is_dir, "is_link": is_link, "hidden": hidden}
 
     @staticmethod
-    def _type_fg(theme, is_dir: bool, is_link: bool):
+    def _type_fg(theme, is_dir: bool, is_link: bool, hidden: bool = False, base=None):
         """The raw name foreground for a file type, from the theme's ``file_types``
         palette (``extras['file_types']``: directory / file / link). A symlink wins
         over a directory so a link to a folder still reads as a link. Falls back to
         the legacy flat ``extras['directory']`` and to the module defaults; the
-        returned color is passed through ``ctx.ink`` by the caller for legibility."""
+        returned color is passed through ``ctx.ink`` by the caller for legibility.
+
+        A ``hidden`` entry then recedes toward the pane background ``base`` by
+        ``HIDDEN_DIM`` — see that constant for why the palette has one hidden
+        entry rather than one per type, and for the two spellings
+        ``file_types['hidden']`` accepts."""
         ft = theme.extras.get("file_types") or {}
         if is_link:
-            return ft.get("link") or LINK_FG_DEFAULT
-        if is_dir:
-            return (ft.get("directory")
-                    or theme.extras.get("directory")  # legacy flat shorthand
-                    or DIRECTORY_FG_DEFAULT)
-        return ft.get("file") or theme.text
+            fg = ft.get("link") or LINK_FG_DEFAULT
+        elif is_dir:
+            fg = (ft.get("directory")
+                  or theme.extras.get("directory")  # legacy flat shorthand
+                  or DIRECTORY_FG_DEFAULT)
+        else:
+            fg = ft.get("file") or theme.text
+        if not hidden or base is None:
+            return fg
+        spec = ft.get("hidden")
+        if isinstance(spec, (tuple, list)):
+            # A flat color replaces the type color outright: a theme that names
+            # one is saying hidden matters more here than dir-vs-file does.
+            return tuple(spec)
+        if spec is None or spec is True:
+            amount = HIDDEN_DIM
+        else:
+            try:
+                amount = max(0.0, min(1.0, float(spec)))
+            except (TypeError, ValueError):
+                amount = HIDDEN_DIM
+        return _dim_ink(fg, base, amount)
 
     def _cursor_fg(self, theme, base=None):
         """The cursor-cue color for this pane's focus state, from the theme's
@@ -682,6 +749,10 @@ class FilePane(Widget):
         # (floor-only: unchanged wherever it already reads).
         eff_bg = row_bg if row_bg is not None else base
         is_link = info.get("is_link", False)
+        # Hidden comes off the listing's own attribute record (``dir_scan``), the
+        # same one the hidden-files toggle reads, so it costs no extra stat here
+        # and is right on Windows, where the name does not say.
+        hidden = info.get("hidden", False)
         # An unfocused pane's ink is washed toward the pane background *before* the
         # legibility pass, never after: ``ctx.ink`` is floor-only, so it lifts any
         # color the wash pushed under the readable threshold back over it. That
@@ -689,8 +760,16 @@ class FilePane(Widget):
         # into illegibility, which matters because the user is usually comparing
         # the two panes and still has to read the resting one.
         dim = self._inactive_dim(theme)
-        name_fg = ctx.ink(_dim_ink(self._type_fg(theme, is_dir, is_link), base, dim),
-                          on=eff_bg, target=LC_BODY)
+        # A hidden name is floored at HIDDEN_LC instead of the body target: the
+        # body floor sits above where the wash lands, so applying it would undo
+        # the wash entirely — a dark theme's text clears LC_BODY by a hair (Dark+
+        # is at Lc 78.7 against a 75 target), and lifting a faded color back over
+        # that line returns it paler rather than brighter, 212 grey fading to 206
+        # grey. Below, HIDDEN_LC is a backstop and nothing more.
+        name_target = HIDDEN_LC if hidden else LC_BODY
+        name_fg = ctx.ink(_dim_ink(self._type_fg(theme, is_dir, is_link, hidden, base),
+                                   base, dim),
+                          on=eff_bg, target=name_target)
         col_fg = ctx.ink(_dim_ink(theme.muted_text, base, dim), on=eff_bg, target=LC_LARGE)
         # A vector backend composites, so glyphs on any *filled* row (selected /
         # matched / cursor) draw over a transparent bg and land directly on the fill
@@ -714,17 +793,37 @@ class FilePane(Widget):
             ctx.draw_text(content_left, y, " " * max(0, int(round(content_right - content_left))),
                           Style(fg=under, bg=text_bg, attr=row_attr, underline_color=under))
 
+        # ``ink=False`` on a hidden name: the pane has already inked it, against
+        # its own floor (HIDDEN_LC), and the Panel's auto-ink would otherwise lift
+        # it back to body weight — normalizing away the whole difference. That
+        # lift is skipped wherever a run draws over a transparent bg, which on a
+        # GUI backend is exactly the *cursor* row, so leaving it on made the
+        # cursor row the one place the fade survived: a hidden file under the
+        # cursor drew visibly darker than the hidden files around it. Opting out
+        # once, here, is what makes every hidden row agree.
+        name_ink = not hidden
         ctx.draw_text(content_left, y, name_text,
-                      Style(fg=name_fg, bg=text_bg, attr=row_attr, underline_color=under))
+                      Style(fg=name_fg, bg=text_bg, attr=row_attr, underline_color=under),
+                      ink=name_ink)
         if ext_text:
             ctx.draw_text(ext_x, y, ext_text,
-                          Style(fg=name_fg, bg=text_bg, attr=row_attr, underline_color=under))
+                          Style(fg=name_fg, bg=text_bg, attr=row_attr, underline_color=under),
+                          ink=name_ink)
+        # The columns opt out for the same reason the hidden name does, and they
+        # have wanted to for longer: they are inked at LC_LARGE just above, to sit
+        # a tier under the filenames, and auto-ink was lifting them back to body
+        # weight — Gruvbox's muted (146, 131, 116) reached the row as
+        # (214, 208, 201), all but the name's own color. The quiet column tier was
+        # quiet in intent only, and on a GUI backend it was quiet on the cursor
+        # row alone, that being where auto-ink steps aside.
         if size:
             ctx.draw_text(size_right - measure_mono(size), y, size,
-                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO))
+                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO),
+                          ink=False)
         if date:
             ctx.draw_text(date_right - measure_mono(date), y, date,
-                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO))
+                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO),
+                          ink=False)
 
         # Grid cursor cue drawn last, in the reserved gutter columns clear of the
         # glyphs: the brackets, or — where the row is ruled — the two cells that

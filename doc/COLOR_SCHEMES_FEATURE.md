@@ -17,7 +17,7 @@ of it.
 XeFM starts on **Dark+** and includes a set of standard palettes:
 
 - **Dark+** (default) — dark backgrounds with bright colored text; yellow
-  directories, green executables. Easy on the eyes in low light.
+  directories, cyan symlinks. Easy on the eyes in low light.
 - **Light+** — white backgrounds with black text; high contrast, clean and
   professional. Good for light terminal backgrounds.
 - **Monokai**, **Dracula**, **Nord**, **Solarized** (light and dark),
@@ -60,12 +60,41 @@ you switch to the theme and off when you switch away. You can add your own theme
 ## What Gets Colored
 
 Every theme changes:
-- **File Types**: Different colors for directories, executables, and regular files
+- **File Types**: Different colors for directories, symlinks, and regular files,
+  with hidden entries faded into the background (see below)
 - **Selected Items**: Highlighting for selected files
 - **Interface**: Headers, footers, status bar, and pane borders
 - **Log Messages**: Different colors for different types of messages
 - **Text Viewer**: Syntax highlighting when viewing code files
 - **Search Results**: Highlighting for search matches
+
+### Hidden Files
+
+With hidden files shown (the `.` key by default), a hidden entry is drawn in its
+own type color faded toward the background, so it still reads as a folder or a
+link while being visibly set apart from everything else in the pane. On Windows
+this is the only thing that tells you: hidden there is a file attribute, not a
+dot at the front of the name, so `desktop.ini` and an ordinary file look alike
+otherwise.
+
+To change how far they fade — or to give them a single flat color instead — name
+`hidden` in a theme's `file_types` in `~/.xefm/config.py`:
+
+```python
+THEMES = {
+    'Ocean': {
+        'file_types': {
+            'hidden': 0.6,             # fade harder (0 = not at all)
+            # 'hidden': (110, 110, 110),  # ...or one flat gray for every hidden entry
+        },
+    },
+}
+```
+
+The number is what you get, up to a point: XeFM holds a hidden name to a minimum
+contrast against the pane behind it, so a high number — or a flat color close to
+the background — fades as far as that floor and no further. A hidden entry ends
+up quiet enough to skip over and still solid enough to read when you look at it.
 
 ## How to Use
 
