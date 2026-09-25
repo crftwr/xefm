@@ -1,7 +1,13 @@
 """
-The Info/Details dialog's live "Disk usage" rows: a background walk fills in a
-directory's recursive size and item counts after the dialog is already open,
-via throttled animation ticks that swap updated Markdown in place.
+The Info/Details dialog's live size rows: a background walk fills in a
+directory's recursive size, its size on disk and its item counts after the
+dialog is already open, via throttled animation ticks that swap updated
+Markdown in place.
+
+"Total size" and "On disk" are Finder's two numbers, and the row that used to
+show the first under the name of the second is issue #275. Here the tree is
+dense, so the only difference between them is block rounding — that they are
+two separate, separately-labelled rows is what these tests hold.
 
 Driven end-to-end on the headless memory backend (PROFILE_TUI: animation
 ticks supported, pumped manually with ``run_animation_ticks``) over a real
@@ -96,10 +102,31 @@ class FileDetailsDiskUsage(unittest.TestCase):
         # that the swap does not reset the position, and one line shows that.
         dialog.md.offset = 1.0
         final = self._pump_until_settled(sources)
-        self.assertIn("| Disk usage | 350 B (350 bytes) |", final)
+        self.assertIn("| Total size | 350 B (350 bytes) |", final)
+        self.assertNotIn("Disk usage", final)   # the label that named the wrong number
+        # 3 files, each rounded up to its own 4 KB block: longer than the 350
+        # bytes they hold, and a separate row saying so.
+        self.assertIn("| On disk | 12.0 KB (12,288 bytes) |", final)
         self.assertIn("| Contents | 3 files, 1 folders |", final)
         # The in-place swap must not yank the scroll position.
         self.assertEqual(dialog.md.offset, 1.0)
+
+    def test_the_document_keeps_its_shape_while_the_walk_runs(self):
+        """Every update must have the same line count, or the scroll offset
+        refresh() saves and restores around set_source points at a different
+        line than it did before. Whether the "On disk" row exists is therefore
+        decided per root before the document is built, not from the running
+        totals — which can turn unknown partway through a walk."""
+        dialog, sources = self._open_details("adir", selected=("adir", "beside.bin"))
+        self._pump_until_settled(sources)
+        self.assertTrue(sources, "no in-place update was made")
+        shapes = {len(src.splitlines()) for src in sources}
+        self.assertEqual(len(shapes), 1,
+                         f"line count changed across updates: {sorted(shapes)}")
+        # Both live segments have to be in the document for that to mean
+        # anything: the per-root table rows and the multi-selection header.
+        self.assertIn("**On disk:**", sources[-1])
+        self.assertIn("| On disk |", sources[-1])
 
     def test_multi_selection_aggregates(self):
         dialog, sources = self._open_details(
@@ -108,8 +135,11 @@ class FileDetailsDiskUsage(unittest.TestCase):
         # 360 = the directory's recursive 350 + the plain file's 10; items
         # count the 2 selected entries plus everything inside the directory.
         self.assertIn("**Total size:** 360 B (360 bytes)", final)
+        # 16,384 = the directory's three blocks + the plain file's one. The
+        # aggregate sums the walked roots and the selected plain files alike.
+        self.assertIn("**On disk:** 16.0 KB (16,384 bytes)", final)
         self.assertIn("**Total items:** 6 (4 files, 2 folders)", final)
-        self.assertIn("| Disk usage | 350 B (350 bytes) |", final)
+        self.assertIn("| Total size | 350 B (350 bytes) |", final)
 
 
 if __name__ == "__main__":

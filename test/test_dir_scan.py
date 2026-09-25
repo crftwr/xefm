@@ -1,6 +1,7 @@
 """One-pass directory scanning (xefm.dir_scan) and the listing built on it.
 
-A pane listing needs four facts per entry — is_dir, is_link, size, mtime. Asking
+A pane listing needs four facts per entry — is_dir, is_link, size, mtime — and
+the details dialog a fifth, alloc, the space the entry takes up on disk. Asking
 per file costs a round trip per file, which is the whole cost of listing a large
 directory on a network mount (issue #183). ``dir_scan`` answers for the whole
 directory at once, using the platform's bulk enumeration where one exists.
@@ -33,11 +34,12 @@ def _reference(directory, name):
     try:
         st = os.stat(p)
     except OSError:
-        return {'is_dir': False, 'is_link': is_link, 'size': 0, 'mtime': 0.0,
-                'hidden': hidden, 'ok': False}
+        return {'is_dir': False, 'is_link': is_link, 'size': 0, 'alloc': 0,
+                'mtime': 0.0, 'hidden': hidden, 'ok': False}
     is_dir = os.path.isdir(p)
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else st.st_size,
+            'alloc': 0 if is_dir else st.st_blocks * 512,
             'mtime': st.st_mtime, 'hidden': hidden, 'ok': True}
 
 
@@ -51,6 +53,13 @@ class _TreeBase(unittest.TestCase):
             f.write("x" * 1234)
         with open(os.path.join(self.tmp, ".hidden"), "w") as f:
             f.write("h")
+        # A 64 MB hole with one byte at the end: long, but barely on the disk.
+        # This is the shape that made 'size' and 'alloc' worth telling apart
+        # (issue #275), and every backend has to report both the same way.
+        with open(os.path.join(self.tmp, "sparse.raw"), "wb") as f:
+            f.truncate(64 << 20)
+            f.seek((64 << 20) - 1)
+            f.write(b"z")
         os.symlink(os.path.join(self.tmp, "regular.txt"),
                    os.path.join(self.tmp, "link_to_file"))
         os.symlink(os.path.join(self.tmp, "subdir"),
@@ -90,6 +99,24 @@ class ScanMatchesPerFileStat(_TreeBase):
         self.assertEqual(got["link_to_file"]["size"], 1234)
         self.assertEqual(got["link_to_file"]["is_link"], True)
 
+    def test_a_sparse_file_is_longer_than_it_is_big(self):
+        got = dict(dir_scan.scan_dir(self.tmp))
+        sparse = got["sparse.raw"]
+        self.assertEqual(sparse["size"], 64 << 20)
+        # The hole costs nothing; only the written tail is allocated. Finder
+        # shows the first number as "Size" and the second as "on disk".
+        self.assertLess(sparse["alloc"], 1 << 20)
+        self.assertEqual(sparse["alloc"],
+                         os.stat(os.path.join(self.tmp, "sparse.raw")).st_blocks * 512)
+        # A dense file's allocation rounds its length up to whole blocks.
+        self.assertGreaterEqual(got["regular.txt"]["alloc"], 1234)
+
+    def test_a_directory_reports_no_allocation_of_its_own(self):
+        # As with 'size': the bulk record has no directory equivalent of
+        # ATTR_FILE_ALLOCSIZE, so the backends are normalised to 0 rather than
+        # left to disagree.
+        self.assertEqual(dict(dir_scan.scan_dir(self.tmp))["subdir"]["alloc"], 0)
+
     def test_a_broken_symlink_is_reported_not_raised(self):
         got = dict(dir_scan.scan_dir(self.tmp))
         broken = got["link_broken"]
@@ -121,6 +148,7 @@ class PathListdirAttrs(_TreeBase):
             self.assertEqual(attrs['is_dir'], per_file['is_dir'], entry.name)
             self.assertEqual(attrs['is_link'], per_file['is_link'], entry.name)
             self.assertEqual(attrs['size'], per_file['size'], entry.name)
+            self.assertEqual(attrs['alloc'], per_file['alloc'], entry.name)
             self.assertEqual(attrs['hidden'], per_file['hidden'], entry.name)
             self.assertEqual(attrs['ok'], per_file['ok'], entry.name)
 

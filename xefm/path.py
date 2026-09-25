@@ -109,6 +109,7 @@ def attrs_via_path(entry) -> dict:
               else dir_scan.hidden_from_stat(stat_info))
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else stat_info.st_size,
+            'alloc': 0 if is_dir else dir_scan.alloc_from_stat(stat_info),
             'mtime': stat_info.st_mtime, 'hidden': hidden, 'ok': True}
 
 
@@ -347,7 +348,7 @@ class PathImpl(ABC):
     def listdir_attrs(self) -> List[tuple]:
         """Return ``[(Path, attrs), …]`` for this directory's entries, where
         ``attrs`` is the record described in :mod:`xefm.dir_scan`
-        (``is_dir``/``is_link``/``size``/``mtime``/``ok``).
+        (``is_dir``/``is_link``/``size``/``alloc``/``mtime``/``ok``).
 
         This is ``iterdir`` plus everything a listing needs to know about each
         entry, in one call — so a backend that can answer for the whole
@@ -1045,8 +1046,8 @@ class Path:
 
     def listdir_attrs(self) -> List[tuple]:
         """Return ``[(Path, attrs), …]`` for this directory — ``iterdir`` plus
-        each entry's ``is_dir``/``is_link``/``size``/``mtime`` in one call. See
-        :meth:`PathImpl.listdir_attrs`."""
+        each entry's ``is_dir``/``is_link``/``size``/``alloc``/``mtime`` in one
+        call. See :meth:`PathImpl.listdir_attrs`."""
         return self._impl.listdir_attrs()
 
 

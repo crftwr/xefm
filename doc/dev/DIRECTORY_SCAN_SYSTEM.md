@@ -1,8 +1,9 @@
 # Directory Scan System
 
 Listing a pane means answering four questions about every entry: **is it a
-directory, is it a symlink, how big is it, when was it modified**. Asking the OS
-per file costs one round trip per file. On a local disk that is free. On a
+directory, is it a symlink, how big is it, when was it modified** — plus a
+fifth the details dialog needs, **how much space does it take up**. Asking the
+OS per file costs one round trip per file. On a local disk that is free. On a
 network mount it is the entire cost of the listing.
 
 Measured on a 1,680-file SMB directory from a Synology NAS (~9 ms RTT), cold
@@ -45,8 +46,8 @@ Every backend returns the same record per entry, so callers never branch on
 platform:
 
 ```python
-{'is_dir': bool, 'is_link': bool, 'size': int, 'mtime': float,
- 'hidden': bool, 'ok': bool}
+{'is_dir': bool, 'is_link': bool, 'size': int, 'alloc': int | None,
+ 'mtime': float, 'hidden': bool, 'ok': bool}
 ```
 
 `is_dir`, `size` and `mtime` describe the **target** of a symlink; `is_link`
@@ -63,7 +64,38 @@ it stays valid for an entry whose target is gone.
 Directories report `size: 0` on every backend. The bulk syscall cannot supply a
 directory's size, and nothing displays or sorts on it (a directory renders as
 `<DIR>` and sorts as 0), so the backends are normalised rather than left to
-disagree.
+disagree. `alloc` follows it to 0 for the same reason — there is no directory
+equivalent of `ATTR_FILE_ALLOCSIZE`.
+
+### `size` and `alloc`
+
+`size` is how many bytes long the entry is; `alloc` is how many bytes of the
+volume it occupies. They are Finder's **Size** and **on disk**, and they part
+company for a sparse, compressed or cloned file: one `Docker.raw` under
+`~/Library/Containers` is 994 GB long and 24 GB on disk. Summing the first and
+calling it disk usage is [issue #275](https://github.com/crftwr/xefm/issues/275).
+
+`alloc` is `None` when the backend cannot answer, which is not the same as 0:
+
+| Backend | `alloc` | Why |
+|---|---|---|
+| macOS | `ATTR_FILE_ALLOCSIZE`, in the same bulk record | free — one more attribute in a syscall already being made |
+| Linux, Windows `scandir` | `st_blocks × 512` off the cached `stat` | free — the `stat` is already taken |
+| Windows | `None` | `os.stat_result` has no `st_blocks`; `GetCompressedFileSize` would be a call per file |
+| SSH | `None` | `ls -la` reports a length; `ls -s` would be a second listing |
+| S3, archive | `None` | no such concept; their hand-built `stat_result`s carry `st_blocks` as `None` |
+
+`st_blocks` counts 512-byte units *by definition*, not the filesystem's block
+size, so the multiplier is fixed. `dir_scan.alloc_from_stat()` is the single
+place that reads the field, and it maps both ways of it being missing — absent
+attribute, or present-but-`None` on a `stat_result` a backend built from a
+plain tuple — onto `None`.
+
+Adding `ATTR_FILE_ALLOCSIZE` to the macOS request moved every later offset in
+the packed record: the kernel packs attributes in bitmap order, and
+`ALLOCSIZE` (bit 2) lands ahead of `DATALENGTH` (bit 9). A directory's record
+stops before the file attributes altogether — it is shorter by exactly those
+two `off_t` — so they are read only for non-directories.
 
 ## Per platform
 
