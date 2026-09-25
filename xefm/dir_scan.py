@@ -22,8 +22,16 @@ This module answers all four for a whole directory at once:
 
 Every backend returns the same record, so callers never branch on platform::
 
-    {'is_dir': bool, 'is_link': bool, 'size': int, 'mtime': float,
-     'hidden': bool, 'ok': bool}
+    {'is_dir': bool, 'is_link': bool, 'size': int, 'alloc': int | None,
+     'mtime': float, 'hidden': bool, 'ok': bool}
+
+``size`` is how many bytes long the entry is; ``alloc`` is how many bytes it
+occupies on disk, which is smaller for a sparse or compressed file and larger
+for one rounded up to a block. They are Finder's "Size" and "on disk", and the
+gap between them can be four orders of magnitude (issue #275). ``alloc`` is
+None where the backend cannot report it at all — Windows ``stat_result`` has no
+``st_blocks``, and neither an ``ls -la`` listing nor S3 has the concept — and 0
+for a directory on a backend that can, as ``size`` is.
 
 ``is_dir``, ``size`` and ``mtime`` describe the **target** of a symlink, and
 ``is_link`` the link itself — matching what ``stat()``/``is_dir()`` and
@@ -46,7 +54,8 @@ from xefm.log_manager import getLogger
 logger = getLogger("DirScan")
 
 __all__ = ["scan_dir", "attrs_for_path", "is_hidden", "is_hidden_path",
-           "hidden_from_stat", "hidden_of", "BROKEN_ATTRS"]
+           "hidden_from_stat", "hidden_of", "alloc_from_stat",
+           "BROKEN_ATTRS"]
 
 _WINDOWS = sys.platform == "win32"
 
@@ -60,13 +69,13 @@ _WINDOWS = sys.platform == "win32"
 FILE_ATTRIBUTE_HIDDEN = 0x02
 
 #: What a caller sees for an entry whose target could not be stat'd.
-BROKEN_ATTRS = {'is_dir': False, 'is_link': False, 'size': 0, 'mtime': 0.0,
-                'hidden': False, 'ok': False}
+BROKEN_ATTRS = {'is_dir': False, 'is_link': False, 'size': 0, 'alloc': 0,
+                'mtime': 0.0, 'hidden': False, 'ok': False}
 
 
 def _broken(is_link, hidden=False):
-    return {'is_dir': False, 'is_link': is_link, 'size': 0, 'mtime': 0.0,
-            'hidden': hidden, 'ok': False}
+    return {'is_dir': False, 'is_link': is_link, 'size': 0, 'alloc': 0,
+            'mtime': 0.0, 'hidden': hidden, 'ok': False}
 
 
 def hidden_from_stat(st) -> bool:
@@ -79,6 +88,21 @@ def hidden_from_stat(st) -> bool:
     None in it."""
     return bool((getattr(st, 'st_file_attributes', 0) or 0)
                 & FILE_ATTRIBUTE_HIDDEN)
+
+
+def alloc_from_stat(st):
+    """How many bytes the file ``st`` describes occupies on disk, or None where
+    that is not reported. ``st_blocks`` counts 512-byte units by definition —
+    not the filesystem's block size — so the multiplier is fixed.
+
+    None covers the two ways the field can be missing, and both happen here: it
+    does not exist on Windows, and a ``stat_result`` a backend built itself
+    from a plain tuple — the archive backend does — carries it as None (the
+    same quirk :func:`hidden_from_stat` handles from the other direction). A
+    backend that cannot answer must say so rather than report 0, which would
+    read as an empty directory instead of an unmeasured one."""
+    blocks = getattr(st, 'st_blocks', None)
+    return None if blocks is None else blocks * 512
 
 
 def hidden_of(path) -> bool:
@@ -129,6 +153,7 @@ def attrs_for_path(path_str, *, is_link=None):
     hidden = hidden_of(path_str) if is_link else hidden_from_stat(st)
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else st.st_size,
+            'alloc': 0 if is_dir else alloc_from_stat(st),
             'mtime': st.st_mtime, 'hidden': hidden, 'ok': True}
 
 
@@ -162,9 +187,11 @@ def _attrs_from_direntry(entry):
         return _broken(is_link, hidden)
     # Directories report size 0 on every backend: the bulk syscall cannot supply
     # a directory's size, and nothing displays or sorts on it (a directory
-    # renders as "<DIR>" and sorts as 0).
+    # renders as "<DIR>" and sorts as 0). 'alloc' follows it for the same
+    # reason — there is no directory equivalent of ATTR_FILE_ALLOCSIZE.
     return {'is_dir': is_dir, 'is_link': is_link,
             'size': 0 if is_dir else st.st_size,
+            'alloc': 0 if is_dir else alloc_from_stat(st),
             'mtime': st.st_mtime, 'hidden': hidden, 'ok': True}
 
 
@@ -193,6 +220,7 @@ if sys.platform == "darwin":
     ATTR_CMN_NAME = 0x00000001
     ATTR_CMN_OBJTYPE = 0x00000008
     ATTR_CMN_MODTIME = 0x00000400
+    ATTR_FILE_ALLOCSIZE = 0x00000004
     ATTR_FILE_DATALENGTH = 0x00000200
 
     FSOPT_PACK_INVAL_ATTRS = 0x00000008
@@ -200,12 +228,16 @@ if sys.platform == "darwin":
     VREG, VDIR, VLNK = 1, 2, 5
 
     #: Offsets within one packed entry. Attribute buffers are 4-byte packed, not
-    #: naturally aligned, so these are fixed rather than struct-derived.
-    _OFF_RETURNED = 4     # attribute_set_t, 5 x uint32
-    _OFF_NAME = 24        # attrreference_t {int32 offset, uint32 length}
-    _OFF_OBJTYPE = 32     # fsobj_type_t
-    _OFF_MODTIME = 36     # struct timespec
-    _OFF_DATALENGTH = 52  # off_t
+    #: naturally aligned, so these are fixed rather than struct-derived. The
+    #: kernel packs the attributes in bitmap order, common group first, so
+    #: ATTR_FILE_ALLOCSIZE (bit 2) lands ahead of ATTR_FILE_DATALENGTH (bit 9)
+    #: and every later offset moves when one is added.
+    _OFF_RETURNED = 4      # attribute_set_t, 5 x uint32
+    _OFF_NAME = 24         # attrreference_t {int32 offset, uint32 length}
+    _OFF_OBJTYPE = 32      # fsobj_type_t
+    _OFF_MODTIME = 36      # struct timespec
+    _OFF_ALLOCSIZE = 52    # off_t
+    _OFF_DATALENGTH = 60   # off_t
 
     _BULK_BUFSIZE = 256 * 1024
 
@@ -239,7 +271,7 @@ if sys.platform == "darwin":
         al.bitmapcount = ATTR_BIT_MAP_COUNT
         al.commonattr = (ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME |
                          ATTR_CMN_OBJTYPE | ATTR_CMN_MODTIME)
-        al.fileattr = ATTR_FILE_DATALENGTH
+        al.fileattr = ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATALENGTH
 
         buf = ctypes.create_string_buffer(_BULK_BUFSIZE)
         out = []
@@ -294,12 +326,24 @@ if sys.platform == "darwin":
                                         is_link=False)
 
         sec, nsec = struct.unpack_from("<qq", rec, _OFF_MODTIME)
-        size = struct.unpack_from("<q", rec, _OFF_DATALENGTH)[0]
+        # A directory's record stops before the file attributes — it is shorter
+        # by exactly those two off_t — so reading them there would pick up the
+        # next entry's bytes, or run off the end of the buffer for the last
+        # entry. Both are 0 for a directory anyway.
+        size = alloc = 0
+        if not is_dir:
+            size = struct.unpack_from("<q", rec, _OFF_DATALENGTH)[0]
+            # A volume that packs a length but not an allocation reports the
+            # size and leaves the on-disk figure unknown, rather than costing a
+            # stat per entry on the listing path for a number only the details
+            # dialog reads.
+            alloc = (struct.unpack_from("<q", rec, _OFF_ALLOCSIZE)[0]
+                     if ret_file & ATTR_FILE_ALLOCSIZE else None)
         # 'hidden' is the Windows attribute, which no macOS record carries; a
         # dot-name is what hides an entry here, and callers read that off the
         # name (see is_hidden).
         return name, {'is_dir': is_dir, 'is_link': False,
-                      'size': 0 if is_dir else size,
+                      'size': size, 'alloc': alloc,
                       'mtime': sec + nsec / 1e9, 'hidden': False, 'ok': True}
 
 

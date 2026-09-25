@@ -379,6 +379,12 @@ class SSHPathImpl(PathImpl):
         return {'is_dir': is_dir,
                 'is_link': entry.get('is_symlink', False),
                 'size': 0 if is_dir else entry.get('size', 0),
+                # ``ls -la`` reports a length, never an allocation; ``ls -s``
+                # would, but it is a second listing over the same connection
+                # for a number only the details dialog reads. None says the
+                # figure is unknown here rather than zero (see
+                # :func:`xefm.dir_scan.alloc_from_stat`).
+                'alloc': None,
                 'mtime': entry.get('mtime', 0.0),
                 'hidden': False,
                 'ok': True}

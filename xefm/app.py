@@ -65,8 +65,8 @@ from xefm.config import (KeyBindings, config_manager, deprecated_names_notice,
                          get_drive_locations, get_favorite_directories,
                          get_program_for_file, has_explicit_association,
                          keys_label_for_action, printable_text_notice)
-from xefm.dir_scan import is_hidden
-from xefm.disk_usage import UsageScan
+from xefm.dir_scan import is_hidden, alloc_from_stat
+from xefm.disk_usage import UsageScan, reports_allocation
 from xefm.file_list_manager import FileListManager
 from xefm.file_monitor_manager import FileMonitorManager
 from xefm.file_pane import FilePane
@@ -3463,12 +3463,20 @@ class XeFMApp:
         Each entry renders as a heading followed by a GFM table of its stat
         fields, so the values line up in a real column instead of hand-padded.
 
-        Directories additionally get live "Disk usage" / "Contents" rows: a
-        background walk (:class:`xefm.disk_usage.UsageScan`) totals their
+        Directories additionally get live "Total size" / "On disk" / "Contents"
+        rows: a background walk (:class:`xefm.disk_usage.UsageScan`) totals their
         recursive size and item counts while the dialog is already open, and a
         throttled animation tick swaps updated Markdown in place — the dialog
         opens instantly and the numbers climb until the walk finishes. Closing
-        the dialog cancels the walk."""
+        the dialog cancels the walk.
+
+        "Total size" and "On disk" are Finder's two numbers — how long the files
+        are, and how much of the volume they take up. They only differ on a tree
+        holding something sparse, compressed or cloned, and one row called "Disk
+        usage" used to show the former under the latter's name (issue #275). The
+        "On disk" row appears only for a backend that can report an allocation,
+        decided per root before the document is built so its shape stays fixed
+        across the in-place swaps."""
         import datetime as _dt
         import stat as _stat
         pane = self.active_pane()
@@ -3501,6 +3509,10 @@ class XeFMApp:
             except Exception:
                 pass
         scan = UsageScan(dir_roots)
+        # Which roots get an "On disk" row. Settled before the document exists,
+        # so a rebuild never adds or drops a line under the restored scroll
+        # offset — see reports_allocation.
+        alloc_roots = {str(r) for r in dir_roots if reports_allocation(r)}
 
         def _size_cell(nbytes, done, errors) -> str:
             value = f"{format_size(nbytes)} ({nbytes:,} bytes)"
@@ -3512,17 +3524,31 @@ class XeFMApp:
                 return "*n/a*"
             return value + " — *scanning…*"
 
+        def _alloc_cell(nbytes, done) -> str:
+            # None means the walk met an entry whose allocation the volume did
+            # not report, so the sum is missing terms — say so rather than show
+            # a total that reads low.
+            if nbytes is None:
+                return "*unavailable*"
+            return _size_cell(nbytes, done, 0)
+
         def _usage_rows(root):
-            # Two live table rows bound to one root's running totals; called on
-            # every rebuild, so it reads the counters fresh each time.
+            # Two or three live table rows bound to one root's running totals;
+            # called on every rebuild, so it reads the counters fresh each time.
             totals = scan.totals[str(root)]
+            on_disk_row = str(root) in alloc_roots
             def rows() -> str:
                 if scan.cancelled and not totals.done:
                     counts = "*n/a*"
                 else:
                     counts = f"{totals.files:,} files, {totals.dirs:,} folders"
-                return (f"| Disk usage | {_size_cell(totals.bytes, totals.done, totals.errors)} |\n"
-                        f"| Contents | {counts} |")
+                # The unreadable-directories note belongs to the pair of size
+                # rows once, not to each of them.
+                out = [f"| Total size | {_size_cell(totals.bytes, totals.done, totals.errors)} |"]
+                if on_disk_row:
+                    out.append(f"| On disk | {_alloc_cell(totals.on_disk, totals.done)} |")
+                out.append(f"| Contents | {counts} |")
+                return "\n".join(out)
             return rows
 
         def details(entry) -> list:
@@ -3581,17 +3607,35 @@ class XeFMApp:
             segments = details(targets[0])
         else:
             # Non-directory targets' own sizes, summed once; the directories'
-            # recursive share comes from the scan's live grand totals.
+            # recursive share comes from the scan's live grand totals. Their
+            # allocations are summed the same way, and one target that cannot
+            # report its own leaves the selection's on-disk figure unknown —
+            # the same rule RootTotals.on_disk applies inside a directory.
             plain_bytes = 0
+            plain_alloc = 0
+            plain_alloc_known = True
             plain_files = 0
             for t in targets:
                 if str(t) in scan.totals:
                     continue
                 plain_files += 1
                 try:
-                    plain_bytes += t.stat().st_size
+                    st = t.stat()
                 except Exception:
-                    pass
+                    plain_alloc_known = False
+                    continue
+                plain_bytes += st.st_size
+                alloc = alloc_from_stat(st)
+                if alloc is None:
+                    plain_alloc_known = False
+                else:
+                    plain_alloc += alloc
+
+            # The aggregate can only name an on-disk figure when every part of
+            # the selection reports one — every plain file, and every directory
+            # whose walk contributes to the total.
+            show_alloc = (plain_alloc_known and
+                          len(alloc_roots) == len(dir_roots))
 
             def totals_lines() -> str:
                 b, f, d, errors = scan.grand_totals()
@@ -3602,10 +3646,16 @@ class XeFMApp:
                 else:
                     items = (f"{total_files + total_dirs:,} "
                              f"({total_files:,} files, {total_dirs:,} folders)")
-                return (
-                    f"**Total size:** {_size_cell(plain_bytes + b, scan.done, errors)}\n\n"
-                    f"**Total items:** {items}"
-                )
+                lines = [
+                    f"**Total size:** {_size_cell(plain_bytes + b, scan.done, errors)}"]
+                if show_alloc:
+                    walked = scan.grand_alloc()
+                    lines.append(
+                        "**On disk:** " + _alloc_cell(
+                            None if walked is None else plain_alloc + walked,
+                            scan.done))
+                lines.append(f"**Total items:** {items}")
+                return "\n\n".join(lines)
 
             segments = [f"# {len(targets)} items selected", "", totals_lines, ""]
             for t in targets:
