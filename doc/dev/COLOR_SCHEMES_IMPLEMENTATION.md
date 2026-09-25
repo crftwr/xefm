@@ -147,17 +147,32 @@ A hidden entry is still a directory or still a link — the property is orthogon
 to type, so giving it its own color would mean a second entry per type and a
 2×N palette that grows every time a type is added. Instead `_type_fg()` resolves
 the type color first and then, for a hidden entry, washes it toward the pane
-background by `HIDDEN_DIM` (0.40) through the same `_dim_ink()` the resting pane
-uses. The two compose: a hidden file in a resting pane is washed twice toward the
-same background, which is exactly `1-(1-a)(1-b)`, and `ctx.ink` floors the result
-once at the draw site.
+background by `HIDDEN_DIM` (0.40). A resting pane's own wash (`extras['pane_dim']`)
+applies on top of that, toward the same background, and `ctx.ink` floors the
+result once at the draw site.
 
 ### The wash, and the one floor under it
 
-A hidden name is `_dim_ink(color, bg, HIDDEN_DIM)` — the plain wash toward the
-pane background, 0.40 by default — and nothing else. Washing toward the
-background is what makes it read as hidden rather than as a second palette: it
-spends lightness *and* chroma together, which is what the eye knows as faded.
+A hidden name is `_mix_oklab(color, bg, HIDDEN_DIM)` — a wash toward the pane
+background, 0.40 by default — and nothing else. Washing toward the background is
+what makes it read as hidden rather than as a second palette: it spends lightness
+*and* chroma together, which is what the eye knows as faded.
+
+The wash is perceptual, and that is not a detail. Blending gamma-encoded sRGB
+toward a dark background spends lightness fast and leaves hue and much of the
+chroma standing, so a faded orange arrives as a *dark orange*: Shinagawa's
+directory gold, washed 40% toward its navy, kept chroma 0.079 of 0.147 and
+rotated three degrees — a different shade rather than the same name, quieter.
+Interpolating in OKLab lands the same lightness with a quarter less chroma
+(0.059) and the hue six degrees further toward the background's. It is also what
+"40% of the way to the background" is supposed to mean, OKLab being the space
+where equal steps look equal. Neither ends up *blue* at 40% of anything; the
+question is only how much color survives, and the sRGB answer was "too much".
+
+Worth knowing for comparison: this is not alpha compositing, which happens in
+linear light and would arrive lighter still — Shinagawa's gold at (207, 137, 76)
+rather than (152, 115, 90). A hidden entry is faded further than 40%
+transparency would fade it.
 
 Under it sits `HIDDEN_LC` (Lc 30), a backstop rather than a design level. Names
 and directories land clear of it (Lc 34–41 across the built-ins); it catches the
@@ -213,9 +228,10 @@ set `auto_ink = True` or it is not the app's pipeline. The version of this
 feature that lifted every hidden name back to body weight passed a full suite
 that had left it off.
 
-Rendered across the built-ins, hidden names land at Lc 30–41 against Lc 75–103
-for visible ones, keep at least 60% of their chroma, and hold at least 55% of the
-separation the visible types have from each other.
+Rendered across the built-ins, a hidden name reads 23 to 55 Lc below its visible
+counterpart — the drop rather than the absolute, since a light palette starts at
+Lc 104 and a 40% wash still leaves it high — keeps at least 58% of its chroma,
+and holds at least 70% of the separation the visible types have from each other.
 
 `test_file_pane_hidden_color.py` renders a pane per theme for all of this,
 because none of it is visible from `_type_fg`'s return value — the arithmetic was
