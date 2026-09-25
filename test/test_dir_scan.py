@@ -176,6 +176,15 @@ class ListingCostsNoPerFileCalls(_TreeBase):
                 return fn(*a, **kw)
             return wrapper
 
+        # One listing before the counting starts. The first compute_listing in
+        # a process imports xefm.archive_libarchive, whose module body and
+        # one-shot libarchive probe stat ~45 times between ctypes'
+        # find_library, sysconfig and the bundled-library lookup — none of it
+        # per file, all of it cached afterwards. Counted, it landed on
+        # whichever sort mode ran first and made this test pass or fail on
+        # whether some earlier test in the same process had already paid it.
+        flm.compute_listing(Path(self.tmp))
+
         # Symlinks are the one thing bulk enumeration cannot answer: its record
         # describes the link, so the target is followed per link. Everything
         # else must come out of the single scan, whatever the sort mode.
