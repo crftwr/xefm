@@ -114,10 +114,18 @@ class Config:
     #   #     override only the types you name) ---
     #   'file_types': {'directory': (204, 204, 120),  # dirs  (default: soft yellow)
     #                  'file':      (212, 212, 212),  # files (default: foreground)
-    #                  'link':      (86, 194, 214)}   # symlinks (default: cyan)
+    #                  'link':      (86, 194, 214),   # symlinks (default: cyan)
+    #                  'hidden':    0.4}              # hidden entries (see below)
     #   #   ('directory' may also be given as a flat top-level key — shorthand for
     #   #    file_types['directory']. A symlink is colored as a link even when it
     #   #    points at a directory.)
+    #   #   'hidden' is not a fourth type but a treatment of the other three: a
+    #   #    hidden entry keeps its own color and fades toward the background by
+    #   #    this much (0 = no fading; default 0.4), so a hidden folder still reads
+    #   #    as a folder. Fading stops where a name would stop being findable, so
+    #   #    a very high number fades that far and no further. Give it an
+    #   #    (r, g, b) instead to paint every hidden entry one flat color, type
+    #   #    and all — what a monochrome theme wants, having no second hue to spend.
     #   # --- file pane cursor cue (a sub-dict; the row outline on the desktop
     #   #     app, the [ ] brackets and the rule under the row in a terminal,
     #   #     distinct from the selection fill) ---

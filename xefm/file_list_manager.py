@@ -312,6 +312,12 @@ class FileListManager:
                 'date_str': date_str,
                 'is_dir': a['is_dir'],
                 'is_link': a['is_link'],
+                # The same predicate the hidden-files toggle filters on — a
+                # leading dot *or* the platform attribute — so an entry the
+                # toggle calls hidden is also the one the pane renders as hidden
+                # (issue #354). Free: the attribute is already in the record.
+                'hidden': is_hidden(getattr(file_path, 'name', '')
+                                    or os.path.basename(file_key), a),
                 'cmp_name': a.get('cmp_name') or name_key.compare_name(file_path),
             }
         return file_info

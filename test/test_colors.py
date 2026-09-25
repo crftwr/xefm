@@ -6,7 +6,6 @@ Run with: python -m pytest test/test_colors.py -v
 
 from xefm.colors import (
     init_colors,
-    get_file_color,
     get_header_color,
     get_footer_color,
     get_status_color,
@@ -97,18 +96,6 @@ def test_init_colors_light_scheme():
 def test_color_helper_functions_return_tuples():
     """Test that color helper functions return (color_pair, attributes) tuples"""
     
-    # Test file colors
-    color_pair, attributes = get_file_color(is_dir=False, is_executable=False, is_focused=False, is_active=True)
-    assert isinstance(color_pair, int), "Color pair should be an integer"
-    assert isinstance(attributes, int), "Attributes should be an integer"
-    assert color_pair == COLOR_REGULAR_FILE
-    assert attributes == TextAttribute.NORMAL
-    
-    # Test directory colors
-    color_pair, attributes = get_file_color(is_dir=True, is_executable=False, is_focused=False, is_active=True)
-    assert color_pair == COLOR_DIRECTORIES
-    assert attributes == TextAttribute.NORMAL
-    
     # Test header colors
     color_pair, attributes = get_header_color(is_active=False)
     assert isinstance(color_pair, int)
@@ -177,32 +164,6 @@ def test_color_helper_functions_return_tuples():
     assert isinstance(attributes, int)
     
     print("✓ Color helper functions return correct tuple format")
-
-
-def test_selected_file_colors():
-    """Test selected file color variations"""
-    
-    # Active selection
-    color_pair, attributes = get_file_color(is_dir=False, is_executable=False, is_focused=True, is_active=True)
-    assert isinstance(color_pair, int)
-    assert attributes == TextAttribute.NORMAL
-    
-    # Inactive selection
-    color_pair, attributes = get_file_color(is_dir=False, is_executable=False, is_focused=True, is_active=False)
-    assert isinstance(color_pair, int)
-    assert attributes == TextAttribute.NORMAL
-    
-    # Directory active selection
-    color_pair, attributes = get_file_color(is_dir=True, is_executable=False, is_focused=True, is_active=True)
-    assert isinstance(color_pair, int)
-    assert attributes == TextAttribute.NORMAL
-    
-    # Executable active selection
-    color_pair, attributes = get_file_color(is_dir=False, is_executable=True, is_focused=True, is_active=True)
-    assert isinstance(color_pair, int)
-    assert attributes == TextAttribute.NORMAL
-    
-    print("✓ Selected file colors test passed")
 
 
 def test_rgb_color_values():

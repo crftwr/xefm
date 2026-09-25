@@ -18,7 +18,13 @@ except ImportError:
 # Color pair constants
 # Note: Color pair 1 is reserved for terminal background in curses backend
 
-# File type colors (normal)
+# File type colors. These are vestigial: nothing reads them to paint a file pane
+# any more. Names are colored from the active theme's ``file_types`` palette
+# (directory / file / link / hidden) in xefm/file_pane.py, which is also why
+# there is no executables color there — the pane's types are the ones every
+# platform has, and Windows has no execute bit (issue #354).
+# COLOR_REGULAR_FILE doubles as the syntax highlighter's default ink, which is
+# the one reader left; init_colors still binds the pairs below.
 COLOR_REGULAR_FILE = 28      # Regular files (changed from 1 to avoid conflict with terminal background)
 COLOR_DIRECTORIES = 2        # Directories
 COLOR_EXECUTABLES = 3        # Executable files
@@ -523,40 +529,6 @@ def init_colors(renderer, color_scheme=None):
     renderer.init_color_pair(COLOR_MATRIX_BRIGHT, matrix_bright_fg, default_bg)
     renderer.init_color_pair(COLOR_MATRIX_MEDIUM, matrix_medium_fg, default_bg)
     renderer.init_color_pair(COLOR_MATRIX_DIM, matrix_dim_fg, default_bg)
-
-def get_file_color(is_dir, is_executable, is_focused, is_active):
-    """
-    Get the appropriate color pair and attributes for a file based on its properties.
-    
-    Returns:
-        Tuple[int, int]: (color_pair, attributes)
-    """
-    # Handle focused files with common background color
-    if is_focused and is_active:
-        if is_dir:
-            return COLOR_DIRECTORIES_FOCUSED, TextAttribute.NORMAL
-        elif is_executable:
-            return COLOR_EXECUTABLES_FOCUSED, TextAttribute.NORMAL
-        else:
-            return COLOR_REGULAR_FILE_FOCUSED, TextAttribute.NORMAL
-    
-    # Handle inactive focus with dedicated colors
-    if is_focused:
-        if is_dir:
-            return COLOR_DIRECTORIES_FOCUSED_INACTIVE, TextAttribute.NORMAL
-        elif is_executable:
-            return COLOR_EXECUTABLES_FOCUSED_INACTIVE, TextAttribute.NORMAL
-        else:
-            return COLOR_REGULAR_FILE_FOCUSED_INACTIVE, TextAttribute.NORMAL
-    
-    # Normal (unfocused) files
-    if is_dir:
-        return COLOR_DIRECTORIES, TextAttribute.NORMAL
-    elif is_executable:
-        return COLOR_EXECUTABLES, TextAttribute.NORMAL
-    else:
-        return COLOR_REGULAR_FILE, TextAttribute.NORMAL
-
 
 
 def get_header_color(is_active=False):
