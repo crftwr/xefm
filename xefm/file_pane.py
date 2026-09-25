@@ -809,12 +809,21 @@ class FilePane(Widget):
             ctx.draw_text(ext_x, y, ext_text,
                           Style(fg=name_fg, bg=text_bg, attr=row_attr, underline_color=under),
                           ink=name_ink)
+        # The columns opt out for the same reason the hidden name does, and they
+        # have wanted to for longer: they are inked at LC_LARGE just above, to sit
+        # a tier under the filenames, and auto-ink was lifting them back to body
+        # weight — Gruvbox's muted (146, 131, 116) reached the row as
+        # (214, 208, 201), all but the name's own color. The quiet column tier was
+        # quiet in intent only, and on a GUI backend it was quiet on the cursor
+        # row alone, that being where auto-ink steps aside.
         if size:
             ctx.draw_text(size_right - measure_mono(size), y, size,
-                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO))
+                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO),
+                          ink=False)
         if date:
             ctx.draw_text(date_right - measure_mono(date), y, date,
-                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO))
+                          Style(fg=col_fg, bg=text_bg, attr=row_attr, underline_color=under, font=MONO),
+                          ink=False)
 
         # Grid cursor cue drawn last, in the reserved gutter columns clear of the
         # glyphs: the brackets, or — where the row is ruled — the two cells that

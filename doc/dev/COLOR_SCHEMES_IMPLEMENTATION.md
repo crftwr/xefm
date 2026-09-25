@@ -200,6 +200,14 @@ have lowered the target (auto-ink floors dimmed text at `LC_MIN_NONTEXT`), but
 it is a real attribute: the curses backend maps it to `A_DIM` and the terminal
 would dim an already-faded color a second time.
 
+The size and date columns opt out for the same reason, and had been wanting to
+for longer: `_draw_row` inks them at `LC_LARGE` to sit a tier under the
+filenames, and auto-ink had been raising them to body weight — Gruvbox's muted
+(146, 131, 116) reached the row as (214, 208, 201), a hair off the filename's
+own color — so a pane's numbers read as loud as its names, except on a GUI
+cursor row. They now land where the pane put them: (191, 182, 172), Lc 60
+against the name's 82. See `test_file_pane_column_weight.py`.
+
 One thing follows for anyone testing a pane's colors: a `Panel` under test must
 set `auto_ink = True` or it is not the app's pipeline. The version of this
 feature that lifted every hidden name back to body weight passed a full suite
