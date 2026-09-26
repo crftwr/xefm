@@ -66,18 +66,45 @@ output from a program that ignores the console's setting is read in the
 system's code page instead. On macOS and Linux, a name that is not valid UTF-8
 is kept byte for byte, so the file it names can still be opened.
 
+## Import List from File
+
+**Edit → Import List from File** (`import_list_from_file`), or **Open as
+List** on a file's right-click menu, opens the text file under the cursor as a
+list: one path per line. Select several list files first to open them as one
+list.
+
+A list file can be anything that names files: an export from Everything
+(**File → Export → TXT**), a build log's list of outputs, a `.lst` or `.txt`
+you keep beside a project, or the saved output of a command:
+
+```powershell
+dir -Recurse -Name *.log > logs.txt         # Windows PowerShell
+```
+
+- A **relative** path in a list file is taken relative to **the folder the
+  list file is in** — so a list kept beside the files it names keeps working
+  when the folder is moved, and reads the same from either pane.
+- UTF-8 and UTF-16 files are both read (Windows PowerShell 5.1 and Notepad's
+  "Unicode" save as UTF-16), as are files in your system's code page.
+- A list file on an `ssh://` or `s3://` location is read there, and its
+  relative lines name files there.
+- Opening the list does not change the file, and the pane does not follow it:
+  open it again to pick up an edit.
+
 ## Giving them keys
 
-Both actions ship without a key. To give them one, add them to your config:
+The three actions ship without a key. To give them one, add them to your
+config:
 
 ```python
 KEY_BINDINGS['import_list_from_clipboard'] = ['Ctrl-Shift-L']
 KEY_BINDINGS['import_list_from_command'] = ['Ctrl-Shift-K']
+KEY_BINDINGS['import_list_from_file'] = ['Ctrl-Shift-J']
 ```
 
 ## What is read
 
-These apply to both sources.
+These apply to every source.
 
 - One path per line. Blank lines are skipped.
 - Spaces around a line, and one pair of quotes around it (`"C:\My Files\a.txt"`,
@@ -85,18 +112,19 @@ These apply to both sources.
 - A path listed twice appears once.
 - Absolute paths and `ssh://…` / `s3://…` locations are used as they are, and
   one list can mix them.
-- A **relative** path is taken relative to the directory the command ran in,
-  or for the clipboard, the directory the pane is showing, since the clipboard
-  doesn't say where it came from. The log line says how many were read that
-  way — check it if a copied list came from somewhere else.
+- A **relative** path is taken relative to the folder the list file is in,
+  the directory a command ran in, or — for the clipboard, which doesn't say
+  where it came from — the directory the pane is showing. The log line says
+  how many were read that way; check it if a copied list came from somewhere
+  else.
 
 Nothing else is interpreted: no wildcards, no CSV columns, no URLs other than
 the locations XeFM can open.
 
 ## What you see
 
-- The pane's header names the list — `Clipboard`, or the command — and shows
-  the folder its rows are named from: `[Clipboard] ~/src/xefm`,
+- The pane's header names the list — `Clipboard`, the command, or the list
+  file — and shows the folder its rows are named from: `[Clipboard] ~/src/xefm`,
   `[rg -l TODO] ~/src/xefm`. When the header is narrow, the name is
   shortened before the folder is. The number of rows is in the footer, as for
   any directory.

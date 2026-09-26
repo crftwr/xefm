@@ -1,8 +1,8 @@
 # File List Import — Implementation
 
-Stages ① and ③ of [#453](https://github.com/crftwr/xefm/discussions/453): a
-list of paths from outside XeFM — the clipboard, or a command's output —
-becomes a virtual pane. User-facing behavior is in
+Stages ①, ② and ③ of [#453](https://github.com/crftwr/xefm/discussions/453):
+a list of paths from outside XeFM — the clipboard, a list file, or a
+command's output — becomes a virtual pane. User-facing behavior is in
 [`doc/FILE_LIST_IMPORT_FEATURE.md`](../FILE_LIST_IMPORT_FEATURE.md); the
 virtual pane itself is described in
 [SEARCH_RESULTS_PANE_IMPLEMENTATION.md](SEARCH_RESULTS_PANE_IMPLEMENTATION.md).
@@ -24,13 +24,22 @@ supported in tree; it is one source among many.
 | One door for every source | `XeFMApp.open_path_list(pane_name, paths, *, title, base=None)` |
 | The clipboard source | `XeFMApp.import_list_from_clipboard` (action `import_list_from_clipboard`, unbound) |
 | The command source | `XeFMApp.import_list_from_command` → `_run_list_command` → `_open_command_output`; the blocking half in `xefm/command_list.py` |
+| The file source | `XeFMApp.import_list_from_file` (action `import_list_from_file`, unbound; "Open as List" on the context menu); `path_list.read_lists` |
+| The shared report | `XeFMApp._open_list(pane_name, *, title, load, relative_to)` |
 | The public door | `PaneApi.open_list(paths, *, title)` in `xefm/user_api.py` |
 | Listing a virtual pane off the UI thread | `XeFMApp._list_virtual`, `FileListManager.compute_virtual_listing` / `prune_virtual` |
 | Whole-path names | `name_key.WHOLE_PATH` |
 
-Every source ends in `open_path_list` and chooses its own `base` for relative
+Every source ends in `_open_list` and chooses its own base for relative
 lines: the pane's directory for the clipboard, the command's cwd for a command,
-and — for stage ② (a file), not yet built — the list file's own directory.
+each list file's own directory for a file.
+
+`_open_list` hands `_list_virtual` a `load()` callable that runs **on the
+listing worker** and returns the `Resolved` set, rather than a set resolved on
+the UI thread. For the clipboard and `open_list` that only moves resolving;
+for a list file it moves the read itself, which on an `ssh://` or `s3://` list
+is a network round trip. The worker adds `total`, `relative` and `problems`
+(unreadable list files) to the result for the report.
 
 ## The flow
 
@@ -52,6 +61,24 @@ and — for stage ② (a file), not yet built — the list file's own directory.
 
 The search feed (`_feed_search_results`) now enters through the same
 `_list_virtual`, with its root given rather than derived.
+
+## The file source
+
+`import_list_from_file` takes the selection, or the file under the cursor,
+skipping directories, and `path_list.read_lists` reads each through
+`Path.read_bytes` — so a list on any backend works, and its relative lines
+resolve on that backend. The base is **the list file's own directory**, the
+M3U / `.gitignore` / response-file convention: a list kept beside what it
+names survives the folder moving and reads the same from either pane. Several
+lists merge in order, each path once; one that cannot be read is skipped and
+named in the report.
+
+Decoding is `path_list.decode`, shared with the command source and moved here
+from `command_list`. It honours a byte-order mark first — UTF-32, UTF-8, or
+**UTF-16**, which is what Windows PowerShell 5.1's `Out-File` and `>` write and
+Notepad calls "Unicode", and which would otherwise read as NUL-riddled ANSI —
+then UTF-8, then the ANSI code page on Windows or the filesystem encoding with
+`surrogateescape` on POSIX.
 
 ## The command source
 
@@ -88,8 +115,8 @@ with `task.counted` fed from the line count.
   expansion, after the outer `cmd` has parsed its line, so only the inner
   `cmd` parses it — `%VAR%`, `!`, quoted `|`, `^&` and `&&` behave as at a
   prompt, and the exit code is the command's (`_windows_command_line`).
-- **Decoding** happens once, over the whole output (`decode_output`): UTF-8
-  with a BOM stripped; else the ANSI code page on Windows (programs that
+- **Decoding** happens once, over the whole output (`path_list.decode`,
+  described under the file source): UTF-8; else the ANSI code page on Windows (programs that
   ignore the console's code page — the C runtime's `printf`, Python); else the
   filesystem encoding with `surrogateescape` on POSIX, so an undecodable name
   still round-trips to the bytes on disk.

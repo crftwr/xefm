@@ -18,7 +18,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
-from xefm import command_list  # noqa: E402
+from xefm import command_list, path_list  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 
@@ -31,22 +31,22 @@ def py(code: str) -> str:
 
 class Decode(unittest.TestCase):
     def test_utf8(self):
-        self.assertEqual(command_list.decode_output("a/日本.txt\n".encode()),
+        self.assertEqual(path_list.decode("a/日本.txt\n".encode()),
                          "a/日本.txt\n")
 
     def test_a_byte_order_mark_is_dropped(self):
-        self.assertEqual(command_list.decode_output(b"\xef\xbb\xbfa.txt\n"), "a.txt\n")
+        self.assertEqual(path_list.decode(b"\xef\xbb\xbfa.txt\n"), "a.txt\n")
 
     @unittest.skipUnless(sys.platform == "win32", "Windows code pages")
     def test_windows_falls_back_to_the_ansi_code_page(self):
         data = "café.txt\n".encode("cp1252")      # not valid UTF-8
-        self.assertEqual(command_list.decode_output(data),
+        self.assertEqual(path_list.decode(data),
                          data.decode("mbcs", errors="replace"))
 
     @unittest.skipIf(sys.platform == "win32", "POSIX filesystem encoding")
     def test_posix_keeps_undecodable_names_addressable(self):
         raw = b"caf\xe9.txt"            # Latin-1, not UTF-8
-        text = command_list.decode_output(raw + b"\n")
+        text = path_list.decode(raw + b"\n")
         self.assertEqual(os.fsencode(text.rstrip("\n")), raw)
 
 
