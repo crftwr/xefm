@@ -105,19 +105,23 @@ same way:
 | `isearch.next_match` | Move to the next match |
 | `isearch.prev_match` | Move to the previous match |
 | `isearch.toggle_select_down` | Mark, then move to the next match |
-| `isearch.toggle_select_up` | Mark, then move to the previous match |
+| `isearch.toggle_select_up` | Mark, then move to the previous match (no default key) |
+| `isearch.select_range` | Mark everything between the nearest mark and this match |
 | `isearch.select_matches` | Mark every match (again: clear them) |
 | `isearch.accept` | Stop at the current match |
 | `isearch.cancel` | Cancel, restoring the cursor |
 
 One rule applies here and nowhere else: **the key must not be one that types a
 character.** Everything printable belongs to the pattern you are typing — which
-is why marking a file here is a modified arrow rather than the file list's own
-toggle key, whose glyph the search reads as the separator between `report 2024`
-and `report*2024*`. Bind an isearch action to `N` and it can never fire; XeFM
-says so in the log pane at startup rather than leaving you to wonder. Modified or
-non-printable keys are free: `Shift-DOWN`, `Ctrl-Y`, `F2`, `INSERT` (on Windows
-and in the terminal — macOS keyboards have no Insert key).
+is why marking a file here is `Ctrl-Space` rather than the file list's own Space,
+whose glyph the search reads as the separator between `report 2024` and
+`report*2024*`. Bind an isearch action to `N` and it can never fire; XeFM says so
+in the log pane at startup rather than leaving you to wonder. Shift is not enough
+to turn a printable into a command — `Shift-Space` types a space too, which is why
+the range key here is `Ctrl-Shift-Space` while the file list's is `Shift-Space`.
+Everything modified with Ctrl, and every non-printable key, is free: `Ctrl-Y`,
+`Shift-DOWN`, `F2`, `INSERT` (on Windows and in the terminal — macOS keyboards
+have no Insert key).
 
 `isearch.select_matches` is the one default that takes a key the pattern field
 would otherwise use (select-all-text). Only the Ctrl form: `Cmd-A` still selects

@@ -139,6 +139,7 @@ What a terminal cannot deliver, and why those chords are not in the common table
 |---|---|
 | `Command-<key>` | No terminal encodes the Command key at all — not Terminal.app, not iTerm2, not VS Code's. |
 | `Ctrl-Shift-<letter>` | A terminal sends Ctrl+letter as a single control byte with no room for Shift, so `'Ctrl-Shift-C'` *is* `'Ctrl-C'` there. (The Windows console is the exception, but a binding that works on one console only is not a default.) |
+| `Shift-<printable>` | The same gap from the other side: a terminal reports the character, and the character Shift+Space produces is a space. `select_range` takes `Shift-Space` anyway — the one deliberate exception in the table, because Shift is the range gesture users arrive with and nothing a terminal can carry says "range" at all. In a POSIX terminal it toggles one item (plain Space's job) until you rebind it. |
 | `Ctrl-ENTER` | Same reason — indistinguishable from plain `ENTER`. |
 | `Alt-ENTER` | macOS keyboards spend Option on glyphs and IME, and the Windows terminal takes Alt+Enter for fullscreen. |
 | `Ctrl-I`, `Ctrl-M`, `Ctrl-J`, `Ctrl-H`, `Ctrl-[` | Those bytes already *are* Tab, Enter, Backspace and Escape. |
@@ -146,7 +147,9 @@ What a terminal cannot deliver, and why those chords are not in the common table
 Shift and Ctrl on a **named** key are fine everywhere — `Ctrl-UP`, `Shift-DOWN`,
 `Ctrl-HOME`, `Shift-F3` — because a terminal has a sequence for those. That
 leaves **plain `Ctrl-<letter>`** as the chord family the whole keymap can rely on,
-which is what the OS-flavoured actions use.
+which is what the OS-flavoured actions use. `Ctrl-Space` belongs to that family
+too: a terminal sends it as the NUL byte, which PuiKit decodes, and both consoles
+report it natively — which is why the search bar marks a file with it.
 
 ### Keys the host takes first
 
@@ -185,6 +188,17 @@ the lines by hand if your config predates the change:
 | `copy_names` | `Command-Shift-C` / `Ctrl-Shift-C` (Windows) | `Ctrl-N` |
 | `copy_paths` | `Command-Shift-P` / `Ctrl-Shift-P` (Windows) | `Ctrl-P` |
 | `copy_log_selection` | `Command-C`, `Ctrl-C` | `Ctrl-C`, plus `Command-C` in the macOS app |
+| `toggle_select_up` | `Shift-SPACE` | unbound — the key went to `select_range` (see below) |
+| `isearch.toggle_select_down` | `Shift-DOWN` | `Ctrl-SPACE` |
+| `isearch.toggle_select_up` | `Shift-UP` | unbound |
+
+`Shift-Space` now fills a *range* (`select_range`), which is what Shift means
+in every other application, and the search bar's marking moved onto the Space
+family to match: `Ctrl-Space` marks one match, `Ctrl-Shift-Space` fills the range
+to it. Those were `Shift-Down` / `Shift-Up`, which worked but read as the log
+pane's scroll keys — the same chord one surface away. Marking *backwards* is what
+lost its default in both places; both actions are still registered, so a line in
+`KEY_BINDINGS` brings either back.
 
 ## Configuration Format
 
@@ -263,8 +277,9 @@ to a Python function of your own.
 The incremental search bar (`F`) is a surface of its own too, and its keys carry
 its name the same way — `isearch.next_match`, `isearch.prev_match`,
 `isearch.toggle_select_down`, `isearch.toggle_select_up`,
-`isearch.select_matches`, `isearch.accept`, `isearch.cancel`. They are rebound
-exactly like a viewer's; the defaults and what each one does are in
+`isearch.select_range`, `isearch.select_matches`, `isearch.accept`,
+`isearch.cancel`. They are rebound exactly like a viewer's; the defaults and what
+each one does are in
 [Customization (Preview)](CUSTOMIZATION_FEATURE.md#the-incremental-search-bar).
 
 One rule is specific to this surface: **the key must not be one that types a
@@ -272,7 +287,10 @@ character.** The pattern field is offered every printable key first — that is
 what keeps `Q`, `?` and Space typeable into a pattern while `quit`, `help` and
 `toggle_select_down` own them in the file list — so an isearch action bound to
 `N` can never fire. XeFM notes it in the log pane at startup rather than leaving
-the binding silently dead. `Shift-DOWN`, `Ctrl-N` and `F2` are all fine.
+the binding silently dead. `Shift-DOWN`, `Ctrl-N` and `F2` are all fine. Shift
+alone is not enough to make a printable key a command here: `Shift-Space` types a
+space, which is why the file list's `select_range` key cannot serve the search bar
+and `isearch.select_range` has `Ctrl-Shift-Space` instead.
 
 ### Renamed actions
 

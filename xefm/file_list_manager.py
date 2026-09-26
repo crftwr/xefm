@@ -704,6 +704,55 @@ class FileListManager:
         selected.update(paths)
         return True, f"Selected {len(paths)} match{plural}"
 
+    def select_range(self, pane_data):
+        """Select every item between the nearest already-selected item and the
+        cursor, inclusive — the keyboard's answer to a Shift-click (issue #266).
+
+        The anchor is the nearest selected item *above* the cursor, and only when
+        there is none above, the nearest one below: marking an item and then
+        moving either way reaches the same run with the same key, so there is no
+        dead end to learn. Everything in the span is added; nothing outside it is
+        touched and nothing is ever deselected, so several runs accumulate the
+        way repeated searches do in ``toggle_matches_selection``.
+
+        Used by both surfaces that have a cursor over this listing — the file
+        list and the open incremental search — which is why it takes its span
+        from ``focused_index`` and moves nothing: during a search the cursor *is*
+        the current match, and walking it would fight the search.
+
+        Args:
+            pane_data: Pane data dictionary
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        files = pane_data['files']
+        if not files:
+            return False, "No items to select"
+        selected = pane_data['selected_files']
+        if not selected:
+            return False, "No selection"
+
+        cursor = pane_data['focused_index']
+        anchor = next((i for i in range(cursor - 1, -1, -1)
+                       if str(files[i]) in selected), None)
+        if anchor is None:
+            anchor = next((i for i in range(cursor + 1, len(files))
+                           if str(files[i]) in selected), None)
+        if anchor is None:
+            # Something is selected, but it is the item under the cursor and
+            # nothing else: there is no span to fill.
+            return False, "No other selected item"
+
+        low, high = (anchor, cursor) if anchor < cursor else (cursor, anchor)
+        added = [str(files[i]) for i in range(low, high + 1)
+                 if str(files[i]) not in selected]
+        if not added:
+            return True, f"Range already selected ({high - low + 1} items)"
+        selected.update(added)
+        plural = "" if len(added) == 1 else "s"
+        return True, f"Selected {len(added)} item{plural}"
+
     def find_matches(self, pane_data, pattern, match_all=False, return_indices_only=False):
         """Find all files matching the search pattern in the current pane.
 

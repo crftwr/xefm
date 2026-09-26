@@ -254,6 +254,7 @@ it is the one list of keys that is always right for your config.
 | Action | What it does |
 |--------|--------------|
 | `toggle_select_down` | Select/deselect the file and step down |
+| `select_range` | Select everything between the nearest selected item and the cursor |
 | `copy_files` | Copy selected files to the other pane |
 | `move_files` | Move selected files |
 | `create_directory` | Create a directory (the same key, with nothing selected) |
@@ -267,10 +268,31 @@ it is the one list of keys that is always right for your config.
 
 ### Multi-Selection
 1. `toggle_select_down` selects individual files
-2. `toggle_select_files` selects/deselects all files
-3. `toggle_select_items` selects/deselects all items (files + directories)
-4. `cursor_next_selected` / `cursor_prev_selected` jump between what you selected
-5. Perform operations on the selection
+2. `select_range` selects a whole run: mark the first file, move the cursor to
+   the last one, and everything between them is selected
+3. `toggle_select_files` selects/deselects all files
+4. `toggle_select_items` selects/deselects all items (files + directories)
+5. `cursor_next_selected` / `cursor_prev_selected` jump between what you selected
+6. Perform operations on the selection
+
+`select_range` takes its anchor from the nearest selected item above the cursor,
+or — when nothing above is selected — the nearest one below, so it reads the same
+whether you moved down or up from the file you marked. It only ever adds: items
+outside the run keep whatever they were, so several runs add up. Getting the
+cursor to the far end of the run can be a search as well as an arrow key, which
+is why the search bar has the same operation on a key of its own
+(`isearch.select_range`).
+
+Its default key is `Shift-Space`, and a terminal cannot deliver that one: there
+is no room for a modifier on a printable key, so a POSIX terminal reports a plain
+space and toggles one item instead. In Terminal.app, iTerm2 or a Linux terminal,
+bind it to a chord the terminal can carry, or use **Select → Select to Cursor**:
+
+```python
+KEY_BINDINGS = {
+    'select_range': ['Ctrl-LEFT'],   # or 'F6', 'Ctrl-Y' …
+}
+```
 
 **See detailed documentation**: [Key Bindings Feature](KEY_BINDINGS_FEATURE.md)
 
@@ -343,7 +365,8 @@ Run `isearch`, then type. While the search bar is open:
 | Action | What it does |
 |--------|--------------|
 | `isearch.prev_match` / `isearch.next_match` | Previous / next match |
-| `isearch.toggle_select_up` / `isearch.toggle_select_down` | Select the file, then move to the previous / next match |
+| `isearch.toggle_select_down` | Select the file, then move to the next match |
+| `isearch.select_range` | Select everything between the nearest selected item and this match |
 | `isearch.select_matches` | Select every match at once — again to clear them |
 | `isearch.accept` | Stop at the current match |
 | `isearch.cancel` | Cancel and go back to where the cursor was |
@@ -355,10 +378,15 @@ romaji for Japanese keeps a couple of characters of leeway, since `ni` finds
 Japanese only once it is `nih` — see [Migemo Search](MIGEMO_SEARCH_FEATURE.md).)
 
 Space types a space — it separates the pattern's words (`re 24` finds
-`report_2024.txt`), which is why selecting a file here is its own action rather
-than the file list's toggle key. `isearch.select_matches` marks the whole set the
-counter on the right is showing: type `.log`, run it, and every log file is
-selected. Files selected outside the search are left alone, so a second search
+`report_2024.txt`), which is why marking a file here is `Ctrl-Space` rather than
+the file list's bare Space. The two surfaces spell marking the same way: Space
+selects one item and Shift is the range, so in the search bar that is `Ctrl-Space`
+and `Ctrl-Shift-Space`. (`Ctrl-Shift-Space` reaches the desktop app only — a
+terminal cannot modify a printable key, and the Windows terminal claims that
+chord for itself.) Marking *backwards* has no default key in either surface; bind
+`isearch.toggle_select_up` if you want it. `isearch.select_matches` marks the
+whole set the counter on the right is showing: type `.log`, run it, and every log
+file is selected. Files selected outside the search are left alone, so a second search
 adds to them. Every one of these keys can be rebound; see
 [Customization](CUSTOMIZATION_FEATURE.md#the-incremental-search-bar).
 

@@ -24,8 +24,18 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.7.1 is the floor, and a soft one: XeFM calls nothing new for it. It is what
-# makes the image viewer's own overlays land in FRONT of the picture on the TUI.
+# 1.7.2 is the floor, and a soft one in shape but not in effect: XeFM calls
+# nothing new for it, and nothing raises without it -- a TUI simply loses a key.
+# Ctrl+Space is the search bar's marking key (issue #266 moved it there, where
+# Space itself types into the pattern), and in a terminal that chord arrives as
+# the NUL byte. PuiKit decoded only 0x01..0x1A, the Ctrl+letter run one byte
+# above, so NUL fell past every branch and was dropped: on an older PuiKit
+# 'isearch.toggle_select_down' cannot fire in the TUI at all, while both GUI
+# backends and the Windows console -- which report the modifier natively -- are
+# unaffected. 1.7.2 names the byte in both TUI input paths (VT and curses).
+# 1.7.1 was the previous floor, and a soft one: XeFM called nothing new for it
+# either. It is what makes the image viewer's own overlays land in FRONT of the
+# picture on the TUI.
 # A terminal has no compositor, so a picture is written out of band and has to
 # go out after the cell grid -- which put it in front of everything, whatever
 # layer each came from, so pressing ``?`` over an image drew the help dialog
@@ -85,7 +95,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.7.1
+puikit>=1.7.2
 pygments
 boto3
 watchdog

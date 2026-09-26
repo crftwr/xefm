@@ -412,6 +412,17 @@ _FILER_ACTIONS = [
        aliases=("select_all_files",)),
     _a("toggle_select_items", FILER, "Toggle selection of every item",
        aliases=("select_all_items",)),
+    # The keyboard's Shift-click: mark one item, move the cursor, and this fills
+    # the span between them. Shift is what other applications spend on a range,
+    # and Space is already "select" here, so Shift-Space is the one key both
+    # halves of that sentence agree on — which is why it took the key
+    # 'toggle_select_up' used to hold (see the File Selection block of
+    # _config.py). A POSIX terminal cannot deliver it: it has no room for a
+    # modifier on a printable, so Shift-Space arrives there as a plain Space.
+    # Deliberate, and documented for rebinding — the desktop app and the Windows
+    # console, where the gesture is a convention users already have, are worth
+    # more than a key no surface reads as "range".
+    _a("select_range", FILER, "Select from the nearest selected item to the cursor"),
     _a("cursor_next_selected", FILER, "Jump to the next selected item"),
     _a("cursor_prev_selected", FILER, "Jump to the previous selected item"),
     # Clipboard
@@ -630,20 +641,45 @@ _ISEARCH_ACTIONS = [
     #    (no kitty keyboard protocol on the VT input path), and macOS has no
     #    Insert key at all, so neither can carry a default.
     #
-    # Shift+arrow satisfies both, and reads as the arrow it modifies: Up/Down
-    # walk the matches, Shift+Up/Down walk them *marking as they go* — the file
-    # list's Space / Shift-Space, whose "move" is one row where this one is one
-    # match.
+    # Ctrl+Space satisfies both and says what it does: Space is "select" in the
+    # file list, and Ctrl is what turns it into a command on a surface where a
+    # bare Space types. Ctrl+Shift+Space then reads the way it does everywhere
+    # else — Shift is the range — so the two surfaces spell marking the same way:
+    #
+    #     file list   Space              Shift-Space
+    #     search bar  Ctrl-Space         Ctrl-Shift-Space
+    #
+    # These were Shift+Down / Shift+Up, which worked but read as the log pane's
+    # scroll keys, since that is what the same chord does in the file list a row
+    # away. Marking backwards lost its default in the move (as it did in the file
+    # list): a search walks forwards, the backwards variants are still registered,
+    # and either surface can have one back with a line in KEY_BINDINGS.
+    #
+    # Ctrl+Space costs a terminal nothing — it is the NUL byte, decoded since
+    # PuiKit 1.7.2 — while Ctrl+Shift+Space reaches the desktop app only: a
+    # terminal has no room for a modifier on a printable, and the Windows
+    # terminal claims that chord outright.
     _a("isearch.next_match", ISEARCH, "Move to the next match",
        default_keys=("DOWN",)),
     _a("isearch.prev_match", ISEARCH, "Move to the previous match",
        default_keys=("UP",)),
     _a("isearch.toggle_select_down", ISEARCH,
        "Toggle selection and move to the next match",
-       default_keys=("Shift-DOWN",)),
+       default_keys=("Ctrl-SPACE",)),
     _a("isearch.toggle_select_up", ISEARCH,
        "Toggle selection and move to the previous match",
-       default_keys=("Shift-UP",)),
+       default_keys=()),
+    # The file list's 'select_range' on the surface that shares its cursor, and
+    # the same handler: during a search the cursor is the current match, so
+    # "everything between the last mark and here" is the answer to a pattern that
+    # found the end of a run. A separate dotted action rather than the
+    # unqualified name registered twice, because the two carry different keys —
+    # an unqualified 'select_range' in KEY_BINDINGS would otherwise hand this
+    # surface Shift-Space, which the pattern field would swallow as a typed
+    # space.
+    _a("isearch.select_range", ISEARCH,
+       "Select from the nearest selected item to the current match",
+       default_keys=("Ctrl-Shift-SPACE",)),
     # Named for what it selects: the file list's own 'select_all' means every
     # *item* in the pane, and the dotted form of a shorter name is how a config
     # scopes that same action to one context — so reusing it here would read as
