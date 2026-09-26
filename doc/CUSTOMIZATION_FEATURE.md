@@ -241,7 +241,7 @@ And each pane:
 | `pane.unselect(predicate)` | remove matches; no predicate clears it |
 | `pane.cd(path, focus_name=None)` | go somewhere |
 | `pane.refresh()` | re-read the directory |
-| `pane.show_list(paths, title=...)` | show a list of paths instead of a directory — see below |
+| `pane.open_list(paths, title=...)` | open a list of paths in place of a directory — see below |
 
 And each entry: `.name`, `.path`, `.suffix`, `.stem`, `.is_dir`, `.is_file`,
 `.is_link`, `.size`, `.mtime`. `.path` is a `pathlib.Path`-alike that also
@@ -294,9 +294,9 @@ the terminal, and a program that draws on it or reads the keyboard behind
 XeFM's back leaves the screen garbled — or both of them waiting for the same
 key.
 
-### Showing your own list of files
+### Opening your own list of files
 
-`pane.show_list()` puts any list of paths in a pane, the way a search's results
+`pane.open_list()` puts any list of paths in a pane, the way a search's results
 land there: every file operation works on the rows, and `go_parent` returns to
 the directory. It is how a search of your own — or any tool that prints paths —
 gets its answer into XeFM:
@@ -309,7 +309,7 @@ def modified_in_git(ctx):
     out = subprocess.run(['git', 'ls-files', '--modified'],
                          cwd=str(ctx.pane.path), capture_output=True,
                          text=True).stdout
-    ctx.pane.show_list(out.splitlines(), title='git: modified')
+    ctx.pane.open_list(out.splitlines(), title='git: modified')
 
 
 class Config:

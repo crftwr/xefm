@@ -72,5 +72,5 @@ written.
 ## From your own config
 
 A config action can show a list the same way, with
-[`pane.show_list()`](CUSTOMIZATION_FEATURE.md#showing-your-own-list-of-files) —
+[`pane.open_list()`](CUSTOMIZATION_FEATURE.md#opening-your-own-list-of-files) —
 for a search of your own, or a command whose output you use often.

@@ -278,9 +278,13 @@ class PaneApi:
         """Re-read the directory. Also asynchronous — see :meth:`cd`."""
         self._app._relist(self._pane)
 
-    def show_list(self, paths, *, title: str) -> None:
-        """Show ``paths`` in this pane as a flat list headed ``title``, instead
+    def open_list(self, paths, *, title: str) -> None:
+        """Open ``paths`` in this pane as a flat list headed ``title``, in place
         of a directory — the door a search of your own comes through.
+
+        *Open* in the sense ``open_item`` opens an archive: the pane now holds
+        something other than a directory, every file operation works on it,
+        and ``go_parent`` leaves it. Not *show*, which in XeFM means a dialog.
 
         ``paths`` are strings, ``Path`` objects or entries, absolute or
         relative to :attr:`path`; URIs (``ssh://…``, ``s3://…``) stand as they
@@ -298,7 +302,7 @@ class PaneApi:
         runs — on the UI thread (see *Threading* above). A search that takes
         seconds freezes the window for those seconds.
         """
-        self._app.show_path_list(self._name, list(paths), title=str(title))
+        self._app.open_path_list(self._name, list(paths), title=str(title))
 
     # --- entries ------------------------------------------------------------ #
 

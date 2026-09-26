@@ -5337,14 +5337,14 @@ class XeFMApp:
         if not lines:
             self.log_info("The clipboard holds no paths to import")
             return
-        self.show_path_list(self.pm.active_pane, lines,
+        self.open_path_list(self.pm.active_pane, lines,
                             title="Clipboard")
 
-    def show_path_list(self, pane_name: str, paths, *, title: str,
+    def open_path_list(self, pane_name: str, paths, *, title: str,
                        base=None) -> None:
-        """Show ``paths`` in pane ``pane_name`` as a virtual listing headed
+        """Open ``paths`` in pane ``pane_name`` as a virtual listing headed
         ``title`` — the one door every file-list source comes through: the
-        clipboard import, and ``PaneApi.show_list`` for a config's own.
+        clipboard import, and ``PaneApi.open_list`` for a config's own.
 
         ``paths`` are strings or ``Path`` objects. A relative one resolves
         against ``base`` (the pane's directory when not given); absolute paths

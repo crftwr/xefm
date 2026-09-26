@@ -2,7 +2,7 @@
 
 Two halves. :mod:`xefm.path_list` is pure — parsing, resolving, the common
 root, the probe — and is tested here with no app at all. The app half is the
-clipboard import and ``PaneApi.show_list``, driven headless on the ``memory``
+clipboard import and ``PaneApi.open_list``, driven headless on the ``memory``
 backend as ``test_search_results_pane.py`` does.
 
 Remote rows are exercised through a scheme registered for the test, never a
@@ -347,7 +347,7 @@ class Header(RemoteScheme):
 
 
 # --------------------------------------------------------------------------- #
-# the app: the clipboard import and PaneApi.show_list
+# the app: the clipboard import and PaneApi.open_list
 # --------------------------------------------------------------------------- #
 
 class AppImport(RemoteScheme):
@@ -488,9 +488,9 @@ class AppImport(RemoteScheme):
         self.assertTrue(text.startswith("[Clipboard] "))
         self.assertTrue(text.endswith("deep"))
 
-    def test_pane_api_show_list(self):
+    def test_pane_api_open_list(self):
         a = self._write(os.path.join("x", "a.txt"))
-        PaneApi(self.app, self.app.pm.active_pane).show_list(
+        PaneApi(self.app, self.app.pm.active_pane).open_list(
             [Path(a), os.path.join("x", "missing.txt")], title="My search")
         self.app._settle_listings()
         self.assertEqual(self.pane["virtual"]["title"], "My search")
