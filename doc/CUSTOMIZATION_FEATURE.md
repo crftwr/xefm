@@ -223,6 +223,7 @@ The dict form also takes `description` (what the help dialog shows).
 | `ctx.input(prompt, default, on_accept=fn)` | ask for a line of text |
 | `ctx.choose(title, items, on_result=fn)` | pick from a list (index, or `None`); `type='filter'` for a searchable one |
 | `ctx.confirm(prompt, on_result=fn)` | yes / no |
+| `ctx.run_program(command, terminal=False)` | run an external program — see below |
 | `ctx.action_names()` | every name `invoke()` accepts |
 
 And each pane:
@@ -249,6 +250,48 @@ works wherever the pane does.
 `.size` and `.mtime` read from disk the first time you ask; the rest are free.
 A predicate that only looks at names therefore costs no filesystem access at
 all, which matters in a large directory.
+
+### Running an external program from a key
+
+A `PROGRAMS` entry is launched from the **X** picker; to give a program a key
+of its own, call it from an action with `ctx.run_program()`:
+
+```python
+def massren(ctx):
+    ctx.run_program(['massren'], terminal=True)
+
+
+class Config:
+    ACTIONS = {'massren': massren}
+    KEY_BINDINGS = {..., 'massren': ['Alt-R']}
+```
+
+`command` is a list, or a string that is split like a command line. It runs
+the way a `PROGRAMS` entry runs — in the active pane's directory, with the same
+[`XEFM_*` variables](EXTERNAL_PROGRAMS_FEATURE.md#environment-variables) in its
+environment (add your own with `env={...}`, or pick a directory with `cwd=`) —
+with one difference: **no file names are appended.** If the program wants the
+selection, pass it yourself:
+
+```python
+def open_selection_in_vim(ctx):
+    files = ctx.pane.selected() or [ctx.pane.focused]
+    ctx.run_program(['vim'] + [str(e.path) for e in files if e], terminal=True)
+```
+
+- Without `terminal=True`, the program starts in the background, its output
+  goes to the log pane, and XeFM carries on.
+- With `terminal=True`, XeFM hands the terminal over to the program and waits
+  for it — what an editor, a pager, or anything else that draws on the screen
+  or reads the keyboard needs. When it exits, both panes are re-read and the
+  exit code is returned. A nonzero exit waits for Enter first, so its error
+  output stays readable. The desktop window has no terminal to hand over, so
+  there a `terminal=True` launch is refused with a line in the log pane.
+
+Don't call `subprocess.run()` yourself for an interactive program. XeFM owns
+the terminal, and a program that draws on it or reads the keyboard behind
+XeFM's back leaves the screen garbled — or both of them waiting for the same
+key.
 
 ---
 
@@ -594,7 +637,7 @@ sys.path.append('/Users/me/src/xefm-extensions')
 
 **Your code runs on the UI thread, and XeFM waits for it.** A slow action
 freezes the window until it returns. There is no background-work helper in this
-version; keep actions quick, and launch anything long as a subprocess.
+version; keep actions quick, and launch anything long with `ctx.run_program()`.
 
 **Prompts do not block.** XeFM never stops for a dialog, so `ctx.input`,
 `ctx.choose` and `ctx.confirm` return immediately and deliver their answer to a

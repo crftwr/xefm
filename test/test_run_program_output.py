@@ -223,6 +223,80 @@ class TestTerminalOption(RunProgramBase):
         enter.assert_not_called()
 
 
+
+class TestActionContextRunProgram(RunProgramBase):
+    """``ctx.run_program()`` — the picker's launcher, reachable from an action
+    so a program can have a key of its own (#454)."""
+
+    def ctx(self):
+        from xefm.user_api import ActionContext
+        return ActionContext(self.app)
+
+    def test_background_launch_gets_env_and_streams_output(self):
+        """No file names appended; XEFM_* and the caller's env reach the child"""
+        self.ctx().run_program(
+            [sys.executable, '-c',
+             "import os, sys\n"
+             "print('ARGS=%d' % (len(sys.argv) - 1))\n"
+             "print('EXTRA=' + os.environ.get('MY_VAR', ''))\n"
+             "print('ACTIVE=' + os.environ.get('XEFM_ACTIVE', ''))"],
+            env={'MY_VAR': 'hello'})
+
+        lines = self.collect_log_lines(
+            lambda ls: any(l[1].startswith('ACTIVE=') for l in ls))
+        stdout_lines = [l[1] for l in lines if l[0] == 'STDOUT']
+        self.assertIn('ARGS=0', stdout_lines)
+        self.assertIn('EXTRA=hello', stdout_lines)
+        self.assertIn('ACTIVE=1', stdout_lines)
+
+    def test_terminal_hands_off_and_returns_the_exit_code(self):
+        """terminal=True suspends via _run_in_terminal, in the pane's dir"""
+        with patch.object(self.app, '_run_in_terminal',
+                          return_value=7) as handoff, \
+                patch('xefm.app.is_desktop_mode', return_value=False):
+            code = self.ctx().run_program('massren --flag', terminal=True)
+
+        self.assertEqual(code, 7)
+        handoff.assert_called_once()
+        argv = handoff.call_args[0][0]
+        kwargs = handoff.call_args[1]
+        self.assertEqual(argv, ['massren', '--flag'])
+        self.assertEqual(os.path.realpath(kwargs['cwd']),
+                         os.path.realpath(self.tmp))
+        self.assertEqual(kwargs['env']['XEFM_ACTIVE'], '1')
+        self.assertTrue(kwargs['pause_on_error'])
+
+    def test_terminal_run_really_waits_for_the_child(self):
+        """End to end through the memory backend's suspend: the code comes back"""
+        with patch('xefm.app.is_desktop_mode', return_value=False), \
+                patch('builtins.input', return_value=''):
+            code = self.ctx().run_program(
+                [sys.executable, '-c', 'import sys; sys.exit(4)'],
+                terminal=True)
+        self.assertEqual(code, 4)
+
+    def test_terminal_refused_in_desktop_mode(self):
+        with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch.object(self.app, 'log_info') as log, \
+                patch('xefm.app.is_desktop_mode', return_value=True):
+            code = self.ctx().run_program(['vim'], terminal=True)
+
+        self.assertIsNone(code)
+        handoff.assert_not_called()
+        self.assertIn('terminal', log.call_args[0][0])
+
+    def test_an_explicit_cwd_wins(self):
+        other = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, other, ignore_errors=True)
+        with patch.object(self.app, '_run_in_terminal') as handoff, \
+                patch('xefm.app.is_desktop_mode', return_value=False):
+            self.ctx().run_program(['ls'], terminal=True, cwd=other)
+        self.assertEqual(handoff.call_args[1]['cwd'], other)
+
+    def test_an_empty_command_is_an_error(self):
+        with self.assertRaises(ValueError):
+            self.ctx().run_program([])
+
 class TestSubshellEnv(RunProgramBase):
     def _subshell(self, shell):
         """Run the subshell action with SUBSHELL pinned to ``shell`` — the

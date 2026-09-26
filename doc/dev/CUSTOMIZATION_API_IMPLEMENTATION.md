@@ -309,6 +309,32 @@ modal to build that on — every dialog is a layer pushed onto the panel with an
 been a nested event loop, which is a much larger commitment than a preview API
 should make.
 
+### `run_program` shares the picker's launcher
+
+`ctx.run_program()` is the `PROGRAMS` picker's launch path with the argv
+handed in rather than built from the selection (#454). `XeFMApp._run_program`
+was split in two for it: `_program_env(pane)` builds the environment and the
+working directory (including the search-results pane's absolute-path spelling
+of `XEFM_THIS_*`), and `_launch_program(name, argv, cwd, env, terminal)` does
+the launching — `_run_in_terminal` (suspend, wait, re-list both panes) for
+`terminal=True`, `Popen` + `_watch_program` streaming into the log queue
+otherwise. The picker and the action both go through the two, so a program
+cannot see a different contract depending on how it was started.
+
+The API exists because the obvious alternative, `subprocess.run()` from inside
+an action, is wrong in terminal mode: the child and PuiKit's input thread share
+the tty, so the child's output lands on a screen XeFM still believes it owns,
+and keystrokes are split between the two — the report in #454 was a garbled
+screen after `vim`, and a hang when the child sat waiting on a key XeFM had
+already consumed. The suspend/resume that fixes it is a backend detail the
+façade may not expose, so the façade exposes the launch instead.
+
+Two deliberate differences from a `PROGRAMS` entry: no file names are appended
+(the action has the selection and builds its own argv), and the default `cwd`
+falls back to XeFM's own when the pane is not on the local disk, since an
+`s3://` path is no working directory. `_run_in_terminal` now returns the exit
+code so `terminal=True` can hand it back.
+
 ### Failure isolation
 
 `run_guarded` is the single crossing into user code — actions, hooks and dialog

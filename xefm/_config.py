@@ -719,6 +719,9 @@ class Config:
     #   ctx.input(prompt, default, on_accept=fn)      ask for text
     #   ctx.choose(title, items, on_result=fn)        pick from a list
     #   ctx.confirm(prompt, on_result=fn)             yes / no
+    #   ctx.run_program(['cmd', ...], terminal=False) run an external program;
+    #       terminal=True lends it the terminal (vim, massren...) and waits.
+    #       Don't subprocess.run() one yourself -- the screen breaks.
     # ...and on each pane:
     #   pane.path, pane.entries, pane.cursor, pane.focused, pane.selected()
     #   pane.select(predicate) / pane.unselect(predicate) / pane.refresh()

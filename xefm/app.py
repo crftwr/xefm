@@ -3230,14 +3230,16 @@ class XeFMApp:
 
     def _run_in_terminal(self, argv: list, cwd: str | None = None,
                          env: dict | None = None,
-                         pause_on_error: bool = False) -> None:
+                         pause_on_error: bool = False) -> int | None:
         """Run a full-screen child process (editor / shell) with the display
         handed over via ``backend.suspended()``, then refresh both panes and
         repaint — the child may have changed files while we were away. With
         ``pause_on_error``, a nonzero exit holds the terminal until Enter, so
         the child's parting error output stays readable before the repaint
-        wipes it."""
+        wipes it. Returns the child's exit code, or ``None`` when it could not
+        be started."""
         from xefm.external_programs import resolve_command
+        result = None
         try:
             with self.backend.suspended():
                 result = subprocess.run(resolve_command(argv, env),
@@ -3256,6 +3258,7 @@ class XeFMApp:
         self._relist(self.pm.left_pane)
         self._relist(self.pm.right_pane)
         self.panel.render()
+        return result.returncode if result is not None else None
 
     def _launch_associated(self, entries, command: list) -> bool:
         """Run the FILE_ASSOCIATIONS program ``command`` on ``entries`` — one
@@ -4693,55 +4696,73 @@ class XeFMApp:
         self.panel.render()
 
     def _run_program(self, program: dict) -> None:
-        from xefm.external_programs import (SUBPROCESS_NO_WINDOW,
-                                           build_xefm_env,
-                                           ensure_common_paths_in_env,
-                                           get_selected_or_cursor_files,
-                                           quote_filenames_with_double_quotes,
-                                           resolve_command)
+        from xefm.external_programs import get_selected_or_cursor_files
         pane = self.active_pane()
         command = list(program.get("command", []))
         if not command:
             self.log_info(f"Program '{program.get('name')}' has no command")
             return
-        virtual = pane.get("virtual")
-        if virtual:
+        env, cwd = self._program_env(pane)
+        if pane.get("virtual"):
             # A virtual (search-results) pane has no single directory: bare names
             # resolved via one cwd can't reach files scattered across the tree.
             # Pass absolute paths, and run from the search root.
             args = [str(p) for p in self._selected_or_focused(pane)]
-            cwd = str(virtual["root"])
         else:
             args = get_selected_or_cursor_files(pane)  # bare names, resolved via cwd
-            cwd = str(pane["path"])
+        options = program.get("options") or {}
+        self._launch_program(program.get("name", "?"), command + args,
+                             cwd=cwd, env=env,
+                             terminal=bool(options.get("terminal")))
+
+    def _program_env(self, pane: dict) -> tuple[dict, str]:
+        """``(env, cwd)`` for an external program launched from ``pane``: our
+        environment plus the ``XEFM_*`` variables, and the pane's directory —
+        the search root on a virtual (search-results) pane. Shared by the
+        ``PROGRAMS`` picker and ``ctx.run_program()`` so the two can never hand
+        a program different contracts."""
+        from xefm.external_programs import (build_xefm_env,
+                                           ensure_common_paths_in_env,
+                                           quote_filenames_with_double_quotes)
         env = os.environ.copy()
         ensure_common_paths_in_env(env)
         env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
-        if virtual:
-            # Same env contract as anywhere else — SELECTED is the selection
-            # alone, FOCUSED the cursor — but spelled with absolute paths from
-            # the search root rather than bare names, mirroring argv above.
-            env["XEFM_THIS_DIR"] = cwd
-            picked = [f for f in pane["files"] if str(f) in pane["selected_files"]]
-            env["XEFM_THIS_SELECTED"] = " ".join(
-                quote_filenames_with_double_quotes([str(f) for f in picked]))
-            hit = self._virtual_focused_entry(pane)
-            env["XEFM_THIS_FOCUSED"] = " ".join(
-                quote_filenames_with_double_quotes([str(hit)] if hit else []))
-        options = program.get("options") or {}
-        if options.get("terminal"):
+        virtual = pane.get("virtual")
+        if not virtual:
+            return env, str(pane["path"])
+        # Same env contract as anywhere else — SELECTED is the selection
+        # alone, FOCUSED the cursor — but spelled with absolute paths from
+        # the search root rather than bare names, mirroring the argv
+        # _run_program builds.
+        cwd = str(virtual["root"])
+        env["XEFM_THIS_DIR"] = cwd
+        picked = [f for f in pane["files"] if str(f) in pane["selected_files"]]
+        env["XEFM_THIS_SELECTED"] = " ".join(
+            quote_filenames_with_double_quotes([str(f) for f in picked]))
+        hit = self._virtual_focused_entry(pane)
+        env["XEFM_THIS_FOCUSED"] = " ".join(
+            quote_filenames_with_double_quotes([str(hit)] if hit else []))
+        return env, cwd
+
+    def _launch_program(self, name: str, argv: list, *, cwd: str | None,
+                        env: dict, terminal: bool) -> int | None:
+        """Launch ``argv`` one of two ways. ``terminal`` hands the child the
+        tty via suspend/resume and waits (terminal mode only; desktop mode
+        refuses), returning its exit code. Otherwise it runs in the background
+        with stdout/stderr streamed into the log pane, and this returns
+        ``None`` at once."""
+        from xefm.external_programs import SUBPROCESS_NO_WINDOW, resolve_command
+        if terminal:
             if is_desktop_mode():
-                self.log_info(f"Cannot launch '{program.get('name')}': "
-                              "options {'terminal': True} needs a terminal, "
+                self.log_info(f"Cannot launch '{name}': it needs a terminal, "
                               "and desktop mode has none")
                 self.panel.render()
-                return
+                return None
             # Full-screen child (vim, less, a REPL): hand over the tty and wait.
-            self._run_in_terminal(command + args, cwd=cwd, env=env,
-                                  pause_on_error=True)
-            return
+            return self._run_in_terminal(argv, cwd=cwd, env=env,
+                                         pause_on_error=True)
         try:
             # Pipes, never the terminal: in TUI mode a direct write would corrupt
             # the screen we own; in desktop mode there may be no terminal at all.
@@ -4749,16 +4770,17 @@ class XeFMApp:
             # SUBPROCESS_NO_WINDOW keeps a console program from flashing a window
             # of its own on Windows, where the GUI backend has no console to lend.
             proc = subprocess.Popen(
-                resolve_command(command, env) + args, cwd=cwd, env=env,
+                resolve_command(argv, env), cwd=cwd, env=env,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, text=True, errors="replace",
                 **SUBPROCESS_NO_WINDOW)
         except Exception as exc:
-            self.log_info(f"Failed to launch {program.get('name')}: {exc}")
+            self.log_info(f"Failed to launch {name}: {exc}")
         else:
-            self.log_info(f"Launched: {program.get('name')}")
-            self._watch_program(program.get("name", "?"), proc)
+            self.log_info(f"Launched: {name}")
+            self._watch_program(name, proc)
         self.panel.render()
+        return None
 
     def _watch_program(self, name: str, proc: subprocess.Popen) -> None:
         """Stream a launched program's output into the log pane without blocking
