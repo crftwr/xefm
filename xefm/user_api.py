@@ -418,6 +418,51 @@ class ActionContext:
         """
         self._app._run_action(_actions.FILER, action_name, ctx=self)
 
+    # --- running external programs ------------------------------------------ #
+
+    def run_program(self, command, *, terminal: bool = False,
+                    cwd: str | None = None,
+                    env: Mapping[str, str] | None = None) -> int | None:
+        """Run an external program the way a ``PROGRAMS`` entry runs — but from
+        an action, so it can have a key of its own.
+
+        ``command`` is a list (argv, taken as written) or a string (a command
+        line, split like a shell would). Unlike a ``PROGRAMS`` entry, **no file
+        names are appended**: build the argv yourself from
+        ``ctx.pane.selected()`` / ``ctx.pane.focused`` if the program wants
+        them. The program sees the same ``XEFM_*`` variables either way, merged
+        under ``env``. ``cwd`` defaults to the active pane's directory (XeFM's
+        own when the pane is not on the local disk).
+
+        - ``terminal=False`` (the default) starts the program in the
+          background, streams its output into the log pane, and returns
+          ``None`` at once.
+        - ``terminal=True`` hands the terminal over to the program — an editor,
+          a pager, anything that draws a screen or reads the keyboard — and
+          waits for it. The panes are re-read on return, and the exit code is
+          returned (``None`` if it could not be started). A nonzero exit holds
+          the screen until Enter so its last words stay readable. Terminal
+          mode only: the desktop window has no terminal to lend, so there the
+          launch is refused with a log line and ``None`` comes back.
+
+        Never call :mod:`subprocess` directly for an interactive program: XeFM
+        owns the terminal, and a child drawing on it unannounced leaves the
+        screen corrupted and the keyboard fought over (#454).
+        """
+        from xefm.external_programs import command_argv
+        argv = command_argv(command)
+        if not argv:
+            raise ValueError("run_program: the command is empty")
+        app = self._app
+        full_env, default_cwd = app._program_env(app.active_pane())
+        if env:
+            full_env.update({str(k): str(v) for k, v in env.items()})
+        if cwd is None and app._is_local(default_cwd):
+            cwd = default_cwd
+        return app._launch_program(argv[0], argv,
+                                   cwd=str(cwd) if cwd is not None else None,
+                                   env=full_env, terminal=terminal)
+
     # --- talking to the user ------------------------------------------------ #
 
     def message(self, text: str) -> None:

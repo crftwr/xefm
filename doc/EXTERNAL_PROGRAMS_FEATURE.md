@@ -13,6 +13,10 @@ The programs menu and the sub-shell are two different tools: **X** runs one of
 your configured `PROGRAMS` and returns to XeFM, while `subshell` drops you into
 an interactive shell in the current pane's directory.
 
+To run a program from a key of its own instead of from the **X** picker, call
+`ctx.run_program()` from an action — see
+[Running an external program from a key](CUSTOMIZATION_FEATURE.md#running-an-external-program-from-a-key).
+
 ## Configuration
 
 External programs are configured in the `PROGRAMS` list in your `config.py` file. Each program entry needs:
