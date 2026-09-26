@@ -19,6 +19,9 @@ XeFM stores its configuration in:
 On first run, XeFM creates this file with default settings. You can edit it with
 any text editor.
 
+Python modules you put in `~/.xefm/extensions/` can be imported from it — see
+[Your own modules](CUSTOMIZATION_FEATURE.md#your-own-modules-xefmextensions).
+
 ## Quick Start
 
 ```bash

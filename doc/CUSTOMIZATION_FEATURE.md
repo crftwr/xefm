@@ -541,6 +541,55 @@ including a registry browser, in
 
 ---
 
+## Your own modules: `~/.xefm/extensions/`
+
+`~/.xefm/extensions/` is on Python's import path, so anything the sections
+above describe — a `PATH_SCHEMES` class, an archive format, a set of actions —
+can live in its own file and be imported from `config.py`:
+
+```
+~/.xefm/
+├── config.py
+└── extensions/
+    ├── box.py              # import box
+    └── mail/               # import mail.eml_archive
+        ├── __init__.py
+        └── eml_archive.py
+```
+
+```python
+import box
+
+class Config:
+    PATH_SCHEMES = {'box': box.BoxPathImpl}
+```
+
+XeFM creates the directory at startup if it is missing.
+
+**Reloading the config re-imports them.** Edit a module, run **Tools ▸ Reload
+Configuration**, and the edited code is what runs — no restart.
+
+**Python's own modules win a name clash.** The directory is added to the *end*
+of the import path, so an `email.py` or `queue.py` here cannot break the
+standard library for the rest of XeFM — but it cannot be imported either.
+Rename it.
+
+**Only `extensions/` is on the path.** `~/.xefm/` itself is not (its
+`config.py` would be importable as `config`, a name too common to claim), and
+neither is `~/.xefm/tools/`, which holds [external programs](EXTERNAL_PROGRAMS_FEATURE.md)
+XeFM runs as separate processes.
+
+**Keeping them elsewhere.** If you keep your extensions in their own project
+directory — under version control, say — add it to the path yourself at the top
+of `config.py`:
+
+```python
+import sys
+sys.path.append('/Users/me/src/xefm-extensions')
+```
+
+---
+
 ## Things to know
 
 **Your code runs on the UI thread, and XeFM waits for it.** A slow action

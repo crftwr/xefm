@@ -200,6 +200,9 @@ config to pick up newly added settings.
 
 ```
 1. ConfigManager.load_config() called
+   - ensure_user_tools_dir() seeds ~/.xefm/tools/ on first launch
+   - prepare_user_extensions() puts ~/.xefm/extensions/ on sys.path and evicts
+     previously imported extension modules (USER_EXTENSIONS_IMPLEMENTATION.md)
 2. Load template Config class from xefm/_config.py   (_load_template_config)
 3. Does ~/.xefm/config.py exist?
    - No  -> create_default_config() copies xefm/_config.py to ~/.xefm/config.py

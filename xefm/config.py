@@ -615,6 +615,7 @@ class ConfigManager:
         self.config_dir = Path.home() / '.xefm'
         self.config_file = self.config_dir / 'config.py'
         self.user_tools_dir = self.config_dir / 'tools'
+        self.user_extensions_dir = self.config_dir / 'extensions'
         self.config = None
         self._key_bindings = None
         
@@ -657,6 +658,39 @@ class ConfigManager:
 
         return True
 
+    def prepare_user_extensions(self):
+        """Make ~/.xefm/extensions/ importable from config.py, and re-importable.
+
+        *Appended* to sys.path, not prepended: a module named after what it
+        does (``email.py``, ``queue.py``) would otherwise shadow the standard
+        library for the whole process. ~/.xefm itself stays off the path, since
+        ``config`` is too common a module name, and ~/.xefm/tools/ holds
+        external programs, not in-process code.
+
+        Modules already imported from the directory are dropped from
+        sys.modules, bytecode included, so reloading the config picks up an
+        edited extension instead of silently running the previous one."""
+        try:
+            self.user_extensions_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            self.logger.warning(f"Could not create user extensions directory {self.user_extensions_dir}: {e}")
+
+        resolved = os.path.realpath(self.user_extensions_dir)
+        if resolved not in (os.path.realpath(entry) for entry in sys.path if entry):
+            sys.path.append(resolved)
+
+        prefix = resolved + os.sep
+        for name, module in list(sys.modules.items()):
+            path = getattr(module, '__file__', None)
+            if not path or not os.path.realpath(path).startswith(prefix):
+                continue
+            del sys.modules[name]
+            try:
+                os.remove(importlib.util.cache_from_source(path))
+            except (OSError, NotImplementedError):
+                pass
+        importlib.invalidate_caches()
+
     def create_default_config(self):
         """Create a default configuration file by copying from template"""
         if not self.ensure_config_dir():
@@ -692,6 +726,7 @@ class ConfigManager:
         # First launch: seed ~/.xefm/tools/ before the config module executes,
         # so xefm_tool('example_tool.py') in a config resolves to the user copy.
         self.ensure_user_tools_dir()
+        self.prepare_user_extensions()
 
         # Load template config class for filling in missing fields
         template_config_class = _load_template_config()
