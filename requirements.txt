@@ -24,8 +24,19 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.7.2 is the floor, and a soft one in shape but not in effect: XeFM calls
-# nothing new for it, and nothing raises without it -- a TUI simply loses a key.
+# 1.7.3 is the floor, and on the Windows TUI an absolute one: 1.7.2 -- the floor
+# it replaces, for the reason recorded just below -- reads the NUL byte as
+# Ctrl+Space on every TUI input path, while the Windows console sends NUL for
+# every key that produced no character. So there the arrows, F1-F12,
+# Home/End/PageUp/PageDown and Insert/Delete all arrive as that chord, and
+# holding Shift alone marks a file: the Windows terminal app cannot be driven at
+# all on 1.7.2. Nothing raises, and no other platform or backend is touched --
+# which is why the pin has to carry it, the version that is new enough for the
+# feature being the one that breaks the app. 1.7.3 drops the NUL where the
+# Windows console builds its key record, before anything reads it as a character.
+# 1.7.2 was the previous floor, and a soft one in shape but not in effect: XeFM
+# calls nothing new for it, and nothing raises without it -- a TUI simply loses
+# a key.
 # Ctrl+Space is the search bar's marking key (issue #266 moved it there, where
 # Space itself types into the pattern), and in a terminal that chord arrives as
 # the NUL byte. PuiKit decoded only 0x01..0x1A, the Ctrl+letter run one byte
@@ -95,7 +106,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.7.2
+puikit>=1.7.3
 pygments
 boto3
 watchdog
