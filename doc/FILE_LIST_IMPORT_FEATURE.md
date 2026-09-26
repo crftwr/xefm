@@ -32,9 +32,15 @@ step instead of piping to the clipboard and importing.
 rg -l TODO
 git ls-files --modified
 fd -e py -E tests
-es.exe -path src ext:py          # Everything's command-line interface
+es.exe -path . ext:py           # Everything, under this folder
 dir /s /b *.log                  # Windows, cmd
 ```
+
+Everything's command-line interface, `es.exe`, is a separate download from
+voidtools; put it on your `PATH`. Its query is Everything's own search syntax
+(`ext:`, `dm:thisweek`, `size:>100mb`, `|`, `!`). It searches the whole index
+wherever it runs, so `-path .` is what limits it to the folder the pane is
+showing.
 
 - The command runs through your shell (`/bin/sh`, or `cmd.exe` on Windows), so
   pipes and quoting work as they do at a prompt. It gets the same `XEFM_*`
