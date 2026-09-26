@@ -24,7 +24,18 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.7.3 is the floor, and on the Windows TUI an absolute one: 1.7.2 -- the floor
+# 1.7.4 is the floor, and a soft one: XeFM calls nothing new for it, and nothing
+# raises without it. It is what keeps a long name readable while it is edited
+# (issue #480). PuiKit's TextEdit scrolled only once the caret itself left the
+# field and never scrolled back, so Backspacing from the end of a long name in
+# the rename dialog left the start of the name hidden off the left while a blank
+# run grew on the right -- the user deleted blind until they pressed Home.
+# 1.7.4 keeps a few columns of text visible past the caret on either side and
+# pulls hidden text back in whenever an edit shortens the line. Every XeFM text
+# field gets it -- rename, the input and connect dialogs, batch rename, the
+# filter list and the search bar. On an older PuiKit the fields still work;
+# they only scroll the old way.
+# 1.7.3 was the previous floor, and on the Windows TUI an absolute one: 1.7.2 -- the floor
 # it replaces, for the reason recorded just below -- reads the NUL byte as
 # Ctrl+Space on every TUI input path, while the Windows console sends NUL for
 # every key that produced no character. So there the arrows, F1-F12,
@@ -106,7 +117,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.7.3
+puikit>=1.7.4
 pygments
 boto3
 watchdog
