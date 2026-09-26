@@ -48,6 +48,7 @@ class StubFLM:
         self._result = {"ok": True, "files": list(files),
                         "file_info": {str(f): {} for f in files}}
         self.compute_calls = 0
+        self.virtual_calls = []
         self.last_filter = None
         self.refreshed = []
 
@@ -56,6 +57,20 @@ class StubFLM:
         self.compute_calls += 1
         self.last_filter = filter_pattern
         return self._result
+
+    def compute_virtual_listing(self, paths, *, filter_pattern=None,
+                                sort_mode="name", sort_reverse=False,
+                                rel_root=None, derive_root=False):
+        """A virtual pane's listing: every path survives, none is read."""
+        self.virtual_calls.append(list(paths))
+        return {"ok": True, "files": list(paths),
+                "file_info": {str(p): {} for p in paths},
+                "survivors": list(paths), "missing": 0, "unreachable": 0,
+                "root": rel_root}
+
+    @staticmethod
+    def prune_virtual(virtual, result):
+        virtual["results"] = result["survivors"]
 
     def fail_next(self):
         """Make the next listing come back unreadable, the way a directory that
@@ -81,8 +96,8 @@ class StubFLM:
     # --- the synchronous halves _relist / _apply_filter still lean on ---------
 
     def refresh_files(self, pane):
-        """Only a virtual pane reaches this now — recorded so a test can prove a
-        directory pane never does."""
+        """Nothing in the app should reach this any more — recorded so a test
+        can prove neither a directory pane nor a virtual one does."""
         self.refreshed.append(pane)
         self.apply_listing(pane, self._result)
 
@@ -259,17 +274,35 @@ class RelistKeepsThePaneInPlace(unittest.TestCase):
         self.assertTrue(_drain_next(app))
         self.assertEqual(app._history, [])
 
-    def test_virtual_pane_rebuilds_in_memory_with_no_worker(self):
-        # A search-results feed has no directory to read: it must not be listed.
+    def test_virtual_pane_rebuilds_from_its_set_on_a_worker(self):
+        # A virtual pane has no directory to read, so its directory is never
+        # listed. But each path in its set is re-read — one round trip apiece,
+        # which on an ssh:// list is exactly what must not hold the UI thread.
         left = _pane(FakePath("/dir"))
-        left["virtual"] = {"kind": "search", "results": []}
+        hits = [FakePath("/dir/a/x"), FakePath("/dir/b/y")]
+        left["virtual"] = {"kind": "search", "results": list(hits), "root": None}
         app = _app(left, _pane(FakePath("/tmp")), ["a"])
         ran = []
         app._relist(left, on_ready=ran.append)
-        self.assertEqual(app.flm.compute_calls, 0)
-        self.assertEqual(app.flm.refreshed, [left])
-        self.assertEqual(ran, [left])  # on_ready fires synchronously
-        self.assertTrue(app._result_queue.empty())
+        self.assertEqual(ran, [])            # nothing lands on the calling thread
+        self.assertTrue(_drain_next(app))
+        self.assertEqual(ran, [left])
+        self.assertEqual(left["files"], hits)
+        self.assertEqual(app.flm.virtual_calls, [hits])
+        self.assertEqual(app.flm.compute_calls, 0)   # the directory: never read
+        self.assertEqual(app.flm.refreshed, [])      # nor the synchronous path
+
+    def test_a_virtual_result_landing_after_the_pane_left_is_dropped(self):
+        left = _pane(FakePath("/dir"))
+        left["virtual"] = {"kind": "search", "results": [FakePath("/dir/a")],
+                           "root": None}
+        app = _app(left, _pane(FakePath("/tmp")), ["a"])
+        ran = []
+        app._relist(left, on_ready=ran.append)
+        left["virtual"] = None               # ⌫ while the worker ran
+        _drain_next(app)
+        self.assertEqual(ran, [])
+        self.assertEqual(left["files"], [])
 
 
 class FilterAppliesAsynchronously(unittest.TestCase):

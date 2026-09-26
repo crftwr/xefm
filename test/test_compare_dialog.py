@@ -191,6 +191,7 @@ class CompareDialogApp(unittest.TestCase):
             [Path(os.path.join(self.left, "same.txt")),
              Path(os.path.join(sub, "newer.txt"))],
             Path(self.left), "txt")
+        self.app._settle_listings()
         pane = self.app.active_pane()
         self.assertIsNotNone(pane["virtual"])
 
@@ -214,6 +215,7 @@ class CompareDialogApp(unittest.TestCase):
             "filename",
             [Path(os.path.join(one, "newer.txt")), Path(os.path.join(two, "newer.txt"))],
             Path(self.right), "newer.txt")
+        self.app._settle_listings()
         self.assertIsNotNone(self.app.active_pane()["virtual"])
         self.app.pm.switch_pane()             # back to the left directory listing
 
@@ -268,6 +270,7 @@ class CompareDialogApp(unittest.TestCase):
             [Path(os.path.join(self.left, "same.txt")),
              Path(os.path.join(sub, "newer.txt"))],
             Path(self.left), "txt")
+        self.app._settle_listings()
 
         dlg = self._open()
         _enable(dlg._mtime, "newer")

@@ -128,10 +128,16 @@ class AppVirtual(unittest.TestCase):
             f.write(content)
         return Path(p)
 
+    def _feed(self, *args, **kwargs):
+        """Feed a result set and wait for it to land: which of the paths still
+        exist is read on a worker thread, as any listing is."""
+        self.app._feed_search_results(*args, **kwargs)
+        self.app._settle_listings()
+
     def test_feed_filename_results_makes_virtual_pane(self):
         a = self._write("sub/a.txt")
         b = self._write("sub2/b.txt")
-        self.app._feed_search_results("filename", [a, b], Path(self.tmp), "txt")
+        self._feed("filename", [a, b], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         self.assertIsNotNone(pane["virtual"])
         self.assertEqual(pane["virtual"]["mode"], "filename")
@@ -143,7 +149,7 @@ class AppVirtual(unittest.TestCase):
             {"path": f, "line": 2, "text": "needle"},
             {"path": f, "line": 3, "text": "needle"},
         ]
-        self.app._feed_search_results("content", hits, Path(self.tmp), "needle")
+        self._feed("content", hits, Path(self.tmp), "needle")
         pane = self.app.active_pane()
         self.assertEqual([p.name for p in pane["files"]], ["x.txt"])  # one entry
         self.assertEqual(pane["virtual"]["meta"][str(f)]["line"], 2)  # first match
@@ -153,7 +159,7 @@ class AppVirtual(unittest.TestCase):
         # land on the file that was picked — not on the top row.
         a = self._write("one/a.txt")
         z = self._write("two/z.txt")
-        self.app._feed_search_results("filename", [a, z], Path(self.tmp), "txt",
+        self._feed("filename", [a, z], Path(self.tmp), "txt",
                                       focus=z)
         pane = self.app.active_pane()
         self.assertEqual(pane["files"][pane["focused_index"]].name, "z.txt")
@@ -164,7 +170,7 @@ class AppVirtual(unittest.TestCase):
         z = self._write("two/z.txt", "needle\n")
         hits = [{"path": a, "line": 1, "text": "needle"},
                 {"path": z, "line": 1, "text": "needle"}]
-        self.app._feed_search_results("content", hits, Path(self.tmp), "needle",
+        self._feed("content", hits, Path(self.tmp), "needle",
                                       focus=hits[1])
         pane = self.app.active_pane()
         self.assertEqual(pane["files"][pane["focused_index"]].name, "z.txt")
@@ -173,7 +179,7 @@ class AppVirtual(unittest.TestCase):
         # Same basename in two directories: the accepted one wins.
         first = self._write("one/dup.txt")
         second = self._write("two/dup.txt")
-        self.app._feed_search_results("filename", [first, second],
+        self._feed("filename", [first, second],
                                       Path(self.tmp), "dup", focus=second)
         pane = self.app.active_pane()
         self.assertEqual(str(pane["files"][pane["focused_index"]]), str(second))
@@ -181,13 +187,13 @@ class AppVirtual(unittest.TestCase):
     def test_feed_without_focus_stays_at_top(self):
         a = self._write("one/a.txt")
         z = self._write("two/z.txt")
-        self.app._feed_search_results("filename", [a, z], Path(self.tmp), "txt")
+        self._feed("filename", [a, z], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         self.assertEqual(pane["focused_index"], 0)
 
     def test_feed_scrolls_accepted_hit_into_view(self):
         paths = [self._write(f"d{i:03d}/f.txt") for i in range(200)]
-        self.app._feed_search_results("filename", paths, Path(self.tmp), "txt",
+        self._feed("filename", paths, Path(self.tmp), "txt",
                                       focus=paths[-1])
         pane = self.app.active_pane()
         idx = pane["focused_index"]
@@ -199,16 +205,17 @@ class AppVirtual(unittest.TestCase):
     def test_delete_reconciles_virtual_set(self):
         a = self._write("sub/a.txt")
         b = self._write("sub2/b.txt")
-        self.app._feed_search_results("filename", [a, b], Path(self.tmp), "txt")
+        self._feed("filename", [a, b], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         # Simulate the file being removed by an op, then reconcile via _refresh.
         os.remove(str(a))
         self.app._refresh(pane)
+        self.app._settle_listings()
         self.assertEqual([f.name for f in pane["files"]], ["b.txt"])
 
     def test_navigation_clears_virtual(self):
         sub = self._write("sub/a.txt")
-        self.app._feed_search_results("filename", [sub], Path(self.tmp), "txt")
+        self._feed("filename", [sub], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         self.assertIsNotNone(pane["virtual"])
         # Jumping to a directory (favorite path) exits virtual mode.
@@ -224,7 +231,7 @@ class AppVirtual(unittest.TestCase):
         other["path"] = Path(os.path.join(self.tmp, "sub"))
         self.app.flm.refresh_files(other)
         other["focused_index"] = 0
-        self.app._feed_search_results("filename", [a], Path(self.tmp), "txt")
+        self._feed("filename", [a], Path(self.tmp), "txt")
         active = self.app.active_pane()
         self.assertIsNotNone(active["virtual"])
         self.assertTrue(self.app.dispatch("sync_current_to_other"))
@@ -235,7 +242,7 @@ class AppVirtual(unittest.TestCase):
 
     def test_reveal_other_keeps_virtual(self):
         a = self._write("sub/a.txt")
-        self.app._feed_search_results("filename", [a], Path(self.tmp), "txt")
+        self._feed("filename", [a], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         other = self.app.pm.get_inactive_pane()
         pane["focused_index"] = 0
@@ -250,7 +257,7 @@ class AppVirtual(unittest.TestCase):
         # location into the pane we're standing on, landing on that file.
         a = self._write("one/a.txt")
         z = self._write("two/z.txt")
-        self.app._feed_search_results("filename", [a, z], Path(self.tmp), "txt")
+        self._feed("filename", [a, z], Path(self.tmp), "txt")
         virt = self.app.active_pane()
         virt["sort_mode"] = "name"
         self.app.flm.refresh_files(virt)
@@ -271,7 +278,7 @@ class AppVirtual(unittest.TestCase):
     def test_file_pane_shows_root_relative_paths(self):
         deep = self._write("a/b/deep.txt")
         top = self._write("top.txt")
-        self.app._feed_search_results("filename", [deep, top], Path(self.tmp), "txt")
+        self._feed("filename", [deep, top], Path(self.tmp), "txt")
         # The name column shows each hit's path relative to the search root (so a
         # scattered result reveals *where* it lives), via FilePane._display_name.
         fp = self.app._active_view()
@@ -284,7 +291,7 @@ class AppVirtual(unittest.TestCase):
         # clipboard says nothing about which of several scattered hits it was.
         deep = self._write("a/b/deep.txt")
         top = self._write("top.txt")
-        self.app._feed_search_results("filename", [deep, top], Path(self.tmp), "txt")
+        self._feed("filename", [deep, top], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         pane["selected_files"].update(str(f) for f in pane["files"])
         self.app.copy_names_to_clipboard()
@@ -309,13 +316,13 @@ class AppVirtual(unittest.TestCase):
         # Copy Full Path(s) is the other clipboard action and keeps its meaning:
         # the whole path, not the root-relative one.
         deep = self._write("a/b/deep.txt")
-        self.app._feed_search_results("filename", [deep], Path(self.tmp), "txt")
+        self._feed("filename", [deep], Path(self.tmp), "txt")
         self.app.copy_paths_to_clipboard()
         self.assertEqual(self.app.panel.get_clipboard(), str(deep))
 
     def test_monitoring_reload_suspended_while_virtual(self):
         a = self._write("sub/a.txt")
-        self.app._feed_search_results("filename", [a], Path(self.tmp), "txt")
+        self._feed("filename", [a], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         name = self.app._pane_name_of(pane)
         # A reload request for a virtual pane is a no-op (returns False), so the
@@ -330,7 +337,7 @@ class AppVirtual(unittest.TestCase):
         a = self._write("sub/a.txt")
         b = self._write("sub2/b.txt")
         self._write("root.txt")  # at the search root: appears only on a reset
-        self.app._feed_search_results("filename", [a, b], Path(self.tmp), "txt")
+        self._feed("filename", [a, b], Path(self.tmp), "txt")
         pane = self.app.active_pane()
         for _ in range(2):  # hidden off, then back on
             self.assertTrue(self.app.dispatch("toggle_hidden"))

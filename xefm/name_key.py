@@ -49,6 +49,23 @@ def nfc(text: str) -> str:
     return unicodedata.normalize('NFC', text)
 
 
+class _WholePath:
+    """The type of :data:`WHOLE_PATH`; one instance, compared by identity."""
+
+    def __repr__(self) -> str:
+        return "WHOLE_PATH"
+
+
+#: The root of a virtual pane whose rows share no common ancestor — a list
+#: spanning two drives, two hosts or two schemes. Its rows are named by their
+#: whole path, since nothing shorter says where each one lives.
+#:
+#: A value of its own rather than ``None``, because ``None`` already means
+#: something load-bearing: an ordinary directory pane, whose rows are direct
+#: children and are named by their basename.
+WHOLE_PATH = _WholePath()
+
+
 def rel_name(path, root=None) -> str:
     """``path``'s name relative to ``root`` — the whole ``sub/dir/a.txt`` a
     search-results pane shows in its name column.
@@ -57,7 +74,12 @@ def rel_name(path, root=None) -> str:
     under it, or when the two name the same place. That fallback is also the
     ordinary directory pane's answer: its entries are direct children, so the
     relative name and the basename are one and the same.
+
+    ``root`` may also be :data:`WHOLE_PATH`, for a list with no common ancestor:
+    the name is then the whole path.
     """
+    if root is WHOLE_PATH:
+        return str(path)
     if root:
         root_str = str(root)
         full = str(path)
