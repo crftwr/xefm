@@ -168,7 +168,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "directory. No Finder, no Explorer. macOS and Windows."),
 
     ("Disconnect and eject from the drives picker",
-     "Shift-Delete in the drives picker ({key:drives}) disconnects the "
+     "{key:remove_list_item} in the drives picker ({key:drives}) disconnects the "
      "highlighted network share, or ejects a USB disk so it is safe to "
      "unplug. On any other row it does nothing."),
 

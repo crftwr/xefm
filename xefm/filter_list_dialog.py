@@ -32,8 +32,8 @@ Migemo match so romaji finds Japanese labels (#349); ↑/↓/PageUp/PageDown mov
 the selection; Enter accepts
 the selected value; Esc cancels; a click selects/activates a row. A picker whose
 rows are *remembered* rather than declared (History, the ';' Filter prompt) also
-passes ``on_remove``, which binds the ``remove_list_item`` action — Shift-Delete
-by default — to dropping the highlighted row (#271). A hint band along the
+passes ``on_remove``, which binds the ``remove_list_item`` action to dropping
+the highlighted row (#271). A hint band along the
 bottom, mirroring the title bar, says which keys are live — the remove key among
 them read back from the keymap, so a rebind shows up there.
 
@@ -72,7 +72,7 @@ _LIST_KEYS = frozenset({"up", "down", "pageup", "pagedown"})
 
 #: The one key of this dialog's that a config can rebind. Everything else here
 #: (arrows, Enter, Esc) is structural to a modal picker and stays fixed; removal
-#: is the operation a user may well want somewhere other than Shift-Delete.
+#: is the operation a user may well want on a key of their own choosing.
 _REMOVE_ACTION = "remove_list_item"
 
 #: Braille spinner frames for the title's background-loading indicator.
@@ -495,10 +495,10 @@ class FilterListDialog(FocusContainer, Widget):
             elif (self.on_remove is not None
                   and is_action_for_event(event, _REMOVE_ACTION,
                                           context=FILTER_LIST)):
-                # Ahead of the field, which would otherwise read the default
-                # Shift-Delete as its own forward-delete. Resolving by *action*
-                # rather than by key is what keeps a rebind working here, and
-                # what keeps a plain Delete typing in the query field.
+                # Ahead of the field, which would otherwise read the remove
+                # key as its own forward-delete. Resolving by *action* rather
+                # than by key is what keeps a rebind working here, and what
+                # keeps a plain Delete typing in the query field.
                 self.remove_selected()
             elif key in _LIST_KEYS:
                 self.list.handle_event(event)  # arrows drive the list selection
@@ -561,16 +561,16 @@ def show_filter_list(
     (History, Favorites and Drives do this). Pass ``ellipsis=""`` for a hard clip
     with no marker.
 
-    ``on_remove(value)`` opts the picker into the remove key (Shift-Delete by
-    default, rebindable as ``remove_list_item`` in the ``filter_list`` context):
+    ``on_remove(value)`` opts the picker into the remove key
+    (``remove_list_item``, in the ``filter_list`` context):
     it is called with the highlighted value and the row goes only if it returns
     True, so the caller both does the forgetting and decides what is removable at
     all. For the pickers whose rows accumulate — History and the ';' Filter
     prompt (#271); a list that comes from the config or from the system has
     nothing to forget, and without this hook shows no remove key.
-    ``remove_label`` names the key in the hint line: the Drives picker's
-    Shift-Delete disconnects a share or ejects a disk, which "remove" describes
-    badly enough to be worth a word of its own.
+    ``remove_label`` names the key in the hint line: in the Drives picker it
+    disconnects a share or ejects a disk, which "remove" describes badly enough
+    to be worth a word of its own.
 
     ``load_more`` optionally streams extra rows in after the dialog opens: it is
     called once on a daemon worker thread with a ``threading.Event`` that is set

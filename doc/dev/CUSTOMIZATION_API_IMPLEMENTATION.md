@@ -410,7 +410,7 @@ Four, all deliberate:
    not the viewer's old hardcoded fallback.** `ImageViewer` used to fall back to
    `n`/`p` for stepping and plain arrows for panning when those actions were
    absent from `KEY_BINDINGS`; it now falls back to the registry defaults
-   (`↓`/`↑` and Shift-arrows) — the same keys a freshly written config gets.
+   — the same keys a freshly written config gets.
    Such a config converges on the documented defaults instead of keeping
    pre-release ones. `test_image_viewer.py`'s `legacy_config` tests assert the
    new behavior.

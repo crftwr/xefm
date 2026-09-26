@@ -49,7 +49,7 @@ To bind either action, add it to `KEY_BINDINGS`:
 ```python
 KEY_BINDINGS = {
     'edit_config':   ['Y'],
-    'reload_config': ['Ctrl-R'],
+    'reload_config': ['Ctrl-Y'],
 }
 ```
 
@@ -144,7 +144,7 @@ and the filter-list dialogs) also matches Japanese names from typed romaji —
 TEXT_ENCODINGS = ['utf-8', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
 ```
 
-The encodings offered by the text viewer's manual encoding picker (`Shift-E` in
+The encodings offered by the text viewer's manual encoding picker (`change_encoding` in
 the viewer). Automatic detection is built in and always the default; this list only
 feeds the picker, for when detection gets a file wrong. Any
 [Python codec name](https://docs.python.org/3/library/codecs.html#standard-encodings)

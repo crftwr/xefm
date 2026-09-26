@@ -216,8 +216,7 @@ A sort used to re-read the directory, so it incidentally refreshed the pane.
 It no longer does. External changes arrive through
 [`FileMonitorManager`](../../xefm/file_monitor_manager.py), which watches the
 directory and posts a reload — that is the mechanism responsible for freshness,
-and it is unaffected. `Ctrl-R` and every post-operation path still re-list for
-real. The trade-off is only visible where file monitoring is unavailable *and*
+and it is unaffected. Every post-operation path still re-lists for real. The trade-off is only visible where file monitoring is unavailable *and*
 the directory changed underneath: previously a sort would have surfaced it by
 accident, now it waits for an explicit refresh.
 

@@ -80,8 +80,8 @@ Shows all directories including hidden ones.
 ## Usage
 
 ### Opening the Jump Dialog
-- **Key Binding**: `Shift+J` (uppercase J)
-- **Action**: Opens the jump dialog and starts scanning the current directory tree
+- **Action**: `jump_to_path` — opens the jump dialog and starts scanning the
+  current directory tree. Its key is in `KEY_BINDINGS`.
 
 ### Navigation Controls
 - **↑/↓ Arrow Keys**: Move selection up/down
@@ -190,12 +190,10 @@ self.jump_dialog.show(root_directory, self.file_operations)
 ## Configuration
 
 ### Key Binding
-```python
-KEY_BINDINGS = {
-    'jump_dialog': ['J'],  # Shift+J to open jump dialog
-    # ... other bindings
-}
-```
+
+The action is `jump_to_path`; rebind it under `KEY_BINDINGS` in
+`~/.xefm/config.py` like any other action. The shipped default is in
+[`_config.py`](../../xefm/_config.py).
 
 ### Performance Settings
 The number of directories scanned is bounded by an internal cap (not a config

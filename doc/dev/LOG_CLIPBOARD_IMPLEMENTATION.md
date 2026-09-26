@@ -72,18 +72,14 @@ which builds a `LogManager` by hand. Don't wire new code to them.
 
 ## Bindings
 
-In the [`_config.py`](../../xefm/_config.py) template, under "Log Pane Control":
+Both live in the [`_config.py`](../../xefm/_config.py) template, under "Log Pane
+Control", which is the only place the keys are written down.
 
-```python
-'copy_log_selection': ['Command-C', 'Ctrl-C'],
-'copy_log_all': [],
-```
-
-Both chords are listed because one machine runs both frontends: the macOS GUI
-answers `Command-C`, while no terminal ever delivers Command — so the pair
-reproduces exactly what the backend sniffing used to compute at runtime, without
-the sniffing. The `sys.platform == 'win32'` branch narrows it to `['Ctrl-C']`, so
-the menu's shortcut hint reads `Ctrl-C` there rather than `⌘C`.
+`copy_log_selection` is one of the two actions the macOS desktop case adds a
+Command chord to (see "Three cases" there): copying text is that platform's own
+gesture, while no terminal delivers Command at all — so the common Ctrl chord is
+what the TUI answers, and the pair reproduces what the backend sniffing used to
+compute at runtime, without the sniffing.
 
 `copy_log_all` ships deliberately unbound: this key family has few chords left,
 and the action's home is the menu. An empty list is meaningful to

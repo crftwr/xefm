@@ -7,10 +7,10 @@ The External Programs feature allows you to execute custom external programs dir
 ## Key Bindings
 
 - **X**: Open the external programs dialog
-- **Shift-X**: Enter sub-shell (command line) mode — a separate feature
+- `subshell`: Enter sub-shell (command line) mode — a separate feature
 
 The programs menu and the sub-shell are two different tools: **X** runs one of
-your configured `PROGRAMS` and returns to XeFM, while **Shift-X** drops you into
+your configured `PROGRAMS` and returns to XeFM, while `subshell` drops you into
 an interactive shell in the current pane's directory.
 
 ## Configuration
@@ -105,7 +105,7 @@ repainting, so whatever error output it left on the terminal stays readable.
 
 In desktop mode there is no terminal to hand over, so a `terminal: True`
 entry is refused with an error in the log pane — as is sub-shell mode
-(**Shift-X**), which in terminal mode remains the tool for extended
+(`subshell`), which in terminal mode remains the tool for extended
 interactive command-line work.
 
 ## Example Use Cases
@@ -136,7 +136,7 @@ On first launch XeFM creates a personal tools directory, `~/.xefm/tools/`, and
 places an example in it: `example_tool.py`, which prints every `XEFM_*`
 variable and resolves the current selection to absolute paths. It is wired
 into the default `PROGRAMS` as **Example Tool (show XeFM environment)**, so
-pressing **X** and running it shows exactly what your own scripts receive.
+opening the picker and running it shows exactly what your own scripts receive.
 (The directory is seeded once — if you delete the example, it stays deleted.)
 
 To add a tool of your own:
@@ -218,6 +218,6 @@ command in PATH* from the command palette.
 ## Quick Reference
 
 - **X**: Open external programs dialog
-- **Shift-X**: Open sub-shell mode (different feature)
+- `subshell`: Open sub-shell mode (different feature)
 - Use external programs for quick, specific tasks
 - Use sub-shell mode for interactive command-line work

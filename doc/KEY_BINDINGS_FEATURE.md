@@ -120,6 +120,72 @@ Add modifiers before the main key, separated by hyphens:
 - Modifier **order doesn't matter**: `'Command-Shift-X'` equals `'Shift-Command-X'`
 - You can combine **multiple modifiers**: `'Command-Shift-X'`, `'Control-Alt-Delete'`
 
+### What a terminal can carry
+
+The same XeFM runs as a desktop app and in a terminal, and a terminal cannot
+send every chord a window can. The defaults are therefore **one common table** —
+every key in it reaches XeFM in the macOS app, the Windows app and any terminal —
+with two per-case additions where a desktop platform owns the gesture outright:
+
+| Case | What is added |
+|---|---|
+| macOS desktop | `Command-ENTER` for `open_with_os`, `Command-C` for `copy_log_selection` |
+| Windows desktop | `Ctrl-ENTER` for `open_with_os` |
+| Any terminal | nothing — the common table is the whole keymap |
+
+What a terminal cannot deliver, and why those chords are not in the common table:
+
+| Chord | Why not |
+|---|---|
+| `Command-<key>` | No terminal encodes the Command key at all — not Terminal.app, not iTerm2, not VS Code's. |
+| `Ctrl-Shift-<letter>` | A terminal sends Ctrl+letter as a single control byte with no room for Shift, so `'Ctrl-Shift-C'` *is* `'Ctrl-C'` there. (The Windows console is the exception, but a binding that works on one console only is not a default.) |
+| `Ctrl-ENTER` | Same reason — indistinguishable from plain `ENTER`. |
+| `Alt-ENTER` | macOS keyboards spend Option on glyphs and IME, and the Windows terminal takes Alt+Enter for fullscreen. |
+| `Ctrl-I`, `Ctrl-M`, `Ctrl-J`, `Ctrl-H`, `Ctrl-[` | Those bytes already *are* Tab, Enter, Backspace and Escape. |
+
+Shift and Ctrl on a **named** key are fine everywhere — `Ctrl-UP`, `Shift-DOWN`,
+`Ctrl-HOME`, `Shift-F3` — because a terminal has a sequence for those. That
+leaves **plain `Ctrl-<letter>`** as the chord family the whole keymap can rely on,
+which is what the OS-flavoured actions use.
+
+### Keys the host takes first
+
+On top of that, whatever runs XeFM may claim a chord before XeFM sees it. Nothing
+is logged when it does — XeFM is never told the key was pressed, so the binding
+simply does nothing. The ones worth knowing:
+
+- **Windows Terminal** claims `Ctrl-Shift-P` (command palette), `Ctrl-Shift-F`
+  (find), `Ctrl-Shift-T`/`N`/`D`/`W` (tabs, windows, panes), `Ctrl-Shift-A`/`V`/`M`/`K`
+  (select all, paste, mark mode, clear), `Ctrl-Shift-<arrow>`/`HOME`/`END`/`PAGE_UP`/`PAGE_DOWN`
+  (scrollback), `Ctrl-Shift-SPACE`, `Ctrl-Shift-TAB`, `Ctrl-Shift-<digit>`,
+  `Ctrl-Alt-<digit>`, `Alt-ENTER` and `F11`. Its copy chords (`Ctrl-Shift-C`,
+  `Ctrl-INSERT`, `ENTER`) only fire while text is selected *in the terminal*; with
+  nothing selected they fall through.
+- **VS Code's integrated terminal** keeps the commands listed in
+  `terminal.integrated.commandsToSkipShell` and never sends them on. That
+  includes the command palette (`Cmd-Shift-P` / `Ctrl-Shift-P`) and Quick Open
+  (`Ctrl-P` and `Ctrl-E` on Windows and Linux) — so `copy_paths` on `Ctrl-P` is
+  the one deliberate compromise in the defaults: it works in every terminal
+  except that one, where Quick Open opens instead. Rebind it there, or use
+  **Edit → Copy Full Path(s)**.
+- **tmux and screen** keep their prefix key (`Ctrl-B`, `Ctrl-A`) and whatever is
+  typed after it.
+
+### Defaults that moved
+
+These changed when the keymap became one common table, and an existing
+`~/.xefm/config.py` keeps whatever it already says — XeFM fills in a setting your
+config is missing, but never rewrites the `KEY_BINDINGS` you already have. Edit
+the lines by hand if your config predates the change:
+
+| Action | Was | Now |
+|---|---|---|
+| `open_with_os` | `Command-ENTER` / `Ctrl-ENTER` (Windows) | `Ctrl-O`, plus the old chord in the desktop app |
+| `reveal_in_os` | `Alt-ENTER` / `Ctrl-Shift-E` (Windows) | `Ctrl-R` |
+| `copy_names` | `Command-Shift-C` / `Ctrl-Shift-C` (Windows) | `Ctrl-N` |
+| `copy_paths` | `Command-Shift-P` / `Ctrl-Shift-P` (Windows) | `Ctrl-P` |
+| `copy_log_selection` | `Command-C`, `Ctrl-C` | `Ctrl-C`, plus `Command-C` in the macOS app |
+
 ## Configuration Format
 
 ### Simple Format
@@ -349,7 +415,10 @@ KEY_BINDINGS = {
    `Unknown key in expression: ...` and never fires
 3. Make sure modifiers are spelled correctly
 4. Check for conflicts with other key bindings
-5. For an `isearch.*` action, check the key is not a printable one — the search
+5. In a terminal, check the chord is one a terminal can send at all, and that
+   the emulator (or VS Code, or tmux) does not claim it first — see "What a
+   terminal can carry" and "Keys the host takes first" above
+6. For an `isearch.*` action, check the key is not a printable one — the search
    pattern is offered those first, so such a binding never fires (XeFM says so in
    the log pane at startup)
 

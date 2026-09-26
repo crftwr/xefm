@@ -32,13 +32,13 @@ from a checkout.)
 
 ### Opening the menu with the keyboard (terminal mode)
 
-In terminal mode, press **F10** to open the first menu (on the Windows
+In terminal mode, the `menu` action opens the first menu (on the Windows
 terminal, tapping **Alt** by itself works too, just like a desktop menu bar).
 On the Windows terminal, **Alt+letter** opens a menu directly by the first
 letter of its title: **Alt+F** for File, **Alt+E** Edit, **Alt+G** for Go,
 **Alt+S** Select, **Alt+V** View, **Alt+T** Tools, **Alt+H** Help. (Other terminals don't
-deliver bare Alt or Alt+letter chords reliably — use F10 and the arrow keys
-there.)
+deliver bare Alt or Alt+letter chords reliably — use the `menu` action and the
+arrow keys there.)
 
 While a menu is open:
 
@@ -50,10 +50,10 @@ While a menu is open:
   on the one you mean);
 - **→** on an item with a submenu opens the submenu, **←** backs out of it;
 - **Enter** runs the highlighted item;
-- **Esc** (or F10 again, or a click elsewhere) closes the menu.
+- **Esc** (or the `menu` key again, or a click elsewhere) closes the menu.
 
-The activation key is the `menu` action in `~/.xefm/config.py`
-(default `['F10', 'ALT']`), so it can be rebound like any other; if you bind
+The activation key is the `menu` action in `~/.xefm/config.py`, so it can be
+rebound like any other; if you bind
 `Alt-<letter>` chords of your own, they win over the menu accelerator. In
 desktop mode the OS menu bar handles keyboard access natively (Alt on
 Windows).
@@ -64,37 +64,41 @@ XeFM has seven menus: **File**, **Edit**, **Go**, **Select**, **View**,
 **Tools**, and **Help** — in the terminal, each opens directly with Alt + its first letter
 on the Windows terminal.
 
+Each item draws the key its action is actually bound to, so the tables below
+name the **action** instead — press `?` for the keys, or just read them off the
+menu.
+
 ### File Menu
 
-| Item | Shortcut |
-|------|----------|
-| Open | Enter |
-| View File | V |
-| Edit File | E |
-| Details… | I |
-| Open with Default App | Cmd-Enter |
-| Reveal in File Manager | Alt-Enter |
-| New Folder… | M *(when nothing is selected)* |
-| New File… | Shift-E |
-| Rename… | R |
-| Duplicate | — |
-| Copy to Other Pane | C |
-| Move to Other Pane | M *(when files are selected)* |
-| Delete… | K |
-| Create Archive… | P |
-| Extract Archive… | U |
-| Quit | Q |
+| Item | Action |
+|------|--------|
+| Open | `open_item` |
+| View File | `view_file` |
+| Edit File | `edit_file` |
+| Details… | `file_details` |
+| Open with Default App | `open_with_os` |
+| Reveal in File Manager | `reveal_in_os` |
+| New Folder… | `create_directory` *(when nothing is selected)* |
+| New File… | `create_file` |
+| Rename… | `rename` |
+| Duplicate | *(menu only)* |
+| Copy to Other Pane | `copy_files` |
+| Move to Other Pane | `move_files` *(when files are selected)* |
+| Delete… | `delete_files` |
+| Create Archive… | `create_archive` |
+| Extract Archive… | `extract_archive` |
+| Quit | `quit` |
 
 ### Edit Menu
 
 Everything that ends up on the clipboard.
 
-| Item | Shortcut |
-|------|----------|
-| Copy Name(s) | Cmd-Shift-C |
-| Copy Full Path(s) | Cmd-Shift-P |
-| Copy Log Selection | Cmd-C / Ctrl-C |
-| Copy All Logs | — |
+| Item | Action |
+|------|--------|
+| Copy Name(s) | `copy_names` |
+| Copy Full Path(s) | `copy_paths` |
+| Copy Log Selection | `copy_log_selection` |
+| Copy All Logs | `copy_log_all` *(ships unbound)* |
 
 The log items act on the log pane under the file panes: select log text with
 the mouse for the first, take the whole buffer with the second. See
@@ -102,61 +106,60 @@ the mouse for the first, take the whole buffer with the second. See
 
 ### Go Menu
 
-| Item | Shortcut |
-|------|----------|
-| Parent Directory | Backspace |
-| Go to Favorite… | J |
-| Jump to Path… | Shift-J |
-| Drives… | D |
-| History… | H |
+| Item | Action |
+|------|--------|
+| Parent Directory | `go_parent` |
+| Go to Favorite… | `favorites` |
+| Jump to Path… | `jump_to_path` |
+| Drives… | `drives` |
+| History… | `history` |
 
 ### Select Menu
 
-| Item | Shortcut |
-|------|----------|
-| Toggle Selection | Space |
-| Select All Items | Home |
-| Clear Selection | End |
-| Compare and Select… | W |
-| Compare Selected Files… | = |
-| Compare Directories… | Shift-= |
+| Item | Action |
+|------|--------|
+| Toggle Selection | `toggle_select_down` |
+| Select All Items | `select_all` |
+| Clear Selection | `unselect_all` |
+| Compare and Select… | `compare_selection` |
+| Compare Selected Files… | `diff_files` |
+| Compare Directories… | `diff_directories` |
 
 ### View Menu
 
-| Item | Shortcut |
-|------|----------|
-| Find… | F |
-| Filter… | ; |
-| Search Files… | Shift-F |
-| Search Content… | Shift-G |
-| Show Hidden Files | . |
-| Reverse Sort | — |
-| Sort By ▸ | (submenu: Name / Extension / Size / Date; quick keys `1`–`4`) |
+| Item | Action |
+|------|--------|
+| Find… | `isearch` |
+| Filter… | `filter` |
+| Search Files… | `find_files` |
+| Search Content… | `find_in_files` |
+| Show Hidden Files | `toggle_hidden` |
+| Reverse Sort | *(menu only)* |
+| Sort By ▸ | (submenu: Name / Extension / Size / Date — also the `quick_sort_*` actions) |
 | Theme ▸ | (submenu of installed themes) |
-| Next Theme | — |
-| Switch Pane | Tab |
+| Next Theme | `toggle_color_scheme` *(ships unbound)* |
+| Switch Pane | `switch_pane` |
 
 ### Tools Menu
 
-| Item | Shortcut |
-|------|----------|
-| External Programs… | X |
-| Subshell Here | Shift-X *(terminal mode only)* |
-| Edit Configuration… | — |
-| Reload Configuration | — |
+| Item | Action |
+|------|--------|
+| External Programs… | `programs` |
+| Subshell Here | `subshell` *(terminal mode only)* |
+| Edit Configuration… | `edit_config` *(ships unbound)* |
+| Reload Configuration | `reload_config` *(ships unbound)* |
 
 ### Help Menu
 
-| Item | Shortcut |
-|------|----------|
-| Keyboard Shortcuts… | ? |
-| Tip of the Day… | — |
-| About XeFM | — |
+| Item | Action |
+|------|--------|
+| Keyboard Shortcuts… | `help` |
+| Tip of the Day… | *(menu only)* |
+| About XeFM | *(menu only)* |
 
-> Note: `M` is context-sensitive — it creates a new folder when nothing is
-> selected, and moves the selection when files are selected. This is a property
-> of the `create_directory` / `move_files` key bindings, and the menu reflects
-> both.
+> Note: `create_directory` and `move_files` ship on one key, which does whichever
+> fits — a new folder when nothing is selected, a move when files are. That is a
+> property of their bindings, and the menu reflects both.
 
 ## Menu Item States
 
@@ -170,10 +173,12 @@ Disabled items appear grayed out.
 ### How shortcut hints are produced
 
 Each menu item shows the first key bound to its action, formatted for display —
-single letters appear as-is (`C`, `R`), special keys are spelled out (`Enter`,
-`Backspace`, `Tab`), and modifier combinations use `Cmd-`, `Shift-`, `Alt-`
-prefixes (`Cmd-Shift-C`, `Shift-F`). Because the hint is read live from the
-keymap, rebinding an action in config automatically updates its menu shortcut.
+single letters appear as-is, special keys are spelled out (`Enter`, `Backspace`,
+`Tab`), and modifier combinations use `Cmd-`, `Shift-`, `Alt-` prefixes. Because
+the hint is read live from the keymap,
+rebinding an action in config automatically updates its menu shortcut — and the
+hint follows the case it is drawn in, so "Open with Default App" reads
+`Cmd-Enter` in the macOS app and `Ctrl-O` in a terminal.
 
 ### Using shortcuts
 

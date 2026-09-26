@@ -2,15 +2,16 @@
 
 XeFM's directory navigation dialogs all share one searchable-list picker: a
 scrollable list you filter by typing, with the same keys for moving through it
-and choosing an entry. Five keys open five flavors of that picker:
+and choosing an entry. Five actions open five flavors of that picker (press `?`
+for the keys yours are on, or find them in the **Go** menu):
 
-| Key | Dialog | What it lists |
-|-----|--------|---------------|
-| **J** | Favorites | Your configured favorite directories |
-| **Shift-J** | Jump | Directories found by scanning from the current directory |
-| **H** | History | Directories you have already visited in this pane |
-| **D** | Drives | Storage locations and volumes (and S3 buckets, if available) |
-| **Shift-D** | Connect to Server | Saved servers, plus the ones found on the network (macOS and Windows) |
+| Action | Dialog | What it lists |
+|--------|--------|---------------|
+| `favorites` | Favorites | Your configured favorite directories |
+| `jump_to_path` | Jump | Directories found by scanning from the current directory |
+| `history` | History | Directories you have already visited in this pane |
+| `drives` | Drives | Storage locations and volumes (and S3 buckets, if available) |
+| `connect_server` | Connect to Server | Saved servers, plus the ones found on the network (macOS and Windows) |
 
 Whichever one you open, pressing **Enter** navigates the current pane to the
 selected location.
@@ -29,7 +30,8 @@ Every navigation dialog uses the same list-picker controls:
 - **Page Up/Page Down** to scroll by page
 - **Home/End** to jump to the first/last result
 - **Enter** to navigate to the selected entry
-- **Shift+Delete** to remove the highlighted entry, where there is something to
+- The **remove** key (`remove_list_item`) to drop the highlighted entry, where
+  there is something to
   remove: it forgets a directory in History or the Filter prompt, forgets a
   saved server in Connect to Server, and disconnects or ejects a volume in
   Drives. Favorites and External Programs come from your config, so there is
@@ -93,9 +95,10 @@ class Config:
 To use a different key, rebind the `favorites` action in `KEY_BINDINGS`, e.g.
 `'favorites': ['f']`.
 
-## Jump dialog (Shift-J)
+## Jump dialog
 
-Press **Shift-J** to search your filesystem for directories and jump to a match.
+The **Jump** dialog (`jump_to_path`) searches your filesystem for directories and
+jumps to a match.
 This is ideal for reaching a deeply nested directory without navigating the tree
 by hand.
 
@@ -121,7 +124,7 @@ known locations.
 Press **H** to open a searchable list of directories you have already visited in
 the current pane, and jump back to any of them. Each pane keeps its own history.
 
-**Shift+Delete** forgets the highlighted directory. Every visit to it is
+The **remove** key forgets the highlighted directory. Every visit to it is
 dropped, not just the most recent one, and the change is saved immediately. It
 is not a blocklist: going there again puts it back at the top.
 
@@ -186,7 +189,7 @@ configured" message points at the step above.
 
 ### Disconnecting and ejecting
 
-**Shift+Delete** disconnects the highlighted network mount, or ejects the
+The **remove** key disconnects the highlighted network mount, or ejects the
 highlighted external volume so the device is safe to unplug. On any other row —
 Home, `C:\`, an S3 bucket, an SSH host — it does nothing.
 
@@ -198,11 +201,11 @@ rather than forcing it.
 
 - **Favorites (J)** — instant, for a handful of directories you use constantly
 - **History (H)** — instant, for somewhere you were a moment ago
-- **Jump (Shift-J)** — slower (scans the disk), for finding a directory you
+- **Jump** — slower (scans the disk), for finding a directory you
   don't have memorized
 - **Drives (D)** — for switching between volumes, drives, or S3 buckets, and
   for disconnecting or ejecting one
-- **Connect to Server (Shift-D)** — for mounting a NAS or file server in the
+- **Connect to Server** — for mounting a NAS or file server in the
   first place
 
 ## See Also

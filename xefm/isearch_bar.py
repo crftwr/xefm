@@ -10,11 +10,12 @@ Being the top layer makes it the focus root, which is what lets its ``TextEdit``
 engage the IME and blink a caret — a plain in-footer draw could do neither.
 
 Layout is one row: a bold prompt on the left and the editable pattern field
-stretched across the rest. ``Up``/``Down`` walk the match set, ``Shift+Up`` /
-``Shift+Down`` walk it marking as they go, ``Ctrl+A`` marks the whole set at
-once, ``Enter`` stops at the current match, and ``Esc`` (or
-a click outside) cancels. The controller owns what those outcomes mean and passes
-them in as callbacks.
+stretched across the rest. ``isearch.prev_match`` / ``isearch.next_match`` walk
+the match set, ``isearch.toggle_select_up`` / ``isearch.toggle_select_down`` walk
+it marking as they go, ``isearch.select_matches`` marks the whole set at once,
+``isearch.accept`` stops at the current match, and ``isearch.cancel`` (or a click
+outside) cancels. The controller owns what those outcomes mean and passes them in
+as callbacks.
 
 Those keys are named actions in the ``isearch`` context (``xefm.actions``), so a
 config can rebind them — but this is the one surface whose keys compete with
@@ -182,8 +183,8 @@ class ISearchBar(FocusContainer, Widget):
     def _handlers(self) -> dict[str, Callable[[], None]]:
         """``{action name: handler}`` for the keys this bar answers, built from
         the callbacks it was given — so the viewers' bar, which has nothing to
-        select, simply does not claim ``isearch.toggle_select_*`` and leaves
-        Shift+Up/Down to the field.
+        select, simply does not claim ``isearch.toggle_select_*``, whose keys
+        then fall through to the field.
 
         It is also the filter that keeps the ``common`` actions every context
         inherits from firing here: ``quit`` may well resolve in the ``isearch``
@@ -307,8 +308,8 @@ class ViewerISearch:
             set, repaint highlights, and jump to the nearest match.
         navigate(delta):    Up (``-1``) / Down (``+1``) — walk to the prev / next
             match. (No ``select`` / ``select_all`` callbacks: a viewer has no
-            selection to mark, so the bar leaves Shift+Up/Down and Ctrl+A to the
-            pattern field there.)
+            selection to mark, so the bar leaves the marking actions' keys to
+            the pattern field there.)
         status():           returns ``(position, total)`` for the bar's counter.
         accept():           Enter — keep the current match; clear the search chrome.
         cancel():           Esc / outside click — restore the pre-search view.

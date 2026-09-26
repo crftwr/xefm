@@ -35,8 +35,9 @@ SAMPLE_KEYMAP = {
     "Shift-A": "select_all_items",
     "a": "select_all_files",
     "enter": "open_item",
-    "Command-enter": "open_with_os",   # GUI-only (terminals can't send Cmd)
-    "Alt-enter": "reveal_in_os",       # GUI-only
+    "Ctrl-o": "open_with_os",          # the common chord: every backend has it
+    "Ctrl-r": "reveal_in_os",
+    "Command-enter": "open_with_os",   # desktop-only (terminals can't send Cmd)
     "tab": "switch_pane",
     "Shift-tab": "switch_pane_back",
     "space": "select_file",

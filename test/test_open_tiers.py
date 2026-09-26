@@ -1,7 +1,7 @@
 """The two tiers of "open" in FILE_ASSOCIATIONS.
 
 Enter is the casual open: it stays inside XeFM, and an ``enter`` rule names a
-built-in *handler*. Cmd/Ctrl-Enter is the deliberate one: ``open`` names an
+built-in *handler*. Ctrl-O is the deliberate one: ``open`` names an
 external *program*. The two value spaces are different, which is why they have
 separate accessors — routing a handler name through the command accessor would
 quietly turn ``'viewer'`` into the command ``['viewer']``.

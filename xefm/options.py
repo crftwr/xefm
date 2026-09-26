@@ -9,7 +9,7 @@ want to change one is the moment you are looking at the results it changes.
 every printable key belongs to the query (the rule ``xefm.actions`` already
 states for ``isearch`` and ``filter_list``), and what is left is countable —
 Ctrl, minus what the text field owns (A/C/X/V), minus what a terminal renames
-(Ctrl+I/M/J/H/[), minus the hardcoded Ctrl+L. Spending three of those on one
+(Ctrl+I/M/J/H/[). Spending three of those on one
 dialog's options leaves nothing for the next dialog that wants some. So options
 are not reached by a key each: they are reached by *one* key — ``options``,
 Ctrl-O — which opens :mod:`xefm.options_dialog`, a surface with no text field,

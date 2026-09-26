@@ -12,7 +12,7 @@ typing) shows and narrows the choices.
 
 | Prompt | Opened by | Completes |
 |--------|-----------|-----------|
-| **Jump to Path** | `Shift-J` | files + directories |
+| **Jump to Path** | `jump_to_path` | files + directories |
 | **New Directory** | create-directory | files + directories |
 | **New File** | create-file | files + directories |
 | **Rename** | `R` (single item) | files + directories |

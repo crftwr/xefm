@@ -47,21 +47,20 @@ Messages are color-coded by type:
 
 ### Scrolling Through Logs
 
-Use keyboard shortcuts to navigate through log history:
+Four actions scroll the log without taking focus off the file list — press `?`
+for the keys they are on:
 
-- **Shift+↑**: Scroll up one line
-- **Shift+↓**: Scroll down one line
-- **Shift+Page Up**: Scroll up one page
-- **Shift+Page Down**: Scroll down one page
-- **Shift+Home**: Jump to top of log (oldest messages)
-- **Shift+End**: Jump to bottom of log (newest messages)
+- `scroll_log_up` / `scroll_log_down`: one line at a time
+- `scroll_log_page_up` / `scroll_log_page_down`: a page at a time, so
+  `scroll_log_page_down` from the middle of the history walks back to the newest
+  messages
 
 ### Auto-Scroll Behavior
 
 - New messages automatically appear at the bottom
 - Log automatically scrolls to show new messages
 - Manual scrolling temporarily disables auto-scroll
-- Pressing Shift+End re-enables auto-scroll
+- Scrolling back to the newest message re-enables auto-scroll
 
 ## Common Use Cases
 
@@ -154,8 +153,9 @@ or a note.
 
 Drag across the log with the mouse to highlight lines (double-click selects a
 word, triple-click a line, and dragging past the top or bottom edge keeps
-selecting), then press **Cmd-C** on macOS or **Ctrl-C** elsewhere. The
-highlight clears once the text is on the clipboard.
+selecting), then run `copy_log_selection` — the macOS desktop app answers the
+platform's own copy chord for it as well. The highlight clears once the text is
+on the clipboard.
 
 The chord copies whatever the log has highlighted, whichever pane you were
 last clicking in — so selecting in the log and then going back to the file list
@@ -175,7 +175,7 @@ It ships without a key of its own. To give it one, bind `copy_log_all` in
 `~/.xefm/config.py`:
 
 ```python
-KEY_BINDINGS['copy_log_all'] = ['Ctrl-Alt-C']
+KEY_BINDINGS['copy_log_all'] = ['Ctrl-G']
 ```
 
 `copy_log_selection` is bound the same way if you would rather it answered some
@@ -202,14 +202,14 @@ lines, unwrapped.
 
 ### Finding Recent Errors
 
-1. Press **Shift+End** to jump to bottom
-2. Press **Shift+↑** to scroll up
+1. Let the log sit at the newest messages (it does by default)
+2. Scroll up a line at a time with `scroll_log_up`
 3. Look for red error messages
 
 ### Reviewing Operation History
 
-1. Press **Shift+Home** to jump to top
-2. Press **Shift+Page Down** to scroll through history
+1. Page back through the history with `scroll_log_page_up`
+2. Walk forward again with `scroll_log_page_down`
 3. Review messages chronologically
 
 ### Monitoring Long Operations
@@ -242,8 +242,8 @@ lines, unwrapped.
 **Problem:** New messages scroll by too quickly.
 
 **Solution:** 
-- Use **Shift+↑** to scroll up and review
-- Press **Shift+Home** to jump to top
+- Use `scroll_log_up` to scroll up and review
+- Page back with `scroll_log_page_up`
 - Consider reducing log level to WARNING
 
 ### Too Many Messages

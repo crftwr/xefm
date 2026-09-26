@@ -29,7 +29,7 @@ Three options per surface would exhaust that in six surfaces, and nothing would
 guarantee that the same option meant the same chord in two of them.
 
 So options are not reached by a key each. They are reached by **one** key —
-`options`, `Ctrl-O` — that opens a surface with *no text field*, where every
+`options` — that opens a surface with *no text field*, where every
 plain letter is free. One key, spent once, for as many options as any surface
 ever grows.
 
@@ -93,7 +93,7 @@ values already has them.
 The same rationale `remove_list_item` states in `xefm/actions.py`. The registry
 keeps a table per context, so the name can be registered again in `dir_diff` or
 `file_diff` with its own default key, while a config naming it unqualified
-(`'options': ['F9']`) rebinds every one of them at once. `'search.options'`
+(`'options': ['Ctrl-T']`) rebinds every one of them at once. `'search.options'`
 moves just the one.
 
 ## Adding options to another surface

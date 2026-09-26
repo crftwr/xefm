@@ -1,34 +1,35 @@
 # Image Viewer
 
-XeFM has a built-in image viewer. Put the cursor on an image and press **V** (or
+XeFM has a built-in image viewer. Put the cursor on an image and run `view_file` (or
 **Enter**) to open it full-window, with zoom, pan, and navigation to the other
 images in the same directory — without leaving XeFM.
 
 ## Opening
 
-| Key | What it does |
-|-----|--------------|
-| `V` | View the focused file — an image opens in the image viewer |
-| `Enter` | Same, for a file with no other `enter` rule |
+| Action | What it does |
+|--------|--------------|
+| `view_file` | View the focused file — an image opens in the image viewer |
+| `open_item` | Same, for a file with no other `enter` rule |
 
 Recognized formats: PNG, JPEG, GIF, BMP, WebP, TIFF, ICO, TGA, and the netpbm
 family (PPM/PGM/PBM/PNM).
 
-## Keys
+## Controls
 
-| Key | Action |
-|-----|--------|
-| `+` / `=` | Zoom in |
-| `-` | Zoom out |
-| `0` | Fit the whole image to the window |
-| `Shift-↑` `Shift-↓` `Shift-←` `Shift-→` | Pan (while zoomed in) |
+The viewer's own footer names the keys, and `?` inside it lists them all.
+
+| Action | What it does |
+|--------|--------------|
+| `image_viewer.zoom_in` | Zoom in |
+| `image_viewer.zoom_out` | Zoom out |
+| `image_viewer.zoom_reset` | Fit the whole image to the window |
+| `image_viewer.pan_*` | Pan (while zoomed in) |
 | mouse drag | Pan |
 | mouse scroll | Zoom in / out |
-| `↓` | Next image |
-| `↑` | Previous image |
+| `image_viewer.next` / `.prev` | Next / previous image |
 | `Home` / `End` | First / last image |
 | `?` | Key help |
-| `q` / `Esc` | Close |
+| `quit` / `Esc` | Close |
 
 Zoom starts at *fit* — the whole image in the window — and each step magnifies
 by 25%, up to 40×. Panning past an edge stops at the border rather than
@@ -73,8 +74,8 @@ In a terminal without any of these protocols — Terminal.app and the VS Code
 terminal, notably — the viewer shows a card with the format, dimensions and
 file size instead of the picture. Navigation still works; zoom and pan are
 hidden, since there is nothing to zoom. To view the picture itself, use a
-terminal from the table above, run the desktop app, or press `Cmd-Enter` /
-`open_with_os` to hand the file to your OS image viewer.
+terminal from the table above, run the desktop app, or use `open_with_os` to
+hand the file to your OS image viewer.
 
 You can force or disable the protocol with the `PUIKIT_TERM_GRAPHICS`
 environment variable (`kitty`, `iterm2`, `sixel`, or `none`) — useful when XeFM
@@ -173,8 +174,8 @@ temporary file for the life of the viewer and removed when it closes.)
 
 ## Opening in an external viewer instead
 
-By default `V` uses the built-in viewer and `Cmd-Enter` (`open_with_os`) hands
-the file to your OS app. To send `V` to an external program too, point the
+By default `view_file` uses the built-in viewer and `open_with_os` hands the
+file to your OS app. To send `V` to an external program too, point the
 `view` entry at it in your config's `FILE_ASSOCIATIONS`:
 
 ```python

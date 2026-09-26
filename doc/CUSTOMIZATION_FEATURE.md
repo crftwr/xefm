@@ -57,67 +57,71 @@ An entry **replaces** the default rather than adding to it, as everywhere else
 in `KEY_BINDINGS`: after that first line, PgDn no longer pages the text viewer.
 List both if you want both — `['SPACE', 'PAGE_DOWN']`.
 
-### Every viewer action and its default
+### Every viewer action
 
-| Text viewer | | File diff | |
-|---|---|---|---|
-| `text_viewer.scroll_up` | ↑ | `file_diff.scroll_up` | ↑ |
-| `text_viewer.scroll_down` | ↓ | `file_diff.scroll_down` | ↓ |
-| `text_viewer.page_up` | PgUp | `file_diff.page_up` | PgUp |
-| `text_viewer.page_down` | PgDn | `file_diff.page_down` | PgDn |
-| `text_viewer.scroll_top` | Home | `file_diff.scroll_top` | Home |
-| `text_viewer.scroll_bottom` | End | `file_diff.scroll_bottom` | End |
-| `text_viewer.scroll_left` | ← | `file_diff.scroll_left` | ← |
-| `text_viewer.scroll_right` | → | `file_diff.scroll_right` | → |
-| `toggle_wrap` \* † | W | `file_diff.next_block` | n |
-| `toggle_view_mode` \* † | M | `file_diff.prev_block` | Shift-N |
-| `change_encoding` \* † | Shift-E | | |
+The keys they ship with are not listed here — each action declares its own in
+`xefm/actions.py`, and `?` inside a viewer shows what yours are on, which is the
+only list that cannot go stale.
 
-| Image viewer | | Directory diff | |
-|---|---|---|---|
-| `image_viewer.zoom_in` \* | + = | `dir_diff.cursor_up` | ↑ |
-| `image_viewer.zoom_out` \* | - _ | `dir_diff.cursor_down` | ↓ |
-| `image_viewer.zoom_reset` \* | 0 | `dir_diff.page_up` | PgUp |
-| `image_viewer.next` \* | ↓ | `dir_diff.page_down` | PgDn |
-| `image_viewer.prev` \* | ↑ | `dir_diff.cursor_top` | Home |
-| `image_viewer.pan_up` \* | Shift-↑ | `dir_diff.cursor_bottom` | End |
-| `image_viewer.pan_down` \* | Shift-↓ | `dir_diff.expand` | → |
-| `image_viewer.pan_left` \* | Shift-← | `dir_diff.collapse` | ← |
-| `image_viewer.pan_right` \* | Shift-→ | `dir_diff.activate` | Enter |
-| `image_viewer.first` | Home | `dir_diff.switch_side` | Tab |
-| `image_viewer.last` | End | `dir_diff.next_change` | n |
-| | | `dir_diff.prev_change` | Shift-N |
-| | | `dir_diff.rescan` | r |
-| | | `dir_diff.split_left` | [ |
-| | | `dir_diff.split_right` | ] |
+| Text viewer | File diff |
+|---|---|
+| `text_viewer.scroll_up` | `file_diff.scroll_up` |
+| `text_viewer.scroll_down` | `file_diff.scroll_down` |
+| `text_viewer.page_up` | `file_diff.page_up` |
+| `text_viewer.page_down` | `file_diff.page_down` |
+| `text_viewer.scroll_top` | `file_diff.scroll_top` |
+| `text_viewer.scroll_bottom` | `file_diff.scroll_bottom` |
+| `text_viewer.scroll_left` | `file_diff.scroll_left` |
+| `text_viewer.scroll_right` | `file_diff.scroll_right` |
+| `toggle_wrap` \* † | `file_diff.next_block` |
+| `toggle_view_mode` \* † | `file_diff.prev_block` |
+| `change_encoding` \* † | |
+
+| Image viewer | Directory diff |
+|---|---|
+| `image_viewer.zoom_in` \* | `dir_diff.cursor_up` |
+| `image_viewer.zoom_out` \* | `dir_diff.cursor_down` |
+| `image_viewer.zoom_reset` \* | `dir_diff.page_up` |
+| `image_viewer.next` \* | `dir_diff.page_down` |
+| `image_viewer.prev` \* | `dir_diff.cursor_top` |
+| `image_viewer.pan_up` \* | `dir_diff.cursor_bottom` |
+| `image_viewer.pan_down` \* | `dir_diff.expand` |
+| `image_viewer.pan_left` \* | `dir_diff.collapse` |
+| `image_viewer.pan_right` \* | `dir_diff.activate` |
+| `image_viewer.first` | `dir_diff.switch_side` |
+| `image_viewer.last` | `dir_diff.next_change` |
+| | `dir_diff.prev_change` |
+| | `dir_diff.rescan` |
+| | `dir_diff.split_left` |
+| | `dir_diff.split_right` |
 
 ### The incremental search bar
 
-The search bar (`F`) is a surface of its own, and its keys are named the same
-way:
+The search bar (`isearch`) is a surface of its own, and its keys are named the
+same way:
 
-| Action | Default | |
-|---|---|---|
-| `isearch.next_match` | ↓ | Move to the next match |
-| `isearch.prev_match` | ↑ | Move to the previous match |
-| `isearch.toggle_select_down` | Shift-↓ | Mark, then move to the next match |
-| `isearch.toggle_select_up` | Shift-↑ | Mark, then move to the previous match |
-| `isearch.select_matches` | Ctrl-A | Mark every match (again: clear them) |
-| `isearch.accept` | Enter | Stop at the current match |
-| `isearch.cancel` | Esc | Cancel, restoring the cursor |
+| Action | |
+|---|---|
+| `isearch.next_match` | Move to the next match |
+| `isearch.prev_match` | Move to the previous match |
+| `isearch.toggle_select_down` | Mark, then move to the next match |
+| `isearch.toggle_select_up` | Mark, then move to the previous match |
+| `isearch.select_matches` | Mark every match (again: clear them) |
+| `isearch.accept` | Stop at the current match |
+| `isearch.cancel` | Cancel, restoring the cursor |
 
 One rule applies here and nowhere else: **the key must not be one that types a
-character.** Everything printable belongs to the pattern you are typing — that
-is why marking a file is Shift-↓ rather than the file list's Space, which the
-search reads as the separator between `report 2024` and `report*2024*`. Bind an
-isearch action to `N` and it can never fire; XeFM says so in the log pane at
-startup rather than leaving you to wonder. Modified or non-printable keys are
-free: `Shift-DOWN`, `Ctrl-N`, `F2`, `INSERT` (on Windows and in the terminal —
-macOS keyboards have no Insert key).
+character.** Everything printable belongs to the pattern you are typing — which
+is why marking a file here is a modified arrow rather than the file list's own
+toggle key, whose glyph the search reads as the separator between `report 2024`
+and `report*2024*`. Bind an isearch action to `N` and it can never fire; XeFM
+says so in the log pane at startup rather than leaving you to wonder. Modified or
+non-printable keys are free: `Shift-DOWN`, `Ctrl-Y`, `F2`, `INSERT` (on Windows
+and in the terminal — macOS keyboards have no Insert key).
 
-`Ctrl-A` is the one default that takes a key the pattern field would otherwise
-use (select-all-text). Only the Ctrl form: `Cmd-A` still selects the text on
-macOS, which is where that chord is the habit.
+`isearch.select_matches` is the one default that takes a key the pattern field
+would otherwise use (select-all-text). Only the Ctrl form: `Cmd-A` still selects
+the text on macOS, which is where that chord is the habit.
 
 \* These are listed as live entries in the default `KEY_BINDINGS`, so a config
 generated from the template already has them. The rest work from the defaults
@@ -508,7 +512,7 @@ More, including the format table per platform, in
 A config can add a browsable location that is not a directory — the Windows
 registry, a bookmark database, a device list, anything you can present as
 folders and files. Write one class, name it, and `reg://` is somewhere a pane
-can open, Shift-J can jump to, and `FAVORITE_DIRECTORIES` can hold.
+can open, `jump_to_path` can jump to, and `FAVORITE_DIRECTORIES` can hold.
 
 ```python
 import io

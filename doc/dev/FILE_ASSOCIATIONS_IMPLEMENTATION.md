@@ -294,8 +294,7 @@ else:
 ## OS-default fallback (`open_with_os`)
 
 `open_with_os()` in `xefm/app.py` is the deliberate "hand this file to another
-program" action (bound to Cmd/Ctrl-Enter), as opposed to Enter's
-open-inside-XeFM. It is **not** association-blind: it consults `FILE_ASSOCIATIONS`
+program" action, as opposed to `open_item`'s open-inside-XeFM. It is **not** association-blind: it consults `FILE_ASSOCIATIONS`
 first, exactly like the other three handlers, and only reaches the OS default
 when no rule applies.
 
@@ -337,8 +336,8 @@ operates only on the focused entry:
 - Linux / other: `xdg-open <parent>` — opens the containing directory (no
   portable "select this item" verb).
 
-Default binding is `Alt-Enter` (`Ctrl-Shift-E` on Windows), configured under
-`KEY_BINDINGS` in `xefm/_config.py`. As with `open_with_os`, the launcher
+Its key is configured under `KEY_BINDINGS` in `xefm/_config.py`, the same as
+every other action's. As with `open_with_os`, the launcher
 returns immediately, so the renderer is not suspended; errors are logged.
 
 ## Data Structures
