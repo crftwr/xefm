@@ -440,14 +440,47 @@ class ActionContext:
                    on_cancel=_guard("input callback", on_cancel, arity=0))
         self._app.panel.render()
 
-    def choose(self, title: str, items: Iterable[Any], *,
+    def choose(self, title: str, items: Iterable[Any], *, type: str = "choice",
                on_result: Callable[[int | None], None] | None = None) -> None:
         """Offer a list to pick from. The chosen item's **index** — or ``None``
-        on cancel — is handed to ``on_result``. Items are shown via ``str()``."""
-        from xefm.choice_dialog import show_choice_dialog
-        rows = [(i, str(item)) for i, item in enumerate(items)]
-        show_choice_dialog(self._app.panel, title, rows,
-                           on_result=_guard("choose callback", on_result, arity=1))
+        on cancel — is handed to ``on_result``. Items are shown via ``str()``.
+
+        ``type`` names the dialog, because a list of three and a list of three
+        hundred want different ones:
+
+        - ``"choice"`` — a compact box sized to its items, where typing jumps
+          the selection and a second of quiet forgets what was typed. The
+          default, and right for a handful of alternatives.
+        - ``"filter"`` — the picker the built-in Favorites and History lists
+          use: a filter field over a scrolling list, anchored over the active
+          pane. It takes the same query the file pane's incremental search
+          takes — whitespace-separated tokens, wildcards, and Migemo, so romaji
+          finds Japanese labels — and holds it until it is erased. For a list
+          long enough to search (#467).
+
+        An unknown ``type`` is a ValueError, which the action boundary logs.
+        """
+        callback = _guard("choose callback", on_result, arity=1)
+        if type == "choice":
+            from xefm.choice_dialog import show_choice_dialog
+            rows = [(i, str(item)) for i, item in enumerate(items)]
+            show_choice_dialog(self._app.panel, title, rows, on_result=callback)
+        elif type == "filter":
+            # The dialog reports the *value* it was given, so the values are the
+            # indices themselves and the labels are read off a list built once —
+            # `items` is an Iterable and may well be a generator.
+            from xefm.filter_list_dialog import show_filter_list
+            labels = [str(item) for item in items]
+            show_filter_list(
+                self._app.panel, range(len(labels)), title=title,
+                to_label=lambda i: labels[i],
+                on_accept=callback,
+                on_cancel=(lambda: callback(None)) if callback else None,
+                region=self._app._active_pane_region(),
+            )
+        else:
+            raise ValueError(
+                f"choose(type={type!r}): expected 'choice' or 'filter'")
         self._app.panel.render()
 
     def confirm(self, prompt: str, *, title: str = "Confirm",
