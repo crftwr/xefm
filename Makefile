@@ -115,7 +115,7 @@ help:
 	@echo "(run 'make venv' first if .venv does not exist)"
 	@echo ""
 	@echo "Available commands:"
-	@echo "  venv           - Create .venv using the latest python3 in PATH and install deps"
+	@echo "  venv           - Create .venv using the latest python3 in PATH, with runtime + test deps"
 	@echo "  clean-venv     - Remove the .venv directory"
 	@echo "  install-puikit - (Re)install PuiKit: editable if PUIKIT_DIR set, else from PyPI"
 	@echo "  run            - Run XeFM (terminal); LEFT=/RIGHT= set startup dirs"
@@ -239,6 +239,8 @@ endif
 	@.venv/$(VENV_BINDIR)/python -m pip install --upgrade pip
 	@echo "Installing dependencies from requirements.txt..."
 	@.venv/$(VENV_BINDIR)/python -m pip install -r requirements.txt
+	@echo "Installing test dependencies from requirements-dev.txt..."
+	@.venv/$(VENV_BINDIR)/python -m pip install -r requirements-dev.txt
 	@$(MAKE) install-puikit
 	@echo ""
 	@echo ".venv created successfully with $$(.venv/$(VENV_BINDIR)/python --version 2>&1)"
