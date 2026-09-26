@@ -1073,7 +1073,7 @@ def printable_text_notice(bindings: dict, limit: int = 3) -> str | None:
     return (f"KEY_BINDINGS binds {len(pairs)} action(s) on a surface that takes "
             f"typing to a key that types a character, so they will never fire: "
             f"{shown}. Use a modified or non-printable key "
-            f"(Shift-DOWN, F2, Ctrl-N).")
+            f"(Shift-DOWN, F2, Ctrl-Y).")
 
 
 def printable_isearch_notice(bindings: dict, limit: int = 3) -> str | None:
@@ -1088,7 +1088,7 @@ def printable_isearch_notice(bindings: dict, limit: int = 3) -> str | None:
         shown += f", and {more} more"
     return (f"KEY_BINDINGS binds {len(pairs)} isearch action(s) to a key that "
             f"types a character, so they will never fire: {shown}. "
-            f"Use a modified or non-printable key (Shift-DOWN, F2, Ctrl-N).")
+            f"Use a modified or non-printable key (Shift-DOWN, F2, Ctrl-Y).")
 
 
 def keys_label_for_action(action: str, fallback: str = "",

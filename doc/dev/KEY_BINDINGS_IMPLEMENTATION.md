@@ -68,6 +68,55 @@ two **modes**:
 > Alphabetical bindings are case-insensitive **by design** (the parser lowercases
 > the letter).
 
+### What a backend can actually deliver
+
+A binding is worth no more than the transport under it, and the backends do not
+carry the same set:
+
+| Chord | Desktop (macOS / Windows) | Windows console (VT / curses) | POSIX terminal |
+|---|---|---|---|
+| `Command-…` | yes (macOS) | — | — |
+| `Ctrl-<letter>` | yes | yes | yes, except I, M, J, H and `[` — those bytes already *are* tab, enter, backspace and escape |
+| `Ctrl-Shift-<letter>` | yes | yes | **no** — one control byte, no room for shift |
+| `Ctrl-ENTER` | yes | yes | **no** — arrives as plain `enter` |
+| `Alt-<key>` | yes | yes | as ESC + key; macOS keyboards spend Option on glyphs and IME |
+| modifiers on a named key (arrows, F-keys, Home/End, Tab…) | yes | yes | yes, via the xterm CSI modifier parameter |
+
+The Windows console reports a real virtual key plus `dwControlKeyState`
+(`ReadConsoleInputW`), which is why `Ctrl-Shift-<letter>` and `Ctrl-ENTER` survive
+there and nowhere else in a terminal. On a VT stream a Ctrl+letter is the bare
+control byte 0x01–0x1A: PuiKit's VT input path turns it back into
+`key=<letter>, modifiers={ctrl}` and there is no shift to recover. PuiKit
+implements kitty's *graphics* protocol, not its keyboard protocol, so no CSI-u
+path changes this.
+
+### The three cases, and where they live
+
+`KEY_BINDINGS` in `xefm/_config.py` is therefore written as **one common table**
+— only chords every backend delivers — followed by a small override block keyed
+on `is_desktop_mode()` and `sys.platform`:
+
+| Case | Override |
+|---|---|
+| macOS desktop | `open_with_os` gains `Command-ENTER`; `copy_log_selection` gains `Command-C` |
+| Windows desktop | `open_with_os` gains `Ctrl-ENTER` |
+| Any terminal | none |
+
+Both overrides *prepend* the platform chord and keep the common one, because
+`_menu_shortcut` shows `keys[0]` while the help dialog lists them all: the menu
+then reads `Cmd-Enter` in the macOS app and `Ctrl-O` in a terminal, each true
+where it is drawn. `is_desktop_mode()` is evaluated at config-load time (it reads
+`XEFM_BACKEND` / `--backend`, so it is decided before the config is read) and
+again on `reload_config`.
+
+What the *host* takes before XeFM sees it — a terminal's own shortcuts, VS Code's
+`commandsToSkipShell`, a multiplexer's prefix — is a second filter on top of this
+one, and the reason the common letters are what they are. The user-facing list is
+under "Keys the host takes first" in
+[KEY_BINDINGS_FEATURE.md](../KEY_BINDINGS_FEATURE.md); `TestThreeCases` in
+`test/test_keybindings_puikit_contract.py` holds the rule that terminal mode
+binds nothing a terminal cannot send.
+
 ## Config token → identity map
 
 | Config token(s) | Resolves to | Match mode |

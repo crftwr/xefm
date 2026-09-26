@@ -275,7 +275,11 @@ class Config:
         # === Application Control ===
         'quit': ['Q'],                         # Exit XeFM application
         'help': ['?'],                         # Show help dialog with all key bindings
-        'redraw': ['F5'],                      # Additional redraw trigger (Ctrl-L is always hardcoded)
+        # A repaint should never be something you have to ask for, so this gets a
+        # function key and none of the scarce Ctrl+letters: it is the escape hatch
+        # for a screen a *multiplexer* or another program wrote over, not a part
+        # of using XeFM.
+        'redraw': ['F5'],                      # Repaint the screen
         'menu': ['F10', 'ALT'],                # Open the menu bar (terminal; a bare Alt tap works on the Windows terminal, F10 everywhere)
         
         # === Navigation ===
@@ -286,8 +290,8 @@ class Config:
         'cursor_top': ['Ctrl-HOME'],           # Move cursor to the first item
         'cursor_bottom': ['Ctrl-END'],         # Move cursor to the last item
         'open_item': ['ENTER'],                # Open file/directory or enter directory
-        'open_with_os': ['Command-ENTER'],     # Open file(s) with OS default application
-        'reveal_in_os': ['Alt-ENTER'],         # Reveal focused file in OS file manager
+        'open_with_os': ['Ctrl-O'],            # Open file(s) with OS default application (desktop adds Cmd/Ctrl-ENTER)
+        'reveal_in_os': ['Ctrl-R'],            # Reveal focused file in OS file manager
         'go_parent': ['BACKSPACE'],            # Go to parent directory
         'go_root': ['\\'],                     # Go to the root of the current drive/location
         'switch_pane': ['TAB'],                # Switch between left and right panes
@@ -305,8 +309,11 @@ class Config:
         'cursor_prev_selected': ['Ctrl-UP'],   # Move cursor to the previous selected item
         
         # === Clipboard (copy names/paths to the system clipboard) ===
-        'copy_names': ['Command-Shift-C'],     # Copy selected/focused file name(s) to clipboard
-        'copy_paths': ['Command-Shift-P'],     # Copy selected/focused full path(s) to clipboard
+        # Ctrl+letter, not the Command-Shift / Ctrl-Shift chords these used to
+        # carry, for the reason spelled out under "Three cases" at the foot of
+        # KEY_BINDINGS: a terminal cannot deliver either of those.
+        'copy_names': ['Ctrl-N'],              # Copy selected/focused file name(s) to clipboard
+        'copy_paths': ['Ctrl-P'],              # Copy selected/focused full path(s) to clipboard
 
         # === File Operations ===
         'copy_files': {'keys': ['C'], 'selection': 'required'},  # Copy selected files to other pane
@@ -366,10 +373,10 @@ class Config:
         'scroll_log_down': ['Shift-DOWN'],     # Scroll log pane down one line
         'scroll_log_page_up': ['Shift-LEFT'],  # Scroll log pane up one page (to older messages)
         'scroll_log_page_down': ['Shift-RIGHT'], # Scroll log pane down one page (to newer messages)
-        # Drag across the log with the mouse to select, then copy. Both chords
-        # are listed because one machine runs both frontends: the GUI answers
-        # Command-C on macOS, while a terminal never sees Command at all.
-        'copy_log_selection': ['Command-C', 'Ctrl-C'],  # Copy the log pane's selected text
+        # Drag across the log with the mouse to select, then copy. Ctrl-C works
+        # everywhere; the macOS desktop adds Command-C below, because copying
+        # text is the one place that chord is the whole platform's convention.
+        'copy_log_selection': ['Ctrl-C'],      # Copy the log pane's selected text
         'copy_log_all': [],                    # Copy the whole log (unbound; Edit menu, or bind a key here)
         
         # === Text Viewer ===
@@ -488,7 +495,7 @@ class Config:
         # the file list's SPACE. Bind one of these to 'N' and it can never fire;
         # XeFM says so in the log pane at startup rather than leaving you to
         # wonder. Modified and non-printable keys are all free: 'Shift-DOWN',
-        # 'Ctrl-N', 'F2', 'INSERT' (on Windows and in the terminal -- macOS
+        # 'Ctrl-Y', 'F2', 'INSERT' (on Windows and in the terminal -- macOS
         # keyboards have no Insert key).
         #
         # Shift-UP / Shift-DOWN are the log pane's scroll keys above, and stay
@@ -569,15 +576,47 @@ class Config:
         # 'search.toggle_case': ['Ctrl-T'],
     }
 
-    # Windows has no Command key, and Alt-Enter is the platform fullscreen-toggle
-    # convention — so the Mac-centric defaults above are unreachable there. Remap
-    # them to Ctrl equivalents on Windows.
-    if sys.platform == 'win32':
-        KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER']    # Open file(s) with OS default application
-        KEY_BINDINGS['reveal_in_os'] = ['Ctrl-Shift-E']  # Reveal focused file in Explorer
-        KEY_BINDINGS['copy_names'] = ['Ctrl-Shift-C']    # Copy selected/focused file name(s) to clipboard
-        KEY_BINDINGS['copy_paths'] = ['Ctrl-Shift-P']    # Copy selected/focused full path(s) to clipboard
-        KEY_BINDINGS['copy_log_selection'] = ['Ctrl-C']  # Copy the log pane's selected text
+    # -----------------------------------------------------------------------
+    # Three cases: macOS desktop / Windows desktop / any terminal
+    # -----------------------------------------------------------------------
+    # The table above is the COMMON set — every key in it is one all three cases
+    # can actually deliver. What a terminal cannot carry, and why the OS-flavoured
+    # actions above are plain Ctrl+letter rather than the chord each platform
+    # would use in a GUI:
+    #
+    #   Command-<key>        no terminal encodes Command at all — not
+    #                        Terminal.app, not iTerm2, not VS Code's.
+    #   Ctrl-Shift-<letter>  a POSIX terminal sends Ctrl+letter as one control
+    #                        byte with no room for Shift, so 'Ctrl-Shift-C' is
+    #                        the same key as 'Ctrl-C' there. (Only the Windows
+    #                        console reports a real key with its modifiers.)
+    #   Ctrl-ENTER           likewise indistinguishable from plain ENTER.
+    #   Alt-ENTER            macOS keyboards spend Option on glyphs and IME, and
+    #                        the Windows terminal takes Alt-Enter for fullscreen.
+    #
+    # Shift and Ctrl on a NAMED key (Ctrl-UP, Shift-DOWN, Ctrl-HOME) are fine
+    # everywhere — a terminal has a sequence for those — which is why the rest of
+    # this table needs no per-case treatment.
+    #
+    # The letters were chosen against what the host takes first: Ctrl-P is VS
+    # Code's Quick Open in its own terminal on Windows and Linux (the one
+    # deliberate compromise here — the mnemonic is worth more than that case),
+    # Ctrl-E is the same dialog, Ctrl-B is tmux's prefix and Ctrl-A screen's,
+    # Ctrl-S / Ctrl-Q are flow control, Ctrl-L clears a screen by convention, and
+    # Ctrl-I / M / J / H / [ are tab, enter, backspace and escape before they are
+    # letters. Ctrl-O is also the search dialog's options key, in its own context
+    # — the two surfaces never apply at once, so the letter carries both.
+    #
+    # Only two things are worth overriding per case, and both are strong
+    # platform idioms rather than missing keys:
+    if is_desktop_mode():
+        if sys.platform == 'darwin':
+            # The Finder gesture: a modifier on the same Enter that opens.
+            KEY_BINDINGS['open_with_os'] = ['Command-ENTER', 'Ctrl-O']
+            # Copying text on macOS is Command-C, wherever the text is.
+            KEY_BINDINGS['copy_log_selection'] = ['Command-C', 'Ctrl-C']
+        elif sys.platform == 'win32':
+            KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
 
 
     # -----------------------------------------------------------------------
