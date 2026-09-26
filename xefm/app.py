@@ -700,6 +700,41 @@ def _build_theme_list(config) -> list[tuple[str, Theme]]:
     return themes
 
 
+#: Between a virtual pane's label and the root its rows are named from.
+_VIRTUAL_ROOT_SEP = "  ·  "
+
+
+def _virtual_header_text(virtual: dict, n: int, avail: float,
+                         measure=len) -> str:
+    """The header of a virtual pane, fitted to ``avail``: what it is — a list's
+    title or a search's query — and how many rows, then the root those rows are
+    named relative to.
+
+    The root is what makes the name column readable: a row showing
+    ``src/main.py`` means nothing until you know which ``src`` — and for an
+    imported list the root is derived from the paths, not the directory the
+    pane was on, so nothing else on screen says it. It is shortened by whole
+    components, as a directory header is, and it is what gives way first: the
+    label keeps its width, and a root with no room left is dropped rather than
+    shown as a stub. A list whose rows share no root shows none — each row
+    already carries its whole path."""
+    if virtual.get("kind") == "list":
+        label = f'{virtual["title"]} — {n} item{"" if n == 1 else "s"}'
+    else:
+        mode = "content" if virtual["mode"] == "content" else "filename"
+        label = (f'⌕ "{virtual["query"]}" — '
+                 f'{n} result{"" if n == 1 else "s"} ({mode})')
+    root = virtual.get("root")
+    if root is not None and root is not name_key.WHOLE_PATH:
+        room = avail - measure(label + _VIRTUAL_ROOT_SEP)
+        # Enough for a short leaf; anything less would be a fragment.
+        if room >= measure("x" * 8):
+            shown = abbreviate_path(str(root), room, measure=measure)
+            if measure(shown) <= room:
+                return label + _VIRTUAL_ROOT_SEP + shown
+    return elide(label, avail, where="end", measure=measure)
+
+
 def _archive_header_label(path_str: str) -> str:
     """Render an ``archive://…#internal`` URI for the pane header as
     ``[archive.zip]/internal/path`` (or ``[archive.zip]`` at the archive root),
@@ -789,16 +824,10 @@ class PaneHeader(Widget):
         virtual = pane.get("virtual")
         if virtual:
             # Not a directory: a search-results feed or an imported list. Say so
-            # (and which pane an operation will hit) rather than showing the —
-            # misleading — root path.
-            n = len(pane["files"])
-            if virtual.get("kind") == "list":
-                label = f'{virtual["title"]} — {n} item{"" if n == 1 else "s"}'
-            else:
-                mode = "content" if virtual["mode"] == "content" else "filename"
-                label = (f'⌕ "{virtual["query"]}" — '
-                         f'{n} result{"" if n == 1 else "s"} ({mode})')
-            text = elide(label, avail, where="end", measure=ctx.measure_text)
+            # (and which pane an operation will hit) first, then the root its
+            # rows are named from.
+            text = _virtual_header_text(virtual, len(pane["files"]), avail,
+                                        measure=ctx.measure_text)
         elif self.app._is_archive(pane["path"]):
             # A browsed archive: show [archive.zip]/sub rather than the raw URI.
             label = _archive_header_label(str(pane["path"]))

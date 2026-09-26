@@ -44,14 +44,16 @@ the locations XeFM can open.
 
 ### What you see
 
-- The pane's header names the list and counts its rows:
-  `List from clipboard — 42 items`.
+- The pane's header names the list, counts its rows, and shows the folder
+  the rows are named from: `List from clipboard — 42 items · ~/src/xefm`.
+  When the header is narrow, that folder is shortened first.
 - Paths that don't exist are left out, and the log pane says how many — and,
   separately, how many sat on a server or drive that could not be reached.
   If none exist, the pane stays as it was.
-- Each row is named relative to the deepest folder the whole list shares.
-  Paths from one project show as `src/main.py`; a list spanning two drives or
-  two servers shares nothing, so each row shows its whole path.
+- Each row is named relative to the deepest folder the whole list shares —
+  the one in the header. Paths from one project show as `src/main.py`; a list
+  spanning two drives or two servers shares nothing, so each row shows its
+  whole path and the header shows no folder.
 - Sorting, filtering, incremental search, selection, and every file
   operation work on the rows. A file you delete or move away leaves the list.
 - **Back** (`go_parent`) returns to the directory the pane showed before.

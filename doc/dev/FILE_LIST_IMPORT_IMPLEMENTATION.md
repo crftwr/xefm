@@ -88,7 +88,11 @@ cwd, falls back to `pane["path"]`, the directory ⌫ returns to.
 
 `PaneHeader` reads `virtual["kind"]`, which the search feed had written since
 the start and nothing had read: `"list"` renders `{title} — N items`; anything
-else keeps the search banner. The Info dialog's content-hit metadata reads
+else keeps the search banner. Either is followed by the root the rows are named
+from (`_virtual_header_text`) — for a list it is derived from the paths, so
+nothing else on screen says what `src/main.py` is relative to. The root is
+shortened by whole components (`abbreviate_path`) and dropped before the label
+is cut; `WHOLE_PATH` shows none. The Info dialog's content-hit metadata reads
 `virtual.get("mode")`, since a list has none.
 
 ## Deliberately not done

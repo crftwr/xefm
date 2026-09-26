@@ -299,6 +299,41 @@ class WholePathNames(RemoteScheme):
 
 
 # --------------------------------------------------------------------------- #
+# the header
+# --------------------------------------------------------------------------- #
+
+class Header(RemoteScheme):
+    LIST = {"kind": "list", "title": "My list"}
+
+    def _text(self, root, avail=200):
+        return xefm_app._virtual_header_text(dict(self.LIST, root=root), 3, avail)
+
+    def test_the_root_follows_the_label(self):
+        self.assertEqual(self._text(Path("fake://h/proj/src")),
+                         "My list — 3 items  ·  fake://h/proj/src")
+
+    def test_no_common_root_shows_none(self):
+        self.assertEqual(self._text(name_key.WHOLE_PATH), "My list — 3 items")
+
+    def test_a_long_root_drops_whole_components(self):
+        root = Path("fake://h/" + "/".join(f"dir{i:02d}" for i in range(20)) + "/leaf")
+        text = self._text(root, avail=60)
+        self.assertLessEqual(len(text), 60)
+        self.assertTrue(text.startswith("My list — 3 items  ·  fake://h/"))
+        self.assertTrue(text.endswith("/leaf"))
+
+    def test_the_root_gives_way_before_the_label(self):
+        text = self._text(Path("fake://h/proj/src"), avail=len("My list — 3 items") + 4)
+        self.assertEqual(text, "My list — 3 items")
+
+    def test_a_search_shows_its_root_too(self):
+        virtual = {"kind": "search", "mode": "filename", "query": "q",
+                   "root": Path("fake://h/proj")}
+        self.assertEqual(xefm_app._virtual_header_text(virtual, 1, 200),
+                         '⌕ "q" — 1 result (filename)  ·  fake://h/proj')
+
+
+# --------------------------------------------------------------------------- #
 # the app: the clipboard import and PaneApi.show_list
 # --------------------------------------------------------------------------- #
 
@@ -431,6 +466,14 @@ class AppImport(RemoteScheme):
         self.app._settle_listings()
         self.assertEqual([str(f) for f in self.pane["files"]], [b])
         self.assertEqual([str(p) for p in self.pane["virtual"]["results"]], [b])
+
+    def test_the_header_names_the_list_and_its_root(self):
+        a = self._write(os.path.join("deep", "a.txt"))
+        b = self._write(os.path.join("deep", "b.txt"))
+        self._import(f"{a}\n{b}")
+        text = xefm_app._virtual_header_text(self.pane["virtual"], 2, 500)
+        self.assertTrue(text.startswith("List from clipboard — 2 items  ·  "))
+        self.assertTrue(text.endswith("deep"))
 
     def test_pane_api_show_list(self):
         a = self._write(os.path.join("x", "a.txt"))
