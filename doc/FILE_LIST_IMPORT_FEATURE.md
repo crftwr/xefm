@@ -53,10 +53,12 @@ dir /s /b *.log                  # Windows, cmd
 - It runs in a local directory only. A pane showing an `ssh://` or `s3://`
   location refuses rather than running on this machine.
 
-Output is read as UTF-8. On Windows, output that is not UTF-8 is read in the
-console's code page, which is what `dir` and most console tools write. On
-macOS and Linux, a name that is not valid UTF-8 is kept byte for byte, so the
-file it names can still be opened.
+Output is read as UTF-8. On Windows the command's console is switched to
+UTF-8 before it runs, so `dir`, `es.exe` and other console tools print
+Japanese and other non-English names intact whatever your system language;
+output from a program that ignores the console's setting is read in the
+system's code page instead. On macOS and Linux, a name that is not valid UTF-8
+is kept byte for byte, so the file it names can still be opened.
 
 ## Giving them keys
 

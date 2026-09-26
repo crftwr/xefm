@@ -76,11 +76,23 @@ with `task.counted` fed from the line count.
   its own session and `killpg`s it; Windows runs `taskkill /T /F`. Killing only
   the shell would leave its children writing into a pipe nobody reads, and the
   readers would never see EOF.
+- **UTF-8 on Windows.** Console programs write to a pipe in their console's
+  output code page, and the hidden console a child of the GUI gets is the
+  system OEM one: on an English system (cp437) `es.exe` and `dir /b` print a
+  Japanese name as `????`, lost before XeFM reads a byte. `chcp 65001` fixes
+  external programs, but `cmd` reads the code page once at startup, so its
+  built-ins keep cp437. The command therefore runs in a second `cmd` started
+  after `chcp`:
+  `cmd /d /v:on /s /c "chcp 65001>nul & cmd /d /s /c "!XEFM_LIST_COMMAND!""`.
+  The command travels in `XEFM_LIST_COMMAND` and is expanded by *delayed*
+  expansion, after the outer `cmd` has parsed its line, so only the inner
+  `cmd` parses it — `%VAR%`, `!`, quoted `|`, `^&` and `&&` behave as at a
+  prompt, and the exit code is the command's (`_windows_command_line`).
 - **Decoding** happens once, over the whole output (`decode_output`): UTF-8
-  with a BOM stripped; else the OEM code page on Windows (what console programs
-  and `dir /b` write to a pipe); else the filesystem encoding with
-  `surrogateescape` on POSIX, so an undecodable name still round-trips to the
-  bytes on disk.
+  with a BOM stripped; else the ANSI code page on Windows (programs that
+  ignore the console's code page — the C runtime's `printf`, Python); else the
+  filesystem encoding with `surrogateescape` on POSIX, so an undecodable name
+  still round-trips to the bytes on disk.
 
 `_open_command_output` routes the last five stderr lines to the log pane as
 STDERR, and shows whatever paths arrived **regardless of the exit code** —

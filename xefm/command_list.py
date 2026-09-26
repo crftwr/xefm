@@ -21,6 +21,24 @@ tree.
 **Bytes in, text out, paths intact.** Output is read as bytes and decoded once
 at the end (:func:`decode_output`), because the right encoding is a property of
 the whole output, not of a line.
+
+**UTF-8 on Windows, asked for.** A console program writes to a pipe in its
+console's output code page, and a GUI process's child gets a console whose code
+page is the system OEM one — cp437 on an English system, where every Japanese
+name comes out as ``????`` and is lost before XeFM sees a byte. Everything's
+``es.exe`` and ``cmd``'s own ``dir /b`` both behave so.
+
+``chcp 65001`` switches the console to UTF-8, but ``cmd`` reads the code page
+once, when it starts: a program started after ``chcp`` writes UTF-8, and the
+``cmd`` that ran ``chcp`` goes on writing its built-ins (``dir``, ``echo``,
+``for``) in cp437. So the user's command runs in a *second* ``cmd``, started
+after ``chcp`` (:func:`_windows_command_line`). The obvious spelling,
+``chcp 65001 & cmd /c <command>``, has the outer ``cmd`` parse the command
+first and split its ``&&`` and ``|`` wrongly. Instead the command travels in
+an environment variable and reaches the inner ``cmd`` through *delayed*
+expansion, ``!XEFM_LIST_COMMAND!``, which happens after the outer ``cmd`` has
+finished parsing — so the only ``cmd`` that parses it is the one that runs it,
+exactly as at a prompt: ``%VAR%`` expands, ``!`` stays literal, ``^`` escapes.
 """
 
 from __future__ import annotations
@@ -54,11 +72,13 @@ def decode_output(data: bytes) -> str:
     the file it names.
 
     UTF-8 first, and a byte-order mark dropped: what nearly every tool prints
-    today. Where that fails:
+    today, and what console programs print on Windows once :func:`run` has set
+    their code page. Where that fails:
 
-    - **Windows** falls back to the OEM code page — what console programs
-      write to a pipe, and what ``cmd``'s own ``dir /b`` writes (cp932 on a
-      Japanese system, cp437 on an American one).
+    - **Windows** falls back to the ANSI code page — what a program that
+      ignores the console's code page writes (the C runtime's narrow
+      ``printf``, Python's own ``print``): cp1252 on an English system, cp932
+      on a Japanese one.
     - **POSIX** decodes with the filesystem encoding and ``surrogateescape``,
       exactly as :func:`os.fsdecode` does: a name that is not valid UTF-8 is
       still a name on disk, and the escaped form round-trips to the same bytes
@@ -69,7 +89,7 @@ def decode_output(data: bytes) -> str:
     except UnicodeDecodeError:
         pass
     if _WINDOWS:
-        return data.decode("oem", errors="replace")
+        return data.decode("mbcs", errors="replace")
     return data.decode(sys.getfilesystemencoding(), errors="surrogateescape")
 
 
@@ -100,6 +120,24 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         pass
 
 
+#: The environment variable the command reaches the inner ``cmd`` through.
+_COMMAND_VAR = "XEFM_LIST_COMMAND"
+
+
+def _windows_command_line(env: dict) -> str:
+    """The ``CreateProcess`` command line that runs ``env[_COMMAND_VAR]`` in a
+    ``cmd`` started after ``chcp 65001`` — see the module docstring.
+
+    ``/s /c "…"`` makes each ``cmd`` strip exactly the outer pair of quotes and
+    run what is inside as written. ``/d`` skips AutoRun, whose output would
+    otherwise land in the list. ``/v:on`` is the outer ``cmd``'s alone: the
+    inner one keeps delayed expansion off, so a ``!`` in the user's command —
+    Everything's NOT operator — is left as typed."""
+    comspec = env.get("COMSPEC") or os.environ.get("COMSPEC") or "cmd.exe"
+    return (f'"{comspec}" /d /v:on /s /c "chcp 65001>nul & '
+            f'"{comspec}" /d /s /c "!{_COMMAND_VAR}!""')
+
+
 def run(command: str, *, cwd: str, env: dict,
         cancelled: Callable[[], bool] = lambda: False,
         on_count: Callable[[int], None] = lambda n: None) -> CommandOutput:
@@ -111,10 +149,14 @@ def run(command: str, *, cwd: str, env: dict,
     produced so far, for a progress display.
     """
     popen_kwargs = dict(SUBPROCESS_NO_WINDOW)
-    if not _WINDOWS:
+    if _WINDOWS:
+        env = dict(env, **{_COMMAND_VAR: command})
+        args, shell = _windows_command_line(env), False
+    else:
+        args, shell = command, True
         popen_kwargs["start_new_session"] = True
     try:
-        proc = subprocess.Popen(command, shell=True, cwd=cwd, env=env,
+        proc = subprocess.Popen(args, shell=shell, cwd=cwd, env=env,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, **popen_kwargs)
     except OSError as e:

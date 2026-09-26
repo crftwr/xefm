@@ -38,10 +38,10 @@ class Decode(unittest.TestCase):
         self.assertEqual(command_list.decode_output(b"\xef\xbb\xbfa.txt\n"), "a.txt\n")
 
     @unittest.skipUnless(sys.platform == "win32", "Windows code pages")
-    def test_windows_falls_back_to_the_oem_code_page(self):
-        data = "日本.txt\n".encode("cp932")
+    def test_windows_falls_back_to_the_ansi_code_page(self):
+        data = "café.txt\n".encode("cp1252")      # not valid UTF-8
         self.assertEqual(command_list.decode_output(data),
-                         data.decode("oem", errors="replace"))
+                         data.decode("mbcs", errors="replace"))
 
     @unittest.skipIf(sys.platform == "win32", "POSIX filesystem encoding")
     def test_posix_keeps_undecodable_names_addressable(self):
@@ -85,6 +85,37 @@ class Run(unittest.TestCase):
         out = self._run(py(r"print('x')") + " | " + py(
             "import sys; print(sys.stdin.read().strip() + 'y')"))
         self.assertEqual(out.stdout.strip(), "xy")
+
+    @unittest.skipUnless(sys.platform == "win32", "console code pages")
+    def test_a_console_program_is_asked_for_utf8(self):
+        # es.exe and dir /b write in the console's code page; on an English
+        # system that is cp437, where a Japanese name is gone before it is read.
+        out = self._run(py("import ctypes; "
+                           "print(ctypes.windll.kernel32.GetConsoleOutputCP())"))
+        self.assertEqual(out.stdout.strip(), "65001")
+
+    @unittest.skipUnless(sys.platform == "win32", "cmd.exe")
+    def test_cmd_dir_keeps_a_japanese_name(self):
+        name = "設計メモ.md"
+        open(os.path.join(self.cwd, name), "w").close()
+        out = self._run("dir /b")
+        self.assertEqual(out.stdout.splitlines(), [name])
+
+    @unittest.skipUnless(sys.platform == "win32", "cmd.exe")
+    def test_the_command_is_parsed_once_as_at_a_prompt(self):
+        # %VAR% expands, ! stays (Everything's NOT), a quoted | is not a pipe,
+        # ^& is a literal ampersand, && chains.
+        env = dict(os.environ, XEFM_X="expanded")
+        out = command_list.run('echo !NOT! %XEFM_X% "a|b" ^& done && echo next',
+                               cwd=self.cwd, env=env)
+        self.assertEqual([line.strip() for line in out.stdout.splitlines()],
+                         ['!NOT! expanded "a|b" & done', "next"])
+
+    @unittest.skipUnless(sys.platform == "win32", "cmd.exe")
+    def test_the_exit_code_is_the_commands_not_chcps(self):
+        out = self._run(py("raise SystemExit(4)") + " && echo never")
+        self.assertEqual(out.code, 4)
+        self.assertEqual(out.stdout.strip(), "")
 
     def test_stdin_reads_eof_rather_than_waiting(self):
         start = time.monotonic()
