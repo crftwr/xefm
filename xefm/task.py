@@ -95,10 +95,14 @@ class Task:
     #: a pending prompt promptly without a busy-spin.
     _WAIT_TICK = 0.05
 
-    def __init__(self, title: str, *, config: Any = None, kind: str = ""):
+    def __init__(self, title: str, *, config: Any = None, kind: str = "",
+                 busy_label: str = "Preparing…"):
         self.id = next(_task_ids)
         self.title = title
         self.kind = kind
+        #: What the dialog says while the task has no item total to show — the
+        #: counting phase of a copy, or the whole of a task that never has one.
+        self.busy_label = busy_label
         self.status = TaskStatus.PENDING
         self.progress = ProgressManager(config)
         #: Files seen so far during the (pre-total) counting phase — display only.
@@ -489,7 +493,8 @@ class ProgressDialog(Widget):
                         child_hints) -> None:
         ctx.draw_child(self._busy, 2, 3.0, 2.0, 1.0, hints=child_hints)
         n = self.task.counted
-        label = f"Preparing… ({n} item{'s' if n != 1 else ''})" if n else "Preparing…"
+        busy = self.task.busy_label
+        label = f"{busy} ({n} item{'s' if n != 1 else ''})" if n else busy
         ctx.draw_text(4, 3.0, label, text_style)
 
     # --- events --------------------------------------------------------------

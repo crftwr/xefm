@@ -1,7 +1,8 @@
 # File List Import — Implementation
 
-Stage ① of [#453](https://github.com/crftwr/xefm/discussions/453): a list of
-paths from outside XeFM becomes a virtual pane. User-facing behavior is in
+Stages ① and ③ of [#453](https://github.com/crftwr/xefm/discussions/453): a
+list of paths from outside XeFM — the clipboard, or a command's output —
+becomes a virtual pane. User-facing behavior is in
 [`doc/FILE_LIST_IMPORT_FEATURE.md`](../FILE_LIST_IMPORT_FEATURE.md); the
 virtual pane itself is described in
 [SEARCH_RESULTS_PANE_IMPLEMENTATION.md](SEARCH_RESULTS_PANE_IMPLEMENTATION.md).
@@ -22,13 +23,14 @@ supported in tree; it is one source among many.
 | Parse, resolve, common root, probe — storage-agnostic, pane-free | `xefm/path_list.py` |
 | One door for every source | `XeFMApp.open_path_list(pane_name, paths, *, title, base=None)` |
 | The clipboard source | `XeFMApp.import_list_from_clipboard` (action `import_list_from_clipboard`, unbound) |
+| The command source | `XeFMApp.import_list_from_command` → `_run_list_command` → `_open_command_output`; the blocking half in `xefm/command_list.py` |
 | The public door | `PaneApi.open_list(paths, *, title)` in `xefm/user_api.py` |
 | Listing a virtual pane off the UI thread | `XeFMApp._list_virtual`, `FileListManager.compute_virtual_listing` / `prune_virtual` |
 | Whole-path names | `name_key.WHOLE_PATH` |
 
-Stages ② (a file) and ③ (a command's stdout) are further sources calling
-`open_path_list`; each chooses its own `base` for relative lines (the list
-file's directory, the command's cwd).
+Every source ends in `open_path_list` and chooses its own `base` for relative
+lines: the pane's directory for the clipboard, the command's cwd for a command,
+and — for stage ② (a file), not yet built — the list file's own directory.
 
 ## The flow
 
@@ -50,6 +52,48 @@ file's directory, the command's cwd).
 
 The search feed (`_feed_search_results`) now enters through the same
 `_list_virtual`, with its root given rather than derived.
+
+## The command source
+
+`import_list_from_command` prompts for a command line, prefilled with the last
+one run (state key `list_command.last`), and `_run_list_command` runs it on a
+`Task`, so the existing `ProgressDialog` shows it and Esc cancels it. The
+dialog has no item total to show, so it stays in its busy phase;
+`Task.busy_label` (new, default `"Preparing…"`) lets it say `Running… (N items)`
+with `task.counted` fed from the line count.
+
+`command_list.run` is the blocking half:
+
+- **Shell.** `Popen(command, shell=True)`: the user typed a command line, and
+  pipes and quoting should mean what they mean at a prompt.
+- **Environment and cwd** come from `_program_env(pane)`, the function
+  `PROGRAMS` and `ctx.run_program` already share, so the `XEFM_*` contract
+  cannot drift. A cwd that is a URI (`ssh://`, `s3://`, an archive) is refused
+  before prompting; remote execution is a later stage.
+- **Reading.** Two reader threads drain stdout and stderr as bytes (`read1`, so
+  the line count moves while output arrives); stdin is `DEVNULL`.
+- **Cancel.** The run loop polls the task's flag. POSIX starts the command in
+  its own session and `killpg`s it; Windows runs `taskkill /T /F`. Killing only
+  the shell would leave its children writing into a pipe nobody reads, and the
+  readers would never see EOF.
+- **Decoding** happens once, over the whole output (`decode_output`): UTF-8
+  with a BOM stripped; else the OEM code page on Windows (what console programs
+  and `dir /b` write to a pipe); else the filesystem encoding with
+  `surrogateescape` on POSIX, so an undecodable name still round-trips to the
+  bytes on disk.
+
+`_open_command_output` routes the last five stderr lines to the log pane as
+STDERR, and shows whatever paths arrived **regardless of the exit code** —
+`grep`/`rg` exit 1 for "no match" and `find` exits 1 after one unreadable
+directory. The code is reported only when no path arrived.
+
+**Refresh does not re-run the command.** #453's follow-up proposed re-running
+it on refresh. Refresh here is the post-operation reconciliation, which fires
+after every delete, move and rename: re-running `find` there is slow, and a
+re-run can reorder rows under the cursor. The pane prunes vanished rows like
+any list, and re-running is the menu item (whose field holds the command).
+A re-runnable list belongs with saved lists, where there is an explicit verb
+for it.
 
 ## `probe`: one read per path, one attempt per location
 
@@ -108,8 +152,13 @@ The Info dialog's content-hit metadata reads
 - **No cap.** `_RESULT_CAP` belongs to the search dialog. The user chose this
   exact set; truncating it silently would be worse than a slow import, and the
   probe is off the UI thread.
-- **No history.** A clipboard list cannot be reopened; saved lists belong with
-  the command source, which has something to re-run.
+- **No history, no named commands.** A clipboard list cannot be reopened, and
+  a command list is re-run from the menu. Saved lists and named commands (a
+  `PROGRAMS`-like table) are the next step; they need a verb for "run it
+  again", which a post-operation refresh is not.
+- **No remote execution.** On an `ssh://` pane the command could run on the
+  server and its output be read as `ssh://` paths; not done yet, and refused
+  rather than run locally.
 - **No native file-list clipboard** (CF_HDROP, `NSFilenamesPboardType`). PuiKit
   reads plain text only; that is stage ④.
 - **No attributes from the source.** A source that already knows size and
@@ -117,6 +166,12 @@ The Info dialog's content-hit metadata reads
   `EntryInfo` in `open_list` is additive if it is ever wanted.
 
 ## Tests
+
+`test/test_command_list.py` runs real subprocesses through the shell (this
+Python, so nothing needs installing): output and line counts, cwd, exit code
+and stderr tail, a pipe, stdin at EOF, cancel stopping the whole tree (timed:
+a surviving child would hold stdout open), a command that cannot start, and
+the app half on the memory backend.
 
 `test/test_path_list.py` covers the pure half against a `fake://` scheme
 registered for the test (host as root, like `ssh://`, including a down host
