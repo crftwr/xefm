@@ -532,6 +532,20 @@ if [ "$USE_FRAMEWORK" = true ]; then
         log_info "  Removed lib/pkgconfig/"
     fi
 
+    # config-X.Y-darwin/ is what you link against Python with: a Makefile, the
+    # Setup files, install-sh, and python.o - the object file a `make` would
+    # link into an interpreter of its own. Nothing here runs, and an app that
+    # never compiles an extension never reads it. It also cannot ship: python.o
+    # is a Mach-O that Apple's notary service inspects and rejects outright
+    # ("The binary is not signed"), and signing an .o is not a thing to do -
+    # Step 6 signs the code the app loads, which this is not. Homebrew leaves
+    # the directory out, so the rejection only appeared with python.org.
+    PYTHON_CONFIG_DIR="${PYTHON_DEST}/lib/python${PYTHON_VERSION}/config-${PYTHON_VERSION}-darwin"
+    if [ -d "${PYTHON_CONFIG_DIR}" ]; then
+        rm -rf "${PYTHON_CONFIG_DIR}"
+        log_info "  Removed lib/python${PYTHON_VERSION}/config-${PYTHON_VERSION}-darwin/"
+    fi
+
     # Remove Python test suite (saves ~68MB)
     if [ -d "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test" ]; then
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
@@ -1229,6 +1243,38 @@ PLIST
         log_error "Code signing verification failed"
         exit 1
     fi
+
+    # --deep --strict validates the code the bundle declares; the notary
+    # service instead opens the archive and inspects every Mach-O it finds,
+    # signed or not, and one unsigned file fails the whole submission. The two
+    # disagreed over lib/python3.14/config-3.14-darwin/python.o, a link-time
+    # object file that is a Mach-O by format and not code by any other measure:
+    # codesign never looked at it, Apple did, and the answer came back after
+    # the upload and a several-minute wait. Ask the same question here, where
+    # it costs a second.
+    log_info "  Checking every Mach-O in the bundle carries a signature..."
+    # Every file, not just the ones named like code - that is the point. One
+    # `file` over the lot, tab-separated so a type string of its own ("Mach-O
+    # universal binary with 2 architectures: [x86_64: ...]") cannot be mistaken
+    # for the path separator.
+    UNSIGNED_MACHOS=""
+    while IFS= read -r macho; do
+        [ -n "${macho}" ] || continue
+        codesign --verify "${macho}" > /dev/null 2>&1 && continue
+        UNSIGNED_MACHOS="${UNSIGNED_MACHOS}  ${macho#${APP_BUNDLE}/}
+"
+    done <<MACHO_LIST
+$(find "${APP_BUNDLE}" -type f -print0 2>/dev/null \
+    | xargs -0 file -F "$(printf '\t')" 2>/dev/null \
+    | awk -F"$(printf '\t')" '$2 ~ /Mach-O/ { print $1 }')
+MACHO_LIST
+    if [ -n "${UNSIGNED_MACHOS}" ]; then
+        log_error "Notarization would reject these unsigned Mach-O files:"
+        printf '%s' "${UNSIGNED_MACHOS}"
+        log_error "Strip them in Step 4, or sign them, before submitting."
+        exit 1
+    fi
+    log_success "  Every Mach-O is signed"
     log_info "  (After notarization, confirm Gatekeeper acceptance with:"
     log_info "     spctl -a -vvv --type exec \"${APP_BUNDLE}\")"
 else
