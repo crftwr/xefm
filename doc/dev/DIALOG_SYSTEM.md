@@ -98,7 +98,7 @@ GUI/vector backends, False on a character grid). Colors come from the theme
 (`popup_bg`, `popup_border`, `text`, `muted_text`, `selection_active_bg`, …) via
 `Style`, never from curses color pairs. Sub-widgets (the field, the list) are
 drawn with `ctx.draw_child(...)`, and their rects are captured for mouse
-hit-testing. The same widget code runs unchanged on the curses, macOS, and Windows
+hit-testing. The same widget code runs unchanged on the VT, macOS, and Windows
 backends.
 
 ### 5. Events: keys, IME, mouse

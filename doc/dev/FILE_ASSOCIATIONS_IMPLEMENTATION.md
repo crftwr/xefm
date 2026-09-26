@@ -127,7 +127,7 @@ An earlier draft did have a per-entry `'terminal': True` flag. Three reasons it
 was removed, worth recording so it does not come back:
 
 1. **It duplicated a decision PuiKit already makes.** `backend.suspended()` is
-   polymorphic — a real curses shell-out dance on the terminal backend, a no-op
+   polymorphic — a real shell-out dance on the terminal backend, a no-op
    on GUI backends, which is exactly the distinction the flag encoded.
 2. **It could not express a mixed entry.** `'view': ['less']` with
    `'edit': ['code']` is a realistic pairing, and an entry-level flag forced

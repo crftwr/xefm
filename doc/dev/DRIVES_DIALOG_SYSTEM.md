@@ -391,7 +391,7 @@ All tests pass successfully:
 
 ### Required Dependencies
 - **Python 3.9+**: Core language support
-- **curses**: Terminal UI library
+- **PuiKit**: rendering/UI framework (terminal and GUI backends)
 - **threading**: Background S3 scanning
 - **pathlib**: Path manipulation
 

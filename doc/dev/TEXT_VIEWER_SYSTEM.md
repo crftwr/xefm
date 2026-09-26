@@ -172,12 +172,16 @@ except OSError as e:
 ```
 
 ### Syntax Highlighting Implementation
-The text viewer uses a **curses-native approach** to syntax highlighting:
+The text viewer highlights through **PuiKit's draw API**, so the same code paints
+in the terminal and on the GUI backends:
 
 1. **Pygments tokenization** - Uses pygments to parse and tokenize source code
-2. **Token-to-color mapping** - Maps pygments token types to curses color pairs
-3. **Line-by-line rendering** - Renders each line as a sequence of colored text segments
-4. **No ANSI escape sequences** - Direct curses color application for proper terminal compatibility
+2. **Token-to-color mapping** - Maps pygments token types to RGB via the active
+   theme's syntax palette (`_syntax_fg`, `DEFAULT_SYNTAX`)
+3. **Line-by-line rendering** - Renders each line as a sequence of `(text, fg)`
+   segments drawn with `ctx.draw_text(..., Style(fg=...))`
+4. **No escape sequences of its own** - the backend owns what reaches the
+   terminal, so the viewer never writes color codes
 
 ### File Detection
 Multi-step approach to identify text files:
@@ -281,7 +285,7 @@ User-facing behavior: `doc/TEXT_VIEWER_FEATURE.md`.
 ## Installation & Dependencies
 
 ### Core Functionality
-The text viewer works with **no external dependencies** - it uses Python's built-in libraries and the curses interface.
+The text viewer works with **no external dependencies** beyond PuiKit - it uses Python's built-in libraries and PuiKit's draw API.
 
 ### Enhanced Syntax Highlighting
 For **full syntax highlighting support**, install pygments:

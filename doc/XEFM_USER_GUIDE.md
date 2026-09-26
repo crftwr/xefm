@@ -673,7 +673,7 @@ backend directly.
 
 ### Basic Usage
 ```bash
-python3 -m xefm                    # Terminal (curses) mode — the default
+python3 -m xefm                    # Terminal mode — the default
 python3 -m xefm --left ~/projects  # Set the left pane's startup directory
 python3 -m xefm --right ~/docs     # Set the right pane's startup directory
 ```

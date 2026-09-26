@@ -17,7 +17,7 @@ Rendering is PuiKit's job (per `CLAUDE.md`), so the work divides:
 | PuiKit | `image.zoom_window()` — zoom + pan center → normalized source window |
 | PuiKit | `src` hint on `draw_image` — the crop the backend samples |
 | PuiKit | `backends/_terminal_graphics.py` — kitty / iTerm2 / sixel |
-| PuiKit | `CursesBackend` phase-3 image emission; `images` capability |
+| PuiKit | `VTBackend` image emission after the grid commit; `images` capability |
 | PuiKit | `DrawContext.images` / `Panel.images` — lets a widget pick a richer fallback |
 | PuiKit | `image.RasterImage` — decoded pixels as an image source |
 | PuiKit | `Backend.image_formats()` — which formats this machine draws from a path |
@@ -161,45 +161,58 @@ viewer is up and a plain save/restore is safe.
 
 ## Images in a terminal
 
-A character grid has no pixels, and XeFM's curses backend has a hard **256
-color-pair ceiling** (`CursesBackend._color_pair`), so the half-block-mosaic
-approach is a non-starter: a 60×30 image region wants ~1800 distinct (fg, bg)
-pairs and would degrade to nearest-pair mush while starving the rest of the UI.
+A character grid has no pixels, and the half-block-mosaic approach — two pixels
+per cell, painted as an (fg, bg) pair — buys half-cell resolution at the price of
+the cells themselves. On the curses backend it could not even be attempted: a
+hard **256 color-pair ceiling** (`CursesBackend._color_pair`) against the ~1800
+distinct pairs a 60×30 image region wants would degrade to nearest-pair mush
+while starving the rest of the UI.
 
 Instead the backend uses the emulator's **inline-image protocol**, which puts
 real pixels on screen out-of-band, entirely outside the grid.
 
 ### Where it hooks in
 
-`CursesBackend.present()` already had a two-phase shape for color emoji: commit
-the text grid, `refresh()`, then overlay the deferred glyphs as isolated writes.
-Images ride the same seam as **phase 3**:
+Both terminal backends commit the text grid first and the pixels last:
 
 1. `draw_image()` records a placement — it emits nothing.
-2. `present()` commits text and emoji as before.
-3. `_present_images()` writes the escape sequences last.
+2. `present()` commits the grid (on curses: text, `refresh()`, then the deferred
+   color-emoji overlay, which is where this seam came from).
+3. The image escapes go out after that — `VTBackend._emit_images()`,
+   `CursesBackend._present_images()`.
 
-Ordering is the whole point: a `refresh()` after the pixels would paint grid
-cells back over them. Nothing may follow phase 3.
+Ordering is the whole point: text written after the pixels paints grid cells back
+over them. Nothing may follow the image emission.
+
+On the VT backend the whole frame — erase, grid, images, cursor — leaves as a
+single batched write (`VTBackend.present`), so no half-drawn frame is ever on
+screen.
 
 ### Erasing
 
-Curses' diff refresh only resends cells whose `(glyph, pair#)` changed — it
-cannot know pixels were painted over its grid, so it will never clear an image
-on its own. `_present_images` therefore diffs this frame's placements against
-last frame's and erases the stale ones:
+A cell diff only resends cells whose content changed — it cannot know pixels were
+painted over the grid, so it will never clear an image on its own. Both backends
+therefore diff this frame's placements against last frame's and erase the stale
+ones:
 
 - **kitty** has a real delete verb (`a=d,d=i,i=<id>`), keyed by a stable image
   id assigned in draw order.
-- **iTerm2 / sixel** have none, so the backend forces `redrawwin()` and lets the
-  repainted text cells overwrite the image. `_terminal_graphics.clear()`
-  returning `""` for these is a real answer, not a stub.
+- **iTerm2 / sixel** have none, so the cells the image covered are invalidated and
+  the frame's own text repaints over the pixels. `_terminal_graphics.clear()`
+  returning `""` for these is a real answer, not a stub. The VT backend owns the
+  previous frame, so it invalidates just the stale placement's footprint — plus a
+  one-cell border, for the pixels a protocol's own rounding puts outside the box
+  (`VTBackend._erase_stale_images`). The curses backend has no such handle: it
+  forces a whole-screen `redrawwin()` and then re-sends every image, because that
+  repaint wiped them all.
 
 Unchanged placements are left alone — retransmitting a few hundred KB per frame
-would make panning crawl.
+would make panning crawl — except where this frame's text overpaints one, which
+`present()` tests for before the grid consumes its diff.
 
-`close()` also erases: images live outside the grid, so `endwin()` does not take
-them with it and they would otherwise be burned into the shell's scrollback.
+Closing erases too: images live outside the grid, so leaving the alternate screen
+does not take them with it and they would otherwise be burned into the shell's
+scrollback.
 
 ### Detection
 
@@ -207,12 +220,12 @@ them with it and they would otherwise be burned into the shell's scrollback.
 `KONSOLE_VERSION`, `TERM_PROGRAM`, then `TERM` substrings. The obvious
 alternative, a Device Attributes query (`\x1b[c`), means writing to the tty and
 blocking on a reply that a non-supporting emulator never sends: a startup hang
-risk inside curses' raw mode, for a cosmetic capability. `PUIKIT_TERM_GRAPHICS`
+risk inside the terminal's raw mode, for a cosmetic capability. `PUIKIT_TERM_GRAPHICS`
 overrides in both directions (a protocol name, or `none`).
 
 When a protocol is found the backend flips `images: True` in its capability
 profile, so `Panel.draw_image` stops substituting the alt glyph and the same
-widget code renders pictures on curses and GUI alike.
+widget code renders pictures in the terminal and on the GUI alike.
 
 ### Escapes must reach the real terminal, not a redirected `sys.stdout`
 
@@ -222,26 +235,27 @@ and *never forwards them to the tty*. An image escape has no newline, so the
 shim's line-buffer holds it forever — the picture simply never renders (and the
 same swallowing hit kitty, sixel, OSC 52 clipboard, and OSC 22 pointer).
 
-So `CursesBackend` writes every out-of-band escape (mouse tracking, pointer
-shape, clipboard, **images**) through `self._raw_out`, captured once at
-construction from `sys.__stdout__` — the interpreter's original stream, which no
-host reassigns — not the live `sys.stdout`. `test_terminal_graphics.py`'s
+So the terminal backends write every out-of-band escape (mouse tracking, pointer
+shape, clipboard, **images**) to the interpreter's original stream, which no host
+reassigns — `CursesBackend._raw_out`, captured from `sys.__stdout__` at
+construction; the VT console's output fd, taken from the same place
+(`_vt_posix.PosixConsole`) — never the live `sys.stdout`. `test_terminal_graphics.py`'s
 `test_images_go_to_the_real_terminal_not_a_redirected_stdout` pins it: with a
 swallowing shim installed as `sys.stdout`, the image still reaches the terminal.
 
 This is the diagnostic hook's main use, too: `PUIKIT_TERM_GRAPHICS_DEBUG=<file>`
 traces detection → each placement → each emission with byte counts, and
-`tools/diagnose_terminal_graphics.py` emits the protocol directly (bypassing
-curses) to separate an encoding problem from an integration one.
+`tools/diagnose_terminal_graphics.py` emits the protocol directly (bypassing the
+backend) to separate an encoding problem from an integration one.
 
 ### Cursor drift (why iTerm2 showed nothing)
 
 kitty keeps the cursor put (`C=1`); iTerm2 and sixel have no such option and
 **advance the cursor when they draw**. Left unchecked, an image low on the
 screen scrolls the alternate screen and pushes the picture out of view — which
-presents as "no image appears at all." So `_present_images` brackets the whole
-batch in DECSC/DECRC (`\x1b7` … `\x1b8`): save the cursor curses positioned,
-draw, restore it. Each image is addressed absolutely (`\x1b[row;colH`), so one
+presents as "no image appears at all." So the emission brackets the whole batch in
+DECSC/DECRC (`\x1b7` … `\x1b8`): save the cursor the backend positioned, draw,
+restore it. Each image is addressed absolutely (`\x1b[row;colH`), so one
 image's drift never offsets the next and a single save/restore covers the batch.
 
 Do **not** send `doNotMoveCursor=1` to iTerm2 — it is not a real `File` argument

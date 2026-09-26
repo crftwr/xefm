@@ -138,7 +138,7 @@ should not be launched non-interactively (they block).
 - Python 3.9+ (3.13 supported)
 - **PuiKit** (external, editable from `../puikit`)
 - `pygments` (syntax highlighting), `boto3` (S3), `watchdog` (file monitoring)
-- Platform extras via environment markers: `pyobjc` (macOS native backend), `windows-curses` (Windows)
+- Platform extras via environment markers: `pyobjc` (macOS native backend), `windows-curses` (Windows, for `--backend curses` only)
 
 ### Development
 - `pytest` (tests), plus optional `flake8` / `black`

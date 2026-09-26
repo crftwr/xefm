@@ -40,13 +40,14 @@ def is_desktop_mode():
 
     This function checks multiple indicators to determine if XeFM is running
     with the native GUI backend (desktop mode — ``macos``/``windows``, launched
-    via the ``gui`` alias) or the curses backend (terminal mode).
+    via the ``gui`` alias) or a terminal backend (terminal mode — PuiKit's VT
+    backend, or curses when asked for by name).
 
     Detection methods (in order of priority):
     1. Check XEFM_BACKEND environment variable (set by main() at startup)
     2. Check command-line arguments for the --backend flag
     3. Check if a GUI backend module is already loaded
-    4. Default to terminal mode (curses)
+    4. Default to terminal mode
 
     Note: Results are cached after first detection for performance.
 
@@ -100,7 +101,11 @@ def get_backend_name():
     Get the name of the currently running backend.
 
     Returns:
-        str: 'gui' for desktop mode, 'curses' for terminal mode
+        str: 'gui' for desktop mode, 'curses' for terminal mode. The terminal
+        spelling is historical — terminal mode has run PuiKit's VT backend since
+        XeFM 1.0.7, and the curses backend is only reached via
+        ``--backend curses`` — but the string is kept for callers that compare
+        against it.
 
     Examples:
         >>> backend = get_backend_name()

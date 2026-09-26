@@ -17,7 +17,7 @@ This document provides comprehensive implementation details for XeFM's drag-and-
 - ✅ macOS (via CoreGraphics backend)
 - ⏳ Windows (future implementation)
 - ⏳ Linux (future implementation)
-- ❌ Terminal mode (Curses backend - gracefully degrades)
+- ❌ Terminal mode (gracefully degrades)
 
 ## Architecture Overview
 
@@ -82,7 +82,7 @@ The drag-and-drop implementation follows a four-layer architecture:
 
 1. **Platform Independence**: XeFM code is platform-agnostic; platform-specific logic lives in backends
 2. **Capability Detection**: Backends advertise drag-and-drop support via `supports_drag_and_drop()`
-3. **Graceful Degradation**: Terminal mode (Curses) returns False without errors
+3. **Graceful Degradation**: Terminal mode returns False without errors
 4. **Standard Protocols**: Uses file:// URLs (RFC 8089) for cross-platform compatibility
 5. **Clean Separation**: Gesture detection, payload building, and session management are independent modules
 
@@ -257,7 +257,7 @@ The drag *source* itself is PuiKit's, not XeFM's. XeFM issues one intent —
 `panel.begin_file_drag(paths, event, operations=..., on_complete=...)` — and
 PuiKit resolves it per backend: a real OS drag session where the
 `os_drag_drop` capability is present, and a clipboard fallback everywhere else
-(notably the curses TUI, which cannot be an OS drag source at all).
+(notably the TUI, which cannot be an OS drag source at all).
 
 The interface, its capability gating, the per-platform implementations and the
 "add a new platform backend" walkthrough all live in the PuiKit repo — see its

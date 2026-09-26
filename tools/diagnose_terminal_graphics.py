@@ -17,7 +17,7 @@ break:
 * TEST 1-3 show but 5 does not -> the cursor save/restore or positioning the
                              real backend adds is the culprit.
 * Everything shows here but XeFM still doesn't -> the protocol is fine; the break
-                             is in the curses integration (run with the debug
+                             is in the backend integration (run with the debug
                              env var below and send the log).
 
 Runtime trace for the *real* app (complements this script):
@@ -128,8 +128,8 @@ if tg is not None:
     emit("TEST 6  encoder + cursor-move + DECSC/DECRC (as present() writes it)",
          "\x1b7" + "\x1b[12;3H" + tg.encode(tg.ITERM2, image, png, 20, 10) + "\x1b8")
 
-# TEST 7 is the important one: XeFM runs in the ALTERNATE screen buffer (curses
-# initscr enables it). Some terminals render inline images differently there —
+# TEST 7 is the important one: XeFM runs in the ALTERNATE screen buffer (the TUI
+# backend enables it). Some terminals render inline images differently there —
 # this is the single most likely reason images work in a plain shell but not in
 # the TUI. It is interactive (enters the alt screen and waits) so it only runs on
 # a real terminal.
