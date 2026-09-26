@@ -1,0 +1,25 @@
+# What it takes to run XeFM's test suite. None of it is needed to run or
+# install XeFM, which is why it is not in requirements.txt: someone installing
+# from PyPI gets the runtime dependencies alone, while `make venv` installs
+# both files.
+#
+# Two of the three are less optional than "dev dependency" usually suggests,
+# because pytest.ini asks for them by flag rather than by import:
+#
+#   -n 1        is pytest-xdist's. Without it pytest exits on an unrecognized
+#               argument before collecting a single test -- the suite does not
+#               run at all, in a way that reads like a broken pytest.
+#   timeout = 10  is pytest-timeout's. Without it pytest warns "Unknown config
+#               option" on every run and the suite has no timeout, so a hung
+#               test hangs the run instead of failing it.
+#
+# The Linux test image installs this same file (tools/docker/Dockerfile), so
+# the set is not written down twice and cannot drift between the two.
+#
+# Release tooling is deliberately absent: `make build` installs build and twine
+# when it needs them, and macos_app/build.sh installs delocate the same way.
+# They belong to a release, not to a working copy.
+
+pytest
+pytest-xdist
+pytest-timeout

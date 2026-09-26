@@ -1,9 +1,9 @@
 # XeFM's Linux test image (glibc): the dependencies, not the source.
 #
 # The source is mounted read-only at run time rather than copied in, so a test
-# run needs no rebuild and cannot write into the working tree. Only
-# requirements.txt is baked, which means the pip layer is rebuilt exactly when
-# the dependencies change and reused every other time.
+# run needs no rebuild and cannot write into the working tree. Only the
+# requirements files are baked, which means the pip layer is rebuilt exactly
+# when the dependencies change and reused every other time.
 #
 #   make test-linux
 #
@@ -20,10 +20,10 @@ RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends libarchive13 \
  && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/requirements.txt
+COPY requirements.txt requirements-dev.txt /tmp/
 RUN pip install --no-cache-dir --quiet -r /tmp/requirements.txt \
- && pip install --no-cache-dir --quiet pytest pytest-timeout pytest-xdist \
- && rm /tmp/requirements.txt
+ && pip install --no-cache-dir --quiet -r /tmp/requirements-dev.txt \
+ && rm /tmp/requirements.txt /tmp/requirements-dev.txt
 
 # The source mount is read-only, so nothing may be written beside it: no
 # bytecode, and no .pytest_cache either — the cache plugin only warns, but a
