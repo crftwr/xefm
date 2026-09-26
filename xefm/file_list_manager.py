@@ -7,6 +7,7 @@ import os
 import stat
 from xefm import filters
 from xefm import name_key
+from xefm import path_list
 from xefm import search_match
 from xefm import sort_keys
 from xefm.dir_scan import is_hidden
@@ -57,20 +58,14 @@ class FileListManager:
         """
         virtual = pane_data.get('virtual')
         if virtual:
-            # Re-stat the found set: drop entries that have vanished (moved/
-            # deleted by a prior op) and prune their metadata in step.
-            survivors = [p for p in virtual['results'] if self._path_exists(p)]
-            virtual['results'] = survivors
-            keys = {str(p) for p in survivors}
-            virtual['meta'] = {k: v for k, v in virtual.get('meta', {}).items()
-                               if k in keys}
-            result = self.compute_listing_from_paths(
-                survivors,
+            result = self.compute_virtual_listing(
+                virtual['results'],
                 filter_pattern=pane_data.get('filter_pattern'),
                 sort_mode=pane_data['sort_mode'],
                 sort_reverse=pane_data['sort_reverse'],
                 rel_root=virtual.get('root'),
             )
+            self.prune_virtual(virtual, result)
             self.apply_listing(pane_data, result)
             return
         result = self.compute_listing(
@@ -82,13 +77,16 @@ class FileListManager:
         self.apply_listing(pane_data, result)
 
     @staticmethod
-    def _path_exists(path):
-        """Whether ``path`` still resolves — tolerant of a raised error (a broken
-        remote handle counts as gone rather than crashing the re-stat)."""
-        try:
-            return path.exists()
-        except Exception:
-            return False
+    def prune_virtual(virtual, result):
+        """Drop the paths a :meth:`compute_virtual_listing` pass found gone from
+        the virtual set it was computed for, and their metadata in step — so a
+        file moved or deleted by an operation leaves the set rather than coming
+        back on the next refresh. Mutates pane state: UI thread only."""
+        survivors = result['survivors']
+        virtual['results'] = survivors
+        keys = {str(p) for p in survivors}
+        virtual['meta'] = {k: v for k, v in virtual.get('meta', {}).items()
+                           if k in keys}
 
     def compute_listing(self, path, *, filter_pattern=None, sort_mode='filename',
                         sort_reverse=False):
@@ -162,24 +160,44 @@ class FileListManager:
             self.logger.error(f"Unexpected error reading directory {path}: {e}")
         return {"ok": False, "files": [], "file_info": {}}
 
-    def compute_listing_from_paths(self, paths, *, filter_pattern=None,
-                                   sort_mode='filename', sort_reverse=False,
-                                   rel_root=None):
+    def compute_virtual_listing(self, paths, *, filter_pattern=None,
+                                sort_mode='filename', sort_reverse=False,
+                                rel_root=None, derive_root=False, cancel=None):
         """Build a listing dict from an explicit list of ``Path`` objects — a
-        virtual / search-results pane — instead of reading a directory. Applies
-        the filename filter and the sort in memory and builds the display-info
-        cache, mirroring :meth:`compute_listing`'s tail so :meth:`apply_listing`
-        installs it unchanged. Always ``ok`` (there is no directory I/O to fail);
-        a per-entry ``stat`` error is absorbed into the info cache as ``---``.
+        virtual pane (a search-results feed, an imported list) — instead of
+        reading a directory. **No pane mutation**, so a worker thread can call
+        it; blocking I/O, so one should.
+
+        Each path's attributes are read once, and that read is the existence
+        check too (:func:`xefm.path_list.probe`): a path that is gone is left out
+        of the listing, and ``survivors`` in the result names what is left, for
+        :meth:`prune_virtual` to write back on the UI thread. ``missing`` and
+        ``unreachable`` count what was left out, and why.
+
+        Applies the filename filter and the sort in memory and builds the
+        display-info cache, mirroring :meth:`compute_listing`'s tail so
+        :meth:`apply_listing` installs it unchanged. Always ``ok``: there is no
+        directory whose read could fail, only rows that are or are not there.
+
+        ``derive_root`` names the rows relative to the survivors' common
+        ancestor instead of ``rel_root``, and returns that ancestor as ``root``
+        — :data:`~xefm.name_key.WHOLE_PATH` where there is none.
 
         Unlike :meth:`compute_listing` this does **not** apply the hidden-file
-        filter: the search that produced ``paths`` already honoured
-        ``show_hidden``, and a scattered result set has no single directory whose
-        dotfiles to hide."""
-        all_entries = [(p, attrs_via_path(p)) for p in paths]
-        return self._assemble_listing(
-            all_entries, filter_pattern=filter_pattern,
+        filter: a list someone produced, or a search that already honoured
+        ``show_hidden``, has no single directory whose dotfiles to hide."""
+        probed = path_list.probe(paths, cancel=cancel)
+        if derive_root:
+            rel_root = path_list.common_root(
+                [p for p, _ in probed.entries]) or name_key.WHOLE_PATH
+        result = self._assemble_listing(
+            probed.entries, filter_pattern=filter_pattern,
             sort_mode=sort_mode, sort_reverse=sort_reverse, rel_root=rel_root)
+        result['root'] = rel_root
+        result['survivors'] = [p for p, _ in probed.entries]
+        result['missing'] = probed.missing
+        result['unreachable'] = probed.unreachable
+        return result
 
     def _assemble_listing(self, entries, *, filter_pattern=None,
                           sort_mode='filename', sort_reverse=False, rel_root=None):

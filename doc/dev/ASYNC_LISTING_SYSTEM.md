@@ -27,15 +27,15 @@ the I/O and the pane mutation). Tests:
 | Method | Thread | Touches the pane? |
 |---|---|---|
 | `compute_listing(path, …)` | any (worker) | no — returns a plain dict |
-| `compute_listing_from_paths(paths, …)` | any | no — the virtual-pane variant |
+| `compute_virtual_listing(paths, …)` | any (worker) | no — the virtual-pane variant; reports `survivors`, `missing`, `unreachable` |
+| `prune_virtual(virtual, result)` | UI only | yes — writes the survivors back into the virtual set |
 | `apply_listing(pane, result)` | UI only | yes — installs files, reconciles cursor + selection |
 | `refresh_files(pane)` | caller's | both, back to back — the **synchronous** API |
 | `set_filter(pane, pattern)` | UI only | pane state only, no I/O |
 | `apply_filter(pane, pattern)` | caller's | `set_filter` + `refresh_files` — synchronous |
 
 `refresh_files` / `apply_filter` remain as the simple synchronous contract for
-non-UI callers and for virtual panes; the app itself no longer calls them on a
-directory pane.
+non-UI callers; the app itself no longer calls them on any pane.
 
 ---
 
@@ -87,9 +87,13 @@ which differ only in what they reset:
 | History record | no | yes | no |
 | Used by | delete/copy/move/create/rename reload, startup, `show_hidden` | enter/leave a directory, jump, favorites | sort, filter |
 
-Both re-reading wrappers are virtual-pane aware: a search-results feed has no
-directory to read, so it is rebuilt from its in-memory result set
-(`flm.refresh_files`) and `on_ready` fires synchronously. `_refresh` is literally
+Both re-reading wrappers are virtual-pane aware: a search-results feed or an
+imported list has no directory to read, so it is rebuilt from its set by
+`_list_virtual` — each path's attributes re-read on a worker, since on a remote
+list that is one round trip per row — and `on_ready` fires when that lands.
+A queued result may carry a seventh element, `prepare(pane, result)`, run on the
+UI thread before installing; it readies the pane for a virtual listing and may
+refuse it (an imported list none of whose paths exist leaves the pane alone). `_refresh` is literally
 `_relist` plus the cursor reset and the history record, so the two can never
 drift.
 

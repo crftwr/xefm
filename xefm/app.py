@@ -84,6 +84,7 @@ from xefm import name_key
 from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
                               getLogger, route_library_logger, set_log_sink)
 from xefm.pane_manager import PaneManager
+from xefm import path_list
 from xefm import path_schemes
 from xefm.path import Path
 from xefm import search_match
@@ -787,11 +788,16 @@ class PaneHeader(Widget):
         avail = max(0.0, ctx.size_units[0] - 2 * pad_x)
         virtual = pane.get("virtual")
         if virtual:
-            # Not a directory: a search-results feed. Say so (and which pane an
-            # operation will hit) rather than showing the — misleading — root path.
-            mode = "content" if virtual["mode"] == "content" else "filename"
+            # Not a directory: a search-results feed or an imported list. Say so
+            # (and which pane an operation will hit) rather than showing the —
+            # misleading — root path.
             n = len(pane["files"])
-            label = f'⌕ "{virtual["query"]}" — {n} result{"" if n == 1 else "s"} ({mode})'
+            if virtual.get("kind") == "list":
+                label = f'{virtual["title"]} — {n} item{"" if n == 1 else "s"}'
+            else:
+                mode = "content" if virtual["mode"] == "content" else "filename"
+                label = (f'⌕ "{virtual["query"]}" — '
+                         f'{n} result{"" if n == 1 else "s"} ({mode})')
             text = elide(label, avail, where="end", measure=ctx.measure_text)
         elif self.app._is_archive(pane["path"]):
             # A browsed archive: show [archive.zip]/sub rather than the raw URI.
@@ -1916,16 +1922,28 @@ class XeFMApp:
         applied = False
         while True:
             try:
-                (pane_name, gen, result, on_ready, keep_visible,
-                 drop_if_unchanged) = self._result_queue.get_nowait()
+                item = self._result_queue.get_nowait()
             except queue.Empty:
                 break
+            (pane_name, gen, result, on_ready, keep_visible,
+             drop_if_unchanged) = item[:6]
+            # An optional seventh element: ``prepare(pane, result) -> bool``,
+            # run on this thread before the listing is installed. It readies the
+            # pane for what is landing (a virtual listing's set, pruned) and may
+            # refuse it outright — an imported list none of whose paths exist
+            # leaves the pane as it was.
+            prepare = item[6] if len(item) > 6 else None
             pane = self.pane(pane_name)
             if gen != pane.get("_load_gen"):
                 # Superseded by a newer navigation. Leave _load_pending set — it
                 # tracks the *latest* generation, which is still in flight.
                 continue
             pane["_load_pending"] = False
+            if prepare is not None and not prepare(pane, result):
+                # Refused, but a refusal says why in the log pane, and that
+                # line is owed a frame.
+                applied = True
+                continue
 
             # Only a keep_visible re-list can be dropped, and only while the pane
             # is actually showing the listing it is compared against: one still
@@ -2277,10 +2295,10 @@ class XeFMApp:
         callers that reset the cursor on purpose — :meth:`_refresh`, and a filter
         change reaching here through :meth:`_resort`.
 
-        For a **virtual pane** (a search-results feed) there is no directory to
-        read: rebuild the flat listing from the result set in memory (re-stat
-        survivors, re-sort, re-filter — see ``FileListManager.refresh_files``)
-        and fire ``on_ready`` synchronously.
+        For a **virtual pane** (a search-results feed, an imported list) there
+        is no directory to read: the flat listing is rebuilt from the set,
+        re-reading each path's attributes on a worker thread
+        (:meth:`_list_virtual`), and ``on_ready`` fires when it lands.
 
         This is the "no directory change" sibling of :meth:`_refresh`, which adds
         the cursor reset and the history record a navigation needs."""
@@ -2292,11 +2310,87 @@ class XeFMApp:
             if on_ready is not None:
                 on_ready(p)
 
-        if pane.get("virtual"):
-            self.flm.refresh_files(pane)
-            landed(pane)
+        virtual = pane.get("virtual")
+        if virtual:
+            self._list_virtual(pane, virtual, on_ready=landed)
             return
         self._list_pane(self._pane_name_of(pane), on_ready=landed)
+
+    def _list_virtual(self, pane: dict, virtual: dict, *, on_ready=None,
+                      on_empty=None, on_result=None) -> None:
+        """(Re)build a virtual pane's listing from ``virtual['results']`` on a
+        worker thread — the virtual counterpart of :meth:`_list_pane`.
+
+        Each path's attributes are read once, and that read is the existence
+        check (:meth:`FileListManager.compute_virtual_listing`). That is N
+        round trips for N rows, which on an ``ssh://`` or ``s3://`` list — or
+        a long local one — is exactly what must not run on the UI thread. The
+        pane keeps showing its rows while the worker runs, as a monitor reload
+        does: nothing about it is navigating anywhere.
+
+        Two callers, told apart by whether ``virtual`` is already the pane's:
+
+        - **Entering** — a search feed or an imported list. The pane changes
+          only once the listing lands, and only if at least one path survived;
+          if none did, ``on_empty(result)`` runs instead and the pane is left
+          as it was. Entering starts unfiltered, with no selection, cursor at
+          the top.
+        - **Refreshing** — after an operation. Paths found gone leave the set,
+          so they do not come back on the next refresh; a result that lands
+          after the pane left this set (⌫, a navigation) is dropped.
+
+        A ``virtual`` entering with no ``root`` has one derived on the worker,
+        from the paths that survived (:func:`xefm.path_list.common_root`) — a
+        path that turned out not to exist must not drag the root up — or
+        :data:`~xefm.name_key.WHOLE_PATH` where they share none.
+
+        ``on_result(result)`` runs just before a listing is installed, for a
+        caller that reports what was left out (``missing``, ``unreachable``);
+        ``on_ready(pane)`` runs once the rows are in place. Both on the UI
+        thread."""
+        pane_name = self._pane_name_of(pane)
+        gen = pane["_load_gen"] = pane.get("_load_gen", 0) + 1
+        pane["_load_pending"] = True
+        entering = pane.get("virtual") is not virtual
+        # Snapshot every input: the worker must not read the pane dict.
+        paths = list(virtual["results"])
+        filter_pattern = "" if entering else pane.get("filter_pattern")
+        sort_mode = pane["sort_mode"]
+        sort_reverse = pane["sort_reverse"]
+        rel_root = virtual.get("root")
+        derive_root = entering and rel_root is None
+
+        def prepare(p: dict, result: dict) -> bool:
+            if entering:
+                if not result["survivors"]:
+                    if on_empty is not None:
+                        on_empty(result)
+                    return False
+                if derive_root:
+                    virtual["root"] = result["root"]
+                p["virtual"] = virtual
+                p["filter_pattern"] = ""
+                p["focused_index"] = 0
+                p["scroll_offset"] = 0
+                p["selected_files"].clear()
+            elif p.get("virtual") is not virtual:
+                return False
+            self.flm.prune_virtual(virtual, result)
+            if on_result is not None:
+                on_result(result)
+            return True
+
+        def worker() -> None:
+            result = self.flm.compute_virtual_listing(
+                paths, filter_pattern=filter_pattern, sort_mode=sort_mode,
+                sort_reverse=sort_reverse, rel_root=rel_root,
+                derive_root=derive_root)
+            self._result_queue.put((pane_name, gen, result, on_ready,
+                                    True, False, prepare))
+            self._wake_pump()
+
+        threading.Thread(target=worker, name=f"xefm-list-{pane_name}",
+                         daemon=True).start()
 
     def _resort(self, pane: dict, *, keep_cursor: bool = True, on_ready=None) -> None:
         """Re-sort / re-filter ``pane`` from the snapshot its last listing left
@@ -2580,6 +2674,7 @@ class XeFMApp:
                 "rename": (self.rename, False),
                 "copy_names": (self.copy_names_to_clipboard, True),
                 "copy_paths": (self.copy_paths_to_clipboard, True),
+                "import_list_from_clipboard": (self.import_list_from_clipboard, True),
                 "copy_files": (self.copy_files, None),
                 "move_files": (self.move_files, None),
                 "duplicate_files": (self.duplicate_files, None),
@@ -3079,8 +3174,9 @@ class XeFMApp:
             MenuItem("Quit", on_select=self.confirm_quit, shortcut=sc("quit")),
             title="File",
         )
-        # Everything that ends on the clipboard, in the menu users look in for
-        # it: the file-name / path copies that used to sit in File, and the log
+        # Everything that goes through the clipboard, in the menu users look in
+        # for it: the file-name / path copies that used to sit in File, their
+        # inverse — a list of paths read back in as a pane (#453) — and the log
         # pane's own two (#360). The log items need a menu more than most —
         # a log selection is made with the mouse, and "Copy All Logs" ships
         # unbound — so this is where that feature is discovered at all.
@@ -3094,6 +3190,9 @@ class XeFMApp:
                      enabled=has_files, shortcut=sc("copy_names")),
             MenuItem("Copy Full Path(s)", on_select=lambda: self._menu("copy_paths"),
                      enabled=has_files, shortcut=sc("copy_paths")),
+            MenuItem("Import List from Clipboard",
+                     on_select=lambda: self._menu("import_list_from_clipboard"),
+                     shortcut=sc("import_list_from_clipboard")),
             SEPARATOR,
             MenuItem("Copy Log Selection",
                      on_select=lambda: self._menu("copy_log_selection"),
@@ -3511,7 +3610,7 @@ class XeFMApp:
         # Content search-results panes carry a per-file matched line/text map;
         # empty for a normal or filename-results pane (no extra row then).
         virtual = pane.get("virtual")
-        match_meta = virtual["meta"] if virtual and virtual["mode"] == "content" else {}
+        match_meta = virtual["meta"] if virtual and virtual.get("mode") == "content" else {}
 
         def _md_escape(text: str) -> str:
             # Keep a filename with Markdown-significant characters (``|`` splits a
@@ -4420,22 +4519,26 @@ class XeFMApp:
             self.log_info("No results to open")
             self.panel.render()
             return
-        pane["virtual"] = {
+        virtual = {
             "kind": "search", "root": Path(root), "mode": mode,
             "query": query, "results": paths, "meta": meta,
         }
-        pane["filter_pattern"] = ""
-        pane["focused_index"] = 0
-        pane["scroll_offset"] = 0
-        pane["selected_files"].clear()
-        self.flm.refresh_files(pane)  # virtual-aware: sorts/filters the set in memory
-        self._focus_result(pane, focus)
-        self.log_info(f'Search results for "{query}": {len(paths)} item(s)  '
-                      f'— {self._keys_label("sync_current_to_other")} go to '
-                      f'location · {self._keys_label("sync_other_to_current")} '
-                      f'reveal in other pane · '
-                      f'{self._keys_label("go_parent")} back')
+
+        def landed(p: dict) -> None:
+            self._focus_result(p, focus)
+            self.log_info(f'Search results for "{query}": '
+                          f'{len(virtual["results"])} item(s)  '
+                          f'— {self._virtual_keys_hint()}')
+
+        self._list_virtual(pane, virtual, on_ready=landed,
+                           on_empty=lambda _result: self.log_info("No results to open"))
         self.panel.render()
+
+    def _virtual_keys_hint(self) -> str:
+        """The keys that work a virtual pane, for the line announcing one."""
+        return (f'{self._keys_label("sync_current_to_other")} go to location · '
+                f'{self._keys_label("sync_other_to_current")} reveal in other '
+                f'pane · {self._keys_label("go_parent")} back')
 
     def _focus_result(self, pane: dict, focus) -> None:
         """Land ``pane``'s cursor on the fed result ``focus`` (a ``Path`` or a
@@ -4718,8 +4821,8 @@ class XeFMApp:
     def _program_env(self, pane: dict) -> tuple[dict, str]:
         """``(env, cwd)`` for an external program launched from ``pane``: our
         environment plus the ``XEFM_*`` variables, and the pane's directory —
-        the search root on a virtual (search-results) pane. Shared by the
-        ``PROGRAMS`` picker and ``ctx.run_program()`` so the two can never hand
+        the root on a virtual pane (a search-results feed, an imported list).
+        Shared by the ``PROGRAMS`` picker and ``ctx.run_program()`` so the two can never hand
         a program different contracts."""
         from xefm.external_programs import (build_xefm_env,
                                            ensure_common_paths_in_env,
@@ -4735,8 +4838,10 @@ class XeFMApp:
         # Same env contract as anywhere else — SELECTED is the selection
         # alone, FOCUSED the cursor — but spelled with absolute paths from
         # the search root rather than bare names, mirroring the argv
-        # _run_program builds.
-        cwd = str(virtual["root"])
+        # _run_program builds. A list with no common root runs from the
+        # directory the pane showed before it, the one ⌫ goes back to.
+        root = virtual["root"]
+        cwd = str(pane["path"] if root is name_key.WHOLE_PATH else root)
         env["XEFM_THIS_DIR"] = cwd
         picked = [f for f in pane["files"] if str(f) in pane["selected_files"]]
         env["XEFM_THIS_SELECTED"] = " ".join(
@@ -5170,6 +5275,82 @@ class XeFMApp:
         path when nothing is selected — to the system clipboard, one per
         line."""
         self._copy_to_clipboard(str, "path")
+
+    def import_list_from_clipboard(self) -> None:
+        """Show the paths on the clipboard, one per line, as the active pane's
+        listing — the inverse of ``copy_paths`` (#453).
+
+        The list comes from anywhere that can put text on a clipboard: a
+        search tool's "copy full paths", ``find … | pbcopy``, a column out of a
+        spreadsheet, a list pasted in chat. Nothing is touched on disk — this
+        changes what the pane *shows*, and ⌫ goes back to the directory. That is
+        the line between this and a paste: "show me these files", not "put
+        these files here".
+
+        A relative line resolves against the directory the pane is showing,
+        because the clipboard carries no anchor of its own."""
+        lines = path_list.parse(self.panel.get_clipboard())
+        if not lines:
+            self.log_info("The clipboard holds no paths to import")
+            return
+        self.show_path_list(self.pm.active_pane, lines,
+                            title="List from clipboard")
+
+    def show_path_list(self, pane_name: str, paths, *, title: str,
+                       base=None) -> None:
+        """Show ``paths`` in pane ``pane_name`` as a virtual listing headed
+        ``title`` — the one door every file-list source comes through: the
+        clipboard import, and ``PaneApi.show_list`` for a config's own.
+
+        ``paths`` are strings or ``Path`` objects. A relative one resolves
+        against ``base`` (the pane's directory when not given); absolute paths
+        and URIs stand as they are, so one list can span drives, hosts and
+        schemes. Which of them exist is found on a worker thread, and the pane
+        changes only once that answer lands — to the ones that do, or not at
+        all if none do. The status line says how many were left out, and how
+        many were resolved relatively, since a relative path resolved against
+        the wrong directory finds a real file that is not the one meant."""
+        pane = self.pane(pane_name)
+        if base is None:
+            base = pane["path"]
+        resolved = path_list.resolve((str(p) for p in paths), base)
+        if not resolved.paths:
+            self.log_info(f"{title}: no paths to show")
+            return
+        total = len(resolved.paths)
+        plural = "" if total == 1 else "s"
+        virtual = {"kind": "list", "title": title, "root": None,
+                   "results": resolved.paths, "meta": {}}
+        left_out = {"missing": 0, "unreachable": 0}
+
+        def details() -> str:
+            parts = []
+            if left_out["missing"]:
+                parts.append(f'{left_out["missing"]} not found')
+            if left_out["unreachable"]:
+                parts.append(f'{left_out["unreachable"]} unreachable')
+            if resolved.relative:
+                parts.append(f"{resolved.relative} resolved relative to {base}")
+            return f" ({', '.join(parts)})" if parts else ""
+
+        def counted(result: dict) -> None:
+            left_out["missing"] = result["missing"]
+            left_out["unreachable"] = result["unreachable"]
+
+        def landed(p: dict) -> None:
+            n = len(virtual["results"])
+            self.log_info(f"{title}: {n} item{'' if n == 1 else 's'}"
+                          f"{details()}  — {self._virtual_keys_hint()}")
+
+        def empty(result: dict) -> None:
+            counted(result)
+            self.log_info(f"{title}: none of the {total} path{plural} "
+                          f"could be shown{details()}")
+
+        self.log_info(f"{title}: reading {total} path{plural}…")
+        self._list_virtual(pane, virtual, on_ready=landed, on_empty=empty,
+                           on_result=counted)
+        self.panel.render()
 
     def _copy_to_clipboard(self, render, label: str) -> None:
         """Shared body of the clipboard-copy actions: gather the selection (or
@@ -6867,6 +7048,8 @@ class XeFMApp:
             ("copy_files", "Copy selection to the other pane"),
             ("copy_names", "Copy selection's name(s) to the clipboard"),
             ("copy_paths", "Copy selection's full path(s) to the clipboard"),
+            ("import_list_from_clipboard",
+             "Show the paths on the clipboard as this pane's list (Edit menu)"),
             ("move_files", "Move selection to the other pane"),
             ("delete_files", "Delete selection"),
             ("create_archive", "Create archive from selection"),

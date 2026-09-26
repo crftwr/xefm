@@ -428,6 +428,10 @@ _FILER_ACTIONS = [
     # Clipboard
     _a("copy_names", FILER, "Copy the file name(s) to the clipboard"),
     _a("copy_paths", FILER, "Copy the full path(s) to the clipboard"),
+    # Its inverse. Unbound: a paste-like key is what #342's paste will want,
+    # and this is not a paste — nothing is written, the pane only shows.
+    _a("import_list_from_clipboard", FILER,
+       "Show the paths on the clipboard as the pane's list", default_keys=()),
     # File operations
     _a("copy_files", FILER, "Copy the selection to the other pane"),
     _a("move_files", FILER, "Move the selection to the other pane"),

@@ -278,6 +278,28 @@ class PaneApi:
         """Re-read the directory. Also asynchronous — see :meth:`cd`."""
         self._app._relist(self._pane)
 
+    def show_list(self, paths, *, title: str) -> None:
+        """Show ``paths`` in this pane as a flat list headed ``title``, instead
+        of a directory — the door a search of your own comes through.
+
+        ``paths`` are strings, ``Path`` objects or entries, absolute or
+        relative to :attr:`path`; URIs (``ssh://…``, ``s3://…``) stand as they
+        are, and one list may mix drives, hosts and schemes. Rows are named
+        relative to the deepest directory they all share, or by their whole
+        path where they share none. Nothing on disk changes: every file operation works on the
+        rows, and ``go_parent`` returns to :attr:`path`.
+
+        Which paths exist is found on a worker thread, and the pane changes
+        only once that lands — to the ones that do, or not at all if none do,
+        with the status line saying how many were left out. Like :meth:`cd`,
+        then, :attr:`entries` does not hold the list on the next line.
+
+        Producing ``paths`` is the caller's work, and runs where every action
+        runs — on the UI thread (see *Threading* above). A search that takes
+        seconds freezes the window for those seconds.
+        """
+        self._app.show_path_list(self._name, list(paths), title=str(title))
+
     # --- entries ------------------------------------------------------------ #
 
     @property
