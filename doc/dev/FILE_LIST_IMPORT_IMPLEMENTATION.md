@@ -20,14 +20,14 @@ supported in tree; it is one source among many.
 | Piece | Where |
 |---|---|
 | Parse, resolve, common root, probe — storage-agnostic, pane-free | `xefm/path_list.py` |
-| One door for every source | `XeFMApp.show_path_list(pane_name, paths, *, title, base=None)` |
+| One door for every source | `XeFMApp.open_path_list(pane_name, paths, *, title, base=None)` |
 | The clipboard source | `XeFMApp.import_list_from_clipboard` (action `import_list_from_clipboard`, unbound) |
-| The public door | `PaneApi.show_list(paths, *, title)` in `xefm/user_api.py` |
+| The public door | `PaneApi.open_list(paths, *, title)` in `xefm/user_api.py` |
 | Listing a virtual pane off the UI thread | `XeFMApp._list_virtual`, `FileListManager.compute_virtual_listing` / `prune_virtual` |
 | Whole-path names | `name_key.WHOLE_PATH` |
 
 Stages ② (a file) and ③ (a command's stdout) are further sources calling
-`show_path_list`; each chooses its own `base` for relative lines (the list
+`open_path_list`; each chooses its own `base` for relative lines (the list
 file's directory, the command's cwd).
 
 ## The flow
@@ -36,7 +36,7 @@ file's directory, the command's cwd).
    lines into `Path`s — URIs and absolute paths as they are, relative ones
    joined onto `base` and counted. Duplicates collapse. Nothing is read from
    disk.
-2. `show_path_list` builds `{"kind": "list", "title": …, "root": None,
+2. `open_path_list` builds `{"kind": "list", "title": …, "root": None,
    "results": [...], "meta": {}}` and hands it to `_list_virtual`. The pane is
    **not** touched yet.
 3. **Worker.** `compute_virtual_listing(..., derive_root=True)` probes every
@@ -114,7 +114,7 @@ The Info dialog's content-hit metadata reads
   reads plain text only; that is stage ④.
 - **No attributes from the source.** A source that already knows size and
   mtime (an `.efu` export, `find -printf`) still has them re-read. Accepting
-  `EntryInfo` in `show_list` is additive if it is ever wanted.
+  `EntryInfo` in `open_list` is additive if it is ever wanted.
 
 ## Tests
 
