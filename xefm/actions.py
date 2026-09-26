@@ -100,7 +100,8 @@ ISEARCH = "isearch"
 #: modified or non-printable keys can reach an action here.
 FILTER_LIST = "filter_list"
 #: The modal live search dialog (``xefm.progressive_search_dialog``) behind
-#: Shift-F and Shift-G. A third surface whose keys compete with typing, for the
+#: ``find_files`` / ``find_in_files``. A third surface whose keys compete with
+#: typing, for the
 #: same reason ``isearch``'s and ``filter_list``'s do — and the first one to
 #: carry live options, which is why it is where the ``options`` key starts.
 SEARCH = "search"
@@ -648,8 +649,9 @@ _ISEARCH_ACTIONS = [
     # scopes that same action to one context — so reusing it here would read as
     # "select_all, but in the search bar", which is not what this does.
     #
-    # Ctrl-A, not Cmd-A: XeFM's own convention is Ctrl for its actions and
-    # Command for the OS-flavoured ones (``Command-ENTER``, ``Command-Shift-C``).
+    # Ctrl-A, not Cmd-A: XeFM's own convention is Ctrl for its actions, and a
+    # Command chord only where the desktop platform owns the gesture outright
+    # (opening a file, copying text).
     # It costs the pattern field its select-all-text chord on Windows and in the
     # terminal — a one-line field, where Esc and retyping is the shorter move —
     # and leaves Cmd-A doing exactly that on macOS.

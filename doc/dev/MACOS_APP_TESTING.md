@@ -143,11 +143,8 @@ Essential tests to verify basic functionality:
 **Steps:**
 1. Launch XeFM.app and navigate to a test directory
 2. Test these operations:
-   - View a text file (press F3 or V)
-   - Copy a file (press F5)
-   - Move a file (press F6)
-   - Delete a file (press F8)
-   - Create a directory (press F7)
+   - View a text file, copy a file, move a file, delete a file, create a
+     directory — press `?` for the keys this build is using
 
 **Expected Results:**
 - File viewer opens for text files

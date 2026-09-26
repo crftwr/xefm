@@ -32,7 +32,7 @@ ssh://server.example.com:2222/opt/data
 ### Quick Access Methods
 
 **Method 1: Jump to Path Dialog**
-1. Press `Shift-J` (Jump to path)
+1. Open **Jump to Path** (`jump_to_path`)
 2. Enter: `ssh://hostname/path`
 3. Press Enter
 
@@ -132,7 +132,7 @@ Extract: ssh://server/archive.tar.gz → ~/extracted/
 
 ### Search Functionality
 
-**Filename Search** (`Alt+F7` or `F`):
+**Filename Search** (`find_files`):
 - Search for files by name pattern
 - Supports wildcards: `*.py`, `test_*.txt`
 - Real-time results as search progresses
@@ -265,7 +265,7 @@ completion in the background, and the partly-transferred file is removed.
 
 ### Sub-shell with SFTP
 
-Press `Shift-X` to enter sub-shell mode with SFTP environment variables:
+Run `subshell` to enter sub-shell mode with SFTP environment variables:
 
 ```bash
 # Environment variables available:
@@ -402,8 +402,8 @@ tar czf archive.tar.gz $XEFM_THIS_DIR/*
 ```
 1. Left pane: ~/projects/website (local)
 2. Right pane: ssh://webserver/var/www/html
-3. Select updated files in left pane (Space)
-4. Press F5 (Copy)
+3. Select the updated files in the left pane
+4. Copy them across (`copy_files`)
 5. Confirm overwrite
 6. Watch progress bar
 ```
@@ -413,9 +413,9 @@ tar czf archive.tar.gz $XEFM_THIS_DIR/*
 ```
 1. Left pane: ssh://server/var/log
 2. Right pane: ~/logs/backup
-3. Search for logs: Alt+F7, pattern: *.log
-4. Select all results: a
-5. Press F5 (Copy)
+3. Search for logs (`find_files`), pattern: *.log
+4. Select every file in the results (`toggle_select_files`)
+5. Copy them across (`copy_files`)
 6. Files copied to local backup
 ```
 
@@ -423,10 +423,10 @@ tar czf archive.tar.gz $XEFM_THIS_DIR/*
 
 ```
 1. Navigate to: ssh://server/tmp
-2. Search for old files: Alt+F7, pattern: *.tmp
+2. Search for old files (`find_files`), pattern: *.tmp
 3. Review results
-4. Select files to delete: Space
-5. Press F8 (Delete)
+4. Select the files to delete
+5. Delete them (`delete_files`)
 6. Confirm deletion
 ```
 

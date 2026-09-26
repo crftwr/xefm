@@ -118,13 +118,12 @@ described the old text), and drops the cached rich widget so a rendered view
 rebuilds from the re-decoded source (`_ensure_rich_widget` and `_read_source`
 take the override too). Scroll position is kept, clamped.
 
-The `change_encoding` binding (default `Shift-E`) follows the
-established viewer-action pattern: it is a named action of the `text_viewer`
-context, so it safely shares the key with the file list's `create_file` — the
-two surfaces never apply at once, and neither can see the other's actions. A
-config that predates the action falls back to the default the action declares in
-`xefm/actions.py`, which is `Shift-E` rather than plain `e` because plain `e` is
-`edit_file`, in the viewer too.
+The `change_encoding` binding follows the established viewer-action pattern: it
+is a named action of the `text_viewer` context, so it safely shares its key with
+the file list's `create_file` — the two surfaces never apply at once, and neither
+can see the other's actions. A config that predates the action falls back to the
+default the action declares in `xefm/actions.py`, which is a Shift-letter rather
+than the plain letter because the plain one is `edit_file`, in the viewer too.
 
 ## Editing from the viewer
 

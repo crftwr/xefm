@@ -2,13 +2,15 @@
 
 ## Overview
 
-The search dialog (`Shift-F` for filenames, `Shift-G` for contents) carries four
+The search dialog (`find_files` for filenames, `find_in_files` for contents)
+carries four
 live options: whether capitals are matched exactly, whether only whole words
 count, whether the query is a regular expression, and whether subfolders are
 searched. They change the search you are already looking at — results re-run the
 moment you flip one — and they are all behind one key.
 
-Press **Ctrl-O** (or **F9**) while the search dialog is open.
+Press the **options** key while the search dialog is open — the dialog's footer
+names it, and so does `?`.
 
 ## The chips
 
@@ -40,7 +42,7 @@ listed at all.
 
 ## The options box
 
-`Ctrl-O` opens a small box over the search. There is no typing in it, so **every
+It opens a small box over the search. There is no typing in it, so **every
 option is toggled by the initial of its name**:
 
 ```
@@ -99,7 +101,7 @@ Nothing is written to disk — reopening XeFM starts from the defaults again.
 
 ## Changing the keys
 
-`Ctrl-O` and `F9` are the defaults for the `options` action, and both are
+The keys shipped for the `options` action are in `_config.py`, and both are
 rebindable in `~/.xefm/config.py`:
 
 ```python

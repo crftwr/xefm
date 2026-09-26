@@ -18,7 +18,7 @@ PATH_SCHEMES = {'notes': NotesPathImpl}
 ```
 
 After that, `notes://` is a place: you can open it in a pane, jump to it with
-Shift-J, put it in `FAVORITE_DIRECTORIES`, and walk into it and back out.
+the Jump dialog, put it in `FAVORITE_DIRECTORIES`, and walk into it and back out.
 
 ---
 
@@ -228,7 +228,7 @@ class Config:
     ]
 ```
 
-Shift-J and `reg://HKEY_CURRENT_USER` now open the registry in a pane. Enter
+The Jump dialog and `reg://HKEY_CURRENT_USER` now open the registry in a pane. Enter
 walks into a key, Backspace walks back out, `;` filters, and the viewer shows a
 value's content.
 

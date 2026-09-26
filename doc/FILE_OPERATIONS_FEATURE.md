@@ -217,9 +217,9 @@ always on and adapts automatically to file size, file count, and terminal width.
 
 ## Create file operations
 
-- **Create directory**: press **M** with nothing selected, type a name, and
-  press **Enter**.
-- **Create file**: press **Shift-E**, type a filename, and press **Enter**. The
+- **Create directory**: `create_directory` (the same key as `move_files`, with
+  nothing selected), type a name, and press **Enter**.
+- **Create file**: `create_file`, type a filename, and press **Enter**. The
   new empty file opens immediately in your configured text editor.
 
 Both check that the current directory is writable and refuse to overwrite an
@@ -234,7 +234,7 @@ size or date, or sorted in reverse.
 
 When the file under the cursor is the one that disappeared — you deleted it,
 moved it out, or deleted a whole block of selected files — the cursor drops to
-the entry that took its place, so pressing **K** repeatedly deletes down through
+the entry that took its place, so repeating `delete_files` deletes down through
 a directory. At the end of the listing it moves up to the new last entry
 instead, and in a directory you have just emptied it returns to the top.
 

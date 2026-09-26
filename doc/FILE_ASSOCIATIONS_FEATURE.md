@@ -68,19 +68,20 @@ Each file pattern can configure up to four actions:
 | Action | Key | What it does | Value |
 |---|---|---|---|
 | **enter** | `Enter` | Casual open — handled **inside XeFM** | A built-in handler name |
-| **open** | `Cmd/Ctrl-Enter` | Deliberate open — hands off to another app | A command |
+| **open** | `open_with_os` | Deliberate open — hands off to another app | A command |
 | **view** | `V` | View the file | A command |
 | **edit** | `E` | Edit the file | A command |
 
 #### Two tiers of "open"
 
-`Enter` and `Cmd/Ctrl-Enter` are deliberately different gestures:
+`open_item` and `open_with_os` are deliberately different gestures:
 
 - **`Enter` never leaves XeFM.** It enters directories, browses archives, and
   opens files in the built-in viewer. It is safe to lean on — it will not
   launch an application or steal focus.
-- **`Cmd/Ctrl-Enter` hands the file to a real application.** Use it when you
-  actually want Preview, an IDE, or the OS default app.
+- **`open_with_os` hands the file to a real application.** Use it when you
+  actually want Preview, an IDE, or the OS default app. In a desktop window it
+  answers a modifier on the same Enter that opens, as well as its usual key.
 
 Because the `enter` tier stays inside XeFM, its value names a **built-in
 handler** rather than a program to launch:
@@ -96,7 +97,7 @@ handler** rather than a program to launch:
 {
     'pattern': '*.csv',
     'enter': 'viewer',                    # Enter -> built-in viewer
-    'open':  ['open', '-a', 'Numbers'],   # Cmd-Enter -> Numbers
+    'open':  ['open', '-a', 'Numbers'],   # open_with_os -> Numbers
 }
 ```
 
@@ -325,12 +326,13 @@ Enter uses the **enter** action. It never launches an external program.
    opening a viewer on content it cannot render
 
 Step 5 is why images currently report *"No built-in viewer for photo.png —
-press Command-ENTER to open it in an external program"*. Setting
+press <key> to open it in an external program"* — the message names whatever key
+`open_with_os` is bound to, so it follows your config. Setting
 `'enter': 'viewer'` on such a pattern overrides this and opens the viewer
 anyway, which shows a binary placeholder.
 
-#### Cmd/Ctrl-Enter - Open Externally
-Cmd-Enter (Ctrl-Enter on Windows) uses the **open** action.
+#### open_with_os - Open Externally
+`open_with_os` uses the **open** action.
 
 **Behavior**:
 1. Checks associations for an 'open' command
@@ -481,11 +483,10 @@ file to the operating system.
 
 ### Open externally — the OS default app
 
-**Key**: `Cmd-Enter` (macOS) / `Ctrl-Enter` (Linux/Windows) — the same key as
-the **open** action.
+**Action**: `open_with_os` — the same key as the **open** action.
 
 This is the deliberate-open tier described under
-[Cmd/Ctrl-Enter](#cmdctrl-enter---open-externally): XeFM first looks for an
+[open_with_os](#open_with_os---open-externally): XeFM first looks for an
 `open` command in your associations, and if there is none (and it is not
 explicitly `None`) it falls back to the OS default application — `open` on
 macOS, `xdg-open` on Linux, `start` on Windows. Selected files are opened; if
@@ -495,7 +496,7 @@ has registered for that type.
 
 ### Reveal in File Manager
 
-**Key**: `Alt-Enter` (macOS/Linux) / `Ctrl-Shift-E` (Windows).
+**Action**: `reveal_in_os`.
 
 Opens the OS file manager with the item selected:
 

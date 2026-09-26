@@ -587,7 +587,7 @@ reconnects without asking, and I never ticked Save password", and
 so only the **mount** saves one — on success, under the key the saved row can
 remove. The *Save password* tick is carried through the share picker to get
 there. The user-facing doc's two promises, that saving happens after the
-connection succeeds and that Shift-Delete takes the password with the row,
+connection succeeds and that removing the row takes the password with it,
 were correct throughout; the code had stopped keeping them.
 
 | | Store | Mechanism |

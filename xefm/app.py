@@ -2673,7 +2673,7 @@ class XeFMApp:
             self.active_pane(), move_cursor=True, direction=1))
 
     def _act_select_file_up(self) -> None:
-        """Shift-SPACE: toggle, then move up."""
+        """``toggle_select_up``: toggle, then move up."""
         self._log_result(self.flm.toggle_selection(
             self.active_pane(), move_cursor=True, direction=-1))
 
@@ -2682,7 +2682,7 @@ class XeFMApp:
         self._log_result(self.flm.toggle_all_files_selection(self.active_pane()))
 
     def _act_select_all_items(self) -> None:
-        """Shift-A: toggle selection of every item (files + directories)."""
+        """``toggle_select_items``: toggle selection of every item (files + dirs)."""
         self._log_result(self.flm.toggle_all_items_selection(self.active_pane()))
 
     def _act_select_all(self) -> None:
@@ -2762,7 +2762,7 @@ class XeFMApp:
             self._list_pane(self._pane_name_of(self.active_pane()))
 
     def _act_sync_other_to_current(self) -> None:
-        # From the results pane, Shift-O reveals the highlighted result in the
+        # From the results pane, this reveals the highlighted result in the
         # *other* pane, keeping the results here. If instead the *other* pane
         # is the results view, there is nowhere to send a directory — block it.
         pane = self.active_pane()
@@ -2771,7 +2771,7 @@ class XeFMApp:
         elif self.pm.get_inactive_pane().get("virtual"):
             self.log_info("The other pane is a search-results view")
         elif pane["path"] == self.pm.get_inactive_pane()["path"]:
-            # Both panes already show the same directory: a second Shift-O
+            # Both panes already show the same directory: a second press
             # moves the other pane's cursor onto this pane's focused file.
             self.pm.sync_cursor_from_current_pane(self.log_info)
         elif self.pm.sync_other_to_current(self.log_info):
@@ -2891,7 +2891,7 @@ class XeFMApp:
                 self.log_info(f"Entered archive {entry.name}")
             else:
                 # A plain file. Enter is the *casual* open: it stays inside XeFM
-                # (Cmd/Ctrl-Enter is the one that hands off to another app), so
+                # (``open_with_os`` is the one that hands off to another app), so
                 # a FILE_ASSOCIATIONS 'enter' rule selects a built-in handler
                 # rather than a program to launch.
                 self._enter_file(pane, entry)
@@ -2937,8 +2937,9 @@ class XeFMApp:
         """Warning for a file XeFM has no built-in way to display.
 
         Names the key actually bound to ``open_with_os`` rather than assuming
-        Cmd-Enter — that binding is configurable, and differs on Windows out of
-        the box. Says nothing about a key at all when the action is unbound.
+        one — that binding is configurable, and the desktop cases add a chord the
+        terminal cannot have. Says nothing about a key at all when the action is
+        unbound.
         """
         keys = keys_label_for_action("open_with_os")
         if keys:
@@ -3714,7 +3715,7 @@ class XeFMApp:
 
     def open_with_os(self) -> None:
         """Hand the focused entry to an external program — the deliberate open,
-        bound to Cmd/Ctrl-Enter, as opposed to Enter's open-inside-XeFM.
+        as opposed to ``open_item``'s open-inside-XeFM.
 
         A matching ``open`` entry in FILE_ASSOCIATIONS wins; otherwise the OS
         default application ('open' / 'xdg-open' / 'start') handles it. An
@@ -4108,7 +4109,8 @@ class XeFMApp:
         while it is already open (issue #274). Selecting an ``ssh://`` or
         ``s3://`` row connects on first listing.
 
-        Shift-Delete here **disconnects** a network mount or **ejects** a
+        The picker's remove key (``remove_list_item``) here **disconnects** a
+        network mount or **ejects** a
         removable volume (issue #406). That rides the picker's existing remove
         hook: a row it declines stays put, which is exactly the behaviour every
         other row needs.
@@ -4168,8 +4170,8 @@ class XeFMApp:
                            log=f"Connected: {label} — {path}")
 
     def _drive_remove(self, drive: dict) -> bool:
-        """Shift-Delete in the drives picker: disconnect a share, eject a disk,
-        or decline the row.
+        """The drives picker's remove key (``remove_list_item``): disconnect a
+        share, eject a disk, or decline the row.
 
         Always returns False, for two different reasons. A row that is neither a
         network mount nor a removable volume — Home, a drive letter, an S3
@@ -4267,7 +4269,7 @@ class XeFMApp:
         return path == root or path == volume or path.startswith(root + os.sep)
 
     def show_search(self) -> None:
-        """Live filename search under the active pane (the Shift-F dialog): opens
+        """Live filename search under the active pane (``find_files``): opens
         the progressive search dialog in filename mode. Typing walks the tree
         (bounded, honouring the hidden-file setting) and streams matching entries
         into the list as you type; Tab switches to content search; Enter feeds the
@@ -4276,7 +4278,7 @@ class XeFMApp:
         self._open_search("filename")
 
     def show_content_search(self) -> None:
-        """Live content (grep) search under the active pane (the Shift-G dialog):
+        """Live content (grep) search under the active pane (``find_in_files``):
         opens the progressive search dialog in content mode. Typing walks the tree
         reading text files and streams each matching line; Tab switches to
         filename search; Enter feeds the *whole* result set into the pane —
@@ -4286,8 +4288,8 @@ class XeFMApp:
 
     def _open_search(self, initial_mode: str) -> None:
         """Open the progressive search dialog anchored over the active pane. Both
-        Shift-F and Shift-G land here — they differ only in the starting mode, and
-        Tab toggles between them in place. The dialog runs ``search_iter`` on a
+        ``find_files`` and ``find_in_files`` land here — they differ only in the
+        starting mode, and Tab toggles between them in place. The dialog runs ``search_iter`` on a
         worker thread and streams results in, so a huge tree never blocks the UI;
         each keystroke supersedes the previous search.
 
@@ -4409,7 +4411,10 @@ class XeFMApp:
         self.flm.refresh_files(pane)  # virtual-aware: sorts/filters the set in memory
         self._focus_result(pane, focus)
         self.log_info(f'Search results for "{query}": {len(paths)} item(s)  '
-                      f'— O go to location · Shift-O reveal in other pane · ⌫ back')
+                      f'— {self._keys_label("sync_current_to_other")} go to '
+                      f'location · {self._keys_label("sync_other_to_current")} '
+                      f'reveal in other pane · '
+                      f'{self._keys_label("go_parent")} back')
         self.panel.render()
 
     def _focus_result(self, pane: dict, focus) -> None:
@@ -4513,7 +4518,7 @@ class XeFMApp:
         self.panel.render()
 
     def _reveal_result_other(self) -> bool:
-        """Shift-O from the results pane: open the highlighted result's real
+        """``sync_other_to_current`` from the results pane: open the result's real
         directory in the *other* pane (landing on the file), keeping the result
         set intact here — reveal without leaving virtual mode. Only meaningful when
         the active pane is the virtual one; returns False otherwise."""
@@ -4628,7 +4633,7 @@ class XeFMApp:
         """The recent-directory picker: pick a previously visited directory and
         jump the active pane there. Shows most-recent-first, de-duplicated.
 
-        Shift-Delete forgets the highlighted directory (#271) — see
+        The picker's remove key forgets the highlighted directory (#271) — see
         :meth:`_forget_history_path`."""
         items = self._recent_dirs_most_recent_first()
         if not items:
@@ -5083,8 +5088,7 @@ class XeFMApp:
         self.panel.render()
 
     def diff_directories(self) -> None:
-        """Recursively compare the two panes' current directories side by side
-        (the Shift-EQUAL action)."""
+        """Recursively compare the two panes' current directories side by side."""
         left = self.pane("left")["path"]
         right = self.pane("right")["path"]
         show_directory_diff_viewer(self.panel, left, right,
@@ -5107,8 +5111,8 @@ class XeFMApp:
     def copy_names_to_clipboard(self) -> None:
         """Copy the active pane's selected file name(s) — or the cursor entry's
         name when nothing is selected — to the system clipboard, one per line
-        (Cmd-Shift-C). On the curses backend the clipboard is process-
-        local, but the copy still succeeds.
+        On the curses backend the clipboard is process-local, but the copy
+        still succeeds.
 
         The name copied is the one the pane *shows*: on a virtual (search-results)
         pane that is the path relative to the search root — ``sub/dir/a.txt``,
@@ -5123,8 +5127,8 @@ class XeFMApp:
 
     def copy_paths_to_clipboard(self) -> None:
         """Copy the active pane's selected full path(s) — or the cursor entry's
-        path when nothing is selected — to the system clipboard, one per line
-        (Cmd-Shift-P)."""
+        path when nothing is selected — to the system clipboard, one per
+        line."""
         self._copy_to_clipboard(str, "path")
 
     def _copy_to_clipboard(self, render, label: str) -> None:
@@ -5247,7 +5251,8 @@ class XeFMApp:
         dst_pane = self.pm.get_inactive_pane()
         if dst_pane.get("virtual"):
             # The other pane is a search-results feed, not a directory — there is
-            # nowhere to write. Reveal a real destination first (O / Shift-O).
+            # nowhere to write. Reveal a real destination first (the pane-sync
+            # actions).
             self.log_info(f"Cannot {kind}: the other pane is a search-results view")
             return True
         if self._is_archive(dst_pane["path"]):
@@ -6342,11 +6347,13 @@ class XeFMApp:
 
         Type a case-insensitive *contains* pattern (space-separated tokens all
         match); every hit is highlighted and the cursor jumps to the nearest match
-        at/after its current position. ``Up``/``Down`` walk the previous/next
-        match; ``Shift+Up``/``Shift+Down`` mark the current item on the way (the
-        file list's SPACE cannot: here it separates the pattern's tokens — issue
-        #347) and ``Ctrl+A`` marks every match at once; ``Enter`` stops at the
-        current match; ``Esc`` cancels and restores the pre-search cursor. Reuses
+        at/after its current position. ``isearch.prev_match`` /
+        ``isearch.next_match`` walk the matches; ``isearch.toggle_select_up`` /
+        ``isearch.toggle_select_down`` mark the current item on the way (the file
+        list's own toggle key cannot: a printable key here separates the
+        pattern's tokens — issue #347) and ``isearch.select_matches`` marks every
+        match at once; ``isearch.accept`` stops at the current match;
+        ``isearch.cancel`` restores the pre-search cursor. Reuses
         ``FileListManager.find_matches`` for the hits."""
         if self._isearch_active or not self.active_pane()["files"]:
             return
@@ -6432,8 +6439,9 @@ class XeFMApp:
 
     def _isearch_toggle_select(self, delta: int) -> None:
         """Toggle the focused item's selection, then walk to the previous
-        (``delta<0``) / next (``delta>0``) match — the file list's SPACE /
-        Shift-SPACE, whose "move" is one row where this one is one match.
+        (``delta<0``) / next (``delta>0``) match — the file list's
+        ``toggle_select_down`` / ``toggle_select_up``, whose "move" is one row
+        where this one is one match.
 
         The pattern field owns SPACE itself (it separates the pattern's tokens),
         which is what left marking unreachable during a search until now."""
@@ -6445,10 +6453,11 @@ class XeFMApp:
             self.panel.render()
 
     def _isearch_select_matches(self) -> None:
-        """Ctrl-A: mark every match the pattern has found — the counter's whole
+        """``isearch.select_matches``: mark every match found — the counter's whole
         "n" in one key — or clear them when they are all marked already.
 
-        The bulk answer to the same need Shift+Up/Down covers one file at a time:
+        The bulk answer to the same need the mark-and-move keys cover one file
+        at a time:
         the search has already worked out which files you mean. Items outside the
         match set are left alone, so a second search adds to the marks rather
         than replacing them, and the bar stays open to make that the obvious
@@ -6702,8 +6711,8 @@ class XeFMApp:
 
         These are the same attributes the pane's own size and date columns are
         drawn from, so a comparison now agrees with what the user is looking at —
-        and carries that display's staleness, which the file monitor and Ctrl-R
-        already exist to clear."""
+        and carries that display's staleness, which the file monitor and every
+        re-listing already exist to clear."""
         entries = pane.get("_listing_entries")
         if not entries:
             return {}

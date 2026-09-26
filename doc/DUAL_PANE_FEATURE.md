@@ -8,18 +8,21 @@ to switch which is active.
 Each pane keeps its own current directory, cursor position, selection, sort
 mode, filter, and history — they are fully independent.
 
-## Key bindings
+## Actions
 
-| Key | Action |
-|-----|--------|
-| **Tab** | Switch active pane |
-| **O** | Sync current pane's directory to the other pane |
-| **Shift-O** | Sync other pane's directory to the current pane |
-| **C** | Copy selected files to the other pane's directory |
-| **M** | Move selected files to the other pane's directory |
-| **W** | Compare files/directories between panes |
-| **[** | Move the pane boundary left (left pane smaller) |
-| **]** | Move the pane boundary right (left pane larger) |
+Press `?` in XeFM for the keys these are on — the help is built from your own
+`KEY_BINDINGS`, so it is always the truth for your config.
+
+| Action | What it does |
+|--------|--------------|
+| `switch_pane` | Switch active pane |
+| `sync_current_to_other` | Sync current pane's directory to the other pane |
+| `sync_other_to_current` | Sync other pane's directory to the current pane |
+| `copy_files` | Copy selected files to the other pane's directory |
+| `move_files` | Move selected files to the other pane's directory |
+| `compare_selection` | Compare files/directories between panes |
+| `adjust_pane_left` | Move the pane boundary left (left pane smaller) |
+| `adjust_pane_right` | Move the pane boundary right (left pane larger) |
 
 Copy/move always target the *other* pane, so the usual workflow is: point each
 pane at a directory, select in one, and act.
@@ -29,15 +32,14 @@ pane at a directory, select in one, and act.
 These patterns are what the two panes are really for:
 
 - **Copy/move between directories** — point one pane at the source and the other
-  at the destination, select files with Space, then press **C** (copy) or **M**
-  (move).
-- **Compare two directories** — put both panes on related directories and press
-  **W** to list files unique to each pane (or in both), then copy/move to
-  reconcile them.
-- **Backup** — source on the left, backup location on the right; press **A** to
-  select all files, then **C** to copy them across.
-- **Work in one directory from both sides** — press **O** to mirror the current
-  directory into the other pane, handy for selecting from one view while
+  at the destination, select the files, then copy or move them across.
+- **Compare two directories** — put both panes on related directories and run
+  `compare_selection` to list files unique to each pane (or in both), then
+  copy/move to reconcile them.
+- **Backup** — source on the left, backup location on the right; select every
+  file with `toggle_select_files`, then copy them across.
+- **Work in one directory from both sides** — `sync_current_to_other` mirrors the
+  current directory into the other pane, handy for selecting from one view while
   scrolling another part of a large directory in the second.
 - **Browse an archive** — navigate one pane into an archive (`archive://...`) and
   copy files out to the regular filesystem in the other pane.

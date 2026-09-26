@@ -157,7 +157,7 @@ listing.**
   view, O behaves like a normal pane: leave the results and open the *other*
   pane's directory, cursor synced. Both go through `_go_to_dir`; neither keeps a
   stale virtual listing.
-- **Shift-O** (`sync_other_to_current`) → `_reveal_result_other`: from the
+- **`sync_other_to_current`** → `_reveal_result_other`: from the
   results pane, open the highlighted result in the *other* pane, keeping the
   results intact. Blocked (with a message) if the other pane is the results view.
 

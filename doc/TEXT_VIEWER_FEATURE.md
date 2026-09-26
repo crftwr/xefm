@@ -3,8 +3,9 @@
 XeFM has a built-in text viewer for source code, config files, logs, and any
 other text. The encoding is detected automatically — UTF-8 with or without
 BOM, Shift-JIS, EUC-JP, ISO-2022-JP, Latin-1 / CP1252 and more, with a manual
-override on `Shift-E` (see [Text Encodings](TEXT_ENCODING_FEATURE.md)). Put the
-cursor on a file and press `V` (or `Enter` on a file with no other `enter`
+override through `change_encoding` (see
+[Text Encodings](TEXT_ENCODING_FEATURE.md)). Put the cursor on a file and run
+`view_file` (or `open_item` on a file with no other `enter`
 rule) to open it full-window, without leaving XeFM. Binary files are detected
 and show a short placeholder instead of mojibake.
 
@@ -14,23 +15,24 @@ switch between the rendered view and the plain source (see below and
 
 ## Opening & controls
 
-| Key | Action |
-|-----|--------|
-| `V` | View the focused file in the text viewer |
-| `Enter` | Same, for a file with no other `enter` rule |
-| `↑` `↓` | Scroll one line |
-| `PgUp` / `PgDn` | Scroll one page |
-| `Home` / `End` | Jump to the top / bottom |
+The viewer draws its own keys along the bottom, and `?` inside it lists them all
+— both read from your `KEY_BINDINGS`, so they are right whatever you have bound.
+
+| Action | What it does |
+|--------|--------------|
+| `view_file` | View the focused file in the text viewer |
+| `open_item` | Same, for a file with no other `enter` rule |
+| `↑` `↓` `PgUp` `PgDn` `Home` `End` | Scroll by line, page, or to either end |
 | `←` `→` | Scroll horizontally (when line wrap is off) |
-| `W` | Toggle line wrapping |
-| `F` | Incremental search — then `↑` / `↓` step between matches |
-| `M` | Toggle rendered / raw view (Markdown and other rich types) |
-| `Shift-E` | Choose the text encoding (Auto / explicit) |
-| `E` | Edit the viewed file in the configured editor |
+| `toggle_wrap` | Toggle line wrapping |
+| `isearch` | Incremental search — then `↑` / `↓` step between matches |
+| `toggle_view_mode` | Toggle rendered / raw view (Markdown and other rich types) |
+| `change_encoding` | Choose the text encoding (Auto / explicit) |
+| `edit_file` | Edit the viewed file in the configured editor |
 | `Cmd`/`Ctrl` + `C` | Copy the current selection |
 | `Cmd`/`Ctrl` + `A` | Select the whole file |
 | `?` | Key help |
-| `Q` / `Esc` | Close the viewer |
+| `quit` / `Esc` | Close the viewer |
 
 The view/edit keys are rebindable in your config's `KEY_BINDINGS`; the arrow /
 page / home / end scroll keys are viewer-local and always active.
@@ -79,7 +81,8 @@ always works for pasting back inside XeFM regardless.
 
 ### Rich copy from the Markdown view
 
-When you copy from the **rendered Markdown** view (press `M` on a `.md` file),
+When you copy from the **rendered Markdown** view (`toggle_view_mode` on a
+`.md` file),
 the copy carries rich formatting — bold, italics, inline code, links, headings
 and tables come across intact when you paste into a formatting-aware app, while
 a plain editor gets the plain text. See

@@ -1,9 +1,20 @@
-# Screen Redraw (Ctrl-L) Implementation
+# Screen Redraw Implementation
 
-> **Note.** The `force_repaint()` / backend plumbing referenced below lives in
-> the external **[PuiKit](https://github.com/crftwr/puikit)** framework
-> (`puikit/backends/curses_backend.py`, `puikit/backend.py`), where the API may
-> differ from what is sketched here. XeFM's redraw-trigger design still applies.
+> **Historical.** This records the fix as it was made against XeFM's own
+> renderer. Both halves have since moved into the external
+> **[PuiKit](https://github.com/crftwr/puikit)** framework — the repaint
+> plumbing (`puikit/backends/*`, `puikit/backend.py`) and the layer
+> invalidation, which is `Panel`'s now — so the class and function names below
+> no longer exist in XeFM. What survives is the reasoning, and one trigger: the
+> **`redraw` action**, whose key lives in `KEY_BINDINGS`. There is no longer a
+> key hardcoded outside the keymap.
+>
+> **And it stays a function key on purpose.** The goal is a UI that never needs
+> asking: a repaint is the escape hatch for a screen something *else* wrote over
+> (a multiplexer switch, a program that drew outside its lines), not a part of
+> using XeFM. An action reached that rarely does not get to spend one of the
+> scarce `Ctrl`+letter chords — see "Three cases" in `xefm/_config.py` for what
+> that budget looks like.
 
 ## Problem
 
@@ -25,8 +36,8 @@ Two independent gaps combined to cause this:
 
 2. **Ctrl+letter never produced a CONTROL modifier (terminal mode).** In the
    curses backend, control bytes (1-26) were not translated into `KeyEvent`s
-   carrying `ModifierKey.CONTROL`. A `Ctrl-L` key binding therefore could never
-   match in terminal mode.
+   carrying `ModifierKey.CONTROL`. A `Ctrl`+letter key binding therefore could
+   never match in terminal mode.
 
 ## Solution
 
@@ -73,35 +84,19 @@ next iteration of the main loop redraws everything.
 
 ### 5. Global key routing
 
-`XeFMEventCallback.on_key_event()` intercepts the redraw shortcut before routing
-to the layer stack, so it works in any context (file list, dialogs, text/diff
-viewers). It honors two triggers:
+The trigger was routed ahead of the layer stack, so it worked in any context
+(file list, dialogs, text/diff viewers). Two triggers existed: the `redraw`
+action, and one key wired outside the keymap as a fallback for configs written
+before the action existed.
 
-- A **hardcoded `Ctrl-L`** trigger. This is intentional and permanent: Ctrl-L is
-  the universal terminal convention for "redraw the screen", so it always works
-  regardless of configuration (including for users whose `~/.xefm/config.py`
-  predates this action — missing sub-keys of `KEY_BINDINGS` are not auto-merged
-  into existing user configs). It cannot be disabled via config by design.
-- The configurable `redraw` action (default `F5` in `_config.py`). Users can
-  bind additional keys to the action without affecting the hardcoded Ctrl-L.
-
-## Files changed
-
-| File | Change |
-|------|--------|
-| the curses backend | Translate Ctrl+letter (1-26) to CONTROL key events; add `force_repaint()` (now PuiKit's, see `puikit/backends/curses_backend.py`) |
-| the backend ABC | Concrete no-op `force_repaint()` (now PuiKit's, see `puikit/backend.py`) |
-| `xefm/app.py` | Add `UILayerStack.mark_all_dirty()` |
-| `xefm/app.py` | Add `FileManager.force_redraw()`; route Ctrl-L / `redraw` globally |
-| `xefm/_config.py` | Add `redraw: ['F5']` default key binding (Ctrl-L is hardcoded separately) |
-| `xefm/text_dialog.py` | Document Ctrl-L in the help dialog |
+**What is true now:** only the `redraw` action remains, resolved through
+`KEY_BINDINGS` like everything else, and the repaint it asks for is PuiKit's. A
+key wired outside the keymap could not survive the three-case split, and it does
+not need to: the action takes as many keys as a config wants to give it, for
+anyone whose terminal makes them reach for one.
 
 ## Tests
 
-- `test/test_ui_layer_basic.py` — `mark_all_dirty()` marks all layers and
-  triggers a full re-render.
-- `test/test_redraw_action.py` — `Ctrl-L` resolves to `redraw`; default config
-  binding present; `force_redraw()` invalidates the renderer and marks layers
-  dirty (including the renderer-error path).
-- `test/test_xefm_main_input_handling.py` — global handler routes both the
-  hardcoded Ctrl-L fallback and a rebound `redraw` action to `force_redraw()`.
+`test/test_keybindings_puikit_contract.py` covers the `redraw` action resolving
+from the default keymap. The layer-invalidation and `force_repaint()` tests
+listed here originally went to PuiKit with the code.

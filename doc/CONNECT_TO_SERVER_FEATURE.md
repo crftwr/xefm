@@ -2,7 +2,8 @@
 
 XeFM connects to a NAS or file server by itself. On macOS you no longer need to
 open Finder, walk into **Network** and open a share to get it into `/Volumes`;
-on Windows you no longer need Explorer's *Map network drive*. Press **Shift-D**,
+on Windows you no longer need Explorer's *Map network drive*. Open
+**Connect to Server** (`connect_server`),
 pick the server, and the pane lands in it.
 
 The connection is a real mount made by the operating system, not a private
@@ -19,8 +20,8 @@ Drives dialog like any other directory.
 
 | How | |
 |-----|--|
-| **Shift-D** | Opens Connect to Server directly |
-| **D** | The Drives dialog, whose first row is **Connect to Server…** |
+| `connect_server` | Opens Connect to Server directly |
+| `drives` | The Drives dialog, whose first row is **Connect to Server…** |
 | Menu | **Go → Connect to Server…** |
 
 ## The server list
@@ -47,7 +48,8 @@ Each row says what it is, and **Enter** does the obvious thing with it:
 | an address | Saved, not mounted. **Enter** connects, then moves the pane. |
 | `— on the network` | Found just now (see below). **Enter** asks it which shares it offers. |
 
-**Shift-Delete** forgets the highlighted server. It does not disconnect
+The list's **remove** key (`remove_list_item`) forgets the highlighted server.
+It does not disconnect
 anything — it removes the entry from the list, along with any password saved
 for it. A password is kept per server and account rather than per share, so if
 another saved row still uses the same account on that machine, the password
@@ -189,7 +191,7 @@ list described above.
 Two kinds of entry appear in the list, and they are merged into one:
 
 **Servers you save from the dialog** are remembered by XeFM and can be removed
-with **Shift-Delete**.
+with the list's **remove** key.
 
 **Servers written into `~/.xefm/config.py`** come from `NETWORK_SERVERS`:
 
@@ -202,7 +204,7 @@ NETWORK_SERVERS = [
 ```
 
 `name` is what the list shows, `url` is the address, and `user` is optional. A
-config entry cannot be removed with **Shift-Delete** — the config is the source
+config entry cannot be removed from the list — the config is the source
 of truth for it, the same way it is for Favorites.
 
 **Never put a password in the config file.** There is no field for one, and
@@ -233,12 +235,13 @@ reported on its own, because retyping a password would not help.
 XeFM does not restore connections when it launches. Windows offers this for
 mapped drives and it is deliberately not copied here: an unreachable server
 turns startup into a network wait, and a file manager that will not open because
-a NAS is off is worse than one extra keypress. A saved server is one **Shift-D**
-and one **Enter** away.
+a NAS is off is worse than one extra keypress. A saved server is one dialog and
+one **Enter** away.
 
 ## Disconnecting and ejecting
 
-Both live in the **Drives** dialog (**D**), on **Shift-Delete**:
+Both live in the **Drives** dialog, on its **remove** key
+(`remove_list_item`):
 
 - On a **network mount**, it disconnects.
 - On an **external volume** — a USB stick, an SD card, an external disk — it

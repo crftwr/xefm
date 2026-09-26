@@ -184,8 +184,9 @@ them up through `_copy_missing_fields`.
 
 ## Out of scope (deliberately)
 
-- **Filter (`;`), Shift-F, Shift-G** — not incremental search; Shift-F is a
-  whole-name glob by design (#231) and content grep is already a regex.
+- **`filter`, `find_files`, `find_in_files`** — not incremental search;
+  `find_files` is a whole-name glob by design (#231) and content grep is already
+  a regex.
   Extending Migemo there is a separate decision (#332 §5).
 - **Async / two-phase result delivery** (#332 comment 2) — unnecessary at
   the current numbers: measured ~31ms for the first gated keystroke

@@ -159,9 +159,13 @@ On Linux there is no desktop backend; use terminal mode.
 
 ### Keyboard Shortcuts
 
-All keyboard shortcuts work identically in both terminal and desktop modes. The same key bindings apply regardless of which backend you're using.
+It is one keymap in both terminal and desktop mode. Two actions get a second,
+platform-native chord in a desktop window — opening a file with the OS app, and
+copying text on macOS — and everything else is shared; see "Three cases" in
+`~/.xefm/config.py`.
 
-For a complete list of all keyboard shortcuts, see the [Keyboard Shortcuts Reference](#keyboard-shortcuts-reference) section. You can also press **?** at any time while using XeFM to see the built-in help dialog with all available shortcuts.
+Press **?** at any time for the built-in help, which is built from your own
+`KEY_BINDINGS` and is therefore always the truth for your config.
 
 ### Performance
 
@@ -204,12 +208,15 @@ When you first run XeFM, you'll see:
 - **Status Bar**: Current path and file information
 
 ### Essential Keys
-- **Tab**: Switch between left and right panes
-- **Arrow Keys**: Navigate files and directories
-- **Enter**: Enter directory or view text file
-- **Backspace**: Go to parent directory
-- **\\**: Go to the root of the current drive or location
-- **?**: Show help dialog
+- **Arrow keys**: Navigate files and directories
+- `switch_pane`: Switch between left and right panes
+- `open_item`: Enter a directory or view a text file
+- `go_parent`: Go to the parent directory
+- `go_root`: Go to the root of the current drive or location
+- `help`: Show the help dialog — and the key every other action is on
+
+Press `?` (`help`) first: that dialog is built from your own `KEY_BINDINGS`, so
+it is the one list of keys that is always right for your config.
 - **Q**: Quit XeFM
 
 ---
@@ -243,25 +250,27 @@ When you first run XeFM, you'll see:
 ## File Operations
 
 ### Basic Operations
-```
-Space    - Select/deselect file
-C        - Copy selected files to the other pane
-M        - Move selected files (or create a directory when nothing is selected)
-K        - Delete selected files (also the Delete key)
-R        - Rename file (or batch-rename multiple)
-E        - Edit the selected files (or the focused file) with the external editor
-Shift-E  - Create a new file
-```
+
+| Action | What it does |
+|--------|--------------|
+| `toggle_select_down` | Select/deselect the file and step down |
+| `copy_files` | Copy selected files to the other pane |
+| `move_files` | Move selected files |
+| `create_directory` | Create a directory (the same key, with nothing selected) |
+| `delete_files` | Delete selected files |
+| `rename` | Rename a file (or batch-rename several) |
+| `edit_file` | Edit the selection (or the focused file) in the external editor |
+| `create_file` | Create a new file |
 
 **See detailed documentation**: 
 - [File Operations Feature](FILE_OPERATIONS_FEATURE.md)
 
 ### Multi-Selection
-1. Use **Space** to select individual files
-2. Use **A** to select/deselect all files
-3. Use **Shift-A** to select/deselect all items (files + directories)
-4. Use **Ctrl-Down** / **Ctrl-Up** to jump the cursor to the next / previous selected item
-5. Perform operations on selected files
+1. `toggle_select_down` selects individual files
+2. `toggle_select_files` selects/deselects all files
+3. `toggle_select_items` selects/deselects all items (files + directories)
+4. `cursor_next_selected` / `cursor_prev_selected` jump between what you selected
+5. Perform operations on the selection
 
 **See detailed documentation**: [Key Bindings Feature](KEY_BINDINGS_FEATURE.md)
 
@@ -287,25 +296,21 @@ Shift-E  - Create a new file
 ## Navigation
 
 ### Directory Navigation
-```
-↑↓       - Move up/down in file list
-←→       - Switch panes or enter/exit directories
-Enter    - Enter directory or view file
-Backspace - Go to parent directory
-\        - Go to the root of the current drive or location
-Home/End - Go to first/last file
-Page Up/Down - Navigate by page
-Ctrl-Home/End - Move the cursor to the first / last item
-```
+
+The arrows move the cursor and `nav_left` / `nav_right` walk between the panes
+and in and out of directories; `open_item` enters a directory or views a file,
+`go_parent` goes up, `go_root` jumps to the root of the current drive or
+location, and `cursor_top` / `cursor_bottom` go to the first / last item.
 
 ### Quick Navigation
-```
-J        - Show favorite directories
-Shift-J  - Jump to a path (a file path lands the cursor on the file)
-H        - Show directory history
-O        - Sync current pane to the other pane
-Shift-O  - Sync other pane to the current pane
-```
+
+| Action | What it opens |
+|--------|---------------|
+| `favorites` | Your favorite directories |
+| `jump_to_path` | Jump to a path (a file path lands the cursor on the file) |
+| `history` | Directories this pane has visited |
+| `sync_current_to_other` | Point the other pane at this one's directory |
+| `sync_other_to_current` | Point this pane at the other one's directory |
 
 **See detailed documentation**: 
 - [Navigation Dialogs Feature](NAVIGATION_DIALOGS_FEATURE.md)
@@ -315,37 +320,33 @@ Shift-O  - Sync other pane to the current pane
 ## Search and Filtering
 
 ### Search Methods
-```
-F        - Incremental search (filter as you type)
-Shift-F  - Threaded filename search dialog
-Shift-G  - Content search (grep) dialog
-;        - Filter the pane (a pattern, or a filter from your config)
-:        - Clear current filter
-```
+
+| Action | What it does |
+|--------|--------------|
+| `isearch` | Incremental search (match as you type) |
+| `find_files` | Threaded filename search dialog |
+| `find_in_files` | Content search (grep) dialog |
+| `filter` | Filter the pane (a pattern, or a filter from your config) |
+| `clear_filter` | Clear the current filter |
 
 ### Sorting
-```
-S        - Open the sort dialog (key + order)
-1        - Quick sort by name
-2        - Quick sort by extension
-3        - Quick sort by size
-4        - Quick sort by date
-```
+`sort` opens the sort dialog (key + order), and `quick_sort_name`,
+`quick_sort_ext`, `quick_sort_size` and `quick_sort_date` each sort in one press.
 
 See [Sort Dialog Feature](SORT_DIALOG_FEATURE.md) for the dialog's controls
-(F/E/S/T choose a key directly; Left/Right choose ascending/descending).
+(a key is chosen by its initial; Left/Right choose ascending/descending).
 
 ### Incremental search keys
 
-Press `F`, then type. While the search bar is open:
+Run `isearch`, then type. While the search bar is open:
 
-| Key | Action |
-|-----|--------|
-| ↑ / ↓ | Previous / next match |
-| Shift+↑ / Shift+↓ | Select the file, then move to the previous / next match |
-| Ctrl+A | Select every match at once — press again to clear them |
-| Enter | Stop at the current match |
-| Esc | Cancel and go back to where the cursor was |
+| Action | What it does |
+|--------|--------------|
+| `isearch.prev_match` / `isearch.next_match` | Previous / next match |
+| `isearch.toggle_select_up` / `isearch.toggle_select_down` | Select the file, then move to the previous / next match |
+| `isearch.select_matches` | Select every match at once — again to clear them |
+| `isearch.accept` | Stop at the current match |
+| `isearch.cancel` | Cancel and go back to where the cursor was |
 
 The search stops where its matches do: a character that would leave nothing
 matching is refused, so the pattern stays on the last file it found instead of
@@ -354,10 +355,11 @@ romaji for Japanese keeps a couple of characters of leeway, since `ni` finds
 Japanese only once it is `nih` — see [Migemo Search](MIGEMO_SEARCH_FEATURE.md).)
 
 Space types a space — it separates the pattern's words (`re 24` finds
-`report_2024.txt`), so selecting a file uses Shift+↓ rather than the file list's
-Space. Ctrl+A marks the whole set the counter on the right is showing: type
-`.log`, press Ctrl+A, and every log file is selected. Files selected outside the
-search are left alone, so a second search adds to them. Every one of these keys can be rebound; see
+`report_2024.txt`), which is why selecting a file here is its own action rather
+than the file list's toggle key. `isearch.select_matches` marks the whole set the
+counter on the right is showing: type `.log`, run it, and every log file is
+selected. Files selected outside the search are left alone, so a second search
+adds to them. Every one of these keys can be rebound; see
 [Customization](CUSTOMIZATION_FEATURE.md#the-incremental-search-bar).
 
 ### Search Tips
@@ -365,19 +367,19 @@ search are left alone, so a second search adds to them. Every one of these keys 
 - **Japanese by romaji (Migemo)**: In incremental search, typing `kensaku`
   also finds `検索` — no IME needed. See [Migemo Search](MIGEMO_SEARCH_FEATURE.md).
 - **Pattern filtering**: Use wildcards like `*.txt` or `test_*`
-- **Your own filters**: The `;` prompt also lists the filters your config
+- **Your own filters**: The `filter` prompt also lists the filters your config
   defines, pinned under *clear filter*. They can match on anything about a file,
   not just its name — "modified today", "over 100 MB". See
   [Customization](CUSTOMIZATION_FEATURE.md#your-own-filters-filters).
-- **Filename search (Shift-F)**: The query is an *exact* glob matched against the
+- **Filename search** (`find_files`): The query is an *exact* glob matched against the
   whole filename — `report.txt` matches only that name. Add wildcards for partial
   matches: `report*`, `*.py`, or `*report*` for the old "contains" behaviour.
 - **Content search**: Search inside files with progress tracking. An active
-  pane filter (`;`) narrows the search to the files it matches — filter to
+  pane filter narrows the search to the files it matches — filter to
   `*.txt` and only `.txt` files are grepped (subdirectories are still walked).
   The dialog title shows the pattern while it applies. Unicode files with a
   BOM (UTF-8, UTF-16, UTF-32) are searched as text, not skipped as binary.
-- **Quick sort**: Use number keys 1-4 for instant sorting
+- **Quick sort**: the `quick_sort_*` actions sort in one press
 - **ESC**: Cancel any search operation
 
 **See detailed documentation**: [Search Animation Feature](SEARCH_ANIMATION_FEATURE.md)
@@ -387,32 +389,27 @@ search are left alone, so a second search adds to them. Every one of these keys 
 ## Text Viewing and Editing
 
 ### Built-in Text Viewer
-```
-V        - View text file in built-in viewer
-Enter    - Open item (views a text file)
-```
+
+`view_file` opens the focused file in the built-in viewer; `open_item` does too,
+for a file with no `enter` rule of its own.
 
 ### Text Viewer Controls
-```
-q/ESC    - Exit viewer
-↑↓       - Scroll up/down
-←→       - Scroll left/right
-Page Up/Down - Page scrolling
-Home/End - Jump to start/end
-n        - Toggle line numbers
-w        - Toggle line wrapping
-s        - Toggle syntax highlighting
-/        - Search within file
-```
+
+The arrows, paging and Home/End scroll; `toggle_wrap` turns line wrapping on and
+off, `toggle_view_mode` switches between the rendered and raw view of a Markdown
+or other rich file, `change_encoding` picks the text encoding, `isearch` searches
+inside the file and `edit_file` hands it to your editor. `quit` (or Esc) closes
+the viewer. The viewer draws its own keys along the bottom, and `?` inside it
+lists them all — see
+[Text Viewer Feature](TEXT_VIEWER_FEATURE.md).
 
 ### External Editor
-```
-E        - Edit the selected files (or the focused file)
-Shift-E  - Create a new file
-```
 
-With several files selected, `E` opens them all — files sharing an editor are
-passed to it in one launch (`vim a.txt b.txt`).
+`edit_file` edits the selection (or the focused file); `create_file` makes a new
+one.
+
+With several files selected, `edit_file` opens them all — files sharing an editor
+are passed to it in one launch (`vim a.txt b.txt`).
 
 Configure your preferred editor in `~/.xefm/config.py`:
 ```python
@@ -422,9 +419,8 @@ TEXT_EDITOR = 'vim'  # or 'nano', 'code', etc.
 **See detailed documentation**: [Text Editor Feature](TEXT_EDITOR_FEATURE.md)
 
 ### Subshell
-```
-Shift-X  - Open a shell in the current directory (terminal mode only)
-```
+
+`subshell` opens a shell in the current directory (terminal mode only).
 
 Exit the shell to return to XeFM. The shell sees the `XEFM_*` environment
 variables (pane directories and selections) and a `[XeFM]` prompt prefix.
@@ -511,45 +507,40 @@ s3://my-bucket/path/to/files/
 ## Advanced Features
 
 ### Sub-shell Mode
-Press **Shift+X** to enter sub-shell mode (terminal mode only — the desktop
-app has no terminal to hand over) with environment variables:
+`subshell` enters sub-shell mode (terminal mode only — the desktop app has no
+terminal to hand over) with environment variables:
 - `XEFM_LEFT_DIR`: Left pane directory
 - `XEFM_RIGHT_DIR`: Right pane directory
 - `XEFM_THIS_DIR`: Current pane directory
 - `XEFM_OTHER_DIR`: Other pane directory
-- `XEFM_THIS_SELECTED`: Files selected with Space in the current pane — empty
-  when nothing is selected
+- `XEFM_THIS_SELECTED`: Files selected in the current pane — empty when nothing
+  is selected
 - `XEFM_THIS_FOCUSED`: The item under the cursor in the current pane, whatever
   is selected (`*_FOCUSED` exists for the other three panes too)
 
 ### External Programs
-Press **x** to show external programs menu. Programs have access to XeFM environment variables.
+`programs` shows the external-programs menu. Programs have access to XeFM
+environment variables.
 
 **See detailed documentation**: [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md)
 
 ### Pane Layout
-```
-[        - Make left pane smaller
-]        - Make left pane larger
--        - Reset pane split to 50/50
-{        - Make log pane larger (Shift+[)
-}        - Make log pane smaller (Shift+])
-_        - Reset log pane height (Shift+-)
-```
+
+`adjust_pane_left` / `adjust_pane_right` move the boundary between the panes and
+`reset_pane_boundary` puts it back at 50/50; `adjust_log_up` / `adjust_log_down`
+resize the log pane and `reset_log_height` restores it.
 
 ### File Comparison
-```
-=        - View diff between two selected text files (requires 2 files selected)
-Shift-=  - Compare the two panes' current directories recursively
-W        - Show file and directory comparison options
-```
+
+`diff_files` shows the diff between two selected text files, `diff_directories`
+compares the two panes' current directories recursively, and
+`compare_selection` opens the file and directory comparison options.
 
 **See detailed documentation**: [Diff Viewer Feature](DIFF_VIEWER_FEATURE.md) (file and directory diff)
 
 ### View and Display Options
-```
-.        - Toggle visibility of hidden files
-```
+
+`toggle_hidden` shows or hides hidden files.
 
 Other display settings — sorting, hidden files, themes — are also in the
 menu bar under **View**.
@@ -785,114 +776,23 @@ For detailed information about specific features, see these dedicated guides:
 
 ## Keyboard Shortcuts Reference
 
-XeFM provides extensive keyboard shortcuts for efficient file management. All shortcuts work identically in both terminal and desktop modes. Press **?** at any time to see the help dialog with all available shortcuts.
+**The reference is in XeFM.** Press `?` for the help dialog: it is generated from
+the keymap your config actually produced, action by action, so it can never drift
+from what your keys do. The menu bar shows the same keys next to the items they
+run.
 
-### Navigation
+This guide names **actions** rather than keys for that reason — `copy_files`,
+`find_files`, `jump_to_path` — and one place holds the keys they ship on:
+`~/.xefm/config.py`, which is a copy of
+[`xefm/_config.py`](../xefm/_config.py) with every default written out and
+commented. Reading that file is how you learn the defaults; editing it is how you
+change them.
 
-| Key | Action |
-|-----|--------|
-| ↑ / ↓ | Move cursor up / down |
-| ← / → | Switch to the left / right pane |
-| Tab | Switch the active pane |
-| Enter | Open item (enter directory, open file, or enter archive) |
-| Backspace | Go to the parent directory |
-| \\ | Go to the root of the current drive or location |
-| Page Up / Page Down | Scroll by a page |
-| Ctrl+Home / Ctrl+End | Move the cursor to the first / last item |
-| Cmd+Enter | Open with the OS default application |
-| Alt+Enter | Reveal in the OS file manager |
-
-### Selection
-
-| Key | Action |
-|-----|--------|
-| Space | Toggle selection and move down |
-| Shift+Space | Toggle selection and move up |
-| Home | Select all items |
-| End | Unselect all |
-| A | Toggle all *files* |
-| Shift+A | Toggle all *items* (files + directories) |
-| Ctrl+↓ / Ctrl+↑ | Jump the cursor to the next / previous selected item |
-| W | Compare-and-select against the other pane |
-
-### File Operations
-
-| Key | Action | Selection |
-|-----|--------|-----------|
-| C | Copy selection to the other pane | required |
-| M | Move selection to the other pane | required |
-| M | Create a new directory | only when nothing is selected |
-| K or Delete | Delete selection | required |
-| R | Rename the focused file/directory | any |
-| Shift+E | Create a new file | any |
-| E | Edit the selected file(s) (external editor) | any |
-| V | View the file (built-in viewer) | any |
-| I | Show file details | any |
-| = | Diff two selected files | 2 files |
-| Shift+= | Diff two directories recursively | 2 dirs |
-| Cmd+Shift+C | Copy name(s) to the clipboard | any |
-| Cmd+Shift+P | Copy path(s) to the clipboard | any |
-
-### Search, Filter and Sort
-
-| Key | Action |
-|-----|--------|
-| F | Incremental search (isearch) |
-| Shift+F | Filename search dialog |
-| Shift+G | Content (grep) search dialog |
-| ; | Filter the pane by pattern or by a filter you defined (Shift+Delete forgets a saved pattern) |
-| : | Clear the filter |
-| S | Sort dialog (key + order) |
-| 1 / 2 / 3 / 4 | Quick sort by name / extension / size / date |
-
-### Archive Operations
-
-| Key | Action | Selection |
-|-----|--------|-----------|
-| P | Create an archive from the selection | required |
-| U | Extract the selected archives (or the cursor entry) | any |
-
-### Panes and Log
-
-| Key | Action |
-|-----|--------|
-| [ / ] | Make the left pane smaller / larger |
-| - | Reset the pane split |
-| { / } | Make the log pane larger / smaller |
-| _ | Reset the log-pane height |
-| Shift+↑ / Shift+↓ | Scroll the log up / down |
-| Shift+← / Shift+→ | Page the log up / down |
-| O | Sync the current pane's directory to the other pane |
-| Shift+O | Sync the other pane's directory to the current pane |
-
-### Places and Dialogs
-
-| Key | Action |
-|-----|--------|
-| J | Favorite directories |
-| Shift+J | Jump to a path — a file path goes to its directory and focuses it |
-| H | History for the current pane (Shift+Delete forgets an entry) |
-| D | Drives / storage selection dialog (Shift+Delete disconnects or ejects) |
-| Shift+D | Connect to a network server — lists what it finds (macOS and Windows) |
-
-### Other
-
-| Key | Action |
-|-----|--------|
-| ? | Show the help dialog |
-| Q | Quit XeFM |
-| . | Toggle hidden files |
-| X | External programs menu |
-| Shift+X | Enter subshell (command line) mode |
-| Z | View options menu |
-| Shift+Z | Settings / configuration menu |
-| Ctrl+L | Redraw the screen (always available; recovers the display after a terminal-multiplexer switch) |
-| F5 | Redraw the screen (rebindable via `redraw` in config) |
-
-> **Letter keys are case-sensitive.** Most file-operation bindings use the
-> **uppercase** letter (e.g. `C`, `M`, `K`, `R`), and their variants use `Shift`
-> (e.g. `Shift-F`, `Shift-E`). All bindings are customizable — see below.
-
+- Which chords work where (a terminal cannot send everything a window can), and
+  which ones your terminal or editor takes first:
+  [Key Bindings](KEY_BINDINGS_FEATURE.md)
+- Viewer- and dialog-local actions, and how to rebind them:
+  [Customization](CUSTOMIZATION_FEATURE.md)
 
 ### Customizing Key Bindings
 

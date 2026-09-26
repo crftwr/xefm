@@ -265,17 +265,12 @@ between the desktop app and terminal mode.
 
 ### Keyboard Shortcuts
 
-All keyboard shortcuts work identically in desktop mode:
+Every key binding works the same in desktop mode — it is the same keymap. Two
+actions get a second, platform-native chord in a desktop window (opening a file
+with the OS app, and copying text on macOS); everything else is shared with the
+terminal. See "Three cases" in `~/.xefm/config.py`.
 
-- **Navigation**: Arrow keys, Tab, Enter, Backspace
-- **File Operations**: C (copy), M (move), K (delete), R (rename)
-- **Selection**: Space, A (all files), Shift-A (all items)
-- **Search**: F (incremental), Shift-F (filename), Shift-G (content)
-- **Theme**: T (cycle color schemes)
-- **Help**: ? (help dialog)
-- **Quit**: Q
-
-See the [User Guide](XEFM_USER_GUIDE.md) for the complete keyboard reference.
+Press `?` at any time for the keys your config is using.
 
 ### Window Management
 

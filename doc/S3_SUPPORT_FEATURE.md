@@ -66,7 +66,7 @@ xefm s3://my-bucket-name/
 
 Or navigate to S3 from within XeFM:
 
-1. Press the key for "Jump to Path" (default: `Shift-J`)
+1. Open **Jump to Path** (`jump_to_path`)
 2. Enter: `s3://my-bucket-name/`
 3. Press Enter
 
@@ -140,14 +140,14 @@ pane's current directory — there is no separate clipboard/paste step.
 
 #### Between S3 Locations
 
-Same as above with both panes on S3 paths: select in one pane, press `C` to copy to the other.
+Same as above with both panes on S3 paths: select in one pane, then `copy_files` to the other.
 
 ### Moving Files
 
 Move works like copy — it sends the selection to the other pane's directory:
 
 1. Open the destination in the other pane
-2. Select the file(s) and press `M`
+2. Select the file(s) and run `move_files`
 3. Confirm the move
 
 **Note:** Moving between S3 and local storage performs copy + delete.

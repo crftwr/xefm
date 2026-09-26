@@ -80,13 +80,9 @@ from your location inside it, for example
 
 ### Navigating
 
-| Key | Action |
-|-----|--------|
-| **↑ / ↓** | Move cursor |
-| **Page Up / Down** | Scroll by page |
-| **Home / End** | Jump to first / last entry |
-| **ENTER** | Enter a directory within the archive |
-| **Backspace** | Go to the parent directory (at the root, exit the archive) |
+An archive browses like any directory: the cursor, paging and `open_item` all
+behave as they do in the filesystem, and `go_parent` at the archive root leaves
+the archive.
 
 Example: from `/home/user/documents/`, press **ENTER** on `backup.zip` to view
 `archive:///home/user/documents/backup.zip#`, **ENTER** on `projects/` to go
@@ -94,7 +90,7 @@ deeper, then **Backspace** twice to return to the filesystem.
 
 ### Viewing files inside an archive
 
-Put the cursor on a file and press **V**. XeFM extracts it to a temporary
+Put the cursor on a file and run `view_file`. XeFM extracts it to a temporary
 location, shows it in the built-in viewer (the title shows the full archive
 path), and cleans up the temporary file automatically when you close the viewer.
 
@@ -126,20 +122,15 @@ internal path within the archive.
 
 ### Sorting
 
-Sort the archive listing with the same quick-sort keys used everywhere in XeFM:
-
-| Key | Sort by |
-|-----|---------|
-| **1** | Name |
-| **2** | Extension |
-| **3** | Size |
-| **4** | Modification date |
+Sort the archive listing with the same quick-sort actions used everywhere in
+XeFM — `quick_sort_name`, `quick_sort_ext`, `quick_sort_size` and
+`quick_sort_date`, or the `sort` dialog.
 
 Directories are always listed first, regardless of sort mode.
 
 ### Searching inside an archive
 
-While browsing an archive, press **Shift-F** to open the filename search dialog.
+While browsing an archive, `find_files` opens the filename search dialog.
 Enter a pattern (wildcards like `*.txt` work) and XeFM lists matching files with
 their full paths inside the archive. Press **ENTER** on a result to jump to it.
 The search covers the current archive only, starting from your current location
@@ -150,7 +141,7 @@ search runs.
 
 Archive browsing works with XeFM's two panes: browse an archive in one pane while
 a regular directory (or a different archive) is shown in the other, and copy
-files between them. **O** / **Shift-O** sync directories between panes and work
+files between them. The pane-sync actions work between panes, and work
 with archives too.
 
 ## Password-protected archives
@@ -164,7 +155,7 @@ and the value can't be copied or cut from the field.
 ### Extracting a password-protected archive
 
 1. Put the cursor on the encrypted archive (or select it among others) and
-   press **U** (Extract Archive).
+   run `extract_archive`.
 2. Confirm the destination as usual.
 3. XeFM detects that the archive is encrypted and asks for its password. In a
    batch the prompt appears when that archive's turn comes, so each encrypted
@@ -280,7 +271,7 @@ install anything.
 
 ## Tips
 
-- Use **Shift-F** to find files quickly in large archives instead of browsing by
+- Use `find_files` to find files quickly in large archives instead of browsing by
   hand.
 - Select several files before pressing **C** to extract them all at once.
 - Check sizes with **I** before extracting large entries.

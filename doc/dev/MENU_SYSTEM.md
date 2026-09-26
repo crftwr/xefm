@@ -88,7 +88,7 @@ The two fallback widgets live in `puikit/widgets/menu.py` (re-exported from
   pulldown's open state, never from focus — taking focus on click is what left
   a title stuck inverted after an outside click dismissed its modal pulldown
   (#304). Keyboard activation is `MenuBar.open_menu(index=0)` — XeFM binds
-  the `menu` action (`F10`, bare `ALT` on the Windows terminal) to it in
+  the `menu` action to it in
   `dispatch()` — and `MenuBar.open_menu_mnemonic(letter)` for the Alt+letter
   accelerators (Alt+F → File, by title first letter), which XeFM tries in
   `_menu_mnemonic()` only after the keymap had no binding for the chord.
