@@ -84,6 +84,7 @@ from xefm import name_key
 from xefm.log_manager import (LOG_ERROR_SOURCE, LOG_SOURCE, clear_log_sink,
                               getLogger, route_library_logger, set_log_sink)
 from xefm.pane_manager import PaneManager
+from xefm import command_list
 from xefm import path_list
 from xefm import path_schemes
 from xefm.path import Path
@@ -2719,6 +2720,7 @@ class XeFMApp:
                 "copy_names": (self.copy_names_to_clipboard, True),
                 "copy_paths": (self.copy_paths_to_clipboard, True),
                 "import_list_from_clipboard": (self.import_list_from_clipboard, True),
+                "import_list_from_command": (self.import_list_from_command, False),
                 "copy_files": (self.copy_files, None),
                 "move_files": (self.move_files, None),
                 "duplicate_files": (self.duplicate_files, None),
@@ -3237,6 +3239,9 @@ class XeFMApp:
             MenuItem("Import List from Clipboard",
                      on_select=lambda: self._menu("import_list_from_clipboard"),
                      shortcut=sc("import_list_from_clipboard")),
+            MenuItem("Import List from Command…",
+                     on_select=self.import_list_from_command,
+                     shortcut=sc("import_list_from_command")),
             SEPARATOR,
             MenuItem("Copy Log Selection",
                      on_select=lambda: self._menu("copy_log_selection"),
@@ -5340,6 +5345,93 @@ class XeFMApp:
         self.open_path_list(self.pm.active_pane, lines,
                             title="Clipboard")
 
+    #: State key for the last command ``import_list_from_command`` ran, offered
+    #: again the next time — the commonest next command is the same one.
+    _LIST_COMMAND_STATE = "list_command.last"
+
+    def import_list_from_command(self) -> None:
+        """Run a command and show the paths it prints, one per line, as the
+        active pane's listing — Midnight Commander's *External panelize*
+        (#453 ③).
+
+        ``rg -l TODO``, ``git ls-files -m``, ``fd -e py``, ``es.exe <query>``:
+        any tool that prints paths becomes a search XeFM can show, with no
+        clipboard in between. The command runs through the shell in the
+        pane's directory, with the same ``XEFM_*`` environment a ``PROGRAMS``
+        entry gets, and relative lines resolve against that same directory.
+        The field starts with the last command run."""
+        pane = self.active_pane()
+        _env, cwd = self._program_env(pane)
+        if path_schemes.is_uri(cwd):
+            self.log_info(f"Commands run in a local directory; this pane is "
+                          f"showing {cwd}")
+            return
+        last = self.state_manager.get_state(self._LIST_COMMAND_STATE, "") or ""
+
+        def accept(text: str) -> None:
+            command = text.strip()
+            if command:
+                self._run_list_command(self.pm.active_pane, command)
+
+        show_input(self.panel, title="Import List from Command",
+                   prompt="Command:", text=last, on_accept=accept,
+                   on_cancel=self.panel.render, region=self._active_pane_region())
+        self.panel.render()
+
+    def _run_list_command(self, pane_name: str, command: str) -> None:
+        """Run ``command`` for :meth:`import_list_from_command` on a task, with
+        the progress dialog counting the lines it prints and Esc stopping it —
+        the whole process tree, not only the shell — then hand its output to
+        :meth:`open_path_list`.
+
+        The command runs once. A refresh after a file operation drops the rows
+        that are gone, as for any list; it does not run the command again,
+        which after every delete would be slow and would reorder the rows
+        under the cursor."""
+        pane = self.pane(pane_name)
+        env, cwd = self._program_env(pane)
+        self.state_manager.set_state(self._LIST_COMMAND_STATE, command)
+        task = Task(command, config=self.config, kind="list_command",
+                    busy_label="Running…")
+
+        def run(t: Task) -> dict:
+            output = command_list.run(
+                command, cwd=cwd, env=env, cancelled=t.cancelled,
+                on_count=lambda n: setattr(t, "counted", n))
+            return {"output": output, "cancelled": output.cancelled}
+
+        def on_done(res: dict) -> None:
+            output = res.get("output")
+            if output is None or output.cancelled:
+                self.log_info(f"{command}: cancelled")
+            elif output.code is None:
+                self.log_info(f"{command}: could not run: {output.error}")
+            else:
+                self._open_command_output(pane_name, command, cwd, output)
+            self.panel.render()
+
+        self.tasks.submit(task, self.panel, run=run, on_done=on_done)
+
+    def _open_command_output(self, pane_name: str, command: str, cwd: str,
+                             output) -> None:
+        """Show what ``command`` printed, or say why there is nothing to show.
+
+        A nonzero exit is not by itself a failure: ``grep`` and ``rg`` exit 1
+        for "no match", and a ``find`` that met one unreadable directory exits
+        1 having printed everything else. So paths that arrived are shown
+        whatever the code, and the code is only reported when nothing did —
+        together with the command's last words on stderr, which is where it
+        says why."""
+        for line in output.stderr_tail:
+            self._log_queue.put(("STDERR", line))
+        self._wake_pump()
+        lines = path_list.parse(output.stdout)
+        if not lines:
+            code = f" (exit code {output.code})" if output.code else ""
+            self.log_info(f"{command}: printed no paths{code}")
+            return
+        self.open_path_list(pane_name, lines, title=command, base=cwd)
+
     def open_path_list(self, pane_name: str, paths, *, title: str,
                        base=None) -> None:
         """Open ``paths`` in pane ``pane_name`` as a virtual listing headed
@@ -7094,6 +7186,8 @@ class XeFMApp:
             ("copy_paths", "Copy selection's full path(s) to the clipboard"),
             ("import_list_from_clipboard",
              "Show the paths on the clipboard as this pane's list (Edit menu)"),
+            ("import_list_from_command",
+             "Show the paths a command prints as this pane's list (Edit menu)"),
             ("move_files", "Move selection to the other pane"),
             ("delete_files", "Delete selection"),
             ("create_archive", "Create archive from selection"),

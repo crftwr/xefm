@@ -432,6 +432,8 @@ _FILER_ACTIONS = [
     # and this is not a paste — nothing is written, the pane only shows.
     _a("import_list_from_clipboard", FILER,
        "Show the paths on the clipboard as the pane's list", default_keys=()),
+    _a("import_list_from_command", FILER,
+       "Show the paths a command prints as the pane's list", default_keys=()),
     # File operations
     _a("copy_files", FILER, "Copy the selection to the other pane"),
     _a("move_files", FILER, "Move the selection to the other pane"),

@@ -98,6 +98,7 @@ Everything that goes through the clipboard.
 | Copy Name(s) | `copy_names` |
 | Copy Full Path(s) | `copy_paths` |
 | Import List from Clipboard | `import_list_from_clipboard` *(ships unbound)* — see [File lists](FILE_LIST_IMPORT_FEATURE.md) |
+| Import List from Command… | `import_list_from_command` *(ships unbound)* |
 | Copy Log Selection | `copy_log_selection` |
 | Copy All Logs | `copy_log_all` *(ships unbound)* |
 

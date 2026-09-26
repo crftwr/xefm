@@ -6,7 +6,8 @@ every file operation works on them as it does anywhere else.
 
 The list comes from outside XeFM. Search in the tool that is best at it —
 Everything, `find`, `fd`, `rg -l`, `git ls-files`, a build log, a column in a
-spreadsheet — copy the paths, and bring them in.
+spreadsheet — and bring the paths in, by copying them or by running the
+command from XeFM.
 
 ## Import List from Clipboard
 
@@ -21,13 +22,62 @@ rg -l TODO | clip                             # Windows
 It is the reverse of **Copy Full Path(s)**: select files anywhere, copy their
 paths, and importing them gives you the same rows back.
 
-The action ships without a key. To give it one, add it to your config:
+## Import List from Command
+
+**Edit → Import List from Command…** (`import_list_from_command`) asks for a
+command, runs it in the pane's directory, and shows the paths it prints — one
+step instead of piping to the clipboard and importing.
+
+```sh
+rg -l TODO
+git ls-files --modified
+fd -e py -E tests
+es.exe -path . ext:py           # Everything, under this folder
+dir /s /b *.log                  # Windows, cmd
+```
+
+Everything's command-line interface, `es.exe`, is a separate download from
+voidtools; put it on your `PATH`. Its query is Everything's own search syntax
+(`ext:`, `dm:thisweek`, `size:>100mb`, `|`, `!`). It searches the whole index
+wherever it runs, so `-path .` is what limits it to the folder the pane is
+showing.
+
+- The command runs through your shell (`/bin/sh`, or `cmd.exe` on Windows), so
+  pipes and quoting work as they do at a prompt. It gets the same `XEFM_*`
+  [environment variables](EXTERNAL_PROGRAMS_FEATURE.md#environment-variables)
+  as a program run from the **X** picker.
+- While it runs, a dialog counts the lines it has printed. **Esc** stops it,
+  along with anything it started.
+- The field starts with the last command you ran, so running it again is one
+  key.
+- A command that exits with an error still has its output shown — `grep` and
+  `rg` exit with 1 when nothing matched, `find` when one folder could not be
+  read. If it printed no paths, the log pane shows the exit code and the last
+  lines it wrote to stderr.
+- It runs once. Deleting or moving files removes them from the list, but the
+  command is not run again; run it again from the menu to get a fresh list.
+- It runs in a local directory only. A pane showing an `ssh://` or `s3://`
+  location refuses rather than running on this machine.
+
+Output is read as UTF-8. On Windows the command's console is switched to
+UTF-8 before it runs, so `dir`, `es.exe` and other console tools print
+Japanese and other non-English names intact whatever your system language;
+output from a program that ignores the console's setting is read in the
+system's code page instead. On macOS and Linux, a name that is not valid UTF-8
+is kept byte for byte, so the file it names can still be opened.
+
+## Giving them keys
+
+Both actions ship without a key. To give them one, add them to your config:
 
 ```python
 KEY_BINDINGS['import_list_from_clipboard'] = ['Ctrl-Shift-L']
+KEY_BINDINGS['import_list_from_command'] = ['Ctrl-Shift-K']
 ```
 
-### What it reads
+## What is read
+
+These apply to both sources.
 
 - One path per line. Blank lines are skipped.
 - Spaces around a line, and one pair of quotes around it (`"C:\My Files\a.txt"`,
@@ -35,17 +85,19 @@ KEY_BINDINGS['import_list_from_clipboard'] = ['Ctrl-Shift-L']
 - A path listed twice appears once.
 - Absolute paths and `ssh://…` / `s3://…` locations are used as they are, and
   one list can mix them.
-- A **relative** path is taken relative to the directory the pane is showing,
-  since the clipboard doesn't say where it came from. The log line says how
-  many were read that way — check it if the list came from somewhere else.
+- A **relative** path is taken relative to the directory the command ran in,
+  or for the clipboard, the directory the pane is showing, since the clipboard
+  doesn't say where it came from. The log line says how many were read that
+  way — check it if a copied list came from somewhere else.
 
 Nothing else is interpreted: no wildcards, no CSV columns, no URLs other than
 the locations XeFM can open.
 
-### What you see
+## What you see
 
-- The pane's header names the list and shows the folder its rows are named
-  from: `[Clipboard] ~/src/xefm`. When the header is narrow, the name is
+- The pane's header names the list — `Clipboard`, or the command — and shows
+  the folder its rows are named from: `[Clipboard] ~/src/xefm`,
+  `[rg -l TODO] ~/src/xefm`. When the header is narrow, the name is
   shortened before the folder is. The number of rows is in the footer, as for
   any directory.
 - Paths that don't exist are left out, and the log pane says how many — and,
@@ -71,6 +123,7 @@ written.
 
 ## From your own config
 
-A config action can show a list the same way, with
+A config action can open a list the same way, with
 [`pane.open_list()`](CUSTOMIZATION_FEATURE.md#opening-your-own-list-of-files) —
-for a search of your own, or a command whose output you use often.
+for a search written in Python. Unlike **Import List from Command**, the
+action runs on the UI thread, so keep anything slow out of it.
