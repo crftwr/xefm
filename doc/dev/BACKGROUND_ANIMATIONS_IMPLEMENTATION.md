@@ -139,7 +139,7 @@ A name **not** in `SHADER_KINDS` resolves to `None` — a plain solid background
 is nowhere else for it to go: a scene *is* a shader, and puikit no longer carries a
 second background kind. So a config typo costs the scene, not startup.
 
-A backend without the `background_shader` capability (curses, or a desktop backend
+A backend without the `background_shader` capability (the TUI, or a desktop backend
 with no usable shader path) inherits a no-op, so none of this branches on the backend.
 
 ## Adding a scene

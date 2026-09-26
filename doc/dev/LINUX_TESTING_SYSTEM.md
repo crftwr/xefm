@@ -139,7 +139,7 @@ through the standard library regardless; see §1.2 of
 - The images are built for the host's architecture. On Apple Silicon that is
   `linux/aarch64`; pass `--platform` through `DOCKER` if x86-64 matters.
 - Only the headless/memory backend is exercised. Nothing here opens a terminal
-  or a window, so the curses and GUI backends are not covered — the suite does
+  or a window, so the terminal and GUI backends are not covered — the suite does
   not cover them anywhere.
 - Debian and Alpine are two data points, not a distribution matrix. They were
   chosen because glibc/musl is the axis that has actually broken something.

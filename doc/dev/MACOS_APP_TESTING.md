@@ -229,7 +229,7 @@ Essential tests to verify basic functionality:
 5. Quit (press Q)
 
 **Expected Results:**
-- Terminal mode launches with curses interface
+- Terminal mode launches with the TUI (VT backend)
 - Desktop mode launches with CoreGraphics window
 - Both modes work correctly
 - No errors or warnings
@@ -237,7 +237,7 @@ Essential tests to verify basic functionality:
 
 **Verification:**
 - Both modes launch successfully
-- Terminal mode uses curses backend
+- Terminal mode uses the VT backend
 - Desktop mode uses CoreGraphics backend
 - No conflicts with app bundle
 - Development workflow unchanged

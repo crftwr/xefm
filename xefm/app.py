@@ -2,8 +2,8 @@
 """XeFM — a dual-pane file manager for the desktop and the terminal.
 
 One widget model, realized per backend by PuiKit: a native desktop window on
-Windows and macOS, a curses TUI on Windows, macOS and Linux, or a browser tab.
-Pick with ``--backend``; nothing above the backend seam branches on it.
+Windows and macOS, a VT-terminal TUI on Windows, macOS and Linux, or a browser
+tab. Pick with ``--backend``; nothing above the backend seam branches on it.
 
 The storage-agnostic core is backend-independent — ``xefm.path.Path`` for
 listing (local, S3, SFTP, archives), ``PaneManager`` / ``FileListManager`` for
@@ -17,7 +17,7 @@ jump-to-path dialogs are all wired — as are file operations (copy / move /
 delete, threaded with progress and per-conflict resolution via ``xefm.task``),
 archive browsing, and remote storage (S3 / SFTP).
 
-    python -m xefm                       # terminal (curses) — the default
+    python -m xefm                       # terminal (VT) — the default
     python -m xefm --backend gui         # native desktop window (Windows/macOS)
     python -m xefm --backend web         # browser tab
     python -m xefm --left ./xefm --right ./test
@@ -1360,7 +1360,7 @@ class XeFMApp:
         self.log = LogView(max_lines=2000, auto_scroll=True, wrap=True, padding_px=BAR_PAD_PX)
         self.status = StatusBar(self)
         # One Menu model drives the OS-native menu bar on macOS (an NSMenu) and an
-        # in-window strip on curses — the Panel resolves which, so we never branch.
+        # in-window strip in the terminal — the Panel resolves which, so we never branch.
         self.menu_bar = MenuBar(self._build_menu())
         self._sync_active()
 
@@ -1394,7 +1394,7 @@ class XeFMApp:
         )
         self.panel.set_layout(
             VSplit(
-                # The MenuBar self-sizes via "content": a 1-row strip on curses,
+                # The MenuBar self-sizes via "content": a 1-row strip in the terminal,
                 # zero height on macOS (it installs the native bar instead), so
                 # no row branch. Without "content" the item would flex and eat
                 # half the window. It carries no divider after it — when it
@@ -1447,7 +1447,7 @@ class XeFMApp:
         # each producer (fs watcher, listing worker, stdout/stderr streams) wakes
         # the UI thread to drain, so there is NO idle polling timer at all. A burst
         # of producer signals coalesces into at most one pending main-thread hop
-        # (``_wake_lock``/``_wake_pending``). On a poll-loop backend (curses) that
+        # (``_wake_lock``/``_wake_pending``). On a poll-loop backend (the TUI) that
         # can't dispatch, fall back to the animation-tick pump that drains queues
         # each frame. See ``_wake_pump`` / ``_reload_tick``.
         self._event_driven = self.panel.dispatches_to_main_thread
@@ -3264,7 +3264,7 @@ class XeFMApp:
         Whether to hand over the display is a property of *our backend*, not of
         the program, so associations do not describe it:
 
-        * Terminal mode — the child shares our tty, so we suspend curses, wait
+        * Terminal mode — the child shares our tty, so we suspend the TUI, wait
           for it, and restore. Correct for ``less``/``vim``; a launcher like
           ``open -a`` merely returns straight away and we repaint.
         * Desktop mode — there is no tty to hand over and blocking would freeze
@@ -4744,7 +4744,7 @@ class XeFMApp:
             return
         try:
             # Pipes, never the terminal: in TUI mode a direct write would corrupt
-            # the curses screen; in desktop mode there may be no terminal at all.
+            # the screen we own; in desktop mode there may be no terminal at all.
             # stdin reads EOF so an interactive program can't hang on input.
             # SUBPROCESS_NO_WINDOW keeps a console program from flashing a window
             # of its own on Windows, where the GUI backend has no console to lend.
@@ -5127,9 +5127,10 @@ class XeFMApp:
 
     def copy_names_to_clipboard(self) -> None:
         """Copy the active pane's selected file name(s) — or the cursor entry's
-        name when nothing is selected — to the system clipboard, one per line
-        On the curses backend the clipboard is process-local, but the copy
-        still succeeds.
+        name when nothing is selected — to the system clipboard, one per line.
+        In terminal mode the copy rides OSC 52, so it reaches the user's own
+        clipboard on terminals that honor it (and stays process-local on the
+        ones that don't, e.g. Terminal.app); either way the copy succeeds.
 
         The name copied is the one the pane *shows*: on a virtual (search-results)
         pane that is the path relative to the search root — ``sub/dir/a.txt``,
@@ -7111,7 +7112,7 @@ class XeFMApp:
 
     def _show_context_menu(self, pane_name: str, index: int, x: float, y: float) -> None:
         """Right-click on a row: activate that row, then pop a context menu at the
-        pointer (native on macOS, a widget popup on curses)."""
+        pointer (native on macOS, a widget popup in the terminal)."""
         self.pm.active_pane = pane_name
         self._sync_active()
         pane = self.active_pane()
@@ -7459,7 +7460,7 @@ def main() -> None:
     # unit — hence the on-screen text size — is derived from this font's glyph
     # box, so MONO_FONT_NAME and FONT_SIZE take effect here. The base font must be
     # monospaced; MONO_FONT_NAME=None falls back to PuiKit's bundled Noto Sans
-    # Mono. Both the native GUI and the browser backend read it; curses has one
+    # Mono. Both the native GUI and the browser backend read it; the TUI has one
     # terminal font and no base_font parameter, so this is skipped there.
     if backend_name in ("gui", "web"):
         cfg = get_config()

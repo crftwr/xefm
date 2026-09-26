@@ -28,7 +28,7 @@ The Subshell System allows users to temporarily suspend the XeFM interface and e
 
 - **Action**: `subshell` (the neighbouring `programs` opens the
   external-programs picker)
-- **Action**: Suspends XeFM curses interface and starts a new shell session
+- **Action**: Suspends the XeFM TUI and starts a new shell session
   (`XeFMApp.subshell` → `_run_in_terminal`, with the environment built by
   `build_xefm_env` and the prompt marked by `prefix_prompt_markers`)
 - **Terminal mode only**: desktop mode has no terminal to hand over, so the
@@ -375,10 +375,11 @@ KEY_BINDINGS = {
 
 ## Technical Implementation
 
-### Curses Management
-- The curses interface is properly suspended using `curses.endwin()`
+### Display Handover
+- The terminal is handed over with PuiKit's `backend.suspended()` — the backend
+  leaves the alternate screen, shows the cursor and puts the console modes back
 - Terminal is restored to normal mode for shell interaction
-- Curses is reinitialized when returning to XeFM
+- The backend reclaims the screen when returning to XeFM
 
 ### Environment Preservation
 - Original stdout/stderr are temporarily restored
@@ -405,7 +406,7 @@ local_path.is_remote() # Returns False
 
 ### Error Handling
 - If the shell fails to start, an error message is displayed
-- The curses interface is properly restored even if errors occur
+- The TUI is properly restored even if errors occur
 - Log messages are captured when returning to XeFM
 - Graceful handling of permission errors and inaccessible directories
 

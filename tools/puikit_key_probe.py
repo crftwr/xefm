@@ -16,7 +16,7 @@ Use it to confirm what a *real terminal* delivers for Shift / Ctrl / Alt / Cmd
 and punctuation (modifier reporting varies by emulator), and later to re-check
 the macOS GUI backend.
 
-    python tools/puikit_key_probe.py                 # curses (TUI)
+    python tools/puikit_key_probe.py                 # terminal (VT)
     python tools/puikit_key_probe.py --backend gui   # macOS GUI
 
 Quit with Ctrl+Q.

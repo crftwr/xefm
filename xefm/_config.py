@@ -1079,8 +1079,8 @@ class Config:
     # - String format: 'vim' (single command, no arguments)
     # - List format: ['code', '--wait'] (command with arguments)
     # Automatically set based on actual running backend mode:
-    # - Terminal mode (curses): vim
-    # - Desktop mode (coregraphics): code (VS Code)
+    # - Terminal mode (TUI): vim
+    # - Desktop mode (GUI): code (VS Code)
     TEXT_EDITOR = 'code' if is_desktop_mode() else 'vim'
     
     # Text diff tool settings
@@ -1089,8 +1089,8 @@ class Config:
     # - String format: 'vimdiff' (single command, no arguments)
     # - List format: ['code', '--diff'] (command with arguments)
     # Automatically set based on actual running backend mode:
-    # - Terminal mode (curses): vimdiff (string format example)
-    # - Desktop mode (coregraphics): code --diff (list format example)
+    # - Terminal mode (TUI): vimdiff (string format example)
+    # - Desktop mode (GUI): code --diff (list format example)
     TEXT_DIFF = ['code', '--diff'] if is_desktop_mode() else 'vimdiff'
 
     # Subshell settings

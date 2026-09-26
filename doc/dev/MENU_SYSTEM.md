@@ -9,7 +9,7 @@ single model is *realized* per backend:
 - On a **`native_menus`** backend (the macOS and Windows native GUIs) the model
   becomes a real OS menu bar (`NSMenu` on macOS, an `HMENU` on Windows), and
   context menus become native popups.
-- On every **other** backend (the curses TUI, and the web/memory backends) the
+- On every **other** backend (the TUI, and the web/memory backends) the
   same model is drawn *in-window* by PuiKit's `MenuBar` and `MenuPopup` widgets.
 
 XeFM never branches on the backend. It describes menus as intent (labels,
@@ -123,7 +123,7 @@ XeFM owns the menu *content*. All of it lives in `xefm/app.py`:
   **File, Edit, Go, Select, View, Tools, Help**.
 - **`self.menu_bar = MenuBar(self._build_menu())`** — the widget is placed into
   the app layout as `Item(self.menu_bar, size="content", hints={"surface":
-  "header"})`. `size="content"` lets it self-size: a 1-row strip on curses,
+  "header"})`. `size="content"` lets it self-size: a 1-row strip in the terminal,
   zero height on macOS (where it installs the native bar instead), so the layout
   needs no per-backend row branch.
 

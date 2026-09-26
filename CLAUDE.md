@@ -1,6 +1,6 @@
 # XeFM — Claude Code Instructions
 
-XeFM is a dual-pane file manager. It is **not terminal-only**: the same widget code runs as a native desktop app on Windows and macOS *and* as a terminal (TUI) app on Windows, macOS and Linux, selected with `--backend`. That comes from its rendering/UI layer, **[PuiKit](https://github.com/crftwr/puikit)** — an external, capability-based framework whose backends (curses, macOS, Windows, web) each realize one widget model. PuiKit is **not vendored** here; it is installed editable from `../puikit` (see `make install-puikit`).
+XeFM is a dual-pane file manager. It is **not terminal-only**: the same widget code runs as a native desktop app on Windows and macOS *and* as a terminal (TUI) app on Windows, macOS and Linux, selected with `--backend`. That comes from its rendering/UI layer, **[PuiKit](https://github.com/crftwr/puikit)** — an external, capability-based framework whose backends (VT, curses, macOS, Windows, web) each realize one widget model. PuiKit is **not vendored** here; it is installed editable from `../puikit` (see `make install-puikit`).
 
 XeFM itself is a single Python package, `xefm/`, at the repo root (flat layout, matching PuiKit's own repo): `xefm/app.py` is the entry module holding the `XeFMApp` shell, and its siblings (`xefm/config.py`, `xefm/path.py`, …) hold the storage-agnostic business logic. Tests live in `test/`, docs in `doc/`.
 
@@ -37,7 +37,7 @@ Use `--no-pager` for any git command that may page output: `diff`, `log`, `show`
 
 ### Don't run TUIs
 
-- **Never execute `python -m xefm` (or `xefm/app.py`)** — it launches the interactive file manager (curses / native PuiKit backend) and blocks indefinitely. Read the source instead.
+- **Never execute `python -m xefm` (or `xefm/app.py`)** — it launches the interactive file manager (VT terminal / native PuiKit backend) and blocks indefinitely. Read the source instead.
 - Anything importing `curses`, PuiKit backends, or the `xefm` UI modules is blocking. PuiKit demos (`../puikit/demo/*.py`) block too.
 - `test/test_*.py` are safe — run them with `pytest`, not `python` directly.
 - If the user explicitly wants to see the app or a demo, tell them to run it manually rather than starting it yourself.

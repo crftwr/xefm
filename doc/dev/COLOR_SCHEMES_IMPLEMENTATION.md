@@ -212,8 +212,8 @@ drawn visibly darker than the hidden files around it.
 The name run of a hidden entry therefore passes `ink=False`, PuiKit's opt-out
 for "this widget owns this color deliberately". `TextAttribute.DIM` would also
 have lowered the target (auto-ink floors dimmed text at `LC_MIN_NONTEXT`), but
-it is a real attribute: the curses backend maps it to `A_DIM` and the terminal
-would dim an already-faded color a second time.
+it is a real attribute: a terminal backend hands it to the terminal (`A_DIM`
+under curses), which would dim an already-faded color a second time.
 
 The size and date columns opt out for the same reason, and had been wanting to
 for longer: `_draw_row` inks them at `LC_LARGE` to sit a tier under the

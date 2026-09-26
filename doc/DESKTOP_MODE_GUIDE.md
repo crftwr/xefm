@@ -411,7 +411,7 @@ Press `?` at any time for the keys your config is using.
 | Feature | Terminal Mode | Desktop Mode |
 |---------|--------------|--------------|
 | **Platform** | All (macOS, Linux, Windows) | Windows and macOS |
-| **Dependencies** | Python + curses | Python (+ PyObjC on macOS, installed for you) |
+| **Dependencies** | Python only | Python (+ PyObjC on macOS, installed for you) |
 | **Window** | Terminal window | Native desktop window |
 | **Rendering** | Terminal-based | GPU-accelerated |
 | **Performance** | Good | Excellent (60 FPS) |

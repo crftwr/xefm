@@ -2,7 +2,7 @@
 
 ## Overview
 
-XeFM supports mouse interaction in both Desktop mode (CoreGraphics backend on macOS) and Terminal mode (curses backend in supported terminals). You can click to move the cursor and switch panes, scroll with the wheel, right-click for a context menu, and — in Desktop mode — drag files out to other applications.
+XeFM supports mouse interaction in both Desktop mode (CoreGraphics backend on macOS) and Terminal mode (in supported terminals). You can click to move the cursor and switch panes, scroll with the wheel, right-click for a context menu, and — in Desktop mode — drag files out to other applications.
 
 ## Availability
 
@@ -184,7 +184,7 @@ Full mouse support with all event types:
 
 **Coordinate precision**: text grid coordinates (column and row) plus sub-cell positioning (fractional position within a character cell), accurate to pixel level.
 
-### Curses Backend (Terminal Mode)
+### Terminal Mode
 
 Basic mouse support, depending on the terminal:
 

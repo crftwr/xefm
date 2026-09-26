@@ -8,7 +8,7 @@ modifier chords, punctuation and shifted-symbol identities, and per-action
 selection requirements.
 
 The **normative cross-backend keyboard contract** — the `Event(KEY, key, char,
-modifiers)` shape and how each backend (curses / macOS / Windows) normalizes a
+modifiers)` shape and how each backend (VT / curses / macOS / Windows) normalizes a
 keypress into it — lives in PuiKit: `puikit/docs/keyboard_contract.md`. This
 document covers **XeFM's side**: how a config token is parsed and matched against
 that contract.
@@ -73,7 +73,7 @@ two **modes**:
 A binding is worth no more than the transport under it, and the backends do not
 carry the same set:
 
-| Chord | Desktop (macOS / Windows) | Windows console (VT / curses) | POSIX terminal |
+| Chord | Desktop (macOS / Windows) | Windows console | POSIX terminal (VT) |
 |---|---|---|---|
 | `Command-…` | yes (macOS) | — | — |
 | `Ctrl-<letter>` | yes | yes | yes, except I, M, J, H and `[` — those bytes already *are* tab, enter, backspace and escape |
@@ -131,7 +131,7 @@ binds nothing a terminal cannot send.
 | digit / punctuation literal (`?`, `.`, `:`, `1`, …) | the produced glyph | `char` |
 | `Shift-<named punct / digit>` | the **shifted** glyph (`Shift-EQUAL` → `+`, `Shift-1` → `!`) | `char` |
 | `Shift-X` (letter) | `x` + `shift` | `key` + exact mods |
-| `Command-X` / `Alt-X` | `x` + `cmd` / `alt` | `key` + exact mods (curses can't deliver `cmd`; such chords are GUI-only) |
+| `Command-X` / `Alt-X` | `x` + `cmd` / `alt` | `key` + exact mods (a terminal can't deliver `cmd`; such chords are GUI-only) |
 
 The maps that back this table live at the top of `xefm/config.py`:
 `_MODIFIER_ALIASES`, `_NAMED_KEYS`, `_PUNCT_NAMES`, `_SHIFT_SYMBOL`, `_KEY_ALIASES`.

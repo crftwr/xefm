@@ -53,7 +53,7 @@ flowchart TB
 
     subgraph BE["PuiKit Backends"]
         direction LR
-        Curses["Curses<br/>terminal"]
+        VT["VT<br/>terminal"]
         MacOS["macOS<br/>native"]
         Windows["Windows<br/>native"]
     end
@@ -77,7 +77,7 @@ flowchart TB
     class Panes,Viewers,Dialogs ui;
     class Path,Local,SSH,S3,Archive store;
     class Events,Widgets,TextEng pui;
-    class Curses,MacOS,Windows be;
+    class VT,MacOS,Windows be;
 ```
 
 ### Design principles
@@ -218,12 +218,13 @@ XeFM includes comprehensive color support with multiple color schemes.
 
 ### Required
 - **Python 3.9+**: Core language requirement (3.13 supported)
-- **curses**: Terminal UI library (built-in on Unix systems)
+- **PuiKit**: rendering/UI framework; its VT backend drives the terminal over a
+  raw tty (POSIX) or the Win32 console API, so no curses is needed
 
 ### Optional
 - **pygments**: Enhanced syntax highlighting
 - **boto3**: AWS S3 support
-- **windows-curses**: Windows terminal support
+- **windows-curses**: only for `--backend curses` on Windows
 
 ## Platform Support
 - **macOS**: Full support with native terminal

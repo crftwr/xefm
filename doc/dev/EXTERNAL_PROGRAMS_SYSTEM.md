@@ -148,7 +148,8 @@ terminal and desktop mode:
 3. `subprocess.Popen` — the program name resolved through `resolve_command`
    first — with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE`, so the
    child never touches the terminal. In TUI mode a direct write would corrupt
-   the curses screen (newlines without carriage returns under raw mode); in
+   the screen the backend owns (newlines without carriage returns under raw
+   mode); in
    desktop mode there may be no terminal at all.
 4. `_watch_program` starts daemon reader threads that post complete lines to
    `XeFMApp._log_queue` — the same thread-safe channel as the app's own
