@@ -305,32 +305,45 @@ class WholePathNames(RemoteScheme):
 class Header(RemoteScheme):
     LIST = {"kind": "list", "title": "My list"}
 
-    def _text(self, root, avail=200):
-        return xefm_app._virtual_header_text(dict(self.LIST, root=root), 3, avail)
+    def _text(self, root, avail=200, title="My list"):
+        virtual = dict(self.LIST, root=root, title=title)
+        return xefm_app._virtual_header_text(virtual, avail)
 
-    def test_the_root_follows_the_label(self):
+    def test_a_list_reads_title_then_root_with_no_count(self):
         self.assertEqual(self._text(Path("fake://h/proj/src")),
-                         "My list — 3 items  ·  fake://h/proj/src")
+                         "[My list] fake://h/proj/src")
 
-    def test_no_common_root_shows_none(self):
-        self.assertEqual(self._text(name_key.WHOLE_PATH), "My list — 3 items")
+    def test_no_common_root_shows_the_title_alone(self):
+        self.assertEqual(self._text(name_key.WHOLE_PATH), "[My list]")
 
-    def test_a_long_root_drops_whole_components(self):
+    def test_the_title_gives_way_before_the_root(self):
+        root = "fake://h/proj/src"
+        title = "A rather long title for a list"
+        text = self._text(Path(root), avail=len(f"[My list] {root}"), title=title)
+        self.assertTrue(text.endswith(root))           # the whole root survives
+        self.assertTrue(text.startswith("[A"))
+        self.assertIn("…", text)
+        self.assertLessEqual(len(text), len(f"[My list] {root}"))
+
+    def test_then_the_root_drops_whole_components(self):
         root = Path("fake://h/" + "/".join(f"dir{i:02d}" for i in range(20)) + "/leaf")
-        text = self._text(root, avail=60)
-        self.assertLessEqual(len(text), 60)
-        self.assertTrue(text.startswith("My list — 3 items  ·  fake://h/"))
+        text = self._text(root, avail=40, title="Clipboard")
+        self.assertLessEqual(len(text), 40)
+        self.assertTrue(text.startswith("[Cl"))
+        self.assertIn("fake://h/", text)
         self.assertTrue(text.endswith("/leaf"))
 
-    def test_the_root_gives_way_before_the_label(self):
-        text = self._text(Path("fake://h/proj/src"), avail=len("My list — 3 items") + 4)
-        self.assertEqual(text, "My list — 3 items")
-
-    def test_a_search_shows_its_root_too(self):
+    def test_a_search_keeps_its_banner_first_and_no_count(self):
         virtual = {"kind": "search", "mode": "filename", "query": "q",
                    "root": Path("fake://h/proj")}
-        self.assertEqual(xefm_app._virtual_header_text(virtual, 1, 200),
-                         '⌕ "q" — 1 result (filename)  ·  fake://h/proj')
+        self.assertEqual(xefm_app._virtual_header_text(virtual, 200),
+                         '⌕ "q" (filename)  ·  fake://h/proj')
+
+    def test_a_search_drops_its_root_before_its_banner(self):
+        virtual = {"kind": "search", "mode": "filename", "query": "q",
+                   "root": Path("fake://h/proj")}
+        self.assertEqual(xefm_app._virtual_header_text(virtual, 22),
+                         '⌕ "q" (filename)')
 
 
 # --------------------------------------------------------------------------- #
@@ -387,7 +400,7 @@ class AppImport(RemoteScheme):
         self._import(f"{a}\n\n{b}\n")
         virtual = self.pane["virtual"]
         self.assertEqual(virtual["kind"], "list")
-        self.assertEqual(virtual["title"], "List from clipboard")
+        self.assertEqual(virtual["title"], "Clipboard")
         self.assertEqual(sorted(str(f) for f in self.pane["files"]), sorted([a, b]))
         # Named relative to what they share, which here is the pane's own dir.
         self.assertEqual(str(virtual["root"]), str(Path(self.tmp)))
@@ -471,8 +484,8 @@ class AppImport(RemoteScheme):
         a = self._write(os.path.join("deep", "a.txt"))
         b = self._write(os.path.join("deep", "b.txt"))
         self._import(f"{a}\n{b}")
-        text = xefm_app._virtual_header_text(self.pane["virtual"], 2, 500)
-        self.assertTrue(text.startswith("List from clipboard — 2 items  ·  "))
+        text = xefm_app._virtual_header_text(self.pane["virtual"], 500)
+        self.assertTrue(text.startswith("[Clipboard] "))
         self.assertTrue(text.endswith("deep"))
 
     def test_pane_api_show_list(self):

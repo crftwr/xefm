@@ -44,9 +44,10 @@ the locations XeFM can open.
 
 ### What you see
 
-- The pane's header names the list, counts its rows, and shows the folder
-  the rows are named from: `List from clipboard — 42 items · ~/src/xefm`.
-  When the header is narrow, that folder is shortened first.
+- The pane's header names the list and shows the folder its rows are named
+  from: `[Clipboard] ~/src/xefm`. When the header is narrow, the name is
+  shortened before the folder is. The number of rows is in the footer, as for
+  any directory.
 - Paths that don't exist are left out, and the log pane says how many — and,
   separately, how many sat on a server or drive that could not be reached.
   If none exist, the pane stays as it was.

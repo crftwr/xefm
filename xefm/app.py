@@ -700,32 +700,48 @@ def _build_theme_list(config) -> list[tuple[str, Theme]]:
     return themes
 
 
-#: Between a virtual pane's label and the root its rows are named from.
+#: Between a search's banner and the root its rows are named from.
 _VIRTUAL_ROOT_SEP = "  ·  "
 
+#: The narrowest a list's title is cut to before its root starts giving way.
+_MIN_TITLE = "Cl…"
 
-def _virtual_header_text(virtual: dict, n: int, avail: float,
-                         measure=len) -> str:
-    """The header of a virtual pane, fitted to ``avail``: what it is — a list's
-    title or a search's query — and how many rows, then the root those rows are
-    named relative to.
 
-    The root is what makes the name column readable: a row showing
-    ``src/main.py`` means nothing until you know which ``src`` — and for an
-    imported list the root is derived from the paths, not the directory the
-    pane was on, so nothing else on screen says it. It is shortened by whole
-    components, as a directory header is, and it is what gives way first: the
-    label keeps its width, and a root with no room left is dropped rather than
-    shown as a stub. A list whose rows share no root shows none — each row
-    already carries its whole path."""
-    if virtual.get("kind") == "list":
-        label = f'{virtual["title"]} — {n} item{"" if n == 1 else "s"}'
-    else:
-        mode = "content" if virtual["mode"] == "content" else "filename"
-        label = (f'⌕ "{virtual["query"]}" — '
-                 f'{n} result{"" if n == 1 else "s"} ({mode})')
+def _virtual_header_text(virtual: dict, avail: float, measure=len) -> str:
+    """The header of a virtual pane, fitted to ``avail``: what the pane holds,
+    and the root its rows are named relative to. No row count — the footer
+    already has it.
+
+    **A list** reads ``[title] root``, in the bracket style of an archive's
+    ``[foo.zip]/sub``, and the root has priority. It is derived from the paths,
+    not from where the pane was, so the header is the one place that says what
+    a row's ``src/main.py`` is relative to. When space runs out the title is
+    cut first, down to :data:`_MIN_TITLE`, and only then is the root shortened
+    — by whole components, as a directory header is. A list whose rows share
+    no root shows the title alone: each row already carries its whole path.
+
+    **A search** reads ``⌕ "query" (mode)  ·  root``, and there the banner has
+    priority: the root is the directory the search was started from, which the
+    user chose, and it is dropped rather than shown as a fragment."""
     root = virtual.get("root")
-    if root is not None and root is not name_key.WHOLE_PATH:
+    has_root = root is not None and root is not name_key.WHOLE_PATH
+
+    if virtual.get("kind") == "list":
+        title = virtual["title"]
+        if not has_root:
+            return elide(f"[{title}]", avail, where="end", measure=measure)
+        root_str = str(root)
+        room = avail - measure(f"[] {root_str}")
+        if measure(title) > room:
+            title = elide(title, max(room, measure(_MIN_TITLE)), where="end",
+                          measure=measure)
+        tag = f"[{title}] "
+        shown = abbreviate_path(root_str, avail - measure(tag), measure=measure)
+        return elide(tag + shown, avail, where="end", measure=measure)
+
+    mode = "content" if virtual["mode"] == "content" else "filename"
+    label = f'⌕ "{virtual["query"]}" ({mode})'
+    if has_root:
         room = avail - measure(label + _VIRTUAL_ROOT_SEP)
         # Enough for a short leaf; anything less would be a fragment.
         if room >= measure("x" * 8):
@@ -826,8 +842,7 @@ class PaneHeader(Widget):
             # Not a directory: a search-results feed or an imported list. Say so
             # (and which pane an operation will hit) first, then the root its
             # rows are named from.
-            text = _virtual_header_text(virtual, len(pane["files"]), avail,
-                                        measure=ctx.measure_text)
+            text = _virtual_header_text(virtual, avail, measure=ctx.measure_text)
         elif self.app._is_archive(pane["path"]):
             # A browsed archive: show [archive.zip]/sub rather than the raw URI.
             label = _archive_header_label(str(pane["path"]))
@@ -5323,7 +5338,7 @@ class XeFMApp:
             self.log_info("The clipboard holds no paths to import")
             return
         self.show_path_list(self.pm.active_pane, lines,
-                            title="List from clipboard")
+                            title="Clipboard")
 
     def show_path_list(self, pane_name: str, paths, *, title: str,
                        base=None) -> None:

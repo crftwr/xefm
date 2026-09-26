@@ -87,12 +87,20 @@ cwd, falls back to `pane["path"]`, the directory ⌫ returns to.
 ## Header
 
 `PaneHeader` reads `virtual["kind"]`, which the search feed had written since
-the start and nothing had read: `"list"` renders `{title} — N items`; anything
-else keeps the search banner. Either is followed by the root the rows are named
-from (`_virtual_header_text`) — for a list it is derived from the paths, so
-nothing else on screen says what `src/main.py` is relative to. The root is
-shortened by whole components (`abbreviate_path`) and dropped before the label
-is cut; `WHOLE_PATH` shows none. The Info dialog's content-hit metadata reads
+the start and nothing had read (`_virtual_header_text`). Neither form carries a
+row count; the footer already shows one.
+
+- `"list"` renders `[title] root`, and the **root has priority**. It is derived
+  from the paths rather than chosen by the user, so the header is the only
+  place that says what a row's `src/main.py` is relative to. When space runs
+  out the title is cut first, down to `Cl…`, and only then is the root
+  shortened by whole components (`abbreviate_path`). `WHOLE_PATH` shows the
+  title alone.
+- A search renders `⌕ "query" (mode)  ·  root`, and there the banner has
+  priority: the root is the directory the user searched from, and it is
+  dropped rather than shown as a fragment.
+
+The Info dialog's content-hit metadata reads
 `virtual.get("mode")`, since a list has none.
 
 ## Deliberately not done
