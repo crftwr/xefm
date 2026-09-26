@@ -104,9 +104,19 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
     # --- space vs shift-space (named key, shift significant) ----------------
     def test_space_and_shift_space(self):
         self.assertEqual(self.action(key("space", " ")), "toggle_select_down")
+        # Shift on SPACE is a different action, which is the whole reason the
+        # binding is on the named key rather than the character: a char-mode
+        # match would ignore shift and both would mark one item. Only a console
+        # that reports modifiers on a printable can deliver it — a POSIX
+        # terminal sends a bare space (see the Three cases note in _config.py).
         self.assertEqual(
-            self.action(key("space", " ", {"shift"})), "toggle_select_up"
+            self.action(key("space", " ", {"shift"})), "select_range"
         )
+
+    def test_ctrl_space_is_the_search_bar_s_alone(self):
+        # The file list does not answer it: marking with Ctrl-SPACE belongs to
+        # the search bar, where a bare SPACE types into the pattern.
+        self.assertIsNone(self.action(key("space", " ", {"ctrl"})))
 
     # --- punctuation & digits (char mode, ignore shift/alt) -----------------
     def test_punctuation(self):

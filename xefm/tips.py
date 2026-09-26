@@ -47,9 +47,16 @@ TIPS: tuple[tuple[str, str], ...] = (
      "fire."),
 
     ("Select several files at once",
-     "{key:toggle_select_down} toggles selection on the focused item and moves down; "
-     "{key:toggle_select_up} toggles and moves up. {key:select_all} selects "
-     "everything, and {key:unselect_all} clears the selection."),
+     "{key:toggle_select_down} toggles selection on the focused item and moves "
+     "down. {key:select_all} selects everything, and {key:unselect_all} clears "
+     "the selection."),
+
+    ("Select a whole run of files",
+     "Mark the first one with {key:toggle_select_down}, move the cursor to the "
+     "last one — with the arrows, or by searching for it — then press "
+     "{key:select_range}: everything between the marked item and the cursor is "
+     "selected in one go. Inside an open search the same key is "
+     "{key:isearch.select_range}."),
 
     ("Jump to a file by typing",
      "Press {key:isearch} and just start typing — the cursor jumps to the first "

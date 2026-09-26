@@ -2509,6 +2509,7 @@ class XeFMApp:
                 # --- selection (reuses FileListManager) ---
                 "toggle_select_down": (self._act_select_file, True),
                 "toggle_select_up": (self._act_select_file_up, True),
+                "select_range": (self._act_select_range, True),
                 "toggle_select_files": (self._act_select_all_files, True),
                 "toggle_select_items": (self._act_select_all_items, True),
                 "select_all": (self._act_select_all, True),
@@ -2676,6 +2677,16 @@ class XeFMApp:
         """``toggle_select_up``: toggle, then move up."""
         self._log_result(self.flm.toggle_selection(
             self.active_pane(), move_cursor=True, direction=-1))
+
+    def _act_select_range(self) -> None:
+        """``select_range``: fill the span between the nearest marked item and the
+        cursor (#266) — a Shift-click done with the keyboard, which is why its
+        default key is Shift-SPACE.
+
+        The cursor stays where it is: the item under it is the end of the span,
+        not a step on the way, and the search bar runs this same handler over its
+        own cursor (``_isearch_select_range``)."""
+        self._log_result(self.flm.select_range(self.active_pane()))
 
     def _act_select_all_files(self) -> None:
         """A: toggle selection of every file."""
@@ -3121,6 +3132,9 @@ class XeFMApp:
         select_menu = Menu(
             MenuItem("Toggle Selection", on_select=lambda: self._menu("toggle_select_down"),
                      enabled=has_files, shortcut=sc("toggle_select_down")),
+            MenuItem("Select to Cursor", on_select=lambda: self._menu("select_range"),
+                     enabled=lambda: bool(self.active_pane()["selected_files"]),
+                     shortcut=sc("select_range")),
             MenuItem("Select All Items", on_select=lambda: self._menu("select_all"),
                      shortcut=sc("select_all")),
             MenuItem("Clear Selection", on_select=lambda: self._menu("unselect_all"),
@@ -6376,6 +6390,7 @@ class XeFMApp:
             on_change=self._isearch_recompute,
             on_navigate=self._isearch_step,
             on_select=self._isearch_toggle_select,
+            on_select_range=self._isearch_select_range,
             on_select_all=self._isearch_select_matches,
             on_submit=self._isearch_stop,
             on_cancel=self._isearch_cancel,
@@ -6451,6 +6466,18 @@ class XeFMApp:
             self._isearch_step(delta)   # renders
         else:
             self.panel.render()
+
+    def _isearch_select_range(self) -> None:
+        """``isearch.select_range``: the file list's ``select_range`` over the
+        search's cursor — everything between the nearest marked item and the
+        current match.
+
+        The same handler, because a search *is* a way of moving the cursor: mark
+        one item, type a pattern that lands on the far end of the run, and this
+        fills what lies between. Nothing moves, so the bar stays on its match and
+        the pattern stays live for the next one."""
+        self._log_result(self.flm.select_range(self.active_pane()))
+        self.panel.render()
 
     def _isearch_select_matches(self) -> None:
         """``isearch.select_matches``: mark every match found — the counter's whole
@@ -6802,9 +6829,16 @@ class XeFMApp:
             ("sync_current_to_other", "Go to the other pane's directory"),
             ("sync_other_to_current", "Send this directory to the other pane"),
         )),
+        # 'toggle_select_up' and 'isearch.toggle_select_up' — mark and move
+        # *backwards* — are deliberately absent: both gave up their default key
+        # (Shift-SPACE went to 'select_range', Shift-UP to the log pane it always
+        # read as), and a row with no key and no menu route would advertise a
+        # feature while withholding the one way to reach it. Both are still
+        # registered actions, listed for rebinding in the File Selection and
+        # incremental-search blocks of _config.py.
         ("Selection", (
             ("toggle_select_down", "Toggle selection, move down"),
-            ("toggle_select_up", "Toggle selection, move up"),
+            ("select_range", "Select from the nearest selected item to the cursor"),
             ("toggle_select_files", "Toggle all files"),
             ("toggle_select_items", "Toggle all items"),
             ("select_all", "Select every item"),
@@ -6847,7 +6881,8 @@ class XeFMApp:
             ("isearch.next_match", "Move to the next match"),
             ("isearch.prev_match", "Move to the previous match"),
             ("isearch.toggle_select_down", "Select, then move to the next match"),
-            ("isearch.toggle_select_up", "Select, then move to the previous match"),
+            ("isearch.select_range",
+             "Select from the nearest selected item to this match"),
             ("isearch.select_matches", "Select every match (again: clear them)"),
             ("isearch.accept", "Stop at the current match"),
             ("isearch.cancel", "Cancel and restore the cursor"),

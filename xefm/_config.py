@@ -300,7 +300,22 @@ class Config:
         
         # === File Selection ===
         'toggle_select_down': ['SPACE'],              # Toggle selection of current file
-        'toggle_select_up': ['Shift-SPACE'],     # Toggle selection and move up
+        # Mark one item, move the cursor, then Shift-SPACE fills the span between
+        # them -- a Shift-click from the keyboard. The nearest marked item above
+        # the cursor is the anchor (below, when there is none above), and nothing
+        # outside the span is touched, so several runs add up.
+        #
+        # Shift-SPACE is the desktop app's and the Windows console's key. A POSIX
+        # terminal has no room for a modifier on a printable, so Shift-SPACE
+        # arrives there as a plain SPACE and toggles one item instead; under
+        # Terminal.app, iTerm2 or a Linux terminal, put this on a chord the
+        # terminal can carry ('Ctrl-LEFT', 'Ctrl-Y', 'F6'). In an open search the
+        # same operation is 'isearch.select_range' (Ctrl-Shift-SPACE), listed with
+        # the other search-bar keys below.
+        'select_range': ['Shift-SPACE'],       # Select from the nearest marked item to the cursor
+        # Unbound: SPACE already marks and moves, and Shift-SPACE now fills a
+        # range. Put it back on a key of your own if you mark upwards often.
+        'toggle_select_up': [],                # Toggle selection and move up
         'select_all': ['HOME'],                # Select all items (Home key)
         'unselect_all': ['END'],               # Unselect all items (End key)
         'toggle_select_files': ['A'],             # Toggle selection of all files in current pane
@@ -480,8 +495,11 @@ class Config:
         #
         #   'isearch.next_match':         DOWN        next match
         #   'isearch.prev_match':         UP          previous match
-        #   'isearch.toggle_select_down': Shift-DOWN  select, then next match
-        #   'isearch.toggle_select_up':   Shift-UP    select, then previous match
+        #   'isearch.toggle_select_down': Ctrl-SPACE  select, then next match
+        #   'isearch.toggle_select_up':   (unbound)   select, then previous match
+        #   'isearch.select_range':       Ctrl-Shift-SPACE
+        #                                             select from the nearest
+        #                                             marked item to this match
         #   'isearch.select_matches':     Ctrl-A      select every match
         #                                             (again: clear them)
         #   'isearch.accept':             ENTER       stop at the current match
@@ -491,18 +509,27 @@ class Config:
         # types a character. Everything printable belongs to the pattern you are
         # typing -- SPACE included, which the search reads as the separator
         # between the pattern's words ('re 24' finds 'report_2024.txt'), and
-        # which is exactly why selecting a file here is Shift-DOWN rather than
-        # the file list's SPACE. Bind one of these to 'N' and it can never fire;
+        # which is exactly why marking a file here is Ctrl-SPACE rather than
+        # the file list's bare SPACE. Bind one of these to 'N' and it can never fire;
         # XeFM says so in the log pane at startup rather than leaving you to
         # wonder. Modified and non-printable keys are all free: 'Shift-DOWN',
         # 'Ctrl-Y', 'F2', 'INSERT' (on Windows and in the terminal -- macOS
         # keyboards have no Insert key).
         #
-        # Shift-UP / Shift-DOWN are the log pane's scroll keys above, and stay
-        # so: the two surfaces never apply at once, and each only ever looks at
-        # its own context's actions. Ctrl-A is the one default that takes a key
-        # the pattern field would otherwise use (select-all-text), and only in
-        # the Ctrl form -- Command-A still selects the text on macOS.
+        # The two marking keys spell the file list's out loud: SPACE selects, so
+        # Ctrl-SPACE selects here (Ctrl being what makes a command of a key that
+        # would otherwise type), and Shift is the range in both places --
+        # Shift-SPACE in the file list, Ctrl-Shift-SPACE here. Marking backwards
+        # has no default in either: a search walks forwards. These were
+        # Shift-DOWN / Shift-UP, which read as the log pane's scroll keys, since
+        # that is what the same chord does in the file list a row away.
+        #
+        # Ctrl-SPACE reaches every backend (it is the NUL byte in a terminal);
+        # Ctrl-Shift-SPACE reaches the desktop app only, because a terminal
+        # cannot modify a printable and the Windows terminal claims that chord
+        # for itself. Ctrl-A is the one default that takes a key the pattern
+        # field would otherwise use (select-all-text), and only in the Ctrl form
+        # -- Command-A still selects the text on macOS.
         #
         # Example -- select with Insert, on a keyboard that has one:
         # 'isearch.toggle_select_down': ['INSERT'],
@@ -580,9 +607,9 @@ class Config:
     # Three cases: macOS desktop / Windows desktop / any terminal
     # -----------------------------------------------------------------------
     # The table above is the COMMON set — every key in it is one all three cases
-    # can actually deliver. What a terminal cannot carry, and why the OS-flavoured
-    # actions above are plain Ctrl+letter rather than the chord each platform
-    # would use in a GUI:
+    # can actually deliver, with one deliberate exception named below. What a
+    # terminal cannot carry, and why the OS-flavoured actions above are plain
+    # Ctrl+letter rather than the chord each platform would use in a GUI:
     #
     #   Command-<key>        no terminal encodes Command at all — not
     #                        Terminal.app, not iTerm2, not VS Code's.
@@ -590,9 +617,21 @@ class Config:
     #                        byte with no room for Shift, so 'Ctrl-Shift-C' is
     #                        the same key as 'Ctrl-C' there. (Only the Windows
     #                        console reports a real key with its modifiers.)
+    #   Shift-<printable>    the same gap on the other side: a terminal reports
+    #                        the character, and the character for Shift-SPACE is
+    #                        a space. This is the exception — 'select_range' takes
+    #                        Shift-SPACE anyway, because Shift is the range
+    #                        gesture users bring with them and no key a terminal
+    #                        can carry says "range" at all. In a POSIX terminal
+    #                        it toggles one item (plain SPACE's job) until you
+    #                        rebind it; the file's File Selection block says so.
     #   Ctrl-ENTER           likewise indistinguishable from plain ENTER.
     #   Alt-ENTER            macOS keyboards spend Option on glyphs and IME, and
     #                        the Windows terminal takes Alt-Enter for fullscreen.
+    #
+    # Ctrl-SPACE is the way round it, and is why the search bar's marking key is
+    # that rather than a Shift chord: a terminal sends it as the NUL byte, which
+    # PuiKit decodes (1.7.2), and both consoles report it natively.
     #
     # Shift and Ctrl on a NAMED key (Ctrl-UP, Shift-DOWN, Ctrl-HOME) are fine
     # everywhere — a terminal has a sequence for those — which is why the rest of

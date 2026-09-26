@@ -119,6 +119,7 @@ the mouse for the first, take the whole buffer with the second. See
 | Item | Action |
 |------|--------|
 | Toggle Selection | `toggle_select_down` |
+| Select to Cursor | `select_range` |
 | Select All Items | `select_all` |
 | Clear Selection | `unselect_all` |
 | Compare and Select… | `compare_selection` |

@@ -2,8 +2,8 @@
 
 The bar is the one surface whose keys compete with typing, so its routing is
 tested from both ends: the widget's key dispatch (text first, then the actions
-it owns, then the field) and the file list's Shift+Up/Down marking through a
-live app.
+it owns, then the field) and the file list's Ctrl+Space marking through a live
+app.
 
 See xefm/isearch_bar.py, the ``isearch`` context in xefm/actions.py, and
 doc/dev/KEY_BINDINGS_IMPLEMENTATION.md.
@@ -44,6 +44,7 @@ class Calls:
     def __init__(self):
         self.navigate = []
         self.select = []
+        self.select_range = 0
         self.select_all = 0
         self.submitted = 0
         self.cancelled = 0
@@ -51,11 +52,15 @@ class Calls:
     def bar(self, **kw) -> ISearchBar:
         opts = dict(on_navigate=self.navigate.append,
                     on_select=self.select.append,
+                    on_select_range=self._select_range,
                     on_select_all=self._select_all,
                     on_submit=self._submit,
                     on_cancel=self._cancel)
         opts.update(kw)
         return ISearchBar(**opts)
+
+    def _select_range(self):
+        self.select_range += 1
 
     def _select_all(self):
         self.select_all += 1
@@ -75,7 +80,12 @@ def test_defaults_resolve_in_the_isearch_context():
     # Not in the shipped KEY_BINDINGS at all — they resolve from the action's
     # own defaults, like every other dotted (viewer) action.
     assert kb.get_keys_for_action("isearch.toggle_select_down", ISEARCH)[0] == \
-        ["Shift-DOWN"]
+        ["Ctrl-SPACE"]
+    assert kb.get_keys_for_action("isearch.select_range", ISEARCH)[0] == \
+        ["Ctrl-Shift-SPACE"]
+    # Marking *backwards* has no default here (nor in the file list): a search
+    # walks forwards, and the action stays registered for a config to bind.
+    assert kb.get_keys_for_action("isearch.toggle_select_up", ISEARCH)[0] == []
     assert kb.get_keys_for_action("isearch.next_match", ISEARCH)[0] == ["DOWN"]
     assert kb.get_keys_for_action("isearch.cancel", ISEARCH)[0] == ["ESCAPE"]
     assert kb.get_keys_for_action("isearch.select_matches", ISEARCH)[0] == \
@@ -90,7 +100,7 @@ def test_a_config_can_rebind_an_isearch_key():
     assert kb.find_action_for_event(_key("insert"), context=ISEARCH) == \
         "isearch.toggle_select_down"
     # An entry replaces the default rather than adding to it.
-    assert kb.find_action_for_event(_key("down", {"shift"}), context=ISEARCH) != \
+    assert kb.find_action_for_event(_key("space", {"ctrl"}), context=ISEARCH) != \
         "isearch.toggle_select_down"
 
 
@@ -171,14 +181,35 @@ def test_printable_keys_are_typed_not_dispatched():
     assert (c.navigate, c.select, c.submitted, c.cancelled) == ([], [], 0, 0)
 
 
-def test_shift_arrows_mark_and_walk():
+def test_ctrl_space_marks_and_walks():
+    # SPACE is the file list's mark key and types here, so the chord is what
+    # marks: Ctrl takes it out of the text path (isearch_bar.handle_event) the
+    # way Cmd-A is a command rather than the letter "a".
     c = Calls()
     bar = c.bar()
-    bar.handle_event(_key("down", {"shift"}))
-    bar.handle_event(_key("up", {"shift"}))
-    assert c.select == [1, -1]
+    bar.handle_event(_key("space", {"ctrl"}))
+    assert c.select == [1]
     assert c.navigate == []
     assert bar.pattern == ""
+
+
+def test_ctrl_shift_space_fills_the_range():
+    c = Calls()
+    bar = c.bar()
+    bar.handle_event(_key("space", {"ctrl", "shift"}))
+    assert (c.select_range, c.select, c.navigate) == (1, [], [])
+    assert bar.pattern == ""
+
+
+def test_shift_space_still_types_a_space():
+    # Shift on a printable is not taken out of the text path — and a terminal
+    # cannot report it in the first place. The file list's 'select_range' key is
+    # therefore unreachable here, which is why the bar has its own.
+    c = Calls()
+    bar = c.bar()
+    bar.handle_event(char_key_event(" ", frozenset({"shift"})))
+    assert bar.pattern == " "
+    assert (c.select_range, c.select) == (0, [])
 
 
 def test_plain_arrows_walk_the_matches():
@@ -252,10 +283,14 @@ def test_a_viewer_bar_leaves_the_select_keys_to_the_field():
     """No selection to mark, so ``on_select`` is never passed and the actions
     are simply not claimed."""
     c = Calls()
-    bar = c.bar(on_select=None, on_select_all=None)
-    bar.handle_event(_key("down", {"shift"}))
+    bar = c.bar(on_select=None, on_select_range=None, on_select_all=None)
+    bar.handle_event(_key("space", {"ctrl"}))
+    bar.handle_event(_key("space", {"ctrl", "shift"}))
     bar.handle_event(char_key_event("a", frozenset({"ctrl"})))
     assert c.select == [] and c.navigate == [] and c.select_all == 0
+    assert c.select_range == 0
+    # Unclaimed, so the field sees them — and a Ctrl chord is a command there
+    # too, so nothing is typed either.
     assert bar.pattern == ""
 
 
@@ -263,8 +298,8 @@ def test_a_viewer_bar_leaves_the_select_keys_to_the_field():
 
 
 class ISearchSelectionTest(unittest.TestCase):
-    """Shift+Down marks the file the search is sitting on and moves to the next
-    match — the whole point of #347."""
+    """Ctrl+Space marks the file the search is sitting on and moves to the next
+    match (#347), and Ctrl+Shift+Space fills the run up to it (#266)."""
 
     NAMES = ["alpha.txt", "beta.txt", "delta.txt", "gamma_alpha.txt"]
 
@@ -305,22 +340,35 @@ class ISearchSelectionTest(unittest.TestCase):
     def _focused(self):
         return self.pane["files"][self.pane["focused_index"]].name
 
-    def test_shift_down_marks_each_match_in_turn(self):
+    def test_ctrl_space_marks_each_match_in_turn(self):
         self._search("alpha")                       # alpha.txt, gamma_alpha.txt
         self.assertEqual(self.app._isearch_matches, [0, 3])
         self.assertEqual(self._focused(), "alpha.txt")
 
-        self.app.panel.dispatch_event(_key("down", {"shift"}))
+        self.app.panel.dispatch_event(_key("space", {"ctrl"}))
         self.assertEqual(self._selected(), ["alpha.txt"])
         self.assertEqual(self._focused(), "gamma_alpha.txt")
 
-        self.app.panel.dispatch_event(_key("down", {"shift"}))
+        self.app.panel.dispatch_event(_key("space", {"ctrl"}))
         self.assertEqual(self._selected(), ["alpha.txt", "gamma_alpha.txt"])
         self.assertEqual(self._focused(), "alpha.txt")   # wrapped
 
         # Marking again clears it, as SPACE does in the file list.
-        self.app.panel.dispatch_event(_key("up", {"shift"}))
+        self.app.panel.dispatch_event(_key("space", {"ctrl"}))
         self.assertEqual(self._selected(), ["gamma_alpha.txt"])
+        self.assertEqual(self._focused(), "gamma_alpha.txt")
+
+    def test_ctrl_shift_space_fills_the_run_up_to_the_match(self):
+        """The file list's range select, over the search's cursor (#266)."""
+        self.pane["selected_files"] = {str(self.pane["files"][0])}  # alpha.txt
+        self._search("gamma")                       # gamma_alpha.txt, idx 3
+        self.assertEqual(self._focused(), "gamma_alpha.txt")
+
+        self.app.panel.dispatch_event(_key("space", {"ctrl", "shift"}))
+        self.assertEqual(self._selected(),
+                         [f.name for f in self.pane["files"][:4]])
+        # The bar stays on its match: a search is how the cursor got here.
+        self.assertTrue(self.app._isearch_active)
         self.assertEqual(self._focused(), "gamma_alpha.txt")
 
     def test_space_still_types_into_the_pattern(self):
@@ -331,7 +379,7 @@ class ISearchSelectionTest(unittest.TestCase):
 
     def test_marks_survive_the_search(self):
         self._search("alpha")
-        self.app.panel.dispatch_event(_key("down", {"shift"}))
+        self.app.panel.dispatch_event(_key("space", {"ctrl"}))
         self.app.panel.dispatch_event(_key("enter"))     # stop here
         self.assertFalse(self.app._isearch_active)
         self.assertEqual(self._selected(), ["alpha.txt"])
@@ -354,7 +402,9 @@ class ISearchSelectionTest(unittest.TestCase):
 
     def test_hint_line_names_the_select_keys(self):
         hints = self.app.status._isearch_hints()
-        self.assertIn("Shift-↑/Shift-↓ select", hints)
+        # One key, not the old Shift-↑/Shift-↓ pair: marking backwards has no
+        # default, and an unbound action drops out of the line.
+        self.assertIn("Ctrl-Space select", hints)
         self.assertIn("Ctrl-A all", hints)
         self.assertIn("↑/↓ prev/next match", hints)
 
