@@ -2362,7 +2362,7 @@ class XeFMApp:
         self._list_pane(self._pane_name_of(pane), on_ready=landed)
 
     def _list_virtual(self, pane: dict, virtual: dict, *, on_ready=None,
-                      on_empty=None, on_result=None) -> None:
+                      on_empty=None, on_result=None, load=None) -> None:
         """(Re)build a virtual pane's listing from ``virtual['results']`` on a
         worker thread — the virtual counterpart of :meth:`_list_pane`.
 
@@ -2389,10 +2389,17 @@ class XeFMApp:
         path that turned out not to exist must not drag the root up — or
         :data:`~xefm.name_key.WHOLE_PATH` where they share none.
 
+        ``load()``, when given, runs first on the worker and returns the
+        :class:`~xefm.path_list.Resolved` set to list in place of
+        ``virtual['results']`` — for a source whose reading is itself I/O, such
+        as a list file on a remote host. Its ``relative`` count and
+        ``problems`` ride along in the result, with ``total``, the number of
+        paths listed.
+
         ``on_result(result)`` runs just before a listing is installed, for a
         caller that reports what was left out (``missing``, ``unreachable``);
         ``on_ready(pane)`` runs once the rows are in place. Both on the UI
-        thread."""
+        thread; so does ``on_empty(result)``."""
         pane_name = self._pane_name_of(pane)
         gen = pane["_load_gen"] = pane.get("_load_gen", 0) + 1
         pane["_load_pending"] = True
@@ -2426,10 +2433,18 @@ class XeFMApp:
             return True
 
         def worker() -> None:
+            listed, extra = paths, {}
+            if load is not None:
+                resolved = load()
+                listed = resolved.paths
+                extra = {"relative": resolved.relative,
+                         "problems": list(resolved.problems)}
             result = self.flm.compute_virtual_listing(
-                paths, filter_pattern=filter_pattern, sort_mode=sort_mode,
+                listed, filter_pattern=filter_pattern, sort_mode=sort_mode,
                 sort_reverse=sort_reverse, rel_root=rel_root,
                 derive_root=derive_root)
+            result["total"] = len(listed)
+            result.update(extra)
             self._result_queue.put((pane_name, gen, result, on_ready,
                                     True, False, prepare))
             self._wake_pump()
@@ -2721,6 +2736,7 @@ class XeFMApp:
                 "copy_paths": (self.copy_paths_to_clipboard, True),
                 "import_list_from_clipboard": (self.import_list_from_clipboard, True),
                 "import_list_from_command": (self.import_list_from_command, False),
+                "import_list_from_file": (self.import_list_from_file, True),
                 "copy_files": (self.copy_files, None),
                 "move_files": (self.move_files, None),
                 "duplicate_files": (self.duplicate_files, None),
@@ -3242,6 +3258,9 @@ class XeFMApp:
             MenuItem("Import List from Command…",
                      on_select=self.import_list_from_command,
                      shortcut=sc("import_list_from_command")),
+            MenuItem("Import List from File",
+                     on_select=lambda: self._menu("import_list_from_file"),
+                     enabled=has_files, shortcut=sc("import_list_from_file")),
             SEPARATOR,
             MenuItem("Copy Log Selection",
                      on_select=lambda: self._menu("copy_log_selection"),
@@ -5449,29 +5468,39 @@ class XeFMApp:
         pane = self.pane(pane_name)
         if base is None:
             base = pane["path"]
-        resolved = path_list.resolve((str(p) for p in paths), base)
-        if not resolved.paths:
-            self.log_info(f"{title}: no paths to show")
-            return
-        total = len(resolved.paths)
-        plural = "" if total == 1 else "s"
+        lines = [str(p) for p in paths]
+        self._open_list(pane_name, title=title,
+                        load=lambda: path_list.resolve(lines, base),
+                        relative_to=str(base))
+
+    def _open_list(self, pane_name: str, *, title: str, load,
+                   relative_to: str) -> None:
+        """Open the set ``load()`` resolves as pane ``pane_name``'s listing,
+        headed ``title``, and report it — the tail every file-list source
+        shares. ``load`` runs on the worker (:meth:`_list_virtual`), so a source
+        may do its reading there. ``relative_to`` names what relative lines
+        were resolved against, for the report."""
+        pane = self.pane(pane_name)
         virtual = {"kind": "list", "title": title, "root": None,
-                   "results": resolved.paths, "meta": {}}
-        left_out = {"missing": 0, "unreachable": 0}
+                   "results": [], "meta": {}}
+        report = {}
 
         def details() -> str:
             parts = []
-            if left_out["missing"]:
-                parts.append(f'{left_out["missing"]} not found')
-            if left_out["unreachable"]:
-                parts.append(f'{left_out["unreachable"]} unreachable')
-            if resolved.relative:
-                parts.append(f"{resolved.relative} resolved relative to {base}")
+            if report.get("missing"):
+                parts.append(f'{report["missing"]} not found')
+            if report.get("unreachable"):
+                parts.append(f'{report["unreachable"]} unreachable')
+            if report.get("relative"):
+                parts.append(f'{report["relative"]} resolved relative to '
+                             f'{relative_to}')
+            parts.extend(f"could not read {p}" for p in report.get("problems", ()))
             return f" ({', '.join(parts)})" if parts else ""
 
         def counted(result: dict) -> None:
-            left_out["missing"] = result["missing"]
-            left_out["unreachable"] = result["unreachable"]
+            report.update({k: result.get(k) for k in
+                           ("missing", "unreachable", "relative", "problems",
+                            "total")})
 
         def landed(p: dict) -> None:
             n = len(virtual["results"])
@@ -5480,13 +5509,44 @@ class XeFMApp:
 
         def empty(result: dict) -> None:
             counted(result)
-            self.log_info(f"{title}: none of the {total} path{plural} "
-                          f"could be shown{details()}")
+            total = report.get("total") or 0
+            if not total:
+                self.log_info(f"{title}: no paths to show{details()}")
+                return
+            self.log_info(f"{title}: none of the {total} "
+                          f"path{'' if total == 1 else 's'} could be shown"
+                          f"{details()}")
 
-        self.log_info(f"{title}: reading {total} path{plural}…")
+        self.log_info(f"{title}: reading…")
         self._list_virtual(pane, virtual, on_ready=landed, on_empty=empty,
-                           on_result=counted)
+                           on_result=counted, load=load)
         self.panel.render()
+
+    def import_list_from_file(self) -> None:
+        """Open the list file under the cursor — or every selected one, as one
+        list — as the active pane's listing: one path per line (#453 ②).
+
+        A relative line resolves against the directory its own list file is
+        in, the convention of M3U playlists and ``.gitignore``: a list kept
+        beside the files it names keeps working wherever the folder goes, and
+        reads the same from whichever pane it is opened. The file is read on
+        the listing worker, so a list on a remote host does not hold the UI.
+        Directories among the selection are skipped."""
+        pane = self.active_pane()
+        info = pane.get("file_info") or {}
+        files = [f for f in self._selected_or_focused(pane)
+                 if not (info.get(str(f)) or {}).get("is_dir")]
+        if not files:
+            self.log_info("Import List from File: put the cursor on a text file "
+                          "that lists paths, one per line")
+            return
+        title = files[0].name if len(files) == 1 else \
+            f"{files[0].name} +{len(files) - 1}"
+        relative_to = (str(files[0].parent) if len(files) == 1
+                       else "each list's folder")
+        self._open_list(self.pm.active_pane, title=title,
+                        load=lambda: path_list.read_lists(files),
+                        relative_to=relative_to)
 
     def _copy_to_clipboard(self, render, label: str) -> None:
         """Shared body of the clipboard-copy actions: gather the selection (or
@@ -7188,6 +7248,8 @@ class XeFMApp:
              "Show the paths on the clipboard as this pane's list (Edit menu)"),
             ("import_list_from_command",
              "Show the paths a command prints as this pane's list (Edit menu)"),
+            ("import_list_from_file",
+             "Show the paths the file under the cursor lists (Edit menu)"),
             ("move_files", "Move selection to the other pane"),
             ("delete_files", "Delete selection"),
             ("create_archive", "Create archive from selection"),
@@ -7478,6 +7540,8 @@ class XeFMApp:
             MenuItem("Copy Name(s)", on_select=self.copy_names_to_clipboard,
                      enabled=entry is not None),
             MenuItem("Copy Full Path(s)", on_select=self.copy_paths_to_clipboard,
+                     enabled=entry is not None),
+            MenuItem("Open as List", on_select=lambda: self._menu("import_list_from_file"),
                      enabled=entry is not None),
             SEPARATOR,
             MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),

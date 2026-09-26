@@ -19,7 +19,7 @@ group and the whole group is signalled; on Windows ``taskkill /T`` walks the
 tree.
 
 **Bytes in, text out, paths intact.** Output is read as bytes and decoded once
-at the end (:func:`decode_output`), because the right encoding is a property of
+at the end (:func:`xefm.path_list.decode`), because the right encoding is a property of
 the whole output, not of a line.
 
 **UTF-8 on Windows, asked for.** A console program writes to a pipe in its
@@ -51,6 +51,7 @@ import threading
 import time
 from typing import Callable, NamedTuple, Optional
 
+from xefm import path_list
 from xefm.external_programs import SUBPROCESS_NO_WINDOW
 from xefm.log_manager import getLogger
 
@@ -65,32 +66,6 @@ _POLL = 0.05
 #: usually says why at the end; one that writes a megabyte of warnings does not
 #: need all of it in the log pane.
 _STDERR_TAIL = 5
-
-
-def decode_output(data: bytes) -> str:
-    """Text from a command's stdout, read so that each path still addresses
-    the file it names.
-
-    UTF-8 first, and a byte-order mark dropped: what nearly every tool prints
-    today, and what console programs print on Windows once :func:`run` has set
-    their code page. Where that fails:
-
-    - **Windows** falls back to the ANSI code page — what a program that
-      ignores the console's code page writes (the C runtime's narrow
-      ``printf``, Python's own ``print``): cp1252 on an English system, cp932
-      on a Japanese one.
-    - **POSIX** decodes with the filesystem encoding and ``surrogateescape``,
-      exactly as :func:`os.fsdecode` does: a name that is not valid UTF-8 is
-      still a name on disk, and the escaped form round-trips to the same bytes
-      when it is opened.
-    """
-    try:
-        return data.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        pass
-    if _WINDOWS:
-        return data.decode("mbcs", errors="replace")
-    return data.decode(sys.getfilesystemencoding(), errors="surrogateescape")
 
 
 class CommandOutput(NamedTuple):
@@ -194,7 +169,7 @@ def run(command: str, *, cwd: str, env: dict,
     for t in readers:
         t.join(timeout=5)
 
-    stderr_lines = decode_output(bytes(err)).splitlines()
-    return CommandOutput(decode_output(bytes(out)), proc.returncode,
+    stderr_lines = path_list.decode(bytes(err)).splitlines()
+    return CommandOutput(path_list.decode(bytes(out)), proc.returncode,
                          [line for line in stderr_lines if line.strip()][-_STDERR_TAIL:],
                          stopped)

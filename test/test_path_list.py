@@ -350,7 +350,9 @@ class Header(RemoteScheme):
 # the app: the clipboard import and PaneApi.open_list
 # --------------------------------------------------------------------------- #
 
-class AppImport(RemoteScheme):
+class _AppBase(RemoteScheme):
+    """A headless app on the memory backend, and the helpers both halves use."""
+
     def setUp(self):
         super().setUp()
         from puikit.backends import create_backend
@@ -394,6 +396,8 @@ class AppImport(RemoteScheme):
         view = self.app._active_view()
         return [view._display_name(f) for f in self.pane["files"]]
 
+
+class AppImport(_AppBase):
     def test_the_clipboard_becomes_the_pane(self):
         a = self._write(os.path.join("one", "a.txt"))
         b = self._write(os.path.join("two", "b.txt"))
@@ -496,6 +500,128 @@ class AppImport(RemoteScheme):
         self.assertEqual(self.pane["virtual"]["title"], "My search")
         self.assertEqual([str(f) for f in self.pane["files"]], [a])
         self.assertIn("My search: 1 item", self._last_log())
+
+
+# --------------------------------------------------------------------------- #
+# decode and read_lists: a list file
+# --------------------------------------------------------------------------- #
+
+class Decode(unittest.TestCase):
+    TEXT = "C:\\a\\日本語.txt\r\nb.txt\r\n"
+
+    def test_a_byte_order_mark_decides(self):
+        import codecs
+        for bom, enc in ((codecs.BOM_UTF8, "utf-8"),
+                         (codecs.BOM_UTF16_LE, "utf-16-le"),
+                         (codecs.BOM_UTF16_BE, "utf-16-be")):
+            with self.subTest(enc=enc):
+                self.assertEqual(path_list.decode(bom + self.TEXT.encode(enc)),
+                                 self.TEXT)
+
+    def test_powershell_out_file_is_read(self):
+        # Windows PowerShell 5.1's `dir -Name > list.txt` writes UTF-16LE + BOM.
+        data = "\ufeffa.txt\r\nb.txt\r\n".encode("utf-16-le")
+        self.assertEqual(path_list.parse(path_list.decode(data)), ["a.txt", "b.txt"])
+
+    def test_utf8_without_a_mark(self):
+        self.assertEqual(path_list.decode(self.TEXT.encode()), self.TEXT)
+
+
+class ReadLists(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _list(self, rel, lines, encoding="utf-8"):
+        p = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding=encoding, newline="") as f:
+            f.write("\r\n".join(lines) + "\r\n")
+        return Path(p)
+
+    def test_relative_lines_resolve_against_the_list_files_own_folder(self):
+        lst = self._list(os.path.join("proj", "files.txt"), ["src/a.py"])
+        got = path_list.read_lists([lst])
+        self.assertEqual([str(p) for p in got.paths],
+                         [str(Path(os.path.join(self.tmp, "proj")) / "src/a.py")])
+        self.assertEqual(got.relative, 1)
+
+    def test_several_lists_become_one_each_path_once(self):
+        one = self._list(os.path.join("one", "l.txt"), ["x.txt", "y.txt"])
+        two = self._list(os.path.join("one", "m.txt"), ["y.txt", "z.txt"])
+        got = path_list.read_lists([one, two])
+        self.assertEqual([p.name for p in got.paths], ["x.txt", "y.txt", "z.txt"])
+
+    def test_an_unreadable_list_is_named_not_fatal(self):
+        good = self._list("good.txt", ["a.txt"])
+        gone = Path(os.path.join(self.tmp, "gone.txt"))
+        got = path_list.read_lists([gone, good])
+        self.assertEqual([p.name for p in got.paths], ["a.txt"])
+        self.assertEqual(len(got.problems), 1)
+        self.assertTrue(got.problems[0].startswith("gone.txt: "))
+
+
+class AppListFile(_AppBase):
+    def _open(self, *names):
+        """Put the cursor on (or select) ``names`` in the pane and import."""
+        self.app._relist(self.pane)
+        self.app._settle_listings()
+        files = self.pane["files"]
+        by_name = {f.name: i for i, f in enumerate(files)}
+        self.pane["focused_index"] = by_name[names[0]]
+        if len(names) > 1:
+            self.pane["selected_files"] = {str(files[by_name[n]]) for n in names}
+        self.assertTrue(self.app.dispatch("import_list_from_file"))
+        self.app._settle_listings()
+
+    def _list_file(self, rel, lines, encoding="utf-8"):
+        p = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(p) or self.tmp, exist_ok=True)
+        with open(p, "w", encoding=encoding, newline="") as f:
+            f.write("\n".join(lines) + "\n")
+        return p
+
+    def test_the_file_under_the_cursor_becomes_the_list(self):
+        self._write(os.path.join("src", "a.py"))
+        self._write(os.path.join("src", "b.py"))
+        self._list_file("files.txt", ["src/a.py", "src/b.py", "src/gone.py"])
+        self._open("files.txt")
+        virtual = self.pane["virtual"]
+        self.assertEqual(virtual["title"], "files.txt")
+        self.assertEqual(sorted(f.name for f in self.pane["files"]), ["a.py", "b.py"])
+        log = self._last_log()
+        self.assertIn("1 not found", log)
+        self.assertIn("3 resolved relative to", log)
+
+    def test_a_utf16_list_from_powershell(self):
+        a = self._write("日本語.txt")
+        self._list_file("ps.txt", ["\ufeff" + a], encoding="utf-16-le")
+        self._open("ps.txt")
+        self.assertEqual([str(f) for f in self.pane["files"]], [a])
+
+    def test_selected_lists_become_one(self):
+        self._write("x.txt")
+        self._write("y.txt")
+        self._list_file("l1.lst", ["x.txt"])
+        self._list_file("l2.lst", ["y.txt"])
+        self._open("l1.lst", "l2.lst")
+        self.assertEqual(self.pane["virtual"]["title"], "l1.lst +1")
+        self.assertEqual(sorted(f.name for f in self.pane["files"]),
+                         ["x.txt", "y.txt"])
+
+    def test_a_directory_is_not_a_list(self):
+        os.makedirs(os.path.join(self.tmp, "sub"))
+        self._open("sub")
+        self.assertIsNone(self.pane["virtual"])
+        self.assertIn("put the cursor on a text file", self._last_log())
+
+    def test_an_empty_list_leaves_the_pane_alone(self):
+        self._list_file("empty.txt", [""])
+        self._open("empty.txt")
+        self.assertIsNone(self.pane["virtual"])
+        self.assertIn("empty.txt: no paths to show", self._last_log())
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ other tool; all that crosses over is the list.
 Everything here is storage-agnostic and pane-free, so the pieces run on a
 worker thread and are tested without an app:
 
+- :func:`decode` — bytes to text, in whatever encoding a list arrived in.
 - :func:`parse` — text to candidate lines. Dull on purpose: one path per line,
   whitespace and one surrounding pair of quotes trimmed, blank lines skipped.
   No delimiter guessing, no CSV, no globs, no URLs; anything cleverer belongs in
@@ -28,7 +29,9 @@ filesystem that matches bytes exactly.
 
 from __future__ import annotations
 
+import codecs
 import os
+import sys
 from typing import Iterable, NamedTuple
 
 from xefm import path_schemes
@@ -40,6 +43,45 @@ from xefm.path import Path, attrs_via_path
 _MAX_DEPTH = 256
 
 _QUOTES = ('"', "'")
+
+_WINDOWS = sys.platform == "win32"
+
+#: Byte-order marks, longest first so UTF-32's is not read as UTF-16's.
+_BOMS = ((codecs.BOM_UTF32_LE, "utf-32-le"), (codecs.BOM_UTF32_BE, "utf-32-be"),
+         (codecs.BOM_UTF8, "utf-8"),
+         (codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
+
+
+def decode(data: bytes) -> str:
+    """Text from a list's bytes — a command's stdout or a list file — read so
+    that each path still addresses the file it names.
+
+    A byte-order mark decides, when there is one. That matters most for
+    UTF-16, which is what Windows PowerShell 5.1's ``Out-File`` and ``>``
+    write and what Notepad calls "Unicode": without the mark it would read as
+    NUL-riddled ANSI. Otherwise UTF-8 — what nearly every tool writes today,
+    and what console programs print on Windows once
+    :func:`xefm.command_list.run` has set their code page. Where that fails:
+
+    - **Windows** falls back to the ANSI code page — what a program that
+      ignores the console's code page writes (the C runtime's narrow
+      ``printf``, Python's own ``print``), and what an older editor saves:
+      cp1252 on an English system, cp932 on a Japanese one.
+    - **POSIX** decodes with the filesystem encoding and ``surrogateescape``,
+      exactly as :func:`os.fsdecode` does: a name that is not valid UTF-8 is
+      still a name on disk, and the escaped form round-trips to the same bytes
+      when it is opened.
+    """
+    for bom, encoding in _BOMS:
+        if data.startswith(bom):
+            return data[len(bom):].decode(encoding, errors="replace")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if _WINDOWS:
+        return data.decode("mbcs", errors="replace")
+    return data.decode(sys.getfilesystemencoding(), errors="surrogateescape")
 
 
 def parse(text: str | None) -> list[str]:
@@ -77,9 +119,11 @@ class Resolved(NamedTuple):
 
     The count is reported, not hidden: a relative line resolved against the
     wrong base finds a real file that is not the one meant, which cannot be
-    prevented — only said."""
+    prevented — only said. ``problems`` says what could not be read at all —
+    a list file that is gone or unreadable — one line each."""
     paths: list
     relative: int
+    problems: tuple = ()
 
 
 def resolve(lines: Iterable[str], base) -> Resolved:
@@ -104,6 +148,34 @@ def resolve(lines: Iterable[str], base) -> Resolved:
         seen.add(key)
         paths.append(path)
     return Resolved(paths, relative)
+
+
+def read_lists(files) -> Resolved:
+    """The paths listed in ``files`` — list files, one path per line — as one
+    list, in order, each path once.
+
+    A relative line resolves against **its own list file's directory**, the
+    convention of M3U playlists, ``.gitignore`` and response files: a list
+    kept beside the files it names keeps working wherever the folder is
+    moved, and is read the same whichever pane it is opened from. A list file
+    that cannot be read is skipped and named in ``problems``. Blocking I/O —
+    a list file may be on a remote host — so call it on a worker.
+    """
+    paths, seen, relative, problems = [], set(), 0, []
+    for file in files:
+        try:
+            text = decode(file.read_bytes())
+        except Exception as e:  # noqa: BLE001 — any backend's read error
+            problems.append(f"{file.name}: {e}")
+            continue
+        got = resolve(parse(text), file.parent)
+        relative += got.relative
+        for path in got.paths:
+            key = str(path)
+            if key not in seen:
+                seen.add(key)
+                paths.append(path)
+    return Resolved(paths, relative, tuple(problems))
 
 
 def _ancestors(path) -> list:
