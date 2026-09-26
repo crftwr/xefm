@@ -5,8 +5,11 @@ Range selection: from the nearest marked item to the cursor (#266).
 already-selected item — a Shift-click done with the keyboard. The anchor is
 looked for above the cursor first and only then below, so marking an item and
 then moving either way reaches the same run with the same key. Nothing moves and
-nothing outside the span is touched, which is what lets the open search bar run
-the same operation over its own cursor (``isearch.select_range``).
+nothing outside the span is touched.
+
+A file-list action alone: an open search has no range key, because its cursor is
+a match while the anchor is an item marked before the search began. Enter leaves
+the search with the cursor on the match, and this key applies there.
 
 Run with: python -m pytest test/test_select_range.py -v
 """
@@ -157,20 +160,24 @@ class SelectRange(unittest.TestCase):
         # says "range", and SPACE already marks and moves.
         self.assertEqual(Config.KEY_BINDINGS["toggle_select_up"], [])
 
-    def test_the_search_bar_has_its_own_key_for_it(self):
-        # Shift on a printable cannot reach an action inside the pattern field
-        # (nor a POSIX terminal at all), so the same operation is a Ctrl chord
-        # there — and the two contexts keep their own defaults.
-        from xefm.actions import FILER, ISEARCH
+    def test_the_search_bar_has_no_range_key(self):
+        """An open search is not a surface for this. Its cursor is a match, but
+        the anchor is an item marked before the search began — so the span would
+        take in rows the pattern never matched, which is not a promise a search
+        should make. ``isearch.accept`` (Enter) leaves the search with the cursor
+        on the match it found, so the range is one keystroke away in the file
+        list, where it means what it says."""
+        from xefm.actions import FILER, ISEARCH, registry
         keys = self.app.keys
         self.assertEqual(keys.get_keys_for_action("select_range", FILER)[0],
                          ["Shift-SPACE"])
-        self.assertEqual(
-            keys.get_keys_for_action("isearch.select_range", ISEARCH)[0],
-            ["Ctrl-Shift-SPACE"])
-        # The unqualified name is the file list's alone; binding it in a config
-        # must not reach into the search bar.
         self.assertEqual(keys.get_keys_for_action("select_range", ISEARCH)[0], [])
+        self.assertIsNone(registry.resolve(ISEARCH, "isearch.select_range"))
+        # Shift on a printable never reaches an action inside the pattern field
+        # anyway (nor a POSIX terminal at all), so the file list's key could not
+        # have served the bar even if the operation belonged there.
+        self.assertEqual(
+            keys.get_keys_for_action("isearch.select_range", ISEARCH)[0], [])
 
     def test_a_config_that_predates_this_keeps_its_own_shift_space(self):
         """XeFM never rewrites a config's KEY_BINDINGS, so an existing one still

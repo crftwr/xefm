@@ -643,22 +643,22 @@ _ISEARCH_ACTIONS = [
     #
     # Ctrl+Space satisfies both and says what it does: Space is "select" in the
     # file list, and Ctrl is what turns it into a command on a surface where a
-    # bare Space types. Ctrl+Shift+Space then reads the way it does everywhere
-    # else — Shift is the range — so the two surfaces spell marking the same way:
+    # bare Space types. It costs a terminal nothing either — it is the NUL byte,
+    # decoded since PuiKit 1.7.2.
     #
-    #     file list   Space              Shift-Space
-    #     search bar  Ctrl-Space         Ctrl-Shift-Space
+    # This was Shift+Down, which worked but read as the log pane's scroll keys,
+    # since that is what the same chord does in the file list a row away. Marking
+    # backwards lost its default in the move (as it did in the file list): a
+    # search walks forwards, the action is still registered, and either surface
+    # can have one back with a line in KEY_BINDINGS.
     #
-    # These were Shift+Down / Shift+Up, which worked but read as the log pane's
-    # scroll keys, since that is what the same chord does in the file list a row
-    # away. Marking backwards lost its default in the move (as it did in the file
-    # list): a search walks forwards, the backwards variants are still registered,
-    # and either surface can have one back with a line in KEY_BINDINGS.
-    #
-    # Ctrl+Space costs a terminal nothing — it is the NUL byte, decoded since
-    # PuiKit 1.7.2 — while Ctrl+Shift+Space reaches the desktop app only: a
-    # terminal has no room for a modifier on a printable, and the Windows
-    # terminal claims that chord outright.
+    # There is deliberately no range key here, though the file list has one
+    # ('select_range', Shift-Space). A range would have to be the *positional*
+    # span to be worth anything — its anchor is an item marked before the search
+    # began, so it is not a match — and a span of rows the search is not talking
+    # about is a promise this surface should not make. 'isearch.accept' (Enter)
+    # keeps the cursor on the current match, so the range is one keystroke away
+    # in the surface that owns it.
     _a("isearch.next_match", ISEARCH, "Move to the next match",
        default_keys=("DOWN",)),
     _a("isearch.prev_match", ISEARCH, "Move to the previous match",
@@ -669,17 +669,6 @@ _ISEARCH_ACTIONS = [
     _a("isearch.toggle_select_up", ISEARCH,
        "Toggle selection and move to the previous match",
        default_keys=()),
-    # The file list's 'select_range' on the surface that shares its cursor, and
-    # the same handler: during a search the cursor is the current match, so
-    # "everything between the last mark and here" is the answer to a pattern that
-    # found the end of a run. A separate dotted action rather than the
-    # unqualified name registered twice, because the two carry different keys —
-    # an unqualified 'select_range' in KEY_BINDINGS would otherwise hand this
-    # surface Shift-Space, which the pattern field would swallow as a typed
-    # space.
-    _a("isearch.select_range", ISEARCH,
-       "Select from the nearest selected item to the current match",
-       default_keys=("Ctrl-Shift-SPACE",)),
     # Named for what it selects: the file list's own 'select_all' means every
     # *item* in the pane, and the dotted form of a shorter name is how a config
     # scopes that same action to one context — so reusing it here would read as

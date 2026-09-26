@@ -192,13 +192,14 @@ the lines by hand if your config predates the change:
 | `isearch.toggle_select_down` | `Shift-DOWN` | `Ctrl-SPACE` |
 | `isearch.toggle_select_up` | `Shift-UP` | unbound |
 
-`Shift-Space` now fills a *range* (`select_range`), which is what Shift means
-in every other application, and the search bar's marking moved onto the Space
-family to match: `Ctrl-Space` marks one match, `Ctrl-Shift-Space` fills the range
-to it. Those were `Shift-Down` / `Shift-Up`, which worked but read as the log
-pane's scroll keys — the same chord one surface away. Marking *backwards* is what
-lost its default in both places; both actions are still registered, so a line in
-`KEY_BINDINGS` brings either back.
+`Shift-Space` now fills a *range* (`select_range`), which is what Shift means in
+every other application, and the search bar's marking moved onto the Space family
+to match: `Ctrl-Space` marks the current match. That was `Shift-Down` /
+`Shift-Up`, which worked but read as the log pane's scroll keys — the same chord
+one surface away. Marking *backwards* is what lost its default in both places;
+both actions are still registered, so a line in `KEY_BINDINGS` brings either
+back. The search bar has no range key: Enter leaves the search with the cursor on
+the match, and `Shift-Space` does the rest.
 
 ## Configuration Format
 
@@ -277,9 +278,8 @@ to a Python function of your own.
 The incremental search bar (`F`) is a surface of its own too, and its keys carry
 its name the same way — `isearch.next_match`, `isearch.prev_match`,
 `isearch.toggle_select_down`, `isearch.toggle_select_up`,
-`isearch.select_range`, `isearch.select_matches`, `isearch.accept`,
-`isearch.cancel`. They are rebound exactly like a viewer's; the defaults and what
-each one does are in
+`isearch.select_matches`, `isearch.accept`, `isearch.cancel`. They are rebound
+exactly like a viewer's; the defaults and what each one does are in
 [Customization (Preview)](CUSTOMIZATION_FEATURE.md#the-incremental-search-bar).
 
 One rule is specific to this surface: **the key must not be one that types a
@@ -289,8 +289,9 @@ what keeps `Q`, `?` and Space typeable into a pattern while `quit`, `help` and
 `N` can never fire. XeFM notes it in the log pane at startup rather than leaving
 the binding silently dead. `Shift-DOWN`, `Ctrl-N` and `F2` are all fine. Shift
 alone is not enough to make a printable key a command here: `Shift-Space` types a
-space, which is why the file list's `select_range` key cannot serve the search bar
-and `isearch.select_range` has `Ctrl-Shift-Space` instead.
+space, so the file list's `select_range` key could not serve this surface even if
+range selection belonged here — which it does not. Press Enter to leave the
+search (the cursor stays on the match) and `Shift-Space` applies again.
 
 ### Renamed actions
 

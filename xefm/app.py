@@ -2684,8 +2684,11 @@ class XeFMApp:
         default key is Shift-SPACE.
 
         The cursor stays where it is: the item under it is the end of the span,
-        not a step on the way, and the search bar runs this same handler over its
-        own cursor (``_isearch_select_range``)."""
+        not a step on the way. Deliberately a file-list action alone: an open
+        search has no range key, because its cursor is a match and the span
+        between a mark and a match is not something the search is talking about
+        (see the isearch block of xefm/actions.py). Enter leaves the search with
+        the cursor on the match, which is where this key applies."""
         self._log_result(self.flm.select_range(self.active_pane()))
 
     def _act_select_all_files(self) -> None:
@@ -6390,7 +6393,6 @@ class XeFMApp:
             on_change=self._isearch_recompute,
             on_navigate=self._isearch_step,
             on_select=self._isearch_toggle_select,
-            on_select_range=self._isearch_select_range,
             on_select_all=self._isearch_select_matches,
             on_submit=self._isearch_stop,
             on_cancel=self._isearch_cancel,
@@ -6466,18 +6468,6 @@ class XeFMApp:
             self._isearch_step(delta)   # renders
         else:
             self.panel.render()
-
-    def _isearch_select_range(self) -> None:
-        """``isearch.select_range``: the file list's ``select_range`` over the
-        search's cursor — everything between the nearest marked item and the
-        current match.
-
-        The same handler, because a search *is* a way of moving the cursor: mark
-        one item, type a pattern that lands on the far end of the run, and this
-        fills what lies between. Nothing moves, so the bar stays on its match and
-        the pattern stays live for the next one."""
-        self._log_result(self.flm.select_range(self.active_pane()))
-        self.panel.render()
 
     def _isearch_select_matches(self) -> None:
         """``isearch.select_matches``: mark every match found — the counter's whole
@@ -6881,8 +6871,6 @@ class XeFMApp:
             ("isearch.next_match", "Move to the next match"),
             ("isearch.prev_match", "Move to the previous match"),
             ("isearch.toggle_select_down", "Select, then move to the next match"),
-            ("isearch.select_range",
-             "Select from the nearest selected item to this match"),
             ("isearch.select_matches", "Select every match (again: clear them)"),
             ("isearch.accept", "Stop at the current match"),
             ("isearch.cancel", "Cancel and restore the cursor"),

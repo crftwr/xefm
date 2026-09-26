@@ -309,9 +309,11 @@ class Config:
         # terminal has no room for a modifier on a printable, so Shift-SPACE
         # arrives there as a plain SPACE and toggles one item instead; under
         # Terminal.app, iTerm2 or a Linux terminal, put this on a chord the
-        # terminal can carry ('Ctrl-LEFT', 'Ctrl-Y', 'F6'). In an open search the
-        # same operation is 'isearch.select_range' (Ctrl-Shift-SPACE), listed with
-        # the other search-bar keys below.
+        # terminal can carry ('Ctrl-LEFT', 'Ctrl-Y', 'F6').
+        #
+        # A file-list key only: an open search has no range of its own. Press
+        # Enter to leave the search -- the cursor stays on the match it found --
+        # and the range is this key again.
         'select_range': ['Shift-SPACE'],       # Select from the nearest marked item to the cursor
         # Unbound: SPACE already marks and moves, and Shift-SPACE now fills a
         # range. Put it back on a key of your own if you mark upwards often.
@@ -497,9 +499,6 @@ class Config:
         #   'isearch.prev_match':         UP          previous match
         #   'isearch.toggle_select_down': Ctrl-SPACE  select, then next match
         #   'isearch.toggle_select_up':   (unbound)   select, then previous match
-        #   'isearch.select_range':       Ctrl-Shift-SPACE
-        #                                             select from the nearest
-        #                                             marked item to this match
         #   'isearch.select_matches':     Ctrl-A      select every match
         #                                             (again: clear them)
         #   'isearch.accept':             ENTER       stop at the current match
@@ -516,20 +515,23 @@ class Config:
         # 'Ctrl-Y', 'F2', 'INSERT' (on Windows and in the terminal -- macOS
         # keyboards have no Insert key).
         #
-        # The two marking keys spell the file list's out loud: SPACE selects, so
-        # Ctrl-SPACE selects here (Ctrl being what makes a command of a key that
-        # would otherwise type), and Shift is the range in both places --
-        # Shift-SPACE in the file list, Ctrl-Shift-SPACE here. Marking backwards
-        # has no default in either: a search walks forwards. These were
-        # Shift-DOWN / Shift-UP, which read as the log pane's scroll keys, since
-        # that is what the same chord does in the file list a row away.
+        # The marking key spells the file list's out loud: SPACE selects, so
+        # Ctrl-SPACE selects here, Ctrl being what makes a command of a key that
+        # would otherwise type. It reaches every backend (in a terminal it is the
+        # NUL byte). This was Shift-DOWN / Shift-UP, which read as the log pane's
+        # scroll keys, since that is what the same chord does in the file list a
+        # row away; marking backwards has no default now, in either surface,
+        # because a search walks forwards.
         #
-        # Ctrl-SPACE reaches every backend (it is the NUL byte in a terminal);
-        # Ctrl-Shift-SPACE reaches the desktop app only, because a terminal
-        # cannot modify a printable and the Windows terminal claims that chord
-        # for itself. Ctrl-A is the one default that takes a key the pattern
-        # field would otherwise use (select-all-text), and only in the Ctrl form
-        # -- Command-A still selects the text on macOS.
+        # There is no range key here on purpose. The file list's 'select_range'
+        # fills the span between a marked item and the cursor, and its anchor is
+        # something you marked before the search started -- not a match. Enter
+        # leaves the search on the match it found, so the range is one keystroke
+        # away where it means what it says.
+        #
+        # Ctrl-A is the one default that takes a key the pattern field would
+        # otherwise use (select-all-text), and only in the Ctrl form -- Command-A
+        # still selects the text on macOS.
         #
         # Example -- select with Insert, on a keyboard that has one:
         # 'isearch.toggle_select_down': ['INSERT'],
