@@ -78,6 +78,23 @@ endif
 endif
 endif
 
+# --- The home directory XeFM itself reads -------------------------------------
+# `~` in a recipe is the shell's $HOME, which on Windows is not where XeFM keeps
+# its configuration. XeFM asks Python for Path.home(), i.e. USERPROFILE
+# (C:\Users\craft), while MSYS2's sh answers /home/craft from its own passwd --
+# a directory that need not exist and, under the stripped environment above,
+# cannot even be created ("mkdir: cannot create directory '/home'"), which is
+# where `make install-config` stopped. HOME is not among the variables that
+# block restores, and deliberately so: it is not wrong, it answers a different
+# question. Derive the path from USERPROFILE instead, in the POSIX form the sh
+# running the recipe expects, and use it in place of `~`.
+ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S))$(findstring CYGWIN,$(UNAME_S)))
+XEFM_HOME := $(shell cygpath -u "$(USERPROFILE)" 2>/dev/null)
+endif
+ifeq ($(XEFM_HOME),)
+XEFM_HOME := $(HOME)
+endif
+
 # --- PuiKit source: PyPI by default, local editable checkout on opt-in ---------
 # PuiKit is released on PyPI, so `make venv` installs it from there by default.
 # To develop against a local PuiKit checkout, set PUIKIT_DIR to its path — PuiKit
@@ -448,14 +465,14 @@ dev-install: check-venv install-puikit
 	@$(PIP) install -e .
 
 install-config:
-	@echo "Installing default configuration to ~/.xefm/config.py..."
-	@mkdir -p ~/.xefm
-	@if [ -f ~/.xefm/config.py ]; then \
-		echo "Warning: ~/.xefm/config.py already exists"; \
+	@echo "Installing default configuration to $(XEFM_HOME)/.xefm/config.py..."
+	@mkdir -p "$(XEFM_HOME)/.xefm"
+	@if [ -f "$(XEFM_HOME)/.xefm/config.py" ]; then \
+		echo "Warning: $(XEFM_HOME)/.xefm/config.py already exists"; \
 		echo "This will overwrite your existing configuration!"; \
 		read -p "Continue? [y/N] " confirm; \
 		if [ "$${confirm}" = "y" ] || [ "$${confirm}" = "Y" ]; then \
-			cp xefm/_config.py ~/.xefm/config.py; \
+			cp xefm/_config.py "$(XEFM_HOME)/.xefm/config.py"; \
 			echo "Configuration installed successfully"; \
 			echo "Your old config has been overwritten"; \
 		else \
@@ -463,7 +480,7 @@ install-config:
 			exit 1; \
 		fi; \
 	else \
-		cp xefm/_config.py ~/.xefm/config.py; \
+		cp xefm/_config.py "$(XEFM_HOME)/.xefm/config.py"; \
 		echo "Configuration installed successfully"; \
 	fi
 
