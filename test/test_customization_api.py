@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import actions as xa  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
+from xefm import migemo_search  # noqa: E402
 from xefm import user_api  # noqa: E402
 from xefm._config import Config as DefaultConfig  # noqa: E402
 from xefm.config import KeyBindings, config_manager  # noqa: E402
@@ -772,6 +773,113 @@ def test_a_config_that_uses_none_of_it_says_nothing(app_with):
     app.log_info = lines.append
     app._load_user_entries(app.config)
     assert lines == []
+
+
+# --- ctx.choose and its two dialogs (#467) ---------------------------------- #
+
+def _top(app):
+    return type(app.panel._layers[-1].widget).__name__
+
+
+def test_choose_opens_the_compact_dialog_by_default(app_with):
+    app, _ = app_with(ACTIONS={"pick": lambda ctx: ctx.choose("Pick", ["a", "b"])})
+    app.dispatch("pick")
+    assert _top(app) == "ChoiceDialog"
+
+
+def test_choose_type_filter_opens_the_searchable_picker(app_with):
+    def pick(ctx):
+        ctx.choose("Pick", ["a", "b"], type="filter")
+
+    app, _ = app_with(ACTIONS={"pick": pick})
+    app.dispatch("pick")
+    assert _top(app) == "FilterListDialog"
+
+
+@pytest.mark.parametrize("dialog_type", ["choice", "filter"])
+def test_choose_reports_the_chosen_index(app_with, dialog_type):
+    got = []
+
+    def pick(ctx):
+        ctx.choose("Pick", ["alpha", "beta", "gamma"], type=dialog_type,
+                   on_result=got.append)
+
+    app, _ = app_with(ACTIONS={"pick": pick})
+    app.dispatch("pick")
+    dialog = app.panel._layers[-1].widget
+    # Land on the third row and take it — the index is what the config gets,
+    # whichever dialog drew it.
+    for _ in range(2):
+        dialog.handle_event(key("down"))
+    dialog.handle_event(key("enter"))
+    assert got == [2]
+
+
+@pytest.mark.parametrize("dialog_type", ["choice", "filter"])
+def test_choose_reports_none_on_cancel(app_with, dialog_type):
+    got = []
+
+    def pick(ctx):
+        ctx.choose("Pick", ["alpha"], type=dialog_type, on_result=got.append)
+
+    app, _ = app_with(ACTIONS={"pick": pick})
+    app.dispatch("pick")
+    app.panel._layers[-1].widget.handle_event(key("escape"))
+    assert got == [None]
+
+
+def test_the_filter_picker_searches_rather_than_times_out(app_with):
+    """The reason ``type='filter'`` exists: the typed query narrows the list and
+    stays, where the compact dialog's type-ahead is a jump that a second of
+    quiet forgets."""
+    def pick(ctx):
+        ctx.choose("Pick", ["alpha", "beta", "gamma"], type="filter")
+
+    app, _ = app_with(ACTIONS={"pick": pick})
+    app.dispatch("pick")
+    dialog = app.panel._layers[-1].widget
+    for char in "mm":
+        dialog.handle_event(key(char, char))
+    assert dialog.list.items == ["gamma"]
+    assert dialog.filter_edit.text == "mm"
+
+
+def test_the_filter_picker_takes_the_pane_s_query_language(app_with):
+    """Its filter is ``xefm.search_match``, so a config's list answers to
+    whitespace-separated AND tokens and wildcards, exactly as the pane does."""
+    def pick(ctx):
+        ctx.choose("Pick", ["report 2024.txt", "report 2025.txt", "notes.md"],
+                   type="filter")
+
+    app, _ = app_with(ACTIONS={"pick": pick})
+    app.dispatch("pick")
+    dialog = app.panel._layers[-1].widget
+    dialog._refilter("*.txt 2025")
+    assert dialog.list.items == ["report 2025.txt"]
+
+
+@pytest.mark.skipif(migemo_search._load_engine() is None,
+                    reason="pymigemo not installed")
+def test_the_filter_picker_finds_japanese_labels_from_romaji(app_with):
+    """And it inherits Migemo with the matcher — the ask behind #467: a config's
+    own list is searched in romaji, no IME."""
+    def pick(ctx):
+        ctx.choose("Pick", ["写真", "書類", "音楽"], type="filter")
+
+    app, _ = app_with(ACTIONS={"pick": pick})
+    app.dispatch("pick")
+    dialog = app.panel._layers[-1].widget
+    dialog._refilter("shashin")
+    assert dialog.list.items == ["写真"]
+
+
+def test_an_unknown_choose_type_is_one_log_line_not_a_crash(app_with):
+    def pick(ctx):
+        ctx.choose("Pick", ["a"], type="fancy")
+
+    app, _ = app_with(ACTIONS={"pick": pick})
+    assert app.dispatch("pick") is True
+    assert not app.panel.has_layers
 
 
 # --- the dispatch table ----------------------------------------------------- #

@@ -213,7 +213,7 @@ The dict form also takes `description` (what the help dialog shows).
 | `ctx.invoke(name)` | run another action — built-in or your own |
 | `ctx.message(text)` | write one line to the log pane |
 | `ctx.input(prompt, default, on_accept=fn)` | ask for a line of text |
-| `ctx.choose(title, items, on_result=fn)` | pick from a list (index, or `None`) |
+| `ctx.choose(title, items, on_result=fn)` | pick from a list (index, or `None`); `type='filter'` for a searchable one |
 | `ctx.confirm(prompt, on_result=fn)` | yes / no |
 | `ctx.action_names()` | every name `invoke()` accepts |
 
@@ -555,6 +555,27 @@ def rename_to_lowercase(ctx):
             ctx.pane.refresh()
 
     ctx.confirm(f"Rename {entry.name} to lowercase?", on_result=go)
+```
+
+**A long list wants the searchable picker.** `ctx.choose` opens a compact box
+where typing jumps the selection and a second of quiet forgets what you typed —
+right for a handful of alternatives, wrong for a list you have to search. Pass
+`type='filter'` and you get the dialog the built-in Favorites and History lists
+use instead: a filter field over a scrolling list, anchored over the active
+pane, taking the same query the file pane's incremental search takes —
+space-separated tokens, wildcards, and Migemo, so typing romaji finds Japanese
+labels — and holding it until you erase it.
+
+```python
+BOOKMARKS = [("work", "/Users/me/src"), ("写真", "/Users/me/Pictures")]
+
+def go_to_bookmark(ctx):
+    def jump(index):
+        if index is not None:
+            ctx.pane.cd(BOOKMARKS[index][1])
+
+    ctx.choose("Bookmarks", [f"{n}  —  {p}" for n, p in BOOKMARKS],
+               type="filter", on_result=jump)
 ```
 
 `pane.cd()` and `pane.refresh()` are asynchronous for the same reason — the
