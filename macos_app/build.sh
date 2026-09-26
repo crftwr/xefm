@@ -518,7 +518,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # the interpreter under Rosetta. XeFM's own executable is built for this
     # machine alone, so the bundle is single-architecture and that launcher can
     # never be the one that runs; it is dead weight that still names the system
-    # framework in its load commands, which is exactly what Step 4d refuses.
+    # framework in its load commands, which is exactly what Step 4e refuses.
     for tool in "python${PYTHON_VERSION}-intel64" python3-intel64; do
         if [ -e "${PYTHON_DEST}/bin/${tool}" ]; then
             rm -f "${PYTHON_DEST}/bin/${tool}"
@@ -537,6 +537,24 @@ if [ "$USE_FRAMEWORK" = true ]; then
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
         log_info "  Removed lib/python${PYTHON_VERSION}/test/"
     fi
+
+    # Tkinter and the standard library that depends on it (~16MB with Tcl/Tk).
+    # XeFM draws through PuiKit's own backends and neither imports tkinter, so
+    # the only thing shipping it achieves is two more frameworks to vendor and
+    # sign: _tkinter links Tcl and Tk by absolute path, which is why delocate
+    # copies 9MB of them into .dylibs. Removing the extension before Step 4b
+    # means they are never brought in at all. An external program the user
+    # launches through the bundled interpreter loses tkinter with this - the
+    # same trade the removed test suite already makes, and a file manager's
+    # embedded runtime is not a general-purpose Python install.
+    STDLIB_DIR="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
+    for tk_path in "${STDLIB_DIR}/lib-dynload/_tkinter."*.so "${STDLIB_DIR}/tkinter" \
+                   "${STDLIB_DIR}/idlelib" "${STDLIB_DIR}/turtledemo" "${STDLIB_DIR}/turtle.py"; do
+        if [ -e "${tk_path}" ]; then
+            rm -rf "${tk_path}"
+            log_info "  Removed lib/python${PYTHON_VERSION}/${tk_path#${STDLIB_DIR}/}"
+        fi
+    done
 
     # The framework's lib/ carries the shared libraries CPython was linked
     # against - libssl, libcrypto, libncurses and friends - each naming the
@@ -895,7 +913,68 @@ else
 fi
 
 # ============================================================================
-# Step 4c: Generate third-party license notices
+# Step 4c: Drop the architectures this bundle cannot run
+# ============================================================================
+#
+# The embedded Python is universal2 because that is how python.org ships it,
+# and that is what pins the floor at 10.15/11.0 no matter who builds. It is not
+# Intel support: XeFM's own launcher is compiled without -arch, so it is built
+# for this machine alone, and a bundle whose executable has no x86_64 slice can
+# never run a single byte of the x86_64 code inside it. Pillow settles the
+# question anyway - it publishes no universal2 wheel for cp314, so the image
+# viewer is this architecture only regardless. Every foreign slice is weight in
+# the DMG that no Mac will ever map.
+#
+# So the slices follow the launcher rather than a hardcoded arm64: a build on
+# an Intel Mac thins to x86_64 by the same rule, and if the launcher is ever
+# built universal the step stands aside and the bundle stays fat.
+#
+# lipo rewrites the file, so the signature each binary carries - ad-hoc here,
+# whatever the distribution shipped elsewhere - no longer matches. Re-sign
+# ad-hoc immediately: an unsigned Mach-O cannot exec on Apple Silicon at all,
+# and Step 6 replaces these with the real identity.
+
+LAUNCHER_ARCHS=$(lipo -archs "${MACOS_DIR}/${APP_NAME}" 2>/dev/null)
+if [ "$(echo "${LAUNCHER_ARCHS}" | wc -w | tr -d ' ')" != "1" ]; then
+    log_info "Step 4c: Launcher is ${LAUNCHER_ARCHS}; keeping every slice"
+else
+    BUNDLE_ARCH="${LAUNCHER_ARCHS}"
+    log_info "Step 4c: Thinning universal binaries to ${BUNDLE_ARCH}..."
+
+    THINNED=0
+    BYTES_BEFORE=0
+    BYTES_AFTER=0
+    while IFS= read -r macho; do
+        [ -n "${macho}" ] || continue
+        [ -L "${macho}" ] && continue
+        file -b "${macho}" | grep -q "Mach-O universal" || continue
+        if ! lipo -archs "${macho}" | tr ' ' '\n' | grep -qx "${BUNDLE_ARCH}"; then
+            log_error "${macho#${APP_BUNDLE}/} has no ${BUNDLE_ARCH} slice"
+            exit 1
+        fi
+        SIZE_BEFORE=$(stat -f%z "${macho}")
+        # Written through the original path so the file keeps its mode: the
+        # interpreter and the launcher have to stay executable.
+        if ! lipo -thin "${BUNDLE_ARCH}" "${macho}" -output "${macho}.thin"; then
+            log_error "Failed to thin ${macho#${APP_BUNDLE}/}"
+            exit 1
+        fi
+        cat "${macho}.thin" > "${macho}"
+        rm -f "${macho}.thin"
+        codesign --force --sign - "${macho}" 2>/dev/null
+        THINNED=$((THINNED + 1))
+        BYTES_BEFORE=$((BYTES_BEFORE + SIZE_BEFORE))
+        BYTES_AFTER=$((BYTES_AFTER + $(stat -f%z "${macho}")))
+    done <<MACHO_LIST
+$(find "${APP_BUNDLE}" -type f \( -perm -u+x -o -name "*.so" -o -name "*.dylib" \) 2>/dev/null)
+MACHO_LIST
+
+    log_success "  Thinned ${THINNED} binaries to ${BUNDLE_ARCH}, \
+$(( (BYTES_BEFORE - BYTES_AFTER) / 1024 / 1024 ))MB saved"
+fi
+
+# ============================================================================
+# Step 4d: Generate third-party license notices
 # ============================================================================
 #
 # Build an aggregated THIRD_PARTY_NOTICES.txt from the license text shipped with
@@ -906,7 +985,7 @@ fi
 # incomplete notice can never ship. The script is stdlib-only and platform-
 # agnostic - the Windows bundle build reuses it the same way.
 
-log_info "Step 4c: Generating third-party license notices..."
+log_info "Step 4d: Generating third-party license notices..."
 
 NOTICES_SCRIPT="${PROJECT_ROOT}/tools/generate_third_party_notices.py"
 NOTICES_OUT="${RESOURCES_DIR_BUNDLE}/THIRD_PARTY_NOTICES.txt"
@@ -969,7 +1048,7 @@ else
 fi
 
 # ============================================================================
-# Step 4d: Verify the bundle loads nothing from outside itself
+# Step 4e: Verify the bundle loads nothing from outside itself
 # ============================================================================
 #
 # The steps above each make one part of the bundle self-contained - the
@@ -979,7 +1058,7 @@ fi
 # reach outside the .app? It runs before signing so a bundle that would fail on
 # someone else's machine is never sealed, let alone notarized.
 
-log_info "Step 4d: Verifying the bundle is self-contained..."
+log_info "Step 4e: Verifying the bundle is self-contained..."
 
 SELF_CONTAINED_SCRIPT="${PROJECT_ROOT}/tools/check_bundle_self_contained.py"
 if [ ! -f "${SELF_CONTAINED_SCRIPT}" ]; then
