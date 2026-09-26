@@ -81,6 +81,30 @@ log_info "Detected Python ${PYTHON_VERSION} from venv"
 log_info "Python base: ${PYTHON_BASE_PREFIX}"
 log_info "Site packages: ${PYTHON_SITE_PACKAGES}"
 
+# The bundle embeds whichever Python the venv was built on, so that choice is
+# the release's floor and its architectures. A Homebrew Python is built for the
+# machine that installed it - one architecture, and a minimum OS of the current
+# macOS - which is how a 1.5.x DMG came to demand macOS 26 on Apple Silicon only
+# (issue #486). The python.org installer ships universal2 with a 10.15/11.0
+# floor, so it is what a release is built on; refuse a Homebrew one rather than
+# discover the floor afterwards in Step 5. Set ALLOW_HOMEBREW_PYTHON=1 for a
+# local throwaway build.
+case "${PYTHON_BASE_PREFIX}" in
+    /opt/homebrew/*|/usr/local/Cellar/*|/usr/local/opt/*)
+        if [ "${ALLOW_HOMEBREW_PYTHON:-0}" != "1" ]; then
+            log_error "The venv is built on a Homebrew Python: ${PYTHON_BASE_PREFIX}"
+            log_error "A release bundle embeds it as-is, which pins the DMG to this"
+            log_error "machine's architecture and macOS version. Install Python from"
+            log_error "python.org and rebuild the venv:"
+            log_error "  make clean-venv && make venv"
+            log_error "(ALLOW_HOMEBREW_PYTHON=1 overrides this for a local build.)"
+            exit 1
+        fi
+        log_warning "Building on a Homebrew Python (ALLOW_HOMEBREW_PYTHON=1)"
+        log_warning "The bundle will inherit its architecture and macOS floor"
+        ;;
+esac
+
 # Check if using Python.framework or standard Python installation
 # Python.framework can be in /Library/Frameworks (python.org) or /opt/homebrew (Homebrew)
 if [[ "${PYTHON_BASE_PREFIX}" == *"/Python.framework/Versions/"* ]]; then
@@ -209,6 +233,18 @@ CONTENTS_DIR="${APP_BUNDLE}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR_BUNDLE="${CONTENTS_DIR}/Resources"
 FRAMEWORKS_DIR="${CONTENTS_DIR}/Frameworks"
+
+# Start from an empty bundle. Every step below copies in what it needs but only
+# a few remove anything, so whatever a previous build left behind is signed and
+# shipped along with the rest: the switch off Homebrew (issue #486) left four
+# Homebrew dylibs in lib-dynload/.dylibs that the python.org build has no use
+# for - delocate vendors what the extensions ask for, and nothing deletes what
+# they stopped asking for. A release must not depend on what the build tree
+# happened to hold.
+if [ -d "${APP_BUNDLE}" ]; then
+    log_info "Removing the previous bundle at ${APP_BUNDLE}"
+    rm -rf "${APP_BUNDLE}"
+fi
 
 mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR_BUNDLE}"
@@ -478,10 +514,36 @@ if [ "$USE_FRAMEWORK" = true ]; then
         fi
     done
 
+    # The python.org framework also ships an x86_64-only launcher for running
+    # the interpreter under Rosetta. XeFM's own executable is built for this
+    # machine alone, so the bundle is single-architecture and that launcher can
+    # never be the one that runs; it is dead weight that still names the system
+    # framework in its load commands, which is exactly what Step 4e refuses.
+    for tool in "python${PYTHON_VERSION}-intel64" python3-intel64; do
+        if [ -e "${PYTHON_DEST}/bin/${tool}" ]; then
+            rm -f "${PYTHON_DEST}/bin/${tool}"
+            log_info "  Removed bin/${tool}"
+        fi
+    done
+
     # Remove pkg-config files
     if [ -d "${PYTHON_DEST}/lib/pkgconfig" ]; then
         rm -rf "${PYTHON_DEST}/lib/pkgconfig"
         log_info "  Removed lib/pkgconfig/"
+    fi
+
+    # config-X.Y-darwin/ is what you link against Python with: a Makefile, the
+    # Setup files, install-sh, and python.o - the object file a `make` would
+    # link into an interpreter of its own. Nothing here runs, and an app that
+    # never compiles an extension never reads it. It also cannot ship: python.o
+    # is a Mach-O that Apple's notary service inspects and rejects outright
+    # ("The binary is not signed"), and signing an .o is not a thing to do -
+    # Step 6 signs the code the app loads, which this is not. Homebrew leaves
+    # the directory out, so the rejection only appeared with python.org.
+    PYTHON_CONFIG_DIR="${PYTHON_DEST}/lib/python${PYTHON_VERSION}/config-${PYTHON_VERSION}-darwin"
+    if [ -d "${PYTHON_CONFIG_DIR}" ]; then
+        rm -rf "${PYTHON_CONFIG_DIR}"
+        log_info "  Removed lib/python${PYTHON_VERSION}/config-${PYTHON_VERSION}-darwin/"
     fi
 
     # Remove Python test suite (saves ~68MB)
@@ -490,18 +552,58 @@ if [ "$USE_FRAMEWORK" = true ]; then
         log_info "  Removed lib/python${PYTHON_VERSION}/test/"
     fi
 
+    # Tkinter and the standard library that depends on it (~16MB with Tcl/Tk).
+    # XeFM draws through PuiKit's own backends and neither imports tkinter, so
+    # the only thing shipping it achieves is two more frameworks to vendor and
+    # sign: _tkinter links Tcl and Tk by absolute path, which is why delocate
+    # copies 9MB of them into .dylibs. Removing the extension before Step 4b
+    # means they are never brought in at all. An external program the user
+    # launches through the bundled interpreter loses tkinter with this - the
+    # same trade the removed test suite already makes, and a file manager's
+    # embedded runtime is not a general-purpose Python install.
+    STDLIB_DIR="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
+    for tk_path in "${STDLIB_DIR}/lib-dynload/_tkinter."*.so "${STDLIB_DIR}/tkinter" \
+                   "${STDLIB_DIR}/idlelib" "${STDLIB_DIR}/turtledemo" "${STDLIB_DIR}/turtle.py"; do
+        if [ -e "${tk_path}" ]; then
+            rm -rf "${tk_path}"
+            log_info "  Removed lib/python${PYTHON_VERSION}/${tk_path#${STDLIB_DIR}/}"
+        fi
+    done
+
+    # The framework's lib/ carries the shared libraries CPython was linked
+    # against - libssl, libcrypto, libncurses and friends - each naming the
+    # others by the absolute path the distribution installs to. Nothing in the
+    # bundle loads them: every extension that needs one reaches it through the
+    # copy delocate vendors into lib-dynload/.dylibs (Step 4b) and rewrites to
+    # @loader_path. What is left is ~18MB of duplicates whose load commands
+    # point back at /Library/Frameworks, so a machine without python.org
+    # installed is one dlopen away from a failure that the bundle should have
+    # made impossible. Drop them and let .dylibs be the only copy. lib/python*/
+    # (the standard library) and the libpython symlink to the framework dylib
+    # are untouched.
+    log_info "Removing duplicate shared libraries from lib/..."
+    for lib in "${PYTHON_DEST}"/lib/*.dylib; do
+        [ -e "${lib}" ] || continue
+        case "$(basename "${lib}")" in
+            "libpython${PYTHON_VERSION}.dylib") continue ;;
+        esac
+        rm -f "${lib}"
+        log_info "  Removed lib/$(basename "${lib}")"
+    done
+
     log_success "Unnecessary files removed"
 
     # Make the bundled interpreter self-contained. bin/pythonX.Y in a framework
     # build is a stub that posix_spawns Resources/Python.app/Contents/MacOS/Python
     # — an app this bundle strips — and both binaries reference the framework by
-    # the build machine's absolute path (the versioned Homebrew keg), so external
-    # programs launched via xefm_python only ran on machines where that exact
-    # path still existed. Replace the stub with the real interpreter binary and
-    # point it at the embedded framework dylib. The old load command is read out
-    # of the binary rather than assumed (Homebrew records the Cellar path there,
-    # not the opt path in ${PYTHON_BASE_PREFIX}) because install_name_tool
-    # -change no-ops silently on a mismatch.
+    # the build machine's absolute path, so external programs launched via
+    # xefm_python only ran on machines where that exact path still existed.
+    # Replace the stub with the real interpreter binary and point it at the
+    # embedded framework dylib. The old load command is read out of the binary
+    # rather than assumed — it is the install name the distribution was linked
+    # with, which need not be ${PYTHON_BASE_PREFIX} (a Homebrew build records
+    # the versioned Cellar path there, not the opt path) — because
+    # install_name_tool -change no-ops silently on a mismatch.
     log_info "Making bundled interpreter self-contained..."
     EMBEDDED_PYTHON_BIN="${PYTHON_DEST}/bin/python${PYTHON_VERSION}"
     REAL_PYTHON_BIN="${PYTHON_SOURCE}/Resources/Python.app/Contents/MacOS/Python"
@@ -519,12 +621,28 @@ if [ "$USE_FRAMEWORK" = true ]; then
             "@executable_path/../Python" \
             "${EMBEDDED_PYTHON_BIN}"
     fi
-    # install_name_tool invalidates the copied Homebrew signature (it is not
-    # linker-signed), which is fatal at exec on Apple Silicon. Ad-hoc re-sign so
-    # the interpreter runs in unsigned builds and in the pre-compile step below;
+    # install_name_tool invalidates the signature the interpreter was shipped
+    # with, which is fatal at exec on Apple Silicon. Ad-hoc re-sign so the
+    # interpreter runs in unsigned builds and in the pre-compile step below;
     # release signing later replaces this signature (--force).
     codesign --force --sign - "${EMBEDDED_PYTHON_BIN}"
-    if otool -L "${EMBEDDED_PYTHON_BIN}" | awk 'NR > 1 && $1 !~ /^@/ && $1 !~ /^\/usr\/lib\// && $1 !~ /^\/System\//' | grep -q .; then
+    # The framework dylib needs the same treatment, for a reason that has
+    # nothing to do with its own bytes: python.org signs Python.framework as a
+    # bundle, and that signature seals Resources/Info.plist — which the strip
+    # above deletes. dyld then refuses to load the dylib into the ad-hoc
+    # interpreter ("code signature invalid", errno=1) and every use of the
+    # bundled Python during the build aborts, the standard-library pre-compile
+    # below included. Homebrew's framework is linker-signed with nothing sealed
+    # beside it, which is why this only began to matter off Homebrew. Step 6
+    # writes a minimal Info.plist and signs the framework for real.
+    codesign --force --sign - "${PYTHON_DEST}/Python"
+    # Only otool -L's tab-indented lines are load commands. A universal binary
+    # prints a "<path> (architecture X):" header per slice, and that path is the
+    # file's own — under the build tree — so a filter that reads every line
+    # fails a bundle that is in fact self-contained. Skipping just the first
+    # line was enough while the embedded Python was a single-architecture
+    # Homebrew build; a universal2 python.org one has a header per slice.
+    if otool -L "${EMBEDDED_PYTHON_BIN}" | awk '/^\t/ && $1 !~ /^@/ && $1 !~ /^\/usr\/lib\// && $1 !~ /^\/System\//' | grep -q .; then
         log_error "Embedded python${PYTHON_VERSION} still links a build-machine path:"
         otool -L "${EMBEDDED_PYTHON_BIN}"
         exit 1
@@ -809,7 +927,68 @@ else
 fi
 
 # ============================================================================
-# Step 4c: Generate third-party license notices
+# Step 4c: Drop the architectures this bundle cannot run
+# ============================================================================
+#
+# The embedded Python is universal2 because that is how python.org ships it,
+# and that is what pins the floor at 10.15/11.0 no matter who builds. It is not
+# Intel support: XeFM's own launcher is compiled without -arch, so it is built
+# for this machine alone, and a bundle whose executable has no x86_64 slice can
+# never run a single byte of the x86_64 code inside it. Pillow settles the
+# question anyway - it publishes no universal2 wheel for cp314, so the image
+# viewer is this architecture only regardless. Every foreign slice is weight in
+# the DMG that no Mac will ever map.
+#
+# So the slices follow the launcher rather than a hardcoded arm64: a build on
+# an Intel Mac thins to x86_64 by the same rule, and if the launcher is ever
+# built universal the step stands aside and the bundle stays fat.
+#
+# lipo rewrites the file, so the signature each binary carries - ad-hoc here,
+# whatever the distribution shipped elsewhere - no longer matches. Re-sign
+# ad-hoc immediately: an unsigned Mach-O cannot exec on Apple Silicon at all,
+# and Step 6 replaces these with the real identity.
+
+LAUNCHER_ARCHS=$(lipo -archs "${MACOS_DIR}/${APP_NAME}" 2>/dev/null)
+if [ "$(echo "${LAUNCHER_ARCHS}" | wc -w | tr -d ' ')" != "1" ]; then
+    log_info "Step 4c: Launcher is ${LAUNCHER_ARCHS}; keeping every slice"
+else
+    BUNDLE_ARCH="${LAUNCHER_ARCHS}"
+    log_info "Step 4c: Thinning universal binaries to ${BUNDLE_ARCH}..."
+
+    THINNED=0
+    BYTES_BEFORE=0
+    BYTES_AFTER=0
+    while IFS= read -r macho; do
+        [ -n "${macho}" ] || continue
+        [ -L "${macho}" ] && continue
+        file -b "${macho}" | grep -q "Mach-O universal" || continue
+        if ! lipo -archs "${macho}" | tr ' ' '\n' | grep -qx "${BUNDLE_ARCH}"; then
+            log_error "${macho#${APP_BUNDLE}/} has no ${BUNDLE_ARCH} slice"
+            exit 1
+        fi
+        SIZE_BEFORE=$(stat -f%z "${macho}")
+        # Written through the original path so the file keeps its mode: the
+        # interpreter and the launcher have to stay executable.
+        if ! lipo -thin "${BUNDLE_ARCH}" "${macho}" -output "${macho}.thin"; then
+            log_error "Failed to thin ${macho#${APP_BUNDLE}/}"
+            exit 1
+        fi
+        cat "${macho}.thin" > "${macho}"
+        rm -f "${macho}.thin"
+        codesign --force --sign - "${macho}" 2>/dev/null
+        THINNED=$((THINNED + 1))
+        BYTES_BEFORE=$((BYTES_BEFORE + SIZE_BEFORE))
+        BYTES_AFTER=$((BYTES_AFTER + $(stat -f%z "${macho}")))
+    done <<MACHO_LIST
+$(find "${APP_BUNDLE}" -type f \( -perm -u+x -o -name "*.so" -o -name "*.dylib" \) 2>/dev/null)
+MACHO_LIST
+
+    log_success "  Thinned ${THINNED} binaries to ${BUNDLE_ARCH}, \
+$(( (BYTES_BEFORE - BYTES_AFTER) / 1024 / 1024 ))MB saved"
+fi
+
+# ============================================================================
+# Step 4d: Generate third-party license notices
 # ============================================================================
 #
 # Build an aggregated THIRD_PARTY_NOTICES.txt from the license text shipped with
@@ -820,7 +999,7 @@ fi
 # incomplete notice can never ship. The script is stdlib-only and platform-
 # agnostic - the Windows bundle build reuses it the same way.
 
-log_info "Step 4c: Generating third-party license notices..."
+log_info "Step 4d: Generating third-party license notices..."
 
 NOTICES_SCRIPT="${PROJECT_ROOT}/tools/generate_third_party_notices.py"
 NOTICES_OUT="${RESOURCES_DIR_BUNDLE}/THIRD_PARTY_NOTICES.txt"
@@ -879,6 +1058,32 @@ if "${VENV_PYTHON}" "${NOTICES_SCRIPT}" \
     log_success "Third-party notices written to ${NOTICES_OUT}"
 else
     log_error "Failed to generate third-party license notices (see errors above)"
+    exit 1
+fi
+
+# ============================================================================
+# Step 4e: Verify the bundle loads nothing from outside itself
+# ============================================================================
+#
+# The steps above each make one part of the bundle self-contained - the
+# interpreter's own load command, the extensions' vendored dylibs, the copies
+# that had to go. This reads the finished bundle back and answers the question
+# they are all serving: on a Mac with no Python installed, does anything here
+# reach outside the .app? It runs before signing so a bundle that would fail on
+# someone else's machine is never sealed, let alone notarized.
+
+log_info "Step 4e: Verifying the bundle is self-contained..."
+
+SELF_CONTAINED_SCRIPT="${PROJECT_ROOT}/tools/check_bundle_self_contained.py"
+if [ ! -f "${SELF_CONTAINED_SCRIPT}" ]; then
+    log_error "Self-containment checker not found at ${SELF_CONTAINED_SCRIPT}"
+    exit 1
+fi
+
+if "${VENV_PYTHON}" "${SELF_CONTAINED_SCRIPT}" "${APP_BUNDLE}"; then
+    log_success "Bundle is self-contained"
+else
+    log_error "The bundle depends on files outside itself (listed above)"
     exit 1
 fi
 
@@ -1038,6 +1243,38 @@ PLIST
         log_error "Code signing verification failed"
         exit 1
     fi
+
+    # --deep --strict validates the code the bundle declares; the notary
+    # service instead opens the archive and inspects every Mach-O it finds,
+    # signed or not, and one unsigned file fails the whole submission. The two
+    # disagreed over lib/python3.14/config-3.14-darwin/python.o, a link-time
+    # object file that is a Mach-O by format and not code by any other measure:
+    # codesign never looked at it, Apple did, and the answer came back after
+    # the upload and a several-minute wait. Ask the same question here, where
+    # it costs a second.
+    log_info "  Checking every Mach-O in the bundle carries a signature..."
+    # Every file, not just the ones named like code - that is the point. One
+    # `file` over the lot, tab-separated so a type string of its own ("Mach-O
+    # universal binary with 2 architectures: [x86_64: ...]") cannot be mistaken
+    # for the path separator.
+    UNSIGNED_MACHOS=""
+    while IFS= read -r macho; do
+        [ -n "${macho}" ] || continue
+        codesign --verify "${macho}" > /dev/null 2>&1 && continue
+        UNSIGNED_MACHOS="${UNSIGNED_MACHOS}  ${macho#${APP_BUNDLE}/}
+"
+    done <<MACHO_LIST
+$(find "${APP_BUNDLE}" -type f -print0 2>/dev/null \
+    | xargs -0 file -F "$(printf '\t')" 2>/dev/null \
+    | awk -F"$(printf '\t')" '$2 ~ /Mach-O/ { print $1 }')
+MACHO_LIST
+    if [ -n "${UNSIGNED_MACHOS}" ]; then
+        log_error "Notarization would reject these unsigned Mach-O files:"
+        printf '%s' "${UNSIGNED_MACHOS}"
+        log_error "Strip them in Step 4, or sign them, before submitting."
+        exit 1
+    fi
+    log_success "  Every Mach-O is signed"
     log_info "  (After notarization, confirm Gatekeeper acceptance with:"
     log_info "     spctl -a -vvv --type exec \"${APP_BUNDLE}\")"
 else
