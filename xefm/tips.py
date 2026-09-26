@@ -53,10 +53,10 @@ TIPS: tuple[tuple[str, str], ...] = (
 
     ("Select a whole run of files",
      "Mark the first one with {key:toggle_select_down}, move the cursor to the "
-     "last one — with the arrows, or by searching for it — then press "
-     "{key:select_range}: everything between the marked item and the cursor is "
-     "selected in one go. Inside an open search the same key is "
-     "{key:isearch.select_range}."),
+     "last one, then press {key:select_range}: everything between the marked "
+     "item and the cursor is selected in one go. Getting there can be a search "
+     "— {key:isearch} finds the far end, {key:isearch.accept} leaves the search "
+     "with the cursor on it, and {key:select_range} does the rest."),
 
     ("Jump to a file by typing",
      "Press {key:isearch} and just start typing — the cursor jumps to the first "

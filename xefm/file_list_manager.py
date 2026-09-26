@@ -715,10 +715,8 @@ class FileListManager:
         touched and nothing is ever deselected, so several runs accumulate the
         way repeated searches do in ``toggle_matches_selection``.
 
-        Used by both surfaces that have a cursor over this listing — the file
-        list and the open incremental search — which is why it takes its span
-        from ``focused_index`` and moves nothing: during a search the cursor *is*
-        the current match, and walking it would fight the search.
+        The span is read from ``focused_index`` and the cursor is left alone: the
+        item under it is the end of the run, not a step on the way.
 
         Args:
             pane_data: Pane data dictionary

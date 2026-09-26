@@ -254,7 +254,7 @@ the `ConfigManager` caches the `KeyBindings` instance and rebuilds it only on
 `xefm.actions.ISEARCH` names one more key-consuming surface: the incremental-
 search bar (`xefm/isearch_bar.py`), which is the focus root while it is open and
 so receives every key. Its keys — `isearch.next_match`, `isearch.prev_match`,
-`isearch.toggle_select_down`, `isearch.toggle_select_up`, `isearch.select_range`,
+`isearch.toggle_select_down`, `isearch.toggle_select_up`,
 `isearch.select_matches`, `isearch.accept`, `isearch.cancel` — are ordinary
 named actions, resolved and rebound exactly like a viewer's.
 
@@ -270,8 +270,8 @@ compete with **typing**. `ISearchBar.handle_event` runs three steps in order:
    `quit` does resolve here — but the bar tests its own action names alone
    (`ISearchBar._handlers`, built from the callbacks its owner supplied) rather
    than taking whatever `find_action_for_event` returns. A viewer's search bar
-   passes no `on_select` / `on_select_range`, which is how the marking chords stay
-   the field's there.
+   passes no `on_select`, which is how the marking chord stays the field's
+   there.
 3. **Everything else is the field's.** Left/Right/Home/End, Backspace, Delete
    and the clipboard chords fall through untouched.
 
@@ -285,34 +285,38 @@ keyboard protocol on the VT input path) and Insert (absent on macOS).
 
 `Ctrl-SPACE` satisfies every one of those and says what it does — Space is
 "select" in the file list, Ctrl is what makes a command of a key that would
-otherwise type — so it carries `isearch.toggle_select_down`, and
-`Ctrl-Shift-SPACE` carries `isearch.select_range` because Shift is the range
-gesture in the file list too (`select_range`, Shift-Space) and everywhere else:
+otherwise type — so it carries `isearch.toggle_select_down`. It also reaches every
+backend: both GUI backends and the Windows console report it natively, and a POSIX
+terminal sends the NUL byte, which PuiKit decodes as space+ctrl (1.7.2 — the byte
+one below the `0x01..0x1A` run it already turned into Ctrl+letter).
 
-| | mark one | mark a range |
-|---|---|---|
-| file list | `SPACE` | `Shift-SPACE` |
-| search bar | `Ctrl-SPACE` | `Ctrl-Shift-SPACE` |
-
-Two mechanics make that table possible, and both are worth knowing before moving
-any of it:
+Two mechanics are worth knowing before moving any of this:
 
 - **Shift does not make a printable a command.** Step 1 exempts Ctrl and Cmd
   only, so `Shift-SPACE` types a space here however it arrives — and on a POSIX
   terminal it *is* a plain space, since a terminal reports the character and has
-  no room for a modifier on it. The file list's key therefore cannot serve this
-  surface, which is why `isearch.select_range` is a separate dotted action rather
-  than the unqualified `select_range` registered in both contexts: the shipped
-  `KEY_BINDINGS` names `select_range`, and an unqualified entry reaches every
-  context that understands the name (`KeyBindings._context_entries`, source 2),
-  which would hand this surface Shift-Space and have
-  `printable_text_bindings` report XeFM's own default as a mistake.
-- **`Ctrl-SPACE` reaches every backend.** Both GUI backends and the Windows
-  console report it natively; a POSIX terminal sends the NUL byte, which PuiKit
-  decodes as space+ctrl (1.7.2 — the byte one below the `0x01..0x1A` run it
-  already turned into Ctrl+letter). `Ctrl-Shift-SPACE` reaches the desktop app
-  alone: a terminal cannot encode it and the Windows terminal claims that chord
-  for scrollback.
+  no room for a modifier on it. The file list's `select_range` key therefore
+  cannot fire on this surface at all.
+- **An unqualified name reaches every context that understands it.** The shipped
+  `KEY_BINDINGS` names `select_range`, and a config entry under an action's own
+  name feeds every context the registry has it in
+  (`KeyBindings._context_entries`, source 2). So registering a file-list action
+  name here is not free: it would take the file list's key, which in this case
+  `printable_text_bindings` would then report as a default the pattern field
+  swallows.
+
+**There is deliberately no range selection here** (#266). The span
+`select_range` fills runs from the nearest *already-marked* item to the cursor,
+and on this surface that anchor is something marked before the search began — so
+it is not a match, and the span takes in rows the pattern never matched. Two
+readings were available and neither is worth an action: restricting the span to
+matches collapses the operation into `isearch.toggle_select_down` whenever the
+anchor is not a match (the normal case), and keeping the positional span makes a
+search promise something about rows it is not talking about. `isearch.accept`
+(Enter) leaves the search with the cursor on the match, so the file list's own key
+is one keystroke away — and restricting *operations* to matching items is what
+`filter` is for, where the listing itself narrows and you can see what you are
+selecting.
 
 `isearch.toggle_select_up` and the file list's `toggle_select_up` are registered
 with **no default key**: a search walks forwards, `Shift-SPACE` was worth more as
@@ -503,11 +507,11 @@ skipped rather than crashing; a missing `KEY_BINDINGS` config falls back to
 - `test/test_puikit_keyboard_contract.py` — the per-backend translation XeFM relies
   on (the contract's guarantees hold on each backend).
 - `test/test_isearch_keys.py` — the isearch context: its defaults, the
-  printable-binding notice, the bar's three-step routing, and Ctrl+Space /
-  Ctrl+Shift+Space marking through a live file list.
+  printable-binding notice, the bar's three-step routing, and Ctrl+Space marking
+  through a live file list.
 - `test/test_select_range.py` — `select_range` itself (#266): the span it fills,
-  the anchor rule, the log lines, both contexts' defaults, and what a config
-  written before the action existed resolves to.
+  the anchor rule, the log lines, its one default, the search bar having no range
+  key, and what a config written before the action existed resolves to.
 - `test/test_viewer_footer_keys.py` — the label helpers, and each viewer's
   footer text under a rebind (issue #382).
 - `test/test_filter_list_remove.py` — the `filter_list` context: the default

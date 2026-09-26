@@ -278,10 +278,15 @@ it is the one list of keys that is always right for your config.
 `select_range` takes its anchor from the nearest selected item above the cursor,
 or — when nothing above is selected — the nearest one below, so it reads the same
 whether you moved down or up from the file you marked. It only ever adds: items
-outside the run keep whatever they were, so several runs add up. Getting the
-cursor to the far end of the run can be a search as well as an arrow key, which
-is why the search bar has the same operation on a key of its own
-(`isearch.select_range`).
+outside the run keep whatever they were, so several runs add up.
+
+Getting the cursor to the far end of the run can be a search as well as an arrow
+key: run `isearch`, type enough of the name, and `isearch.accept` (Enter) leaves
+the search with the cursor on the file it found — then `select_range` fills the
+run. The search bar has no range key of its own, deliberately: its cursor is a
+match, but the item you marked earlier is not, so a range there would take in
+files the pattern never matched. Leave the search first and the key means what it
+says.
 
 Its default key is `Shift-Space`, and a terminal cannot deliver that one: there
 is no room for a modifier on a printable key, so a POSIX terminal reports a plain
@@ -366,7 +371,6 @@ Run `isearch`, then type. While the search bar is open:
 |--------|--------------|
 | `isearch.prev_match` / `isearch.next_match` | Previous / next match |
 | `isearch.toggle_select_down` | Select the file, then move to the next match |
-| `isearch.select_range` | Select everything between the nearest selected item and this match |
 | `isearch.select_matches` | Select every match at once — again to clear them |
 | `isearch.accept` | Stop at the current match |
 | `isearch.cancel` | Cancel and go back to where the cursor was |
@@ -379,14 +383,11 @@ Japanese only once it is `nih` — see [Migemo Search](MIGEMO_SEARCH_FEATURE.md)
 
 Space types a space — it separates the pattern's words (`re 24` finds
 `report_2024.txt`), which is why marking a file here is `Ctrl-Space` rather than
-the file list's bare Space. The two surfaces spell marking the same way: Space
-selects one item and Shift is the range, so in the search bar that is `Ctrl-Space`
-and `Ctrl-Shift-Space`. (`Ctrl-Shift-Space` reaches the desktop app only — a
-terminal cannot modify a printable key, and the Windows terminal claims that
-chord for itself.) Marking *backwards* has no default key in either surface; bind
-`isearch.toggle_select_up` if you want it. `isearch.select_matches` marks the
-whole set the counter on the right is showing: type `.log`, run it, and every log
-file is selected. Files selected outside the search are left alone, so a second search
+the file list's bare Space: Space selects, and Ctrl is what makes a command of a
+key that would otherwise type. Marking *backwards* has no default key in either
+surface; bind `isearch.toggle_select_up` if you want it.
+`isearch.select_matches` marks the whole set the counter on the right is showing:
+type `.log`, run it, and every log file is selected. Files selected outside the search are left alone, so a second search
 adds to them. Every one of these keys can be rebound; see
 [Customization](CUSTOMIZATION_FEATURE.md#the-incremental-search-bar).
 

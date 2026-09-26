@@ -44,7 +44,6 @@ class Calls:
     def __init__(self):
         self.navigate = []
         self.select = []
-        self.select_range = 0
         self.select_all = 0
         self.submitted = 0
         self.cancelled = 0
@@ -52,15 +51,11 @@ class Calls:
     def bar(self, **kw) -> ISearchBar:
         opts = dict(on_navigate=self.navigate.append,
                     on_select=self.select.append,
-                    on_select_range=self._select_range,
                     on_select_all=self._select_all,
                     on_submit=self._submit,
                     on_cancel=self._cancel)
         opts.update(kw)
         return ISearchBar(**opts)
-
-    def _select_range(self):
-        self.select_range += 1
 
     def _select_all(self):
         self.select_all += 1
@@ -81,11 +76,15 @@ def test_defaults_resolve_in_the_isearch_context():
     # own defaults, like every other dotted (viewer) action.
     assert kb.get_keys_for_action("isearch.toggle_select_down", ISEARCH)[0] == \
         ["Ctrl-SPACE"]
-    assert kb.get_keys_for_action("isearch.select_range", ISEARCH)[0] == \
-        ["Ctrl-Shift-SPACE"]
     # Marking *backwards* has no default here (nor in the file list): a search
     # walks forwards, and the action stays registered for a config to bind.
     assert kb.get_keys_for_action("isearch.toggle_select_up", ISEARCH)[0] == []
+    # And the file list's range select is not an action of this surface at all
+    # (#266): its anchor is an item marked before the search, so the span it
+    # would fill is not one the search is talking about. Enter first, then the
+    # file list's own key.
+    assert kb.get_keys_for_action("select_range", ISEARCH)[0] == []
+    assert kb.get_keys_for_action("isearch.select_range", ISEARCH)[0] == []
     assert kb.get_keys_for_action("isearch.next_match", ISEARCH)[0] == ["DOWN"]
     assert kb.get_keys_for_action("isearch.cancel", ISEARCH)[0] == ["ESCAPE"]
     assert kb.get_keys_for_action("isearch.select_matches", ISEARCH)[0] == \
@@ -193,23 +192,27 @@ def test_ctrl_space_marks_and_walks():
     assert bar.pattern == ""
 
 
-def test_ctrl_shift_space_fills_the_range():
+def test_the_bar_claims_no_range_key(): 
+    # The file list's range select is not this surface's operation (#266), so
+    # neither the chord it used to have nor the file list's own key does
+    # anything here. Ctrl chords are commands to the field, so nothing is typed
+    # either.
     c = Calls()
     bar = c.bar()
     bar.handle_event(_key("space", {"ctrl", "shift"}))
-    assert (c.select_range, c.select, c.navigate) == (1, [], [])
+    assert (c.select, c.navigate, c.select_all) == ([], [], 0)
     assert bar.pattern == ""
 
 
 def test_shift_space_still_types_a_space():
     # Shift on a printable is not taken out of the text path — and a terminal
-    # cannot report it in the first place. The file list's 'select_range' key is
-    # therefore unreachable here, which is why the bar has its own.
+    # cannot report it in the first place — so the file list's 'select_range'
+    # key could never have fired here in any case.
     c = Calls()
     bar = c.bar()
     bar.handle_event(char_key_event(" ", frozenset({"shift"})))
     assert bar.pattern == " "
-    assert (c.select_range, c.select) == (0, [])
+    assert c.select == []
 
 
 def test_plain_arrows_walk_the_matches():
@@ -283,12 +286,10 @@ def test_a_viewer_bar_leaves_the_select_keys_to_the_field():
     """No selection to mark, so ``on_select`` is never passed and the actions
     are simply not claimed."""
     c = Calls()
-    bar = c.bar(on_select=None, on_select_range=None, on_select_all=None)
+    bar = c.bar(on_select=None, on_select_all=None)
     bar.handle_event(_key("space", {"ctrl"}))
-    bar.handle_event(_key("space", {"ctrl", "shift"}))
     bar.handle_event(char_key_event("a", frozenset({"ctrl"})))
     assert c.select == [] and c.navigate == [] and c.select_all == 0
-    assert c.select_range == 0
     # Unclaimed, so the field sees them — and a Ctrl chord is a command there
     # too, so nothing is typed either.
     assert bar.pattern == ""
@@ -299,7 +300,7 @@ def test_a_viewer_bar_leaves_the_select_keys_to_the_field():
 
 class ISearchSelectionTest(unittest.TestCase):
     """Ctrl+Space marks the file the search is sitting on and moves to the next
-    match (#347), and Ctrl+Shift+Space fills the run up to it (#266)."""
+    match — the whole point of #347."""
 
     NAMES = ["alpha.txt", "beta.txt", "delta.txt", "gamma_alpha.txt"]
 
@@ -356,19 +357,6 @@ class ISearchSelectionTest(unittest.TestCase):
         # Marking again clears it, as SPACE does in the file list.
         self.app.panel.dispatch_event(_key("space", {"ctrl"}))
         self.assertEqual(self._selected(), ["gamma_alpha.txt"])
-        self.assertEqual(self._focused(), "gamma_alpha.txt")
-
-    def test_ctrl_shift_space_fills_the_run_up_to_the_match(self):
-        """The file list's range select, over the search's cursor (#266)."""
-        self.pane["selected_files"] = {str(self.pane["files"][0])}  # alpha.txt
-        self._search("gamma")                       # gamma_alpha.txt, idx 3
-        self.assertEqual(self._focused(), "gamma_alpha.txt")
-
-        self.app.panel.dispatch_event(_key("space", {"ctrl", "shift"}))
-        self.assertEqual(self._selected(),
-                         [f.name for f in self.pane["files"][:4]])
-        # The bar stays on its match: a search is how the cursor got here.
-        self.assertTrue(self.app._isearch_active)
         self.assertEqual(self._focused(), "gamma_alpha.txt")
 
     def test_space_still_types_into_the_pattern(self):

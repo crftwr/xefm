@@ -12,10 +12,9 @@ engage the IME and blink a caret — a plain in-footer draw could do neither.
 Layout is one row: a bold prompt on the left and the editable pattern field
 stretched across the rest. ``isearch.prev_match`` / ``isearch.next_match`` walk
 the match set, ``isearch.toggle_select_up`` / ``isearch.toggle_select_down`` walk
-it marking as they go, ``isearch.select_range`` marks everything between the
-nearest mark and the current match, ``isearch.select_matches`` marks the whole set
-at once, ``isearch.accept`` stops at the current match, and ``isearch.cancel`` (or
-a click outside) cancels. The controller owns what those outcomes mean and passes them in
+it marking as they go, ``isearch.select_matches`` marks the whole set at once,
+``isearch.accept`` stops at the current match, and ``isearch.cancel`` (or a click
+outside) cancels. The controller owns what those outcomes mean and passes them in
 as callbacks.
 
 Those keys are named actions in the ``isearch`` context (``xefm.actions``), so a
@@ -100,7 +99,6 @@ class ISearchBar(FocusContainer, Widget):
         on_change: Callable[[str], None] | None = None,
         on_navigate: Callable[[int], None] | None = None,
         on_select: Callable[[int], None] | None = None,
-        on_select_range: Callable[[], None] | None = None,
         on_select_all: Callable[[], None] | None = None,
         on_submit: Callable[[], None] | None = None,
         on_cancel: Callable[[], None] | None = None,
@@ -118,10 +116,6 @@ class ISearchBar(FocusContainer, Widget):
         #: next match. Left ``None`` by an owner with nothing to select (the
         #: viewers' bar), which is what leaves those keys to the field there.
         self.on_select = on_select
-        #: Mark everything between the nearest already-marked item and the
-        #: current match — the file list's ``select_range`` over this cursor.
-        #: ``None`` for an owner with nothing to select, like ``on_select``.
-        self.on_select_range = on_select_range
         #: Mark every current match at once. ``None`` for an owner with nothing
         #: to select, like ``on_select``.
         self.on_select_all = on_select_all
@@ -205,8 +199,6 @@ class ISearchBar(FocusContainer, Widget):
         if self.on_select is not None:
             handlers["isearch.toggle_select_down"] = lambda: self.on_select(1)
             handlers["isearch.toggle_select_up"] = lambda: self.on_select(-1)
-        if self.on_select_range is not None:
-            handlers["isearch.select_range"] = self.on_select_range
         if self.on_select_all is not None:
             handlers["isearch.select_matches"] = self.on_select_all
         if self.on_navigate is not None:
