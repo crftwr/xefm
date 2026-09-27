@@ -544,9 +544,11 @@ class Config:
         #   'remove_list_item':  Shift-DELETE  forget the highlighted row
         #   'edit_list_item':    TAB           edit the highlighted row, then run it
         #
-        # The edit key is offered only where the rows are things to run -- the
-        # command history of Import List from Command -- since elsewhere Enter
-        # already uses a row as it is.
+        # The edit key is offered only where rows are used as text -- the ';'
+        # Filter prompt's patterns and the command history of Import List from
+        # Command. Enter uses a row as it is; Tab puts it in a field to change
+        # first, which is also how to use new text that happens to match an old
+        # row.
         #
         # It only does anything where the rows are *remembered* rather than
         # declared: History and the Filter prompt, whose lists XeFM built by

@@ -103,7 +103,7 @@ class FilterListDialog(FocusContainer, Widget):
         on_remove: Callable[[Any], bool] | None = None,
         remove_label: str = "remove",
         load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
-        on_edit: Callable[[str], None] | None = None,
+        on_edit: Callable[[Any, str], None] | None = None,
     ):
         self.all_items = list(items)
         self.to_label = to_label
@@ -127,12 +127,16 @@ class FilterListDialog(FocusContainer, Widget):
         #: same key disconnects a share or ejects a disk.
         self.remove_label = remove_label
         #: Optional edit hook: the ``edit_list_item`` key closes the dialog and
-        #: hands over the highlighted row's text — or, with no row matching,
-        #: what was typed — for the owner to open in an editable field. For a
-        #: list whose rows are things to *run*: Enter runs a row as it is, and
-        #: this is how one is changed first. It is also the way to run a new
-        #: entry that happens to match an old one, which Enter would pick
-        #: instead. ``None`` leaves the dialog with no edit key.
+        #: calls ``on_edit(value, query)`` — the highlighted row's value, or
+        #: ``None`` when no row matches, and the typed query — for the owner to
+        #: open in an editable field. The value rather than its label, because
+        #: a row can draw something other than the text it stands for (a
+        #: defined filter's label, a saved server's name); the owner knows
+        #: which text to edit. For lists whose rows are *used as text* — a
+        #: command, a pattern — where Enter uses a row as it is: this is how
+        #: one is changed first, and how a new entry that happens to match an
+        #: old one is used as typed. ``None`` leaves the dialog with no edit
+        #: key.
         self.on_edit = on_edit
         self._hint_cache: str | None = None
         self._panel: Any = None
@@ -370,17 +374,16 @@ class FilterListDialog(FocusContainer, Widget):
     # --- outcome -------------------------------------------------------------
 
     def edit_selected(self) -> None:
-        """Close and hand ``on_edit`` the text to edit: the highlighted row's
-        label, or the query itself when no row matches it."""
+        """Close and call ``on_edit(value, query)``: the highlighted row's
+        value, or ``None`` when no row matches the query."""
         if self.on_edit is None:
             return
         index = self.list.selected
-        if self.filtered and 0 <= index < len(self.filtered):
-            text = self.to_label(self.filtered[index])
-        else:
-            text = self.filter_edit.text
+        value = (self.filtered[index]
+                 if self.filtered and 0 <= index < len(self.filtered) else None)
+        query = self.filter_edit.text
         self._close()
-        self.on_edit(text)
+        self.on_edit(value, query)
 
     def _accept_index(self, index: int) -> None:
         if 0 <= index < len(self.filtered):
@@ -572,7 +575,7 @@ def show_filter_list(
     ellipsis: str = "…",
     elide_where: str = "end",
     load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
-    on_edit: Callable[[str], None] | None = None,
+    on_edit: Callable[[Any, str], None] | None = None,
     z: int = 70,
 ) -> FilterListDialog:
     """Push a modal :class:`FilterListDialog` over ``panel`` and return it.
@@ -611,11 +614,12 @@ def show_filter_list(
     the scan runs. For rows that need a network round-trip — the drives picker's
     S3 buckets — so the dialog never waits on them.
 
-    ``on_edit(text)`` opts the picker into the edit key (``edit_list_item``,
-    Tab by default): it closes the dialog and hands over the highlighted row's
-    text, or the query when no row matches, for the caller to open in an
-    editable field — for rows that are run rather than chosen, such as the
-    command history."""
+    ``on_edit(value, query)`` opts the picker into the edit key
+    (``edit_list_item``, Tab by default): it closes the dialog and hands over
+    the highlighted row's value — ``None`` when no row matches — and the typed
+    query, for the caller to open the right text in an editable field. For
+    rows used as text rather than chosen: the command history of Import List
+    from Command, and the Filter prompt's patterns."""
     dialog = FilterListDialog(
         items, title=title, to_label=to_label, on_accept=on_accept, on_cancel=on_cancel,
         on_accept_text=on_accept_text, on_remove=on_remove,

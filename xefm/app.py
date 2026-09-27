@@ -5398,7 +5398,8 @@ class XeFMApp:
                 self._run_list_command(self.pm.active_pane, command)
             self.panel.render()
 
-        def edit(text: str) -> None:
+        def edit(value, query: str) -> None:
+            text = value if value is not None else query
             show_input(self.panel, title="Import List from Command",
                        prompt="Command:", text=text, select_all=False,
                        on_accept=run, on_cancel=self.panel.render,
@@ -6783,12 +6784,27 @@ class XeFMApp:
             else:
                 apply("" if value == self._FILTER_CLEAR else value)
 
+        def edit(value, query: str) -> None:
+            # The text a row stands for: a defined filter by its name (which
+            # is what applying it types), the clear row as nothing at all.
+            if isinstance(value, filters.Row):
+                text = value.name
+            elif value == self._FILTER_CLEAR:
+                text = ""
+            else:
+                text = value if value is not None else query
+            show_input(self.panel, title="Filter", prompt="Pattern:", text=text,
+                       select_all=False, on_accept=apply,
+                       on_cancel=self.panel.render,
+                       region=self._active_pane_region())
+            self.panel.render()
+
         items = [self._FILTER_CLEAR, *filters.rows(), *self._filter_history()]
         show_filter_list(
             self.panel, items, title="Filter",
             to_label=lambda v: v.label if isinstance(v, filters.Row) else v,
-            on_accept=accept,
-            on_accept_text=apply, on_remove=self._forget_filter_pattern,
+            on_accept=accept, on_accept_text=apply, on_edit=edit,
+            on_remove=self._forget_filter_pattern,
             region=self._active_pane_region())
         self.panel.render()
 

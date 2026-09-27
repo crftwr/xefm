@@ -89,14 +89,18 @@ picker, and `_run_list_command` runs the choice on a `Task`, so the existing
 
 The picker is the Filter prompt's shape: Enter runs the highlighted row, or
 the typed text when no row matches (`on_accept_text`), and `remove_list_item`
-forgets a row (`on_remove`). One thing differs for rows that are *run*: typed
-text that partly matches an old command highlights that command, and Enter
-would run it. So `FilterListDialog` gains `on_edit` and the `edit_list_item`
+forgets a row (`on_remove`). Both share a trap: typed text that partly
+matches an old row highlights it, and Enter uses the old one. So
+`FilterListDialog` gains `on_edit(value, query)` and the `edit_list_item`
 action in the `filter_list` context (Tab by default, offered only when a hook
-is given): it closes the picker and hands the highlighted row's label — or the
-query, when nothing matches — to an input field, which is also how an old
-command is changed before running. The
-dialog has no item total to show, so it stays in its busy phase;
+is given): it closes the picker and hands over the highlighted row's *value* —
+`None` when nothing matches — and the query, and the owner opens the right
+text in an input field. The value rather than the label, because a row can
+draw something other than the text it stands for: the Filter prompt's defined
+filters draw a label and are applied by name, and its "clear filter" row
+stands for no text at all. The Filter prompt takes the same hook.
+
+The progress dialog has no item total to show, so it stays in its busy phase;
 `Task.busy_label` (new, default `"Preparing…"`) lets it say `Running… (N items)`
 with `task.counted` fed from the line count.
 

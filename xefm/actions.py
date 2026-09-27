@@ -713,8 +713,9 @@ _FILTER_LIST_ACTIONS = [
        default_keys=("Shift-DELETE",)),
     # Tab, as a shell's completion puts a candidate on the line to finish: the
     # highlighted row lands in a field to change before it is used. Offered
-    # only where rows are things to run (the command history), and a key the
-    # query field has no use for, since Tab types nothing there.
+    # only where rows are used as text -- the command history, the Filter
+    # prompt's patterns -- and a key the query field has no use for, since Tab
+    # types nothing there.
     _a("edit_list_item", FILTER_LIST,
        "Edit the highlighted entry before using it",
        default_keys=("TAB",)),
