@@ -31,8 +31,10 @@ The Subshell System allows users to temporarily suspend the XeFM interface and e
 - **Action**: Suspends the XeFM TUI and starts a new shell session
   (`XeFMApp.subshell` → `_run_in_terminal`, with the environment built by
   `build_xefm_env` and the prompt marked by `prefix_prompt_markers`)
-- **Terminal mode only**: desktop mode has no terminal to hand over, so the
-  launch is refused with a log-pane error and the Tools menu item is disabled
+- **Desktop mode**: there is no terminal to hand over, so the same command,
+  directory and environment go to `_open_terminal` instead, which opens the
+  `TERMINAL` application and returns at once — see
+  [EXTERNAL_TERMINAL_IMPLEMENTATION.md](EXTERNAL_TERMINAL_IMPLEMENTATION.md)
 - **Visual indicator**: Shell prompt includes `[XeFM]` label for easy identification
 - **Working directory**: Automatically set to appropriate directory (with remote fallback)
 

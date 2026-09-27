@@ -149,7 +149,7 @@ the mouse for the first, take the whole buffer with the second. See
 | Item | Action |
 |------|--------|
 | External Programs… | `programs` |
-| Subshell Here | `subshell` *(terminal mode only)* |
+| Subshell Here | `subshell` *(desktop mode: in a terminal window)* |
 | Edit Configuration… | `edit_config` *(ships unbound)* |
 | Reload Configuration | `reload_config` *(ships unbound)* |
 

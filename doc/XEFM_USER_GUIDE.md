@@ -451,9 +451,11 @@ TEXT_EDITOR = 'vim'  # or 'nano', 'code', etc.
 
 ### Subshell
 
-`subshell` opens a shell in the current directory (terminal mode only).
+`subshell` opens a shell in the current directory.
 
-Exit the shell to return to XeFM. The shell sees the `XEFM_*` environment
+In terminal mode, exit the shell to return to XeFM. The desktop app has no
+terminal of its own to hand over, so it opens the shell in a terminal window
+instead — see [External Terminal](EXTERNAL_TERMINAL_FEATURE.md). The shell sees the `XEFM_*` environment
 variables (pane directories and selections) and a `[XeFM]` prompt prefix.
 
 The prefix is passed via the `PS1`/`PROMPT` environment variables, so a shell
@@ -538,8 +540,8 @@ s3://my-bucket/path/to/files/
 ## Advanced Features
 
 ### Sub-shell Mode
-`subshell` enters sub-shell mode (terminal mode only — the desktop app has no
-terminal to hand over) with environment variables:
+`subshell` enters sub-shell mode (in the desktop app, in a terminal window —
+see [External Terminal](EXTERNAL_TERMINAL_FEATURE.md)) with environment variables:
 - `XEFM_LEFT_DIR`: Left pane directory
 - `XEFM_RIGHT_DIR`: Right pane directory
 - `XEFM_THIS_DIR`: Current pane directory

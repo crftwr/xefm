@@ -108,9 +108,10 @@ If the program exits with a nonzero code, XeFM waits for Enter before
 repainting, so whatever error output it left on the terminal stays readable.
 
 In desktop mode there is no terminal to hand over, so a `terminal: True`
-entry is refused with an error in the log pane — as is sub-shell mode
-(`subshell`), which in terminal mode remains the tool for extended
-interactive command-line work.
+entry opens in a terminal window of its own instead — Terminal.app on macOS,
+Windows Terminal on Windows, or whatever `TERMINAL` names — with the same
+working directory, arguments and `XEFM_*` environment. XeFM does not wait for
+it. See [External Terminal](EXTERNAL_TERMINAL_FEATURE.md).
 
 ## Example Use Cases
 

@@ -467,9 +467,10 @@ class ActionContext:
           a pager, anything that draws a screen or reads the keyboard — and
           waits for it. The panes are re-read on return, and the exit code is
           returned (``None`` if it could not be started). A nonzero exit holds
-          the screen until Enter so its last words stay readable. Terminal
-          mode only: the desktop window has no terminal to lend, so there the
-          launch is refused with a log line and ``None`` comes back.
+          the screen until Enter so its last words stay readable. The desktop
+          window has no terminal to lend, so there the program opens in the
+          ``TERMINAL`` application instead and ``None`` comes back at once —
+          the terminal window is on its own from then on.
 
         Never call :mod:`subprocess` directly for an interactive program: XeFM
         owns the terminal, and a child drawing on it unannounced leaves the

@@ -152,7 +152,8 @@ TIPS: tuple[tuple[str, str], ...] = (
 
     ("A shell where you are",
      "{key:subshell} opens your shell in the current directory. Exit the shell "
-     "and you are right back in XeFM."),
+     "and you are right back in XeFM. The desktop app opens it in a terminal "
+     "window of its own."),
 
     ("Batch rename with a regex",
      "Select more than one file and press {key:rename}: the rename prompt "
