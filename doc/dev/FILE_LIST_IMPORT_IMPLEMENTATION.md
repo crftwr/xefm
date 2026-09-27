@@ -82,23 +82,31 @@ then UTF-8, then the ANSI code page on Windows or the filesystem encoding with
 
 ## The command source
 
-`import_list_from_command` opens the command history (state key
-`list_command.history`, most recent first, capped at 100) in the searchable
-picker, and `_run_list_command` runs the choice on a `Task`, so the existing
+`import_list_from_command` opens a command field over the command history
+(state key `list_command.history`, most recent first, capped at 100), and
+`_run_list_command` runs the field's text on a `Task`, so the existing
 `ProgressDialog` shows it and Esc cancels it.
 
-The picker is the Filter prompt's shape: Enter runs the highlighted row, or
-the typed text when no row matches (`on_accept_text`), and `remove_list_item`
-forgets a row (`on_remove`). Both share a trap: typed text that partly
-matches an old row highlights it, and Enter uses the old one. So
-`FilterListDialog` gains `on_edit(value, query)` and the `edit_list_item`
-action in the `filter_list` context (Tab by default, offered only when a hook
-is given): it closes the picker and hands over the highlighted row's *value* —
-`None` when nothing matches — and the query, and the owner opens the right
-text in an input field. The value rather than the label, because a row can
-draw something other than the text it stands for: the Filter prompt's defined
-filters draw a label and are applied by name, and its "clear filter" row
-stands for no text at all. The Filter prompt takes the same hook.
+The field is `xefm/history_input_dialog.py`'s `HistoryInputDialog`, which the
+`;` Filter prompt uses too. It exists because the searchable picker
+(`FilterListDialog`) is the wrong shape for text that is typed and used: its
+Enter takes the highlighted row and falls back to the typed text only when
+nothing matches, so typing `rg -l` with `rg -l TODO` remembered ran the old
+command. Here Enter always takes the field. Focus is on one side at a time
+(`ListView(allow_no_selection=True)`): typing narrows the list but highlights
+nothing; ↓ highlights a row and copies `to_text(row)` into the field without
+re-filtering — the list stays filtered by `query`, the last *typed* text, as
+an address bar does; editing the copied text makes it the new query; ↑ past
+the first row or Esc puts the typed text back. `to_label` / `to_text` let a
+row draw one thing and stand for another: the Filter prompt's defined filters
+draw a label and go into the field as their name, and "clear filter" as an
+empty field. A second click on a row within 0.4 s uses it (the directory diff
+viewer's threshold; PuiKit reports no double-click).
+
+It replaced a first attempt on the picker itself — a Tab key (`edit_list_item`)
+that closed the picker and reopened the row in an input dialog — which fixed
+the trap only for a user who knew to press Tab, and was removed before any
+release.
 
 The progress dialog has no item total to show, so it stays in its busy phase;
 `Task.busy_label` (new, default `"Preparing…"`) lets it say `Running… (N items)`

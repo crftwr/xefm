@@ -74,7 +74,6 @@ _LIST_KEYS = frozenset({"up", "down", "pageup", "pagedown"})
 #: (arrows, Enter, Esc) is structural to a modal picker and stays fixed; removal
 #: is the operation a user may well want on a key of their own choosing.
 _REMOVE_ACTION = "remove_list_item"
-_EDIT_ACTION = "edit_list_item"
 
 #: Braille spinner frames for the title's background-loading indicator.
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -103,7 +102,6 @@ class FilterListDialog(FocusContainer, Widget):
         on_remove: Callable[[Any], bool] | None = None,
         remove_label: str = "remove",
         load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
-        on_edit: Callable[[Any, str], None] | None = None,
     ):
         self.all_items = list(items)
         self.to_label = to_label
@@ -126,18 +124,6 @@ class FilterListDialog(FocusContainer, Widget):
         #: a list of remembered rows, and wrong for the Drives picker, where the
         #: same key disconnects a share or ejects a disk.
         self.remove_label = remove_label
-        #: Optional edit hook: the ``edit_list_item`` key closes the dialog and
-        #: calls ``on_edit(value, query)`` — the highlighted row's value, or
-        #: ``None`` when no row matches, and the typed query — for the owner to
-        #: open in an editable field. The value rather than its label, because
-        #: a row can draw something other than the text it stands for (a
-        #: defined filter's label, a saved server's name); the owner knows
-        #: which text to edit. For lists whose rows are *used as text* — a
-        #: command, a pattern — where Enter uses a row as it is: this is how
-        #: one is changed first, and how a new entry that happens to match an
-        #: old one is used as typed. ``None`` leaves the dialog with no edit
-        #: key.
-        self.on_edit = on_edit
         self._hint_cache: str | None = None
         self._panel: Any = None
         # Values currently passing the filter, parallel to ``self.list.items``.
@@ -256,10 +242,6 @@ class FilterListDialog(FocusContainer, Widget):
         """
         if self._hint_cache is None:
             parts = ["↑/↓ select", "Enter choose"]
-            if self.on_edit is not None:
-                keys, _ = get_keys_for_action(_EDIT_ACTION, FILTER_LIST)
-                if keys:
-                    parts.append(f"{format_key_for_display(keys[0])} edit")
             if self.on_remove is not None:
                 keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
                 if keys:
@@ -372,18 +354,6 @@ class FilterListDialog(FocusContainer, Widget):
             self._panel.render()
 
     # --- outcome -------------------------------------------------------------
-
-    def edit_selected(self) -> None:
-        """Close and call ``on_edit(value, query)``: the highlighted row's
-        value, or ``None`` when no row matches the query."""
-        if self.on_edit is None:
-            return
-        index = self.list.selected
-        value = (self.filtered[index]
-                 if self.filtered and 0 <= index < len(self.filtered) else None)
-        query = self.filter_edit.text
-        self._close()
-        self.on_edit(value, query)
 
     def _accept_index(self, index: int) -> None:
         if 0 <= index < len(self.filtered):
@@ -522,10 +492,6 @@ class FilterListDialog(FocusContainer, Widget):
                     self.on_accept_text(text)
                 else:
                     self._accept_index(self.list.selected)
-            elif (self.on_edit is not None
-                  and is_action_for_event(event, _EDIT_ACTION,
-                                          context=FILTER_LIST)):
-                self.edit_selected()
             elif (self.on_remove is not None
                   and is_action_for_event(event, _REMOVE_ACTION,
                                           context=FILTER_LIST)):
@@ -575,7 +541,6 @@ def show_filter_list(
     ellipsis: str = "…",
     elide_where: str = "end",
     load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
-    on_edit: Callable[[Any, str], None] | None = None,
     z: int = 70,
 ) -> FilterListDialog:
     """Push a modal :class:`FilterListDialog` over ``panel`` and return it.
@@ -614,18 +579,14 @@ def show_filter_list(
     the scan runs. For rows that need a network round-trip — the drives picker's
     S3 buckets — so the dialog never waits on them.
 
-    ``on_edit(value, query)`` opts the picker into the edit key
-    (``edit_list_item``, Tab by default): it closes the dialog and hands over
-    the highlighted row's value — ``None`` when no row matches — and the typed
-    query, for the caller to open the right text in an editable field. For
-    rows used as text rather than chosen: the command history of Import List
-    from Command, and the Filter prompt's patterns."""
+    A picker's Enter takes a row. For text the user types and uses — a command,
+    a filter pattern — see :mod:`xefm.history_input_dialog`, whose Enter takes
+    the field."""
     dialog = FilterListDialog(
         items, title=title, to_label=to_label, on_accept=on_accept, on_cancel=on_cancel,
         on_accept_text=on_accept_text, on_remove=on_remove,
         remove_label=remove_label,
         ellipsis=ellipsis, elide_where=elide_where, load_more=load_more,
-        on_edit=on_edit,
     )
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 72.0))

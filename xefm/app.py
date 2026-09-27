@@ -71,6 +71,7 @@ from xefm.file_list_manager import FileListManager
 from xefm.file_monitor_manager import FileMonitorManager
 from xefm.file_pane import FilePane
 from xefm.filter_list_dialog import show_filter_list
+from xefm.history_input_dialog import show_history_input
 from xefm.completion import FilepathCompleter
 from xefm.connect_dialog import open_connect_server, run_connecting
 from xefm.input_dialog import show_input
@@ -5379,12 +5380,11 @@ class XeFMApp:
         clipboard in between. The command runs through the shell in the
         pane's directory, with the same ``XEFM_*`` environment a ``PROGRAMS``
         entry gets, and relative lines resolve against that same directory.
-        The dialog is the command history, most recent first, searched as it
-        is typed: Enter runs the highlighted command, or — when nothing
-        matches — the text as typed. Tab opens the highlighted one (or the
-        text) in a field to change before running, which is also how to run a
-        new command that happens to match an old one. Shift-Delete forgets a
-        command."""
+        The dialog is a command field over the command history, most recent
+        first (:mod:`xefm.history_input_dialog`): typing narrows the history,
+        ↓ copies a command into the field to run or change, and Enter runs
+        whatever the field holds — never a row the typing merely matched.
+        Shift-Delete forgets a command while browsing."""
         pane = self.active_pane()
         _env, cwd = self._program_env(pane)
         if path_schemes.is_uri(cwd):
@@ -5398,19 +5398,12 @@ class XeFMApp:
                 self._run_list_command(self.pm.active_pane, command)
             self.panel.render()
 
-        def edit(value, query: str) -> None:
-            text = value if value is not None else query
-            show_input(self.panel, title="Import List from Command",
-                       prompt="Command:", text=text, select_all=False,
-                       on_accept=run, on_cancel=self.panel.render,
-                       region=self._active_pane_region())
-            self.panel.render()
-
-        show_filter_list(
+        show_history_input(
             self.panel, self._list_command_history(),
-            title="Import List from Command", on_accept=run, on_accept_text=run,
-            on_edit=edit, on_remove=self._forget_list_command,
-            on_cancel=self.panel.render, region=self._active_pane_region())
+            title="Import List from Command", prompt="Command:",
+            accept_label="run", on_accept=run,
+            on_remove=self._forget_list_command, on_cancel=self.panel.render,
+            region=self._active_pane_region())
         self.panel.render()
 
     def _list_command_history(self) -> list:
@@ -6750,16 +6743,19 @@ class XeFMApp:
     def enter_filter(self) -> None:
         """Filter picker for the active pane (the ';' key).
 
-        A searchable list of three bands, in this order: the "clear filter" row,
-        the filters the config defines (``FILTERS``, :mod:`xefm.filters`), and
-        the patterns applied here before. The middle band is *fixed* — a defined
-        filter sits in the same place every time rather than ageing down a
-        history it was never part of. Type to narrow the list; ``↑/↓`` pick a
-        row; ``Enter`` applies the highlighted one. If the typed text matches no
-        row, ``Enter`` applies it verbatim — so a brand-new ``fnmatch`` glob
-        (e.g. ``*.py``) still works. Directories are always shown; an applied
-        *pattern* is (re)recorded most-recent-first, a defined filter is not
-        (it already has a row of its own)."""
+        A pattern field over a list of three bands, in this order: the "clear
+        filter" row, the filters the config defines (``FILTERS``,
+        :mod:`xefm.filters`), and the patterns applied here before. The middle
+        band is *fixed* — a defined filter sits in the same place every time
+        rather than ageing down a history it was never part of.
+
+        ``Enter`` applies what the field holds (:mod:`xefm.history_input_dialog`):
+        typed text narrows the list, and ``↓`` copies a row into the field — a
+        defined filter as its name, the clear row as nothing — to apply as it
+        is or change first. So a new pattern is applied as typed even where it
+        matches an old one. Directories are always shown; an applied *pattern*
+        is (re)recorded most-recent-first, a defined filter is not (it already
+        has a row of its own)."""
         pane = self.active_pane()
 
         def apply(pattern: str) -> None:
@@ -6776,35 +6772,20 @@ class XeFMApp:
                 self.log_info("Filter cleared")
             self.panel.render()
 
-        def accept(value) -> None:
-            # A defined filter travels as a Row (it is applied by name, drawn by
-            # label); every other row is the pattern it shows.
+        def text_of(value) -> str:
+            # The text a row stands for: a defined filter by its name (which is
+            # what applying it types), the clear row as nothing at all.
             if isinstance(value, filters.Row):
-                apply(value.name)
-            else:
-                apply("" if value == self._FILTER_CLEAR else value)
-
-        def edit(value, query: str) -> None:
-            # The text a row stands for: a defined filter by its name (which
-            # is what applying it types), the clear row as nothing at all.
-            if isinstance(value, filters.Row):
-                text = value.name
-            elif value == self._FILTER_CLEAR:
-                text = ""
-            else:
-                text = value if value is not None else query
-            show_input(self.panel, title="Filter", prompt="Pattern:", text=text,
-                       select_all=False, on_accept=apply,
-                       on_cancel=self.panel.render,
-                       region=self._active_pane_region())
-            self.panel.render()
+                return value.name
+            return "" if value == self._FILTER_CLEAR else value
 
         items = [self._FILTER_CLEAR, *filters.rows(), *self._filter_history()]
-        show_filter_list(
-            self.panel, items, title="Filter",
+        show_history_input(
+            self.panel, items, title="Filter", prompt="Pattern:",
+            heading="Filters and history", accept_label="apply",
             to_label=lambda v: v.label if isinstance(v, filters.Row) else v,
-            on_accept=accept, on_accept_text=apply, on_edit=edit,
-            on_remove=self._forget_filter_pattern,
+            to_text=text_of, on_accept=apply,
+            on_remove=self._forget_filter_pattern, on_cancel=self.panel.render,
             region=self._active_pane_region())
         self.panel.render()
 

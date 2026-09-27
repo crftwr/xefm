@@ -292,11 +292,14 @@ class FakePicker:
 
 @pytest.fixture
 def picker(monkeypatch):
-    """Open the ';' prompt and hand back the app plus the dialog's arguments."""
+    """Open the ';' prompt and hand back the app plus the dialog's arguments.
+
+    Picking a row is ↓ to it (the field gets ``to_text(row)``) and Enter
+    (``on_accept(field text)``) — which is what the tests below spell out."""
     def open_it(history=()):
         seen = {}
         monkeypatch.setattr(
-            "xefm.app.show_filter_list",
+            "xefm.app.show_history_input",
             lambda panel, items, **kw: seen.update(items=items, **kw))
         app = FakePicker(history)
         app.enter_filter()
@@ -316,7 +319,7 @@ def test_picking_one_applies_it_by_name(picker):
     load(images={"label": "Images", "pattern": "*.png"})
     app, seen = picker()
 
-    seen["on_accept"](seen["items"][1])
+    seen["on_accept"](seen["to_text"](seen["items"][1]))
     assert app.applied == ["images"]
     assert app.logged == []          # the count is logged when the listing lands
 
@@ -324,7 +327,7 @@ def test_picking_one_applies_it_by_name(picker):
 def test_picking_a_remembered_pattern_still_applies_the_text(picker):
     app, seen = picker(history=["*.py"])
 
-    seen["on_accept"](seen["items"][1])
+    seen["on_accept"](seen["to_text"](seen["items"][1]))
     assert app.applied == ["*.py"]
 
 
@@ -332,7 +335,7 @@ def test_the_clear_row_still_clears(picker):
     load(images="*.png")
     app, seen = picker()
 
-    seen["on_accept"](XeFMApp._FILTER_CLEAR)
+    seen["on_accept"](seen["to_text"](XeFMApp._FILTER_CLEAR))
     assert app.applied == [""] and app.logged == ["Filter cleared"]
 
 
