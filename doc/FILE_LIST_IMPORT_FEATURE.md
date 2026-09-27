@@ -9,9 +9,12 @@ Everything, `find`, `fd`, `rg -l`, `git ls-files`, a build log, a column in a
 spreadsheet — and bring the paths in, by copying them or by running the
 command from XeFM.
 
-## Import List from Clipboard
+**Go → Open List** opens one from three places, each an action you can bind
+to a key.
 
-**Edit → Import List from Clipboard** (`import_list_from_clipboard`) reads the
+## From the clipboard
+
+**Go → Open List → From Clipboard** (`open_list_from_clipboard`) reads the
 clipboard as one path per line and shows those paths in the active pane.
 
 ```sh
@@ -22,9 +25,9 @@ rg -l TODO | clip                             # Windows
 It is the reverse of **Copy Full Path(s)**: select files anywhere, copy their
 paths, and importing them gives you the same rows back.
 
-## Import List from Command
+## From a command
 
-**Edit → Import List from Command…** (`import_list_from_command`) asks for a
+**Go → Open List → From Command…** (`open_list_from_command`) asks for a
 command, runs it in the pane's directory, and shows the paths it prints — one
 step instead of piping to the clipboard and importing.
 
@@ -80,9 +83,9 @@ output from a program that ignores the console's setting is read in the
 system's code page instead. On macOS and Linux, a name that is not valid UTF-8
 is kept byte for byte, so the file it names can still be opened.
 
-## Import List from File
+## From a file
 
-**Edit → Import List from File** (`import_list_from_file`), or **Open as
+**Go → Open List → From File** (`open_list_from_file`), or **Open as
 List** on a file's right-click menu, opens the text file under the cursor as a
 list: one path per line. Select several list files first to open them as one
 list.
@@ -111,9 +114,9 @@ The three actions ship without a key. To give them one, add them to your
 config:
 
 ```python
-KEY_BINDINGS['import_list_from_clipboard'] = ['Ctrl-Shift-L']
-KEY_BINDINGS['import_list_from_command'] = ['Ctrl-Shift-K']
-KEY_BINDINGS['import_list_from_file'] = ['Ctrl-Shift-J']
+KEY_BINDINGS['open_list_from_clipboard'] = ['Ctrl-Shift-L']
+KEY_BINDINGS['open_list_from_command'] = ['Ctrl-Shift-K']
+KEY_BINDINGS['open_list_from_file'] = ['Ctrl-Shift-J']
 ```
 
 ## What is read
@@ -167,5 +170,5 @@ written.
 
 A config action can open a list the same way, with
 [`pane.open_list()`](CUSTOMIZATION_FEATURE.md#opening-your-own-list-of-files) —
-for a search written in Python. Unlike **Import List from Command**, the
+for a search written in Python. Unlike **Open List → From Command**, the
 action runs on the UI thread, so keep anything slow out of it.
