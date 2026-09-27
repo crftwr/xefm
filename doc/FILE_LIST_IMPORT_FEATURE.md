@@ -35,13 +35,13 @@ most recent first:
 |---|---|
 | typing | Edits the command, and narrows the history (Migemo included) |
 | **↓** / **↑** | Move through the history, copying each command into the field |
-| **Enter** | Run what the field holds |
+| **Enter** | In the history: choose that command and go back to the field. In the field: run what it holds |
 | **Esc** | In the history: back to what you typed. Otherwise: close |
 | **Shift-Delete** | In the history: forget that command |
 
-Enter always runs the field: typing `rg -l` runs `rg -l`, even with
-`rg -l TODO` in the history. To run an old command, or change one, press ↓ to
-it; see [Fields with a history](NAVIGATION_DIALOGS_FEATURE.md#fields-with-a-history).
+Enter in the field always runs the field: typing `rg -l` runs `rg -l`, even
+with `rg -l TODO` in the history. To run an old command, press ↓ to it and
+Enter twice — once to choose it, once to run it — or change it in between; see [Fields with a history](NAVIGATION_DIALOGS_FEATURE.md#fields-with-a-history).
 
 ```sh
 rg -l TODO

@@ -99,11 +99,25 @@ class Browsing(unittest.TestCase):
             self.d.handle_event(_key("down"))
         self.assertEqual(self.d.list.selected, len(HISTORY) - 1)
 
-    def test_enter_uses_the_copied_row(self):
+    def test_enter_in_the_history_chooses_and_a_second_enter_uses(self):
         self.d.handle_event(_key("down"))
         self.d.handle_event(_key("down"))
         self.d.handle_event(_key("enter"))
+        # Chosen: back in the field with the row's text, nothing used yet.
+        self.assertFalse(self.d.browsing)
+        self.assertEqual(self.d.field.text, "git ls-files -m")
+        self.assertEqual(self.used, [])
+        # The list did not collapse to the chosen row.
+        self.assertEqual(self.d.filtered, HISTORY)
+        self.d.handle_event(_key("enter"))
         self.assertEqual(self.used, ["git ls-files -m"])
+
+    def test_a_chosen_row_can_be_edited_before_it_is_used(self):
+        self.d.handle_event(_key("down"))          # "rg -l TODO"
+        self.d.handle_event(_key("enter"))         # choose
+        _type(self.d, " src")
+        self.d.handle_event(_key("enter"))
+        self.assertEqual(self.used, ["rg -l TODO src"])
 
     def test_up_past_the_first_row_puts_the_typed_text_back(self):
         _type(self.d, "rg")
@@ -208,6 +222,7 @@ class LabelsAndText(unittest.TestCase):
         self.assertNotIn("remove", d.hint())
         d.handle_event(_key("down"))
         self.assertIn("remove", d.hint())
+        self.assertIn("Enter choose", d.hint())
         self.assertIn("Esc back", d.hint())
 
 

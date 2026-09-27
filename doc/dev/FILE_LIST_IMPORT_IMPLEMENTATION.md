@@ -96,8 +96,10 @@ command. Here Enter always takes the field. Focus is on one side at a time
 (`ListView(allow_no_selection=True)`): typing narrows the list but highlights
 nothing; ↓ highlights a row and copies `to_text(row)` into the field without
 re-filtering — the list stays filtered by `query`, the last *typed* text, as
-an address bar does; editing the copied text makes it the new query; ↑ past
-the first row or Esc puts the typed text back. `to_label` / `to_text` let a
+an address bar does; editing the copied text makes it the new query; Enter
+while browsing *chooses* the row — focus back to the field with its text, not
+used until a second Enter; ↑ past the first row or Esc puts the typed text
+back. `to_label` / `to_text` let a
 row draw one thing and stand for another: the Filter prompt's defined filters
 draw a label and go into the field as their name, and "clear filter" as an
 empty field. A second click on a row within 0.4 s uses it (the directory diff

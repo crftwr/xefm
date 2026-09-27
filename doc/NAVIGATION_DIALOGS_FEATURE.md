@@ -53,8 +53,9 @@ listed below, and they work the other way round:
   pattern `py`, even with `*.py` in the history.
 - Typing narrows the history, but highlights nothing in it.
 - **↓** moves into the history and copies the highlighted entry into the
-  field, where Enter uses it and typing edits it. **↑** past the first entry,
-  or **Esc**, goes back to what you typed.
+  field. **Enter** there chooses it: you are back in the field with the
+  entry's text, to use with a second Enter or to change first. **↑** past the
+  first entry, or **Esc**, goes back to what you typed.
 - A click copies an entry in; a second click on it uses it.
 - The remove key forgets the highlighted entry while you are in the history.
 - In the Filter prompt, a filter from your config goes into the field as its

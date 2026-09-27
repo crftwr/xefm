@@ -15,8 +15,10 @@ from.
   search takes (``xefm.search_match``): whitespace-separated tokens, globs,
   Migemo.
 - *Browsing*: ↓ enters the history, and the highlighted row's text is copied
-  into the field — so Enter uses it, and typing edits it. Moving along the
-  history copies each row in turn. **The list is not re-filtered by the
+  into the field; moving along the history copies each row in turn. Enter
+  here *chooses* the row rather than using it: focus returns to the field
+  with the row's text in it, to use with a second Enter or to edit first.
+  Typing while browsing edits the copied text directly. **The list is not re-filtered by the
   copied text**, or it would collapse to the one row just copied; it stays
   filtered by what was typed, as a browser's address bar does. ↑ past the
   first row, or Esc, returns to typing with the typed text put back.
@@ -141,6 +143,12 @@ class HistoryInputDialog(FocusContainer, Widget):
         self.list.selected = index
         self._set_field(self.to_text(self.filtered[index]))
 
+    def choose(self) -> None:
+        """Leave the history keeping the highlighted row's text in the field —
+        Enter while browsing. The list stays as it was filtered, as it does
+        when the field is clicked."""
+        self.list.selected = -1
+
     def _back_to_typing(self) -> None:
         """Leave the history: no row highlighted, the typed text back."""
         self.list.selected = -1
@@ -248,7 +256,7 @@ class HistoryInputDialog(FocusContainer, Widget):
             if keys:
                 remove = f"{format_key_for_display(keys[0])} remove"
         if self.browsing:
-            parts = ["↑/↓ history", "type to edit", f"Enter {self.accept_label}"]
+            parts = ["↑/↓ history", "Enter choose", "type to edit"]
             if remove:
                 parts.append(remove)
             parts.append("Esc back")
@@ -328,7 +336,10 @@ class HistoryInputDialog(FocusContainer, Widget):
                 else:
                     self._cancel()
             elif key == "enter":
-                self.accept()
+                if self.browsing:
+                    self.choose()
+                else:
+                    self.accept()
             elif (self.on_remove is not None and self.browsing
                   and is_action_for_event(event, _REMOVE_ACTION,
                                           context=FILTER_LIST)):
