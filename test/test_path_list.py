@@ -362,7 +362,9 @@ class _AppBase(RemoteScheme):
     def setUp(self):
         super().setUp()
         from puikit.backends import create_backend
-        self.tmp = tempfile.mkdtemp()
+        # Real path: the app resolves its start directory, and macOS's temp dir
+        # sits behind the /var -> /private/var symlink.
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
         self.state_dir = tempfile.mkdtemp()
         self.sm = XeFMStateManager(db_path=os.path.join(self.state_dir, "state.db"))
         self.b = create_backend("memory")

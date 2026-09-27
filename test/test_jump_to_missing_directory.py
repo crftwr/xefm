@@ -140,6 +140,7 @@ class JumpToAMissingDirectory(unittest.TestCase):
         the destination turns out not to be there."""
         found = Path(os.path.join(self.tmp, "alpha.txt"))
         self.app._feed_search_results("filename", [found], Path(self.tmp), "alpha")
+        self.app._settle_listings()
         pane = self.app.active_pane()
         self.assertIsNotNone(pane["virtual"])
 
