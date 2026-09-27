@@ -54,11 +54,21 @@ which is what makes ``pane['filter_pattern']`` a single string throughout — th
 status bar, the saved pane state and the search narrowing all keep working
 unchanged. Names may not contain ``*``, ``?`` or ``[`` for exactly that reason:
 nothing must be readable both as a name and as a pattern someone typed.
+
+**A typed filter may name several patterns**, and a name matching any one of
+them is shown: ``*.jpg *.png *.svg``, or ``*.jpg;*.png`` as Windows' own file
+dialogs spell it (:func:`split_globs`). Space-separated OR is the file-manager
+convention (Total Commander's masks), and it takes nothing away: ``fnmatch``
+matches a space literally, so a typed pattern with a space in it only ever
+matched names containing that same space. Such a pattern is still one pattern
+when quoted, ``"my file*"``. A config's ``FILTERS`` globs are not split — a
+list is already how they say "any of these".
 """
 
 from __future__ import annotations
 
 import fnmatch
+import shlex
 from typing import Any, Callable, Mapping, NamedTuple
 
 from xefm import name_key
@@ -145,7 +155,7 @@ def matcher(pattern: str) -> Callable[[Any, Mapping[str, Any]], bool]:
     """
     entry = _user.get(pattern)
     if entry is None:
-        return _glob_matcher((pattern,))
+        return _glob_matcher(split_globs(pattern))
     if entry["globs"] is not None:
         return _glob_matcher(entry["globs"])
     match = entry["match"]
@@ -157,6 +167,28 @@ def matcher(pattern: str) -> Callable[[Any, Mapping[str, Any]], bool]:
         return bool(match(EntryInfo.from_attrs(path, attrs)))
 
     return run
+
+
+def split_globs(pattern: str) -> tuple[str, ...]:
+    """The patterns a typed filter names: separated by spaces or ``;``, a
+    quoted one kept whole — ``*.jpg *.png``, ``*.jpg;*.png``,
+    ``"my file*" *.txt``.
+
+    Backslash is not an escape, so a pattern keeps any it holds. Text the
+    split cannot read — an unclosed quote — is taken as the one pattern it
+    was before this rule, rather than refused: a filter prompt is no place
+    for a syntax error.
+    """
+    lexer = shlex.shlex(pattern, posix=True)
+    lexer.whitespace_split = True
+    lexer.whitespace += ";"
+    lexer.escape = ""
+    lexer.commenters = ""
+    try:
+        globs = tuple(lexer)
+    except ValueError:
+        return (pattern,)
+    return globs or (pattern,)
 
 
 def _glob_matcher(globs) -> Callable[[Any, Mapping[str, Any]], bool]:

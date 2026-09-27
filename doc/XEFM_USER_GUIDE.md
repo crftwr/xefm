@@ -395,7 +395,9 @@ adds to them. Every one of these keys can be rebound; see
 - **Incremental search**: Start typing to filter files immediately
 - **Japanese by romaji (Migemo)**: In incremental search, typing `kensaku`
   also finds `検索` — no IME needed. See [Migemo Search](MIGEMO_SEARCH_FEATURE.md).
-- **Pattern filtering**: Use wildcards like `*.txt` or `test_*`
+- **Pattern filtering**: Use wildcards like `*.txt` or `test_*`. Several
+  patterns separated by spaces (or `;`) show a file matching any of them —
+  `*.jpg *.png *.svg`; quote a pattern that contains a space: `"my file*"`
 - **Your own filters**: The `filter` prompt also lists the filters your config
   defines, pinned under *clear filter*. They can match on anything about a file,
   not just its name — "modified today", "over 100 MB". See
