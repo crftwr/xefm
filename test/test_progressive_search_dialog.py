@@ -490,6 +490,7 @@ class AppIntegration(unittest.TestCase):
             # the picked hit actually landed, so the test is robust to sort order.
             picked = dlg.results[-1]
             dlg._accept_index(len(dlg.results) - 1)
+            app._settle_listings()
 
             pane = app.active_pane()
             self.assertIsNotNone(pane["virtual"])
