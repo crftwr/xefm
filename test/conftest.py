@@ -23,3 +23,25 @@ def reset_s3_clients():
     clear_s3_clients()
     yield
     clear_s3_clients()
+
+
+@pytest.fixture(autouse=True)
+def drop_user_config_entries():
+    """Leave no config-defined entry behind for the next test.
+
+    A test that builds an ``XeFMApp`` loads the developer's own
+    ``~/.xefm/config.py``, and its ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS``,
+    ``FILTERS``, ``IMAGE_DECODERS`` and ``PATH_SCHEMES`` land in process-wide
+    registries. Left there, they reach every later test in the process — the
+    key-help test then finds the developer's unbound actions and fails, or not,
+    depending on which test happened to run first. Dropped the way a config
+    reload drops them (``user_api._process_user_entries``)."""
+    yield
+    from xefm import actions, filters, image_decoders, path_schemes, sort_keys
+    from xefm.user_api import hooks
+    actions.registry.unregister_source("user")
+    hooks.clear()
+    sort_keys.clear()
+    filters.clear()
+    image_decoders.clear()
+    path_schemes.unregister_source("user")
