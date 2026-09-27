@@ -90,6 +90,7 @@ handler** rather than a program to launch:
 |---|---|
 | `'viewer'` | Open in the built-in text/markdown viewer |
 | `'navigate'` | Browse the file as an archive (useful for `*.jar`, `*.whl`) |
+| `'list'` | Open the file as a [file list](FILE_LIST_IMPORT_FEATURE.md#from-a-file), one path per line (the default for `*.m3u`, `*.m3u8`) |
 | `None` | Do nothing |
 | *(no rule)* | XeFM's default: enter directories and archives, view files |
 
@@ -319,7 +320,7 @@ Enter uses the **enter** action. It never launches an external program.
    not configurable; this is what Enter means structurally
 2. For a plain file, checks associations for an 'enter' handler
 3. `'viewer'` opens the built-in viewer; `'navigate'` browses the file as an
-   archive; `None` does nothing
+   archive; `'list'` opens it as a file list; `None` does nothing
 4. With no rule, opens the built-in viewer
 5. Unless XeFM has no built-in way to show the file — a PNG, say — in which case
    it logs a warning naming the key bound to `open_with_os`, rather than

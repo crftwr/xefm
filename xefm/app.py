@@ -3076,7 +3076,8 @@ class XeFMApp:
         An ``enter`` rule in FILE_ASSOCIATIONS picks the handler: ``'viewer'``
         for the built-in viewer, ``'navigate'`` to browse the file as an
         archive (useful for zip-shaped formats XeFM does not recognise by
-        extension, like ``.jar`` or ``.whl``), or ``None`` to do nothing.
+        extension, like ``.jar`` or ``.whl``), ``'list'`` to open it as a file
+        list (an ``.m3u8`` playlist, a ``.lst``), or ``None`` to do nothing.
 
         With no rule, the default stands: the built-in viewer — the same one V
         uses, which routes *.md to the Markdown renderer and shows a
@@ -3093,6 +3094,9 @@ class XeFMApp:
             pane["path"] = Path(f"archive://{entry.absolute()}#")
             self._refresh(pane, on_ready=self._restore_remembered_cursor)
             self.log_info(f"Entered archive {entry.name}")
+            return
+        if handler == "list":
+            self._open_list_files(self._pane_name_of(pane), [entry])
             return
         # Nothing built in can render this: warn in the log rather than spending
         # a full-screen viewer on a placeholder. Images are binary but the image
@@ -3122,10 +3126,22 @@ class XeFMApp:
 
     def _go_parent(self, pane: dict) -> None:
         # From a virtual pane, "up" leaves the result set and lists the search
-        # root (pane['path'] still holds it); land the cursor generically.
-        if pane.get("virtual"):
+        # root (pane['path'] still holds it). A list opened from a directory
+        # lands back on the row it was opened from — the list file, so walking a
+        # folder of lists is up, down, Enter; otherwise the cursor lands
+        # generically.
+        virtual = pane.get("virtual")
+        if virtual:
+            back_to = virtual.get("return_to")
             self._exit_virtual(pane)
-            self._refresh(pane)
+
+            def land_on_origin(p: dict) -> None:
+                for i, f in enumerate(p["files"]):
+                    if f.name == back_to:
+                        p["focused_index"] = i
+                        break
+
+            self._refresh(pane, on_ready=land_on_origin if back_to else None)
             self.log_info(f"Up to {pane['path']}")
             return
         parent = pane["path"].parent
@@ -5547,8 +5563,17 @@ class XeFMApp:
         may do its reading there. ``relative_to`` names what relative lines
         were resolved against, for the report."""
         pane = self.pane(pane_name)
+        # The row go_parent lands back on, by name in pane["path"]'s listing:
+        # the one the list was opened from, or — opened over another list —
+        # wherever that one would have returned.
+        previous = pane.get("virtual")
+        if previous:
+            return_to = previous.get("return_to")
+        else:
+            files = pane["files"]
+            return_to = files[pane["focused_index"]].name if files else None
         virtual = {"kind": "list", "title": title, "root": None,
-                   "results": [], "meta": {}}
+                   "results": [], "meta": {}, "return_to": return_to}
         report = {}
 
         def details() -> str:
@@ -5606,11 +5631,16 @@ class XeFMApp:
             self.log_info("Open List from File: put the cursor on a text file "
                           "that lists paths, one per line")
             return
+        self._open_list_files(self.pm.active_pane, files)
+
+    def _open_list_files(self, pane_name: str, files) -> None:
+        """Open the list files ``files`` as one list in pane ``pane_name`` —
+        behind both Open List from File and an ``'enter': 'list'`` rule."""
         title = files[0].name if len(files) == 1 else \
             f"{files[0].name} +{len(files) - 1}"
         relative_to = (str(files[0].parent) if len(files) == 1
                        else "each list's folder")
-        self._open_list(self.pm.active_pane, title=title,
+        self._open_list(pane_name, title=title,
                         load=lambda: path_list.read_lists(files),
                         relative_to=relative_to)
 

@@ -1144,6 +1144,8 @@ class Config:
     #                             'viewer'   - the built-in text/markdown viewer
     #                             'navigate' - browse the file as an archive
     #                                          (handy for *.jar, *.whl, ...)
+    #                             'list'     - open the file as a file list,
+    #                                          one path per line (*.m3u8, ...)
     #                             None       - do nothing
     #                           With no rule, XeFM's default applies: directories
     #                           and archives are entered, files open in the
@@ -1233,6 +1235,14 @@ class Config:
         {
             'pattern': ['*.jar', '*.whl', '*.egg'],
             'enter': 'navigate',
+        },
+        # Playlists are file lists: ENTER shows the files a playlist names in the
+        # pane, with every file operation working on them, and open_with_os
+        # still plays it. A list you keep yourself can join this entry --
+        # '*.lst', say -- as long as it holds one path per line.
+        {
+            'pattern': ['*.m3u', '*.m3u8'],
+            'enter': 'list',
         },
         # Add your own file associations here:
         # {

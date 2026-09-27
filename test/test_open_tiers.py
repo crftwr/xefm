@@ -139,6 +139,10 @@ class TestShippedDefaults:
     def test_zip_shaped_files_navigate(self, filename):
         assert get_builtin_handler_for_file(filename) == (True, 'navigate')
 
+    @pytest.mark.parametrize("filename", ['mix.m3u', 'Group (3).M3U8'])
+    def test_playlists_open_as_lists(self, filename):
+        assert get_builtin_handler_for_file(filename) == (True, 'list')
+
     @pytest.mark.parametrize("filename", ['sheet.xlsx', 'report.docx'])
     def test_office_files_do_not_navigate(self, filename):
         """They are zip files underneath, which is exactly why 'navigate'
