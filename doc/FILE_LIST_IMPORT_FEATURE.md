@@ -28,6 +28,19 @@ paths, and importing them gives you the same rows back.
 command, runs it in the pane's directory, and shows the paths it prints — one
 step instead of piping to the clipboard and importing.
 
+The dialog lists the commands you have run, most recent first, and typing
+narrows the list the way every picker does (Migemo included):
+
+| Key | Does |
+|---|---|
+| **Enter** | Run the highlighted command — or, when nothing in the history matches, the text you typed |
+| **Tab** | Put the highlighted command (or your text) in a field to change before running it |
+| **Shift-Delete** | Forget the highlighted command |
+
+Use **Tab** to run a new command that looks like an old one: typing `rg -l`
+when `rg -l TODO` is in the history highlights the old command, and Enter would
+run it.
+
 ```sh
 rg -l TODO
 git ls-files --modified
@@ -48,8 +61,7 @@ showing.
   as a program run from the **X** picker.
 - While it runs, a dialog counts the lines it has printed. **Esc** stops it,
   along with anything it started.
-- The field starts with the last command you ran, so running it again is one
-  key.
+- The history keeps your last 100 commands, and survives a restart.
 - A command that exits with an error still has its output shown — `grep` and
   `rg` exit with 1 when nothing matched, `find` when one folder could not be
   read. If it printed no paths, the log pane shows the exit code and the last

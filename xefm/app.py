@@ -5364,9 +5364,10 @@ class XeFMApp:
         self.open_path_list(self.pm.active_pane, lines,
                             title="Clipboard")
 
-    #: State key for the last command ``import_list_from_command`` ran, offered
-    #: again the next time — the commonest next command is the same one.
-    _LIST_COMMAND_STATE = "list_command.last"
+    #: State key for the commands ``import_list_from_command`` has run, most
+    #: recent first — the commonest next command is one already run.
+    _LIST_COMMAND_STATE = "list_command.history"
+    _LIST_COMMAND_HISTORY_MAX = 100
 
     def import_list_from_command(self) -> None:
         """Run a command and show the paths it prints, one per line, as the
@@ -5378,24 +5379,60 @@ class XeFMApp:
         clipboard in between. The command runs through the shell in the
         pane's directory, with the same ``XEFM_*`` environment a ``PROGRAMS``
         entry gets, and relative lines resolve against that same directory.
-        The field starts with the last command run."""
+        The dialog is the command history, most recent first, searched as it
+        is typed: Enter runs the highlighted command, or — when nothing
+        matches — the text as typed. Tab opens the highlighted one (or the
+        text) in a field to change before running, which is also how to run a
+        new command that happens to match an old one. Shift-Delete forgets a
+        command."""
         pane = self.active_pane()
         _env, cwd = self._program_env(pane)
         if path_schemes.is_uri(cwd):
             self.log_info(f"Commands run in a local directory; this pane is "
                           f"showing {cwd}")
             return
-        last = self.state_manager.get_state(self._LIST_COMMAND_STATE, "") or ""
 
-        def accept(text: str) -> None:
+        def run(text: str) -> None:
             command = text.strip()
             if command:
                 self._run_list_command(self.pm.active_pane, command)
+            self.panel.render()
 
-        show_input(self.panel, title="Import List from Command",
-                   prompt="Command:", text=last, on_accept=accept,
-                   on_cancel=self.panel.render, region=self._active_pane_region())
+        def edit(text: str) -> None:
+            show_input(self.panel, title="Import List from Command",
+                       prompt="Command:", text=text, select_all=False,
+                       on_accept=run, on_cancel=self.panel.render,
+                       region=self._active_pane_region())
+            self.panel.render()
+
+        show_filter_list(
+            self.panel, self._list_command_history(),
+            title="Import List from Command", on_accept=run, on_accept_text=run,
+            on_edit=edit, on_remove=self._forget_list_command,
+            on_cancel=self.panel.render, region=self._active_pane_region())
         self.panel.render()
+
+    def _list_command_history(self) -> list:
+        """The commands run so far, most recent first."""
+        history = self.state_manager.get_state(self._LIST_COMMAND_STATE, [])
+        return [c for c in history if isinstance(c, str)] \
+            if isinstance(history, list) else []
+
+    def _record_list_command(self, command: str) -> None:
+        """Put ``command`` at the head of the history, once."""
+        history = [c for c in self._list_command_history() if c != command]
+        history.insert(0, command)
+        self.state_manager.set_state(self._LIST_COMMAND_STATE,
+                                     history[:self._LIST_COMMAND_HISTORY_MAX])
+
+    def _forget_list_command(self, command: str) -> bool:
+        """Drop ``command`` from the history (the picker's remove key)."""
+        history = self._list_command_history()
+        if command not in history:
+            return False
+        history.remove(command)
+        self.state_manager.set_state(self._LIST_COMMAND_STATE, history)
+        return True
 
     def _run_list_command(self, pane_name: str, command: str) -> None:
         """Run ``command`` for :meth:`import_list_from_command` on a task, with
@@ -5409,7 +5446,7 @@ class XeFMApp:
         under the cursor."""
         pane = self.pane(pane_name)
         env, cwd = self._program_env(pane)
-        self.state_manager.set_state(self._LIST_COMMAND_STATE, command)
+        self._record_list_command(command)
         task = Task(command, config=self.config, kind="list_command",
                     busy_label="Running…")
 

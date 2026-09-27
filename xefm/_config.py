@@ -539,9 +539,14 @@ class Config:
         # === Searchable-list picker keys (rebindable, not listed above) =======
         # The picker dialogs -- Favorites, Drives, History, External Programs and
         # the ';' Filter prompt -- are a surface of their own ('filter_list'), and
-        # one of their keys is yours to move:
+        # two of their keys are yours to move:
         #
         #   'remove_list_item':  Shift-DELETE  forget the highlighted row
+        #   'edit_list_item':    TAB           edit the highlighted row, then run it
+        #
+        # The edit key is offered only where the rows are things to run -- the
+        # command history of Import List from Command -- since elsewhere Enter
+        # already uses a row as it is.
         #
         # It only does anything where the rows are *remembered* rather than
         # declared: History and the Filter prompt, whose lists XeFM built by
