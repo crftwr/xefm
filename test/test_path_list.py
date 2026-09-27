@@ -99,6 +99,12 @@ class Parse(unittest.TestCase):
     def test_one_path_per_line_blank_lines_skipped(self):
         self.assertEqual(path_list.parse("/a/x\n\n  \n/b/y\n"), ["/a/x", "/b/y"])
 
+    def test_a_hash_line_is_a_path_unless_asked(self):
+        text = "#EXTM3U\n#EXTINF:12,Title\na.mp3\n#notes.txt\n"
+        self.assertEqual(path_list.parse(text),
+                         ["#EXTM3U", "#EXTINF:12,Title", "a.mp3", "#notes.txt"])
+        self.assertEqual(path_list.parse(text, comments=True), ["a.mp3"])
+
     def test_windows_line_endings(self):
         self.assertEqual(path_list.parse("C:\\a\\x\r\nC:\\b\\y\r\n"),
                          ["C:\\a\\x", "C:\\b\\y"])
@@ -554,6 +560,16 @@ class ReadLists(unittest.TestCase):
         got = path_list.read_lists([one, two])
         self.assertEqual([p.name for p in got.paths], ["x.txt", "y.txt", "z.txt"])
 
+    def test_a_playlist_skips_its_hash_lines(self):
+        lst = self._list("mix.M3U8", ["#EXTM3U", "#EXTINF:12,Song", "a.mp3"])
+        got = path_list.read_lists([lst])
+        self.assertEqual([p.name for p in got.paths], ["a.mp3"])
+
+    def test_any_other_list_keeps_them(self):
+        lst = self._list("files.lst", ["#notes.txt", "a.txt"])
+        got = path_list.read_lists([lst])
+        self.assertEqual([p.name for p in got.paths], ["#notes.txt", "a.txt"])
+
     def test_an_unreadable_list_is_named_not_fatal(self):
         good = self._list("good.txt", ["a.txt"])
         gone = Path(os.path.join(self.tmp, "gone.txt"))
@@ -616,6 +632,55 @@ class AppListFile(_AppBase):
         self._open("sub")
         self.assertIsNone(self.pane["virtual"])
         self.assertIn("put the cursor on a text file", self._last_log())
+
+    def _enter(self, name):
+        """Press Enter on ``name`` with the shipped FILE_ASSOCIATIONS."""
+        from unittest import mock
+        self.app._relist(self.pane)
+        self.app._settle_listings()
+        files = self.pane["files"]
+        self.pane["focused_index"] = [f.name for f in files].index(name)
+        entry = files[self.pane["focused_index"]]
+        with mock.patch("xefm.config.get_config", return_value=_config.Config):
+            self.app._enter_file(self.pane, entry)
+        self.app._settle_listings()
+
+    def test_enter_opens_a_playlist_as_a_list(self):
+        self._write(os.path.join("clips", "a.mp4"))
+        self._write(os.path.join("clips", "b.mp4"))
+        self._list_file("group.m3u8", ["#EXTM3U", "clips/a.mp4", "clips/b.mp4"])
+        self._enter("group.m3u8")
+        self.assertEqual(self.pane["virtual"]["title"], "group.m3u8")
+        self.assertEqual(sorted(f.name for f in self.pane["files"]),
+                         ["a.mp4", "b.mp4"])
+        self.assertNotIn("not found", self._last_log())
+
+    def test_up_from_a_list_lands_on_the_list_file(self):
+        self._write("x.txt")
+        for name in ("a.m3u8", "b.m3u8", "c.m3u8"):
+            self._list_file(name, ["x.txt"])
+        self._enter("b.m3u8")
+        self.assertIsNotNone(self.pane["virtual"])
+        self.assertTrue(self.app.dispatch("go_parent"))
+        self.app._settle_listings()
+        self.assertIsNone(self.pane["virtual"])
+        focused = self.pane["files"][self.pane["focused_index"]]
+        self.assertEqual(focused.name, "b.m3u8")
+
+    def test_a_list_over_a_list_returns_to_the_first_origin(self):
+        self._write("x.txt")
+        self._list_file("outer.lst", ["inner.lst"])
+        self._list_file("inner.lst", ["x.txt"])
+        self._list_file("z.lst", ["x.txt"])
+        self._open("outer.lst")
+        self.pane["focused_index"] = 0      # inner.lst, the only row
+        self.assertTrue(self.app.dispatch("open_list_from_file"))
+        self.app._settle_listings()
+        self.assertEqual(self.pane["virtual"]["title"], "inner.lst")
+        self.assertTrue(self.app.dispatch("go_parent"))
+        self.app._settle_listings()
+        focused = self.pane["files"][self.pane["focused_index"]]
+        self.assertEqual(focused.name, "outer.lst")
 
     def test_an_empty_list_leaves_the_pane_alone(self):
         self._list_file("empty.txt", [""])

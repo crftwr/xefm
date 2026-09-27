@@ -24,7 +24,7 @@ supported in tree; it is one source among many.
 | One door for every source | `XeFMApp.open_path_list(pane_name, paths, *, title, base=None)` |
 | The clipboard source | `XeFMApp.open_list_from_clipboard` (action `open_list_from_clipboard`, unbound; Go → Open List) |
 | The command source | `XeFMApp.open_list_from_command` → `_run_list_command` → `_open_command_output`; the blocking half in `xefm/command_list.py` |
-| The file source | `XeFMApp.open_list_from_file` (action `open_list_from_file`, unbound; "Open as List" on the context menu); `path_list.read_lists` |
+| The file source | `XeFMApp.open_list_from_file` (action `open_list_from_file`, unbound; "Open as List" on the context menu) and the `'list'` Enter handler, both through `_open_list_files`; `path_list.read_lists` |
 | The shared report | `XeFMApp._open_list(pane_name, *, title, load, relative_to)` |
 | The public door | `PaneApi.open_list(paths, *, title)` in `xefm/user_api.py` |
 | Listing a virtual pane off the UI thread | `XeFMApp._list_virtual`, `FileListManager.compute_virtual_listing` / `prune_virtual` |
@@ -80,6 +80,27 @@ M3U / `.gitignore` / response-file convention: a list kept beside what it
 names survives the folder moving and reads the same from either pane. Several
 lists merge in order, each path once; one that cannot be read is skipped and
 named in the report.
+
+An `.m3u` / `.m3u8` file (`path_list.is_playlist`) is parsed with
+`parse(..., comments=True)`, which skips `#` lines. Only a playlist gets that:
+in a plain list `#notes.txt` is a relative path, and dropping it would lose a
+file silently. Before this, a playlist's `#EXTM3U` / `#EXTINF` lines were
+resolved as paths and counted as "not found".
+
+**Enter.** `'list'` is the third `enter` handler in `BUILTIN_HANDLERS`, next
+to `'viewer'` and `'navigate'`. `_enter_file` sends it to `_open_list_files`,
+the body `open_list_from_file` now shares. The shipped `_config.py` gives
+`*.m3u` / `*.m3u8` that handler; `.lst` and `.txt` have no standard meaning,
+and `.txt` would take the viewer away from every text file, so a user opts
+those in.
+
+**Back out.** `_open_list` records `return_to` in the virtual dict: the
+*name* of the row under the cursor when the list was opened, or — opened over
+another list — that list's `return_to`. `_go_parent` lands the cursor on it
+after re-listing `pane["path"]`, as leaving an archive already does. It is a
+name, not a path, because the row is always one of `pane["path"]`'s children,
+and a re-listing may spell the directory differently (`/var` vs
+`/private/var`). A search feed records none and lands generically, as before.
 
 Decoding is `path_list.decode`, shared with the command source and moved here
 from `command_list`. It honours a byte-order mark first — UTF-32, UTF-8, or

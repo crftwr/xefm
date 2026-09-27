@@ -1352,7 +1352,8 @@ def get_file_associations():
 #: implements itself:
 #:   'viewer'   -- the built-in text/markdown viewer
 #:   'navigate' -- browse the file as an archive (jar, whl, ... )
-BUILTIN_HANDLERS = ('viewer', 'navigate')
+#:   'list'     -- open the file as a file list, one path per line (m3u8, lst)
+BUILTIN_HANDLERS = ('viewer', 'navigate', 'list')
 
 #: Entry keys that configure the entry itself rather than naming an action.
 #: 'terminal' is obsolete -- whether to hand over the display follows from

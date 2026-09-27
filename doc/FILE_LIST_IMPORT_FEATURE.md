@@ -107,6 +107,31 @@ dir -Recurse -Name *.log > logs.txt         # Windows PowerShell
   relative lines name files there.
 - Opening the list does not change the file, and the pane does not follow it:
   open it again to pick up an edit.
+- **Backspace** (Parent Directory) leaves the list and puts the cursor back
+  on the list file you opened it from, so going through a folder of lists is
+  Backspace, ↓, Enter.
+
+### Playlists, and Enter
+
+An **M3U playlist** (`.m3u`, `.m3u8`) is a list file too: one path per line,
+relative to the playlist's folder. Its `#` lines — `#EXTM3U`, `#EXTINF` and
+the rest — are skipped. In any other list file a line starting with `#` is a
+path like any other.
+
+**Enter** opens a playlist as a list, out of the box. **open_with_os** still
+hands it to your player. To make Enter open your own list files the same way,
+give their extension the `'list'` handler in `FILE_ASSOCIATIONS`:
+
+```python
+{
+    'pattern': ['*.m3u', '*.m3u8', '*.lst'],
+    'enter': 'list',
+},
+```
+
+A config written before this rule shipped does not have it; add the entry
+above to get Enter on playlists. See
+[File Associations](FILE_ASSOCIATIONS_FEATURE.md).
 
 ## Giving them keys
 

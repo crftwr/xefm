@@ -11,9 +11,9 @@ worker thread and are tested without an app:
 
 - :func:`decode` — bytes to text, in whatever encoding a list arrived in.
 - :func:`parse` — text to candidate lines. Dull on purpose: one path per line,
-  whitespace and one surrounding pair of quotes trimmed, blank lines skipped.
-  No delimiter guessing, no CSV, no globs, no URLs; anything cleverer belongs in
-  the tool that produced the list.
+  whitespace and one surrounding pair of quotes trimmed, blank lines skipped —
+  and, in an M3U playlist only, ``#`` lines. No delimiter guessing, no CSV, no
+  globs, no URLs; anything cleverer belongs in the tool that produced the list.
 - :func:`resolve` — lines to ``Path`` objects. Absolute lines and URIs stand as
   they are; a relative line resolves against a base the *caller* chooses,
   because the right anchor depends on where the list came from.
@@ -84,13 +84,18 @@ def decode(data: bytes) -> str:
     return data.decode(sys.getfilesystemencoding(), errors="surrogateescape")
 
 
-def parse(text: str | None) -> list[str]:
+def parse(text: str | None, *, comments: bool = False) -> list[str]:
     """The candidate paths in ``text``, one per line, in order, each once.
 
     Each line loses its surrounding whitespace and then one surrounding pair of
     matching quotes — what a shell or Explorer's "Copy as path" adds. Blank
     lines are skipped. A path listed twice is kept once: a pane addresses its
     rows by path, so a duplicate row would be one file shown twice.
+
+    ``comments`` skips lines starting with ``#`` as well — M3U's header,
+    ``#EXTINF`` and the rest. Only a playlist asks for it: anywhere else a
+    ``#`` line is a relative path like any other (``#notes.txt``), and a list
+    that dropped it would lose the file with no word said.
     """
     if not text:
         return []
@@ -100,7 +105,7 @@ def parse(text: str | None) -> list[str]:
         line = raw.strip()
         if len(line) >= 2 and line[0] == line[-1] and line[0] in _QUOTES:
             line = line[1:-1].strip()
-        if not line or line in seen:
+        if not line or line in seen or (comments and line.startswith("#")):
             continue
         seen.add(line)
         lines.append(line)
@@ -150,6 +155,16 @@ def resolve(lines: Iterable[str], base) -> Resolved:
     return Resolved(paths, relative)
 
 
+#: Suffixes read as M3U playlists: paths, one per line, with ``#`` lines that
+#: are directives or comments rather than files.
+PLAYLIST_SUFFIXES = (".m3u", ".m3u8")
+
+
+def is_playlist(name: str) -> bool:
+    """Whether a list file named ``name`` is an M3U playlist."""
+    return name.lower().endswith(PLAYLIST_SUFFIXES)
+
+
 def read_lists(files) -> Resolved:
     """The paths listed in ``files`` — list files, one path per line — as one
     list, in order, each path once.
@@ -157,7 +172,8 @@ def read_lists(files) -> Resolved:
     A relative line resolves against **its own list file's directory**, the
     convention of M3U playlists, ``.gitignore`` and response files: a list
     kept beside the files it names keeps working wherever the folder is
-    moved, and is read the same whichever pane it is opened from. A list file
+    moved, and is read the same whichever pane it is opened from. An ``.m3u``
+    or ``.m3u8`` file is read as a playlist, its ``#`` lines skipped. A list file
     that cannot be read is skipped and named in ``problems``. Blocking I/O —
     a list file may be on a remote host — so call it on a worker.
     """
@@ -168,7 +184,7 @@ def read_lists(files) -> Resolved:
         except Exception as e:  # noqa: BLE001 — any backend's read error
             problems.append(f"{file.name}: {e}")
             continue
-        got = resolve(parse(text), file.parent)
+        got = resolve(parse(text, comments=is_playlist(file.name)), file.parent)
         relative += got.relative
         for path in got.paths:
             key = str(path)
