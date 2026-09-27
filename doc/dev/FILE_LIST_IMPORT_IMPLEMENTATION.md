@@ -82,10 +82,25 @@ then UTF-8, then the ANSI code page on Windows or the filesystem encoding with
 
 ## The command source
 
-`import_list_from_command` prompts for a command line, prefilled with the last
-one run (state key `list_command.last`), and `_run_list_command` runs it on a
-`Task`, so the existing `ProgressDialog` shows it and Esc cancels it. The
-dialog has no item total to show, so it stays in its busy phase;
+`import_list_from_command` opens the command history (state key
+`list_command.history`, most recent first, capped at 100) in the searchable
+picker, and `_run_list_command` runs the choice on a `Task`, so the existing
+`ProgressDialog` shows it and Esc cancels it.
+
+The picker is the Filter prompt's shape: Enter runs the highlighted row, or
+the typed text when no row matches (`on_accept_text`), and `remove_list_item`
+forgets a row (`on_remove`). Both share a trap: typed text that partly
+matches an old row highlights it, and Enter uses the old one. So
+`FilterListDialog` gains `on_edit(value, query)` and the `edit_list_item`
+action in the `filter_list` context (Tab by default, offered only when a hook
+is given): it closes the picker and hands over the highlighted row's *value* —
+`None` when nothing matches — and the query, and the owner opens the right
+text in an input field. The value rather than the label, because a row can
+draw something other than the text it stands for: the Filter prompt's defined
+filters draw a label and are applied by name, and its "clear filter" row
+stands for no text at all. The Filter prompt takes the same hook.
+
+The progress dialog has no item total to show, so it stays in its busy phase;
 `Task.busy_label` (new, default `"Preparing…"`) lets it say `Running… (N items)`
 with `task.counted` fed from the line count.
 
@@ -191,10 +206,10 @@ The Info dialog's content-hit metadata reads
 - **No cap.** `_RESULT_CAP` belongs to the search dialog. The user chose this
   exact set; truncating it silently would be worse than a slow import, and the
   probe is off the UI thread.
-- **No history, no named commands.** A clipboard list cannot be reopened, and
-  a command list is re-run from the menu. Saved lists and named commands (a
-  `PROGRAMS`-like table) are the next step; they need a verb for "run it
-  again", which a post-operation refresh is not.
+- **No saved lists, no named commands.** A clipboard list cannot be
+  reopened, and a command list is re-run from its history. Named commands (a
+  `PROGRAMS`-like table) and a list that re-runs on request would need a verb
+  for "run it again", which a post-operation refresh is not.
 - **No remote execution.** On an `ssh://` pane the command could run on the
   server and its output be read as `ssh://` paths; not done yet, and refused
   rather than run locally.

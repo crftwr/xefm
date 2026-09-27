@@ -36,10 +36,16 @@ Every navigation dialog uses the same list-picker controls:
   saved server in Connect to Server, and disconnects or ejects a volume in
   Drives. Favorites and External Programs come from your config, so there is
   nothing there to remove and the key does nothing
+- **Tab** (`edit_list_item`) to change the highlighted entry before using it,
+  where entries are text you might edit: the Filter prompt's patterns and the
+  command history of [Import List from Command](FILE_LIST_IMPORT_FEATURE.md).
+  It opens the entry — or what you typed, if nothing matches — in a field;
+  Enter there uses it. This is also how to use new text that happens to match
+  an old entry: typing `py` highlights `*.py`, and Enter would apply that
 - **Escape** or **q** to cancel and close
 
 A line along the bottom of each dialog names the keys that are live in it, so
-the remove key shows up only where it applies — and shows the key *you* have
+the remove and edit keys show up only where they apply — and shows the key *you* have
 bound if you rebound it.
 
 ## Favorites (J)

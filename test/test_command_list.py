@@ -196,10 +196,47 @@ class AppCommand(unittest.TestCase):
         self.assertEqual(str(virtual["root"]), str(Path(os.path.join(self.tmp, "src"))))
         self.assertTrue(any("1 not found" in line for line in self._logs()))
 
-    def test_the_last_command_is_remembered(self):
-        command = py("print()")
-        self._run(command)
-        self.assertEqual(self.sm.get_state(self.app._LIST_COMMAND_STATE), command)
+    def test_commands_are_remembered_most_recent_first_each_once(self):
+        a, b = py("print(1)"), py("print(2)")
+        self._run(a)
+        self._run(b)
+        self._run(a)
+        self.assertEqual(self.app._list_command_history(), [a, b])
+
+    def test_the_history_is_capped(self):
+        for i in range(self.app._LIST_COMMAND_HISTORY_MAX + 5):
+            self.app._record_list_command(f"cmd {i}")
+        history = self.app._list_command_history()
+        self.assertEqual(len(history), self.app._LIST_COMMAND_HISTORY_MAX)
+        self.assertEqual(history[0], f"cmd {self.app._LIST_COMMAND_HISTORY_MAX + 4}")
+
+    def test_a_command_can_be_forgotten(self):
+        self.app._record_list_command("keep")
+        self.app._record_list_command("drop")
+        self.assertTrue(self.app._forget_list_command("drop"))
+        self.assertFalse(self.app._forget_list_command("never run"))
+        self.assertEqual(self.app._list_command_history(), ["keep"])
+
+    def _dialog(self):
+        from xefm.filter_list_dialog import FilterListDialog
+        self.app.import_list_from_command()
+        top = self.app.panel._layers[-1].widget
+        self.assertIsInstance(top, FilterListDialog)
+        return top
+
+    def test_the_dialog_is_the_history(self):
+        self.app._record_list_command("old")
+        self.app._record_list_command("new")
+        self.assertEqual(self._dialog().all_items, ["new", "old"])
+
+    def test_tab_puts_the_command_in_a_field_to_change(self):
+        from xefm.input_dialog import InputDialog
+        self.app._record_list_command("rg -l TODO")
+        dialog = self._dialog()
+        dialog.edit_selected()
+        top = self.app.panel._layers[-1].widget
+        self.assertIsInstance(top, InputDialog)
+        self.assertEqual(top.edit.text, "rg -l TODO")
 
     def test_nothing_printed_leaves_the_pane_and_says_why(self):
         before = list(self.pane["files"])
