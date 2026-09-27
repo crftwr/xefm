@@ -92,6 +92,46 @@ def test_a_typed_glob_is_unaffected(tree):
     assert shown(tree, "") == ["zdir", "a.txt", "b.png", "c.py"]
 
 
+def test_a_typed_filter_may_name_several_patterns(tree):
+    """Space-separated, a name matching any one is shown — the file-manager
+    convention for a mask, and what a single glob cannot say."""
+    assert shown(tree, "*.png *.py") == ["zdir", "b.png", "c.py"]
+
+
+def test_semicolons_separate_patterns_too(tree):
+    """As Windows' own file dialogs write them."""
+    assert shown(tree, "*.png;*.py") == ["zdir", "b.png", "c.py"]
+    assert shown(tree, "*.png; *.txt") == ["zdir", "a.txt", "b.png"]
+
+
+def test_a_quoted_pattern_keeps_its_space(tmp_path):
+    (tmp_path / "my file.txt").write_text("x")
+    (tmp_path / "file.txt").write_text("x")
+    (tmp_path / "other.py").write_text("x")
+    assert shown(tmp_path, '"my file*" *.py') == ["my file.txt", "other.py"]
+
+
+@pytest.mark.parametrize("pattern, globs", [
+    ("*.jpg *.png", ("*.jpg", "*.png")),
+    ("  *.jpg   *.png  ", ("*.jpg", "*.png")),
+    ("*.jpg;*.png", ("*.jpg", "*.png")),
+    ('"a b*" c', ("a b*", "c")),
+    ("*.py", ("*.py",)),
+    ("dir\\*.py", ("dir\\*.py",)),        # backslash is not an escape
+    ('"unclosed *.py', ('"unclosed *.py',)),  # unreadable: one pattern, as before
+    ("#tag *.md", ("#tag", "*.md")),      # '#' is not a comment
+])
+def test_split_globs(pattern, globs):
+    assert filters.split_globs(pattern) == globs
+
+
+def test_a_config_glob_is_not_split(tree):
+    """A config says "any of these" with a list; its strings are one glob each."""
+    (tree / "b c.png").write_text("x")
+    load(spaced="b c.png")
+    assert shown(tree, "spaced") == ["zdir", "b c.png"]
+
+
 def test_a_defined_name_wins_over_reading_it_as_a_pattern(tree):
     """``matcher`` is the one place the question is decided, and the registry is
     what it asks first — otherwise a name would filter by matching files called

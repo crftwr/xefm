@@ -459,8 +459,8 @@ you were given.
 
 ## Your own filters: `FILTERS`
 
-The pane filter (`;`) has always been one wildcard pattern, which can only ask
-about a name. "The images", "anything I touched today", "everything over 100 MB"
+The pane filter (`;`) takes wildcard patterns — one, or several separated by
+spaces (`*.jpg *.png`) — which can only ask about a name. "The images", "anything I touched today", "everything over 100 MB"
 are questions about the *file*, and no pattern spells them. So the filter is
 yours to write too.
 
