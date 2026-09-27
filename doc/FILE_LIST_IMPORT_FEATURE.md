@@ -28,18 +28,20 @@ paths, and importing them gives you the same rows back.
 command, runs it in the pane's directory, and shows the paths it prints — one
 step instead of piping to the clipboard and importing.
 
-The dialog lists the commands you have run, most recent first, and typing
-narrows the list the way every picker does (Migemo included):
+The dialog is a command field with the commands you have run listed below it,
+most recent first:
 
 | Key | Does |
 |---|---|
-| **Enter** | Run the highlighted command — or, when nothing in the history matches, the text you typed |
-| **Tab** | Put the highlighted command (or your text) in a field to change before running it |
-| **Shift-Delete** | Forget the highlighted command |
+| typing | Edits the command, and narrows the history (Migemo included) |
+| **↓** / **↑** | Move through the history, copying each command into the field |
+| **Enter** | In the history: choose that command and go back to the field. In the field: run what it holds |
+| **Esc** | In the history: back to what you typed. Otherwise: close |
+| **Shift-Delete** | In the history: forget that command |
 
-Use **Tab** to run a new command that looks like an old one: typing `rg -l`
-when `rg -l TODO` is in the history highlights the old command, and Enter would
-run it.
+Enter in the field always runs the field: typing `rg -l` runs `rg -l`, even
+with `rg -l TODO` in the history. To run an old command, press ↓ to it and
+Enter twice — once to choose it, once to run it — or change it in between; see [Fields with a history](NAVIGATION_DIALOGS_FEATURE.md#fields-with-a-history).
 
 ```sh
 rg -l TODO

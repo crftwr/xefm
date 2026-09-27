@@ -36,17 +36,30 @@ Every navigation dialog uses the same list-picker controls:
   saved server in Connect to Server, and disconnects or ejects a volume in
   Drives. Favorites and External Programs come from your config, so there is
   nothing there to remove and the key does nothing
-- **Tab** (`edit_list_item`) to change the highlighted entry before using it,
-  where entries are text you might edit: the Filter prompt's patterns and the
-  command history of [Import List from Command](FILE_LIST_IMPORT_FEATURE.md).
-  It opens the entry — or what you typed, if nothing matches — in a field;
-  Enter there uses it. This is also how to use new text that happens to match
-  an old entry: typing `py` highlights `*.py`, and Enter would apply that
 - **Escape** or **q** to cancel and close
 
 A line along the bottom of each dialog names the keys that are live in it, so
-the remove and edit keys show up only where they apply — and shows the key *you* have
+the remove key shows up only where it applies — and shows the key *you* have
 bound if you rebound it.
+
+### Fields with a history
+
+Two dialogs are for text you type rather than an entry you pick: the **Filter**
+prompt (`;`) and [Import List from Command](FILE_LIST_IMPORT_FEATURE.md). They
+look like a text prompt — a label and a field, no magnifier — with the history
+listed below, and they work the other way round:
+
+- **Enter** uses what the **field** holds, always. Typing `py` applies the
+  pattern `py`, even with `*.py` in the history.
+- Typing narrows the history, but highlights nothing in it.
+- **↓** moves into the history and copies the highlighted entry into the
+  field. **Enter** there chooses it: you are back in the field with the
+  entry's text, to use with a second Enter or to change first. **↑** past the
+  first entry, or **Esc**, goes back to what you typed.
+- A click copies an entry in; a second click on it uses it.
+- The remove key forgets the highlighted entry while you are in the history.
+- In the Filter prompt, a filter from your config goes into the field as its
+  name, and *clear filter* as an empty field — Enter then clears the filter.
 
 ## Favorites (J)
 

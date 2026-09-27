@@ -218,25 +218,31 @@ class AppCommand(unittest.TestCase):
         self.assertEqual(self.app._list_command_history(), ["keep"])
 
     def _dialog(self):
-        from xefm.filter_list_dialog import FilterListDialog
+        from xefm.history_input_dialog import HistoryInputDialog
         self.app.import_list_from_command()
         top = self.app.panel._layers[-1].widget
-        self.assertIsInstance(top, FilterListDialog)
+        self.assertIsInstance(top, HistoryInputDialog)
         return top
 
-    def test_the_dialog_is_the_history(self):
+    def test_the_dialog_is_a_field_over_the_history(self):
         self.app._record_list_command("old")
         self.app._record_list_command("new")
-        self.assertEqual(self._dialog().all_items, ["new", "old"])
-
-    def test_tab_puts_the_command_in_a_field_to_change(self):
-        from xefm.input_dialog import InputDialog
-        self.app._record_list_command("rg -l TODO")
         dialog = self._dialog()
-        dialog.edit_selected()
-        top = self.app.panel._layers[-1].widget
-        self.assertIsInstance(top, InputDialog)
-        self.assertEqual(top.edit.text, "rg -l TODO")
+        self.assertEqual(dialog.all_items, ["new", "old"])
+        self.assertEqual(dialog.field.text, "")
+        self.assertFalse(dialog.browsing)
+
+    def test_enter_runs_what_the_field_holds_not_the_row_it_matches(self):
+        # The trap this dialog exists for: typing a prefix of an old command
+        # must run the prefix.
+        self.app._record_list_command(py("print('old')"))
+        dialog = self._dialog()
+        ran = []
+        dialog.on_accept = ran.append
+        dialog.field.text = "rg -l"
+        dialog._typed("rg -l")
+        dialog.accept()
+        self.assertEqual(ran, ["rg -l"])
 
     def test_nothing_printed_leaves_the_pane_and_says_why(self):
         before = list(self.pane["files"])
