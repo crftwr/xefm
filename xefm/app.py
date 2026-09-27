@@ -3296,8 +3296,7 @@ class XeFMApp:
         )
         tools_menu = Menu(
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
-            MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell"),
-                     enabled=lambda: not is_desktop_mode()),
+            MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
             SEPARATOR,
             MenuItem("Edit Configuration…", on_select=self.edit_config,
                      shortcut=sc("edit_config")),
@@ -3433,6 +3432,30 @@ class XeFMApp:
         self.panel.render()
         return result.returncode if result is not None else None
 
+    def _open_terminal(self, argv: list, *, cwd: str | None, env: dict,
+                       pause_on_error: bool = False) -> bool:
+        """Desktop mode's stand-in for :meth:`_run_in_terminal`: open the
+        ``TERMINAL`` application running ``argv`` and return at once (see
+        :mod:`xefm.external_terminal`). Returns False — having logged why —
+        when no terminal could be opened."""
+        from xefm.external_terminal import (NoTerminalError, launch_in_terminal,
+                                           terminal_command)
+        terminal = terminal_command(self.config)
+        try:
+            launch_in_terminal(terminal, argv, cwd=cwd, env=env,
+                               pause_on_error=pause_on_error)
+        except NoTerminalError:
+            self.log_info("No terminal configured: set TERMINAL in "
+                          "~/.xefm/config.py")
+            return False
+        except FileNotFoundError:
+            self.log_info(f"Terminal not found: {terminal[0]}")
+            return False
+        except Exception as exc:
+            self.log_info(f"Could not open a terminal: {exc}")
+            return False
+        return True
+
     def _launch_associated(self, entries, command: list) -> bool:
         """Run the FILE_ASSOCIATIONS program ``command`` on ``entries`` — one
         launch, with every path appended to the argv.
@@ -3547,9 +3570,12 @@ class XeFMApp:
             self.log_info(f"Edited {self._files_label(fallback)}")
 
     def subshell(self) -> None:
-        """Drop to an interactive shell in the active pane's directory, handing
-        over the terminal via suspend/resume; refresh on return. Terminal mode
-        and local directories only. The shell is ``SUBSHELL`` from the config,
+        """Drop to an interactive shell in the active pane's directory. In
+        terminal mode the terminal is handed over via suspend/resume and the
+        panes refresh on return; in desktop mode the shell opens in the
+        ``TERMINAL`` application instead (#472) and XeFM carries on — file
+        monitoring stands in for the refresh. Local directories only. The
+        shell is ``SUBSHELL`` from the config,
         falling back to ``$SHELL`` and then the platform default (cmd.exe on
         Windows, ``/bin/sh`` elsewhere) — see :func:`_subshell_command`. The
         shell gets the ``XEFM_*`` variables (pane directories, selections,
@@ -3559,11 +3585,6 @@ class XeFMApp:
         from xefm.external_programs import (build_xefm_env,
                                            ensure_common_paths_in_env,
                                            prefix_prompt_markers)
-        if is_desktop_mode():
-            self.log_info("Cannot open a subshell: it needs a terminal, "
-                          "and desktop mode has none")
-            self.panel.render()
-            return
         path = self.active_pane()["path"]
         if not self._is_local(path):
             self.log_info("Subshell is only available for local directories")
@@ -3575,6 +3596,11 @@ class XeFMApp:
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
         prefix_prompt_markers(env, command)
+        if is_desktop_mode():
+            if self._open_terminal(command, cwd=str(path), env=env):
+                self.log_info(f"Opened a terminal in {path}")
+            self.panel.render()
+            return
         self.log_info(f"Subshell in {path} — exit the shell to return")
         self._run_in_terminal(command, cwd=str(path), env=env)
 
@@ -4858,7 +4884,7 @@ class XeFMApp:
         the environment, and stdout/stderr streamed into the log pane. An entry
         with ``options {'terminal': True}`` instead gets the terminal via
         suspend/resume (like ``edit_file``) so full-screen programs (vim, less)
-        work — terminal mode only; desktop mode refuses the launch. Other
+        work — in desktop mode, a terminal window of its own. Other
         programs' stdin reads EOF."""
         programs = getattr(self.config, "PROGRAMS", None) or []
         if not programs:
@@ -4928,15 +4954,19 @@ class XeFMApp:
     def _launch_program(self, name: str, argv: list, *, cwd: str | None,
                         env: dict, terminal: bool) -> int | None:
         """Launch ``argv`` one of two ways. ``terminal`` hands the child the
-        tty via suspend/resume and waits (terminal mode only; desktop mode
-        refuses), returning its exit code. Otherwise it runs in the background
+        tty via suspend/resume and waits, returning its exit code — or, in
+        desktop mode, opens it in the ``TERMINAL`` application and returns
+        ``None`` at once. Otherwise it runs in the background
         with stdout/stderr streamed into the log pane, and this returns
         ``None`` at once."""
         from xefm.external_programs import SUBPROCESS_NO_WINDOW, resolve_command
         if terminal:
             if is_desktop_mode():
-                self.log_info(f"Cannot launch '{name}': it needs a terminal, "
-                              "and desktop mode has none")
+                # No tty of ours to lend: the program gets a terminal window
+                # of its own, and we do not wait for it (#472).
+                if self._open_terminal(argv, cwd=cwd, env=env,
+                                       pause_on_error=True):
+                    self.log_info(f"Launched in a terminal: {name}")
                 self.panel.render()
                 return None
             # Full-screen child (vim, less, a REPL): hand over the tty and wait.
@@ -7358,17 +7388,17 @@ class XeFMApp:
     #: Rows of :data:`_HELP_SECTIONS` that only some frontends can honor, each
     #: mapped to the test for "this one can". The help is one table for two
     #: frontends, and an action the running one refuses is worse than a missing
-    #: row: ``menu`` answers nothing once an OS menu bar has taken the menu over,
-    #: and ``subshell`` needs a terminal to hand over. Both stay in the sections
-    #: above — they are real actions, and the *other* frontend lists them — so
-    #: the filter lives here rather than as a branch in the table.
+    #: row: ``menu`` answers nothing once an OS menu bar has taken the menu
+    #: over. It stays in the sections above — it is a real action, and the
+    #: *other* frontend lists it — so the filter lives here rather than as a
+    #: branch in the table. (``subshell`` used to be gated too, until desktop
+    #: mode learned to open it in an external terminal — #472.)
     #:
     #: The menu bar is asked about itself, not the backend about its
     #: capabilities: which menus a platform has is PuiKit's business, and XeFM
     #: only wants to know whether the key it would print does anything.
     _BACKEND_GATED = {
         "menu": lambda self: self.menu_bar.takes_activation_key,
-        "subshell": lambda self: not is_desktop_mode(),
     }
 
     def _help_entries(self, entries):

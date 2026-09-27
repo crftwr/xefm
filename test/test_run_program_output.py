@@ -189,23 +189,41 @@ class TestTerminalOption(RunProgramBase):
         self.assertIn('XEFM_THIS_DIR', kwargs['env'])
         self.assertTrue(kwargs['pause_on_error'])
 
-    def test_terminal_option_refused_in_desktop_mode(self):
-        """Desktop mode has no tty to hand over: the launch is refused"""
+    def test_terminal_option_opens_a_terminal_in_desktop_mode(self):
+        """Desktop mode has no tty to hand over: the program gets a terminal
+        window of its own (#472), with the same env, cwd and pause"""
         program = {'name': 'Echoer',
                    'command': [sys.executable, '-c', "print('piped output')"],
                    'options': {'terminal': True}}
         with patch.object(self.app, '_run_in_terminal') as handoff, \
                 patch.object(self.app, 'log_info') as log, \
                 patch('xefm.app.subprocess.Popen') as popen, \
+                patch('xefm.external_terminal.launch_in_terminal') as launch, \
                 patch('xefm.app.is_desktop_mode', return_value=True):
             self.app._run_program(program)
 
         handoff.assert_not_called()
         popen.assert_not_called()
-        log.assert_called_once()
-        message = log.call_args[0][0]
-        self.assertIn('Echoer', message)
-        self.assertIn('terminal', message)
+        launch.assert_called_once()
+        argv, kwargs = launch.call_args[0][1], launch.call_args[1]
+        self.assertEqual(argv[:3], program['command'])
+        self.assertEqual(os.path.realpath(kwargs['cwd']),
+                         os.path.realpath(self.tmp))
+        self.assertEqual(kwargs['env']['XEFM_ACTIVE'], '1')
+        self.assertTrue(kwargs['pause_on_error'])
+        self.assertIn('Echoer', log.call_args[0][0])
+
+    def test_desktop_terminal_launch_failure_is_logged(self):
+        """No terminal configured and no platform default: say which setting"""
+        program = {'name': 'Less', 'command': ['less'],
+                   'options': {'terminal': True}}
+        with patch.object(self.app, 'log_info') as log, \
+                patch('xefm.external_terminal.default_terminal',
+                      return_value=None), \
+                patch.object(self.app.config, 'TERMINAL', None, create=True), \
+                patch('xefm.app.is_desktop_mode', return_value=True):
+            self.app._run_program(program)
+        self.assertIn('TERMINAL', log.call_args[0][0])
 
     def test_terminal_nonzero_exit_waits_for_enter(self):
         """pause_on_error holds the terminal until Enter on a nonzero exit"""
@@ -275,15 +293,17 @@ class TestActionContextRunProgram(RunProgramBase):
                 terminal=True)
         self.assertEqual(code, 4)
 
-    def test_terminal_refused_in_desktop_mode(self):
+    def test_terminal_opens_a_terminal_in_desktop_mode(self):
         with patch.object(self.app, '_run_in_terminal') as handoff, \
-                patch.object(self.app, 'log_info') as log, \
+                patch('xefm.external_terminal.launch_in_terminal') as launch, \
                 patch('xefm.app.is_desktop_mode', return_value=True):
-            code = self.ctx().run_program(['vim'], terminal=True)
+            code = self.ctx().run_program(['vim'], terminal=True,
+                                          env={'MY_VAR': 'hello'})
 
         self.assertIsNone(code)
         handoff.assert_not_called()
-        self.assertIn('terminal', log.call_args[0][0])
+        self.assertEqual(launch.call_args[0][1], ['vim'])
+        self.assertEqual(launch.call_args[1]['env']['MY_VAR'], 'hello')
 
     def test_an_explicit_cwd_wins(self):
         other = tempfile.mkdtemp()
@@ -332,16 +352,28 @@ class TestSubshellEnv(RunProgramBase):
         self.assertEqual(env['XEFM_ACTIVE'], '1')
         self.assertEqual(env['PROMPT'], '[XeFM] $P$G')
 
-    def test_subshell_refused_in_desktop_mode(self):
-        """Desktop mode has no tty to hand over: the subshell is refused"""
+    def test_subshell_opens_a_terminal_in_desktop_mode(self):
+        """Desktop mode has no tty to hand over: SUBSHELL opens in the
+        TERMINAL application, with the env and prompt marker (#472)"""
         with patch.object(self.app, '_run_in_terminal') as handoff, \
-                patch.object(self.app, 'log_info') as log, \
+                patch.object(self.app.config, 'SUBSHELL', '/bin/zsh', create=True), \
+                patch.object(self.app.config, 'TERMINAL', ['my-term', '-e'],
+                             create=True), \
+                patch('xefm.external_terminal.launch_in_terminal') as launch, \
                 patch('xefm.app.is_desktop_mode', return_value=True):
             self.app.subshell()
 
         handoff.assert_not_called()
-        log.assert_called_once()
-        self.assertIn('terminal', log.call_args[0][0])
+        launch.assert_called_once()
+        terminal, argv = launch.call_args[0]
+        kwargs = launch.call_args[1]
+        self.assertEqual(terminal, ['my-term', '-e'])
+        self.assertEqual(argv, ['/bin/zsh'])
+        self.assertEqual(os.path.realpath(kwargs['cwd']),
+                         os.path.realpath(self.tmp))
+        self.assertEqual(kwargs['env']['XEFM_ACTIVE'], '1')
+        self.assertTrue(kwargs['env']['PROMPT'].startswith('[XeFM] '))
+        self.assertFalse(kwargs['pause_on_error'])
 
 
 class TestAutoReturnDeprecation(unittest.TestCase):

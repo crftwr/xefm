@@ -47,8 +47,8 @@ the place to read which key does what on *your* setup. The sections, in order:
   [Archives](ARCHIVE_FEATURE.md))
 
 A few rows appear only where they work. The terminal build lists the in-window
-menu bar and the subshell; the desktop builds leave both out, because there the
-menu bar is the operating system's own and there is no terminal to hand over.
+menu bar; the desktop builds leave it out, because there the menu bar is the
+operating system's own.
 
 An action your configuration leaves unbound shows an em dash instead of a key,
 followed by the menu that reaches it — several useful actions ship unbound on

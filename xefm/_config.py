@@ -1097,13 +1097,25 @@ class Config:
     TEXT_DIFF = ['code', '--diff'] if is_desktop_mode() else 'vimdiff'
 
     # Subshell settings
-    # Shell launched by the 'subshell' action (Shift-X), terminal mode only.
+    # Shell launched by the 'subshell' action (Shift-X), in both modes.
     # None: use $SHELL if set, otherwise the platform default
     # (%COMSPEC% / cmd.exe on Windows, /bin/sh elsewhere).
     # Supports both string and list formats:
     # - String format: 'zsh' (single command, no arguments)
     # - List format: ['powershell', '-NoLogo'] (command with arguments)
     SUBSHELL = None
+
+    # Terminal application (desktop mode only)
+    # Desktop mode has no terminal of its own to hand over, so the subshell and
+    # PROGRAMS entries with {'terminal': True} open in this application instead.
+    # TERMINAL decides the window; SUBSHELL decides the shell inside it. The
+    # command to run is appended as trailing arguments.
+    # None: the platform default -- Terminal.app on macOS; Windows Terminal
+    # (wt.exe) on Windows if installed, otherwise a new console window.
+    # Supports both string and list formats:
+    # - ['open', '-a', 'iTerm']      (macOS: any app that runs a script it opens)
+    # - ['wezterm', 'start', '--']   (a terminal that takes the command as args)
+    TERMINAL = None
 
     # S3 settings
     S3_CACHE_TTL = 60  # S3 cache TTL in seconds (default: 60 seconds)
@@ -1249,8 +1261,8 @@ class Config:
     #   - terminal: if True, hand the terminal over to the program and wait for
     #     it to exit — for full-screen / interactive programs (vim, less, a
     #     REPL). If it exits with an error, XeFM waits for Enter so the output
-    #     stays readable. Terminal mode only; desktop mode has no terminal to
-    #     hand over and refuses the launch with an error in the log pane.
+    #     stays readable. Desktop mode has no terminal to hand over, so the
+    #     program opens in a TERMINAL window instead (see TERMINAL above).
     #   - auto_return: deprecated and ignored — launches never block XeFM.
     PROGRAMS = [
         {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')]},

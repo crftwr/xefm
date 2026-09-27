@@ -144,7 +144,9 @@ terminal and desktop mode:
    the same hand-off `edit_file` and the sub-shell use — and a nonzero exit
    holds the terminal until Enter (the prompt goes to `sys.__stdout__`, since
    `sys.stdout` is captured into the log pane). In desktop mode there is no
-   terminal, so the launch is refused with a log-pane error.
+   terminal, so `_open_terminal` opens the `TERMINAL` application running the
+   same command instead and returns `None` at once — see
+   [EXTERNAL_TERMINAL_IMPLEMENTATION.md](EXTERNAL_TERMINAL_IMPLEMENTATION.md).
 3. `subprocess.Popen` — the program name resolved through `resolve_command`
    first — with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE`, so the
    child never touches the terminal. In TUI mode a direct write would corrupt
@@ -281,4 +283,5 @@ if platform.system() == 'Darwin':
 
 - [External Programs Feature](../EXTERNAL_PROGRAMS_FEATURE.md) — user documentation
 - [Subshell System](SUBSHELL_SYSTEM.md) — interactive sub-shell details
+- [External Terminal](EXTERNAL_TERMINAL_IMPLEMENTATION.md) — desktop mode's terminal window
 - [Configuration System](CONFIGURATION_SYSTEM.md) — configuration management

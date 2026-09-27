@@ -3,9 +3,9 @@
 XeFM runs the same widget code as a desktop app and as a TUI, and a few actions
 only one of them can perform. The help used to list them unconditionally, so the
 macOS build offered ``F10, Alt — Open the menu bar`` (PuiKit's ``MenuBar`` opens
-nothing once the OS bar owns the menu) and ``Open a shell in the current directory``
-(``subshell`` needs a terminal to hand over). Both rows named a key and then did
-nothing when pressed.
+nothing once the OS bar owns the menu): a row that named a key and then did
+nothing when pressed. ``subshell`` was gated the same way until desktop mode
+learned to open it in an external terminal (#472); it is listed in both now.
 
 ``_help_markdown`` is built here from a bare instance — the keymap and a stubbed
 menu bar are all it reads — so both frontends can be checked in one process.
@@ -60,10 +60,10 @@ class TestBackendGatedRows(HelpMarkdownCase):
     def test_menu_bar_row_is_present_in_the_terminal(self):
         self.assertIn("Open the menu bar", self.terminal_help())
 
-    def test_subshell_row_is_absent_in_desktop_mode(self):
-        # subshell() logs "it needs a terminal, and desktop mode has none".
-        self.assertNotIn("Open a shell in the current directory",
-                         self.desktop_help())
+    def test_subshell_row_is_present_in_desktop_mode(self):
+        # Desktop mode opens the shell in the TERMINAL application (#472).
+        self.assertIn("Open a shell in the current directory",
+                      self.desktop_help())
 
     def test_subshell_row_is_present_in_the_terminal(self):
         self.assertIn("Open a shell in the current directory",
