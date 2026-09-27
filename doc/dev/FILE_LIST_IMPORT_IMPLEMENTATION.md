@@ -22,9 +22,9 @@ supported in tree; it is one source among many.
 |---|---|
 | Parse, resolve, common root, probe — storage-agnostic, pane-free | `xefm/path_list.py` |
 | One door for every source | `XeFMApp.open_path_list(pane_name, paths, *, title, base=None)` |
-| The clipboard source | `XeFMApp.import_list_from_clipboard` (action `import_list_from_clipboard`, unbound) |
-| The command source | `XeFMApp.import_list_from_command` → `_run_list_command` → `_open_command_output`; the blocking half in `xefm/command_list.py` |
-| The file source | `XeFMApp.import_list_from_file` (action `import_list_from_file`, unbound; "Open as List" on the context menu); `path_list.read_lists` |
+| The clipboard source | `XeFMApp.open_list_from_clipboard` (action `open_list_from_clipboard`, unbound; Go → Open List) |
+| The command source | `XeFMApp.open_list_from_command` → `_run_list_command` → `_open_command_output`; the blocking half in `xefm/command_list.py` |
+| The file source | `XeFMApp.open_list_from_file` (action `open_list_from_file`, unbound; "Open as List" on the context menu); `path_list.read_lists` |
 | The shared report | `XeFMApp._open_list(pane_name, *, title, load, relative_to)` |
 | The public door | `PaneApi.open_list(paths, *, title)` in `xefm/user_api.py` |
 | Listing a virtual pane off the UI thread | `XeFMApp._list_virtual`, `FileListManager.compute_virtual_listing` / `prune_virtual` |
@@ -40,6 +40,14 @@ the UI thread. For the clipboard and `open_list` that only moves resolving;
 for a list file it moves the read itself, which on an `ssh://` or `s3://` list
 is a network round trip. The worker adds `total`, `relative` and `problems`
 (unreadable list files) to the result for the report.
+
+The three actions sit under **Go → Open List**, a submenu, and are named
+`open_list_from_*`: "open" as the public `PaneApi.open_list` and `open_item`
+on an archive are — the pane shows something other than a directory, and
+`go_parent` leaves it — which is also why they are in Go, with the other ways
+the pane moves, rather than Edit, which holds what ends on the clipboard. They
+began as Edit → "Import List from …", three rows each 21–27 characters long,
+and were renamed before any release.
 
 ## The flow
 
@@ -64,7 +72,7 @@ The search feed (`_feed_search_results`) now enters through the same
 
 ## The file source
 
-`import_list_from_file` takes the selection, or the file under the cursor,
+`open_list_from_file` takes the selection, or the file under the cursor,
 skipping directories, and `path_list.read_lists` reads each through
 `Path.read_bytes` — so a list on any backend works, and its relative lines
 resolve on that backend. The base is **the list file's own directory**, the
@@ -82,7 +90,7 @@ then UTF-8, then the ANSI code page on Windows or the filesystem encoding with
 
 ## The command source
 
-`import_list_from_command` opens a command field over the command history
+`open_list_from_command` opens a command field over the command history
 (state key `list_command.history`, most recent first, capped at 100), and
 `_run_list_command` runs the field's text on a `Task`, so the existing
 `ProgressDialog` shows it and Esc cancels it.

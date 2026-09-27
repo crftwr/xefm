@@ -385,7 +385,7 @@ class _AppBase(RemoteScheme):
 
     def _import(self, text):
         self.app.panel.set_clipboard(text)
-        self.assertTrue(self.app.dispatch("import_list_from_clipboard"))
+        self.assertTrue(self.app.dispatch("open_list_from_clipboard"))
         self.app._settle_listings()
 
     def _last_log(self):
@@ -573,7 +573,7 @@ class AppListFile(_AppBase):
         self.pane["focused_index"] = by_name[names[0]]
         if len(names) > 1:
             self.pane["selected_files"] = {str(files[by_name[n]]) for n in names}
-        self.assertTrue(self.app.dispatch("import_list_from_file"))
+        self.assertTrue(self.app.dispatch("open_list_from_file"))
         self.app._settle_listings()
 
     def _list_file(self, rel, lines, encoding="utf-8"):

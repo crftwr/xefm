@@ -1,6 +1,6 @@
 """A text field over its history (:mod:`xefm.history_input_dialog`).
 
-The dialog behind Import List from Command and the ';' Filter prompt. What is
+The dialog behind Open List from Command and the ';' Filter prompt. What is
 under test is the contract that makes it different from the picker it
 replaced there:
 

@@ -45,7 +45,7 @@ bound if you rebound it.
 ### Fields with a history
 
 Two dialogs are for text you type rather than an entry you pick: the **Filter**
-prompt (`;`) and [Import List from Command](FILE_LIST_IMPORT_FEATURE.md). They
+prompt (`;`) and [Open List → From Command](FILE_LIST_IMPORT_FEATURE.md#from-a-command). They
 look like a text prompt — a label and a field, no magnifier — with the history
 listed below, and they work the other way round:
 

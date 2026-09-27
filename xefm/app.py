@@ -2735,9 +2735,9 @@ class XeFMApp:
                 "rename": (self.rename, False),
                 "copy_names": (self.copy_names_to_clipboard, True),
                 "copy_paths": (self.copy_paths_to_clipboard, True),
-                "import_list_from_clipboard": (self.import_list_from_clipboard, True),
-                "import_list_from_command": (self.import_list_from_command, False),
-                "import_list_from_file": (self.import_list_from_file, True),
+                "open_list_from_clipboard": (self.open_list_from_clipboard, True),
+                "open_list_from_command": (self.open_list_from_command, False),
+                "open_list_from_file": (self.open_list_from_file, True),
                 "copy_files": (self.copy_files, None),
                 "move_files": (self.move_files, None),
                 "duplicate_files": (self.duplicate_files, None),
@@ -3237,9 +3237,8 @@ class XeFMApp:
             MenuItem("Quit", on_select=self.confirm_quit, shortcut=sc("quit")),
             title="File",
         )
-        # Everything that goes through the clipboard, in the menu users look in
-        # for it: the file-name / path copies that used to sit in File, their
-        # inverse — a list of paths read back in as a pane (#453) — and the log
+        # Everything that ends on the clipboard, in the menu users look in for
+        # it: the file-name / path copies that used to sit in File, and the log
         # pane's own two (#360). The log items need a menu more than most —
         # a log selection is made with the mouse, and "Copy All Logs" ships
         # unbound — so this is where that feature is discovered at all.
@@ -3253,15 +3252,6 @@ class XeFMApp:
                      enabled=has_files, shortcut=sc("copy_names")),
             MenuItem("Copy Full Path(s)", on_select=lambda: self._menu("copy_paths"),
                      enabled=has_files, shortcut=sc("copy_paths")),
-            MenuItem("Import List from Clipboard",
-                     on_select=lambda: self._menu("import_list_from_clipboard"),
-                     shortcut=sc("import_list_from_clipboard")),
-            MenuItem("Import List from Command…",
-                     on_select=self.import_list_from_command,
-                     shortcut=sc("import_list_from_command")),
-            MenuItem("Import List from File",
-                     on_select=lambda: self._menu("import_list_from_file"),
-                     enabled=has_files, shortcut=sc("import_list_from_file")),
             SEPARATOR,
             MenuItem("Copy Log Selection",
                      on_select=lambda: self._menu("copy_log_selection"),
@@ -3287,6 +3277,21 @@ class XeFMApp:
                      # asks properly, and says so if the answer is no.
                      enabled=lambda: platform.system() in ("Darwin", "Windows")),
             MenuItem("History…", on_select=self.show_history, shortcut=sc("history")),
+            SEPARATOR,
+            # A list of paths in place of a directory (#453): where the pane
+            # goes, like everything above, and left again with Parent
+            # Directory. One submenu for the three sources rather than three
+            # rows each starting "Open List from".
+            MenuItem("Open List", submenu=Menu(
+                MenuItem("From Clipboard",
+                         on_select=lambda: self._menu("open_list_from_clipboard"),
+                         shortcut=sc("open_list_from_clipboard")),
+                MenuItem("From Command…", on_select=self.open_list_from_command,
+                         shortcut=sc("open_list_from_command")),
+                MenuItem("From File",
+                         on_select=lambda: self._menu("open_list_from_file"),
+                         enabled=has_files, shortcut=sc("open_list_from_file")),
+            )),
             title="Go",
         )
         tools_menu = Menu(
@@ -5345,7 +5350,7 @@ class XeFMApp:
         line."""
         self._copy_to_clipboard(str, "path")
 
-    def import_list_from_clipboard(self) -> None:
+    def open_list_from_clipboard(self) -> None:
         """Show the paths on the clipboard, one per line, as the active pane's
         listing — the inverse of ``copy_paths`` (#453).
 
@@ -5365,12 +5370,12 @@ class XeFMApp:
         self.open_path_list(self.pm.active_pane, lines,
                             title="Clipboard")
 
-    #: State key for the commands ``import_list_from_command`` has run, most
+    #: State key for the commands ``open_list_from_command`` has run, most
     #: recent first — the commonest next command is one already run.
     _LIST_COMMAND_STATE = "list_command.history"
     _LIST_COMMAND_HISTORY_MAX = 100
 
-    def import_list_from_command(self) -> None:
+    def open_list_from_command(self) -> None:
         """Run a command and show the paths it prints, one per line, as the
         active pane's listing — Midnight Commander's *External panelize*
         (#453 ③).
@@ -5400,7 +5405,7 @@ class XeFMApp:
 
         show_history_input(
             self.panel, self._list_command_history(),
-            title="Import List from Command", prompt="Command:",
+            title="Open List from Command", prompt="Command:",
             accept_label="run", on_accept=run,
             on_remove=self._forget_list_command, on_cancel=self.panel.render,
             region=self._active_pane_region())
@@ -5429,7 +5434,7 @@ class XeFMApp:
         return True
 
     def _run_list_command(self, pane_name: str, command: str) -> None:
-        """Run ``command`` for :meth:`import_list_from_command` on a task, with
+        """Run ``command`` for :meth:`open_list_from_command` on a task, with
         the progress dialog counting the lines it prints and Esc stopping it —
         the whole process tree, not only the shell — then hand its output to
         :meth:`open_path_list`.
@@ -5553,7 +5558,7 @@ class XeFMApp:
                            on_result=counted, load=load)
         self.panel.render()
 
-    def import_list_from_file(self) -> None:
+    def open_list_from_file(self) -> None:
         """Open the list file under the cursor — or every selected one, as one
         list — as the active pane's listing: one path per line (#453 ②).
 
@@ -5568,7 +5573,7 @@ class XeFMApp:
         files = [f for f in self._selected_or_focused(pane)
                  if not (info.get(str(f)) or {}).get("is_dir")]
         if not files:
-            self.log_info("Import List from File: put the cursor on a text file "
+            self.log_info("Open List from File: put the cursor on a text file "
                           "that lists paths, one per line")
             return
         title = files[0].name if len(files) == 1 else \
@@ -7250,6 +7255,12 @@ class XeFMApp:
             ("jump_to_path", "Jump to a typed path"),
             ("drives", "Open the drives / locations picker"),
             ("history", "Go to a recently-visited directory"),
+            ("open_list_from_clipboard",
+             "Open the paths on the clipboard as a list (Go menu)"),
+            ("open_list_from_command",
+             "Open the paths a command prints as a list (Go menu)"),
+            ("open_list_from_file",
+             "Open the list file under the cursor as a list (Go menu)"),
             ("sync_current_to_other", "Go to the other pane's directory"),
             ("sync_other_to_current", "Send this directory to the other pane"),
         )),
@@ -7278,12 +7289,6 @@ class XeFMApp:
             ("copy_files", "Copy selection to the other pane"),
             ("copy_names", "Copy selection's name(s) to the clipboard"),
             ("copy_paths", "Copy selection's full path(s) to the clipboard"),
-            ("import_list_from_clipboard",
-             "Show the paths on the clipboard as this pane's list (Edit menu)"),
-            ("import_list_from_command",
-             "Show the paths a command prints as this pane's list (Edit menu)"),
-            ("import_list_from_file",
-             "Show the paths the file under the cursor lists (Edit menu)"),
             ("move_files", "Move selection to the other pane"),
             ("delete_files", "Delete selection"),
             ("create_archive", "Create archive from selection"),
@@ -7575,7 +7580,7 @@ class XeFMApp:
                      enabled=entry is not None),
             MenuItem("Copy Full Path(s)", on_select=self.copy_paths_to_clipboard,
                      enabled=entry is not None),
-            MenuItem("Open as List", on_select=lambda: self._menu("import_list_from_file"),
+            MenuItem("Open as List", on_select=lambda: self._menu("open_list_from_file"),
                      enabled=entry is not None),
             SEPARATOR,
             MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),

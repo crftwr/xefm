@@ -1,4 +1,4 @@
-"""A command's output as a file list (#453 ③, ``import_list_from_command``).
+"""A command's output as a file list (#453 ③, ``open_list_from_command``).
 
 :mod:`xefm.command_list` runs a real subprocess through the shell here — the
 current Python, so the tests need nothing installed — and the app half is
@@ -219,7 +219,7 @@ class AppCommand(unittest.TestCase):
 
     def _dialog(self):
         from xefm.history_input_dialog import HistoryInputDialog
-        self.app.import_list_from_command()
+        self.app.open_list_from_command()
         top = self.app.panel._layers[-1].widget
         self.assertIsInstance(top, HistoryInputDialog)
         return top
@@ -260,7 +260,7 @@ class AppCommand(unittest.TestCase):
 
     def test_a_remote_pane_refuses(self):
         self.pane["path"] = Path("s3://bucket/dir")
-        self.app.import_list_from_command()
+        self.app.open_list_from_command()
         self.assertIn("run in a local directory", self._logs()[-1])
 
 

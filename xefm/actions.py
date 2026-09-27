@@ -428,14 +428,6 @@ _FILER_ACTIONS = [
     # Clipboard
     _a("copy_names", FILER, "Copy the file name(s) to the clipboard"),
     _a("copy_paths", FILER, "Copy the full path(s) to the clipboard"),
-    # Its inverse. Unbound: a paste-like key is what #342's paste will want,
-    # and this is not a paste — nothing is written, the pane only shows.
-    _a("import_list_from_clipboard", FILER,
-       "Show the paths on the clipboard as the pane's list", default_keys=()),
-    _a("import_list_from_command", FILER,
-       "Show the paths a command prints as the pane's list", default_keys=()),
-    _a("import_list_from_file", FILER,
-       "Show the paths the list file under the cursor names", default_keys=()),
     # File operations
     _a("copy_files", FILER, "Copy the selection to the other pane"),
     _a("move_files", FILER, "Move the selection to the other pane"),
@@ -476,6 +468,17 @@ _FILER_ACTIONS = [
        aliases=("drives_dialog",)),
     _a("connect_server", FILER, "Connect to a network server",
        aliases=("connect_to_server",)),
+    # A list of paths in place of a directory (Go > Open List), "open" as
+    # open_item opens an archive: the pane shows something else, and
+    # go_parent leaves it. Unbound. Not "paste" -- nothing is written, and a
+    # paste-like key is what #342's paste will want.
+    _a("open_list_from_clipboard", FILER,
+       "Open the paths on the clipboard as the pane's list", default_keys=()),
+    _a("open_list_from_command", FILER,
+       "Open the paths a command prints as the pane's list", default_keys=()),
+    _a("open_list_from_file", FILER,
+       "Open the list file under the cursor as the pane's list",
+       default_keys=()),
     # Panes
     _a("sync_current_to_other", FILER, "Go to the other pane's directory"),
     _a("sync_other_to_current", FILER, "Send this directory to the other pane"),

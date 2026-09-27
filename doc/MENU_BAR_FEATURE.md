@@ -91,15 +91,12 @@ menu.
 
 ### Edit Menu
 
-Everything that goes through the clipboard.
+Everything that ends up on the clipboard.
 
 | Item | Action |
 |------|--------|
 | Copy Name(s) | `copy_names` |
 | Copy Full Path(s) | `copy_paths` |
-| Import List from Clipboard | `import_list_from_clipboard` *(ships unbound)* — see [File lists](FILE_LIST_IMPORT_FEATURE.md) |
-| Import List from Command… | `import_list_from_command` *(ships unbound)* |
-| Import List from File | `import_list_from_file` *(ships unbound)* — also **Open as List** on a file's right-click menu |
 | Copy Log Selection | `copy_log_selection` |
 | Copy All Logs | `copy_log_all` *(ships unbound)* |
 
@@ -116,6 +113,9 @@ the mouse for the first, take the whole buffer with the second. See
 | Jump to Path… | `jump_to_path` |
 | Drives… | `drives` |
 | History… | `history` |
+| Open List → From Clipboard | `open_list_from_clipboard` *(ships unbound)* — see [File lists](FILE_LIST_IMPORT_FEATURE.md) |
+| Open List → From Command… | `open_list_from_command` *(ships unbound)* |
+| Open List → From File | `open_list_from_file` *(ships unbound)* — also **Open as List** on a file's right-click menu |
 
 ### Select Menu
 
