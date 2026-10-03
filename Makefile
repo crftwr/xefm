@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: help run run-gui run-web run-linux run-linux-musl run-linux-tui run-linux-shell linux-image linux-musl-image test test-quick test-linux test-linux-musl clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config venv clean-venv check-venv install-puikit
+.PHONY: help banner run run-gui run-web run-linux run-linux-musl run-linux-tui run-linux-shell linux-image linux-musl-image test test-quick test-linux test-linux-musl clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config venv clean-venv check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -160,6 +160,7 @@ help:
 	@echo "App Icons (macOS-only; the generated assets are committed):"
 	@echo "  icons             - Regenerate icon assets from tools/icon/*.svg"
 	@echo "  icons-check       - Verify the committed icon assets match the SVG masters"
+	@echo "  banner            - Render doc/images/banner.svg to the GitHub Pages JPEGs (needs Chrome)"
 	@echo ""
 	@echo "macOS App Bundle:"
 	@echo "  macos-app           - Build native macOS application bundle"
@@ -736,6 +737,12 @@ clean-macos:
 # The SVG masters in tools/icon/ are the single source of truth. Rendering needs
 # AppKit's SVG support, so these targets are macOS-only - the resulting .icns/.ico/
 # .png assets are committed, and the Windows build consumes them as-is.
+
+# GitHub Pages banner.  doc/images/banner.svg is the source; link previews
+# ignore SVG in og:image, so the site serves JPEGs rendered from it (headless
+# Chrome + sips, macOS).  The JPEGs are committed.
+banner:
+	python3 tools/render_banner.py
 
 icons: check-venv
 	@echo "Regenerating icon assets from tools/icon/*.svg..."
