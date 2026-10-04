@@ -10,7 +10,7 @@ searched. They change the search you are already looking at — results re-run t
 moment you flip one — and they are all behind one key.
 
 Press the **options** key while the search dialog is open — the dialog's footer
-names it, and so does `?`.
+names it, and so does `F1`.
 
 ## The chips
 

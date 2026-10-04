@@ -228,7 +228,7 @@ files opens it in the viewer instead of browsing into it — or if typing a `.7z
 name at the create prompt produces a `.tar.gz` — XeFM did not find a usable one.
 (ZIP, TAR and `.tar.zst` are unaffected; they never go near it.)
 
-**Press ? and scroll to "Archive Formats".** That table is built when XeFM
+**Press F1 and scroll to "Archive Formats".** That table is built when XeFM
 starts, so it lists exactly what this copy can open and create, and the line
 under it names the libarchive in use:
 

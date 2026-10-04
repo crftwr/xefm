@@ -270,7 +270,7 @@ actions get a second, platform-native chord in a desktop window (opening a file
 with the OS app, and copying text on macOS); everything else is shared with the
 terminal. See "Three cases" in `~/.xefm/config.py`.
 
-Press `?` at any time for the keys your config is using.
+Press `F1` at any time for the keys your config is using.
 
 ### Window Management
 

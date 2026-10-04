@@ -37,7 +37,7 @@ The simplest form - just a single character:
 Examples:
 ```python
 'quit': ['Q']              # the Q key; writing 'q' would mean the same
-'help': ['?']              # the '?' glyph, not the '/' key it shares
+'context_menu_dir': ['?']  # the '?' glyph, not the '/' key it shares
 'isearch': ['F']           # F on its own
 'find_files': ['Shift-F']  # Shift+F — a different binding from 'F'
 ```
@@ -62,6 +62,7 @@ logs `Unknown key in expression: ...` and the binding never fires.
 | Navigation | `UP`, `DOWN`, `LEFT`, `RIGHT`, `HOME`, `END`, `PAGE_UP` (or `PAGEUP`), `PAGE_DOWN` (or `PAGEDOWN`) |
 | Editing | `ENTER` (or `RETURN`), `ESCAPE` (or `ESC`), `TAB`, `BACKSPACE`, `DELETE` (or `DEL`), `INSERT`, `SPACE` |
 | Function keys | `F1` through `F12` |
+| Menu key | `APPS` — the PC keyboard's context-menu key. Delivered by Windows (desktop app and terminal), a PC keyboard on macOS, and the web backend; a POSIX terminal sends nothing for it. `Shift-APPS` is a separate binding. |
 | Bare Alt tap | `ALT` on its own — Alt pressed and released with nothing in between. Delivered only by the Windows terminal, where it opens the menu bar. As a *prefix* (`Alt-X`) it is the modifier instead. |
 
 Names are **case-insensitive**: `'ENTER'`, `'enter'` and `'Enter'` all work.
@@ -176,7 +177,8 @@ simply does nothing. The ones worth knowing:
 
 ### Defaults that moved
 
-These changed when the keymap became one common table, and an existing
+These changed when the keymap became one common table (and `help` later, to
+make room for the context-menu keys), and an existing
 `~/.xefm/config.py` keeps whatever it already says — XeFM fills in a setting your
 config is missing, but never rewrites the `KEY_BINDINGS` you already have. Edit
 the lines by hand if your config predates the change:
@@ -191,6 +193,7 @@ the lines by hand if your config predates the change:
 | `toggle_select_up` | `Shift-SPACE` | unbound — the key went to `select_range` (see below) |
 | `isearch.toggle_select_down` | `Shift-DOWN` | `Ctrl-SPACE` |
 | `isearch.toggle_select_up` | `Shift-UP` | unbound |
+| `help` | `?` | `F1` — `?` (Shift-/) went to `context_menu_dir`, with `/` for `context_menu` |
 
 `Shift-Space` now fills a *range* (`select_range`), which is what Shift means in
 every other application, and the search bar's marking moved onto the Space family
@@ -210,7 +213,8 @@ For actions without selection requirements, use a list of keys:
 ```python
 KEY_BINDINGS = {
     'quit': ['Q'],              # the Q key ('q' would mean the same)
-    'help': ['?'],              # the '?' glyph
+    'help': ['F1'],             # a named key
+    'context_menu_dir': ['?'],  # the '?' glyph
     'move_up': ['UP', 'k'],     # two keys for one action
     'move_down': ['DOWN', 'j'],
 }

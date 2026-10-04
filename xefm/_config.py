@@ -274,7 +274,9 @@ class Config:
     KEY_BINDINGS = {
         # === Application Control ===
         'quit': ['Q'],                         # Exit XeFM application
-        'help': ['?'],                         # Show help dialog with all key bindings
+        # F1, not '?': Shift-/ is the directory context menu below, and a
+        # terminal cannot tell Shift-/ from '?' -- both arrive as the glyph.
+        'help': ['F1'],                        # Show help dialog with all key bindings
         # A repaint should never be something you have to ask for, so this gets a
         # function key and none of the scarce Ctrl+letters: it is the escape hatch
         # for a screen a *multiplexer* or another program wrote over, not a part
@@ -372,6 +374,14 @@ class Config:
         # === Directory Navigation ===
         'favorites': ['J'],                    # Show favorites dialog
         'add_favorite': ['B'],                 # Add this directory / the cursor item to favorites
+
+        # === Context Menus ===
+        # The right-click menus, from the keyboard: '/' for the item under the
+        # cursor (opened just below it), Shift-/ -- the '?' glyph -- for the
+        # directory itself. APPS is the PC keyboard's Menu key; a POSIX terminal
+        # never sends it, so the punctuation keys are the ones that work there.
+        'context_menu': ['/', 'APPS'],         # Context menu for the cursor item
+        'context_menu_dir': ['?', 'Shift-APPS'],  # Context menu for the current directory
         'jump_to_path': ['Shift-J'],           # Jump to path
         'history': ['H'],                      # Show history for current pane
         'drives': ['D'],                # Show drives/volumes dialog
@@ -548,9 +558,9 @@ class Config:
         #
         # It only does anything where the rows are *remembered* rather than
         # declared: History and the Filter prompt, whose lists XeFM built by
-        # watching you. Favorites, Drives and External Programs come from this
-        # file or from the machine, so there is nothing there to forget and the
-        # key is not offered.
+        # watching you, and the favorites you added with B. Favorites written in
+        # this file and External Programs are yours to edit here, so the key
+        # leaves them alone (in Drives it disconnects or ejects instead).
         #
         # The name has no context prefix on purpose: removing the highlighted row
         # is an operation other lists may grow later, and an unqualified entry

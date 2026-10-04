@@ -2,7 +2,7 @@
 
 XeFM's directory navigation dialogs all share one searchable-list picker: a
 scrollable list you filter by typing, with the same keys for moving through it
-and choosing an entry. Five actions open five flavors of that picker (press `?`
+and choosing an entry. Five actions open five flavors of that picker (press `F1`
 for the keys yours are on, or find them in the **Go** menu):
 
 | Action | Dialog | What it lists |

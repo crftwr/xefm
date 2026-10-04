@@ -120,10 +120,19 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
 
     # --- punctuation & digits (char mode, ignore shift/alt) -----------------
     def test_punctuation(self):
-        self.assertEqual(self.action(key("?", "?")), "help")
+        self.assertEqual(self.action(key("?", "?")), "context_menu_dir")
+        self.assertEqual(self.action(key("/", "/")), "context_menu")
         self.assertEqual(self.action(key(".", ".")), "toggle_hidden")
         self.assertEqual(self.action(key(";", ";")), "filter")
         self.assertEqual(self.action(key("[", "[")), "adjust_pane_left")
+
+    def test_help_is_f1(self):
+        self.assertEqual(self.action(key("f1")), "help")
+
+    def test_the_menu_key_opens_the_context_menus(self):
+        # Shift is kept on a named key, so the Menu key is two bindings.
+        self.assertEqual(self.action(key("apps")), "context_menu")
+        self.assertEqual(self.action(key("apps", None, {"shift"})), "context_menu_dir")
 
     def test_named_punctuation_token(self):
         # 'EQUAL' -> '=', 'Shift-EQUAL' -> '+' (the produced shifted glyph).

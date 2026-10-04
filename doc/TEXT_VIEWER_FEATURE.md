@@ -15,7 +15,7 @@ switch between the rendered view and the plain source (see below and
 
 ## Opening & controls
 
-The viewer draws its own keys along the bottom, and `?` inside it lists them all
+The viewer draws its own keys along the bottom, and `F1` inside it lists them all
 — both read from your `KEY_BINDINGS`, so they are right whatever you have bound.
 
 | Action | What it does |
@@ -31,7 +31,7 @@ The viewer draws its own keys along the bottom, and `?` inside it lists them all
 | `edit_file` | Edit the viewed file in the configured editor |
 | `Cmd`/`Ctrl` + `C` | Copy the current selection |
 | `Cmd`/`Ctrl` + `A` | Select the whole file |
-| `?` | Key help |
+| `F1` | Key help |
 | `quit` / `Esc` | Close the viewer |
 
 The view/edit keys are rebindable in your config's `KEY_BINDINGS`; the arrow /

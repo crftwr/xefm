@@ -142,7 +142,7 @@ rebinds); the scroll and `n`/`N` keys are viewer-local.
 | `←` / `→` | Scroll horizontally |
 | `n` / `N` | Next / previous change block |
 | `isearch` (default `F`) | Incremental search — the shared `ISearchBar` overlay (matches on both sides; `↑`/`↓` walk them) |
-| `help` (default `?`) | Key reference |
+| `help` (default `F1`) | Key reference |
 | `quit` (default `q`) / `Esc` | Close |
 
 Mouse events route to the `Splitter` so the divider can be dragged; the panes

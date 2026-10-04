@@ -472,7 +472,7 @@ logging.basicConfig(level=logging.DEBUG)
 ```
 
 ### Getting Help
-- Check XeFM's main help with `?` key
+- Check XeFM's main help with `F1` key
 - Review configuration in `~/.xefm/config.py`
 - Check the log pane for error messages
 - Verify file permissions and encoding

@@ -230,7 +230,7 @@ def test_help_key_pushes_markdown_overlay(backend, trees):
     panel = Panel(backend)
     show_directory_diff_viewer(panel, *trees, background=False)
     panel.render()
-    panel.dispatch_event(_key(None, "?"))
+    panel.dispatch_event(_key("f1"))
     panel.render()  # must not raise
     # A help overlay (Markdown) stacks above the viewer.
     assert len(panel._layers) == 2

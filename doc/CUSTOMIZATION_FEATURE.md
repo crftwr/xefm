@@ -60,7 +60,7 @@ List both if you want both — `['SPACE', 'PAGE_DOWN']`.
 ### Every viewer action
 
 The keys they ship with are not listed here — each action declares its own in
-`xefm/actions.py`, and `?` inside a viewer shows what yours are on, which is the
+`xefm/actions.py`, and `F1` inside a viewer shows what yours are on, which is the
 only list that cannot go stale.
 
 | Text viewer | File diff |
@@ -183,7 +183,7 @@ class Config:
 ```
 
 Press Shift-D and the documents are selected. Your actions also appear in the
-help dialog (`?`), under **Your Actions**, alongside the built-in ones.
+help dialog (`F1`), under **Your Actions**, alongside the built-in ones.
 
 Edit the file and run `reload_config` and the new version takes effect
 immediately — no restart.

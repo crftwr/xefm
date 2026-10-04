@@ -10,7 +10,7 @@ mode, filter, and history — they are fully independent.
 
 ## Actions
 
-Press `?` in XeFM for the keys these are on — the help is built from your own
+Press `F1` in XeFM for the keys these are on — the help is built from your own
 `KEY_BINDINGS`, so it is always the truth for your config.
 
 | Action | What it does |

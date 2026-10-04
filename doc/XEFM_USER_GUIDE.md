@@ -92,7 +92,7 @@ updates automatically, and on macOS you install the new DMG over the old app.
   (or `uvx` ran it without installing). Upgrade with the tool you installed
   with — see the table above
 
-**First run:** arrow keys navigate, `Tab` switches panes, `?` opens help, `Q`
+**First run:** arrow keys navigate, `Tab` switches panes, `F1` opens help, `Q`
 quits.
 
 ---
@@ -215,7 +215,7 @@ When you first run XeFM, you'll see:
 - `go_root`: Go to the root of the current drive or location
 - `help`: Show the help dialog — and the key every other action is on
 
-Press `?` (`help`) first: that dialog is built from your own `KEY_BINDINGS`, so
+Press `F1` (`help`) first: that dialog is built from your own `KEY_BINDINGS`, so
 it is the one list of keys that is always right for your config.
 - **Q**: Quit XeFM
 
@@ -430,7 +430,7 @@ The arrows, paging and Home/End scroll; `toggle_wrap` turns line wrapping on and
 off, `toggle_view_mode` switches between the rendered and raw view of a Markdown
 or other rich file, `change_encoding` picks the text encoding, `isearch` searches
 inside the file and `edit_file` hands it to your editor. `quit` (or Esc) closes
-the viewer. The viewer draws its own keys along the bottom, and `?` inside it
+the viewer. The viewer draws its own keys along the bottom, and `F1` inside it
 lists them all — see
 [Text Viewer Feature](TEXT_VIEWER_FEATURE.md).
 
@@ -809,7 +809,7 @@ For detailed information about specific features, see these dedicated guides:
 
 ## Keyboard Shortcuts Reference
 
-**The reference is in XeFM.** Press `?` for the help dialog: it is generated from
+**The reference is in XeFM.** Press `F1` for the help dialog: it is generated from
 the keymap your config actually produced, action by action, so it can never drift
 from what your keys do. The menu bar shows the same keys next to the items they
 run.
