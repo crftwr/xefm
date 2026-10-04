@@ -3973,7 +3973,11 @@ class XeFMApp:
             if system == "Darwin":
                 subprocess.run(["open", str(entry)], check=True)
             elif system == "Windows":
-                subprocess.run(["start", "", str(entry)], shell=True, check=True)
+                # ShellExecute directly, not cmd.exe's `start`: the shell=True
+                # command line quotes only ASCII blanks, so cmd.exe split a
+                # name at a full-width space (U+3000) and opened its first
+                # half (#508).
+                os.startfile(str(entry))
             else:
                 subprocess.run(["xdg-open", str(entry)], check=True)
         except Exception as exc:
