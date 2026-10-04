@@ -97,6 +97,24 @@ class ContextMenuKeysTest(unittest.TestCase):
         self.app.context_menu()
         self.assertIn("New Directory…", _labels(self.shown[0][0]))
 
+    def test_a_right_click_shows_the_cursor_on_the_row_before_the_menu(self):
+        """A native menu holds the UI thread until it closes, so the frame with
+        the cursor on the clicked row has to be rendered before it opens."""
+        pane = self.app.active_pane()
+        pane["focused_index"] = 0
+        order = []
+        real_render = self.app.panel.render
+
+        def render():
+            order.append(("render", pane["focused_index"]))
+            real_render()
+
+        with patch.object(self.app.panel, "render", render), \
+                patch.object(self.app.panel, "popup_menu",
+                             lambda menu, x, y: order.append(("popup", None))):
+            self.app._show_context_menu(self.app.pm.active_pane, 2, 3.0, 4.0)
+        self.assertEqual(order[:2], [("render", 2), ("popup", None)])
+
     def test_a_right_click_below_the_rows_gets_the_directory_menu(self):
         self.app._show_context_menu(self.app.pm.active_pane, -1, 3.0, 9.0)
         menu, x, y = self.shown[0]

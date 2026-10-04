@@ -7792,6 +7792,11 @@ class XeFMApp:
             menu = self._item_context_menu(pane)
         else:
             menu = self._dir_context_menu(pane)
+        # Render *before* the menu opens: a native menu holds the UI thread
+        # until it closes, so a render after it showed the cursor on the
+        # clicked row only once the menu was gone — while it was open nothing
+        # said which row it was for.
+        self.panel.render()
         self.panel.popup_menu(menu, x, y)
         self.panel.render()
 
