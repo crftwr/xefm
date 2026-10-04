@@ -287,6 +287,38 @@ repeated navigation doesn't re-open the archive each time:
 - **Metrics** via `get_stats()` (`open_archives`, `cache_hits`, `cache_misses`,
   `hit_rate`, `evictions`, `avg_open_time`, …).
 
+**A cached handler holds the archive file open, so the cache lets go as soon as
+nothing needs it.** On Windows a file that is held open cannot be deleted, moved or
+renamed, whether by XeFM or anything else. Before xefm#516 a browsed zip stayed
+open after the pane left it: TTL and LRU only run when the cache is used again,
+so in practice it stayed open indefinitely. Two calls now close it:
+
+- `retain_only(archive_paths)`: every navigation passes through
+  `XeFMApp._refresh`, which calls `release_unshown_archives(pane paths)`. That
+  closes every handler no pane is inside. It runs on the UI thread, so it
+  takes the lock with `blocking=False` and skips the pass if a worker is
+  opening an archive. The next navigation retries it.
+- `release_under(path)`: `xefm.path` runs its before-mutation listeners from
+  `Path.unlink` / `rmdir` / `rename` / `replace`, for the path being changed and
+  for a rename's target. The archive module registers a listener that closes
+  every handler at or beneath that path. Delete, move, rename, batch rename and
+  user hooks all go through those four methods. `xefm.path` uses a registry
+  rather than importing the archive module, because that module imports it.
+
+**Closing a handler never interrupts a read.** All reads through the cache use
+`lease(archive_path)`, a context manager that counts users on the handler.
+Letting go of a handler (`_drop`) removes it from the cache and marks it
+retired. If no lease is open it is closed at once; otherwise the last lease to
+end closes it. A copy that is streaming a member out therefore finishes even if
+the pane leaves the archive mid-copy, and the next read opens a fresh handler.
+`tarfile` needs this guarantee. `zipfile` keeps its file open for an open member
+stream anyway, but `tarfile` closes it outright.
+
+`libarchive` handlers never hold the file open between reads (each read opens
+its own reader), so releasing them only drops the cached index. Closing a
+remote archive's handler also deletes its downloaded copy, so going back into
+it downloads it again.
+
 `_create_handler` is a lookup in the registry (§1.1) — `archive_format_for_name`
 then `fmt.factory(archive_path)` — raising `ArchiveFormatError` when nothing
 registered reads the name. A process-wide instance is returned

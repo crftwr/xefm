@@ -55,7 +55,7 @@ from xefm.actions import registry as _action_registry
 from xefm.archive import (ArchiveFormatError, archive_format_for_name,
                           archive_format_label, archive_readable_formats,
                           archive_strip_suffix, archive_writable_formats,
-                          tar_zstd_supported)
+                          release_unshown_archives, tar_zstd_supported)
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
@@ -2559,7 +2559,13 @@ class XeFMApp:
         rather than re-listed, and keeps its cursor rather than resetting it —
         there is no directory here to have navigated to. This is the post-op
         reconciliation path — every existing ``self._refresh(pane)`` call site
-        keeps working after a mutating op."""
+        keeps working after a mutating op.
+
+        Every navigation lands here, which makes it where an archive the panes
+        have left is closed — on Windows XeFM holding it open is what stopped
+        it being deleted (xefm#516)."""
+        release_unshown_archives((self.pm.left_pane["path"],
+                                  self.pm.right_pane["path"]))
         if pane.get("virtual"):
             # Nothing navigated: hold the cursor on its file, the way every other
             # post-operation reload does.

@@ -868,6 +868,32 @@ class LocalPathImpl(PathImpl):
         return dt.strftime('%Y-%m-%d %H:%M:%S')
 
 
+#: Callables run with a :class:`Path` just before it is removed or renamed —
+#: and with a rename's target, which is about to be overwritten. The archive
+#: cache registers one so it can close any archive at or beneath that path
+#: first: on Windows a file XeFM holds open cannot be deleted, moved or renamed
+#: (xefm#516). A registry rather than an import because the archive module sits
+#: above this one.
+_before_mutation_listeners: List[Any] = []
+
+
+def add_before_mutation_listener(listener) -> None:
+    """Have ``listener(path)`` called before XeFM removes or renames ``path``."""
+    if listener not in _before_mutation_listeners:
+        _before_mutation_listeners.append(listener)
+
+
+def _before_mutation(*paths) -> None:
+    """Tell the listeners ``paths`` are about to change. A listener that fails
+    is logged and skipped — it must never be what stops the operation."""
+    for listener in _before_mutation_listeners:
+        for path in paths:
+            try:
+                listener(path)
+            except Exception as e:
+                logger.error(f"Before-mutation listener failed for {path}: {e}")
+
+
 class Path:
     """
     A pathlib-compatible Path class designed to support both local and remote storage.
@@ -1111,18 +1137,22 @@ class Path:
     
     def rmdir(self):
         """Remove this directory"""
+        _before_mutation(self)
         return self._impl.rmdir()
     
     def unlink(self, missing_ok=False):
         """Remove this file or symbolic link"""
+        _before_mutation(self)
         return self._impl.unlink(missing_ok)
     
     def rename(self, target) -> 'Path':
         """Rename this file or directory to the given target"""
+        _before_mutation(self, target)
         return self._impl.rename(target)
     
     def replace(self, target) -> 'Path':
         """Replace this file or directory with the given target"""
+        _before_mutation(self, target)
         return self._impl.replace(target)
     
     def symlink_to(self, target, target_is_directory=False):

@@ -18,11 +18,12 @@ import io
 import time
 import threading
 import fnmatch
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path as PathlibPath
 from xefm.log_manager import getLogger
-from xefm.path import Path, PathImpl
+from xefm.path import Path, PathImpl, add_before_mutation_listener
 from xefm.str_format import format_size
 from typing import Callable, List, Optional, Union, Tuple, Dict, Any, Iterator
 
@@ -402,7 +403,13 @@ class ArchiveHandler:
         self._directory_cache: Dict[str, List[str]] = {}
         self._is_open = False
         self._last_access = 0.0
-    
+        #: Bookkeeping owned by :class:`ArchiveCache` — how many callers are
+        #: inside :meth:`ArchiveCache.lease` right now, and whether the cache has
+        #: let go of this handler. A retired handler is closed by whichever
+        #: lease ends last, never under a read that is still running.
+        self._leases = 0
+        self._retired = False
+
     def open(self):
         """
         Open the archive file and cache its structure.
@@ -1491,6 +1498,18 @@ def _register_builtin_formats() -> None:
             description=description))
 
 
+#: Separators a cache key can use below a directory: ``/`` for remote URIs and
+#: POSIX, plus the native one on Windows.
+_KEY_SEPARATORS = tuple({'/', os.sep})
+
+
+def _cache_key_compare_form(key: str) -> str:
+    """``key`` as release decisions compare it — case-folded where the local
+    filesystem folds case (Windows), so a delete names the same archive the pane
+    opened however either spelled it."""
+    return os.path.normcase(key) if '://' not in key else key
+
+
 class ArchiveCache:
     """
     Cache for opened archives and their structures.
@@ -1502,6 +1521,16 @@ class ArchiveCache:
     - Lazy initialization of archive handlers
     - Cache statistics and monitoring
     - Performance metrics tracking
+
+    **An open handler holds the archive file open**, and on Windows a file
+    held open cannot be deleted, moved or renamed — by XeFM or by anything
+    else (xefm#516). So the cache lets go of a handler as soon as nothing needs
+    it: :meth:`retain_only` when no pane shows the archive any more, and
+    :meth:`release_under` just before the file (or a directory holding it) is
+    removed or renamed. Letting go *retires* the handler; it is closed at once
+    unless a :meth:`lease` is still reading through it, in which case the last
+    lease to end closes it. A caller that needs the archive again simply gets a
+    fresh handler.
     """
     
     def __init__(self, max_open: int = 5, ttl: int = 300):
@@ -1549,13 +1578,8 @@ class ArchiveCache:
                 
                 # Check if handler has expired
                 if current_time - access_time > self._ttl:
-                    # Handler expired, close and remove it
-                    try:
-                        handler.close()
-                    except Exception:
-                        pass
-                    del self._handlers[cache_key]
-                    del self._access_times[cache_key]
+                    # Handler expired, retire it and open a fresh one below
+                    self._drop(cache_key)
                     self._cache_misses += 1
                 else:
                     # Handler is valid, update access time and return
@@ -1615,27 +1639,81 @@ class ArchiveCache:
         
         with self._lock:
             if cache_key in self._handlers:
-                handler = self._handlers[cache_key]
-                try:
-                    handler.close()
-                except Exception:
-                    pass
-                del self._handlers[cache_key]
-                del self._access_times[cache_key]
+                self._drop(cache_key)
     
     def clear(self):
         """Clear all cached archives."""
         with self._lock:
-            # Close all handlers
-            for handler in self._handlers.values():
-                try:
-                    handler.close()
-                except Exception:
-                    pass
-            
-            # Clear caches
-            self._handlers.clear()
-            self._access_times.clear()
+            for cache_key in list(self._handlers):
+                self._drop(cache_key)
+
+    @contextmanager
+    def lease(self, archive_path: Path) -> Iterator[ArchiveHandler]:
+        """The handler for ``archive_path``, guaranteed to stay open until the
+        ``with`` block ends — even if the cache lets go of it meanwhile (a pane
+        leaving the archive while a copy is still reading from it). Every read
+        through the cache goes through here; a bare :meth:`get_handler` is only
+        safe on the thread that also does the releasing."""
+        with self._lock:
+            handler = self.get_handler(archive_path)
+            handler._leases += 1
+        try:
+            yield handler
+        finally:
+            with self._lock:
+                handler._leases -= 1
+                if handler._retired and handler._leases == 0:
+                    self._close_quietly(handler)
+
+    def release_under(self, path) -> None:
+        """Let go of every archive at ``path`` or anywhere beneath it — called
+        just before ``path`` is deleted or renamed, so XeFM's own handle is not
+        what stops it. Accepts a :class:`Path` or a plain string."""
+        if not self._handlers:
+            return  # the common case: a delete of many files, nothing open
+        target = _cache_key_compare_form(str(Path(str(path)).absolute()))
+        with self._lock:
+            for cache_key in list(self._handlers):
+                key = _cache_key_compare_form(cache_key)
+                if key == target or any(key.startswith(target.rstrip(sep) + sep)
+                                        for sep in _KEY_SEPARATORS):
+                    self._drop(cache_key)
+
+    def retain_only(self, archive_paths) -> None:
+        """Let go of every cached archive except ``archive_paths`` — the ones
+        some pane is still showing. What browsing opened is closed when
+        browsing moves on, instead of waiting for TTL or LRU eviction, neither of
+        which runs until the cache is used again.
+
+        Called on the UI thread, so it never waits: :meth:`get_handler` holds the
+        lock while it opens an archive, which for a remote one means the whole
+        download. If the lock is busy this pass is skipped — the next
+        navigation tries again."""
+        keep = {_cache_key_compare_form(str(p.absolute())) for p in archive_paths}
+        if not self._lock.acquire(blocking=False):
+            return
+        try:
+            for cache_key in list(self._handlers):
+                if _cache_key_compare_form(cache_key) not in keep:
+                    self._drop(cache_key)
+        finally:
+            self._lock.release()
+
+    def _drop(self, cache_key: str) -> None:
+        """Remove ``cache_key`` from the cache and retire its handler. Lock held."""
+        handler = self._handlers.pop(cache_key)
+        self._access_times.pop(cache_key, None)
+        handler._retired = True
+        if handler._leases == 0:
+            self._close_quietly(handler)
+
+    @staticmethod
+    def _close_quietly(handler: ArchiveHandler) -> None:
+        try:
+            handler.close()
+        except Exception as e:
+            getLogger("Archive").warning(
+                f"Error closing archive {handler._archive_path}: {e}")
     
     def _evict_lru(self):
         """Evict the least recently used cache entry."""
@@ -1645,16 +1723,7 @@ class ArchiveCache:
         # Find the entry with the oldest access time
         oldest_key = min(self._access_times.keys(), 
                         key=lambda k: self._access_times[k])
-        
-        # Close and remove the handler
-        handler = self._handlers[oldest_key]
-        try:
-            handler.close()
-        except Exception:
-            pass
-        
-        del self._handlers[oldest_key]
-        del self._access_times[oldest_key]
+        self._drop(oldest_key)
         self._evictions += 1
     
     def get_stats(self) -> Dict[str, Any]:
@@ -1717,8 +1786,28 @@ def get_archive_cache() -> ArchiveCache:
             ttl = 300
         
         _archive_cache = ArchiveCache(max_open=max_open, ttl=ttl)
-    
+
     return _archive_cache
+
+
+def _release_before_mutation(path) -> None:
+    """Close any cached archive at or beneath ``path`` before XeFM deletes or
+    renames it (xefm#516). Nothing to do until something has been browsed."""
+    if _archive_cache is not None:
+        _archive_cache.release_under(path)
+
+
+add_before_mutation_listener(_release_before_mutation)
+
+
+def release_unshown_archives(shown_paths) -> None:
+    """Close every cached archive none of ``shown_paths`` is inside — called as
+    the panes move, so leaving an archive lets go of its file (xefm#516)."""
+    if _archive_cache is None:
+        return
+    keep = [a for a in (get_member_archive_path(p) for p in shown_paths)
+            if a is not None]
+    _archive_cache.retain_only(keep)
 
 
 class ArchivePathImpl(PathImpl):
@@ -1800,9 +1889,10 @@ class ArchivePathImpl(PathImpl):
         path = path.replace('\\', '/')
         return path
     
-    def _get_archive_handler(self) -> ArchiveHandler:
-        """Get or create cached archive handler for this archive file."""
-        return self._cache.get_handler(self._archive_path)
+    def _lease_handler(self):
+        """The cached handler for this archive file, held open for the ``with``
+        block (see :meth:`ArchiveCache.lease`)."""
+        return self._cache.lease(self._archive_path)
     
     def _get_entry(self) -> Optional[ArchiveEntry]:
         """Get the ArchiveEntry for this path."""
@@ -1811,8 +1901,8 @@ class ArchivePathImpl(PathImpl):
             return self._metadata['entry']
         
         # Get from archive handler
-        handler = self._get_archive_handler()
-        entry = handler.get_entry_info(self._internal_path)
+        with self._lease_handler() as handler:
+            entry = handler.get_entry_info(self._internal_path)
         
         # Cache the entry
         if entry:
@@ -2108,8 +2198,8 @@ class ArchivePathImpl(PathImpl):
             raise NotADirectoryError(f"Not a directory: {self}")
         
         try:
-            handler = self._get_archive_handler()
-            entries = handler.list_entries(self._internal_path)
+            with self._lease_handler() as handler:
+                entries = handler.list_entries(self._internal_path)
             
             for entry in entries:
                 entry_uri = f"archive://{self._archive_path.absolute()}#{entry.internal_path}"
@@ -2167,8 +2257,8 @@ class ArchivePathImpl(PathImpl):
             raise IsADirectoryError(f"Is a directory: {self}")
         
         try:
-            handler = self._get_archive_handler()
-            data = handler.extract_to_bytes(self._internal_path)
+            with self._lease_handler() as handler:
+                data = handler.extract_to_bytes(self._internal_path)
             
             if 'b' in mode:
                 # Binary mode
@@ -2183,8 +2273,8 @@ class ArchivePathImpl(PathImpl):
     def read_text(self, encoding=None, errors=None) -> str:
         """Open the file in text mode, read it, and close the file."""
         try:
-            handler = self._get_archive_handler()
-            data = handler.extract_to_bytes(self._internal_path)
+            with self._lease_handler() as handler:
+                data = handler.extract_to_bytes(self._internal_path)
             return data.decode(encoding or 'utf-8', errors or 'strict')
         except Exception as e:
             raise OSError(f"Error reading text: {e}")
@@ -2192,8 +2282,8 @@ class ArchivePathImpl(PathImpl):
     def read_bytes(self) -> bytes:
         """Open the file in bytes mode, read it, and close the file."""
         try:
-            handler = self._get_archive_handler()
-            return handler.extract_to_bytes(self._internal_path)
+            with self._lease_handler() as handler:
+                return handler.extract_to_bytes(self._internal_path)
         except Exception as e:
             raise OSError(f"Error reading bytes: {e}")
 
@@ -2212,15 +2302,15 @@ class ArchivePathImpl(PathImpl):
 
         Anything the callback raises propagates: that is how a cancel gets out.
         """
-        handler = self._get_archive_handler()
-        entry = handler.get_entry_info(self._internal_path)
-        total = entry.size if entry is not None else 0
-        written = 0
-        for block in handler.iter_member_bytes(self._internal_path):
-            stream.write(block)
-            written += len(block)
-            if progress_callback is not None:
-                progress_callback(written, total)
+        with self._lease_handler() as handler:
+            entry = handler.get_entry_info(self._internal_path)
+            total = entry.size if entry is not None else 0
+            written = 0
+            for block in handler.iter_member_bytes(self._internal_path):
+                stream.write(block)
+                written += len(block)
+                if progress_callback is not None:
+                    progress_callback(written, total)
         return written
     
     def write_text(self, data: str, encoding=None, errors=None, newline=None) -> int:
@@ -2408,13 +2498,10 @@ def archive_password_state(path) -> str:
     if archive_path is None:
         return 'ok'
     try:
-        handler = get_archive_cache().get_handler(archive_path)
+        with get_archive_cache().lease(archive_path) as handler:
+            status = handler.encryption_status()
     except Exception:
         # Can't classify (e.g. corrupt archive) — let the normal read path report.
-        return 'ok'
-    try:
-        status = handler.encryption_status()
-    except Exception:
         return 'ok'
     if status == 'unsupported':
         return 'unsupported'
@@ -2432,17 +2519,15 @@ def try_archive_password(path, password: str) -> bool:
     archive_path = get_member_archive_path(path)
     if archive_path is None:
         return False
-    try:
-        handler = get_archive_cache().get_handler(archive_path)
-    except Exception:
-        return False
     pwd = password.encode('utf-8')
     try:
-        if handler.verify_password(pwd):
-            set_archive_password(archive_path, pwd)
-            return True
+        with get_archive_cache().lease(archive_path) as handler:
+            verified = handler.verify_password(pwd)
     except Exception:
         return False
+    if verified:
+        set_archive_password(archive_path, pwd)
+        return True
     return False
 
 
