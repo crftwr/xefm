@@ -259,10 +259,7 @@ class PaneApi:
         ``ctx.pane`` and ``ctx.other`` follow on the next read; a ``PaneApi``
         already in hand keeps naming the pane it was made for.
         """
-        if self.is_active:
-            return
-        self._app.pm.active_pane = self._name
-        self._app._sync_active()
+        self._app._activate_pane(self._name)
 
     def __repr__(self) -> str:
         return f"<PaneApi {self._name} {self.path}>"

@@ -401,6 +401,8 @@ _FILER_ACTIONS = [
     _a("switch_pane", FILER, "Switch between the left and right panes"),
     _a("nav_left", FILER, "Focus the left pane, or go to the parent"),
     _a("nav_right", FILER, "Focus the right pane, or go to the parent"),
+    _a("focus_left", FILER, "Focus the left pane"),
+    _a("focus_right", FILER, "Focus the right pane"),
     # Selection
     _a("toggle_select_down", FILER, "Toggle selection and move down",
        aliases=("select_file",)),

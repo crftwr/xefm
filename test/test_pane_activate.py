@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import unittest
 
+from xefm import _config
 from xefm import app as xefm_app
 from xefm.state_manager import XeFMStateManager
 from xefm.user_api import ActionContext
@@ -61,6 +62,18 @@ class PaneActivate(unittest.TestCase):
         self.ctx.other.activate()
         self._assert_active("right")
         self.assertEqual(self.ctx.other.name, "left")
+
+    def test_focus_actions(self):
+        self.assertTrue(self.app.dispatch("focus_right"))
+        self._assert_active("right")
+        self.assertTrue(self.app.dispatch("focus_right"))
+        self._assert_active("right")
+        self.assertTrue(self.app.dispatch("focus_left"))
+        self._assert_active("left")
+
+    def test_focus_actions_ship_unbound(self):
+        self.assertEqual(_config.Config.KEY_BINDINGS["focus_left"], [])
+        self.assertEqual(_config.Config.KEY_BINDINGS["focus_right"], [])
 
 
 if __name__ == "__main__":

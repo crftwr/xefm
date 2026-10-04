@@ -297,6 +297,8 @@ class Config:
         'switch_pane': ['TAB'],                # Switch between left and right panes
         'nav_left': ['LEFT'],                  # Left pane: go to parent, Right pane: switch to left pane
         'nav_right': ['RIGHT'],                # Right pane: go to parent, Left pane: switch to right pane
+        'focus_left': [],                      # Focus the left pane (unbound; bind a key here)
+        'focus_right': [],                     # Focus the right pane (unbound; bind a key here)
         
         # === File Selection ===
         'toggle_select_down': ['SPACE'],              # Toggle selection of current file

@@ -16,6 +16,7 @@ Press `?` in XeFM for the keys these are on — the help is built from your own
 | Action | What it does |
 |--------|--------------|
 | `switch_pane` | Switch active pane |
+| `focus_left` / `focus_right` | Focus that pane; unbound by default |
 | `sync_current_to_other` | Sync current pane's directory to the other pane |
 | `sync_other_to_current` | Sync other pane's directory to the current pane |
 | `copy_files` | Copy selected files to the other pane's directory |
