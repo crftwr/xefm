@@ -164,16 +164,79 @@ def _build_ico() -> bytes:
     return buf.getvalue()
 
 
-def _write(path: Path, data: bytes, check: bool) -> bool:
+# Largest per-channel difference --check still calls a match. AppKit's rasterizer
+# rounds differently across macOS releases: on macOS 27 the 1024px render of an
+# unchanged SVG moves a few pixels by 1/255, which a byte comparison reports as
+# stale. An actual edit to the artwork moves pixels by far more than this.
+PIXEL_TOLERANCE = 2
+
+
+def _decode_png(data: bytes) -> dict:
+    from PIL import Image
+    return {"": Image.open(io.BytesIO(data)).convert("RGBA")}
+
+
+def _decode_icns(data: bytes) -> dict:
+    """Decode every iconset slot through ``iconutil``, the same tool that packed them."""
+    from PIL import Image
+    with tempfile.TemporaryDirectory() as tmp:
+        icns = Path(tmp) / "XeFM.icns"
+        icns.write_bytes(data)
+        iconset = Path(tmp) / "XeFM.iconset"
+        subprocess.run(
+            ["iconutil", "-c", "iconset", str(icns), "-o", str(iconset)],
+            check=True, capture_output=True,
+        )
+        return {p.name: Image.open(p).convert("RGBA") for p in iconset.glob("*.png")}
+
+
+def _decode_ico(data: bytes) -> dict:
+    from PIL import Image
+    ico = Image.open(io.BytesIO(data)).ico
+    return {size: ico.getimage(size).convert("RGBA") for size in ico.sizes()}
+
+
+def _pixels_match(current: bytes, data: bytes, decode) -> bool:
+    """
+    True if both encodings decode to the same frames, every channel within
+    ``PIXEL_TOLERANCE``. Both sides go through the same decoder, so a lossy
+    container (the legacy 16/32px .icns slots) cancels out.
+    """
+    from PIL import ImageChops
+    try:
+        old, new = decode(current), decode(data)
+    except Exception as e:
+        print(f"[WARNING] Could not decode for a pixel comparison: {e}")
+        return False
+    if old.keys() != new.keys():
+        return False
+    for key, image in new.items():
+        if old[key].size != image.size:
+            return False
+        extrema = ImageChops.difference(old[key], image).getextrema()
+        if max(high for _, high in extrema) > PIXEL_TOLERANCE:
+            return False
+    return True
+
+
+def _write(path: Path, data: bytes, check: bool, decode=None) -> bool:
     """
     Write ``data`` to ``path``, or in check mode just compare. Returns True if the
     file on disk already matched.
+
+    In check mode, bytes that differ still match when ``decode`` is given and the
+    decoded pixels agree within ``PIXEL_TOLERANCE``; regenerating writes whenever
+    the bytes differ.
     """
     current = path.read_bytes() if path.exists() else None
     if current == data:
         print(f"[INFO] Up to date: {path.relative_to(REPO_ROOT)}")
         return True
     if check:
+        if current is not None and decode is not None and _pixels_match(current, data, decode):
+            print(f"[INFO] Up to date (pixels within {PIXEL_TOLERANCE}/255): "
+                  f"{path.relative_to(REPO_ROOT)}")
+            return True
         reason = "missing" if current is None else "out of date"
         print(f"[ERROR] {path.relative_to(REPO_ROOT)} is {reason}")
         return False
@@ -201,10 +264,11 @@ def main() -> int:
             return 1
 
     ok = True
-    ok &= _write(ICNS_OUT, _build_icns(), args.check)
-    ok &= _write(ICO_OUT, _build_ico(), args.check)
-    ok &= _write(PNG_OUT, _render_png(SVG_DETAILED, MASTER_PNG_PX), args.check)
-    ok &= _write(PNG_SMALL_OUT, _render_png(SVG_SIMPLE, MASTER_SMALL_PNG_PX), args.check)
+    ok &= _write(ICNS_OUT, _build_icns(), args.check, _decode_icns)
+    ok &= _write(ICO_OUT, _build_ico(), args.check, _decode_ico)
+    ok &= _write(PNG_OUT, _render_png(SVG_DETAILED, MASTER_PNG_PX), args.check, _decode_png)
+    ok &= _write(PNG_SMALL_OUT, _render_png(SVG_SIMPLE, MASTER_SMALL_PNG_PX), args.check,
+                 _decode_png)
 
     if not ok:
         print("[ERROR] Icon assets are stale; run: make icons")
