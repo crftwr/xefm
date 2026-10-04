@@ -233,6 +233,7 @@ And each pane:
 | `pane.path` | the directory it is showing |
 | `pane.name` | `'left'` or `'right'` |
 | `pane.is_active` | whether the cursor is in it |
+| `pane.activate()` | move the cursor into it |
 | `pane.entries` | everything listed, in the pane's sort order |
 | `pane.cursor` | the focused row's index (assignable; clamped) |
 | `pane.focused` | the entry under the cursor, or `None` |
