@@ -2867,6 +2867,14 @@ class XeFMApp:
         self._log_result(self.flm.toggle_selection(
             self.active_pane(), move_cursor=True, direction=-1))
 
+    def _toggle_select_in_place(self) -> None:
+        """The context menu's Select / Deselect: toggle the item the menu was
+        opened on and leave the cursor on it. SPACE moves down so a run of
+        presses marks a run of rows; a menu names one row, and stepping off it
+        made the menu's subject look like the next one."""
+        self._log_result(self.flm.toggle_selection(self.active_pane(), move_cursor=False))
+        self.panel.render()
+
     def _act_select_range(self) -> None:
         """``select_range``: fill the span between the nearest marked item and the
         cursor (#266) — a Shift-click done with the keyboard, which is why its
@@ -7832,7 +7840,7 @@ class XeFMApp:
             MenuItem("Open", on_select=lambda: self._menu("open_item")),
             MenuItem("View File", on_select=self.view_file, enabled=entry is not None),
             MenuItem("Deselect" if selected else "Select",
-                     on_select=lambda: self._menu("toggle_select_down")),
+                     on_select=self._toggle_select_in_place),
             SEPARATOR,
             MenuItem("Rename…", on_select=self.rename, enabled=entry is not None),
             MenuItem("Duplicate", on_select=self.duplicate_files, enabled=entry is not None),
