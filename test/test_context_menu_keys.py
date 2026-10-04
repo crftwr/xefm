@@ -115,6 +115,19 @@ class ContextMenuKeysTest(unittest.TestCase):
             self.app._show_context_menu(self.app.pm.active_pane, 2, 3.0, 4.0)
         self.assertEqual(order[:2], [("render", 2), ("popup", None)])
 
+    def test_select_from_the_menu_leaves_the_cursor_on_the_row(self):
+        """SPACE toggles and moves down; the menu names one row and stays on it."""
+        pane = self.app.active_pane()
+        self.app._show_context_menu(self.app.pm.active_pane, 1, 0.0, 0.0)
+        _item(self.shown[0][0], "Select").activate()
+        entry = pane["files"][1]
+        self.assertEqual(pane["focused_index"], 1)
+        self.assertIn(str(entry), pane["selected_files"])
+        self.app._show_context_menu(self.app.pm.active_pane, 1, 0.0, 0.0)
+        _item(self.shown[1][0], "Deselect").activate()
+        self.assertEqual(pane["focused_index"], 1)
+        self.assertNotIn(str(entry), pane["selected_files"])
+
     def test_a_right_click_below_the_rows_gets_the_directory_menu(self):
         self.app._show_context_menu(self.app.pm.active_pane, -1, 3.0, 9.0)
         menu, x, y = self.shown[0]
