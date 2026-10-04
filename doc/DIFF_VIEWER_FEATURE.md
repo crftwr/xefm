@@ -46,7 +46,7 @@ active theme (a darker band on a dark theme, a pastel one on a light theme):
 | `n` / `N` | Jump to the next / previous change block |
 | `F` | Incremental search — then `↑` / `↓` step between matches |
 | Drag the centre gutter | Move the divider between the two panes |
-| `?` | Key help |
+| `F1` | Key help |
 | `Q` / `Esc` | Close the viewer |
 
 The footer shows the total row and change counts and the key hints. Tabs are

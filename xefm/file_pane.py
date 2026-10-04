@@ -906,6 +906,19 @@ class FilePane(Widget):
 
     # --- events --------------------------------------------------------------
 
+    def menu_anchor(self, index: int) -> tuple[float, float]:
+        """Where row ``index``'s context menu opens from the keyboard, in screen
+        base units: just under the row — the inverse of :meth:`_row_at`. A row
+        scrolled out of view falls back to the top of the listing, so the menu
+        never opens off the pane. (The directory's menu hangs from the path bar
+        instead; see ``PaneHeader.menu_anchor``.)"""
+        ax, ay, _aw, ah = self._abs
+        x = ax + 1.0
+        y = ay + self._margin_y + (index - self.offset) + 1.0
+        if ay < y <= ay + ah:
+            return x, y
+        return x, ay + self._margin_y
+
     def _row_at(self, event: Event) -> int:
         """The row index under ``event``'s pointer, or ``-1`` where there is no
         row: past the last one, or anywhere in an empty pane. The scroll offset
@@ -956,8 +969,10 @@ class FilePane(Widget):
                 self.on_click(self._row_at(event))
                 return True
         if event.type is EventType.MOUSE_CLICK and event.button == "right":
+            # -1 (no row under the pointer) is reported too: it is a click on
+            # the directory, and gets the directory's menu.
             index = self._row_at(event)
-            if index >= 0 and self.on_context is not None:
+            if self.on_context is not None:
                 rx, ry, *_ = self._abs
                 self.on_context(index, rx + (event.x or 0.0), ry + (event.y or 0.0))
                 return True

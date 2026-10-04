@@ -47,7 +47,7 @@ Messages are color-coded by type:
 
 ### Scrolling Through Logs
 
-Four actions scroll the log without taking focus off the file list — press `?`
+Four actions scroll the log without taking focus off the file list — press `F1`
 for the keys they are on:
 
 - `scroll_log_up` / `scroll_log_down`: one line at a time

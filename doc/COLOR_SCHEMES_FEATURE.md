@@ -470,7 +470,7 @@ full screen repaint.
 
 ## Getting More Information
 
-- **In XeFM**: Press `?` for help, which lists all key bindings
+- **In XeFM**: Press `F1` for help, which lists all key bindings
 - **Log messages**: XeFM shows what type of colors your terminal supports
 
 The theme feature makes XeFM look good in any terminal environment!

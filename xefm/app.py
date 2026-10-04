@@ -705,6 +705,12 @@ def _build_theme_list(config) -> list[tuple[str, Theme]]:
 
 
 #: Between a search's banner and the root its rows are named from.
+#: The directory context menu's "open this directory in the OS" item, named
+#: for the file manager the platform actually has.
+_FILE_MANAGER_OPEN_LABEL = {"Darwin": "Open in Finder",
+                            "Windows": "Open in Explorer"}.get(
+                                platform.system(), "Open in File Manager")
+
 _VIRTUAL_ROOT_SEP = "  ·  "
 
 #: The narrowest a list's title is cut to before its root starts giving way.
@@ -834,12 +840,26 @@ class PaneHeader(Widget):
     def __init__(self, app: "XeFMApp", pane_name: str):
         self.app = app
         self.pane_name = pane_name
+        # Captured each draw, for menu_anchor: the bar's screen rect and the
+        # path text's left inset.
+        self._abs: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+        self._pad_x = 0.0
+
+    def menu_anchor(self) -> tuple[float, float]:
+        """Where the directory's context menu opens from the keyboard: hanging
+        from this bar — the line that names the directory — under the start of
+        the path, so it reads as a menu for the directory rather than for the
+        first row of the listing below."""
+        x, y, _w, h = self._abs
+        return x + self._pad_x, y + h
 
     def draw(self, ctx) -> None:
         pane = self.app.pane(self.pane_name)
         active = self.app.pm.active_pane == self.pane_name
         # Inset the text from the top/left/right; the surface fills the whole slot.
         pad_x, pad_y = _bar_pad(ctx)
+        self._abs = ctx.screen_rect
+        self._pad_x = pad_x
         avail = max(0.0, ctx.size_units[0] - 2 * pad_x)
         virtual = pane.get("virtual")
         if virtual:
@@ -1328,6 +1348,7 @@ class XeFMApp:
         #: Pane footers by name, so ``enter_isearch`` can read the active footer's
         #: captured rect and position the isearch overlay exactly on it.
         self._footers: dict[str, PaneFooter] = {}
+        self._headers: dict[str, PaneHeader] = {}
         #: TTL cache for the footer's disk-usage readout, keyed by directory
         #: string → ``(monotonic_timestamp, (free, total) | None)``. See
         #: ``disk_free_total`` and ``DISK_USAGE_TTL``.
@@ -1601,10 +1622,13 @@ class XeFMApp:
         # Kept so enter_isearch can read the footer's captured rect and drop the
         # isearch overlay exactly on it.
         self._footers[name] = footer
+        header = PaneHeader(self, name)
+        # Kept so context_menu_dir can open its menu from the path bar.
+        self._headers[name] = header
         return LayoutView(VSplit(
             # "content" (not size=1): the header measures itself a touch taller so
             # it can pad the path text down from the window's top edge (§_bar_pad).
-            Item(PaneHeader(self, name), size="content", hints={"surface": "header"}),
+            Item(header, size="content", hints={"surface": "header"}),
             Item(view, weight=1, hints={"surface": "content"}),
             Item(footer, size=1, hints={"surface": "footer"}),
             divider="subtle",
@@ -2722,6 +2746,8 @@ class XeFMApp:
                 "programs": (self.show_programs, False),
                 "favorites": (self.show_favorites, False),
                 "add_favorite": (self.add_favorite, False),
+                "context_menu": (self.context_menu, False),
+                "context_menu_dir": (self.context_menu_dir, False),
                 "jump_to_path": (self.jump_to_path, False),
                 "compare_selection": (self.compare_selection, False),
                 # --- opening things ---
@@ -7449,6 +7475,8 @@ class XeFMApp:
             ("nav_right", "Focus right pane / go to parent"),
             ("favorites", "Go to a favorite directory or file"),
             ("add_favorite", "Add this directory or the item under the cursor to favorites"),
+            ("context_menu", "Open the context menu for the item under the cursor"),
+            ("context_menu_dir", "Open the context menu for the current directory"),
             ("jump_to_path", "Jump to a typed path"),
             ("drives", "Open the drives / locations picker"),
             ("history", "Go to a recently-visited directory"),
@@ -7752,15 +7780,50 @@ class XeFMApp:
         self.show_tips()
 
     def _show_context_menu(self, pane_name: str, index: int, x: float, y: float) -> None:
-        """Right-click on a row: activate that row, then pop a context menu at the
-        pointer (native on macOS, a widget popup in the terminal)."""
+        """Right-click in a pane: activate it, then pop a context menu at the
+        pointer (native on macOS, a widget popup in the terminal). On a row,
+        that row becomes the cursor and gets the item menu; below the last row
+        (``index`` -1) the click is on the directory, and gets its menu."""
         self.pm.active_pane = pane_name
         self._sync_active()
         pane = self.active_pane()
-        pane["focused_index"] = index
-        entry = pane["files"][index] if 0 <= index < len(pane["files"]) else None
+        if 0 <= index < len(pane["files"]):
+            pane["focused_index"] = index
+            menu = self._item_context_menu(pane)
+        else:
+            menu = self._dir_context_menu(pane)
+        self.panel.popup_menu(menu, x, y)
+        self.panel.render()
+
+    def _active_view(self):
+        return self.left_view if self.pm.active_pane == "left" else self.right_view
+
+    def context_menu(self) -> None:
+        """The item context menu from the keyboard ('/', the Menu key), opened
+        just under the cursor row — what a right-click on that row opens. An
+        empty pane has no row to talk about, so it gets the directory's menu."""
+        pane = self.active_pane()
+        if not pane["files"]:
+            self.context_menu_dir()
+            return
+        x, y = self._active_view().menu_anchor(pane["focused_index"])
+        self.panel.popup_menu(self._item_context_menu(pane), x, y)
+        self.panel.render()
+
+    def context_menu_dir(self) -> None:
+        """The directory context menu from the keyboard ('?', Shift + the Menu
+        key), hanging from the pane's path bar — what a right-click below the
+        last row opens."""
+        x, y = self._headers[self.pm.active_pane].menu_anchor()
+        self.panel.popup_menu(self._dir_context_menu(self.active_pane()), x, y)
+        self.panel.render()
+
+    def _item_context_menu(self, pane: dict) -> Menu:
+        """The menu for the row under the cursor (and the selection, for the
+        operations that take one)."""
+        entry = self._focused_entry()
         selected = entry is not None and str(entry) in pane["selected_files"]
-        menu = Menu(
+        return Menu(
             MenuItem("Open", on_select=lambda: self._menu("open_item")),
             MenuItem("View File", on_select=self.view_file, enabled=entry is not None),
             MenuItem("Deselect" if selected else "Select",
@@ -7786,8 +7849,51 @@ class XeFMApp:
             MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),
                      checked=lambda: self.flm.show_hidden),
         )
-        self.panel.popup_menu(menu, x, y)
-        self.panel.render()
+
+    def _dir_context_menu(self, pane: dict) -> Menu:
+        """The menu for the directory the pane is showing. A search-results
+        pane has no directory of its own, so the items about one are disabled
+        there; what is left (sorting, hidden files) still applies to its rows."""
+        has_dir = not pane.get("virtual")
+        local = has_dir and self._is_local(pane["path"])
+        return Menu(
+            MenuItem("New Directory…", on_select=self.create_directory, enabled=has_dir),
+            MenuItem("New File…", on_select=self.create_file, enabled=has_dir),
+            SEPARATOR,
+            MenuItem("Add to Favorites…",
+                     on_select=lambda: self._name_favorite(pane["path"], False),
+                     enabled=has_dir),
+            MenuItem("Copy Full Path", on_select=lambda: self._copy_dir_path(pane),
+                     enabled=has_dir),
+            MenuItem(_FILE_MANAGER_OPEN_LABEL,
+                     on_select=lambda: self._open_dir_in_os(pane), enabled=local),
+            MenuItem("Subshell Here", on_select=self.subshell, enabled=local),
+            SEPARATOR,
+            MenuItem("Sort…", on_select=self.show_sort_menu),
+            MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),
+                     checked=lambda: self.flm.show_hidden),
+        )
+
+    def _copy_dir_path(self, pane: dict) -> None:
+        self.panel.set_clipboard(str(pane["path"]))
+        self.log_info(f"Copied path to clipboard: {pane['path']}")
+
+    def _open_dir_in_os(self, pane: dict) -> None:
+        """Open the pane's directory in the OS file manager (Finder / Explorer
+        / the desktop's own)."""
+        path = str(pane["path"])
+        system = platform.system()
+        try:
+            if system == "Darwin":
+                subprocess.run(["open", path], check=True)
+            elif system == "Windows":
+                os.startfile(path)
+            else:
+                subprocess.run(["xdg-open", path], check=True)
+        except Exception as exc:
+            self.log_info(f"Failed to open {path}: {exc}")
+        else:
+            self.log_info(f"Opened {path} in the file manager")
 
     def _start_drag(self, pane_name: str, index: int, event) -> None:
         """A file row was dragged out: export it (or the whole selection, when the

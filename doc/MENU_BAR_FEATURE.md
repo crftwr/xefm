@@ -65,7 +65,7 @@ XeFM has seven menus: **File**, **Edit**, **Go**, **Select**, **View**,
 on the Windows terminal.
 
 Each item draws the key its action is actually bound to, so the tables below
-name the **action** instead — press `?` for the keys, or just read them off the
+name the **action** instead — press `F1` for the keys, or just read them off the
 menu.
 
 ### File Menu

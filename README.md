@@ -114,7 +114,7 @@ macOS / Windows app bundles.
 - **File operations:** `C` (copy), `M` (move), `K` (delete), `R` (rename)
 - **Search:** `F` for incremental search, `Shift-F` for filename search, `Shift-G` for content search
 - **Remote paths:** open `ssh://hostname/path` or `s3://bucket/path` like any directory
-- **Help:** `?` opens the help dialog with every key binding organized by category — no need to memorize
+- **Help:** `F1` opens the help dialog with every key binding organized by category — no need to memorize
 - **Quit:** `Q` to exit
 
 ## Documentation

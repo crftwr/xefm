@@ -466,6 +466,10 @@ _FILER_ACTIONS = [
     _a("favorites", FILER, "Go to a favorite directory or file"),
     _a("add_favorite", FILER,
        "Add this directory or the item under the cursor to favorites"),
+    # The right-click menus from the keyboard, cfiler's pair: the item's, and
+    # the directory's.
+    _a("context_menu", FILER, "Open the context menu for the item under the cursor"),
+    _a("context_menu_dir", FILER, "Open the context menu for the current directory"),
     _a("jump_to_path", FILER, "Jump to a typed path"),
     _a("history", FILER, "Go to a recently visited directory"),
     _a("drives", FILER, "Show drives and volumes",

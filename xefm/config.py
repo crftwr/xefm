@@ -55,6 +55,10 @@ _NAMED_KEYS = {
     # named key of its own on the Windows terminal (PuiKit keyboard contract
     # §1), distinct from ALT the modifier prefix; XeFM binds it to 'menu'.
     "ALT": "alt",
+    # The PC keyboard's context-menu key (VK_APPS). Windows, the Windows
+    # terminal, a PC keyboard on macOS and the web backend deliver it; a POSIX
+    # terminal sends nothing, which is why '/' carries the same action.
+    "APPS": "apps",
 }
 _NAMED_KEYS.update({f"F{n}": f"f{n}" for n in range(1, 13)})
 

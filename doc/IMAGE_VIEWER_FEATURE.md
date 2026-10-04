@@ -16,7 +16,7 @@ family (PPM/PGM/PBM/PNM).
 
 ## Controls
 
-The viewer's own footer names the keys, and `?` inside it lists them all.
+The viewer's own footer names the keys, and `F1` inside it lists them all.
 
 | Action | What it does |
 |--------|--------------|
@@ -28,7 +28,7 @@ The viewer's own footer names the keys, and `?` inside it lists them all.
 | mouse scroll | Zoom in / out |
 | `image_viewer.next` / `.prev` | Next / previous image |
 | `Home` / `End` | First / last image |
-| `?` | Key help |
+| `F1` | Key help |
 | `quit` / `Esc` | Close |
 
 Zoom starts at *fit* — the whole image in the window — and each step magnifies

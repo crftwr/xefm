@@ -85,13 +85,14 @@ class FilePaneClick(unittest.TestCase):
         _click(view, 2.0)
         self.assertEqual(seen, [7])
 
-    def test_a_right_click_below_the_rows_opens_no_menu(self):
-        """The context menu is a menu *for an item*; there is no item here."""
+    def test_a_right_click_below_the_rows_is_on_the_directory(self):
+        """No item here, so the click is reported as -1: the app opens the
+        directory's menu for it rather than an item's."""
         seen = []
         view = self._widget([_F("one")],
                             on_context=lambda i, x, y: seen.append(i))
         _click(view, 9.0, button="right")
-        self.assertEqual(seen, [])
+        self.assertEqual(seen, [-1])
 
 
 class AppPaneActivation(unittest.TestCase):

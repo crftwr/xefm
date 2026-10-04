@@ -58,8 +58,8 @@ class TestMainIntegration(unittest.TestCase):
         self.assertTrue(self.file_manager.is_key_for_action_original(ord('q'), 'quit'))  # Key is bound
         self.assertTrue(self.file_manager.is_key_for_action(ord('q'), 'quit'))  # And available
         
-        self.assertTrue(self.file_manager.is_key_for_action_original(ord('?'), 'help'))  # Key is bound
-        self.assertTrue(self.file_manager.is_key_for_action(ord('?'), 'help'))  # And available
+        self.assertTrue(self.file_manager.is_key_for_action_original(ord('/'), 'context_menu'))  # Key is bound
+        self.assertTrue(self.file_manager.is_key_for_action(ord('/'), 'context_menu'))  # And available
         
         # Actions that require selection - should not be available
         self.assertTrue(self.file_manager.is_key_for_action_original(ord('c'), 'copy_files'))  # Key is bound
@@ -77,8 +77,8 @@ class TestMainIntegration(unittest.TestCase):
         self.assertTrue(self.file_manager.is_key_for_action_original(ord('q'), 'quit'))  # Key is bound
         self.assertTrue(self.file_manager.is_key_for_action(ord('q'), 'quit'))  # And available
         
-        self.assertTrue(self.file_manager.is_key_for_action_original(ord('?'), 'help'))  # Key is bound
-        self.assertTrue(self.file_manager.is_key_for_action(ord('?'), 'help'))  # And available
+        self.assertTrue(self.file_manager.is_key_for_action_original(ord('/'), 'context_menu'))  # Key is bound
+        self.assertTrue(self.file_manager.is_key_for_action(ord('/'), 'context_menu'))  # And available
         
         # Actions that require selection - should be available
         self.assertTrue(self.file_manager.is_key_for_action_original(ord('c'), 'copy_files'))  # Key is bound

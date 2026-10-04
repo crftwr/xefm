@@ -38,7 +38,7 @@ Clicking a row is the mouse equivalent of arrowing the cursor onto it; press Ent
 
 ### Right-Click for a Context Menu
 
-Right-clicking a file or directory opens a context menu of common operations for that item.
+Right-clicking a file or directory opens a context menu of common operations for that item. Right-clicking the empty space below the last row opens the menu for the directory itself. Both are on keys too (`/` and `?`) — see [Context Menus](CONTEXT_MENU_FEATURE.md).
 
 ### Pane Layout
 
