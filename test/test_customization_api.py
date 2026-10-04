@@ -611,6 +611,23 @@ def test_pane_api_cd_navigates(app_with):
     assert app.active_pane()["path"].name == "sub"
 
 
+def test_pane_api_cd_accepts_a_pathlib_path(app_with):
+    # #506: a pathlib.Path has iterdir() but none of XeFM's Path methods, so
+    # storing it as the pane's path failed every frame on path.is_remote().
+    import pathlib
+
+    holder = {}
+    app, tmp = app_with(ACTIONS={
+        "go": lambda ctx: ctx.other.cd(pathlib.Path(holder["tmp"]) / "sub")})
+    holder["tmp"] = tmp
+    app.dispatch("go")
+    app._settle_listings()
+    other = app.pm.get_inactive_pane()["path"]
+    assert isinstance(other, Path)
+    assert other.name == "sub"
+    app.panel.render()
+
+
 # --- events ---------------------------------------------------------------- #
 
 def test_startup_and_quit_hooks_fire(app_with):

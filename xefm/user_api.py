@@ -279,7 +279,7 @@ class PaneApi:
         so ``pane.entries`` is empty for a moment after this returns — read the
         new listing from a later action rather than from the next line.
         """
-        target = path if hasattr(path, "iterdir") else Path(str(path))
+        target = path if isinstance(path, Path) else Path(str(path))
         self._app._go_to_dir(self._pane, target, focus_name)
 
     def refresh(self) -> None:
