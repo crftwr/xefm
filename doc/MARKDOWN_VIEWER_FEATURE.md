@@ -50,7 +50,7 @@ to; **M** does nothing there.
 | Mouse wheel | Scroll |
 | **F** | Incremental search |
 | **M** | Switch back to raw text |
-| **?** | Key help |
+| **F1** | Key help |
 | **Q** / Esc | Close the viewer |
 
 ### Searching the rendered view

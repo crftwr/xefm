@@ -1583,7 +1583,7 @@ class TextViewer(Widget):
             rows.append((_label("toggle_view_mode", "M"),
                          f"toggle {self._rich.name} / raw text"))
         rows += [
-            (_label("help", "?"), "this help"),
+            (_label("help", "F1"), "this help"),
             (_label("quit", "q") + " / Esc", "close"),
         ]
         show_markdown(self._panel, keys_markdown(rows),

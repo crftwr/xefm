@@ -622,7 +622,7 @@ class ImageViewer(Widget):
         pan are omitted where no picture can be drawn, prev/next where the file
         has no siblings."""
         quit_k = _keys_display("quit", "q")
-        help_k = _keys_display("help", "?")
+        help_k = _keys_display("help", "F1")
         parts = []
         if self._can_render(ctx):
             # Named from the live keymap, not the default ``+/-``, so a rebind
@@ -752,7 +752,7 @@ class ImageViewer(Widget):
                  f'{_keys_display("image_viewer.last")}', "first / last image"),
             ]
         rows += [
-            (_keys_display("help", "?"), "this help"),
+            (_keys_display("help", "F1"), "this help"),
             (_keys_display("quit", "q") + " / Esc", "close"),
         ]
         show_markdown(self._panel, keys_markdown(rows),

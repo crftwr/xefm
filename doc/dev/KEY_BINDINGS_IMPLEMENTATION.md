@@ -239,7 +239,8 @@ _key_to_actions = {
     ("q",      frozenset(), "key"):  [("quit", "any")],
     ("pageup", frozenset(), "key"):  [("page_up", "any")],       # from token "PAGE_UP"
     ("delete", frozenset(), "key"):  [("delete_files", "required")],
-    ("?",      frozenset(), "char"): [("help", "any")],
+    ("f1",     frozenset(), "key"):  [("help", "any")],
+    ("?",      frozenset(), "char"): [("context_menu_dir", "any")],
     ("=",      frozenset(), "char"): [("diff_files", "any")],    # from token "EQUAL"
     ("+",      frozenset(), "char"): [("diff_directories", "any")],  # from token "Shift-EQUAL"
 }
@@ -264,8 +265,8 @@ compete with **typing**. `ISearchBar.handle_event` runs three steps in order:
 1. **Text first.** `typed_char(event) is not None` (minus Ctrl/Cmd chords, taken
    out first — the order `TextEdit` itself uses so `Cmd+A` is not read as typing
    "a") goes straight to the pattern field, and the keymap never sees it. This
-   is what keeps `Q`, `?` and SPACE typeable into a pattern while `quit`, `help`
-   and `toggle_select_down` own them in the file list a row above.
+   is what keeps `Q`, `?` and SPACE typeable into a pattern while `quit`,
+   `context_menu_dir` and `toggle_select_down` own them in the file list a row above.
 2. **Only what the bar owns.** Every context inherits the `common` actions, so
    `quit` does resolve here — but the bar tests its own action names alone
    (`ISearchBar._handlers`, built from the callbacks its owner supplied) rather

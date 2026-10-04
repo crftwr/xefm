@@ -26,7 +26,7 @@ rest need nothing at all — Zstandard included, which comes from Python itself
 rather than from libarchive.
 
 For the complete list of key bindings, see the
-[XeFM User Guide](XEFM_USER_GUIDE.md) or press **?** in XeFM.
+[XeFM User Guide](XEFM_USER_GUIDE.md) or press **F1** in XeFM.
 
 ## Creating an archive
 

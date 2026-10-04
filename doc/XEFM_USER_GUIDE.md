@@ -164,7 +164,7 @@ platform-native chord in a desktop window — opening a file with the OS app, an
 copying text on macOS — and everything else is shared; see "Three cases" in
 `~/.xefm/config.py`.
 
-Press **?** at any time for the built-in help, which is built from your own
+Press **F1** at any time for the built-in help, which is built from your own
 `KEY_BINDINGS` and is therefore always the truth for your config.
 
 ### Performance
@@ -605,7 +605,7 @@ XeFM supports powerful key binding customization with modifier keys and multiple
 KEY_BINDINGS = {
     # An action can have several keys — add your own alongside the defaults
     'quit': ['Q'],
-    'help': ['?'],
+    'help': ['F1'],
 
     # e.g. add vim-style movement next to the arrow keys
     'cursor_up': ['UP', 'k'],
@@ -748,7 +748,7 @@ Check file permissions and disk space
 - Check available memory for large directory operations
 
 ### Getting Help
-- Press **?** for built-in help
+- Press **F1** for built-in help
 - Check feature documentation below
 - Use `--help` command line option
 
