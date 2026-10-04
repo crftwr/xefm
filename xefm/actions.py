@@ -463,7 +463,9 @@ _FILER_ACTIONS = [
     _a("quick_sort_size", FILER, "Sort by size"),
     _a("quick_sort_date", FILER, "Sort by modification date"),
     # Directory navigation
-    _a("favorites", FILER, "Go to a favorite directory"),
+    _a("favorites", FILER, "Go to a favorite directory or file"),
+    _a("add_favorite", FILER,
+       "Add this directory or the item under the cursor to favorites"),
     _a("jump_to_path", FILER, "Jump to a typed path"),
     _a("history", FILER, "Go to a recently visited directory"),
     _a("drives", FILER, "Show drives and volumes",

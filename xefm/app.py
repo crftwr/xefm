@@ -62,7 +62,7 @@ from xefm.backend_detector import is_desktop_mode
 from xefm.background_shaders import SHADER_KINDS
 from xefm.config import (KeyBindings, config_manager, deprecated_names_notice,
                          get_builtin_handler_for_file, get_config,
-                         get_drive_locations, get_favorite_directories,
+                         get_drive_locations,
                          get_program_for_file, has_explicit_association,
                          keys_label_for_action, printable_text_notice)
 from xefm.dir_scan import is_hidden, alloc_from_stat
@@ -75,6 +75,8 @@ from xefm.history_input_dialog import show_history_input
 from xefm.completion import FilepathCompleter
 from xefm.connect_dialog import open_connect_server, run_connecting
 from xefm.input_dialog import show_input
+from xefm.choice_dialog import show_choice_dialog
+from xefm import favorites
 from xefm import netmount
 from xefm.options import OptionSet
 from xefm.progressive_search_dialog import show_progressive_search
@@ -2719,6 +2721,7 @@ class XeFMApp:
                 "history": (self.show_history, False),
                 "programs": (self.show_programs, False),
                 "favorites": (self.show_favorites, False),
+                "add_favorite": (self.add_favorite, False),
                 "jump_to_path": (self.jump_to_path, False),
                 "compare_selection": (self.compare_selection, False),
                 # --- opening things ---
@@ -2990,7 +2993,8 @@ class XeFMApp:
     _PANE_VIEW_KEYS = ("path", "virtual", "files", "file_info",
                        "_listing_entries", "focused_index", "scroll_offset")
 
-    def _jump_pane_to(self, pane: dict, path: Path, *, log: str) -> None:
+    def _jump_pane_to(self, pane: dict, path: Path, *, log: str,
+                      select_name: str | None = None) -> None:
         """Send ``pane`` to ``path`` — the move behind every picker that names a
         directory the user cannot see: favorites, drives, history.
 
@@ -3009,6 +3013,8 @@ class XeFMApp:
         …"), which is the whole story.
 
         ``log`` is the line to write once the move has actually happened.
+        ``select_name`` lands the cursor on that entry instead of where the
+        pane last left it — a favorite that names a file.
         """
         before = {k: pane.get(k) for k in self._PANE_VIEW_KEYS}
         # Copied, not referenced: the clear() below empties the very set the
@@ -3022,7 +3028,10 @@ class XeFMApp:
         def landed(p: dict) -> None:
             if p.get("listing_ok", True):
                 self.log_info(log)
-                self._restore_remembered_cursor(p)
+                if select_name:
+                    self._select_by_name(p, select_name)
+                else:
+                    self._restore_remembered_cursor(p)
             else:
                 # The navigation did not happen — so nothing about it happened,
                 # marked files included. compute_listing has already said why,
@@ -3291,6 +3300,8 @@ class XeFMApp:
             MenuItem("Root Directory", on_select=lambda: self._menu("go_root"),
                      shortcut=sc("go_root")),
             MenuItem("Go to Favorite…", on_select=self.show_favorites, shortcut=sc("favorites")),
+            MenuItem("Add to Favorites…", on_select=self.add_favorite,
+                     shortcut=sc("add_favorite")),
             MenuItem("Jump to Path…", on_select=self.jump_to_path, shortcut=sc("jump_to_path")),
             MenuItem("Drives…", on_select=self.show_drives, shortcut=sc("drives")),
             MenuItem("Connect to Server…", on_select=self.show_connect_server,
@@ -4157,24 +4168,131 @@ class XeFMApp:
         self.panel.render()
 
     def show_favorites(self) -> None:
-        """The modal filter-list dialog: pick a favorite directory and jump the
-        active pane there. The canonical searchable-list-picker pattern (XeFM's
-        ``BaseListDialog`` workhorse), built from PuiKit's TextEdit + ListView."""
-        favorites = get_favorite_directories()
-        if not favorites:
-            show_message_box(self.panel, "No favorite directories configured.",
+        """The modal filter-list dialog: pick a favorite and jump the active pane
+        there. The canonical searchable-list-picker pattern (XeFM's
+        ``BaseListDialog`` workhorse), built from PuiKit's TextEdit + ListView.
+
+        The rows are ``FAVORITE_DIRECTORIES`` followed by the favorites added
+        with :meth:`add_favorite` (see :mod:`xefm.favorites`). The picker's
+        remove key forgets an added one; a config row stays, since the next
+        config load would only bring it back."""
+        rows = favorites.get_favorites()
+        if not rows:
+            key = keys_label_for_action("add_favorite")
+            hint = f" Press {key} to add one." if key else ""
+            show_message_box(self.panel, f"No favorites yet.{hint}",
                              title="Favorites", icon="info")
             self.panel.render()
             return
         # Middle-elide the "name — path" rows so a long path keeps its tail (the
         # leaf directory) rather than being clipped away (issue #211).
         show_filter_list(
-            self.panel, favorites, title="Go to Favorite",
-            to_label=lambda fav: f"{fav['name']}  —  {fav['path']}",
+            self.panel, rows, title="Go to Favorite",
+            to_label=lambda fav: f"{fav.name}  —  {fav.path}",
             on_accept=self._jump_to_favorite,
+            on_remove=self._forget_favorite,
             region=self._active_pane_region(),
             elide_where="middle",
         )
+        self.panel.render()
+
+    def _forget_favorite(self, fav: favorites.FavoriteEntry) -> bool:
+        if not favorites.remove_favorite(fav):
+            if not fav.removable:
+                self.log_info(f"'{fav.name}' is set in FAVORITE_DIRECTORIES "
+                              "in config.py; remove it there")
+            return False
+        self.log_info(f"Removed favorite: {fav.name} ({fav.path})")
+        return True
+
+    def add_favorite(self) -> None:
+        """B: remember a place in the favorites picker (J).
+
+        Two candidates, offered as a choice: the directory the pane is showing
+        (first, so Enter alone takes it) and the item under the cursor — which
+        may be a file, so a favorite can name the thing to land on and not only
+        the place to go. Where there is only one candidate (a search-results
+        pane has no directory of its own; an empty directory has nothing under
+        the cursor) the choice is skipped.
+
+        Whether the cursor item is a file comes from the listing the pane
+        already holds, so adding reads nothing from disk."""
+        pane = self.active_pane()
+        candidates = []
+        if not pane.get("virtual"):
+            here = pane["path"]
+            candidates.append(((here, False),
+                               f"This directory: {here.name or str(here)}"))
+        cursor = self._cursor_favorite_target(pane)
+        if cursor is not None:
+            entry, is_file = cursor
+            label = entry.name + ("" if is_file else "/")
+            candidates.append((cursor, f"Under the cursor: {label}"))
+        if not candidates:
+            self.log_info("Nothing to add to favorites")
+            return
+        if len(candidates) == 1:
+            self._name_favorite(*candidates[0][0])
+            return
+
+        def on_result(choice) -> None:
+            if choice is None:
+                self.panel.render()
+                return
+            self._name_favorite(*choice)
+
+        show_choice_dialog(self.panel, "Add to Favorites", candidates,
+                           on_result=on_result)
+        self.panel.render()
+
+    def _cursor_favorite_target(self, pane: dict):
+        """``(entry, is_file)`` for the item under ``pane``'s cursor, or ``None``
+        when there is none. ``is_file`` comes from the pane's own listing, so
+        nothing is read from disk."""
+        files = pane["files"]
+        idx = pane["focused_index"]
+        if not (files and 0 <= idx < len(files)):
+            return None
+        entry = files[idx]
+        is_dir = pane.get("file_info", {}).get(str(entry), {}).get("is_dir", False)
+        return entry, not is_dir
+
+    def _add_cursor_favorite(self) -> None:
+        """The context menu's Add to Favorites: a right-click names its row, so
+        that row is what is added — no "this directory or the cursor item"
+        choice, which :meth:`add_favorite` (B) still offers."""
+        cursor = self._cursor_favorite_target(self.active_pane())
+        if cursor is not None:
+            self._name_favorite(*cursor)
+
+    def _name_favorite(self, path, is_file: bool) -> None:
+        """Ask for the name ``path`` is listed under, then save it. A path that
+        is already a saved favorite opens as a rename, prefilled with its
+        current name; one the config lists is left alone."""
+        existing = favorites.find_favorite(str(path))
+        if existing is not None and not existing.removable:
+            self.log_info(f"Already a favorite (from config.py): {existing.name}")
+            self.panel.render()
+            return
+
+        def accept(text: str) -> None:
+            name = text.strip()
+            status = favorites.add_favorite(name, str(path), is_file=is_file)
+            if status == favorites.ADDED:
+                self.log_info(f"Added favorite: {name} ({path})")
+            elif status == favorites.RENAMED:
+                self.log_info(f"Renamed favorite: {name} ({path})")
+            else:
+                self.log_info(f"Could not save favorite: {path}")
+            self.panel.render()
+
+        default = existing.name if existing else (path.name or str(path))
+        show_input(self.panel,
+                   title="Rename Favorite" if existing else "Add to Favorites",
+                   prompt="Name:", text=default, on_accept=accept,
+                   on_cancel=self.panel.render,
+                   validate=lambda t: None if t.strip() else "Name cannot be empty",
+                   region=self._active_pane_region())
         self.panel.render()
 
     def _active_pane_region(self) -> tuple[float, float]:
@@ -5051,9 +5169,14 @@ class XeFMApp:
         threading.Thread(target=waiter, name="xefm-program-wait",
                          daemon=True).start()
 
-    def _jump_to_favorite(self, fav: dict) -> None:
-        self._jump_pane_to(self.active_pane(), Path(fav["path"]),
-                           log=f"Jumped to {fav['name']} ({fav['path']})")
+    def _jump_to_favorite(self, fav: favorites.FavoriteEntry) -> None:
+        log = f"Jumped to {fav.name} ({fav.path})"
+        target = Path(fav.path)
+        if fav.is_file:
+            self._jump_pane_to(self.active_pane(), target.parent, log=log,
+                               select_name=target.name)
+        else:
+            self._jump_pane_to(self.active_pane(), target, log=log)
 
     def _select_by_name(self, pane: dict, name: str) -> None:
         """Land the cursor on the entry called ``name`` (after create/rename).
@@ -7324,7 +7447,8 @@ class XeFMApp:
             ("switch_pane", "Switch active pane"),
             ("nav_left", "Focus left pane / go to parent"),
             ("nav_right", "Focus right pane / go to parent"),
-            ("favorites", "Go to a favorite directory"),
+            ("favorites", "Go to a favorite directory or file"),
+            ("add_favorite", "Add this directory or the item under the cursor to favorites"),
             ("jump_to_path", "Jump to a typed path"),
             ("drives", "Open the drives / locations picker"),
             ("history", "Go to a recently-visited directory"),
@@ -7654,6 +7778,9 @@ class XeFMApp:
             MenuItem("Copy Full Path(s)", on_select=self.copy_paths_to_clipboard,
                      enabled=entry is not None),
             MenuItem("Open as List", on_select=lambda: self._menu("open_list_from_file"),
+                     enabled=entry is not None),
+            SEPARATOR,
+            MenuItem("Add to Favorites…", on_select=self._add_cursor_favorite,
                      enabled=entry is not None),
             SEPARATOR,
             MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),

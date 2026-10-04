@@ -14,9 +14,10 @@ prefix match winning over a substring match. The buffer shows in the hint band
 along the bottom while it is live, Backspace trims it, and a second of quiet
 resets it, so a mistyped jump costs a beat, not an Esc.
 
-First (and so far only) user: the text viewer's encoding picker. The Sort
-dialog predates this widget and keeps its own two-axis layout (key rows × an
-order segment) — this one is for flat pick-one lists.
+Users: the text viewer's encoding picker, and Add to Favorites' "this
+directory or the cursor item" choice. The Sort dialog predates this widget and
+keeps its own two-axis layout (key rows × an order segment) — this one is for
+flat pick-one lists.
 """
 
 from __future__ import annotations

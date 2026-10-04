@@ -72,10 +72,11 @@ TIPS: tuple[tuple[str, str], ...] = (
      "directory, and {key:find_in_files} searches *inside* files (grep). "
      "Results stream in as they are found."),
 
-    ("Favorite directories",
-     "{key:favorites} opens a searchable picker of your favorite directories "
-     "for a one-keystroke jump. Define them in `FAVORITE_DIRECTORIES` in "
-     "`~/.xefm/config.py` (**Tools ▸ Edit Configuration…** opens it)."),
+    ("Favorites",
+     "{key:favorites} opens a searchable picker of your favorites for a "
+     "one-keystroke jump. {key:add_favorite} adds the current directory — or "
+     "the file under the cursor, to land right on it. Permanent ones can also "
+     "go in `FAVORITE_DIRECTORIES` in `~/.xefm/config.py`."),
 
     ("Jump to any path",
      "{key:jump_to_path} prompts for a path — with filename completion — and "
