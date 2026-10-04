@@ -502,15 +502,19 @@ class ArchiveHandler:
         a virtual directory entry for every parent the archive names only
         implicitly (``a/b/c.txt`` with no ``a/`` member of its own).
 
-        Shared by the handlers whose formats hand over every member up front —
-        tar's and libarchive's. ZipHandler keeps a copy of this rather than
-        calling it because it additionally drops deep entries from the cache on
-        very large archives, which is a zip-only lazy-loading policy.
+        Shared by every handler whose format hands over all members up front —
+        zip's, tar's and libarchive's. ZipHandler used to keep its own copy that
+        left entries two or more levels deep out of ``_entry_cache`` once an
+        archive passed 1000 members, while still naming them as children in
+        ``_directory_cache``; ``list_entries`` skips children it has no entry
+        for, so those files vanished from the listing and from extraction
+        (xefm#510). Every member is cached now.
         """
         self._entry_cache.clear()
         self._directory_cache.clear()
 
         all_directories = set()
+        seen_children = set()
         for entry in entries:
             normalized_path = self._normalize_path(entry.internal_path)
             self._entry_cache[normalized_path] = entry
@@ -529,10 +533,12 @@ class ArchiveHandler:
                     if dir_path:
                         all_directories.add(dir_path)
 
+                # A child path names its parent, so one set dedupes every
+                # directory's list without the list scan going quadratic.
                 child = '/'.join(parts[:i + 1])
-                children = self._directory_cache.setdefault(parent, [])
-                if child not in children:
-                    children.append(child)
+                if child not in seen_children:
+                    seen_children.add(child)
+                    self._directory_cache.setdefault(parent, []).append(child)
 
         for dir_path in all_directories:
             if dir_path and dir_path not in self._entry_cache:
@@ -786,71 +792,15 @@ class ZipHandler(ArchiveHandler):
             self._temp_file = None
     
     def _cache_entries(self):
-        """Cache all entries from the ZIP file with lazy loading optimization"""
+        """Cache all entries from the ZIP file"""
         if not self._archive_obj:
             return
-        
-        # Clear caches
-        self._entry_cache.clear()
-        self._directory_cache.clear()
-        
-        # Track all directories we've seen (including virtual ones)
-        all_directories = set()
-        
-        # For large archives, use lazy loading - only cache structure, not all entries
-        infolist = self._archive_obj.infolist()
-        is_large_archive = len(infolist) > 1000
-        
-        # Process all entries
-        for zip_info in infolist:
-            entry = ArchiveEntry.from_zip_info(zip_info, 'zip')
-            normalized_path = self._normalize_path(entry.internal_path)
-            
-            # For large archives, only cache directory structure initially
-            # Individual entries will be loaded on demand
-            if not is_large_archive or entry.is_dir or normalized_path.count('/') < 2:
-                # Cache the entry (all entries for small archives, only shallow for large)
-                self._entry_cache[normalized_path] = entry
-            
-            # Build directory cache and track parent directories
-            if normalized_path:
-                # Get all parent directories
-                parts = normalized_path.split('/')
-                for i in range(len(parts)):
-                    if i == 0:
-                        parent = ''
-                    else:
-                        parent = '/'.join(parts[:i])
-                    
-                    # Track this directory
-                    if i < len(parts) - 1 or entry.is_dir:
-                        dir_path = '/'.join(parts[:i+1]) if i < len(parts) - 1 else normalized_path
-                        if dir_path:
-                            all_directories.add(dir_path)
-                    
-                    # Add to parent's children list
-                    if i < len(parts):
-                        child = '/'.join(parts[:i+1])
-                        if parent not in self._directory_cache:
-                            self._directory_cache[parent] = []
-                        if child not in self._directory_cache[parent]:
-                            self._directory_cache[parent].append(child)
-        
-        # Create virtual directory entries for directories that don't have explicit entries
-        for dir_path in all_directories:
-            if dir_path and dir_path not in self._entry_cache:
-                # Create a virtual directory entry
-                virtual_entry = ArchiveEntry(
-                    name=dir_path.split('/')[-1],
-                    internal_path=dir_path,
-                    is_dir=True,
-                    size=0,
-                    compressed_size=0,
-                    mtime=0.0,
-                    mode=0o755,
-                    archive_type='zip'
-                )
-                self._entry_cache[dir_path] = virtual_entry
+
+        self._build_index(
+            (ArchiveEntry.from_zip_info(zip_info, 'zip')
+             for zip_info in self._archive_obj.infolist()),
+            'zip'
+        )
     
     def list_entries(self, internal_path: str = "") -> List[ArchiveEntry]:
         """List entries at the given internal path"""
@@ -885,7 +835,7 @@ class ZipHandler(ArchiveHandler):
         if normalized_path in self._entry_cache:
             return self._entry_cache[normalized_path]
         
-        # For large archives with lazy loading, load entry on demand
+        # Not in the index: ask the zip directory itself
         if self._archive_obj:
             try:
                 zip_info = self._archive_obj.getinfo(normalized_path)

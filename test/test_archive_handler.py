@@ -156,6 +156,22 @@ class TestZipHandler:
             with pytest.raises(ArchiveNavigationError):
                 handler.list_entries('nonexistent_dir')
 
+    def test_large_archive_lists_deep_entries(self):
+        """Past 1000 members, files two or more levels deep still list (xefm#510)"""
+        big_path = self.temp_path / 'big.zip'
+        with zipfile.ZipFile(str(big_path), 'w') as zf:
+            zf.writestr('top.txt', b'top')
+            for i in range(1001):
+                zf.writestr(f'app/bin/file{i}.dll', b'x')
+            zf.writestr('app/bin/plugins/deep.dll', b'deep')
+
+        with ZipHandler(Path(big_path)) as handler:
+            names = [e.name for e in handler.list_entries('app/bin')]
+            assert len(names) == 1002
+            assert 'file1000.dll' in names
+            assert 'plugins' in names
+            assert [e.name for e in handler.list_entries('app/bin/plugins')] == ['deep.dll']
+
 
 class TestTarHandler:
     """Test TarHandler functionality"""
