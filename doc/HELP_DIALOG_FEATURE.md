@@ -1,13 +1,13 @@
-# Help Dialog (? Key)
+# Help Dialog (F1 Key)
 
 XeFM includes a scrollable help dialog listing the key bindings for whatever is
-on screen. Press **?** in the file list to open the one described here. The
-viewers (text, image, file diff, directory diff) answer **?** as well, each with
+on screen. Press **F1** in the file list to open the one described here. The
+viewers (text, image, file diff, directory diff) answer **F1** as well, each with
 its own key list rather than this dialog.
 
 ## Usage
 
-- **?** — open the help dialog
+- **F1** — open the help dialog
 - **↑/↓** — scroll line by line (the mouse wheel scrolls too)
 - **Page Up/Down** — scroll by page
 - **Home/End** — jump to top/bottom
@@ -59,12 +59,12 @@ Usage tips are *not* here — they live in the separate Tip of the Day dialog
 
 ## Configuration
 
-Help is bound to **?** by default. Rebind the `help` action in `KEY_BINDINGS`
+Help is bound to **F1** by default. Rebind the `help` action in `KEY_BINDINGS`
 to use a different key:
 
 ```python
 KEY_BINDINGS = {
-    'help': ['?'],  # ? shows help
+    'help': ['F1', 'H'],  # F1 or H shows help
     # ... other bindings
 }
 ```

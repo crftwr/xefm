@@ -19,7 +19,7 @@ The simplest form - just a single character:
 
 ```python
 'quit': ['Q']
-'help': ['?']
+'context_menu_dir': ['?']
 'toggle_hidden': ['.']
 ```
 
@@ -288,7 +288,7 @@ exactly like a viewer's; the defaults and what each one does are in
 
 One rule is specific to this surface: **the key must not be one that types a
 character.** The pattern field is offered every printable key first — that is
-what keeps `Q`, `?` and Space typeable into a pattern while `quit`, `help` and
+what keeps `Q`, `?` and Space typeable into a pattern while `quit`, `context_menu_dir` and
 `toggle_select_down` own them in the file list — so an isearch action bound to
 `N` can never fire. XeFM notes it in the log pane at startup rather than leaving
 the binding silently dead. `Shift-DOWN`, `Ctrl-N` and `F2` are all fine. Shift
@@ -353,7 +353,7 @@ class Config:
     KEY_BINDINGS = {
         # Basic navigation
         'quit': ['q'],                    # Matches both 'q' and 'Q'
-        'help': ['?'],                    # Matches only '?'
+        'help': ['F1'],                   # Function key F1
         'move_up': ['UP', 'k'],           # 'k' matches both 'k' and 'K'
         'move_down': ['DOWN', 'j'],       # 'j' matches both 'j' and 'J'
         'move_left': ['LEFT', 'h'],       # 'h' matches both 'h' and 'H'

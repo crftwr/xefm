@@ -709,7 +709,7 @@ class DiffViewer(Widget):
              + " (in search)", "prev / next match"),
             (_label("edit_file", "E"), "edit both sides in $TEXT_DIFF"),
             ("Drag gutter", "move centre split"),
-            (_label("help", "?"), "this help"),
+            (_label("help", "F1"), "this help"),
             (_label("quit", "q") + " / Esc", "close"),
         ]
         show_markdown(self._panel, keys_markdown(rows),

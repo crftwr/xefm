@@ -97,7 +97,7 @@ XeFM now features a fully configurable key binding system where all keyboard sho
 KEY_BINDINGS = {
     # Application Control
     'quit': ['q', 'Q'],                 # Exit XeFM application
-    'help': ['?'],                      # Show help dialog with all key bindings
+    'help': ['F1'],                     # Show help dialog with all key bindings
     
     # Display & Navigation
     'toggle_hidden': ['.'],             # Toggle visibility of hidden files (dotfiles, Windows hidden attribute)
@@ -480,7 +480,7 @@ class Config:
     KEY_BINDINGS = {
         # Application control
         'quit': ['q'],
-        'help': ['?'],
+        'help': ['F1'],
         
         # Navigation and display
         'toggle_hidden': ['.'],

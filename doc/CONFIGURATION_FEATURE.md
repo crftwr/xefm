@@ -184,7 +184,7 @@ CONFIRM_ARCHIVE_CREATE  = True   # before creating an archive
 ```python
 KEY_BINDINGS = {
     'quit': ['Q'],
-    'help': ['?'],
+    'help': ['F1'],
     'toggle_hidden': ['.'],
     # ... many more actions
 }
