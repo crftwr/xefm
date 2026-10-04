@@ -2676,6 +2676,8 @@ class XeFMApp:
                 "go_root": (lambda: self._go_root(self.active_pane()), True),
                 "nav_left": (self._act_nav_left, True),
                 "nav_right": (self._act_nav_right, True),
+                "focus_left": (lambda: self._activate_pane("left"), True),
+                "focus_right": (lambda: self._activate_pane("right"), True),
                 "sync_current_to_other": (self._act_sync_current_to_other, True),
                 "sync_other_to_current": (self._act_sync_other_to_current, True),
                 # --- listing ---
@@ -2867,6 +2869,13 @@ class XeFMApp:
     def _act_switch_pane(self) -> None:
         self.pm.active_pane = "right" if self.pm.active_pane == "left" else "left"
         self._sync_active()
+
+    def _activate_pane(self, name: str) -> None:
+        # Unlike nav_left / nav_right, focusing the pane already active is a
+        # no-op rather than a trip to the parent (#509).
+        if self.pm.active_pane != name:
+            self.pm.active_pane = name
+            self._sync_active()
 
     def _act_nav_left(self) -> None:
         # Context-aware LEFT: from the right pane, move focus to the

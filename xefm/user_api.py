@@ -253,6 +253,14 @@ class PaneApi:
         """Whether this is the pane the cursor is in."""
         return self._app.pm.active_pane == self._name
 
+    def activate(self) -> None:
+        """Move the cursor into this pane. Does nothing if it is already there.
+
+        ``ctx.pane`` and ``ctx.other`` follow on the next read; a ``PaneApi``
+        already in hand keeps naming the pane it was made for.
+        """
+        self._app._activate_pane(self._name)
+
     def __repr__(self) -> str:
         return f"<PaneApi {self._name} {self.path}>"
 
