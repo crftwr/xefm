@@ -334,9 +334,10 @@ calls a factory and renders:
 ```python
 def show_favorites(self) -> None:
     show_filter_list(
-        self.panel, favorites, title="Go to Favorite",
-        to_label=lambda fav: f"{fav['name']}  —  {fav['path']}",
+        self.panel, favorites.get_favorites(), title="Go to Favorite",
+        to_label=lambda fav: f"{fav.name}  —  {fav.path}",
         on_accept=self._jump_to_favorite,
+        on_remove=self._forget_favorite,
         region=self._active_pane_region(),
         elide_where="middle",
     )

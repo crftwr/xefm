@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm.path import Path  # noqa: E402
+from xefm.favorites import FavoriteEntry  # noqa: E402
 from xefm.file_list_manager import FileListManager  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from xefm import _config  # noqa: E402
@@ -219,7 +220,7 @@ class AppVirtual(unittest.TestCase):
         pane = self.app.active_pane()
         self.assertIsNotNone(pane["virtual"])
         # Jumping to a directory (favorite path) exits virtual mode.
-        self.app._jump_to_favorite({"name": "root", "path": str(self.tmp)})
+        self.app._jump_to_favorite(FavoriteEntry("root", str(self.tmp)))
         self.app._settle_listings()
         self.assertIsNone(pane["virtual"])
 

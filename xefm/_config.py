@@ -370,7 +370,8 @@ class Config:
         'quick_sort_date': ['4'],              # Quick sort by modification date
         
         # === Directory Navigation ===
-        'favorites': ['J'],                    # Show favorite directories dialog
+        'favorites': ['J'],                    # Show favorites dialog
+        'add_favorite': ['B'],                 # Add this directory / the cursor item to favorites
         'jump_to_path': ['Shift-J'],           # Jump to path
         'history': ['H'],                      # Show history for current pane
         'drives': ['D'],                # Show drives/volumes dialog
@@ -970,6 +971,12 @@ class Config:
 
 
     # Favorite directories (J) - the places you jump to by name.
+    #
+    # B adds one without editing this file: the directory you are in, or the
+    # item under the cursor (a file too - selecting it lands the cursor on it).
+    # Those live in XeFM's state database, are listed after the entries below,
+    # and are removed from the picker with Shift-DELETE. The entries below are
+    # yours: the picker lists them but never removes them.
     #
     # Each entry needs 'name' and 'path'. Every entry is listed as written -
     # XeFM does not check that a favorite exists before showing it, so a network

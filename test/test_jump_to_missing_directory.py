@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm import _config  # noqa: E402
+from xefm.favorites import FavoriteEntry  # noqa: E402
 from xefm.file_list_manager import FileListManager  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
@@ -69,7 +70,7 @@ class JumpToAMissingDirectory(unittest.TestCase):
         before_names = [f.name for f in pane["files"]]
         pane["focused_index"] = 1
 
-        self.app._jump_to_favorite({"name": "Gone", "path": self.missing})
+        self.app._jump_to_favorite(FavoriteEntry("Gone", self.missing))
         self.app._settle_listings()
 
         self.assertEqual(str(pane["path"]), self.tmp)
@@ -81,7 +82,7 @@ class JumpToAMissingDirectory(unittest.TestCase):
         original = self.app.flm.logger.error
         self.app.flm.logger.error = said.append
         try:
-            self.app._jump_to_favorite({"name": "Gone", "path": self.missing})
+            self.app._jump_to_favorite(FavoriteEntry("Gone", self.missing))
             self.app._settle_listings()
         finally:
             self.app.flm.logger.error = original
@@ -98,7 +99,7 @@ class JumpToAMissingDirectory(unittest.TestCase):
         os.mkdir(sub)
         pane = self.app.active_pane()
 
-        self.app._jump_to_favorite({"name": "Sub", "path": sub})
+        self.app._jump_to_favorite(FavoriteEntry("Sub", sub))
         self.app._settle_listings()
         self.app.panel.render()
 
@@ -112,13 +113,13 @@ class JumpToAMissingDirectory(unittest.TestCase):
         marked = str(Path(os.path.join(self.tmp, "alpha.txt")))
         pane["selected_files"].add(marked)
 
-        self.app._jump_to_favorite({"name": "Gone", "path": self.missing})
+        self.app._jump_to_favorite(FavoriteEntry("Gone", self.missing))
         self.app._settle_listings()
 
         self.assertEqual(pane["selected_files"], {marked})
 
     def test_a_failed_jump_leaves_no_trace_in_history(self):
-        self.app._jump_to_favorite({"name": "Gone", "path": self.missing})
+        self.app._jump_to_favorite(FavoriteEntry("Gone", self.missing))
         self.app._settle_listings()
         self.assertNotIn(self.missing, self.app._history)
 
@@ -144,7 +145,7 @@ class JumpToAMissingDirectory(unittest.TestCase):
         pane = self.app.active_pane()
         self.assertIsNotNone(pane["virtual"])
 
-        self.app._jump_to_favorite({"name": "Gone", "path": self.missing})
+        self.app._jump_to_favorite(FavoriteEntry("Gone", self.missing))
         self.app._settle_listings()
 
         self.assertIsNotNone(pane["virtual"])

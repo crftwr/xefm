@@ -199,6 +199,9 @@ So neither picker probes:
   rather than an oversight: its built-in set is a menu XeFM proposes (Documents
   / Downloads / Desktop drop out on a machine without them), not a list the user
   wrote. Favorites are always the user's own.
+- Favorites added from the UI (`xefm.favorites`) come from the state DB, and
+  whether one names a file is recorded when it is added, from the pane's
+  `file_info` — so the picker has nothing to probe there either.
 
 The verification did not disappear — it moved to where the user is already
 waiting on purpose. Selecting a row navigates, the navigation lists on a worker

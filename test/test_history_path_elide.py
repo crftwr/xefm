@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from xefm import app as xefm_app  # noqa: E402
 from xefm import filter_list_dialog as fld  # noqa: E402
+from xefm.favorites import FavoriteEntry  # noqa: E402
 from xefm.filter_list_dialog import FilterListDialog  # noqa: E402
 from xefm.progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
@@ -89,8 +90,8 @@ class PathPickersRequestMiddleElide(unittest.TestCase):
         self.assertEqual(show.call_args.kwargs.get("elide_where"), "middle")
 
     def test_favorites_uses_middle(self):
-        with patch("xefm.app.get_favorite_directories",
-                   return_value=[{"name": "Home", "path": "/tmp"}]), \
+        with patch("xefm.favorites.get_favorites",
+                   return_value=[FavoriteEntry("Home", "/tmp")]), \
              patch("xefm.app.show_filter_list") as show:
             self.app.show_favorites()
         show.assert_called_once()

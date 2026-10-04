@@ -7,7 +7,7 @@ for the keys yours are on, or find them in the **Go** menu):
 
 | Action | Dialog | What it lists |
 |--------|--------|---------------|
-| `favorites` | Favorites | Your configured favorite directories |
+| `favorites` | Favorites | Your favorite directories and files |
 | `jump_to_path` | Jump | Directories found by scanning from the current directory |
 | `history` | History | Directories you have already visited in this pane |
 | `drives` | Drives | Storage locations and volumes (and S3 buckets, if available) |
@@ -33,9 +33,10 @@ Every navigation dialog uses the same list-picker controls:
 - The **remove** key (`remove_list_item`) to drop the highlighted entry, where
   there is something to
   remove: it forgets a directory in History or the Filter prompt, forgets a
-  saved server in Connect to Server, and disconnects or ejects a volume in
-  Drives. Favorites and External Programs come from your config, so there is
-  nothing there to remove and the key does nothing
+  saved server in Connect to Server, forgets a favorite you added with **B**,
+  and disconnects or ejects a volume in Drives. Favorites written in your
+  config and External Programs are yours to edit there, so the key leaves them
+  alone
 - **Escape** or **q** to cancel and close
 
 A line along the bottom of each dialog names the keys that are live in it, so
@@ -63,8 +64,9 @@ listed below, and they work the other way round:
 
 ## Favorites (J)
 
-Press **J** to open a searchable list of your favorite directories and jump to
-any of them instantly.
+Press **J** to open a searchable list of your favorites and jump to any of them
+instantly. A favorite is usually a directory, but it can also be a file: picking
+one opens its directory with the cursor on the file.
 
 The list opens immediately, whatever is on it. XeFM does not go and look at your
 favorites before showing them — checking a network share that is asleep, offline
@@ -81,6 +83,32 @@ That means a favorite can be anywhere: a NAS, a USB disk you plug in on
 Tuesdays, an `ssh://` or `s3://` location. It sits quietly in the list whether
 or not it is reachable today.
 
+### Adding and removing favorites
+
+Press **B** (`add_favorite`, also **Go ▸ Add to Favorites…**) to add one. XeFM
+asks which of two things you mean:
+
+- **This directory** — the directory the pane is showing. It is first, so
+  **B** then **Enter** adds where you are.
+- **Under the cursor** — the directory or file the cursor is on.
+
+Then type the name it should be listed under (it starts as the directory's or
+file's own name) and press **Enter**. Where only one of the two makes sense —
+an empty directory has nothing under the cursor, and a search-results list has
+no directory of its own — XeFM goes straight to the name.
+
+Right-clicking a row and choosing **Add to Favorites…** adds that row — the
+directory or file you clicked — without the choice, straight to the name.
+
+Favorites added this way are listed after the ones in your config, in the order
+you added them, and are kept in XeFM's own state database — your `config.py` is
+never rewritten. Adding a place that is already a favorite renames it instead of
+listing it twice.
+
+To remove one, highlight it in the **J** list and press the remove key
+(**Shift-Delete** by default). Favorites written in `FAVORITE_DIRECTORIES` are
+not removed there: delete them from your config.
+
 ### Default favorites
 
 XeFM ships with four — Home, Documents, Downloads and Desktop — and they are
@@ -94,9 +122,10 @@ Projects (/Users/username/dev)
 Web Server (/var/www)
 ```
 
-### Customizing your favorites
+### Favorites in your config
 
-Edit `FAVORITE_DIRECTORIES` in your `~/.xefm/config.py`. Each entry needs a
+For favorites you want to keep in a file you control — the same list on every
+machine you copy your config to — edit `FAVORITE_DIRECTORIES` in your `~/.xefm/config.py`. Each entry needs a
 `name` (what to call it) and a `path` (where it is; `~` expands to your home
 directory):
 
@@ -111,8 +140,8 @@ class Config:
     ]
 ```
 
-To use a different key, rebind the `favorites` action in `KEY_BINDINGS`, e.g.
-`'favorites': ['f']`.
+To use different keys, rebind the `favorites` and `add_favorite` actions in
+`KEY_BINDINGS`, e.g. `'favorites': ['f']`.
 
 ## Jump dialog
 
