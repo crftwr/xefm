@@ -24,7 +24,17 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.7.5 is the floor, and a soft one: XeFM calls nothing new for it, and nothing
+# 1.7.6 is the floor, and a soft one: XeFM calls nothing new for it, and nothing
+# raises without it. It is what makes the context menus say which row they are
+# for, and what delivers the Menu key. A native popup menu (macOS, Windows)
+# holds the UI thread until it closes while a render only schedules a redraw,
+# so a right-click moved the cursor onto the clicked row and the screen kept
+# the old frame for as long as the menu was open; 1.7.6 draws the pending frame
+# before the menu opens (puikit#151). It also names the PC keyboard's Menu key
+# 'apps' (puikit#152), which the APPS / Shift-APPS context-menu bindings need.
+# On an older PuiKit the menus still open and '/' and '?' still work; the
+# cursor catches up when the menu closes, and the Menu key does nothing.
+# 1.7.5 was the previous floor, and a soft one: XeFM calls nothing new for it, and nothing
 # raises without it. It is what lets a full-width space be typed (issue #508).
 # With a Japanese IME on, the space bar types U+3000, and every PuiKit backend
 # decided "is this text?" with str.isprintable(), which rejects every Unicode
@@ -124,7 +134,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.7.5
+puikit>=1.7.6
 pygments
 boto3
 watchdog
