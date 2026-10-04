@@ -24,7 +24,14 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.7.4 is the floor, and a soft one: XeFM calls nothing new for it, and nothing
+# 1.7.5 is the floor, and a soft one: XeFM calls nothing new for it, and nothing
+# raises without it. It is what lets a full-width space be typed (issue #508).
+# With a Japanese IME on, the space bar types U+3000, and every PuiKit backend
+# decided "is this text?" with str.isprintable(), which rejects every Unicode
+# space separator but the ASCII one -- so the rename dialog, and every other
+# text field, silently dropped it. 1.7.5 admits the space separators as text.
+# On an older PuiKit the fields still work; they only refuse that character.
+# 1.7.4 was the previous floor, and a soft one: XeFM calls nothing new for it, and nothing
 # raises without it. It is what keeps a long name readable while it is edited
 # (issue #480). PuiKit's TextEdit scrolled only once the caret itself left the
 # field and never scrolled back, so Backspacing from the end of a long name in
@@ -117,7 +124,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.7.4
+puikit>=1.7.5
 pygments
 boto3
 watchdog
