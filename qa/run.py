@@ -23,6 +23,14 @@ to put back after a run that died, and a running XeFM of yours is unaffected.
 The room's own session keeps your HOME - Claude Code's login lives there -
 and RULES.md tells it where the run's home is.
 
+**In a VM** (xefm#750): with XEFM_QA_GUEST naming a guest (`qa-win`,
+`qa-mac`; doc/dev/VM_TESTING_SYSTEM.md), the live check's XeFM runs in that
+VM rather than here. The VM starts from its clean state for the run, this
+working tree is staged there (qa/guest.py), and the run's home goes on the
+shared folder, so XeFM in the guest loads what the room made. The operator's
+terminal is still a pty on this machine; tools/vm_live.py puts the guest's
+XeFM in it over `ssh -tt`. The room and the operator stay here.
+
 The design is crftwr/keyhac#205; the harness is quality-loop
 (crftwr/quality-loop). Before it, this was .claude/skills/xefm-skill-cleanroom.
 """
@@ -31,6 +39,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import json
 import os
 import pathlib
 import shlex
@@ -92,15 +101,19 @@ class Home:
     directory: outside the checkout and the run's directory, which a room
     must not reach."""
 
-    def __init__(self):
-        self.root = pathlib.Path(tempfile.mkdtemp(prefix="xefm-qa-home-")).resolve()
+    def __init__(self, parent: pathlib.Path | None = None):
+        self.root = pathlib.Path(tempfile.mkdtemp(prefix="xefm-qa-home-", dir=parent)).resolve()
+        #: What runs here and not in a VM - the room's `xefm` and its log - is
+        #: kept off the shared folder when the home is on one (``parent``).
+        self.host = (pathlib.Path(tempfile.mkdtemp(prefix="xefm-qa-host-")).resolve()
+                     if parent else self.root)
         self.xefm = self.root / ".xefm"
         self.xefm.mkdir()
         #: Where the stand-in keeps the previous fixture: out of the room's
         #: reach, which is ~/.xefm only.
         self.stand_in = self.root / "stand-in"
         #: The `xefm` calls' log, collected into each room's evidence.
-        self.calls = self.root / "calls"
+        self.calls = self.host / "calls"
         self.calls.mkdir()
         #: The live check's panes: a directory with two files to select.
         self.work = self.root / "work"
@@ -115,7 +128,7 @@ class Home:
         # Gone at exit even when no run's product() took it down - a home made
         # only to list the apps for `quality-loop check`.
         atexit.register(self.remove)
-        self.bin = self.root / "bin"
+        self.bin = self.host / "bin"
         self.bin.mkdir()
         shim = self.bin / "xefm"
         shim.write_text(SHIM.format(log=shlex.quote(str(self.calls / "xefm-calls.log")),
@@ -141,6 +154,7 @@ class Home:
 
     def remove(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
+        shutil.rmtree(self.host, ignore_errors=True)
 
 
 class XeFM(adapter.Adapter):
@@ -169,13 +183,25 @@ class XeFM(adapter.Adapter):
     def __init__(self):
         self._home: Home | None = None
         self._foreign: set[str] = set()
+        import guest as vm  # qa/guest.py
+        alias = os.environ.get("XEFM_QA_GUEST")
+        #: The VM the live check's XeFM runs in, or None to run it here.
+        self.guest = vm.Guest.for_alias(alias) if alias else None
+        #: While a VM run is up: its stage, and the live app's settings.
+        self._stage: pathlib.Path | None = None
+        self._live: pathlib.Path | None = None
 
     @property
     def apps(self) -> dict:
         """XeFM in the terminal, for a scenario's live check: under the run's
         home, so it loads the config and the extensions the room left, with
         the left pane on a directory of two files. The operator drives it;
-        the room never does - its surface is the skill."""
+        the room never does - its surface is the skill. In a VM run,
+        tools/vm_live.py runs it there."""
+        if self._live is not None:
+            return {"xefm": drive.TerminalApp(
+                [sys.executable, str(ROOT / "tools" / "vm_live.py"), str(self._live)],
+                rows=40, cols=120)}
         return {"xefm": drive.TerminalApp(
             [sys.executable, "-c", "import sys; sys.argv[0] = 'xefm'; "
              "from xefm.app import main; main()", "--backend", "tui",
@@ -187,8 +213,11 @@ class XeFM(adapter.Adapter):
         """The run's home, made when a run first needs it - not when the
         adapter is merely loaded to list or check scenarios."""
         if self._home is None:
-            self._home = Home()
+            self._home = Home(self.guest.host_share if self._stage is not None else None)
         return self._home
+
+    def platform(self) -> str:
+        return self.guest.platform if self.guest is not None else sys.platform
 
     def bundle(self) -> pathlib.Path:
         """The skill as `xefm skill --zip` ships it, unpacked: the zip holds
@@ -225,13 +254,45 @@ class XeFM(adapter.Adapter):
 
     @contextlib.contextmanager
     def product(self):
-        """Nothing runs for the length of a run; the home goes at the end."""
-        try:
-            yield
-        finally:
-            if self._home is not None:
-                self._home.remove()
-                self._home = None
+        """Nothing runs for the length of a run; the home goes at the end. In
+        a VM run, the VM is up for its length, with this tree staged."""
+        with contextlib.ExitStack() as stack:
+            if self.guest is not None:
+                stack.enter_context(self.guest.machine())
+                stack.callback(self._unstage)
+                self._stage = self.guest.stage("xefm-qa-stage-")
+                print("vm:      installing the third-party packages in the guest...", flush=True)
+                self._live = self._live_settings(self.guest.venv(self._stage,
+                                                                 self.guest.requirements()))
+            try:
+                yield
+            finally:
+                if self._home is not None:
+                    self._home.remove()
+                    self._home = None
+
+    def _live_settings(self, python: str) -> pathlib.Path:
+        """What tools/vm_live.py needs to put XeFM up in the guest: the same
+        command as a local live check, from the stage, under the run's home."""
+        guest, stage, home = self.guest, self._stage, self.home
+        environ = guest.environment(stage)
+        environ.update(HOME=guest.path(home.root), USERPROFILE=guest.path(home.root))
+        separator = ";" if guest.windows else ":"
+        settings = {
+            "guest": guest.to_settings(), "stage": str(stage), "environ": environ,
+            "path": environ["PYTHONPATH"].split(separator), "cwd": guest.path(home.root),
+            "argv": ["--backend", "tui", "--left", guest.path(home.work),
+                     "--right", guest.path(home.root)],
+            "python": python,
+            "script": guest.path(stage / "tree" / "tools" / "vm_guest_xefm.py")}
+        path = home.host / "live.json"
+        path.write_text(json.dumps(settings), encoding="utf-8")
+        return path
+
+    def _unstage(self) -> None:
+        if self._stage is not None:
+            shutil.rmtree(self._stage, ignore_errors=True)
+        self._stage = self._live = None
 
     def stand_in(self, case, variant, room):
         home = self.home

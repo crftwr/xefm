@@ -8,6 +8,7 @@ clean image every time and is put away afterwards.
 make test-vm GUEST=qa-win                           # the whole suite in the Windows VM
 make test-vm GUEST=qa-mac ARGS="test/test_x.py -k name"
 make run-vm  GUEST=qa-win                           # the VM up, XeFM launchers on its desktop
+XEFM_QA_GUEST=qa-win make qa SCENARIO=01            # quality-loop, the live check's XeFM in the VM
 ```
 
 `GUEST` is an SSH host alias whose table in `~/.config/quality-loop/guests.toml`
@@ -15,7 +16,8 @@ says what VM it is, what folder it shares with this Mac, and the image's
 Python. The VM layer is quality-loop's (`quality_loop.guest`, its
 `docs/guests.md`), and the images and aliases are shared with Keyhac
 (crftwr/keyhac, `doc/dev/testing.md`, "In a VM"). This page is what XeFM adds:
-`qa/guest.py` (what is staged) and `tools/vm.py` (the two commands).
+`qa/guest.py` (what is staged), `tools/vm.py` (the two make targets) and the
+VM mode of the quality-loop adapter (`qa/run.py`, `tools/vm_live.py`).
 
 ---
 
@@ -90,6 +92,35 @@ Enter, and puts the VM away.
 - **macOS:** the Tart window shows when the table says `visible = true`. The
   launchers are `.command` files.
 
+## quality-loop in a VM
+
+With `XEFM_QA_GUEST` naming a guest, `make qa` (or `quality-loop run`) runs a
+scenario's **live check** in the VM. The room and the operator stay on this
+Mac - Claude, the skill bundle and the evidence tools never enter the guest;
+only the XeFM the operator drives does.
+
+- `product()` brings the VM up for the run, stages the tree and builds the
+  venv, as `test-vm` does.
+- The run's home goes on the share, so the guest's XeFM loads the config and
+  extensions the room left. Only what runs here - the room's `xefm` shim, its
+  call log, the live app's settings - stays in a temporary directory on this
+  Mac (`Home.host`).
+- quality-loop's terminal driver runs its app in a pty here. The app it is
+  given is `tools/vm_live.py`, which starts XeFM's TUI in the guest over
+  `ssh -tt` (`tools/vm_guest_xefm.py` there) and passes the pty through:
+  the operator reads and types into the guest's XeFM as it would a local one.
+  This works on Windows too, where OpenSSH hosts the session in a ConPTY.
+- XeFM's event log (`QUALITY_LOOP_EVENTS`) is written on the share by the
+  guest and copied, whole lines at a time, to the file the driver named.
+- The driver stops the app with SIGTERM to its process group. `vm_live.py`
+  then ends the guest's XeFM by its pid, which `vm_guest_xefm.py` left on the
+  stage: a closed session does not always end what it started.
+- `platform()` answers the guest's, so the operator is told the right OS.
+
+The first run, scenario 01 in `qa-win`, met every Must; the operator read the
+help and pressed F12 in the guest's XeFM. A run on a laptop on battery can
+spend most of its time asleep: idle sleep stopped that one three times.
+
 ## Timings
 
 Seen on an M-series Mac, the Windows guest being x64 Python under emulation
@@ -110,4 +141,5 @@ on Windows 11 Arm:
   (2026-10-31): on Windows the symlink privilege a standard user lacks and two
   tests that outlast the 10 s timeout under x64 emulation (#794), and `./`
   in path completion (#787); macOS passes.
-- quality-loop's own runs (`make qa`) do not use the VM yet.
+- The quality-loop VM mode drives the TUI only; a desktop (GUI) live check
+  would need a screen backend in the guest, as Keyhac's runs have.

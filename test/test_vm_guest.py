@@ -67,3 +67,19 @@ def test_the_stage_is_the_tree_git_sees():
     files = guest.working_tree()
     assert "xefm/app.py" in files and "tools/vm_guest_pytest.py" in files
     assert not [f for f in files if f.startswith((".venv/", "cleanroom/", "temp/", ".git/"))]
+
+
+def test_a_vm_run_keeps_what_runs_here_off_the_share(tmp_path):
+    """The room's `xefm` shim and its log run on this machine; the home they
+    serve is on the share. An SMB share is no place for an executable."""
+    sys.path.insert(0, str(ROOT / "qa" / "checks"))
+    import run  # noqa: E402  (qa/run.py)
+    home = run.Home(tmp_path)
+    try:
+        assert home.root.parent == tmp_path.resolve()
+        assert tmp_path.resolve() not in home.bin.parents
+        assert tmp_path.resolve() not in home.calls.parents
+        assert (home.bin / "xefm").exists()
+    finally:
+        home.remove()
+    assert not home.host.exists() and not home.root.exists()
