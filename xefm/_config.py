@@ -279,7 +279,7 @@ class Config:
     # Every action already has its keys from the preset in force. An entry
     # here replaces that action's keys under every preset; an action you do
     # not list keeps the preset's. Help (F1) lists every action with its keys,
-    # and doc/KEY_BINDINGS_FEATURE.md names them all.
+    # and https://crftwr.github.io/xefm/doc/KEY_BINDINGS_FEATURE.html names them all.
     #
     # Each action can have multiple keys assigned to it
     # 
@@ -294,8 +294,8 @@ class Config:
     #    - 'none': only works when no items are explicitly selected
     #
     # Every key name XeFM accepts, and what a modifier prefix does, is listed in
-    # doc/KEY_BINDINGS_FEATURE.md under "Key Expression Format". One of each,
-    # so the shape is visible here:
+    # https://crftwr.github.io/xefm/doc/KEY_BINDINGS_FEATURE.html under "Key
+    # Expression Format". One of each, so the shape is visible here:
     #
     #   'Q'  '?'                    a character (a capital letter is not Shift)
     #   'Shift-F'                   ...which is why Shift is written out
