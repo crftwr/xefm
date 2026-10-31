@@ -782,7 +782,8 @@ class Config:
     #     }
     #
     # 'type' is how the value is shown and compared: 'text', 'count', 'size'
-    # (bytes), 'time' (a timestamp), 'enum' (one of 'values'), or 'tags'.
+    # (bytes), 'time' (a timestamp), 'duration' (seconds), 'enum' (one of
+    # 'values'), or 'tags'.
     # 'where' lists the storage it is asked about -- 'local' (the default),
     # 'archive', 'ssh', 's3' -- since a call per file is cheap on a disk and
     # a request each on S3.
@@ -826,8 +827,9 @@ class Config:
     # 'time' -- 'short', 'full' (DATE_FORMAT picks between the two by
     # default), 'iso', 'relative' ("5 min ago") or 'recent' (13:24 today,
     # 10/21 this year, 2024 before that); 'enum' -- 'letter' or
-    # 'word' (its label from 'values'); 'tags' -- 'dots' or 'names'; 'count'
-    # -- 'number'; 'text' -- 'text'. A function of yours takes (value, entry)
+    # 'word' (its label from 'values'); 'tags' -- 'dots' or 'names';
+    # 'duration' -- 'clock' (3:07, 1:02:45); 'count' -- 'number'; 'text' --
+    # 'text'. A function of yours takes (value, entry)
     # and returns text, or a Cell to give it a color: color is 'muted',
     # 'accent', 'accent2', 'text', a name ('red', 'green', 'yellow', 'blue',
     # 'purple', 'orange', 'gray') or an (r, g, b). value is None while it is

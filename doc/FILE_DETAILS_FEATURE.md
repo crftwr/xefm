@@ -71,6 +71,19 @@ Linux. It is left out for Windows paths, for SSH and S3 connections, and for
 files inside an archive, none of which report the figure — rather than showing
 a number that would be a guess.
 
+### Attributes
+
+Below its own fields, an item shows the attributes that apply to it, in words:
+its **Tags**, and any value an attribute of your own or an installed extension
+adds — a Git status, a photo's dimensions, a song's length (see
+[File List Layouts](FILE_LIST_LAYOUTS_FEATURE.md#attributes--values-xefm-can-know-about-an-entry)).
+An item without such a value gets no row for it.
+
+A value the pane already shows appears at once. The others are worked out for
+the items in the dialog while it is open — including ones the pane works out
+only on request — and fill in as they arrive, marked *reading…* until then.
+Closing the dialog stops them.
+
 Example:
 
 ```

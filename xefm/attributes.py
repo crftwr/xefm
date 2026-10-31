@@ -49,7 +49,7 @@ logger = getLogger("Attributes")
 
 #: The value types. A type decides the default format, the default alignment,
 #: and how values compare when a column is sorted.
-TYPES = ("text", "count", "size", "time", "enum", "tags")
+TYPES = ("text", "count", "size", "time", "duration", "enum", "tags")
 #: When a provider's values are computed — see the module docstring.
 COMPUTE = ("auto", "on_request")
 #: The storage kinds ``where`` may name besides a ``PATH_SCHEMES`` scheme.
@@ -401,7 +401,9 @@ class AttributeStore:
                 and directory == self._directory:
             return
         with self._lock:
-            if directory != self._directory:
+            # The first sync has nothing of another folder to drop, and must
+            # not stop what File Details asked for before the pane first drew.
+            if directory != self._directory and self._directory is not None:
                 self._cancel_requests()
                 self._values.clear()
                 self._stamps.clear()
@@ -585,6 +587,49 @@ class AttributeStore:
 
         threading.Thread(target=run, name="xefm-attr-request", daemon=True).start()
         return True
+
+    def fill(self, names: Iterable[str], paths: list, records: dict,
+             on_done: Optional[Callable[[bool], None]] = None) -> threading.Event:
+        """Compute what the store does not hold yet of ``names`` for ``paths``,
+        automatic and on-request alike, on a thread of its own: File Details
+        asks for the few items it shows, as Resolve Attribute does (#789).
+        Synchronous attributes and ``size`` are left out — the dialog has those
+        already. ``on_done(cancelled)`` runs on that thread when it stops.
+        Returns the event that stops it; a new directory or :meth:`clear` sets
+        it too."""
+        attrs = [a for n in names
+                 if (a := get(n)) is not None and not a.is_sync and n != "size"]
+        cancel = threading.Event()
+        with self._lock:
+            self._requests.append(cancel)
+            for p in paths:
+                key = str(p)
+                self._records.setdefault(key, records.get(key, {}))
+
+        def run() -> None:
+            for path in paths:
+                for attr in attrs:
+                    if cancel.is_set():
+                        break
+                    if not attr.applies_to(path) or self.value(str(path), attr.name)[0]:
+                        continue
+                    value = self._compute_requested(attr, path, cancel)
+                    # The generation a value lands in is the one current now:
+                    # the pane re-syncs as soon as the dialog draws over it,
+                    # and only a new folder or clear() — which set ``cancel``
+                    # — makes a value stale.
+                    if not cancel.is_set() and self._put(self._generation, attr.name,
+                                                         path, value) \
+                            and on_ready is not None:
+                        on_ready()
+            with self._lock:
+                if cancel in self._requests:
+                    self._requests.remove(cancel)
+            if on_done is not None:
+                on_done(cancel.is_set())
+
+        threading.Thread(target=run, name="xefm-attr-fill", daemon=True).start()
+        return cancel
 
     def _compute_requested(self, attr: Attribute, path, cancel: threading.Event):
         if attr.name == "size":
