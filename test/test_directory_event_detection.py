@@ -151,3 +151,18 @@ class TestDirectoryEventDetection(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_an_attribute_change_reloads_like_a_modification(tmp_path):
+    """watchdog 7 reports a file's time or permissions changing as an attrib
+    event, apart from a content change; the listing shows both."""
+    received = []
+    handler = XeFMFileSystemEventHandler(lambda kind, name: received.append((kind, name)),
+                                         str(tmp_path))
+
+    class Event:
+        src_path = str(tmp_path / "a.txt")
+        is_directory = False
+
+    handler.on_attrib(Event())
+    assert received == [("modified", "a.txt")]
