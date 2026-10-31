@@ -376,7 +376,7 @@ class Extra:
 BUILTIN_DEFAULT = Layout(DEFAULT, "Default", "details", (
     Column("name"),
     Column("ext"),
-    Column("total_size"),
+    Column("size"),
     Column("mtime", priority=1),
 ))
 

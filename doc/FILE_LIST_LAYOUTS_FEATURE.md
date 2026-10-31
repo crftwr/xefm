@@ -18,7 +18,7 @@ What a row of the file list shows comes from two things that combine:
   dots after a name.
 
 The values a layout or an extra shows are **attributes**: name, extension,
-size, date, tags and a folder's total size are built in, and `config.py` and
+size (a folder's total, once calculated), date and tags are built in, and `config.py` and
 extension packages can add their own.
 
 > **Preview.** `ATTRIBUTES`, `LAYOUTS`, `DEFAULT_LAYOUT` and `LAYOUT_EXTRAS` may
@@ -82,7 +82,7 @@ below).
 **View → Resolve Attribute…** (`resolve_attribute`) works one out for the
 selected items, or the item under the cursor when nothing is selected. A
 dialog names those items and lists, by name, the attributes that can be
-resolved for them in this pane — **Total size** in the default layout — even
+resolved for them in this pane — **Size** in the default layout — even
 when there is only one, so it is always clear what is about to run. To resolve
 every folder here, select them all first.
 
@@ -94,8 +94,9 @@ again.
 ## Sorting by what a pane shows
 
 The sort dialog (`sort`) lists, after its own keys, what the pane shows that
-is not already one of them — **Total size** in the default layout, a Git status
-when that extra is showing. Sorting by such a row:
+is not already one of them — **Size with folder totals** in the default
+layout (the built-in **Size** orders files only), a Git status when that extra
+is showing. Sorting by such a row:
 
 - orders **this folder only**. Go to another folder and the pane is sorted the
   way it was before; come back and choose it again.
@@ -198,7 +199,7 @@ until the value is there, it is `None`.
 class Config:
     LAYOUTS = {
         'short': {'label': 'Short time', 'columns': [
-            'name', 'ext', 'total_size',
+            'name', 'ext', 'size',
             {'attr': 'mtime', 'format': 'recent', 'priority': 1}]},
         'names': {'label': 'Names only', 'columns': ['name']},
     }
@@ -217,8 +218,8 @@ A column is an attribute's name, or a dict:
 
 Every layout has a `name` column, and it takes the width the others leave.
 Leave out `ext` and the extension stays part of the name. The built-in
-`name`, `ext`, `size`, `mtime`, `tags` and `total_size` (a file's size, or a
-folder's once it is calculated) can be used in any layout. Naming a layout
+`name`, `ext`, `size` (a file's size, or a folder's once it is calculated),
+`mtime` and `tags` can be used in any layout. Naming a layout
 `'default'` replaces the built-in one, which needs `'override': True` so that a
 typo cannot.
 

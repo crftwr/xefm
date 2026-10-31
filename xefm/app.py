@@ -5834,11 +5834,11 @@ class XeFMApp:
         logging the start and the end."""
         attr = attributes.get(name)
         records = {str(p): a for p, a in pane.get("_listing_entries") or ()}
-        if name == "total_size":
-            # A file's total is its size, already shown: only folders count.
+        if name == "size":
+            # A file's size is already shown: only folders count.
             targets = [p for p in targets if records.get(str(p), {}).get("is_dir")]
             if not targets:
-                self.log_info("Total size: no folder among the items")
+                self.log_info("Size: no folder among the items")
                 return
         self.log_info(f"Resolving {attr.label} for {len(targets)} item(s)…")
 
@@ -6297,15 +6297,22 @@ class XeFMApp:
         rows, seen = [], set()
         for name in names:
             attr = attributes.get(name)
-            if attr is None or name in seen or name in attributes.SORT_MODE_OF:
+            if attr is None or name in seen:
+                continue
+            if name in attributes.SORT_MODE_OF and attr.compute != "on_request":
                 continue
             seen.add(name)
             ready = store.ready(name, files, records)
             note = ("this folder only" if ready
                     else "still computing — this folder only")
+            label = attr.label
             if attr.compute == "on_request":
                 note = "this folder only — rows not calculated go last"
-            rows.append((self._ATTR_SORT + name, attr.label, ready, note))
+            if name in attributes.SORT_MODE_OF:
+                # Beside the built-in Size, which orders files only.
+                label, note = (f"{label} with folder totals",
+                               "this folder only — folders not calculated go last")
+            rows.append((self._ATTR_SORT + name, label, ready, note))
         return rows
 
     #: Keyboard nudge for the pane boundary / log height (fraction of the split),

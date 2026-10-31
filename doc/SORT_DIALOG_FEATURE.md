@@ -57,8 +57,9 @@ updated live as you move:
 ## Sorting by what a pane shows
 
 After its own keys the dialog lists what the pane shows that is not one of
-them — **Total size** in the default
-[layout](FILE_LIST_LAYOUTS_FEATURE.md), a Git status when that extra is
+them — **Size with folder totals** in the default
+[layout](FILE_LIST_LAYOUTS_FEATURE.md) (the built-in **Size** orders files
+only), a Git status when that extra is
 showing. Sorting by one orders this folder only, by the values the pane
 already has; rows without a value go last. Going to another folder brings back
 the pane's own sort. One still being filled in is greyed out until every row

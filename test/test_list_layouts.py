@@ -2,7 +2,7 @@
 
 The attribute layer (``xefm.attributes``): what ``ATTRIBUTES`` accepts, how a
 pane's store computes values off the UI thread and keeps them across a re-read,
-and the on-request ``total_size``. The display layer (``xefm.layouts``): what
+and ``size``, whose folder half is on request. The display layer (``xefm.layouts``): what
 ``LAYOUTS`` and ``LAYOUT_RULES`` accept, the built-in formats, and a pane drawn
 with a layout of its own. And where they meet the rest: an attribute sort over
 one directory, ``EntryInfo.attr``, and the config loader.
@@ -154,6 +154,10 @@ class LayoutsTable(_Clean):
         self.assertEqual(loaded.layouts, 1)
         self.assertIn("git", loaded.warnings[0])
 
+    def test_the_old_total_size_name_says_what_it_is_now(self):
+        loaded = _load(LAYOUTS={"t": {"columns": ["name", "total_size"]}})
+        self.assertIn("'total_size' is now 'size'", loaded.warnings[0])
+
     def test_markers_take_side_and_limit(self):
         _load(LAYOUTS={"m": {"columns": [{"attr": "name", "markers": [
             "tags", {"attr": "size", "side": "before", "limit": 2}]}]}})
@@ -243,7 +247,7 @@ class Extras(_Clean):
                               [layouts.get_extra(n) for n in "abc"])
         self.assertEqual([(c.attr, c.extra) for c in row.columns],
                          [("name", None), ("kind", "a"), ("ext", None),
-                          ("total_size", None), ("kind", "b"), ("kind", "c")])
+                          ("size", None), ("kind", "b"), ("kind", "c")])
         before = layouts.compose(layouts.BUILTIN_DEFAULT, [layouts.build_extra(
             "d", {"columns": [{"attr": "kind", "before": "name"}]})[0]])
         self.assertEqual([c.attr for c in before.columns][:2], ["kind", "name"])
@@ -384,19 +388,19 @@ class Store(_Tree):
         store.sync([], {}, "/elsewhere", {"n"})
         self.assertEqual(store.value(str(pane["files"][0]), "n"), (False, None))
 
-    def test_total_size_is_computed_only_on_request(self):
+    def test_size_is_computed_only_on_request(self):
         pane = self.pane()
         store = attributes.store_of(pane)
         records = self.records(pane)
         sub = next(p for p in pane["files"] if p.name == "sub")
-        self.assertIsNone(store.get(sub, records[str(sub)], "total_size"))
+        self.assertIsNone(store.get(sub, records[str(sub)], "size"))
         a = next(p for p in pane["files"] if p.name == "a.txt")
-        self.assertEqual(store.get(a, records[str(a)], "total_size"), 10)
+        self.assertEqual(store.get(a, records[str(a)], "size"), 10)
         done = threading.Event()
-        store.request("total_size", [sub], records, on_done=lambda n, c: done.set())
+        store.request("size", [sub], records, on_done=lambda n, c: done.set())
         self.assertTrue(done.wait(3))
-        self.assertEqual(store.get(sub, records[str(sub)], "total_size"), 1000)
-        self.assertEqual(EntryInfo(sub, is_dir=True).attr("total_size"), 1000)
+        self.assertEqual(store.get(sub, records[str(sub)], "size"), 1000)
+        self.assertEqual(EntryInfo(sub, is_dir=True).attr("size"), 1000)
 
     def test_entry_attr_never_computes(self):
         _load(ATTRIBUTES={"n": {"read": lambda d, es: ["computed"] * len(es)}})
@@ -426,7 +430,7 @@ class Drawing(_Tree):
 
     def test_a_marker_on_a_value_column_sits_against_its_value(self):
         _load(ATTRIBUTES=KIND, LAYOUT_EXTRAS={"k": {
-            "markers": [{"attr": "kind", "on": "total_size", "side": "after"}]}})
+            "markers": [{"attr": "kind", "on": "size", "side": "after"}]}})
         pane = self.pane(extras={"k": "on"})
         self.render(pane)
         store = attributes.store_of(pane)
@@ -576,16 +580,19 @@ class App(_Tree):
         self.app.dispatch("resolve_attribute")    # names the targets, lists the values
         dialog = self.app.panel._layers[-1].widget
         self.assertIn("3 selected item(s)", dialog.title)
-        self.assertEqual([v for v, _l in dialog._rows], ["total_size"])
-        self.app._resolve(pane, "total_size", self.app._selected_or_focused(pane))
+        self.assertEqual([v for v, _l in dialog._rows], ["size"])
+        # The built-in Size orders files only; the totals are a row of their own.
+        rows = self.app._attribute_sort_rows(pane)
+        self.assertEqual(rows[0][:2], ("attr:size", "Size with folder totals"))
+        self.app._resolve(pane, "size", self.app._selected_or_focused(pane))
         pane["selected_files"] = set()
         store = attributes.store_of(pane)
         records = self.records(pane)
         sub = next(p for p in pane["files"] if p.name == "sub")
-        self.assertTrue(_wait(lambda: store.value(str(sub), "total_size")[0]))
+        self.assertTrue(_wait(lambda: store.value(str(sub), "size")[0]))
         self.assertTrue(_wait(lambda: not store.busy()))
 
-        pane["sort_overlay"] = {"attr": "total_size", "reverse": True,
+        pane["sort_overlay"] = {"attr": "size", "reverse": True,
                                 "path": str(pane["path"])}
         self.app._resort(pane)
         self.app._settle_listings()
