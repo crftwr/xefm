@@ -3,7 +3,41 @@
 Run with: python -m pytest test/ -v
 """
 
+import os
+import shutil
+import tempfile
+
 import pytest
+
+_saved_home_env = {}
+_fake_home = None
+
+
+def pytest_configure(config):
+    """Point the home directory at an empty temporary one for the whole run
+    (#808), so no test reads the runner's own ``~/.xefm/config.py``.
+
+    Its ``MENUS``, ``FILTERS`` and status-bar items would otherwise be live
+    while a test runs, and ``make tag`` fails on a configured machine while
+    passing on a bare one. Set here rather than in a fixture so it is already
+    in place for anything that reads the home at collection time. ``realpath``
+    because macOS hands out ``/var/...``, a symlink to ``/private/var/...``.
+    A test that needs a home of its own still sets ``HOME`` itself."""
+    global _fake_home
+    _fake_home = os.path.realpath(tempfile.mkdtemp(prefix="xefm-test-home-"))
+    for name in ("HOME", "USERPROFILE"):
+        _saved_home_env[name] = os.environ.get(name)
+        os.environ[name] = _fake_home
+
+
+def pytest_unconfigure(config):
+    for name, value in _saved_home_env.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    if _fake_home is not None:
+        shutil.rmtree(_fake_home, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
@@ -42,12 +76,12 @@ def reset_s3_clients():
 def drop_user_config_entries():
     """Leave no config-defined entry behind for the next test.
 
-    A test that builds an ``XeFMApp`` loads the developer's own
-    ``~/.xefm/config.py``, and its ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS``,
-    ``FILTERS``, ``IMAGE_DECODERS``, ``PATH_SCHEMES`` and ``LEXERS`` land in process-wide
-    registries. Left there, they reach every later test in the process — the
-    key-help test then finds the developer's unbound actions and fails, or not,
-    depending on which test happened to run first. Dropped the way a config
+    A test that builds an ``XeFMApp`` loads ``~/.xefm/config.py`` (the
+    temporary home's, see ``pytest_configure``, which a test may write), and
+    its ``ACTIONS``, ``EVENT_HOOKS``, ``SORT_KEYS``, ``FILTERS``,
+    ``IMAGE_DECODERS``, ``PATH_SCHEMES`` and ``LEXERS`` land in process-wide
+    registries. Left there, they reach every later test in the process, which
+    then passes or fails depending on which test happened to run first. Dropped the way a config
     reload drops them (``user_api._process_user_entries``)."""
     yield
     from xefm import (actions, filters, image_decoders, lexer_registry,
