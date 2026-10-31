@@ -5,7 +5,8 @@ tools/vm.py stages the working tree and starts this in the guest:
     vm_guest_pytest.py <exit-code file> <pytest args...>
 
 On Windows it runs from a scheduled task through quality-loop's launcher,
-with pythonw and no console, its output going to the log on the share. When
+with python.exe - a console of its own, which the tests that run a console
+program inherit - and its output goes to the log on the share. When
 pytest is done it writes pytest's exit code to the file, which is how the
 host knows the run is over. Written whole, then renamed: the host polls for
 the name.

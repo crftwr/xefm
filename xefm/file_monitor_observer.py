@@ -25,6 +25,26 @@ except ImportError:
 
 
 if WATCHDOG_AVAILABLE and sys.platform == "win32":
+    from watchdog.observers import winapi as _winapi
+
+    #: watchdog 7 reads a directory through its own DirectoryChangeReader,
+    #: whose thread closes the handle itself once it has left - the fix the
+    #: emitter below makes for watchdog 6 and older, which close it on the
+    #: stopping thread. With 7 the stock Observer is right and the subclass
+    #: would reach for a handle that is no longer there.
+    _WATCHDOG_CLOSES_ITS_OWN_HANDLE = hasattr(_winapi, "DirectoryChangeReader")
+else:
+    _WATCHDOG_CLOSES_ITS_OWN_HANDLE = True
+
+#: The native observer's timeout, where it is not watchdog's default. watchdog
+#: 7's Windows reader hands over a batch only once the directory has been
+#: quiet for that long - a second by default, which a pane felt as a second's
+#: lag before every refresh. XeFM debounces on its own, so a short one is
+#: enough.
+_NATIVE_OBSERVER_OPTIONS = ({"timeout": 0.1} if WATCHDOG_AVAILABLE and sys.platform == "win32"
+                            and _WATCHDOG_CLOSES_ITS_OWN_HANDLE else {})
+
+if WATCHDOG_AVAILABLE and sys.platform == "win32" and not _WATCHDOG_CLOSES_ITS_OWN_HANDLE:
     import contextlib
     from watchdog.observers.api import DEFAULT_OBSERVER_TIMEOUT, BaseObserver
     from watchdog.observers.read_directory_changes import WindowsApiEmitter
@@ -185,6 +205,12 @@ if WATCHDOG_AVAILABLE:
             except Exception as e:
                 self.logger.error(f"Error handling modification event: {e}")
         
+        def on_attrib(self, event):
+            """A file's metadata changed - its time, its permissions. watchdog
+            7 reports this apart from a content change, where 6 called it
+            modified; the listing shows both, so both reload it."""
+            self.on_modified(event)
+
         def on_moved(self, event):
             """
             Handle file/directory rename/move.
@@ -366,7 +392,7 @@ class FileMonitorObserver:
         try:
             # Try to use native Observer first
             self.logger.debug(f"Attempting to start native monitoring for: {self.path} using {api_name}")
-            self.observer = Observer()
+            self.observer = Observer(**_NATIVE_OBSERVER_OPTIONS)
             self.monitoring_mode = "native"
             
             # Create XeFMFileSystemEventHandler
