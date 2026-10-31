@@ -135,6 +135,10 @@ on Windows 11 Arm:
 
 ## Limits
 
+- The stage is a copy of the working tree as it is when the run starts. Do
+  not switch branches or edit files in that first minute - a checkout half
+  way through the copy stages a mix of both branches, and the run then fails
+  in ways neither has.
 - One run per VM at a time: a VMware VM has one snapshot to revert to, and
   `run-vm` holds it until Enter.
 - What the whole suite still fails on, first run on the minimal images

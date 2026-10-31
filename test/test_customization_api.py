@@ -883,7 +883,9 @@ def test_input_completes_paths_against_the_active_pane(app_with, complete, expec
     app, _ = app_with(ACTIONS={"ask": lambda ctx: ctx.input("Where:", complete=complete)})
     completer = _input_completer(app)
     assert completer.get_candidates("", 0) == expected
-    assert completer.get_candidates("./", 2) == expected, "'.' is the pane's directory"
+    # Typed with "/", a directory ends with "/" on Windows too (#787).
+    assert completer.get_candidates("./", 2) == [
+        e.replace(os.sep, "/") for e in expected], "'.' is the pane's directory"
 
 
 def test_input_without_complete_has_no_completion(app_with):
