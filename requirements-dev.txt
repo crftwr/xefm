@@ -28,4 +28,4 @@ pytest-timeout
 # reported on by an operator agent. test/test_qa.py checks qa/ without a run,
 # and is skipped where quality-loop is missing. The tui extra (pyte) drives
 # XeFM in a pty for a scenario's Live check.
-quality-loop[tui]>=0.4.0
+quality-loop[tui]>=0.4.1
