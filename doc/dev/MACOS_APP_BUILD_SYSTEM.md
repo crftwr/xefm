@@ -90,6 +90,10 @@ All Python components are copied from the venv's base_prefix:
   The flag is required: PuiKit is installed editable, and an editable install's
   `.dist-info` records the version that was current when `pip install -e` ran, so
   collecting it normally ships metadata for a version the bundle does not contain.
+- The collector stops the build when a collected distribution, PuiKit
+  included, was not installed from a package index (editable, local wheel, VCS)
+  or falls outside a requirement on it (#809); see `RELEASE_SYSTEM.md`, and
+  `XEFM_BUNDLE_ALLOW_LOCAL` for a development build.
 
 **XeFM Source:**
 - Source: `${PROJECT_ROOT}/src/`

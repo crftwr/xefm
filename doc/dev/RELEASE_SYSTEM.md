@@ -316,13 +316,33 @@ decide for you:
 - `gh` is missing or unauthenticated — `make tag` does not need it, but every
   target after it does.
 
-The bundle builds (DMG, Windows zip) go further for the other libraries XeFM
-develops alongside, doc-files and similar-files: `tools/collect_dependencies.py`
-**refuses** to collect an editable install other than PuiKit, because its
-RECORD names only the `.dist-info` and the shim, and the package would
-silently be missing from the bundle. Before building, install their released
-versions into the venv (`pip install doc-files similar-files`), and re-run
-`pip install -e` afterwards to go on developing. The collector also honours
+The bundle builds (DMG, Windows zip, MSIX) ship whatever the build venv
+holds, so `tools/collect_dependencies.py` **refuses** a venv that is not what
+the release depends on:
+
+- **An editable install other than PuiKit**: its RECORD names only the
+  `.dist-info` and the shim, and the package would silently be missing from
+  the bundle.
+- **Anything not installed from a package index** (#809), PuiKit included:
+  an editable or local-directory install, a local wheel, a VCS URL (a PEP 610
+  `direct_url.json`). Each may be a build no one released — a `../puikit`
+  checkout with uncommitted edits or past its last release, a `similar-files`
+  wheel built from a branch.
+- **A version outside a requirement** (#809): every collected distribution
+  must satisfy `requirements.txt` and the requirements of whatever depends on
+  it. A venv left at `puikit 1.15.2` under `puikit>=1.16.1`, or
+  `similar-files 0.2.1` under `>=0.3.0`, would otherwise ship that.
+
+Before building, put the released versions into the venv: `make
+install-puikit PUIKIT_DIR=` for PuiKit, `pip install --force-reinstall
+--no-deps doc-files similar-files` for the others, then `pip install -r
+requirements.txt`; switch back to editable installs afterwards to go on
+developing. For a local development build only, `XEFM_BUNDLE_ALLOW_LOCAL`
+names the ones to let through anyway (comma-separated, e.g.
+`XEFM_BUNDLE_ALLOW_LOCAL=puikit,doc-files make macos-app`); an editable
+PuiKit's metadata keeps the version current at its install, so its version
+goes unchecked then. An unpinned requirement is not checked against PyPI:
+`watchdog` ships at whatever version the venv has. The collector also honours
 requirement extras (`doc-files[pdf]` brings pypdf).
 
 ## Target reference

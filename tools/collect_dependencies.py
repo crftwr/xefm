@@ -37,6 +37,22 @@ package itself would silently be missing from the bundle (1.8.0's first DMG
 shipped neither ``doc_files`` nor ``similar_files``). Install the released
 version into the venv before building.
 
+The bundle ships what the venv holds, so two more checks stop the collection
+(#809), PuiKit included:
+
+- **Not from a package index.** A distribution installed from a local
+  directory, a local wheel or a VCS URL (it has a PEP 610 ``direct_url.json``)
+  may be a build no one released: a PuiKit checkout with uncommitted edits, a
+  ``similar-files`` wheel built from a branch. For a development build, name
+  the ones to let through in ``XEFM_BUNDLE_ALLOW_LOCAL`` (comma-separated, e.g.
+  ``puikit,doc-files``); that lets an editable PuiKit through too, as PuiKit
+  is copied from its source, but no other editable install, whose package
+  would not be copied at all.
+- **Below a requirement.** Every collected distribution's version must satisfy
+  each requirement on it that applies here: ``requirements.txt``'s and those
+  of the distributions that depend on it. A venv left at ``puikit 1.15.2``
+  under ``puikit>=1.16.1`` would otherwise ship 1.15.2 without complaint.
+
 Requirement **extras** are honoured: ``doc-files[pdf]`` brings pypdf, which
 plain ``doc-files`` does not.
 """
@@ -77,6 +93,18 @@ _SKIP_DISTRIBUTIONS = {
 def _canonical(name):
     """PEP 503 canonical distribution name (for de-duplication/lookup)."""
     return re.sub(r"[-_.]+", "-", name).strip().lower()
+
+
+def _packaging():
+    """``packaging``'s ``Requirement`` and ``Version``: the build venv's own
+    copy, or the one pip vendors when the venv has none."""
+    try:
+        from packaging.requirements import Requirement
+        from packaging.version import Version
+    except ImportError:
+        from pip._vendor.packaging.requirements import Requirement
+        from pip._vendor.packaging.version import Version
+    return Requirement, Version
 
 
 def _parse_requirement_extras(req_str):
@@ -128,8 +156,9 @@ def _marker_satisfied(marker, extras=()):
 
 def read_seed_requirements(requirements_file):
     """Read requirements.txt, returning the marker-satisfied top-level
-    requirements as ``(name, extras)`` — the extras matter: ``doc-files[pdf]``
-    needs pypdf, which plain ``doc-files`` does not pull in."""
+    requirements as ``(name, extras, line)`` — the extras matter:
+    ``doc-files[pdf]`` needs pypdf, which plain ``doc-files`` does not pull
+    in; the line carries the version it asks for."""
     seeds = []
     if not os.path.exists(requirements_file):
         log_error(f"Requirements file not found: {requirements_file}")
@@ -147,29 +176,40 @@ def read_seed_requirements(requirements_file):
             if not _marker_satisfied(marker):
                 log_info(f"Skipping (marker not satisfied for this platform): {line}")
                 continue
-            seeds.append((name, _parse_requirement_extras(line)))
+            seeds.append((name, _parse_requirement_extras(line), line))
 
     log_info(f"Found {len(seeds)} applicable top-level requirement(s)")
     return seeds
 
 
-def resolve_runtime_closure(seed_names):
+def resolve_runtime_closure(seed_names, wanted=None):
     """
-    Resolve the full runtime dependency closure for *seed_names*.
+    Resolve the full runtime dependency closure for *seed_names*: names, or
+    ``(name, extras)`` / ``(name, extras, requirement)`` tuples.
 
-    Returns a dict of canonical-name -> importlib.metadata.Distribution.
+    Returns a dict of canonical-name -> importlib.metadata.Distribution. When
+    *wanted* is a dict, every requirement that applies here is added to it as
+    canonical-name -> ``[(required_by, requirement string)]``, for
+    ``version_problems``.
     """
     resolved = {}
     #: The extras already expanded for each resolved distribution, so an extra
     #: asked for later (by another requirement) still pulls in its deps.
     expanded = {}
-    queue = [(s, set()) if isinstance(s, str) else (s[0], set(s[1])) for s in seed_names]
+    queue = []
+    for s in seed_names:
+        if isinstance(s, str):
+            queue.append((s, set(), None, None))
+        else:
+            queue.append((s[0], set(s[1]), s[2] if len(s) > 2 else None, "requirements.txt"))
 
     while queue:
-        name, extras = queue.pop(0)
+        name, extras, req_str, required_by = queue.pop(0)
         cname = _canonical(name)
         if cname in _SKIP_DISTRIBUTIONS:
             continue
+        if wanted is not None and req_str:
+            wanted.setdefault(cname, []).append((required_by, req_str))
         if cname in resolved:
             new_extras = extras - expanded[cname]
             if not new_extras:
@@ -195,7 +235,8 @@ def resolve_runtime_closure(seed_names):
             if not (_marker_satisfied(marker)
                     or (extras and _marker_satisfied(marker, extras))):
                 continue
-            queue.append((dep_name, _parse_requirement_extras(req_str)))
+            queue.append((dep_name, _parse_requirement_extras(req_str), req_str,
+                          dist.metadata["Name"]))
 
     return resolved
 
@@ -209,6 +250,56 @@ def _is_editable(dist):
     except Exception:
         return False
     return bool((info.get("dir_info") or {}).get("editable"))
+
+
+def _local_source(dist):
+    """Where *dist* was installed from when that was not a package index —
+    a local directory, a local wheel or a VCS URL, per its PEP 610
+    ``direct_url.json`` — else None."""
+    try:
+        import json
+        raw = dist.read_text("direct_url.json")
+        info = json.loads(raw) if raw else None
+    except Exception:
+        return None
+    if not info:
+        return None
+    url = info.get("url", "?")
+    if (info.get("dir_info") or {}).get("editable"):
+        return f"editable from {url}"
+    if "vcs_info" in info:
+        return f"{info['vcs_info'].get('vcs', 'VCS')} {url}"
+    return url
+
+
+def _allowed_local():
+    """Canonical names ``XEFM_BUNDLE_ALLOW_LOCAL`` lets through though they
+    were not installed from a package index."""
+    raw = os.environ.get("XEFM_BUNDLE_ALLOW_LOCAL", "")
+    return {_canonical(n) for n in raw.split(",") if n.strip()}
+
+
+def version_problems(resolved, wanted, skip=()):
+    """``"<name> <version> does not satisfy <requirement> (from <who>)"``
+    for every requirement in *wanted* that its resolved distribution's
+    version falls outside. Distributions in *skip* are not checked."""
+    Requirement, Version = _packaging()
+    problems = []
+    for cname, reqs in sorted(wanted.items()):
+        if cname not in resolved or cname in skip:
+            continue
+        dist = resolved[cname]
+        version = Version(dist.version)
+        for required_by, req_str in reqs:
+            try:
+                req = Requirement(req_str)
+            except Exception as exc:
+                log_warning(f"Could not parse requirement '{req_str}' ({exc}); not checked")
+                continue
+            if req.specifier and not req.specifier.contains(version, prereleases=True):
+                problems.append(f"{dist.metadata['Name']} {dist.version} does not satisfy "
+                                f"{req.name}{req.specifier} (from {required_by})")
+    return problems
 
 
 def _should_skip_file(rel_path):
@@ -320,7 +411,8 @@ def collect_dependencies(requirements_file, dest_dir, include_deps_of=None):
                  f"(these distributions are copied in separately, not here)")
 
     log_info("Resolving runtime dependency closure...")
-    resolved = resolve_runtime_closure(seeds + sorted(deps_only))
+    wanted = {}
+    resolved = resolve_runtime_closure(seeds + sorted(deps_only), wanted)
     log_info(f"Runtime closure: {len(resolved)} distribution(s)")
 
     # An editable install's RECORD holds only its .dist-info and the shim that
@@ -333,6 +425,39 @@ def collect_dependencies(requirements_file, dest_dir, include_deps_of=None):
         log_error(f"Installed editable, so they would not be bundled: {', '.join(editable)}")
         log_error("Install the released versions into this venv first, e.g. "
                   f"pip install {' '.join(editable)} (re-run 'pip install -e' afterwards to develop)")
+        return False
+
+    # Not from a package index: maybe a build no one released (#809). PuiKit
+    # (deps_only) is checked here too, as its source is what gets copied.
+    allowed = _allowed_local()
+    local = {c: _local_source(resolved[c]) for c in sorted(resolved)}
+    local = {c: src for c, src in local.items() if src}
+    for cname, src in local.items():
+        if cname in allowed:
+            log_warning(f"{resolved[cname].metadata['Name']} is not from a package index "
+                        f"({src}); bundled anyway, as XEFM_BUNDLE_ALLOW_LOCAL names it")
+    refused = {c: src for c, src in local.items() if c not in allowed}
+    if refused:
+        log_error("Not installed from a package index, so the bundle could ship a build "
+                  "no one released:")
+        for cname, src in refused.items():
+            log_error(f"  {resolved[cname].metadata['Name']}: {src}")
+        names = " ".join(resolved[c].metadata["Name"] for c in refused)
+        log_error(f"Install the released versions first: pip install --force-reinstall "
+                  f"--no-deps {names} (for PuiKit alone, make install-puikit PUIKIT_DIR=), "
+                  f"or, for a development build only, name them in "
+                  f"XEFM_BUNDLE_ALLOW_LOCAL={','.join(refused)}")
+        return False
+
+    # An editable install's metadata keeps the version current when it was
+    # installed, so an allowed editable PuiKit's version says nothing here.
+    stale = {c for c in local if c in deps_only and _is_editable(resolved[c])}
+    problems = version_problems(resolved, wanted, skip=stale)
+    if problems:
+        log_error("Installed versions outside what is required, so the bundle would ship them:")
+        for problem in problems:
+            log_error(f"  {problem}")
+        log_error("Bring the venv up to the requirements first: pip install -r requirements.txt")
         return False
 
     total_files = 0
