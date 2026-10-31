@@ -103,10 +103,14 @@ class FilepathCompleter:
     uses, so a large directory costs one enumeration rather than a ``stat``
     round trip per entry (issue #246) — and returns entries whose name starts
     with the prefix (case-sensitive). Directory candidates carry a trailing
-    ``os.sep`` so a following TAB descends into them; with ``directories_only``
-    the files are dropped. A leading ``~`` / ``~user`` is expanded for the
-    *listing*, but the returned tokens are the plain entry names, so the field
-    keeps whatever the user typed to their left.
+    separator so a following TAB descends into them; with ``directories_only``
+    the files are dropped. A local token splits at either of the platform's
+    separators - ``os.altsep`` too, so ``D:/apps/Xe`` completes on Windows as
+    ``D:\\apps\\Xe`` does, and as Enter already accepts it (#787) - and a
+    directory candidate ends with the separator the token was typed with.
+    A leading ``~`` / ``~user`` is expanded for the *listing*, but the returned
+    tokens are the plain entry names, so the field keeps whatever the user
+    typed to their left.
 
     ``show_hidden`` mirrors the panes' hidden-files toggle (issue #258): when
     False, dot-entries are left out of the candidates — *unless* the typed token
@@ -146,6 +150,12 @@ class FilepathCompleter:
             return True
         relative = not (os.path.isabs(text_to_cursor) or text_to_cursor.startswith("~"))
         return relative and path_schemes.is_uri(self.base_directory)
+
+    @staticmethod
+    def _local_split(token: str) -> int:
+        """Where a local token's directory part ends: its last ``os.sep`` or
+        ``os.altsep`` (``/`` on Windows), whichever is later."""
+        return max(token.rfind(os.sep), token.rfind(os.altsep) if os.altsep else -1)
 
     @staticmethod
     def _remote_split(token: str) -> int:
@@ -206,12 +216,14 @@ class FilepathCompleter:
         # apply unconditionally.
         expanded = os.path.expanduser(text_to_cursor)
 
-        last_sep_pos = expanded.rfind(os.sep)
+        last_sep_pos = self._local_split(expanded)
         if last_sep_pos == -1:
             # No separator: complete within the base directory.
             directory = self.base_directory
             prefix = expanded
+            separator = os.sep
         else:
+            separator = expanded[last_sep_pos]
             directory = expanded[: last_sep_pos + 1]
             prefix = expanded[last_sep_pos + 1:]
             if not os.path.isabs(directory):
@@ -240,7 +252,7 @@ class FilepathCompleter:
                 is_directory = attrs["is_dir"]
                 if self.directories_only and not is_directory:
                     continue
-                candidates.append(entry + os.sep if is_directory else entry)
+                candidates.append(entry + separator if is_directory else entry)
         except (PermissionError, FileNotFoundError, NotADirectoryError, OSError) as exc:
             # Expected while typing a path that doesn't exist yet, or on a virtual
             # (non-local) path os can't list; report nothing rather than failing.
@@ -255,7 +267,7 @@ class FilepathCompleter:
         # when it inserts a completion.
         if self._is_remote(text[:cursor_pos]):
             return self._remote_split(text[:cursor_pos]) + 1
-        last_sep_pos = text[:cursor_pos].rfind(os.sep)
+        last_sep_pos = self._local_split(text[:cursor_pos])
         return last_sep_pos + 1 if last_sep_pos != -1 else 0
 
 

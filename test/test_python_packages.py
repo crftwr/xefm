@@ -101,7 +101,8 @@ class CheckTest(_Fixture):
         self.assertIn("XeFM's own packages", status.reason)
 
     def test_another_platform_is_not_loaded(self):
-        self.synced("pillow-heif\n", platform="cpython-314-win32-amd64")
+        # No real tag: "cpython-314-win32-amd64" is this one on x64 Windows (#794).
+        self.synced("pillow-heif\n", platform="cpython-0-elsewhere")
         status = pp.check(self.layout, HOST)
         self.assertEqual((status.state, status.loaded), (pp.FOREIGN, False))
 
