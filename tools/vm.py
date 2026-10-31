@@ -52,9 +52,10 @@ def _venv(guest, stage) -> str:
 
 def _follow(log: pathlib.Path, done: pathlib.Path, patience: float) -> int:
     """Print ``log`` as it grows until ``done`` holds an exit code."""
-    position, deadline = 0, time.monotonic() + patience
+    position, deadline, finished_at = 0, time.monotonic() + patience, None
     while True:
         finished = done.exists()
+        chunk = ""
         if log.exists():
             with log.open("r", encoding="utf-8", errors="replace") as f:
                 f.seek(position)
@@ -64,6 +65,12 @@ def _follow(log: pathlib.Path, done: pathlib.Path, patience: float) -> int:
                 sys.stdout.write(chunk)
                 sys.stdout.flush()
         if finished:
+            # Over SMB the log's last writes can show up after the exit code
+            # does: read on until it has stopped growing.
+            if chunk or (time.monotonic() - finished_at if finished_at else 0) < 3:
+                finished_at = finished_at or time.monotonic()
+                time.sleep(1)
+                continue
             return int(done.read_text(encoding="utf-8").strip() or 3)
         if time.monotonic() > deadline:
             print(f"\nvm:      no end within {patience:.0f}s", flush=True)

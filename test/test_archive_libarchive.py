@@ -385,7 +385,11 @@ def test_a_symlinked_directory_does_not_stop_the_write(tmp_path):
     root = tmp_path / "fw"
     (root / "Versions" / "A" / "bin").mkdir(parents=True)
     (root / "Versions" / "A" / "bin" / "python").write_bytes(b"x" * 100)
-    os.symlink("A", root / "Versions" / "Current")            # dir -> dir
+    try:
+        os.symlink("A", root / "Versions" / "Current")        # dir -> dir
+    except OSError as error:
+        # A standard Windows user lacks the privilege (WinError 1314, #794).
+        pytest.skip(f"cannot create a symlink here: {error}")
     os.symlink("Versions/Current/bin", root / "bin")          # the reported one
     os.symlink("Versions/A/bin/python", root / "python")      # link to a file
 

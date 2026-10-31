@@ -16,6 +16,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from xefm.state_manager import StateManager, XeFMStateManager
 
 
@@ -290,6 +292,9 @@ def test_session_management():
         print("✓ Session management works correctly")
 
 
+# 2000 committed writes: 5 s alone on x64 Python emulated on Windows Arm, and
+# past the suite's 10 s timeout under the full run's load (#794).
+@pytest.mark.timeout(60)
 def test_performance():
     """Test performance with many operations."""
     print("Testing performance...")

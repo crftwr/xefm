@@ -62,6 +62,25 @@ def test_filepath_prefix_match_and_dir_sep(tmp_path):
     assert comp.get_candidates("data", 4) == ["data.txt"]
 
 
+@pytest.mark.skipif(os.altsep is None, reason="a platform with one path separator")
+@pytest.mark.parametrize("typed, expected", [
+    ("apps\\Xe", ["XeFM\\", "Xenon\\"]),
+    ("apps/Xe", ["XeFM/", "Xenon/"]),
+    ("apps/", ["XeFM/", "Xenon/", "notes.txt"]),
+    ("apps\\", ["XeFM\\", "Xenon\\", "notes.txt"]),
+])
+def test_filepath_splits_at_either_separator(tmp_path, typed, expected):
+    """#787: on Windows a path typed with "/" completes as one typed with "\\"
+    does (Enter takes both), and a directory ends with the separator typed."""
+    apps = tmp_path / "apps"
+    for name in ("XeFM", "Xenon"):
+        (apps / name).mkdir(parents=True)
+    (apps / "notes.txt").write_text("x")
+    comp = FilepathCompleter(base_directory=str(tmp_path))
+    assert comp.get_candidates(typed, len(typed)) == expected
+    assert comp.get_completion_start_pos(typed, len(typed)) == len("apps") + 1
+
+
 def test_filepath_directories_only(tmp_path):
     _make_tree(tmp_path)
     comp = FilepathCompleter(base_directory=str(tmp_path), directories_only=True)

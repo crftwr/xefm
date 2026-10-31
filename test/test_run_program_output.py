@@ -476,7 +476,10 @@ class TestSubshellEnv(RunProgramBase):
 
     def test_cmd_exe_gets_a_prompt_it_can_render(self):
         """A cmd.exe subshell must not be handed zsh's %-code prompt"""
-        argv, kwargs = self._subshell(['cmd.exe'])
+        # XeFM builds on the user's own PROMPT, so the test runs without one (#794).
+        with patch.dict(os.environ):
+            os.environ.pop('PROMPT', None)
+            argv, kwargs = self._subshell(['cmd.exe'])
         self.assertEqual(argv, ['cmd.exe'])
         env = kwargs['env']
         self.assertEqual(env['XEFM_ACTIVE'], '1')
