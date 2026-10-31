@@ -70,6 +70,9 @@ TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "TodoWrite"]
 ALLOW = [
     "Read", "Glob", "Grep", "Write", "Edit", "TodoWrite",
     "Bash(xefm ext *)", "Bash(xefm skill *)", "Bash(xefm --version)",
+    # The skill's way to see a key or an extension work (#803); the room's
+    # `xefm` lets it through only with --keys.
+    "Bash(xefm try *)",
     "Bash(python3 -c \"import ast*)", "Bash(python -c \"import ast*)",
     "Bash(python3 -m pytest*)", "Bash(python -m pytest*)",
     "Bash(cd *)", "Bash(ls *)", "Bash(mkdir *)",
@@ -82,17 +85,26 @@ CHECKOUT_SKILLS = ("xefm-release", "puikit-release", "quality-loop")
 
 #: The room's `xefm`: the subcommands the skill may run, nothing that opens a
 #: window, with the run's home as HOME. Every call is logged, which is how
-#: "never launch XeFM" is checked.
+#: "never launch XeFM" is checked. `xefm try` runs only with `--keys` (#803):
+#: then XeFM runs in a pty and a temporary home of its own and ends with the
+#: script, while without it XeFM takes the terminal and the room's shell hangs.
 SHIM = """\
 #!/bin/sh
 printf '%s\\n' "$*" >> {log}
 case "$1" in
-  ext|skill|--version|-v)
-    HOME={home} USERPROFILE={home} PYTHONPATH={root} exec {python} -c 'import sys; sys.argv[0] = "xefm"; from xefm.app import main; main()' "$@" ;;
+  ext|skill|--version|-v) ;;
+  try)
+    case " $* " in
+      *" --keys "*|*" --keys="*) ;;
+      *)
+        echo "xefm: refused in the clean room - xefm try without --keys would open the file manager" >&2
+        exit 64 ;;
+    esac ;;
   *)
     echo "xefm: refused in the clean room - this would open the file manager" >&2
     exit 64 ;;
 esac
+HOME={home} USERPROFILE={home} PYTHONPATH={root} exec {python} -c 'import sys; sys.argv[0] = "xefm"; from xefm.app import main; main()' "$@"
 """
 
 
