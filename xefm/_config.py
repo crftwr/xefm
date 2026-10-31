@@ -729,8 +729,8 @@ class Config:
     # Values XeFM can know about each entry beyond its name, size and date --
     # a Git status, a line count, an image's dimensions. Defining one shows it
     # nowhere: LAYOUT_EXTRAS (or LAYOUTS) below puts it in a row. XeFM has a
-    # few of its own already: 'name', 'ext', 'size', 'mtime', 'tags' and
-    # 'total_size' (a folder's recursive size, counted by View > Resolve Attribute).
+    # few of its own already: 'name', 'ext', 'size' (a folder's recursive size
+    # once View > Resolve Attribute has counted it), 'mtime' and 'tags'.
     #
     # One function, read(directory, entries), computes the values on a
     # background thread: `entries` are rows of one folder, `directory` is that
@@ -792,7 +792,7 @@ class Config:
     # time. One that cannot -- it reads every file whole, it walks a tree --
     # says 'compute': 'on_request' and is computed only for the entries you
     # ask about: View > Resolve Attribute, for the selection or the entry
-    # under the cursor, one entry per call -- as total_size is.
+    # under the cursor, one entry per call -- as a folder's size is.
     #
     # A value is None until it arrives. A function that fails, or returns a
     # list of the wrong length, costs that call's values and says so once in
@@ -807,7 +807,7 @@ class Config:
     # below is the one a new tab starts with. The built-in 'default' is what
     # you see now:
     #
-    #     'columns': ['name', 'ext', 'total_size', {'attr': 'mtime', 'priority': 1}]
+    #     'columns': ['name', 'ext', 'size', {'attr': 'mtime', 'priority': 1}]
     #
     # A column is an attribute's name, or a dict:
     #
@@ -835,7 +835,7 @@ class Config:
     #
     #     LAYOUTS = {
     #         'short': {'label': 'Short time', 'columns': [
-    #             'name', 'ext', 'total_size',
+    #             'name', 'ext', 'size',
     #             {'attr': 'mtime', 'format': 'recent', 'priority': 1}]},
     #         'names': {'label': 'Names only', 'columns': ['name']},
     #     }

@@ -113,11 +113,19 @@ Each is a place a later change should not quietly undo.
 
 | Name | Kind | Value |
 |---|---|---|
-| `name`, `ext`, `size`, `mtime` | sync | off the listing's record (`dir_scan` attrs); never cached |
+| `name`, `ext`, `mtime` | sync | off the listing's record (`dir_scan` attrs); never cached |
+| `size` | on request | a file's size (sync half, never cached); a folder's `UsageScan` total |
 | `tags` | auto | `tags.read` per entry, only where `store_for(path).cheap`; fills `tags.SEEN` |
-| `total_size` | on request | a file's size (sync half); a folder's `UsageScan` total |
 
-`SORT_MODE_OF` maps the four sync names to the built-in sort modes.
+`SORT_MODE_OF` maps `name`, `ext`, `size` and `mtime` to the built-in sort
+modes. The sort dialog still offers `size` as an attribute sort, **Size with
+folder totals**, since the built-in mode orders files only.
+
+There was a separate `total_size` until 1.11.0 (#633). A layout that said
+`'size'` instead — the same for every file — counted totals it drew nowhere,
+lost the sort row and gave Resolve Attribute nothing to do, without a word.
+One attribute removes the trap; a config still naming `total_size` gets the
+unknown-attribute warning with a "now 'size'" hint (`user_api._renamed_hint`).
 
 ### `AttributeStore`
 
@@ -140,7 +148,7 @@ One per pane dict (tab), created lazily by `store_of(pane)` and kept in
   call's values (`None`), logged once per attribute per generation.
 - `request(name, paths, records, on_done)` runs an on-request computation one
   entry per call on its own thread with a cancel `Event`, set by a new
-  directory or `clear()`. `total_size` runs `UsageScan.run_sync` with it.
+  directory or `clear()`. `size` runs `UsageScan.run_sync` with it for a folder.
 
 ## Layouts and extras — `xefm/layouts.py`
 
@@ -148,7 +156,7 @@ One per pane dict (tab), created lazily by `store_of(pane)` and kept in
 priority, refresh, markers, extra)`; `Marker(attr, format, side, limit, slot)`.
 `Extra(name, label, when, markers, columns)` with `ExtraMarker(marker, on)`
 and `ExtraColumn(column, after, replace)`. `BUILTIN_DEFAULT` reproduces the old
-fixed row (`name`, `ext`, `total_size`, `mtime` priority 1);
+fixed row (`name`, `ext`, `size`, `mtime` priority 1);
 `BUILTIN_EXTRA_SPECS` holds `tags` as the spec `LAYOUT_EXTRAS` takes, so a config
 entry of the same name merges over it.
 

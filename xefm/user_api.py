@@ -314,20 +314,18 @@ class EntryInfo:
     @preview
     def attr(self, name: str):
         """The value of attribute ``name`` (``config.ATTRIBUTES``, or a built-in
-        such as ``'tags'`` or ``'total_size'``) for this entry, as far as XeFM
+        such as ``'tags'`` or ``'size'``) for this entry, as far as XeFM
         already knows it — ``None`` while it is being computed, when it was
         never asked for, or when there is none. Never computes and never waits,
         so it is as cheap in an action on the UI thread as in a sort key.
 
-        ``'name'``, ``'ext'``, ``'size'`` and ``'mtime'`` are always known."""
-        if name in ("name", "ext", "size", "mtime"):
+        ``'name'``, ``'ext'`` and ``'mtime'`` are always known, and so is a
+        file's ``'size'``; a folder's is its total once it has been counted."""
+        if name in ("name", "ext", "mtime") or (name == "size" and not self.is_dir):
             record = {"cmp_name": self.name, "is_dir": self.is_dir, "ok": True,
                       "size": self.size, "mtime": self.mtime}
             return _attributes.sync_value(name, self.path, record)
-        value = _attributes.lookup(str(self.path), name)
-        if value is None and name == "total_size" and not self.is_dir:
-            return self.size
-        return value
+        return _attributes.lookup(str(self.path), name)
 
     @property
     def mtime(self) -> float:
@@ -1574,7 +1572,8 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
             # appears once the attribute does (an extension enabled later).
             warnings.append(
                 f"LAYOUTS['{name}'] names attribute(s) nothing defines: "
-                f"{', '.join(unknown)} — those columns are left out")
+                f"{', '.join(unknown)} — those columns are left out"
+                f"{_renamed_hint(unknown)}")
         if apply:
             _layouts.register(layout)
         layout_names.add(name)
@@ -1611,7 +1610,8 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
         if unknown:
             warnings.append(
                 f"LAYOUT_EXTRAS['{name}'] names attribute(s) nothing defines: "
-                f"{', '.join(unknown)} — those are left out")
+                f"{', '.join(unknown)} — those are left out"
+                f"{_renamed_hint(unknown)}")
         if apply:
             _layouts.register_extra(extra)
         built[name] = extra
@@ -1625,6 +1625,11 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
     return LoadResult(warnings, count, hook_count, sort_count, filter_count,
                       decoder_count, scheme_count, lexer_count, menu_count,
                       scheme_overrides, attr_count, layout_count, extra_count)
+
+
+def _renamed_hint(unknown) -> str:
+    """A note for an attribute name a release has since renamed."""
+    return " ('total_size' is now 'size')" if "total_size" in unknown else ""
 
 
 def _items(value, label: str, warnings: list[str]):

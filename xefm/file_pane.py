@@ -956,7 +956,6 @@ class FilePane(Widget):
         if record is None:
             record = {"is_dir": is_dir, "ok": True}
             fallback = {"size": info.get("size_str", ""),
-                        "total_size": info.get("size_str", ""),
                         "mtime": info.get("date_str", "")}
         value_of, row_for, entry_factory = self._row_access(entry, record, store)
 

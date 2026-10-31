@@ -8,9 +8,8 @@ the user's choice, never the provider's.
 
 Three kinds, by how a value is had:
 
-- **Built-in, synchronous** — ``name``, ``ext``, ``size``, ``mtime``: read
-  straight off the record the listing already collected. Never cached, never
-  pending.
+- **Built-in, synchronous** — ``name``, ``ext``, ``mtime``: read straight
+  off the record the listing already collected. Never cached, never pending.
 - **Automatic** (``compute = 'auto'``) — computed in the background for every
   row of a listing as soon as something on screen uses the attribute (a column
   or a marker of the pane's layout). ``tags`` is one, and so is anything
@@ -18,7 +17,9 @@ Three kinds, by how a value is had:
   automatic only if a directory's worth of it comes back before anyone would
   call it a wait.
 - **On request** (``compute = 'on_request'``) — computed only when the user
-  asks, for the entries they asked about (the ``resolve_attribute`` action). ``total_size`` is one: a recursive walk per folder.
+  asks, for the entries they asked about (the ``resolve_attribute`` action).
+  ``size`` is one, half of it: a file's size is read off its record like a
+  synchronous value, a folder's is a recursive walk, on request.
 
 A provider is one function, ``read(directory, entries) -> [value, ...]``:
 ``entries`` are rows of one folder, ``directory`` is that folder, and the
@@ -146,18 +147,18 @@ def _tags_read(directory, entries):
 BUILTIN: dict[str, Attribute] = {a.name: a for a in (
     Attribute("name", "Name", "text", sync=_sync_name),
     Attribute("ext", "Extension", "text", sync=_sync_ext),
-    Attribute("size", "Size", "size", sync=_sync_size),
-    Attribute("mtime", "Modified", "time", sync=_sync_mtime),
-    Attribute("tags", "Tags", "tags", read=_tags_read, applies=_tags_apply),
     # A file's own size, a folder's recursive total once it has been counted.
     # The file half is synchronous; the folder half is the on-request part,
     # computed by the resolve_attribute action (see AttributeStore.request).
-    Attribute("total_size", "Total size", "size", compute="on_request",
+    Attribute("size", "Size", "size", compute="on_request",
               where=(LOCAL, "ssh", "s3", "archive")),
+    Attribute("mtime", "Modified", "time", sync=_sync_mtime),
+    Attribute("tags", "Tags", "tags", read=_tags_read, applies=_tags_apply),
 )}
 
 #: Names a sort can already order by without this module: these map to the
-#: built-in sort modes rather than to an attribute sort.
+#: built-in sort modes rather than to an attribute sort. ``size``'s built-in
+#: mode orders files only; its folder totals are an attribute sort.
 SORT_MODE_OF = {"name": "filename", "ext": "extension", "size": "size",
                 "mtime": "timestamp"}
 
@@ -186,13 +187,13 @@ def is_known(name: str) -> bool:
 
 
 def sync_value(name: str, path, record):
-    """A synchronous attribute's value, or the file half of ``total_size``."""
+    """A synchronous attribute's value, or the file half of ``size``."""
     attr = get(name)
     if attr is None:
         return None
     if attr.sync is not None:
         return attr.sync(path, record)
-    if name == "total_size" and not record.get("is_dir"):
+    if name == "size" and not record.get("is_dir"):
         return _sync_size(path, record)
     return None
 
@@ -356,7 +357,7 @@ class AttributeStore:
         found, value = self.value(str(path), name)
         if found:
             return value
-        if name == "total_size":
+        if name == "size":
             return sync_value(name, path, record)
         return None
 
@@ -586,7 +587,7 @@ class AttributeStore:
         return True
 
     def _compute_requested(self, attr: Attribute, path, cancel: threading.Event):
-        if attr.name == "total_size":
+        if attr.name == "size":
             record = self._records.get(str(path), {})
             if not record.get("is_dir"):
                 return _sync_size(path, record)
