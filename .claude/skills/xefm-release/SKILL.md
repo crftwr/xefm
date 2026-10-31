@@ -90,6 +90,15 @@ to the Microsoft Store rather than the GitHub Release. The Store re-signs the
 package during certification, which proceeds asynchronously (poll with
 `msstore submission status`).
 
+The bundle targets (DMG, Windows zip, MSIX) refuse a venv holding anything
+not installed from a package index — an editable PuiKit included — or below
+a requirement (#809). Before `release-macos-dmg` and the Windows targets, put
+the released versions in: `make install-puikit PUIKIT_DIR=`, `pip install
+--force-reinstall --no-deps <whatever the error names>`, `pip install -r
+requirements.txt`. Never set `XEFM_BUNDLE_ALLOW_LOCAL` for a release build;
+it is for local development builds. Restore the editable installs afterwards
+if the user develops against them.
+
 - `make tag` commits directly to `main` — sanctioned for release commits only.
 - Each target is independently re-runnable; `release-github` is idempotent,
   and the artifact uploads pass `--clobber`. The DMG/zip/sdist file targets
@@ -193,7 +202,9 @@ finished and get a yes before uploading.
    artifacts must be built from the tagged code, not from whatever `main`
    has become.
 3. `make release-windows-zip` — builds the bundle and the portable zip, and
-   attaches the zip to the GitHub Release.
+   attaches the zip to the GitHub Release. If the collector refuses the venv
+   (a local install, a version below `requirements.txt`), bring it to the
+   released versions as above and rebuild with `make windows-zip`.
 4. `make release-windows-msix` — repacks the unsigned MSIX and submits it to
    the Microsoft Store (needs `windows_app/store.env` and the configured
    `msstore` CLI; the target checks both). Certification proceeds
