@@ -13,136 +13,136 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 
 ## File list
 
-| Action | What it does | AFX style | Orthodox |
-|---|---|---|---|
-| `cursor_up` | Move the cursor up one item | `UP` | `UP` |
-| `cursor_down` | Move the cursor down one item | `DOWN` | `DOWN` |
-| `page_up` | Move the cursor up one page | `PAGE_UP` | `PAGE_UP` |
-| `page_down` | Move the cursor down one page | `PAGE_DOWN` | `PAGE_DOWN` |
-| `half_page_up` | Move the cursor up half a screen | — | — |
-| `half_page_down` | Move the cursor down half a screen | — | — |
-| `cursor_top` | Move the cursor to the first item | `Ctrl-HOME` | `HOME`, `Ctrl-HOME` |
-| `cursor_bottom` | Move the cursor to the last item | `Ctrl-END` | `END`, `Ctrl-END` |
-| `open_item` | Open the file, or enter the directory | `ENTER` | `ENTER`, `Ctrl-PAGE_DOWN` |
-| `open_with_os` | Open with the OS default application | `Ctrl-O` | `Ctrl-O` |
-| `reveal_in_os` | Reveal in the OS file manager | `Ctrl-R` | — |
-| `go_parent` | Go to the parent directory | `BACKSPACE` | `BACKSPACE`, `Ctrl-PAGE_UP` |
-| `go_root` | Go to the root of the current drive or location | `\` | `Ctrl-BACKSLASH` |
-| `switch_pane` | Switch between the left and right panes | `TAB` | `TAB` |
-| `nav_left` | Focus the left pane, or go to the parent | `LEFT` | `LEFT` |
-| `nav_right` | Focus the right pane, or go to the parent | `RIGHT` | `RIGHT` |
-| `focus_left` | Focus the left pane | — | — |
-| `focus_right` | Focus the right pane | — | — |
-| `toggle_select_down` | Toggle selection and move down | `SPACE` | `INSERT`, `SPACE` |
-| `toggle_select_up` | Toggle selection and move up | — | — |
-| `toggle_select_in_place` | Toggle selection without moving the cursor | — | — |
-| `select_all` | Select every item | `HOME` | `Ctrl-A` |
-| `unselect_all` | Clear the selection | `END` | `Ctrl-MINUS` |
-| `toggle_select_files` | Toggle selection of every file | `A` | `*` |
-| `toggle_select_items` | Toggle selection of every item | `Shift-A` | — |
-| `select_range` | Select from the nearest selected item to the cursor | `Shift-SPACE` | `Shift-SPACE` |
-| `search_next` | Go to the next match of the last incremental search | — | — |
-| `search_prev` | Go to the previous match of the last incremental search | — | — |
-| `select_by_pattern` | Select the files matching a pattern | `'` | `+` |
-| `unselect_by_pattern` | Unselect the files matching a pattern | `"` | `-` |
-| `select_same_extension` | Select every file with the cursor file's extension | — | `Alt-+` |
-| `cursor_next_selected` | Jump to the next selected item | `Ctrl-DOWN` | — |
-| `cursor_prev_selected` | Jump to the previous selected item | `Ctrl-UP` | — |
-| `copy_names` | Copy the file name(s) to the clipboard | `Ctrl-N` | — |
-| `copy_paths` | Copy the full path(s) to the clipboard | `Ctrl-P` | `Ctrl-P` |
-| `copy_files` | Copy the selection to the other pane | `C` (selection: required) | `F5` |
-| `move_files` | Move the selection to the other pane | `M` (selection: required) | `F6` |
-| `copy_files_to` | Copy the selection to a directory typed in a prompt | `Shift-C` (selection: required) | — |
-| `move_files_to` | Move the selection to a directory typed in a prompt | `Shift-M` (selection: required) | — |
-| `duplicate_files` | Duplicate the selection in place | — | `Shift-F5` |
-| `delete_files` | Move the selection to the Trash (or delete it where there is none) | `K`, `DELETE` (selection: required) | `F8`, `DELETE` |
-| `delete_permanently` | Delete the selection for good, skipping the Trash | `Shift-K`, `Shift-DELETE` (selection: required) | `Shift-F8`, `Shift-DELETE` |
-| `rename` | Rename the focused item, or batch-rename the selection | `R` | `Shift-F6`, `Ctrl-M` |
-| `rename_in_editor` | Rename the selection by editing its names in TEXT_EDITOR | `Shift-R` | — |
-| `create_file` | Create a new file | `Shift-E` | `Shift-F4` |
-| `create_directory` | Create a new directory | `M` (selection: none) | `F7` |
-| `view_file` | View the focused file in the built-in viewer | `V` | `F3` |
-| `file_details` | Show details for the focused item | `I` | `Alt-ENTER` |
-| `diff_files` | Compare two files side by side | `EQUAL` | `EQUAL` |
-| `diff_directories` | Compare two directories recursively | `Shift-EQUAL` | — |
-| `create_archive` | Create an archive from the selection | `P` (selection: required) | `Alt-F5` |
-| `extract_archive` | Extract the selected archive(s) | `U` | `Alt-F9`, `Alt-F6` |
-| `find_files` | Search for files by name | `Shift-F` | `Alt-F7` |
-| `find_in_files` | Search inside files | `Shift-G` | — |
-| `filter` | Filter the listing by a filename pattern | `;` | `Ctrl-S` |
-| `clear_filter` | Clear the filename filter | `:` | `Ctrl-F10` |
-| `sort` | Open the sort dialog | `S` | — |
-| `quick_sort_name` | Sort by name | `1` | `Ctrl-F3` |
-| `quick_sort_ext` | Sort by extension | `2` | `Ctrl-F4` |
-| `quick_sort_size` | Sort by size | `3` | `Ctrl-F6` |
-| `quick_sort_date` | Sort by modification date | `4` | `Ctrl-F5` |
-| `favorites` | Go to a favorite directory or file | `J` | `Ctrl-D` |
-| `add_favorite` | Add a favorite, or tag the selection | `B` | — |
-| `context_menu` | Open the context menu for the item under the cursor | `/`, `APPS` | `Shift-F10`, `APPS` |
-| `context_menu_dir` | Open the context menu for the current directory | `?`, `Shift-APPS` | `?`, `Shift-APPS` |
-| `jump_to_path` | Jump to a typed path | `Shift-J` | — |
-| `history` | Go to a recently visited directory | `H` | `Alt-DOWN` |
-| `go_back` | Go back to the directory shown before | `Alt-LEFT` | `Alt-LEFT` |
-| `go_forward` | Go forward again after going back | `Alt-RIGHT` | `Alt-RIGHT` |
-| `drives` | Show drives and volumes | `D` | `Alt-F1`, `Alt-F2` |
-| `connect_server` | Connect to a network server | `Shift-D` | `Ctrl-F`, `Ctrl-N` |
-| `flat_view` | Show every file below this directory as one list | `Shift-B` | `Ctrl-B` |
-| `open_list_from_clipboard` | Open the paths on the clipboard as the pane's list | — | — |
-| `open_list_from_command` | Open the paths a command prints as the pane's list | — | — |
-| `open_list_from_file` | Open the list file under the cursor as the pane's list | — | — |
-| `index_search` | Search the OS index under this folder | `Ctrl-F` | — |
-| `find_by_tag` | Find the files with a tag under this folder | — | — |
-| `clipboard_copy` | Copy files to the clipboard | `Ctrl-C`, `Y` | `Ctrl-C` |
-| `clipboard_cut` | Cut files to the clipboard | `Ctrl-X`, `Shift-Y` | `Ctrl-X` |
-| `clipboard_paste` | Paste the clipboard into this folder | `Ctrl-V`, `G` | `Ctrl-V` |
-| `clipboard_clear` | Empty the file clipboard | — | — |
-| `clipboard_show` | Show what the file clipboard holds | — | — |
-| `quick_view` | Preview the item under the cursor in the other pane | `Shift-V` | `Ctrl-Q` |
-| `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` |
-| `find_similar` | Find identical files, or similar images, videos or audio | — | — |
-| `new_tab` | Open a new tab in this pane, at the same place | `T` | `Ctrl-T` |
-| `open_in_new_tab` | Open the directory under the cursor in a new tab | `Shift-T` | `Ctrl-UP` |
-| `close_tab` | Close this pane's current tab | `Ctrl-W` | `Ctrl-W` |
-| `next_tab` | Show this pane's next tab | `Ctrl-PAGE_DOWN` | `Ctrl-TAB` |
-| `prev_tab` | Show this pane's previous tab | `Ctrl-PAGE_UP` | `Ctrl-Shift-TAB` |
-| `sync_current_to_other` | Go to the other pane's directory | `O` | — |
-| `sync_other_to_current` | Send this directory to the other pane | `Shift-O` | — |
-| `compare_selection` | Select by comparison with the other pane | `W` | `Shift-F2` |
-| `adjust_pane_left` | Make the left pane smaller | `[` | `[` |
-| `adjust_pane_right` | Make the left pane larger | `]` | `]` |
-| `reset_pane_boundary` | Reset the pane split to 50 / 50 | `-` | — |
-| `adjust_log_up` | Make the log pane larger | `{` | `{` |
-| `adjust_log_down` | Make the log pane smaller | `}` | `}` |
-| `reset_log_height` | Reset the log pane height | `_` | — |
-| `scroll_log_up` | Scroll the log up one line | `Shift-UP` | `Shift-UP` |
-| `scroll_log_down` | Scroll the log down one line | `Shift-DOWN` | `Shift-DOWN` |
-| `scroll_log_page_up` | Scroll the log up one page | `Shift-LEFT` | `Shift-LEFT` |
-| `scroll_log_page_down` | Scroll the log down one page | `Shift-RIGHT` | `Shift-RIGHT` |
-| `copy_log_selection` | Copy the log pane's selected text to the clipboard | — | — |
-| `copy_log_all` | Copy the whole log to the clipboard | — | — |
-| `toggle_hidden` | Show or hide hidden files | `.` | `.` |
-| `toggle_color_scheme` | Cycle to the next color theme | — | — |
-| `choose_layout` | Choose how the pane presents its rows | — | — |
-| `choose_extras` | Turn an extra such as Git status on or off in this tab | — | — |
-| `resolve_attribute` | Work out an attribute that takes time, such as a folder's total size | — | — |
-| `redraw` | Redraw the screen | `F5` | — |
-| `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` |
-| `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` |
-| `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` |
-| `choose_keymap` | Choose the keymap preset | — | — |
-| `programs` | Run an external program | `X` | — |
-| `subshell` | Open a subshell in this directory | `Shift-X` | — |
-| `edit_config` | Edit config.py, then reload it | — | — |
-| `reload_config` | Re-read config.py and apply it live | — | — |
-| `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — |
-| `extensions` | List the extension packages and whether they loaded | — | — |
-| `check_extension_updates` | Look for newer versions of the installed extension packages | — | — |
-| `sync_python_packages` | Install the Python packages ~/.xefm/requirements.txt lists | — | — |
-| `quit` | Quit XeFM — or close the open viewer | `Q` | `Alt-F4` |
-| `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — | — |
-| `help` | Show the key bindings for what is on screen | `F1` | `F1` |
-| `isearch` | Incremental search | `F` | — |
-| `edit_file` | Edit in the configured text editor | `E` | `F4` |
+| Action | What it does | AFX style | Orthodox | OS native | Vim style |
+|---|---|---|---|---|---|
+| `cursor_up` | Move the cursor up one item | `UP` | `UP` | `UP` | `k`, `UP` |
+| `cursor_down` | Move the cursor down one item | `DOWN` | `DOWN` | `DOWN` | `j`, `DOWN` |
+| `page_up` | Move the cursor up one page | `PAGE_UP` | `PAGE_UP` | `PAGE_UP` | `Ctrl-B`, `PAGE_UP` |
+| `page_down` | Move the cursor down one page | `PAGE_DOWN` | `PAGE_DOWN` | `PAGE_DOWN` | `Ctrl-F`, `PAGE_DOWN` |
+| `half_page_up` | Move the cursor up half a screen | — | — | — | `Ctrl-U` |
+| `half_page_down` | Move the cursor down half a screen | — | — | — | `Ctrl-D` |
+| `cursor_top` | Move the cursor to the first item | `Ctrl-HOME` | `HOME`, `Ctrl-HOME` | `HOME`, `Ctrl-HOME` | `g g`, `HOME`, `Ctrl-HOME` |
+| `cursor_bottom` | Move the cursor to the last item | `Ctrl-END` | `END`, `Ctrl-END` | `END`, `Ctrl-END` | `Shift-G`, `END`, `Ctrl-END` |
+| `open_item` | Open the file, or enter the directory | `ENTER` | `ENTER`, `Ctrl-PAGE_DOWN` | `ENTER` | `l`, `g l`, `ENTER` |
+| `open_with_os` | Open with the OS default application | `Ctrl-O` | `Ctrl-O` | `Ctrl-O` | `g x` |
+| `reveal_in_os` | Reveal in the OS file manager | `Ctrl-R` | — | — | `Ctrl-R` |
+| `go_parent` | Go to the parent directory | `BACKSPACE` | `BACKSPACE`, `Ctrl-PAGE_UP` | `BACKSPACE`, `Alt-UP` | `h`, `g h`, `BACKSPACE` |
+| `go_root` | Go to the root of the current drive or location | `\` | `Ctrl-BACKSLASH` | `\` | `\` |
+| `switch_pane` | Switch between the left and right panes | `TAB` | `TAB` | `TAB` | `TAB`, `SPACE` |
+| `nav_left` | Focus the left pane, or go to the parent | `LEFT` | `LEFT` | `LEFT` | `LEFT` |
+| `nav_right` | Focus the right pane, or go to the parent | `RIGHT` | `RIGHT` | `RIGHT` | `RIGHT` |
+| `focus_left` | Focus the left pane | — | — | — | — |
+| `focus_right` | Focus the right pane | — | — | — | — |
+| `toggle_select_down` | Toggle selection and move down | `SPACE` | `INSERT`, `SPACE` | `SPACE`, `INSERT` | `INSERT` |
+| `toggle_select_up` | Toggle selection and move up | — | — | — | — |
+| `toggle_select_in_place` | Toggle selection without moving the cursor | — | — | — | `t` |
+| `select_all` | Select every item | `HOME` | `Ctrl-A` | `Ctrl-A` | — |
+| `unselect_all` | Clear the selection | `END` | `Ctrl-MINUS` | — | `ESCAPE` |
+| `toggle_select_files` | Toggle selection of every file | `A` | `*` | — | — |
+| `toggle_select_items` | Toggle selection of every item | `Shift-A` | — | — | — |
+| `select_range` | Select from the nearest selected item to the cursor | `Shift-SPACE` | `Shift-SPACE` | `Shift-SPACE` | `v`, `Shift-SPACE` |
+| `search_next` | Go to the next match of the last incremental search | — | — | — | `n` |
+| `search_prev` | Go to the previous match of the last incremental search | — | — | — | `Shift-N` |
+| `select_by_pattern` | Select the files matching a pattern | `'` | `+` | `'` | — |
+| `unselect_by_pattern` | Unselect the files matching a pattern | `"` | `-` | `"` | `"` |
+| `select_same_extension` | Select every file with the cursor file's extension | — | `Alt-+` | — | — |
+| `cursor_next_selected` | Jump to the next selected item | `Ctrl-DOWN` | — | `Ctrl-DOWN` | `Ctrl-DOWN` |
+| `cursor_prev_selected` | Jump to the previous selected item | `Ctrl-UP` | — | `Ctrl-UP` | `Ctrl-UP` |
+| `copy_names` | Copy the file name(s) to the clipboard | `Ctrl-N` | — | `Ctrl-N` | `Ctrl-N` |
+| `copy_paths` | Copy the full path(s) to the clipboard | `Ctrl-P` | `Ctrl-P` | `Ctrl-P` | `Ctrl-P` |
+| `copy_files` | Copy the selection to the other pane | `C` (selection: required) | `F5` | `F5` | `F5` |
+| `move_files` | Move the selection to the other pane | `M` (selection: required) | `F6` | `F6` | `F6` |
+| `copy_files_to` | Copy the selection to a directory typed in a prompt | `Shift-C` (selection: required) | — | — (selection: required) | — (selection: required) |
+| `move_files_to` | Move the selection to a directory typed in a prompt | `Shift-M` (selection: required) | — | — (selection: required) | — (selection: required) |
+| `duplicate_files` | Duplicate the selection in place | — | `Shift-F5` | — | — |
+| `delete_files` | Move the selection to the Trash (or delete it where there is none) | `K`, `DELETE` (selection: required) | `F8`, `DELETE` | `DELETE`, `F8` | `d d`, `DELETE`, `F8` |
+| `delete_permanently` | Delete the selection for good, skipping the Trash | `Shift-K`, `Shift-DELETE` (selection: required) | `Shift-F8`, `Shift-DELETE` | `Shift-DELETE`, `Shift-F8` | `Shift-D Shift-D`, `Shift-DELETE`, `Shift-F8` |
+| `rename` | Rename the focused item, or batch-rename the selection | `R` | `Shift-F6`, `Ctrl-M` | `F2` | `c w` |
+| `rename_in_editor` | Rename the selection by editing its names in TEXT_EDITOR | `Shift-R` | — | — | — |
+| `create_file` | Create a new file | `Shift-E` | `Shift-F4` | — | — |
+| `create_directory` | Create a new directory | `M` (selection: none) | `F7` | `F7` | `F7` |
+| `view_file` | View the focused file in the built-in viewer | `V` | `F3` | `F3` | `e`, `F3` |
+| `file_details` | Show details for the focused item | `I` | `Alt-ENTER` | `Alt-I` | `Ctrl-G` |
+| `diff_files` | Compare two files side by side | `EQUAL` | `EQUAL` | `EQUAL` | — |
+| `diff_directories` | Compare two directories recursively | `Shift-EQUAL` | — | `Shift-EQUAL` | `Shift-EQUAL` |
+| `create_archive` | Create an archive from the selection | `P` (selection: required) | `Alt-F5` | — (selection: required) | — (selection: required) |
+| `extract_archive` | Extract the selected archive(s) | `U` | `Alt-F9`, `Alt-F6` | — | — |
+| `find_files` | Search for files by name | `Shift-F` | `Alt-F7` | `Ctrl-F` | — |
+| `find_in_files` | Search inside files | `Shift-G` | — | — | — |
+| `filter` | Filter the listing by a filename pattern | `;` | `Ctrl-S` | `;` | `=` |
+| `clear_filter` | Clear the filename filter | `:` | `Ctrl-F10` | `:` | `z r` |
+| `sort` | Open the sort dialog | `S` | — | — | `Shift-S` |
+| `quick_sort_name` | Sort by name | `1` | `Ctrl-F3` | — | — |
+| `quick_sort_ext` | Sort by extension | `2` | `Ctrl-F4` | — | — |
+| `quick_sort_size` | Sort by size | `3` | `Ctrl-F6` | — | — |
+| `quick_sort_date` | Sort by modification date | `4` | `Ctrl-F5` | — | — |
+| `favorites` | Go to a favorite directory or file | `J` | `Ctrl-D` | — | `'` |
+| `add_favorite` | Add a favorite, or tag the selection | `B` | — | — | — |
+| `context_menu` | Open the context menu for the item under the cursor | `/`, `APPS` | `Shift-F10`, `APPS` | `Shift-F10`, `APPS` | `APPS`, `Shift-F10` |
+| `context_menu_dir` | Open the context menu for the current directory | `?`, `Shift-APPS` | `?`, `Shift-APPS` | `?`, `Shift-APPS` | `?`, `Shift-APPS` |
+| `jump_to_path` | Jump to a typed path | `Shift-J` | — | `Ctrl-L`, `Alt-D` | `g p` |
+| `history` | Go to a recently visited directory | `H` | `Alt-DOWN` | `Alt-DOWN` | — |
+| `go_back` | Go back to the directory shown before | `Alt-LEFT` | `Alt-LEFT` | `Alt-LEFT` | `Ctrl-O`, `Alt-LEFT` |
+| `go_forward` | Go forward again after going back | `Alt-RIGHT` | `Alt-RIGHT` | `Alt-RIGHT` | `Alt-RIGHT` |
+| `drives` | Show drives and volumes | `D` | `Alt-F1`, `Alt-F2` | — | — |
+| `connect_server` | Connect to a network server | `Shift-D` | `Ctrl-F`, `Ctrl-N` | — | — |
+| `flat_view` | Show every file below this directory as one list | `Shift-B` | `Ctrl-B` | — | — |
+| `open_list_from_clipboard` | Open the paths on the clipboard as the pane's list | — | — | — | — |
+| `open_list_from_command` | Open the paths a command prints as the pane's list | — | — | — | — |
+| `open_list_from_file` | Open the list file under the cursor as the pane's list | — | — | — | — |
+| `index_search` | Search the OS index under this folder | `Ctrl-F` | — | — | — |
+| `find_by_tag` | Find the files with a tag under this folder | — | — | — | — |
+| `clipboard_copy` | Copy files to the clipboard | `Ctrl-C`, `Y` | `Ctrl-C` | `Ctrl-C` | `y y`, `Ctrl-C` |
+| `clipboard_cut` | Cut files to the clipboard | `Ctrl-X`, `Shift-Y` | `Ctrl-X` | `Ctrl-X` | `x`, `Ctrl-X` |
+| `clipboard_paste` | Paste the clipboard into this folder | `Ctrl-V`, `G` | `Ctrl-V` | `Ctrl-V` | `p`, `Ctrl-V` |
+| `clipboard_clear` | Empty the file clipboard | — | — | — | — |
+| `clipboard_show` | Show what the file clipboard holds | — | — | — | — |
+| `quick_view` | Preview the item under the cursor in the other pane | `Shift-V` | `Ctrl-Q` | `Alt-P` | `w` |
+| `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
+| `find_similar` | Find identical files, or similar images, videos or audio | — | — | — | — |
+| `new_tab` | Open a new tab in this pane, at the same place | `T` | `Ctrl-T` | `Ctrl-T` | — |
+| `open_in_new_tab` | Open the directory under the cursor in a new tab | `Shift-T` | `Ctrl-UP` | — | — |
+| `close_tab` | Close this pane's current tab | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` |
+| `next_tab` | Show this pane's next tab | `Ctrl-PAGE_DOWN` | `Ctrl-TAB` | `Ctrl-PAGE_DOWN` | `Ctrl-PAGE_DOWN` |
+| `prev_tab` | Show this pane's previous tab | `Ctrl-PAGE_UP` | `Ctrl-Shift-TAB` | `Ctrl-PAGE_UP` | `Ctrl-PAGE_UP` |
+| `sync_current_to_other` | Go to the other pane's directory | `O` | — | — | — |
+| `sync_other_to_current` | Send this directory to the other pane | `Shift-O` | — | — | — |
+| `compare_selection` | Select by comparison with the other pane | `W` | `Shift-F2` | — | — |
+| `adjust_pane_left` | Make the left pane smaller | `[` | `[` | `[` | `[` |
+| `adjust_pane_right` | Make the left pane larger | `]` | `]` | `]` | `]` |
+| `reset_pane_boundary` | Reset the pane split to 50 / 50 | `-` | — | `-` | `-` |
+| `adjust_log_up` | Make the log pane larger | `{` | `{` | `{` | `{` |
+| `adjust_log_down` | Make the log pane smaller | `}` | `}` | `}` | `}` |
+| `reset_log_height` | Reset the log pane height | `_` | — | `_` | `_` |
+| `scroll_log_up` | Scroll the log up one line | `Shift-UP` | `Shift-UP` | `Shift-UP` | `Shift-UP` |
+| `scroll_log_down` | Scroll the log down one line | `Shift-DOWN` | `Shift-DOWN` | `Shift-DOWN` | `Shift-DOWN` |
+| `scroll_log_page_up` | Scroll the log up one page | `Shift-LEFT` | `Shift-LEFT` | `Shift-LEFT` | `Shift-LEFT` |
+| `scroll_log_page_down` | Scroll the log down one page | `Shift-RIGHT` | `Shift-RIGHT` | `Shift-RIGHT` | `Shift-RIGHT` |
+| `copy_log_selection` | Copy the log pane's selected text to the clipboard | — | — | — | — |
+| `copy_log_all` | Copy the whole log to the clipboard | — | — | — | — |
+| `toggle_hidden` | Show or hide hidden files | `.` | `.` | `.` | `z a` |
+| `toggle_color_scheme` | Cycle to the next color theme | — | — | — | — |
+| `choose_layout` | Choose how the pane presents its rows | — | — | — | — |
+| `choose_extras` | Turn an extra such as Git status on or off in this tab | — | — | — | — |
+| `resolve_attribute` | Work out an attribute that takes time, such as a folder's total size | — | — | — | — |
+| `redraw` | Redraw the screen | `F5` | — | — | — |
+| `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
+| `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` | `Ctrl-K` | `:`, `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — | — | — | — |
+| `programs` | Run an external program | `X` | — | — | — |
+| `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
+| `edit_config` | Edit config.py, then reload it | — | — | — | — |
+| `reload_config` | Re-read config.py and apply it live | — | — | — | — |
+| `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
+| `extensions` | List the extension packages and whether they loaded | — | — | — | — |
+| `check_extension_updates` | Look for newer versions of the installed extension packages | — | — | — | — |
+| `sync_python_packages` | Install the Python packages ~/.xefm/requirements.txt lists | — | — | — | — |
+| `quit` | Quit XeFM — or close the open viewer | `Q` | `Alt-F4` | `Ctrl-Q` | `Shift-Z Shift-Z`, `Shift-Z Shift-Q` |
+| `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — | — | — | — |
+| `help` | Show the key bindings for what is on screen | `F1` | `F1` | `F1` | `F1` |
+| `isearch` | Incremental search | `F` | — | — | `/` |
+| `edit_file` | Edit in the configured text editor | `E` | `F4` | `F4` | `F4` |
 
 ### Desktop app additions
 
@@ -152,21 +152,52 @@ send them). These replace the row above in that app:
 **macOS desktop app:**
 
 - `clipboard_copy` (AFX style): `Command-C`, `Ctrl-C`, `Y`
+- `clipboard_copy` (OS native): `Command-C`, `Ctrl-C`
 - `clipboard_cut` (AFX style): `Command-X`, `Ctrl-X`, `Shift-Y`
+- `clipboard_cut` (OS native): `Command-X`, `Ctrl-X`
 - `clipboard_paste` (AFX style): `Command-V`, `Ctrl-V`, `G`
+- `clipboard_paste` (OS native): `Command-V`, `Ctrl-V`
+- `close_tab` (OS native): `Command-W`, `Ctrl-W`
+- `command_palette` (OS native): `Command-Shift-P`, `Ctrl-K`
+- `copy_paths` (OS native): `Command-Alt-C`, `Ctrl-P`
+- `create_directory` (OS native): `Command-Shift-N`, `F7`
+- `delete_files` (OS native): `Command-BACKSPACE`, `DELETE`, `F8`
+- `delete_permanently` (OS native): `Command-Alt-BACKSPACE`, `Shift-DELETE`, `Shift-F8`
+- `file_details` (OS native): `Command-I`, `Alt-I`
+- `find_files` (OS native): `Command-F`, `Ctrl-F`
 - `go_back` (AFX style): `Command-LEFT_BRACKET`, `Alt-LEFT`
+- `go_back` (OS native): `Command-LEFT_BRACKET`, `Alt-LEFT`
 - `go_forward` (AFX style): `Command-RIGHT_BRACKET`, `Alt-RIGHT`
+- `go_forward` (OS native): `Command-RIGHT_BRACKET`, `Alt-RIGHT`
+- `go_parent` (OS native): `Command-UP`, `BACKSPACE`, `Alt-UP`
+- `jump_to_path` (OS native): `Command-Shift-G`, `Ctrl-L`
+- `new_tab` (OS native): `Command-T`, `Ctrl-T`
+- `open_item` (OS native): `ENTER`, `Command-DOWN`
 - `open_with_os` (AFX style): `Command-ENTER`, `Ctrl-O`
+- `open_with_os` (OS native): `Command-ENTER`, `Ctrl-O`
 - `open_with_os` (Orthodox): `Command-ENTER`, `Ctrl-O`
+- `quick_view` (OS native): `SPACE`, `Alt-P`
 - `quit_app` (AFX style): `Command-Q`
+- `quit_app` (OS native): `Command-Q`
 - `quit_app` (Orthodox): `Command-Q`
+- `quit_app` (Vim style): `Command-Q`
+- `select_all` (OS native): `Command-A`, `Ctrl-A`
+- `toggle_hidden` (OS native): `Command-Shift-.`, `.`
+- `toggle_select_down` (OS native): `Ctrl-SPACE`, `INSERT`
 
 **Windows desktop app:**
 
+- `command_palette` (OS native): `Ctrl-Shift-P`, `Ctrl-K`
+- `copy_paths` (OS native): `Ctrl-Shift-C`, `Ctrl-P`
+- `create_directory` (OS native): `Ctrl-Shift-N`, `F7`
+- `file_details` (OS native): `Alt-ENTER`, `Alt-I`
 - `open_with_os` (AFX style): `Ctrl-ENTER`, `Ctrl-O`
+- `open_with_os` (OS native): `Ctrl-ENTER`, `Ctrl-O`
 - `open_with_os` (Orthodox): `Ctrl-ENTER`, `Ctrl-O`
 - `quit_app` (AFX style): `Alt-F4`
+- `quit_app` (OS native): `Alt-F4`
 - `quit_app` (Orthodox): `Alt-F4`
+- `quit_app` (Vim style): `Alt-F4`
 
 ## Inside viewers and dialogs
 

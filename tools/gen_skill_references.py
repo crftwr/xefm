@@ -29,7 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 REFERENCES = ROOT / "xefm" / "skills" / "xefm" / "references"
 TEMPLATE = ROOT / "xefm" / "_config.py"
 
-PRESETS = (("afx", "AFX style"), ("orthodox", "Orthodox"))
+PRESETS = (("afx", "AFX style"), ("orthodox", "Orthodox"), ("native", "OS native"),
+           ("vim", "Vim style"))
 DESKTOPS = (("darwin", "macOS desktop app"), ("win32", "Windows desktop app"))
 
 

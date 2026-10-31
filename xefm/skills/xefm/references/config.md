@@ -96,11 +96,26 @@ KEY_BINDINGS = {
 }
 ```
 
-- Keys: a character (`'Q'`, `'?'` — a capital letter is *not* Shift), a name
-  (`'ENTER'`, `'ESCAPE'`, `'TAB'`, `'SPACE'`, `'UP'`, `'PAGE_DOWN'`, `'F1'`…`'F12'`,
-  `'DELETE'`, `'BACKSPACE'`), or a chord with `Shift-`, `Ctrl-`, `Alt-`,
-  `Cmd-` (macOS): `'Ctrl-T'`, `'Shift-F'`, `'Cmd-ENTER'`. A name XeFM does not
-  know never fires and is only reported in XeFM's log.
+- Keys: a character (`'Q'`, `'?'` — a capital letter is *not* Shift), a name,
+  or a chord of modifiers and a key: `'Ctrl-T'`, `'Shift-F'`, `'Cmd-ENTER'`.
+  Names and modifiers are case-insensitive. **These are all the names**; a
+  name XeFM does not know never fires and is only reported in XeFM's log:
+  - `'UP'` `'DOWN'` `'LEFT'` `'RIGHT'` `'HOME'` `'END'` `'PAGE_UP'` (`'PAGEUP'`)
+    `'PAGE_DOWN'` (`'PAGEDOWN'`)
+  - `'ENTER'` (`'RETURN'`) `'ESCAPE'` (`'ESC'`) `'TAB'` `'BACKSPACE'`
+    `'DELETE'` (`'DEL'`) `'INSERT'` `'SPACE'`, `'F1'`…`'F12'`
+  - `'APPS'` — the PC keyboard's Menu key; `'ALT'` alone — a bare Alt tap
+    (Windows terminal only)
+  - punctuation, by its glyph or by name: `'MINUS'` `'EQUAL'` (`'EQUALS'`)
+    `'LEFT_BRACKET'` `'RIGHT_BRACKET'` `'BACKSLASH'` `'SEMICOLON'` `'QUOTE'`
+    (`'APOSTROPHE'`) `'COMMA'` `'PERIOD'` (`'DOT'`) `'SLASH'` `'GRAVE'`
+    (`'BACKTICK'`, `'BACKQUOTE'`). `Shift-` on one is the character it makes
+    on a US layout (`'Shift-EQUAL'` is `'+'`).
+- Modifiers, each spelling the same binding: `Shift`; `Ctrl` or `Control`;
+  `Alt` or `Option`; `Cmd` or `Command` (macOS). `'Cmd-ENTER'` and
+  `'Command-ENTER'` are one key, so match the spelling the user's file
+  already uses. Order does not matter (`'Cmd-Shift-X'` = `'Shift-Cmd-X'`).
+  A sequence is keys separated by spaces: `'g g'`.
 - `'selection'`: `'any'` (default), `'required'` (only with files selected),
   `'none'` (only without).
 - **Action names are in `references/actions.md`**, with each preset's
@@ -138,7 +153,13 @@ KEY_BINDINGS = {
   - `Shift-<character>` (`Shift-SPACE`), `Ctrl-ENTER`, `Alt-ENTER`: arrive as
     the plain key, or not at all.
   - Function keys and modified *named* keys (`F2`, `Ctrl-UP`, `Shift-DOWN`)
-    work everywhere.
+    reach XeFM from every backend — but the OS or the terminal can take one
+    first. On a Mac keyboard the F-row sends brightness, volume and the like
+    unless Fn is held, or **System Settings ▸ Keyboard ▸ Keyboard Shortcuts… ▸
+    Function Keys ▸ Use F1, F2, etc. keys as standard function keys** is on; macOS itself uses some (F11 shows the
+    desktop); a terminal may keep one for itself (Windows Terminal: F11 for
+    full screen). When you bind a function key, tell the user which of these
+    may apply on their machine.
 
   If the user may use the terminal version, choose such a key — or give the
   action a terminal-safe key alongside the desktop chord — and say why.
