@@ -62,7 +62,7 @@ MONO_FONT_NAME = None  # monospaced face for the aligned grid (None = bundled de
 FONT_SIZE      = 12    # point size applied to BOTH faces (8-72)
 ```
 
-`MONO_FONT_NAME` には等幅フォントを指定する必要があります。画面のグリッドは、このフォントのグリフの大きさから決まります。デスクトップモードでは、`Cmd-+`／`Cmd--` で `FONT_SIZE` をその場で変更することもできます。
+`MONO_FONT_NAME` には等幅フォントを指定する必要があります。画面のグリッドの列幅は、このフォントから決まります。行の高さは 2 つのフォントのどちらも収まる高さになり、どちらのフォントの文字も同じベースラインに並ぶので、どの組み合わせでも行の中で揃います。`UI_FONT_NAME` のフォントが等幅フォントより背が高いと、行が高くなります。デスクトップモードでは、`Cmd-+`／`Cmd--` で `FONT_SIZE` をその場で変更することもできます。
 
 ### ターミナルのフォントが全角幅で描く記号（上級者向け）
 

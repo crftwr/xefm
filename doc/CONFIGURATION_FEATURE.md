@@ -81,8 +81,10 @@ MONO_FONT_NAME = None  # monospaced face for the aligned grid (None = bundled de
 FONT_SIZE      = 12    # point size applied to BOTH faces (8-72)
 ```
 
-`MONO_FONT_NAME` must be a monospaced font; the on-screen grid is derived from its
-glyph box. In desktop mode you can also change `FONT_SIZE` live with `Cmd-+` /
+`MONO_FONT_NAME` must be a monospaced font; the on-screen grid takes its column
+width from it. A row is tall enough for both faces, and text in either face sits on
+the same baseline, so any pair lines up; a `UI_FONT_NAME` taller than the
+monospaced face makes rows taller. In desktop mode you can also change `FONT_SIZE` live with `Cmd-+` /
 `Cmd--`.
 
 ### Symbols your terminal font draws full-width (advanced)

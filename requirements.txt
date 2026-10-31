@@ -24,7 +24,14 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.16.1 is the floor, and a soft one: in the log pane a click or drag to the
+# 1.17.0 is the floor, and a soft one: with a named UI_FONT_NAME / MONO_FONT_NAME
+# pair the two faces did not line up -- a file name sat above its size and date,
+# bar text crowded the top of its bar, a taller UI face overflowed its row -- and
+# on Windows a name holding a glyph the font lacks (a fallback such as U+29F8 or
+# a flag) dropped below its neighbours. PuiKit now gives the two default faces
+# one line box and keeps a run's baseline through fallback (#788, puikit#181,
+# puikit#183). An older PuiKit runs, with those misalignments.
+# 1.16.1 was the previous floor, and a soft one: in the log pane a click or drag to the
 # right of a decomposed voiced kana (how macOS file names often arrive) or an
 # emoji with its selector raised in PuiKit's hit test, so the text could not
 # be selected (#783, puikit#180). An older PuiKit runs, with that bug.
@@ -202,7 +209,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.16.1
+puikit>=1.17.0
 pygments
 boto3
 watchdog
