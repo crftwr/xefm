@@ -278,11 +278,20 @@ class Outcome:
         return self.after != self.before
 
 
+def _cli_call(call: str) -> bool:
+    """Whether an `xefm` call ran the CLI rather than the app: `ext`, `skill`,
+    `--version`, or `try` with a script (#803), which runs XeFM in a pty and a
+    temporary home of its own and ends with the script."""
+    words = call.split()
+    if words[:1] == ["try"]:
+        return any(w == "--keys" or w.startswith("--keys=") for w in words)
+    return words[:1] in (["ext"], ["skill"], ["--version"], ["-v"])
+
+
 def common_failures(o: Outcome, kind: str) -> list[str]:
     """What every run must get right, whatever it was asked."""
     failures = []
-    launched = [c for c in o.xefm_calls if c.split()[:1] not in (["ext"], ["skill"],
-                                                                 ["--version"], ["-v"])]
+    launched = [c for c in o.xefm_calls if not _cli_call(c)]
     if launched:
         failures.append(f"tried to launch XeFM itself: {launched}")
     if o.after is None:

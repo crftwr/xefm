@@ -102,6 +102,14 @@ def test_launching_xefm_fails():
     assert any("launch XeFM" in f for f in outcome.common_failures(o, "config"))
 
 
+def test_a_scripted_try_is_not_a_launch_and_an_interactive_one_is():
+    scripted = ["try --config /h/.xefm/config.py --keys steps.json", "try --keys=s.json"]
+    o = outcome.Outcome(FIXTURE, FIXTURE, xefm_calls=scripted)
+    assert outcome.common_failures(o, "config") == []
+    o = outcome.Outcome(FIXTURE, FIXTURE, xefm_calls=["try --config /h/.xefm/config.py"])
+    assert any("launch XeFM" in f for f in outcome.common_failures(o, "config"))
+
+
 def test_the_bare_fixture_has_no_template_text_but_the_same_edits():
     bare = outcome.fixture_config("bare")
     loaded = outcome.inspect_config(bare)
@@ -262,6 +270,7 @@ def test_bash_is_narrowed_and_the_room_reaches_only_the_run_s_home():
         assert "Bash" in session.tools
         assert "Bash" not in session.allow and "Bash(*)" not in session.allow
         assert "Bash(xefm ext *)" in session.allow
+        assert "Bash(xefm try *)" in session.allow
         assert session.add_dirs == [product.home.xefm]
         if os.name != "nt":  # Windows keeps its temp directory in the profile
             assert pathlib.Path.home() not in product.home.root.parents
@@ -297,11 +306,15 @@ def test_the_room_s_xefm_runs_the_cli_in_the_run_s_home_and_refuses_the_app():
         shim = str(home.bin / "xefm")
         refused = subprocess.run([shim, "--backend", "gui"], capture_output=True, text=True)
         assert refused.returncode == 64 and "refused" in refused.stderr
+        # Without a script, try would hand the room's terminal to XeFM.
+        refused = subprocess.run([shim, "try", "--keymap", "afx"], capture_output=True,
+                                 text=True, timeout=10)
+        assert refused.returncode == 64 and "--keys" in refused.stderr
         listed = subprocess.run([shim, "ext", "list"], capture_output=True, text=True,
                                 timeout=120)
         assert listed.returncode == 0, listed.stderr
         calls = (home.calls / "xefm-calls.log").read_text().splitlines()
-        assert calls == ["--backend gui", "ext list"]
+        assert calls == ["--backend gui", "try --keymap afx", "ext list"]
     finally:
         home.remove()
 

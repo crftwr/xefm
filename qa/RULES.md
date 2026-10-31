@@ -17,6 +17,9 @@ which you may not read.
 - The `xefm ext …`, `xefm skill …` and `xefm --version` commands, and Python
   only as far as the skill tells you to run it (checking a config edit,
   running an extension's own tests).
+- `xefm try` **with `--keys`**, to see XeFM run a script of keys: it runs in a
+  temporary home of its own and ends with the script. Keep its `--screens`
+  and the script in this directory.
 - Writing an extension package in **this directory**, and installing it with
   `xefm ext install`.
 
@@ -50,7 +53,8 @@ when all it does is read.
 - Anything in `{xefm}` other than `config.py` and what you install there
   yourself. Other extensions in `{xefm}/extensions/` were written by people
   who had the source.
-- Starting XeFM itself (`xefm` with no subcommand, `python -m xefm`, the app).
+- Starting XeFM itself (`xefm` with no subcommand, `xefm try` without
+  `--keys`, `python -m xefm`, the app).
 - Asking the user. They know the answer, which is exactly why asking
   destroys the measurement. The skill may tell you to ask — for a value only
   they know, for a choice it cannot make — and you cannot. Write down what you
