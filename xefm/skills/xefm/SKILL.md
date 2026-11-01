@@ -38,17 +38,17 @@ the XeFM the user runs (`XeFM X.Y.Z`); if it is not, skip this check.
 ## Ground rules
 
 - **Never launch XeFM.** `xefm`, `python -m xefm` and the app itself open an
-  interactive file manager that blocks until a person quits it. `xefm ext …`
-  and `xefm skill` are safe: they never open a window. The one exception is
-  `xefm try --keys steps.json`, which runs XeFM in a temporary home and a
-  pseudo-terminal and exits when the script ends (`references/try.md`);
-  without `--keys` it blocks like `xefm`.
+  interactive file manager that blocks until a person quits it. `xefm ext …`,
+  `xefm keys` and `xefm skill` are safe: they never open a window. The one
+  exception is `xefm try --keys steps.json`, which runs XeFM in a temporary
+  home and a pseudo-terminal and exits when the script ends
+  (`references/try.md`); without `--keys` it blocks like `xefm`.
 - **XeFM applies a change when the user asks it to.** Finish with: run
   **Tools ▸ Reload Configuration** in XeFM, or restart it. Say which of the two
   the change needs (the config reference lists what only a restart applies).
 - `xefm` may not be on PATH (`xefm --version` tells). Editing `config.py`
-  never needs it; the `xefm ext …` commands do. If it is missing, tell the user
-  rather than searching the disk for an XeFM to run.
+  never needs it; the `xefm ext …` commands and `xefm keys` do. If it is
+  missing, tell the user rather than searching the disk for an XeFM to run.
 
 ## Which reference to read
 

@@ -78,8 +78,8 @@ In the `--screens` folder:
 A recording plays with `asciinema play demo.cast`, or becomes a GIF with
 [agg](https://github.com/asciinema/agg): `agg demo.cast demo.gif`.
 
-Scripts need an extra package, `pip install 'quality-loop[tui]'`, and do not
-run on Windows yet. Trying XeFM by hand works everywhere.
+Scripts need an extra package, `pip install 'quality-loop[tui]'`. They run on
+macOS, Linux and Windows, like trying XeFM by hand.
 
 ### Things to know
 

@@ -99,7 +99,8 @@ KEY_BINDINGS = {
 - Keys: a character (`'Q'`, `'?'` — a capital letter is *not* Shift), a name,
   or a chord of modifiers and a key: `'Ctrl-T'`, `'Shift-F'`, `'Cmd-ENTER'`.
   Names and modifiers are case-insensitive. **These are all the names**; a
-  name XeFM does not know never fires and is only reported in XeFM's log:
+  name XeFM does not know never fires and is only reported in XeFM's log —
+  `xefm keys` (§4) reports it before that:
   - `'UP'` `'DOWN'` `'LEFT'` `'RIGHT'` `'HOME'` `'END'` `'PAGE_UP'` (`'PAGEUP'`)
     `'PAGE_DOWN'` (`'PAGEDOWN'`)
   - `'ENTER'` (`'RETURN'`) `'ESCAPE'` (`'ESC'`) `'TAB'` `'BACKSPACE'`
@@ -324,7 +325,7 @@ invent a name — an attribute XeFM does not know is silently ignored.
 
 ## 4. Checking an edit
 
-There is no `xefm config check`. What you can check:
+What you can check:
 
 1. **It parses.** With any Python 3 (use the full path on Windows):
 
@@ -334,12 +335,36 @@ There is no `xefm config check`. What you can check:
 
    This proves the syntax only. The file imports from `xefm`, so it cannot be
    run outside XeFM.
-2. **By reading it back:** `class Config:` is still there, the attribute you
+2. **What XeFM makes of it: `xefm keys`.** It loads `config.py` and the
+   installed extensions the way XeFM does — without starting it, on every OS —
+   lays the keymap preset over them, and prints which key runs which action in
+   each context. Give it the key or the action you bound:
+
+   ```bash
+   xefm keys F12
+   ```
+
+   ```text
+   config:  /Users/me/.xefm/config.py
+   keymap:  afx (chosen in XeFM), tui
+
+   [filer]
+     F12  reload_config
+   ```
+
+   An `error:` line means a binding that can never fire — a key name XeFM
+   does not know, an action no context has, a malformed entry — or a
+   `config.py` that does not load; the exit status is then 1. The `warning:`
+   lines are the `Config warning`s XeFM would log. It uses the preset the user
+   chose; `--keymap NAME` shows another, `--backend gui` the desktop app's keys
+   (the OS native preset differs there). A key listed with
+   `same key as …` is shared; most surfaces run the first one listed.
+3. **By reading it back:** `class Config:` is still there, the attribute you
    changed appears once, its name matches `references/config-template.md`
    exactly, and the value has the shape shown there (a list where it wants a
    list, a dict entry with the keys it wants).
 
-3. **By running it**, where `xefm try` works (`references/try.md`): XeFM
+4. **By running it** with `xefm try` (`references/try.md`): XeFM
    loads the file in a temporary home and follows a script, for example
    pressing the key you bound:
 

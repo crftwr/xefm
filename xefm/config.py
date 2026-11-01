@@ -84,6 +84,80 @@ _SHIFT_SYMBOL = {
 _KEY_ALIASES = {"page_up": "pageup", "page_down": "pagedown"}
 
 
+def _punct_binding(glyph: str, mods: set) -> tuple:
+    """Build a char-mode binding for a punctuation/digit glyph, folding a
+    Shift modifier into the produced (shifted) glyph so the identity is the
+    character the key actually emits."""
+    mods = set(mods)
+    if "shift" in mods:
+        glyph = _SHIFT_SYMBOL.get(glyph, glyph)
+        mods.discard("shift")
+    return (glyph, frozenset(mods), "char")
+
+
+def _parse_key(key_expr: str, problems: list) -> tuple:
+    """:meth:`KeyBindings._parse_key_expression`, with what it does not know
+    appended to ``problems`` as ``(kind, part, key_expr)`` — ``kind`` being
+    ``"modifier"`` or ``"key"`` — instead of logged — so :func:`key_problem` judges a key exactly
+    as a binding is resolved."""
+    parts = key_expr.split()
+    if len(parts) > 1:
+        return (tuple(_parse_key(part, problems) for part in parts),
+                frozenset(), "seq")
+    # Single-character token: letter -> key mode (lowercased); anything else
+    # (digit or punctuation) -> char mode on the produced glyph.
+    if len(key_expr) == 1:
+        if key_expr.isalpha():
+            return (key_expr.lower(), frozenset(), "key")
+        return (key_expr, frozenset(), "char")
+
+    # Modifier-prefixed token: split into modifier parts + the final key.
+    parts = key_expr.split('-')
+    key_part = parts[-1]
+    mods = set()
+    for part in parts[:-1]:
+        name = _MODIFIER_ALIASES.get(part.upper())
+        if name:
+            mods.add(name)
+        else:
+            problems.append(("modifier", part, key_expr))
+
+    upper = key_part.upper()
+    if upper in _NAMED_KEYS:
+        return (_NAMED_KEYS[upper], frozenset(mods), "key")
+    if upper in _PUNCT_NAMES:
+        return _punct_binding(_PUNCT_NAMES[upper], mods)
+    if len(key_part) == 1 and key_part.isalpha():
+        return (key_part.lower(), frozenset(mods), "key")
+    if len(key_part) == 1:
+        # Digit or literal punctuation carrying a modifier.
+        return _punct_binding(key_part, mods)
+
+    problems.append(("key", key_part, key_expr))
+    return (key_part.lower(), frozenset(mods), "key")
+
+
+def key_problem(key_expr) -> str | None:
+    """Why XeFM would not understand ``key_expr`` as a ``KEY_BINDINGS`` key —
+    an unknown modifier or key name, which the app only logs and never fires —
+    or None when it would."""
+    if not isinstance(key_expr, str) or not key_expr.strip():
+        return f"{key_expr!r} is not a key"
+    problems: list = []
+    _parse_key(key_expr, problems)
+    if not problems:
+        return None
+    kind, part, _expr = problems[0]
+    if not part:
+        return f"{key_expr!r}: write the minus key as MINUS"
+    if kind == "modifier":
+        return f"{key_expr!r}: unknown modifier '{part}'"
+    if len(key_expr.split()) > 1:
+        return (f"{key_expr!r}: unknown key '{part}' (a space makes a key "
+                f"sequence: one key, then the next)")
+    return f"{key_expr!r}: unknown key '{part}'"
+
+
 class KeyBindings:
     """
     Manages key bindings and provides lookup functionality.
@@ -147,52 +221,14 @@ class KeyBindings:
         (:meth:`_matches`); :meth:`sequence_lookup` is what matches it, one key
         at a time.
         """
-        parts = key_expr.split()
-        if len(parts) > 1:
-            return (tuple(self._parse_key_expression(part) for part in parts),
-                    frozenset(), "seq")
-        # Single-character token: letter -> key mode (lowercased); anything else
-        # (digit or punctuation) -> char mode on the produced glyph.
-        if len(key_expr) == 1:
-            if key_expr.isalpha():
-                return (key_expr.lower(), frozenset(), "key")
-            return (key_expr, frozenset(), "char")
-
-        # Modifier-prefixed token: split into modifier parts + the final key.
-        parts = key_expr.split('-')
-        key_part = parts[-1]
-        mods = set()
-        for part in parts[:-1]:
-            name = _MODIFIER_ALIASES.get(part.upper())
-            if name:
-                mods.add(name)
-            else:
+        problems: list = []
+        parsed = _parse_key(key_expr, problems)
+        for kind, part, expr in problems:
+            if kind == "modifier":
                 self.logger.warning(f"Unknown modifier in key expression: {part}")
-
-        upper = key_part.upper()
-        if upper in _NAMED_KEYS:
-            return (_NAMED_KEYS[upper], frozenset(mods), "key")
-        if upper in _PUNCT_NAMES:
-            return self._punct_binding(_PUNCT_NAMES[upper], mods)
-        if len(key_part) == 1 and key_part.isalpha():
-            return (key_part.lower(), frozenset(mods), "key")
-        if len(key_part) == 1:
-            # Digit or literal punctuation carrying a modifier.
-            return self._punct_binding(key_part, mods)
-
-        self.logger.warning(f"Unknown key in expression: {key_expr}")
-        return (key_part.lower(), frozenset(mods), "key")
-
-    @staticmethod
-    def _punct_binding(glyph: str, mods: set) -> tuple:
-        """Build a char-mode binding for a punctuation/digit glyph, folding a
-        Shift modifier into the produced (shifted) glyph so the identity is the
-        character the key actually emits."""
-        mods = set(mods)
-        if "shift" in mods:
-            glyph = _SHIFT_SYMBOL.get(glyph, glyph)
-            mods.discard("shift")
-        return (glyph, frozenset(mods), "char")
+            else:
+                self.logger.warning(f"Unknown key in expression: {expr}")
+        return parsed
 
     @staticmethod
     def _event_identity(event) -> tuple:
@@ -675,6 +711,7 @@ class ConfigManager:
         self.user_tools_dir = self.config_dir / 'tools'
         self.user_extensions_dir = self.config_dir / 'extensions'
         self.config = None
+        self.load_error = None
         self._key_bindings = None
         
     def ensure_config_dir(self):
@@ -716,7 +753,7 @@ class ConfigManager:
 
         return True
 
-    def prepare_user_extensions(self):
+    def prepare_user_extensions(self, create: bool = True):
         """Make ~/.xefm/extensions/ importable from config.py, and re-importable.
 
         *Appended* to sys.path, not prepended: a module named after what it
@@ -729,7 +766,8 @@ class ConfigManager:
         sys.modules, bytecode included, so reloading the config picks up an
         edited extension instead of silently running the previous one."""
         try:
-            self.user_extensions_dir.mkdir(parents=True, exist_ok=True)
+            if create:
+                self.user_extensions_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"Could not create user extensions directory {self.user_extensions_dir}: {e}")
 
@@ -787,15 +825,23 @@ class ConfigManager:
             self.logger.error(f"Error creating default config: {e}")
             return False
     
-    def load_config(self):
-        """Load configuration from file or create default if not exists"""
+    def load_config(self, create: bool = True):
+        """Load configuration from file or create default if not exists.
+
+        ``create=False`` loads without writing anything: no ``tools`` or
+        ``extensions`` directory is made and a missing ``config.py`` is not
+        written — the template stands in for it, as when it cannot be
+        written. What ``xefm keys`` reads a home with."""
         # First launch: seed ~/.xefm/tools/ before the config module executes,
         # so xefm_tool('example_tool.py') in a config resolves to the user copy.
-        self.ensure_user_tools_dir()
-        self.prepare_user_extensions()
+        if create:
+            self.ensure_user_tools_dir()
+        self.prepare_user_extensions(create=create)
         # Before config.py runs, which may import what requirements.txt brought.
         self.prepare_python_packages()
         self._config_namespace = {}
+        #: Why ``config.py`` could not be loaded (the template stands in), or None.
+        self.load_error = None
 
         # Load template config class for filling in missing fields
         template_config_class = _load_template_config()
@@ -803,10 +849,11 @@ class ConfigManager:
         # Check if config file exists
         if not self.config_file.exists():
             self.logger.info(f"Configuration file not found at: {self.config_file}")
-            if self.create_default_config():
+            if create and self.create_default_config():
                 self.logger.info("Created default configuration file")
             else:
-                self.logger.warning("Could not create default configuration file")
+                if create:
+                    self.logger.warning("Could not create default configuration file")
                 # Create empty config and fill from template
                 class EmptyConfig:
                     pass
@@ -835,6 +882,7 @@ class ConfigManager:
                 raise AttributeError("Config class not found in configuration file")
                 
         except Exception as e:
+            self.load_error = e
             self.logger.error(f"Error loading configuration: {e}")
             self.logger.info("Creating empty config and filling from template")
             # Create empty config and fill from template

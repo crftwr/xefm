@@ -59,9 +59,11 @@ ROOT = HERE.parent
 STAGED = {"puikit": "puikit", "doc-files": "doc_files", "similar-files": "similar_files"}
 
 #: What the test suite needs beyond requirements.txt: requirements-dev.txt's
-#: pytest plugins, which pytest.ini asks for by flag. Not quality-loop, which
-#: runs on the host.
-TEST_REQUIREMENTS = ["pytest", "pytest-xdist", "pytest-timeout"]
+#: pytest plugins, which pytest.ini asks for by flag, and quality-loop's key
+#: notation and pyte, without which the pseudo-terminal tests of `xefm try`
+#: skip — the ConPTY half (#801) runs nowhere but a Windows guest.
+TEST_REQUIREMENTS = ["pytest", "pytest-xdist", "pytest-timeout",
+                     "quality-loop[tui]>=0.4.1"]
 
 #: Downloads kept between runs: the libarchive zip.
 CACHE = pathlib.Path.home() / ".cache" / "xefm-qa"

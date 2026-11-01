@@ -448,21 +448,8 @@ def _accepts(args: ast.arguments, n: int) -> bool:
 
 
 def _check_key(expr) -> Optional[str]:
-    from xefm.config import _MODIFIER_ALIASES, _NAMED_KEYS, _PUNCT_NAMES
-    if not isinstance(expr, str) or not expr:
-        return f"{expr!r} is not a key"
-    if len(expr) == 1:
-        return None
-    parts = expr.split("-")
-    if parts[-1] == "" and len(parts) > 1:  # "Ctrl--": the key is a minus
-        parts = parts[:-2] + ["-"]
-    for mod in parts[:-1]:
-        if mod.upper() not in _MODIFIER_ALIASES:
-            return f"{expr!r}: unknown modifier '{mod}'"
-    key = parts[-1]
-    if len(key) == 1 or key.upper() in _NAMED_KEYS or key.upper() in _PUNCT_NAMES:
-        return None
-    return f"{expr!r}: unknown key '{key}'"
+    from xefm.config import key_problem
+    return key_problem(expr)
 
 
 def python_top_level(root: Path) -> set[str]:

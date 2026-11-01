@@ -548,10 +548,47 @@ which is what a footer overlay is for.
 ## Error handling
 
 Parsing is defensive — an unknown modifier or key token logs a warning and is
-skipped rather than crashing. A config with no `KEY_BINDINGS` gets the template's
+skipped rather than crashing. The parse itself is the module-level
+`_parse_key(key_expr, problems)`, which collects what it does not know instead
+of logging it; `_parse_key_expression` logs those, and `key_problem(expr)` turns
+the first into a sentence. `xefm keys` and `xefm ext check` both judge keys with
+`key_problem`, so neither can accept a key the app would reject (`'Ctrl--'`,
+which the app reads as an empty modifier, is one the old check let through). A config with no `KEY_BINDINGS` gets the template's
 (`xefm/_config.py`, examples only) through `_copy_missing_fields`, and
 `keymap_presets.apply` lays it over the preset in force, so the keymap is the
 preset's own.
+
+## `xefm keys` (#801)
+
+`xefm/keys_cli.py` answers "what does this key do" without the app, which is
+the only way to answer it where `xefm try --keys` cannot run, and the cheap way
+everywhere. It does what startup does, in the same order, with nothing written:
+
+1. `ConfigManager.load_config(create=False)` — no `tools/` or `extensions/`
+   made, no template copied over a missing `config.py`; a load failure is kept
+   in `load_error` instead of only being logged. `sys.dont_write_bytecode`
+   keeps `__pycache__` out of `~/.xefm`, and the log sink is a no-op: every
+   warning that matters is reported once, as a line of the report.
+2. `validate_config` (the `Config warning`s) and the extension load report.
+3. `load_user_entries`, so the user's and the extensions' actions are in the
+   registry before a binding to one is judged.
+4. Each entry of `keymap_presets.overrides(config)` — what `config.py` and the
+   extensions put in `KEY_BINDINGS` — is checked: `key_problem` for every key,
+   `keymap_presets._reach` for the name (empty means no context has it), and
+   the value's shape. `printable_text_bindings` is an error too: the field
+   takes those keys first.
+5. The preset: `--keymap`, else `KEY_PRESET`, else `keymap.preset` read from
+   `state.db` through a read-only SQLite URI, else the fallback, said as such.
+   `XEFM_BACKEND` is set first, as `xefm --backend` does, because the OS
+   native table depends on it.
+6. `keymap_presets.apply`, then per context `KeyBindings._context_entries` —
+   the table a key press walks — with each entry's written key found again
+   through `_context_binding`.
+
+Two keys on one context are listed in walk order with `same key as …`, not
+judged: most surfaces take the first match, but some ask for one action by
+name (`is_action_for_event`, the picker's `describe_list_item` on F1), where
+order does not decide.
 
 ## Testing
 
@@ -570,6 +607,8 @@ preset's own.
 - `test/test_filter_list_remove.py` — the `filter_list` context: the default
   binding, Shift-Delete vs a plain Delete in the query field, the dialog's local
   row edit, and what each owner forgets (issue #271).
+- `test/test_keys_cli.py` — `key_problem`, and `xefm keys` on a temporary
+  home: errors and the exit status, the preset it picks, and nothing written.
 - `test/test_dialog_hint_row.py` — the two bands mirroring each other on both
   backends, every modal drawing its keys in the band below its content, and the
   status bar going quiet under a modal.

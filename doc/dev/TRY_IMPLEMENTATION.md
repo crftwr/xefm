@@ -39,8 +39,30 @@ point.
   app bundle `sys.executable` is the launcher, which would open the desktop
   app.
 - **Interactive** (no `--keys`) hands the terminal to that XeFM and waits.
-- **Scripted** (`--keys`) is a small `PtyApp`: a fixed-size pty, with `pyte`
-  kept in step with every byte. Keys use quality-loop's notation
+- **Scripted** (`--keys`) is a small `PtyApp`: a fixed-size pseudo-terminal,
+  with `pyte` kept in step with every byte. The pseudo-terminal is a transport
+  of two kinds behind one interface (`read`, `write`, `stop`, `close`, and a
+  `process` with `poll`/`wait`):
+  - `_PosixTerminal` — `os.openpty`, the size set with `TIOCSWINSZ`, the app in
+    a session of its own; `stop` is SIGTERM to the group, then SIGKILL.
+  - `_ConPtyTerminal` (Windows, #801) — a pseudoconsole from
+    `CreatePseudoConsole` over two `os.pipe()`s, the app started by
+    `CreateProcessW` with the `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` attribute,
+    which `subprocess.Popen` cannot pass. The standard handles are given as
+    null with `STARTF_USESTDHANDLES`: left unset, a child of a process whose
+    output is redirected (an agent's shell) can inherit those handles and
+    write past the console. The app starts suspended, joins a
+    kill-on-close job object, then resumes, so `stop` reaches what it
+    spawned. `stop` closes the pseudoconsole first (the app gets
+    `CTRL_CLOSE_EVENT`, as when a console window closes), then terminates the
+    job after the grace period. The reader blocks in `os.read` and ends on
+    the EOF that closing the pseudoconsole gives; `ClosePseudoConsole` can
+    itself wait for that pipe to drain on older Windows, which the reader
+    thread is still doing. Every `kernel32` call has a prototype: ctypes
+    would otherwise take each handle for a C int, which truncates it on
+    64-bit Windows. Conhost turns the VT input written to it into key
+    events, so the key bytes are the same on both; PuiKit's VT backend reads
+    them with `ReadConsoleInputW` there. Keys use quality-loop's notation
   (`quality_loop.drive.keys`), so a script reads like an operator's live
   check. `PtyApp` is a copy of quality-loop's rather than a use of it, because
   the recording needs the raw bytes, and quality-loop's reader keeps them to
@@ -75,8 +97,7 @@ point.
 The script mode depends on `quality-loop[tui]` (MIT; pyte, LGPL, comes with
 it), imported only when `--keys` is given. It is not a requirement, because
 the desktop bundles would have to carry and attribute pyte for a developer
-feature. It is POSIX only: Windows has ConPTY, which neither this nor
-quality-loop drives yet.
+feature.
 
 ## The event log
 
@@ -114,7 +135,12 @@ event log keeps it.
 - the script reader, and that a bad script installs nothing;
 - the asciicast;
 - the event log;
-- the dispatch before the UI starts.
+- the dispatch before the UI starts;
+- the pseudo-terminal itself, under a line-echoing Python program instead of
+  XeFM: keys in, screen out, and `stop` ending a program that does not quit.
+  These run on every OS, so the ConPTY half runs only on Windows — `make
+  test-vm GUEST=qa-win` installs `quality-loop[tui]` in the guest for them
+  (they skip without it).
 
 `test/test_extension_skill.py` checks that every `xefm try` option the skill
 uses exists, and that the skill's example script reads. A real run (scaffold →

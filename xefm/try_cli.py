@@ -42,7 +42,7 @@ def _parser() -> argparse.ArgumentParser:
     home.add_argument("--keep-home", action="store_true",
                       help="leave the home in place and print where it is")
     script = parser.add_argument_group(
-        "scripted (needs 'quality-loop[tui]'; not on Windows yet)")
+        "scripted (needs 'quality-loop[tui]')")
     script.add_argument("--keys", metavar="SCRIPT",
                         help="a JSON list of steps to run instead of handing the "
                         "terminal over")
