@@ -297,6 +297,28 @@ class Formats(unittest.TestCase):
         self.assertEqual((cell.text, cell.color), ("Modified", "yellow"))
         self.assertEqual(self.render("enum", "letter", "M", values=values)[0].text, "M")
 
+    def test_a_duration_reads_as_a_clock(self):
+        self.assertEqual(self.render("duration", None, 187.4)[0].text, "3:07")
+        self.assertEqual(self.render("duration", "clock", 3765)[0].text, "1:02:45")
+        self.assertEqual(self.render("duration", None, None), [])
+        self.assertEqual(layouts.resolve_format(None, attributes.Attribute(
+            "d", "D", "duration")).align, "right")
+
+    def test_words_spell_a_value_out_for_file_details(self):
+        def words(kind, value, **kw):
+            return layouts.words(attributes.Attribute("x", "X", kind, **kw), value)
+        self.assertEqual(words("enum", "M", values={"M": {"label": "Modified"}}),
+                         "Modified")
+        self.assertEqual(words("enum", "Z", values={"M": {"label": "Modified"}}), "Z")
+        self.assertEqual(words("size", 2048), "2.0 KB (2,048 bytes)")
+        self.assertEqual(words("duration", 75), "1:15")
+        self.assertEqual(words("count", 12345), "12,345")
+        self.assertEqual(words("tags", [types.SimpleNamespace(name="Work"),
+                                        types.SimpleNamespace(name="Red")]), "Work, Red")
+        from datetime import datetime
+        when = datetime(2024, 3, 15, 14, 30, 22)
+        self.assertEqual(words("time", when.timestamp()), "2024-03-15 14:30:22")
+
     def test_a_user_format_may_return_text_a_cell_or_cells(self):
         attr = attributes.Attribute("x", "X", "text")
         for out, expect in (("hi", ["hi"]), (Cell("a", color="red"), ["a"]),
@@ -401,6 +423,59 @@ class Store(_Tree):
         self.assertTrue(done.wait(3))
         self.assertEqual(store.get(sub, records[str(sub)], "size"), 1000)
         self.assertEqual(EntryInfo(sub, is_dir=True).attr("size"), 1000)
+
+    def test_fill_computes_only_what_is_missing_auto_and_on_request_alike(self):
+        calls = []
+
+        def read(name):
+            def fn(directory, entries):
+                calls.append((name, [e.name for e in entries]))
+                return [f"{name}:{e.name}" for e in entries]
+            return fn
+
+        _load(ATTRIBUTES={"au": {"read": read("au")},
+                          "rq": {"read": read("rq"), "compute": "on_request"},
+                          "far": {"read": read("far"), "where": "s3"}})
+        pane = self.pane()
+        store = attributes.store_of(pane)
+        files, records = pane["files"], self.records(pane)
+        a = next(p for p in files if p.name == "a.txt")
+        store.sync(files, records, pane["path"], {"au"})
+        self.assertTrue(_wait(lambda: store.ready("au", files, records)))
+        calls.clear()
+        done = threading.Event()
+        store.fill(["au", "rq", "far", "size", "name"], [a], records,
+                   on_done=lambda cancelled: done.set())
+        self.assertTrue(done.wait(3))
+        # 'au' was already there, 'far' is not asked about a local file, and
+        # 'size' and 'name' are the dialog's own rows.
+        self.assertEqual(calls, [("rq", ["a.txt"])])
+        self.assertEqual(store.value(str(a), "rq"), (True, "rq:a.txt"))
+
+    def test_a_fill_stops_when_cancelled(self):
+        started, release = threading.Event(), threading.Event()
+        seen = []
+
+        def slow(directory, entries):
+            seen.append(entries[0].name)
+            started.set()
+            release.wait(3)
+            return [1]
+
+        _load(ATTRIBUTES={"slow": {"read": slow, "type": "count"}})
+        pane = self.pane()
+        store = attributes.store_of(pane)
+        records = self.records(pane)
+        targets = [p for p in pane["files"] if not p.is_dir()]
+        done = threading.Event()
+        cancel = store.fill(["slow"], targets, records,
+                            on_done=lambda cancelled: done.set())
+        self.assertTrue(started.wait(3))
+        cancel.set()
+        release.set()
+        self.assertTrue(done.wait(3))
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(store.value(str(targets[0]), "slow"), (False, None))
 
     def test_entry_attr_never_computes(self):
         _load(ATTRIBUTES={"n": {"read": lambda d, es: ["computed"] * len(es)}})

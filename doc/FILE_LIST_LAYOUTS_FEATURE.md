@@ -170,7 +170,7 @@ class Config:
 |---|---|
 | `read` | The function: `read(directory, entries)`, returning one value per entry in the order of `entries`. |
 | `label` | The name shown in the sort dialog. |
-| `type` | `text`, `count`, `size` (bytes), `time` (a timestamp), `enum` (one of `values`) or `tags`. It decides how the value is written and how it sorts. |
+| `type` | `text`, `count`, `size` (bytes), `time` (a timestamp), `duration` (seconds), `enum` (one of `values`) or `tags`. It decides how the value is written and how it sorts. |
 | `values` | For an `enum`: each value's meaning, and a color to show it in. The meaning is what Help lists. |
 | `where` | The storage it is asked about: `local` (the default), `archive`, `ssh`, `s3`. A call per file is cheap on a disk and a request each on S3. |
 | `compute` | `auto` (the default) or `on_request`. |
@@ -188,6 +188,10 @@ leaving the folder stops them.
 A value is empty until it arrives. A function that fails, or returns a list of
 the wrong length, costs only that call's values, and says so once in the log
 pane.
+
+**File Details** lists every attribute that applies to an item, written out
+— an `enum` by its meaning, a time in full — and works out the ones it does
+not have yet for the items it shows, on-request ones included.
 
 Your own functions — a sort key, a filter, an action — can read a value XeFM
 already has with `entry.attr('git')`. It never computes one and never waits:
@@ -231,6 +235,7 @@ typo cannot.
 | `time` | `short`, `full` — `DATE_FORMAT` picks between them by default — `iso`, `relative` (`5 min ago`), `recent` (`13:24` today, `10/21` this year, `2024` before) |
 | `enum` | `letter` (the value itself), `word` (its label from `values`) — both in its color |
 | `tags` | `dots`, `names` |
+| `duration` | `clock` (`3:07`, `1:02:45`) |
 | `count` | `number` |
 | `text` | `text` |
 

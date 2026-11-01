@@ -149,6 +149,13 @@ One per pane dict (tab), created lazily by `store_of(pane)` and kept in
 - `request(name, paths, records, on_done)` runs an on-request computation one
   entry per call on its own thread with a cancel `Event`, set by a new
   directory or `clear()`. `size` runs `UsageScan.run_sync` with it for a folder.
+- `fill(names, paths, records, on_done)` is File Details' request (#789 B):
+  every non-synchronous attribute of `names` but `size` that applies and is
+  not held yet, automatic ones included, one entry per call, under the same
+  kind of cancel `Event`. Its values land in the generation current when each
+  arrives, not the one it started in: the pane re-syncs as soon as the dialog
+  draws over it, and only a new folder or `clear()` — which cancel it — make a
+  value stale. For the same reason a store's *first* `sync` cancels nothing.
 
 ## Layouts and extras — `xefm/layouts.py`
 
@@ -207,6 +214,13 @@ come from `_attribute_sort_rows` (`mode = "attr:<name>"`).
   the pane and each tab; `_saved_extras` keeps a state for an extra the config
   no longer has. `sort_overlay` is not saved.
 - `_help_markers_section` builds the legend.
+- `file_details` adds, last in each item's table, a row per attribute that
+  applies to it (`applies_to`) and has a value, written by `layouts.words`;
+  one `Attributes | reading…` row stands for those not there yet. The rows
+  are a callable segment the dialog's tick re-renders, as the folder totals
+  are; closing the dialog sets the fill's cancel. Every applicable attribute,
+  not just the layout's (the issue's open point): the dialog is where a value
+  no column has room for gets read at all — a media extension's twenty.
 
 ## Config, extensions, API
 
@@ -226,11 +240,11 @@ come from `_attribute_sort_rows` (`mode = "attr:<name>"`).
 drawing — marks against the text, sparse extras taking no room, `limit` — the
 attribute sort, the app's per-tab state and the Help legend);
 `test/test_extensions.py` (contributions, and an extra overridden key by
-key); `test/test_tags.py`.
+key); `test/test_tags.py`; `test/test_file_details_attributes.py` (the
+dialog's rows, what it reads and when it stops).
 
 ## Not done yet
 
 - Hand checks: GUI and TUI on macOS and Windows; a real Git working tree.
 - The Git status extension in xefm-extensions.
-- File Details showing attribute values (#789 B).
 - Tree and thumbnail kinds (#638).

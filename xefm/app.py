@@ -6006,6 +6006,37 @@ class XeFMApp:
                 return "\n".join(out)
             return rows
 
+        # The attributes the entries have beyond the table's own fields — tags,
+        # an ATTRIBUTES entry, an extension's (#789). What the pane already
+        # holds shows at once; the rest is computed for these entries while the
+        # dialog is open, as their folder totals are.
+        store = attributes.store_of(pane)
+        records = {str(p): a for p, a in pane.get("_listing_entries") or ()}
+        shown = ("name", "ext", "size", "mtime")
+        attr_names = [n for n in attributes.names() if n not in shown]
+        fill = {"names": set(), "cancel": None, "done": True}
+
+        def _attr_rows(entry):
+            key = str(entry)
+            names = [n for n in attr_names if attributes.get(n).applies_to(entry)]
+            if not names:
+                return None
+            fill["names"].update(n for n in names if not store.value(key, n)[0])
+            def rows() -> str:
+                out, pending = [], False
+                for n in names:
+                    found, value = store.value(key, n)
+                    if not found:
+                        pending = True
+                    elif attributes.has_value(value):
+                        attr = attributes.get(n)
+                        out.append(f"| {_md_escape(attr.label)} | "
+                                   f"{_md_escape(layouts.words(attr, value))} |")
+                if pending and not fill["done"]:
+                    out.append("| Attributes | *reading…* |")
+                return "\n".join(out)
+            return rows
+
         def details(entry) -> list:
             out = [f"### {_md_escape(entry.name)}", ""]
             try:
@@ -6055,6 +6086,12 @@ class XeFMApp:
             m = match_meta.get(str(entry))
             if m is not None:
                 out.append(f"| Match | line {m['line']}: `{_md_escape(m['text'])}` |")
+            # Last in the table: the rows come and go as values land, and an
+            # empty line here would end the table early only where nothing
+            # follows it.
+            rows = _attr_rows(entry)
+            if rows is not None:
+                out.append(rows)
             out.append("")
             return out
 
@@ -6121,11 +6158,20 @@ class XeFMApp:
         def render() -> str:
             return "\n".join(s if isinstance(s, str) else s() for s in segments)
 
+        if fill["names"]:
+            fill["done"] = False
         source = render()
-        dialog = show_markdown(self.panel, source, title="Details",
-                               on_close=scan.cancel)
+        closed = []
 
-        if dir_roots:
+        def close() -> None:
+            closed.append(True)
+            scan.cancel()
+            if fill["cancel"] is not None:
+                fill["cancel"].set()
+
+        dialog = show_markdown(self.panel, source, title="Details", on_close=close)
+
+        if dir_roots or not fill["done"]:
             cache = {"src": source}
 
             def refresh() -> None:
@@ -6147,9 +6193,9 @@ class XeFMApp:
             deadline = [time.monotonic() + interval]
 
             def tick() -> bool:
-                if scan.cancelled:
+                if closed:
                     return False
-                if scan.done:
+                if (scan.done or not dir_roots) and fill["done"]:
                     refresh()
                     return False
                 now = time.monotonic()
@@ -6159,11 +6205,18 @@ class XeFMApp:
                 return True
 
             if self.panel.request_animation_ticks(tick):
-                scan.start()
+                if dir_roots:
+                    scan.start()
+                if not fill["done"]:
+                    fill["cancel"] = store.fill(
+                        fill["names"], targets, records,
+                        on_done=lambda cancelled: fill.update(done=True))
             else:
-                # Still backend (no timer to repaint on): drop the walk rather
-                # than leave "scanning…" up forever.
+                # Still backend (no timer to repaint on): drop the walk and
+                # the attribute reads rather than leave "scanning…" or
+                # "reading…" up forever.
                 scan.cancel()
+                fill["done"] = True
                 refresh()
         self.panel.render()
 

@@ -158,6 +158,19 @@ def _fmt_recent(value, entry):
     return str(when.year)
 
 
+def _fmt_clock(value, entry):
+    """A length of time as a clock reads it: ``3:07``, ``1:02:45``."""
+    if value is None:
+        return ""
+    try:
+        total = int(round(float(value)))
+    except (TypeError, ValueError, OverflowError):
+        return "---"
+    hours, rest = divmod(max(total, 0), 3600)
+    minutes, seconds = divmod(rest, 60)
+    return f"{hours}:{minutes:02}:{seconds:02}" if hours else f"{minutes}:{seconds:02}"
+
+
 def _enum_spec(row, value) -> dict:
     attr = row.attr
     return (attr.values.get(value) if attr is not None else None) or {}
@@ -207,6 +220,7 @@ FORMATS: dict[str, dict[str, Format]] = {
              "iso": Format(_time_formatter("%Y-%m-%d %H:%M"), 16, "right", True),
              "relative": Format(_fmt_relative, 10, "right", True, refresh=60.0),
              "recent": Format(_fmt_recent, 5, "right", True, refresh=60.0)},
+    "duration": {"clock": Format(_fmt_clock, 8, "right", True)},
     "enum": {"letter": Format(_fmt_letter, 1), "word": Format(_fmt_word, 10)},
     "tags": {"dots": Format(_fmt_dots, 3),
              "names": Format(_fmt_names, 16)},
@@ -235,7 +249,30 @@ def enum_width(attr, fmt: str) -> int:
 
 #: Value types drawn right-aligned in a fixed-advance face when the format
 #: does not say otherwise.
-NUMERIC = ("count", "size", "time")
+NUMERIC = ("count", "size", "time", "duration")
+
+
+def words(attr, value) -> str:
+    """``value`` written out for File Details (#789): an ``enum`` by its
+    label, tags by their names, a size in both units, a time in full — what
+    a column would say, without the glyphs a column is narrow enough to want."""
+    kind = attr.type if attr is not None else "text"
+    if kind == "enum":
+        spec = attr.values.get(value) or {}
+        return str(spec.get("label", value))
+    if kind == "tags":
+        return _fmt_names(value, None)
+    if kind == "size":
+        return f"{format_size(value)} ({value:,} bytes)" if isinstance(value, int) \
+            else str(value)
+    row = Row(attr=attr)
+    if kind == "time":
+        return _time_formatter("%Y-%m-%d %H:%M:%S")(value, row)
+    if kind == "duration":
+        return _fmt_clock(value, row)
+    if kind == "count":
+        return _fmt_count(value, row)
+    return _fmt_text(value, row)
 
 
 @dataclass(frozen=True)
