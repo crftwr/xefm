@@ -365,10 +365,10 @@ class AppIntegration(_Tmp):
         self.b.run_animation_ticks()
 
     def choose(self, label_part):
-        from xefm.choice_dialog import ChoiceDialog
+        from xefm.choice_dialog import ChoiceDialog, label_text
         dialog = self.top()
         self.assertIsInstance(dialog, ChoiceDialog)
-        labels = [label for _, label in dialog._rows]
+        labels = [label_text(label) for _, label in dialog._rows]
         index = next(i for i, label in enumerate(labels) if label_part in label)
         dialog._index = index
         dialog._accept()
@@ -388,7 +388,7 @@ class AppIntegration(_Tmp):
             self.assertEqual(self.store.read(a)[1].color, 6, "Red gets Finder's red")
         # Known now: B offers it as a toggle, checked, and choosing it removes it.
         self.app.add_favorite()
-        self.choose("✓ Work")
+        self.choose("✓ ● Work")
         self.assertEqual([t.name for t in self.store.read(a)], ["Red"])
 
     def test_b_on_a_selection_tags_every_item(self):
@@ -423,16 +423,6 @@ class AppIntegration(_Tmp):
         pane = self.app.active_pane()
         self.assertTrue(pane.get("virtual"))
         self.assertEqual([str(f) for f in pane["files"]], [self.deep])
-
-    def pick(self, value_or_label):
-        """Accept a row of the filter list on top: by value, or by label."""
-        from xefm.filter_list_dialog import FilterListDialog
-        dialog = self.top()
-        self.assertIsInstance(dialog, FilterListDialog)
-        dialog.filter_edit.text = ""
-        index = next(i for i, v in enumerate(dialog.filtered)
-                     if v == value_or_label or dialog.to_label(v).startswith(str(value_or_label)))
-        dialog._accept_index(index)
 
     def tag_two_files_work(self):
         a = os.path.join(self.tmp, "a.txt")
@@ -470,7 +460,7 @@ class AppIntegration(_Tmp):
              patch.object(type(self.store), "find", return_value=None):
             self.app.add_favorite()
             self.choose("Manage tags…")
-            self.pick("Work")
+            self.choose("Work")
             self.choose("Change color…")
             self.choose("Green")
             self.drain()
@@ -484,7 +474,7 @@ class AppIntegration(_Tmp):
         with patch.object(type(self.store), "find_everywhere", return_value=None), \
              patch.object(type(self.store), "find", return_value=None):
             self.app._manage_tags(self.app.active_pane()["path"])
-            self.pick("Work")
+            self.choose("Work")
             self.choose("Delete tag…")
             self.drain()
             box = self.top()
@@ -504,7 +494,7 @@ class AppIntegration(_Tmp):
         with patch.object(type(self.store), "find_everywhere", return_value=None), \
              patch.object(type(self.store), "find", return_value=None):
             self.app._manage_tags(self.app.active_pane()["path"])
-            self.pick("Work")
+            self.choose("Work")
             self.choose("Rename tag…")
             dialog = self.top()
             dialog.edit.text = "Job"
@@ -522,6 +512,31 @@ class AppIntegration(_Tmp):
         pane["files"] = []
         rows = self.app._tag_rows(pane)
         self.assertEqual([v for v, _ in rows], [("tag-manage", None)])
+
+    def test_tag_dialogs_draw_colored_dots(self):
+        """The B rows, the color picker and Manage Tags lead each tag with its
+        dot (#792), in its color."""
+        self.app._remember_tags([Tag("Urgent", 6), Tag("Plain")])
+        self.focus("a.txt")
+        rows = dict(self.app._tag_rows(self.app.active_pane()))
+        runs = {v[1][0].name: label for v, label in rows.items() if v[0] == "tag-toggle"}
+        self.assertEqual(runs["Urgent"][1], ("●", tags.RGB["red"]))
+        self.assertEqual(runs["Plain"][1], ("●", None), "no color: the muted ink")
+        self.app._choose_tag_color("Work", 0, lambda c: None)
+        labels = [label for _, label in self.top()._rows]
+        self.assertEqual(labels[0], [("●", None), " None"])
+        self.app.panel.render()  # the runs draw
+        self.app.panel.pop_layer()
+        self.app._manage_tags(self.app.active_pane()["path"])
+        rows = {v.name: label for v, label in self.top()._rows}
+        self.assertEqual(rows["Urgent"], [("●", tags.RGB["red"]), " Urgent"],
+                         "Manage Tags marks each tag with its dot")
+        self.app.panel.pop_layer()
+        self.app.dispatch("find_by_tag")
+        rows = {r[0]: r for r in self.top().list.items}
+        self.assertEqual(rows["Urgent"][2], [("●", tags.RGB["red"])],
+                         "so does Search Tags")
+        self.app.panel.render()  # the marks draw
 
     def test_unsupported_places_offer_no_tag_rows(self):
         with patch.object(tags, "store_for", return_value=None):

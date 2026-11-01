@@ -19,6 +19,14 @@ every draw and repaints itself a few times a second, keeping the selection on
 the same value, and closes once there are none left. The background jobs list
 uses it for its progress.
 
+A list taller than the box scrolls: the rows shown follow the selection, with
+an arrow at the top or bottom edge where more rows lie beyond it.
+
+A label is a string, or a list of runs for a row with colored marks (the tag
+dots of #792): each run a string in the text ink, or ``(text, rgb)`` drawn in
+that color — ``rgb`` None for the muted ink. Type-ahead and sizing read the
+runs' text joined (:func:`label_text`).
+
 Users: the text viewer's encoding picker, Add to Favorites' "this
 directory or the cursor item" choice, and the background jobs list. The Sort dialog predates this widget and
 keeps its own two-axis layout (key rows × an order segment) — this one is for
@@ -31,6 +39,7 @@ import time
 from typing import Any, Callable, Optional
 
 from puikit.backend import Style
+from puikit.color import LC_LARGE
 from puikit.event import Event, EventType
 from puikit.font import Font
 from puikit.theme import DEFAULT_THEME
@@ -50,6 +59,13 @@ _GUI_ROW_PITCH = 1.3
 
 #: How often a dialog with live rows repaints.
 _REFRESH_S = 0.5
+
+
+def label_text(label) -> str:
+    """A row label's plain text: the string, or its runs' text joined."""
+    if isinstance(label, str):
+        return label
+    return "".join(run if isinstance(run, str) else run[0] for run in label)
 
 
 class ChoiceDialog(Widget):
@@ -82,6 +98,8 @@ class ChoiceDialog(Widget):
         self._clock = time.monotonic
         # Row hit bands captured during draw, dialog-local (index, y0, y1).
         self._row_hits: list[tuple[int, float, float]] = []
+        #: The first row shown, when the list is taller than the box.
+        self._top = 0
         self._size: tuple[float, float] = (0.0, 0.0)
 
     # --- geometry ------------------------------------------------------------
@@ -107,7 +125,7 @@ class ChoiceDialog(Widget):
         """Width of the widest content line (base units, excluding the 2-unit
         margins): the widest row label or the key hint. ``measure`` must be the
         *rendering* text measurer (proportional on GUI)."""
-        row_w = 1.0 + max(measure(label) for _v, label in self._rows)
+        row_w = 1.0 + max(measure(label_text(label)) for _v, label in self._rows)
         return max(row_w, measure(self._HINT))
 
     # --- lifecycle -----------------------------------------------------------
@@ -121,8 +139,11 @@ class ChoiceDialog(Widget):
         prop = Style(font=Font())
         measure = lambda t: panel.backend.measure_text(t, prop)  # noqa: E731
         pitch = self._row_pitch(panel.backend.capabilities.supports("vector_shapes"))
-        w = float(min(int(sw) - 4, self._content_width(measure) + 4.0))  # +2 margin/side
-        h = float(min(sh - 2.0, self._box_height(self._TITLE_ROWS, pitch)))
+        h_needed = self._box_height(self._TITLE_ROWS, pitch)
+        # A list that will scroll gets room for its arrows beside the labels.
+        arrows = 2.0 if h_needed > sh - 2.0 else 0.0
+        w = float(min(int(sw) - 4, self._content_width(measure) + 4.0 + arrows))  # +2 margin/side
+        h = float(min(sh - 2.0, h_needed))
         panel.push_layer(self, z=z, hints={"shadow": True, "w": w, "h": h})
         animate_open(panel, self)
         if self._refresh is not None:
@@ -194,7 +215,7 @@ class ChoiceDialog(Widget):
             self._jump_to(self._typed)
 
     def _jump_to(self, text: str) -> None:
-        labels = [label.lower() for _v, label in self._rows]
+        labels = [label_text(label).lower() for _v, label in self._rows]
         hit = next((i for i, label in enumerate(labels) if label.startswith(text)),
                    None)
         if hit is None:
@@ -226,16 +247,32 @@ class ChoiceDialog(Widget):
 
         self._row_hits = []
         y = self._rows_top(title_bottom)
-        for i, (_value, label) in enumerate(self._rows):
+        # As many rows as fit above the hint band; the shown window follows
+        # the selection.
+        fits = max(1, int((box_h - y - HINT_ROWS) / pitch + 1e-6))
+        self._top = min(max(self._top, self._index - fits + 1), self._index,
+                        max(0, len(self._rows) - fits))
+        self._top = max(0, self._top)
+        shown = range(self._top, min(len(self._rows), self._top + fits))
+        rows_y = y
+        for i in shown:
+            _value, label = self._rows[i]
             selected = i == self._index
             if selected:
                 ctx.round_rect(2.0, y + row_vy - 0.1, box_w - 4.0, line_h + 0.2,
                                Style(bg=theme.selection_active_bg),
                                radius=None, hints={"fill": True})
             row_bg = theme.selection_active_bg if selected else surface_bg
-            ctx.draw_text(3.0, y + row_vy, label, Style(fg=theme.text, bg=row_bg))
+            self._draw_label(ctx, theme, 3.0, y + row_vy, label, row_bg)
             self._row_hits.append((i, y, y + pitch))
             y += pitch
+        # Drawn over the rows, so a selection band does not hide them.
+        for edge, more, arrow in ((0, self._top > 0, "↑"),
+                                  (len(shown) - 1, shown.stop < len(self._rows), "↓")):
+            if more:
+                bg = theme.selection_active_bg if shown[edge] == self._index else surface_bg
+                ctx.draw_text(box_w - 3.5, rows_y + edge * pitch + row_vy, arrow,
+                              Style(fg=theme.muted_text, bg=bg))
 
         # The band shows the live type-ahead buffer while one is building
         # (feedback for the jump — including a miss), else the key hint: what the
@@ -243,6 +280,22 @@ class ChoiceDialog(Widget):
         buffer = self._typeahead_buffer()
         draw_hint_row(ctx, f"Jump to: {buffer}▏" if buffer else self._HINT,
                       surface_bg=surface_bg, border=theme.popup_border)
+
+    @staticmethod
+    def _draw_label(ctx, theme, x: float, y: float, label, bg) -> None:
+        if isinstance(label, str):
+            ctx.draw_text(x, y, label, Style(fg=theme.text, bg=bg))
+            return
+        for run in label:
+            if isinstance(run, str):
+                text, fg = run, theme.text
+            else:
+                text, rgb = run
+                fg = ctx.ink(rgb if rgb is not None else theme.muted_text,
+                             on=bg, target=LC_LARGE)
+            style = Style(fg=fg, bg=bg)
+            ctx.draw_text(x, y, text, style)
+            x += ctx.measure_text(text, style)
 
     # --- events --------------------------------------------------------------
 

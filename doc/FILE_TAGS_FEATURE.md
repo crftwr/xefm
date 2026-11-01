@@ -16,13 +16,14 @@ cursor when nothing is selected:
 ```
 Favorite: This directory: projects
 Favorite: Under the cursor: notes.txt
-Tag: ✓ Work
-Tag:   Urgent · red
+Tag: ✓ ● Work
+Tag:   ● Urgent
 Tag: Edit tags… (notes.txt)
 Tag: Manage tags…
 ```
 
-- **A tag row** toggles that tag. A ✓ means every item already has it, and
+- **A tag row** shows the tag's color as a dot, gray for none, and toggles
+  that tag. A ✓ means every item already has it, and
   choosing the row removes it. Otherwise the row adds it to every item. The
   rows list the tags you have used, plus tags XeFM has seen on files during
   this session.
@@ -35,7 +36,8 @@ Tag: Manage tags…
   A tag XeFM has not seen before then asks for its color: none, or one of
   Finder's seven. This step is skipped where the files' storage keeps no
   colors (Linux, S3), and for a tag named after a color ("Red").
-- **Manage tags…** changes a tag itself. Pick the tag, or type its name, then:
+- **Manage tags…** changes a tag itself. Pick the tag from the list (each
+  with its color dot), then:
   - **Change color…** gives it another color;
   - **Rename tag…** gives it another name and keeps its color. A file that
     already has the new name keeps just one of them;
@@ -67,7 +69,7 @@ network request. Their tags still work through **Add to Favorites…** and **Sea
 
 ## Finding by tag: View → Search Tags…
 
-**View → Search Tags…** lists your tags. Pick `Work`, or type a tag name that
+**View → Search Tags…** lists your tags, each with its color dot. Pick `Work`, or type a tag name that
 is not in the list, and the pane shows every file tagged *Work* in the current
 directory and below, as a list you can work on like any other. Press Backspace
 to go back. On macOS, Spotlight answers this instantly. Elsewhere, or when
