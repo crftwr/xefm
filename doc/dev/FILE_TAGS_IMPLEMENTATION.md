@@ -122,7 +122,8 @@ particular to tags:
 - **Manage tags…** (#792, row `tag-manage`): offered whenever the pane's
   directory has a store, even with no targets. `add_favorite` does not count
   it when deciding to skip straight to naming the one favorite. It opens a
-  filter list of known tags (typing a name works too), then a choice of
+  `ChoiceDialog` of the known tags (it scrolls once they outgrow the box),
+  then a choice of
   **Change color…** (only when `store.has_colors`), **Rename tag…** and
   **Delete tag…**. All three act on the tag, the way Finder treats a tag's
   color and name as one per name, not per file:
@@ -136,6 +137,12 @@ particular to tags:
     of the old one. `tags.SEEN` is updated to match.
   - Delete finds the files first, then confirms with the count and scope
     (default Cancel). Recolor and rename don't ask, as in Finder.
+- **Dots in the dialogs**: the `tag-toggle` rows and the color picker pass
+  `ChoiceDialog` labels as runs, `_tag_dot(color)` giving `(TAG_DOT, rgb)`
+  (`None` for the muted ink, as in the file list). So do Manage Tags' rows.
+  Search Tags, a filter list, draws the same dot through
+  `FilterListDialog`'s `to_marks` hook. Marks are not part of the label, so typing a color's name
+  no longer filters by color.
 - **Color on creation**: in Edit tags…, each added tag that is not known and
   whose name is not a color gets a `_choose_tag_color` step when
   `store.has_colors`. Esc there cancels the whole edit.

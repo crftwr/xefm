@@ -1761,11 +1761,10 @@ def _real_entry(entry):
     return entry
 
 
-def _tag_label(tag) -> str:
-    """A tag as a picker row names it: its color in words, since a list row
-    cannot carry a colored dot."""
-    color = tag.color_name
-    return f"{tag.name} · {color}" if color and color != tag.name.casefold() else tag.name
+def _tag_dot(color: int) -> tuple:
+    """A tag's dot as a dialog run or mark (#792): in its Finder color, or the
+    muted ink for none — as the file list draws it."""
+    return (layouts.TAG_DOT, tags.RGB.get(tags.COLORS.get(color)))
 
 
 #: Listing generations, unique across every pane and tab. A result names the
@@ -7071,7 +7070,7 @@ class XeFMApp:
             on = current is not None and tag.name.casefold() in current
             mark = "✓" if on else " "
             rows.append((("tag-toggle", (tag, on if current is not None else None)),
-                         f"Tag: {mark} {_tag_label(tag)}"))
+                         [f"Tag: {mark} ", _tag_dot(tag.color), f" {tag.name}"]))
         what = targets[0].name if len(targets) == 1 else f"{len(targets)} selected"
         rows.append((("tag-edit", None), f"Tag: Edit tags… ({what})"))
         return rows + manage
@@ -7234,7 +7233,8 @@ class XeFMApp:
     def _choose_tag_color(self, name: str, current: int, then) -> None:
         """Pick a color for tag ``name`` from Finder's seven plus none, and
         hand its index to ``then``; Esc cancels and calls nothing."""
-        rows = [(c, (tags.COLORS[c] or "none").capitalize()) for c in tags.COLOR_CHOICES]
+        rows = [(c, [_tag_dot(c), " " + (tags.COLORS[c] or "none").capitalize()])
+                for c in tags.COLOR_CHOICES]
 
         def on_result(color) -> None:
             if color is None:
@@ -7247,28 +7247,28 @@ class XeFMApp:
         self.panel.render()
 
     def _manage_tags(self, root) -> None:
-        """B's "Manage tags…" (#792): pick a tag — or type one not listed —
-        then change its color, rename it or delete it. Each acts on the tag
-        itself, as Finder's do: every file carrying it, not only the
-        selection."""
+        """B's "Manage tags…" (#792): pick a tag, then change its color,
+        rename it or delete it. Each acts on the tag itself, as Finder's do:
+        every file carrying it, not only the selection."""
         store = tags.store_for(root)
         if store is None:
             self.log_info("Tags are not supported here")
             return
+        known = self._known_tags()
+        if not known:
+            self.log_info("No tags yet: add one with Edit tags…")
+            self.panel.render()
+            return
 
-        def named(text: str):
-            text = text.strip()
-            if text:
-                tag = next((t for t in self._known_tags()
-                            if t.name.casefold() == text.casefold()), None)
-                self._manage_tag(root, store, tag or tags.new_tag(text, store))
+        def on_result(tag) -> None:
+            if tag is None:
+                self.panel.render()
+                return
+            self._manage_tag(root, store, tag)
 
-        show_filter_list(
-            self.panel, self._known_tags(), title="Manage Tags",
-            to_label=_tag_label,
-            on_accept=lambda tag: self._manage_tag(root, store, tag),
-            on_accept_text=named,
-            region=self._active_pane_region())
+        show_choice_dialog(self.panel, "Manage Tags",
+                           [(tag, [_tag_dot(tag.color), f" {tag.name}"]) for tag in known],
+                           on_result=on_result)
         self.panel.render()
 
     def _manage_tag(self, root, store, tag) -> None:
@@ -7290,7 +7290,7 @@ class XeFMApp:
             else:
                 self.panel.render()
 
-        show_choice_dialog(self.panel, f"Tag {_tag_label(tag)}", rows, on_result=on_result)
+        show_choice_dialog(self.panel, f"Tag {tag.name}", rows, on_result=on_result)
         self.panel.render()
 
     def _find_tagged(self, t, root, store, name: str) -> tuple[list, str]:
@@ -7448,7 +7448,8 @@ class XeFMApp:
         rows = self._known_tags()
         show_filter_list(
             self.panel, rows, title="Search Tags",
-            to_label=_tag_label,
+            to_label=lambda tag: tag.name,
+            to_marks=lambda tag: [_tag_dot(tag.color)],
             on_accept=lambda tag: self.find_by_tag(tag.name),
             on_accept_text=lambda text: text.strip() and self.find_by_tag(text.strip()),
             on_remove=self._forget_known_tag,

@@ -145,3 +145,65 @@ class TestTypeAhead:
     def test_arrow_keys_do_not_feed_the_buffer(self, dialog):
         dialog.handle_event(_key("down"))
         assert dialog._typeahead_buffer() == ""
+
+
+# --- a list taller than the box (#792) -------------------------------------------
+
+
+def _drawn(width=40, height=14, rows=30, index=0):
+    from puikit import Panel
+    from puikit.backends.memory_backend import MemoryBackend
+    from xefm.choice_dialog import show_choice_dialog
+    backend = MemoryBackend(width=width, height=height)
+    backend.open()
+    panel = Panel(backend)
+    dialog = show_choice_dialog(panel, "Many", [(i, f"Row {i:02d}") for i in range(rows)],
+                                current=index)
+    panel.render()
+    return panel, dialog
+
+
+def _shown(dialog):
+    return [i for i, _y0, _y1 in dialog._row_hits]
+
+
+def test_a_tall_list_scrolls_with_the_selection():
+    panel, dialog = _drawn()
+    first = _shown(dialog)
+    assert first[0] == 0 and len(first) < 30, "only what fits is drawn"
+    for _ in range(len(first) + 2):
+        dialog.handle_event(_key("down"))
+    shown = _shown(dialog)
+    assert dialog._index in shown and shown[0] > 0
+    dialog.handle_event(_key("up"))   # moving back inside the window keeps it
+    assert _shown(dialog) == shown
+    dialog.handle_event(_key("up"))
+    dialog._index = 0
+    panel.render()
+    assert _shown(dialog)[0] == 0
+
+
+def test_wrapping_to_the_last_row_shows_it():
+    panel, dialog = _drawn()
+    dialog.handle_event(_key("up"))   # wraps to the end
+    assert _shown(dialog)[-1] == 29
+
+
+def test_a_short_list_shows_every_row():
+    panel, dialog = _drawn(rows=3)
+    assert _shown(dialog) == [0, 1, 2]
+
+
+def test_runs_in_a_label_draw_and_jump():
+    from puikit import Panel
+    from puikit.backends.memory_backend import MemoryBackend
+    from xefm.choice_dialog import label_text, show_choice_dialog
+    backend = MemoryBackend(width=40, height=14)
+    backend.open()
+    panel = Panel(backend)
+    rows = [("a", [("●", (255, 0, 0)), " Alpha"]), ("b", [("●", None), " Beta"])]
+    dialog = show_choice_dialog(panel, "Runs", rows)
+    panel.render()
+    assert label_text(rows[0][1]) == "● Alpha"
+    _type(dialog, "be")
+    assert dialog._index == 1

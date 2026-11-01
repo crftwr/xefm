@@ -37,7 +37,7 @@ the highlighted row (#271). A hint band along the
 bottom, mirroring the title bar, says which keys are live — the remove key among
 them read back from the keymap, so a rebind shows up there.
 
-Three more opt-in hooks let a picker say more about each row than its label —
+Four more opt-in hooks let a picker say more about each row than its label —
 each one off unless passed, so a call site that uses none of them looks exactly
 as before (discussion #550, which the command palette is built on):
 
@@ -46,6 +46,9 @@ as before (discussion #550, which the command palette is built on):
 - ``to_detail(value)`` — one line about the highlighted row, in a row of its own
   between the list and the hint band. It is not a key, so it stays out of the
   band, which is where a modal names its keys and nothing else;
+- ``to_marks(value)`` — colored marks drawn before the label, as
+  ``(text, rgb)`` runs (``rgb`` None for the muted ink): the tag dots of
+  #792. They are not part of the label, so the filter never matches them;
 - ``to_help(value)`` — a longer Markdown page for the highlighted row, opened
   over the picker by the ``describe_list_item`` key (F1); closing it returns to
   the picker with the query and the cursor where they were.
@@ -65,6 +68,7 @@ import threading
 from typing import Any, Callable, Iterator, Sequence
 
 from puikit.backend import Style
+from puikit.color import LC_LARGE
 from puikit.event import Event, EventType
 from puikit.focus import FocusContainer, focus_on_click
 from puikit.panel import Rect
@@ -103,13 +107,15 @@ _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 class _ColumnRow(Widget):
     """One list row with a right-aligned second column: the label on the left,
     eliding as the row narrows, and ``right`` kept whole against the right edge
-    in the muted text color. The list paints the selection fill behind it (the
-    ``bg`` hint ``ListView`` hands a selected widget row), so the row draws only
-    its two texts."""
+    in the muted text color; ``marks``, colored runs, lead the label. The list
+    paints the selection fill behind it (the ``bg`` hint ``ListView`` hands a
+    selected widget row), so the row draws only its texts."""
 
-    def __init__(self, label: str, right: str, *, ellipsis: str, elide_where: str):
+    def __init__(self, label: str, right: str, marks=(), *, ellipsis: str,
+                 elide_where: str):
         self.label = label
         self.right = right
+        self.marks = marks
         self._ellipsis = ellipsis
         self._elide_where = elide_where
 
@@ -133,10 +139,20 @@ class _ColumnRow(Widget):
                 ctx.draw_text(wu - right_w - 1.0, 0, self.right,
                               Style(fg=theme.muted_text if theme else None))
                 reserved = right_w + gap + 1.0
-        label = elide(self.label, max(0.0, wu - reserved), self._ellipsis or "",
+        x = 0.0
+        for text, rgb in self.marks:
+            # ink() lifts the color against this row's own surface — the
+            # selection fill when the row is highlighted.
+            mark = Style(fg=ctx.ink(rgb if rgb is not None else theme.muted_text,
+                                    target=LC_LARGE) if theme else None)
+            ctx.draw_text(x, 0, text, mark)
+            x += ctx.measure_text(text, mark)
+        if self.marks:
+            x += ctx.measure_text(" ", style)
+        label = elide(self.label, max(0.0, wu - reserved - x), self._ellipsis or "",
                       where=self._elide_where,
                       measure=lambda t: ctx.measure_text(t, style))
-        ctx.draw_text(0, 0, label, style)
+        ctx.draw_text(x, 0, label, style)
 
 
 class FilterListDialog(FocusContainer, Widget):
@@ -165,6 +181,7 @@ class FilterListDialog(FocusContainer, Widget):
         to_right: Callable[[Any], str] | None = None,
         to_detail: Callable[[Any], str] | None = None,
         to_help: Callable[[Any], str] | None = None,
+        to_marks: Callable[[Any], list] | None = None,
     ):
         self.all_items = list(items)
         self.to_label = to_label
@@ -190,6 +207,9 @@ class FilterListDialog(FocusContainer, Widget):
         #: Optional second column, right-aligned on every row (see the module
         #: docstring). With it the list draws widget rows instead of plain text.
         self.to_right = to_right
+        #: Optional colored marks before each label (see the module docstring).
+        #: With it, too, the list draws widget rows.
+        self.to_marks = to_marks
         #: Optional one-line description of the highlighted row, drawn in a row
         #: of its own above the hint band.
         self.to_detail = to_detail
@@ -218,8 +238,8 @@ class FilterListDialog(FocusContainer, Widget):
 
         self.filter_edit = TextEdit(on_change=self._refilter)
         row_factory = None
-        if to_right is not None:
-            def row_factory(row: tuple[str, str]) -> Widget:
+        if to_right is not None or to_marks is not None:
+            def row_factory(row: tuple) -> Widget:
                 return _ColumnRow(*row, ellipsis=ellipsis, elide_where=elide_where)
         self.list = ListView(
             self._rows(self.all_items),
@@ -244,10 +264,13 @@ class FilterListDialog(FocusContainer, Widget):
 
     def _rows(self, values: Sequence[Any]) -> list[Any]:
         """What the list holds for ``values``: the labels, or ``(label, right)``
-        pairs for the widget rows a second column needs."""
-        if self.to_right is None:
+        — plus ``marks`` when given — for the widget rows they need."""
+        if self.to_right is None and self.to_marks is None:
             return [self.to_label(v) for v in values]
-        return [(self.to_label(v), self.to_right(v)) for v in values]
+        right = self.to_right or (lambda _v: "")
+        if self.to_marks is None:
+            return [(self.to_label(v), right(v)) for v in values]
+        return [(self.to_label(v), right(v), self.to_marks(v)) for v in values]
 
     def selected_value(self) -> Any:
         """The value behind the highlighted row, or ``None`` when no row passes
@@ -704,6 +727,7 @@ def show_filter_list(
     elide_where: str = "end",
     load_more: Callable[[threading.Event], Iterator[Any]] | None = None,
     to_right: Callable[[Any], str] | None = None,
+    to_marks: Callable[[Any], list] | None = None,
     to_detail: Callable[[Any], str] | None = None,
     to_help: Callable[[Any], str] | None = None,
     z: int = 70,
@@ -744,10 +768,11 @@ def show_filter_list(
     the scan runs. For rows that need a network round-trip — the drives picker's
     S3 buckets — so the dialog never waits on them.
 
-    ``to_right``, ``to_detail`` and ``to_help`` describe each row beyond its
-    label — a right-aligned column, a one-line detail row for the highlighted
-    entry, and a Markdown help page for it on the ``describe_list_item`` key.
-    All three are optional and independent; see the module docstring.
+    ``to_right``, ``to_marks``, ``to_detail`` and ``to_help`` describe each row
+    beyond its label — a right-aligned column, colored marks before it, a
+    one-line detail row for the highlighted entry, and a Markdown help page for
+    it on the ``describe_list_item`` key. All are optional and independent; see
+    the module docstring.
 
     A picker's Enter takes a row. For text the user types and uses — a command,
     a filter pattern — see :mod:`xefm.history_input_dialog`, whose Enter takes
@@ -757,7 +782,7 @@ def show_filter_list(
         on_accept_text=on_accept_text, on_remove=on_remove,
         remove_label=remove_label,
         ellipsis=ellipsis, elide_where=elide_where, load_more=load_more,
-        to_right=to_right, to_detail=to_detail, to_help=to_help,
+        to_right=to_right, to_marks=to_marks, to_detail=to_detail, to_help=to_help,
     )
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 72.0))
