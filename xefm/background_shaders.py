@@ -50,6 +50,11 @@ from ``time``.
 
 from __future__ import annotations
 
+from typing import Callable
+
+from xefm.background_earth import AVAILABLE as EARTH_AVAILABLE
+from xefm.background_earth import OPTIONS as EARTH_OPTIONS, earth_shader
+
 #: A flowing sheet of particles — a wave surface rendered as a point cloud.
 #:
 #: Structure: the surface is a sum of travelling sine trains, sampled at a stack of
@@ -3765,15 +3770,15 @@ vec4 puikit_bg_fragment(vec2 pos) {
 #: ``idle`` is per scene for the same reason: only the scene knows what it should
 #: come to rest *as* when the backend parks it after ~a minute of no input (see
 #: puikit's ``Shader.idle``). ``"freeze"``, the default, holds the last frame —
-#: right for a scene whose every frame is a composed image. **Every scene here says
-#: ``"fade"``**, because every scene here is nothing *but* motion: rain that is only
-#: falling, stars that are only streaming, a corridor that is only being flown
-#: through. Stop one and the frame left behind is not a picture of anything — it is
+#: right for a scene whose every frame is a composed image. **Every scene here but
+#: ``earth`` says ``"fade"``**, because each of them is nothing *but* motion: rain
+#: that is only falling, stars that are only streaming, a corridor that is only
+#: being flown through. Stop one and the frame left behind is not a picture of anything — it is
 #: wherever the drops, stars or rails happened to be, held indefinitely, which reads
 #: as the file manager having hung rather than settled. Dissolving to the theme
-#: background instead resolves to something the palette already contains. A future
-#: scene composed to be looked at still (a lit skyline, a horizon) should say
-#: ``"freeze"`` and this comment should stop saying "every".
+#: background instead resolves to something the palette already contains. The
+#: exception is ``earth``, the one scene composed to be looked at still: its every
+#: frame is a shot of the planet, so it says ``"freeze"`` and parks on one.
 SHADER_KINDS: dict[str, dict] = {
     "wave": {"source": WAVE_MSL, "source_hlsl": WAVE_HLSL, "source_glsl": WAVE_GLSL,
              "resolution_scale": 0.5, "idle": "fade"},
@@ -3805,4 +3810,18 @@ SHADER_KINDS: dict[str, dict] = {
     # depth, not just sharpness.
     "hologram": {"source": HOLOGRAM_MSL, "source_hlsl": HOLOGRAM_HLSL,
                  "source_glsl": HOLOGRAM_GLSL, "idle": "fade"},
+    # The one picture rather than motion, and so the one scene that says
+    # "freeze": parked, it holds a composed shot of the planet. It also brings its
+    # own textures and lens, and has no GLSL (the web backend binds neither) —
+    # see xefm.background_earth. These are its defaults; a theme's options
+    # rebuild them through SCENE_OPTIONS below.
+    **({"earth": earth_shader()} if EARTH_AVAILABLE else {}),
 }
+
+#: Scenes that take options of their own beyond the shared ``speed``/``opacity``/
+#: ``color``: the option keys a theme's ``animation`` dict may carry, and the
+#: function that turns them into the scene's ``Shader`` fields (replacing its
+#: ``SHADER_KINDS`` entry). A scene absent here takes no options.
+SCENE_OPTIONS: dict[str, tuple[tuple[str, ...], Callable[..., dict]]] = {
+    "earth": (EARTH_OPTIONS, earth_shader),
+} if EARTH_AVAILABLE else {}

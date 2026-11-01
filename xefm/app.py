@@ -65,7 +65,7 @@ from xefm.archive import (ArchiveFormatError, archive_format_for_name,
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
-from xefm.background_shaders import SHADER_KINDS
+from xefm.background_shaders import SCENE_OPTIONS, SHADER_KINDS
 from xefm.config import (KeyBindings, apply_wide_chars, config_manager,
                          deprecated_names_notice,
                          get_builtin_handler_for_file, get_config,
@@ -255,7 +255,9 @@ def _resolve_background(animation, wallpaper, *, color, backdrop):
       (``{'type': 'rain', 'speed': ..., ...}`` merged onto the tuned default). The
       line ``color`` (theme fg) and ``backdrop`` (theme bg) are filled from the theme;
       a shader receives the former as its ``ink`` uniform, the name the GPU contract
-      uses for the same intent.
+      uses for the same intent. A scene listed in ``SCENE_OPTIONS`` also reads its
+      own keys from the dict (``earth``: ``shot``, ``lens``, ``clouds``,
+      ``exposure``).
     * ``wallpaper`` — an image path string, or a params dict
       (``{'image': 'path', 'fit': ..., 'opacity': ...}``).
 
@@ -278,20 +280,26 @@ def _resolve_background(animation, wallpaper, *, color, backdrop):
             if isinstance(animation, (Shader, Wallpaper)):
                 return animation
             params = dict(_ANIM_DEFAULTS)
+            options: dict = {}
             if isinstance(animation, dict):
                 atype = animation.get("type", _ANIM_DEFAULT_KIND)
                 params.update({k: animation[k] for k in _ANIM_PARAMS if k in animation})
+                keys = SCENE_OPTIONS.get(atype, ((), None))[0]
+                options = {k: animation[k] for k in keys if k in animation}
             else:  # a type string, or True for the tuned default
                 atype = animation if isinstance(animation, str) else _ANIM_DEFAULT_KIND
             if atype not in SHADER_KINDS:
                 return None
+            # A scene with options of its own (earth's shot and lens) rebuilds its
+            # fields from them; the rest take their registry entry as it stands.
+            fields = SCENE_OPTIONS[atype][1](**options) if options else SHADER_KINDS[atype]
             params.setdefault("color", color)
             params.setdefault("backdrop", backdrop)
             # ``color`` is the theme foreground, which a shader receives as its
             # ``ink`` uniform — same intent, the name the GPU contract uses.
             return Shader(speed=params["speed"], opacity=params["opacity"],
                           ink=params["color"], backdrop=params["backdrop"],
-                          **SHADER_KINDS[atype])
+                          **fields)
     except (TypeError, KeyError):
         return None
     return None
@@ -650,6 +658,37 @@ _THEME_SPECS: list[tuple[str, dict]] = [
     # NB: no ``text_effect`` — text arrives instantly here. Water is the thing that
     # moves in this theme; having the filenames type themselves in as well would put
     # two independent animations on screen competing for the same attention.
+    #
+    # Earth: the planet from orbit behind the panes (the ``earth`` scene, see
+    # xefm.background_earth) — a deep-space navy for the base, the pale blue of the
+    # lit limb for the chrome, and the amber of a sunrise on the atmosphere for the
+    # things to find. The scene is physically coloured and ignores ``ink``, so
+    # nothing here is chosen to steer it; the palette is chosen to sit on it.
+    ("Earth", dict(bg=(6, 10, 20), fg=(226, 234, 244), muted=(140, 158, 186),
+                   accent=(126, 190, 250), surface=(16, 24, 40), selection=(30, 62, 104),
+                   accent2=(255, 184, 108),
+                   status=lambda p: mix(p["bg"], p["accent"], 0.16),
+                   footer=lambda p: mix(p["bg"], p["accent"], 0.16),
+                   file_types={"directory": (150, 206, 255), "link": (255, 184, 108)},
+                   cursor={"active": (255, 184, 108)},
+                   syntax={"keyword": (150, 206, 255), "string": (255, 196, 128),
+                           "comment": (140, 158, 186), "number": (255, 222, 150),
+                           "operator": (196, 176, 255), "builtin": (128, 226, 214)},
+                   # Shinagawa's reason, more so: the text sits over imagery, some of
+                   # it a sunlit disc, and a shadow is what keeps a glyph's edge.
+                   post_effect={"drop_shadow": 0.5},
+                   # Every scene is a random pairing of a composition and a lens
+                   # look (the scene's defaults), held for about 40 s at this speed
+                   # while the camera drifts, then eased into the next over about
+                   # 20 s; a new random one on every launch and every return from
+                   # idle. The
+                   # picture is shown whole (``opacity`` 1) and kept off the text by
+                   # the scene's own ceiling instead: no pixel brighter than half
+                   # white (its ``brightness`` default), so even a sunlit ocean
+                   # cannot wash out a file name. Dimming by opacity would grey the
+                   # night side toward the navy while leaving the glint hot.
+                   animation={"type": "earth", "speed": 0.8, "opacity": 1.0},
+                   opacity=0.72)),   # chrome at 72%: the planet reads, the list wins
 ]
 
 THEMES: list[tuple[str, Theme]] = [(name, _theme(**spec)) for name, spec in _THEME_SPECS]

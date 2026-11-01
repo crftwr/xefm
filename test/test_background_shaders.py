@@ -39,6 +39,13 @@ d3d_only = pytest.mark.skipif(not HAVE_D3D_SHADER, reason="D3D shader support un
 
 _INK, _BACKDROP = (200, 224, 245), (16, 30, 50)
 
+#: Scenes that are a picture rather than motion: physically coloured (they ignore
+#: ``ink``), composed to be looked at still (they freeze when idle), and allowed to
+#: fill the frame — legibility over them is the theme's surface opacity's job.
+#: They bring textures and a lens, which the web backend does not bind, so they
+#: ship no GLSL. See test_background_earth.py for what they promise instead.
+PICTURES = {"earth"}
+
 
 def _shader(kind):
     return Shader(ink=_INK, backdrop=_BACKDROP, **SHADER_KINDS[kind])
@@ -49,7 +56,7 @@ class Registry(unittest.TestCase):
     def test_expected_shaders_are_offered(self):
         self.assertEqual(set(SHADER_KINDS),
                          {"wave", "rain", "starfield", "grid", "constellation",
-                          "datastream", "hologram"})
+                          "datastream", "hologram", "earth"})
 
     def test_each_entry_is_valid_shader_kwargs(self):
         # The dict is splatted straight into Shader(...), so a stray key would
@@ -68,11 +75,11 @@ class Registry(unittest.TestCase):
         # is nothing but motion — rain falling, stars streaming, a corridor being
         # flown through — so the frame a freeze would leave behind is not a picture
         # of anything, just wherever the objects happened to be. They fade out
-        # instead. A scene composed to be looked at still may say "freeze"; it would
-        # be the first, so this asserts the current answer rather than a rule.
+        # instead. A scene composed to be looked at still says "freeze" — the
+        # pictures, and only they.
         for kind, params in SHADER_KINDS.items():
-            self.assertEqual(params.get("idle"), "fade", kind)
-            self.assertTrue(Shader(**params).fades_when_idle, kind)
+            expected = "freeze" if kind in PICTURES else "fade"
+            self.assertEqual(Shader(**params).idle, expected, kind)
 
     def test_every_scene_ships_an_hlsl_translation(self):
         # A shader is the one backend-specific part of a background: macOS compiles
@@ -84,8 +91,12 @@ class Registry(unittest.TestCase):
 
     def test_every_scene_ships_a_glsl_translation(self):
         # The web (WebGL) backend compiles ``source_glsl``; a scene missing it draws
-        # nothing on web.
+        # nothing on web. A picture needs textures and a lens the web client does
+        # not bind, so it ships none and the web backend shows the backdrop.
         for kind, params in SHADER_KINDS.items():
+            if kind in PICTURES:
+                self.assertNotIn("source_glsl", params, kind)
+                continue
             self.assertIn("source_glsl", params, kind)
             self.assertIn(SHADER_ENTRY, params["source_glsl"], kind)
 
@@ -217,8 +228,9 @@ class Compilation(unittest.TestCase):
 
     def test_every_shader_follows_the_theme_ink(self):
         # Scenes are anchored on the theme foreground rather than fixed colours, so
-        # a different palette must produce a visibly different frame.
-        for kind in SHADER_KINDS:
+        # a different palette must produce a visibly different frame. A picture is
+        # physically coloured instead (test_background_earth.py asserts that).
+        for kind in set(SHADER_KINDS) - PICTURES:
             renderer = MetalBackground()
             self.assertTrue(renderer.set_shader(
                 Shader(ink=(200, 224, 245), backdrop=_BACKDROP, **SHADER_KINDS[kind])))
@@ -236,7 +248,7 @@ class Compilation(unittest.TestCase):
         # Measured at a realistic window size on purpose: line widths are set in
         # pixels, so at the 160x100 the tests elsewhere use, the grid's 1.1px rails
         # are a far larger share of the frame than they ever are in use.
-        for kind in SHADER_KINDS:
+        for kind in set(SHADER_KINDS) - PICTURES:
             renderer = MetalBackground()
             self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
             px = MetalBackground.texture_pixels(renderer.render_to_texture(400, 260, 2.0))
@@ -296,7 +308,7 @@ class CompilationD3D(unittest.TestCase):
 
     def test_every_shader_stays_a_backdrop(self):
         renderer = D3DShaderBackground()
-        for kind in SHADER_KINDS:
+        for kind in set(SHADER_KINDS) - PICTURES:
             self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
             px = renderer.render_pixels(400, 260, 2.0)   # see the Metal twin
             near_backdrop = sum(

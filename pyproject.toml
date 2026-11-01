@@ -64,7 +64,7 @@ include = ["xefm*"]
 # End-user external programs invoked by XeFM (xefm/tools/*), and the AI-agent
 # skill for XeFM (xefm/skills/, see `xefm skill`) with its references/. The
 # ``_config.py`` template ships automatically as a package .py module.
-xefm = ["tools/*", "skills/*/*", "skills/*/*/*"]
+xefm = ["tools/*", "skills/*/*", "skills/*/*/*", "assets/*/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "xefm.__version__" }

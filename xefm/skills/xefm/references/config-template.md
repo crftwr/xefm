@@ -176,9 +176,22 @@ class Config:
     #   #       'grid'          flying through a wireframe corridor, the camera
     #   #                       slowly drifting and turning as it goes
     #   #       'wave'          a dense particle wave with its own colour gradient
+    #   #       'earth'         the planet from orbit, in its own natural colours
+    #   #                       (the one scene that ignores the foreground)
     #   #     Written as a bare type, or a dict to retune speed / opacity:
     #   #       'animation': 'starfield'                     # the tuned default
     #   #       'animation': {'type': 'rain', 'speed': 1.0, 'opacity': 0.8}
+    #   #     'earth' also takes a shot, a lens look, a cloud height, exposure and
+    #   #     brightness (its ceiling, 0..1, default 0.5 — kept dim for the text):
+    #   #       'animation': {'type': 'earth', 'shot': 'rise', 'lens': 'film',
+    #   #                     'clouds': 3.0, 'exposure': 0.85}
+    #   #       shot: 'auto' (default: a random one per scene) | 'day' | 'dawn' |
+    #   #             'crescent' | 'leo' | 'terminator' | 'glint' | 'rise' | 'polar' |
+    #   #             'horizon' | 'ocean'
+    #   #       lens: 'auto' (default: a random one per scene) | 'clean' |
+    #   #             'aberration' | 'mono' | 'film' | 'anamorphic' | 'flare' |
+    #   #             'fisheye' | 'crt' | 'infrared' | 'night-vision' — a list to
+    #   #             pick among, or {'preset': 'film', 'grain': 0} to tune one
     #   #     ('cube', a spinning wireframe, also works — it is the UI toolkit's
     #   #      own reference scene rather than one of XeFM's.)
     #   #   * wallpaper — a single image scaled to fill the window:
