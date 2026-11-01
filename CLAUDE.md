@@ -165,6 +165,44 @@ Python files should NOT be executable. Run them via `python3 script.py`, not `./
 
 ---
 
+## What belongs in the core
+
+The rules above are mechanical; these need judgment. Before each release,
+`tools/release_review.py` checks the mechanical ones over everything since the
+last tag and points at what these need looked at (the `xefm-release` skill,
+step 2). It reports; the user decides what to fix. Apply them to every change
+too — this section is the one place they are written down.
+
+- **Core or extension?** The core carries the extension point; a feature
+  that can live on it is an extension. One stays out of the tree when it
+  cannot be tested here (a platform not used day to day, a third-party
+  program to install), or when shipping it would imply support nobody gives —
+  an extension or a wiki page can be kept up by whoever actually runs it.
+- **The PuiKit boundary.** No UI-toolkit, backend or renderer code in XeFM.
+  A capability read decides only whether a pixel ornament is worth drawing,
+  never a different drawing model — a visible-vs-grid branch belongs in a
+  PuiKit intent (`doc/dev/CAPABILITY_BRANCHING_AUDIT.md`).
+- **The `user_api` firewall.** No PuiKit type, widget or `XeFMApp` internal
+  appears in a public signature (`xefm.user_api`, `xefm.path_base`).
+- **Generalize rather than solve one case.** A registry or table instead of
+  the second one-off; a capability check (`path_base`'s capability set)
+  instead of a scheme check.
+- **TUI / desktop parity of capability.** What one backend can do, the other
+  can too, each in its own medium. An exception (the OS clipboard bridge is
+  desktop-only) is a decision, written in the feature's doc.
+- **Keys a terminal can actually deliver.** A default binding in the shared
+  table must reach XeFM through a terminal (many cannot send Ctrl-Shift-letter,
+  Ctrl-ENTER or Ctrl-digit); desktop-only keys go in the desktop overrides.
+- **New dependencies: supported, not required.** XeFM starts and works
+  without one; the feature it serves is disabled with a hint. No GPL
+  licenses — check PyPI before adding a package.
+- **The public API across a release.** Each change passes `make api-snapshot`
+  against the commit before it; the release is also compared against the last
+  tag, so a deprecation must ship in a release before its removal, and
+  `API_VERSION` moves at most once per release.
+
+---
+
 ## Release notes
 
 `make release-github` opens the Release with `--generate-notes`, which here lists

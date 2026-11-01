@@ -47,6 +47,21 @@ any of that, do the checks preflight cannot:
 - `git log v<current>..origin/main --oneline` — everything meant for this
   release is merged, nothing unexpected rode along. This list is also the raw
   material for the release note.
+- `make release-review` — reviews `v<current>..origin/main` against the
+  core's rules (CLAUDE.md, "What belongs in the core"), in three layers.
+  Report each to the user; fix nothing here, the user decides what is fixed
+  before tagging.
+  1. **Core or extension?** For each `in-core?` line (a new module), and for
+     the release as a whole, judge whether it could have been an extension.
+  2. **Findings** (exit 1) are the mechanical rules — `print()`, logger
+     names, permissions, placement, docs, skill references, translations,
+     and the public API compared against the last tag (a deprecation that
+     never shipped before its removal, a break with no bump, `API_VERSION`
+     moving twice). Same result every time; list them as they are.
+  3. **For review** lines point at what the judgment rules need looked at —
+     dependencies, scheme checks, capability reads, the firewall, default
+     keys, actions no doc names. Read each site and give a verdict per
+     line; a pointer is not a violation by itself.
 - `make icons-check` (macOS only) — the committed icon assets must still
   match their SVG masters in `tools/icon/` before they ship inside bundles.
 - `make api-compat` — every package in crftwr/xefm-extensions still passes
@@ -54,7 +69,9 @@ any of that, do the checks preflight cannot:
   broken promise to a real extension: stop and fix, or confirm with the user
   that the package is the one to change.
 - `git diff v<current> -- test/data/api_snapshot.txt` — what the public API
-  did since the last release. If the `API_VERSION` line moved, the release
+  did since the last release (`make release-review` lists the breaking
+  changes, deprecations and stable additions; this diff is the detail
+  behind them). If the `API_VERSION` line moved, the release
   broke something stable on purpose: say so in a bullet of the note, with
   what an extension author must change. A line that turned `deprecated`
   gets the same treatment: name the replacement. Stable additions and

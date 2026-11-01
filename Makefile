@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: api-snapshot api-compat check-docs fix-docs skill-zip skill-references release-skill qa help banner run run-gui run-web run-linux run-linux-musl run-linux-tui run-linux-shell linux-image linux-musl-image test test-quick test-linux test-linux-musl test-vm run-vm clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-toolchainwindows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config keymap-reset venv clean-venv check-venv install-puikit
+.PHONY: api-snapshot api-compat release-review check-docs fix-docs skill-zip skill-references release-skill qa help banner run run-gui run-web run-linux run-linux-musl run-linux-tui run-linux-shell linux-image linux-musl-image test test-quick test-linux test-linux-musl test-vm run-vm clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-toolchainwindows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config keymap-reset venv clean-venv check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -143,7 +143,8 @@ help:
 	@echo "  api-snapshot   - Regenerate test/data/api_snapshot.txt (refuses a breaking"
 	@echo "                   change to the stable API unless API_VERSION was bumped)"
 	@echo "  api-compat     - Check every package in xefm-extensions against this tree"
-	@echo "  check-docs     - Check the Japanese doc translations (missing, stale, links)"
+	@echo "  release-review - Review the last tag..origin/main against the core's rules"
+	@echo "  check-docs    - Check the Japanese doc translations (missing, stale, links)"
 	@echo "  fix-docs       - Point translations' links at other translations, then check"
 	@echo "  format         - Format code"
 	@echo ""
@@ -348,6 +349,13 @@ api-snapshot: check-venv
 
 api-compat: check-venv
 	PYTHONPATH=. $(PYTHON) tools/api_compat.py
+
+# What is about to ship, against the core's rules (#697): the mechanical ones
+# as findings, the judgment ones as pointers (CLAUDE.md, "What belongs in the
+# core"). Reports only; the xefm-release skill runs it before tagging.
+release-review: check-venv
+	git fetch -q origin
+	PYTHONPATH=. $(PYTHON) tools/release_review.py $(ARGS)
 
 # The Japanese translations of README.md and doc/*.md (#728): missing, stale,
 # or linking to an English page that has a translation. See
