@@ -444,6 +444,18 @@ readable in the source.
 `ctx.copy_text(text)` is `XeFMApp._set_text_clipboard` — one clipboard, so a
 text copy clears the files XeFM was holding, as Copy Name(s) does.
 
+### `diff` (#824)
+
+`ctx.diff(left, right)` converts both sides with `_operation_path` (entry,
+`Path`, or an absolute string or URI), refuses a side that is not a file with
+a log line, and calls `XeFMApp.open_diff` — the half of `diff_files` after the
+selection is gathered, which `diff_files` now calls too: binary on either side
+goes to `show_byte_comparison`, text to `show_diff_viewer`. `left_title` /
+`right_title` become `DiffViewer.titles`, the side headers, which otherwise
+show `path.name`; a Git extension's `HEAD` copy of a file has the working
+file's name. The viewer reads both files on the UI thread when it opens, as
+`diff_files` always has, so a slow virtual folder stalls that moment.
+
 ### `actions()` and `ActionInfo` (#718)
 
 `ctx.actions()` is `registry.actions(FILER)` — the same list, in the same order,

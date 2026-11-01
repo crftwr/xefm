@@ -1117,6 +1117,38 @@ class ActionContext:
         self._app.panel.render()
 
     @preview
+    def diff(self, left: "EntryInfo | Path | str", right: "EntryInfo | Path | str",
+             *, left_title: str | None = None,
+             right_title: str | None = None) -> None:
+        """Compare two files the way **Compare Selected Files** does, without
+        their being selected: side by side in the diff viewer when both are
+        text, byte for byte in a message box when either is binary. Returns at
+        once.
+
+        ``left`` and ``right`` take entries, paths or absolute path strings, on
+        anything XeFM can read — the local disk, an archive, SSH, S3 or a
+        virtual folder of your own, so a file can be compared with an older
+        version of itself that a ``PATH_SCHEMES`` class serves. Each side's
+        header shows the file name unless ``left_title`` / ``right_title``
+        names it (``"HEAD"``, ``"Working tree"``).
+
+        A folder on either side, or one that does not exist, is not compared:
+        the log pane says so. Wrong argument types raise ValueError at once.
+        """
+        self._require_ui_thread("diff")
+        paths = [_operation_path(left, "diff: left"),
+                 _operation_path(right, "diff: right")]
+        for path in paths:
+            try:
+                is_file = path.is_file()
+            except OSError:
+                is_file = False
+            if not is_file:
+                self._app.log_info(f"Compare: {path} is not a file")
+                return
+        self._app.open_diff(paths[0], paths[1], titles=(left_title, right_title))
+
+    @preview
     def copy_text(self, text: str) -> None:
         """Put ``text`` on the clipboard — the system one where XeFM can reach
         it. Like any copy, it replaces files XeFM's clipboard was holding."""

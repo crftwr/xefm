@@ -9179,13 +9179,19 @@ class XeFMApp:
         if len(files) != 2:
             self.log_info(f"Select exactly 2 files to compare (selected {len(files)})")
             return
-        if looks_binary(files[0]) or looks_binary(files[1]):
+        self.open_diff(files[0], files[1])
+
+    def open_diff(self, left, right, titles: tuple[str | None, str | None] = (None, None)) -> None:
+        """Compare two files: side by side when both are text, byte for byte
+        when either is binary. ``diff_files`` and ``ctx.diff`` (#824) both end
+        here, so the two cannot drift."""
+        if looks_binary(left) or looks_binary(right):
             # A text diff of two placeholders answers nothing; say whether the
             # bytes match instead (#631).
-            show_byte_comparison(self.panel, self.tasks, files[0], files[1],
+            show_byte_comparison(self.panel, self.tasks, left, right,
                                  config=self.config)
             return
-        show_diff_viewer(self.panel, files[0], files[1])
+        show_diff_viewer(self.panel, left, right, titles=titles)
         self.panel.render()
 
     def diff_directories(self) -> None:

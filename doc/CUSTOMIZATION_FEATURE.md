@@ -19,7 +19,7 @@ English \| [日本語](CUSTOMIZATION_FEATURE.ja.md)
 > Preview: `EVENT_HOOKS`, `MENU_ITEMS`, `IMAGE_DECODERS`, `LEXERS`,
 > `ATTRIBUTES`, `LAYOUTS`, `DEFAULT_LAYOUT`, `LAYOUT_EXTRAS`, `entry.attr`, `Cell`, the
 > prompts (`ctx.input` / `choose` / `confirm`), `ctx.run_task`,
-> `ctx.show_markdown`, `ctx.copy_text`, `ctx.actions` and `pane.open_list`. A config that
+> `ctx.show_markdown`, `ctx.copy_text`, `ctx.diff`, `ctx.actions` and `pane.open_list`. A config that
 > uses a Preview table gets one line in the log pane saying so, and the first
 > call to a Preview function logs one line naming it.
 
@@ -278,6 +278,7 @@ summary with no further page.
 | `ctx.message(text)` | write one line to the log pane |
 | `ctx.show_markdown(title, source)` | (Preview) show Markdown in a scrollable dialog, with a Copy button on each code block — see below |
 | `ctx.copy_text(text)` | (Preview) put text on the clipboard |
+| `ctx.diff(left, right)` | (Preview) compare two files as **Select → Compare Selected Files…** does, without selecting them; either may be on SSH, S3, in an archive or in a virtual folder, and `left_title=` / `right_title=` name the sides |
 | `ctx.run_task(title, work, on_done=fn)` | (Preview) run slow work in the background, with a progress dialog — see below |
 | `ctx.input(prompt, default, on_accept=fn)` | (Preview) ask for a line of text; `complete='path'` (or `'directory'`) adds Tab completion of paths, as Jump to Path has — relative to the active pane |
 | `ctx.choose(title, items, on_result=fn)` | (Preview) pick from a list (index, or `None`); `type='filter'` for a searchable one |
