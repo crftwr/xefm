@@ -125,6 +125,7 @@ preview	method	xefm.user_api.ActionContext.choose	[["self", "pk", null], ["title
 preview	method	xefm.user_api.ActionContext.confirm	[["self", "pk", null], ["prompt", "pk", null], ["title", "kw", "'Confirm'"], ["on_result", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy	[["self", "pk", null], ["items", "pk", null], ["dest", "pk", null], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy_text	[["self", "pk", null], ["text", "pk", null]]
+preview	method	xefm.user_api.ActionContext.diff	[["self", "pk", null], ["left", "pk", null], ["right", "pk", null], ["left_title", "kw", "None"], ["right_title", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.input	[["self", "pk", null], ["prompt", "pk", null], ["default", "pk", "''"], ["title", "kw", "''"], ["on_accept", "kw", "None"], ["on_cancel", "kw", "None"], ["complete", "kw", "None"]]
 stable	method	xefm.user_api.ActionContext.invoke	[["self", "pk", null], ["action_name", "pk", null]]
 preview	property	xefm.user_api.ActionContext.is_terminal_backend	ro

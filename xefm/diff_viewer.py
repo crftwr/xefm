@@ -211,7 +211,7 @@ class _DiffPane(Widget):
 
         # The filename sits on the parent's 'header' surface band (drawn full-width
         # in DiffViewer.draw), so use that bg rather than the content background.
-        name = v.path1.name if self.side == "l" else v.path2.name
+        name = v.titles[0] if self.side == "l" else v.titles[1]
         ctx.draw_text(0, 0, f" {name}"[:w],
                       Style(fg=accent, bg=_header_bg(theme), attr=TextAttribute.BOLD))
         # Content below the filename header, clipped for smooth scroll. Uses the
@@ -331,8 +331,12 @@ class DiffViewer(Widget):
         EventType.MOUSE_CLICK, EventType.MOUSE_DRAG,
     })
 
-    def __init__(self, path1, path2, *, syntax: dict | None = None, on_edited=None):
+    def __init__(self, path1, path2, *, syntax: dict | None = None, on_edited=None,
+                 titles: tuple[str | None, str | None] = (None, None)):
         self.path1, self.path2 = path1, path2
+        # Each side's header: the file name, unless the opener names the side
+        # ("HEAD", "Working tree") — a revision's file has the same name (#824).
+        self.titles = (titles[0] or path1.name, titles[1] or path2.name)
         # ``syntax`` is kept so a reload after the external TEXT_DIFF tool can
         # re-highlight; ``on_edited`` tells the opener the files may have changed.
         self._syntax = syntax
@@ -730,12 +734,14 @@ class DiffViewer(Widget):
                       title="File Diff — Keys", z=self._child_z)
 
 
-def show_diff_viewer(panel: Any, path1, path2, z: int = 80, on_edited=None) -> DiffViewer:
+def show_diff_viewer(panel: Any, path1, path2, z: int = 80, on_edited=None,
+                     titles: tuple[str | None, str | None] = (None, None)) -> DiffViewer:
     """Push a full-window modal :class:`DiffViewer` comparing two files.
     ``on_edited`` is called after the external ``TEXT_DIFF`` tool has run (the
     ``edit_file`` binding), so the opener can refresh anything it derived from
-    the files."""
-    viewer = DiffViewer(path1, path2, syntax=_syntax_palette(panel), on_edited=on_edited)
+    the files. ``titles`` replaces either side's file-name header."""
+    viewer = DiffViewer(path1, path2, syntax=_syntax_palette(panel), on_edited=on_edited,
+                        titles=titles)
     sw, sh = panel.backend.size_units
     viewer._panel = panel
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer
