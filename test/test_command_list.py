@@ -29,6 +29,29 @@ def py(code: str) -> str:
     return f'"{sys.executable}" -c "{code}"'
 
 
+def _alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))
+            return code.value == 259                       # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 class Decode(unittest.TestCase):
     def test_utf8(self):
         self.assertEqual(path_list.decode("a/日本.txt\n".encode()),
@@ -132,6 +155,23 @@ class Run(unittest.TestCase):
                         cancelled=lambda: time.monotonic() > deadline)
         self.assertTrue(out.cancelled)
         self.assertLess(time.monotonic() - start, 4.5)
+
+    def test_cancel_leaves_no_process_behind(self):
+        # The interpreter that runs the code is the shell's grandchild on
+        # Windows (cmd, cmd, then a venv launcher's child) — the one #793 found
+        # alive, holding stdout, after taskkill was denied.
+        pid_file = os.path.join(self.cwd, "pid")
+        started = lambda: os.path.exists(pid_file)
+        out = self._run(py(f"import os, time; open(r'{pid_file}', 'w').write(str(os.getpid())); "
+                           "time.sleep(30)"),
+                        cancelled=started)
+        self.assertTrue(out.cancelled)
+        with open(pid_file) as f:
+            pid = int(f.read())
+        deadline = time.monotonic() + 2
+        while _alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(_alive(pid), f"the command (pid {pid}) is still running")
 
     def test_a_command_that_cannot_start(self):
         out = command_list.run("anything", cwd=os.path.join(self.cwd, "nowhere"),
