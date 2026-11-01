@@ -81,6 +81,7 @@ see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 | Open With ▸ Viewer | `view_file` |
 | Open With ▸ Text Editor | `edit_file` |
 | Open With ▸ Default App | `open_with_os` |
+| Open With ▸ Choose App… | `open_with` — see [Open With](OPEN_WITH_FEATURE.md) |
 | Details… | `file_details` |
 | Reveal in File Manager | `reveal_in_os` |
 | New Folder… | `create_directory` *(when nothing is selected)* |

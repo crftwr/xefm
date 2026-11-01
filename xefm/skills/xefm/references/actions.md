@@ -25,6 +25,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `cursor_bottom` | Move the cursor to the last item | `Ctrl-END` | `END`, `Ctrl-END` | `END`, `Ctrl-END` | `Shift-G`, `END`, `Ctrl-END` |
 | `open_item` | Open the file, or enter the directory | `ENTER` | `ENTER`, `Ctrl-PAGE_DOWN` | `ENTER` | `l`, `g l`, `ENTER` |
 | `open_with_os` | Open with the OS default application | `Ctrl-O` | `Ctrl-O` | `Ctrl-O` | `g x` |
+| `open_with` | Choose the application that opens the selection | — | — | — | — |
 | `reveal_in_os` | Reveal in the OS file manager | `Ctrl-R` | — | — | `Ctrl-R` |
 | `go_parent` | Go to the parent directory | `BACKSPACE` | `BACKSPACE`, `Ctrl-PAGE_UP` | `BACKSPACE`, `Alt-UP` | `h`, `g h`, `BACKSPACE` |
 | `go_root` | Go to the root of the current drive or location | `\` | `Ctrl-BACKSLASH` | `\` | `\` |

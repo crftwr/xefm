@@ -445,6 +445,17 @@ _DETAILS: dict[str, str] = {
         "operating system's default for that type, or the `open` rule in "
         "`FILE_ASSOCIATIONS`. A rule set to `None` stops the file type from "
         "being opened this way at all."),
+    "open_with": (
+        "Lists the applications that can open the selected files — or the "
+        "file under the cursor — and opens them in the one you pick: first "
+        "the `open_with` entries of the `FILE_ASSOCIATIONS` rules the files "
+        "match, then the applications the operating system offers (in the "
+        "desktop app, or a terminal on this computer). With several files, "
+        "only the applications that open all of them are listed, and they "
+        "all go to it at once. The app you chose last for a file type is "
+        "listed first.\n\n"
+        "Directories are skipped, and so are files on a remote or in an "
+        "archive: an application needs a file on this computer."),
     "reveal_in_os": (
         "Shows the item under the cursor in Finder or Explorer, highlighted. "
         "Elsewhere, opens its parent directory in the system file manager."),
@@ -921,6 +932,7 @@ _FILER_ACTIONS = [
     _a("cursor_bottom", FILER, "Move the cursor to the last item"),
     _a("open_item", FILER, "Open the file, or enter the directory"),
     _a("open_with_os", FILER, "Open with the OS default application"),
+    _a("open_with", FILER, "Choose the application that opens the selection"),
     _a("reveal_in_os", FILER, "Reveal in the OS file manager"),
     _a("go_parent", FILER, "Go to the parent directory"),
     _a("go_root", FILER, "Go to the root of the current drive or location"),

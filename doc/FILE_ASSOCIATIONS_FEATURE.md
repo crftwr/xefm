@@ -76,6 +76,10 @@ Each file pattern can configure up to four actions:
 
 Keys depend on your keymap preset — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
+A rule can also carry an `open_with` list: the programs
+[Open With](OPEN_WITH_FEATURE.md) offers for its files. It is not an action —
+every matching rule's list is offered, not only the first one's.
+
 #### Two tiers of "open"
 
 `open_item` and `open_with_os` are deliberately different gestures:
@@ -527,7 +531,9 @@ directory is focused it is revealed *in its parent* (shown as a selected item),
 not opened to show its contents — useful for jumping out to the OS to
 drag-and-drop or reach a native context menu.
 
-To run one of your own configured tools instead of the OS default, open the
+To pick a different application just this time, use
+[Open With](OPEN_WITH_FEATURE.md) (**File → Open With ▸ Choose App…**). To run
+one of your own configured tools instead of the OS default, open the
 external programs menu with **X** (see
 [External Programs](EXTERNAL_PROGRAMS_FEATURE.md)).
 

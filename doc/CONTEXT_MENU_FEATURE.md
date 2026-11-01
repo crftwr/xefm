@@ -27,7 +27,7 @@ both actions also have a key that works everywhere.
 
 ## What is in them
 
-**Item menu** — Open, View File, Select / Deselect, Rename…, Duplicate, Copy /
+**Item menu** — Open, View File, Open With… ([Open With](OPEN_WITH_FEATURE.md)), Select / Deselect, Rename…, Duplicate, Copy /
 Move to Other Pane, Copy to… / Move to…, Delete, Copy Name(s), Copy Full Path(s), Open as List, Add
 to Favorites… (that item), Show Hidden Files. Copy, Move and Delete act on the
 marked files when there are any, as their keys do. Select / Deselect leaves the

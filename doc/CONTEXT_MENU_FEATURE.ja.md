@@ -17,7 +17,7 @@
 
 ## メニューの内容
 
-**項目メニュー** — Open、View File、Select / Deselect、Rename…、Duplicate、Copy / Move to Other Pane、Copy to… / Move to…、Delete、Copy Name(s)、Copy Full Path(s)、Open as List、Add to Favorites…（その項目）、Show Hidden Files。Copy、Move、Delete は、それぞれのキーと同じく、選択されたファイルがあればそれらを対象にします。Select / Deselect は、次の行へ進む `toggle_select_down` と違い、カーソルをその項目に残したままにします。
+**項目メニュー** — Open、View File、Open With…（[アプリケーションを選んで開く](OPEN_WITH_FEATURE.ja.md)）、Select / Deselect、Rename…、Duplicate、Copy / Move to Other Pane、Copy to… / Move to…、Delete、Copy Name(s)、Copy Full Path(s)、Open as List、Add to Favorites…（その項目）、Show Hidden Files。Copy、Move、Delete は、それぞれのキーと同じく、選択されたファイルがあればそれらを対象にします。Select / Deselect は、次の行へ進む `toggle_select_down` と違い、カーソルをその項目に残したままにします。
 
 空のディレクトリには項目がないので、そこでは `context_menu` でディレクトリメニューが開きます。
 
