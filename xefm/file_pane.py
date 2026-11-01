@@ -602,8 +602,8 @@ class FilePane(Widget):
             else:
                 msg = "(empty)"
             if msg:
-                ctx.draw_text(mx + 1, my, elide(msg, max(0, ctx.width - 2), measure=ctx.measure_text),
-                              Style(fg=theme.muted_text, attr=TextAttribute.DIM))
+                self._draw_message(ctx, msg, mx, my, cursor_pad)
+            self._draw_frame(ctx, not ctx.vector_shapes)
             return
 
         cursor = self.pane["focused_index"]
@@ -733,11 +733,48 @@ class FilePane(Widget):
         # resting pane (see ``_draw_cursor``). Same reasoning as the framework's own
         # ``divider="subtle"``: spend the sub-unit where it is free, spend nothing
         # where it is not.
-        frame = None if grid else self._pane_frame(theme)
+        self._draw_frame(ctx, grid)
+
+    def _draw_frame(self, ctx, grid) -> None:
+        """The focused pane's corner brackets, if the theme opts in (see the
+        call at the end of ``draw`` for why a grid never gets them)."""
+        frame = None if grid else self._pane_frame(ctx.theme)
         if frame is not None:
             color, arm, thickness = frame
             ctx.draw_corner_brackets(ctx.size_units[0], ctx.size_units[1],
                                      Style(fg=color), arm=arm, thickness=thickness)
+
+    def _draw_message(self, ctx, msg, mx, my, cursor_pad) -> None:
+        """An empty pane's one line — "(empty)", the listing error, "Loading…" —
+        drawn as the cursor row. There is no entry to put the cursor on, and
+        without the cue an empty focused pane looked exactly like an empty
+        resting one. It is the file row's cue, so it reads the same way: vivid
+        on the focused pane, muted on the other (``_draw_cursor``). The bands
+        are ``draw``'s, with no scrollbar to clear."""
+        grid = not ctx.vector_shapes
+        ruled = grid and ctx.colored_underlines
+        right = ctx.size_units[0]
+        content_left = mx + (GUTTER_W if grid else 0.0)
+        content_right = right - mx - (BRACKET_W if grid else 0.0)
+        if grid:
+            band_left, band_right = mx, right - mx
+        else:
+            band_left, band_right = cursor_pad, right - cursor_pad
+        under = self._cursor_fg(ctx.theme, ctx.background or DEFAULT_BG) if ruled else None
+        attr = TextAttribute.DIM | (TextAttribute.UNDERLINE if ruled else TextAttribute.NORMAL)
+        if not grid:
+            ctx.fill_rect(content_left, my, max(0.0, content_right - content_left), 1.0,
+                          Style(bg=ctx.background or DEFAULT_BG))
+            self._draw_cursor(ctx, my, band_left, band_right, grid)
+        elif ruled:
+            ctx.draw_text(content_left, my, " " * max(0, int(round(content_right - content_left))),
+                          Style(fg=under, attr=TextAttribute.UNDERLINE, underline_color=under))
+        ctx.draw_text(mx + 1, my,
+                      elide(msg, max(0.0, content_right - mx - 1), measure=ctx.measure_text),
+                      Style(fg=ctx.theme.muted_text, bg=None if grid else TRANSPARENT,
+                            attr=attr, underline_color=under))
+        if grid:
+            self._draw_cursor(ctx, my, band_left, band_right, grid, ruled)
 
     def _records(self) -> dict:
         """``{str(path): record}`` — the listing's own attribute records, what
