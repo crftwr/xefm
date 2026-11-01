@@ -12423,6 +12423,10 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "try":
         from xefm.try_cli import main as try_main
         sys.exit(try_main(sys.argv[2:]))
+    # `xefm keys` reads the config and prints what each key does — no window.
+    if len(sys.argv) > 1 and sys.argv[1] == "keys":
+        from xefm.keys_cli import main as keys_main
+        sys.exit(keys_main(sys.argv[2:]))
     # `xefm deps sync|status` — the packages ~/.xefm/requirements.txt declares.
     if len(sys.argv) > 1 and sys.argv[1] == "deps":
         from xefm.deps_cli import main as deps_main

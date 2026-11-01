@@ -60,7 +60,7 @@ xefm try --ext ./hello-xefm --keys steps.json --screens out/ --record demo.cast
 
 録画は `asciinema play demo.cast` で再生でき、[agg](https://github.com/asciinema/agg) を使えば GIF にできます：`agg demo.cast demo.gif`
 
-スクリプトには追加のパッケージ（`pip install 'quality-loop[tui]'`）が必要で、Windows ではまだ動きません。手で試す使い方はどこでも動きます。
+スクリプトには追加のパッケージ（`pip install 'quality-loop[tui]'`）が必要です。手で試す使い方と同じく、macOS、Linux、Windows で動きます。
 
 ### 知っておきたいこと
 

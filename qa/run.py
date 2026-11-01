@@ -70,6 +70,8 @@ TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "TodoWrite"]
 ALLOW = [
     "Read", "Glob", "Grep", "Write", "Edit", "TodoWrite",
     "Bash(xefm ext *)", "Bash(xefm skill *)", "Bash(xefm --version)",
+    # What a key does, read without starting XeFM (#801).
+    "Bash(xefm keys)", "Bash(xefm keys *)",
     # The skill's way to see a key or an extension work (#803); the room's
     # `xefm` lets it through only with --keys.
     "Bash(xefm try *)",
@@ -92,7 +94,7 @@ SHIM = """\
 #!/bin/sh
 printf '%s\\n' "$*" >> {log}
 case "$1" in
-  ext|skill|--version|-v) ;;
+  ext|skill|keys|--version|-v) ;;
   try)
     case " $* " in
       *" --keys "*|*" --keys="*) ;;

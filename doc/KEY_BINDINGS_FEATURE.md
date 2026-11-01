@@ -470,18 +470,58 @@ KEY_BINDINGS = {
 
 ## Troubleshooting
 
+### Checking bindings without starting XeFM
+
+`xefm keys` reads your `config.py` and your extension packages the way XeFM
+does, lays your keymap preset over them, and prints which key runs which action
+in each place: the file list (`filer`), each viewer, the search bar and the
+pickers. It does not open a window or change anything.
+
+```bash
+xefm keys F12             # what F12 does, wherever it does something
+xefm keys reload_config   # which keys run an action
+xefm keys                 # everything
+```
+
+```text
+config:  /Users/me/.xefm/config.py
+keymap:  afx (chosen in XeFM), tui
+
+[filer]
+  F12  reload_config
+```
+
+A binding that can never fire is reported as an `error:` line: a key name or
+modifier XeFM does not know, an action name no part of XeFM has (with the
+closest real name, when there is one), a malformed entry, or a `config.py` that
+fails to load. The exit status is then 1. The `warning:` lines are the
+`Config warning` messages XeFM would put in the log pane.
+
+- `--keymap NAME` shows another preset's keys; by default it is the one you
+  chose in XeFM, or `KEY_PRESET` from `config.py`.
+- `--backend gui` shows the desktop app's keys, which differ from the
+  terminal's under the OS native preset.
+- `--context NAME` shows one place only, such as `--context text_viewer`.
+- `--config FILE` reads another `config.py` (extensions still come from
+  `~/.xefm`).
+
+A row marked `same key as …` shares its key with the action named there. In
+most places the first one listed runs.
+
 ### Key not working
 
-1. Check the key expression format is correct
-2. Verify the key name is one of those listed under "Key Names" and
+1. Run `xefm keys` with the key, as above: it says whether XeFM understands
+   the key and the action, and where the key is bound
+2. Check the key expression format is correct
+3. Verify the key name is one of those listed under "Key Names" and
    "Punctuation by Name" above — a name outside those lists logs
    `Unknown key in expression: ...` and never fires
-3. Make sure modifiers are spelled correctly
-4. Check for conflicts with other key bindings
-5. In a terminal, check the chord is one a terminal can send at all, and that
+4. Make sure modifiers are spelled correctly
+5. Check for conflicts with other key bindings
+6. In a terminal, check the chord is one a terminal can send at all, and that
    the emulator (or VS Code, or tmux) does not claim it first — see "What a
    terminal can carry" and "Keys the host takes first" above
-6. For an `isearch.*` action, check the key is not a printable one — the search
+7. For an `isearch.*` action, check the key is not a printable one — the search
    pattern is offered those first, so such a binding never fires (XeFM says so in
    the log pane at startup)
 

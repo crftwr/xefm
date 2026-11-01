@@ -14,9 +14,9 @@ which you may not read.
 - Everything under `./skills`.
 - The user's XeFM configuration, `{xefm}/config.py` — reading it and
   editing it, when the task calls for that.
-- The `xefm ext …`, `xefm skill …` and `xefm --version` commands, and Python
-  only as far as the skill tells you to run it (checking a config edit,
-  running an extension's own tests).
+- The `xefm ext …`, `xefm skill …`, `xefm keys …` and `xefm --version`
+  commands, and Python only as far as the skill tells you to run it (checking
+  a config edit, running an extension's own tests).
 - `xefm try` **with `--keys`**, to see XeFM run a script of keys: it runs in a
   temporary home of its own and ends with the script. Keep its `--screens`
   and the script in this directory.

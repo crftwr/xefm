@@ -271,6 +271,7 @@ def test_bash_is_narrowed_and_the_room_reaches_only_the_run_s_home():
         assert "Bash" not in session.allow and "Bash(*)" not in session.allow
         assert "Bash(xefm ext *)" in session.allow
         assert "Bash(xefm try *)" in session.allow
+        assert "Bash(xefm keys *)" in session.allow
         assert session.add_dirs == [product.home.xefm]
         if os.name != "nt":  # Windows keeps its temp directory in the profile
             assert pathlib.Path.home() not in product.home.root.parents
@@ -313,8 +314,11 @@ def test_the_room_s_xefm_runs_the_cli_in_the_run_s_home_and_refuses_the_app():
         listed = subprocess.run([shim, "ext", "list"], capture_output=True, text=True,
                                 timeout=120)
         assert listed.returncode == 0, listed.stderr
+        keys = subprocess.run([shim, "keys", "quit"], capture_output=True, text=True,
+                              timeout=120)
+        assert keys.returncode == 0 and "quit" in keys.stdout, keys.stdout + keys.stderr
         calls = (home.calls / "xefm-calls.log").read_text().splitlines()
-        assert calls == ["--backend gui", "try --keymap afx", "ext list"]
+        assert calls == ["--backend gui", "try --keymap afx", "ext list", "keys quit"]
     finally:
         home.remove()
 

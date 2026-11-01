@@ -23,8 +23,8 @@ serves all three:
   XeFM.
 
 Scripted mode needs ``pyte`` (the emulator) and quality-loop's key notation:
-``pip install 'quality-loop[tui]'`` brings both. POSIX only for now: Windows
-has ConPTY, which this does not drive yet.
+``pip install 'quality-loop[tui]'`` brings both. The pseudo-terminal is a pty
+on macOS and Linux and a pseudoconsole (ConPTY) on Windows.
 """
 
 from __future__ import annotations
@@ -296,37 +296,345 @@ def screen_file(text: str, marks: list[dict]) -> str:
 
 # --- the terminal -------------------------------------------------------------
 
-class PtyApp:
-    """One terminal app under a pseudo-terminal of a fixed size, its screen
-    kept as text by a terminal emulator kept in step with everything it
-    writes."""
+class _PosixTerminal:
+    """A pseudo-terminal pair: the app on the slave side in a session of its
+    own, this side reading and writing the master."""
 
-    def __init__(self, argv: list[str], *, rows: int, cols: int, env: dict,
-                 cwd: str, recording: Recording | None = None):
-        if os.name == "nt":
-            raise TryError("--keys drives XeFM in a pseudo-terminal, which this "
-                           "does not do on Windows yet; run `xefm try` without "
-                           "--keys to try it by hand")
+    def __init__(self, argv: list[str], *, rows: int, cols: int, env: dict, cwd: str):
         import fcntl
         import struct
         import termios
+        master, slave = os.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        self._master = master
+        self.process = subprocess.Popen(
+            argv, stdin=slave, stdout=slave, stderr=slave, cwd=cwd, env=env,
+            start_new_session=True, close_fds=True)
+        os.close(slave)
+
+    def read(self) -> bytes | None:
+        """What the app wrote: None when nothing came within a moment, b"" once
+        the terminal is gone."""
+        try:
+            ready, _w, _x = select.select([self._master], [], [], 0.1)
+            if not ready:
+                return None
+            return os.read(self._master, 65536)
+        except OSError:
+            return b""
+
+    def write(self, data: bytes) -> None:
+        os.write(self._master, data)
+
+    def stop(self, grace: float) -> None:
+        """End the app: its process group, politely and then not."""
+        if self.process.poll() is None:
+            try:
+                os.killpg(self.process.pid, signal.SIGTERM)
+            except OSError:
+                pass
+            try:
+                self.process.wait(grace)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(self.process.pid, signal.SIGKILL)
+                except OSError:
+                    pass
+                self.process.wait()
+
+    def close(self) -> None:
+        try:
+            os.close(self._master)
+        except OSError:
+            pass
+
+
+class _WindowsProcess:
+    """The little of :class:`subprocess.Popen` the runner uses, over a process
+    handle from ``CreateProcessW`` (which Popen cannot start: it has no way to
+    pass the pseudoconsole attribute)."""
+
+    _WAIT_TIMEOUT = 0x102
+
+    def __init__(self, k32, handle, pid: int):
+        self._k32, self._handle, self.pid = k32, handle, pid
+        self.returncode: int | None = None
+
+    def wait(self, timeout: float | None = None) -> int:
+        ms = 0xFFFFFFFF if timeout is None else max(0, int(timeout * 1000))
+        if self.returncode is None and \
+                self._k32.WaitForSingleObject(self._handle, ms) == self._WAIT_TIMEOUT:
+            raise subprocess.TimeoutExpired("xefm", timeout)
+        return self.poll()
+
+    def poll(self) -> int | None:
+        if self.returncode is None and self._k32.WaitForSingleObject(self._handle, 0) == 0:
+            import ctypes
+            code = ctypes.c_ulong()
+            self._k32.GetExitCodeProcess(self._handle, ctypes.byref(code))
+            self.returncode = code.value
+        return self.returncode
+
+
+class _ConPtyTerminal:
+    """A Windows pseudoconsole (ConPTY): the app attached to a console of a
+    fixed size that turns what it draws into VT sequences on one pipe and the
+    VT input written to the other into key events. A job object holds the app
+    and anything it starts, so the end of a run takes them all."""
+
+    _PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
+    _EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+    _CREATE_UNICODE_ENVIRONMENT = 0x00000400
+    _CREATE_SUSPENDED = 0x00000004
+    _STARTF_USESTDHANDLES = 0x00000100
+    _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+    _JobObjectExtendedLimitInformation = 9
+
+    def __init__(self, argv: list[str], *, rows: int, cols: int, env: dict, cwd: str):
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+        self._ctypes = ctypes
+        k32 = self._k32 = _kernel32()
+        self._hpc = self._job = self._attributes = None
+        self._handles: list = []
+        self._fds: list[int] = []
+        try:
+            # Ours: we write the app's input to one and read its screen from
+            # the other. The ends handed to the pseudoconsole are duplicated
+            # into it, so they are closed here once it has them.
+            in_read, self._in_write = os.pipe()
+            self._out_read, out_write = os.pipe()
+            self._fds = [self._in_write, self._out_read]
+            hpc = wintypes.HANDLE()
+            hr = k32.CreatePseudoConsole(_COORD(cols, rows), msvcrt.get_osfhandle(in_read),
+                                         msvcrt.get_osfhandle(out_write), 0,
+                                         ctypes.byref(hpc))
+            os.close(in_read)
+            os.close(out_write)
+            if hr != 0:
+                raise TryError(f"CreatePseudoConsole failed (0x{hr & 0xFFFFFFFF:08x})")
+            self._hpc = hpc
+
+            size = ctypes.c_size_t()
+            k32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+            self._attributes = ctypes.create_string_buffer(size.value)
+            if not k32.InitializeProcThreadAttributeList(self._attributes, 1, 0,
+                                                         ctypes.byref(size)):
+                raise _win_error("InitializeProcThreadAttributeList")
+            if not k32.UpdateProcThreadAttribute(
+                    self._attributes, 0, self._PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+                    hpc, ctypes.sizeof(hpc), None, None):
+                raise _win_error("UpdateProcThreadAttribute")
+
+            info = _STARTUPINFOEXW()
+            info.StartupInfo.cb = ctypes.sizeof(info)
+            # Null standard handles, explicitly: left unset, a child of a
+            # process whose own output is redirected (an agent's shell) can
+            # inherit those handles and write past the pseudoconsole.
+            info.StartupInfo.dwFlags = self._STARTF_USESTDHANDLES
+            info.lpAttributeList = ctypes.cast(self._attributes, ctypes.c_void_p)
+            block = "".join(f"{k}={v}\0" for k, v in
+                            sorted(env.items(), key=lambda kv: kv[0].upper())) + "\0"
+            environment = (ctypes.c_wchar * len(block)).from_buffer_copy(
+                block.encode("utf-16-le"))
+            command = ctypes.create_unicode_buffer(subprocess.list2cmdline(argv))
+            process = _PROCESS_INFORMATION()
+            if not k32.CreateProcessW(
+                    None, command, None, None, False,
+                    self._EXTENDED_STARTUPINFO_PRESENT | self._CREATE_UNICODE_ENVIRONMENT
+                    | self._CREATE_SUSPENDED,
+                    environment, cwd, ctypes.byref(info.StartupInfo),
+                    ctypes.byref(process)):
+                raise _win_error("CreateProcessW")
+            self._handles = [process.hProcess, process.hThread]
+            self._job = self._kill_on_close_job()
+            if not k32.AssignProcessToJobObject(self._job, process.hProcess):
+                raise _win_error("AssignProcessToJobObject")
+            k32.ResumeThread(process.hThread)
+            self.process = _WindowsProcess(k32, process.hProcess, process.dwProcessId)
+        except BaseException:
+            if self._handles:
+                k32.TerminateProcess(self._handles[0], 1)
+            self.close()
+            raise
+
+    def _kill_on_close_job(self):
+        ctypes = self._ctypes
+        job = self._k32.CreateJobObjectW(None, None)
+        if not job:
+            raise _win_error("CreateJobObjectW")
+        limits = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        limits.BasicLimitInformation.LimitFlags = self._JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        self._k32.SetInformationJobObject(job, self._JobObjectExtendedLimitInformation,
+                                          ctypes.byref(limits), ctypes.sizeof(limits))
+        return job
+
+    def read(self) -> bytes | None:
+        # A blocking read on the reader thread; it ends when the
+        # pseudoconsole closes, which close() and stop() see to.
+        try:
+            return os.read(self._out_read, 65536)
+        except OSError:
+            return b""
+
+    def write(self, data: bytes) -> None:
+        os.write(self._in_write, data)
+
+    def stop(self, grace: float) -> None:
+        """End the app: closing the pseudoconsole sends it CTRL_CLOSE_EVENT,
+        as closing a console window does; then the job takes what is left."""
+        if self.process.poll() is None:
+            self._close_console()
+            try:
+                self.process.wait(grace)
+            except subprocess.TimeoutExpired:
+                self._k32.TerminateJobObject(self._job, 1)
+                self.process.wait()
+        self._close_console()
+
+    def _close_console(self) -> None:
+        if self._hpc is not None:
+            # Blocks until the screen pipe is drained on older Windows, which
+            # the reader thread is still doing.
+            self._k32.ClosePseudoConsole(self._hpc)
+            self._hpc = None
+
+    def close(self) -> None:
+        self._close_console()
+        for fd in self._fds:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        self._fds = []
+        for handle in self._handles + ([self._job] if self._job else []):
+            self._k32.CloseHandle(handle)
+        self._handles, self._job = [], None
+        if self._attributes is not None:
+            self._k32.DeleteProcThreadAttributeList(self._attributes)
+            self._attributes = None
+
+
+def _win_error(what: str) -> TryError:
+    import ctypes
+    return TryError(f"{what} failed: {ctypes.FormatError(ctypes.get_last_error())}")
+
+
+_K32 = None
+
+
+def _kernel32():
+    """kernel32 with a prototype for every call above: ctypes would take each
+    handle for a C int, which truncates it on 64-bit Windows."""
+    global _K32, _COORD, _STARTUPINFOEXW, _PROCESS_INFORMATION, \
+        _JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    if _K32 is not None:
+        return _K32
+    import ctypes
+    from ctypes import wintypes
+
+    class COORD(ctypes.Structure):
+        _fields_ = [("X", wintypes.SHORT), ("Y", wintypes.SHORT)]
+
+    class STARTUPINFOW(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("lpReserved", wintypes.LPWSTR),
+                    ("lpDesktop", wintypes.LPWSTR), ("lpTitle", wintypes.LPWSTR),
+                    ("dwX", wintypes.DWORD), ("dwY", wintypes.DWORD),
+                    ("dwXSize", wintypes.DWORD), ("dwYSize", wintypes.DWORD),
+                    ("dwXCountChars", wintypes.DWORD), ("dwYCountChars", wintypes.DWORD),
+                    ("dwFillAttribute", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
+                    ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
+                    ("lpReserved2", ctypes.c_void_p), ("hStdInput", wintypes.HANDLE),
+                    ("hStdOutput", wintypes.HANDLE), ("hStdError", wintypes.HANDLE)]
+
+    class STARTUPINFOEXW(ctypes.Structure):
+        _fields_ = [("StartupInfo", STARTUPINFOW), ("lpAttributeList", ctypes.c_void_p)]
+
+    class PROCESS_INFORMATION(ctypes.Structure):
+        _fields_ = [("hProcess", wintypes.HANDLE), ("hThread", wintypes.HANDLE),
+                    ("dwProcessId", wintypes.DWORD), ("dwThreadId", wintypes.DWORD)]
+
+    class IO_COUNTERS(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_ulonglong) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong),
+                    ("PerJobUserTimeLimit", ctypes.c_longlong),
+                    ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD)]
+
+    class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                    ("IoInfo", IO_COUNTERS),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    _COORD, _STARTUPINFOEXW, _PROCESS_INFORMATION = COORD, STARTUPINFOEXW, PROCESS_INFORMATION
+    _JOBOBJECT_EXTENDED_LIMIT_INFORMATION = JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    H, DWORD, BOOL = wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL
+    prototypes = {
+        "CreatePseudoConsole": (ctypes.c_long, [COORD, H, H, DWORD, ctypes.POINTER(H)]),
+        "ClosePseudoConsole": (None, [H]),
+        "InitializeProcThreadAttributeList": (
+            BOOL, [ctypes.c_void_p, DWORD, DWORD, ctypes.POINTER(ctypes.c_size_t)]),
+        "UpdateProcThreadAttribute": (
+            BOOL, [ctypes.c_void_p, DWORD, ctypes.c_size_t, H, ctypes.c_size_t,
+                   ctypes.c_void_p, ctypes.c_void_p]),
+        "DeleteProcThreadAttributeList": (None, [ctypes.c_void_p]),
+        "CreateProcessW": (
+            BOOL, [wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.c_void_p, ctypes.c_void_p,
+                   BOOL, DWORD, ctypes.c_void_p, wintypes.LPCWSTR,
+                   ctypes.POINTER(STARTUPINFOW), ctypes.POINTER(PROCESS_INFORMATION)]),
+        "CreateJobObjectW": (H, [ctypes.c_void_p, wintypes.LPCWSTR]),
+        "SetInformationJobObject": (BOOL, [H, ctypes.c_int, ctypes.c_void_p, DWORD]),
+        "AssignProcessToJobObject": (BOOL, [H, H]),
+        "TerminateJobObject": (BOOL, [H, wintypes.UINT]),
+        "TerminateProcess": (BOOL, [H, wintypes.UINT]),
+        "ResumeThread": (DWORD, [H]),
+        "WaitForSingleObject": (DWORD, [H, DWORD]),
+        "GetExitCodeProcess": (BOOL, [H, ctypes.POINTER(DWORD)]),
+        "CloseHandle": (BOOL, [H]),
+    }
+    for name, (restype, argtypes) in prototypes.items():
+        function = getattr(k32, name)
+        function.restype, function.argtypes = restype, argtypes
+    _K32 = k32
+    return k32
+
+
+class PtyApp:
+    """One terminal app under a pseudo-terminal of a fixed size — a pty on
+    POSIX, a pseudoconsole on Windows — its screen kept as text by a terminal
+    emulator kept in step with everything it writes."""
+
+    def __init__(self, argv: list[str], *, rows: int, cols: int, env: dict,
+                 cwd: str, recording: Recording | None = None):
         pyte = _pyte()
         self.rows, self.cols = rows, cols
         self.screen = pyte.Screen(cols, rows)
         self._stream = pyte.ByteStream(self.screen)
         self._recording = recording
-        master, slave = os.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-        self._master = master
         # The app's answers to queries (cursor position, device attributes)
         # go back down the pty, or an app that asks waits forever.
         self.screen.write_process_input = lambda data: self._write(data.encode("utf-8"))
-        self.process = subprocess.Popen(
-            argv, stdin=slave, stdout=slave, stderr=slave, cwd=cwd,
+        terminal = _ConPtyTerminal if os.name == "nt" else _PosixTerminal
+        self._terminal = terminal(
+            argv, rows=rows, cols=cols, cwd=cwd,
             env={**os.environ, **env, "TERM": "xterm-256color",
-                 "LINES": str(rows), "COLUMNS": str(cols)},
-            start_new_session=True, close_fds=True)
-        os.close(slave)
+                 "LINES": str(rows), "COLUMNS": str(cols)})
+        self.process = self._terminal.process
         self._lock = threading.Lock()
         self._changed = self._sent = time.monotonic()
         self._closed = False
@@ -335,13 +643,9 @@ class PtyApp:
 
     def _read(self) -> None:
         while not self._closed:
-            try:
-                ready, _w, _x = select.select([self._master], [], [], 0.1)
-                if not ready:
-                    continue
-                data = os.read(self._master, 65536)
-            except OSError:
-                break
+            data = self._terminal.read()
+            if data is None:
+                continue
             if not data:
                 break
             with self._lock:
@@ -352,7 +656,10 @@ class PtyApp:
 
     def _write(self, data: bytes) -> None:
         if not self._closed:
-            os.write(self._master, data)
+            try:
+                self._terminal.write(data)
+            except OSError:
+                pass  # the app is gone; what it would have read goes nowhere
 
     def send(self, items: list) -> None:
         keys = _keys_module()
@@ -395,26 +702,11 @@ class PtyApp:
         return False
 
     def stop(self, grace: float = 3.0) -> int | None:
-        """End the app: its process group, politely and then not."""
-        if self.process.poll() is None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-            except OSError:
-                pass
-            try:
-                self.process.wait(grace)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(self.process.pid, signal.SIGKILL)
-                except OSError:
-                    pass
-                self.process.wait()
+        """End the app, politely and then not, and the terminal with it."""
+        self._terminal.stop(grace)
         self._closed = True
         self._reader.join(1.0)
-        try:
-            os.close(self._master)
-        except OSError:
-            pass
+        self._terminal.close()
         return self.process.returncode
 
 

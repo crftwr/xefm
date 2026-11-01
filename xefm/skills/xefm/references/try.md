@@ -29,8 +29,9 @@ xefm try --ext hello-xefm --keys steps.json --screens out/ --record out/session.
 - The left pane opens on a few fixture files (`a.txt`, `b.txt`, `c.md`,
   `folder/`); `--left DIR` opens another directory.
 - It needs `pip install 'quality-loop[tui]'` (a terminal emulator and the key
-  notation below), and does not run on Windows yet. If either stops it, tell
-  the user, and rely on the tests.
+  notation below). If that is missing, tell the user. What can be checked
+  without it: an extension with its unit tests and `xefm ext check`, a key a
+  config edit bound with `xefm keys` (`references/config.md` §4).
 
 The script is a JSON list of steps. Each step sends its keys, then waits until
 the screen has stopped changing:

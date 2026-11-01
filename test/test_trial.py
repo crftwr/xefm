@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
@@ -273,6 +274,51 @@ class EventLog(_Tmp):
         self.assertEqual((event["kind"], event["logger"], event["text"]),
                          ("exception", "EventLogTest", "Action failed"))
         self.assertIn("ValueError: boom", event["traceback"])
+
+
+
+#: A line-reading program in place of XeFM: fast, and enough to show that keys
+#: reach the app and what it writes reaches the emulator.
+_ECHO = ("import sys\n"
+         "print('ready', flush=True)\n"
+         "line = sys.stdin.readline()\n"
+         "print('got:' + line.strip()[::-1], flush=True)\n"
+         "sys.stdin.readline()\n")
+
+
+@unittest.skipUnless(HAVE_KEYS, "needs quality-loop[tui]")
+class PseudoTerminal(unittest.TestCase):
+    """The pseudo-terminal itself — a pty on POSIX, a pseudoconsole on
+    Windows (#801) — under a small program instead of XeFM."""
+
+    def start(self, code: str) -> "trial.PtyApp":
+        app = trial.PtyApp([sys.executable, "-c", code], rows=10, cols=40, env={},
+                           cwd=os.getcwd())
+        self.addCleanup(app.stop, 1.0)
+        return app
+
+    def wait_for(self, app, text: str, patience: float = 5.0) -> None:
+        deadline = time.monotonic() + patience
+        while text not in app.text():
+            if time.monotonic() > deadline:
+                self.fail(f"{text!r} never appeared; the screen:\n{app.text()}")
+            time.sleep(0.05)
+
+    def test_keys_go_in_and_the_screen_comes_out(self):
+        from quality_loop.drive import keys
+        app = self.start(_ECHO)
+        self.wait_for(app, "ready")
+        app.send(keys.sequence([{"text": "abc"}, "Enter"]))
+        self.wait_for(app, "got:cba")
+        self.assertIsNone(app.process.poll())
+
+    def test_stop_ends_an_app_that_does_not_quit(self):
+        app = self.start("import time\nprint('up', flush=True)\ntime.sleep(60)\n")
+        self.wait_for(app, "up")
+        started = time.monotonic()
+        app.stop(grace=1.0)
+        self.assertIsNotNone(app.process.poll())
+        self.assertLess(time.monotonic() - started, 5.0)
 
 
 if __name__ == "__main__":
