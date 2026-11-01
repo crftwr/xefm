@@ -52,6 +52,10 @@ from __future__ import annotations
 
 from typing import Callable
 
+from xefm.background_blocks import AVAILABLE as BLOCKS_AVAILABLE
+from xefm.background_blocks import OPTIONS as BLOCKS_OPTIONS, blocks_shader
+from xefm.background_crystal import AVAILABLE as CRYSTAL_AVAILABLE
+from xefm.background_crystal import OPTIONS as CRYSTAL_OPTIONS, crystal_shader
 from xefm.background_earth import AVAILABLE as EARTH_AVAILABLE
 from xefm.background_earth import OPTIONS as EARTH_OPTIONS, earth_shader
 
@@ -3816,6 +3820,12 @@ SHADER_KINDS: dict[str, dict] = {
     # see xefm.background_earth. These are its defaults; a theme's options
     # rebuild them through SCENE_OPTIONS below.
     **({"earth": earth_shader()} if EARTH_AVAILABLE else {}),
+    # Composed stills too, both of them: a field of metal columns with light
+    # leaking up between them (xefm.background_blocks), and a macro of crystals
+    # growing out of basalt, which bakes a volume and films it with a depth of
+    # field (xefm.background_crystal). Each brings its own lens.
+    **({"blocks": blocks_shader()} if BLOCKS_AVAILABLE else {}),
+    **({"crystal": crystal_shader()} if CRYSTAL_AVAILABLE else {}),
 }
 
 #: Scenes that take options of their own beyond the shared ``speed``/``opacity``/
@@ -3823,5 +3833,7 @@ SHADER_KINDS: dict[str, dict] = {
 #: function that turns them into the scene's ``Shader`` fields (replacing its
 #: ``SHADER_KINDS`` entry). A scene absent here takes no options.
 SCENE_OPTIONS: dict[str, tuple[tuple[str, ...], Callable[..., dict]]] = {
-    "earth": (EARTH_OPTIONS, earth_shader),
-} if EARTH_AVAILABLE else {}
+    **({"earth": (EARTH_OPTIONS, earth_shader)} if EARTH_AVAILABLE else {}),
+    **({"blocks": (BLOCKS_OPTIONS, blocks_shader)} if BLOCKS_AVAILABLE else {}),
+    **({"crystal": (CRYSTAL_OPTIONS, crystal_shader)} if CRYSTAL_AVAILABLE else {}),
+}

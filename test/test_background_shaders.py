@@ -39,12 +39,16 @@ d3d_only = pytest.mark.skipif(not HAVE_D3D_SHADER, reason="D3D shader support un
 
 _INK, _BACKDROP = (200, 224, 245), (16, 30, 50)
 
-#: Scenes that are a picture rather than motion: physically coloured (they ignore
-#: ``ink``), composed to be looked at still (they freeze when idle), and allowed to
-#: fill the frame — legibility over them is the theme's surface opacity's job.
-#: They bring textures and a lens, which the web backend does not bind, so they
-#: ship no GLSL. See test_background_earth.py for what they promise instead.
-PICTURES = {"earth"}
+#: Scenes that are a picture rather than motion: composed to be looked at still
+#: (they freeze when idle) and allowed to fill the frame — legibility over them
+#: is the theme's surface opacity's and their lens's brightness ceiling's job.
+#: They bring a lens (and textures or volumes), which the web backend does not
+#: bind, so they ship no GLSL. See test_background_earth.py and
+#: test_background_blocks_crystal.py for what they promise instead.
+PICTURES = {"earth", "blocks", "crystal"}
+
+#: The one scene that ignores ``ink``: Earth is physically coloured.
+INKLESS = {"earth"}
 
 
 def _shader(kind):
@@ -56,7 +60,7 @@ class Registry(unittest.TestCase):
     def test_expected_shaders_are_offered(self):
         self.assertEqual(set(SHADER_KINDS),
                          {"wave", "rain", "starfield", "grid", "constellation",
-                          "datastream", "hologram", "earth"})
+                          "datastream", "hologram", "earth", "blocks", "crystal"})
 
     def test_each_entry_is_valid_shader_kwargs(self):
         # The dict is splatted straight into Shader(...), so a stray key would
@@ -228,9 +232,9 @@ class Compilation(unittest.TestCase):
 
     def test_every_shader_follows_the_theme_ink(self):
         # Scenes are anchored on the theme foreground rather than fixed colours, so
-        # a different palette must produce a visibly different frame. A picture is
+        # a different palette must produce a visibly different frame. Earth is
         # physically coloured instead (test_background_earth.py asserts that).
-        for kind in set(SHADER_KINDS) - PICTURES:
+        for kind in set(SHADER_KINDS) - INKLESS:
             renderer = MetalBackground()
             self.assertTrue(renderer.set_shader(
                 Shader(ink=(200, 224, 245), backdrop=_BACKDROP, **SHADER_KINDS[kind])))

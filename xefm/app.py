@@ -689,6 +689,47 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                    # night side toward the navy while leaving the glint hot.
                    animation={"type": "earth", "speed": 0.8, "opacity": 1.0},
                    opacity=0.72)),   # chrome at 72%: the planet reads, the list wins
+    # Blocks: a field of blue-black metal columns in blue fog (the ``blocks``
+    # scene, see xefm.background_blocks), rising and falling at their own uneven
+    # pace, with light leaking up between them now and then. The base is the
+    # scene's own fog, which it takes from the theme background; the leaks are
+    # the accent cyan, which the scene takes as its ink; amber, the warm leak of
+    # the prototype's palette, marks the things to find.
+    ("Blocks", dict(bg=(10, 22, 38), fg=(214, 230, 244), muted=(136, 160, 186),
+                    accent=(99, 214, 255), surface=(18, 34, 54), selection=(28, 68, 104),
+                    accent2=(255, 179, 92),
+                    status=lambda p: mix(p["bg"], p["accent"], 0.16),
+                    footer=lambda p: mix(p["bg"], p["accent"], 0.16),
+                    file_types={"directory": (130, 214, 255), "link": (255, 179, 92)},
+                    cursor={"active": (255, 179, 92)},
+                    syntax={"keyword": (130, 214, 255), "string": (255, 196, 128),
+                            "comment": (136, 160, 186), "number": (255, 222, 150),
+                            "operator": (196, 176, 255), "builtin": (128, 226, 214)},
+                    post_effect={"drop_shadow": 0.5},
+                    # Tuned at speed 1: the camera's loop is about five minutes.
+                    animation={"type": "blocks", "color": (99, 214, 255), "speed": 1.0,
+                               "opacity": 1.0},
+                    opacity=0.66)),
+    # Crystal: the brand's own scene — cyan crystals growing out of black basalt,
+    # filmed as a macro (the ``crystal`` scene, see xefm.background_crystal). XeFM
+    # is named for the xenolith, the foreign stone caught in rock. Graphite base,
+    # the icon's cyan for the accent and for the glass (the scene's ink), amber
+    # for what to find.
+    ("Crystal", dict(bg=(21, 24, 27), fg=(214, 221, 224), muted=(138, 151, 159),
+                     accent=(88, 199, 222), surface=(30, 35, 39), selection=(28, 70, 82),
+                     accent2=(255, 154, 82),
+                     status=lambda p: mix(p["bg"], p["accent"], 0.14),
+                     footer=lambda p: mix(p["bg"], p["accent"], 0.14),
+                     file_types={"directory": (88, 199, 222), "link": (255, 154, 82)},
+                     cursor={"active": (255, 154, 82)},
+                     syntax={"keyword": (88, 199, 222), "string": (255, 182, 120),
+                             "comment": (138, 151, 159), "number": (255, 214, 150),
+                             "operator": (196, 176, 255), "builtin": (140, 222, 170)},
+                     post_effect={"drop_shadow": 0.5},
+                     # Tuned at speed 1: one orbit of the rock is about 140 s.
+                     animation={"type": "crystal", "color": (88, 199, 222), "speed": 1.0,
+                                "opacity": 1.0},
+                     opacity=0.6)),
 ]
 
 THEMES: list[tuple[str, Theme]] = [(name, _theme(**spec)) for name, spec in _THEME_SPECS]

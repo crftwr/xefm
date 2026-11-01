@@ -178,6 +178,8 @@ class Config:
     #   #       'wave'          a dense particle wave with its own colour gradient
     #   #       'earth'         the planet from orbit, in its own natural colours
     #   #                       (the one scene that ignores the foreground)
+    #   #       'blocks'        metal columns in fog, light leaking between them
+    #   #       'crystal'       a macro of crystals growing out of basalt
     #   #     Written as a bare type, or a dict to retune speed / opacity:
     #   #       'animation': 'starfield'                     # the tuned default
     #   #       'animation': {'type': 'rain', 'speed': 1.0, 'opacity': 0.8}
@@ -192,6 +194,11 @@ class Config:
     #   #             'aberration' | 'mono' | 'film' | 'anamorphic' | 'flare' |
     #   #             'fisheye' | 'crt' | 'infrared' | 'night-vision' — a list to
     #   #             pick among, or {'preset': 'film', 'grain': 0} to tune one
+    #   #     'blocks' takes leaks, leak_strength, motion, camera (each 1 as tuned),
+    #   #     exposure and brightness; 'crystal' takes focus (1 as tuned, 0 = all
+    #   #     sharp), exposure and brightness:
+    #   #       'animation': {'type': 'blocks', 'leaks': 1.5, 'camera': 0.5}
+    #   #       'animation': {'type': 'crystal', 'focus': 0.5}
     #   #     ('cube', a spinning wireframe, also works — it is the UI toolkit's
     #   #      own reference scene rather than one of XeFM's.)
     #   #   * wallpaper — a single image scaled to fill the window:
