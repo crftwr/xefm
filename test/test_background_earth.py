@@ -15,11 +15,12 @@ from dataclasses import replace
 import pytest
 
 from puikit import _platform_image
-from puikit.background import Lens, LensCycle, Shader, slot_hash
+from puikit.background import Shader
 from puikit.backends._metal import HAVE_METAL, MetalBackground
 
 from xefm import app as xefm_app
 from xefm import background_earth as earth
+from xefm.background_lens import Look, slot_hash
 from xefm.background_shaders import SCENE_OPTIONS, SHADER_KINDS
 
 metal_only = pytest.mark.skipif(not HAVE_METAL, reason="Metal unavailable")
@@ -43,12 +44,12 @@ class Options(unittest.TestCase):
         fields = earth.earth_shader()
         consts = _consts(fields["source"])
         self.assertEqual(consts["SHOT"].strip(), "-1")
-        self.assertIsInstance(fields["lens"], LensCycle)
-        self.assertEqual(fields["lens"].looks, tuple(map(_capped, earth.LENSES.values())))
+        self.assertEqual(earth.earth_looks(), tuple(map(_capped, earth.LENSES.values())))
         self.assertEqual(int(consts["LENS_COUNT"]), len(earth.LENSES))
+        self.assertEqual(int(consts["LENS_LOOK_COUNT"]), len(earth.LENSES))
         # The camera and the look change together.
-        self.assertEqual(float(consts["SHOT_SECONDS"]), fields["lens"].period)
-        self.assertEqual(float(consts["TRANSITION"]), fields["lens"].transition)
+        self.assertEqual(float(consts["SHOT_SECONDS"]), float(consts["LENS_PERIOD"]))
+        self.assertEqual(float(consts["TRANSITION"]), float(consts["LENS_TRANSITION"]))
         self.assertEqual(fields["idle"], "freeze")
         self.assertEqual(fields["textures"], earth.TEXTURES)
 
@@ -66,19 +67,20 @@ class Options(unittest.TestCase):
         self.assertEqual(_consts(earth.earth_shader(shot="moon")["source"])["SHOT"].strip(), "-1")
 
     def test_lens_by_name_by_dict_by_list_and_fallback(self):
-        fixed = earth.earth_shader(lens="Film")
-        self.assertEqual(fixed["lens"], _capped(earth.LENSES["film"]))
-        self.assertEqual(_consts(fixed["source"])["LENS_COUNT"].strip(), "1")
-        tuned = earth.earth_shader(lens={"preset": "film", "grain": 0.0})["lens"]
+        self.assertEqual(earth.earth_looks("Film"), (_capped(earth.LENSES["film"]),))
+        self.assertEqual(_consts(earth.earth_shader(lens="Film")["source"])["LENS_COUNT"].strip(),
+                         "1")
+        (tuned,) = earth.earth_looks({"preset": "film", "grain": 0.0})
         self.assertEqual(tuned.grain, 0.0)
         self.assertEqual(tuned.halation, earth.LENSES["film"].halation)
-        some = earth.earth_shader(lens=["film", "nope", "crt"])
-        self.assertEqual(some["lens"].looks,
+        self.assertEqual(earth.earth_looks(["film", "nope", "crt"]),
                          (_capped(earth.LENSES["film"]), _capped(earth.LENSES["crt"])))
+        some = earth.earth_shader(lens=["film", "nope", "crt"])
         self.assertEqual(_consts(some["source"])["LENS_COUNT"].strip(), "2")
         # The scene cannot be shown without a lens, so nothing bad leaves it lensless.
         for bad in ("no-such-lens", {"no_such_field": 1}, 42, []):
-            self.assertIsInstance(earth.earth_shader(lens=bad)["lens"], (Lens, LensCycle), bad)
+            looks = earth.earth_looks(bad)
+            self.assertTrue(looks and all(isinstance(l, Look) for l in looks), bad)
 
     def test_numbers_are_clamped_and_bad_ones_default(self):
         consts = _consts(earth.earth_shader(clouds=99, exposure="bright")["source"])
@@ -86,15 +88,15 @@ class Options(unittest.TestCase):
         self.assertEqual(float(consts["EXPOSURE"]), earth.DEFAULT_EXPOSURE)
 
     def test_brightness_is_the_ceiling_of_every_look(self):
-        self.assertEqual({l.level for l in earth.earth_shader()["lens"].looks}, {0.5})
-        self.assertEqual(earth.earth_shader(lens="film", brightness=0.8)["lens"].level, 0.8)
-        self.assertEqual(earth.earth_shader(lens="film", brightness=7)["lens"].level, 1.0)
+        self.assertEqual({l.level for l in earth.earth_looks()}, {0.5})
+        self.assertEqual(earth.earth_looks("film", brightness=0.8)[0].level, 0.8)
+        self.assertEqual(earth.earth_looks("film", brightness=7)[0].level, 1.0)
 
     def test_dialects_bake_the_same_options(self):
         fields = earth.earth_shader(shot="rise", clouds=1.5, exposure=0.7)
         msl, hlsl = _consts(fields["source"]), _consts(fields["source_hlsl"])
         for name in ("SHOT", "CLOUD_H", "EXPOSURE", "LENS_COUNT", "SHOT_SECONDS",
-                     "TRANSITION"):
+                     "TRANSITION", "LENS_LOOK_COUNT", "LENS_PERIOD", "LENS_TRANSITION"):
             self.assertEqual(float(msl[name]), float(hlsl[name]), name)
 
     def test_shot_tables_match_between_dialects(self):
@@ -123,19 +125,19 @@ class ThemeResolution(unittest.TestCase):
     def test_scene_options_reach_the_shader(self):
         bg = self._resolve({"type": "earth", "shot": "leo", "lens": "crt", "speed": 0.5})
         self.assertIsInstance(bg, Shader)
-        self.assertEqual(bg.lens, _capped(earth.LENSES["crt"]))
+        self.assertEqual(bg.source, earth.earth_shader(shot="leo", lens="crt")["source"])
         self.assertEqual(_consts(bg.source)["SHOT"].strip(), str(earth.SHOTS.index("leo")))
         self.assertEqual(bg.speed, 0.5)
 
     def test_the_bare_name_uses_the_registry_defaults(self):
         bg = self._resolve("earth")
         self.assertEqual(bg.source, SHADER_KINDS["earth"]["source"])
-        self.assertEqual(bg.lens, SHADER_KINDS["earth"]["lens"])
+        self.assertEqual(bg.passes, SHADER_KINDS["earth"]["passes"])
 
     def test_options_of_one_scene_do_not_leak_into_another(self):
         # ``lens`` means nothing to the wave; it is ignored, not an error.
         bg = self._resolve({"type": "wave", "lens": "crt"})
-        self.assertIsNone(bg.lens)
+        self.assertEqual(bg.passes, ())
         self.assertEqual(SCENE_OPTIONS["earth"][0], earth.OPTIONS)
 
     def test_the_earth_theme_is_built_in(self):
@@ -144,7 +146,7 @@ class ThemeResolution(unittest.TestCase):
         theme = dict(xefm_app.THEMES)["Earth"]
         bg = theme.extras["background"]
         self.assertIsInstance(bg, Shader)
-        self.assertIsNotNone(bg.lens)
+        self.assertTrue(bg.passes)
         self.assertEqual(bg.backdrop, (6, 10, 20))     # mixed over the theme navy
 
 

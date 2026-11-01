@@ -10,12 +10,12 @@ composed shots. It is physically coloured, so it **ignores** ``ink``; the theme'
 ``backdrop`` is still what it is mixed over (by the lens pass) and what it fades
 to. The night side carries no city lights, by design.
 
-**Two things only this scene asks of PuiKit.** It samples three textures
-(``Shader.textures``, bound by position: day, clouds, relief) and it returns
-*linear HDR* — the sun is thousands of times brighter than the ground — which a
-``Shader.lens`` tone-maps, grades and mixes over the backdrop. The lens is part of
-the scene, not an option: without it the HDR would clip. Which lens is a theme
-choice (:data:`LENSES`).
+**Textures and a lens.** It samples three textures (``Shader.textures``: day,
+clouds, relief) and it returns *linear HDR* — the sun is thousands of times
+brighter than the ground — which the lens passes of ``xefm.background_lens``
+tone-map, grade and mix over the backdrop. The lens is part of the scene, not an
+option: without it the HDR would clip. Which look is a theme choice
+(:data:`LENSES`).
 
 **Hundreds of scenes, chosen at random.** A scene is a shot (:data:`SHOTS`), one
 of ``VARIANTS`` compositions of it (variant 0 is the shot as composed; the others
@@ -23,9 +23,8 @@ move the longitude, latitude, altitude, tilt, sun, lens length, framing and roll
 by fixed amounts drawn from a hash, the low orbits turning the horizon any way
 round), and a lens look — 10 x 12 x 10 = 1,200. Each ``SHOT_SECONDS`` slot of the
 clock hashes, with PuiKit's ``seed`` uniform, to one of them:
-``puikit_slot_hash(slot, seed)`` modulo the number of looks is the look (PuiKit's
-``LensCycle`` takes it the same way, bit for bit), and the rest picks the shot and
-variant. PuiKit draws a new seed when the background is set and once each time
+``xefm_slot_hash(slot, seed)`` modulo the number of looks is the look (the lens
+passes take it the same way), and the rest picks the shot and variant. PuiKit draws a new seed when the background is set and once each time
 the user comes back to it after it parked, so XeFM opens on a random scene and
 eases into a fresh one on a return (``seed_prev``/``seed_mix``).
 
@@ -34,7 +33,7 @@ advances a shader without XeFM's involvement, so there is no per-frame CPU state
 the camera follows one smooth path through all the scenes (``path_at``) — each
 scene drifts steadily while it holds, and the move to the next one flows out of
 that drift and into the next scene's, a monotone cubic through the scenes'
-entry and exit poses — while the ``LensCycle`` blends the looks over the move.
+entry and exit poses — while the lens blends the looks over the move.
 The sun's dip behind the limb in the ``rise`` shot and the earth's spin are
 closed-form in ``time`` too. Per-theme options (which shot, which looks, cloud
 height, exposure) are constants baked into the source when the theme is applied
@@ -46,7 +45,7 @@ scene is a shader" true.
 
 **Dialects.** MSL is the source of truth and the HLSL is a hand port, as for every
 scene; the parity test compares their constants. There is no GLSL: the web
-backend binds neither textures nor a lens, and PuiKit draws the plain backdrop
+backend binds neither textures nor passes, and PuiKit draws the plain backdrop
 there for a scene that needs them.
 """
 
@@ -55,23 +54,22 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-try:
-    from puikit.background import Lens, LensCycle, ShaderTexture
-    AVAILABLE = True
-except ImportError:
-    # PuiKit 1.17.0 and older have no textures or lenses: the scene cannot be built,
-    # so xefm.background_shaders leaves it out and a theme naming it gets the
-    # plain background — the same as any unknown scene.
-    AVAILABLE = False
+from .background_lens import AVAILABLE, Look, lens_shader
 
-#: The textures, in slot order — day (sRGB colour), clouds (grey coverage in
-#: red), relief (slope east/north in red/green, ocean mask in blue). See
-#: ``tools/make_earth_textures.py``.
+if AVAILABLE:
+    # PuiKit 1.17.0 and older have neither textures nor passes: the scene cannot
+    # be built, so xefm.background_shaders leaves it out and a theme naming it
+    # gets the plain background — the same as any unknown scene.
+    from puikit.background import ShaderTexture
+
+#: The textures, in the scene pass's slot order — day (sRGB colour), clouds
+#: (grey coverage in red), relief (slope east/north in red/green, ocean mask in
+#: blue). See ``tools/make_earth_textures.py``.
 ASSET_DIR = Path(__file__).resolve().parent / "assets" / "earth"
 TEXTURES = (
-    ShaderTexture(str(ASSET_DIR / "day.jpg"), srgb=True),
-    ShaderTexture(str(ASSET_DIR / "clouds.jpg")),
-    ShaderTexture(str(ASSET_DIR / "relief.jpg")),
+    ShaderTexture(str(ASSET_DIR / "day.jpg"), srgb=True, name="day"),
+    ShaderTexture(str(ASSET_DIR / "clouds.jpg"), name="clouds"),
+    ShaderTexture(str(ASSET_DIR / "relief.jpg"), name="relief"),
 ) if AVAILABLE else ()
 
 #: Shot names, in the order of the shader's shot arrays. ``auto`` (or ``None``)
@@ -79,25 +77,26 @@ TEXTURES = (
 SHOTS = ("day", "dawn", "crescent", "leo", "terminator", "glint", "rise", "polar",
          "horizon", "ocean")
 
-#: Lens looks, by the name a theme's ``lens`` option uses. Pure data on PuiKit's
-#: ``Lens``; the thresholds are tuned to this scene's radiance (exposure 1).
-LENSES: "dict[str, Lens]" = {} if not AVAILABLE else {
-    "clean": Lens(),
-    "aberration": Lens(aberration=0.018, distortion=0.06, vignette=0.35, bloom=0.45),
-    "mono": Lens(saturation=0.0, contrast=1.3, grain=0.45, vignette=0.5, bloom=0.35,
+#: Lens looks, by the name a theme's ``lens`` option uses. Pure data
+#: (``background_lens.Look``); the thresholds are tuned to this scene's radiance
+#: (exposure 1).
+LENSES: "dict[str, Look]" = {
+    "clean": Look(),
+    "aberration": Look(aberration=0.018, distortion=0.06, vignette=0.35, bloom=0.45),
+    "mono": Look(saturation=0.0, contrast=1.3, grain=0.45, vignette=0.5, bloom=0.35,
                  mono_tint=(1.0, 0.98, 0.94)),
-    "film": Lens(halation=0.9, grain=0.32, vignette=0.4, saturation=0.88, contrast=1.08,
+    "film": Look(halation=0.9, grain=0.32, vignette=0.4, saturation=0.88, contrast=1.08,
                  bloom=0.45, aberration=0.002, shadow_tint=(0.86, 0.97, 1.08),
                  highlight_tint=(1.08, 1.0, 0.88)),
-    "anamorphic": Lens(streak=1.0, letterbox=1.0, bloom=0.5, aberration=0.003, ghosts=0.3,
+    "anamorphic": Look(streak=1.0, letterbox=1.0, bloom=0.5, aberration=0.003, ghosts=0.3,
                        vignette=0.25, threshold=1.2),
-    "flare": Lens(ghosts=1.0, bloom=0.65, aberration=0.004, vignette=0.2, threshold=1.2),
-    "fisheye": Lens(distortion=1.4, aberration=0.006, vignette=0.5, bloom=0.4),
-    "crt": Lens(scanlines=1.0, curvature=1.0, distortion=0.18, aberration=0.004, bloom=0.7,
+    "flare": Look(ghosts=1.0, bloom=0.65, aberration=0.004, vignette=0.2, threshold=1.2),
+    "fisheye": Look(distortion=1.4, aberration=0.006, vignette=0.5, bloom=0.4),
+    "crt": Look(scanlines=1.0, curvature=1.0, distortion=0.18, aberration=0.004, bloom=0.7,
                 saturation=1.1, grain=0.2, vignette=0.6, contrast=1.1, threshold=1.0),
-    "infrared": Lens(color_matrix=(0.1, 1.3, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+    "infrared": Look(color_matrix=(0.1, 1.3, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
                      saturation=1.15, contrast=1.1, bloom=0.4, grain=0.15, vignette=0.3),
-    "night-vision": Lens(saturation=0.0, mono_tint=(0.35, 1.0, 0.45), gain=2.4, grain=0.9,
+    "night-vision": Look(saturation=0.0, mono_tint=(0.35, 1.0, 0.45), gain=2.4, grain=0.9,
                          scope=1.0, bloom=0.8, contrast=1.15, scanlines=0.25, threshold=1.0),
 }
 
@@ -108,12 +107,12 @@ DEFAULT_CLOUDS = 3.0
 DEFAULT_EXPOSURE = 1.0
 #: The ceiling of the picture, as a fraction of white: file names sit on it, so
 #: by default no pixel of it is brighter than half white, whatever the shot and
-#: the look (PuiKit's ``Lens.level``).
+#: the look (``Look.level``).
 DEFAULT_BRIGHTNESS = 0.5
 
 #: How long each scene holds on the scene clock (speed applied), and how much of
 #: that is the move into the next. Baked into the shader and handed to the
-#: ``LensCycle``, so the camera and the look change together.
+#: lens, so the camera and the look change together.
 SHOT_SECONDS = 49.0
 TRANSITION = 18.0
 
@@ -247,7 +246,7 @@ static inline float2 earth_uv(float3 n) {
 // A fixed number in [0, 1) for a scene and a purpose: the same every frame and
 // every launch, so a scene is a composition, not a dice roll per frame.
 static inline float scene_rand(int id, int n) {
-    return float(puikit_slot_hash(id * 16 + n, 0.0) & 0xFFFFu) / 65536.0;
+    return float(xefm_slot_hash(id * 16 + n, 0.0) & 0xFFFFu) / 65536.0;
 }
 
 static inline float scene_signed(int id, int n) {
@@ -285,7 +284,7 @@ static inline Pose unwrap_to(Pose p, Pose ref) {
 // The shot and variant a slot shows.
 static inline int2 scene_of(int slot, float seed) {
     if (SHOT >= 0) return int2(SHOT, 0);
-    uint h = puikit_slot_hash(slot, seed) / uint(LENS_COUNT);
+    uint h = xefm_slot_hash(slot, seed) / uint(LENS_COUNT);
     return int2(int(h % uint(SHOT_COUNT)), int((h / uint(SHOT_COUNT)) % uint(VARIANTS)));
 }
 
@@ -413,12 +412,12 @@ static inline Pose path_at(float t, float seed) {
 }
 
 // The whole camera and sun, from time and the seeds alone. Each SHOT_SECONDS slot
-// hashes to a scene; the low part of the hash is the lens look PuiKit's
-// LensCycle picks for the same slot (it takes it modulo LENS_COUNT), and the
-// rest picks the shot and its variant -- so every combination can come up. A
-// new seed (each launch, each return from idle) means new scenes; while
-// seed_mix is below 1 the path for the old seed blends into the new one, as the
-// LensCycle blends the looks.
+// hashes to a scene; the low part of the hash is the lens look the lens passes
+// pick for the same slot (they take it modulo LENS_COUNT), and the rest picks
+// the shot and its variant -- so every combination can come up. A new seed
+// (each launch, each return from idle) means new scenes; while seed_mix is
+// below 1 the path for the old seed blends into the new one, as the lens blends
+// the looks.
 static inline Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float fov = aspect < 0.8 ? 0.75 : 1.0;      // portrait: widen the lens
     float spin = SPIN * t;
@@ -879,7 +878,7 @@ float2 earth_uv(float3 n) {
 // A fixed number in [0, 1) for a scene and a purpose: the same every frame and
 // every launch, so a scene is a composition, not a dice roll per frame.
 float scene_rand(int id, int n) {
-    return float(puikit_slot_hash(id * 16 + n, 0.0) & 0xFFFFu) / 65536.0;
+    return float(xefm_slot_hash(id * 16 + n, 0.0) & 0xFFFFu) / 65536.0;
 }
 
 float scene_signed(int id, int n) {
@@ -917,7 +916,7 @@ Pose unwrap_to(Pose p, Pose ref) {
 // The shot and variant a slot shows.
 int2 scene_of(int slot, float seed) {
     if (SHOT >= 0) return int2(SHOT, 0);
-    uint h = puikit_slot_hash(slot, seed) / uint(LENS_COUNT);
+    uint h = xefm_slot_hash(slot, seed) / uint(LENS_COUNT);
     return int2(int(h % uint(SHOT_COUNT)), int((h / uint(SHOT_COUNT)) % uint(VARIANTS)));
 }
 
@@ -1045,12 +1044,12 @@ Pose path_at(float t, float seed) {
 }
 
 // The whole camera and sun, from time and the seeds alone. Each SHOT_SECONDS slot
-// hashes to a scene; the low part of the hash is the lens look PuiKit's
-// LensCycle picks for the same slot (it takes it modulo LENS_COUNT), and the
-// rest picks the shot and its variant -- so every combination can come up. A
-// new seed (each launch, each return from idle) means new scenes; while
-// seed_mix is below 1 the path for the old seed blends into the new one, as the
-// LensCycle blends the looks.
+// hashes to a scene; the low part of the hash is the lens look the lens passes
+// pick for the same slot (they take it modulo LENS_COUNT), and the rest picks
+// the shot and its variant -- so every combination can come up. A new seed
+// (each launch, each return from idle) means new scenes; while seed_mix is
+// below 1 the path for the old seed blends into the new one, as the lens blends
+// the looks.
 Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float fov = aspect < 0.8 ? 0.75 : 1.0;      // portrait: widen the lens
     float spin = SPIN * t;
@@ -1396,10 +1395,10 @@ RESOLUTION_SCALE = 0.5
 OPTIONS = ("shot", "lens", "clouds", "exposure", "brightness")
 
 
-def _one_lens(value) -> "Lens | None":
+def _one_lens(value) -> "Look | None":
     """One look: a preset name, a params dict (``preset`` names the base, the rest
-    override it) or a ``Lens``; ``None`` for anything else."""
-    if isinstance(value, Lens):
+    override it) or a ``Look``; ``None`` for anything else."""
+    if isinstance(value, Look):
         return value
     if isinstance(value, str):
         return LENSES.get(value.strip().lower())
@@ -1413,12 +1412,12 @@ def _one_lens(value) -> "Lens | None":
     return None
 
 
-def _resolve_lens(value) -> "Lens | LensCycle":
-    """A lens option as what the scene is filmed through: ``"auto"`` (or ``None``)
-    cycles through every look, one per scene; a list cycles through those; a
-    single look (see :func:`_one_lens`) holds it. Unknown names are dropped, and
-    nothing usable left means the default — the scene cannot be shown without
-    *some* lens."""
+def _resolve_lens(value) -> "tuple[Look, ...]":
+    """A lens option as the looks the scene is filmed through: ``"auto"`` (or
+    ``None``) cycles through every look, one per scene; a list cycles through
+    those; a single look (see :func:`_one_lens`) holds it. Unknown names are
+    dropped, and nothing usable left means the default — the scene cannot be
+    shown without *some* lens."""
     if value is None or (isinstance(value, str) and value.strip().lower() == "auto"):
         looks = tuple(LENSES.values())
     elif isinstance(value, (list, tuple)):
@@ -1426,11 +1425,7 @@ def _resolve_lens(value) -> "Lens | LensCycle":
     else:
         one = _one_lens(value)
         looks = (one,) if one is not None else ()
-    if not looks:
-        return _resolve_lens(DEFAULT_LENS)
-    if len(looks) == 1:
-        return looks[0]
-    return LensCycle(looks, period=SHOT_SECONDS, transition=TRANSITION)
+    return looks or _resolve_lens(DEFAULT_LENS)
 
 
 def _clamped(value, default: float, lo: float, hi: float) -> float:
@@ -1439,6 +1434,13 @@ def _clamped(value, default: float, lo: float, hi: float) -> float:
     except (TypeError, ValueError):
         v = default
     return min(hi, max(lo, v))
+
+
+def earth_looks(lens=None, brightness=None) -> "tuple[Look, ...]":
+    """The looks a theme's ``lens`` and ``brightness`` options film the scene
+    through (see :func:`_resolve_lens`), each under the brightness ceiling."""
+    level = _clamped(brightness, DEFAULT_BRIGHTNESS, 0.0, 1.0)
+    return tuple(replace(l, level=level) for l in _resolve_lens(lens))
 
 
 def earth_shader(shot=None, lens=None, clouds=None, exposure=None,
@@ -1454,23 +1456,18 @@ def earth_shader(shot=None, lens=None, clouds=None, exposure=None,
     values fall back to the defaults."""
     name = shot.strip().lower() if isinstance(shot, str) else None
     index = SHOTS.index(name) if name in SHOTS else -1
-    level = _clamped(brightness, DEFAULT_BRIGHTNESS, 0.0, 1.0)
-    resolved = _resolve_lens(lens)
-    if isinstance(resolved, LensCycle):
-        resolved = replace(resolved, looks=tuple(replace(l, level=level)
-                                                 for l in resolved.looks))
-    else:
-        resolved = replace(resolved, level=level)
+    looks = earth_looks(lens, brightness)
     options = dict(shot=index,
                    clouds=repr(_clamped(clouds, DEFAULT_CLOUDS, 0.0, 8.0)),
                    exposure=repr(_clamped(exposure, DEFAULT_EXPOSURE, 0.1, 4.0)),
-                   lens_count=len(getattr(resolved, "looks", (resolved,))),
+                   lens_count=len(looks),
                    period=repr(SHOT_SECONDS), transition=repr(TRANSITION))
     return {
-        "source": _MSL_OPTIONS.format(**options) + EARTH_MSL_BODY,
-        "source_hlsl": _HLSL_OPTIONS.format(**options) + EARTH_HLSL_BODY,
+        **lens_shader(_MSL_OPTIONS.format(**options) + EARTH_MSL_BODY,
+                      _HLSL_OPTIONS.format(**options) + EARTH_HLSL_BODY,
+                      looks, period=SHOT_SECONDS, transition=TRANSITION,
+                      scene_inputs=tuple(t.name for t in TEXTURES)),
         "textures": TEXTURES,
-        "lens": resolved,
         "resolution_scale": RESOLUTION_SCALE,
         "idle": "freeze",
     }

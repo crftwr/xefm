@@ -13,8 +13,8 @@ casts cyan-tinted shadows.
 
 **A baked volume makes it affordable.** The full-detail rock (ridged crests,
 cellular cracks, vesicle pits) and the crystal distances are baked into a
-176 x 64 x 144 half-float 3D texture when the background is set (PuiKit's
-``ShaderVolume``; the bake is ``puikit_bg_bake`` in this source), together with
+176 x 64 x 144 half-float 3D target when the background is set (a PuiKit
+``once`` pass of ``puikit_bg_bake`` in this source), together with
 the crystal interior's inclusion and milkiness fields. Marching then costs one
 texel fetch per step instead of several noise octaves; normals are still taken
 from the exact field, so no voxel ever shows.
@@ -24,7 +24,7 @@ incommensurate sines — the orbit never visibly repeats); the crystal layout is
 a set of constant arrays computed here, in Python, from the prototype's own
 formulas. The prototype's autofocus read the centre ray back to the CPU every
 frame and smoothed it; here the lens pulls focus to the depth at the middle of
-the frame instead (PuiKit's ``Lens.dof``), which needs no state.
+the frame instead (``background_lens.Look.dof``), which needs no state.
 
 **Colour.** The rim light, the glass's absorption, its internal glow and
 milkiness and the tint of its shadows all follow the theme's ``ink``; with the
@@ -40,12 +40,11 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-try:
-    from puikit.background import Lens, ShaderVolume
-    AVAILABLE = True
-except ImportError:
-    # PuiKit 1.17.0 and older have no volumes or lens; see background_earth.
-    AVAILABLE = False
+from .background_lens import AVAILABLE, Look, lens_shader
+
+if AVAILABLE:
+    # PuiKit 1.17.0 and older run a shader as one pass; see background_earth.
+    from puikit.background import Pass, Target
 
 #: Options a theme's ``animation`` dict may carry for this scene.
 OPTIONS = ("exposure", "brightness", "focus")
@@ -603,8 +602,9 @@ static inline float3 shadeBasalt(float3 p, float3 n, float3 rd, float3 tr, float
 
 // The volume: x rock distance, y crystal distance (both clamped to +-0.4),
 // z the inclusion field, w the milkiness noise.
-fragment float4 puikit_bg_bake(float4 pos [[position]], constant BakeUniforms &b [[buffer(0)]]) {
-    float3 uvw = float3(pos.xy / b.size.xy, (b.size.w + 0.5) / b.size.z);
+fragment float4 puikit_bg_bake(float4 pos [[position]], constant BackgroundUniforms &u [[buffer(0)]],
+                               constant PassUniforms &p [[buffer(1)]]) {
+    float3 uvw = float3(pos.xy / p.target.xy, (p.target.w + 0.5) / p.target.z);
     float3 bp = RB_MIN + uvw * RB_SIZE;
     float2 d = clamp(float2(rockBase(bp, 5), crystals(bp)), -0.4, 0.4);
     return float4(d, clamp(fbmN(bp * 20.0 + 2.0, 3) + 0.04, 0.0, 1.0), vnoise(bp * 40.0));
@@ -1189,7 +1189,7 @@ float3 shadeBasalt(float3 p, float3 n, float3 rd, float3 tr, float ao, Look L) {
 // The volume: x rock distance, y crystal distance (both clamped to +-0.4),
 // z the inclusion field, w the milkiness noise.
 float4 puikit_bg_bake(float4 pos : SV_Position) : SV_Target {
-    float3 uvw = float3(pos.xy / bake_size.xy, (bake_size.w + 0.5) / bake_size.z);
+    float3 uvw = float3(pos.xy / pass_target.xy, (pass_target.w + 0.5) / pass_target.z);
     float3 bp = RB_MIN + uvw * RB_SIZE;
     float2 d = clamp(float2(rockBase(bp, 5), crystals(bp)), -0.4, 0.4);
     return float4(d, clamp(fbmN(bp * 20.0 + 2.0, 3) + 0.04, 0.0, 1.0), vnoise(bp * 40.0));
@@ -1315,8 +1315,8 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
 
 
 #: The lens: a macro's depth of field, bloom on the glints, vignette, fine grain.
-LENS = Lens(bloom=1.4, threshold=0.75, vignette=0.32, grain=0.06, dof=0.014,
-            focus_range=2.6) if AVAILABLE else None
+LENS = Look(bloom=1.4, threshold=0.75, vignette=0.32, grain=0.06, dof=0.014,
+            focus_range=2.6)
 
 
 def _clamped(value, default: float, lo: float, hi: float) -> float:
@@ -1327,6 +1327,13 @@ def _clamped(value, default: float, lo: float, hi: float) -> float:
     return min(hi, max(lo, v))
 
 
+def crystal_look(brightness=None, focus=None) -> Look:
+    """:data:`LENS` with a theme's ``brightness`` ceiling (0..1, default 0.5) and
+    ``focus`` (the depth of field's strength, 0..2, 0 off)."""
+    return replace(LENS, level=_clamped(brightness, DEFAULT_BRIGHTNESS, 0.0, 1.0),
+                   dof=LENS.dof * _clamped(focus, 1.0, 0.0, 2.0))
+
+
 def crystal_shader(exposure=None, brightness=None, focus=None) -> dict:
     """The ``Shader`` fields for the Crystal scene with a theme's options applied:
     ``exposure`` (0.1..4, 1.25 as tuned), ``brightness`` (the picture's ceiling,
@@ -1334,14 +1341,13 @@ def crystal_shader(exposure=None, brightness=None, focus=None) -> dict:
     as tuned; 0 turns it off). Bad values fall back to the defaults."""
     options = dict(exposure=repr(_clamped(exposure, 1.25, 0.1, 4.0)))
     layout_msl, layout_hlsl = _layout_constants("msl"), _layout_constants("hlsl")
-    lens = replace(LENS, level=_clamped(brightness, DEFAULT_BRIGHTNESS, 0.0, 1.0),
-                   dof=LENS.dof * _clamped(focus, 1.0, 0.0, 2.0))
     return {
-        "source": _MSL_OPTIONS.format(**options) + CRYSTAL_MSL_BODY.replace("// @LAYOUT@", layout_msl),
-        "source_hlsl": (_HLSL_OPTIONS.format(**options)
-                        + CRYSTAL_HLSL_BODY.replace("// @LAYOUT@", layout_hlsl)),
-        "lens": lens,
-        "volumes": (ShaderVolume(VOLUME_SIZE),),
+        **lens_shader(
+            _MSL_OPTIONS.format(**options) + CRYSTAL_MSL_BODY.replace("// @LAYOUT@", layout_msl),
+            _HLSL_OPTIONS.format(**options) + CRYSTAL_HLSL_BODY.replace("// @LAYOUT@", layout_hlsl),
+            crystal_look(brightness, focus), scene_inputs=("rock",),
+            scene_targets=(Target("rock", size=VOLUME_SIZE),),
+            scene_once=(Pass("puikit_bg_bake", "rock", once=True),)),
         "resolution_scale": RESOLUTION_SCALE,
         "frame_rate": FRAME_RATE,
         "idle": "freeze",

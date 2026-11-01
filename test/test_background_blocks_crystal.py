@@ -13,7 +13,7 @@ import unittest
 
 import pytest
 
-from puikit.background import Lens, Shader, ShaderVolume
+from puikit.background import Pass, Shader, Target
 from puikit.backends._metal import HAVE_METAL, MetalBackground
 
 from xefm import app as xefm_app
@@ -78,15 +78,18 @@ class Options(unittest.TestCase):
         self.assertEqual(float(consts["LEAK_RATE"]), 3.0)
         self.assertEqual(float(consts["BOB"]), 0.0)
         self.assertEqual(float(consts["CAM_SPEED"]), 1.0)
-        self.assertEqual(fields["lens"].level, blocks.DEFAULT_BRIGHTNESS)
+        self.assertEqual(blocks.blocks_look().level, blocks.DEFAULT_BRIGHTNESS)
+        self.assertEqual(blocks.blocks_look(brightness=0.7).level, 0.7)
         self.assertEqual(fields["idle"], "freeze")
 
     def test_crystal_brings_its_volume_lens_and_frame_rate(self):
         fields = crystal.crystal_shader(brightness=0.8, focus=0)
-        self.assertEqual(fields["volumes"], (ShaderVolume(crystal.VOLUME_SIZE),))
-        self.assertEqual(fields["lens"].level, 0.8)
-        self.assertEqual(fields["lens"].dof, 0.0)                 # focus 0 turns it off
-        self.assertGreater(crystal.crystal_shader()["lens"].dof, 0.0)
+        self.assertIn(Target("rock", size=crystal.VOLUME_SIZE), fields["targets"])
+        self.assertEqual(fields["passes"][0], Pass("puikit_bg_bake", "rock", once=True))
+        self.assertEqual(fields["passes"][1].inputs, ("rock",))
+        look = crystal.crystal_look(brightness=0.8, focus=0)
+        self.assertEqual((look.level, look.dof), (0.8, 0.0))      # focus 0 turns it off
+        self.assertGreater(crystal.crystal_look().dof, 0.0)
         self.assertEqual(fields["frame_rate"], crystal.FRAME_RATE)
         self.assertIn("puikit_bg_bake", fields["source"])
         self.assertIn("puikit_bg_bake", fields["source_hlsl"])
@@ -116,7 +119,7 @@ class Options(unittest.TestCase):
         for name, kind in (("Blocks", blocks), ("Crystal", crystal)):
             bg = themes[name].extras["background"]
             self.assertIsInstance(bg, Shader, name)
-            self.assertIsInstance(bg.lens, Lens, name)
+            self.assertEqual(bg.passes[-1].entry, "lens_composite", name)
 
 
 @metal_only

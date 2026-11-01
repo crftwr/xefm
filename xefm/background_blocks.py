@@ -30,8 +30,8 @@ from the hash; a point evaluates only the junctions near it.
 
 **Colour.** The leak light is the theme's ``ink``; the fog and the sky are
 built from its ``backdrop``. The metal itself is the approved blue-black and
-does not follow the palette. A lens (PuiKit's background-only chain) supplies
-the bloom that carries the glow, tone-maps, and caps the brightness.
+does not follow the palette. A lens (``xefm.background_lens``) supplies the
+bloom that carries the glow, tone-maps, and caps the brightness.
 
 MSL is the source of truth; the HLSL is a mechanical port of it.
 """
@@ -40,12 +40,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-try:
-    from puikit.background import Lens
-    AVAILABLE = True
-except ImportError:
-    # PuiKit 1.17.0 and older have no background lens; see background_earth.
-    AVAILABLE = False
+from .background_lens import AVAILABLE, Look, lens_shader
 
 #: Options a theme's ``animation`` dict may carry for this scene.
 OPTIONS = ("leaks", "leak_strength", "motion", "camera", "exposure", "brightness")
@@ -933,7 +928,7 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
 
 
 #: The lens: bloom carries the glow of the leaks and the edge highlights.
-LENS = Lens(bloom=0.9, threshold=0.55, vignette=0.12) if AVAILABLE else None
+LENS = Look(bloom=0.9, threshold=0.55, vignette=0.12)
 
 
 def _clamped(value, default: float, lo: float, hi: float) -> float:
@@ -942,6 +937,11 @@ def _clamped(value, default: float, lo: float, hi: float) -> float:
     except (TypeError, ValueError):
         v = default
     return min(hi, max(lo, v))
+
+
+def blocks_look(brightness=None) -> Look:
+    """:data:`LENS` under a theme's ``brightness`` ceiling (0..1, default 0.5)."""
+    return replace(LENS, level=_clamped(brightness, DEFAULT_BRIGHTNESS, 0.0, 1.0))
 
 
 def blocks_shader(leaks=None, leak_strength=None, motion=None, camera=None,
@@ -959,9 +959,9 @@ def blocks_shader(leaks=None, leak_strength=None, motion=None, camera=None,
                    # the lens uses; 0.95 there is 1.58 here.
                    exposure=repr(_clamped(exposure, 1.58, 0.1, 4.0)))
     return {
-        "source": _MSL_OPTIONS.format(**options) + BLOCKS_MSL_BODY,
-        "source_hlsl": _HLSL_OPTIONS.format(**options) + BLOCKS_HLSL_BODY,
-        "lens": replace(LENS, level=_clamped(brightness, DEFAULT_BRIGHTNESS, 0.0, 1.0)),
+        **lens_shader(_MSL_OPTIONS.format(**options) + BLOCKS_MSL_BODY,
+                      _HLSL_OPTIONS.format(**options) + BLOCKS_HLSL_BODY,
+                      blocks_look(brightness)),
         "resolution_scale": RESOLUTION_SCALE,
         "idle": "freeze",
     }

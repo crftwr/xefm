@@ -4,7 +4,8 @@ Two picture themes beside [Earth](EARTH_THEME_IMPLEMENTATION.md), built from
 approved prototypes (a three.js mesh scene for Blocks, a WebGL2 ray-marcher for
 Crystal). User-facing behaviour is in
 [`doc/COLOR_SCHEMES_FEATURE.md`](../COLOR_SCHEMES_FEATURE.md#picture-themes).
-They share Earth's PuiKit infrastructure and add two pieces to it.
+They share Earth's PuiKit infrastructure and its lens
+([BACKGROUND_LENS_SYSTEM.md](BACKGROUND_LENS_SYSTEM.md)).
 
 | Where | What |
 |---|---|
@@ -12,20 +13,20 @@ They share Earth's PuiKit infrastructure and add two pieces to it.
 | `xefm/background_crystal.py` | The Crystal scene, its bake, the crystal layout (`crystal_layout()`), `crystal_shader()` |
 | `xefm/background_shaders.py` | `SHADER_KINDS` / `SCENE_OPTIONS` entries |
 | `xefm/app.py` | The `Blocks` and `Crystal` theme specs |
-| PuiKit `puikit/background.py` | `ShaderVolume`, `Shader.volumes`, `Shader.frame_rate`, `Lens.dof` / `focus_range` |
-| PuiKit `backends/_bg_lens.py` | The depth-of-field gather in the lens composite |
-| PuiKit `backends/_metal.py`, `_d3d_shader.py` | Volume bake, frame-rate cap, Windows frame reuse |
+| `xefm/background_lens.py` | The lens, its depth-of-field gather included |
+| PuiKit `puikit/background.py` | `Target` (3D), `Pass(once=True)`, `Shader.frame_rate` |
+| PuiKit `backends/_metal.py`, `_d3d_shader.py` | Bakes into 3D targets, frame-rate cap, Windows frame reuse |
 
-## What PuiKit gained
+## The bake, depth of field, and what PuiKit gained
 
-- **`ShaderVolume`** — a 3D texture the scene bakes for itself. The source
-  defines a second entry, `puikit_bg_bake`, run once per slice with
-  `BakeUniforms` (size, slice, volume index); the result is half-float. The
-  scene samples volume *i* in the slot after its textures. Baking is spread
-  over the first frames (8 slices a frame) with the backdrop shown until done,
-  and re-applying the same shader keeps the volumes. On D3D11 each slice is a
-  `Texture3D` render-target view with `FirstWSlice`.
-- **`Lens.dof` / `focus_range`** — depth of field in the lens composite. The
+- **A baked 3D target.** Crystal's rock and crystal distances are a
+  `Target("rock", size=(176, 64, 144))`, written by a `once` pass of
+  `puikit_bg_bake` (one draw per slice; `PassUniforms.target` gives the size and
+  the slice) and read by the scene pass. Baking is spread over the first frames
+  (8 slices a frame) with the backdrop shown until done, and re-applying the
+  same shader keeps the result. On D3D11 each slice is a `Texture3D`
+  render-target view with `FirstWSlice`; on Metal, a `depthPlane`.
+- **Depth of field** (`Look.dof` / `focus_range`) in the lens composite. The
   scene writes **inverse** depth into alpha. The blur size `|1 − focus/depth| ·
   range` is linear in it, so a bilinear tap blends blur sizes across a
   silhouette as the prototype's stored circle of confusion did; writing depth
@@ -128,12 +129,13 @@ and bloom match; the remaining difference is the prototype's slight focus lag.
 
 ## Shared choices
 
-- **Brightness ceiling 0.5** (`Lens.level`, the `brightness` option), as Earth.
+- **Brightness ceiling 0.5** (`Look.level`, the `brightness` option), as Earth.
 - **`idle: "freeze"`** — both are composed stills. The lens chain, grain and
   bake all stop with the frame.
-- **No GLSL** — the web backend binds neither a lens nor volumes.
+- **No GLSL** — the web backend runs no passes.
 - **Built in**, like Earth: neither needs package data, but both need PuiKit
-  descriptors that the `user_api` firewall keeps out of an extension's reach.
+  descriptors (`Target`, `Pass`) that the `user_api` firewall keeps out of an
+  extension's reach.
 - **HLSL** is a mechanical port of the MSL (dialect spellings, globals for
   textures, uniforms read from the cbuffer, `[loop]` on long loops so fxc does
   not unroll them).
@@ -144,4 +146,4 @@ and bloom match; the remaining difference is the prototype's slight focus lag.
   bake's half-second, focus pulls, legibility of real file lists.
 - Windows GPU cost on an integrated GPU, and fxc compile time for Crystal on
   theme switch.
-- Web backend: lens, volumes and a GLSL dialect.
+- Web backend: passes and a GLSL dialect.

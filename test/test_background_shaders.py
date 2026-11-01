@@ -42,8 +42,8 @@ _INK, _BACKDROP = (200, 224, 245), (16, 30, 50)
 #: Scenes that are a picture rather than motion: composed to be looked at still
 #: (they freeze when idle) and allowed to fill the frame — legibility over them
 #: is the theme's surface opacity's and their lens's brightness ceiling's job.
-#: They bring a lens (and textures or volumes), which the web backend does not
-#: bind, so they ship no GLSL. See test_background_earth.py and
+#: They are filmed through a lens (passes, and textures or a baked volume), which
+#: the web backend does not run, so they ship no GLSL. See test_background_earth.py and
 #: test_background_blocks_crystal.py for what they promise instead.
 PICTURES = {"earth", "blocks", "crystal"}
 
@@ -95,8 +95,8 @@ class Registry(unittest.TestCase):
 
     def test_every_scene_ships_a_glsl_translation(self):
         # The web (WebGL) backend compiles ``source_glsl``; a scene missing it draws
-        # nothing on web. A picture needs textures and a lens the web client does
-        # not bind, so it ships none and the web backend shows the backdrop.
+        # nothing on web. A picture needs passes (and textures) the web client
+        # does not run, so it ships none and the web backend shows the backdrop.
         for kind, params in SHADER_KINDS.items():
             if kind in PICTURES:
                 self.assertNotIn("source_glsl", params, kind)
@@ -281,9 +281,14 @@ class Compilation(unittest.TestCase):
 
 
 @d3d_only
+@pytest.mark.timeout(240)
 class CompilationD3D(unittest.TestCase):
     """Every shipped shader must also build with the real HLSL (Direct3D 11)
-    compiler — the Windows twin of the Metal Compilation tests."""
+    compiler — the Windows twin of the Metal Compilation tests.
+
+    Each test compiles every scene, and fxc takes over ten seconds on
+    Crystal's ray-marcher alone (it inlines every call), so the suite's
+    10-second limit is too short here."""
 
     def test_every_shader_compiles(self):
         renderer = D3DShaderBackground()
