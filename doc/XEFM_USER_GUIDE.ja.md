@@ -719,6 +719,7 @@ AWS の認証情報とバケットの権限を確認してください
 - [キーバインド](KEY_BINDINGS_FEATURE.ja.md) - カスタマイズできるキーボードショートカット
 - [カスタマイズ](CUSTOMIZATION_FEATURE.ja.md) - ビューアーのキーの割り当て直し、自分の Python 関数へのキーの割り当て、イベントでの関数の実行
 - [ファイルの関連付け](FILE_ASSOCIATIONS_FEATURE.ja.md) - ファイルの種類ごとに、開く・表示する・編集するプログラム
+- [アプリケーションを選んで開く](OPEN_WITH_FEATURE.ja.md) - 今回どのアプリケーションでファイルを開くかを選ぶ
 - [追加の Python ライブラリ](PYTHON_PACKAGES_FEATURE.ja.md) - `config.py` や拡張機能が必要とするライブラリを `~/.xefm/requirements.txt` から
 - [ログ](LOGGING_FEATURE.ja.md) - ログペインとログファイル
 

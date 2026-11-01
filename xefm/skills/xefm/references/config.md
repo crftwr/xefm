@@ -268,6 +268,19 @@ the built-in viewer: XeFM only sniffs a file when no rule names the action.
   ])
   ```
 
+`open_with` is not an action: it is a list of `PROGRAMS`-shaped entries
+(`name`, `command`, optional `options`) that Open With (the `open_with`
+action, File → Open With ▸ Choose App…) offers for the rule's files, above
+the OS's own applications. Unlike the actions, **every** matching rule's list
+is offered, top to bottom, and a name declared twice keeps its first entry —
+so "offer VS Code for every file" is one `'*'` rule, and it does not need to
+sit at the bottom. Unlike the associations, `'options': {'terminal': True}`
+applies here, as in `PROGRAMS`.
+
+```python
+{'pattern': '*', 'open_with': [{'name': 'VS Code', 'command': ['code']}]},
+```
+
 ### Themes: `THEMES`
 
 `THEMES` *defines* themes; it does not choose one, and there is no setting

@@ -858,6 +858,7 @@ For detailed information about specific features, see these dedicated guides:
 - [Key Bindings Feature](KEY_BINDINGS_FEATURE.md) - Customizable keyboard shortcuts
 - [Customization](CUSTOMIZATION_FEATURE.md) - Rebind viewer keys, bind keys to your own Python functions, run functions on events
 - [File Associations](FILE_ASSOCIATIONS_FEATURE.md) - Which program opens, views and edits each file type
+- [Open With](OPEN_WITH_FEATURE.md) - Choose which application opens a file this time
 - [Extra Python Libraries](PYTHON_PACKAGES_FEATURE.md) - Libraries your `config.py` or extensions need, from `~/.xefm/requirements.txt`
 - [Logging](LOGGING_FEATURE.md) - The log pane and log files
 

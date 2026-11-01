@@ -1117,6 +1117,13 @@ class Config:
     #
     # The other two actions are 'view' (V) and 'edit' (E), both external.
     #
+    # 'open_with' is not an action: it lists programs for Open With
+    # (File > Open With > Choose App...), which asks which one to use this
+    # time. Each item is shaped like a PROGRAMS entry below ('name', 'command',
+    # optional 'options'). Unlike the actions, where the first matching rule
+    # wins, every matching rule's list is offered, so a '*' rule's programs
+    # appear for every file. The OS's own applications are listed after these.
+    #
     # Compact Format Features:
     # 1. Multiple patterns in one entry: ['*.jpg', '*.jpeg', '*.png']
     # 2. Combined actions: 'open|view' assigns same command to both actions
@@ -1137,6 +1144,7 @@ class Config:
     #     'enter': 'viewer',         # Built-in handler for the ENTER key
     #     'open|view': ['command'],  # Same command for open and view
     #     'edit': ['command'],       # Different command for edit
+    #     'open_with': [{'name': 'App', 'command': ['command']}],  # Open With
     # }
     FILE_ASSOCIATIONS = [
         # PDF files. 'view' is None so V shows the document's text in XeFM's
@@ -1256,6 +1264,15 @@ class Config:
         # {
         #     'pattern': '*.log',
         #     'view': ['less'],
+        # },
+        # Programs for Open With. A '*' rule's programs are offered for every
+        # file, so a mixed selection always has them in common:
+        # {
+        #     'pattern': '*',
+        #     'open_with': [
+        #         {'name': 'VS Code', 'command': ['code']},
+        #         {'name': 'Hex view', 'command': ['hexyl'], 'options': {'terminal': True}},
+        #     ],
         # },
     ]
     

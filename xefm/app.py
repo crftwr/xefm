@@ -90,6 +90,7 @@ from xefm import layouts
 from xefm import tags
 from xefm import trash
 from xefm import netmount
+from xefm import open_with
 from xefm.options import OptionSet
 from xefm.progressive_search_dialog import SearchFailed, show_progressive_search
 from xefm import search_options as search_opts
@@ -4008,6 +4009,7 @@ class XeFMApp:
                 "compare_selection": (self.compare_selection, False),
                 # --- opening things ---
                 "open_with_os": (self.open_with_os, False),
+                "open_with": (self.open_with, False),
                 "reveal_in_os": (self.reveal_in_os, False),
                 "edit_file": (self.edit_file, False),
                 "view_file": (self.view_file, False),
@@ -4797,6 +4799,8 @@ class XeFMApp:
                          enabled=has_files, shortcut=sc("edit_file")),
                 MenuItem("Default App", on_select=self.open_with_os,
                          enabled=has_files, shortcut=sc("open_with_os")),
+                MenuItem("Choose App…", on_select=self.open_with,
+                         enabled=has_files, shortcut=sc("open_with")),
                 title="Open With")),
             MenuItem("Details…", on_select=self.file_details, enabled=has_files,
                      shortcut=sc("file_details")),
@@ -6259,6 +6263,93 @@ class XeFMApp:
             self.log_info(f"Failed to open {entry.name}: {exc}")
         else:
             self.log_info(f"Opened {entry.name} with the default app")
+
+    #: State key of the app last chosen in Open With, per file type.
+    _OPEN_WITH_STATE = "open_with.last"
+
+    def open_with(self) -> None:
+        """Choose, this time, the application that opens the selected files —
+        or the focused file (#634). See :mod:`xefm.open_with` for where the
+        candidates come from.
+
+        XeFM's ``open_with`` entries are listed first, then the OS's
+        applications where they mean something. For several files only the
+        candidates that open every one of them are offered, and all the files
+        go to the chosen one in one launch. Directories are skipped, and so are
+        remote and in-archive files: an application needs a path on disk. The
+        app chosen last for a file type is listed first next time."""
+        pane = self.active_pane()
+        files = []
+        for target in self._selected_or_focused(pane):
+            entry = _real_entry(target)
+            if entry is None:
+                self.log_info(f"{target.name} points at no file")
+                continue
+            if not self._is_local(entry):
+                self.log_info(f"{entry.name}: external programs need a local file")
+                continue
+            try:
+                if entry.is_dir():
+                    self.log_info(f"{entry.name} is a directory")
+                    continue
+            except Exception:
+                pass
+            files.append(entry)
+        if not files:
+            self.panel.render()
+            return
+        paths = [str(e) for e in files]
+        candidates = open_with.xefm_candidates([e.name for e in files])
+        if open_with.os_apps_available(is_desktop_mode()):
+            candidates += open_with.os_candidates(paths)
+        if not candidates:
+            message = ("No app can open all selected files." if len(files) > 1
+                       else f"No app to open {files[0].name} with.")
+            show_message_box(self.panel, message, title="Open With", icon="info")
+            self.panel.render()
+            return
+        kind = open_with.type_key(paths)
+        remembered = self.state_manager.get_state(self._OPEN_WITH_STATE, None)
+        remembered = remembered if isinstance(remembered, dict) else {}
+        candidates = open_with.remembered_first(candidates, remembered.get(kind))
+
+        def on_accept(candidate) -> None:
+            self.state_manager.set_state(self._OPEN_WITH_STATE,
+                                         {**remembered, kind: candidate.key})
+            self._open_with_candidate(candidate, files, pane)
+
+        show_filter_list(
+            self.panel, candidates,
+            title=f"Open {self._files_label(files)} With",
+            to_label=lambda c: c.name,
+            to_right=lambda c: "default" if c.default else "",
+            to_detail=lambda c: c.detail,
+            on_accept=on_accept, region=self._active_pane_region())
+        self.panel.render()
+
+    def _open_with_candidate(self, candidate, files: list, pane: dict) -> None:
+        """Launch the Open With row ``candidate`` on ``files``. XeFM's entries
+        run as a ``PROGRAMS`` entry does — the pane's directory, the ``XEFM_*``
+        environment, ``'terminal': True`` honored — but with absolute paths;
+        the OS's applications get the files the way Finder or Explorer hands
+        them over."""
+        label = self._files_label(files)
+        if candidate.source == open_with.XEFM:
+            program = candidate.program
+            env, cwd = self._program_env(pane)
+            options = program.get("options") or {}
+            self._launch_program(program["name"],
+                                 list(program["command"]) + [str(e) for e in files],
+                                 cwd=cwd, env=env,
+                                 terminal=bool(options.get("terminal")))
+            return
+        try:
+            open_with.launch(candidate, [str(e) for e in files])
+        except Exception as exc:
+            self.log_info(f"Failed to open {label} with {candidate.name}: {exc}")
+        else:
+            self.log_info(f"Opened {label} with {candidate.name}")
+        self.panel.render()
 
     def reveal_in_os(self) -> None:
         """Reveal the focused entry in the OS file manager (Finder / Explorer),
@@ -11450,6 +11541,7 @@ class XeFMApp:
             ("edit_file", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
             ("open_with_os", "Open with the default app"),
+            ("open_with", "Choose the app that opens the selection (File menu)"),
             ("reveal_in_os", "Reveal in the OS file manager"),
             ("programs", "Run an external program on the selection"),
         )),
@@ -11944,6 +12036,7 @@ class XeFMApp:
         return Menu(
             MenuItem("Open", on_select=lambda: self._menu("open_item")),
             MenuItem("View File", on_select=self.view_file, enabled=entry is not None),
+            MenuItem("Open With…", on_select=self.open_with, enabled=entry is not None),
             MenuItem("Deselect" if selected else "Select",
                      on_select=self._toggle_select_in_place),
             SEPARATOR,

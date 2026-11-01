@@ -1542,33 +1542,30 @@ def get_network_servers():
     return servers
 
 
+def _program_entry(prog):
+    """One ``PROGRAMS``-shaped entry (``name`` / ``command`` / ``options``),
+    normalized — ``options`` always a dict — or None, having warned, when it
+    is malformed. Shared by ``PROGRAMS`` and the ``open_with`` lists of
+    FILE_ASSOCIATIONS, which take the same shape."""
+    if isinstance(prog, dict) and 'name' in prog and 'command' in prog:
+        if isinstance(prog['command'], list) and prog['command']:
+            options = prog.get('options')
+            return {
+                'name': prog['name'],
+                'command': prog['command'],
+                'options': options if isinstance(options, dict) else {},
+            }
+        logger.warning(f"Program command must be a non-empty list: {prog['name']}")
+    else:
+        logger.warning(f"Invalid program configuration: {prog}")
+    return None
+
+
 def get_programs():
     """Get the list of external programs from configuration"""
     config = get_config()
-    
-    programs = []
-    
-    for prog in config.PROGRAMS:
-        if isinstance(prog, dict) and 'name' in prog and 'command' in prog:
-            if isinstance(prog['command'], list) and prog['command']:
-                program_entry = {
-                    'name': prog['name'],
-                    'command': prog['command']
-                }
-                
-                # Add options if present
-                if 'options' in prog and isinstance(prog['options'], dict):
-                    program_entry['options'] = prog['options']
-                else:
-                    program_entry['options'] = {}
-                
-                programs.append(program_entry)
-            else:
-                logger.warning(f"Program command must be a non-empty list: {prog['name']}")
-        else:
-            logger.warning(f"Invalid program configuration: {prog}")
-    
-    return programs
+    entries = (_program_entry(prog) for prog in config.PROGRAMS)
+    return [entry for entry in entries if entry is not None]
 
 
 def get_file_associations():
@@ -1591,7 +1588,7 @@ BUILTIN_HANDLERS = ('viewer', 'navigate', 'list')
 #: 'terminal' is obsolete -- whether to hand over the display follows from
 #: the backend, not the config -- but stays reserved so a leftover key in a
 #: hand-written config is inert instead of becoming a phantom action name.
-_RESERVED_KEYS = ('pattern', 'terminal')
+_RESERVED_KEYS = ('pattern', 'terminal', 'open_with')
 
 
 def _entry_matches(filename_lower, entry):
@@ -1688,6 +1685,37 @@ def has_explicit_association(filename, action='open'):
     """
     found, _value, _entry = _lookup_action(filename, action)
     return found
+
+
+def get_open_with_for_file(filename):
+    """The programs a rule's ``open_with`` list offers for a file (#634).
+
+    Unlike the actions, where the first matching rule wins, every matching
+    rule contributes: the lists are concatenated top to bottom, so a ``'*'``
+    rule's entries join every file's list. An entry takes the shape of a
+    ``PROGRAMS`` entry, and a name declared twice keeps its first entry.
+
+    Returns:
+        A list of normalized entries (see :func:`_program_entry`), empty when
+        no matching rule has an ``open_with`` list.
+    """
+    filename_lower = filename.lower()
+    programs, names = [], set()
+    for entry in get_file_associations() or []:
+        if not _entry_matches(filename_lower, entry):
+            continue
+        offered = entry.get('open_with')
+        if offered is None:
+            continue
+        if not isinstance(offered, list):
+            logger.warning(f"'open_with' must be a list of programs: {offered!r}")
+            continue
+        for prog in offered:
+            program = _program_entry(prog)
+            if program is not None and program['name'] not in names:
+                names.add(program['name'])
+                programs.append(program)
+    return programs
 
 
 def get_builtin_handler_for_file(filename, action='enter'):
