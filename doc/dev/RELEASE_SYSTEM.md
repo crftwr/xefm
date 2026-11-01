@@ -345,6 +345,41 @@ goes unchecked then. An unpinned requirement is not checked against PyPI:
 `watchdog` ships at whatever version the venv has. The collector also honours
 requirement extras (`doc-files[pdf]` brings pypdf).
 
+## Release review (#697)
+
+`make release-review` (`tools/release_review.py`) reviews everything since the
+last tag against the core's rules, which CLAUDE.md holds once ("What belongs
+in the core", and the coding standards before it). It is not part of `make
+tag`: it reports, and the `xefm-release` skill puts its output in front of the
+user before tagging, since a finding is still cheap to fix then. XeFM has no
+CI, so this one pass over the release is where drift across many small
+changes shows.
+
+- **Findings** are the mechanical rules, judged the same way every time:
+  `print()` and logger use and bare `except:` on the lines the range added
+  (an older, deliberate `print()` is not reported again; `*_cli.py` and
+  `xefm/tools/` print by design), `*.py` executable anywhere in the tree,
+  placement and naming of new files, a new setting no `doc/*.md` names, a new
+  feature doc with no dev doc beside it, and the skill-reference and
+  translation checks. Exit status 1 when there are any.
+- **The public API, across the release.** `make api-snapshot` refuses a
+  breaking change without a bump, but only against the commit before it. The
+  review runs `tools/api_snapshot.py`'s `classify()` on the tag's snapshot
+  against the head's, which finds what no single change shows: an API
+  deprecated and removed within one release (its deprecation never shipped,
+  STABLE_API_PLAN.md §9), a break whose bump was lost, `API_VERSION` moving
+  more than once. Breaking changes, deprecations, stable additions and a count
+  of Preview changes are listed for the release note.
+- **For review** lines point at what the judgment rules need read: new
+  modules (core or extension?), new requirements, scheme checks, capability
+  reads, PuiKit or app imports in the firewall modules, changed default keys
+  (from the generated `actions.md`, column by column, so a new preset is not
+  a change to every row), new actions no doc names (a doc may name the menu
+  item instead). They never set the exit status.
+
+A base older than the generated `actions.md` or the API snapshot skips that
+comparison and says so.
+
 ## Target reference
 
 | Target | Publishes | Use |
@@ -355,6 +390,7 @@ requirement extras (`doc-files[pdf]` brings pypdf).
 | `make release-macos-dmg` | Release | attach the macOS DMG (macOS only) |
 | `make release-windows-zip` | Release | attach the Windows portable zip (Windows only) |
 | `make release-status` | — | list the Release's assets and whether PyPI has the version |
+| `make release-review` | — | review the last tag..`origin/main` against the core's rules |
 | `make build` | — | sdist + wheel into `dist/`, plus `twine check` |
 | `make macos-dmg` | — | build the DMG locally (macOS only) |
 | `make windows-zip` | — | build the portable zip locally (Windows only) |
