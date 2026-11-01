@@ -19,6 +19,7 @@ Favorite: Under the cursor: notes.txt
 Tag: ✓ Work
 Tag:   Urgent · red
 Tag: Edit tags… (notes.txt)
+Tag: Manage tags…
 ```
 
 - **A tag row** toggles that tag. A ✓ means every item already has it, and
@@ -30,6 +31,23 @@ Tag: Edit tags… (notes.txt)
   - a name you remove is taken off every item;
   - a name you add is put on every item;
   - tags that only some of the items have are left alone.
+
+  A tag XeFM has not seen before then asks for its color: none, or one of
+  Finder's seven. This step is skipped where the files' storage keeps no
+  colors (Linux, S3), and for a tag named after a color ("Red").
+- **Manage tags…** changes a tag itself. Pick the tag, or type its name, then:
+  - **Change color…** gives it another color;
+  - **Rename tag…** gives it another name and keeps its color. A file that
+    already has the new name keeps just one of them;
+  - **Delete tag…** takes it off every file, after telling you how many files
+    carry it.
+
+  These act on every file that carries the tag, not just the selection, as
+  Finder does. On macOS, Spotlight finds the files on every indexed disk.
+  Elsewhere, or when Spotlight finds nothing, XeFM searches the current
+  directory and below, so files outside it keep the tag as it was. The row is
+  there wherever the current directory keeps tags, even with nothing under the
+  cursor. **Change color…** appears only where the storage keeps colors.
 
 Running it and pressing **Enter** still adds the current directory to your
 favorites, since that row stays first. In AFX style `add_favorite` is on `B`;
@@ -74,7 +92,9 @@ To take a tag off the list, highlight it and press the remove key
 | inside archives | not supported | — |
 
 A new tag named after a Finder color ("Red", "Blue", …) gets that color, as it
-does in Finder. A tag that already has a color elsewhere keeps it.
+does in Finder. A tag that already has a color elsewhere keeps it. Any other new
+tag gets the color you choose when you add it, and **Manage tags…** changes it
+later — on Windows, too, where no other program sets these colors.
 
 **Windows** has no system-wide file tags. Explorer's "Tags" are stored inside
 certain file types only, so XeFM keeps tags in a hidden stream on the file

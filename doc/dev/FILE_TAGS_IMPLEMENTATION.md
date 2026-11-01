@@ -47,7 +47,15 @@ Helpers:
 - `common`: the tags shared by every list.
 - `parse_names`: splits the comma-separated text from the edit dialog.
 - `new_tag`: reuses a known tag's color, else maps a Finder color name to its
-  index, else uses no color.
+  index (`names_color`), else uses no color.
+- `recolor` and `rename` (#792): one tag changed in a file's list, in place.
+  `rename` onto a name the file already has drops the old tag, so the two
+  become one.
+- `COLOR_CHOICES`: the color picker's order, none first, then Finder's menu.
+
+`find_everywhere(name)` (#792) is a store's index over everything it covers,
+or `None`. Only `FinderTags` has one: `mdfind` with no `-onlyin`, matching
+case-insensitively (`'name'c`).
 
 ## Copies
 
@@ -111,6 +119,30 @@ particular to tags:
   3. Show the hits with `open_path_list(..., title="Tag: name")`.
 
   The remove key on a tag row forgets it from `tags.known`; files keep the tag.
+- **Manage tags…** (#792, row `tag-manage`): offered whenever the pane's
+  directory has a store, even with no targets. `add_favorite` does not count
+  it when deciding to skip straight to naming the one favorite. It opens a
+  filter list of known tags (typing a name works too), then a choice of
+  **Change color…** (only when `store.has_colors`), **Rename tag…** and
+  **Delete tag…**. All three act on the tag, the way Finder treats a tag's
+  color and name as one per name, not per file:
+  - `_find_tagged` runs in a task. It asks `find_everywhere`, else
+    `find(root)`, else `_walk_for_tag(root)`. It resolves the hits with
+    `path_list.resolve` and reads each one back, so a loose index match never
+    rewrites a file. It returns the scope it used, for the messages.
+  - The rewrite is `_rewrite_tags`, the body `_write_tags` already used. It is
+    now shared and checkpointed.
+  - `tags.known` is updated first: the new color, or the new name in place
+    of the old one. `tags.SEEN` is updated to match.
+  - Delete finds the files first, then confirms with the count and scope
+    (default Cancel). Recolor and rename don't ask, as in Finder.
+- **Color on creation**: in Edit tags…, each added tag that is not known and
+  whose name is not a color gets a `_choose_tag_color` step when
+  `store.has_colors`. Esc there cancels the whole edit.
+- **Finder's tag registry**: Finder also keeps its own list of tags and
+  colors, outside the files. XeFM rewrites the files' xattrs only. Whether
+  Finder shows the file's color or its own registry's after a recolor is a
+  hand check (below).
 - **Finder's format.** `format_finder` writes every tag as `"Name\nN"`,
   `"Work\n0"` for a tag without a color, which is what `NSURLTagNamesKey`
   writes (#605). Foundation reads a bare `"Work"` too. In the hand check
@@ -132,7 +164,9 @@ particular to tags:
 - `carry`;
 - the `tags` attribute (read off the UI thread; costly stores skipped);
 - app tests: B edit then toggle, B on a selection, Search Tags listing
-  the tag (and J not), and `find_by_tag` through the walk.
+  the tag (and J not), and `find_by_tag` through the walk;
+- #792: a new tag's color step, and Manage tags… recoloring, renaming and
+  deleting (after the confirm) on files found by the walk.
 
 ## Hand checks owed
 
@@ -141,7 +175,9 @@ particular to tags:
   here, and Dolphin seeing the tags.
 - **SSH:** against a real Linux host with and without the `attr` package.
 - **S3:** against a real bucket.
-- **macOS:** Finder showing the tags and colors written here. Spotlight
+- **macOS:** Finder showing the tags and colors written here, including after
+  Manage tags… changes a color or a name (#792), and Finder's own tag list
+  after a rename or delete. Spotlight
   indexing was confirmed during development in a non-temporary folder.
 - **GUI and TUI:** the dots in both, including East Asian ambiguous-width
   terminals.

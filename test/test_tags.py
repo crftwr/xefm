@@ -80,6 +80,21 @@ class Helpers(unittest.TestCase):
         self.assertEqual(tags.new_tag("work", finder, [Tag("Work", 4)]), Tag("work", 4))
         self.assertEqual(tags.new_tag("Red", tags.XdgTags()), Tag("Red", 0))
 
+    def test_recolor_and_the_color_choices(self):
+        current = [Tag("Keep", 6), Tag("Work")]
+        self.assertEqual(tags.recolor(current, "work", 4), [Tag("Keep", 6), Tag("Work", 4)])
+        self.assertEqual(sorted(tags.COLOR_CHOICES), sorted(tags.COLORS))
+        self.assertEqual(tags.COLOR_CHOICES[0], 0, "none comes first")
+        self.assertEqual(tags.names_color("Grey"), 1)
+        self.assertEqual(tags.names_color("Work"), 0)
+
+    def test_rename_keeps_place_and_color_and_merges(self):
+        self.assertEqual(tags.rename([Tag("A"), Tag("Work", 4), Tag("B")], "work", "Job"),
+                         [Tag("A"), Tag("Job", 4), Tag("B")])
+        self.assertEqual(tags.rename([Tag("Work", 4), Tag("job", 6)], "Work", "Job"),
+                         [Tag("job", 6)])
+        self.assertEqual(tags.rename([Tag("work", 4)], "work", "Work"), [Tag("Work", 4)])
+
     def test_store_for(self):
         self.assertIs(tags.store_for("s3://bucket/key.txt"), tags._s3)
         self.assertIsNone(tags.store_for("s3://bucket/"))
@@ -408,6 +423,105 @@ class AppIntegration(_Tmp):
         pane = self.app.active_pane()
         self.assertTrue(pane.get("virtual"))
         self.assertEqual([str(f) for f in pane["files"]], [self.deep])
+
+    def pick(self, value_or_label):
+        """Accept a row of the filter list on top: by value, or by label."""
+        from xefm.filter_list_dialog import FilterListDialog
+        dialog = self.top()
+        self.assertIsInstance(dialog, FilterListDialog)
+        dialog.filter_edit.text = ""
+        index = next(i for i, v in enumerate(dialog.filtered)
+                     if v == value_or_label or dialog.to_label(v).startswith(str(value_or_label)))
+        dialog._accept_index(index)
+
+    def tag_two_files_work(self):
+        a = os.path.join(self.tmp, "a.txt")
+        for path in (a, self.deep):
+            self.store.write(path, [Tag("Keep"), Tag("Work")])
+        self.app._remember_tags([Tag("Work")])
+        return a
+
+    def test_a_new_tag_gets_its_color_chosen(self):
+        """#792: Edit tags… asks a new tag's color, where the store keeps one."""
+        self.focus("a.txt")
+        a = os.path.join(self.tmp, "a.txt")
+        self.app.add_favorite()
+        self.choose("Edit tags…")
+        dialog = self.top()
+        dialog.edit.text = "Project, Red"
+        dialog._accept()
+        if self.store.has_colors:
+            self.assertEqual(self.top().title, "Color of tag Project",
+                             "asked for the new tag only: Red has its color")
+            self.choose("Blue")
+        self.assertFalse(self.app.panel.has_layers, "every dialog closed")
+        got = self.store.read(a)
+        self.assertEqual([t.name for t in got], ["Project", "Red"])
+        if self.store.has_colors:
+            self.assertEqual(got[0].color, 4)
+            self.assertIn(["Project", 4], self.sm.get_state("tags.known"))
+
+    def test_manage_recolors_the_tag_on_every_file(self):
+        if not self.store.has_colors:
+            self.skipTest("this store keeps no colors")
+        a = self.tag_two_files_work()
+        self.focus("a.txt")
+        with patch.object(type(self.store), "find_everywhere", return_value=None), \
+             patch.object(type(self.store), "find", return_value=None):
+            self.app.add_favorite()
+            self.choose("Manage tags…")
+            self.pick("Work")
+            self.choose("Change color…")
+            self.choose("Green")
+            self.drain()
+        for path in (a, self.deep):
+            self.assertEqual(self.store.read(path), [Tag("Keep"), Tag("Work", 2)])
+        self.assertEqual(self.sm.get_state("tags.known")[0], ["Work", 2])
+
+    def test_manage_deletes_the_tag_from_every_file_after_asking(self):
+        from puikit.widgets.message_box import MessageBox
+        a = self.tag_two_files_work()
+        with patch.object(type(self.store), "find_everywhere", return_value=None), \
+             patch.object(type(self.store), "find", return_value=None):
+            self.app._manage_tags(self.app.active_pane()["path"])
+            self.pick("Work")
+            self.choose("Delete tag…")
+            self.drain()
+            box = self.top()
+            self.assertIsInstance(box, MessageBox)
+            self.assertIn("from 2 item(s)", box.message)
+            self.assertEqual([t.name for t in self.store.read(a)], ["Keep", "Work"],
+                             "nothing changes before Delete")
+            box._close(box.buttons.index("Delete"))
+            self.drain()
+        for path in (a, self.deep):
+            self.assertEqual([t.name for t in self.store.read(path)], ["Keep"])
+        self.assertNotIn("work", [str(i[0]).casefold()
+                                  for i in self.sm.get_state("tags.known", [])])
+
+    def test_manage_renames_the_tag_on_every_file(self):
+        a = self.tag_two_files_work()
+        with patch.object(type(self.store), "find_everywhere", return_value=None), \
+             patch.object(type(self.store), "find", return_value=None):
+            self.app._manage_tags(self.app.active_pane()["path"])
+            self.pick("Work")
+            self.choose("Rename tag…")
+            dialog = self.top()
+            dialog.edit.text = "Job"
+            dialog._accept()
+            self.drain()
+        for path in (a, self.deep):
+            self.assertEqual([t.name for t in self.store.read(path)], ["Keep", "Job"])
+        names = [str(i[0]) for i in self.sm.get_state("tags.known", [])]
+        self.assertIn("Job", names)
+        self.assertNotIn("Work", names)
+
+    def test_manage_is_offered_with_nothing_to_tag(self):
+        pane = self.app.active_pane()
+        pane["focused_index"] = 0
+        pane["files"] = []
+        rows = self.app._tag_rows(pane)
+        self.assertEqual([v for v, _ in rows], [("tag-manage", None)])
 
     def test_unsupported_places_offer_no_tag_rows(self):
         with patch.object(tags, "store_for", return_value=None):
