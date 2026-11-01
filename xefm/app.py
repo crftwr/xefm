@@ -6966,8 +6966,11 @@ class XeFMApp:
         if not candidates:
             self.log_info("Nothing to add to favorites")
             return
-        if len(candidates) == 1 and candidates[0][0][0] == "fav":
-            self._name_favorite(*candidates[0][0][1])
+        # Manage tags… is always there where tags are, so it does not count
+        # against going straight to the one favorite there is.
+        marks = [c for c in candidates if c[0][0] != "tag-manage"]
+        if len(marks) == 1 and marks[0][0][0] == "fav":
+            self._name_favorite(*marks[0][0][1])
             return
 
         def on_result(choice) -> None:
@@ -6981,6 +6984,8 @@ class XeFMApp:
                 self._toggle_tag(self._tag_targets(pane), *value)
             elif kind == "tag-edit":
                 self._edit_tags(self._tag_targets(pane))
+            elif kind == "tag-manage":
+                self._manage_tags(pane["path"])
 
         show_choice_dialog(self.panel, "Bookmark or Tag", candidates,
                            on_result=on_result)
@@ -7033,21 +7038,29 @@ class XeFMApp:
         self.state_manager.set_state("tags.known", known[:self._KNOWN_TAGS_MAX])
 
     def _forget_known_tag(self, tag) -> bool:
-        known = [i for i in self.state_manager.get_state("tags.known", []) or []
-                 if not (isinstance(i, list) and i
-                         and str(i[0]).casefold() == tag.name.casefold())]
-        self.state_manager.set_state("tags.known", known)
-        tags.SEEN.pop(tag.name.casefold(), None)
+        self._drop_known_tag(tag.name)
         self.log_info(f"Forgot tag {tag.name} (files keep it)")
         return True
 
+    def _drop_known_tag(self, name: str) -> None:
+        known = [i for i in self.state_manager.get_state("tags.known", []) or []
+                 if not (isinstance(i, list) and i
+                         and str(i[0]).casefold() == name.casefold())]
+        self.state_manager.set_state("tags.known", known)
+        tags.SEEN.pop(name.casefold(), None)
+
     def _tag_rows(self, pane: dict) -> list:
         """The B dialog's tag rows for the current targets: one toggle per known
-        tag, checked where every target has it, then a free-form editor."""
+        tag, checked where every target has it, then a free-form editor, then
+        Manage tags… (#792), which acts on tags, not on the targets — so it is
+        offered wherever the pane's directory keeps tags."""
+        manage = []
+        if not pane.get("virtual") and tags.store_for(pane["path"]) is not None:
+            manage = [(("tag-manage", None), "Tag: Manage tags…")]
         targets = self._tag_targets(pane)
         store = self._tag_store_of(targets) if targets else None
         if store is None:
-            return []
+            return manage
         current = None
         if store.cheap and len(targets) <= self._TAG_MARK_LIMIT:
             found = store.read_many(targets)
@@ -7061,7 +7074,7 @@ class XeFMApp:
                          f"Tag: {mark} {_tag_label(tag)}"))
         what = targets[0].name if len(targets) == 1 else f"{len(targets)} selected"
         rows.append((("tag-edit", None), f"Tag: Edit tags… ({what})"))
-        return rows
+        return rows + manage
 
     def _read_tags_then(self, targets: list, then) -> None:
         """Read ``targets``' tags — inline from a cheap store, in a task from
@@ -7089,35 +7102,46 @@ class XeFMApp:
             self.log_info("Tags are not supported here")
             return
 
-        def work() -> dict:
-            found = store.read_many(targets)
-            changes, failed = [], []
-            for target in targets:
-                current = found.get(str(target), [])
-                if isinstance(current, Exception):
-                    failed.append(f"{target.name}: {current}")
-                    continue
-                new = compute(current)
-                if new != current:
-                    changes.append((target, new))
-            failed += store.write_many(changes)
-            return {"changed": len(changes) - len(failed), "failed": failed}
-
         def done(res: dict) -> None:
-            for line in res.get("failed", []):
-                self.log_info(f"Tags not changed: {line}")
-            self.log_info(message + f" ({res.get('changed', 0)} item(s))")
-            for side in ("left", "right"):
-                for tab in self.pm.tabs[side]:
-                    attributes.store_of(tab).forget(targets, "tags")
+            self._report_tag_writes(targets, res, message)
             self.panel.render()
 
         if store.cheap:
-            done(work())
+            done(self._rewrite_tags(store, targets, compute))
             return
         task = Task("Writing tags", config=self.config, kind="tags",
                     busy_label="Writing tags…")
-        self.tasks.submit(task, self.panel, run=lambda t: work(), on_done=done)
+        self.tasks.submit(task, self.panel,
+                          run=lambda t: self._rewrite_tags(store, targets, compute),
+                          on_done=done)
+
+    @staticmethod
+    def _rewrite_tags(store, targets: list, compute, checkpoint=lambda: None) -> dict:
+        """Give each of ``targets`` the tags ``compute(current)`` returns,
+        writing only those that change. Safe off the UI thread."""
+        found = store.read_many(targets)
+        checkpoint()
+        changes, failed = [], []
+        for target in targets:
+            current = found.get(str(target), [])
+            if isinstance(current, Exception):
+                failed.append(f"{target.name}: {current}")
+                continue
+            new = compute(current)
+            if new != current:
+                changes.append((target, new))
+        failed += store.write_many(changes)
+        return {"changed": len(changes) - len(failed), "failed": failed}
+
+    def _report_tag_writes(self, targets: list, res: dict, message: str) -> None:
+        """Log what :meth:`_rewrite_tags` did and let every tab redraw the
+        targets' tags."""
+        for line in res.get("failed", []):
+            self.log_info(f"Tags not changed: {line}")
+        self.log_info(message + f" ({res.get('changed', 0)} item(s))")
+        for side in ("left", "right"):
+            for tab in self.pm.tabs[side]:
+                attributes.store_of(tab).forget(targets, "tags")
 
     def _toggle_tag(self, targets: list, tag, on) -> None:
         """B's tag row: take ``tag`` off when every target has it, else put it
@@ -7170,10 +7194,33 @@ class XeFMApp:
                 if not add and not remove:
                     self.panel.render()
                     return
-                self._remember_tags(add + [t for t in shared if t.name.casefold() in after])
-                self._write_tags(
-                    targets, lambda cur: tags.apply_change(cur, add=add, remove=remove),
-                    "Tags updated")
+                # A tag new to XeFM gets its color chosen now (#792), where
+                # the store keeps one; a known tag or a color's own name
+                # already has its color.
+                known_names = {t.name.casefold() for t in known}
+                fresh = [i for i, t in enumerate(add) if store.has_colors
+                         and t.name.casefold() not in known_names
+                         and not tags.names_color(t.name)]
+
+                def commit() -> None:
+                    self._remember_tags(add + [t for t in shared
+                                               if t.name.casefold() in after])
+                    self._write_tags(
+                        targets, lambda cur: tags.apply_change(cur, add=add, remove=remove),
+                        "Tags updated")
+
+                def ask(k: int) -> None:
+                    if k == len(fresh):
+                        commit()
+                        return
+                    i = fresh[k]
+
+                    def chosen(color: int) -> None:
+                        add[i] = tags.Tag(add[i].name, color)
+                        ask(k + 1)
+                    self._choose_tag_color(add[i].name, add[i].color, chosen)
+
+                ask(0)
 
             what = targets[0].name if len(targets) == 1 else f"{len(targets)} items"
             show_input(self.panel, title=f"Tags — {what}",
@@ -7183,6 +7230,209 @@ class XeFMApp:
             self.panel.render()
 
         self._read_tags_then(targets, show)
+
+    def _choose_tag_color(self, name: str, current: int, then) -> None:
+        """Pick a color for tag ``name`` from Finder's seven plus none, and
+        hand its index to ``then``; Esc cancels and calls nothing."""
+        rows = [(c, (tags.COLORS[c] or "none").capitalize()) for c in tags.COLOR_CHOICES]
+
+        def on_result(color) -> None:
+            if color is None:
+                self.panel.render()
+                return
+            then(color)
+
+        show_choice_dialog(self.panel, f"Color of tag {name}", rows,
+                           current=current, on_result=on_result)
+        self.panel.render()
+
+    def _manage_tags(self, root) -> None:
+        """B's "Manage tags…" (#792): pick a tag — or type one not listed —
+        then change its color, rename it or delete it. Each acts on the tag
+        itself, as Finder's do: every file carrying it, not only the
+        selection."""
+        store = tags.store_for(root)
+        if store is None:
+            self.log_info("Tags are not supported here")
+            return
+
+        def named(text: str):
+            text = text.strip()
+            if text:
+                tag = next((t for t in self._known_tags()
+                            if t.name.casefold() == text.casefold()), None)
+                self._manage_tag(root, store, tag or tags.new_tag(text, store))
+
+        show_filter_list(
+            self.panel, self._known_tags(), title="Manage Tags",
+            to_label=_tag_label,
+            on_accept=lambda tag: self._manage_tag(root, store, tag),
+            on_accept_text=named,
+            region=self._active_pane_region())
+        self.panel.render()
+
+    def _manage_tag(self, root, store, tag) -> None:
+        rows = []
+        if store.has_colors:
+            rows.append(("color", "Change color…"))
+        rows.append(("rename", "Rename tag…"))
+        rows.append(("delete", "Delete tag…"))
+
+        def on_result(choice) -> None:
+            if choice == "color":
+                self._choose_tag_color(
+                    tag.name, tag.color,
+                    lambda color: self._recolor_tag(root, store, tag.name, color))
+            elif choice == "rename":
+                self._ask_tag_rename(root, store, tag)
+            elif choice == "delete":
+                self._delete_tag(root, store, tag.name)
+            else:
+                self.panel.render()
+
+        show_choice_dialog(self.panel, f"Tag {_tag_label(tag)}", rows, on_result=on_result)
+        self.panel.render()
+
+    def _find_tagged(self, t, root, store, name: str) -> tuple[list, str]:
+        """Every file carrying tag ``name`` that XeFM can reach, and where it
+        looked: the store's index everywhere (Spotlight), else its index or a
+        walk under ``root``. Each hit is read back, so an index's loose match
+        never changes a file without the tag. Runs in a task."""
+        hits, where = store.find_everywhere(name), "found by Spotlight"
+        if hits is None:
+            hits, where = store.find(root, name, checkpoint=t.checkpoint), f"under {root}"
+            if hits is None:
+                hits = self._walk_for_tag(t, root, store, name)
+        paths = list(path_list.resolve(hits, root).paths)
+        t.checkpoint()
+        found = store.read_many(paths)
+        folded = name.casefold()
+        return [p for p in paths if isinstance(found.get(str(p)), list)
+                and any(tg.name.casefold() == folded for tg in found[str(p)])], where
+
+    def _recolor_tag(self, root, store, name: str, color: int) -> None:
+        """Make tag ``name`` this color: on every file that carries it, and for
+        the next time XeFM adds it."""
+        tag = tags.Tag(name, color)
+        self._remember_tags([tag])
+        if name.casefold() in tags.SEEN:
+            tags.SEEN[name.casefold()] = tag
+        what = tag.color_name or "no color"
+        task = Task(f"Coloring tag {name}", config=self.config, kind="tags",
+                    busy_label="Coloring tag…")
+
+        def run(t: Task) -> dict:
+            paths, where = self._find_tagged(t, root, store, name)
+            res = self._rewrite_tags(store, paths, lambda cur: tags.recolor(cur, name, color),
+                                     t.checkpoint)
+            return {**res, "paths": paths, "where": where}
+
+        def on_done(res: dict) -> None:
+            if "paths" not in res:
+                why = res.get("error") or "cancelled"
+                self.log_info(f"Tag {name} is now {what} for new tags; "
+                              f"files not changed ({why})")
+            else:
+                self._report_tag_writes(res["paths"], res,
+                                        f"Tag {name} is now {what}, {res['where']}")
+            self.panel.render()
+
+        self.tasks.submit(task, self.panel, run=run, on_done=on_done)
+
+    def _ask_tag_rename(self, root, store, tag) -> None:
+        def accept(text: str) -> None:
+            names = tags.parse_names(text)
+            if len(names) != 1 or names[0] == tag.name:
+                if len(names) > 1:
+                    self.log_info("A tag name cannot contain a comma")
+                self.panel.render()
+                return
+            self._rename_tag(root, store, tag, names[0])
+
+        show_input(self.panel, title=f"Rename Tag {tag.name}", prompt="New name:",
+                   text=tag.name, on_accept=accept, region=self._active_pane_region())
+        self.panel.render()
+
+    def _rename_tag(self, root, store, tag, new: str) -> None:
+        """Call tag ``tag`` ``new`` on every file that carries it, keeping its
+        color, and in XeFM's list. Where a file already has ``new``, the two
+        become one."""
+        old = tag.name
+        self._drop_known_tag(old)
+        self._remember_tags([tags.Tag(new, tag.color)])
+        task = Task(f"Renaming tag {old}", config=self.config, kind="tags",
+                    busy_label="Renaming tag…")
+
+        def run(t: Task) -> dict:
+            paths, where = self._find_tagged(t, root, store, old)
+            res = self._rewrite_tags(store, paths, lambda cur: tags.rename(cur, old, new),
+                                     t.checkpoint)
+            return {**res, "paths": paths, "where": where}
+
+        def on_done(res: dict) -> None:
+            if "paths" not in res:
+                self.log_info(f"Rename tag {old}: files not changed "
+                              f"({res.get('error') or 'cancelled'})")
+            else:
+                self._report_tag_writes(res["paths"], res,
+                                        f"Renamed tag {old} to {new}, {res['where']}")
+            self.panel.render()
+
+        self.tasks.submit(task, self.panel, run=run, on_done=on_done)
+
+    def _delete_tag(self, root, store, name: str) -> None:
+        """Take tag ``name`` off every file that carries it, after saying how
+        many and where, and forget it."""
+        task = Task(f"Finding tag {name}", config=self.config, kind="tags",
+                    busy_label="Searching…")
+
+        def run(t: Task) -> dict:
+            paths, where = self._find_tagged(t, root, store, name)
+            return {"paths": paths, "where": where}
+
+        def found(res: dict) -> None:
+            if "paths" not in res:
+                self.log_info(f"Delete tag {name}: {res.get('error') or 'cancelled'}")
+                self.panel.render()
+                return
+            paths, where = res["paths"], res["where"]
+            if not paths:
+                self._drop_known_tag(name)
+                self.log_info(f"Deleted tag {name} (no files carry it, {where})")
+                self.panel.render()
+                return
+
+            def answered(label: str) -> None:
+                if label == "Delete":
+                    self._drop_known_tag(name)
+                    self._untag_all(store, paths, name, where)
+                else:
+                    self.panel.render()
+
+            show_message_box(
+                self.panel,
+                f"Remove tag {name} from {len(paths)} item(s) {where}?",
+                title="Delete Tag", icon="warning",
+                buttons=("Delete", "Cancel"), default=1, cancel=1,
+                on_result=answered)
+            self.panel.render()
+
+        self.tasks.submit(task, self.panel, run=run, on_done=found)
+
+    def _untag_all(self, store, paths: list, name: str, where: str) -> None:
+        """The second half of :meth:`_delete_tag`, once confirmed."""
+        task = Task(f"Deleting tag {name}", config=self.config, kind="tags",
+                    busy_label="Writing tags…")
+
+        def on_done(res: dict) -> None:
+            self._report_tag_writes(paths, res, f"Deleted tag {name}, {where}")
+            self.panel.render()
+
+        self.tasks.submit(
+            task, self.panel,
+            run=lambda t: self._rewrite_tags(
+                store, paths, lambda cur: tags.apply_change(cur, remove=[name]), t.checkpoint),
+            on_done=on_done)
 
     def show_tag_search(self) -> None:
         """Search Tags (#605): pick a tag — or type one not listed — and the

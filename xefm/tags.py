@@ -38,9 +38,11 @@ from xefm.log_manager import getLogger
 
 logger = getLogger("Tags")
 
-#: Finder's color indices, in the order Finder's own tag menu lists them.
+#: Finder's color indices, as Finder numbers them in the xattr.
 COLORS = {0: None, 1: "gray", 2: "green", 3: "purple", 4: "blue",
           5: "yellow", 6: "red", 7: "orange"}
+#: The color picker's order (#792): none, then Finder's own tag menu order.
+COLOR_CHOICES = (0, 6, 7, 5, 2, 4, 3, 1)
 #: A new tag with one of these names gets the matching color, as in Finder.
 _COLOR_BY_NAME = {"gray": 1, "grey": 1, "green": 2, "purple": 3, "blue": 4,
                   "yellow": 5, "red": 6, "orange": 7}
@@ -84,6 +86,12 @@ class TagStore:
     def find(self, root, name: str, *, checkpoint=lambda: None) -> Optional[list[str]]:
         """Paths under ``root`` tagged ``name`` by an index, or None when this
         store has no index (the caller walks instead)."""
+        return None
+
+    def find_everywhere(self, name: str) -> Optional[list[str]]:
+        """Every path the store's index knows tagged ``name`` (ignoring case),
+        wherever it is, or None when there is no such index. Changing or
+        deleting a tag (#792) asks this first, as Finder does."""
         return None
 
     def read_many(self, paths: list) -> dict[str, list[Tag]]:
@@ -199,6 +207,19 @@ class FinderTags(TagStore):
             out = subprocess.run(
                 ["mdfind", "-onlyin", str(root), f"kMDItemUserTags == '{escaped}'"],
                 capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        paths = [line for line in out.stdout.splitlines() if line]
+        return paths or None
+
+    def find_everywhere(self, name: str) -> Optional[list[str]]:
+        """Spotlight over every indexed volume, case ignored (``'…'c``) since
+        Finder treats ``Work`` and ``work`` as one tag."""
+        import subprocess
+        escaped = name.replace("\\", "\\\\").replace("'", "\\'")
+        try:
+            out = subprocess.run(["mdfind", f"kMDItemUserTags == '{escaped}'c"],
+                                 capture_output=True, text=True, timeout=60)
         except (OSError, subprocess.SubprocessError):
             return None
         paths = [line for line in out.stdout.splitlines() if line]
@@ -549,7 +570,7 @@ def new_tag(name: str, store: TagStore, known: Iterable[Tag] = ()) -> Tag:
     for tag in known:
         if tag.name.casefold() == name.casefold():
             return Tag(name, tag.color)
-    return Tag(name, _COLOR_BY_NAME.get(name.casefold(), 0))
+    return Tag(name, names_color(name))
 
 
 def apply_change(current: list[Tag], add: Iterable[Tag] = (),
@@ -564,6 +585,35 @@ def apply_change(current: list[Tag], add: Iterable[Tag] = (),
             out.append(tag)
             have.add(tag.name.casefold())
     return out
+
+
+def recolor(current: list[Tag], name: str, color: int) -> list[Tag]:
+    """``current`` with the tag named ``name`` (any case) given ``color``."""
+    folded = name.casefold()
+    return [Tag(t.name, color) if t.name.casefold() == folded else t for t in current]
+
+
+def rename(current: list[Tag], old: str, new: str) -> list[Tag]:
+    """``current`` with the tag named ``old`` (any case) called ``new``, in
+    its place and with its color. A file that already has ``new`` keeps that
+    one and loses ``old``: the two tags become one."""
+    gone, folded = old.casefold(), new.casefold()
+    if gone == folded:
+        return [Tag(new, t.color) if t.name.casefold() == gone else t for t in current]
+    has_new = any(t.name.casefold() == folded for t in current)
+    out = []
+    for t in current:
+        if t.name.casefold() == gone:
+            if not has_new:
+                out.append(Tag(new, t.color))
+        else:
+            out.append(t)
+    return out
+
+
+def names_color(name: str) -> int:
+    """The Finder color a tag's name spells ("Red" → red), else 0."""
+    return _COLOR_BY_NAME.get(name.casefold(), 0)
 
 
 def parse_names(text: str) -> list[str]:
