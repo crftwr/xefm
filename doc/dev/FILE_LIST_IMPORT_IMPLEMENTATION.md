@@ -154,9 +154,14 @@ with `task.counted` fed from the line count.
 - **Reading.** Two reader threads drain stdout and stderr as bytes (`read1`, so
   the line count moves while output arrives); stdin is `DEVNULL`.
 - **Cancel.** The run loop polls the task's flag. POSIX starts the command in
-  its own session and `killpg`s it; Windows runs `taskkill /T /F`. Killing only
-  the shell would leave its children writing into a pipe nobody reads, and the
-  readers would never see EOF.
+  its own session and `killpg`s it; Windows starts the shell suspended, puts it
+  in a job object, resumes it, and terminates the job. Killing only the shell
+  would leave its children writing into a pipe nobody reads, and the readers
+  would never see EOF. `taskkill /T /F` did this once, and is still the
+  fallback when the job cannot be made: in an OpenSSH session it answers
+  `Access denied` after 5 s and leaves the command running (#793). The job has
+  no `KILL_ON_JOB_CLOSE`, so as on POSIX, what a command leaves running after a
+  normal exit is left alone.
 - **UTF-8 on Windows.** Console programs write to a pipe in their console's
   output code page, and the hidden console a child of the GUI gets is the
   system OEM one: on an English system (cp437) `es.exe` and `dir /b` print a

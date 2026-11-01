@@ -15,8 +15,12 @@ quoting mean what they mean at a prompt.
 **Stopping stops the tree.** A shell runs the command as its child, and a
 pipeline as several; killing the shell alone leaves them running, still
 writing into a pipe nobody reads. On POSIX the command gets its own process
-group and the whole group is signalled; on Windows ``taskkill /T`` walks the
-tree.
+group and the whole group is signalled; on Windows the shell starts in a job
+object and the job is terminated. ``taskkill /T`` walked the tree once, but it
+is refused — ``Access denied`` after 5 s — in an OpenSSH session, and leaves the
+command running (#793); a job holds every descendant whoever its parent, and
+ending it needs no rights over them. The shell is created suspended and joins
+the job before it runs, so nothing it starts can escape.
 
 **Bytes in, text out, paths intact.** Output is read as bytes and decoded once
 at the end (:func:`xefm.path_list.decode`), because the right encoding is a property of
@@ -78,13 +82,99 @@ class CommandOutput(NamedTuple):
     error: str = ""
 
 
-def _kill_tree(proc: subprocess.Popen) -> None:
+#: ``CreateProcess``'s flag, which :mod:`subprocess` does not name.
+_CREATE_SUSPENDED = 0x00000004
+
+
+class _Job:
+    """A Windows job object holding a process started suspended, and all it
+    starts. :meth:`attach` resumes the process whether or not it could join;
+    when it could not, :meth:`terminate` returns False and the caller falls
+    back to ``taskkill``."""
+
+    def __init__(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+        self._ctypes = ctypes
+        k = self._k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateJobObjectW.restype = wintypes.HANDLE
+        k.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        k.OpenProcess.restype = wintypes.HANDLE
+        k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k.OpenThread.restype = wintypes.HANDLE
+        k.OpenThread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        k.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        k.ResumeThread.argtypes = [wintypes.HANDLE]
+        k.CloseHandle.argtypes = [wintypes.HANDLE]
+        k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        k.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        k.Thread32First.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
+        k.Thread32Next.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
+        self._handle = k.CreateJobObjectW(None, None)
+        self._joined = False
+
+    def attach(self, pid: int) -> None:
+        k = self._k32
+        if self._handle:
+            process = k.OpenProcess(0x0101, False, pid)  # SET_QUOTA | TERMINATE
+            if process:
+                self._joined = bool(k.AssignProcessToJobObject(self._handle, process))
+                k.CloseHandle(process)
+        if not self._joined:
+            logger.warning(f"The command could not join a job object "
+                           f"(error {self._ctypes.get_last_error()})")
+        self._resume(pid)
+
+    def _resume(self, pid: int) -> None:
+        """Resume the threads of ``pid`` — a process created suspended has one."""
+        ctypes, k = self._ctypes, self._k32
+        from ctypes import wintypes
+
+        class THREADENTRY32(ctypes.Structure):
+            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                        ("th32ThreadID", wintypes.DWORD),
+                        ("th32OwnerProcessID", wintypes.DWORD),
+                        ("tpBasePri", wintypes.LONG), ("tpDeltaPri", wintypes.LONG),
+                        ("dwFlags", wintypes.DWORD)]
+
+        snapshot = k.CreateToolhelp32Snapshot(0x4, 0)  # TH32CS_SNAPTHREAD
+        if snapshot in (None, wintypes.HANDLE(-1).value):
+            logger.error(f"Could not list the command's threads to start it "
+                         f"(error {ctypes.get_last_error()})")
+            return
+        try:
+            entry = THREADENTRY32(dwSize=ctypes.sizeof(THREADENTRY32))
+            more = k.Thread32First(snapshot, ctypes.byref(entry))
+            while more:
+                if entry.th32OwnerProcessID == pid:
+                    thread = k.OpenThread(0x0002, False, entry.th32ThreadID)  # SUSPEND_RESUME
+                    if thread:
+                        k.ResumeThread(thread)
+                        k.CloseHandle(thread)
+                more = k.Thread32Next(snapshot, ctypes.byref(entry))
+        finally:
+            k.CloseHandle(snapshot)
+
+    def terminate(self) -> bool:
+        return self._joined and bool(self._k32.TerminateJobObject(self._handle, 1))
+
+    def close(self) -> None:
+        if self._handle:
+            self._k32.CloseHandle(self._handle)
+            self._handle = None
+
+
+def _kill_tree(proc: subprocess.Popen, job: Optional[_Job]) -> None:
     """Stop ``proc`` and everything it started."""
     try:
         if _WINDOWS:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           **SUBPROCESS_NO_WINDOW)
+            if not (job and job.terminate()):
+                said = subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                                      capture_output=True, **SUBPROCESS_NO_WINDOW)
+                if said.returncode != 0:
+                    logger.warning("taskkill could not stop the command's process tree: "
+                                   + said.stderr.decode("mbcs", errors="replace").strip())
         else:
             os.killpg(proc.pid, signal.SIGKILL)
     except (OSError, ProcessLookupError) as e:
@@ -124,9 +214,13 @@ def run(command: str, *, cwd: str, env: dict,
     produced so far, for a progress display.
     """
     popen_kwargs = dict(SUBPROCESS_NO_WINDOW)
+    job = None
     if _WINDOWS:
         env = dict(env, **{_COMMAND_VAR: command})
         args, shell = _windows_command_line(env), False
+        popen_kwargs["creationflags"] = (popen_kwargs.get("creationflags", 0)
+                                         | _CREATE_SUSPENDED)
+        job = _Job()
     else:
         args, shell = command, True
         popen_kwargs["start_new_session"] = True
@@ -135,7 +229,22 @@ def run(command: str, *, cwd: str, env: dict,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, **popen_kwargs)
     except OSError as e:
+        if job:
+            job.close()
         return CommandOutput("", None, [], False, error=str(e))
+    if job:
+        job.attach(proc.pid)
+    try:
+        return _collect(proc, job, cancelled, on_count)
+    finally:
+        if job:
+            job.close()
+
+
+def _collect(proc: subprocess.Popen, job: Optional[_Job],
+             cancelled: Callable[[], bool],
+             on_count: Callable[[int], None]) -> CommandOutput:
+    """Read ``proc``'s output until it exits or ``cancelled()``, for :func:`run`."""
 
     out = bytearray()
     err = bytearray()
@@ -161,7 +270,7 @@ def run(command: str, *, cwd: str, env: dict,
     stopped = False
     while proc.poll() is None:
         if cancelled():
-            _kill_tree(proc)
+            _kill_tree(proc, job)
             stopped = True
             break
         time.sleep(_POLL)
