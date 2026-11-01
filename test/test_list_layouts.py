@@ -304,6 +304,18 @@ class Formats(unittest.TestCase):
         self.assertEqual(layouts.resolve_format(None, attributes.Attribute(
             "d", "D", "duration")).align, "right")
 
+    def test_times_start_at_the_left_and_numbers_end_at_the_right(self):
+        def align(kind, fmt=None, **kw):
+            return layouts.resolve_format(fmt, attributes.Attribute("x", "X", kind), **kw).align
+        for fmt in layouts.format_names("time"):
+            self.assertEqual(align("time", fmt), "left", fmt)
+        self.assertEqual(align("time", lambda v, e: "x"), "left")
+        for kind in ("size", "count", "duration"):
+            self.assertEqual(align(kind), "right", kind)
+            self.assertEqual(align(kind, lambda v, e: "x"), "right", kind)
+        self.assertEqual(align("time", "relative", align="right"), "right")
+        self.assertEqual(align("size", align="left"), "left")
+
     def test_words_spell_a_value_out_for_file_details(self):
         def words(kind, value, **kw):
             return layouts.words(attributes.Attribute("x", "X", kind, **kw), value)
