@@ -215,11 +215,11 @@ FORMATS: dict[str, dict[str, Format]] = {
     "count": {"number": Format(_fmt_count, 7, "right", True)},
     "size": {"compact": Format(_fmt_compact, 9, "right", True),
              "bytes": Format(_fmt_bytes, 15, "right", True)},
-    "time": {"short": Format(_time_formatter("%y-%m-%d %H:%M"), 14, "right", True),
-             "full": Format(_time_formatter("%Y-%m-%d %H:%M:%S"), 19, "right", True),
-             "iso": Format(_time_formatter("%Y-%m-%d %H:%M"), 16, "right", True),
-             "relative": Format(_fmt_relative, 10, "right", True, refresh=60.0),
-             "recent": Format(_fmt_recent, 5, "right", True, refresh=60.0)},
+    "time": {"short": Format(_time_formatter("%y-%m-%d %H:%M"), 14, "left", True),
+             "full": Format(_time_formatter("%Y-%m-%d %H:%M:%S"), 19, "left", True),
+             "iso": Format(_time_formatter("%Y-%m-%d %H:%M"), 16, "left", True),
+             "relative": Format(_fmt_relative, 10, "left", True, refresh=60.0),
+             "recent": Format(_fmt_recent, 5, "left", True, refresh=60.0)},
     "duration": {"clock": Format(_fmt_clock, 8, "right", True)},
     "enum": {"letter": Format(_fmt_letter, 1), "word": Format(_fmt_word, 10)},
     "tags": {"dots": Format(_fmt_dots, 3),
@@ -247,9 +247,14 @@ def enum_width(attr, fmt: str) -> int:
     return max(len(str(v.get("label", k))) for k, v in attr.values.items())
 
 
-#: Value types drawn right-aligned in a fixed-advance face when the format
-#: does not say otherwise.
+#: Value types drawn in a fixed-advance face when the format does not say
+#: otherwise.
 NUMERIC = ("count", "size", "time", "duration")
+
+#: Of those, the ones right-aligned. Times start at the left (#756): a word
+#: like ``5 min ago`` or a ``recent`` date reads from its start, as dates do
+#: in Finder and Explorer.
+RIGHT_ALIGNED = ("count", "size", "duration")
 
 
 def words(attr, value) -> str:
@@ -292,7 +297,8 @@ def resolve_format(fmt, attr, config=None, *, width=None, align=None,
     kind = attr.type if attr is not None else "text"
     numeric = kind in NUMERIC
     if callable(fmt):
-        return Resolved(fmt, False, width or 10, align or ("right" if numeric else "left"),
+        return Resolved(fmt, False, width or 10,
+                        align or ("right" if kind in RIGHT_ALIGNED else "left"),
                         numeric, refresh)
     table = FORMATS.get(kind, FORMATS["text"])
     name = fmt if isinstance(fmt, str) and fmt in table else default_format(kind, config)

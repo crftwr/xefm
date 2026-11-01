@@ -217,7 +217,7 @@ A column is an attribute's name, or a dict:
 | `attr` | The attribute to show. |
 | `format` | How to write it: a format's name (below) or a function of your own. |
 | `width` | In cells. Each format has its own. |
-| `align` | `left` or `right`. Numbers and dates are right-aligned. |
+| `align` | `left` or `right`. Sizes, counts and durations are right-aligned; dates and text start at the left. |
 | `priority` | When the pane is too narrow, columns with a priority are dropped, lowest first. A column without one stays. |
 
 Every layout has a `name` column, and it takes the width the others leave.

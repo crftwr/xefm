@@ -169,6 +169,14 @@ entry of the same name merges over it.
 
 - `FORMATS`, `resolve_format`, `render`: as before — a built-in format gets a
   `Row`, a user one an `EntryInfo`, and the result is normalized to `Cell`s.
+- Alignment (#756): a format's own `align`, else `right` for the types in
+  `RIGHT_ALIGNED` (`size`, `count`, `duration`) and `left` for the rest. Every
+  `time` format starts at the left — `relative` reads as words and `recent`'s
+  `13:24` / `10/21` / `2024` start in one place, as dates do in Finder and
+  Explorer. `NUMERIC` (the fixed-advance face) still includes `time`. A
+  column's `align` wins. No `'width': 'auto'` for value columns: an extra's
+  column is already measured per listing, and a user format function that
+  needs other than 10 cells says so with `width`.
 - `extras_for(path)` evaluates every extra's `when` on the listing worker
   (`XeFMApp._list_pane`); the result rides the listing as `extras_auto` and
   `_process_result_queue` installs it as `pane["_extras_auto"]`, even when the
