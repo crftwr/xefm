@@ -37,7 +37,8 @@ see, and the fixes are PuiKit API additions.
 `grid = not ctx.vector_shapes` picks between a stroked rounded rect framing the
 row (GUI) and a grid cue (TUI). That is different *in kind*, and it drags two
 more branches with it: the gutter columns the cue may need, and the cursor band
-those gutters define.
+those gutters define. An empty pane's message line (`_draw_message`) carries
+the same cue, so it repeats the same branch rather than adding one.
 
 A second capability now feeds the same choice: `ruled = grid and
 ctx.colored_underlines` picks between the two grid spellings — an underlined row

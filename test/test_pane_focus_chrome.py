@@ -53,9 +53,9 @@ class _VectorBackend(MemoryBackend):
         return (8, 16)
 
 
-def _render(theme, active, backend, w=26, h=8):
-    pane = {"files": [Path(f"/tmp/file{i}.txt") for i in range(5)],
-            "focused_index": 1, "selected_files": set(), "path": "/tmp"}
+def _render(theme, active, backend, w=26, h=8, count=5):
+    pane = {"files": [Path(f"/tmp/file{i}.txt") for i in range(count)],
+            "focused_index": 1 if count else 0, "selected_files": set(), "path": "/tmp"}
     panel = Panel(backend)
     panel.theme = theme
     view = FilePane(pane)
@@ -72,14 +72,14 @@ def _render(theme, active, backend, w=26, h=8):
     return backend, panel
 
 
-def _hairlines(theme, active):
+def _hairlines(theme, active, count=5):
     """The sub-unit strokes drawn for a pane — i.e. its frame, if any.
 
     Captured from a single settled frame: _render draws more than once (to let a
     theme's arriving-text effect finish), so a spy left on across all of them
     would count the frame once per render."""
     be = _VectorBackend(width=26, height=8)
-    _be, panel = _render(theme, active, be)
+    _be, panel = _render(theme, active, be, count=count)
     calls = []
     orig = be.fill_rect
     be.fill_rect = lambda *a, **k: (calls.append(a), orig(*a, **k))[1]
@@ -219,6 +219,43 @@ class PaneFrame(unittest.TestCase):
         for line in lines:
             for glyph in "┏┓┗┛━┃":
                 self.assertNotIn(glyph, line)
+
+
+# --- an empty pane --------------------------------------------------------------
+
+class EmptyPane(unittest.TestCase):
+    """An empty listing has no row for the cursor, so its "(empty)" line carries
+    the cursor cue instead — without it the focused pane and the resting one
+    looked identical."""
+
+    def _grid(self, active):
+        be, _panel = _render(DARK, active, MemoryBackend(width=26, height=8,
+                                                         capabilities=PROFILE_TUI),
+                             count=0)
+        return be
+
+    def test_grid_message_carries_the_cursor_cue(self):
+        be = self._grid(True)
+        self.assertIn("(empty)", be.snapshot()[0])
+        # The cue's gutter cell is drawn in the cursor color: a bracket, or the
+        # rule's end where the terminal can color one.
+        self.assertIsNotNone(be.style_at(0, 0).fg)
+
+    def test_grid_cue_is_louder_on_the_focused_pane(self):
+        self.assertNotEqual(self._grid(True).style_at(0, 0).fg,
+                            self._grid(False).style_at(0, 0).fg)
+
+    def test_vector_message_is_outlined(self):
+        be = _VectorBackend(width=26, height=8)
+        rects = []
+        orig = be.draw_round_rect
+        be.draw_round_rect = lambda *a, **k: (rects.append(a), orig(*a, **k))[1]
+        _render(DARK, True, be, count=0)
+        self.assertTrue(rects)
+
+    def test_focused_empty_scifi_pane_is_still_framed(self):
+        self.assertEqual(len(_hairlines(SCIFI, active=True, count=0)), 8)
+        self.assertEqual(_hairlines(SCIFI, active=False, count=0), [])
 
 
 # --- the dim -------------------------------------------------------------------
