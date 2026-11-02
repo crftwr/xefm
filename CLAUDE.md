@@ -195,7 +195,9 @@ too — this section is the one place they are written down.
   Ctrl-ENTER or Ctrl-digit); desktop-only keys go in the desktop overrides.
 - **New dependencies: supported, not required.** XeFM starts and works
   without one; the feature it serves is disabled with a hint. No GPL
-  licenses — check PyPI before adding a package.
+  licenses — check PyPI before adding a package. A compiled one is
+  required only on the OS and machine pairs it has wheels for, so the
+  install never fails elsewhere (`doc/dev/BINARY_DEPENDENCIES_SYSTEM.md`).
 - **The public API across a release.** Each change passes `make api-snapshot`
   against the commit before it; the release is also compared against the last
   tag, so a deprecation must ship in a release before its removal, and
