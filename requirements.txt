@@ -24,7 +24,14 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.17.0 is the floor, and a soft one: with a named UI_FONT_NAME / MONO_FONT_NAME
+# 1.18.0 is the floor, and a soft one: it requires Pillow only on the OS and
+# machine pairs Pillow has wheels for, so XeFM installs on 32-bit ARM, Cygwin,
+# FreeBSD and the like (puikit#185, doc/dev/BINARY_DEPENDENCIES_SYSTEM.md); it
+# also carries the passes, targets and textures the Earth, Blocks and Crystal
+# themes draw with (puikit#184), which XeFM leaves out on an older PuiKit
+# (background_lens.AVAILABLE). An older PuiKit runs, without those themes and
+# with Pillow required everywhere.
+# 1.17.0 was the previous floor, and a soft one: with a named UI_FONT_NAME / MONO_FONT_NAME
 # pair the two faces did not line up -- a file name sat above its size and date,
 # bar text crowded the top of its bar, a taller UI face overflowed its row -- and
 # on Windows a name holding a glyph the font lacks (a fallback such as U+29F8 or
@@ -209,7 +216,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.17.0
+puikit>=1.18.0
 pygments
 boto3
 watchdog
