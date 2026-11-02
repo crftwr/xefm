@@ -213,7 +213,14 @@ puikit>=1.17.0
 pygments
 boto3
 watchdog
-pillow
+# Pillow only on the machines it publishes wheels for. Elsewhere (32-bit ARM,
+# i686, ppc64le, ...) pip would build it from source, which fails without a
+# compiler and takes the whole install down. Left out there, the image viewer
+# shows its metadata card; a user who installs Pillow by hand gets pictures
+# back. PuiKit gates its own Pillow the same way, and similar-files below its
+# Pillow and numpy.
+# test/test_requirements.py holds this list.
+pillow; platform_machine == 'x86_64' or platform_machine == 'AMD64' or platform_machine == 'arm64' or platform_machine == 'aarch64' or platform_machine == 'ARM64' or platform_machine == 'x86'
 
 # The ctypes binding for libarchive, which is how XeFM reads .7z, .rar, .iso,
 # .cab, .cpio and .rpm. It is pure Python and carries no binary of its own, so
@@ -242,10 +249,13 @@ doc-files[pdf]>=0.1.0
 # Similar audio finds excerpts and tracks inside longer mixes, as the menu
 # and the docs say. 0.2.1 fixed a lost final status on Windows (#620,
 # similar-files#5). 0.2.0 is where --status, --stop-file and --format tree
-# arrived, and where the tree became .xft (#613). Pure Python; the [image] extra adds only Pillow, which XeFM
-# already requires. Video and audio need ffmpeg / fpcalc on PATH, which the
-# menu names when they are missing.
-similar-files[image]>=0.3.0
+# arrived, and where the tree became .xft (#613). Pure Python. Video and
+# audio need ffmpeg / fpcalc on PATH, which the menu names when they are
+# missing. 0.5.0 brings Pillow and numpy with it,
+# where they have wheels (the same machines as pillow above): numpy groups a
+# large video library in minutes instead of an hour (15,000 films: 18 min
+# against 76), and on the other machines it groups in pure Python.
+similar-files>=0.5.0
 # comtypes reaches Windows Search (the OS's own file index) over COM, for
 # index_search (#579): OLE DB against Search.CollatorDSO. Pure Python on
 # ctypes, Windows only. macOS needs nothing -- Spotlight is queried through

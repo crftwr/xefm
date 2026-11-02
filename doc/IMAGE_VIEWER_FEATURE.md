@@ -162,9 +162,11 @@ example in its `IMAGE_DECODERS` section.
 
 ## Requirements
 
-Pillow ships with XeFM and decodes most of the list above. If it is somehow
-missing, the viewer still opens and still navigates, but shows the metadata card
-instead of the picture.
+Pillow ships with XeFM and decodes most of the list above. On a machine Pillow
+has no ready-made package for (32-bit ARM Linux, for example), XeFM installs
+without it; there, or if it is missing for any other reason, the viewer still
+opens and still navigates, but shows the metadata card instead of the picture.
+Installing Pillow by hand brings the pictures back.
 
 ## Remote and archived images
 
