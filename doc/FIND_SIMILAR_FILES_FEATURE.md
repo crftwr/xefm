@@ -78,8 +78,12 @@ same scan again picks up quickly.
   finished scans are kept.
 - If a scan ends without finishing (its process was killed, for example), the
   jobs list says so, and choosing it shows its log.
-- **similar-files comes with XeFM** (0.3 or later). Video and audio scans
-  still need ffmpeg and fpcalc, as listed above.
+- **similar-files comes with XeFM** (0.5 or later), with numpy, which lets a
+  library of thousands of videos be grouped in minutes rather than an hour.
+  Video and audio scans still need ffmpeg and fpcalc, as listed above.
+- On a machine numpy has no ready-made package for (32-bit ARM Linux, for
+  example), XeFM installs without it and groups videos more slowly; the
+  scan's log says which one it used.
 
 ## See also
 
