@@ -72,6 +72,16 @@ class ThemePersistence(unittest.TestCase):
         sys.stdout, sys.stderr = app._orig_stdout, app._orig_stderr
         return app
 
+    def test_compiled_shaders_are_kept_with_xefms_data(self):
+        """Compiled background shaders go to ~/.xefm/shader-cache, not PuiKit's
+        default folder (PuiKit's set_shader_cache_dir)."""
+        from puikit import background
+        if not hasattr(background, "set_shader_cache_dir"):
+            self.skipTest("PuiKit without set_shader_cache_dir")
+        self._make_app()
+        self.assertEqual(background._shader_cache_dir,
+                         xefm_app.config_manager.config_dir / "shader-cache")
+
     @staticmethod
     def _active(app):
         return app.themes[app._theme_index][0]

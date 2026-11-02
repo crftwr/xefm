@@ -44,6 +44,22 @@ from pathlib import Path as _StdPath
 from urllib.parse import quote, unquote, urlsplit
 
 from puikit import EventType, Font, Item, Panel, PostEffect, Style, TextAttribute, Theme, VSplit, WindowStyle, derive_theme, mix
+from puikit.panel import DrawContext
+
+#: Whether the Panel answers if a pointer move changed what it drew (PuiKit's
+#: ``dispatch_event`` for MOUSE_MOVE, which came with ``DrawContext.pointer_in``);
+#: before that it always said False and every move had to redraw.
+_MOVE_TELLS_REDRAW = hasattr(DrawContext, "pointer_in")
+
+
+def _set_shader_cache_dir(path) -> None:
+    """PuiKit's set_shader_cache_dir, where PuiKit has it (older ones keep
+    compiled shaders in their own default folder, or none)."""
+    try:
+        from puikit.background import set_shader_cache_dir
+    except ImportError:
+        return
+    set_shader_cache_dir(path)
 from puikit.background import Shader, Wallpaper
 from puikit.posteffect import PRESETS as _POST_EFFECT_PRESETS
 from puikit.backends import create_backend
@@ -65,7 +81,7 @@ from xefm.archive import (ArchiveFormatError, archive_format_for_name,
 from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
-from xefm.background_shaders import SHADER_KINDS
+from xefm.background_shaders import SCENE_OPTIONS, SHADER_KINDS
 from xefm.config import (KeyBindings, apply_wide_chars, config_manager,
                          deprecated_names_notice,
                          get_builtin_handler_for_file, get_config,
@@ -255,7 +271,9 @@ def _resolve_background(animation, wallpaper, *, color, backdrop):
       (``{'type': 'rain', 'speed': ..., ...}`` merged onto the tuned default). The
       line ``color`` (theme fg) and ``backdrop`` (theme bg) are filled from the theme;
       a shader receives the former as its ``ink`` uniform, the name the GPU contract
-      uses for the same intent.
+      uses for the same intent. A scene listed in ``SCENE_OPTIONS`` also reads its
+      own keys from the dict (``earth``: ``shot``, ``lens``, ``clouds``,
+      ``exposure``).
     * ``wallpaper`` — an image path string, or a params dict
       (``{'image': 'path', 'fit': ..., 'opacity': ...}``).
 
@@ -278,20 +296,26 @@ def _resolve_background(animation, wallpaper, *, color, backdrop):
             if isinstance(animation, (Shader, Wallpaper)):
                 return animation
             params = dict(_ANIM_DEFAULTS)
+            options: dict = {}
             if isinstance(animation, dict):
                 atype = animation.get("type", _ANIM_DEFAULT_KIND)
                 params.update({k: animation[k] for k in _ANIM_PARAMS if k in animation})
+                keys = SCENE_OPTIONS.get(atype, ((), None))[0]
+                options = {k: animation[k] for k in keys if k in animation}
             else:  # a type string, or True for the tuned default
                 atype = animation if isinstance(animation, str) else _ANIM_DEFAULT_KIND
             if atype not in SHADER_KINDS:
                 return None
+            # A scene with options of its own (earth's shot and lens) rebuilds its
+            # fields from them; the rest take their registry entry as it stands.
+            fields = SCENE_OPTIONS[atype][1](**options) if options else SHADER_KINDS[atype]
             params.setdefault("color", color)
             params.setdefault("backdrop", backdrop)
             # ``color`` is the theme foreground, which a shader receives as its
             # ``ink`` uniform — same intent, the name the GPU contract uses.
             return Shader(speed=params["speed"], opacity=params["opacity"],
                           ink=params["color"], backdrop=params["backdrop"],
-                          **SHADER_KINDS[atype])
+                          **fields)
     except (TypeError, KeyError):
         return None
     return None
@@ -650,6 +674,78 @@ _THEME_SPECS: list[tuple[str, dict]] = [
     # NB: no ``text_effect`` — text arrives instantly here. Water is the thing that
     # moves in this theme; having the filenames type themselves in as well would put
     # two independent animations on screen competing for the same attention.
+    #
+    # Earth: the planet from orbit behind the panes (the ``earth`` scene, see
+    # xefm.background_earth) — a deep-space navy for the base, the pale blue of the
+    # lit limb for the chrome, and the amber of a sunrise on the atmosphere for the
+    # things to find. The scene is physically coloured and ignores ``ink``, so
+    # nothing here is chosen to steer it; the palette is chosen to sit on it.
+    ("Earth", dict(bg=(6, 10, 20), fg=(226, 234, 244), muted=(140, 158, 186),
+                   accent=(126, 190, 250), surface=(16, 24, 40), selection=(30, 62, 104),
+                   accent2=(255, 184, 108),
+                   status=lambda p: mix(p["bg"], p["accent"], 0.16),
+                   footer=lambda p: mix(p["bg"], p["accent"], 0.16),
+                   file_types={"directory": (150, 206, 255), "link": (255, 184, 108)},
+                   cursor={"active": (255, 184, 108)},
+                   syntax={"keyword": (150, 206, 255), "string": (255, 196, 128),
+                           "comment": (140, 158, 186), "number": (255, 222, 150),
+                           "operator": (196, 176, 255), "builtin": (128, 226, 214)},
+                   # Shinagawa's reason, more so: the text sits over imagery, some of
+                   # it a sunlit disc, and a shadow is what keeps a glyph's edge.
+                   post_effect={"drop_shadow": 0.5},
+                   # Every scene is a random pairing of a composition and a lens
+                   # look (the scene's defaults), held for about 40 s at this speed
+                   # while the camera drifts, then eased into the next over about
+                   # 20 s; a new random one on every launch and every return from
+                   # idle. The
+                   # picture is shown whole (``opacity`` 1) and kept off the text by
+                   # the scene's own ceiling instead: no pixel brighter than half
+                   # white (its ``brightness`` default), so even a sunlit ocean
+                   # cannot wash out a file name. Dimming by opacity would grey the
+                   # night side toward the navy while leaving the glint hot.
+                   animation={"type": "earth", "speed": 0.8, "opacity": 1.0},
+                   opacity=0.72)),   # chrome at 72%: the planet reads, the list wins
+    # Blocks: a field of blue-black metal columns in blue fog (the ``blocks``
+    # scene, see xefm.background_blocks), rising and falling at their own uneven
+    # pace, with light leaking up between them now and then. The base is the
+    # scene's own fog, which it takes from the theme background; the leaks are
+    # the accent cyan, which the scene takes as its ink; amber, the warm leak of
+    # the prototype's palette, marks the things to find.
+    ("Blocks", dict(bg=(10, 22, 38), fg=(214, 230, 244), muted=(136, 160, 186),
+                    accent=(99, 214, 255), surface=(18, 34, 54), selection=(28, 68, 104),
+                    accent2=(255, 179, 92),
+                    status=lambda p: mix(p["bg"], p["accent"], 0.16),
+                    footer=lambda p: mix(p["bg"], p["accent"], 0.16),
+                    file_types={"directory": (130, 214, 255), "link": (255, 179, 92)},
+                    cursor={"active": (255, 179, 92)},
+                    syntax={"keyword": (130, 214, 255), "string": (255, 196, 128),
+                            "comment": (136, 160, 186), "number": (255, 222, 150),
+                            "operator": (196, 176, 255), "builtin": (128, 226, 214)},
+                    post_effect={"drop_shadow": 0.5},
+                    # Tuned at speed 1: the camera's loop is about five minutes.
+                    animation={"type": "blocks", "color": (99, 214, 255), "speed": 1.0,
+                               "opacity": 1.0},
+                    opacity=0.66)),
+    # Crystal: the brand's own scene — cyan crystals growing out of black basalt,
+    # filmed as a macro (the ``crystal`` scene, see xefm.background_crystal). XeFM
+    # is named for the xenolith, the foreign stone caught in rock. Graphite base,
+    # the icon's cyan for the accent and for the glass (the scene's ink), amber
+    # for what to find.
+    ("Crystal", dict(bg=(21, 24, 27), fg=(214, 221, 224), muted=(138, 151, 159),
+                     accent=(88, 199, 222), surface=(30, 35, 39), selection=(28, 70, 82),
+                     accent2=(255, 154, 82),
+                     status=lambda p: mix(p["bg"], p["accent"], 0.14),
+                     footer=lambda p: mix(p["bg"], p["accent"], 0.14),
+                     file_types={"directory": (88, 199, 222), "link": (255, 154, 82)},
+                     cursor={"active": (255, 154, 82)},
+                     syntax={"keyword": (88, 199, 222), "string": (255, 182, 120),
+                             "comment": (138, 151, 159), "number": (255, 214, 150),
+                             "operator": (196, 176, 255), "builtin": (140, 222, 170)},
+                     post_effect={"drop_shadow": 0.5},
+                     # Tuned at speed 1: one orbit of the rock is about 140 s.
+                     animation={"type": "crystal", "color": (88, 199, 222), "speed": 1.0,
+                                "opacity": 1.0},
+                     opacity=0.6)),
 ]
 
 THEMES: list[tuple[str, Theme]] = [(name, _theme(**spec)) for name, spec in _THEME_SPECS]
@@ -1802,12 +1898,18 @@ class XeFMApp:
                  left_provided: bool = True, right_provided: bool = True,
                  state_manager=None):
         self.backend = backend
+        # counts() per pane: the listing it was computed from, and the answer.
+        self._counts_memo: dict[int, tuple] = {}
         # Load via ConfigManager (the shared singleton): this creates
         # ~/.xefm/config.py from the template on first run and reads the user's
         # config, filling any missing fields from the template. Instantiating
         # _config.Config() directly (as the port did) skipped both — the file was
         # never created and the user's settings were ignored.
         self.config = get_config()
+        # Compiled background shaders live with the rest of XeFM's data, in
+        # ~/.xefm/shader-cache, set before any theme sets a background. Only the
+        # Windows (Direct3D) backend compiles slowly enough to keep them.
+        _set_shader_cache_dir(config_manager.config_dir / "shader-cache")
         # Before anything is measured: the characters WIDE_CHARS names count as
         # two columns from the first layout on (#611).
         apply_wide_chars(self.config)
@@ -3260,10 +3362,23 @@ class XeFMApp:
                 yield f"shown in the {name} pane", archive
 
     def counts(self, pane: dict) -> tuple[int, int]:
-        """(dirs, files) in a pane, read from the file-info cache."""
+        """(dirs, files) in a pane, read from the file-info cache.
+
+        The footer asks every frame, and the count walks the whole listing —
+        a stringified path and a dict lookup per entry, a few milliseconds a
+        frame in a large directory — so the answer is kept until the pane's
+        ``files`` or ``file_info`` is replaced (a listing replaces both, never
+        edits them in place) or changes length."""
+        files = pane["files"]
         info = pane.get("file_info", {})
-        dirs = sum(1 for f in pane["files"] if info.get(str(f), {}).get("is_dir"))
-        return dirs, len(pane["files"]) - dirs
+        memo = self._counts_memo.get(id(pane))
+        if (memo is not None and memo[0] is files and memo[1] is info
+                and memo[2] == (len(files), len(info))):
+            return memo[3]
+        dirs = sum(1 for f in files if info.get(str(f), {}).get("is_dir"))
+        result = (dirs, len(files) - dirs)
+        self._counts_memo[id(pane)] = (files, info, (len(files), len(info)), result)
+        return result
 
     def disk_free_total(self, pane: dict) -> tuple[int, int] | None:
         """``(free_bytes, total_bytes)`` for the pane's filesystem, or ``None``
@@ -12564,8 +12679,13 @@ class XeFMApp:
             # Pointer movement only updates hover state — let the Splitters under
             # the cursor swap in their resize cursor (and drop it again on the way
             # out). GUI emits these; the TUI does not, so it's a GUI-only affordance.
-            self.panel.dispatch_event(event)
-            self.panel.render()
+            # The Panel says whether the move changed anything the last frame drew
+            # from the pointer; redrawing the window for every move that did not
+            # held the frame's time hostage to the mouse (the background stopped
+            # while it moved). An older PuiKit has no answer, so there every move
+            # redraws as it always did.
+            if self.panel.dispatch_event(event) or not _MOVE_TELLS_REDRAW:
+                self.panel.render()
             return
         # quit_app (Cmd-Q, Alt-F4) is the window's close button as a key: it
         # works over a dialog or a viewer too, so it is answered before any

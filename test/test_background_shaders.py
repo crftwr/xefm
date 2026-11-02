@@ -39,6 +39,17 @@ d3d_only = pytest.mark.skipif(not HAVE_D3D_SHADER, reason="D3D shader support un
 
 _INK, _BACKDROP = (200, 224, 245), (16, 30, 50)
 
+#: Scenes that are a picture rather than motion: composed to be looked at still
+#: (they freeze when idle) and allowed to fill the frame — legibility over them
+#: is the theme's surface opacity's and their lens's brightness ceiling's job.
+#: They are filmed through a lens (passes, and textures or a baked volume), which
+#: the web backend does not run, so they ship no GLSL. See test_background_earth.py and
+#: test_background_blocks_crystal.py for what they promise instead.
+PICTURES = {"earth", "blocks", "crystal"}
+
+#: The one scene that ignores ``ink``: Earth is physically coloured.
+INKLESS = {"earth"}
+
 
 def _shader(kind):
     return Shader(ink=_INK, backdrop=_BACKDROP, **SHADER_KINDS[kind])
@@ -49,7 +60,7 @@ class Registry(unittest.TestCase):
     def test_expected_shaders_are_offered(self):
         self.assertEqual(set(SHADER_KINDS),
                          {"wave", "rain", "starfield", "grid", "constellation",
-                          "datastream", "hologram"})
+                          "datastream", "hologram", "earth", "blocks", "crystal"})
 
     def test_each_entry_is_valid_shader_kwargs(self):
         # The dict is splatted straight into Shader(...), so a stray key would
@@ -68,11 +79,11 @@ class Registry(unittest.TestCase):
         # is nothing but motion — rain falling, stars streaming, a corridor being
         # flown through — so the frame a freeze would leave behind is not a picture
         # of anything, just wherever the objects happened to be. They fade out
-        # instead. A scene composed to be looked at still may say "freeze"; it would
-        # be the first, so this asserts the current answer rather than a rule.
+        # instead. A scene composed to be looked at still says "freeze" — the
+        # pictures, and only they.
         for kind, params in SHADER_KINDS.items():
-            self.assertEqual(params.get("idle"), "fade", kind)
-            self.assertTrue(Shader(**params).fades_when_idle, kind)
+            expected = "freeze" if kind in PICTURES else "fade"
+            self.assertEqual(Shader(**params).idle, expected, kind)
 
     def test_every_scene_ships_an_hlsl_translation(self):
         # A shader is the one backend-specific part of a background: macOS compiles
@@ -84,8 +95,12 @@ class Registry(unittest.TestCase):
 
     def test_every_scene_ships_a_glsl_translation(self):
         # The web (WebGL) backend compiles ``source_glsl``; a scene missing it draws
-        # nothing on web.
+        # nothing on web. A picture needs passes (and textures) the web client
+        # does not run, so it ships none and the web backend shows the backdrop.
         for kind, params in SHADER_KINDS.items():
+            if kind in PICTURES:
+                self.assertNotIn("source_glsl", params, kind)
+                continue
             self.assertIn("source_glsl", params, kind)
             self.assertIn(SHADER_ENTRY, params["source_glsl"], kind)
 
@@ -217,8 +232,9 @@ class Compilation(unittest.TestCase):
 
     def test_every_shader_follows_the_theme_ink(self):
         # Scenes are anchored on the theme foreground rather than fixed colours, so
-        # a different palette must produce a visibly different frame.
-        for kind in SHADER_KINDS:
+        # a different palette must produce a visibly different frame. Earth is
+        # physically coloured instead (test_background_earth.py asserts that).
+        for kind in set(SHADER_KINDS) - INKLESS:
             renderer = MetalBackground()
             self.assertTrue(renderer.set_shader(
                 Shader(ink=(200, 224, 245), backdrop=_BACKDROP, **SHADER_KINDS[kind])))
@@ -236,7 +252,7 @@ class Compilation(unittest.TestCase):
         # Measured at a realistic window size on purpose: line widths are set in
         # pixels, so at the 160x100 the tests elsewhere use, the grid's 1.1px rails
         # are a far larger share of the frame than they ever are in use.
-        for kind in SHADER_KINDS:
+        for kind in set(SHADER_KINDS) - PICTURES:
             renderer = MetalBackground()
             self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
             px = MetalBackground.texture_pixels(renderer.render_to_texture(400, 260, 2.0))
@@ -265,9 +281,14 @@ class Compilation(unittest.TestCase):
 
 
 @d3d_only
+@pytest.mark.timeout(240)
 class CompilationD3D(unittest.TestCase):
     """Every shipped shader must also build with the real HLSL (Direct3D 11)
-    compiler — the Windows twin of the Metal Compilation tests."""
+    compiler — the Windows twin of the Metal Compilation tests.
+
+    Each test compiles every scene, and fxc takes over ten seconds on
+    Crystal's ray-marcher alone (it inlines every call), so the suite's
+    10-second limit is too short here."""
 
     def test_every_shader_compiles(self):
         renderer = D3DShaderBackground()
@@ -296,7 +317,7 @@ class CompilationD3D(unittest.TestCase):
 
     def test_every_shader_stays_a_backdrop(self):
         renderer = D3DShaderBackground()
-        for kind in SHADER_KINDS:
+        for kind in set(SHADER_KINDS) - PICTURES:
             self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
             px = renderer.render_pixels(400, 260, 2.0)   # see the Metal twin
             near_backdrop = sum(
