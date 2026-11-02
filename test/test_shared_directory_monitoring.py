@@ -145,6 +145,48 @@ class TestSharedDirectoryMonitoring(unittest.TestCase):
             # Clean up the other directory
             shutil.rmtree(other_dir)
     
+    def test_one_pane_navigates_away_other_pane_still_reloads(self):
+        """Test that the pane left on the shared directory still gets its reloads (issue #830)."""
+        # Start monitoring with both panes pointing to same directory
+        # (the left pane starts the observer, the right pane shares it)
+        self.monitor_manager.start_monitoring(self.test_dir, self.test_dir)
+        
+        # Give observers time to start
+        time.sleep(0.5)
+        
+        # Create a different directory for navigation
+        other_dir = Path(tempfile.mkdtemp())
+        
+        try:
+            # Navigate left pane to different directory
+            self.monitor_manager.update_monitored_directory('left', other_dir)
+            
+            # Give time for update
+            time.sleep(0.5)
+            
+            # Drain any events so far
+            while not self.file_manager.reload_queue.empty():
+                self.file_manager.reload_queue.get_nowait()
+            
+            # Change the directory the right pane is still showing
+            (self.test_dir / 'test_file.txt').write_text('x')
+            
+            # Wait for the event and coalescing
+            time.sleep(1.0)
+            
+            reload_requests = []
+            while not self.file_manager.reload_queue.empty():
+                reload_requests.append(self.file_manager.reload_queue.get_nowait())
+            
+            self.assertIn('right', reload_requests,
+                          "Right pane should receive reload request: it shows the changed directory")
+            self.assertNotIn('left', reload_requests,
+                             "Left pane should not receive reload request: it shows another directory")
+        
+        finally:
+            # Clean up the other directory
+            shutil.rmtree(other_dir)
+    
     def test_both_panes_navigate_away_observer_stops(self):
         """Test that when both panes navigate away, the shared observer is stopped."""
         # Start monitoring with both panes pointing to same directory

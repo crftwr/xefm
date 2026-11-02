@@ -262,7 +262,8 @@ class FileMonitorManager:
         Returns ("started" | "failed" | "superseded", observer-or-None).
         """
         def event_callback(event_type: str, filename: str):
-            self._on_filesystem_event(pane_name, event_type, filename)
+            self._on_filesystem_event(self._holder(observer, pane_name),
+                                      event_type, filename)
 
         polling_interval = self.config.FILE_MONITORING_FALLBACK_POLL_INTERVAL_S
         observer = FileMonitorObserver(path, event_callback, self.logger,
@@ -286,6 +287,19 @@ class FileMonitorManager:
             state['failed_path'] = None
             state['last_successful_start'] = time.time()
         return ("started", observer)
+
+    def _holder(self, observer, pane_name: str) -> str:
+        """The pane an event from ``observer`` is for. ``pane_name`` is the
+        pane that started it; when that pane moves on while the other pane
+        stays on the same directory, the other pane keeps the shared observer
+        and its events are that pane's (#830). An observer neither pane holds
+        (not installed yet, or on its way out) stays with ``pane_name``."""
+        other_pane = 'right' if pane_name == 'left' else 'left'
+        with self.state_lock:
+            if (self.monitoring_state[pane_name]['observer'] is not observer
+                    and self.monitoring_state[other_pane]['observer'] is observer):
+                return other_pane
+        return pane_name
 
     def _start_pane_monitoring(self, pane_name: str, path: Path) -> None:
         """
@@ -588,9 +602,11 @@ class FileMonitorManager:
         When both panes are monitoring the same directory, this method will be called
         with the pane_name of whichever pane created the observer first. We need to
         check if both panes are monitoring the same path and post reload requests for both.
+        If that pane has since moved on, it is called with the pane that kept the
+        observer (see _holder).
         
         Args:
-            pane_name: "left" or "right" (the pane that created the observer)
+            pane_name: "left" or "right" (a pane that holds the observer)
             event_type: Type of event ("created", "deleted", "modified")
             filename: Name of the affected file
         """
