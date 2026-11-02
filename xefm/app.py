@@ -12917,14 +12917,13 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "deps":
         from xefm.deps_cli import main as deps_main
         sys.exit(deps_main(sys.argv[2:]))
-    parser = create_parser()
-    args = parser.parse_args()
+    args = create_parser().parse_args()
 
     backend_name = _BACKENDS.get(args.backend, args.backend)
     curses_notice = _curses_backend_notice(backend_name, sys.platform)
     if curses_notice is not None:
         if sys.platform == "win32":
-            parser.error(curses_notice)
+            create_parser().error(curses_notice)
         getLogger("Main").warning(curses_notice)
     # Publish the resolved backend so is_desktop_mode() (used by the config,
     # e.g. TEXT_EDITOR = 'code' in GUI vs 'vim' in terminal) reads it directly
