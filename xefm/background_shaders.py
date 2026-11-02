@@ -59,6 +59,14 @@ from xefm.background_crystal import OPTIONS as CRYSTAL_OPTIONS, crystal_shader
 from xefm.background_earth import AVAILABLE as EARTH_AVAILABLE
 from xefm.background_earth import OPTIONS as EARTH_OPTIONS, earth_shader
 
+try:
+    from puikit.background import Shader as _Shader
+    #: Whether PuiKit takes a render density in points (Shader.pixel_density);
+    #: an older one would refuse the field, so a scene leaves it out there.
+    _HAS_DENSITY = "pixel_density" in _Shader.__dataclass_fields__
+except ImportError:          # pragma: no cover - PuiKit is a hard dependency
+    _HAS_DENSITY = False
+
 #: A flowing sheet of particles — a wave surface rendered as a point cloud.
 #:
 #: Structure: the surface is a sum of travelling sine trains, sampled at a stack of
@@ -483,32 +491,41 @@ static inline float rnd(uint index, uint salt) {
 
 fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    constant BackgroundUniforms &u [[buffer(0)]]) {
-    float H = u.resolution.y;
-    float columns = max(6.0, floor(u.resolution.x / COLUMN_PX));
-    float colW = u.resolution.x / columns;
+    // Measured in Retina pixels (XEFM_RP render pixels each), so the columns and
+    // streaks are the same size on any display; see _with_points.
+    float rp = XEFM_RP;
+    float2 R = u.resolution / rp;
+    float2 P = pos.xy / rp;
+    float H = R.y;
+    float columns = max(6.0, floor(R.x / COLUMN_PX));
+    float colW = R.x / columns;
+    // Never narrower than one render pixel: thinner, a streak falls between pixel
+    // centres and flickers; widened, it gives up brightness instead.
+    float w = max(WIDTH_PX, 1.0 / rp);
+    float wGain = WIDTH_PX / w;
 
     float density = 0.0;   // accumulated streak coverage at this pixel
     float hot = 0.0;       // proximity to the brightest head, for the glow
 
-    float c0 = floor(pos.x / colW);
+    float c0 = floor(P.x / colW);
     for (int n = -1; n <= 1; ++n) {
         float cf = c0 + float(n);
         uint ci = uint(int(cf));
 
         // Jitter x within the column so the fall is not a perfect comb.
         float x = (cf + 0.15 + rnd(ci, 1) * 0.7) * colW;
-        float dx = abs(pos.x - x);
+        float dx = abs(P.x - x);
         // Nothing in this column can reach this pixel: skip its drops entirely.
         // Most pixels take this exit for all three columns, which is what keeps
         // the scene cheap at native resolution.
-        if (dx > WIDTH_PX * 1.6) { continue; }
+        if (dx > w * 1.6) { continue; }
 
         float fall      = 0.55 + rnd(ci, 2);              // per-column speed
         float streakLen = (LEN_MIN + LEN_RANGE * rnd(ci, 3)) * H;
         float bright    = 0.45 + rnd(ci, 6) * 0.55;       // some columns stay faint
         // Antialiased across the streak's width — a hard test would shimmer as the
         // column's sub-pixel x drifts with the window size.
-        float prof = 1.0 - smoothstep(WIDTH_PX * 0.5, WIDTH_PX * 1.6, dx);
+        float prof = (1.0 - smoothstep(w * 0.5, w * 1.6, dx)) * wGain;
 
         for (int d = 0; d < DROPS; ++d) {
             float phase = rnd(ci, 4u + uint(d));
@@ -520,7 +537,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
             float travel = fract(u.time * RATE * fall + phase);
             float hy = travel * (H + 2.0 * streakLen) - streakLen;
             // Place this pixel along the streak: 0 at the head, 1 at the tail end.
-            float k = (hy - pos.y) / streakLen;
+            float k = (hy - P.y) / streakLen;
             if (k < 0.0 || k > 1.0) { continue; }
             float a = pow(1.0 - k, TAIL_GAMMA) * bright * prof;
             density += a;
@@ -566,32 +583,37 @@ float rnd(uint index, uint salt) {
 }
 
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
-    float H = resolution.y;
-    float columns = max(6.0, floor(resolution.x / COLUMN_PX));
-    float colW = resolution.x / columns;
+    float rp = XEFM_RP;
+    float2 R = resolution / rp;
+    float2 P = pos.xy / rp;
+    float H = R.y;
+    float columns = max(6.0, floor(R.x / COLUMN_PX));
+    float colW = R.x / columns;
+    float w = max(WIDTH_PX, 1.0 / rp);
+    float wGain = WIDTH_PX / w;
 
     float density = 0.0;
     float hot = 0.0;
 
-    float c0 = floor(pos.x / colW);
+    float c0 = floor(P.x / colW);
     for (int n = -1; n <= 1; ++n) {
         float cf = c0 + float(n);
         uint ci = uint(int(cf));
 
         float x = (cf + 0.15 + rnd(ci, 1) * 0.7) * colW;
-        float dx = abs(pos.x - x);
-        if (dx > WIDTH_PX * 1.6) { continue; }
+        float dx = abs(P.x - x);
+        if (dx > w * 1.6) { continue; }
 
         float fall      = 0.55 + rnd(ci, 2);
         float streakLen = (LEN_MIN + LEN_RANGE * rnd(ci, 3)) * H;
         float bright    = 0.45 + rnd(ci, 6) * 0.55;
-        float prof = 1.0 - smoothstep(WIDTH_PX * 0.5, WIDTH_PX * 1.6, dx);
+        float prof = (1.0 - smoothstep(w * 0.5, w * 1.6, dx)) * wGain;
 
         for (int d = 0; d < DROPS; ++d) {
             float phase = rnd(ci, 4 + (uint)d);
             float travel = frac(time * RATE * fall + phase);
             float hy = travel * (H + 2.0 * streakLen) - streakLen;
-            float k = (hy - pos.y) / streakLen;
+            float k = (hy - P.y) / streakLen;
             if (k < 0.0 || k > 1.0) { continue; }
             float a = pow(1.0 - k, TAIL_GAMMA) * bright * prof;
             density += a;
@@ -631,32 +653,41 @@ float rnd(uint index, uint salt) {
 }
 
 vec4 puikit_bg_fragment(vec2 pos) {
-    float H = resolution.y;
-    float columns = max(6.0, floor(resolution.x / COLUMN_PX));
-    float colW = resolution.x / columns;
+    // Measured in Retina pixels (XEFM_RP render pixels each), so the columns and
+    // streaks are the same size on any display; see _with_points.
+    float rp = XEFM_RP;
+    vec2 R = resolution / rp;
+    vec2 P = pos.xy / rp;
+    float H = R.y;
+    float columns = max(6.0, floor(R.x / COLUMN_PX));
+    float colW = R.x / columns;
+    // Never narrower than one render pixel: thinner, a streak falls between pixel
+    // centres and flickers; widened, it gives up brightness instead.
+    float w = max(WIDTH_PX, 1.0 / rp);
+    float wGain = WIDTH_PX / w;
 
     float density = 0.0;   // accumulated streak coverage at this pixel
     float hot = 0.0;       // proximity to the brightest head, for the glow
 
-    float c0 = floor(pos.x / colW);
+    float c0 = floor(P.x / colW);
     for (int n = -1; n <= 1; ++n) {
         float cf = c0 + float(n);
         uint ci = uint(int(cf));
 
         // Jitter x within the column so the fall is not a perfect comb.
         float x = (cf + 0.15 + rnd(ci, 1u) * 0.7) * colW;
-        float dx = abs(pos.x - x);
+        float dx = abs(P.x - x);
         // Nothing in this column can reach this pixel: skip its drops entirely.
         // Most pixels take this exit for all three columns, which is what keeps
         // the scene cheap at native resolution.
-        if (dx > WIDTH_PX * 1.6) { continue; }
+        if (dx > w * 1.6) { continue; }
 
         float fall      = 0.55 + rnd(ci, 2u);              // per-column speed
         float streakLen = (LEN_MIN + LEN_RANGE * rnd(ci, 3u)) * H;
         float bright    = 0.45 + rnd(ci, 6u) * 0.55;       // some columns stay faint
         // Antialiased across the streak's width — a hard test would shimmer as the
         // column's sub-pixel x drifts with the window size.
-        float prof = 1.0 - smoothstep(WIDTH_PX * 0.5, WIDTH_PX * 1.6, dx);
+        float prof = (1.0 - smoothstep(w * 0.5, w * 1.6, dx)) * wGain;
 
         for (int d = 0; d < DROPS; ++d) {
             float phase = rnd(ci, 4u + uint(d));
@@ -668,7 +699,7 @@ vec4 puikit_bg_fragment(vec2 pos) {
             float travel = fract(time * RATE * fall + phase);
             float hy = travel * (H + 2.0 * streakLen) - streakLen;
             // Place this pixel along the streak: 0 at the head, 1 at the tail end.
-            float k = (hy - pos.y) / streakLen;
+            float k = (hy - P.y) / streakLen;
             if (k < 0.0 || k > 1.0) { continue; }
             float a = pow(1.0 - k, TAIL_GAMMA) * bright * prof;
             density += a;
@@ -730,8 +761,13 @@ static inline float2 hash21(float2 p) {
 
 fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    constant BackgroundUniforms &u [[buffer(0)]]) {
-    float2 halfRes = u.resolution * 0.5;
-    float2 P = pos.xy - halfRes;      // pixels from the centre
+    // Measured in Retina pixels (see _with_points): the streak is as fine on
+    // any display, and never thinner than a render pixel, dimming instead.
+    float rp = XEFM_RP;
+    float2 halfRes = u.resolution * 0.5 / rp;
+    float2 P = pos.xy / rp - halfRes; // pixels from the centre
+    float dotR = max(DOT_PX, 1.0 / rp);
+    float dotGain = DOT_PX / dotR;
     float2 n = P / halfRes;           // normalised: +-1 at the view edges
     float span = Z_FAR - Z_NEAR;
 
@@ -764,8 +800,8 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
             // the centre) out to the head.
             float along = clamp(dot(P, dir), L / zt, L / z);
             float d = length(P - dir * along);
-            float q = max(0.0, 1.0 - d / DOT_PX);
-            float splat = q * q;
+            float q = max(0.0, 1.0 - d / dotR);
+            float splat = q * q * dotGain;
             float bright = 0.55 + 0.45 * hash11(cell.x * 73.0 + cell.y * 149.0 + float(i));
             // max, not sum: the two bracket samples usually find the same star, and
             // adding them would double it.
@@ -807,8 +843,11 @@ float2 hash21(float2 p) {
 }
 
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
-    float2 halfRes = resolution * 0.5;
-    float2 P = pos.xy - halfRes;
+    float rp = XEFM_RP;
+    float2 halfRes = resolution * 0.5 / rp;
+    float2 P = pos.xy / rp - halfRes;
+    float dotR = max(DOT_PX, 1.0 / rp);
+    float dotGain = DOT_PX / dotR;
     float2 n = P / halfRes;
     float span = Z_FAR - Z_NEAR;
 
@@ -835,8 +874,8 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
             float2 dir = A / L;
             float along = clamp(dot(P, dir), L / zt, L / z);
             float d = length(P - dir * along);
-            float q = max(0.0, 1.0 - d / DOT_PX);
-            float splat = q * q;
+            float q = max(0.0, 1.0 - d / dotR);
+            float splat = q * q * dotGain;
             float bright = 0.55 + 0.45 * hash11(cell.x * 73.0 + cell.y * 149.0 + float(i));
             density = max(density, splat * alpha * bright);
             near = max(near, splat * (1.0 - z / Z_FAR));
@@ -876,8 +915,13 @@ vec2 hash21(vec2 p) {
 }
 
 vec4 puikit_bg_fragment(vec2 pos) {
-    vec2 halfRes = resolution * 0.5;
-    vec2 P = pos.xy - halfRes;      // pixels from the centre
+    // Measured in Retina pixels (see _with_points): the streak is as fine on
+    // any display, and never thinner than a render pixel, dimming instead.
+    float rp = XEFM_RP;
+    vec2 halfRes = resolution * 0.5 / rp;
+    vec2 P = pos.xy / rp - halfRes; // pixels from the centre
+    float dotR = max(DOT_PX, 1.0 / rp);
+    float dotGain = DOT_PX / dotR;
     vec2 n = P / halfRes;           // normalised: +-1 at the view edges
     float span = Z_FAR - Z_NEAR;
 
@@ -910,8 +954,8 @@ vec4 puikit_bg_fragment(vec2 pos) {
             // the centre) out to the head.
             float along = clamp(dot(P, dir), L / zt, L / z);
             float d = length(P - dir * along);
-            float q = max(0.0, 1.0 - d / DOT_PX);
-            float splat = q * q;
+            float q = max(0.0, 1.0 - d / dotR);
+            float splat = q * q * dotGain;
             float bright = 0.55 + 0.45 * hash11(cell.x * 73.0 + cell.y * 149.0 + float(i));
             // max, not sum: the two bracket samples usually find the same star, and
             // adding them would double it.
@@ -971,11 +1015,17 @@ constant float TAU          = 6.283185307;
 // stays crisp into the distance here. Past the point where one pixel spans a whole
 // period the grid can no longer be resolved, so it fades out instead of turning
 // into a solid wash.
-static inline float grid_line(float p) {
+static inline float grid_line(float p, float rp) {
     float w = max(fwidth(p), 1e-5);
-    float halfWidth = LINE_PX * 0.5 * w;
+    // The line's footprint -- its core plus the one-pixel antialiased edge -- is
+    // kept in Retina pixels (see _with_points): (LINE_PX + 1) * rp render pixels.
+    // On Retina that is the core it always had. Where the footprint is under two
+    // render pixels the core shrinks and the edge alone carries the line, and
+    // under one it dims rather than break up.
+    float span = (LINE_PX + 1.0) * rp;
+    float halfWidth = max(span - 1.0, 0.0) * 0.5 * w;
     float d = abs(p - round(p));
-    float m = 1.0 - smoothstep(halfWidth, halfWidth + w, d);
+    float m = (1.0 - smoothstep(halfWidth, halfWidth + w, d)) * min(span, 1.0);
     return m * (1.0 - smoothstep(0.25, 0.6, w));
 }
 
@@ -988,6 +1038,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    constant BackgroundUniforms &u [[buffer(0)]]) {
     float2 halfRes = u.resolution * 0.5;
     float focal = halfRes.y;
+    float rp = XEFM_RP;
     float halfH = HALF_H;
     float halfW = HALF_H * (u.resolution.x / u.resolution.y);
     float t = u.time;
@@ -1035,11 +1086,11 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
     // Putting the grid_line calls inside the branch instead makes their fwidth
     // conditional, and the corridor corners -- the one place neighbouring pixels
     // disagree about which wall they hit -- come out as dashed lines.
-    float mSide = grid_line((wy + halfH) / (2.0 * halfH / RAILS_V));
-    float mFloor = grid_line((wx + halfW) / (2.0 * halfW / railsH));
+    float mSide = grid_line((wy + halfH) / (2.0 * halfH / RAILS_V), rp);
+    float mFloor = grid_line((wx + halfW) / (2.0 * halfW / railsH), rp);
     float mRail = sideWall ? mSide : mFloor;
 
-    float lit = max(grid_line(ring), mRail) * depth_fade(depth) * visible;
+    float lit = max(grid_line(ring, rp), mRail) * depth_fade(depth) * visible;
 
     float3 rgb = mix(u.ink.rgb, float3(1.0),
                      clamp(1.0 - depth / Z_FAR, 0.0, 1.0) * NEAR_GLOW);
@@ -1073,11 +1124,17 @@ static const float NEAR_GLOW    = 0.35;
 static const float BRIGHTNESS   = 0.5;
 static const float TAU          = 6.283185307;
 
-float grid_line(float p) {
+float grid_line(float p, float rp) {
     float w = max(fwidth(p), 1e-5);
-    float halfWidth = LINE_PX * 0.5 * w;
+    // The line's footprint -- its core plus the one-pixel antialiased edge -- is
+    // kept in Retina pixels (see _with_points): (LINE_PX + 1) * rp render pixels.
+    // On Retina that is the core it always had. Where the footprint is under two
+    // render pixels the core shrinks and the edge alone carries the line, and
+    // under one it dims rather than break up.
+    float span = (LINE_PX + 1.0) * rp;
+    float halfWidth = max(span - 1.0, 0.0) * 0.5 * w;
     float d = abs(p - round(p));
-    float m = 1.0 - smoothstep(halfWidth, halfWidth + w, d);
+    float m = (1.0 - smoothstep(halfWidth, halfWidth + w, d)) * min(span, 1.0);
     return m * (1.0 - smoothstep(0.25, 0.6, w));
 }
 
@@ -1089,6 +1146,7 @@ float depth_fade(float depth) {
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     float2 halfRes = resolution * 0.5;
     float focal = halfRes.y;
+    float rp = XEFM_RP;
     float halfH = HALF_H;
     float halfW = HALF_H * (resolution.x / resolution.y);
     float t = time;
@@ -1123,11 +1181,11 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     float wx = camX + s * dx;
     float wy = camY + s * dy;
     // See the MSL twin: evaluating both before the select keeps fwidth uniform.
-    float mSide = grid_line((wy + halfH) / (2.0 * halfH / RAILS_V));
-    float mFloor = grid_line((wx + halfW) / (2.0 * halfW / railsH));
+    float mSide = grid_line((wy + halfH) / (2.0 * halfH / RAILS_V), rp);
+    float mFloor = grid_line((wx + halfW) / (2.0 * halfW / railsH), rp);
     float mRail = sideWall ? mSide : mFloor;
 
-    float lit = max(grid_line(ring), mRail) * depth_fade(depth) * visible;
+    float lit = max(grid_line(ring, rp), mRail) * depth_fade(depth) * visible;
 
     float3 rgb = lerp(ink.rgb, float3(1.0, 1.0, 1.0),
                       saturate(1.0 - depth / Z_FAR) * NEAR_GLOW);
@@ -1166,11 +1224,17 @@ const float TAU          = 6.283185307;
 // stays crisp into the distance here. Past the point where one pixel spans a whole
 // period the grid can no longer be resolved, so it fades out instead of turning
 // into a solid wash.
-float grid_line(float p) {
+float grid_line(float p, float rp) {
     float w = max(fwidth(p), 1e-5);
-    float halfWidth = LINE_PX * 0.5 * w;
+    // The line's footprint -- its core plus the one-pixel antialiased edge -- is
+    // kept in Retina pixels (see _with_points): (LINE_PX + 1) * rp render pixels.
+    // On Retina that is the core it always had. Where the footprint is under two
+    // render pixels the core shrinks and the edge alone carries the line, and
+    // under one it dims rather than break up.
+    float span = (LINE_PX + 1.0) * rp;
+    float halfWidth = max(span - 1.0, 0.0) * 0.5 * w;
     float d = abs(p - round(p));
-    float m = 1.0 - smoothstep(halfWidth, halfWidth + w, d);
+    float m = (1.0 - smoothstep(halfWidth, halfWidth + w, d)) * min(span, 1.0);
     return m * (1.0 - smoothstep(0.25, 0.6, w));
 }
 
@@ -1182,6 +1246,7 @@ float depth_fade(float depth) {
 vec4 puikit_bg_fragment(vec2 pos) {
     vec2 halfRes = resolution * 0.5;
     float focal = halfRes.y;
+    float rp = XEFM_RP;
     float halfH = HALF_H;
     float halfW = HALF_H * (resolution.x / resolution.y);
     float t = time;
@@ -1229,11 +1294,11 @@ vec4 puikit_bg_fragment(vec2 pos) {
     // Putting the grid_line calls inside the branch instead makes their fwidth
     // conditional, and the corridor corners -- the one place neighbouring pixels
     // disagree about which wall they hit -- come out as dashed lines.
-    float mSide = grid_line((wy + halfH) / (2.0 * halfH / RAILS_V));
-    float mFloor = grid_line((wx + halfW) / (2.0 * halfW / railsH));
+    float mSide = grid_line((wy + halfH) / (2.0 * halfH / RAILS_V), rp);
+    float mFloor = grid_line((wx + halfW) / (2.0 * halfW / railsH), rp);
     float mRail = sideWall ? mSide : mFloor;
 
-    float lit = max(grid_line(ring), mRail) * depth_fade(depth) * visible;
+    float lit = max(grid_line(ring, rp), mRail) * depth_fade(depth) * visible;
 
     vec3 rgb = mix(ink.rgb, vec3(1.0),
                      clamp(1.0 - depth / Z_FAR, 0.0, 1.0) * NEAR_GLOW);
@@ -1320,9 +1385,16 @@ static inline float2 node_at(float2 cell, float cellPx, float t) {
 
 fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    constant BackgroundUniforms &u [[buffer(0)]]) {
-    float cellPx = CELL_FRACTION * min(u.resolution.x, u.resolution.y);
+    // Measured in Retina pixels (see _with_points): dots and edges as fine on any
+    // display, never under a render pixel, dimming instead.
+    float rp = XEFM_RP;
+    float2 R = u.resolution / rp;
+    float2 P = pos.xy / rp;
+    float nodeR = max(NODE_PX, 1.0 / rp);
+    float lineR = max(LINE_PX, 1.0 / rp);
+    float cellPx = CELL_FRACTION * min(R.x, R.y);
     float link = LINK_CELLS * cellPx;
-    float2 base = floor(pos.xy / cellPx);
+    float2 base = floor(P / cellPx);
 
     float2 nodes[25];
     float  fades[25];
@@ -1333,7 +1405,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
             // Reject on the cell's bounds before evaluating its node: the corners of
             // the 5x5 are always out of range, and this skips their trig entirely.
             float2 lo = cell * cellPx;
-            float2 far = max(max(lo - pos.xy, pos.xy - (lo + cellPx)), float2(0.0));
+            float2 far = max(max(lo - P, P - (lo + cellPx)), float2(0.0));
             if (dot(far, far) > link * link) {
                 nodes[k] = float2(0.0);
                 fades[k] = 0.0;
@@ -1342,7 +1414,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
             }
             float2 p = node_at(cell, cellPx, u.time);
             nodes[k] = p;
-            float2 nrm = p / u.resolution;
+            float2 nrm = p / R;
             fades[k] = border_fade(nrm.x) * border_fade(nrm.y);
             k++;
         }
@@ -1355,15 +1427,16 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
         float fa = fades[a];
         if (fa <= 0.0) { continue; }
         float2 pa = nodes[a];
-        float da = length(pos.xy - pa);
+        float da = length(P - pa);
         // Only a node within one link of this pixel can put an edge across it: a
         // pixel on an edge lies between its ends, so it is within `len` of both.
         // The inner loop runs over every other node (not just b > a), which is what
         // keeps this prune from dropping an edge whose far end is out of range.
         if (da >= link) { continue; }
 
-        float q = max(0.0, 1.0 - da / NODE_PX);
-        float dot_ = q * q * fa;
+        float q = max(0.0, 1.0 - da / nodeR);
+        // A dot's light goes with its area: the radius ratio, squared.
+        float dot_ = q * q * fa * (NODE_PX / nodeR) * (NODE_PX / nodeR);
         hot = max(hot, dot_);
         lit = max(lit, dot_ * NODE_ALPHA);
 
@@ -1375,9 +1448,9 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
             float len = length(e);
             if (len >= link || len < 1e-4) { continue; }
             float2 dir = e / len;
-            float along = clamp(dot(pos.xy - pa, dir), 0.0, len);
-            float d = length(pos.xy - pa - dir * along);
-            float m = max(0.0, 1.0 - d / LINE_PX);
+            float along = clamp(dot(P - pa, dir), 0.0, len);
+            float d = length(P - pa - dir * along);
+            float m = max(0.0, 1.0 - d / lineR);
             if (m <= 0.0) { continue; }
             // Falloff measured against the *cell spacing*, not the link radius. The
             // CPU scene scattered its nodes at random, so plenty of pairs sat well
@@ -1386,7 +1459,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
             // falloff drops them all to the same near-zero alpha and the net renders
             // as bare dots. Anchoring full strength at half a cell restores the range.
             float f = clamp((link - len) / (link - cellPx * NEAR_SPAN), 0.0, 1.0);
-            lit = max(lit, m * m * f * EDGE_ALPHA * fa * fb);
+            lit = max(lit, m * m * (LINE_PX / lineR) * f * EDGE_ALPHA * fa * fb);
         }
     }
 
@@ -1435,9 +1508,14 @@ float2 node_at(float2 cell, float cellPx, float t) {
 }
 
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
-    float cellPx = CELL_FRACTION * min(resolution.x, resolution.y);
+    float rp = XEFM_RP;
+    float2 R = resolution / rp;
+    float2 P = pos.xy / rp;
+    float nodeR = max(NODE_PX, 1.0 / rp);
+    float lineR = max(LINE_PX, 1.0 / rp);
+    float cellPx = CELL_FRACTION * min(R.x, R.y);
     float link = LINK_CELLS * cellPx;
-    float2 base = floor(pos.xy / cellPx);
+    float2 base = floor(P / cellPx);
 
     float2 nodes[25];
     float  fades[25];
@@ -1446,7 +1524,7 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
         for (int ox = -2; ox <= 2; ++ox) {
             float2 cell = base + float2(float(ox), float(oy));
             float2 lo = cell * cellPx;
-            float2 far = max(max(lo - pos.xy, pos.xy - (lo + cellPx)), float2(0.0, 0.0));
+            float2 far = max(max(lo - P, P - (lo + cellPx)), float2(0.0, 0.0));
             if (dot(far, far) > link * link) {
                 nodes[k] = float2(0.0, 0.0);
                 fades[k] = 0.0;
@@ -1455,7 +1533,7 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
             }
             float2 p = node_at(cell, cellPx, time);
             nodes[k] = p;
-            float2 nrm = p / resolution;
+            float2 nrm = p / R;
             fades[k] = border_fade(nrm.x) * border_fade(nrm.y);
             k++;
         }
@@ -1468,11 +1546,11 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
         float fa = fades[a];
         if (fa <= 0.0) { continue; }
         float2 pa = nodes[a];
-        float da = length(pos.xy - pa);
+        float da = length(P - pa);
         if (da >= link) { continue; }
 
-        float q = max(0.0, 1.0 - da / NODE_PX);
-        float dotv = q * q * fa;
+        float q = max(0.0, 1.0 - da / nodeR);
+        float dotv = q * q * fa * (NODE_PX / nodeR) * (NODE_PX / nodeR);
         hot = max(hot, dotv);
         lit = max(lit, dotv * NODE_ALPHA);
 
@@ -1484,12 +1562,12 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
             float len = length(e);
             if (len >= link || len < 1e-4) { continue; }
             float2 dir = e / len;
-            float along = clamp(dot(pos.xy - pa, dir), 0.0, len);
-            float d = length(pos.xy - pa - dir * along);
-            float m = max(0.0, 1.0 - d / LINE_PX);
+            float along = clamp(dot(P - pa, dir), 0.0, len);
+            float d = length(P - pa - dir * along);
+            float m = max(0.0, 1.0 - d / lineR);
             if (m <= 0.0) { continue; }
             float f = saturate((link - len) / (link - cellPx * NEAR_SPAN));
-            lit = max(lit, m * m * f * EDGE_ALPHA * fa * fb);
+            lit = max(lit, m * m * (LINE_PX / lineR) * f * EDGE_ALPHA * fa * fb);
         }
     }
 
@@ -1543,9 +1621,16 @@ vec2 node_at(vec2 cell, float cellPx, float t) {
 }
 
 vec4 puikit_bg_fragment(vec2 pos) {
-    float cellPx = CELL_FRACTION * min(resolution.x, resolution.y);
+    // Measured in Retina pixels (see _with_points): dots and edges as fine on any
+    // display, never under a render pixel, dimming instead.
+    float rp = XEFM_RP;
+    vec2 R = resolution / rp;
+    vec2 P = pos.xy / rp;
+    float nodeR = max(NODE_PX, 1.0 / rp);
+    float lineR = max(LINE_PX, 1.0 / rp);
+    float cellPx = CELL_FRACTION * min(R.x, R.y);
     float link = LINK_CELLS * cellPx;
-    vec2 base = floor(pos.xy / cellPx);
+    vec2 base = floor(P / cellPx);
 
     vec2 nodes[25];
     float  fades[25];
@@ -1556,7 +1641,7 @@ vec4 puikit_bg_fragment(vec2 pos) {
             // Reject on the cell's bounds before evaluating its node: the corners of
             // the 5x5 are always out of range, and this skips their trig entirely.
             vec2 lo = cell * cellPx;
-            vec2 far = max(max(lo - pos.xy, pos.xy - (lo + cellPx)), vec2(0.0));
+            vec2 far = max(max(lo - P, P - (lo + cellPx)), vec2(0.0));
             if (dot(far, far) > link * link) {
                 nodes[k] = vec2(0.0);
                 fades[k] = 0.0;
@@ -1565,7 +1650,7 @@ vec4 puikit_bg_fragment(vec2 pos) {
             }
             vec2 p = node_at(cell, cellPx, time);
             nodes[k] = p;
-            vec2 nrm = p / resolution;
+            vec2 nrm = p / R;
             fades[k] = border_fade(nrm.x) * border_fade(nrm.y);
             k++;
         }
@@ -1578,15 +1663,16 @@ vec4 puikit_bg_fragment(vec2 pos) {
         float fa = fades[a];
         if (fa <= 0.0) { continue; }
         vec2 pa = nodes[a];
-        float da = length(pos.xy - pa);
+        float da = length(P - pa);
         // Only a node within one link of this pixel can put an edge across it: a
         // pixel on an edge lies between its ends, so it is within `len` of both.
         // The inner loop runs over every other node (not just b > a), which is what
         // keeps this prune from dropping an edge whose far end is out of range.
         if (da >= link) { continue; }
 
-        float q = max(0.0, 1.0 - da / NODE_PX);
-        float dot_ = q * q * fa;
+        float q = max(0.0, 1.0 - da / nodeR);
+        // A dot's light goes with its area: the radius ratio, squared.
+        float dot_ = q * q * fa * (NODE_PX / nodeR) * (NODE_PX / nodeR);
         hot = max(hot, dot_);
         lit = max(lit, dot_ * NODE_ALPHA);
 
@@ -1598,9 +1684,9 @@ vec4 puikit_bg_fragment(vec2 pos) {
             float len = length(e);
             if (len >= link || len < 1e-4) { continue; }
             vec2 dir = e / len;
-            float along = clamp(dot(pos.xy - pa, dir), 0.0, len);
-            float d = length(pos.xy - pa - dir * along);
-            float m = max(0.0, 1.0 - d / LINE_PX);
+            float along = clamp(dot(P - pa, dir), 0.0, len);
+            float d = length(P - pa - dir * along);
+            float m = max(0.0, 1.0 - d / lineR);
             if (m <= 0.0) { continue; }
             // Falloff measured against the *cell spacing*, not the link radius. The
             // CPU scene scattered its nodes at random, so plenty of pairs sat well
@@ -1609,7 +1695,7 @@ vec4 puikit_bg_fragment(vec2 pos) {
             // falloff drops them all to the same near-zero alpha and the net renders
             // as bare dots. Anchoring full strength at half a cell restores the range.
             float f = clamp((link - len) / (link - cellPx * NEAR_SPAN), 0.0, 1.0);
-            lit = max(lit, m * m * f * EDGE_ALPHA * fa * fb);
+            lit = max(lit, m * m * (LINE_PX / lineR) * f * EDGE_ALPHA * fa * fb);
         }
     }
 
@@ -1690,6 +1776,12 @@ static inline float3 hash33(float2 p) {
 fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    constant BackgroundUniforms &u [[buffer(0)]]) {
     float t = u.time;
+    // Measured in Retina pixels (see _with_points): rows, slots, speeds and
+    // strokes as on Retina on any display. The antialiasing stays one render
+    // pixel wide (aaR), and the light a stroke gives is kept at Retina's.
+    float rp = XEFM_RP;
+    float2 P = pos.xy / rp;
+    float aaR = AA_PX / rp;
     float2 uv = pos.xy / u.resolution;
 
     // Busy and quiet regions drifting across the field. Modulating the *density*
@@ -1710,14 +1802,16 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
         float cellW = CELL_PX * scale;
         // Floors: the far layers must not thin below what a pixel can draw, or they
         // stop being distance and become a grey haze over the file list.
-        float halfT = max(0.55, LINE_PX * 0.5 * scale);
+        float halfT0 = max(0.55, LINE_PX * 0.5 * scale);   // Retina's
+        float halfT = max(halfT0, 0.55 / rp);
+        float strokeGain = (2.0 * halfT0 + AA_PX) / (2.0 * halfT + aaR);
         float tickHalf = rowH * TICK_FRAC * 0.5;
 
-        float row = floor(pos.y / rowH);
-        float dy = abs(pos.y - (row + 0.5) * rowH);
+        float row = floor(P.y / rowH);
+        float dy = abs(P.y - (row + 0.5) * rowH);
         // Most pixels sit in a row's gap. Rejecting on the tallest thing the row can
         // hold skips the rest of the layer for them.
-        if (dy <= tickHalf + AA_PX) {
+        if (dy <= tickHalf + aaR) {
             float3 r = hash33(float2(row, float(i) * 91.0));
             float speed = RATE * scale * (SPEED_MIN + SPEED_RANGE * r.x);
 
@@ -1725,7 +1819,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
             // only names the slot (see the module note).
             float shift = t * speed / cellW;
             float shiftI = floor(shift);
-            float uX = pos.x / cellW + (shift - shiftI);
+            float uX = P.x / cellW + (shift - shiftI);
             float cell = floor(uX);
             float f = uX - cell;
             float cid = fmod(cell + shiftI, CELL_WRAP);
@@ -1736,11 +1830,11 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
                 // of the slot long. A flat distribution gives every dash roughly the
                 // same length, which reads as a dashed rule rather than as traffic.
                 float dash = DASH_MIN + DASH_RANGE * pow(c.y, DASH_SKEW);
-                float aa = AA_PX / cellW;          // the AA width, in slot units
+                float aa = aaR / cellW;          // the AA width, in slot units
                 float bright = (0.45 + 0.55 * c.z) * dim;
 
                 // The lane slides left, so f = 0 is the dash's leading edge.
-                float covY = 1.0 - smoothstep(halfT, halfT + AA_PX, dy);
+                float covY = (1.0 - smoothstep(halfT, halfT + aaR, dy)) * strokeGain;
                 float covX = smoothstep(0.0, aa, f)
                            * (1.0 - smoothstep(dash - aa, dash, f));
                 float k = f / dash;                // 0 at the head, 1 at the tail
@@ -1762,10 +1856,11 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
                 // would have to be found by pixels in rows that do not own it, and
                 // the one-cell lookup is what makes this scene cheap.
                 if (c.x < TICK_SHARE * dens) {
-                    float m = 1.0 - smoothstep(TICK_PX * 0.5, TICK_PX * 0.5 + AA_PX,
+                    float m = 1.0 - smoothstep(TICK_PX * 0.5, TICK_PX * 0.5 + aaR,
                                                abs(f - dash) * cellW);
-                    float covT = 1.0 - smoothstep(tickHalf, tickHalf + AA_PX, dy);
-                    lit = max(lit, m * covT * bright * TICK_ALPHA);
+                    float covT = 1.0 - smoothstep(tickHalf, tickHalf + aaR, dy);
+                    float tickGain = (TICK_PX + AA_PX) / (TICK_PX + aaR);
+                    lit = max(lit, m * covT * bright * TICK_ALPHA * tickGain);
                 }
             }
         }
@@ -1828,6 +1923,12 @@ float3 hash33(float2 p) {
 
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     float t = time;
+    // Measured in Retina pixels (see _with_points): rows, slots, speeds and
+    // strokes as on Retina on any display. The antialiasing stays one render
+    // pixel wide (aaR), and the light a stroke gives is kept at Retina's.
+    float rp = XEFM_RP;
+    float2 P = pos.xy / rp;
+    float aaR = AA_PX / rp;
     float2 uv = pos.xy / resolution;
 
     float wash = 0.5 + 0.5 * sin(uv.x * WASH_X + t * WASH_RATE)
@@ -1843,18 +1944,20 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     for (int i = 0; i < LAYERS; ++i) {
         float rowH = ROW_PX * scale;
         float cellW = CELL_PX * scale;
-        float halfT = max(0.55, LINE_PX * 0.5 * scale);
+        float halfT0 = max(0.55, LINE_PX * 0.5 * scale);   // Retina's
+        float halfT = max(halfT0, 0.55 / rp);
+        float strokeGain = (2.0 * halfT0 + AA_PX) / (2.0 * halfT + aaR);
         float tickHalf = rowH * TICK_FRAC * 0.5;
 
-        float row = floor(pos.y / rowH);
-        float dy = abs(pos.y - (row + 0.5) * rowH);
-        if (dy <= tickHalf + AA_PX) {
+        float row = floor(P.y / rowH);
+        float dy = abs(P.y - (row + 0.5) * rowH);
+        if (dy <= tickHalf + aaR) {
             float3 r = hash33(float2(row, float(i) * 91.0));
             float speed = RATE * scale * (SPEED_MIN + SPEED_RANGE * r.x);
 
             float shift = t * speed / cellW;
             float shiftI = floor(shift);
-            float uX = pos.x / cellW + (shift - shiftI);
+            float uX = P.x / cellW + (shift - shiftI);
             float cell = floor(uX);
             float f = uX - cell;
             float cid = fmod(cell + shiftI, CELL_WRAP);
@@ -1862,10 +1965,10 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
             float3 c = hash33(float2(cid, row + float(i) * 313.0));
             if (c.x <= dens) {
                 float dash = DASH_MIN + DASH_RANGE * pow(c.y, DASH_SKEW);
-                float aa = AA_PX / cellW;
+                float aa = aaR / cellW;
                 float bright = (0.45 + 0.55 * c.z) * dim;
 
-                float covY = 1.0 - smoothstep(halfT, halfT + AA_PX, dy);
+                float covY = (1.0 - smoothstep(halfT, halfT + aaR, dy)) * strokeGain;
                 float covX = smoothstep(0.0, aa, f)
                            * (1.0 - smoothstep(dash - aa, dash, f));
                 float k = f / dash;
@@ -1876,10 +1979,11 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
 
                 // See the MSL twin: the tick stands at the dash's trailing end.
                 if (c.x < TICK_SHARE * dens) {
-                    float m = 1.0 - smoothstep(TICK_PX * 0.5, TICK_PX * 0.5 + AA_PX,
+                    float m = 1.0 - smoothstep(TICK_PX * 0.5, TICK_PX * 0.5 + aaR,
                                                abs(f - dash) * cellW);
-                    float covT = 1.0 - smoothstep(tickHalf, tickHalf + AA_PX, dy);
-                    lit = max(lit, m * covT * bright * TICK_ALPHA);
+                    float covT = 1.0 - smoothstep(tickHalf, tickHalf + aaR, dy);
+                    float tickGain = (TICK_PX + AA_PX) / (TICK_PX + aaR);
+                    lit = max(lit, m * covT * bright * TICK_ALPHA * tickGain);
                 }
             }
         }
@@ -1940,6 +2044,12 @@ vec3 hash33(vec2 p) {
 
 vec4 puikit_bg_fragment(vec2 pos) {
     float t = time;
+    // Measured in Retina pixels (see _with_points): rows, slots, speeds and
+    // strokes as on Retina on any display. The antialiasing stays one render
+    // pixel wide (aaR), and the light a stroke gives is kept at Retina's.
+    float rp = XEFM_RP;
+    vec2 P = pos.xy / rp;
+    float aaR = AA_PX / rp;
     vec2 uv = pos.xy / resolution;
 
     // Busy and quiet regions drifting across the field. Modulating the *density*
@@ -1960,14 +2070,16 @@ vec4 puikit_bg_fragment(vec2 pos) {
         float cellW = CELL_PX * scale;
         // Floors: the far layers must not thin below what a pixel can draw, or they
         // stop being distance and become a grey haze over the file list.
-        float halfT = max(0.55, LINE_PX * 0.5 * scale);
+        float halfT0 = max(0.55, LINE_PX * 0.5 * scale);   // Retina's
+        float halfT = max(halfT0, 0.55 / rp);
+        float strokeGain = (2.0 * halfT0 + AA_PX) / (2.0 * halfT + aaR);
         float tickHalf = rowH * TICK_FRAC * 0.5;
 
-        float row = floor(pos.y / rowH);
-        float dy = abs(pos.y - (row + 0.5) * rowH);
+        float row = floor(P.y / rowH);
+        float dy = abs(P.y - (row + 0.5) * rowH);
         // Most pixels sit in a row's gap. Rejecting on the tallest thing the row can
         // hold skips the rest of the layer for them.
-        if (dy <= tickHalf + AA_PX) {
+        if (dy <= tickHalf + aaR) {
             vec3 r = hash33(vec2(row, float(i) * 91.0));
             float speed = RATE * scale * (SPEED_MIN + SPEED_RANGE * r.x);
 
@@ -1975,7 +2087,7 @@ vec4 puikit_bg_fragment(vec2 pos) {
             // only names the slot (see the module note).
             float shift = t * speed / cellW;
             float shiftI = floor(shift);
-            float uX = pos.x / cellW + (shift - shiftI);
+            float uX = P.x / cellW + (shift - shiftI);
             float cell = floor(uX);
             float f = uX - cell;
             float cid = pk_fmod(cell + shiftI, CELL_WRAP);
@@ -1986,11 +2098,11 @@ vec4 puikit_bg_fragment(vec2 pos) {
                 // of the slot long. A flat distribution gives every dash roughly the
                 // same length, which reads as a dashed rule rather than as traffic.
                 float dash = DASH_MIN + DASH_RANGE * pow(c.y, DASH_SKEW);
-                float aa = AA_PX / cellW;          // the AA width, in slot units
+                float aa = aaR / cellW;          // the AA width, in slot units
                 float bright = (0.45 + 0.55 * c.z) * dim;
 
                 // The lane slides left, so f = 0 is the dash's leading edge.
-                float covY = 1.0 - smoothstep(halfT, halfT + AA_PX, dy);
+                float covY = (1.0 - smoothstep(halfT, halfT + aaR, dy)) * strokeGain;
                 float covX = smoothstep(0.0, aa, f)
                            * (1.0 - smoothstep(dash - aa, dash, f));
                 float k = f / dash;                // 0 at the head, 1 at the tail
@@ -2012,10 +2124,11 @@ vec4 puikit_bg_fragment(vec2 pos) {
                 // would have to be found by pixels in rows that do not own it, and
                 // the one-cell lookup is what makes this scene cheap.
                 if (c.x < TICK_SHARE * dens) {
-                    float m = 1.0 - smoothstep(TICK_PX * 0.5, TICK_PX * 0.5 + AA_PX,
+                    float m = 1.0 - smoothstep(TICK_PX * 0.5, TICK_PX * 0.5 + aaR,
                                                abs(f - dash) * cellW);
-                    float covT = 1.0 - smoothstep(tickHalf, tickHalf + AA_PX, dy);
-                    lit = max(lit, m * covT * bright * TICK_ALPHA);
+                    float covT = 1.0 - smoothstep(tickHalf, tickHalf + aaR, dy);
+                    float tickGain = (TICK_PX + AA_PX) / (TICK_PX + aaR);
+                    lit = max(lit, m * covT * bright * TICK_ALPHA * tickGain);
                 }
             }
         }
@@ -2314,11 +2427,22 @@ static inline float ambient_field(float2 p, float t) {
 // consults exactly one cell however long the app has been running.
 //
 // Returns coverage in .x and how much of it is leading edge in .y.
-static inline float2 fast_field(float2 pos, float t) {
+// A stroke ``w`` Retina pixels wide at distance ``d`` (Retina pixels), edged by one
+// render pixel of antialiasing. Its footprint -- core plus edge -- is kept in Retina
+// pixels (see _with_points): on Retina this is the 1 - smoothstep(w/2, w/2 + 1, d)
+// it always was; where the footprint is under two render pixels the core shrinks,
+// and under one the stroke dims rather than break up.
+static inline float stroke(float d, float w, float rp) {
+    float span = (w + 1.0) * rp;
+    float core = max(span - 1.0, 0.0) / rp;
+    return (1.0 - smoothstep(core * 0.5, core * 0.5 + 1.0 / rp, d)) * min(span, 1.0);
+}
+
+static inline float2 fast_field(float2 pos, float t, float rp) {
     float lane = floor(pos.y / FAST_LANE_PX);
     float dy = abs(pos.y - (lane + 0.5) * FAST_LANE_PX);
     // Everything in a lane hugs its centre line, so most pixels leave immediately.
-    if (dy > FAST_REACH) { return float2(0.0); }
+    if (dy > FAST_REACH + 1.0 / rp - 1.0) { return float2(0.0); }
 
     float3 lh = hash33(float2(lane, 71.0));
     if (lh.x > FAST_KEEP) { return float2(0.0); }
@@ -2334,7 +2458,7 @@ static inline float2 fast_field(float2 pos, float t) {
 
     if (sh.y < FAST_DOT_MIX) {
         float d = length(float2(fx * FAST_CELL_PX, dy));
-        return float2((1.0 - smoothstep(FAST_DOT_R, FAST_DOT_R + 1.2, d))
+        return float2((1.0 - smoothstep(FAST_DOT_R, FAST_DOT_R + 1.2 / rp, d))
                       * FAST_ALPHA, 0.0);
     }
     if (sh.y < FAST_TICK_MIX) {
@@ -2350,15 +2474,14 @@ static inline float2 fast_field(float2 pos, float t) {
         if (th.x > FAST_TICK_FILL) { return float2(0.0); }
         float half_h = FAST_TICK_H * (0.35 + 1.1 * th.y);
         float pitch = FAST_BURST * FAST_CELL_PX / FAST_TICK_N;   // bar spacing, px
-        float covX = 1.0 - smoothstep(FAST_TICK_W * 0.5, FAST_TICK_W * 0.5 + 1.0,
-                                      gf * pitch);
-        float covY = 1.0 - smoothstep(half_h, half_h + 1.0, dy);
+        float covX = stroke(gf * pitch, FAST_TICK_W, rp);
+        float covY = 1.0 - smoothstep(half_h, half_h + 1.0 / rp, dy);
         return float2(covX * covY * FAST_ALPHA, 0.0);
     }
     float dash = FAST_DASH * (0.4 + 1.2 * sh.z);
-    float aa = 1.0 / FAST_CELL_PX;
+    float aa = 1.0 / rp / FAST_CELL_PX;
     float covX = smoothstep(0.0, aa, fx) * (1.0 - smoothstep(dash - aa, dash, fx));
-    float covY = 1.0 - smoothstep(FAST_LINE_W * 0.5, FAST_LINE_W * 0.5 + 1.0, dy);
+    float covY = stroke(dy, FAST_LINE_W, rp);
     float a = covX * covY * FAST_ALPHA;
     return float2(a, a * (1.0 - smoothstep(0.0, dash * 0.35, fx)));
 }
@@ -2491,6 +2614,7 @@ static inline float2 panel_content(float lx, float ly, float pixCell,
 
 fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    constant BackgroundUniforms &u [[buffer(0)]]) {
+    float rp = XEFM_RP;
     float2 halfRes = u.resolution * 0.5;
     // View-height units in both axes, so a panel stays square whatever the window
     // aspect. (The starfield normalises per-axis instead and lets its field stretch;
@@ -2619,7 +2743,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
                 // Constant width in pixels, so the angular half-width has to shrink
                 // as the radius grows -- otherwise a streak fans out into a wedge.
                 float dPx = abs(fract(ang * CONC_SECTORS) - 0.5) / CONC_SECTORS * TAU * rad;
-                float covA = 1.0 - smoothstep(CONC_PX * 0.5, CONC_PX * 0.5 + 1.0, dPx);
+                float covA = stroke(dPx / rp, CONC_PX, rp);
                 float covR = smoothstep(0.0, 0.02, fu)
                            * (1.0 - smoothstep(dash - 0.02, dash, fu));
                 float fade = smoothstep(CONC_IN, CONC_IN + CONC_RAMP, rn);
@@ -2631,10 +2755,11 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
     }
 
     // The ambient layer sits under the rest: dim, soft and cool, never warm or hot.
-    lit = max(lit, ambient_field(pos.xy, t));
+    // Both fields are laid out in Retina pixels (see _with_points).
+    lit = max(lit, ambient_field(pos.xy / rp, t));
 
     // The fast layer, on top: this is the element that actually moves.
-    float2 fastR = fast_field(pos.xy, t);
+    float2 fastR = fast_field(pos.xy / rp, t, rp);
     lit = max(lit, fastR.x);
     hot = max(hot, fastR.y * FAST_HEAD);
 
@@ -2865,11 +2990,22 @@ float ambient_field(float2 p, float t) {
 // consults exactly one cell however long the app has been running.
 //
 // Returns coverage in .x and how much of it is leading edge in .y.
-static inline float2 fast_field(float2 pos, float t) {
+// A stroke ``w`` Retina pixels wide at distance ``d`` (Retina pixels), edged by one
+// render pixel of antialiasing. Its footprint -- core plus edge -- is kept in Retina
+// pixels (see _with_points): on Retina this is the 1 - smoothstep(w/2, w/2 + 1, d)
+// it always was; where the footprint is under two render pixels the core shrinks,
+// and under one the stroke dims rather than break up.
+float stroke(float d, float w, float rp) {
+    float span = (w + 1.0) * rp;
+    float core = max(span - 1.0, 0.0) / rp;
+    return (1.0 - smoothstep(core * 0.5, core * 0.5 + 1.0 / rp, d)) * min(span, 1.0);
+}
+
+static inline float2 fast_field(float2 pos, float t, float rp) {
     float lane = floor(pos.y / FAST_LANE_PX);
     float dy = abs(pos.y - (lane + 0.5) * FAST_LANE_PX);
     // Everything in a lane hugs its centre line, so most pixels leave immediately.
-    if (dy > FAST_REACH) { return float2(0.0, 0.0); }
+    if (dy > FAST_REACH + 1.0 / rp - 1.0) { return float2(0.0, 0.0); }
 
     float3 lh = hash33(float2(lane, 71.0));
     if (lh.x > FAST_KEEP) { return float2(0.0, 0.0); }
@@ -2885,7 +3021,7 @@ static inline float2 fast_field(float2 pos, float t) {
 
     if (sh.y < FAST_DOT_MIX) {
         float d = length(float2(fx * FAST_CELL_PX, dy));
-        return float2((1.0 - smoothstep(FAST_DOT_R, FAST_DOT_R + 1.2, d))
+        return float2((1.0 - smoothstep(FAST_DOT_R, FAST_DOT_R + 1.2 / rp, d))
                       * FAST_ALPHA, 0.0);
     }
     if (sh.y < FAST_TICK_MIX) {
@@ -2901,15 +3037,14 @@ static inline float2 fast_field(float2 pos, float t) {
         if (th.x > FAST_TICK_FILL) { return float2(0.0, 0.0); }
         float half_h = FAST_TICK_H * (0.35 + 1.1 * th.y);
         float pitch = FAST_BURST * FAST_CELL_PX / FAST_TICK_N;   // bar spacing, px
-        float covX = 1.0 - smoothstep(FAST_TICK_W * 0.5, FAST_TICK_W * 0.5 + 1.0,
-                                      gf * pitch);
-        float covY = 1.0 - smoothstep(half_h, half_h + 1.0, dy);
+        float covX = stroke(gf * pitch, FAST_TICK_W, rp);
+        float covY = 1.0 - smoothstep(half_h, half_h + 1.0 / rp, dy);
         return float2(covX * covY * FAST_ALPHA, 0.0);
     }
     float dash = FAST_DASH * (0.4 + 1.2 * sh.z);
-    float aa = 1.0 / FAST_CELL_PX;
+    float aa = 1.0 / rp / FAST_CELL_PX;
     float covX = smoothstep(0.0, aa, fx) * (1.0 - smoothstep(dash - aa, dash, fx));
-    float covY = 1.0 - smoothstep(FAST_LINE_W * 0.5, FAST_LINE_W * 0.5 + 1.0, dy);
+    float covY = stroke(dy, FAST_LINE_W, rp);
     float a = covX * covY * FAST_ALPHA;
     return float2(a, a * (1.0 - smoothstep(0.0, dash * 0.35, fx)));
 }
@@ -3041,6 +3176,7 @@ float2 panel_content(float lx, float ly, float pixCell,
 }
 
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
+    float rp = XEFM_RP;
     float2 halfRes = resolution * 0.5;
     // View-height units in both axes, so a panel stays square whatever the window
     // aspect. (The starfield normalises per-axis instead and lets its field stretch;
@@ -3169,7 +3305,7 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
                 // Constant width in pixels, so the angular half-width has to shrink
                 // as the radius grows -- otherwise a streak fans out into a wedge.
                 float dPx = abs(frac(ang * CONC_SECTORS) - 0.5) / CONC_SECTORS * TAU * rad;
-                float covA = 1.0 - smoothstep(CONC_PX * 0.5, CONC_PX * 0.5 + 1.0, dPx);
+                float covA = stroke(dPx / rp, CONC_PX, rp);
                 float covR = smoothstep(0.0, 0.02, fu)
                            * (1.0 - smoothstep(dash - 0.02, dash, fu));
                 float fade = smoothstep(CONC_IN, CONC_IN + CONC_RAMP, rn);
@@ -3181,10 +3317,11 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     }
 
     // The ambient layer sits under the rest: dim, soft and cool, never warm or hot.
-    lit = max(lit, ambient_field(pos.xy, t));
+    // Both fields are laid out in Retina pixels (see _with_points).
+    lit = max(lit, ambient_field(pos.xy / rp, t));
 
     // The fast layer, on top: this is the element that actually moves.
-    float2 fastR = fast_field(pos.xy, t);
+    float2 fastR = fast_field(pos.xy / rp, t, rp);
     lit = max(lit, fastR.x);
     hot = max(hot, fastR.y * FAST_HEAD);
 
@@ -3423,11 +3560,22 @@ float ambient_field(vec2 p, float t) {
 // consults exactly one cell however long the app has been running.
 //
 // Returns coverage in .x and how much of it is leading edge in .y.
-vec2 fast_field(vec2 pos, float t) {
+// A stroke ``w`` Retina pixels wide at distance ``d`` (Retina pixels), edged by one
+// render pixel of antialiasing. Its footprint -- core plus edge -- is kept in Retina
+// pixels (see _with_points): on Retina this is the 1 - smoothstep(w/2, w/2 + 1, d)
+// it always was; where the footprint is under two render pixels the core shrinks,
+// and under one the stroke dims rather than break up.
+float stroke(float d, float w, float rp) {
+    float span = (w + 1.0) * rp;
+    float core = max(span - 1.0, 0.0) / rp;
+    return (1.0 - smoothstep(core * 0.5, core * 0.5 + 1.0 / rp, d)) * min(span, 1.0);
+}
+
+vec2 fast_field(vec2 pos, float t, float rp) {
     float lane = floor(pos.y / FAST_LANE_PX);
     float dy = abs(pos.y - (lane + 0.5) * FAST_LANE_PX);
     // Everything in a lane hugs its centre line, so most pixels leave immediately.
-    if (dy > FAST_REACH) { return vec2(0.0); }
+    if (dy > FAST_REACH + 1.0 / rp - 1.0) { return vec2(0.0); }
 
     vec3 lh = hash33(vec2(lane, 71.0));
     if (lh.x > FAST_KEEP) { return vec2(0.0); }
@@ -3443,7 +3591,7 @@ vec2 fast_field(vec2 pos, float t) {
 
     if (sh.y < FAST_DOT_MIX) {
         float d = length(vec2(fx * FAST_CELL_PX, dy));
-        return vec2((1.0 - smoothstep(FAST_DOT_R, FAST_DOT_R + 1.2, d))
+        return vec2((1.0 - smoothstep(FAST_DOT_R, FAST_DOT_R + 1.2 / rp, d))
                       * FAST_ALPHA, 0.0);
     }
     if (sh.y < FAST_TICK_MIX) {
@@ -3459,15 +3607,14 @@ vec2 fast_field(vec2 pos, float t) {
         if (th.x > FAST_TICK_FILL) { return vec2(0.0); }
         float half_h = FAST_TICK_H * (0.35 + 1.1 * th.y);
         float pitch = FAST_BURST * FAST_CELL_PX / FAST_TICK_N;   // bar spacing, px
-        float covX = 1.0 - smoothstep(FAST_TICK_W * 0.5, FAST_TICK_W * 0.5 + 1.0,
-                                      gf * pitch);
-        float covY = 1.0 - smoothstep(half_h, half_h + 1.0, dy);
+        float covX = stroke(gf * pitch, FAST_TICK_W, rp);
+        float covY = 1.0 - smoothstep(half_h, half_h + 1.0 / rp, dy);
         return vec2(covX * covY * FAST_ALPHA, 0.0);
     }
     float dash = FAST_DASH * (0.4 + 1.2 * sh.z);
-    float aa = 1.0 / FAST_CELL_PX;
+    float aa = 1.0 / rp / FAST_CELL_PX;
     float covX = smoothstep(0.0, aa, fx) * (1.0 - smoothstep(dash - aa, dash, fx));
-    float covY = 1.0 - smoothstep(FAST_LINE_W * 0.5, FAST_LINE_W * 0.5 + 1.0, dy);
+    float covY = stroke(dy, FAST_LINE_W, rp);
     float a = covX * covY * FAST_ALPHA;
     return vec2(a, a * (1.0 - smoothstep(0.0, dash * 0.35, fx)));
 }
@@ -3599,6 +3746,7 @@ vec2 panel_content(float lx, float ly, float pixCell,
 }
 
 vec4 puikit_bg_fragment(vec2 pos) {
+    float rp = XEFM_RP;
     vec2 halfRes = resolution * 0.5;
     // View-height units in both axes, so a panel stays square whatever the window
     // aspect. (The starfield normalises per-axis instead and lets its field stretch;
@@ -3727,7 +3875,7 @@ vec4 puikit_bg_fragment(vec2 pos) {
                 // Constant width in pixels, so the angular half-width has to shrink
                 // as the radius grows -- otherwise a streak fans out into a wedge.
                 float dPx = abs(fract(ang * CONC_SECTORS) - 0.5) / CONC_SECTORS * TAU * rad;
-                float covA = 1.0 - smoothstep(CONC_PX * 0.5, CONC_PX * 0.5 + 1.0, dPx);
+                float covA = stroke(dPx / rp, CONC_PX, rp);
                 float covR = smoothstep(0.0, 0.02, fu)
                            * (1.0 - smoothstep(dash - 0.02, dash, fu));
                 float fade = smoothstep(CONC_IN, CONC_IN + CONC_RAMP, rn);
@@ -3739,10 +3887,11 @@ vec4 puikit_bg_fragment(vec2 pos) {
     }
 
     // The ambient layer sits under the rest: dim, soft and cool, never warm or hot.
-    lit = max(lit, ambient_field(pos.xy, t));
+    // Both fields are laid out in Retina pixels (see _with_points).
+    lit = max(lit, ambient_field(pos.xy / rp, t));
 
     // The fast layer, on top: this is the element that actually moves.
-    vec2 fastR = fast_field(pos.xy, t);
+    vec2 fastR = fast_field(pos.xy / rp, t, rp);
     lit = max(lit, fastR.x);
     hot = max(hot, fastR.y * FAST_HEAD);
 
@@ -3771,6 +3920,12 @@ vec4 puikit_bg_fragment(vec2 pos) {
 #: other scene here is thin bright lines, where halving the scale and upscaling would
 #: trade away the crispness that is the point of drawing them.
 #:
+#: The wave's half scale is set as a density as well — one render pixel per point,
+#: which is what half scale *is* on a Retina display. ``resolution_scale`` alone is
+#: a fraction of the display's pixels, so on a standard display the sheet rendered
+#: at half a pixel per point: the fine sparkles became soft, dim blobs merged into
+#: a mush. With the density the render is the same on both.
+#:
 #: ``idle`` is per scene for the same reason: only the scene knows what it should
 #: come to rest *as* when the backend parks it after ~a minute of no input (see
 #: puikit's ``Shader.idle``). ``"freeze"``, the default, holds the last frame —
@@ -3783,37 +3938,63 @@ vec4 puikit_bg_fragment(vec2 pos) {
 #: background instead resolves to something the palette already contains. The
 #: exception is ``earth``, the one scene composed to be looked at still: its every
 #: frame is a shot of the planet, so it says ``"freeze"`` and parks on one.
+def _with_points(source: str, dialect: str) -> str:
+    """``source`` with ``XEFM_RP`` defined: render pixels per *Retina* pixel.
+
+    The full-resolution scenes were tuned on a Retina display, in its pixels —
+    a 13-pixel row, a 1.3-pixel streak, 260 pixels a second. On a standard
+    display the same numbers came out twice as large and twice as fast. A scene
+    that works in ``pos / XEFM_RP`` and ``resolution / XEFM_RP`` keeps every one of
+    them in Retina pixels on any display: PuiKit's ``pixel_scale`` (render pixels
+    per point) is 2 on Retina at full scale, so ``XEFM_RP`` is 1 there and the
+    scene computes exactly what it did. PuiKit before ``pixel_scale`` reads 1.0."""
+    if not _HAS_DENSITY:
+        rp = "1.0"
+    elif dialect == "msl":
+        rp = "(u.pixel_scale * 0.5)"
+    else:
+        rp = "(pixel_scale * 0.5)"
+    return f"#define XEFM_RP {rp}\n" + source
+
+
 SHADER_KINDS: dict[str, dict] = {
     "wave": {"source": WAVE_MSL, "source_hlsl": WAVE_HLSL, "source_glsl": WAVE_GLSL,
-             "resolution_scale": 0.5, "idle": "fade"},
+             "resolution_scale": 0.5, "idle": "fade",
+             **({"pixel_density": 1.0} if _HAS_DENSITY else {})},
     # Rain renders at full resolution: it is thin bright lines, and at half scale the
     # upscale makes them crawl and shimmer. It can afford to — a pixel tests three
     # columns and most exit before touching a drop.
-    "rain": {"source": RAIN_MSL, "source_hlsl": RAIN_HLSL, "source_glsl": RAIN_GLSL,
-             "idle": "fade"},
+    "rain": {"source": _with_points(RAIN_MSL, "msl"),
+             "source_hlsl": _with_points(RAIN_HLSL, "hlsl"),
+             "source_glsl": _with_points(RAIN_GLSL, "glsl"), "idle": "fade"},
     # Also full resolution: streaks are thin and near-white at the head, and halving
     # the scale turns them into crawling smudges.
-    "starfield": {"source": STARFIELD_MSL, "source_hlsl": STARFIELD_HLSL,
-                  "source_glsl": STARFIELD_GLSL, "idle": "fade"},
+    "starfield": {"source": _with_points(STARFIELD_MSL, "msl"),
+                  "source_hlsl": _with_points(STARFIELD_HLSL, "hlsl"),
+                  "source_glsl": _with_points(STARFIELD_GLSL, "glsl"), "idle": "fade"},
     # The corridor is all thin straight lines, and its whole gain over the segment
     # version is derivative-filtered width. Rendering at half scale and upscaling
     # would throw exactly that away.
-    "grid": {"source": GRID_MSL, "source_hlsl": GRID_HLSL, "source_glsl": GRID_GLSL,
-             "idle": "fade"},
+    "grid": {"source": _with_points(GRID_MSL, "msl"),
+             "source_hlsl": _with_points(GRID_HLSL, "hlsl"),
+             "source_glsl": _with_points(GRID_GLSL, "glsl"), "idle": "fade"},
     # Dots and hairline edges, so again full resolution.
-    "constellation": {"source": CONSTELLATION_MSL, "source_hlsl": CONSTELLATION_HLSL,
-                      "source_glsl": CONSTELLATION_GLSL, "idle": "fade"},
+    "constellation": {"source": _with_points(CONSTELLATION_MSL, "msl"),
+                      "source_hlsl": _with_points(CONSTELLATION_HLSL, "hlsl"),
+                      "source_glsl": _with_points(CONSTELLATION_GLSL, "glsl"), "idle": "fade"},
     # Thin dashes with crisp leading edges, and the far layers' rows are only a few
     # pixels apart — halving the scale would merge them into a band.
-    "datastream": {"source": DATASTREAM_MSL, "source_hlsl": DATASTREAM_HLSL,
-                   "source_glsl": DATASTREAM_GLSL, "idle": "fade"},
+    "datastream": {"source": _with_points(DATASTREAM_MSL, "msl"),
+                   "source_hlsl": _with_points(DATASTREAM_HLSL, "hlsl"),
+                   "source_glsl": _with_points(DATASTREAM_GLSL, "glsl"), "idle": "fade"},
     # Hairline rules, 1px panel outlines and blocks a couple of pixels tall, all of
     # which the upscale from a half-scale render would smear into mush. It is also
     # the scene that most wants the resolution: its far planes fade out exactly where
     # a pixel stops resolving a row, so rendering at half scale would throw away
     # depth, not just sharpness.
-    "hologram": {"source": HOLOGRAM_MSL, "source_hlsl": HOLOGRAM_HLSL,
-                 "source_glsl": HOLOGRAM_GLSL, "idle": "fade"},
+    "hologram": {"source": _with_points(HOLOGRAM_MSL, "msl"),
+                 "source_hlsl": _with_points(HOLOGRAM_HLSL, "hlsl"),
+                 "source_glsl": _with_points(HOLOGRAM_GLSL, "glsl"), "idle": "fade"},
     # The one picture rather than motion, and so the one scene that says
     # "freeze": parked, it holds a composed shot of the planet. It also brings its
     # own textures and lens, and has no GLSL (the web backend binds neither) —

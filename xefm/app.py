@@ -44,6 +44,22 @@ from pathlib import Path as _StdPath
 from urllib.parse import quote, unquote, urlsplit
 
 from puikit import EventType, Font, Item, Panel, PostEffect, Style, TextAttribute, Theme, VSplit, WindowStyle, derive_theme, mix
+from puikit.panel import DrawContext
+
+#: Whether the Panel answers if a pointer move changed what it drew (PuiKit's
+#: ``dispatch_event`` for MOUSE_MOVE, which came with ``DrawContext.pointer_in``);
+#: before that it always said False and every move had to redraw.
+_MOVE_TELLS_REDRAW = hasattr(DrawContext, "pointer_in")
+
+
+def _set_shader_cache_dir(path) -> None:
+    """PuiKit's set_shader_cache_dir, where PuiKit has it (older ones keep
+    compiled shaders in their own default folder, or none)."""
+    try:
+        from puikit.background import set_shader_cache_dir
+    except ImportError:
+        return
+    set_shader_cache_dir(path)
 from puikit.background import Shader, Wallpaper
 from puikit.posteffect import PRESETS as _POST_EFFECT_PRESETS
 from puikit.backends import create_backend
@@ -1882,12 +1898,18 @@ class XeFMApp:
                  left_provided: bool = True, right_provided: bool = True,
                  state_manager=None):
         self.backend = backend
+        # counts() per pane: the listing it was computed from, and the answer.
+        self._counts_memo: dict[int, tuple] = {}
         # Load via ConfigManager (the shared singleton): this creates
         # ~/.xefm/config.py from the template on first run and reads the user's
         # config, filling any missing fields from the template. Instantiating
         # _config.Config() directly (as the port did) skipped both — the file was
         # never created and the user's settings were ignored.
         self.config = get_config()
+        # Compiled background shaders live with the rest of XeFM's data, in
+        # ~/.xefm/shader-cache, set before any theme sets a background. Only the
+        # Windows (Direct3D) backend compiles slowly enough to keep them.
+        _set_shader_cache_dir(config_manager.config_dir / "shader-cache")
         # Before anything is measured: the characters WIDE_CHARS names count as
         # two columns from the first layout on (#611).
         apply_wide_chars(self.config)
@@ -3340,10 +3362,23 @@ class XeFMApp:
                 yield f"shown in the {name} pane", archive
 
     def counts(self, pane: dict) -> tuple[int, int]:
-        """(dirs, files) in a pane, read from the file-info cache."""
+        """(dirs, files) in a pane, read from the file-info cache.
+
+        The footer asks every frame, and the count walks the whole listing —
+        a stringified path and a dict lookup per entry, a few milliseconds a
+        frame in a large directory — so the answer is kept until the pane's
+        ``files`` or ``file_info`` is replaced (a listing replaces both, never
+        edits them in place) or changes length."""
+        files = pane["files"]
         info = pane.get("file_info", {})
-        dirs = sum(1 for f in pane["files"] if info.get(str(f), {}).get("is_dir"))
-        return dirs, len(pane["files"]) - dirs
+        memo = self._counts_memo.get(id(pane))
+        if (memo is not None and memo[0] is files and memo[1] is info
+                and memo[2] == (len(files), len(info))):
+            return memo[3]
+        dirs = sum(1 for f in files if info.get(str(f), {}).get("is_dir"))
+        result = (dirs, len(files) - dirs)
+        self._counts_memo[id(pane)] = (files, info, (len(files), len(info)), result)
+        return result
 
     def disk_free_total(self, pane: dict) -> tuple[int, int] | None:
         """``(free_bytes, total_bytes)`` for the pane's filesystem, or ``None``
@@ -12644,8 +12679,13 @@ class XeFMApp:
             # Pointer movement only updates hover state — let the Splitters under
             # the cursor swap in their resize cursor (and drop it again on the way
             # out). GUI emits these; the TUI does not, so it's a GUI-only affordance.
-            self.panel.dispatch_event(event)
-            self.panel.render()
+            # The Panel says whether the move changed anything the last frame drew
+            # from the pointer; redrawing the window for every move that did not
+            # held the frame's time hostage to the mouse (the background stopped
+            # while it moved). An older PuiKit has no answer, so there every move
+            # redraws as it always did.
+            if self.panel.dispatch_event(event) or not _MOVE_TELLS_REDRAW:
+                self.panel.render()
             return
         # quit_app (Cmd-Q, Alt-F4) is the window's close button as a key: it
         # works over a dialog or a viewer too, so it is answered before any

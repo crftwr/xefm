@@ -1406,6 +1406,11 @@ class DirectoryDiffView(Widget):
         resizable, so the cursor and the band brighten can respond."""
         if not self._resizable:
             return False
+        pointer_in = getattr(ctx, "pointer_in", None)
+        if pointer_in is not None:
+            # Asked as a sub-rect, so only crossing the gutter redraws the viewer
+            # (PuiKit's Panel.dispatch_event); older PuiKit reads the pointer.
+            return pointer_in(self._sep_x, 0, self._right_x - self._sep_x, h - 2)
         panel = getattr(ctx, "panel", None)
         p = panel.pointer if panel is not None else None
         if p is None:

@@ -144,8 +144,10 @@ with no usable shader path) inherits a no-op, so none of this branches on the ba
 ## Adding a scene
 
 1. Write `<SCENE>_MSL` and `<SCENE>_HLSL` in `xefm/background_shaders.py`.
-2. Add both to `SHADER_KINDS`, with `resolution_scale` if the scene can afford it and
-   an `idle` mode — `"fade"` unless the scene is composed to be looked at when still.
+2. Add both to `SHADER_KINDS`, with `resolution_scale` (and `pixel_density`) if the
+   scene can afford it and an `idle` mode — `"fade"` unless the scene is composed to
+   be looked at when still. Wrap each dialect in `_with_points` and size things in
+   Retina pixels (see [Retina pixels](#retina-pixels)).
 3. Add a row to the table in `doc/COLOR_SCHEMES_FEATURE.md` (Background animations section) and to the theme
    comment block in `xefm/_config.py`.
 4. Update the expected set in `test/test_background_shaders.py`. The generic suites
@@ -345,6 +347,31 @@ Per-pixel, so the tunables that matter are the per-pixel loop and the resolution
   Only the wave uses it (`0.5`): it is diffuse grain, indistinguishable at a quarter
   of the pixels. Every other scene is thin bright lines, where halving the scale trades
   away exactly the crispness that is the point of drawing them.
+- The wave also sets `pixel_density` 1.0: half scale *is* one render pixel per
+  point on Retina, and the density keeps that on a standard display, where half of
+  its pixels turned the fine sparkles into soft blobs. It costs a standard display
+  what it costs Retina, per point.
+
+## Retina pixels
+
+The full-resolution scenes were tuned on a Retina display, in its pixels: a
+13-pixel row, a 1.3-pixel streak, 260 pixels a second. On a standard display
+those came out twice as large and twice as fast. Each of them now works in
+**Retina pixels**: `_with_points` prepends `#define XEFM_RP`, the render pixels
+per Retina pixel (PuiKit's `pixel_scale / 2`; `1.0` on a PuiKit without it), and
+the scene divides `pos` and `resolution` by it. On Retina it is 1 and the scene
+computes exactly what it did — the renders match the old ones pixel for pixel.
+
+A stroke cannot be thinner than a render pixel, so widths are kept as a
+*footprint* (core plus its one-pixel antialiased edge) in Retina pixels: where
+that falls under two render pixels the core shrinks, and under one the stroke
+dims instead of breaking up (`stroke()` in the hologram, the same arithmetic
+inline elsewhere; a dot's light goes with its area, so its ratio is squared).
+Measured as light per point, a standard display now draws 92–112% of what Retina
+does, where it drew up to twice as much before.
+
+When writing a scene: size things in Retina pixels and work in `pos / XEFM_RP`;
+keep antialiasing widths in render pixels (`1.0 / XEFM_RP` in those units).
 
 Measure with `tools/render_background_animations.py` plus a timing loop over
 `MetalBackground.render_to_texture`, or in the real app with `PUIKIT_BG_PROFILE=1`.

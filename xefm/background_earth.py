@@ -1391,6 +1391,12 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
 #: measurements behind it.
 RESOLUTION_SCALE = 0.5
 
+#: How finely it renders, in render pixels per point (PuiKit's
+#: ``Shader.pixel_density``): what that fraction gives on a Retina display, kept
+#: on a standard one too, where a fraction of *its* pixels would render the
+#: scene twice as coarsely. ``RESOLUTION_SCALE`` above is the Retina reading.
+PIXEL_DENSITY = 2 * RESOLUTION_SCALE
+
 #: The option keys a theme's ``animation`` dict may carry for this scene.
 OPTIONS = ("shot", "lens", "clouds", "exposure", "brightness")
 
@@ -1469,5 +1475,6 @@ def earth_shader(shot=None, lens=None, clouds=None, exposure=None,
                       scene_inputs=tuple(t.name for t in TEXTURES)),
         "textures": TEXTURES,
         "resolution_scale": RESOLUTION_SCALE,
+        "pixel_density": PIXEL_DENSITY,
         "idle": "freeze",
     }

@@ -180,7 +180,10 @@ Levers taken:
   the frame on sky pixels; they now run only where the band is visible.
 - **`resolution_scale` 0.5.** At 0.5 vs 0.75 upscaled to Retina, the surface is
   indistinguishable (the maps, not the render, limit detail); it halves the
-  cost. A 1440×900-point window on a 2× display renders 1440×900.
+  cost. A 1440×900-point window on a 2× display renders 1440×900. It is set as
+  `pixel_density` 1.0 too, so a standard display renders the same one pixel per
+  point instead of half that (Blocks likewise, 1.5; Crystal is left at its scale
+  — at Retina's density it would take a standard display's GPU its whole frame).
 - **`idle: "freeze"`.** Earth is a picture: when the app parks the animation it
   coasts to a stop and holds the shot, and nothing — scene or lens chain — is
   drawn while parked.

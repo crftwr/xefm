@@ -51,6 +51,12 @@ DEFAULT_BRIGHTNESS = 0.5
 #: mid distance; 0.75 keeps them from crawling while saving almost half the cost.
 RESOLUTION_SCALE = 0.75
 
+#: How finely it renders, in render pixels per point (PuiKit's
+#: ``Shader.pixel_density``): what that fraction gives on a Retina display, kept
+#: on a standard one too, where a fraction of *its* pixels would render the
+#: scene twice as coarsely. ``RESOLUTION_SCALE`` above is the Retina reading.
+PIXEL_DENSITY = 2 * RESOLUTION_SCALE
+
 _MSL_OPTIONS = """
 // --- per-theme options (baked by xefm.background_blocks.blocks_shader) -------
 constant float LEAK_RATE  = {leaks};          // how often light leaks (1 = as tuned)
@@ -963,5 +969,6 @@ def blocks_shader(leaks=None, leak_strength=None, motion=None, camera=None,
                       _HLSL_OPTIONS.format(**options) + BLOCKS_HLSL_BODY,
                       blocks_look(brightness)),
         "resolution_scale": RESOLUTION_SCALE,
+        "pixel_density": PIXEL_DENSITY,
         "idle": "freeze",
     }

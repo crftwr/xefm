@@ -1348,6 +1348,10 @@ def crystal_shader(exposure=None, brightness=None, focus=None) -> dict:
             crystal_look(brightness, focus), scene_inputs=("rock",),
             scene_targets=(Target("rock", size=VOLUME_SIZE),),
             scene_once=(Pass("puikit_bg_bake", "rock", once=True),)),
+        # No pixel_density, unlike Earth and Blocks: held at Retina's 0.9 pixels
+        # per point on a standard display it rendered 1296 x 810 for a 1440 x
+        # 900 window, 33 ms a frame on the VM it was measured in, its whole
+        # 30 fps budget; the depth of field blurs most of the frame anyway.
         "resolution_scale": RESOLUTION_SCALE,
         "frame_rate": FRAME_RATE,
         "idle": "freeze",
