@@ -134,7 +134,7 @@ FONT_SIZE     = 12         # point size applied to both faces (8–72)
 
 バックエンドは `--backend` フラグだけで選びます。設定ファイルで指定する項目はありません。既定はターミナルモードです。
 
-- `--backend tui` — ターミナル。既定です（`--backend curses` を指定すると、普通でないターミナル向けの代替手段として、従来の curses による描画を使います）
+- `--backend tui` — ターミナル。既定です（`--backend curses` を指定すると、普通でないターミナル向けの代替手段として、従来の curses による描画を使います。macOS と Linux のみで、非推奨です。今後のリリースで削除されます）
 - `--backend gui` — Windows（別名 `windows`）または macOS（別名 `macos`）のネイティブのウィンドウ
 
 Linux にはデスクトップのバックエンドがないので、ターミナルモードを使ってください。
@@ -580,7 +580,7 @@ python3 -m xefm --right ~/docs     # Set the right pane's startup directory
 `--backend` で描画のバックエンドを選びます。
 
 ```bash
-python3 -m xefm --backend tui      # Terminal — default (--backend curses: classic curses fallback)
+python3 -m xefm --backend tui      # Terminal — default (--backend curses: classic curses fallback, macOS/Linux, deprecated)
 python3 -m xefm --backend gui      # Native window (aliases: --backend macos / windows)
 ```
 

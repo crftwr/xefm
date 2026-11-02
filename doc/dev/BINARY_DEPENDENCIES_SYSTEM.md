@@ -30,7 +30,7 @@ A survey of the whole dependency closure (25 distributions, 2026-11-02):
 | numpy | similar-files (video grouping); PuiKit on Windows (GUI backend) | the same pairs as Pillow | yes in similar-files; PuiKit's is Windows-only, where every machine has wheels |
 | watchdog | XeFM | the above plus armv7, i686, ppc64le, s390x, … | no need |
 | pyobjc | PuiKit, macOS only | universal2 | no need |
-| windows-curses | PuiKit, Windows only | Windows x86/x64 only, **no arm64, no sdist** | see "Known gaps" |
+| windows-curses | PuiKit, Windows only, until 1.19.0 | Windows x86/x64 only, **no arm64, no sdist** | dropped (see below) |
 
 The other 18 are pure Python and install everywhere. pypdf (doc-files) is
 one of them, which is why it needs no marker.
@@ -124,10 +124,23 @@ The marker cannot see these, and they still fail the install as before:
   `platform_machine` reports the kernel's `aarch64`.
 - **Termux on Android** reports `linux` and `aarch64`, but manylinux wheels
   do not run there.
-- **Native ARM64 Python on Windows**: windows-curses, which PuiKit requires
-  on every Windows machine, has no arm64 wheel and no sdist. An x64 Python
-  under emulation installs. Not addressed yet; the VT backend is the TUI
-  default, so windows-curses may not need to be required there.
+
+## windows-curses, and the curses backend
+
+windows-curses has no arm64 wheel and no sdist, and PuiKit required it on
+every Windows machine, so native ARM64 Python on Windows could not install
+XeFM at all. It served only PuiKit's curses backend, which `tui` has not
+chosen on Windows since the VT backend replaced it there (PDCurses mis-sizes
+wide glyphs and swallows inline images, #283, #306).
+
+The user decided (2026-11-02) to drop the dependency and the backend. PuiKit
+1.19.0 no longer requires windows-curses, refuses `create_backend("curses")`
+on Windows with a hint to use `tui` (unless windows-curses was installed by
+hand), and deprecates the curses backend everywhere; PuiKit 2.0 removes it,
+as its compatibility policy allows only in a major version. XeFM follows:
+`--backend curses` is refused on Windows and logs a deprecation warning on
+macOS and Linux, where it stays as the fallback for terminals off the xterm
+dialect until PuiKit 2.0.
 
 ## The extras that remain
 
