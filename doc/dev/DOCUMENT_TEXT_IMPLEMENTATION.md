@@ -82,11 +82,11 @@ types, so it already reaches the built-in viewer.
 
 ## Dependency
 
-doc-files is **optional at runtime** until it is on PyPI. `handles()` is
-False without it, and documents keep the binary placeholder. Once released,
-`doc-files[pdf]` belongs in `requirements.txt` (and so in the desktop
-bundles), with a note on why. For development: `pip install -e ../doc-files`
-and `pip install pypdf`.
+doc-files is **optional at runtime**: `handles()` is False without it, and
+documents keep the binary placeholder. It is in `requirements.txt` (and so
+in the desktop bundles) as plain `doc-files`: since 0.2.0 it brings pypdf
+for PDF itself, with no `[pdf]` extra. For development:
+`pip install -e ../doc-files`, which brings pypdf too.
 
 ## Not done
 

@@ -238,11 +238,11 @@ libarchive-c
 # discussion #332 before bumping.
 pymigemo==0.0.1
 # doc-files reads what PDF, Office, OpenDocument and EPUB files say, for the
-# viewer's documents-as-text and content search (#575). Pure Python with no
-# dependencies of its own; the [pdf] extra adds pypdf, pure Python too.
+# viewer's documents-as-text and content search (#575). Pure Python; since
+# 0.2.0 it brings pypdf (pure Python too) for PDF itself, with no extra.
 # Without it those files show the "binary file" placeholder, so it is an
 # ordinary requirement: every install, the desktop apps included, reads them.
-doc-files[pdf]>=0.1.0
+doc-files>=0.2.0
 # similar-files finds identical and similar files for Find Similar Files
 # (#571). XeFM runs it as a program of its own (python -m similar_files) and
 # reads the .xft tree it writes; 0.3.0 is the floor because it is where

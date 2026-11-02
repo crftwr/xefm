@@ -42,7 +42,7 @@ def test_what_ours_need_is_installed_with_its_markers():
 
 def test_a_requested_extra_comes_along_and_the_others_do_not():
     requirements = guest.third_party_requirements()
-    # requirements.txt asks for doc-files[pdf]: pypdf, with no extra marker left.
+    # doc-files brings pypdf as a dependency of its own (no extra since 0.2.0).
     assert any(r.startswith("pypdf") and "extra" not in r for r in requirements)
     # doc-files[test], similar-files[whash], puikit[dev] are not asked for.
     assert not _names(requirements) & {"python-docx", "imagehash", "openpyxl"}
