@@ -180,6 +180,27 @@ def test_prune_keeps_the_newest_finished_and_every_running_one(tmp_path):
                      "20260104-000000-aaaaaa"]
 
 
+def test_prune_drops_seen_scans_before_unseen_ones(tmp_path):
+    # #822: the newest finished scans used to be kept whether looked at or
+    # not, so an unseen one could go before anyone opened it.
+    old_unseen = _job(tmp_path, "20260101-000000-aaaaaa", status={"state": "done"})
+    for i in (2, 3):
+        _job(tmp_path, f"2026010{i}-000000-aaaaaa", status={"state": "done"}).mark_seen()
+    similar_scan.prune(tmp_path, keep=2)
+    names = sorted(p.name for p in tmp_path.iterdir())
+    assert names == [old_unseen.id, "20260103-000000-aaaaaa"]
+
+
+def test_remove_deletes_a_finished_scan_and_refuses_a_running_one(tmp_path):
+    done = _job(tmp_path, "d", status={"state": "cancelled", "groups": 2})
+    running = _job(tmp_path, "r", status={"state": "running"}, pid=os.getpid())
+    done.remove()
+    assert not done.folder.exists()
+    with pytest.raises(ValueError):
+        running.remove()
+    assert running.folder.exists()
+
+
 def test_unavailable(monkeypatch):
     assert similar_scan.unavailable(similar_scan.IDENTICAL) is None
     assert "no 'nonsense' method" in similar_scan.unavailable("nonsense")
@@ -294,3 +315,78 @@ class TestMethods:
         with patch("shutil.which", return_value=None):
             why = similar_scan.unavailable(similar_scan.AUDIO)
         assert why is not None and "fpcalc" in why
+
+
+# --------------------------------------------------------------------------- #
+# many scans (#822)
+# --------------------------------------------------------------------------- #
+
+def _rows(app):
+    app._refresh_scans()
+    return app._jobs_parts()
+
+
+def test_one_stopped_scan_gets_the_done_mark_not_the_warning(app, dirs):
+    _src, base = dirs
+    _job(base, "20260101-000000-aaaaaa", status={"state": "cancelled", "groups": 3})
+    assert _rows(app) == [("done", "Similar videos: stopped — 3 group(s) so far")]
+
+
+def test_finished_scans_collapse_into_one_part(app, dirs):
+    _src, base = dirs
+    for i in range(3):
+        _job(base, f"2026010{i}-000000-aaaaaa", status={"state": "done", "groups": 1})
+    _job(base, "20260104-000000-aaaaaa", status={"state": "cancelled"})
+    assert _rows(app) == [("done", "4 scans finished")]
+    _job(base, "20260105-000000-aaaaaa", status={"state": "failed"})
+    assert _rows(app) == [("failed", "5 scans finished, 1 failed")]
+
+
+def test_running_scans_collapse_into_one_part(app, dirs):
+    _src, base = dirs
+    _job(base, "20260101-000000-aaaaaa", status={"state": "running"}, pid=os.getpid())
+    assert _rows(app) == [("busy", "Similar videos extract 25%")]
+    _job(base, "20260102-000000-aaaaaa", status={"state": "running"}, pid=os.getpid())
+    _job(base, "20260103-000000-aaaaaa", status={"state": "done"})
+    assert _rows(app) == [("busy", "2 scans running"),
+                          ("done", "Similar videos: 0 groups")]
+
+
+def _jobs_dialog(app):
+    from xefm.choice_dialog import ChoiceDialog
+    app.show_jobs()
+    dialog = app.panel._layers[-1].widget
+    assert isinstance(dialog, ChoiceDialog)
+    return dialog
+
+
+def test_the_jobs_list_marks_every_finished_scan_seen(app, dirs):
+    _src, base = dirs
+    for i in range(2):
+        _job(base, f"2026010{i}-000000-aaaaaa", status={"state": "done"})
+    dialog = _jobs_dialog(app)
+    value, label = dialog._rows[-1]
+    assert label == "Mark 2 finished scans as seen"
+    tabs = len(app.pm.tabs[app.pm.active_pane])
+    dialog._index = len(dialog._rows) - 1
+    app.panel.dispatch_event(_key("enter"))
+    assert _rows(app) == []
+    assert len(app.pm.tabs[app.pm.active_pane]) == tabs     # nothing opened
+
+
+def test_the_remove_key_deletes_a_finished_scan_but_not_a_running_one(app, dirs):
+    from puikit import Event, EventType
+    _src, base = dirs
+    running = _job(base, "20260102-000000-aaaaaa", status={"state": "running"},
+                   pid=os.getpid())
+    done = _job(base, "20260101-000000-aaaaaa", status={"state": "done"})
+    dialog = _jobs_dialog(app)
+    remove = Event(type=EventType.KEY, key="delete", modifiers=frozenset({"shift"}))
+    app.panel.dispatch_event(remove)                  # the running one, first
+    assert running.folder.exists()
+    assert "still running" in app.log.lines[-1][0]
+    dialog._index = next(i for i, (v, _l) in enumerate(dialog._rows)
+                         if v[0] == "scan" and v[1].id == done.id)
+    app.panel.dispatch_event(remove)
+    assert not done.folder.exists()
+    assert [v[1].id for v, _l in dialog._rows if v[0] == "scan"] == [running.id]

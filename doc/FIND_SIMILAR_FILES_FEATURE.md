@@ -37,6 +37,11 @@ and says when it is done:
 ✓ Similar videos: 12 groups
 ```
 
+With several scans, the bar keeps to one entry for those running
+(`⠋ 2 scans running`) and one for those finished and not looked at yet
+(`✓ 3 scans finished`). A stopped scan counts as finished; `⚠` means one
+failed or ended without finishing.
+
 ## Looking at the results
 
 Click that, or open **Tools → Background Jobs…**, and choose the scan. Its
@@ -69,13 +74,25 @@ Stopping, putting the computer to sleep or restarting it doesn't waste the
 work done. similar-files remembers what it has already read, so running the
 same scan again picks up quickly.
 
+## Clearing finished scans
+
+A finished scan stays in the status bar until you open it. To clear them
+without opening each one, open **Tools → Background Jobs…**:
+
+- **Mark N finished scans as seen**, the last row, clears them all from the
+  status bar. Their results stay, and the jobs list still shows them.
+- The **remove** key (`remove_list_item`, see
+  [Keymap Presets](KEYMAP_PRESETS_FEATURE.md)) deletes the highlighted scan:
+  its results and its log. A running scan has to be stopped first.
+
 ## Things to know
 
 - **Local folders only.** A mounted network share counts as local. Folders on
   `ssh://` or `s3://` can't be scanned from here yet.
 - **Results are kept in `~/.xefm/scans/`**, one folder per scan, with the
   results file (`result.xft`) and the scan's log. Nothing is written beside your files. The ten most recent
-  finished scans are kept.
+  finished scans are kept; when there are more, the ones you have already
+  looked at go first.
 - If a scan ends without finishing (its process was killed, for example), the
   jobs list says so, and choosing it shows its log.
 - **similar-files comes with XeFM** (0.5 or later), with numpy, which lets a

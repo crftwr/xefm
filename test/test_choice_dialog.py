@@ -207,3 +207,55 @@ def test_runs_in_a_label_draw_and_jump():
     assert label_text(rows[0][1]) == "● Alpha"
     _type(dialog, "be")
     assert dialog._index == 1
+
+
+class TestRemove:
+    """``on_remove`` binds the remove key (#822): the row goes only when the
+    owner says it removed the thing, and the last one closes the dialog."""
+
+    def _remove_key(self):
+        return _key("delete", mods={"shift"})
+
+    def test_an_accepted_row_leaves_and_the_selection_stays_in_place(self):
+        removed = []
+        d = ChoiceDialog("Encoding", ROWS, current="cp932",
+                         on_remove=lambda v: removed.append(v) or True)
+        d.handle_event(self._remove_key())
+        assert removed == ["cp932"]
+        assert [v for v, _l in d._rows] == ["auto", "utf-8", "euc-jp",
+                                             "iso-2022-jp", "latin-1"]
+        assert d._rows[d._index][0] == "euc-jp"
+
+    def test_a_declined_row_stays(self):
+        d = ChoiceDialog("Encoding", ROWS, on_remove=lambda v: False)
+        d.handle_event(self._remove_key())
+        assert len(d._rows) == len(ROWS)
+
+    def test_removing_the_last_row_closes_with_no_result(self):
+        results = []
+        d = ChoiceDialog("One", [("a", "A")], on_result=results.append,
+                         on_remove=lambda v: True)
+        d.handle_event(self._remove_key())
+        assert d._closed and results == [None]
+
+    def test_live_rows_are_read_again_after_a_removal(self):
+        rows = list(ROWS[:3])
+
+        def remove(value):
+            rows[:] = [r for r in rows if r[0] != value]
+            return True
+
+        d = ChoiceDialog("Encoding", list(rows), refresh=lambda: list(rows),
+                         on_remove=remove)
+        d.handle_event(self._remove_key())
+        assert [v for v, _l in d._rows] == ["utf-8", "cp932"]
+
+    def test_the_hint_names_the_key_only_when_rows_can_go(self):
+        assert "remove" not in ChoiceDialog("Encoding", ROWS)._hint()
+        hint = ChoiceDialog("Encoding", ROWS, on_remove=lambda v: True,
+                            remove_label="delete scan")._hint()
+        assert "delete scan" in hint and hint.endswith("Esc cancel")
+
+    def test_without_on_remove_the_key_does_nothing(self, dialog):
+        dialog.handle_event(self._remove_key())
+        assert len(dialog._rows) == len(ROWS) and not dialog._closed

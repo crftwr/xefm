@@ -19,6 +19,10 @@ every draw and repaints itself a few times a second, keeping the selection on
 the same value, and closes once there are none left. The background jobs list
 uses it for its progress.
 
+With ``on_remove``, the ``remove_list_item`` key hands the selected row's
+value to it, and the row leaves the list when it reports True (#822: the jobs
+list deletes a finished scan this way). The key is named in the hint band.
+
 A list taller than the box scrolls: the rows shown follow the selection, with
 an arrow at the top or bottom edge where more rows lie beyond it.
 
@@ -45,6 +49,9 @@ from puikit.font import Font
 from puikit.theme import DEFAULT_THEME
 from puikit.widgets.base import Widget
 
+from xefm.actions import FILTER_LIST
+from xefm.config import (format_key_for_display, get_keys_for_action,
+                         is_action_for_event)
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
                                   draw_title_bar)
 
@@ -56,6 +63,10 @@ _TYPEAHEAD_TIMEOUT_S = 1.0
 #: rows get extra air there (matches SortDialog).
 _GRID_ROW_PITCH = 1.0
 _GUI_ROW_PITCH = 1.3
+
+#: The action whose key removes a row, when the caller gives ``on_remove``:
+#: the one the filter-list pickers use, so a rebind holds for both.
+_REMOVE_ACTION = "remove_list_item"
 
 #: How often a dialog with live rows repaints.
 _REFRESH_S = 0.5
@@ -80,9 +91,14 @@ class ChoiceDialog(Widget):
     def __init__(self, title: str, rows: list[tuple[Any, str]], *,
                  current: Any = None,
                  on_result: Callable[[Optional[Any]], None] | None = None,
-                 refresh: Callable[[], list[tuple[Any, str]]] | None = None):
+                 refresh: Callable[[], list[tuple[Any, str]]] | None = None,
+                 on_remove: Callable[[Any], bool] | None = None,
+                 remove_label: str = "remove"):
         self.title = title
         self.on_result = on_result
+        #: Called with a row's value on the remove key; True drops the row.
+        self.on_remove = on_remove
+        self.remove_label = remove_label
         self._rows = list(rows)
         #: Returns the rows as they are now, for a live list; None for a
         #: fixed one.
@@ -126,7 +142,18 @@ class ChoiceDialog(Widget):
         margins): the widest row label or the key hint. ``measure`` must be the
         *rendering* text measurer (proportional on GUI)."""
         row_w = 1.0 + max(measure(label_text(label)) for _v, label in self._rows)
-        return max(row_w, measure(self._HINT))
+        return max(row_w, measure(self._hint()))
+
+    def _hint(self) -> str:
+        """The key hint, naming the remove key — as the keymap has it — only
+        where a row can be removed."""
+        if self.on_remove is None:
+            return self._HINT
+        keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
+        if not keys:
+            return self._HINT
+        return self._HINT.replace(
+            " · Esc", f" · {format_key_for_display(keys[0])} {self.remove_label} · Esc")
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -182,6 +209,21 @@ class ChoiceDialog(Widget):
             panel.pop_layer()
         if self.on_result is not None:
             self.on_result(result)
+
+    def _remove_selected(self) -> None:
+        """Offer the selected row to ``on_remove``; when it is gone, the
+        selection stays in place, and the dialog closes on the last row."""
+        if not self._rows or not self.on_remove(self._rows[self._index][0]):
+            return
+        if self._refresh is not None:
+            rows = list(self._refresh())
+        else:
+            rows = self._rows[:self._index] + self._rows[self._index + 1:]
+        if not rows:
+            self._finish(None)
+            return
+        self._rows = rows
+        self._index = min(self._index, len(rows) - 1)
 
     def _accept(self) -> None:
         self._finish(self._rows[self._index][0])
@@ -278,7 +320,7 @@ class ChoiceDialog(Widget):
         # (feedback for the jump — including a miss), else the key hint: what the
         # dialog answers to, which for the moment you are typing *is* the buffer.
         buffer = self._typeahead_buffer()
-        draw_hint_row(ctx, f"Jump to: {buffer}▏" if buffer else self._HINT,
+        draw_hint_row(ctx, f"Jump to: {buffer}▏" if buffer else self._hint(),
                       surface_bg=surface_bg, border=theme.popup_border)
 
     @staticmethod
@@ -316,7 +358,13 @@ class ChoiceDialog(Widget):
         if key == "enter":
             self._accept()
             return
-        if key == "up":
+        if self.on_remove is not None and is_action_for_event(
+                event, _REMOVE_ACTION, context=FILTER_LIST):
+            # Ahead of type-ahead, so a printable rebind still removes.
+            self._remove_selected()
+            if self._closed:
+                return
+        elif key == "up":
             self._index = (self._index - 1) % len(self._rows)
         elif key == "down":
             self._index = (self._index + 1) % len(self._rows)
@@ -349,14 +397,18 @@ def show_choice_dialog(panel: Any, title: str, rows: list[tuple[Any, str]], *,
                        current: Any = None,
                        on_result: Callable[[Optional[Any]], None] | None = None,
                        z: int = 90,
-                       refresh: Callable[[], list[tuple[Any, str]]] | None = None
+                       refresh: Callable[[], list[tuple[Any, str]]] | None = None,
+                       on_remove: Callable[[Any], bool] | None = None,
+                       remove_label: str = "remove"
                        ) -> ChoiceDialog:
     """Push a modal :class:`ChoiceDialog` over ``panel`` and return it.
     ``rows`` are ``(value, label)`` pairs; ``current`` seeds the selection on
     the row with that value (first row otherwise). The chosen row's value is
     reported through ``on_result`` — ``None`` on cancel. ``refresh`` makes the
-    rows live: it returns them as they are now."""
+    rows live: it returns them as they are now. ``on_remove`` binds the
+    remove key to it, labelled ``remove_label`` in the hint."""
     dialog = ChoiceDialog(title, rows, current=current, on_result=on_result,
-                          refresh=refresh)
+                          refresh=refresh, on_remove=on_remove,
+                          remove_label=remove_label)
     dialog.show(panel, z=z)
     return dialog

@@ -6791,12 +6791,31 @@ class XeFMApp:
             parts.append(("busy", f"{running.title.rstrip('… ')} {pct}%{more}"))
         elif queued:
             parts.append(("busy", f"+{queued}"))
-        for job, state, text in self._scan_rows:
-            if state in (similar_scan.RUNNING, similar_scan.STARTING):
-                parts.append(("busy", f"{job.label} {text}"))
-            elif not job.seen:
-                kind = "done" if state == similar_scan.DONE else "failed"
-                parts.append((kind, f"{job.label}: {text}"))
+        # One part for the running scans and one for the unseen finished
+        # ones, however many there are (#822): a part each crowded the hints
+        # out of the bar.
+        running = [(j, tx) for j, st, tx in self._scan_rows
+                   if st in (similar_scan.RUNNING, similar_scan.STARTING)]
+        if len(running) == 1:
+            job, text = running[0]
+            parts.append(("busy", f"{job.label} {text}"))
+        elif running:
+            parts.append(("busy", f"{len(running)} scans running"))
+        unseen = [(j, st, tx) for j, st, tx in self._scan_rows
+                  if st in similar_scan.FINISHED and not j.seen]
+        # Stopping is the user's own doing, not a problem: only a scan that
+        # failed or was lost gets the warning mark.
+        failed = sum(st in (similar_scan.FAILED, similar_scan.LOST)
+                     for _j, st, _t in unseen)
+        kind = "failed" if failed else "done"
+        if len(unseen) == 1:
+            job, _state, text = unseen[0]
+            parts.append((kind, f"{job.label}: {text}"))
+        elif unseen:
+            text = f"{len(unseen)} scans finished"
+            if failed:
+                text += f", {failed} failed"
+            parts.append((kind, text))
         return parts
 
     # --- similar-file scans (#571) -------------------------------------------
@@ -6961,7 +6980,11 @@ class XeFMApp:
         """List the background jobs and the similar-file scans. Choosing a
         running job brings it forward — its progress dialog, where a waiting
         prompt is answered and Esc can cancel it; a queued one is dropped from
-        the queue. A scan opens its groups, or offers to stop it."""
+        the queue. A scan opens its groups, or offers to stop it.
+
+        Finished scans are cleared here without opening each one (#822): the
+        remove key deletes a finished scan's folder, and a last row marks
+        every unseen one seen."""
         self._refresh_scans()
         jobs = self.tasks.background_tasks()
         if not jobs and not self._scan_rows:
@@ -6995,7 +7018,12 @@ class XeFMApp:
         def chosen(value) -> None:
             if value is not None:
                 kind, item = value
-                if kind == "task":
+                if kind == "seen":
+                    for job, state, _t in self._scan_rows:
+                        if state in similar_scan.FINISHED:
+                            job.mark_seen()
+                    self._refresh_scans()
+                elif kind == "task":
                     dropped = (self.tasks.is_queued(item)
                                and item.status is not TaskStatus.RUNNING)
                     self.tasks.bring_forward(item)
@@ -7011,10 +7039,33 @@ class XeFMApp:
             items = [(("task", t), label(t)) for t in self.tasks.background_tasks()]
             items += [(("scan", j), scan_label(j, st, tx))
                       for j, st, tx in self._scan_rows]
+            unseen = sum(st in similar_scan.FINISHED and not j.seen
+                         for j, st, _t in self._scan_rows)
+            if unseen:
+                items.append((("seen", None),
+                              f"Mark {unseen} finished scan{'' if unseen == 1 else 's'} as seen"))
             return items
 
+        def remove(value) -> bool:
+            """The remove key: delete a finished scan — its groups and log."""
+            kind, job = value
+            if kind != "scan":
+                return False
+            try:
+                job.remove()
+            except ValueError:
+                self.log_info(f"{job.label} scan is still running; stop it first")
+                return False
+            except OSError as e:
+                getLogger("Main").error(f"Could not delete the {job.label} scan: {e}")
+                self.log_info(f"Could not delete the {job.label} scan: {e}")
+                return False
+            self.log_info(f"Deleted the {job.label} scan ({job.id})")
+            self._refresh_scans()
+            return True
+
         show_choice_dialog(self.panel, "Background Jobs", rows(), on_result=chosen,
-                           refresh=rows)
+                           refresh=rows, on_remove=remove, remove_label="delete scan")
         self.panel.render()
 
     def show_favorites(self) -> None:
