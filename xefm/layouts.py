@@ -189,6 +189,7 @@ def _fmt_word(value, entry):
     return Cell(str(spec.get("label", value)), color=spec.get("color"))
 
 
+# non-ASCII: drawn in the file list, never printed to a stream.
 TAG_DOT = "●"
 
 
@@ -502,7 +503,7 @@ def _build_format(where: str, attr, fmt) -> Optional[str]:
         return f"{where}: 'format' must be a format name or a function"
     if attr is not None and fmt not in FORMATS.get(attr.type, {}):
         known = ", ".join(format_names(attr.type))
-        return f"{where}: '{fmt}' is not a format for a {attr.type} value — known: {known}"
+        return f"{where}: '{fmt}' is not a format for a {attr.type} value - known: {known}"
     return None
 
 
@@ -511,7 +512,7 @@ def _check_keys(where: str, spec: dict, keys) -> Optional[str]:
     if not unknown:
         return None
     hint = " ('max_width' is now 'limit', a count of cells)" if "max_width" in unknown else ""
-    return f"{where}: unknown keys {', '.join(unknown)} — known: {', '.join(keys)}{hint}"
+    return f"{where}: unknown keys {', '.join(unknown)} - known: {', '.join(keys)}{hint}"
 
 
 def _build_marker(where: str, spec, keys=MARKER_KEYS, slot=None) -> tuple[Optional[Marker], Optional[str]]:
@@ -584,7 +585,7 @@ def build(name: str, spec) -> tuple[Optional[Layout], Optional[str]]:
     if problem:
         return None, problem
     if name == DEFAULT and not spec.get("override"):
-        return None, (f"{where} would replace the built-in layout and was ignored — "
+        return None, (f"{where} would replace the built-in layout and was ignored - "
                       f"add 'override': True if that is intended")
     kind = spec.get("kind", "details")
     if kind not in KINDS:
@@ -599,7 +600,7 @@ def build(name: str, spec) -> tuple[Optional[Layout], Optional[str]]:
             return None, problem
         columns.append(column)
     if not any(c.attr == "name" for c in columns):
-        return None, f"{where} has no 'name' column — every layout shows the name"
+        return None, f"{where} has no 'name' column - every layout shows the name"
     label = spec.get("label") or name
     return Layout(name, str(label), kind, tuple(columns), source="user"), None
 
@@ -642,7 +643,7 @@ def build_extra(name: str, spec, source: str = "user") -> tuple[Optional[Extra],
         columns.append(ExtraColumn(column, where.get("after"), where.get("replace"),
                                    where.get("before")))
     if not markers and not columns:
-        return None, f"{where} shows nothing — give it 'markers' or 'columns'"
+        return None, f"{where} shows nothing - give it 'markers' or 'columns'"
     label = spec.get("label") or name
     return Extra(name, str(label), when, tuple(markers), tuple(columns), source), None
 
@@ -806,7 +807,7 @@ def collisions(extras: list, entry_factory=lambda: None) -> list[str]:
             if other is not None and other[0] != extra.name:
                 color = f" in {key[1]}" if key[1] else ""
                 lines.append(f"LAYOUT_EXTRAS '{other[0]}' ({other[1]}) and '{extra.name}' "
-                             f"({meaning}) both draw {key[0]}{color} — tell them "
+                             f"({meaning}) both draw {key[0]}{color} - tell them "
                              f"apart with another glyph or color")
             else:
                 seen.setdefault(key, (extra.name, meaning))

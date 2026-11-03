@@ -209,8 +209,8 @@ MENU_WHEN = {
 EVENTS: dict[str, str] = {
     "startup": "after the app is up, before the first key",
     "quit": "before XeFM shuts down",
-    "directory_changed": "a pane moved — event.pane, event.old_path, event.new_path",
-    "file_open": "Enter on a file — event.path; return True to claim the open",
+    "directory_changed": "a pane moved - event.pane, event.old_path, event.new_path",
+    "file_open": "Enter on a file - event.path; return True to claim the open",
 }
 
 
@@ -965,7 +965,7 @@ class ActionContext:
         ui_thread = getattr(self._app, "_ui_thread", None)
         if ui_thread is not None and threading.current_thread() is not ui_thread:
             raise RuntimeError(
-                f"{api} must be called on XeFM's UI thread — from the action "
+                f"{api} must be called on XeFM's UI thread - from the action "
                 f"or hook itself, not from run_task's work or a thread of yours")
 
     # --- background work ---------------------------------------------------- #
@@ -995,7 +995,7 @@ class ActionContext:
         from xefm.task import Task
         app = self._app
         task = Task(str(title), config=app.config, kind="user",
-                    busy_label="Working…")
+                    busy_label="Working...")
         task.exclusive = not read_only
         job = TaskJob(task)
 
@@ -1068,7 +1068,7 @@ class ActionContext:
             if str(target.parent) == str(dest_dir):
                 raise ValueError(f"{kind}: {target} is already in {dest_dir}")
             if kind == "move" and app._is_archive(target):
-                raise ValueError(f"move: {target} is inside an archive — "
+                raise ValueError(f"move: {target} is inside an archive - "
                                  f"copy it instead")
 
         def report(outcome: TaskOutcome) -> None:
@@ -1447,7 +1447,7 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
         if existing is not None and not existing.is_user and not override:
             warnings.append(
                 f"ACTIONS['{name}'] would shadow the built-in action '{name}' in "
-                f"context '{action.context}' and was ignored — pass "
+                f"context '{action.context}' and was ignored - pass "
                 f"{{'func': ..., 'override': True}} if that is intended")
             continue
         if apply:
@@ -1458,7 +1458,7 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
     for event, spec in _items(getattr(config, "EVENT_HOOKS", None), "EVENT_HOOKS", warnings):
         if event not in EVENTS:
             warnings.append(
-                f"EVENT_HOOKS['{event}'] is not a known event and was ignored — "
+                f"EVENT_HOOKS['{event}'] is not a known event and was ignored - "
                 f"known events: {', '.join(sorted(EVENTS))}")
             continue
         funcs = [spec] if callable(spec) else list(spec) if isinstance(spec, (list, tuple)) else None
@@ -1480,7 +1480,7 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
             problem = _call_problem(func, 2, "fn(ctx, event)")
             if problem:
                 warnings.append(
-                    f"EVENT_HOOKS['{event}']: {problem} and was ignored — every "
+                    f"EVENT_HOOKS['{event}']: {problem} and was ignored - every "
                     f"hook takes (ctx, event) and reads what happened from "
                     f"the event's attributes")
                 good.remove(func)
@@ -1534,7 +1534,7 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
             # user's folder away over a promise, not a fault.
             warnings.append(
                 f"PATH_SCHEMES['{name}'] is {impl.__name__}, which does not "
-                f"build on xefm.path_base.ReadOnlyPathImpl or UriPathImpl — "
+                f"build on xefm.path_base.ReadOnlyPathImpl or UriPathImpl - "
                 f"subclassing PathImpl directly is not supported and breaks "
                 f"whenever XeFM's storage interface grows")
         if name in _path_schemes.schemes("builtin"):
@@ -1604,7 +1604,7 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
             # appears once the attribute does (an extension enabled later).
             warnings.append(
                 f"LAYOUTS['{name}'] names attribute(s) nothing defines: "
-                f"{', '.join(unknown)} — those columns are left out"
+                f"{', '.join(unknown)} - those columns are left out"
                 f"{_renamed_hint(unknown)}")
         if apply:
             _layouts.register(layout)
@@ -1642,7 +1642,7 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
         if unknown:
             warnings.append(
                 f"LAYOUT_EXTRAS['{name}'] names attribute(s) nothing defines: "
-                f"{', '.join(unknown)} — those are left out"
+                f"{', '.join(unknown)} - those are left out"
                 f"{_renamed_hint(unknown)}")
         if apply:
             _layouts.register_extra(extra)
@@ -1687,12 +1687,12 @@ def _build_menu_entry(name, spec, registry, own: set) -> tuple[MenuEntry | None,
         return None, (f"MENU_ITEMS['{name}'] must be a dict with 'menus' and "
                       f"'label', not {type(spec).__name__}")
     if name not in own and registry.resolve(_actions.FILER, name) is None:
-        return None, (f"MENU_ITEMS['{name}'] names no action — define it in "
+        return None, (f"MENU_ITEMS['{name}'] names no action - define it in "
                       f"ACTIONS, or name a built-in one")
     unknown = sorted(set(spec) - set(TABLE_KEYS["MENU_ITEMS"]))
     if unknown:
         return None, (f"MENU_ITEMS['{name}'] has unknown keys "
-                      f"{', '.join(unknown)} — known: "
+                      f"{', '.join(unknown)} - known: "
                       f"{', '.join(sorted(TABLE_KEYS['MENU_ITEMS']))}")
     menus = spec.get("menus")
     if isinstance(menus, str):
@@ -1706,7 +1706,7 @@ def _build_menu_entry(name, spec, registry, own: set) -> tuple[MenuEntry | None,
         return None, f"MENU_ITEMS['{name}'] needs a 'label', the text the menu shows"
     when = spec.get("when", "always")
     if when not in MENU_WHEN:
-        return None, (f"MENU_ITEMS['{name}'] has 'when' {when!r} — known: "
+        return None, (f"MENU_ITEMS['{name}'] has 'when' {when!r} - known: "
                       f"{', '.join(MENU_WHEN)}")
     return MenuEntry(name, label.strip(), tuple(dict.fromkeys(menus)), when), None
 
@@ -1731,7 +1731,7 @@ def _build_sort_key(name, spec) -> tuple[dict | None, str | None]:
     if name in _sort_keys.BUILTIN_NAMES and not _override_requested(spec):
         return None, (
             f"SORT_KEYS['{name}'] would replace the built-in '{name}' sort and "
-            f"was ignored — pass {{'key': ..., 'override': True}} if that is "
+            f"was ignored - pass {{'key': ..., 'override': True}} if that is "
             f"intended")
     hotkey = spec.get("hotkey")
     if hotkey is not None:
@@ -1758,7 +1758,7 @@ def _build_filter(name, spec) -> tuple[dict | None, str | None]:
     if any(c in name for c in _filters.GLOB_CHARS):
         return None, (
             f"FILTERS['{name}'] must not contain the glob characters "
-            f"{' '.join(_filters.GLOB_CHARS)} — a filter is remembered under its "
+            f"{' '.join(_filters.GLOB_CHARS)} - a filter is remembered under its "
             f"name where a typed pattern is remembered as itself, so a name that "
             f"reads as a pattern could not be told from one; put the glob in "
             f"{{'pattern': '{name}'}} and give the filter a plain name")
@@ -1803,7 +1803,7 @@ def _build_image_decoder(name, spec) -> tuple[dict | None, str | None]:
         return None, f"IMAGE_DECODERS keys must be file suffixes; ignored {name!r}"
     suffix = _image_decoders.normalize(name)
     if len(suffix) < 2 or not suffix[1:].replace(".", "").isalnum():
-        return None, (f"IMAGE_DECODERS['{name}'] is not a file suffix — it must "
+        return None, (f"IMAGE_DECODERS['{name}'] is not a file suffix - it must "
                       f"read like '.heic', letters and digits after the dot")
     if callable(spec):
         spec = {"open": spec}
@@ -1858,10 +1858,10 @@ def _build_action(name, spec) -> tuple[_actions.Action | None, str | None]:
         return None, f"ACTIONS['{name}'] has no callable 'func'"
     problem = _call_problem(func, 1, "fn(ctx)")
     if problem:
-        return None, f"ACTIONS['{name}']: {problem} — an action takes ctx alone"
+        return None, f"ACTIONS['{name}']: {problem} - an action takes ctx alone"
     context = spec.get("context", _actions.FILER)
     if context not in _actions.CONTEXTS:
-        return None, (f"ACTIONS['{name}'] names unknown context '{context}' — "
+        return None, (f"ACTIONS['{name}'] names unknown context '{context}' - "
                       f"known contexts: {', '.join(_actions.CONTEXTS)}")
     if context != _actions.FILER:
         # Deliberate for this version: a user function running inside a viewer
@@ -1919,7 +1919,7 @@ def _build_path_scheme(name, spec) -> tuple[type | None, str | None]:
 
     if not isinstance(spec, type) or not issubclass(spec, PathImpl):
         return None, (f"PATH_SCHEMES['{name}'] must be a PathImpl subclass, or "
-                      f"a dict with a 'class' key, not {type(spec).__name__} — "
+                      f"a dict with a 'class' key, not {type(spec).__name__} - "
                       f"see xefm.path_base.ReadOnlyPathImpl")
 
     missing = sorted(getattr(spec, "__abstractmethods__", ()))
@@ -1930,13 +1930,13 @@ def _build_path_scheme(name, spec) -> tuple[type | None, str | None]:
 
     if name in _path_schemes.schemes() and not override:
         return None, (f"PATH_SCHEMES['{name}'] would replace the built-in "
-                      f"'{name}://' backend and was ignored — pass "
+                      f"'{name}://' backend and was ignored - pass "
                       f"{{'class': ..., 'override': True}} if that is intended")
 
     declared = getattr(spec, "SCHEME", "")
     if declared and declared != name:
         return None, (f"PATH_SCHEMES['{name}'] is {spec.__name__}, whose SCHEME "
-                      f"is '{declared}' — a class registered under one scheme "
+                      f"is '{declared}' - a class registered under one scheme "
                       f"cannot build paths under another")
     if not declared:
         # The key already said it. Filling it in beats asking for the same
@@ -1970,7 +1970,7 @@ def preview_notice(*, hooks: int = 0, image_decoders: int = 0,
     if not parts:
         return None
     return (f"Customization API {API_VERSION}: {', '.join(parts)} loaded from "
-            f"Preview tables — these may change in any release.")
+            f"Preview tables - these may change in any release.")
 
 
 #: The names of the APIs that are Preview — free to change in any release —

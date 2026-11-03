@@ -88,6 +88,7 @@ BUILTIN_NAMES = frozenset(m for m, _l, _h in BUILTIN) | set(ALIASES)
 
 #: The explanation line per (mode, reverse) the sort dialog draws: three values
 #: in the order the list would show them, plus the plain-words reading.
+# non-ASCII: drawn in the sort dialog, never printed to a stream.
 BUILTIN_EXPLANATIONS: dict[tuple[str, bool], str] = {
     ("filename", False): "a.txt → m.txt → z.txt  (A to Z)",
     ("filename", True): "z.txt → m.txt → a.txt  (Z to A)",

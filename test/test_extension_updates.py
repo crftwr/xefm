@@ -358,7 +358,7 @@ class Cli(_Home):
         self.release("0.2.0")
         code, out, _ = self.run_cli("outdated")
         self.assertEqual(code, 1)
-        self.assertIn("upd 0.1.0 → 0.2.0", out)
+        self.assertIn("upd 0.1.0 -> 0.2.0", out)
 
     def test_upgrade(self):
         self.release("0.2.0")

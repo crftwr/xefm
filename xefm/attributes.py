@@ -231,7 +231,7 @@ def build(name: str, spec) -> tuple[Optional[Attribute], Optional[str]]:
                       f"returning one value per entry")
     problem = _arity_problem(read, 2)
     if problem:
-        return None, f"{where}: {problem} — it is called as read(directory, entries)"
+        return None, f"{where}: {problem} - it is called as read(directory, entries)"
     kind = spec.get("type", "text")
     if kind not in TYPES:
         return None, f"{where}: type '{kind}' is not one of {', '.join(TYPES)}"
@@ -246,7 +246,7 @@ def build(name: str, spec) -> tuple[Optional[Attribute], Optional[str]]:
     if isinstance(places, str):
         places = (places,)
     if not isinstance(places, (list, tuple)) or not all(isinstance(p, str) for p in places):
-        return None, f"{where}: 'where' must be a list of storage kinds ('local', 'ssh', …)"
+        return None, f"{where}: 'where' must be a list of storage kinds ('local', 'ssh', ...)"
     label = spec.get("label") or name
     return Attribute(name, str(label), kind, read=read,
                      values=dict(values), where=tuple(places), compute=compute,

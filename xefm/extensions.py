@@ -413,11 +413,11 @@ def _check_reference(root: Path, ref: str, call: Optional[tuple[int, str]] = Non
     from the module's source, never by importing it. With ``call``, a
     top-level ``def`` must also accept that many positional arguments."""
     if not _REF_RE.match(ref):
-        return f"{ref!r} is not a reference — write it as 'package.module:name'"
+        return f"{ref!r} is not a reference - write it as 'package.module:name'"
     module, name = ref.split(":")
     path = _module_file(root, module)
     if path is None:
-        return (f"module {module} is not in the package — expected "
+        return (f"module {module} is not in the package - expected "
                 f"{module.replace('.', '/')}.py or {module.replace('.', '/')}/__init__.py")
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -431,7 +431,7 @@ def _check_reference(root: Path, ref: str, call: Optional[tuple[int, str]] = Non
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
                     and node.name == name and not _accepts(node.args, call[0]):
-                return (f"{name} cannot be called as {call[1]} — XeFM passes "
+                return (f"{name} cannot be called as {call[1]} - XeFM passes "
                         f"exactly that, and anything more it has to say is an "
                         f"attribute of ctx or event")
     return None
@@ -486,15 +486,15 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
 
     for section in data:
         if section not in _KNOWN_SECTIONS:
-            err(section, f"unknown section — known: {', '.join(sorted(_KNOWN_SECTIONS))}")
+            err(section, f"unknown section - known: {', '.join(sorted(_KNOWN_SECTIONS))}")
 
     ext = data.get("extension")
     if not isinstance(ext, dict):
-        err("extension", "missing — every manifest starts with an [extension] table")
+        err("extension", "missing - every manifest starts with an [extension] table")
         ext = {}
     for key in ext:
         if key not in _KNOWN_EXTENSION_KEYS:
-            err(f"extension.{key}", "unknown key — known: "
+            err(f"extension.{key}", "unknown key - known: "
                 f"{', '.join(sorted(_KNOWN_EXTENSION_KEYS))}")
     updates = ext.get("updates")
     if updates is not None:
@@ -502,7 +502,7 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
         if parsed is None or parsed[3] is not None:
             err("extension.updates", "must be 'github:owner/repo', or "
                 "'github:owner/repo/path/to/package' for a package in a "
-                "subdirectory — with no @ref: newer versions are found from the "
+                "subdirectory - with no @ref: newer versions are found from the "
                 "repository's tags")
     ext_id = ext.get("id")
     if not isinstance(ext_id, str) or not _ID_RE.match(ext_id):
@@ -514,7 +514,7 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
     api = ext.get("api_version")
     current = _api_version()
     if not isinstance(api, int) or isinstance(api, bool):
-        err("extension.api_version", f"required: an integer — this XeFM's API "
+        err("extension.api_version", f"required: an integer - this XeFM's API "
             f"version is {current}")
     elif api > current:
         err("extension.api_version", f"asks for API version {api}; this XeFM "
@@ -547,7 +547,7 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
     action_names = set(actions) if isinstance(actions, dict) else set()
     for kind, table in contributes.items():
         if kind != "key_suggestions" and kind not in CONTRIBUTION_TABLES:
-            err(f"contributes.{kind}", "unknown contribution — known: "
+            err(f"contributes.{kind}", "unknown contribution - known: "
                 f"{', '.join(sorted(list(CONTRIBUTION_TABLES) + ['key_suggestions']))}")
             continue
         if not isinstance(table, dict):
@@ -564,7 +564,7 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
             where = f"contributes.actions.{_quote(name)}"
             builtin = _actions.registry.builtin(_actions.FILER, name)
             if builtin is not None:
-                err(where, f"'{name}' is a built-in action — prefix it with the "
+                err(where, f"'{name}' is a built-in action - prefix it with the "
                     f"extension's own name, e.g. '{ext_id or 'myext'}.{name}'")
             elif "." not in name:
                 warn(where, f"name it '<extension>.{name}' so it cannot collide "
@@ -582,7 +582,7 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
             err("settings", "must be a table")
         else:
             for key in set(settings) - set(SETTINGS_KEYS):
-                err(f"settings.{key}", "unknown key — known: "
+                err(f"settings.{key}", "unknown key - known: "
                     f"{', '.join(sorted(SETTINGS_KEYS))}")
             if not isinstance(settings.get("defaults"), str):
                 err("settings.defaults", "required: the class holding the "
@@ -598,7 +598,7 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
         requires = {}
     for key in requires:
         if key not in REQUIRES_KEYS:
-            err(f"requires.{key}", "unknown key — known: " + ", ".join(REQUIRES_KEYS))
+            err(f"requires.{key}", "unknown key - known: " + ", ".join(REQUIRES_KEYS))
     for key in REQUIRES_KEYS:
         value = requires.get(key, [])
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
@@ -611,12 +611,12 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
     if machine:
         for program in requires.get("programs", []) or []:
             if isinstance(program, str) and shutil.which(program) is None:
-                warn("requires.programs", f"'{program}' is not on PATH here — "
+                warn("requires.programs", f"'{program}' is not on PATH here - "
                      "the actions that need it will say so when run")
         for package in requires.get("host_packages", []) or []:
             if isinstance(package, str) and not _importable(package):
                 warn("requires.host_packages", f"'{package}' is not importable "
-                     "in this XeFM — the extension will not load here")
+                     "in this XeFM - the extension will not load here")
 
     problems.extend(lint_code(manifest.root))
     problems.extend(deprecated_uses(manifest))
@@ -629,7 +629,7 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
     for name in sorted(own & reserved):
         err("(layout)", f"top-level module '{name}' would shadow "
             f"{'the standard library' if name in sys.stdlib_module_names else name}"
-            " — rename it")
+            " - rename it")
     for other in others:
         if other.root == manifest.root:
             continue
@@ -638,11 +638,11 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
         if settings is not None and other.data.get("settings") is not None \
                 and ext_id and config_class_name(manifest) == config_class_name(other):
             err("settings.config_class", f"both this and '{other.id}' read their "
-                f"settings from class {config_class_name(manifest)} — name one "
+                f"settings from class {config_class_name(manifest)} - name one "
                 "explicitly with settings.config_class")
         for name in sorted(own & python_top_level(other.root)):
             err("(layout)", f"top-level module '{name}' is also provided by "
-                f"'{other.id or other.root.name}' — one process has one "
+                f"'{other.id or other.root.name}' - one process has one "
                 f"'{name}'; rename it (e.g. vendor it under your own package)")
     return problems
 
@@ -692,7 +692,7 @@ def _dotted(node: ast.AST) -> Optional[str]:
 
 
 def _not_public(module: str, name: str) -> str:
-    return (f"'{name}' is not part of {module}'s public API — use only: "
+    return (f"'{name}' is not part of {module}'s public API - use only: "
             f"{', '.join(public_names(module))}")
 
 
@@ -738,7 +738,7 @@ def lint_code(root: Path) -> list[Problem]:
                     and isinstance(node.value, ast.Name) and node.value.id == "ctx":
                 problems.append(Problem(
                     "error", where(node),
-                    "ctx.extension was removed — use "
+                    "ctx.extension was removed - use "
                     "xefm.user_api.extension(__name__), which works anywhere "
                     "in the package: callbacks, workers, sort keys"))
                 continue
@@ -755,8 +755,8 @@ def lint_code(root: Path) -> list[Problem]:
                              and node.value.id in ("self", "cls")):
                 problems.append(Problem(
                     "error", where(node),
-                    f"'.{node.attr}' is private — use only the public API "
-                    "(ctx.pane, ctx.invoke, ctx.run_program, ctx.message, …)"))
+                    f"'.{node.attr}' is private - use only the public API "
+                    "(ctx.pane, ctx.invoke, ctx.run_program, ctx.message, ...)"))
             elif isinstance(node, (ast.Import, ast.ImportFrom)):
                 if isinstance(node, ast.Import):
                     names = [a.name for a in node.names]
@@ -773,19 +773,19 @@ def lint_code(root: Path) -> list[Problem]:
                                         for m in PUBLIC_MODULES):
                         problems.append(Problem(
                             "error", where(node),
-                            f"'{name}' is internal to XeFM — import only "
+                            f"'{name}' is internal to XeFM - import only "
                             f"{' or '.join(PUBLIC_MODULES)}"))
             elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
                     and node.func.id == "print":
                 problems.append(Problem(
                     "warning", where(node),
-                    "print() does not reach the user — use ctx.message(...), or "
+                    "print() does not reach the user - use ctx.message(...), or "
                     "logging.getLogger(__name__) for diagnostics"))
             elif isinstance(node, ast.Attribute) and node.attr == "path" \
                     and isinstance(node.value, ast.Name) and node.value.id == "sys":
                 problems.append(Problem(
                     "warning", where(node),
-                    "do not touch sys.path — import vendored code as "
+                    "do not touch sys.path - import vendored code as "
                     "yourpackage._vendor.name"))
     return problems
 
@@ -806,7 +806,7 @@ def _preview_note(name: str) -> Optional[str]:
 def _deprecated_note(name: str) -> Optional[str]:
     from xefm.preview import is_deprecated
     instead = is_deprecated(name)
-    return (f"deprecated — {instead}; it will be removed in a later release"
+    return (f"deprecated - {instead}; it will be removed in a later release"
             if instead is not None else None)
 
 
@@ -918,7 +918,7 @@ def _marked_uses(manifest: Manifest, marked: Marked) -> list[tuple[str, Optional
 
 
 def _findings(severity: str, uses) -> list[Problem]:
-    return [Problem(severity, where, f"{what} — {note}" if what else note)
+    return [Problem(severity, where, f"{what} - {note}" if what else note)
             for where, what, note in uses]
 
 
@@ -992,7 +992,7 @@ def _check_contribution(kind: str, key: str, value, action_names: set) -> Option
             if "entry" not in value:
                 return "needs entry = 'module:function'"
             if extra:
-                return (f"unknown keys {', '.join(sorted(extra))} — known: "
+                return (f"unknown keys {', '.join(sorted(extra))} - known: "
                         f"{', '.join(sorted(ACTION_ENTRY_KEYS))}")
             return None
         return "must be 'module:function' or { entry = ..., description = ... }"
@@ -1008,7 +1008,7 @@ def _check_contribution(kind: str, key: str, value, action_names: set) -> Option
         from xefm.user_api import TABLE_KEYS
         unknown = sorted(set(value) - set(TABLE_KEYS["ATTRIBUTES"]))
         if unknown:
-            return (f"unknown keys {', '.join(unknown)} — known: "
+            return (f"unknown keys {', '.join(unknown)} - known: "
                     f"{', '.join(TABLE_KEYS['ATTRIBUTES'])}")
         read = value.get("read")
         if not isinstance(read, str) or ":" not in read:
@@ -1017,7 +1017,7 @@ def _check_contribution(kind: str, key: str, value, action_names: set) -> Option
     if kind == "event_hooks":
         from xefm.user_api import EVENTS
         if key not in EVENTS:
-            return f"'{key}' is not an event — known: {', '.join(sorted(EVENTS))}"
+            return f"'{key}' is not an event - known: {', '.join(sorted(EVENTS))}"
         items = value if isinstance(value, list) else [value]
         if not items or not all(isinstance(v, str) and ":" in v for v in items):
             return "must be 'module:function' or a list of them"
@@ -1047,10 +1047,10 @@ def _check_menu(key: str, value, action_names: set) -> Optional[str]:
                 "contribute it in [contributes.actions]")
     if not isinstance(value, dict):
         return ('must be a table, e.g. { menus = ["file", "context"], '
-                'label = "Compute Hash…" }')
+                'label = "Compute Hash..." }')
     unknown = sorted(set(value) - {"menus", "label", "when"})
     if unknown:
-        return f"unknown keys {', '.join(unknown)} — known: label, menus, when"
+        return f"unknown keys {', '.join(unknown)} - known: label, menus, when"
     menus = value.get("menus")
     if not isinstance(menus, list) or not menus or not all(m in MENUS for m in menus):
         return f"needs menus = a list of {', '.join(MENUS)}"
@@ -1083,7 +1083,7 @@ def requirement_problem(line: str) -> Optional[str]:
     if not line.strip():
         return "empty"
     if _REQUIREMENT.fullmatch(line) is None:
-        return ("not a plain requirement — write a project name with optional "
+        return ("not a plain requirement - write a project name with optional "
                 "[extras], version specifiers and ; marker (no pip options, "
                 "URLs or paths)")
     return None
@@ -1159,7 +1159,7 @@ def _installed_others(manifest: Manifest, layout: Layout) -> list[Manifest]:
 
 
 def _local_clash(target: Path) -> str:
-    return f"{target} already exists and was not installed by XeFM — move it away first"
+    return f"{target} already exists and was not installed by XeFM - move it away first"
 
 
 def errors(problems: Iterable[Problem]) -> list[Problem]:
@@ -1205,7 +1205,7 @@ min_xefm = "{_XEFM_VERSION}"
 [settings]
 defaults = "{pkg}.settings:Settings"
 ''', encoding="utf-8")
-    (root / pkg / "__init__.py").write_text(f'''"""{ext_id} — an XeFM extension."""
+    (root / pkg / "__init__.py").write_text(f'''"""{ext_id} - an XeFM extension."""
 ''', encoding="utf-8")
     (root / pkg / "actions.py").write_text(f'''"""The actions {ext_id} contributes. Each takes the action context ``ctx``;
 keep the work itself in plain functions (see logic.py) so it can be tested
@@ -1224,7 +1224,7 @@ def hello(ctx):
     ctx.message(greeting(extension(__name__).settings.GREETING,
                          entry.name if entry else None))
 ''', encoding="utf-8")
-    (root / pkg / "logic.py").write_text('''"""Plain functions with no XeFM in them — what the tests exercise."""
+    (root / pkg / "logic.py").write_text('''"""Plain functions with no XeFM in them - what the tests exercise."""
 
 
 def greeting(text, name):
@@ -1335,7 +1335,7 @@ def _toml_str(value: str) -> str:
 
 
 def write_installed(layout: Layout, entries: dict[str, InstalledEntry]) -> None:
-    lines = ["# The installed extensions — written by XeFM (`xefm ext ...`).",
+    lines = ["# The installed extensions - written by XeFM (`xefm ext ...`).",
              "# The package directories are rebuilt from this list by",
              "# `xefm ext sync`, so it is the part worth keeping.", ""]
     for ext_id in sorted(entries):
@@ -1510,7 +1510,7 @@ def summarize(manifest: Manifest) -> list[str]:
             continue
         for key, value in table.items():
             if kind == "key_suggestions":
-                lines.append(f"key suggestion: {key} → {', '.join(map(str, value))}")
+                lines.append(f"key suggestion: {key} -> {', '.join(map(str, value))}")
             else:
                 refs = [ref for _, ref in _refs_in(value)]
                 code = f"  (runs {', '.join(refs)})" if refs else ""
@@ -1894,7 +1894,7 @@ def _merge_settings(manifest: Manifest, defaults: type, user: Optional[type],
             if name not in known:
                 warnings.append(
                     f"{user.__name__}.{name}: '{manifest.id}' has no setting "
-                    f"'{name}' — ignored (known: {', '.join(sorted(known)) or 'none'})")
+                    f"'{name}' - ignored (known: {', '.join(sorted(known)) or 'none'})")
                 continue
             setattr(merged, name, value)
     return merged
@@ -1913,7 +1913,7 @@ def _load_settings(manifests: list[Manifest], loaded: list[Manifest],
         user = namespace.get(config_class_name(manifest))
         if user is not None and not isinstance(user, type):
             warnings.append(f"{config_class_name(manifest)} in config.py is not "
-                            f"a class — '{manifest.id}' keeps its defaults")
+                            f"a class - '{manifest.id}' keeps its defaults")
             user = None
         try:
             defaults = _import_ref(manifest.root, ref)
@@ -1930,7 +1930,7 @@ def _load_settings(manifests: list[Manifest], loaded: list[Manifest],
                 and name not in claimed
                 and getattr(value, "__module__", module) == module):
             warnings.append(f"config.py class {name} matches no installed "
-                            "extension's settings — check the name with "
+                            "extension's settings - check the name with "
                             "`xefm ext list`")
 
 
@@ -2039,7 +2039,7 @@ def _in_extension(handle: ExtensionHandle, func: Callable, *,
     def run(ctx, *args):
         absent = [p for p in missing if shutil.which(p) is None]
         if absent:
-            logger.warning(f"{handle.id}: needs {', '.join(absent)} on PATH — "
+            logger.warning(f"{handle.id}: needs {', '.join(absent)} on PATH - "
                            "install it to use this")
             return None
         return func(ctx, *args)
@@ -2188,7 +2188,7 @@ def load(config, layout: Layout | None = None, *,
         bad = errors(problems)
         if bad:
             report.skipped.append((label, str(bad[0]) + (
-                f" (and {len(bad) - 1} more — run `xefm ext check {manifest.root}`)"
+                f" (and {len(bad) - 1} more - run `xefm ext check {manifest.root}`)"
                 if len(bad) > 1 else "")))
             continue
         ext = manifest.data.get("extension", {})
@@ -2208,7 +2208,7 @@ def load(config, layout: Layout | None = None, *,
         if wanted and not _python_packages.synced_for(
                 _python_packages.Layout(layout.home), manifest.id, wanted):
             report.skipped.append((label, "its Python packages are not installed "
-                                   "yet — run Sync Python Packages (Tools ▸ Advanced), "
+                                   "yet - run Sync Python Packages (Tools > Advanced), "
                                    "or `xefm deps sync`"))
             continue
         try:
@@ -2256,7 +2256,7 @@ def _apply(config, manifest: Manifest, layout: Layout, report: LoadReport) -> No
                     winner = f"{owner} loaded first and wins"
                     where = f"the extension {owner}"
                 report.warnings.append(
-                    f"{manifest.id}: {attr}['{key}'] is also in {where} — "
+                    f"{manifest.id}: {attr}['{key}'] is also in {where} - "
                     f"{winner}, the extension's entry is skipped")
                 continue
             current[key] = value
@@ -2277,7 +2277,7 @@ def _apply(config, manifest: Manifest, layout: Layout, report: LoadReport) -> No
             if taken:
                 report.warnings.append(
                     f"{manifest.id}: suggested key {', '.join(taken)} for "
-                    f"'{action}' is already in use — bind it in KEY_BINDINGS "
+                    f"'{action}' is already in use - bind it in KEY_BINDINGS "
                     "to use it")
                 continue
             bindings[action] = list(keys)
