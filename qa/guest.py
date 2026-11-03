@@ -13,10 +13,15 @@ with from that stage. tools/vm.py runs the tests and the hand checks on it.
 
 - this working tree, as git sees it (tracked files and untracked ones that
   are not ignored, so an uncommitted change is tried too);
-- the packages we make ourselves - PuiKit, doc-files and similar-files - as
-  this checkout's own environment has them, an editable ../puikit included;
+- with ``packages = "local"`` (development), the packages we make ourselves -
+  PuiKit, doc-files, similar-files and, for the tests, quality-loop - as this
+  checkout's own environment has them, an editable ../puikit included. With
+  ``"pypi"`` (a release, #842) nothing of ours is staged: requirements.txt is
+  installed as it reads, so the run gets what a user's pip gets;
 - on Windows, the libarchive DLL from crftwr/xefm-bin-deps, pinned by tag and
-  checksum exactly as windows_app/build.ps1 pins it. macOS has its own.
+  checksum exactly as windows_app/build.ps1 pins it. macOS has its own, and
+  a Linux container gets the distribution's libarchive13, installed at the
+  start of the run as a user's machine would have it.
 
 **What is installed, every run.** The third-party packages: requirements.txt's
 and those the staged packages need, into a fresh venv from the image's Python,
@@ -28,7 +33,9 @@ guest's version, and the guest installs from it.
 
 The guest's settings - its share, its VM, the image's `python` - are its
 table in ~/.config/quality-loop/guests.toml (`XEFM_QA_GUESTS` names another
-file). The images are shared with Keyhac, and so are the aliases.
+file). The images are shared with Keyhac, and so are the aliases. `qa-linux`,
+a Docker container, works without a table (:data:`DEFAULT_GUESTS`): Docker
+is all `make test-linux` needs.
 """
 
 from __future__ import annotations
@@ -54,16 +61,23 @@ from quality_loop.guest import GuestError  # noqa: F401
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 
-#: Ours, so staged from this checkout's environment rather than installed:
-#: distribution name -> the package it imports as.
-STAGED = {"puikit": "puikit", "doc-files": "doc_files", "similar-files": "similar_files"}
+#: Ours, so staged from this checkout's environment rather than installed
+#: in a development run: distribution name -> the package it imports as.
+STAGED = {"puikit": "puikit", "doc-files": "doc_files", "similar-files": "similar_files",
+          "quality-loop": "quality_loop"}
 
-#: What the test suite needs beyond requirements.txt: requirements-dev.txt's
-#: pytest plugins, which pytest.ini asks for by flag, and quality-loop's key
-#: notation and pyte, without which the pseudo-terminal tests of `xefm try`
-#: skip — the ConPTY half (#801) runs nowhere but a Windows guest.
-TEST_REQUIREMENTS = ["pytest", "pytest-xdist", "pytest-timeout",
-                     "quality-loop[tui]>=0.4.1"]
+#: Where a run's packages of ours come from: this checkout's environment, or
+#: PyPI as requirements.txt names them (a release's run, #842).
+PACKAGES = ("local", "pypi")
+
+#: Guests that need no table in guests.toml.
+DEFAULT_GUESTS = {"qa-linux": {"share": "~/.cache/qa-guest=/qa",
+                               "python": "/usr/local/bin/python3",
+                               "docker": "python:3.13-slim"}}
+
+#: What a Linux container installs before the venv: the runtime library alone,
+#: the state a user's machine is in (doc/dev/LINUX_TESTING_SYSTEM.md).
+LINUX_PACKAGES = ["libarchive13"]
 
 #: Downloads kept between runs: the libarchive zip.
 CACHE = pathlib.Path.home() / ".cache" / "xefm-qa"
@@ -99,14 +113,29 @@ def _requires(name: str) -> list[str]:
     return list(distribution.requires or ())
 
 
-def third_party_requirements(tests: bool = False) -> list[str]:
-    """What the guest installs: requirements.txt's packages that are not ours,
-    and what ours need - their plain requirements and those of the extras
-    requirements.txt asks for (doc-files[pdf] needs pypdf). Platform markers
-    stay: pip in the guest leaves out what is for another OS. With ``tests``,
-    the suite's own plugins as well."""
+def test_requirements() -> list[str]:
+    """What the test suite needs beyond requirements.txt, as
+    requirements-dev.txt writes it down: the pytest plugins pytest.ini asks
+    for by flag, and quality-loop - the marks' plugin, its key notation and
+    pyte, without which the pseudo-terminal tests of `xefm try` skip (the
+    ConPTY half, #801, runs nowhere but a Windows guest)."""
+    return _requirement_lines(ROOT / "requirements-dev.txt")
+
+
+def third_party_requirements(tests: bool = False, packages: str = "local") -> list[str]:
+    """What the guest installs. With ``packages="pypi"``, requirements.txt as
+    it reads - ours from PyPI too. With ``"local"``, its packages that are not
+    ours, and what ours need - their plain requirements and those of the
+    extras requirements.txt asks for (doc-files[pdf] needs pypdf). Platform
+    markers stay: pip in the guest leaves out what is for another OS. With
+    ``tests``, the suite's own requirements as well."""
+    lines = _requirement_lines(ROOT / "requirements.txt")
+    if tests:
+        lines += test_requirements()
+    if packages == "pypi":
+        return list(dict.fromkeys(lines))
     wanted, extras = [], {}
-    for line in _requirement_lines(ROOT / "requirements.txt"):
+    for line in lines:
         requirement = Requirement(line)
         name = _canonical(requirement.name)
         if name in STAGED:
@@ -123,8 +152,6 @@ def third_party_requirements(tests: bool = False) -> list[str]:
                 # An extra's marker is only ever `extra == "..."` in these.
                 requirement.marker = None
                 wanted.append(str(requirement))
-    if tests:
-        wanted += TEST_REQUIREMENTS
     out = []
     for line in wanted:
         if line not in out:
@@ -174,17 +201,29 @@ def working_tree() -> list[str]:
 class Guest(ql.Guest):
     """quality-loop's guest, with XeFM staged in it."""
 
+    #: Where our packages come from in this run (:data:`PACKAGES`).
+    packages = "local"
+
     @classmethod
-    def for_alias(cls, alias: str) -> "Guest":
+    def for_alias(cls, alias: str, packages: str = "local") -> "Guest":
+        if packages not in PACKAGES:
+            raise SystemExit(f"packages is one of {', '.join(PACKAGES)}, not {packages!r}")
+        settings = ql.settings_for(alias, os.environ.get("XEFM_QA_GUESTS"))
+        if not settings and alias in DEFAULT_GUESTS:
+            settings = DEFAULT_GUESTS[alias]
+            host = pathlib.Path(settings["share"].partition("=")[0]).expanduser()
+            host.mkdir(parents=True, exist_ok=True)
         try:
-            return cls.from_settings(alias, ql.settings_for(alias, os.environ.get("XEFM_QA_GUESTS")),
-                                     os.environ.get("XEFM_QA_SHARE"))
+            guest = cls.from_settings(alias, settings, os.environ.get("XEFM_QA_SHARE"))
         except GuestError as error:
             raise SystemExit(f"{alias}: {error}") from None
+        guest.packages = packages
+        return guest
 
     def stage(self, prefix: str = "xefm-qa-stage-") -> pathlib.Path:
-        """This working tree as <stage>/tree, our packages in <stage>/lib, and
-        on Windows the libarchive DLL in <stage>/libarchive."""
+        """This working tree as <stage>/tree, our packages in <stage>/lib in a
+        development run, and on Windows the libarchive DLL in
+        <stage>/libarchive. A Linux container gets its libarchive13 here."""
         stage = super().stage(prefix)
         tree = stage / "tree"
         for name in working_tree():
@@ -194,19 +233,27 @@ class Guest(ql.Guest):
         lib = stage / "lib"
         lib.mkdir()
         ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
-        for package in STAGED.values():
-            source = pathlib.Path(__import__(package).__file__).parent
-            shutil.copytree(source, lib / package, ignore=ignore)
+        if self.packages == "local":
+            for package in STAGED.values():
+                source = pathlib.Path(__import__(package).__file__).parent
+                shutil.copytree(source, lib / package, ignore=ignore)
         if self.windows:
             with zipfile.ZipFile(libarchive_zip()) as archive:
                 archive.extractall(stage / "libarchive")
+        if self.system == "Linux":
+            said = self.ssh("apt-get update -qq && DEBIAN_FRONTEND=noninteractive "
+                            "apt-get install -y -qq --no-install-recommends "
+                            + " ".join(LINUX_PACKAGES), timeout=600)
+            if said.returncode != 0:
+                raise SystemExit(f"could not install {', '.join(LINUX_PACKAGES)} in "
+                                 f"{self.alias}:\n{said.stdout[-1500:]}{said.stderr[-1500:]}")
         return stage
 
     def requirements(self, tests: bool = False) -> list[str]:
         """:func:`third_party_requirements`, with a macOS guest pointed at
         wheels this Mac built (see the module's docstring)."""
-        wanted = third_party_requirements(tests)
-        if self.windows or sys.platform != "darwin":
+        wanted = third_party_requirements(tests, self.packages)
+        if self.system != "Darwin" or sys.platform != "darwin":
             return wanted
         said = self.ssh(f"{ql.sh_quote(self.python)} -c "
                         "'import sys; print(*sys.version_info[:2])'")

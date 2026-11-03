@@ -299,6 +299,7 @@ def test_the_room_holds_the_skill_as_shipped_and_the_prompt_alone(tmp_path):
     assert "Reload Configuration on F12" in task and "Must" not in task
 
 
+@pytest.mark.host_only  # the clean room's shim, which only ever runs on the host (#836)
 @pytest.mark.skipif(os.name == "nt", reason="the room's xefm is a POSIX shell script")
 def test_the_room_s_xefm_runs_the_cli_in_the_run_s_home_and_refuses_the_app():
     product = _adapter()

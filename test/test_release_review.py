@@ -13,6 +13,10 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import release_review as rr  # noqa: E402
 
+# A tool for the host's checkout: it reads git, which a guest does not have
+# (#836).
+pytestmark = pytest.mark.host_only
+
 
 def rules(items):
     return [(item.rule, item.where) for item in items]

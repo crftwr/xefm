@@ -17,6 +17,11 @@ import pytest
 
 pytest.importorskip("quality_loop.guest", reason="quality-loop 0.4.0+ is not installed in this venv")
 
+# What stages a guest runs on the host, from this checkout and its
+# environment; in a guest there is no git and our packages are not installed
+# (#836).
+pytestmark = pytest.mark.host_only
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "qa"))
 
@@ -65,7 +70,7 @@ def test_the_libarchive_pin_is_the_windows_build_s():
 
 def test_the_stage_is_the_tree_git_sees():
     files = guest.working_tree()
-    assert "xefm/app.py" in files and "tools/vm_guest_pytest.py" in files
+    assert "xefm/app.py" in files and "tools/vm.py" in files
     assert not [f for f in files if f.startswith((".venv/", "cleanroom/", "temp/", ".git/"))]
 
 
@@ -83,3 +88,13 @@ def test_a_vm_run_keeps_what_runs_here_off_the_share(tmp_path):
     finally:
         home.remove()
     assert not home.host.exists() and not home.root.exists()
+
+
+def test_a_release_run_installs_ours_from_pypi_as_the_requirements_name_them():
+    """#842: a release's run gets what a user's pip gets, not this checkout's."""
+    requirements = guest.third_party_requirements(tests=True, packages="pypi")
+    names = _names(requirements)
+    assert set(guest.STAGED) <= names
+    floor = [line for line in guest._requirement_lines(ROOT / "requirements.txt")
+             if line.startswith("puikit")]
+    assert floor and floor[0] in requirements

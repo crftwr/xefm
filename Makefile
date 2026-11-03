@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: api-snapshot api-compat release-review check-docs fix-docs skill-zip skill-references release-skill qa help banner run run-gui run-web run-linux run-linux-musl run-linux-tui run-linux-shell linux-image linux-musl-image test test-quick test-linux test-linux-musl test-vm run-vm clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-toolchainwindows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config keymap-reset venv clean-venv check-venv install-puikit
+.PHONY: api-snapshot api-compat release-review check-docs fix-docs skill-zip skill-references release-skill qa help banner run run-gui run-web run-linux run-linux-musl run-linux-shell linux-musl-image test test-quick test-linux test-linux-musl test-vm run-vm shell-vm release-test clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-toolchainwindows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config keymap-reset venv clean-venv check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -123,14 +123,18 @@ help:
 	@echo "  run-web        - Run XeFM in a web browser (web backend)"
 	@echo "  run-linux      - Run XeFM's TUI on Linux in Docker (glibc), interactively"
 	@echo "  run-linux-musl - The same on musl (Alpine)"
-	@echo "  run-linux-shell- A shell in that container (TUI_IMAGE= picks which)"
+	@echo "  run-linux-shell- A shell in the glibc container, on the stage"
 	@echo "  test           - Run all tests"
 	@echo "  test-quick     - Run quick verification tests"
 	@echo "  test-linux     - Run all tests on Linux in Docker (glibc/Debian)"
 	@echo "  test-linux-musl- Check libarchive is found on musl (Alpine), and that"
 	@echo "                   its absence degrades cleanly"
-	@echo "  test-vm        - Run all tests in a VM (GUEST=alias, ARGS= for pytest)"
+	@echo "  test-vm        - Run all tests in a guest (GUEST=qa-mac|qa-win|qa-linux,"
+	@echo "                   ARGS= for pytest, PACKAGES=pypi for ours from PyPI)"
 	@echo "  run-vm         - Start a VM with XeFM launchers on its desktop (GUEST=alias)"
+	@echo "  shell-vm       - A shell in a guest, on the stage (GUEST=alias)"
+	@echo "  release-test   - What a release is tested on: --host-only here, the suite"
+	@echo "                   in every guest on PyPI packages, the musl probe"
 	@echo "  clean          - Remove every rebuildable artifact (keeps .venv + the"
 	@echo "                   Windows download cache; it names both when it finishes)"
 	@echo "  clean-python   - Just the source tree: build/, dist/, egg-info, pyc, pytest"
@@ -366,73 +370,55 @@ check-docs: check-venv
 fix-docs: check-venv
 	$(PYTHON) tools/check_translations.py --fix
 
-# --- Linux, in Docker --------------------------------------------------------
+# --- Guests: the suite and hand checks off this machine ----------------------
 #
-# XeFM is developed on macOS and shipped for Windows too, so Linux is the
-# platform nobody runs the suite on by hand. These targets are that hand.
+# One path for every platform (#842): quality-loop's guests
+# (~/.config/quality-loop/guests.toml) - qa-mac a Tart clone, qa-win a VMware
+# snapshot, qa-linux a Docker container (python:3.13-slim; no table needed).
+# Each run stages this working tree, installs the packages into a fresh venv
+# and puts the guest away; see doc/dev/VM_TESTING_SYSTEM.md.
 #
-# The images hold the dependencies and the source is mounted read-only, so a run
-# needs no rebuild after an edit and cannot write into the working tree. Two
-# images, because they answer different questions: glibc runs the whole suite,
-# musl exists solely to ask whether libarchive can be *found* — the one thing
-# only it gets wrong. See doc/dev/LINUX_TESTING_SYSTEM.md.
-DOCKER ?= docker
-LINUX_PYTHON ?= 3.13
-LINUX_IMAGE ?= xefm-test-linux
-LINUX_MUSL_IMAGE ?= xefm-test-linux-musl
-DOCKER_RUN = $(DOCKER) run --rm -v "$(CURDIR):/src:ro"
-
-# Interactive runs share the test images, so trying something by hand and then
-# running the suite costs one build between them. The working tree stays
-# read-only — a file manager is exactly the program you do not want writing into
-# the checkout by accident — and /work is the writable pane to try things in.
-# --init so Ctrl-C reaches XeFM rather than PID 1, and TERM carried through
-# because a TUI under the wrong terminfo tells you nothing about the TUI.
+#   make test-vm GUEST=qa-win ARGS="test/test_x.py -k name"
+#   make test-vm GUEST=qa-mac PACKAGES=pypi    # ours from PyPI, as a release runs
+#   make run-vm GUEST=qa-mac                   # XeFM launchers on its desktop
+#   make shell-vm GUEST=qa-linux               # a shell on the stage
 #
-# TUI_IMAGE picks which libc: run-linux-shell honours it too, so
-# `make run-linux-shell TUI_IMAGE=$(LINUX_MUSL_IMAGE)` is the musl shell.
-TUI_IMAGE ?= $(LINUX_IMAGE)
-DOCKER_TUI = $(DOCKER) run --rm -it --init \
-	-e TERM="$${TERM:-xterm-256color}" -e COLORTERM="$${COLORTERM}" \
-	-v "$(CURDIR):/src:ro" $(TUI_IMAGE)
-XEFM_CMD = mkdir -p /work && exec python -m xefm \
-	--left $(if $(LEFT),$(LEFT),/src) --right $(if $(RIGHT),$(RIGHT),/work)
+# PACKAGES=local (the default) stages this checkout's PuiKit, doc-files,
+# similar-files and quality-loop; pypi installs them as the requirements name
+# them. A VM run passes --desktop, so the tests that take focus or change the
+# clipboard run there and never here.
+PACKAGES ?= local
+GUEST_CHECK = @test -n "$(GUEST)" || { echo "GUEST= names the guest (qa-mac, qa-win, qa-linux)"; exit 1; }
 
-run-linux: linux-image
-	@echo "XeFM's TUI on Linux, glibc (/src is read-only; /work is not)..."
-	@$(DOCKER_TUI) sh -c '$(XEFM_CMD)'
-
-run-linux-musl: linux-musl-image
-	@echo "XeFM's TUI on Linux, musl (/src is read-only; /work is not)..."
-	@$(MAKE) --no-print-directory run-linux-tui TUI_IMAGE=$(LINUX_MUSL_IMAGE)
-
-run-linux-tui:
-	@$(DOCKER_TUI) sh -c '$(XEFM_CMD)'
-
-run-linux-shell: linux-image
-	@echo "Shell in $(TUI_IMAGE); python -m xefm starts XeFM..."
-	@$(DOCKER_TUI) sh -c 'mkdir -p /work && exec sh'
-
-linux-image:
-	@echo "Building the Linux test image (Python $(LINUX_PYTHON), glibc)..."
-	@$(DOCKER) build -q -f tools/docker/Dockerfile \
-		--build-arg PYTHON_VERSION=$(LINUX_PYTHON) -t $(LINUX_IMAGE) . > /dev/null
-
-test-linux: linux-image
-	@echo "Running the test suite on Linux..."
-	@$(DOCKER_RUN) $(LINUX_IMAGE)
-
-# The same working tree in a VM, from the shared test images (quality-loop's
-# guests, ~/.config/quality-loop/guests.toml): `make test-vm GUEST=qa-win`
-# runs the suite there - ARGS for pytest - and `make run-vm GUEST=...` leaves
-# the VM up with XeFM launchers on its desktop. See doc/dev/VM_TESTING_SYSTEM.md.
 test-vm:
-	@test -n "$(GUEST)" || { echo "GUEST= names the VM (an alias in ~/.config/quality-loop/guests.toml)"; exit 1; }
-	@$(PYTHON) tools/vm.py test $(GUEST) $(ARGS)
+	$(GUEST_CHECK)
+	@$(PYTHON) tools/vm.py test --packages $(PACKAGES) $(GUEST) $(ARGS)
 
 run-vm:
-	@test -n "$(GUEST)" || { echo "GUEST= names the VM (an alias in ~/.config/quality-loop/guests.toml)"; exit 1; }
-	@$(PYTHON) tools/vm.py run $(GUEST)
+	$(GUEST_CHECK)
+	@$(PYTHON) tools/vm.py run --packages $(PACKAGES) $(GUEST)
+
+shell-vm:
+	$(GUEST_CHECK)
+	@$(PYTHON) tools/vm.py shell --packages $(PACKAGES) $(GUEST)
+
+# Linux is the qa-linux guest: the suite on glibc, and XeFM's TUI in this
+# terminal on the stage's tree and an empty, writable /work.
+test-linux:
+	@$(MAKE) --no-print-directory test-vm GUEST=qa-linux
+
+run-linux:
+	@$(MAKE) --no-print-directory run-vm GUEST=qa-linux
+
+run-linux-shell:
+	@$(MAKE) --no-print-directory shell-vm GUEST=qa-linux
+
+# musl exists solely to ask whether libarchive can be *found* - the one thing
+# only it gets wrong - so it keeps an image of its own and a probe rather than
+# the suite. The source is mounted read-only. See doc/dev/LINUX_TESTING_SYSTEM.md.
+DOCKER ?= docker
+LINUX_MUSL_IMAGE ?= xefm-test-linux-musl
+DOCKER_RUN = $(DOCKER) run --rm -v "$(CURDIR):/src:ro"
 
 linux-musl-image:
 	@echo "Building the musl test image..."
@@ -446,6 +432,30 @@ test-linux-musl: linux-musl-image
 	@$(DOCKER_RUN) $(LINUX_MUSL_IMAGE) sh -c \
 		"apk del libarchive > /dev/null 2>&1; \
 		 python tools/docker/probe_libarchive.py --expect-absent"
+
+# --init so Ctrl-C reaches XeFM rather than PID 1, and TERM carried through
+# because a TUI under the wrong terminfo tells you nothing about the TUI.
+run-linux-musl: linux-musl-image
+	@echo "XeFM's TUI on Linux, musl (/src is read-only; /work is not)..."
+	@$(DOCKER) run --rm -it --init \
+		-e TERM="$${TERM:-xterm-256color}" -e COLORTERM="$${COLORTERM}" \
+		-v "$(CURDIR):/src:ro" $(LINUX_MUSL_IMAGE) \
+		sh -c 'mkdir -p /work && exec python -m xefm --left /src --right /work'
+
+# --- release-test: what a release is tested on (#842) ------------------------
+# The host runs only the tests of its own tooling (--host-only: what stages a
+# guest, what reviews a release); the suite runs in every guest on our
+# packages as PyPI has them - what a user's pip installs - and musl's
+# libarchive probe. About half an hour, one guest after another.
+RELEASE_GUESTS ?= qa-mac qa-win qa-linux
+
+release-test: check-venv
+	$(PYTHON) -m pytest test --host-only
+	@for guest in $(RELEASE_GUESTS); do \
+		$(PYTHON) tools/vm.py test --packages pypi $$guest || exit 1; \
+	done
+	@$(MAKE) --no-print-directory test-linux-musl
+	@echo "release-test: passed on the host's tooling and in $(RELEASE_GUESTS) ✓"
 
 test-quick: check-venv
 	@echo "Running quick verification tests..."
@@ -640,8 +650,8 @@ endef
 #
 # release_preflight.py runs FIRST and aborts before any mutation if the tree is
 # dirty, the version is stale, or the tag exists — so a failed precondition
-# never leaves a half-cut release. The test suite must pass before anything is
-# built.
+# never leaves a half-cut release. release-test must pass before anything is
+# built: the suite in every guest on our packages as PyPI has them (#842).
 #
 # `make build` runs before the pushes purely as a gate: it proves the sdist and
 # wheel build and pass `twine check` while the tag is still local and
@@ -649,9 +659,7 @@ endef
 tag: check-venv
 	@test -n "$(VERSION)" || { echo "ERROR: set VERSION, e.g. make tag VERSION=1.0.1"; exit 1; }
 	$(PYTHON) tools/release_preflight.py "$(VERSION)"
-	@# Gates on pytest directly rather than on `make test`: that target tolerates a
-	@# missing pytest (`|| echo ...`) and would let an unrun suite pass silently.
-	$(PYTHON) -m pytest test
+	@$(MAKE) --no-print-directory release-test
 	$(PYTHON) tools/bump_version.py "$(VERSION)"
 	git add xefm/__init__.py
 	git commit -m "Releasing $(VERSION)"

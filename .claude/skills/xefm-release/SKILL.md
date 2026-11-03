@@ -77,8 +77,18 @@ any of that, do the checks preflight cannot:
   gets the same treatment: name the replacement. Stable additions and
   Preview changes an extension author would notice go in the note's "Also"
   paragraph.
-- The pytest suite runs inside `make tag`, but nothing automated exercises
-  the real UI, and Claude cannot run it (the TUI/GUI blocks — per CLAUDE.md,
+- `make release-test` runs inside `make tag` (#842): `pytest --host-only`
+  here, then the whole suite in `qa-mac` (Tart), `qa-win` (VMware) and
+  `qa-linux` (Docker) on PuiKit, doc-files, similar-files and quality-loop
+  **as PyPI has them**, and the musl probe - about half an hour, so tell the
+  user before starting it. It needs VMware Fusion, Tart and Docker up on this
+  Mac, and neither VM held by a `run-vm` here or in Keyhac. Because the
+  guests install our packages from PyPI, anything this release relies on
+  must already be released there (preflight's editable-PuiKit warning is the
+  same point). A failure stops the tag: report it with the log under
+  `temp/vm-test-<guest>-<time>/`, never retry it away. Running it ahead
+  of `make tag` on its own is fine and shortens the tag step's surprises.
+- Nothing automated exercises the real UI, and Claude cannot run it (the TUI/GUI blocks — per CLAUDE.md,
   never launch it). Ask the user whether they have actually run the app on
   the release code recently, on the backends this release touches (macOS GUI,
   Windows, TUI); anything not exercised is *recorded as skipped* in the
@@ -89,7 +99,7 @@ any of that, do the checks preflight cannot:
 ## 3. The Makefile pipeline
 
 ```
-make tag VERSION=x.y.z   # preflight → pytest → bump __version__ → commit
+make tag VERSION=x.y.z   # preflight → release-test → bump __version__ → commit
                          # "Releasing x.y.z" → tag vx.y.z → build gate
                          # (sdist+wheel+twine check) → push commit and tag
 make release-github      # open the GitHub Release (auto body — replaced in step 4)

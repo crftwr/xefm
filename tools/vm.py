@@ -1,24 +1,33 @@
-"""This working tree in a VM: the test suite, or the VM up for a hand check.
+"""This working tree in a guest: the test suite, or the guest up for a hand check.
 
-    python3 tools/vm.py test <guest> [pytest args...]    # make test-vm GUEST=...
-    python3 tools/vm.py run <guest>                      # make run-vm GUEST=...
+    python3 tools/vm.py test [--packages pypi] <guest> [pytest args...]   # make test-vm GUEST=...
+    python3 tools/vm.py run <guest>                                       # make run-vm GUEST=...
+    python3 tools/vm.py shell <guest>                                     # make shell-vm GUEST=...
 
-<guest> is an SSH host alias with a table in ~/.config/quality-loop/guests.toml
-(qa-win, qa-mac; the images are shared with Keyhac). Each run starts
-the VM from its clean state - a VMware snapshot reverted, or a Tart clone -
-stages what is under test and installs the third-party packages (qa/guest.py),
-and puts the VM away afterwards. Nothing is left in the image.
+<guest> is a table in ~/.config/quality-loop/guests.toml (qa-win, qa-mac -
+the images are shared with Keyhac - and qa-linux, a Docker container, which
+needs none). Each run starts the guest from its clean state - a VMware
+snapshot reverted, a Tart clone, a new container - stages what is under test
+and installs the third-party packages (qa/guest.py), and puts the guest away
+afterwards. Nothing is left in the image.
 
-**test** runs pytest in the guest's desktop session (on Windows from a
-scheduled task, so a test that opens a window can, with a console of its own)
-and prints its output as
-it comes. The log and the JUnit XML are kept in temp/vm-test-<guest>-<time>/;
-the exit code is pytest's.
+**test** runs pytest there through quality-loop's runner
+(`quality_loop.guest.suite`): in a VM's desktop session with ``--desktop``,
+so the tests that take focus or change the clipboard run there and only
+there; in a container without it. ``--packages pypi`` installs PuiKit,
+doc-files, similar-files and quality-loop from PyPI as the requirements name
+them - a release's run (#842) - instead of staging this checkout's. The log
+and the JUnit XML are kept in temp/vm-test-<guest>-<time>/; the exit code is
+pytest's.
 
-**run** leaves the VM up with XeFM GUI and XeFM TUI launchers on its desktop,
+**run** leaves a VM up with XeFM GUI and XeFM TUI launchers on its desktop,
 and waits for Enter. A VMware VM is started headless and then suspended, for
 you to open in the Fusion app (a headless VM does not show there); a Tart VM
-shows its window when the table says `visible = true`.
+shows its window when the table says `visible = true`. In a container, XeFM's
+TUI runs in this terminal, on the stage's tree and an empty /work.
+
+**shell** is a shell in the guest, in the stage's tree, with XeFM's
+environment set.
 
 The host's own ~/.xefm is never read: the guest's user has a home of its own,
 and the revert after the run throws it away.
@@ -29,6 +38,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
+import os
 import pathlib
 import shutil
 import subprocess
@@ -40,96 +50,39 @@ sys.path.insert(0, str(ROOT / "qa"))
 
 import guest as xefm_guest  # noqa: E402  (qa/guest.py)
 from quality_loop import guest as ql  # noqa: E402
+from quality_loop.guest import suite  # noqa: E402
 
 
 def _venv(guest, stage) -> str:
-    print("vm:      installing the third-party packages in the guest...", flush=True)
+    print(f"vm:      installing the third-party packages in the guest "
+          f"(ours: {guest.packages})...", flush=True)
     started = time.monotonic()
     python = guest.venv(stage, guest.requirements(tests=True))
     print(f"vm:      packages in {time.monotonic() - started:.0f}s", flush=True)
     return python
 
 
-def _follow(log: pathlib.Path, done: pathlib.Path, patience: float) -> int:
-    """Print ``log`` as it grows until ``done`` holds an exit code."""
-    position, deadline, finished_at = 0, time.monotonic() + patience, None
-    while True:
-        finished = done.exists()
-        chunk = ""
-        if log.exists():
-            with log.open("r", encoding="utf-8", errors="replace") as f:
-                f.seek(position)
-                chunk = f.read()
-                position = f.tell()
-            if chunk:
-                sys.stdout.write(chunk)
-                sys.stdout.flush()
-        if finished:
-            # Over SMB the log's last writes can show up after the exit code
-            # does: read on until it has stopped growing.
-            if chunk or (time.monotonic() - finished_at if finished_at else 0) < 3:
-                finished_at = finished_at or time.monotonic()
-                time.sleep(1)
-                continue
-            return int(done.read_text(encoding="utf-8").strip() or 3)
-        if time.monotonic() > deadline:
-            print(f"\nvm:      no end within {patience:.0f}s", flush=True)
-            return 3
-        time.sleep(1)
-
-
-def _sh_environment(environ: dict) -> str:
-    return " ".join(f"{name}={ql.sh_quote(value)}" for name, value in environ.items())
-
-
-def run_tests(alias: str, pytest_args: list[str], patience: float) -> int:
-    guest = xefm_guest.Guest.for_alias(alias)
+def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str) -> int:
+    guest = xefm_guest.Guest.for_alias(alias, packages)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results = ROOT / "temp" / f"vm-test-{alias}-{stamp}"
     started = time.monotonic()
     code = 3
     with guest.machine():
         stage = guest.stage("xefm-test-")
-        task = f"xefm-test-{stage.name}"
-        log, done, junit = stage / "pytest.log", stage / "exit-code", stage / "junit.xml"
         try:
             python = _venv(guest, stage)
-            args = ["-p", "no:cacheprovider", f"--junitxml={guest.path(junit)}",
-                    *(pytest_args or ["test"])]
-            runner = guest.path(stage / "tree" / "tools" / "vm_guest_pytest.py")
+            args = pytest_args or ["test"]
+            if not guest.docker:
+                args = ["--desktop", *args]
             environ = guest.environment(stage)
-            print(f"vm:      pytest {' '.join(pytest_args or ['test'])} in {alias}", flush=True)
-            if guest.windows:
-                # python.exe, not pythonw: nobody watches this desktop, and a
-                # test that runs a console program needs a console to inherit
-                # (pythonw gave code page 0, empty child output, and handles
-                # that cannot be duplicated).
-                guest.launch(stage, task, python, script=runner, log=log,
-                             environ=environ, path=environ["PYTHONPATH"].split(";"),
-                             cwd=guest.tree(stage), argv=[guest.path(done), *args])
-                code = _follow(log, done, patience)
-            else:
-                command = (f"cd {ql.sh_quote(guest.tree(stage))} && {_sh_environment(environ)} "
-                           f"{ql.sh_quote(python)} {ql.sh_quote(runner)} "
-                           f"{ql.sh_quote(guest.path(done))} "
-                           + " ".join(ql.sh_quote(a) for a in args))
-                with log.open("w", encoding="utf-8") as out:
-                    process = subprocess.Popen(
-                        ["ssh", "-o", "BatchMode=yes", *guest.ssh_options(), guest.alias, command],
-                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT, text=True, errors="replace")
-                    for line in process.stdout:
-                        sys.stdout.write(line)
-                        out.write(line)
-                    process.wait()
-                code = int(done.read_text().strip()) if done.exists() else 3
+            print(f"vm:      pytest {' '.join(args)} in {alias}", flush=True)
+            separator = ";" if guest.windows else ":"
+            code = suite.run_pytest(guest, stage, python, args, cwd=guest.tree(stage),
+                                    results=results, environ=environ,
+                                    path=environ["PYTHONPATH"].split(separator),
+                                    patience=patience, task="xefm-test")
         finally:
-            results.mkdir(parents=True, exist_ok=True)
-            for kept in (log, junit):
-                if kept.exists():
-                    shutil.copy2(kept, results / kept.name)
-            if guest.windows:
-                guest.forget_task(task)
             shutil.rmtree(stage, ignore_errors=True)
     print(f"vm:      pytest exited {code} in {time.monotonic() - started:.0f}s; "
           f"log and JUnit XML in {results.relative_to(ROOT)}")
@@ -164,14 +117,36 @@ def _mac_launchers(guest, stage, python) -> list[pathlib.Path]:
     return [gui, tui]
 
 
-def run_xefm(alias: str) -> int:
-    guest = xefm_guest.Guest.for_alias(alias)
+def _interactive(guest, stage, command: str) -> int:
+    """``command`` in the guest's shell, in the stage's tree with XeFM's
+    environment, on this terminal. TERM and COLORTERM are carried in: a TUI
+    under the wrong terminfo tells you nothing about the TUI."""
+    environ = {**guest.environment(stage), "LANG": "C.UTF-8",
+               "TERM": os.environ.get("TERM", "xterm-256color"),
+               "COLORTERM": os.environ.get("COLORTERM", "")}
+    line = (f"cd {ql.sh_quote(guest.tree(stage))} && "
+            + " ".join(f"export {name}={ql.sh_quote(value)};" for name, value in environ.items())
+            + f" {command}")
+    if guest.docker:
+        argv = ["docker", "exec", "-it", guest.hostname, "sh", "-c", line]
+    else:
+        argv = ["ssh", "-t", *guest.ssh_options(), guest.alias, line]
+    return subprocess.run(argv).returncode
+
+
+def run_xefm(alias: str, packages: str) -> int:
+    guest = xefm_guest.Guest.for_alias(alias, packages)
     machine = guest.machine()
     machine.__enter__()
     stage = None
     try:
         stage = guest.stage("xefm-run-")
         python = _venv(guest, stage)
+        if guest.docker:
+            # The stage's tree on the left and an empty /work on the right, the
+            # pane to copy into, delete from, and make archives in.
+            return _interactive(guest, stage, f"mkdir -p /work && exec {ql.sh_quote(python)} "
+                                              f"-m xefm --left . --right /work")
         if guest.windows:
             launchers = _windows_launchers(guest, stage, python)
             names = ", ".join(ql.ps_quote(guest.path(p)) for p in launchers)
@@ -204,21 +179,42 @@ def run_xefm(alias: str) -> int:
             shutil.rmtree(stage, ignore_errors=True)
 
 
+def run_shell(alias: str, packages: str) -> int:
+    guest = xefm_guest.Guest.for_alias(alias, packages)
+    if guest.windows:
+        raise SystemExit(f"{alias} is Windows: use `make run-vm` and its desktop")
+    with guest.machine():
+        stage = guest.stage("xefm-shell-")
+        try:
+            python = _venv(guest, stage)
+            print(f"vm:      the venv's python is {python}; exit the shell to put "
+                  f"{alias} away", flush=True)
+            return _interactive(guest, stage, "exec sh" if guest.docker else "exec $SHELL -l")
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    test = commands.add_parser("test", help="run the test suite in the VM")
-    test.add_argument("guest")
+    test = commands.add_parser("test", help="run the test suite in the guest")
+    running = commands.add_parser("run", help="the guest up with XeFM, for a hand check")
+    shell = commands.add_parser("shell", help="a shell in the guest, on the stage")
+    for command in (test, running, shell):
+        command.add_argument("--packages", choices=xefm_guest.PACKAGES, default="local",
+                             help="ours from this checkout (local, the default) or PyPI")
     test.add_argument("--patience", type=float, default=3600,
                       help="seconds to wait for pytest to end (default 3600)")
+    for command in (test, running, shell):
+        command.add_argument("guest")
     test.add_argument("pytest_args", nargs=argparse.REMAINDER,
                       help="for pytest (default: test)")
-    running = commands.add_parser("run", help="the VM up with launchers, for a hand check")
-    running.add_argument("guest")
     args = parser.parse_args()
     if args.command == "test":
-        return run_tests(args.guest, args.pytest_args, args.patience)
-    return run_xefm(args.guest)
+        return run_tests(args.guest, args.pytest_args, args.patience, args.packages)
+    if args.command == "shell":
+        return run_shell(args.guest, args.packages)
+    return run_xefm(args.guest, args.packages)
 
 
 if __name__ == "__main__":
