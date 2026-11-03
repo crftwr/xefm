@@ -741,12 +741,13 @@ _DETAILS: dict[str, str] = {
         "The other pane's own folder comes back when quick view closes. On a "
         "remote location only small files are read."),
     "jobs": (
-        "Lists the copy, move and delete operations running in the "
+        "Lists the copy, duplicate, move and delete operations running in the "
         "background, and the ones queued behind them. Choose a running one "
         "to bring its progress dialog back — where a question it is waiting "
         "on is answered, and Esc can cancel it. Choose a queued one to drop "
         "it. Send an operation to the background with the Background button "
-        "when it asks to start, or with B (or Esc) in its progress dialog."),
+        "when it asks to start, or with Run in background in its progress "
+        "dialog."),
     "find_similar": (
         "Scans the selection, or the current folder, for files with identical "
         "content, or for similar images, videos or audio, using similar-files. The scan runs as "

@@ -89,8 +89,10 @@ stray Enter or Esc changes nothing.
 ## `FileOperationService`
 
 The `CONFIRM_*` box gains **Background** between the verb and Cancel, for
-copy and move when `background=True` (synchronous test runs have no pump to
-run a detached task on). The defaults are unchanged: the verb. Delete and
+copy, duplicate and move when `background=True` (synchronous test runs have
+no pump to run a detached task on). The defaults are unchanged: the verb.
+Duplicate had none at first, for no recorded reason; #828 gave it one, since
+duplicating a large tree takes as long as copying it. Delete and
 trash had it too at first, and #601 took it away. A delete is usually over at
 once, and on the permanent delete, whose default is Cancel, the button put
 Delete two steps away from the focus. `_submit(..., detached=)` passes it through

@@ -384,7 +384,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "runs, and the results are kept, so you can come back to them later."),
 
     ("Keep working while it copies",
-     "Copy and Move offer a **Background** button, and a running operation's "
+     "Copy, Duplicate and Move offer a **Background** button, and a running operation's "
      "progress dialog has **Run in background**. The status bar shows the "
      "job, and {key:jobs} lists the jobs to pause, resume or cancel."),
 
