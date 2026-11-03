@@ -12793,6 +12793,22 @@ _BACKENDS = {"tui": "tui", "gui": "gui", "macos": "gui",
              "web": "web", "webbrowser": "web", "browser": "web"}
 
 
+def _curses_backend_notice(backend_name: str, platform: str) -> str | None:
+    """What to tell a user who asked for ``--backend curses``, or ``None``.
+
+    PuiKit 1.19.0 deprecated the curses backend (removed in PuiKit 2.0) and
+    dropped windows-curses, which has no arm64 wheel: on Windows it is not
+    supported at all, elsewhere it still runs, with a warning in the log.
+    See doc/dev/BINARY_DEPENDENCIES_SYSTEM.md.
+    """
+    if backend_name != "curses":
+        return None
+    if platform == "win32":
+        return "--backend curses is not supported on Windows; use --backend tui (the default)"
+    return ("--backend curses is deprecated and goes away with PuiKit 2.0; "
+            "--backend tui (the default) is the terminal backend")
+
+
 #: ``--help`` blurb. Deliberately *not* ``__doc__``: the module docstring is
 #: written for readers of the source (RST markup, architecture notes), and
 #: argparse would reflow the whole thing into an unreadable wall of text.
@@ -12904,6 +12920,11 @@ def main() -> None:
     args = create_parser().parse_args()
 
     backend_name = _BACKENDS.get(args.backend, args.backend)
+    curses_notice = _curses_backend_notice(backend_name, sys.platform)
+    if curses_notice is not None:
+        if sys.platform == "win32":
+            create_parser().error(curses_notice)
+        getLogger("Main").warning(curses_notice)
     # Publish the resolved backend so is_desktop_mode() (used by the config,
     # e.g. TEXT_EDITOR = 'code' in GUI vs 'vim' in terminal) reads it directly
     # rather than re-sniffing sys.argv. Set before get_config()/XeFMApp load the
