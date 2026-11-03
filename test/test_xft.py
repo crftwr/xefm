@@ -248,7 +248,8 @@ class Declared(_Files):
         self.assertEqual([c.text for c in cell(0.29)], ["29%"])
         self.assertEqual(cell(None), [])
         self.assertEqual(layouts.resolve_format("decimal", attr).align, "right")
-        self.assertEqual(layouts.words(attr, 0.93), "93%")
+        self.assertEqual([layouts.words(attr, v) for v in (0.9375, 0.93, 0.99999, 1.0, 0.5)],
+                         ["93.75%", "93%", "99.99%", "100%", "50%"])
 
     def _nodes(self):
         return [{"name": "one.txt (1)", "children": [
@@ -344,7 +345,7 @@ class InThePane(_Files):
             self.app.file_details()
         finally:
             xefm_app.show_markdown = real
-        self.assertIn("| Similarity | 90% |", sources[0])
+        self.assertIn("| Similarity | 90% |", sources[0])  # 0.9: no trailing zeros
         self.assertNotIn("reading…", sources[0])
 
     def test_a_reference_to_a_folder_goes_there(self):

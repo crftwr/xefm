@@ -172,15 +172,22 @@ def _fmt_clock(value, entry):
     return f"{hours}:{minutes:02}:{seconds:02}" if hours else f"{minutes}:{seconds:02}"
 
 
-def _fmt_percent(value, entry):
-    """A 0-1 score as a whole percent, rounded down: ``0.996`` is ``99%``, so
-    ``100%`` is said only of an exact match."""
-    if value is None:
-        return ""
+def _percent(value, places: int) -> str:
+    """A 0-1 score as a percent with up to ``places`` decimals, rounded down
+    so ``100%`` is said only of an exact match: ``0.996`` is ``99%`` with
+    none, ``0.9375`` is ``93.75%`` with two."""
     try:
-        return f"{math.floor(round(float(value) * 100, 6))}%"
+        scale = 10 ** places
+        hundredths = math.floor(round(float(value) * 100 * scale, 6))
     except (TypeError, ValueError, OverflowError):
         return "---"
+    whole, part = divmod(hundredths, scale)
+    digits = f"{part:0{places}d}".rstrip("0") if places else ""
+    return f"{whole}.{digits}%" if digits else f"{whole}%"
+
+
+def _fmt_percent(value, entry):
+    return "" if value is None else _percent(value, 0)
 
 
 def _fmt_decimal(value, entry):
@@ -304,7 +311,8 @@ def words(attr, value) -> str:
     if kind == "count":
         return _fmt_count(value, row)
     if kind == "ratio":
-        return _fmt_percent(value, row)
+        # Room for the digits a column has no space for.
+        return _percent(value, 2)
     return _fmt_text(value, row)
 
 

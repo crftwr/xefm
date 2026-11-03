@@ -190,7 +190,8 @@ the wrong length, costs only that call's values, and says so once in the log
 pane.
 
 **File Details** lists every attribute that applies to an item, written out
-— an `enum` by its meaning, a time in full — and works out the ones it does
+— an `enum` by its meaning, a time in full, a `ratio` to two decimals
+(`93.75%`) — and works out the ones it does
 not have yet for the items it shows, on-request ones included.
 
 Your own functions — a sort key, a filter, an action — can read a value XeFM
