@@ -478,8 +478,12 @@ _THEME_SPECS: list[tuple[str, dict]] = [
     # halo + glow give the emissive holographic feel; NO scanlines and NO rolling
     # band (with no scanlines the bloom is free to spread into a broad glow).
     # status/footer are a cyan blend of the navy, not a solid bar.
+    # The list selection on the scene themes (Sci-Fi, Cyber, Blocks) is a
+    # saturated mid blue or teal, not a lighter step of the navy: a dialog sits
+    # over the moving scene, and a selection in the scene's own hue and chroma
+    # read as one more patch of it.
     ("Sci-Fi", dict(bg=(16, 30, 50), fg=(200, 224, 245), muted=(98, 128, 164),
-                    accent=(96, 186, 255), surface=(26, 46, 74), selection=(32, 68, 108),
+                    accent=(96, 186, 255), surface=(26, 46, 74), selection=(40, 96, 190),
                     accent2=(255, 158, 54),
                     status=lambda p: mix(p["bg"], p["accent"], 0.20),
                     footer=lambda p: mix(p["bg"], p["accent"], 0.20),
@@ -537,7 +541,7 @@ _THEME_SPECS: list[tuple[str, dict]] = [
     # geometry, and without it the halo is free to spread (the same reasoning Sci-Fi
     # spells out, taken further — the bloom and glow here are roughly double).
     ("Cyber", dict(bg=(9, 17, 28), fg=(198, 230, 244), muted=(94, 128, 154),
-                   accent=(64, 214, 236), surface=(17, 31, 48), selection=(24, 82, 108),
+                   accent=(64, 214, 236), surface=(17, 31, 48), selection=(0, 112, 140),
                    accent2=(255, 196, 84),
                    status=lambda p: mix(p["bg"], p["accent"], 0.18),
                    footer=lambda p: mix(p["bg"], p["accent"], 0.18),
@@ -724,11 +728,14 @@ _THEME_SPECS: list[tuple[str, dict]] = [
     # the accent cyan, which the scene takes as its ink; amber, the warm leak of
     # the prototype's palette, marks the things to find.
     ("Blocks", dict(bg=(10, 22, 38), fg=(214, 230, 244), muted=(136, 160, 186),
-                    accent=(99, 214, 255), surface=(18, 34, 54), selection=(28, 68, 104),
+                    accent=(99, 214, 255), surface=(18, 34, 54), selection=(20, 96, 200),
                     accent2=(255, 179, 92),
                     status=lambda p: mix(p["bg"], p["accent"], 0.16),
                     footer=lambda p: mix(p["bg"], p["accent"], 0.16),
                     file_types={"directory": (130, 214, 255), "link": (236, 132, 200)},
+                    # The file pane's selection too: the accent tint it derives
+                    # is the cyan-gray of the lit columns behind it.
+                    selection_fill=(20, 96, 200),
                     cursor={"active": (255, 179, 92)},
                     syntax={"keyword": (130, 214, 255), "string": (255, 196, 128),
                             "comment": (136, 160, 186), "number": (255, 222, 150),

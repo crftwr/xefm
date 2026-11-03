@@ -371,7 +371,10 @@ field holds the focus draws its list *focused* — the navigation keys move it, 
 Enter acts on its row — so the list shows that active fill rather than the
 inactive one, which sat at the dialog's own shade (#844).
 
-The palette side: Shinagawa's cursor is a pale yellow, not the file names' white;
+The palette side: Sci-Fi, Cyber and Blocks name a saturated blue or teal
+`selection` instead of a lighter step of their navy, which over the moving scene
+read as one more patch of it (Blocks pins the same color as its file-pane
+`selection_fill`); Shinagawa's cursor is a pale yellow, not the file names' white;
 Earth, Blocks and Crystal draw links in pink, leaving the amber to the cursor;
 Dark+, Light+, Dracula, Gruvbox Dark and both Solarized themes name an
 `isearch_match` hue away from their selection.
@@ -383,8 +386,10 @@ scene through, and a mark is no exception: Blocks' selection over a dark patch c
 out the color of an unselected row over a cyan light leak (ΔE 0.06; Crystal 0.007,
 #845). The row's mark fill — selected or matched — is drawn with
 `fill_rect(..., opacity=MARK_OPACITY)` (0.95), the least opacity PuiKit keeps for
-that one fill while the surface around it still dissolves. A terminal has no
-translucency and ignores it.
+that one fill while the surface around it still dissolves. PuiKit's lists do the
+same for their selected row (`SELECTION_OPACITY`), which is what keeps a dialog's
+selection from washing out on these themes. A terminal has no translucency and
+ignores it.
 
 ## Related Files
 
