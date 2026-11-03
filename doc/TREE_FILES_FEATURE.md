@@ -34,6 +34,28 @@ for anyone writing such a program.
   all reading the real file.
 - `Enter` on an entry that stands for a folder goes to that folder.
 
+## Columns a tree adds
+
+The program that writes a tree can record more about each file and say how
+to show it. similar-files records how similar each file is to the first
+file of its group, and asks for a **Similarity** column before the size.
+XeFM shows such a column only inside the trees that ask for it:
+
+- **Sort by it.** The sort dialog (`sort`) offers it by its name, for the
+  group you are in.
+- **Hide it** with **View → Show ▸**, the entry of the same name, set to
+  **Off**.
+- **Use it in your own layout.** In `config.py`, XeFM calls it `xft.` plus
+  the tree's name for it: `xft.similarity`. Name it in a column of
+  `LAYOUTS`, or change how the tree shows it in `LAYOUT_EXTRAS` with only
+  the keys you change, such as `'xft.similarity': {'when': 'never'}`. Both
+  work before you have opened any tree. See
+  [File List Layouts](FILE_LIST_LAYOUTS_FEATURE.md).
+
+Similarity is a percent rounded down, so `100%` means an exact match. A tree
+of identical files does not ask for the column, since every file in it would
+say `100%`.
+
 ## Acting on the real files
 
 Entries in the tree are references. They can't be deleted or renamed there,

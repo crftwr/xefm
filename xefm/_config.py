@@ -802,8 +802,12 @@ class Config:
     #     }
     #
     # 'type' is how the value is shown and compared: 'text', 'count', 'size'
-    # (bytes), 'time' (a timestamp), 'duration' (seconds), 'enum' (one of
-    # 'values'), or 'tags'.
+    # (bytes), 'time' (a timestamp), 'duration' (seconds), 'ratio' (a score
+    # from 0 to 1), 'enum' (one of 'values'), or 'tags'.
+    # Names starting 'xft.' are declared by the tree files that hold them
+    # (xft.similarity in a similar-files scan) and cannot be defined here;
+    # LAYOUTS can use them, and LAYOUT_EXTRAS can change how a tree shows
+    # them, key by key: 'xft.similarity': {'when': 'never'}.
     # 'where' lists the storage it is asked about -- 'local' (the default),
     # 'archive', 'ssh', 's3' -- since a call per file is cheap on a disk and
     # a request each on S3.
@@ -848,7 +852,8 @@ class Config:
     # default), 'iso', 'relative' ("5 min ago") or 'recent' (13:24 today,
     # 10/21 this year, 2024 before that); 'enum' -- 'letter' or
     # 'word' (its label from 'values'); 'tags' -- 'dots' or 'names';
-    # 'duration' -- 'clock' (3:07, 1:02:45); 'count' -- 'number'; 'text' --
+    # 'duration' -- 'clock' (3:07, 1:02:45); 'ratio' -- 'percent' (93%,
+    # rounded down) or 'decimal' (0.93); 'count' -- 'number'; 'text' --
     # 'text'. A function of yours takes (value, entry)
     # and returns text, or a Cell to give it a color: color is 'muted',
     # 'accent', 'accent2', 'text', a name ('red', 'green', 'yellow', 'blue',

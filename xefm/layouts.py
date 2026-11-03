@@ -25,6 +25,7 @@ by the pane on top, so nothing a format returns can make a row unreadable.
 from __future__ import annotations
 
 import fnmatch
+import math
 import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -171,6 +172,26 @@ def _fmt_clock(value, entry):
     return f"{hours}:{minutes:02}:{seconds:02}" if hours else f"{minutes}:{seconds:02}"
 
 
+def _fmt_percent(value, entry):
+    """A 0-1 score as a whole percent, rounded down: ``0.996`` is ``99%``, so
+    ``100%`` is said only of an exact match."""
+    if value is None:
+        return ""
+    try:
+        return f"{math.floor(round(float(value) * 100, 6))}%"
+    except (TypeError, ValueError, OverflowError):
+        return "---"
+
+
+def _fmt_decimal(value, entry):
+    if value is None:
+        return ""
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError, OverflowError):
+        return "---"
+
+
 def _enum_spec(row, value) -> dict:
     attr = row.attr
     return (attr.values.get(value) if attr is not None else None) or {}
@@ -221,6 +242,8 @@ FORMATS: dict[str, dict[str, Format]] = {
              "relative": Format(_fmt_relative, 10, "left", True, refresh=60.0),
              "recent": Format(_fmt_recent, 5, "left", True, refresh=60.0)},
     "duration": {"clock": Format(_fmt_clock, 8, "right", True)},
+    "ratio": {"percent": Format(_fmt_percent, 4, "right", True),
+              "decimal": Format(_fmt_decimal, 4, "right", True)},
     "enum": {"letter": Format(_fmt_letter, 1), "word": Format(_fmt_word, 10)},
     "tags": {"dots": Format(_fmt_dots, 3),
              "names": Format(_fmt_names, 16)},
@@ -249,12 +272,12 @@ def enum_width(attr, fmt: str) -> int:
 
 #: Value types drawn in a fixed-advance face when the format does not say
 #: otherwise.
-NUMERIC = ("count", "size", "time", "duration")
+NUMERIC = ("count", "size", "time", "duration", "ratio")
 
 #: Of those, the ones right-aligned. Times start at the left (#756): a word
 #: like ``5 min ago`` or a ``recent`` date reads from its start, as dates do
 #: in Finder and Explorer.
-RIGHT_ALIGNED = ("count", "size", "duration")
+RIGHT_ALIGNED = ("count", "size", "duration", "ratio")
 
 
 def words(attr, value) -> str:
@@ -277,6 +300,8 @@ def words(attr, value) -> str:
         return _fmt_clock(value, row)
     if kind == "count":
         return _fmt_count(value, row)
+    if kind == "ratio":
+        return _fmt_percent(value, row)
     return _fmt_text(value, row)
 
 
@@ -441,6 +466,13 @@ _user: dict[str, Layout] = {}
 _extras: dict[str, Extra] = {}
 _default_name = DEFAULT
 _composed: dict = {}
+#: Extras a file declares when it is read (a .xft tree's ``attributes``),
+#: as specs, so a config reload can merge its overrides over them again.
+_declared_specs: dict[str, dict] = {}
+_declared: dict[str, Extra] = {}
+#: ``LAYOUT_EXTRAS`` entries for declared extras, which config.py may name
+#: before any file has declared them: kept, and merged when one does.
+_overrides: dict[str, dict] = {}
 
 
 def register(layout: Layout) -> None:
@@ -463,10 +495,46 @@ def clear() -> None:
     _user.clear()
     _extras.clear()
     _composed.clear()
+    _overrides.clear()
     set_default(DEFAULT)
     for name, spec in BUILTIN_EXTRA_SPECS.items():
         extra, _problem = build_extra(name, spec, source="builtin")
         _extras[name] = extra
+    for name in list(_declared_specs):
+        _build_declared(name)
+
+
+def declare_extra(name: str, spec: Optional[dict]) -> Optional[str]:
+    """Register the extra a file declares (None: it declares none any more).
+    Returns the problem when the spec, with config.py's override, is not
+    one; the extra is then left out."""
+    if spec is None:
+        if _declared_specs.pop(name, None) is not None:
+            _declared.pop(name, None)
+            _composed.clear()
+        return None
+    if _declared_specs.get(name) == spec:
+        return None
+    _declared_specs[name] = spec
+    return _build_declared(name)
+
+
+def override_declared(name: str, spec: dict) -> None:
+    """config.py's ``LAYOUT_EXTRAS`` entry for a declared extra, key by key."""
+    _overrides[name] = spec
+    if name in _declared_specs:
+        _build_declared(name)
+
+
+def _build_declared(name: str) -> Optional[str]:
+    extra, problem = build_extra(
+        name, {**_declared_specs[name], **_overrides.get(name, {})}, source="file")
+    if extra is None:
+        _declared.pop(name, None)
+    else:
+        _declared[name] = extra
+    _composed.clear()
+    return problem
 
 
 def get(name: Optional[str]) -> Optional[Layout]:
@@ -485,12 +553,14 @@ def all_layouts() -> list[Layout]:
 
 
 def get_extra(name: str) -> Optional[Extra]:
-    return _extras.get(name)
+    return _extras.get(name) or _declared.get(name)
 
 
 def all_extras() -> list[Extra]:
-    """Every extra, in definition order — the order they are placed in."""
-    return list(_extras.values())
+    """Every extra, in definition order — the order they are placed in —
+    then those files declared."""
+    return list(_extras.values()) + [e for n, e in list(_declared.items())
+                                     if n not in _extras]
 
 
 # --- building from config -----------------------------------------------------------
@@ -651,7 +721,8 @@ def unknown_attributes(layout) -> list[str]:
     """Attributes a layout or an extra names that nothing registered (checked
     after every table has loaded, since an attribute may come from an
     extension)."""
-    return sorted(n for n in layout.attributes() if not attributes.is_known(n))
+    return sorted(n for n in layout.attributes()
+                  if not attributes.is_known(n) and not attributes.is_declarable(n))
 
 
 # --- where extras apply ---------------------------------------------------------------

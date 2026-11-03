@@ -10,6 +10,10 @@ Three kinds, by how a value is had:
 
 - **Built-in, synchronous** — ``name``, ``ext``, ``mtime``: read straight
   off the record the listing already collected. Never cached, never pending.
+- **Declared by a file** — a ``.xft`` tree's ``attributes`` (``xft.<name>``),
+  registered when the tree is read and synchronous too: the value is in the
+  parsed tree. A config reload keeps them; the next tree that declares the
+  same name replaces it.
 - **Automatic** (``compute = 'auto'``) — computed in the background for every
   row of a listing as soon as something on screen uses the attribute (a column
   or a marker of the pane's layout). ``tags`` is one, and so is anything
@@ -49,7 +53,8 @@ logger = getLogger("Attributes")
 
 #: The value types. A type decides the default format, the default alignment,
 #: and how values compare when a column is sorted.
-TYPES = ("text", "count", "size", "time", "duration", "enum", "tags")
+#: ``ratio`` is a score from 0 to 1 (a similarity).
+TYPES = ("text", "count", "size", "time", "duration", "ratio", "enum", "tags")
 #: When a provider's values are computed — see the module docstring.
 COMPUTE = ("auto", "on_request")
 #: The storage kinds ``where`` may name besides a ``PATH_SCHEMES`` scheme.
@@ -162,7 +167,12 @@ BUILTIN: dict[str, Attribute] = {a.name: a for a in (
 SORT_MODE_OF = {"name": "filename", "ext": "extension", "size": "size",
                 "mtime": "timestamp"}
 
+#: Prefixes of the names a file declares when it is read, not the config —
+#: ``config.py`` may name them before any such file has been opened.
+DECLARED_PREFIXES = ("xft.",)
+
 _user: dict[str, Attribute] = {}
+_declared: dict[str, Attribute] = {}
 
 
 def register(attr: Attribute) -> None:
@@ -170,16 +180,31 @@ def register(attr: Attribute) -> None:
 
 
 def clear() -> None:
-    """Drop every registration (a config reload rebuilds from scratch)."""
+    """Drop every registration (a config reload rebuilds from scratch). What
+    files declared stays: the files are still there."""
     _user.clear()
 
 
+def declare(attr: Attribute) -> bool:
+    """Register an attribute a file declares; whether it is new or changed."""
+    if _declared.get(attr.name) == attr:
+        return False
+    _declared[attr.name] = attr
+    return True
+
+
+def is_declarable(name: str) -> bool:
+    """Whether ``name`` is one only a file can define."""
+    return isinstance(name, str) and name.startswith(DECLARED_PREFIXES)
+
+
 def get(name: str) -> Optional[Attribute]:
-    return _user.get(name) or BUILTIN.get(name)
+    return _user.get(name) or BUILTIN.get(name) or _declared.get(name)
 
 
 def names() -> list[str]:
-    return list(BUILTIN) + [n for n in _user if n not in BUILTIN]
+    out = list(BUILTIN) + [n for n in _user if n not in BUILTIN]
+    return out + [n for n in _declared if n not in out]
 
 
 def is_known(name: str) -> bool:
@@ -223,6 +248,10 @@ def build(name: str, spec) -> tuple[Optional[Attribute], Optional[str]]:
         return None, f"{where}: the name must be a non-empty string"
     if name in BUILTIN:
         return None, f"{where} is a built-in attribute and cannot be replaced"
+    if is_declarable(name):
+        return None, (f"{where}: names starting with "
+                      f"{' or '.join(repr(p) for p in DECLARED_PREFIXES)} are "
+                      f"declared by the files that hold them")
     if not isinstance(spec, dict):
         return None, f"{where} must be a dict with 'read'"
     read = spec.get("read")

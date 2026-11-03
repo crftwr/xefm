@@ -6130,8 +6130,10 @@ class XeFMApp:
         # dialog is open, as their folder totals are.
         store = attributes.store_of(pane)
         records = {str(p): a for p, a in pane.get("_listing_entries") or ()}
-        shown = ("name", "ext", "size", "mtime")
-        attr_names = [n for n in attributes.names() if n not in shown]
+        # The synchronous ones are the table's own fields, or (similarity) the
+        # .xft entry's details below — none of them is ever in the store.
+        attr_names = [n for n in attributes.names() if n != "size"
+                      and not attributes.get(n).is_sync]
         fill = {"names": set(), "cancel": None, "done": True}
 
         def _attr_rows(entry):

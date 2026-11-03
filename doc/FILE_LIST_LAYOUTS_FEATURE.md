@@ -170,7 +170,7 @@ class Config:
 |---|---|
 | `read` | The function: `read(directory, entries)`, returning one value per entry in the order of `entries`. |
 | `label` | The name shown in the sort dialog. |
-| `type` | `text`, `count`, `size` (bytes), `time` (a timestamp), `duration` (seconds), `enum` (one of `values`) or `tags`. It decides how the value is written and how it sorts. |
+| `type` | `text`, `count`, `size` (bytes), `time` (a timestamp), `duration` (seconds), `ratio` (a score from 0 to 1), `enum` (one of `values`) or `tags`. It decides how the value is written and how it sorts. |
 | `values` | For an `enum`: each value's meaning, and a color to show it in. The meaning is what Help lists. |
 | `where` | The storage it is asked about: `local` (the default), `archive`, `ssh`, `s3`. A call per file is cheap on a disk and a request each on S3. |
 | `compute` | `auto` (the default) or `on_request`. |
@@ -223,7 +223,11 @@ A column is an attribute's name, or a dict:
 Every layout has a `name` column, and it takes the width the others leave.
 Leave out `ext` and the extension stays part of the name. The built-in
 `name`, `ext`, `size` (a file's size, or a folder's once it is calculated),
-`mtime` and `tags` can be used in any layout. Naming a layout
+`mtime` and `tags` can be used in any layout. A
+[tree file](TREE_FILES_FEATURE.md) can bring attributes of its own, named
+`xft.` plus the tree's name for them (`xft.similarity`), and an extra of the
+same name. A layout can name them before any tree is opened, and `ATTRIBUTES`
+cannot define a name starting with `xft.`. Naming a layout
 `'default'` replaces the built-in one, which needs `'override': True` so that a
 typo cannot.
 
@@ -236,6 +240,7 @@ typo cannot.
 | `enum` | `letter` (the value itself), `word` (its label from `values`) — both in its color |
 | `tags` | `dots`, `names` |
 | `duration` | `clock` (`3:07`, `1:02:45`) |
+| `ratio` | `percent` (`93%`, rounded down, so `100%` is only an exact match), `decimal` (`0.93`) |
 | `count` | `number` |
 | `text` | `text` |
 

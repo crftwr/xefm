@@ -32,6 +32,10 @@ need nothing from XeFM's code.
   "generation": 7,
   "written": 1760340000.5,
   "progress": {"done": 120, "total": 400},
+  "attributes": {
+    "similarity": {"label": "Similarity", "type": "ratio",
+                   "show": {"columns": [{"before": "size"}]}}
+  },
   "nodes": [
     {
       "name": "trip.mp4 (1)",
@@ -63,6 +67,7 @@ need nothing from XeFM's code.
 | `generation` | no | Counts the writes, starting at 1, so a reader can tell a new snapshot from the one it has. |
 | `written` | no | When the file was written, in seconds since the epoch. |
 | `progress` | no | `{"done", "total"}` of a producer still working. `total` is `0` when not known. |
+| `attributes` | no | Values the producer records in its references' `extra`, declared so that a reader can show them. See [Attributes](#attributes). |
 
 ## Nodes
 
@@ -75,7 +80,7 @@ A node is an object with a `name` and **at least one of** `children` and
 | `children` | A list of nodes. A node with children is a **group**, shown as a folder. |
 | `target` | An absolute path or a URI: the place this node stands for. A node with a target is a **reference**. |
 | `attrs` | What the producer recorded about the target: `size` (bytes), `mtime` (seconds since the epoch), `is_dir`. A reader shows these instead of reading the target, which may be on another machine. All are optional. |
-| `extra` | The producer's own data, such as a similarity or a role. A reader may show what it understands and ignores the rest. |
+| `extra` | The producer's own data, such as a similarity or a role. A reader may show what it understands and ignores the rest. The keys declared in `attributes` are the ones it can show. |
 | `final` | On a group, `true` when it cannot change any more even though the file as a whole is still provisional. Identical-file groups are final as soon as they are written. |
 
 A node with both `children` and `target` is a group that is also a place: it
@@ -84,6 +89,39 @@ opens as a folder, and the pane-sync actions (`sync_current_to_other`,
 
 `line` on a reference is **reserved** for a position in a text file (a search
 hit). It is not defined yet.
+
+## Attributes
+
+`attributes` declares values the producer records in the `extra` of its
+references, so a reader can show them and sort by them without knowing the
+producer. Each key is the `extra` key that holds the value, and says what
+the value is:
+
+| Key | Meaning |
+|---|---|
+| `type` | `text` (the default), `count` (a whole number), `size` (bytes), `time` (seconds since the epoch), `duration` (seconds), `ratio` (a score from 0 to 1) or `enum` (one of `values`). |
+| `label` | Its name for people, on a column and in the sort dialog. The key by default. |
+| `values` | For an `enum`: `{value: {"label": …, "color": …}}`, what each value means and a color to show it in (`red`, `green`, `yellow`, `blue`, `purple`, `orange`, `gray`). |
+| `show` | How the producer suggests showing it. Without `show`, the value is defined but shown only where the user puts it. |
+
+`show` holds `columns`, `markers` or both, each a list of objects:
+
+- A **column** goes `before` or `after` one of the reader's columns
+  (`name`, `ext`, `size`, `mtime`), in its place with `replace`, or at the
+  end when it names none. It may also give `format`, `width`, `align` and
+  `priority`.
+- A **marker** is drawn beside a column's text: `on` names the column
+  (`name` by default) and `side` is `before` or `after`. It may also give
+  `format` and `limit`.
+
+`format` names one of the reader's formats for the type: `ratio` has
+`percent` (`93%`, rounded down) and `decimal` (`0.93`). The formats of the
+other types are listed in [File List Layouts](FILE_LIST_LAYOUTS_FEATURE.md).
+
+A value of the wrong type, such as text where a `ratio` is declared, is not
+shown. A declaration the reader cannot use is ignored, and the tree still
+opens. `show` is a suggestion: the user can hide the column, move it, or show
+the value somewhere else ([Tree Files](TREE_FILES_FEATURE.md)).
 
 ## Provisional files
 
