@@ -412,15 +412,20 @@ def _theme(bg, fg, muted, accent, surface, selection, *, accent2=None,
 # active / inactive), ``isearch_match`` (the i-search wash base — defaults to
 # ``accent2``), and ``syntax`` (a partial text-viewer palette).
 _THEME_SPECS: list[tuple[str, dict]] = [
+    # The i-search wash on Dark+, Light+ and Solarized is a warm hue rather than
+    # accent2: washed into the pane it otherwise landed beside the blue selection
+    # fill, and a match row read as a selected one (Light+ ΔE 0.04, #847). Orange
+    # is VS Code's own find-match color.
     ("Dark+", dict(bg=(30, 30, 30), fg=(212, 212, 212), muted=(157, 157, 157),
                    accent=(0, 122, 204), surface=(48, 48, 52), selection=(10, 105, 178),
-                   accent2=(78, 201, 176))),
+                   accent2=(78, 201, 176), isearch_match=(234, 128, 0))),
     ("Monokai", dict(bg=(39, 40, 34), fg=(248, 248, 242), muted=(140, 140, 130),
                      accent=(166, 226, 46), surface=(56, 57, 48), selection=(86, 122, 38),
                      accent2=(249, 38, 114))),
     ("Dracula", dict(bg=(40, 42, 54), fg=(248, 248, 242), muted=(98, 114, 164),
                      accent=(189, 147, 249), surface=(56, 59, 76), selection=(120, 86, 175),
-                     accent2=(255, 121, 198))),
+                     accent2=(255, 121, 198),
+                     isearch_match=(255, 184, 108))),   # Dracula orange, clear of the purple
     # Nord: status stays the frost accent, footer is a neutral gray (a blend of
     # the background toward the text) — the "accent bar + gray footer" recipe.
     ("Nord", dict(bg=(46, 52, 64), fg=(216, 222, 233), muted=(76, 86, 106),
@@ -431,16 +436,18 @@ _THEME_SPECS: list[tuple[str, dict]] = [
     # accent (cyan) rather than the primary accent — the "accent2 blend" recipe.
     ("Solarized", dict(bg=(0, 43, 54), fg=(147, 161, 161), muted=(88, 110, 117),
                        accent=(38, 139, 210), surface=(10, 62, 78), selection=(26, 102, 150),
-                       accent2=(42, 161, 152),
+                       accent2=(42, 161, 152), isearch_match=(181, 137, 0),  # yellow
                        status=lambda p: mix(p["bg"], p["accent2"], 0.20),
                        footer=lambda p: mix(p["bg"], p["accent2"], 0.20))),
     # Sample theme — the *simple* per-theme color config: on top of the six base
     # colors it names a file_types palette (directory + link hues), a secondary
-    # accent (the i-search match base), and a few syntax tokens; everything else
+    # accent, the i-search match base (red: the orange accent2 washed in beside
+    # the aqua selection read too much like it), and a few syntax tokens; everything else
     # falls back to the defaults. _config.py carries the fully spelled-out config.
     ("Gruvbox Dark", dict(bg=(40, 40, 40), fg=(235, 219, 178), muted=(146, 131, 116),
                           accent=(131, 165, 152), surface=(60, 56, 54), selection=(80, 73, 69),
-                          accent2=(254, 128, 25),            # orange — i-search match base
+                          accent2=(254, 128, 25),
+                          isearch_match=(251, 73, 52),       # red — i-search match base
                           file_types={"directory": (250, 189, 47),  # gruvbox yellow
                                       "link": (131, 165, 152)},      # gruvbox aqua
                           syntax={"keyword": (251, 73, 52),   # red
@@ -451,10 +458,12 @@ _THEME_SPECS: list[tuple[str, dict]] = [
     # surface (the default soft yellow is tuned for dark themes).
     ("Light+", dict(bg=(255, 255, 255), fg=(30, 30, 30), muted=(110, 110, 110),
                     accent=(0, 122, 204), surface=(235, 235, 238), selection=(120, 180, 240),
-                    accent2=(0, 128, 128), directory=(160, 120, 0))),
+                    accent2=(0, 128, 128), directory=(160, 120, 0),
+                    isearch_match=(234, 128, 0))),
     ("Solarized Light", dict(bg=(253, 246, 227), fg=(88, 110, 117), muted=(147, 161, 161),
                              accent=(38, 139, 210), surface=(234, 228, 206), selection=(150, 195, 230),
-                             accent2=(211, 54, 130), directory=(181, 137, 0))),
+                             accent2=(211, 54, 130), directory=(181, 137, 0),
+                             isearch_match=(181, 137, 0))),
     # --- retro hardware looks: each pairs a period-correct palette with a
     # recommended GUI-backend ``post_effect`` — an emissive screen texture (glow /
     # bloom / scanline / vignette) composited over the whole frame on a pixel
@@ -625,11 +634,12 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                        footer=lambda p: mix(p["bg"], p["accent"], 0.20),
                        file_types={"directory": (255, 168, 76),   # orange
                                    "link": (94, 234, 214)},        # turquoise
-                       # The cursor stays near-white rather than joining the warm
-                       # family: it frames whichever row you are on, and half those
-                       # rows are now orange directory names — a warm frame around a
-                       # warm name is the one place the cue could disappear.
-                       cursor={"active": (232, 244, 255)},
+                       # A pale yellow: not the near-white it was, which is the
+                       # file names' own white and framed them invisibly (#846),
+                       # and not the directories' orange, which a frame around an
+                       # orange name would lose. Yellow is the one warm hue still
+                       # clear of both, and bright enough to show on a selection.
+                       cursor={"active": (255, 226, 92)},
                        # A full spread of hues, one per token class, each held above
                        # 4.5:1 on the navy. ``comment`` is the deliberate exception —
                        # it keeps the muted slate, because a comment's job is to
@@ -685,7 +695,9 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                    accent2=(255, 184, 108),
                    status=lambda p: mix(p["bg"], p["accent"], 0.16),
                    footer=lambda p: mix(p["bg"], p["accent"], 0.16),
-                   file_types={"directory": (150, 206, 255), "link": (255, 184, 108)},
+                   # Links are pink, not the amber: the amber is the cursor's,
+                   # and a frame the color of the name inside it disappears (#846).
+                   file_types={"directory": (150, 206, 255), "link": (236, 132, 200)},
                    cursor={"active": (255, 184, 108)},
                    syntax={"keyword": (150, 206, 255), "string": (255, 196, 128),
                            "comment": (140, 158, 186), "number": (255, 222, 150),
@@ -716,7 +728,7 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                     accent2=(255, 179, 92),
                     status=lambda p: mix(p["bg"], p["accent"], 0.16),
                     footer=lambda p: mix(p["bg"], p["accent"], 0.16),
-                    file_types={"directory": (130, 214, 255), "link": (255, 179, 92)},
+                    file_types={"directory": (130, 214, 255), "link": (236, 132, 200)},
                     cursor={"active": (255, 179, 92)},
                     syntax={"keyword": (130, 214, 255), "string": (255, 196, 128),
                             "comment": (136, 160, 186), "number": (255, 222, 150),
@@ -736,7 +748,7 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                      accent2=(255, 154, 82),
                      status=lambda p: mix(p["bg"], p["accent"], 0.14),
                      footer=lambda p: mix(p["bg"], p["accent"], 0.14),
-                     file_types={"directory": (88, 199, 222), "link": (255, 154, 82)},
+                     file_types={"directory": (88, 199, 222), "link": (236, 132, 200)},
                      cursor={"active": (255, 154, 82)},
                      syntax={"keyword": (88, 199, 222), "string": (255, 182, 120),
                              "comment": (138, 151, 159), "number": (255, 214, 150),

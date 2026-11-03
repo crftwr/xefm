@@ -337,6 +337,55 @@ Only **Segment LCD** still names an `inactive`, because a two-colour LCD panel h
 no gray — and needs none, its near-black active cue being as far from mid-green as
 that palette goes. A user's `config.py` names one the same way.
 
+The derived gray also keeps `CURSOR_TEXT_DE` (OKLab ΔE 0.10) from the theme's
+text color (`_apart_from`): it frames a row of names, and in the names' own shade
+it frames nothing. On Solarized the floored gray had landed at the cyan-gray of
+the file names, ΔE 0.02 (#846).
+
+### A cue on a filled row
+
+On a selected or matched row the cue is drawn over the row's fill, and a color
+chosen against the pane can vanish there — Segment LCD's black outline on its dark
+selection, the default red on Monokai's green (Lc 10). `_cursor_fg(..., on=fill)`
+runs the color through `_cue_on`: kept where it clears `CURSOR_ON_FILL_LC` on the
+fill, otherwise moved in OKLab toward the pole that contrasts with the fill by the
+least step that clears it. It steps rather than bisects: a dark cue on a dark fill
+loses contrast before it gains it on its way to white.
+
+## Keeping the marks visible
+
+`test/test_theme_contrast.py` holds every built-in theme to these, measured as
+OKLab ΔE between fills and APCA Lc for a cue on a fill (#844–#847):
+
+| Rule | Floor |
+|---|---|
+| a dialog list's selection (`selection_active_bg`) vs the dialog (`popup_bg`) | ΔE 0.10 |
+| the file pane's selection fill vs the pane | ΔE 0.10 |
+| the i-search match fill vs the selection fill | ΔE 0.09 |
+| the cursor vs the text, directory and link colors (resting: the text) | ΔE 0.10 |
+| the cursor on a selected row | Lc 45 |
+
+The first comes from PuiKit: `derive_theme` keeps each selection fill a minimum
+distance from every surface it is drawn on (puikit#187). A dialog whose query
+field holds the focus draws its list *focused* — the navigation keys move it, and
+Enter acts on its row — so the list shows that active fill rather than the
+inactive one, which sat at the dialog's own shade (#844).
+
+The palette side: Shinagawa's cursor is a pale yellow, not the file names' white;
+Earth, Blocks and Crystal draw links in pink, leaving the amber to the cursor;
+Dark+, Light+, Dracula, Gruvbox Dark and both Solarized themes name an
+`isearch_match` hue away from their selection.
+
+### Marks over a background scene
+
+Under a translucent surface (a theme's `opacity` below 1) every fill lets the
+scene through, and a mark is no exception: Blocks' selection over a dark patch came
+out the color of an unselected row over a cyan light leak (ΔE 0.06; Crystal 0.007,
+#845). The row's mark fill — selected or matched — is drawn with
+`fill_rect(..., opacity=MARK_OPACITY)` (0.95), the least opacity PuiKit keeps for
+that one fill while the surface around it still dissolves. A terminal has no
+translucency and ignores it.
+
 ## Related Files
 
 - `xefm/colors.py` — color-pair constants, `dark`/`light` palettes, `init_colors`, accessors

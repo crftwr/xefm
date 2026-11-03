@@ -33,8 +33,8 @@ try:
 except ImportError:  # PuiKit before the release that exported it
     from puikit.widgets._input import MultiClickTracker
 from puikit.backend import Style, TextAttribute, TRANSPARENT
-from puikit.color import (LC_BODY, LC_LARGE, LC_MIN_NONTEXT, ensure_text_headroom,
-                          legible_ink, oklab_to_rgb, rgb_to_oklab)
+from puikit.color import (LC_BODY, LC_LARGE, LC_MIN_NONTEXT, apca_lc, ensure_text_headroom,
+                          legible_ink, oklab_distance, oklab_to_rgb, rgb_to_oklab)
 from puikit.event import Event, EventType
 from puikit.font import Font
 from puikit.text import elide
@@ -142,6 +142,14 @@ CURSOR_ACTIVE = (231, 76, 76)
 #: enough to find the resting cursor, not enough to compete with the focused
 #: pane's colored cue (LC_LARGE lands it around 180 gray, which does compete).
 CURSOR_RESTING_LC = LC_MIN_NONTEXT
+#: How far (OKLab ΔE) that derived gray keeps from the theme's text color. The
+#: cue frames a row of text; in the text's own color it frames nothing — on
+#: Solarized the gray matched the cyan-gray file names to ΔE 0.02 (#846).
+CURSOR_TEXT_DE = 0.10
+#: Floor for any cursor cue against a filled row it sits on (a selection, an
+#: i-search match): the cue's color is kept, lifted only where the fill would
+#: swallow it — black on Segment LCD's dark selection, red on Monokai's green.
+CURSOR_ON_FILL_LC = LC_MIN_NONTEXT
 #: Corner brackets framing the **active** pane's file list — the tactical-HUD
 #: cue, opted into per theme via ``extras['pane_frame']`` (Sci-Fi is the only
 #: built-in that does). Pure configuration: a theme names it and the frame
@@ -173,6 +181,13 @@ PANE_INACTIVE_DIM = 0.30
 #: firmer blend on the active pane, subtler on the inactive one.
 SELECT_MIX_ACTIVE = 0.42
 SELECT_MIX_INACTIVE = 0.22
+#: Least opacity a row's *mark* fill (selected, i-search match) keeps where the
+#: theme makes the surfaces translucent over a background scene. At the surface
+#: opacity the scene shows through the mark as much as through the pane, and a
+#: selected row over a dark patch came out the color of an unselected row over a
+#: bright one — Blocks' cyan selection against its cyan light leaks (#845). The
+#: rest of the row still lets the scene through; only the mark stays solid.
+MARK_OPACITY = 0.95
 #: Fallback pane background when the context reports none (mix base for the
 #: selection tint).
 DEFAULT_BG = (30, 30, 38)
@@ -204,6 +219,73 @@ DRAG_THRESHOLD = 1.5
 def _mix(a, b, t):
     """Linear RGB blend a→b by ``t`` (0..1)."""
     return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+def selection_fill(theme, base, active=True):
+    """The fill of a selected row on a pane whose background is ``base``.
+
+    A theme may pin it (``extras['selection_fill']``: a 2-colour LCD theme,
+    where the accent tint below corrects itself to invisibility) — used verbatim
+    on the active pane, blended toward the pane bg on the inactive one so the
+    focused pane's selection still reads louder; the row text auto-inks over it.
+    Otherwise it is the accent tint, which reads as "selected"; on a light theme
+    that lands mid-luminance and can't bear the row's body text, so it is nudged
+    back toward the pane background just enough to clear the body floor (a no-op
+    on dark themes, where the dark tint already has headroom)."""
+    pinned = theme.extras.get("selection_fill")
+    if pinned is not None:
+        return pinned if active else _mix(base, pinned, 0.55)
+    ratio = SELECT_MIX_ACTIVE if active else SELECT_MIX_INACTIVE
+    return ensure_text_headroom(_mix(base, theme.accent, ratio), base, LC_BODY)
+
+
+def match_fill(theme, base):
+    """The fill of an i-search match row: the theme's secondary accent (or its
+    ``isearch_match`` override) blended into the pane bg — a different hue from
+    the selection fill."""
+    return _mix(base, theme.extras.get("isearch_match") or theme.accent2, MATCH_TINT)
+
+
+def _cue_on(color, fill, target=CURSOR_ON_FILL_LC):
+    """``color`` as it should be drawn over ``fill``: unchanged where it already
+    clears ``target`` Lc there, otherwise moved in OKLab toward the pole that
+    contrasts with the fill, by the least step that clears it — so the hue stays.
+
+    Stepped rather than bisected: a dark cue on a dark fill first loses contrast
+    on its way to white, then gains it, and only the step that crosses back over
+    the target is the answer."""
+    if abs(apca_lc(color, fill)) >= target:
+        return color
+    white, black = (255, 255, 255), (0, 0, 0)
+    pole = white if abs(apca_lc(white, fill)) >= abs(apca_lc(black, fill)) else black
+    start, end = rgb_to_oklab(color), rgb_to_oklab(pole)
+    for step in range(1, 101):
+        t = step / 100
+        cand = oklab_to_rgb(tuple(start[i] + (end[i] - start[i]) * t for i in range(3)))
+        if abs(apca_lc(cand, fill)) >= target:
+            return cand
+    return pole
+
+
+def _apart_from(gray, text, base, floor):
+    """The neutral ``gray`` moved in lightness, the least it takes, until it is
+    ``CURSOR_TEXT_DE`` from ``text`` and still ``floor`` Lc on ``base``.
+    Unchanged where it already is; the farther of the two when neither way gets
+    there."""
+    if oklab_distance(gray, text) >= CURSOR_TEXT_DE:
+        return gray
+    lightness = rgb_to_oklab(gray)[0]
+    best = gray
+    for step in range(1, 101):
+        for sign in (1, -1):
+            cand = oklab_to_rgb((min(1.0, max(0.0, lightness + sign * step / 200)), 0.0, 0.0))
+            if abs(apca_lc(cand, base)) < floor:
+                continue
+            if oklab_distance(cand, text) >= CURSOR_TEXT_DE:
+                return cand
+            if oklab_distance(cand, text) > oklab_distance(best, text):
+                best = cand
+    return best
 
 
 def _neutral(color):
@@ -435,7 +517,7 @@ class FilePane(Widget):
                 amount = HIDDEN_DIM
         return _mix_oklab(fg, base, amount)
 
-    def _cursor_fg(self, theme, base=None):
+    def _cursor_fg(self, theme, base=None, on=None):
         """The cursor-cue color for this pane's focus state, from the theme's
         ``cursor`` sub-palette (``extras['cursor']``: active / inactive).
 
@@ -453,16 +535,25 @@ class FilePane(Widget):
         pane background (``base``, when the caller knows it) so a theme whose
         muted ink is very dim still shows where the resting cursor sits. A theme
         — or a user's ``config.py`` — that names ``inactive`` is honored verbatim:
-        the Segment LCD panel has no gray to spend, and says so.
+        the Segment LCD panel has no gray to spend, and says so. The derived gray
+        also keeps clear of the theme's text color, which it would otherwise
+        frame in its own shade.
+
+        ``on`` is the fill under the cue, when the row has one (selected, an
+        i-search match): whatever the color, it is lifted just enough to show
+        on that fill (``_cue_on``).
         """
         cur = theme.extras.get("cursor") or {}
         if self.active:
-            return cur.get("active") or CURSOR_ACTIVE
-        resting = cur.get("inactive")
-        if resting is not None:
-            return resting
-        gray = _neutral(theme.muted_text)
-        return gray if base is None else legible_ink(gray, base, CURSOR_RESTING_LC)
+            color = cur.get("active") or CURSOR_ACTIVE
+        elif cur.get("inactive") is not None:
+            color = cur["inactive"]
+        else:
+            color = _neutral(theme.muted_text)
+            if base is not None:
+                color = _apart_from(legible_ink(color, base, CURSOR_RESTING_LC),
+                                    theme.text, base, CURSOR_RESTING_LC)
+        return color if on is None else _cue_on(color, on)
 
     def _inactive_dim(self, theme) -> float:
         """How far to wash this pane's ink toward its background, ``0``..``1``.
@@ -1012,45 +1103,31 @@ class FilePane(Widget):
         # a pane's columns.
         ruled_cursor = is_cursor and ruled
         base = ctx.background or DEFAULT_BG
-        # ``base`` first: the resting pane's cue is floored against the pane
-        # background it will be drawn on (see ``_cursor_fg``).
-        under = self._cursor_fg(theme, base) if ruled_cursor else None
         row_attr = TextAttribute.UNDERLINE if ruled_cursor else TextAttribute.NORMAL
         if selected:
-            pinned = theme.extras.get("selection_fill")
-            if pinned is not None:
-                # A theme may pin the selection fill (a 2-colour LCD theme, where the
-                # accent-tinted fill below corrects itself to invisibility). Used
-                # verbatim on the active pane; blended toward the pane bg on the
-                # inactive one so the focused pane's selection still reads louder.
-                # The row text auto-inks over it (a dark fill inverts it to light).
-                row_bg = pinned if self.active else _mix(base, pinned, 0.55)
-            else:
-                ratio = SELECT_MIX_ACTIVE if self.active else SELECT_MIX_INACTIVE
-                # The accent tint reads as "selected"; on a light theme it lands
-                # mid-luminance and can't bear the row's body text, so nudge it back
-                # toward the pane background just enough to clear the body floor (a
-                # no-op on dark themes, where the dark tint already has headroom).
-                row_bg = ensure_text_headroom(_mix(base, theme.accent, ratio), base, LC_BODY)
+            row_bg = selection_fill(theme, base, self.active)
         elif is_match:
-            # Base hue = the theme's secondary accent (or an isearch_match
-            # override), blended into the pane bg — distinct from the accent
-            # selection fill.
-            match_base = theme.extras.get("isearch_match") or theme.accent2
-            row_bg = _mix(base, match_base, MATCH_TINT)
+            row_bg = match_fill(theme, base)
         else:
             row_bg = None
+        # ``base`` first: the resting pane's cue is floored against the pane
+        # background it will be drawn on, and against the row's fill where the
+        # row has one (see ``_cursor_fg``).
+        under = self._cursor_fg(theme, base, on=row_bg) if ruled_cursor else None
 
         # Paint the row background first, then (on a GUI cursor row) the red
         # outline, then the text — the three layers the cursor cue needs, in
         # order. The cursor row always gets a solid fill so the outline sits on an
         # opaque base: its own tint when selected/matched, else the pane bg.
         fill_bg = row_bg if row_bg is not None else (base if gui_cursor else None)
-        if fill_bg is not None:
+        if row_bg is not None:
+            ctx.fill_rect(content_left, y, max(0.0, content_right - content_left), 1.0,
+                          Style(bg=row_bg), opacity=MARK_OPACITY)
+        elif fill_bg is not None:
             ctx.fill_rect(content_left, y, max(0.0, content_right - content_left), 1.0,
                           Style(bg=fill_bg))
         if gui_cursor:
-            self._draw_cursor(ctx, y, band_left, band_right, grid, ruled)
+            self._draw_cursor(ctx, y, band_left, band_right, grid, ruled, on=row_bg)
 
         # Foreground keeps the file-type color language on every row (link / dir /
         # file from the theme's file_types palette, a symlink winning over a dir),
@@ -1170,7 +1247,7 @@ class FilePane(Widget):
         # glyphs: the brackets, or — where the row is ruled — the two cells that
         # carry the rule past the content and out to the row's ends.
         if is_cursor and grid:
-            self._draw_cursor(ctx, y, band_left, band_right, grid, ruled)
+            self._draw_cursor(ctx, y, band_left, band_right, grid, ruled, on=row_bg)
 
     def _draw_value(self, ctx, y, p, value_of, row_for, entry_factory, style,
                     marker_fg, measure, measure_mono, fallback=None) -> None:
@@ -1215,7 +1292,7 @@ class FilePane(Widget):
         for cells_m, _w in after:
             x = self._draw_cells(ctx, x + space, y, cells_m, style, marker_fg, measure)
 
-    def _draw_cursor(self, ctx, y, band_left, band_right, grid, ruled=False) -> None:
+    def _draw_cursor(self, ctx, y, band_left, band_right, grid, ruled=False, on=None) -> None:
         """Draw the cursor-position cue for the current row — the theme's ``cursor``
         color (default a distinct **red**), orthogonal to the selection fill. Vivid
         on the active pane, muted on the inactive one so the focused pane's cursor
@@ -1229,7 +1306,7 @@ class FilePane(Widget):
         - **TUI** (grid), otherwise: a bold ``[`` … ``]`` bracket pair around the
           row, the spelling for a terminal that cannot color a rule.
         """
-        color = self._cursor_fg(ctx.theme, ctx.background or DEFAULT_BG)
+        color = self._cursor_fg(ctx.theme, ctx.background or DEFAULT_BG, on=on)
         if not grid:
             # Span the full row height so the outline matches the selection fill
             # exactly (top and bottom flush). Horizontally, bleed CURSOR_BLEED_PX
