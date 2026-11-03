@@ -24,7 +24,16 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.18.0 is the floor, and a soft one: it requires Pillow only on the OS and
+# 1.20.0 is the floor, and a hard one: the file pane draws a selected row with
+# ``fill_rect(..., opacity=)`` so a background scene cannot wash it out (#845),
+# an unexpected keyword -- a TypeError on the first selected row -- on any older
+# PuiKit. 1.20.0 also keeps each derived selection fill clear of the popup and
+# input surfaces it is drawn on, and draws a list's selected row solid under a
+# translucent surface (puikit#187) -- what makes the search dialogs' selection
+# visible (#844). It also takes in 1.19.0, which never became a floor of its own:
+# PuiKit no longer requires windows-curses, which has no arm64 wheel, so XeFM
+# installs on native ARM64 Python on Windows (#835, puikit#186).
+# 1.18.0 was the previous floor, and a soft one: it requires Pillow only on the OS and
 # machine pairs Pillow has wheels for, so XeFM installs on 32-bit ARM, Cygwin,
 # FreeBSD and the like (puikit#185, doc/dev/BINARY_DEPENDENCIES_SYSTEM.md); it
 # also carries the passes, targets and textures the Earth, Blocks and Crystal
@@ -216,7 +225,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.18.0
+puikit>=1.20.0
 pygments
 boto3
 watchdog

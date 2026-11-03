@@ -634,10 +634,14 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         # The "bg" hint hands the list the popup surface as its inherited
         # background — otherwise its bg=None rows fall through to the terminal's
         # default colors on a grid backend (dark bands over the dialog).
+        # Drawn focused although the query field holds the focus: the
+        # navigation keys move this list, and its row is what Enter acts on, so
+        # it takes the active selection fill. The inactive one is about the
+        # dialog surface's own shade and left the row invisible (#844).
         ctx.draw_child(
             self.list, self._list_rect.x, self._list_rect.y,
             self._list_rect.w, self._list_rect.h,
-            hints={"focused": False, "bg": surface_bg},
+            hints={"focused": True, "bg": surface_bg},
         )
 
         # Key hint as the bottom band, mirroring the title bar — the list's own
