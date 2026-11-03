@@ -234,7 +234,10 @@ class Format:
 FORMATS: dict[str, dict[str, Format]] = {
     "text": {"text": Format(_fmt_text, 12)},
     "count": {"number": Format(_fmt_count, 7, "right", True)},
-    "size": {"compact": Format(_fmt_compact, 9, "right", True),
+    # 7: the longest compact size, "1023.9K". It was 9, the old fixed
+    # column's, and the two spare cells stood between the size and any
+    # column put before it.
+    "size": {"compact": Format(_fmt_compact, 7, "right", True),
              "bytes": Format(_fmt_bytes, 15, "right", True)},
     "time": {"short": Format(_time_formatter("%y-%m-%d %H:%M"), 14, "left", True),
              "full": Format(_time_formatter("%Y-%m-%d %H:%M:%S"), 19, "left", True),

@@ -267,6 +267,15 @@ class Extras(_Clean):
 
 class Formats(unittest.TestCase):
 
+    def test_the_compact_size_column_is_as_wide_as_its_longest_value(self):
+        """No spare cells: they would stand between the size and a column
+        placed before it (a tree's similarity)."""
+        from xefm.str_format import format_size
+        longest = max(len(format_size(n, compact=True)) for k in range(5)
+                      for n in (1023 * 1024 ** k, 1024 ** (k + 1) - 1))
+        self.assertEqual(longest, 7)
+        self.assertEqual(layouts.FORMATS["size"]["compact"].width, longest)
+
     def render(self, kind, fmt, value, **row):
         attr = attributes.Attribute("x", "X", kind, values=row.pop("values", {}))
         resolved = layouts.resolve_format(fmt, attr)
