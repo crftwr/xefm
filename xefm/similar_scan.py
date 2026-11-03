@@ -239,6 +239,13 @@ class ScanJob:
         as ``cancelled``."""
         (self.folder / "stop").write_text("", encoding="utf-8")
 
+    def remove(self) -> None:
+        """Delete the scan's folder — its groups and its log. A running scan
+        is refused with ``ValueError``: it would only write them again."""
+        if self.state() not in FINISHED:
+            raise ValueError("the scan is still running")
+        shutil.rmtree(self.folder)
+
 
 def start(roots: list, method: str, *, base: Optional[_StdPath] = None,
           python: Optional[str] = None) -> ScanJob:
@@ -296,8 +303,10 @@ def jobs(base: Optional[_StdPath] = None) -> list[ScanJob]:
 
 
 def prune(base: _StdPath, keep: int = KEEP) -> None:
-    """Remove finished scans beyond the ``keep`` newest. A running scan is
-    never touched."""
+    """Remove finished scans beyond the ``keep`` newest, the ones already
+    looked at first, so an unseen one is not dropped while a seen one stays
+    (#822). A running scan is never touched."""
     finished = [j for j in jobs(base) if j.state() in FINISHED]
+    finished.sort(key=lambda j: j.seen)  # stable: newest first within each
     for job in finished[keep:]:
         shutil.rmtree(job.folder, ignore_errors=True)

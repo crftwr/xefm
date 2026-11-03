@@ -29,9 +29,9 @@ and `--format tree` / `--snapshot-interval`):
 | Piece | |
 |---|---|
 | `start(roots, method, base=, python=)` | Makes the job folder, writes `job.json`, starts `python -m similar_files scan … --out result.xft --format tree --method M --status status.json --stop-file stop`, with stdout and stderr going to `scan.log` |
-| `ScanJob` | One folder: `info()`, `status()`, `state()`, `progress_text()`, `summary()`, `seen` / `mark_seen()`, `stop()` |
+| `ScanJob` | One folder: `info()`, `status()`, `state()`, `progress_text()`, `summary()`, `seen` / `mark_seen()`, `stop()`, `remove()` (deletes the folder; `ValueError` while running) |
 | `jobs(base)` | Every scan folder, newest first (ids are `YYYYmmdd-HHMMSS-<hex>`) |
-| `prune(base, keep=10)` | Removes finished scans beyond the newest ten. Never a running one |
+| `prune(base, keep=10)` | Removes finished scans beyond the newest ten, seen ones before unseen (#822). Never a running one |
 | `unavailable(method)` | Why a method cannot run (similar-files missing or older than 0.2, the extractor's own `install_hint()`), or None |
 | `pid_alive(pid)` | `os.kill(pid, 0)` on POSIX, `OpenProcess` / `GetExitCodeProcess` on Windows |
 
@@ -71,16 +71,25 @@ reboot, but a status that stopped changing cannot be mistaken for a live one.
   `_pump_monitoring` calls `_pump_scans()`, which refreshes the rows, logs a
   scan that has just finished, and asks for a frame only when the rows
   changed. The poller ends with the last running scan.
-- `_jobs_parts` appends running scans (`busy`, drawn behind the spinner:
-  `Similar videos extract 42%`) and finished, unseen ones (`done`, `✓ … 12
-  groups`; `failed`, `⚠`, for stopped, failed or lost) after the in-process
-  jobs.
+- `_jobs_parts` appends, after the in-process jobs, **at most two** scan
+  parts (#822): the running scans (`busy`, behind the spinner: `Similar
+  videos extract 42%`, or `2 scans running`) and the finished, unseen ones
+  (`✓ Similar videos: 12 groups`, or `✓ 3 scans finished`). A part each let
+  ten finished scans squeeze the hints down to `F…`, since the job segment
+  takes its width first. A stopped (`cancelled`) scan is `done`; `failed`
+  (`⚠`, with `, N failed` in the count) is only for failed or lost ones.
 - `show_jobs` lists in-process jobs and scans together. A running scan offers
   **Look at the groups so far** (once `result.xft` exists), **Stop the scan**
   (`job.stop()`) and **Show its log**. A finished one is marked seen. For both,
   the active pane goes into `xft://<job>/result.xft#` (#573), and the
   tree's own provisional handling (header, re-read on rewrite, follow by
   anchor) does the rest. A failed or lost one opens its log.
+- Clearing without opening (#822): the jobs list ends with **Mark N finished
+  scans as seen** while any is unseen, and its `ChoiceDialog` gets
+  `on_remove`, so `remove_list_item` (the filter-list key, read by action)
+  deletes a finished scan with `ScanJob.remove()` and refuses a running one.
+  Before this, opening was the only way to set `seen`, and each open made a
+  tab.
 
 ## Why a tree file, rewritten
 
