@@ -104,7 +104,7 @@ def _no_action(name: str) -> str:
     known = sorted({a.name for c in CONTEXTS for a in registry.actions(c)})
     close = difflib.get_close_matches(name, known, n=1)
     return (f"no action is called {name!r}"
-            + (f" — did you mean {close[0]!r}?" if close else ""))
+            + (f" - did you mean {close[0]!r}?" if close else ""))
 
 
 def _binding_problems(name, value) -> list[str]:
@@ -126,7 +126,7 @@ def _binding_problems(name, value) -> list[str]:
     else:
         keys = value
     if not isinstance(keys, (list, tuple)):
-        problems.append(f"{where}: the keys are a list, like ['F12'] — or "
+        problems.append(f"{where}: the keys are a list, like ['F12'] - or "
                         "{'keys': [...], 'selection': ...}")
         return problems
     for expr in keys:
@@ -174,7 +174,7 @@ def build(config_file: Path | None = None, keymap: str | None = None,
         manager.config_file = Path(config_file)
     config = manager.load_config(create=False)
     if manager.load_error is not None:
-        report.errors.append(f"{manager.config_file} does not load — XeFM would "
+        report.errors.append(f"{manager.config_file} does not load - XeFM would "
                              f"start on the template instead: {manager.load_error}")
     elif not manager.config_file.is_file():
         report.warnings.append(f"no {manager.config_file}: XeFM's template is shown")
@@ -193,7 +193,7 @@ def build(config_file: Path | None = None, keymap: str | None = None,
     for name, value in own.items():
         report.errors.extend(_binding_problems(name, value))
     for old, current in deprecated_binding_names(own):
-        report.warnings.append(f"KEY_BINDINGS[{old!r}]: an old name — "
+        report.warnings.append(f"KEY_BINDINGS[{old!r}]: an old name - "
                                f"now {current!r}; it still works")
     for action, key in printable_text_bindings(own):
         report.errors.append(f"KEY_BINDINGS[{action!r}]: {key!r} types a "
@@ -212,7 +212,7 @@ def build(config_file: Path | None = None, keymap: str | None = None,
         source = "chosen in XeFM"
         if preset is None:
             preset, source = keymap_presets.FALLBACK, (
-                "none chosen yet — XeFM asks at its next launch")
+                "none chosen yet - XeFM asks at its next launch")
     keymap_presets.apply(config, preset)
     bindings = KeyBindings(config.KEY_BINDINGS)
     for context in registry.contexts():

@@ -93,7 +93,7 @@ class KeysCliTest(unittest.TestCase):
         self.write_config("        'relod_config': ['F12'],\n")
         status, out = self.run_keys("F12")
         self.assertEqual(status, 1)
-        self.assertIn("no action is called 'relod_config' — did you mean "
+        self.assertIn("no action is called 'relod_config' - did you mean "
                       "'reload_config'?", out)
 
     def test_a_malformed_entry_is_an_error(self):

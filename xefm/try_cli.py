@@ -23,7 +23,7 @@ def _parser() -> argparse.ArgumentParser:
         "of the Day is off, and the home is deleted at exit. Without --keys it "
         "runs in this terminal until you quit it. With --keys it follows a "
         "script in a pseudo-terminal, saves each step's screen as text, "
-        "optionally records the session, and exits — for automated tests and "
+        "optionally records the session, and exits - for automated tests and "
         "demos.")
     home = parser.add_argument_group("the home")
     home.add_argument("--ext", metavar="SOURCE", action="append", default=[],

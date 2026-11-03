@@ -12813,7 +12813,7 @@ def _curses_backend_notice(backend_name: str, platform: str) -> str | None:
 #: written for readers of the source (RST markup, architecture notes), and
 #: argparse would reflow the whole thing into an unreadable wall of text.
 _CLI_DESCRIPTION = """\
-XeFM — a dual-pane file manager for the desktop and the terminal.
+XeFM - a dual-pane file manager for the desktop and the terminal.
 
 The same app runs as a native desktop window on Windows and macOS, as a TUI on
 Windows, macOS and Linux, or in a browser tab. Choose with --backend.
@@ -12821,13 +12821,13 @@ Windows, macOS and Linux, or in a browser tab. Choose with --backend.
 
 _CLI_EPILOG = """\
 examples:
-  xefm                            terminal — the default
+  xefm                            terminal - the default
   xefm --backend gui              native desktop window (Windows/macOS)
   xefm --backend web              browser tab
   xefm --left ~/projects --right ~/downloads
   xefm ext --help                 manage extension packages
   xefm skill --help               the skill that teaches AI agents XeFM
-  xefm try --help                 XeFM in a throwaway home — to try, test or record a demo
+  xefm try --help                 XeFM in a throwaway home - to try, test or record a demo
 
 Project home: https://github.com/crftwr/xefm
 """
@@ -12874,7 +12874,7 @@ def _web_access_message(url: str) -> str:
         # a placeholder keeps the hint useful rather than failing startup.
         user_host = "USER@HOST"
     return (
-        f"XeFM web UI: {url} — reachable from this machine only.\n"
+        f"XeFM web UI: {url} - reachable from this machine only.\n"
         f"To use it from another machine, start a tunnel there:\n"
         f"\n"
         f"    ssh -N -L {port}:127.0.0.1:{port} {user_host}\n"
@@ -12884,6 +12884,13 @@ def _web_access_message(url: str) -> str:
 
 
 def main() -> None:
+    # Redirected to a file or a pipe on Windows, stdout takes the ANSI code page
+    # (cp932 in Japan), which cannot hold every character a config, a path or an
+    # extension may carry: write "?" for those rather than crash (#829). XeFM's
+    # own messages are ASCII for the same reason (test_stream_text_ascii.py).
+    # stderr already backslash-escapes instead of raising.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     # Before anything can open a connection: HTTPS is verified by the OS on
     # macOS and Windows, every channel alike (#676, xefm/tls.py).
     from xefm.tls import use_os_trust_store

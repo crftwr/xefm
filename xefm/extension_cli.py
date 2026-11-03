@@ -54,7 +54,7 @@ def _parser() -> argparse.ArgumentParser:
     # Kept as an alias of the top-level `xefm skill` (#639): the skill grew
     # beyond extensions, but instructions already out there name this one.
     _skill_arguments(sub.add_parser(
-        "skill", help="the AI-agent skill for XeFM — same as `xefm skill`"))
+        "skill", help="the AI-agent skill for XeFM - same as `xefm skill`"))
 
     outdated = sub.add_parser(
         "outdated", help="list installed packages with a newer version (asks GitHub)")
@@ -147,7 +147,7 @@ def _sync_python_packages(layout: ext.Layout, *, ask: bool) -> int:
     the network and runs pip."""
     from xefm import python_packages as pp
     if ask and not _ask("It needs Python packages from PyPI. Sync them now?"):
-        print("Not synced — the extension loads after `xefm deps sync`.")
+        print("Not synced - the extension loads after `xefm deps sync`.")
         return 0
     try:
         result = pp.sync(pp.Layout(layout.home), log=print)
@@ -155,7 +155,7 @@ def _sync_python_packages(layout: ext.Layout, *, ask: bool) -> int:
         print(f"Python packages sync failed: {exc}", file=sys.stderr)
         return 1
     print("Python packages synced"
-          + (" — they take effect when XeFM next starts" if result.pending_restart else ""))
+          + (" - they take effect when XeFM next starts" if result.pending_restart else ""))
     return 0
 
 
@@ -164,7 +164,7 @@ def _note_python_packages(layout: ext.Layout) -> None:
     packages out of date — the sync that removes or adds them is the user's."""
     from xefm import python_packages as pp
     if pp.check(pp.Layout(layout.home)).state == pp.NEEDS_SYNC:
-        print("Python packages are out of date — run `xefm deps sync`")
+        print("Python packages are out of date - run `xefm deps sync`")
 
 
 def _print_problems(problems) -> None:
@@ -187,7 +187,7 @@ def _check(args: argparse.Namespace, layout: ext.Layout, root: Path) -> int:
     if args.stable_only:
         previews = ext.stable_only(previews)
     _print_problems(problems + previews)
-    apis = {p.message.split(" — ")[0] if " — " in p.message else p.where
+    apis = {p.message.split(" - ")[0] if " - " in p.message else p.where
             for p in previews}
     if apis:
         print(f"{len(apis)} Preview API(s) in use; everything else this "
@@ -238,8 +238,8 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
         except ext.ManifestError as exc:
             print(exc.problem, file=sys.stderr)
             return 1
-        print(f"installed {manifest.id} {manifest.version} — reload the config "
-              "(Tools ▸ Reload Configuration) or restart XeFM to load it")
+        print(f"installed {manifest.id} {manifest.version} - reload the config "
+              "(Tools > Reload Configuration) or restart XeFM to load it")
         if manifest.requires.get("python_packages"):
             return _sync_python_packages(layout, ask=not args.yes)
         return 0
@@ -272,7 +272,7 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
                 "enabled" if entry.enabled else "disabled")
             bad = ext.errors(ext.check_manifest(manifest, others=manifests,
                                                 machine=False))
-            note = f" — will not load: {bad[0].message}" if bad else ""
+            note = f" - will not load: {bad[0].message}" if bad else ""
             source = f"  from {entry.source}" if entry and entry.source else ""
             print(f"{manifest.id} {manifest.version} [{state}]{source}{note}")
             if manifest.data.get("settings") is not None:
@@ -280,7 +280,7 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
                       "in config.py")
         for ext_id, entry in sorted(installed.items()):
             if ext_id not in seen:
-                print(f"{ext_id} {entry.version} [missing — run `xefm ext sync`]")
+                print(f"{ext_id} {entry.version} [missing - run `xefm ext sync`]")
         return 0
 
     if args.command in ("enable", "disable"):
@@ -289,7 +289,7 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
         except ext.InstallError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        print(f"{args.id} {args.command}d — takes effect on the next config reload")
+        print(f"{args.id} {args.command}d - takes effect on the next config reload")
         _note_python_packages(layout)
         return 0
 
@@ -299,7 +299,7 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
         except ext.InstallError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        print(f"created {root} — edit it, then: xefm ext check {root}")
+        print(f"created {root} - edit it, then: xefm ext check {root}")
         return 0
 
     if args.command == "skill":
@@ -331,13 +331,13 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
         failed = [c for c in checks if c.failed]
         for check in checks:
             if check.failed:
-                print(f"{check.id} {check.version}: could not check — {check.problem}",
+                print(f"{check.id} {check.version}: could not check - {check.problem}",
                       file=sys.stderr)
             elif check.problem:
-                print(f"{check.id} {check.version}: not checked — {check.problem}")
+                print(f"{check.id} {check.version}: not checked - {check.problem}")
         if args.command == "outdated":
             for check in newer:
-                print(f"{check.id} {check.version} → {check.latest}  ({check.source})")
+                print(f"{check.id} {check.version} -> {check.latest}  ({check.source})")
             current = sum(1 for c in checks if c.updates and not c.problem and not c.outdated)
             if current:
                 print(f"{current} package(s) up to date")
@@ -347,7 +347,7 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
             print("nothing to upgrade")
             return 1 if failed else 0
         for check in newer:
-            print(f"{check.id} {check.version} → {check.latest}")
+            print(f"{check.id} {check.version} -> {check.latest}")
         print("Extensions run inside XeFM with your permissions.")
         if not args.yes and not _ask(f"Upgrade {len(newer)} package(s)?"):
             print("Not upgraded.")
@@ -363,7 +363,7 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
                 continue
             print(f"upgraded {manifest.id} to {manifest.version}")
             needs_packages |= bool(manifest.requires.get("python_packages"))
-        print("Reload the config (Tools ▸ Reload Configuration) or restart XeFM "
+        print("Reload the config (Tools > Reload Configuration) or restart XeFM "
               "to load the new versions")
         if needs_packages:
             failed |= _sync_python_packages(layout, ask=not args.yes) != 0

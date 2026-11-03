@@ -263,7 +263,7 @@ class PreviewUses(_Tmp):
             def go(ctx):
                 return ua.md_escape, ua.PaneApi
         ''')
-        self.assertEqual(sorted(line.split(": ")[2].split(" — ")[0] for line in found),
+        self.assertEqual(sorted(line.split(": ")[2].split(" - ")[0] for line in found),
                          ["path_base.UriPathImpl", "user_api.TaskJob",
                           "user_api.md_escape"])
 
@@ -281,9 +281,9 @@ class PreviewUses(_Tmp):
                 c.pane.cd("/")
         ''')
         self.assertEqual([line.split(": ", 2)[1:] for line in found], [
-            ["p_ext/mod.py:3", "ctx.run_task — Preview, may change in any release"],
-            ["p_ext/mod.py:4", "ctx.pane.open_list — Preview, may change in any release"],
-            ["p_ext/mod.py:10", "ctx.show_markdown — Preview, may change in any release"],
+            ["p_ext/mod.py:3", "ctx.run_task - Preview, may change in any release"],
+            ["p_ext/mod.py:4", "ctx.pane.open_list - Preview, may change in any release"],
+            ["p_ext/mod.py:10", "ctx.show_markdown - Preview, may change in any release"],
         ])
 
     def test_a_method_of_the_same_name_on_something_else_is_not_ctx(self):
@@ -320,14 +320,14 @@ class PreviewUses(_Tmp):
             def go(ctx):
                 pass
         ''')
-        self.assertEqual(sorted(line.split(": ")[2].split(" — ")[0] for line in found),
+        self.assertEqual(sorted(line.split(": ")[2].split(" - ")[0] for line in found),
                          ["ReadOnlyPathImpl.CAPABILITIES",
                           "ReadOnlyPathImpl.listdir_attrs",
                           "ReadOnlyPathImpl.parse_uri"])
 
     def test_the_scaffold_shows_settings_and_says_so(self):
         root = ext.scaffold("hello-xefm", self.tmp)
-        found = [p.message.split(" — ")[0] if " — " in p.message else p.where
+        found = [p.message.split(" - ")[0] if " - " in p.message else p.where
                  for p in ext.preview_uses(ext.read_manifest(root))]
         self.assertEqual(sorted(found), ["settings", "user_api.extension"])
 
@@ -354,8 +354,8 @@ class PreviewUses(_Tmp):
             _manifest, problems = ext.check_package(root)
         (problem,) = [p for p in problems if "deprecated" in p.message]
         self.assertEqual(problem.severity, "warning")
-        self.assertEqual(str(problem), "warning: p_ext/mod.py:2: ctx.message — "
-                         "deprecated — use ctx.show_markdown; it will be removed "
+        self.assertEqual(str(problem), "warning: p_ext/mod.py:2: ctx.message - "
+                         "deprecated - use ctx.show_markdown; it will be removed "
                          "in a later release")
         self.assertEqual(ext.errors(problems), [])
 

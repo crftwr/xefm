@@ -122,6 +122,24 @@ Don't gate calls on `if self.logger:` — the logger is always present.
 
 When migrating `print()` → logger, **preserve the exact message string**.
 
+### Text written to stdout/stderr is ASCII
+
+Redirected to a file or a pipe on Windows, stdout takes the ANSI code page
+(cp932 in Japan), and one em dash in a warning crashed `xefm keys > keys.txt`
+(#829). So every message XeFM writes to a stream is ASCII: write ` - `, `...`,
+`->` and `>` (a menu path: **Tools > Advanced**), not `—`, `…`, `→` and `▸`.
+That covers the CLI subcommands and everything whose messages they print:
+config and extension checks, table validation in `user_api`, `layouts`, and
+the rest. Docstrings, comments and text drawn only on screen keep whatever
+they like.
+
+`test/test_stream_text_ascii.py` holds the rule: it lists the modules whose
+messages reach a stream and checks their string literals. A literal in one of
+them that is only ever drawn (a glyph table) takes a `# non-ASCII: <why>`
+comment on the line before its statement. A module that starts printing gets
+added to that list. What XeFM does not write itself (a config's names, a
+path) is replaced with `?` by `main()`'s `errors="replace"`, not refused.
+
 ### Exceptions
 
 - Prefer specific exception types over bare `except:`.

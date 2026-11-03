@@ -562,6 +562,7 @@ class KeyBindings:
     #: Display labels for named (non-literal) key tokens, so the keymap's
     #: internal names render as conventional UI labels rather than raw
     #: uppercase tokens (e.g. ``ENTER`` -> ``Enter``, ``UP`` -> ``↑``).
+    # non-ASCII: drawn in menus and help, never printed to a stream.
     _KEY_DISPLAY = {
         'ENTER': 'Enter', 'RETURN': 'Enter',
         'BACKSPACE': 'Backspace',
@@ -1031,7 +1032,7 @@ class ConfigManager:
                   if isinstance(prog, dict) and 'auto_return' in (prog.get('options') or {})]
         if legacy:
             errors.append(
-                "PROGRAMS option 'auto_return' is deprecated and ignored — launches "
+                "PROGRAMS option 'auto_return' is deprecated and ignored - launches "
                 "never block XeFM; remove it, or use {'terminal': True} for "
                 "full-screen terminal programs. Entries: " + ", ".join(legacy))
 
@@ -1213,7 +1214,7 @@ def deprecated_names_notice(bindings: dict, limit: int = 3) -> str | None:
     more = len(pairs) - limit
     if more > 0:
         shown += f", and {more} more"
-    return (f"KEY_BINDINGS uses {len(pairs)} old action name(s) — they still "
+    return (f"KEY_BINDINGS uses {len(pairs)} old action name(s) - they still "
             f"work, but the current names are: {shown}. "
             f"See doc/KEY_BINDINGS_FEATURE.md for the full list.")
 

@@ -216,10 +216,10 @@ class Status:
     def message(self) -> str:
         if self.state == NEEDS_SYNC:
             return (f"Python packages need a sync: {self.reason}. Run Sync Python "
-                    "Packages (Tools ▸ Advanced), or `xefm deps sync` from a shell.")
+                    "Packages (Tools > Advanced), or `xefm deps sync` from a shell.")
         if self.state == FOREIGN:
             return (f"Python packages not loaded: {self.reason}. Run Sync Python "
-                    "Packages (Tools ▸ Advanced), or `xefm deps sync` from a shell.")
+                    "Packages (Tools > Advanced), or `xefm deps sync` from a shell.")
         return ""
 
 
