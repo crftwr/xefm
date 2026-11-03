@@ -86,14 +86,11 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         self.stdscr.refresh = Mock()
         self.external_program_manager.renderer = self.stdscr
     
-    @patch('curses.curs_set')
-    @patch('curses.endwin')
-    @patch('curses.initscr')
     @patch('subprocess.run')
     @patch('os.chdir')
     @patch('os.getcwd')
     def test_subshell_remote_directory_fallback(self, mock_getcwd, mock_chdir, 
-                                               mock_subprocess, mock_initscr, mock_endwin, mock_curs_set):
+                                               mock_subprocess):
         """Test that subshell falls back to XeFM working directory when browsing remote directory"""
         
         # Set up mocks
@@ -125,14 +122,11 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         self.assertEqual(env['XEFM_OTHER_DIR'], '/home/user/local')
         self.assertEqual(env['XEFM_ACTIVE'], '1')
     
-    @patch('curses.curs_set')
-    @patch('curses.endwin')
-    @patch('curses.initscr')
     @patch('subprocess.run')
     @patch('os.chdir')
     @patch('os.getcwd')
     def test_subshell_local_directory_normal_behavior(self, mock_getcwd, mock_chdir, 
-                                                     mock_subprocess, mock_initscr, mock_endwin, mock_curs_set):
+                                                     mock_subprocess):
         """Test that subshell works normally when browsing local directory"""
         
         # Set up mocks
@@ -164,14 +158,11 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         self.assertEqual(env['XEFM_OTHER_DIR'], 's3://my-bucket/folder/')
         self.assertEqual(env['XEFM_ACTIVE'], '1')
     
-    @patch('curses.curs_set')
-    @patch('curses.endwin')
-    @patch('curses.initscr')
     @patch('subprocess.run')
     @patch('os.chdir')
     @patch('os.getcwd')
     def test_external_program_remote_directory_fallback(self, mock_getcwd, mock_chdir, 
-                                                       mock_subprocess, mock_initscr, mock_endwin, mock_curs_set):
+                                                       mock_subprocess):
         """Test that external programs fall back to XeFM working directory when browsing remote directory"""
         
         # Set up mocks
@@ -215,14 +206,11 @@ class TestSubshellRemoteFallback(unittest.TestCase):
         self.assertEqual(env['XEFM_OTHER_DIR'], '/home/user/local')
         self.assertEqual(env['XEFM_ACTIVE'], '1')
     
-    @patch('curses.curs_set')
-    @patch('curses.endwin')
-    @patch('curses.initscr')
     @patch('subprocess.run')
     @patch('os.chdir')
     @patch('os.getcwd')
     def test_external_program_local_directory_normal_behavior(self, mock_getcwd, mock_chdir, 
-                                                             mock_subprocess, mock_initscr, mock_endwin, mock_curs_set):
+                                                             mock_subprocess):
         """Test that external programs work normally when browsing local directory"""
         
         # Set up mocks

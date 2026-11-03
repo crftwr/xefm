@@ -187,9 +187,11 @@ on Windows 11 Arm:
 - One run per VM at a time: a VMware VM has one snapshot to revert to, and
   `run-vm` holds it until Enter. Keyhac uses the same VMs, so a hand check
   left open in one product holds them from the other's release test.
-- What the whole suite still fails on, first run on the minimal images
-  (2026-10-31): on Windows the symlink privilege a standard user lacks and two
-  tests that outlast the 10 s timeout under x64 emulation (#794), and `./`
-  in path completion (#787); macOS passes.
+- The whole suite passes in all three guests (2026-11-02, #842/#843). The
+  first runs on the minimal images had found tests that assumed the machine
+  they were written on (#794, #787); the first Linux and Windows runs here,
+  a trash test passing by accident, a race, a zombie, curses missing on
+  Windows since PuiKit 1.19.0, and an S3 cache aged by the wall clock, which
+  a VM's time sync sets back (#843).
 - The quality-loop VM mode drives the TUI only; a desktop (GUI) live check
   would need a screen backend in the guest, as Keyhac's runs have.

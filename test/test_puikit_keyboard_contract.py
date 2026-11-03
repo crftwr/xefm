@@ -16,9 +16,12 @@ sufficient to express XeFM's tricky bindings (``a`` vs ``Shift-A``, ``?``,
 ``Shift-SPACE``) regardless of the current backend gaps.
 """
 
-import curses
-
 import pytest
+
+try:
+    import curses
+except ImportError:  # Windows: PuiKit 1.19.0 no longer brings windows-curses
+    curses = None
 
 from puikit.event import EventType, char_key_event
 
@@ -53,6 +56,7 @@ def _as_tuple(ev):
 # Curses backend contract
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.skipif(curses is None, reason="no curses module (Windows without windows-curses)")
 class TestCursesContract:
     def test_lowercase_letter(self):
         ev = _curses_event("a")

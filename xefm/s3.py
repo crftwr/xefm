@@ -80,7 +80,9 @@ class S3Cache:
                 return None
             
             entry = self._cache[cache_key]
-            current_time = time.time()
+            # Monotonic: an entry's age must not move with the wall clock, which
+            # a VM's time sync can set back while it lives (#843).
+            current_time = time.monotonic()
             
             # Check if entry has expired
             if current_time - entry['timestamp'] > entry['ttl']:
@@ -94,7 +96,7 @@ class S3Cache:
     def put(self, operation: str, bucket: str, key: str = "", data: Any = None, ttl: Optional[int] = None, **kwargs):
         """Store result in cache with optional custom TTL"""
         cache_key = self._generate_cache_key(operation, bucket, key, **kwargs)
-        current_time = time.time()
+        current_time = time.monotonic()
         
         with self._lock:
             # Enforce max entries limit using LRU eviction
@@ -172,7 +174,7 @@ class S3Cache:
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics for monitoring"""
         with self._lock:
-            current_time = time.time()
+            current_time = time.monotonic()
             expired_count = sum(1 for entry in self._cache.values() 
                               if current_time - entry['timestamp'] > entry['ttl'])
             
