@@ -492,6 +492,11 @@ def test_delete_focused_removes_file(backend, trees, config):
 
 
 def test_delete_cancel_keeps_file(backend, trees, config):
+    # The permanent delete, whose confirmation defaults to Cancel. Where there
+    # is a trash K goes there instead (#603) - on macOS the test's refusal of
+    # the real Trash used to keep the file, and on Linux the freedesktop trash
+    # in the test's home took it (#843).
+    config.DELETE_TO_TRASH = False
     panel = Panel(backend)
     view = show_directory_diff_viewer(panel, *trees, background=False, config=config)
     panel.render()

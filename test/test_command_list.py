@@ -49,7 +49,13 @@ def _alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
-    return True
+    # A zombie answers kill(0) but runs no more: a container whose PID 1 is
+    # no init leaves the orphaned interpreter one (#843).
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        return True
 
 
 class Decode(unittest.TestCase):

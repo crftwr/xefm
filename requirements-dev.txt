@@ -13,8 +13,8 @@
 #               option" on every run and the suite has no timeout, so a hung
 #               test hangs the run instead of failing it.
 #
-# The Linux test image installs this same file (tools/docker/Dockerfile), so
-# the set is not written down twice and cannot drift between the two.
+# A run in a guest (make test-vm, qa/guest.py) installs this same file, so the
+# set is not written down twice and cannot drift between the two.
 #
 # Release tooling is deliberately absent: `make build` installs build and twine
 # when it needs them, and macos_app/build.sh installs delocate the same way.
@@ -25,7 +25,8 @@ pytest-xdist
 pytest-timeout
 
 # quality-loop runs qa/ (`make qa`): the skill tried by an isolated agent and
-# reported on by an operator agent. test/test_qa.py checks qa/ without a run,
-# and is skipped where quality-loop is missing. The tui extra (pyte) drives
+# reported on by an operator agent. Its pytest plugin, which pytest.ini loads,
+# gives the suite the desktop and host_only marks (#842), and its guests run
+# the suite in the VMs and the Linux container. The tui extra (pyte) drives
 # XeFM in a pty for a scenario's Live check.
-quality-loop[tui]>=0.4.1
+quality-loop[tui]>=0.5.0

@@ -40,6 +40,11 @@ Use `--no-pager` for any git command that may page output: `diff`, `log`, `show`
 - **Never execute `python -m xefm` (or `xefm/app.py`)** — it launches the interactive file manager (VT terminal / native PuiKit backend) and blocks indefinitely. Read the source instead.
 - Anything importing `curses`, PuiKit backends, or the `xefm` UI modules is blocking. PuiKit demos (`../puikit/demo/*.py`) block too.
 - `test/test_*.py` are safe — run them with `pytest`, not `python` directly.
+  A test that takes focus, opens or moves windows, sends real input, or
+  changes the clipboard, the trash or the input source gets the `desktop`
+  mark and runs only in a VM (`--desktop`); a test of the host-side tooling
+  gets `host_only`. A release runs the suite in the guests, not here
+  (`make release-test`, `doc/dev/VM_TESTING_SYSTEM.md`).
 - If the user explicitly wants to see the app or a demo, tell them to run it manually rather than starting it yourself.
 - Last-resort timeout wrapper: `python3 tools/timeout.py 5 python <script>`.
 

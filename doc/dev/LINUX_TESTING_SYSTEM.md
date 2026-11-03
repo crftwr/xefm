@@ -5,54 +5,51 @@ as the platform nobody runs the suite on by hand — despite it being the one
 `pip install xefm` most often lands on. These targets are that hand.
 
 ```bash
-make test-linux        # the whole suite, on glibc (Debian)
+make test-linux        # the whole suite, on glibc (Debian) - the qa-linux guest
 make test-linux-musl   # can libarchive be found on musl? and does its absence degrade cleanly?
 
 make run-linux         # XeFM's TUI, on glibc, interactively
 make run-linux-musl    # the same on musl
-make run-linux-shell   # a shell in that container
+make run-linux-shell   # a shell in the glibc container, on the stage
 ```
 
 All of them need a running Docker daemon and nothing else.
 
 ---
 
-## Why two images
+## glibc is a guest, like the VMs
 
-They answer different questions, and the second one is not a smaller version of
-the first.
+Since #842 the glibc run is the `qa-linux` guest of
+[VM_TESTING_SYSTEM.md](VM_TESTING_SYSTEM.md): `make test-linux` is `make
+test-vm GUEST=qa-linux`. It is staged, installed and reported exactly as the
+macOS and Windows runs are, so the three differ only in the OS:
 
-| | `tools/docker/Dockerfile` | `tools/docker/Dockerfile.musl` |
-| --- | --- | --- |
-| Base | `python:3.13-slim` (Debian, glibc) | `python:3.13-alpine` (musl) |
-| Installs | libarchive13 + `requirements.txt` + pytest | libarchive + `requirements.txt` + `libarchive-c` |
-| `make test-…` runs | `pytest test/` | `tools/docker/probe_libarchive.py` |
-| Answers | does XeFM work on Linux | can the shared library be *found* |
+- a fresh `python:3.13-slim` container per run, removed after it (`--init`,
+  so what a test orphans is reaped as a real system's init would);
+- `libarchive13` installed at the start - the runtime package, not
+  `libarchive-dev`, because the runtime package alone is the state a user's
+  machine is in, and whether XeFM can find the library in that state is part
+  of what is tested (on Debian it can: ldconfig knows the soname);
+- the working tree staged as git sees it, our packages from this checkout or
+  (`PACKAGES=pypi`, a release) from PyPI, and the rest installed into a venv
+  from `requirements.txt` and `requirements-dev.txt`;
+- the log and JUnit XML in `temp/vm-test-qa-linux-<time>/`.
 
-The musl image carries XeFM's dependencies as well, but not to run the suite
-twice — every one of them has a musl wheel, so they cost about five seconds, and
-having them is what makes `make run-linux-musl` possible. What only Alpine can
-*tell* us is whether the library is found at all, so that is all
-`make test-linux-musl` asks.
+A table named `qa-linux` in `~/.config/quality-loop/guests.toml` overrides the
+built-in one - another image (`docker = "python:3.14-slim"`), another share.
 
-`libarchive-dev` is installed in neither. The runtime package alone is the state
-a user's machine is in, and coping with that state is part of what is being
-tested.
+## musl keeps its own image
 
-## Why the source is mounted, not copied
-
-The images hold the **dependencies**; the working tree is bind-mounted read-only
-at `/src` when the container runs. So an edit needs no rebuild, and a test run
-cannot write into the tree it is testing. `PYTHONDONTWRITEBYTECODE=1` is set for
-the same reason — bytecode beside a read-only mount would fail.
-
-Only `requirements.txt` is `COPY`ed into the image, which means Docker rebuilds
-the pip layer exactly when the dependencies change and reuses it every other
-time. `.dockerignore` keeps the macOS virtualenv and the git history out of the
-build context.
-
-Overridable: `LINUX_PYTHON` (default 3.13), `DOCKER`, `LINUX_IMAGE`,
-`LINUX_MUSL_IMAGE`.
+`tools/docker/Dockerfile.musl` (`python:3.13-alpine`) answers a different
+question, and is not a smaller version of the suite: can the shared library be
+*found*. Every one of XeFM's dependencies has a musl wheel, so they are in the
+image too (about five seconds), which is what makes `make run-linux-musl`
+possible. Only `requirements.txt` is `COPY`ed in, so Docker rebuilds the pip
+layer exactly when the dependencies change; the working tree is bind-mounted
+read-only at `/src` when the container runs, so an edit needs no rebuild and
+the probe cannot write into the tree. `PYTHONDONTWRITEBYTECODE=1` for the same
+reason. `.dockerignore` keeps the macOS virtualenv and the git history out of
+the build context. Overridable: `DOCKER`, `LINUX_MUSL_IMAGE`.
 
 ## Running the TUI
 
@@ -61,22 +58,17 @@ looks like under a different terminfo, a different libc's `wcwidth`, or a locale
 XeFM did not choose. `make run-linux` is for looking.
 
 ```bash
-make run-linux                          # /src on the left, /work on the right
-make run-linux LEFT=/work RIGHT=/etc    # or wherever
-make run-linux-musl                     # the same, under musl
-make run-linux-shell TUI_IMAGE=xefm-test-linux-musl
+make run-linux                          # the stage's tree on the left, /work on the right
+make run-linux-musl                     # the same under musl, /src on the left
+make run-linux-shell                    # a shell on the stage; python -m xefm starts XeFM
 ```
 
-The container gets `-it --init` — the second so Ctrl-C reaches XeFM instead of
-PID 1 — and `TERM` and `COLORTERM` are carried in from the host, because a TUI
-under the wrong terminfo tells you nothing about the TUI.
-
-Two directories, deliberately different:
-
-- **`/src`** is the working tree, **read-only**. A file manager is exactly the
-  program you do not want writing into your checkout by accident.
-- **`/work`** is empty and writable — the pane to copy into, delete from, and
-  make archives in.
+`TERM` and `COLORTERM` are carried in from the host, because a TUI under the
+wrong terminfo tells you nothing about the TUI. The left pane is a copy of the
+working tree (glibc: the stage) or the read-only tree (musl: `/src`) - a file
+manager is exactly the program you do not want writing into your checkout by
+accident - and **`/work`** is empty and writable, the pane to copy into, delete
+from, and make archives in.
 
 Config and state land in the container's `/root/.xefm` and go away with it, so
 every run starts from XeFM's defaults. That is useful for seeing what a new
@@ -136,8 +128,9 @@ through the standard library regardless; see §1.2 of
 
 ## Limits
 
-- The images are built for the host's architecture. On Apple Silicon that is
-  `linux/aarch64`; pass `--platform` through `DOCKER` if x86-64 matters.
+- The containers are the host's architecture. On Apple Silicon that is
+  `linux/aarch64`; x86-64 is not run (#842 keeps the platforms to what is
+  already run).
 - Only the headless/memory backend is exercised. Nothing here opens a terminal
   or a window, so the terminal and GUI backends are not covered — the suite does
   not cover them anywhere.

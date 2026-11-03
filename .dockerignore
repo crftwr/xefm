@@ -1,7 +1,7 @@
-# Everything the Linux test image does not need. Only requirements.txt is
-# actually COPYed in — the source is mounted at run time — so this is about not
-# handing Docker a build context with a macOS virtualenv and the whole history
-# in it.
+# Everything the musl image (tools/docker/Dockerfile.musl) does not need. Only
+# requirements.txt is actually COPYed in — the source is mounted at run time —
+# so this is about not handing Docker a build context with a macOS virtualenv
+# and the whole history in it.
 .venv/
 .git/
 __pycache__/
