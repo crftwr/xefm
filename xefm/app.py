@@ -638,13 +638,14 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                        footer=lambda p: mix(p["bg"], p["accent"], 0.20),
                        file_types={"directory": (255, 168, 76),   # orange
                                    "link": (94, 234, 214)},        # turquoise
-                       # Lime: not the near-white it was, which is the file names'
-                       # own white and framed them invisibly (#846), and not a
-                       # yellow, which sat beside the directories' orange (ΔE
-                       # 0.14). Lime clears the white, the orange and the
-                       # turquoise links, and is the brightest of the candidates
-                       # on a selected row; a violet would sink into the waves.
-                       cursor={"active": (170, 255, 110)},
+                       # Red, leaning crimson: not the near-white it was, which is
+                       # the file names' own white and framed them invisibly
+                       # (#846), and not a yellow, which sat beside the
+                       # directories' orange (ΔE 0.14). The blue in it holds it
+                       # off that orange (0.17) at the brightness the navy needs
+                       # for a thin line (Lc 45); on a selected row the cue is
+                       # lifted to a light red (_cue_on).
+                       cursor={"active": (255, 100, 120)},
                        # A full spread of hues, one per token class, each held above
                        # 4.5:1 on the navy. ``comment`` is the deliberate exception —
                        # it keeps the muted slate, because a comment's job is to

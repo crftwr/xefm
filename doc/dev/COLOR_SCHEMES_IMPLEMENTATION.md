@@ -374,7 +374,7 @@ inactive one, which sat at the dialog's own shade (#844).
 The palette side: Sci-Fi, Cyber and Blocks name a saturated blue or teal
 `selection` instead of a lighter step of their navy, which over the moving scene
 read as one more patch of it (Blocks pins the same color as its file-pane
-`selection_fill`); Shinagawa's cursor is lime, clear of the file names' white and the directories' orange;
+`selection_fill`); Shinagawa's cursor is a crimson-leaning red, clear of the file names' white and the directories' orange;
 Earth, Blocks and Crystal draw links in pink, leaving the amber to the cursor;
 Dark+, Light+, Dracula, Gruvbox Dark and both Solarized themes name an
 `isearch_match` hue away from their selection.
