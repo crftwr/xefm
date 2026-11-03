@@ -282,6 +282,22 @@ def test_the_copy_confirmation_starts_it_in_the_background(panel, tmp_path):
     assert (dst / "a.txt").read_text() == "a"
 
 
+def test_the_duplicate_confirmation_starts_it_in_the_background(panel, tmp_path):
+    """Duplicating a large tree takes as long as copying it (#828)."""
+    (tmp_path / "a.txt").write_text("a")
+    service = FileOperationService(_config.Config())
+    done = []
+    service.duplicate(panel, [Path(str(tmp_path / "a.txt"))], Path(str(tmp_path)),
+                      on_complete=done.append)
+    panel.render()
+    assert "Background" in "\n".join(panel.backend.snapshot())
+    panel.dispatch_event(_key("right"))      # Duplicate → Background
+    panel.dispatch_event(_key("enter"))
+    assert _dialogs(panel) == []
+    _pump(panel, lambda: done)
+    assert (tmp_path / "a (1).txt").read_text() == "a"
+
+
 def test_the_delete_confirmation_still_defaults_to_cancel(panel, tmp_path):
     victim = tmp_path / "v.txt"
     victim.write_text("x")

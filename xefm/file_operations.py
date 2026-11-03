@@ -463,11 +463,11 @@ class FileOperationService:
             buttons, icon, default = (verb, "Cancel"), "info", 0
         # "Background" starts the operation with no progress dialog, queued
         # behind any other background job (#567). Offered only where there is
-        # a pump to run it on — tests run synchronously — and only for a copy
-        # or a move: a delete, to the trash or not, is usually over at once,
-        # and the extra button only put Delete two steps from its default,
-        # Cancel (#601).
-        if background and kind in ("copy", "move"):
+        # a pump to run it on — tests run synchronously — and only for a copy,
+        # a duplicate or a move (#828): a delete, to the trash or not, is
+        # usually over at once, and the extra button only put Delete two steps
+        # from its default, Cancel (#601).
+        if background and kind in ("copy", "duplicate", "move"):
             buttons = (buttons[0], "Background", buttons[1])
             default = 2 if default == 1 else 0
         message = "\n".join(lines)

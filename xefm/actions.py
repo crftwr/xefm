@@ -741,7 +741,7 @@ _DETAILS: dict[str, str] = {
         "The other pane's own folder comes back when quick view closes. On a "
         "remote location only small files are read."),
     "jobs": (
-        "Lists the copy, move and delete operations running in the "
+        "Lists the copy, duplicate, move and delete operations running in the "
         "background, and the ones queued behind them. Choose a running one "
         "to bring its progress dialog back — where a question it is waiting "
         "on is answered, and Esc can cancel it. Choose a queued one to drop "

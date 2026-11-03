@@ -2,13 +2,13 @@
 
 English \| [日本語](BACKGROUND_JOBS_FEATURE.ja.md)
 
-A copy, move or delete can run in the **background** while you go on using
+A copy, duplicate, move or delete can run in the **background** while you go on using
 XeFM: browse, view files, even start another operation.
 
 ## Sending an operation to the background
 
-- **When it asks to start.** The Copy and Move confirmations have a
-  **Background** button. The operation starts with no progress dialog.
+- **When it asks to start.** The Copy, Duplicate and Move confirmations
+  have a **Background** button. The operation starts with no progress dialog.
   Delete has none, because deleting is usually over at once. A long delete
   can still be sent back from its progress dialog.
 - **While it runs.** Press the progress dialog's **Run in background**
