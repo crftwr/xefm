@@ -9,15 +9,17 @@ import os
 import shutil
 import sys
 import tempfile
+import types
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-from xefm import xft  # noqa: E402
+from xefm import attributes, layouts, xft  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
+from xefm.user_api import load_user_entries  # noqa: E402
 
 
 def _doc(nodes, **top):
@@ -26,9 +28,9 @@ def _doc(nodes, **top):
     return data
 
 
-def _leaf(name, target, size=5, mtime=1_700_000_000.0, role="member"):
+def _leaf(name, target, size=5, mtime=1_700_000_000.0, role="member", similarity=0.9):
     return {"name": name, "target": target, "attrs": {"size": size, "mtime": mtime},
-            "extra": {"role": role, "similarity": 0.9}}
+            "extra": {"role": role, "similarity": similarity}}
 
 
 class Format(unittest.TestCase):
@@ -72,7 +74,8 @@ class _Files(unittest.TestCase):
         self.tree = os.path.join(self.tmp, "scan.xft")
         self._write([
             {"name": "one.txt (1)", "children": [
-                _leaf("one.txt", os.path.join(self.real, "one.txt"), size=123, role="anchor"),
+                _leaf("one.txt", os.path.join(self.real, "one.txt"), size=123, role="anchor",
+                      similarity=1.0),
                 _leaf("two.txt", os.path.join(self.real, "deep", "two.txt"), size=456),
             ]},
             {"name": "a folder", "target": self.real, "attrs": {"is_dir": True}},
@@ -143,6 +146,118 @@ class Scheme(_Files):
         self.assertIsNone(Path(self.real).target())
 
 
+SIMILARITY = {"similarity": {"label": "Similarity", "type": "ratio",
+                              "show": {"columns": [{"before": "size"}]}}}
+
+
+def _reset_declared():
+    attributes._declared.clear()
+    layouts._declared_specs.clear()
+    layouts._declared.clear()
+    layouts.clear()
+
+
+class Declared(_Files):
+    """Attributes a tree declares (``attributes``): XeFM knows none of them."""
+
+    def setUp(self):
+        super().setUp()
+        _reset_declared()
+
+    def tearDown(self):
+        _reset_declared()
+        load_user_entries(types.SimpleNamespace())
+        super().tearDown()
+
+    def _value(self, key, name="xft.similarity"):
+        path = self._at(key)
+        return attributes.get(name).sync(path, {}) if attributes.get(name) else None
+
+    def test_nothing_is_known_until_a_tree_declares_it(self):
+        xft.load(self.tree)
+        self.assertIsNone(attributes.get("xft.similarity"))
+        self.assertNotIn("xft.similarity", [e.name for e in layouts.all_extras()])
+
+    def test_a_declared_attribute_reads_extra_and_its_extra_shows_it(self):
+        self._write(self._nodes(), attributes=SIMILARITY)
+        xft.load(self.tree)
+        attr = attributes.get("xft.similarity")
+        self.assertEqual((attr.label, attr.type), ("Similarity", "ratio"))
+        self.assertEqual(self._value("one.txt (1)/one.txt"), 1.0)
+        self.assertEqual(self._value("one.txt (1)/two.txt"), 0.9)
+        extra = layouts.get_extra("xft.similarity")
+        self.assertEqual([(c.column.attr, c.before) for c in extra.columns],
+                         [("xft.similarity", "size")])
+        self.assertTrue(layouts.applies(extra, self._at("one.txt (1)")))
+        self.assertFalse(layouts.applies(extra, Path(self.real)))
+
+    def test_a_tree_that_shows_nothing_still_defines_the_attribute(self):
+        self._write(self._nodes(), attributes={"similarity": {"type": "ratio"}})
+        xft.load(self.tree)
+        self.assertEqual(self._value("one.txt (1)/two.txt"), 0.9)
+        self.assertIsNone(layouts.get_extra("xft.similarity"))
+
+    def test_values_of_the_wrong_type_are_none(self):
+        self._write([{"name": "g", "children": [
+            {"name": "none", "target": "/n"},
+            {"name": "flag", "target": "/f", "extra": {"similarity": True}},
+            {"name": "word", "target": "/w", "extra": {"similarity": "high"}},
+        ]}], attributes=SIMILARITY)
+        xft.load(self.tree)
+        for name in ("g", "g/none", "g/flag", "g/word", "g/gone"):
+            self.assertIsNone(self._value(name), name)
+
+    def test_a_bad_declaration_is_left_out_with_a_warning(self):
+        bad = {"a": {"type": "tags"}, "b": {"type": "ratio", "show": {"columns": [{"when": "always"}]}},
+               "c": {"type": "ratio", "show": {"columns": [{"format": "clock"}]}}}
+        self._write(self._nodes(), attributes=bad)
+        with self.assertLogs(xft.logger, "WARNING") as logs:
+            xft.load(self.tree)
+        self.assertIsNone(attributes.get("xft.a"))
+        self.assertIsNone(attributes.get("xft.b"))
+        self.assertIsNone(layouts.get_extra("xft.c"))
+        self.assertEqual(len(logs.output), 3)
+
+    def test_config_names_them_before_any_tree_and_overrides_key_by_key(self):
+        result = load_user_entries(types.SimpleNamespace(
+            LAYOUTS={"mine": {"columns": ["name", "xft.similarity"]}},
+            LAYOUT_EXTRAS={"xft.similarity": {"when": "never"}}))
+        self.assertEqual(result.warnings, [])
+        self._write(self._nodes(), attributes=SIMILARITY)
+        xft.load(self.tree)
+        extra = layouts.get_extra("xft.similarity")
+        self.assertEqual(extra.when, "never")
+        self.assertEqual(extra.columns[0].before, "size")
+        problems = load_user_entries(types.SimpleNamespace(
+            ATTRIBUTES={"xft.x": {"read": lambda d, e: []}})).warnings
+        self.assertTrue(any("declared by the files" in w for w in problems), problems)
+
+    def test_a_config_reload_keeps_what_trees_declared(self):
+        self._write(self._nodes(), attributes=SIMILARITY)
+        xft.load(self.tree)
+        load_user_entries(types.SimpleNamespace())
+        self.assertIsNotNone(attributes.get("xft.similarity"))
+        self.assertIsNotNone(layouts.get_extra("xft.similarity"))
+
+    def test_percent_rounds_down_so_only_a_match_says_100(self):
+        attr = attributes.Attribute("r", "R", "ratio")
+        cell = lambda v: layouts.render(layouts.resolve_format(None, attr), v,
+                                        layouts.Row(attr=attr), lambda: None)
+        self.assertEqual([c.text for c in cell(0.996)], ["99%"])
+        self.assertEqual([c.text for c in cell(1.0)], ["100%"])
+        self.assertEqual([c.text for c in cell(0.29)], ["29%"])
+        self.assertEqual(cell(None), [])
+        self.assertEqual(layouts.resolve_format("decimal", attr).align, "right")
+        self.assertEqual([layouts.words(attr, v) for v in (0.9375, 0.93, 0.99999, 1.0, 0.5)],
+                         ["93.75%", "93%", "99.99%", "100%", "50%"])
+
+    def _nodes(self):
+        return [{"name": "one.txt (1)", "children": [
+            _leaf("one.txt", os.path.join(self.real, "one.txt"), role="anchor", similarity=1.0),
+            _leaf("two.txt", os.path.join(self.real, "deep", "two.txt")),
+        ]}]
+
+
 class InThePane(_Files):
 
     def setUp(self):
@@ -190,6 +305,48 @@ class InThePane(_Files):
         self.app._settle_listings()
         self.assertEqual(str(self.pane["path"]), str(Path(self.tmp)))
         self.assertEqual(self.pane["files"][self.pane["focused_index"]].name, "scan.xft")
+
+    def test_a_declared_attribute_is_a_column_and_a_sort(self):
+        _reset_declared()
+        self.addCleanup(_reset_declared)
+        with open(self.tree) as f:
+            data = json.load(f)
+        self._write(data["nodes"], attributes=SIMILARITY)
+        self._enter("scan.xft")
+        self._enter("one.txt (1)")
+        self.assertIn("xft.similarity", [e.name for e in layouts.active_extras(self.pane)])
+        columns = [c.attr for c in layouts.effective(self.pane).columns]
+        self.assertEqual(columns, ["name", "ext", "xft.similarity", "size", "mtime"])
+        rows = {mode: (label, ready) for mode, label, ready, _note
+                in self.app._attribute_sort_rows(self.pane)}
+        self.assertEqual(rows[self.app._ATTR_SORT + "xft.similarity"], ("Similarity", True))
+        store = attributes.store_of(self.pane)
+        values = store.snapshot("xft.similarity", self.pane["files"], {})
+        self.assertEqual(sorted(values.values()), [0.9, 1.0])
+
+    def test_file_details_lists_a_declared_attribute(self):
+        _reset_declared()
+        self.addCleanup(_reset_declared)
+        with open(self.tree) as f:
+            data = json.load(f)
+        self._write(data["nodes"], attributes=SIMILARITY)
+        self._enter("scan.xft")
+        self._enter("one.txt (1)")
+        self._focus("two.txt")
+        self.pane["selected_files"] = set()
+        sources = []
+        real = xefm_app.show_markdown
+
+        def opening(panel, source, **kw):
+            sources.append(source)
+            return real(panel, source, **kw)
+        xefm_app.show_markdown = opening
+        try:
+            self.app.file_details()
+        finally:
+            xefm_app.show_markdown = real
+        self.assertIn("| Similarity | 90% |", sources[0])  # 0.9: no trailing zeros
+        self.assertNotIn("reading…", sources[0])
 
     def test_a_reference_to_a_folder_goes_there(self):
         self._enter("scan.xft")

@@ -93,11 +93,52 @@ snapshot never needs an exception.
   shows a confirmation, defaulting to Cancel. Single-entry reveal does not ask,
   because the user is looking at the one file.
 
+## Declared attributes
+
+A tree's top-level `attributes` declares values its references keep in
+`extra`, with a type and, in `show`, how to show them
+([`XFT_FORMAT.md`](../XFT_FORMAT.md#attributes)). XeFM has no knowledge of
+any one of them, similarity included.
+
+- **Registered when read.** `load` calls `_declare` for each new parse
+  (never on a cache hit). Each declaration becomes a synchronous
+  `attributes.Attribute` named `xft.<key>` (`attributes.declare`), read off
+  the node's `extra` by `_reader(key)` and checked against the type by
+  `_typed`. A `show` becomes the `LAYOUT_EXTRAS` spec of an extra of the same
+  name (`layouts.declare_extra`), whose `when` (`_when(key)`) holds in a
+  folder of a tree that shows that key.
+- **Why a prefix.** A tree is data from another program: it must not shadow
+  `size` or a user's `git`, and config.py must be able to name its
+  attributes before any tree is open, which only a recognizable name allows
+  (`attributes.is_declarable`). The config's unknown-attribute warnings skip
+  those names, `ATTRIBUTES` refuses them, and a `LAYOUT_EXTRAS` entry for one
+  is kept as an override (`layouts.override_declared`) and merged key by key
+  when a tree declares it.
+- **What a file may give** in `show` is the placement and format keys
+  (`_COLUMN_KEYS`, `_MARKER_KEYS`). `when` and functions stay the user's;
+  `build_extra` validates the rest. A declaration XeFM cannot use is logged
+  as a warning and left out, and the tree still opens.
+- **Kept across a config reload.** `attributes.clear` leaves `_declared`
+  alone, and `layouts.clear` rebuilds the declared extras with the new
+  overrides.
+- **One name, latest declaration.** Two trees declaring the same key share
+  the attribute, and the one read last sets its type, label and placement.
+  A tree that declares a key without `show` does not withdraw another tree's
+  column: `_when` asks the tree the pane is in.
+- **Synchronous.** The value is in the cached `Document`, so it is never
+  pending: the column is measured on the first draw, and the attribute sort
+  is offered at once. File Details reads a sync attribute where it is
+  (`AttributeStore.get`) instead of waiting for the store, which never holds
+  one, so it lists `Similarity | 93%` with no "reading…".
+- **`ratio`** is a type of its own, not a `count`: a 0-1 float. Its default
+  format, `percent`, rounds **down**, so `100%` means an exact match and a
+  `0.996` near-duplicate does not look identical.
+
 ## Not done
 
 Line positions on references (#549 question 2), saving search results as a
-tree, flat lists as one-level trees (#549 decision 6), similarity as a list
-column, and an `.xft` produced by XeFM itself.
+tree, flat lists as one-level trees (#549 decision 6), and an `.xft`
+produced by XeFM itself.
 
 ## Tests
 

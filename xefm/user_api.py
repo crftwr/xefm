@@ -1598,7 +1598,8 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
         if problem:
             warnings.append(problem)
             continue
-        unknown = sorted(n for n in layout.attributes() if n not in attr_names)
+        unknown = sorted(n for n in layout.attributes() if n not in attr_names
+                         and not _attributes.is_declarable(n))
         if unknown:
             # Loaded anyway: the rest of the layout is fine, and the column
             # appears once the attribute does (an extension enabled later).
@@ -1631,6 +1632,16 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
                          for n, spec in _layouts.BUILTIN_EXTRA_SPECS.items()) if e]
     built = {e.name: e for e in built}
     for name, spec in _items(getattr(config, "LAYOUT_EXTRAS", None), "LAYOUT_EXTRAS", warnings):
+        if _attributes.is_declarable(name):
+            # A tree file's extra, declared when the file is read: kept
+            # and merged over it then, key by key.
+            if not isinstance(spec, dict):
+                warnings.append(f"LAYOUT_EXTRAS['{name}'] must be a dict of the keys it changes")
+                continue
+            if apply:
+                _layouts.override_declared(name, spec)
+            extra_count += 1
+            continue
         base = _layouts.BUILTIN_EXTRA_SPECS.get(name)
         if base is not None and isinstance(spec, dict):
             spec = {**base, **spec}
@@ -1638,7 +1649,8 @@ def _process_user_entries(config, registry, apply: bool) -> LoadResult:
         if problem:
             warnings.append(problem)
             continue
-        unknown = sorted(n for n in extra.attributes() if n not in attr_names)
+        unknown = sorted(n for n in extra.attributes() if n not in attr_names
+                         and not _attributes.is_declarable(n))
         if unknown:
             warnings.append(
                 f"LAYOUT_EXTRAS['{name}'] names attribute(s) nothing defines: "

@@ -12,6 +12,12 @@ target), and reads its target's bytes, so view, compare and copy-out work.
 It cannot be deleted or renamed — the tree is a snapshot. The real file is
 reached through :meth:`XftPathImpl.target`, which the pane-sync keys use.
 
+A producer may also **declare attributes**: values it records in each
+reference's ``extra`` (a similarity), with their type and how to show them.
+Reading the tree registers each as the attribute ``xft.<name>`` and, when it
+says how to show it, the extra of the same name, so XeFM knows nothing of what
+a producer records.
+
 A producer may rewrite the file while it is open (similar-files does, every
 few minutes during a long scan). Documents are cached by the file's size and
 modification time, looked at no more than once a second, so a listing that
@@ -23,12 +29,14 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Optional
 
+from xefm import attributes, layouts
 from xefm.log_manager import getLogger
 from xefm.path import Path
 from xefm.path_base import ReadOnlyPathImpl, UriStatResult
@@ -88,6 +96,8 @@ class Document:
     total: int
     root: Node
     stamp: tuple = ()
+    #: ``{name: spec}`` of the ``attributes`` the file declares, as written.
+    attributes: dict = field(default_factory=dict)
 
     @property
     def provisional(self) -> bool:
@@ -147,6 +157,7 @@ def parse(data: dict) -> Document:
     nodes = data.get("nodes")
     _adopt(root, [_build(n) for n in nodes if isinstance(n, dict)] if isinstance(nodes, list) else [])
     progress = data.get("progress") if isinstance(data.get("progress"), dict) else {}
+    declared = data.get("attributes") if isinstance(data.get("attributes"), dict) else {}
     final = bool(data.get("final", True))
     return Document(
         title=str(data.get("title") or ""),
@@ -156,7 +167,117 @@ def parse(data: dict) -> Document:
         done=int(progress.get("done") or 0),
         total=int(progress.get("total") or 0),
         root=root,
+        attributes={k: v for k, v in declared.items()
+                    if isinstance(k, str) and k and isinstance(v, dict)},
     )
+
+
+# --- declared attributes ------------------------------------------------------------
+
+#: What XeFM calls a declared attribute, and the extra that shows it.
+ATTR_PREFIX = "xft."
+#: The column and marker keys a file may give; the rest of a LAYOUT_EXTRAS
+#: entry (a 'when', a function) is XeFM's or the user's.
+_COLUMN_KEYS = ("format", "width", "align", "priority", "before", "after", "replace")
+_MARKER_KEYS = ("format", "on", "side", "limit")
+_NUMBERS = ("count", "size", "time", "duration", "ratio")
+_declare_lock = threading.Lock()
+#: One reader and one condition per name, so declaring the same thing again
+#: compares equal and changes nothing.
+_readers: dict = {}
+_whens: dict = {}
+
+
+def attr_name(name: str) -> str:
+    return ATTR_PREFIX + name
+
+
+def _typed(kind: str, value):
+    """``value`` when it is one of ``kind``, else None — a file is data."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if kind in _NUMBERS:
+        return value if isinstance(value, (int, float)) else None
+    if kind == "enum":
+        return value if isinstance(value, (str, int)) else None
+    return str(value) if isinstance(value, (str, int, float)) else None
+
+
+def _reader(name: str):
+    def read(path, record):
+        attr = attributes.get(attr_name(name))
+        node = XftPathImpl(str(path))._node() if is_xft_path(path) else None
+        if node is None or attr is None:
+            return None
+        return _typed(attr.type, node.extra.get(name))
+    return _readers.setdefault(name, read)
+
+
+def _when(name: str):
+    def when(path) -> bool:
+        """A folder of a tree that shows ``name``."""
+        if not is_xft_path(path):
+            return False
+        try:
+            spec = load(split(path)[0]).attributes.get(name)
+        except OSError:
+            return False
+        return bool(spec and spec.get("show"))
+    return _whens.setdefault(name, when)
+
+
+def _shown(name: str, show) -> tuple[Optional[dict], Optional[str]]:
+    """The ``LAYOUT_EXTRAS`` spec for a declaration's ``show``, or a problem."""
+    if not isinstance(show, dict):
+        return None, "'show' must be an object with 'columns' and/or 'markers'"
+    spec: dict = {"when": _when(name)}
+    for key, allowed in (("columns", _COLUMN_KEYS), ("markers", _MARKER_KEYS)):
+        items = show.get(key)
+        if items is None:
+            continue
+        if not isinstance(items, list):
+            return None, f"'show.{key}' must be a list"
+        out = []
+        for item in items:
+            item = {} if item is True else item
+            if not isinstance(item, dict):
+                return None, f"each of 'show.{key}' must be an object"
+            unknown = sorted(set(item) - set(allowed))
+            if unknown:
+                return None, f"'show.{key}' does not take {', '.join(unknown)}"
+            out.append({**item, "attr": attr_name(name)})
+        spec[key] = out
+    return spec, None
+
+
+def _declare(doc: Document, file: str) -> None:
+    """Register what ``doc`` declares. A name declared again by another tree
+    takes that tree's declaration; one a tree declares no longer stays
+    registered, shown only in trees that show it (``_when``)."""
+    for name, spec in doc.attributes.items():
+        kind = spec.get("type", "text")
+        problem = None
+        if kind not in attributes.TYPES or kind == "tags":
+            problem = f"type {kind!r} is not one a tree file can hold"
+        values = spec.get("values") or {}
+        if not problem and not (isinstance(values, dict)
+                                and all(isinstance(v, dict) for v in values.values())):
+            problem = "'values' must map each value to its label and color"
+        shown = None
+        if not problem and spec.get("show") is not None:
+            shown, problem = _shown(name, spec["show"])
+        if problem:
+            logger.warning(f"{os.path.basename(file)}: attribute {name!r} ignored: {problem}")
+            continue
+        label = str(spec.get("label") or name)
+        attr = attributes.Attribute(attr_name(name), label, kind, values=dict(values),
+                                    where=(SCHEME,), sync=_reader(name), source="file")
+        with _declare_lock:
+            attributes.declare(attr)
+            if shown is not None:
+                problem = layouts.declare_extra(attr_name(name), {"label": label, **shown})
+        if problem:
+            logger.warning(f"{os.path.basename(file)}: how to show {name!r} ignored: {problem}")
 
 
 _cache: dict = {}
@@ -184,6 +305,7 @@ def load(file: str) -> Document:
     except ValueError as e:
         raise OSError(errno.EIO, f"{path.name}: {e}", file) from None
     doc.stamp = stamp
+    _declare(doc, file)
     with _lock:
         _cache[file] = (now, doc)
     return doc

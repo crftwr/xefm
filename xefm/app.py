@@ -6139,11 +6139,17 @@ class XeFMApp:
             names = [n for n in attr_names if attributes.get(n).applies_to(entry)]
             if not names:
                 return None
-            fill["names"].update(n for n in names if not store.value(key, n)[0])
+            # A synchronous value (a .xft tree's declared one) is never in
+            # the store: it is read where it is, never waited for.
+            fill["names"].update(n for n in names if not attributes.get(n).is_sync
+                                 and not store.value(key, n)[0])
             def rows() -> str:
                 out, pending = [], False
                 for n in names:
-                    found, value = store.value(key, n)
+                    if attributes.get(n).is_sync:
+                        found, value = True, store.get(entry, records.get(key, {}), n)
+                    else:
+                        found, value = store.value(key, n)
                     if not found:
                         pending = True
                     elif attributes.has_value(value):

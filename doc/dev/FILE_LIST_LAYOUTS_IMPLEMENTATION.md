@@ -117,6 +117,13 @@ Each is a place a later change should not quietly undo.
 | `size` | on request | a file's size (sync half, never cached); a folder's `UsageScan` total |
 | `tags` | auto | `tags.read` per entry, only where `store_for(path).cheap`; fills `tags.SEEN` |
 
+Besides these, a file can **declare** attributes and extras when it is read:
+`attributes.declare` and `layouts.declare_extra`, kept apart from the
+config's tables so a reload does not drop them. Their names carry a prefix
+(`attributes.DECLARED_PREFIXES`, `xft.` today) so config.py can name them
+before any such file is open. `.xft` trees are the one source
+(`XFT_IMPLEMENTATION.md`, "Declared attributes").
+
 `SORT_MODE_OF` maps `name`, `ext`, `size` and `mtime` to the built-in sort
 modes. The sort dialog still offers `size` as an attribute sort, **Size with
 folder totals**, since the built-in mode orders files only.
