@@ -127,9 +127,9 @@ any one of them, similarity included.
   column: `_when` asks the tree the pane is in.
 - **Synchronous.** The value is in the cached `Document`, so it is never
   pending: the column is measured on the first draw, and the attribute sort
-  is offered at once. File Details leaves sync attributes out of its
-  attribute rows (they never land in the store); `get_extended_metadata`
-  writes a declared key by its label and type instead (`Similarity 93%`).
+  is offered at once. File Details reads a sync attribute where it is
+  (`AttributeStore.get`) instead of waiting for the store, which never holds
+  one, so it lists `Similarity | 93%` with no "reading…".
 - **`ratio`** is a type of its own, not a `count`: a 0-1 float. Its default
   format, `percent`, rounds **down**, so `100%` means an exact match and a
   `0.996` near-duplicate does not look identical.

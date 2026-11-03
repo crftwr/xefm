@@ -455,17 +455,8 @@ class XftPathImpl(ReadOnlyPathImpl):
         if node is not None:
             if node.target:
                 details.append(("Points at", node.target))
-            try:
-                declared = self.document().attributes
-            except OSError:
-                declared = {}
             for key, value in sorted(node.extra.items()):
-                attr = attributes.get(attr_name(key)) if key in declared else None
-                if attr is not None:
-                    value = _typed(attr.type, value)
-                    if value is not None:
-                        details.append((attr.label, layouts.words(attr, value)))
-                elif isinstance(value, (str, int, float, bool)):
+                if isinstance(value, (str, int, float, bool)):
                     details.append((key.replace("_", " ").capitalize(), str(value)))
         return {"type": "xft", "details": details, "format_hint": "standard"}
 

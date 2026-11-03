@@ -190,8 +190,6 @@ class Declared(_Files):
                          [("xft.similarity", "size")])
         self.assertTrue(layouts.applies(extra, self._at("one.txt (1)")))
         self.assertFalse(layouts.applies(extra, Path(self.real)))
-        details = dict(xft.XftPathImpl(str(self._at("one.txt (1)/two.txt"))).get_extended_metadata()["details"])
-        self.assertEqual(details["Similarity"], "90%")
 
     def test_a_tree_that_shows_nothing_still_defines_the_attribute(self):
         self._write(self._nodes(), attributes={"similarity": {"type": "ratio"}})
@@ -324,6 +322,30 @@ class InThePane(_Files):
         store = attributes.store_of(self.pane)
         values = store.snapshot("xft.similarity", self.pane["files"], {})
         self.assertEqual(sorted(values.values()), [0.9, 1.0])
+
+    def test_file_details_lists_a_declared_attribute(self):
+        _reset_declared()
+        self.addCleanup(_reset_declared)
+        with open(self.tree) as f:
+            data = json.load(f)
+        self._write(data["nodes"], attributes=SIMILARITY)
+        self._enter("scan.xft")
+        self._enter("one.txt (1)")
+        self._focus("two.txt")
+        self.pane["selected_files"] = set()
+        sources = []
+        real = xefm_app.show_markdown
+
+        def opening(panel, source, **kw):
+            sources.append(source)
+            return real(panel, source, **kw)
+        xefm_app.show_markdown = opening
+        try:
+            self.app.file_details()
+        finally:
+            xefm_app.show_markdown = real
+        self.assertIn("| Similarity | 90% |", sources[0])
+        self.assertNotIn("reading…", sources[0])
 
     def test_a_reference_to_a_folder_goes_there(self):
         self._enter("scan.xft")
