@@ -162,9 +162,13 @@ class Home:
             wrapper.chmod(0o755)
 
     def environment(self) -> dict:
-        """For a process that should see this home as ~ - XeFM itself."""
+        """For a process that should see this home as ~ - XeFM itself. The
+        checkout goes in front of PYTHONPATH, not in its place: where our
+        packages are staged rather than installed (a guest's run, #843),
+        they are found through it."""
+        path = [str(ROOT), *filter(None, [os.environ.get("PYTHONPATH")])]
         return {"HOME": str(self.root), "USERPROFILE": str(self.root),
-                "PYTHONPATH": str(ROOT)}
+                "PYTHONPATH": os.pathsep.join(path)}
 
     def remove(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)

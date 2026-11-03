@@ -28,6 +28,10 @@ def pytest_configure(config):
     for name in ("HOME", "USERPROFILE"):
         _saved_home_env[name] = os.environ.get(name)
         os.environ[name] = _fake_home
+    # The freedesktop trash follows XDG_DATA_HOME before HOME: a runner that
+    # sets it would have a delete in a test land in its own trash (#843).
+    _saved_home_env["XDG_DATA_HOME"] = os.environ.get("XDG_DATA_HOME")
+    os.environ["XDG_DATA_HOME"] = os.path.join(_fake_home, ".local", "share")
 
 
 def pytest_unconfigure(config):

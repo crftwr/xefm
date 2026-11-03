@@ -994,9 +994,11 @@ def test_a_load_overtaken_by_navigation_is_dropped(images):
 
     first_gate, second_gate = threading.Event(), threading.Event()
     gates = iter([first_gate, second_gate])
+    taken = []
 
     def open_slow(data):
         gate = next(gates)
+        taken.append(gate)
         assert gate.wait(5)
         if gate is first_gate:
             return RasterImage(1, 1, b"\xff" * 4)
@@ -1007,6 +1009,11 @@ def test_a_load_overtaken_by_navigation_is_dropped(images):
         backend = MemoryBackend(width=60, height=20, capabilities=PROFILE_GUI_DESKTOP)
         viewer = ImageViewer(images[0], siblings=images, panel=Panel(backend))
         first = viewer._loader
+        # The first load must hold the first gate before the second starts:
+        # the two threads would otherwise race for it (#843).
+        deadline = time.monotonic() + 5
+        while not taken and time.monotonic() < deadline:
+            time.sleep(0.01)
         viewer._step_image(1)
         second = viewer._loader
         second_gate.set()
