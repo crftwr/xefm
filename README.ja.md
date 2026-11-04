@@ -49,7 +49,7 @@ https://github.com/user-attachments/assets/f121401d-990b-445d-aa79-526d34e4a44e
 - **充実した内蔵ビューアー** - シンタックスハイライト付きテキスト、画像、Markdown、JSON、CSV/TSV
 - **比較と同期** - テキストファイルを左右に並べ、変更箇所を文字単位で示す差分表示。ディレクトリの再帰的な比較と、1 回の操作で済む同期（更新またはミラー）。同期では、書き込む前に実行内容をすべて確認できます（[差分](doc/DIFF_VIEWER_FEATURE.ja.md)、[同期](doc/DIRECTORY_SYNC_FEATURE.ja.md)）
 - **類似ファイルの検索** - 重複ファイルに加え、サイズ変更、再エンコード、メタデータの書き換えをしただけで中身は同じ画像、動画、音声を検出（[詳細](doc/FIND_SIMILAR_FILES_FEATURE.ja.md)）
-- **テーマと視覚効果** - 10 種類以上の内蔵テーマ。デスクトップモードでは GPU による背景アニメーション、CRT／蛍光体風の画面効果、テキストが浮かび上がるアニメーションも使えます
+- **テーマと視覚効果** - 15 種類の内蔵テーマ。デスクトップモードではペインの背後でゆっくり動く 3D の絵（[動画](https://www.youtube.com/watch?v=ZTpk-sUsPIk)）、GPU による背景アニメーション、CRT／蛍光体風の画面効果、テキストが浮かび上がるアニメーションも使えます
 - **4 つのキーマッププリセット** - AFX style（1 つの文字キーで 1 つのコマンド）、Orthodox（ファンクションキー）、OS native（Finder やエクスプローラーのキー）、Vim style から、初回起動時に選択（[詳細](doc/KEYMAP_PRESETS_FEATURE.ja.md)）
 - **カスタマイズ性** - キーバインド、設定項目、外部プログラムの起動をすべて自由に変更可能。コマンドパレットからは、すべてのアクションを名前で探せます
 - **拡張機能** - アクション、テーマ、フィルター、シンタックスハイライトなどを追加するパッケージをインストール（[一覧を見る](https://github.com/crftwr/xefm/wiki/Extensions)）。XeFM スキルを使えば AI エージェントに書かせることもできます
@@ -180,7 +180,7 @@ make run         # launch XeFM through it, no activation needed
 
 ## テーマと視覚効果
 
-XeFM には 10 種類以上のテーマが内蔵されています。テーマは **View → Theme** メニューから選びます。選んだテーマは再起動後も保持されます。`~/.xefm/config.py` で独自のテーマを定義すると、内蔵テーマと並んで選択肢に表示されます。
+XeFM には 15 種類のテーマが内蔵されています。テーマは **View → Theme** メニューから選びます。選んだテーマは再起動後も保持されます。`~/.xefm/config.py` で独自のテーマを定義すると、内蔵テーマと並んで選択肢に表示されます。
 
 | | | |
 |:---:|:---:|:---:|
@@ -188,6 +188,12 @@ XeFM には 10 種類以上のテーマが内蔵されています。テーマ�
 | <img src="doc/images/theme-nord.jpg" width="260"><br>**Nord** | <img src="doc/images/theme-solarized.jpg" width="260"><br>**Solarized** | <img src="doc/images/theme-gruvbox.jpg" width="260"><br>**Gruvbox Dark** |
 | <img src="doc/images/theme-light.jpg" width="260"><br>**Light+** | <img src="doc/images/theme-solarized-light.jpg" width="260"><br>**Solarized Light** | <img src="doc/images/theme-sci-fi.jpg" width="260"><br>**Sci-Fi** |
 | <img src="doc/images/theme-cyber.jpg" width="260"><br>**Cyber** | <img src="doc/images/theme-segment-lcd.jpg" width="260"><br>**Segment LCD** | <img src="doc/images/theme-shinagawa.jpg" width="260"><br>**Shinagawa** |
+
+このほか **Earth**、**Blocks**、**Crystal** の 3 つは、ペインの背後にゆっくり動く 3D の絵を映します。軌道から見た地球、暗い金属の柱が並ぶ風景、黒い岩に育つ結晶のマクロ撮影です。絵を描くのはデスクトップアプリだけで、ターミナルではテーマの配色のみが使われます。YouTube で動画を見られます。
+
+<a href="https://www.youtube.com/watch?v=ZTpk-sUsPIk">
+  <img src="doc/images/theme-picture-video.jpg" alt="XeFM のペインの背後に映る Earth、Blocks、Crystal テーマ：YouTube で動画を再生" />
+</a>
 
 デスクトップモードでは、インターフェースの背後や前面に GPU で描画する**視覚効果**をテーマに含めることもできます。背景アニメーション（`starfield`、`rain`、`hologram` など）、CRT／蛍光体風の画面ポストエフェクト、テキストが浮かび上がるアニメーション、半透明の面などです。視覚効果はテーマの定義の一部にすぎないので、独自テーマで自由に組み合わせられます。ターミナルモードでは無視されます。[配色と視覚効果](doc/COLOR_SCHEMES_FEATURE.ja.md)を参照してください。
 
