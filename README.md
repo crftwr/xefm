@@ -53,7 +53,7 @@ https://github.com/user-attachments/assets/f121401d-990b-445d-aa79-526d34e4a44e
 - **Rich built-in viewers** - Syntax-highlighted text, images, Markdown, JSON, and CSV/TSV
 - **Compare & sync** - Side-by-side text diff down to the exact characters that changed; recursive directory compare, and a one-step sync (update or mirror) with the whole plan shown before anything is written ([diff](doc/DIFF_VIEWER_FEATURE.md), [sync](doc/DIRECTORY_SYNC_FEATURE.md))
 - **Find similar files** - Find duplicates, and images, videos and audio that are the same media resized, re-encoded or retagged ([details](doc/FIND_SIMILAR_FILES_FEATURE.md))
-- **Themes & visual effects** - A dozen built-in themes; desktop mode adds GPU background animations, CRT/phosphor screen effects, and text-reveal animations
+- **Themes & visual effects** - Fifteen built-in themes; desktop mode adds moving 3D pictures behind the panes ([video](https://www.youtube.com/watch?v=ZTpk-sUsPIk)), GPU background animations, CRT/phosphor screen effects, and text-reveal animations
 - **Four keymap presets** - AFX style (one letter, one command), Orthodox (function keys), OS native (Finder's or Explorer's keys) or Vim style, chosen at first launch ([details](doc/KEYMAP_PRESETS_FEATURE.md))
 - **Customizable** - Fully configurable key bindings, settings, and external program launchers; a command palette finds every action by name
 - **Extensions** - Install packages that add actions, themes, filters, syntax highlighting and more — [browse the list](https://github.com/crftwr/xefm/wiki/Extensions) — or let an AI agent write one with the XeFM skill
@@ -229,7 +229,7 @@ archives, and on remote SFTP / S3 paths without extraction or download.
 
 ## Themes & Visual Effects
 
-XeFM ships a dozen built-in themes. Pick one from the **View → Theme** menu — your choice is remembered across restarts. Define your own in `~/.xefm/config.py` and they appear in the picker alongside the built-ins.
+XeFM ships fifteen built-in themes. Pick one from the **View → Theme** menu — your choice is remembered across restarts. Define your own in `~/.xefm/config.py` and they appear in the picker alongside the built-ins.
 
 | | | |
 |:---:|:---:|:---:|
@@ -237,6 +237,15 @@ XeFM ships a dozen built-in themes. Pick one from the **View → Theme** menu �
 | <img src="doc/images/theme-nord.jpg" width="260"><br>**Nord** | <img src="doc/images/theme-solarized.jpg" width="260"><br>**Solarized** | <img src="doc/images/theme-gruvbox.jpg" width="260"><br>**Gruvbox Dark** |
 | <img src="doc/images/theme-light.jpg" width="260"><br>**Light+** | <img src="doc/images/theme-solarized-light.jpg" width="260"><br>**Solarized Light** | <img src="doc/images/theme-sci-fi.jpg" width="260"><br>**Sci-Fi** |
 | <img src="doc/images/theme-cyber.jpg" width="260"><br>**Cyber** | <img src="doc/images/theme-segment-lcd.jpg" width="260"><br>**Segment LCD** | <img src="doc/images/theme-shinagawa.jpg" width="260"><br>**Shinagawa** |
+
+Three more, **Earth**, **Blocks** and **Crystal**, put a slowly moving 3D picture
+behind the panes: the planet from orbit, a field of dark metal columns, and a
+macro study of crystals in black rock. The picture is drawn by the desktop app; a
+terminal shows their palette alone. Watch them on YouTube:
+
+<a href="https://www.youtube.com/watch?v=ZTpk-sUsPIk">
+  <img src="doc/images/theme-picture-video.jpg" alt="Earth, Blocks and Crystal themes behind the XeFM panes: play the video on YouTube" />
+</a>
 
 In desktop mode a theme can also carry **visual effects** the GPU renders behind
 and over the interface: background animations (`starfield`, `rain`, `hologram`,
