@@ -376,7 +376,9 @@ Set aside: the `xefm.testing` fixtures (F). The skill's own fake and
 against real extensions arrived with API_VERSION 1 (#713): `make api-compat`
 (`tools/api_compat.py`) runs every package in xefm-extensions through the check
 and its own tests against the working tree, and the release skill runs it
-before tagging.
+before tagging. A package's `requires.python_packages` go through the same
+`python_packages.sync` a user's install does, into a directory that lasts for
+the run, so the tests see them and the dev venv stays as it was.
 
 Preview use is reported by `preview_uses()`, kept apart from `check_manifest`
 so that install and loading — which gate on `check_manifest`'s errors — never
