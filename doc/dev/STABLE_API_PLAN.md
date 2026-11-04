@@ -455,7 +455,8 @@ under local pytest and at the release pre-tag check.
 
 - `make api-compat` checks out `crftwr/xefm-extensions` into `temp/` (or uses
   `../xefm-extensions` when present). For every package it runs
-  `xefm ext check` and the package's own tests against the working tree. This
+  `xefm ext check` and the package's own tests against the working tree, with
+  the package's `requires.python_packages` installed for the run. This
   is the "compatibility check against real extensions" that
   `EXTENSIONS_IMPLEMENTATION.md` deferred to API_VERSION 1 (discussion #469).
 - The xefm-release skill's pre-tag checks gain two steps:
