@@ -8,6 +8,7 @@ where Metal is unavailable.
 Run with: python -m pytest test/test_background_shaders.py -v
 """
 
+import dataclasses
 import re
 import unittest
 
@@ -309,7 +310,10 @@ class CompilationD3D(unittest.TestCase):
     def test_every_shader_animates(self):
         renderer = D3DShaderBackground()
         for kind in SHADER_KINDS:
-            self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
+            # Without the cap: this renderer keeps the last frame within a scene's
+            # frame_rate interval, so a fast GPU would draw Crystal's two frames as one.
+            uncapped = dataclasses.replace(_shader(kind), frame_rate=0.0)
+            self.assertTrue(renderer.set_shader(uncapped), renderer.error)
             a = renderer.render_pixels(160, 100, 0.0)
             b = renderer.render_pixels(160, 100, 3.0)
             self.assertNotEqual(bytes(a), bytes(b), f"{kind} is a still frame")
