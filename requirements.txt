@@ -24,7 +24,9 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.20.0 is the floor, and a hard one: the file pane draws a selected row with
+# 1.20.1 is the floor because 1.20.0 and earlier leak memory on macOS under every
+# shader background, gigabytes under a many-pass scene such as Earth (#852); it
+# runs without 1.20.1, only leaking. 1.20.0 is a hard floor: the file pane draws a selected row with
 # ``fill_rect(..., opacity=)`` so a background scene cannot wash it out (#845),
 # an unexpected keyword -- a TypeError on the first selected row -- on any older
 # PuiKit. 1.20.0 also keeps each derived selection fill clear of the popup and
@@ -225,7 +227,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.20.0
+puikit>=1.20.1
 pygments
 boto3
 watchdog
