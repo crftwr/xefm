@@ -222,5 +222,47 @@ class TestThreeCases(unittest.TestCase):
                     )
 
 
+
+class AltOnAGlyph(unittest.TestCase):
+    """A punctuation binding ignores an Alt it does not name — on macOS Option
+    types the glyph — but one that names Alt is a chord: 'Alt-+' is not '+'.
+    Orthodox binds both (select_same_extension, select_by_pattern)."""
+
+    def setUp(self):
+        self.kb = KeyBindings({
+            "select_by_pattern": ["+"],
+            "select_same_extension": ["Alt-+"],
+            "at_sign": ["@"],
+        })
+
+    def test_the_alt_chord_wins_over_the_bare_glyph(self):
+        for context in (None, "filer"):
+            self.assertEqual(
+                self.kb.find_action_for_event(key("+", "+", {"alt"}), False, context),
+                "select_same_extension", context)
+
+    def test_the_bare_glyph_is_not_the_alt_chord(self):
+        self.assertEqual(self.kb.find_action_for_event(key("+", "+")),
+                         "select_by_pattern")
+
+    def test_order_does_not_decide_it(self):
+        kb = KeyBindings({"select_same_extension": ["Alt-+"],
+                          "select_by_pattern": ["+"]})
+        self.assertEqual(kb.find_action_for_event(key("+", "+")), "select_by_pattern")
+        self.assertEqual(kb.find_action_for_event(key("+", "+", {"alt"})),
+                         "select_same_extension")
+
+    def test_an_alt_the_binding_does_not_name_is_still_ignored(self):
+        # Opt-L types '@' on a German Mac layout: a bare '@' binding takes it.
+        self.assertEqual(self.kb.find_action_for_event(key("@", "@", {"alt"})),
+                         "at_sign")
+
+    def test_one_key_of_a_sequence_lookup_prefers_it_too(self):
+        self.assertEqual(self.kb.sequence_lookup([key("+", "+", {"alt"})], False, "filer"),
+                         ("select_same_extension", False))
+        self.assertEqual(self.kb.sequence_lookup([key("+", "+")], False, "filer"),
+                         ("select_by_pattern", False))
+
+
 if __name__ == "__main__":
     unittest.main()

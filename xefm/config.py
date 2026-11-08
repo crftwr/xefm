@@ -32,7 +32,8 @@ logger = getLogger("Config")
 # A config token resolves to (identity, modifiers, mode):
 #   mode "key"  -> match on event.key + exact modifiers (shift significant);
 #                  letters and named keys.
-#   mode "char" -> match on event.char (case-sensitive), ignoring shift/alt;
+#   mode "char" -> match on event.char (case-sensitive), ignoring shift, and alt
+#                  unless the binding names it;
 #                  digits and punctuation (the produced glyph is the identity).
 # --------------------------------------------------------------------------- #
 
@@ -203,7 +204,7 @@ class KeyBindings:
               (``shift``/``ctrl``/``alt``/``cmd``).
             - mode: ``"key"`` (match on ``event.key`` + exact modifiers; letters
               and named keys) or ``"char"`` (match on ``event.char``, ignoring
-              shift/alt; digits and punctuation).
+              shift, and alt unless named; digits and punctuation).
 
         Examples:
             "Q" / "q"      -> ("q", frozenset(), "key")         # lowercase press
@@ -249,12 +250,25 @@ class KeyBindings:
         if mode == "seq":
             return False
         if mode == "char":
-            # Ignore shift/alt (the glyph already encodes them); honour ctrl/cmd
-            # only if the binding named them.
+            # Ignore shift (the glyph already encodes it); honour ctrl/cmd only
+            # if the binding named them. Alt is ignored unless the binding names
+            # it: on macOS Option types the glyph ('@' is Opt-L on a German
+            # layout), so a bare '@' must still match it, but 'Alt-+' (Orthodox's
+            # select_same_extension) is a chord, not the '+' of select_by_pattern.
+            if "alt" in required and "alt" not in mods:
+                return False
             sig = frozenset(m for m in mods if m in ("ctrl", "cmd"))
             want = frozenset(m for m in required if m in ("ctrl", "cmd"))
             return char is not None and char == identity and sig == want
         return key == identity and frozenset(mods) == required
+
+    @staticmethod
+    def _alt_exact(parsed: tuple, mods) -> bool:
+        """Whether a binding that matched an event agrees with it on Alt. Only a
+        char-mode binding can match without doing so (it ignores an Alt it does
+        not name); for an Alt chord the binding naming Alt is tried first, so
+        'Alt-+' wins over '+' wherever the two are listed."""
+        return parsed[2] != "char" or ("alt" in parsed[1]) == ("alt" in mods)
 
     def _build_key_lookup(self) -> dict:
         """
@@ -448,21 +462,28 @@ class KeyBindings:
         key, char, mods = self._event_identity(event)
 
         if context is not None:
+            loose = None
             for parsed, action, selection_req in self._context_entries(context):
                 if (self._matches(parsed, key, char, mods)
                         and self._check_selection_requirement(selection_req, has_selection)):
-                    return action
-            return None
+                    if self._alt_exact(parsed, mods):
+                        return action
+                    loose = loose or action
+            return loose
 
         # Try to match against all key bindings
+        loose = None
         for parsed, actions in self._key_to_actions.items():
             if self._matches(parsed, key, char, mods):
                 # Found a matching key - check selection requirements
                 for action, selection_req in actions:
                     if self._check_selection_requirement(selection_req, has_selection):
-                        return action
+                        if self._alt_exact(parsed, mods):
+                            return action
+                        loose = loose or action
+                        break
 
-        return None
+        return loose
 
     def sequence_lookup(self, events, has_selection: bool = False,
                         context: str = "filer") -> tuple:
@@ -474,6 +495,7 @@ class KeyBindings:
         ids = [self._event_identity(event) for event in events]
         count = len(ids)
         exact = None
+        loose = None
         longer = False
         for parsed, action, selection_req in self._context_entries(context):
             if not self._check_selection_requirement(selection_req, has_selection):
@@ -488,10 +510,13 @@ class KeyBindings:
                     self._matches(part, *ids[i]) for i, part in enumerate(parts[:count])):
                 continue
             if len(parts) == count:
-                exact = exact or action
+                if all(self._alt_exact(part, ids[i][2]) for i, part in enumerate(parts)):
+                    exact = exact or action
+                else:
+                    loose = loose or action
             else:
                 longer = True
-        return exact, longer
+        return exact or loose, longer
 
     def is_action_for_event(self, event, action: str, has_selection: bool = False,
                             context: str | None = None) -> bool:
