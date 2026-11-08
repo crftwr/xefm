@@ -326,7 +326,7 @@ def _theme(bg, fg, muted, accent, surface, selection, *, accent2=None,
            syntax=None, file_types=None, cursor=None, selection_fill=None,
            post_effect=None, animation=None, wallpaper=None, opacity=1.0,
            pane_frame=None, pane_dim=None, text_effect=None,
-           dialog_effect=None) -> Theme:
+           dialog_effect=None, theme_fields=None) -> Theme:
     ac2 = accent if accent2 is None else accent2
     p = {"bg": bg, "fg": fg, "muted": muted, "accent": accent, "accent2": ac2,
          "surface": surface}
@@ -394,6 +394,12 @@ def _theme(bg, fg, muted, accent, surface, selection, *, accent2=None,
     if opacity != 1.0:
         extras["opacity"] = min(1.0, max(0.0, float(opacity)))
     kw: dict = {}
+    # Any other derived Theme field, pinned (``control_bg``, ``popup_border``,
+    # ...): for a theme whose chrome is far from its background's polarity, like
+    # Pelagic's white shell over dark water, where the fields derived from the
+    # background (an input inside a white dialog) would land dark.
+    if theme_fields:
+        kw.update(theme_fields)
     if surfaces:
         kw["surfaces"] = surfaces
     if extras:
@@ -766,6 +772,48 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                      # Tuned at speed 1: one orbit of the rock is about 140 s.
                      animation={"type": "crystal", "color": (88, 199, 222), "speed": 1.0,
                                 "opacity": 1.0},
+                     opacity=0.6)),
+    # Pelagic: open water about ten metres down, looking up (the ``pelagic``
+    # scene, see xefm.background_pelagic) — jellyfish drifting through sun
+    # shafts, Snell's window overhead, now and then a turtle far off. The panes
+    # stay the dark water; the chrome is a white shell: the bars and pane headers
+    # translucent white over the sea, dialogs and menus opaque shell white, and a
+    # selected file a white shell row, so nothing that marks or frames the list
+    # is the colour of the water behind it. Text over the white is inked dark by
+    # the panel's auto_ink. Physically coloured like Earth: the scene ignores
+    # ``ink``.
+    ("Pelagic", dict(bg=(3, 22, 26), fg=(207, 230, 234), muted=(127, 166, 173),
+                     accent=(40, 120, 136), surface=(238, 232, 224), selection=(190, 178, 164),
+                     accent2=(255, 154, 82),
+                     status=(238, 232, 224), footer=(220, 212, 202),
+                     file_types={"directory": (170, 222, 232), "link": (244, 160, 190)},
+                     cursor={"active": (232, 112, 72)},
+                     selection_fill=(236, 230, 222),
+                     syntax={"keyword": (120, 210, 228), "string": (255, 182, 120),
+                             "comment": (127, 166, 173), "number": (255, 214, 150),
+                             "operator": (196, 176, 255), "builtin": (140, 222, 170)},
+                     # Inside a white dialog: light fields and secondary buttons,
+                     # and a frame a step darker than the shell (derived from the
+                     # dark background they would be dark).
+                     theme_fields=dict(control_bg=(250, 247, 242), control_hover_bg=(255, 253, 249),
+                                       control_border=(196, 188, 178),
+                                       button_secondary_bg=(226, 219, 210),
+                                       button_secondary_hover_bg=(214, 206, 196),
+                                       button_secondary_border=(190, 182, 172),
+                                       popup_border=(200, 192, 182),
+                                       # rows under the pointer and unfocused
+                                       # selections, mostly drawn on the shell
+                                       hover_bg=(224, 216, 206),
+                                       selection_inactive_bg=(214, 206, 196),
+                                       # Text selected with the mouse (viewers,
+                                       # inputs): a deep coral that reads on the dark
+                                       # water and on the white shell alike.
+                                       text_selection_bg=(166, 78, 62),
+                                       text_selection_inactive_bg=(214, 206, 196)),
+                     post_effect={"drop_shadow": 0.5},
+                     # Tuned at speed 1: the turtle's pass is locked to the
+                     # camera's tilt cycle in scene time, so any speed keeps it.
+                     animation={"type": "pelagic", "speed": 1.0, "opacity": 1.0},
                      opacity=0.6)),
 ]
 

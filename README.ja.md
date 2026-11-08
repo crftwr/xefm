@@ -189,7 +189,7 @@ XeFM には 15 種類のテーマが内蔵されています。テーマは **Vi
 | <img src="doc/images/theme-light.jpg" width="260"><br>**Light+** | <img src="doc/images/theme-solarized-light.jpg" width="260"><br>**Solarized Light** | <img src="doc/images/theme-sci-fi.jpg" width="260"><br>**Sci-Fi** |
 | <img src="doc/images/theme-cyber.jpg" width="260"><br>**Cyber** | <img src="doc/images/theme-segment-lcd.jpg" width="260"><br>**Segment LCD** | <img src="doc/images/theme-shinagawa.jpg" width="260"><br>**Shinagawa** |
 
-このほか **Earth**、**Blocks**、**Crystal** の 3 つは、ペインの背後にゆっくり動く 3D の絵を映します。軌道から見た地球、暗い金属の柱が並ぶ風景、黒い岩に育つ結晶のマクロ撮影です。絵を描くのはデスクトップアプリだけで、ターミナルではテーマの配色のみが使われます。YouTube で動画を見られます。
+このほか **Earth**、**Blocks**、**Crystal**、**Pelagic** の 4 つは、ペインの背後にゆっくり動く 3D の絵を映します。軌道から見た地球、暗い金属の柱が並ぶ風景、黒い岩に育つ結晶のマクロ撮影、そしてクラゲの漂う外洋を下から見上げた眺めです。絵を描くのはデスクトップアプリだけで、ターミナルではテーマの配色のみが使われます。最初の 3 つは YouTube で動画を見られます。
 
 <a href="https://www.youtube.com/watch?v=ZTpk-sUsPIk">
   <img src="doc/images/theme-picture-video.jpg" alt="XeFM のペインの背後に映る Earth、Blocks、Crystal テーマ：YouTube で動画を再生" />

@@ -24,7 +24,14 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.20.1 is the floor because 1.20.0 and earlier leak memory on macOS under every
+# 1.23.0 is the floor because it keeps text and marks legible on translucent
+# surfaces over a background scene: auto-ink judges a fill as it is seen (the
+# Pelagic theme's white shell bars over dark water read as mid gray, and their
+# text came out faint), text backgrounds composite with the surfaces instead of
+# opaque patches (inline code, viewer header titles), selections and search hits
+# keep a mark opacity, and an input's caret is inked against its field. It is
+# soft: XeFM runs on 1.20.1, with those defects. 1.20.1 was the floor before
+# because 1.20.0 and earlier leak memory on macOS under every
 # shader background, gigabytes under a many-pass scene such as Earth (#852); it
 # runs without 1.20.1, only leaking. 1.20.0 is a hard floor: the file pane draws a selected row with
 # ``fill_rect(..., opacity=)`` so a background scene cannot wash it out (#845),
@@ -227,7 +234,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.20.1
+puikit>=1.23.0
 pygments
 boto3
 watchdog

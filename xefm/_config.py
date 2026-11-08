@@ -163,6 +163,8 @@ class Config:
     #   #                       (the one scene that ignores the foreground)
     #   #       'blocks'        metal columns in fog, light leaking between them
     #   #       'crystal'       a macro of crystals growing out of basalt
+    #   #       'pelagic'       open water looking up: jellyfish, sun shafts and
+    #   #                       a turtle now and then (natural colours, like earth)
     #   #     Written as a bare type, or a dict to retune speed / opacity:
     #   #       'animation': 'starfield'                     # the tuned default
     #   #       'animation': {'type': 'rain', 'speed': 1.0, 'opacity': 0.8}
@@ -182,6 +184,9 @@ class Config:
     #   #     sharp), exposure and brightness:
     #   #       'animation': {'type': 'blocks', 'leaks': 1.5, 'camera': 0.5}
     #   #       'animation': {'type': 'crystal', 'focus': 0.5}
+    #   #     'pelagic' takes jellyfish (0..6, 6 as tuned), exposure and
+    #   #     brightness (default 0.7):
+    #   #       'animation': {'type': 'pelagic', 'jellyfish': 3}
     #   #     ('cube', a spinning wireframe, also works — it is the UI toolkit's
     #   #      own reference scene rather than one of XeFM's.)
     #   #   * wallpaper — a single image scaled to fill the window:
