@@ -250,6 +250,11 @@ def bindings() -> dict:
         # Unbound by default (use View → Theme in the menu bar). Assign a key
         # here to cycle themes from the keyboard, e.g. ['T'].
         'toggle_color_scheme': [],             # Cycle to the next color theme
+        # Font size for this run, in the desktop app (below): a terminal draws
+        # in its own font.
+        'increase_font_size': [],
+        'decrease_font_size': [],
+        'reset_font_size': [],
 
         # === External Programs ===
         'programs': ['X'],                     # Show external programs menu
@@ -490,6 +495,11 @@ def bindings() -> dict:
             # Quitting the way every app quits, from anywhere -- a dialog or a
             # viewer open too -- and asking only while a task runs.
             KEY_BINDINGS['quit_app'] = ['Command-Q']
+            # Every Mac app's text size keys. Cmd-+ is Shift-= on a US
+            # keyboard, so Cmd-= without Shift counts too, as in a browser.
+            KEY_BINDINGS['increase_font_size'] = ['Command-+', 'Command-=']
+            KEY_BINDINGS['decrease_font_size'] = ['Command-MINUS']
+            KEY_BINDINGS['reset_font_size'] = ['Command-0']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']

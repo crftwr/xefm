@@ -71,12 +71,24 @@ class TestBackendGatedRows(HelpMarkdownCase):
                       self.terminal_help())
 
     def test_gating_only_removes_rows(self):
-        # Every desktop row is also a terminal row: the gate subtracts, it never
-        # rewrites or reorders what both frontends share.
+        # Each frontend's rows are the ungated table's with some taken out: the
+        # gate subtracts, it never rewrites or reorders what the frontends
+        # share. (Each side has rows the other lacks: the menu bar key in a
+        # terminal, the font size in the desktop app.)
         rows = lambda md: [line for line in md.splitlines() if line.startswith("| ")]
-        desktop, terminal = rows(self.desktop_help()), rows(self.terminal_help())
-        self.assertTrue(set(desktop) <= set(terminal))
-        self.assertEqual(desktop, [r for r in terminal if r in set(desktop)])
+        gates = XeFMApp._BACKEND_GATED
+        self.addCleanup(setattr, XeFMApp, "_BACKEND_GATED", gates)
+        XeFMApp._BACKEND_GATED = {}
+        ungated = rows(self.terminal_help())
+        XeFMApp._BACKEND_GATED = gates
+        for gated in (rows(self.desktop_help()), rows(self.terminal_help())):
+            self.assertTrue(set(gated) <= set(ungated))
+            self.assertEqual(gated, [r for r in ungated if r in set(gated)])
+
+    def test_font_size_rows_are_desktop_only(self):
+        # A terminal draws in its own font; View > Font Size is not there.
+        self.assertIn("Larger text until XeFM quits", self.desktop_help())
+        self.assertNotIn("Larger text until XeFM quits", self.terminal_help())
 
     def test_a_fully_gated_section_loses_its_heading(self):
         # Nothing gates a whole section today; the dialog must not grow an empty

@@ -822,6 +822,16 @@ _DETAILS: dict[str, str] = {
     "toggle_color_scheme": (
         "Switches to the next color theme. View ▸ Theme lists them all by "
         "name."),
+    "increase_font_size": (
+        "Makes the text one point larger, in the desktop app, until XeFM "
+        "quits: the next launch starts from `FONT_SIZE` in `config.py` again. "
+        "In a terminal the terminal's own font setting decides the size."),
+    "decrease_font_size": (
+        "Makes the text one point smaller, in the desktop app, until XeFM "
+        "quits. The size goes no lower than 8 points."),
+    "reset_font_size": (
+        "Puts the text back to `FONT_SIZE` from `config.py` after Larger or "
+        "Smaller changed it."),
     "choose_layout": (
         "Chooses how the active pane presents its rows — which of the usual "
         "columns it has and how they are written: short dates, names with "
@@ -1099,6 +1109,9 @@ _FILER_ACTIONS = [
     # Appearance
     _a("toggle_hidden", FILER, "Show or hide hidden files"),
     _a("toggle_color_scheme", FILER, "Cycle to the next color theme"),
+    _a("increase_font_size", FILER, "Make the text larger until XeFM quits"),
+    _a("decrease_font_size", FILER, "Make the text smaller until XeFM quits"),
+    _a("reset_font_size", FILER, "Put the text back to FONT_SIZE"),
     _a("choose_layout", FILER, "Choose how the pane presents its rows", default_keys=()),
     _a("choose_extras", FILER, "Turn an extra such as Git status on or off in this tab",
        default_keys=()),

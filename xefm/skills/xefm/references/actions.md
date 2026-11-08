@@ -123,6 +123,9 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `copy_log_all` | Copy the whole log to the clipboard | — | — | — | — |
 | `toggle_hidden` | Show or hide hidden files | `.` | `.` | `.` | `z a` |
 | `toggle_color_scheme` | Cycle to the next color theme | — | — | — | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — | — | — | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — | — | — | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — | — | — | — |
 | `choose_layout` | Choose how the pane presents its rows | — | — | — | — |
 | `choose_extras` | Turn an extra such as Git status on or off in this tab | — | — | — | — |
 | `resolve_attribute` | Work out an attribute that takes time, such as a folder's total size | — | — | — | — |
@@ -162,6 +165,10 @@ send them). These replace the row above in that app:
 - `command_palette` (OS native): `Command-Shift-P`, `Ctrl-K`
 - `copy_paths` (OS native): `Command-Alt-C`, `Ctrl-P`
 - `create_directory` (OS native): `Command-Shift-N`, `F7`
+- `decrease_font_size` (AFX style): `Command-MINUS`
+- `decrease_font_size` (OS native): `Command-MINUS`
+- `decrease_font_size` (Orthodox): `Command-MINUS`
+- `decrease_font_size` (Vim style): `Command-MINUS`
 - `delete_files` (OS native): `Command-BACKSPACE`, `DELETE`, `F8`
 - `delete_permanently` (OS native): `Command-Alt-BACKSPACE`, `Shift-DELETE`, `Shift-F8`
 - `file_details` (OS native): `Command-I`, `Alt-I`
@@ -171,6 +178,10 @@ send them). These replace the row above in that app:
 - `go_forward` (AFX style): `Command-RIGHT_BRACKET`, `Alt-RIGHT`
 - `go_forward` (OS native): `Command-RIGHT_BRACKET`, `Alt-RIGHT`
 - `go_parent` (OS native): `Command-UP`, `BACKSPACE`, `Alt-UP`
+- `increase_font_size` (AFX style): `Command-+`, `Command-=`
+- `increase_font_size` (OS native): `Command-+`, `Command-=`
+- `increase_font_size` (Orthodox): `Command-+`, `Command-=`
+- `increase_font_size` (Vim style): `Command-+`, `Command-=`
 - `jump_to_path` (OS native): `Command-Shift-G`, `Ctrl-L`
 - `new_tab` (OS native): `Command-T`, `Ctrl-T`
 - `open_item` (OS native): `ENTER`, `Command-DOWN`
@@ -182,6 +193,10 @@ send them). These replace the row above in that app:
 - `quit_app` (OS native): `Command-Q`
 - `quit_app` (Orthodox): `Command-Q`
 - `quit_app` (Vim style): `Command-Q`
+- `reset_font_size` (AFX style): `Command-0`
+- `reset_font_size` (OS native): `Command-0`
+- `reset_font_size` (Orthodox): `Command-0`
+- `reset_font_size` (Vim style): `Command-0`
 - `select_all` (OS native): `Command-A`, `Ctrl-A`
 - `toggle_hidden` (OS native): `Command-Shift-.`, `.`
 - `toggle_select_down` (OS native): `Ctrl-SPACE`, `INSERT`
