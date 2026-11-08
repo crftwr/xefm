@@ -234,6 +234,49 @@ class Rendering(unittest.TestCase):
         self.assertGreater(moved, 0.05)
         self.assertLess(moved, 0.5)
 
+    @staticmethod
+    def _brightest(px):
+        return max(max(px[i], px[i + 1], px[i + 2]) for i in range(0, len(px), 4))
+
+    def test_a_far_move_dips_through_dark(self):
+        # Day to crescent turns the sun more than two radians round the view:
+        # flown in 18 s that whips the light across the planet, so the picture
+        # fades out, cuts in the dark and fades in on the next scene instead.
+        fields = earth.earth_shader(lens="clean")
+        seed = next(s for s in range(200)
+                    if (self._shot(0, s, 1), self._shot(1, s, 1)) == (0, 2))   # day -> crescent
+        hold = earth.SHOT_SECONDS - earth.TRANSITION
+        self.assertGreater(self._brightest(self._frame(fields, hold + 1.0, seed=seed)), 40)
+        self.assertLessEqual(self._brightest(self._frame(fields, hold + earth.TRANSITION / 2,
+                                                         seed=seed)), 2)
+        self.assertGreater(self._brightest(self._frame(fields, earth.SHOT_SECONDS - 1.0,
+                                                       seed=seed)), 40)
+
+    def test_a_close_move_is_flown(self):
+        # A held shot moves back over its own drift: slow enough to fly, so the
+        # picture never goes dark between its scenes.
+        fields = earth.earth_shader(shot="day", lens="clean")
+        hold = earth.SHOT_SECONDS - earth.TRANSITION
+        for x in (0.25, 0.5, 0.75):
+            px = self._frame(fields, hold + earth.TRANSITION * x)
+            self.assertGreater(self._brightest(px), 40, x)
+
+    def test_a_reseed_dips_instead_of_sweeping(self):
+        # The old seed's scene fades out, the new one's fades in: no six-second
+        # rush from one composition to another.
+        fields = earth.earth_shader(lens="clean")
+        r = MetalBackground()
+        self.assertTrue(r.set_shader(Shader(ink=(200, 224, 245), backdrop=_BACKDROP, **fields)),
+                        r.error)
+
+        def frame(mix):
+            return MetalBackground.texture_pixels(
+                r.render_to_texture(160, 100, 5.0, seed=7.0, seed_prev=3.0, seed_mix=mix))
+
+        self.assertEqual(bytes(frame(0.0)), bytes(self._frame(fields, 5.0, seed=3.0)))
+        self.assertLessEqual(self._brightest(frame(0.5)), 2)
+        self.assertEqual(bytes(frame(1.0)), bytes(self._frame(fields, 5.0, seed=7.0)))
+
     def test_no_pixel_passes_half_white(self):
         # Whatever the shot and the look — the sunlit disc, the glint, the
         # night-vision gain — file names never sit on more than half white.

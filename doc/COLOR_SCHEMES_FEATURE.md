@@ -265,7 +265,8 @@ battery — while you were reading something else. So it doesn't:
 - `earth`, `blocks` and `crystal` are the exceptions. Every frame of them is a
   picture, so instead of fading they slow gently to a stop and **hold** it.
 - `earth` then does not resume that scene when you come back to XeFM: over a few
-  seconds it moves on to a new one, picked at random — once per return. Moving
+  seconds it fades out and fades in on a new one, picked at random — once per
+  return. Moving
   the mouse over XeFM while another app is in front does not count as coming
   back.
 - The moment you press a key or move the mouse, it **eases back in**.
@@ -308,10 +309,12 @@ look (one of ten) — 1,200 combinations. Each scene lasts about 50 seconds at
 `speed` `1.0` — about half a minute held, then a slow move of about 18 seconds into
 the next — with the camera moving slowly and steadily the whole time — around
 the planet, closer or further, the planet drifting and turning across the frame
-and the sun creeping with it — and then travels to the next, picked at random, in
-one smooth move: the drift within a scene and the move between scenes flow into
-each other. XeFM opens on a random scene, and returns from idle to a
-fresh one.
+and the sun creeping with it — and then goes on to the next, picked at random.
+When the next scene is close enough to reach at a calm pace, the camera travels
+there in one smooth move, the drift within a scene and the move between scenes
+flowing into each other; when it is not, the picture fades out and the next
+scene fades in, so the planet and the sun are never swung round faster than they
+drift. XeFM opens on a random scene, and returns from idle to a fresh one.
 
 The picture is kept dim on purpose: no pixel of it is brighter than half white
 (`brightness`), so file names stay readable over a sunlit ocean.

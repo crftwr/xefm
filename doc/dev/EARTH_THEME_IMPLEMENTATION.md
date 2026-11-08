@@ -79,10 +79,13 @@ a new one, paid on the first tick at which the app is really in use again —
 focused, recent input, not reduced motion. Paying it whenever the tick re-arms
 was the first version and was wrong: a mouse crossing an unfocused window
 re-arms the tick on every move, the tick parks again at once, and each of those
-wakes cut to another scene. The change is also not a cut: the shader computes
-the path for both seeds and blends the two poses by `seed_mix` (eased in wall
-time, so the blend starts and ends at rest), and the lens blends the two
-looks the same way.
+wakes cut to another scene. The change is not a bare cut either: it **dips**,
+as a far move between scenes does (below). While `seed_mix` (eased in wall
+time) is under a half the old seed's path shows, over a half the new one's,
+and the picture fades out and back in around that middle; the lens switches
+looks at the same dark moment (`XEFM_LENS_RESEED_WEIGHT`). The first version
+blended the two seeds' poses by `seed_mix`, which swept from one arbitrary
+composition to another in six seconds — the fastest motion the scene had.
 
 ### The camera path
 
@@ -104,6 +107,40 @@ weighted harmonic mean of the neighbouring slopes, zero where they disagree):
 - each scene's drift is pointed from the scene before toward the scene after,
   so the hold, the move in and the move out run the same way wherever they can.
 
+**Flight or dip.** Flying every move was the previous design, and it was
+too fast: two random scenes are typically half a planet and two radians of sun
+apart, and covering that in 18 s swung the light across the disc at up to
+~11°/s (sun yaw, 95th percentile of the move), rolled the frame at
+~10°/s and changed altitude by a third every second. Now `gentle(x0, e1)`
+checks the move's average speed over `TRANSITION` against a calm limit per
+axis (`GENTLE_*`: ground angular speed under the camera at the lower altitude,
+log altitude, tilt, pan, zoom, sun yaw and pitch, limb weight, roll and the
+limb angle where it is framed). A move under all of them is flown as before.
+Any other **dips**: the scene keeps drifting from its exit knot as the picture
+fades out, the path cuts at the move's dark middle, and the next scene fades in
+drifting into its entry knot. A knot next to a dip takes the scene's own drift
+as its tangent, so the hold on either side of a dip is a straight drift and the
+velocity is still continuous wherever the picture shows. The fade is short —
+`DIP_FADE` = 2 s of scene clock either side of `DIP_DARK` = 0.25 s of dark
+(the first cut faded over ~7 s each side and read as sluggish) — so the scene
+holds at full brightness for the rest of the move. The fade stops the
+exposure down as well as scaling it (`DIP_STOPS`) — a plain scale left the
+sun burning through until the last moment — and the fragment returns black
+without rendering in the dark. The lens changes look at that middle
+(`XEFM_LENS_WEIGHT` → `earth_look_weight`, which reruns the gentle test for
+the slot), not over the whole move, so a look never morphs on screen during a
+dip.
+
+Measured on a Python port of `path_at` over ~1,700 transitions: about 3 % are
+flown; the fastest moments anywhere are now ground ~0.034 rad/s, sun
+~0.015 rad/s, roll ~0.02 rad/s.
+
+**Drift scales with altitude.** The drift round the planet was the same
+0.3–0.6°/s at every altitude, which from a low orbit (0.03 earth radii up)
+swept the ground past the camera at ~20°/s. Longitude and latitude drift are
+now scaled by `min(1, altitude / GROUND_REF)`, so below 0.9 earth radii the
+ground crosses the view at the rate it does from there (~0.7°/s).
+
 Two earlier versions explain the design. Blending two moving poses with a
 smoothstep left the transition ending at full deceleration straight into a
 drift that could point the other way — a visible bounce. Slow sines for the
@@ -121,7 +158,8 @@ The backend advances a shader without XeFM, so the prototype's CPU-side
 smoothing could not come along. The shot table is constant arrays in the
 shader; the scene in view is the slot's hash (above), the camera follows the
 path above, and the lens blends the two looks over each slot's last
-`TRANSITION` seconds, the same seconds the camera travels. The `rise` shot's limb oscillation, the in-scene
+`TRANSITION` seconds, the same seconds the camera travels (or, in a dip,
+switches at its dark middle). The `rise` shot's limb oscillation, the in-scene
 drift, the earth's spin, cloud drift and the hand-held "breath" are closed-form
 in `time`.
 The camera is recomputed per pixel; it is a few dozen operations, negligible

@@ -26,14 +26,20 @@ clock hashes, with PuiKit's ``seed`` uniform, to one of them:
 ``xefm_slot_hash(slot, seed)`` modulo the number of looks is the look (the lens
 passes take it the same way), and the rest picks the shot and variant. PuiKit draws a new seed when the background is set and once each time
 the user comes back to it after it parked, so XeFM opens on a random scene and
-eases into a fresh one on a return (``seed_prev``/``seed_mix``).
+dips into a fresh one on a return (``seed_prev``/``seed_mix``).
 
 **Everything moves as a function of ``time``** (and the seeds). The backend
 advances a shader without XeFM's involvement, so there is no per-frame CPU state:
-the camera follows one smooth path through all the scenes (``path_at``) — each
-scene drifts steadily while it holds, and the move to the next one flows out of
-that drift and into the next scene's, a monotone cubic through the scenes'
-entry and exit poses — while the lens blends the looks over the move.
+the camera follows one path through all the scenes (``path_at``). Each scene
+drifts steadily while it holds — round the planet no faster, low down, than the
+ground can cross the view without racing. Where the next scene is close enough
+to reach without moving faster than a calm limit on every axis (``GENTLE_*``),
+the move flows out of that drift and into the next scene's, a monotone cubic
+through the scenes' entry and exit poses, while the lens blends the looks over
+it; anywhere else the move **dips** — the picture fades out with the scene still
+drifting, cuts in the dark (where the lens changes look too), and fades in on
+the next one already moving. Nothing on screen — the camera, the sun's angle,
+the roll — ever moves faster than a scene's own drift or that limit.
 The sun's dip behind the limb in the ``rise`` shot and the earth's spin are
 closed-form in ``time`` too. Per-theme options (which shot, which looks, cloud
 height, exposure) are constants baked into the source when the theme is applied
@@ -111,8 +117,8 @@ DEFAULT_EXPOSURE = 1.0
 DEFAULT_BRIGHTNESS = 0.5
 
 #: How long each scene holds on the scene clock (speed applied), and how much of
-#: that is the move into the next. Baked into the shader and handed to the
-#: lens, so the camera and the look change together.
+#: that is the move into the next (a flight or a dip). Baked into the shader and
+#: handed to the lens, so the camera and the look change together.
 SHOT_SECONDS = 49.0
 TRANSITION = 18.0
 
@@ -180,6 +186,35 @@ constant float MOVE_PAN    = 0.0044;     // the planet across the frame, view he
 constant float MOVE_ZOOM   = 0.006;      // log of the lens length
 constant float MOVE_YAW    = 0.003;      // the sun round the view, radians
 constant float MOVE_ROLL   = 0.006;      // the camera turning about its axis, radians
+// Low over the planet the same turn round it sweeps the ground past many times
+// faster than it turns a whole disc, so the drift round the planet (longitude
+// and latitude) slows with the altitude below GROUND_REF earth radii: the
+// ground never crosses the view faster than it does from there.
+constant float GROUND_REF  = 0.9;
+// The fastest the camera may travel from one scene to the next, on average over
+// the move, per second. A move under every one of these is flown; any other
+// dips -- the picture fades out, cuts while dark and fades in, each scene
+// carrying on with its own drift meanwhile (see path_at) -- rather than whip
+// the planet or the sun round. GENTLE_GROUND is the ground's angular speed
+// under the camera, rad/s, at the lower of the two altitudes.
+constant float GENTLE_GROUND = 0.03;
+constant float GENTLE_ALT    = 0.04;     // log of the altitude
+constant float GENTLE_PITCH  = 0.012;    // tilt from nadir, rad
+constant float GENTLE_PAN    = 0.01;     // the planet across the frame, view heights
+constant float GENTLE_ZOOM   = 0.02;     // log of the lens length
+constant float GENTLE_SUN    = 0.012;    // the sun round the view (yaw, pitch), rad
+constant float GENTLE_LIMB   = 0.005;    // into or out of the limb framing
+constant float GENTLE_ROLL   = 0.015;    // rad; the limb angle too, where it is framed
+// The dip, in the middle of the move's TRANSITION: dark for DIP_DARK seconds
+// either side of the cut, fading over DIP_FADE seconds before and after that
+// (scene clock), and stopping down DIP_STOPS stops as it fades so the sun goes
+// as the ground does. A reseed dips the same way, in seed_mix rather than
+// seconds (it eases 0 to 1 over six seconds of wall time).
+constant float DIP_DARK    = 0.25;
+constant float DIP_FADE    = 2.0;
+constant float RESEED_DARK = 0.03;
+constant float RESEED_FADE = 0.3;
+constant float DIP_STOPS   = 4.0;
 constant float LIMB_PHI    = 0.55;       // where on the limb the sun meets it, rad
 constant float LIMB_AMP    = 0.026;      // how far it swings across the limb, rad
 constant float LIMB_PERIOD = 48.0;       // one dip and emergence, s
@@ -216,6 +251,7 @@ struct Pose { float4 a; float4 b; float4 c; };
 
 struct Cam {
     float3 ro; float3 fw; float3 rt; float3 up; float3 L; float2 off; float focal; float roll;
+    float fade;     // 1 whole, 0 dark: a dip between scenes or across a reseed
 };
 
 static inline float3 rot_y(float a, float3 v) {
@@ -258,14 +294,6 @@ static inline Pose pose_add(Pose p, Pose q, float k) {
     r.a = p.a + q.a * k;
     r.b = p.b + q.b * k;
     r.c = p.c + q.c * k;
-    return r;
-}
-
-static inline Pose pose_lerp(Pose p, Pose q, float w) {
-    Pose r;
-    r.a = mix(p.a, q.a, w);
-    r.b = mix(p.b, q.b, w);
-    r.c = mix(p.c, q.c, w);
     return r;
 }
 
@@ -316,16 +344,19 @@ static inline float4 heading(float4 before, float4 after, int id, int n) {
     return dir;
 }
 
-// How fast a scene moves while it holds, per second: its speeds, pointed the way
-// the camera travels through it (from the scene before to the scene after).
-static inline Pose drift(int2 sv, Pose before, Pose after) {
+// How fast a scene (composed as c) moves while it holds, per second: its
+// speeds, pointed the way the camera travels through it (from the scene before
+// to the scene after), round the planet no faster than GROUND_REF allows.
+static inline Pose drift(int2 sv, Pose c, Pose before, Pose after) {
     int id = sv.x * VARIANTS + sv.y;
+    float g = min(1.0, exp(c.a.z) / GROUND_REF);
     float4 ka = 0.5 + 0.5 * float4(scene_rand(id, 11), scene_rand(id, 12), scene_rand(id, 13), 0.0);
     float4 kb = 0.5 + 0.5 * float4(scene_rand(id, 14), scene_rand(id, 15), scene_rand(id, 16),
                                    scene_rand(id, 17));
     float kc = 0.5 + 0.5 * scene_rand(id, 18);
     Pose d;
-    d.a = float4(MOVE_LON, MOVE_LAT, MOVE_ALT, 0.0) * ka * heading(before.a, after.a, id, 20);
+    d.a = float4(MOVE_LON * g, MOVE_LAT * g, MOVE_ALT, 0.0) * ka
+        * heading(before.a, after.a, id, 20);
     d.b = float4(MOVE_PAN, MOVE_PAN * 0.6, MOVE_ZOOM, MOVE_YAW) * kb
         * heading(before.b, after.b, id, 24);
     d.c = float4(0.0, 0.0, 0.0, MOVE_ROLL * kc) * heading(before.c, after.c, id, 28);
@@ -377,15 +408,37 @@ static inline Pose pose_slope(Pose from, Pose to, float dt) {
     return pose_scale(pose_add(to, from, -1.0), 1.0 / dt);
 }
 
+// Whether the move from x (one scene leaving) to e (the next entering) is slow
+// enough to fly: its average speed over TRANSITION under every GENTLE_ limit.
+static inline bool gentle(Pose x, Pose e) {
+    Pose v = pose_slope(x, e, TRANSITION);
+    float h = min(exp(x.a.z), exp(e.a.z));
+    float ground = length(v.a.xy) * (PI / 180.0) / h;
+    float limb = max(abs(x.c.y), abs(e.c.y));
+    return ground <= GENTLE_GROUND && abs(v.a.z) <= GENTLE_ALT && abs(v.a.w) <= GENTLE_PITCH
+        && length(v.b.xy) <= GENTLE_PAN && abs(v.b.z) <= GENTLE_ZOOM
+        && abs(v.b.w) <= GENTLE_SUN && abs(v.c.x) <= GENTLE_SUN
+        && abs(v.c.y) <= GENTLE_LIMB && abs(v.c.z) * limb <= GENTLE_ROLL
+        && abs(v.c.w) <= GENTLE_ROLL;
+}
+
+// How much of the picture shows at d from the dark middle of a dip.
+static inline float dip(float d, float dark, float fade) {
+    return smoothstep(dark, dark + fade, d);
+}
+
 // The camera's path for one seed. Each slot k holds its scene for HOLD seconds
 // and then moves to the next over TRANSITION. A scene contributes two knots: it
 // enters at its composition minus half its drift over the hold and leaves at
-// the composition plus half. The path runs through every knot as one smooth
-// curve -- a monotone cubic, so the speed changes gradually everywhere and the
-// direction never flicks: the hold drifts steadily, the move out of it starts
-// from that drift and ends in the next scene's, which (headed the same way where
-// it can be) carries straight on.
-static inline Pose path_at(float t, float seed) {
+// the composition plus half. Where the move between two scenes is gentle the
+// path flies it, one smooth curve through the knots -- a monotone cubic, so the
+// speed changes gradually everywhere and the direction never flicks: the hold
+// drifts steadily, the move out of it starts from that drift and ends in the
+// next scene's, which (headed the same way where it can be) carries straight
+// on. Any other move dips: the scene drifts on as it fades out (fade), the cut
+// falls in the dark, and the next scene fades in already drifting into its
+// entry knot -- the camera never moves faster than a scene's own drift.
+static inline Pose path_at(float t, float seed, thread float &fade) {
     float hold = SHOT_SECONDS - TRANSITION;
     int k = int(floor(t / SHOT_SECONDS));
     float u = t - float(k) * SHOT_SECONDS;
@@ -396,33 +449,63 @@ static inline Pose path_at(float t, float seed) {
     Pose c_2 = unwrap_to(composition(s_2), c_1);
     Pose c1 = unwrap_to(composition(s1), c0);
     Pose c2 = unwrap_to(composition(s2), c1);
-    Pose d_1 = drift(s_1, c_2, c0), d0 = drift(s0, c_1, c1), d1 = drift(s1, c0, c2);
+    Pose d_1 = drift(s_1, c_1, c_2, c0), d0 = drift(s0, c0, c_1, c1);
+    Pose d1 = drift(s1, c1, c0, c2);
     Pose x_1 = pose_add(c_1, d_1, 0.5 * hold);           // the scene before leaves here
     Pose e0 = pose_add(c0, d0, -0.5 * hold);             // this one enters
     Pose x0 = pose_add(c0, d0, 0.5 * hold);              // and leaves
     Pose e1 = pose_add(c1, d1, -0.5 * hold);             // the next one enters
+    bool fly_in = gentle(x_1, e0), fly_out = gentle(x0, e1);
     Pose s_in = pose_slope(x_1, e0, TRANSITION);
     Pose s_out = pose_slope(x0, e1, TRANSITION);
-    Pose m_x0 = pose_tangent(d0, hold, s_out, TRANSITION);
-    if (u < hold) {
-        return hermite(e0, pose_tangent(s_in, TRANSITION, d0, hold), x0, m_x0, hold, u);
+    // A knot next to a dip has the scene's own drift for its tangent.
+    Pose m_e0 = fly_in ? pose_tangent(s_in, TRANSITION, d0, hold) : d0;
+    Pose m_x0 = fly_out ? pose_tangent(d0, hold, s_out, TRANSITION) : d0;
+    fade = 1.0;
+    if (u < hold) return hermite(e0, m_e0, x0, m_x0, hold, u);
+    float w = u - hold;
+    if (fly_out) {
+        return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION, w);
     }
-    return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION,
-                   u - hold);
+    fade = dip(abs(w - 0.5 * TRANSITION), DIP_DARK, DIP_FADE);
+    return w < 0.5 * TRANSITION ? pose_add(x0, d0, w) : pose_add(e1, d1, w - TRANSITION);
 }
+
+// Whether the move out of slot k is flown (see path_at), for the lens.
+static inline bool flies_out(int k, float seed) {
+    float hold = SHOT_SECONDS - TRANSITION;
+    int2 s_1 = scene_of(k - 1, seed), s0 = scene_of(k, seed);
+    int2 s1 = scene_of(k + 1, seed), s2 = scene_of(k + 2, seed);
+    Pose c0 = composition(s0);
+    Pose c_1 = unwrap_to(composition(s_1), c0);
+    Pose c1 = unwrap_to(composition(s1), c0);
+    Pose c2 = unwrap_to(composition(s2), c1);
+    Pose x0 = pose_add(c0, drift(s0, c0, c_1, c1), 0.5 * hold);
+    Pose e1 = pose_add(c1, drift(s1, c1, c0, c2), -0.5 * hold);
+    return gentle(x0, e1);
+}
+
+// The lens's blend into the next look (xefm.background_lens): over a flown move
+// as usual, at the dark middle of a dip -- and of a reseed, which dips too.
+static inline float earth_look_weight(int k, float seed, float x) {
+    return flies_out(k, seed) ? x * x * (3.0 - 2.0 * x) : step(0.5, x);
+}
+#define XEFM_LENS_WEIGHT(k, seed, x) earth_look_weight(k, seed, x)
+#define XEFM_LENS_RESEED_WEIGHT(m) step(0.5, m)
 
 // The whole camera and sun, from time and the seeds alone. Each SHOT_SECONDS slot
 // hashes to a scene; the low part of the hash is the lens look the lens passes
 // pick for the same slot (they take it modulo LENS_COUNT), and the rest picks
 // the shot and its variant -- so every combination can come up. A new seed
-// (each launch, each return from idle) means new scenes; while seed_mix is
-// below 1 the path for the old seed blends into the new one, as the lens blends
-// the looks.
+// (each launch, each return from idle) means new scenes; a reseed dips as a
+// move between scenes does -- the old seed's path fades out while seed_mix is
+// below a half, the new one's fades in -- and the lens changes look in the dark.
 static inline Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float fov = aspect < 0.8 ? 0.75 : 1.0;      // portrait: widen the lens
     float spin = SPIN * t;
-    Pose P = path_at(t, seed);
-    if (seed_mix < 1.0) P = pose_lerp(unwrap_to(path_at(t, seed_prev), P), P, seed_mix);
+    float fade;
+    Pose P = path_at(t, seed_mix < 0.5 ? seed_prev : seed, fade);
+    if (seed_mix < 1.0) fade *= dip(abs(seed_mix - 0.5), RESEED_DARK, RESEED_FADE);
     float dist = 1.0 + exp(P.a.z);
     // A gentle hand-held breathing on the tilt and the sun.
     float pitch = P.a.w + sin(t * 0.053) * 0.008;
@@ -436,6 +519,7 @@ static inline Cam camera(float t, float aspect, float seed, float seed_prev, flo
     float3 d = normalize(rot_x(TILT, rot_y(-spin, earth_fixed(P.a.x, clamp(P.a.y, -80.0, 80.0)))));
 
     Cam c;
+    c.fade = fade;
     c.focal = exp(P.b.z) * fov;
     c.off = P.b.xy;
     if (limb > 0.0) {
@@ -619,6 +703,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    sampler sRelief [[sampler(2)]]) {
     float t = u.time;
     Cam cam = camera(t, u.resolution.x / u.resolution.y, u.seed, u.seed_prev, u.seed_mix);
+    if (cam.fade <= 0.0) return float4(0.0, 0.0, 0.0, 1.0);    // the dark of a dip
     // y up, as the shot table was composed; then turned by the roll, about the
     // middle of the screen, before the framing offset places the composition.
     float2 uv0 = float2(pos.x - 0.5 * u.resolution.x, 0.5 * u.resolution.y - pos.y)
@@ -751,8 +836,10 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
     float3 flareCol = mix(float3(1.0, 0.55, 0.25), float3(1.0, 0.92, 0.8), vis);
     col += sunTv * flareCol * swell * prox * (0.25 + 0.75 * vis) * 1.6;
 
-    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop.
-    return float4(max(col * EXPOSURE, 0.0), 1.0);
+    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop. A
+    // dip stops the exposure down as it fades, so the sun goes with the ground.
+    float iris = cam.fade * exp2(DIP_STOPS * (cam.fade - 1.0));
+    return float4(max(col * (EXPOSURE * iris), 0.0), 1.0);
 }
 """
 
@@ -805,6 +892,35 @@ static const float MOVE_PAN    = 0.0044;     // the planet across the frame, vie
 static const float MOVE_ZOOM   = 0.006;      // log of the lens length
 static const float MOVE_YAW    = 0.003;      // the sun round the view, radians
 static const float MOVE_ROLL   = 0.006;      // the camera turning about its axis, radians
+// Low over the planet the same turn round it sweeps the ground past many times
+// faster than it turns a whole disc, so the drift round the planet (longitude
+// and latitude) slows with the altitude below GROUND_REF earth radii: the
+// ground never crosses the view faster than it does from there.
+static const float GROUND_REF  = 0.9;
+// The fastest the camera may travel from one scene to the next, on average over
+// the move, per second. A move under every one of these is flown; any other
+// dips -- the picture fades out, cuts while dark and fades in, each scene
+// carrying on with its own drift meanwhile (see path_at) -- rather than whip
+// the planet or the sun round. GENTLE_GROUND is the ground's angular speed
+// under the camera, rad/s, at the lower of the two altitudes.
+static const float GENTLE_GROUND = 0.03;
+static const float GENTLE_ALT    = 0.04;     // log of the altitude
+static const float GENTLE_PITCH  = 0.012;    // tilt from nadir, rad
+static const float GENTLE_PAN    = 0.01;     // the planet across the frame, view heights
+static const float GENTLE_ZOOM   = 0.02;     // log of the lens length
+static const float GENTLE_SUN    = 0.012;    // the sun round the view (yaw, pitch), rad
+static const float GENTLE_LIMB   = 0.005;    // into or out of the limb framing
+static const float GENTLE_ROLL   = 0.015;    // rad; the limb angle too, where it is framed
+// The dip, in the middle of the move's TRANSITION: dark for DIP_DARK seconds
+// either side of the cut, fading over DIP_FADE seconds before and after that
+// (scene clock), and stopping down DIP_STOPS stops as it fades so the sun goes
+// as the ground does. A reseed dips the same way, in seed_mix rather than
+// seconds (it eases 0 to 1 over six seconds of wall time).
+static const float DIP_DARK    = 0.25;
+static const float DIP_FADE    = 2.0;
+static const float RESEED_DARK = 0.03;
+static const float RESEED_FADE = 0.3;
+static const float DIP_STOPS   = 4.0;
 static const float LIMB_PHI    = 0.55;       // where on the limb the sun meets it, rad
 static const float LIMB_AMP    = 0.026;      // how far it swings across the limb, rad
 static const float LIMB_PERIOD = 48.0;       // one dip and emergence, s
@@ -848,6 +964,7 @@ struct Pose { float4 a; float4 b; float4 c; };
 
 struct Cam {
     float3 ro; float3 fw; float3 rt; float3 up; float3 L; float2 off; float focal; float roll;
+    float fade;     // 1 whole, 0 dark: a dip between scenes or across a reseed
 };
 
 float3 rot_y(float a, float3 v) {
@@ -890,14 +1007,6 @@ Pose pose_add(Pose p, Pose q, float k) {
     r.a = p.a + q.a * k;
     r.b = p.b + q.b * k;
     r.c = p.c + q.c * k;
-    return r;
-}
-
-Pose pose_lerp(Pose p, Pose q, float w) {
-    Pose r;
-    r.a = lerp(p.a, q.a, w);
-    r.b = lerp(p.b, q.b, w);
-    r.c = lerp(p.c, q.c, w);
     return r;
 }
 
@@ -948,16 +1057,19 @@ float4 heading(float4 before, float4 after, int id, int n) {
     return dir;
 }
 
-// How fast a scene moves while it holds, per second: its speeds, pointed the way
-// the camera travels through it (from the scene before to the scene after).
-Pose drift(int2 sv, Pose before, Pose after) {
+// How fast a scene (composed as c) moves while it holds, per second: its
+// speeds, pointed the way the camera travels through it (from the scene before
+// to the scene after), round the planet no faster than GROUND_REF allows.
+Pose drift(int2 sv, Pose c, Pose before, Pose after) {
     int id = sv.x * VARIANTS + sv.y;
+    float g = min(1.0, exp(c.a.z) / GROUND_REF);
     float4 ka = 0.5 + 0.5 * float4(scene_rand(id, 11), scene_rand(id, 12), scene_rand(id, 13), 0.0);
     float4 kb = 0.5 + 0.5 * float4(scene_rand(id, 14), scene_rand(id, 15), scene_rand(id, 16),
                                    scene_rand(id, 17));
     float kc = 0.5 + 0.5 * scene_rand(id, 18);
     Pose d;
-    d.a = float4(MOVE_LON, MOVE_LAT, MOVE_ALT, 0.0) * ka * heading(before.a, after.a, id, 20);
+    d.a = float4(MOVE_LON * g, MOVE_LAT * g, MOVE_ALT, 0.0) * ka
+        * heading(before.a, after.a, id, 20);
     d.b = float4(MOVE_PAN, MOVE_PAN * 0.6, MOVE_ZOOM, MOVE_YAW) * kb
         * heading(before.b, after.b, id, 24);
     d.c = float4(0.0, 0.0, 0.0, MOVE_ROLL * kc) * heading(before.c, after.c, id, 28);
@@ -1009,15 +1121,37 @@ Pose pose_slope(Pose from, Pose to, float dt) {
     return pose_scale(pose_add(to, from, -1.0), 1.0 / dt);
 }
 
+// Whether the move from x (one scene leaving) to e (the next entering) is slow
+// enough to fly: its average speed over TRANSITION under every GENTLE_ limit.
+bool gentle(Pose x, Pose e) {
+    Pose v = pose_slope(x, e, TRANSITION);
+    float h = min(exp(x.a.z), exp(e.a.z));
+    float ground = length(v.a.xy) * (PI / 180.0) / h;
+    float limb = max(abs(x.c.y), abs(e.c.y));
+    return ground <= GENTLE_GROUND && abs(v.a.z) <= GENTLE_ALT && abs(v.a.w) <= GENTLE_PITCH
+        && length(v.b.xy) <= GENTLE_PAN && abs(v.b.z) <= GENTLE_ZOOM
+        && abs(v.b.w) <= GENTLE_SUN && abs(v.c.x) <= GENTLE_SUN
+        && abs(v.c.y) <= GENTLE_LIMB && abs(v.c.z) * limb <= GENTLE_ROLL
+        && abs(v.c.w) <= GENTLE_ROLL;
+}
+
+// How much of the picture shows at d from the dark middle of a dip.
+float dip(float d, float dark, float fade) {
+    return smoothstep(dark, dark + fade, d);
+}
+
 // The camera's path for one seed. Each slot k holds its scene for HOLD seconds
 // and then moves to the next over TRANSITION. A scene contributes two knots: it
 // enters at its composition minus half its drift over the hold and leaves at
-// the composition plus half. The path runs through every knot as one smooth
-// curve -- a monotone cubic, so the speed changes gradually everywhere and the
-// direction never flicks: the hold drifts steadily, the move out of it starts
-// from that drift and ends in the next scene's, which (headed the same way where
-// it can be) carries straight on.
-Pose path_at(float t, float seed) {
+// the composition plus half. Where the move between two scenes is gentle the
+// path flies it, one smooth curve through the knots -- a monotone cubic, so the
+// speed changes gradually everywhere and the direction never flicks: the hold
+// drifts steadily, the move out of it starts from that drift and ends in the
+// next scene's, which (headed the same way where it can be) carries straight
+// on. Any other move dips: the scene drifts on as it fades out (fade), the cut
+// falls in the dark, and the next scene fades in already drifting into its
+// entry knot -- the camera never moves faster than a scene's own drift.
+Pose path_at(float t, float seed, out float fade) {
     float hold = SHOT_SECONDS - TRANSITION;
     int k = int(floor(t / SHOT_SECONDS));
     float u = t - float(k) * SHOT_SECONDS;
@@ -1028,33 +1162,63 @@ Pose path_at(float t, float seed) {
     Pose c_2 = unwrap_to(composition(s_2), c_1);
     Pose c1 = unwrap_to(composition(s1), c0);
     Pose c2 = unwrap_to(composition(s2), c1);
-    Pose d_1 = drift(s_1, c_2, c0), d0 = drift(s0, c_1, c1), d1 = drift(s1, c0, c2);
+    Pose d_1 = drift(s_1, c_1, c_2, c0), d0 = drift(s0, c0, c_1, c1);
+    Pose d1 = drift(s1, c1, c0, c2);
     Pose x_1 = pose_add(c_1, d_1, 0.5 * hold);           // the scene before leaves here
     Pose e0 = pose_add(c0, d0, -0.5 * hold);             // this one enters
     Pose x0 = pose_add(c0, d0, 0.5 * hold);              // and leaves
     Pose e1 = pose_add(c1, d1, -0.5 * hold);             // the next one enters
+    bool fly_in = gentle(x_1, e0), fly_out = gentle(x0, e1);
     Pose s_in = pose_slope(x_1, e0, TRANSITION);
     Pose s_out = pose_slope(x0, e1, TRANSITION);
-    Pose m_x0 = pose_tangent(d0, hold, s_out, TRANSITION);
-    if (u < hold) {
-        return hermite(e0, pose_tangent(s_in, TRANSITION, d0, hold), x0, m_x0, hold, u);
+    // A knot next to a dip has the scene's own drift for its tangent.
+    Pose m_e0 = fly_in ? pose_tangent(s_in, TRANSITION, d0, hold) : d0;
+    Pose m_x0 = fly_out ? pose_tangent(d0, hold, s_out, TRANSITION) : d0;
+    fade = 1.0;
+    if (u < hold) return hermite(e0, m_e0, x0, m_x0, hold, u);
+    float w = u - hold;
+    if (fly_out) {
+        return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION, w);
     }
-    return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION,
-                   u - hold);
+    fade = dip(abs(w - 0.5 * TRANSITION), DIP_DARK, DIP_FADE);
+    return w < 0.5 * TRANSITION ? pose_add(x0, d0, w) : pose_add(e1, d1, w - TRANSITION);
 }
+
+// Whether the move out of slot k is flown (see path_at), for the lens.
+bool flies_out(int k, float seed) {
+    float hold = SHOT_SECONDS - TRANSITION;
+    int2 s_1 = scene_of(k - 1, seed), s0 = scene_of(k, seed);
+    int2 s1 = scene_of(k + 1, seed), s2 = scene_of(k + 2, seed);
+    Pose c0 = composition(s0);
+    Pose c_1 = unwrap_to(composition(s_1), c0);
+    Pose c1 = unwrap_to(composition(s1), c0);
+    Pose c2 = unwrap_to(composition(s2), c1);
+    Pose x0 = pose_add(c0, drift(s0, c0, c_1, c1), 0.5 * hold);
+    Pose e1 = pose_add(c1, drift(s1, c1, c0, c2), -0.5 * hold);
+    return gentle(x0, e1);
+}
+
+// The lens's blend into the next look (xefm.background_lens): over a flown move
+// as usual, at the dark middle of a dip -- and of a reseed, which dips too.
+float earth_look_weight(int k, float seed, float x) {
+    return flies_out(k, seed) ? x * x * (3.0 - 2.0 * x) : step(0.5, x);
+}
+#define XEFM_LENS_WEIGHT(k, seed, x) earth_look_weight(k, seed, x)
+#define XEFM_LENS_RESEED_WEIGHT(m) step(0.5, m)
 
 // The whole camera and sun, from time and the seeds alone. Each SHOT_SECONDS slot
 // hashes to a scene; the low part of the hash is the lens look the lens passes
 // pick for the same slot (they take it modulo LENS_COUNT), and the rest picks
 // the shot and its variant -- so every combination can come up. A new seed
-// (each launch, each return from idle) means new scenes; while seed_mix is
-// below 1 the path for the old seed blends into the new one, as the lens blends
-// the looks.
+// (each launch, each return from idle) means new scenes; a reseed dips as a
+// move between scenes does -- the old seed's path fades out while seed_mix is
+// below a half, the new one's fades in -- and the lens changes look in the dark.
 Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float fov = aspect < 0.8 ? 0.75 : 1.0;      // portrait: widen the lens
     float spin = SPIN * t;
-    Pose P = path_at(t, seed);
-    if (seed_mix < 1.0) P = pose_lerp(unwrap_to(path_at(t, seed_prev), P), P, seed_mix);
+    float fade;
+    Pose P = path_at(t, seed_mix < 0.5 ? seed_prev : seed, fade);
+    if (seed_mix < 1.0) fade *= dip(abs(seed_mix - 0.5), RESEED_DARK, RESEED_FADE);
     float dist = 1.0 + exp(P.a.z);
     // A gentle hand-held breathing on the tilt and the sun.
     float pitch = P.a.w + sin(t * 0.053) * 0.008;
@@ -1068,6 +1232,7 @@ Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float3 d = normalize(rot_x(TILT, rot_y(-spin, earth_fixed(P.a.x, clamp(P.a.y, -80.0, 80.0)))));
 
     Cam c;
+    c.fade = fade;
     c.focal = exp(P.b.z) * fov;
     c.off = P.b.xy;
     if (limb > 0.0) {
@@ -1249,6 +1414,7 @@ float tex_width(Texture2D map) {
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     float t = time;
     Cam cam = camera(t, resolution.x / resolution.y, seed, seed_prev, seed_mix);
+    if (cam.fade <= 0.0) return float4(0.0, 0.0, 0.0, 1.0);    // the dark of a dip
     // y up, as the shot table was composed; then turned by the roll, about the
     // middle of the screen, before the framing offset places the composition.
     float2 uv0 = float2(pos.x - 0.5 * resolution.x, 0.5 * resolution.y - pos.y)
@@ -1380,8 +1546,10 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     float3 flareCol = lerp(float3(1.0, 0.55, 0.25), float3(1.0, 0.92, 0.8), vis);
     col += sunTv * flareCol * swell * prox * (0.25 + 0.75 * vis) * 1.6;
 
-    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop.
-    return float4(max(col * EXPOSURE, 0.0), 1.0);
+    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop. A
+    // dip stops the exposure down as it fades, so the sun goes with the ground.
+    float iris = cam.fade * exp2(DIP_STOPS * (cam.fade - 1.0));
+    return float4(max(col * (EXPOSURE * iris), 0.0), 1.0);
 }
 """
 
