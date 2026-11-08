@@ -105,11 +105,25 @@ satisfy every extension requirement. Three pieces make that hold.
   describes* section placed before the ground rules; the generated
   references carry it in their "Generated from" line. `write_skill_zip` and
   `install_skill` (`xefm skill --install`) resolve it from `skill_version()`
-  on the way out, so the tree never holds a version a bump could miss. A git
-  checkout that is not at the `vX.Y.Z` tag stamps `X.Y.Z+dev`: main keeps the
-  last release's `__version__` until the bump, and a skill made there must not
-  pass for that release. A wheel or app bundle has no checkout and stamps its
-  release. The section tells the agent to compare major.minor with
+  on the way out, so the tree never holds a version a bump could miss. The
+  stamp is a PEP 440 local version (#855, the same form as Keyhac's skill
+  bundle): a clean checkout at `vX.Y.Z` stamps `X.Y.Z`; off the tag,
+  `X.Y.Z+dev.g<sha>`, since main keeps the last release's `__version__` until
+  the bump and a skill made there must not pass for that release (the sha
+  tells two dev builds apart); uncommitted changes add `.dirty`, at the tag
+  too. A wheel or app bundle has no checkout, and a tree where git cannot be
+  asked has no answer: both stamp the plain release. The git lookup is
+  injectable (`skill_version(git=...)`), so the tests do not depend on the
+  checkout's state.
+
+  The zip is named after the same stamp: `write_skill_zip(<folder>)` writes
+  `skill_zip_name(version)` there, and `make skill-zip` and the clean room
+  (`qa/run.py`) both use it, so a dev build never overwrites the release zip
+  in `dist/`. `skill_zip_name()`'s default stays the plain release name, the
+  one the install doc resolves and `SKILL_ZIP` uploads. `release-skill`
+  removes `$(SKILL_ZIP)`, rebuilds, and stops if it is missing, so a release
+  from anywhere but a clean checkout at the tag fails instead of uploading a
+  zip an earlier build left behind. The section tells the agent to compare major.minor with
   `xefm --version` and, on a mismatch, say so once and carry on. Patch
   releases do not change what the skill describes, so comparing the patch
   part would only make the agent nag. Without `xefm` on PATH there is no

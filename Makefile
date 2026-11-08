@@ -155,7 +155,7 @@ help:
 	@echo "Release (one target per artifact; run in this order):"
 	@echo "  tag VERSION=x.y.z  - Bump __version__, commit, tag, push (no publishing)"
 	@echo "  release-github     - Open the GitHub Release at that tag (attaches the agent skill zip)"
-	@echo "  skill-zip          - Build dist/xefm-<version>-skill.zip (AI-agent skill)"
+	@echo "  skill-zip          - Build dist/xefm-<version>-skill.zip (AI-agent skill; +dev.g<sha> off the tag)"
 	@echo "  skill-references   - Regenerate the skill's generated references (actions, config template)"
 	@echo "  qa                 - quality-loop: every scenario against the skill (SCENARIO=name for one)"
 	@echo "  release-whl        - Upload sdist + wheel to PyPI, and to the Release"
@@ -704,10 +704,13 @@ release-github:
 # skill describes that release's config and API (#639); the install doc has an
 # agent resolve the latest tag first. Pure Python and platform-independent, so
 # release-github attaches it itself — it is not a fourth artifact to remember.
+# skill-zip names the zip after the version stamped inside it (#855): only a
+# clean checkout at the tag writes $(SKILL_ZIP); anywhere else it writes
+# dist/xefm-X.Y.Z+dev.g<sha>[.dirty]-skill.zip, which no release has.
 SKILL_ZIP := dist/xefm-$(XEFM_VERSION)-skill.zip
 
 skill-zip:
-	@$(PYTHON) -c "from xefm.extensions import write_skill_zip; print('wrote', write_skill_zip('$(SKILL_ZIP)'))"
+	@$(PYTHON) -c "from pathlib import Path; from xefm.extensions import write_skill_zip; Path('dist').mkdir(exist_ok=True); print('wrote', write_skill_zip(Path('dist')))"
 
 # quality-loop: the scenarios in qa/scenarios, run against the skill. Each
 # runs in a room holding the skill and nothing else, driven by
@@ -727,8 +730,14 @@ skill-references:
 qa:
 	$(PYTHON) -m quality_loop run --foreground $(SCENARIO) $(ARGS)
 
-release-skill: skill-zip
+# The release's zip is removed first, so a zip an earlier build left in dist/
+# cannot be uploaded in place of this one: from anything but a clean checkout
+# at the tag, skill-zip writes a dev name and the upload stops here.
+release-skill:
 	@$(call check_release_exists)
+	@rm -f "$(SKILL_ZIP)"
+	@$(MAKE) --no-print-directory skill-zip
+	@test -f "$(SKILL_ZIP)" || { echo "ERROR: $(SKILL_ZIP) was not built: the skill is a dev build. Run this from a clean checkout at v$(XEFM_VERSION)."; exit 1; }
 	gh release upload v$(XEFM_VERSION) "$(SKILL_ZIP)" --clobber
 	@echo "Attached $(notdir $(SKILL_ZIP)) to release v$(XEFM_VERSION) ✓"
 

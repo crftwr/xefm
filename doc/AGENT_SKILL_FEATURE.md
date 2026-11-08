@@ -76,9 +76,10 @@ version. When you upgrade XeFM, install the skill again from the matching
 release. Replace the old `xefm/` folder rather than unzipping on top of it.
 
 To see which XeFM an installed skill describes, look at the
-`xefm-version` line near the top of its `SKILL.md`. A version ending in
-`+dev` (for example `1.9.0+dev`) was made from unreleased source, newer than
-that release. An agent using the skill checks this against
+`xefm-version` line near the top of its `SKILL.md`. A version with a
+`+dev` part (for example `1.9.0+dev.g1a2b3c4d5`) was made from unreleased
+source, newer than that release; the part after `g` names the commit, and a
+trailing `.dirty` means the source had uncommitted changes. An agent using the skill checks this against
 `xefm --version` itself and tells you once if they differ.
 
 ---
