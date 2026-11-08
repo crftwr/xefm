@@ -24,7 +24,7 @@ from puikit.backends import create_backend
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import actions as xa  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm import migemo_search  # noqa: E402
@@ -113,7 +113,7 @@ def test_generation_bumps_on_every_mutation():
 
 @pytest.fixture
 def kb():
-    return KeyBindings(keymap_afx.bindings())
+    return KeyBindings(keymap_presets.table(keymap_presets.AFX))
 
 
 def test_filer_resolves_every_default_key_exactly_as_the_flat_table_did(kb):
@@ -144,7 +144,7 @@ def test_filer_resolves_every_default_key_exactly_as_the_flat_table_did(kb):
 def test_viewer_local_keys_resolve_without_any_config_entry(kb):
     """Nothing in KEY_BINDINGS mentions these, and they still work — the
     defaults come off the action itself."""
-    assert "file_diff.next_block" not in keymap_afx.bindings()
+    assert "file_diff.next_block" not in keymap_presets.table(keymap_presets.AFX)
     assert kb.find_action_for_event(key("n", "n"), False,
                                     xa.FILE_DIFF) == "file_diff.next_block"
     assert kb.find_action_for_event(key("pagedown"), False,
@@ -165,7 +165,7 @@ def test_the_same_key_means_different_things_in_different_contexts(kb):
 
 
 def test_a_rebound_viewer_action_wins_over_its_default():
-    bindings = dict(keymap_afx.bindings())
+    bindings = dict(keymap_presets.table(keymap_presets.AFX))
     bindings["file_diff.next_block"] = ["j"]
     kb = KeyBindings(bindings)
     assert kb.find_action_for_event(key("j", "j"), False, xa.FILE_DIFF) == "file_diff.next_block"
@@ -177,7 +177,7 @@ def test_a_rebound_viewer_action_wins_over_its_default():
 
 def test_a_dotted_prefix_scopes_a_shared_action_to_one_context():
     """``'file_diff.quit'`` rebinds quit inside the file diff viewer only."""
-    bindings = dict(keymap_afx.bindings())
+    bindings = dict(keymap_presets.table(keymap_presets.AFX))
     bindings["file_diff.quit"] = ["X"]
     kb = KeyBindings(bindings)
     assert kb.find_action_for_event(key("x", "x"), False, xa.FILE_DIFF) == "quit"
@@ -215,7 +215,7 @@ def test_a_config_missing_an_action_still_gets_its_keys():
     """``_copy_missing_fields`` can add a missing config *field* but never a
     missing key inside ``KEY_BINDINGS``, so an action added after a user wrote
     their config would otherwise be unreachable forever."""
-    bindings = dict(keymap_afx.bindings())
+    bindings = dict(keymap_presets.table(keymap_presets.AFX))
     del bindings["image_viewer.zoom_in"]
     kb = KeyBindings(bindings)
     assert kb.find_action_for_event(key("+", "+"), False,
@@ -285,7 +285,7 @@ def test_a_config_binding_an_old_name_still_works():
 
 def test_an_old_viewer_name_still_reaches_its_viewer():
     # A config from before the rename: the old spelling, and only the old one.
-    bindings = dict(keymap_afx.bindings())
+    bindings = dict(keymap_presets.table(keymap_presets.AFX))
     del bindings["image_viewer.zoom_in"]
     bindings["image_zoom_in"] = ["Z"]
     kb = KeyBindings(bindings)
@@ -314,12 +314,12 @@ def test_the_current_name_wins_when_a_config_has_both():
 
 def test_the_shipped_template_uses_only_current_names():
     from xefm.config import deprecated_binding_names
-    assert deprecated_binding_names(keymap_afx.bindings()) == []
+    assert deprecated_binding_names(keymap_presets.table(keymap_presets.AFX)) == []
 
 
 def test_an_old_name_is_reported_once_as_a_single_line():
     from xefm.config import deprecated_binding_names, deprecated_names_notice
-    bindings = dict(keymap_afx.bindings())
+    bindings = dict(keymap_presets.table(keymap_presets.AFX))
     for name in ("image_viewer.zoom_in", "image_viewer.pan_up", "sort"):
         del bindings[name]
     bindings.update({"image_zoom_in": ["+"], "image_scroll_up": ["Shift-UP"],
@@ -335,7 +335,7 @@ def test_an_old_name_is_reported_once_as_a_single_line():
 
 def test_a_name_spelled_both_ways_is_not_reported():
     from xefm.config import deprecated_binding_names
-    bindings = dict(keymap_afx.bindings(), image_zoom_in=["+"])
+    bindings = dict(keymap_presets.table(keymap_presets.AFX), image_zoom_in=["+"])
     assert "image_viewer.zoom_in" in bindings   # the current spelling is there
     assert deprecated_binding_names(bindings) == []
 
@@ -546,7 +546,7 @@ def test_a_user_action_runs_from_the_key_it_is_bound_to(app_with):
     def select_docs(ctx):
         ctx.pane.select(lambda e: e.suffix == ".docx")
 
-    bindings = dict(keymap_afx.bindings(), **{"select-docs": ["Shift-Z"]})
+    bindings = dict(keymap_presets.table(keymap_presets.AFX), **{"select-docs": ["Shift-Z"]})
     app, tmp = app_with(ACTIONS={"select-docs": select_docs}, KEY_BINDINGS=bindings)
 
     app.on_event(key("z", "Z", {"shift"}))
@@ -584,7 +584,7 @@ def test_actions_describe_each_action_with_its_current_keys(app_with):
         captured["names"] = ctx.action_names()
 
     # select_all rebound, so the keys read back are the config's own
-    bindings = dict(keymap_afx.bindings(), select_all=["Shift-Z"])
+    bindings = dict(keymap_presets.table(keymap_presets.AFX), select_all=["Shift-Z"])
     app, _ = app_with(ACTIONS={"probe": {"func": probe, "description": "Look around"}},
                       KEY_BINDINGS=bindings)
     app.dispatch("probe")
@@ -765,7 +765,7 @@ def test_the_help_dialog_lists_the_config_s_own_actions(app_with):
 
     app, _ = app_with(
         ACTIONS={"select-docs": {"func": mine, "description": "Select documents"}},
-        KEY_BINDINGS=dict(keymap_afx.bindings(), **{"select-docs": ["Shift-Z"]}))
+        KEY_BINDINGS=dict(keymap_presets.table(keymap_presets.AFX), **{"select-docs": ["Shift-Z"]}))
     app.panel.render = lambda *a, **k: None
     import xefm.app as module
     original = module.show_markdown

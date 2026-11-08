@@ -73,7 +73,7 @@ size for this run that is never saved, and pushes the same way
 the size just written is the one wanted; a reload that changes only
 `MONO_FONT_NAME` keeps it. In a terminal the actions only log that the terminal
 sets the size, and the menu and help rows are left out (`_BACKEND_GATED`).
-Their keys are bound for the macOS app only (`keymap_common`'s desktop block;
+Their keys are bound for the macOS app only (`xefm/keymaps/common.py`'s desktop block;
 listed on doc/KEYMAP_PRESETS_FEATURE.md): the Windows backend does not report
 Ctrl with `=` or `-` yet, so the Windows equivalents would be bound and never
 arrive. Values consumed **once at construction** —

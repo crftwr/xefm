@@ -20,6 +20,7 @@ from puikit import Event, EventType, Panel  # noqa: E402
 from puikit.backends.memory_backend import MemoryBackend  # noqa: E402
 
 from test_customization_api import app_with, key  # noqa: E402,F401
+from xefm import keymaps  # noqa: E402
 from xefm import keymap_presets  # noqa: E402
 from xefm.actions import COMMON, FILER, TEXT_VIEWER, registry  # noqa: E402
 from xefm.config import KeyBindings, config_manager  # noqa: E402
@@ -63,7 +64,7 @@ def test_it_is_a_letter_layout_with_no_type_ahead():
 
 
 def test_every_binding_names_an_action_this_xefm_has():
-    assert [a for a in keymap_presets._VIM_BINDINGS if not keymap_presets._known(a)] == []
+    assert [a for a in keymaps.vim.own_bindings() if not keymap_presets._known(a)] == []
 
 
 @pytest.mark.parametrize("context", [FILER, TEXT_VIEWER])
@@ -95,7 +96,7 @@ def test_every_key_parses(table):
     kb = KeyBindings(table)
     warnings = []
     kb.logger.warning = warnings.append
-    for action in keymap_presets._VIM_BINDINGS:
+    for action in keymaps.vim.own_bindings():
         for expr in _keys(table.get(action)) or []:
             kb._parse_key_expression(expr)
     assert warnings == []
@@ -103,7 +104,7 @@ def test_every_key_parses(table):
 
 def test_nothing_a_terminal_cannot_send(table):
     kb = KeyBindings(table)
-    for action in keymap_presets._VIM_BINDINGS:
+    for action in keymaps.vim.own_bindings():
         for expr in _keys(table.get(action)) or []:
             for part in expr.split():
                 ident, mods, _mode = kb._parse_key_expression(part)

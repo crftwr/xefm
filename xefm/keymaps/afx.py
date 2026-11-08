@@ -6,7 +6,7 @@ Windows, then cfiler. XeFM follows that direction rather than copying any one
 of them key for key.
 
 This is one of the keymap presets (:mod:`xefm.keymap_presets`), a peer of the
-others. Like each of them it is laid over :mod:`xefm.keymap_common`, the keys
+others. Like each of them it is laid over :mod:`xefm.keymaps.common`, the keys
 every preset shares — the viewers', dialogs' and search bars', the
 non-letter file-list keys, the desktop app's platform keys. What is here is
 what makes it AFX: the file list's letters and digits.
@@ -17,7 +17,7 @@ by action; it ships nearly empty.
 
 import sys
 
-from xefm import keymap_common
+from xefm.keymaps import common
 from xefm.backend_detector import is_desktop_mode
 
 
@@ -110,11 +110,3 @@ def own_bindings() -> dict:
         keys['clipboard_paste'] = ['Command-V', 'Ctrl-V', 'G']
     return keys
 
-
-def bindings() -> dict:
-    """The whole AFX keymap: the common table with :func:`own_bindings` laid
-    over it, in the common table's order. A new dict on every call, so a
-    caller may change it freely."""
-    table = keymap_common.bindings()
-    table.update(own_bindings())
-    return table

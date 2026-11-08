@@ -26,7 +26,7 @@ from puikit.backends import create_backend  # noqa: E402
 from puikit.event import Event, EventType  # noqa: E402
 from puikit.menu import Menu, MenuItem  # noqa: E402
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import _config  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm.actions import FILER  # noqa: E402
@@ -133,7 +133,7 @@ class LogClipboardActions(unittest.TestCase):
     def test_the_copy_chord_resolves_to_the_action(self):
         """Ctrl-C (Cmd-C in the macOS app) is the file clipboard's copy now
         (#577); its handler copies the log's selection when there is one."""
-        keys = KeyBindings(keymap_afx.bindings())
+        keys = KeyBindings(keymap_presets.table(keymap_presets.AFX))
         self.assertEqual(
             keys.find_action_for_event(_key("c", ("ctrl",)), False, FILER),
             "clipboard_copy")
@@ -155,7 +155,7 @@ class LogClipboardActions(unittest.TestCase):
         self.assertEqual(self.app.clipboard.status(), "")
 
     def test_copy_log_all_ships_unbound(self):
-        keys = KeyBindings(keymap_afx.bindings())
+        keys = KeyBindings(keymap_presets.table(keymap_presets.AFX))
         self.assertEqual(keys.get_keys_for_action("copy_log_all")[0], [])
 
     # --- the menu ------------------------------------------------------------

@@ -1,7 +1,7 @@
 """The keys every keymap preset shares (#565, #597).
 
 Every preset (:mod:`xefm.keymap_presets`) is laid over this table, the AFX
-style (:mod:`xefm.keymap_afx`) included: a preset's entry replaces the
+style (:mod:`xefm.keymaps.afx`) included: a preset's entry replaces the
 action's entry here, and an action it does not name keeps these keys. What
 lives here:
 

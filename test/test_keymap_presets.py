@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from puikit import Event, EventType  # noqa: E402
 
-from xefm import keymap_afx, keymap_presets  # noqa: E402
+from xefm import keymaps  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm import config as xefm_config  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
@@ -30,7 +31,7 @@ from xefm.state_manager import XeFMStateManager  # noqa: E402
 def _afx():
     """The AFX table as the presets will build it now — built at the call,
     since its desktop overrides read the backend another test may have set."""
-    return keymap_afx.bindings()
+    return keymap_presets.table(keymap_presets.AFX)
 
 
 def _config_with(**overrides):
@@ -99,7 +100,7 @@ class Apply(unittest.TestCase):
         running XeFM lacks one, its keys stay free."""
         config = _config_with()
         keymap_presets.apply(config, keymap_presets.ORTHODOX)
-        for action in keymap_presets._ORTHODOX.bindings:
+        for action in keymaps.orthodox.own_bindings():
             # Known in any context: the viewers' scoped search keys are (#737).
             if not keymap_presets._known(action):
                 self.assertNotIn(action, config.KEY_BINDINGS, action)
@@ -253,7 +254,7 @@ class Apply(unittest.TestCase):
     def test_the_common_table_binds_no_letter_in_the_file_list(self):
         # Every preset is laid over it; a letter there would reach Orthodox
         # and OS native, whose letters type ahead.
-        from xefm import keymap_common
+        from xefm.keymaps import common as keymap_common
         typing = keymap_presets._typing_contexts()
         for action, value in keymap_common.bindings().items():
             if action in typing:
@@ -261,12 +262,11 @@ class Apply(unittest.TestCase):
                 self.assertFalse([k for k in keys if keymap_presets.is_typing_key(k)],
                                  action)
 
-    def test_afx_is_the_common_table_with_its_own_keys(self):
-        from xefm import keymap_afx, keymap_common
-        own = keymap_afx.own_bindings()
+    def test_a_preset_is_the_common_table_with_its_own_keys(self):
+        from xefm.keymaps import afx, common
+        own = afx.own_bindings()
         table = keymap_presets.table(keymap_presets.AFX)
-        self.assertEqual(list(table), list(keymap_common.bindings()))
-        self.assertEqual(table, keymap_afx.bindings())
+        self.assertEqual(list(table), list(common.bindings()))
         for action, value in own.items():
             self.assertEqual(table[action], value, action)
 

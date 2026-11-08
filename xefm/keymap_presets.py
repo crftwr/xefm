@@ -4,7 +4,7 @@ A preset is a complete keymap. The presets are peers: none is the default
 the others are laid over, and a launch with none chosen — a new install or
 an upgrade from before presets alike — asks which one to use.
 
-- **AFX** (:mod:`xefm.keymap_afx`) — one letter runs one command.
+- **AFX** (:mod:`xefm.keymaps.afx`) — one letter runs one command.
 - **Orthodox** — function keys, and typing a letter searches.
 - **OS native** — Finder's keys on macOS, Explorer's elsewhere (#587).
 - **Vim style** — Vim-style keys: ``hjkl``, ``gg`` / ``G``, ``yy`` / ``dd``
@@ -18,7 +18,7 @@ A preset is **a key table plus a behavior flag**:
   incremental search with that character, the way typing in a file list does
   almost everywhere else.
 
-Every preset is laid over :mod:`xefm.keymap_common`: the viewers', dialogs'
+Every preset is laid over :mod:`xefm.keymaps.common`: the viewers', dialogs'
 and search bars' keys (they take typed text or have no file list, so they are
 the same under every preset), the file list's keys that are not letters or
 digits, and the desktop app's platform keys. That table binds no bare letter
@@ -45,6 +45,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Union
 
+from xefm import keymaps
 from xefm.log_manager import getLogger
 
 logger = getLogger("Keymap")
@@ -87,218 +88,8 @@ _ORTHODOX = Preset(
     description=("F3 view, F4 edit, F5 copy, F6 move, F7 new folder, F8 "
                  "delete; typing a letter searches."),
     type_ahead=True,
-    # Total Commander's default keys wherever XeFM has the action (its
-    # keyboard map: Configuration > Keyboard, KEYBOARD.TXT). Where TC's key
-    # does something XeFM has no action for, the key is simply not bound;
-    # where XeFM has an action TC has no key for, the action keeps no key
-    # here and is reached from the menus and the command palette. Actions
-    # from features not merged yet are listed too: ``apply`` skips any the
-    # running XeFM does not have.
-    bindings={
-        # Application
-        "help": ["F1"],
-        "reread": ["F2", "Ctrl-R"],
-        "menu": ["F9", "F10", "ALT"],
-        "quit": ["Alt-F4"],
-        "redraw": [],
-        "programs": [],
-        "context_menu": ["Shift-F10", "APPS"],
-        "command_palette": ["Ctrl-Shift-P"],   # TC has none; Ctrl-T is tabs
-        # Files
-        "view_file": ["F3"],
-        "edit_file": ["F4"],
-        "create_file": ["Shift-F4"],
-        "copy_files": ["F5"],
-        "duplicate_files": ["Shift-F5"],        # TC: copy with rename, same dir
-        "move_files": ["F6"],
-        "rename": ["Shift-F6", "Ctrl-M"],       # Ctrl-M: multi-rename
-        "create_directory": ["F7"],
-        "delete_files": ["F8", "DELETE"],
-        "delete_permanently": ["Shift-F8", "Shift-DELETE"],
-        "copy_files_to": [],
-        "move_files_to": [],
-        "file_details": ["Alt-ENTER"],          # TC: properties
-        "create_archive": ["Alt-F5"],
-        "extract_archive": ["Alt-F9", "Alt-F6"],
-        "clipboard_copy": ["Ctrl-C"],
-        "clipboard_cut": ["Ctrl-X"],
-        "clipboard_paste": ["Ctrl-V"],
-        "copy_names": [],
-        "copy_paths": ["Ctrl-P"],
-        # Search and filter
-        "find_files": ["Alt-F7"],
-        "find_in_files": [],
-        "filter": ["Ctrl-S"],                   # TC: quick filter
-        "clear_filter": ["Ctrl-F10"],           # TC: show all files
-        "isearch": [],                          # typing a letter searches
-        "index_search": [],
-        "find_by_tag": [],
-        # Places
-        "open_item": ["ENTER", "Ctrl-PAGE_DOWN"],
-        "go_parent": ["BACKSPACE", "Ctrl-PAGE_UP"],
-        "go_root": ["Ctrl-BACKSLASH"],
-        "drives": ["Alt-F1", "Alt-F2"],          # TC: left / right drive
-        "history": ["Alt-DOWN"],
-        "go_back": ["Alt-LEFT"],
-        "go_forward": ["Alt-RIGHT"],
-        "favorites": ["Ctrl-D"],                # TC: directory hotlist
-        "connect_server": ["Ctrl-F", "Ctrl-N"],  # TC: FTP connect / new URL
-        "compare_selection": ["Shift-F2"],      # TC: compare file lists
-        "diff_directories": [],
-        "flat_view": ["Ctrl-B"],                # TC: branch view
-        "quick_view": ["Ctrl-Q"],
-        # Tabs
-        "new_tab": ["Ctrl-T"],
-        "open_in_new_tab": ["Ctrl-UP"],
-        "close_tab": ["Ctrl-W"],
-        "next_tab": ["Ctrl-TAB"],
-        "prev_tab": ["Ctrl-Shift-TAB"],
-        # Selection and cursor
-        "toggle_select_down": ["INSERT", "SPACE"],
-        "select_by_pattern": ["+"],             # TC: Num +
-        "unselect_by_pattern": ["-"],           # TC: Num -
-        "toggle_select_files": ["*"],           # TC: Num * (invert)
-        "select_all": ["Ctrl-A"],
-        "unselect_all": ["Ctrl-MINUS"],         # TC: Ctrl-Num -
-        "select_same_extension": ["Alt-+"],     # TC: Alt-Num +
-        "cursor_top": ["HOME", "Ctrl-HOME"],
-        "cursor_bottom": ["END", "Ctrl-END"],
-        "cursor_next_selected": [],             # Ctrl-Up opens a tab here
-        "cursor_prev_selected": [],
-        "reveal_in_os": [],                     # Ctrl-R rereads here
-        "reset_pane_boundary": [],              # '-' unselects here
-        "reset_log_height": [],                 # '_' starts names (__init__.py)
-        # Sorting
-        "quick_sort_name": ["Ctrl-F3"],
-        "quick_sort_ext": ["Ctrl-F4"],
-        "quick_sort_date": ["Ctrl-F5"],
-        "quick_sort_size": ["Ctrl-F6"],
-        # The viewers, as Lister: F7 searches, F3 / Shift-F3 find again —
-        # scoped, since F7 and F3 are the file list's new folder and view
-        # (#737). The isearch bar takes F3 / Shift-F3 from these too.
-        "text_viewer.isearch": ["F7"],
-        "text_viewer.search_next": ["F3"],
-        "text_viewer.search_prev": ["Shift-F3"],
-        "file_diff.isearch": ["F7"],
-        "file_diff.search_next": ["F3"],
-        "file_diff.search_prev": ["Shift-F3"],
-    },
+    bindings=keymaps.orthodox.own_bindings,
 )
-
-def _native_bindings() -> dict:
-    """The OS native table for the case XeFM is running in (#587).
-
-    Finder's keys in the macOS desktop app, Explorer's in the Windows one, and
-    in a terminal on any OS the same layout with every chord a terminal can
-    actually send — the "three cases" note at the foot of
-    :mod:`xefm.keymap_common` says which those are. The preset is chosen once for
-    both apps (``~/.xefm``), so the terminal case has to stand on its own: the
-    desktop tables are it with the platform chord in front, never a different
-    layout.
-
-    The two-pane operations have no OS convention, so they take the function
-    keys every two-pane manager uses (F5 copy, F6 move to the other pane), as
-    Orthodox does. Enter opens, on macOS too: Finder's Enter-renames would
-    leave no key to open a folder that every other preset opens with Enter.
-    """
-    keys = {
-        # Opening and moving around
-        "open_item": ["ENTER"],
-        "go_parent": ["BACKSPACE", "Alt-UP"],
-        "go_back": ["Alt-LEFT"],
-        "go_forward": ["Alt-RIGHT"],
-        "cursor_top": ["HOME", "Ctrl-HOME"],
-        "cursor_bottom": ["END", "Ctrl-END"],
-        "jump_to_path": ["Ctrl-L", "Alt-D"],
-        "history": ["Alt-DOWN"],
-        "new_tab": ["Ctrl-T"],
-        # Files
-        "rename": ["F2"],
-        "view_file": ["F3"],
-        "edit_file": ["F4"],
-        "copy_files": ["F5"],
-        "move_files": ["F6"],
-        "create_directory": ["F7"],
-        "delete_files": ["DELETE", "F8"],
-        "delete_permanently": ["Shift-DELETE", "Shift-F8"],
-        "clipboard_copy": ["Ctrl-C"],
-        "clipboard_cut": ["Ctrl-X"],
-        "clipboard_paste": ["Ctrl-V"],
-        "file_details": ["Alt-I"],
-        "quick_view": ["Alt-P"],                # Explorer's preview pane
-        "context_menu": ["Shift-F10", "APPS"],
-        # Selection: Space marks, as in Explorer; typing a letter selects by name
-        "toggle_select_down": ["SPACE", "INSERT"],
-        "select_all": ["Ctrl-A"],
-        "unselect_all": [],
-        # Search
-        "find_files": ["Ctrl-F"],
-        "index_search": [],
-        "isearch": [],                          # typing a letter searches
-        # Application
-        "help": ["F1"],
-        "reread": ["Ctrl-R"],
-        "reveal_in_os": [],                     # Ctrl-R rereads here
-        "redraw": [],                           # F5 copies here
-        "command_palette": ["Ctrl-K"],
-        # Ctrl-Q always asks. Cmd-Q / Alt-F4 (quit_app) come with the AFX
-        # table's desktop keys, which every preset starts from.
-        "quit": ["Ctrl-Q"],
-        # The viewers find as Windows' own viewers do (#737): scoped, since
-        # Ctrl-F is the file list's find_files.
-        "text_viewer.isearch": ["Ctrl-F"],
-        "text_viewer.search_next": ["F3"],
-        "text_viewer.search_prev": ["Shift-F3"],
-        "file_diff.isearch": ["Ctrl-F"],
-        "file_diff.search_next": ["F3"],
-        "file_diff.search_prev": ["Shift-F3"],
-    }
-    from xefm.backend_detector import is_desktop_mode
-    if not is_desktop_mode():
-        return keys
-    if sys.platform == "darwin":
-        # Finder. A Command chord goes first, since a menu shows keys[0].
-        keys.update({
-            "open_item": ["ENTER", "Command-DOWN"],
-            "go_parent": ["Command-UP", "BACKSPACE", "Alt-UP"],
-            "go_back": ["Command-LEFT_BRACKET", "Alt-LEFT"],
-            "go_forward": ["Command-RIGHT_BRACKET", "Alt-RIGHT"],
-            "jump_to_path": ["Command-Shift-G", "Ctrl-L"],
-            "new_tab": ["Command-T", "Ctrl-T"],
-            "close_tab": ["Command-W", "Ctrl-W"],
-            "delete_files": ["Command-BACKSPACE", "DELETE", "F8"],
-            "delete_permanently": ["Command-Alt-BACKSPACE", "Shift-DELETE", "Shift-F8"],
-            "create_directory": ["Command-Shift-N", "F7"],
-            "clipboard_copy": ["Command-C", "Ctrl-C"],
-            "clipboard_cut": ["Command-X", "Ctrl-X"],
-            "clipboard_paste": ["Command-V", "Ctrl-V"],
-            "copy_paths": ["Command-Alt-C", "Ctrl-P"],
-            "file_details": ["Command-I", "Alt-I"],
-            # Quick Look is Space; marking moves to Ctrl-Space, which every
-            # backend delivers.
-            "quick_view": ["SPACE", "Alt-P"],
-            "toggle_select_down": ["Ctrl-SPACE", "INSERT"],
-            "select_all": ["Command-A", "Ctrl-A"],
-            "find_files": ["Command-F", "Ctrl-F"],
-            "toggle_hidden": ["Command-Shift-.", "."],
-            "command_palette": ["Command-Shift-P", "Ctrl-K"],
-            # The standard macOS find keys in the viewers.
-            "text_viewer.isearch": ["Command-F", "Ctrl-F"],
-            "text_viewer.search_next": ["Command-G", "F3"],
-            "text_viewer.search_prev": ["Command-Shift-G", "Shift-F3"],
-            "file_diff.isearch": ["Command-F", "Ctrl-F"],
-            "file_diff.search_next": ["Command-G", "F3"],
-            "file_diff.search_prev": ["Command-Shift-G", "Shift-F3"],
-        })
-    elif sys.platform == "win32":
-        keys.update({
-            "create_directory": ["Ctrl-Shift-N", "F7"],
-            "copy_paths": ["Ctrl-Shift-C", "Ctrl-P"],
-            "file_details": ["Alt-ENTER", "Alt-I"],
-            "command_palette": ["Ctrl-Shift-P", "Ctrl-K"],
-        })
-    return keys
-
 
 #: Finder's and Explorer's keys, with the two-pane operations on F5 / F6.
 _NATIVE = Preset(
@@ -307,109 +98,26 @@ _NATIVE = Preset(
     description=("Finder's keys on macOS, Explorer's elsewhere, for copy, "
                  "paste, rename and delete; F5 copies and F6 moves to the "
                  "other pane; typing a letter selects by name."),
-    bindings=_native_bindings,
+    bindings=keymaps.native.own_bindings,
     type_ahead=True,
 )
-
-#: vifm's normal-mode keys (vifm 0.15 manual, and the sample vifmrc a new
-#: install gets: F3-F8, w, s, S), wherever XeFM has the action. Like AFX it
-#: is a letter layout, laid over the common table (which binds no letter), and
-#: nothing is typed ahead: search is '/', as in Vim. Sequences ('g g', 'y y') are
-#: KEY_BINDINGS key sequences, waiting KEY_SEQUENCE_TIMEOUT where a prefix is
-#: also a key of its own.
-_VIM_BINDINGS = {
-    # Moving: h is the parent directory and l opens, as in vifm, not a column
-    # step; the arrows keep AFX's meaning.
-    "cursor_down": ["j", "DOWN"],
-    "cursor_up": ["k", "UP"],
-    "go_parent": ["h", "g h", "BACKSPACE"],
-    "open_item": ["l", "g l", "ENTER"],
-    "cursor_top": ["g g", "HOME", "Ctrl-HOME"],
-    "cursor_bottom": ["Shift-G", "END", "Ctrl-END"],
-    "page_down": ["Ctrl-F", "PAGE_DOWN"],
-    "page_up": ["Ctrl-B", "PAGE_UP"],
-    "half_page_down": ["Ctrl-D"],
-    "half_page_up": ["Ctrl-U"],
-    "switch_pane": ["TAB", "SPACE"],
-    "go_back": ["Ctrl-O", "Alt-LEFT"],
-    "go_forward": ["Alt-RIGHT"],               # vifm's Ctrl-I is Tab here
-    "jump_to_path": ["g p"],
-    "favorites": ["'"],                        # vifm's marks
-    # Selecting. vifm's v starts a visual block; here it fills from the
-    # nearest mark to the cursor, which is what a block ends as.
-    "toggle_select_in_place": ["t"],
-    "toggle_select_down": ["INSERT"],
-    "select_range": ["v", "Shift-SPACE"],
-    "select_all": [],
-    "unselect_all": ["ESCAPE"],                # vifm: Esc clears the selection
-    "select_by_pattern": [],                   # ' is marks here
-    # Files: yank / delete / put. dd goes to the Trash and DD past it, as in
-    # vifm; p pastes what yy yanked, and x cuts (vifm's P moves a yank; here a
-    # cut and a paste do).
-    "clipboard_copy": ["y y", "Ctrl-C"],
-    "clipboard_cut": ["x", "Ctrl-X"],
-    "clipboard_paste": ["p", "Ctrl-V"],
-    "delete_files": ["d d", "DELETE", "F8"],
-    "delete_permanently": ["Shift-D Shift-D", "Shift-DELETE", "Shift-F8"],
-    "rename": ["c w"],
-    "view_file": ["e", "F3"],
-    "open_with_os": ["g x"],                   # Vim's gx; Ctrl-O goes back here
-    "diff_files": [],                          # '=' filters here
-    "edit_file": ["F4"],
-    "copy_files": ["F5"],
-    "move_files": ["F6"],
-    "create_directory": ["F7"],
-    "quick_view": ["w"],
-    "file_details": ["Ctrl-G"],
-    "jobs": [],                                # Ctrl-G is file details here
-    # Search, hidden files, filters
-    "isearch": ["/"],
-    "search_next": ["n"],
-    "search_prev": ["Shift-N"],
-    "index_search": [],                        # Ctrl-F pages here
-    "toggle_hidden": ["z a"],
-    "filter": ["="],
-    "clear_filter": ["z r"],
-    "sort": ["Shift-S"],
-    # Application
-    "command_palette": [":", "Ctrl-T"],
-    "context_menu": ["APPS", "Shift-F10"],     # '/' searches here
-    "subshell": ["s"],
-    "reread": ["Ctrl-L"],
-    "redraw": [],                              # F5 copies here
-    "quit": ["Shift-Z Shift-Z", "Shift-Z Shift-Q"],
-    # The text viewer, as vifm's view mode with Vim's motions
-    "text_viewer.scroll_down": ["j", "DOWN"],
-    "text_viewer.scroll_up": ["k", "UP"],
-    "text_viewer.scroll_left": ["h", "LEFT"],
-    "text_viewer.scroll_right": ["l", "RIGHT"],
-    "text_viewer.page_down": ["Ctrl-F", "Ctrl-D", "PAGE_DOWN", "SPACE"],
-    "text_viewer.page_up": ["Ctrl-B", "Ctrl-U", "PAGE_UP"],
-    "text_viewer.scroll_top": ["g g", "HOME"],
-    "text_viewer.scroll_bottom": ["Shift-G", "END"],
-    "text_viewer.quit": ["q", "Shift-Z Shift-Z"],
-}
 
 _VIM = Preset(
     name=VIM,
     label="Vim style",
     description=("hjkl to move, gg / G, yy / dd / p, cw rename, / and n to "
                  "search, ZZ to quit."),
-    bindings=_VIM_BINDINGS,
+    bindings=keymaps.vim.own_bindings,
 )
-
-def _afx_bindings() -> dict:
-    from xefm import keymap_afx
-    return keymap_afx.own_bindings()
-
 
 _AFX = Preset(
     name=AFX,
     label="AFX style",
     description=("C copy, M move, K delete, V view, E edit; one letter runs "
                  "one command."),
-    bindings=_afx_bindings,
+    bindings=keymaps.afx.own_bindings,
 )
+
 
 PRESETS: dict[str, Preset] = {AFX: _AFX, ORTHODOX: _ORTHODOX, NATIVE: _NATIVE,
                                VIM: _VIM}
@@ -470,9 +178,8 @@ def table(name: Optional[str]) -> dict:
     """Preset ``name``'s whole keymap, before ``config.py`` is laid over it:
     the common table with the preset's ``bindings`` laid over it, in the
     common table's order."""
-    from xefm import keymap_common
     preset = get(name)
-    result = keymap_common.bindings()
+    result = keymaps.common.bindings()
     bindings = preset.bindings() if callable(preset.bindings) else preset.bindings
     for action, keys in bindings.items():
         # A preset may name actions of features this XeFM does not have yet;

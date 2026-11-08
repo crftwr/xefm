@@ -7,9 +7,13 @@ in [`doc/KEYMAP_PRESETS_FEATURE.md`](../KEYMAP_PRESETS_FEATURE.md).
 
 ## Shape
 
-`xefm/keymap_presets.py` holds `Preset` (name, label, description,
-`bindings`, `type_ahead`) and the `PRESETS` table: `afx`,
-`orthodox`, `native` and `vim`. Labels are bare names (`AFX style`, `Orthodox`);
+`xefm/keymap_presets.py` holds the mechanism: `Preset` (name, label,
+description, `bindings`, `type_ahead`), the `PRESETS` table (`afx`,
+`orthodox`, `native` and `vim`), `table()` and `apply()`. The key tables are
+in the `xefm/keymaps/` package, one module each: `common.py` (the keys every
+preset shares) and `afx.py`, `orthodox.py`, `native.py`, `vim.py`, each with
+`own_bindings()` returning a new dict. A new preset is one more module there
+and one more `Preset`. Labels are bare names (`AFX style`, `Orthodox`);
 what each does is the description, which the keymap dialog shows beside it. Discussion #343 asked for one mechanism with several presets on
 it, not a special-cased beginner mode, and that is the reason for this shape.
 
@@ -21,7 +25,7 @@ only the "untouched" actions (equal to the shipped value). That made AFX the
 default, and the untouched test could not tell an old shipped value from a
 deliberate one.
 
-Every preset is laid over **`xefm/keymap_common.py`**, `bindings()`: the
+Every preset is laid over **`xefm/keymaps/common.py`**, `bindings()`: the
 viewers', dialogs' and search bars' keys (the same under every preset), the
 file list's keys that are not a bare letter or digit, and the desktop app's
 platform keys (`quit_app`, the font size). It binds no letter or digit to a
@@ -30,11 +34,11 @@ has to give it a key, so none falls through to `actions._template_bindings`.
 It is a function because the desktop overrides at its foot branch on
 `is_desktop_mode()` and `sys.platform`, and every call returns a new dict.
 
-The AFX preset is `xefm/keymap_afx.py`: `own_bindings()` is its letters and
-digits (with the shared keys an action keeps, such as `DELETE` beside `K`),
-and `bindings()` is the whole AFX keymap, the common table with those laid
-over it. Until the split (in the same change as the font size keys) the AFX
-table *was* the common table: it held every shared key too, and the other
+AFX's `own_bindings()` is its letters and digits (with the shared keys an
+action keeps, such as `DELETE` beside `K`); the whole AFX keymap is
+`table(AFX)`, as for any preset. Until the split (in the same change as the
+font size keys) the AFX table *was* the common table, in `xefm/keymap_afx.py`,
+while the other presets' tables sat inside `keymap_presets.py`: it held every shared key too, and the other
 presets started from it with a `free_letters` flag that stripped AFX's
 letters. That made a shared key look like an AFX choice; a key for every
 preset (the font size) had to be added to "the AFX file". The split kept
@@ -51,7 +55,7 @@ saved menu choice. `set_keymap_preset` compares canonical names, so
 A per-platform Explorer/Finder preset is one more entry.
 
 `actions._template_bindings`, the built-in default for an action no table
-mentions, reads `keymap_afx.bindings()`. Every preset's table starts from the
+mentions, reads `table(AFX)`. Every preset's table starts from the
 common table, which names every action AFX does, so only an action absent
 from all of them reaches that fallback.
 
@@ -59,7 +63,7 @@ from all of them reaches that fallback.
 
 `table(name)` builds one preset's whole keymap:
 
-1. Start from `keymap_common.bindings()`. It has no **typing keys**
+1. Start from `keymaps.common.bindings()`. It has no **typing keys**
    (`is_typing_key`: a bare letter or digit, or `Shift-<letter>`) on a
    `filer` or `common` action; a viewer's own actions keep their letters,
    because nothing is typed into a viewer.
@@ -133,7 +137,7 @@ unbound).
 
 ### The Orthodox table
 
-`_ORTHODOX.bindings` follows Total Commander's default keys wherever XeFM has
+`keymaps/orthodox.py` follows Total Commander's default keys wherever XeFM has
 the matching action. The user asked for it to match TC as closely as possible.
 The reference was TC's keyboard map, from KEYBOARD.TXT as reproduced by
 softpanorama and the DefKey / devcrea lists, which agree on the keys used here.
@@ -166,8 +170,8 @@ without them, and a missing action never holds a key for nothing.
 
 `native` (discussion #587) is the first preset whose table depends on where
 XeFM runs. That makes `Preset.bindings` either a dict or a function, and
-`table()` calls the function each time it builds. `_native_bindings()` uses
-the same three cases as the foot of `keymap_common.py`:
+`table()` calls the function each time it builds. `keymaps/native.py` uses
+the same three cases as the foot of `keymaps/common.py`:
 
 - **Any terminal** gets a table of chords a terminal can send: no `Command`,
   no `Ctrl-Shift-<letter>`, and no `Ctrl`/`Alt-Enter`.
@@ -359,4 +363,4 @@ The app half covers:
 
 It isolates itself from the developer's `~/.xefm/config.py` by emptying the
 shared config's `_KEY_BINDINGS_BASE`. Tests elsewhere that want "the shipped
-keymap" read `keymap_afx.bindings()`, not `_config.Config.KEY_BINDINGS`.
+keymap" read `keymap_presets.table(keymap_presets.AFX)`, not `_config.Config.KEY_BINDINGS`.

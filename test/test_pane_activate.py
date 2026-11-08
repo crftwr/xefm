@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import unittest
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import _config
 from xefm import app as xefm_app
 from xefm.state_manager import XeFMStateManager
@@ -73,8 +73,8 @@ class PaneActivate(unittest.TestCase):
         self._assert_active("left")
 
     def test_focus_actions_ship_unbound(self):
-        self.assertEqual(keymap_afx.bindings()["focus_left"], [])
-        self.assertEqual(keymap_afx.bindings()["focus_right"], [])
+        self.assertEqual(keymap_presets.table(keymap_presets.AFX)["focus_left"], [])
+        self.assertEqual(keymap_presets.table(keymap_presets.AFX)["focus_right"], [])
 
 
 if __name__ == "__main__":
