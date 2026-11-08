@@ -60,12 +60,12 @@ meaning there.
 
 ## Scenes: hundreds of them, chosen at random
 
-A scene is a shot (10), a variant of it (12: variant 0 is the shot as
+A scene is a shot (16), a variant of it (12: variant 0 is the shot as
 composed, the others move longitude, latitude, altitude, tilt, sun direction,
 focal length, framing, the limb angle and the roll by fixed amounts hashed from
 the shot and variant; the altitude, tilt and roll ranges are per shot, so the
 low-orbit shots — `leo`, `horizon`, `ocean`, down to about 170 km — can turn the
-horizon any way round) and a lens look (10) — 1,200 in all. The roll turns the
+horizon any way round) and a lens look (10) — 1,920 in all. The roll turns the
 finished picture on the screen, after the sun and the limb framing are placed,
 so a rolled scene is the same lit composition at a new angle. Each 49-second slot (31 s held, an 18 s move) hashes with the seed:
 `h % LENS_COUNT` is the look, which the lens passes pick from the same hash;
@@ -79,10 +79,13 @@ a new one, paid on the first tick at which the app is really in use again —
 focused, recent input, not reduced motion. Paying it whenever the tick re-arms
 was the first version and was wrong: a mouse crossing an unfocused window
 re-arms the tick on every move, the tick parks again at once, and each of those
-wakes cut to another scene. The change is also not a cut: the shader computes
-the path for both seeds and blends the two poses by `seed_mix` (eased in wall
-time, so the blend starts and ends at rest), and the lens blends the two
-looks the same way.
+wakes cut to another scene. The change is not a bare cut either: it **dips**,
+as a far move between scenes does (below). While `seed_mix` (eased in wall
+time) is under a half the old seed's path shows, over a half the new one's,
+and the picture fades out and back in around that middle; the lens switches
+looks at the same dark moment (`XEFM_LENS_RESEED_WEIGHT`). The first version
+blended the two seeds' poses by `seed_mix`, which swept from one arbitrary
+composition to another in six seconds — the fastest motion the scene had.
 
 ### The camera path
 
@@ -104,6 +107,40 @@ weighted harmonic mean of the neighbouring slopes, zero where they disagree):
 - each scene's drift is pointed from the scene before toward the scene after,
   so the hold, the move in and the move out run the same way wherever they can.
 
+**Flight or dip.** Flying every move was the previous design, and it was
+too fast: two random scenes are typically half a planet and two radians of sun
+apart, and covering that in 18 s swung the light across the disc at up to
+~11°/s (sun yaw, 95th percentile of the move), rolled the frame at
+~10°/s and changed altitude by a third every second. Now `gentle(x0, e1)`
+checks the move's average speed over `TRANSITION` against a calm limit per
+axis (`GENTLE_*`: ground angular speed under the camera at the lower altitude,
+log altitude, tilt, pan, zoom, sun yaw and pitch, limb weight, roll and the
+limb angle where it is framed). A move under all of them is flown as before.
+Any other **dips**: the scene keeps drifting from its exit knot as the picture
+fades out, the path cuts at the move's dark middle, and the next scene fades in
+drifting into its entry knot. A knot next to a dip takes the scene's own drift
+as its tangent, so the hold on either side of a dip is a straight drift and the
+velocity is still continuous wherever the picture shows. The fade is short —
+`DIP_FADE` = 2 s of scene clock either side of `DIP_DARK` = 0.25 s of dark
+(the first cut faded over ~7 s each side and read as sluggish) — so the scene
+holds at full brightness for the rest of the move. The fade stops the
+exposure down as well as scaling it (`DIP_STOPS`) — a plain scale left the
+sun burning through until the last moment — and the fragment returns black
+without rendering in the dark. The lens changes look at that middle
+(`XEFM_LENS_WEIGHT` → `earth_look_weight`, which reruns the gentle test for
+the slot), not over the whole move, so a look never morphs on screen during a
+dip.
+
+Measured on a Python port of `path_at` over ~1,700 transitions: about 3 % are
+flown; the fastest moments anywhere are now ground ~0.034 rad/s, sun
+~0.015 rad/s, roll ~0.02 rad/s.
+
+**Drift scales with altitude.** The drift round the planet was the same
+0.3–0.6°/s at every altitude, which from a low orbit (0.03 earth radii up)
+swept the ground past the camera at ~20°/s. Longitude and latitude drift are
+now scaled by `min(1, altitude / GROUND_REF)`, so below 0.9 earth radii the
+ground crosses the view at the rate it does from there (~0.7°/s).
+
 Two earlier versions explain the design. Blending two moving poses with a
 smoothstep left the transition ending at full deceleration straight into a
 drift that could point the other way — a visible bounce. Slow sines for the
@@ -115,13 +152,86 @@ Each slot's evaluation needs the compositions of five scenes (k−2…k+2: the
 knots of k−1…k+1 and the drift headings that place them), all a few dozen
 operations per pixel, small beside the atmosphere.
 
+### Two-slot scenes: `approach`, `departure` and `sunrise`
+
+Most shots are a composition with a small random drift. Two are scripted
+moves that need longer than a slot: `approach` falls from ~2 earth radii
+above northern India into the clouds in low evening sun, then tilts up to the
+horizon as the sun sets; `departure` climbs from ~250 km over Africa to ~7
+earth radii, tilting from the horizon down to nadir and rolling ~40° as the
+lit disc shrinks; `sunrise` holds a low-orbit horizon over the Pacific while
+the sun climbs from 4° below the visible horizon to 10° above it (its yaw and
+pitch both move, `SHOT_DYAW`/`SHOT_DSPITCH`). Each takes two slots (~100 s at `speed` 1), the hold of the
+first, a flown move, and the hold of the second.
+
+- **The table.** A two-slot scene is two columns at the end of the shot
+  arrays, one per half (`SHOT_PART` 1 and 2; `REGULAR_SHOTS` one-slot columns
+  come first). Each half is a straight run about its composition:
+  `SHOT_DALT`/`SHOT_DPITCH`/`SHOT_DYAW`/`SHOT_DSPITCH`/`SHOT_DROLL` per second replace the
+  random drift entirely (`SHOT_ROLL` is the composed roll), so the halves'
+  knots line up. The numbers come from keyframes at scene times 0, 31, 49 and
+  80 s (the two holds' ends): half A's composition is the midpoint of its
+  first two, its drift their slope, and so on.
+- **Picking.** A two-slot scene starts on an even slot and the odd slot after
+  it is its second half; an odd slot whose own pick would start one re-picks
+  among the one-slot shots (`pick(slot, seed, alone)`). The halves share the
+  first column's variant hash (`family`), so their jitter is the same.
+- **The join is always flown,** whatever the `GENTLE_*` limits say: the halves
+  are designed to meet, and the Fritsch–Butland tangents ease the descent to
+  a stop and the tilt in from rest across it.
+- **One look for the scene.** The lens asks `XEFM_LENS_SLOT(k, seed)` which
+  slot's look to show; a second half answers its first half's slot.
+- `scene_at()` in Python mirrors `scene_of`, for the tests.
+
+### The sun is set against the untilted camera
+
+The sun used to be placed relative to the camera's view, tilt included, so
+tilting the camera swung the light across the planet — a flown move between a
+nadir shot and a horizon shot turned the sun with it, and the `approach` tilt
+would have relit the ground as it rose. It is now placed against the camera
+before its tilt (`-d`, `rt`, `upT`): yaw from the earth's centre toward the
+right, pitch toward the horizon the camera tilts to. The one-slot shots'
+`SHOT_YAW`/`SHOT_SPITCH` were converted so each composes exactly as before;
+only a variant's tilt jitter no longer moves its sun.
+
+### Shots that need distance or a long lens
+
+- `eclipse` sits 16 earth radii out. From close in, the edge of the disc you
+  see is already on the night side (the tangent points face the camera, so the
+  sun is `asin(1/dist)` below their horizon) and no ring shows; at 16 radii
+  the sun is under 4° below it and the upper air is lit. A 4.5 lens keeps the
+  disc large.
+- `night` and `limb` are telephoto (2.5 and 5) pointed at the limb
+  (`pitch = asin(1/dist)`), so their tilt and altitude jitter are kept small —
+  a few hundredths of a radian moves the limb across the whole frame. The
+  airglow line is a few pixels only through the long lens; at 1.0 it is
+  sub-pixel. The exaggerated cloud shells (`clouds` 3) fill much of the limb's
+  air in `limb`, which shows as warm bands and, at the very edge, thin streaks.
+
+### Day and night on screen
+
+Measured on a Python port of the camera (every pixel classed as day, twilight,
+night or space by the sun's angle where its ray meets the ground; every shot
+gets 1/16 of the time, a two-slot scene half of that per half): seven of the
+sixteen shots showed no sunlit ground at all, 44 % of the time. `dawn`,
+`horizon` and `crescent` were moved: `dawn` now has the terminator crossing
+the disc (sun 18° below the camera's horizon), `horizon` sits just before
+morning with the ground lit toward the horizon (−7°), and `crescent` shows a
+thin lit sliver of ground (−42°). The split is now about 31 % of the time on
+shots that are all day (`day`, `glint`, `ocean`, `limb`, `departure`), 40 %
+mixed, and 28 % on shots with no lit ground (`crescent`, `rise`, `night`,
+`eclipse`, the first half of `sunrise`), which are kept for what the dark
+shows. Twilight — the sun within a few degrees of the horizon — reads as lit
+on screen, warm and grazing, so it counts on the day side here.
+
 ## Everything is a function of `time`
 
 The backend advances a shader without XeFM, so the prototype's CPU-side
 smoothing could not come along. The shot table is constant arrays in the
 shader; the scene in view is the slot's hash (above), the camera follows the
 path above, and the lens blends the two looks over each slot's last
-`TRANSITION` seconds, the same seconds the camera travels. The `rise` shot's limb oscillation, the in-scene
+`TRANSITION` seconds, the same seconds the camera travels (or, in a dip,
+switches at its dark middle). The `rise` shot's limb oscillation, the in-scene
 drift, the earth's spin, cloud drift and the hand-held "breath" are closed-form
 in `time`.
 The camera is recomputed per pixel; it is a few dozen operations, negligible

@@ -74,7 +74,12 @@ target can hold NaN, and multiplying NaN by zero is still NaN.
 blend it into the next one, blend from the old seed's look to the new one's,
 then upload the result as uniforms. Now the looks are a constant table in the
 source (`LENS_LOOKS`, `LOOK_ROWS` float4s a look), and `lens_look()` does the
-same steps from `time`, `seed`, `seed_prev` and `seed_mix`. It runs per pixel
+same steps from `time`, `seed`, `seed_prev` and `seed_mix`. A scene may
+reshape either blend by defining a macro ahead of the lens source:
+`XEFM_LENS_WEIGHT(slot, seed, x)` returns the next look's weight at progress
+`x` through the slot's transition (default: smoothstep of `x`), and
+`XEFM_LENS_RESEED_WEIGHT(mix)` the new seed's weight (default: `mix`). Earth
+uses them to change look in the dark of a dip. It runs per pixel
 in the composite and the first downsample, which costs a few hashes and a dozen
 `mix` calls. What it buys:
 

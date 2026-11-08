@@ -21,19 +21,25 @@ option: without it the HDR would clip. Which look is a theme choice
 of ``VARIANTS`` compositions of it (variant 0 is the shot as composed; the others
 move the longitude, latitude, altitude, tilt, sun, lens length, framing and roll
 by fixed amounts drawn from a hash, the low orbits turning the horizon any way
-round), and a lens look — 10 x 12 x 10 = 1,200. Each ``SHOT_SECONDS`` slot of the
+round), and a lens look — 16 x 12 x 10 = 1,920. Each ``SHOT_SECONDS`` slot of the
 clock hashes, with PuiKit's ``seed`` uniform, to one of them:
 ``xefm_slot_hash(slot, seed)`` modulo the number of looks is the look (the lens
 passes take it the same way), and the rest picks the shot and variant. PuiKit draws a new seed when the background is set and once each time
 the user comes back to it after it parked, so XeFM opens on a random scene and
-eases into a fresh one on a return (``seed_prev``/``seed_mix``).
+dips into a fresh one on a return (``seed_prev``/``seed_mix``).
 
 **Everything moves as a function of ``time``** (and the seeds). The backend
 advances a shader without XeFM's involvement, so there is no per-frame CPU state:
-the camera follows one smooth path through all the scenes (``path_at``) — each
-scene drifts steadily while it holds, and the move to the next one flows out of
-that drift and into the next scene's, a monotone cubic through the scenes'
-entry and exit poses — while the lens blends the looks over the move.
+the camera follows one path through all the scenes (``path_at``). Each scene
+drifts steadily while it holds — round the planet no faster, low down, than the
+ground can cross the view without racing. Where the next scene is close enough
+to reach without moving faster than a calm limit on every axis (``GENTLE_*``),
+the move flows out of that drift and into the next scene's, a monotone cubic
+through the scenes' entry and exit poses, while the lens blends the looks over
+it; anywhere else the move **dips** — the picture fades out with the scene still
+drifting, cuts in the dark (where the lens changes look too), and fades in on
+the next one already moving. Nothing on screen — the camera, the sun's angle,
+the roll — ever moves faster than a scene's own drift or that limit.
 The sun's dip behind the limb in the ``rise`` shot and the earth's spin are
 closed-form in ``time`` too. Per-theme options (which shot, which looks, cloud
 height, exposure) are constants baked into the source when the theme is applied
@@ -72,10 +78,45 @@ TEXTURES = (
     ShaderTexture(str(ASSET_DIR / "relief.jpg"), name="relief"),
 ) if AVAILABLE else ()
 
-#: Shot names, in the order of the shader's shot arrays. ``auto`` (or ``None``)
-#: picks one at random per scene; a name holds that one shot.
+#: Shot names. ``auto`` (or ``None``) picks one at random per scene; a name
+#: holds that one shot. The first thirteen are scenes of one slot, in the order of
+#: the shader's shot arrays; the rest are scripted scenes of two slots
+#: (:data:`LONG_SHOTS`), a pair of columns each.
 SHOTS = ("day", "dawn", "crescent", "leo", "terminator", "glint", "rise", "polar",
-         "horizon", "ocean")
+         "horizon", "ocean", "night", "eclipse", "limb", "approach", "departure", "sunrise")
+REGULAR_SHOTS = 13
+LONG_SHOTS = len(SHOTS) - REGULAR_SHOTS
+VARIANTS = 12          # compositions per shot, as in the shader
+
+#: The table column each shot name starts at (a two-slot scene's first half).
+SHOT_COLUMNS = {name: i if i < REGULAR_SHOTS else REGULAR_SHOTS + 2 * (i - REGULAR_SHOTS)
+                for i, name in enumerate(SHOTS)}
+
+
+def scene_at(slot: int, seed: float, lens_count: int, shot: int = -1) -> "tuple[int, int]":
+    """What the shader's ``scene_of`` returns: the table column and the variant
+    a slot shows (for tests and documentation — the GPU is what draws)."""
+    from .background_lens import slot_hash
+
+    def pick(k, alone):
+        h = slot_hash(k, seed) // lens_count
+        n = REGULAR_SHOTS + (0 if alone else LONG_SHOTS)
+        j = h % n
+        col = j if j < REGULAR_SHOTS else REGULAR_SHOTS + 2 * (j - REGULAR_SHOTS)
+        return col, (h // n) % VARIANTS
+
+    def first_half(col):
+        return col >= REGULAR_SHOTS and (col - REGULAR_SHOTS) % 2 == 0
+
+    odd = slot % 2 == 1
+    if shot >= 0:
+        return (shot + 1 if first_half(shot) and odd else shot), 0
+    if odd:
+        col, var = pick(slot - 1, False)
+        if first_half(col):
+            return col + 1, var
+        return pick(slot, True)
+    return pick(slot, False)
 
 #: Lens looks, by the name a theme's ``lens`` option uses. Pure data
 #: (``background_lens.Look``); the thresholds are tuned to this scene's radiance
@@ -111,8 +152,8 @@ DEFAULT_EXPOSURE = 1.0
 DEFAULT_BRIGHTNESS = 0.5
 
 #: How long each scene holds on the scene clock (speed applied), and how much of
-#: that is the move into the next. Baked into the shader and handed to the
-#: lens, so the camera and the look change together.
+#: that is the move into the next (a flight or a dip). Baked into the shader and
+#: handed to the lens, so the camera and the look change together.
 SHOT_SECONDS = 49.0
 TRANSITION = 18.0
 
@@ -154,7 +195,9 @@ constant float SPIN        = 0.0025;     // earth rotation, rad/s
 constant float CLOUD_DRIFT = 0.0009;     // cloud map drift, u per second
 constant float RELIEF      = 0.35;       // strength of the relief map
 constant int   VIEW_STEPS  = 14;         // atmosphere samples along the view ray
-constant int   SHOT_COUNT  = 10;
+constant int   SHOT_COUNT  = 19;         // table columns (below)
+constant int   REGULAR_SHOTS = 13;       // one-slot scenes, then the two-slot ones
+constant int   LONG_SHOTS  = 3;
 constant int   VARIANTS    = 12;         // compositions per shot; 0 is the shot as composed
 // How far a variant may move from its shot: degrees, radians, a fraction. The
 // altitude, tilt and roll ranges are per shot (the SHOT_*J arrays below): a low
@@ -180,6 +223,35 @@ constant float MOVE_PAN    = 0.0044;     // the planet across the frame, view he
 constant float MOVE_ZOOM   = 0.006;      // log of the lens length
 constant float MOVE_YAW    = 0.003;      // the sun round the view, radians
 constant float MOVE_ROLL   = 0.006;      // the camera turning about its axis, radians
+// Low over the planet the same turn round it sweeps the ground past many times
+// faster than it turns a whole disc, so the drift round the planet (longitude
+// and latitude) slows with the altitude below GROUND_REF earth radii: the
+// ground never crosses the view faster than it does from there.
+constant float GROUND_REF  = 0.9;
+// The fastest the camera may travel from one scene to the next, on average over
+// the move, per second. A move under every one of these is flown; any other
+// dips -- the picture fades out, cuts while dark and fades in, each scene
+// carrying on with its own drift meanwhile (see path_at) -- rather than whip
+// the planet or the sun round. GENTLE_GROUND is the ground's angular speed
+// under the camera, rad/s, at the lower of the two altitudes.
+constant float GENTLE_GROUND = 0.03;
+constant float GENTLE_ALT    = 0.04;     // log of the altitude
+constant float GENTLE_PITCH  = 0.012;    // tilt from nadir, rad
+constant float GENTLE_PAN    = 0.01;     // the planet across the frame, view heights
+constant float GENTLE_ZOOM   = 0.02;     // log of the lens length
+constant float GENTLE_SUN    = 0.012;    // the sun round the view (yaw, pitch), rad
+constant float GENTLE_LIMB   = 0.005;    // into or out of the limb framing
+constant float GENTLE_ROLL   = 0.015;    // rad; the limb angle too, where it is framed
+// The dip, in the middle of the move's TRANSITION: dark for DIP_DARK seconds
+// either side of the cut, fading over DIP_FADE seconds before and after that
+// (scene clock), and stopping down DIP_STOPS stops as it fades so the sun goes
+// as the ground does. A reseed dips the same way, in seed_mix rather than
+// seconds (it eases 0 to 1 over six seconds of wall time).
+constant float DIP_DARK    = 0.25;
+constant float DIP_FADE    = 2.0;
+constant float RESEED_DARK = 0.03;
+constant float RESEED_FADE = 0.3;
+constant float DIP_STOPS   = 4.0;
 constant float LIMB_PHI    = 0.55;       // where on the limb the sun meets it, rad
 constant float LIMB_AMP    = 0.026;      // how far it swings across the limb, rad
 constant float LIMB_PERIOD = 48.0;       // one dip and emergence, s
@@ -190,24 +262,47 @@ constant float3 BR = float3(5.8e-3, 13.5e-3, 33.1e-3);   // Rayleigh, 1/km
 
 // The shots: what the camera looks down on (lon, lat, degrees), its distance in
 // earth radii, its tilt from nadir toward the horizon, where the earth sits in
-// frame, the lens, and the sun relative to the view (yaw 0 = behind the earth,
-// PI = behind the camera). The order is SHOTS in background_earth.py.
-// horizon and ocean are low orbits too: sunrise along the horizon, and the
-// daylit ocean seen obliquely. The *J columns are the variants' ranges.
-//                              day    dawn   cresc  leo    term   glint   rise   polar  horizon ocean
-constant float SHOT_LON[10]   = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0};
-constant float SHOT_LAT[10]   = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0};
-constant float SHOT_DIST[10]  = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05};
-constant float SHOT_PITCH[10] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95};
-constant float SHOT_OFFX[10]  = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0};
-constant float SHOT_OFFY[10]  = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0};
-constant float SHOT_FOCAL[10] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9};
-constant float SHOT_YAW[10]   = {2.55, 0.45, 0.38, 0.7, 1.55, 2.75, 0.3, 1.9, 0.12, 2.9};
-constant float SHOT_SPITCH[10]= {0.22, 0.06, 0.14, 0.3, 0.12, 0.28, 0.1, 0.35, 0.03, 0.5};
-constant float SHOT_LIMB[10]  = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
-constant float SHOT_ALTJ[10]  = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4};
-constant float SHOT_PITCHJ[10]= {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2};
-constant float SHOT_ROLLJ[10] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416};
+// frame, the lens, and the sun. The sun is set against the camera before its
+// tilt (yaw 0 = behind the earth, PI = behind the camera, pitch toward the
+// horizon the camera tilts to), so tilting never swings the light across the
+// planet. horizon and ocean are low orbits too: night below with the morning
+// lit toward the horizon, and the daylit ocean seen obliquely. night is the dark limb through a longer lens:
+// airglow, stars, and twilight low on one side. eclipse is the earth from far
+// off (16 radii) with the sun right behind it -- only from that far is the air
+// at the edge in sunlight, a ring round a dark disc. limb is a telephoto on the
+// day limb from low orbit. The *J columns are the variants' ranges.
+//
+// The first REGULAR_SHOTS columns are scenes of one slot each, in the order of
+// SHOTS in background_earth.py. The rest are LONG_SHOTS scenes of two slots, a
+// column per half (SHOT_PART 1 and 2): scripted moves, each half a straight run
+// of SHOT_D* per second about its composition (roll SHOT_ROLL), the two halves
+// joined by a flown move. approach falls from high above northern India in
+// low evening sun and tilts up to the Himalaya on the horizon as the sun sets;
+// departure climbs from low over Africa, tilting down and turning as the whole
+// lit disc comes into view; sunrise watches the horizon from low orbit over the
+// Pacific as the sun comes up over it and the ground lights.
+//   columns: day dawn crescent leo terminator glint rise polar horizon ocean
+//            night eclipse limb | approach x2, departure x2, sunrise x2
+constant float SHOT_LON[19] = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0, -30.0, 0.0, 60.0, 85.0, 85.0, 30.0, 30.0, 140.0, 140.0};
+constant float SHOT_LAT[19] = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0, 30.0, 0.0, 10.0, 25.0, 25.0, 0.0, 0.0, 20.0, 20.0};
+constant float SHOT_DIST[19] = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05, 1.06, 16.0, 1.05, 1.6376, 1.045, 1.1003, 2.7333, 1.0414, 1.0462};
+constant float SHOT_PITCH[19] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95, 1.235, 0.0, 1.262, 0.0, 0.625, 0.75, 0.06, 1.25, 1.25};
+constant float SHOT_OFFX[19] = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+constant float SHOT_OFFY[19] = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+constant float SHOT_FOCAL[19] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9, 2.5, 4.5, 5.0, 1.0, 1.0, 1.0, 1.0, 1.1, 1.1};
+constant float SHOT_YAW[19] = {2.55, 0.995, 0.803, 1.563, 1.574, 2.759, 0.3, 1.947, 1.382, 2.909, 0.7363, 0.0, 2.6779, 1.7773, 1.535, 2.751, 2.751, 0.6116, 0.9798};
+constant float SHOT_SPITCH[19] = {0.22, 0.968, 0.27, 0.908, 0.122, 0.187, 0.1, 0.298, 0.864, -0.427, 0.9639, 0.0, 0.6591, 0.9, 0.9, 0.41, 0.41, 1.2113, 1.3146};
+constant float SHOT_LIMB[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+constant float SHOT_ALTJ[19] = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4, 0.08, 0.15, 0.08, 0.15, 0.15, 0.15, 0.15, 0.1, 0.1};
+constant float SHOT_PITCHJ[19] = {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2, 0.01, 0.0, 0.01, 0.05, 0.05, 0.05, 0.05, 0.04, 0.04};
+constant float SHOT_ROLLJ[19] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416, 0.4, 0.5, 0.3, 0.5, 0.5, 0.8, 0.8, 0.4, 0.4};
+constant float SHOT_ROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.125, 0.525, 0.031, 0.129};
+constant float SHOT_DALT[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0742, -0.0129, 0.0581, 0.0581, 0.00226, 0.00226};
+constant float SHOT_DPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0306, -0.0258, -0.0039, 0.0, 0.0};
+constant float SHOT_DYAW[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.00494, -0.00494, 0.0, 0.0, 0.00521, 0.01015};
+constant float SHOT_DSPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00245, 0.00168};
+constant float SHOT_DROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0081, 0.0081, 0.002, 0.002};
+constant int   SHOT_PART[19] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2, 1, 2};
 
 // A camera pose as numbers that interpolate: a = (longitude, latitude, log of
 // the altitude in earth radii, tilt from nadir), b = (frame offset x, y, log of
@@ -216,6 +311,7 @@ struct Pose { float4 a; float4 b; float4 c; };
 
 struct Cam {
     float3 ro; float3 fw; float3 rt; float3 up; float3 L; float2 off; float focal; float roll;
+    float fade;     // 1 whole, 0 dark: a dip between scenes or across a reseed
 };
 
 static inline float3 rot_y(float a, float3 v) {
@@ -261,14 +357,6 @@ static inline Pose pose_add(Pose p, Pose q, float k) {
     return r;
 }
 
-static inline Pose pose_lerp(Pose p, Pose q, float w) {
-    Pose r;
-    r.a = mix(p.a, q.a, w);
-    r.b = mix(p.b, q.b, w);
-    r.c = mix(p.c, q.c, w);
-    return r;
-}
-
 static inline float wrap_near(float v, float ref, float period) {
     return v + period * floor((ref - v) / period + 0.5);
 }
@@ -281,20 +369,43 @@ static inline Pose unwrap_to(Pose p, Pose ref) {
     return p;
 }
 
-// The shot and variant a slot shows.
-static inline int2 scene_of(int slot, float seed) {
-    if (SHOT >= 0) return int2(SHOT, 0);
+// The shot a slot's hash picks, and its variant: any scene, or (alone) only
+// the one-slot ones. A two-slot scene is picked by its first half.
+static inline int2 pick(int slot, float seed, bool alone) {
     uint h = xefm_slot_hash(slot, seed) / uint(LENS_COUNT);
-    return int2(int(h % uint(SHOT_COUNT)), int((h / uint(SHOT_COUNT)) % uint(VARIANTS)));
+    uint n = uint(REGULAR_SHOTS + (alone ? 0 : LONG_SHOTS));
+    int j = int(h % n);
+    int shot = j < REGULAR_SHOTS ? j : REGULAR_SHOTS + 2 * (j - REGULAR_SHOTS);
+    return int2(shot, int((h / n) % uint(VARIANTS)));
+}
+
+// The shot and variant a slot shows. A two-slot scene starts on an even slot
+// and takes the odd one after it; an odd slot whose own pick would start one
+// picks again among the one-slot scenes.
+static inline int2 scene_of(int slot, float seed) {
+    bool odd = (slot & 1) != 0;
+    if (SHOT >= 0) return int2(SHOT_PART[SHOT] == 1 && odd ? SHOT + 1 : SHOT, 0);
+    if (odd) {
+        int2 first = pick(slot - 1, seed, false);
+        if (SHOT_PART[first.x] == 1) return int2(first.x + 1, first.y);
+        return pick(slot, seed, true);
+    }
+    return pick(slot, seed, false);
+}
+
+// The column a scene's variants and coins are drawn for: both halves of a
+// two-slot scene share the first half's, so they compose as one.
+static inline int family(int2 sv) {
+    return (SHOT_PART[sv.x] == 2 ? sv.x - 1 : sv.x) * VARIANTS + sv.y;
 }
 
 // Shot i in variant v, as composed: where the scene is at the middle of its hold.
 static inline Pose composition(int2 sv) {
-    int i = sv.x, id = sv.x * VARIANTS + sv.y;
+    int i = sv.x, id = family(sv);
     Pose p;
     p.a = float4(SHOT_LON[i], SHOT_LAT[i], log(SHOT_DIST[i] - 1.0), SHOT_PITCH[i]);
     p.b = float4(SHOT_OFFX[i], SHOT_OFFY[i], log(SHOT_FOCAL[i]), SHOT_YAW[i]);
-    p.c = float4(SHOT_SPITCH[i], SHOT_LIMB[i], LIMB_PHI, 0.0);
+    p.c = float4(SHOT_SPITCH[i], SHOT_LIMB[i], LIMB_PHI, SHOT_ROLL[i]);
     if (sv.y > 0) {
         p.a += float4(JIT_LON * scene_signed(id, 0), JIT_LAT * scene_signed(id, 1),
                       SHOT_ALTJ[i] * scene_signed(id, 2), SHOT_PITCHJ[i] * scene_signed(id, 3));
@@ -316,16 +427,28 @@ static inline float4 heading(float4 before, float4 after, int id, int n) {
     return dir;
 }
 
-// How fast a scene moves while it holds, per second: its speeds, pointed the way
-// the camera travels through it (from the scene before to the scene after).
-static inline Pose drift(int2 sv, Pose before, Pose after) {
-    int id = sv.x * VARIANTS + sv.y;
+// How fast a scene (composed as c) moves while it holds, per second: its
+// speeds, pointed the way the camera travels through it (from the scene before
+// to the scene after), round the planet no faster than GROUND_REF allows. A
+// half of a two-slot scene moves as scripted (SHOT_D*) and nothing else, so its
+// halves meet.
+static inline Pose drift(int2 sv, Pose c, Pose before, Pose after) {
+    int i = sv.x, id = family(sv);
+    if (SHOT_PART[i] != 0) {
+        Pose s;
+        s.a = float4(0.0, 0.0, SHOT_DALT[i], SHOT_DPITCH[i]);
+        s.b = float4(0.0, 0.0, 0.0, SHOT_DYAW[i]);
+        s.c = float4(SHOT_DSPITCH[i], 0.0, 0.0, SHOT_DROLL[i]);
+        return s;
+    }
+    float g = min(1.0, exp(c.a.z) / GROUND_REF);
     float4 ka = 0.5 + 0.5 * float4(scene_rand(id, 11), scene_rand(id, 12), scene_rand(id, 13), 0.0);
     float4 kb = 0.5 + 0.5 * float4(scene_rand(id, 14), scene_rand(id, 15), scene_rand(id, 16),
                                    scene_rand(id, 17));
     float kc = 0.5 + 0.5 * scene_rand(id, 18);
     Pose d;
-    d.a = float4(MOVE_LON, MOVE_LAT, MOVE_ALT, 0.0) * ka * heading(before.a, after.a, id, 20);
+    d.a = float4(MOVE_LON * g, MOVE_LAT * g, MOVE_ALT, 0.0) * ka
+        * heading(before.a, after.a, id, 20);
     d.b = float4(MOVE_PAN, MOVE_PAN * 0.6, MOVE_ZOOM, MOVE_YAW) * kb
         * heading(before.b, after.b, id, 24);
     d.c = float4(0.0, 0.0, 0.0, MOVE_ROLL * kc) * heading(before.c, after.c, id, 28);
@@ -377,15 +500,37 @@ static inline Pose pose_slope(Pose from, Pose to, float dt) {
     return pose_scale(pose_add(to, from, -1.0), 1.0 / dt);
 }
 
+// Whether the move from x (one scene leaving) to e (the next entering) is slow
+// enough to fly: its average speed over TRANSITION under every GENTLE_ limit.
+static inline bool gentle(Pose x, Pose e) {
+    Pose v = pose_slope(x, e, TRANSITION);
+    float h = min(exp(x.a.z), exp(e.a.z));
+    float ground = length(v.a.xy) * (PI / 180.0) / h;
+    float limb = max(abs(x.c.y), abs(e.c.y));
+    return ground <= GENTLE_GROUND && abs(v.a.z) <= GENTLE_ALT && abs(v.a.w) <= GENTLE_PITCH
+        && length(v.b.xy) <= GENTLE_PAN && abs(v.b.z) <= GENTLE_ZOOM
+        && abs(v.b.w) <= GENTLE_SUN && abs(v.c.x) <= GENTLE_SUN
+        && abs(v.c.y) <= GENTLE_LIMB && abs(v.c.z) * limb <= GENTLE_ROLL
+        && abs(v.c.w) <= GENTLE_ROLL;
+}
+
+// How much of the picture shows at d from the dark middle of a dip.
+static inline float dip(float d, float dark, float fade) {
+    return smoothstep(dark, dark + fade, d);
+}
+
 // The camera's path for one seed. Each slot k holds its scene for HOLD seconds
 // and then moves to the next over TRANSITION. A scene contributes two knots: it
 // enters at its composition minus half its drift over the hold and leaves at
-// the composition plus half. The path runs through every knot as one smooth
-// curve -- a monotone cubic, so the speed changes gradually everywhere and the
-// direction never flicks: the hold drifts steadily, the move out of it starts
-// from that drift and ends in the next scene's, which (headed the same way where
-// it can be) carries straight on.
-static inline Pose path_at(float t, float seed) {
+// the composition plus half. Where the move between two scenes is gentle the
+// path flies it, one smooth curve through the knots -- a monotone cubic, so the
+// speed changes gradually everywhere and the direction never flicks: the hold
+// drifts steadily, the move out of it starts from that drift and ends in the
+// next scene's, which (headed the same way where it can be) carries straight
+// on. Any other move dips: the scene drifts on as it fades out (fade), the cut
+// falls in the dark, and the next scene fades in already drifting into its
+// entry knot -- the camera never moves faster than a scene's own drift.
+static inline Pose path_at(float t, float seed, thread float &fade) {
     float hold = SHOT_SECONDS - TRANSITION;
     int k = int(floor(t / SHOT_SECONDS));
     float u = t - float(k) * SHOT_SECONDS;
@@ -396,33 +541,73 @@ static inline Pose path_at(float t, float seed) {
     Pose c_2 = unwrap_to(composition(s_2), c_1);
     Pose c1 = unwrap_to(composition(s1), c0);
     Pose c2 = unwrap_to(composition(s2), c1);
-    Pose d_1 = drift(s_1, c_2, c0), d0 = drift(s0, c_1, c1), d1 = drift(s1, c0, c2);
+    Pose d_1 = drift(s_1, c_1, c_2, c0), d0 = drift(s0, c0, c_1, c1);
+    Pose d1 = drift(s1, c1, c0, c2);
     Pose x_1 = pose_add(c_1, d_1, 0.5 * hold);           // the scene before leaves here
     Pose e0 = pose_add(c0, d0, -0.5 * hold);             // this one enters
     Pose x0 = pose_add(c0, d0, 0.5 * hold);              // and leaves
     Pose e1 = pose_add(c1, d1, -0.5 * hold);             // the next one enters
+    // The two halves of a two-slot scene are always flown into each other.
+    bool fly_in = SHOT_PART[s0.x] == 2 || gentle(x_1, e0);
+    bool fly_out = SHOT_PART[s0.x] == 1 || gentle(x0, e1);
     Pose s_in = pose_slope(x_1, e0, TRANSITION);
     Pose s_out = pose_slope(x0, e1, TRANSITION);
-    Pose m_x0 = pose_tangent(d0, hold, s_out, TRANSITION);
-    if (u < hold) {
-        return hermite(e0, pose_tangent(s_in, TRANSITION, d0, hold), x0, m_x0, hold, u);
+    // A knot next to a dip has the scene's own drift for its tangent.
+    Pose m_e0 = fly_in ? pose_tangent(s_in, TRANSITION, d0, hold) : d0;
+    Pose m_x0 = fly_out ? pose_tangent(d0, hold, s_out, TRANSITION) : d0;
+    fade = 1.0;
+    if (u < hold) return hermite(e0, m_e0, x0, m_x0, hold, u);
+    float w = u - hold;
+    if (fly_out) {
+        return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION, w);
     }
-    return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION,
-                   u - hold);
+    fade = dip(abs(w - 0.5 * TRANSITION), DIP_DARK, DIP_FADE);
+    return w < 0.5 * TRANSITION ? pose_add(x0, d0, w) : pose_add(e1, d1, w - TRANSITION);
 }
+
+// Whether the move out of slot k is flown (see path_at), for the lens.
+static inline bool flies_out(int k, float seed) {
+    float hold = SHOT_SECONDS - TRANSITION;
+    int2 s_1 = scene_of(k - 1, seed), s0 = scene_of(k, seed);
+    int2 s1 = scene_of(k + 1, seed), s2 = scene_of(k + 2, seed);
+    Pose c0 = composition(s0);
+    Pose c_1 = unwrap_to(composition(s_1), c0);
+    Pose c1 = unwrap_to(composition(s1), c0);
+    Pose c2 = unwrap_to(composition(s2), c1);
+    if (SHOT_PART[s0.x] == 1) return true;
+    Pose x0 = pose_add(c0, drift(s0, c0, c_1, c1), 0.5 * hold);
+    Pose e1 = pose_add(c1, drift(s1, c1, c0, c2), -0.5 * hold);
+    return gentle(x0, e1);
+}
+
+// The slot whose look the lens shows in slot k: a two-slot scene keeps the look
+// its first half drew.
+static inline int earth_look_slot(int k, float seed) {
+    return SHOT_PART[scene_of(k, seed).x] == 2 ? k - 1 : k;
+}
+
+// The lens's blend into the next look (xefm.background_lens): over a flown move
+// as usual, at the dark middle of a dip -- and of a reseed, which dips too.
+static inline float earth_look_weight(int k, float seed, float x) {
+    return flies_out(k, seed) ? x * x * (3.0 - 2.0 * x) : step(0.5, x);
+}
+#define XEFM_LENS_WEIGHT(k, seed, x) earth_look_weight(k, seed, x)
+#define XEFM_LENS_RESEED_WEIGHT(m) step(0.5, m)
+#define XEFM_LENS_SLOT(k, seed) earth_look_slot(k, seed)
 
 // The whole camera and sun, from time and the seeds alone. Each SHOT_SECONDS slot
 // hashes to a scene; the low part of the hash is the lens look the lens passes
 // pick for the same slot (they take it modulo LENS_COUNT), and the rest picks
 // the shot and its variant -- so every combination can come up. A new seed
-// (each launch, each return from idle) means new scenes; while seed_mix is
-// below 1 the path for the old seed blends into the new one, as the lens blends
-// the looks.
+// (each launch, each return from idle) means new scenes; a reseed dips as a
+// move between scenes does -- the old seed's path fades out while seed_mix is
+// below a half, the new one's fades in -- and the lens changes look in the dark.
 static inline Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float fov = aspect < 0.8 ? 0.75 : 1.0;      // portrait: widen the lens
     float spin = SPIN * t;
-    Pose P = path_at(t, seed);
-    if (seed_mix < 1.0) P = pose_lerp(unwrap_to(path_at(t, seed_prev), P), P, seed_mix);
+    float fade;
+    Pose P = path_at(t, seed_mix < 0.5 ? seed_prev : seed, fade);
+    if (seed_mix < 1.0) fade *= dip(abs(seed_mix - 0.5), RESEED_DARK, RESEED_FADE);
     float dist = 1.0 + exp(P.a.z);
     // A gentle hand-held breathing on the tilt and the sun.
     float pitch = P.a.w + sin(t * 0.053) * 0.008;
@@ -436,6 +621,7 @@ static inline Cam camera(float t, float aspect, float seed, float seed_prev, flo
     float3 d = normalize(rot_x(TILT, rot_y(-spin, earth_fixed(P.a.x, clamp(P.a.y, -80.0, 80.0)))));
 
     Cam c;
+    c.fade = fade;
     c.focal = exp(P.b.z) * fov;
     c.off = P.b.xy;
     if (limb > 0.0) {
@@ -452,8 +638,10 @@ static inline Cam camera(float t, float aspect, float seed, float seed_prev, flo
     // The roll turns the finished picture on the screen (see the fragment), so the
     // sun keeps its place against the planet and the limb framing still holds.
     c.roll = roll;
-    float3 L = normalize(c.fw * (cos(spitch) * cos(yaw)) + c.rt * (cos(spitch) * sin(yaw))
-                         + c.up * sin(spitch));
+    // The sun against the camera before its tilt (looking straight down, -d, with
+    // upT above): the tilt turns the view, not the light.
+    float3 L = normalize(-d * (cos(spitch) * cos(yaw)) + c.rt * (cos(spitch) * sin(yaw))
+                         + upT * sin(spitch));
     if (limb > 0.001) {
         // The sun sliding behind the limb and back out: its centre swings
         // +-LIMB_AMP about the edge, once per LIMB_PERIOD.
@@ -619,6 +807,7 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
                                    sampler sRelief [[sampler(2)]]) {
     float t = u.time;
     Cam cam = camera(t, u.resolution.x / u.resolution.y, u.seed, u.seed_prev, u.seed_mix);
+    if (cam.fade <= 0.0) return float4(0.0, 0.0, 0.0, 1.0);    // the dark of a dip
     // y up, as the shot table was composed; then turned by the roll, about the
     // middle of the screen, before the framing offset places the composition.
     float2 uv0 = float2(pos.x - 0.5 * u.resolution.x, 0.5 * u.resolution.y - pos.y)
@@ -751,8 +940,10 @@ fragment float4 puikit_bg_fragment(float4 pos [[position]],
     float3 flareCol = mix(float3(1.0, 0.55, 0.25), float3(1.0, 0.92, 0.8), vis);
     col += sunTv * flareCol * swell * prox * (0.25 + 0.75 * vis) * 1.6;
 
-    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop.
-    return float4(max(col * EXPOSURE, 0.0), 1.0);
+    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop. A
+    // dip stops the exposure down as it fades, so the sun goes with the ground.
+    float iris = cam.fade * exp2(DIP_STOPS * (cam.fade - 1.0));
+    return float4(max(col * (EXPOSURE * iris), 0.0), 1.0);
 }
 """
 
@@ -779,7 +970,9 @@ static const float SPIN        = 0.0025;     // earth rotation, rad/s
 static const float CLOUD_DRIFT = 0.0009;     // cloud map drift, u per second
 static const float RELIEF      = 0.35;       // strength of the relief map
 static const int   VIEW_STEPS  = 14;         // atmosphere samples along the view ray
-static const int   SHOT_COUNT  = 10;
+static const int   SHOT_COUNT  = 19;         // table columns (below)
+static const int   REGULAR_SHOTS = 13;       // one-slot scenes, then the two-slot ones
+static const int   LONG_SHOTS  = 3;
 static const int   VARIANTS    = 12;         // compositions per shot; 0 is the shot as composed
 // How far a variant may move from its shot: degrees, radians, a fraction. The
 // altitude, tilt and roll ranges are per shot (the SHOT_*J arrays below): a low
@@ -805,6 +998,35 @@ static const float MOVE_PAN    = 0.0044;     // the planet across the frame, vie
 static const float MOVE_ZOOM   = 0.006;      // log of the lens length
 static const float MOVE_YAW    = 0.003;      // the sun round the view, radians
 static const float MOVE_ROLL   = 0.006;      // the camera turning about its axis, radians
+// Low over the planet the same turn round it sweeps the ground past many times
+// faster than it turns a whole disc, so the drift round the planet (longitude
+// and latitude) slows with the altitude below GROUND_REF earth radii: the
+// ground never crosses the view faster than it does from there.
+static const float GROUND_REF  = 0.9;
+// The fastest the camera may travel from one scene to the next, on average over
+// the move, per second. A move under every one of these is flown; any other
+// dips -- the picture fades out, cuts while dark and fades in, each scene
+// carrying on with its own drift meanwhile (see path_at) -- rather than whip
+// the planet or the sun round. GENTLE_GROUND is the ground's angular speed
+// under the camera, rad/s, at the lower of the two altitudes.
+static const float GENTLE_GROUND = 0.03;
+static const float GENTLE_ALT    = 0.04;     // log of the altitude
+static const float GENTLE_PITCH  = 0.012;    // tilt from nadir, rad
+static const float GENTLE_PAN    = 0.01;     // the planet across the frame, view heights
+static const float GENTLE_ZOOM   = 0.02;     // log of the lens length
+static const float GENTLE_SUN    = 0.012;    // the sun round the view (yaw, pitch), rad
+static const float GENTLE_LIMB   = 0.005;    // into or out of the limb framing
+static const float GENTLE_ROLL   = 0.015;    // rad; the limb angle too, where it is framed
+// The dip, in the middle of the move's TRANSITION: dark for DIP_DARK seconds
+// either side of the cut, fading over DIP_FADE seconds before and after that
+// (scene clock), and stopping down DIP_STOPS stops as it fades so the sun goes
+// as the ground does. A reseed dips the same way, in seed_mix rather than
+// seconds (it eases 0 to 1 over six seconds of wall time).
+static const float DIP_DARK    = 0.25;
+static const float DIP_FADE    = 2.0;
+static const float RESEED_DARK = 0.03;
+static const float RESEED_FADE = 0.3;
+static const float DIP_STOPS   = 4.0;
 static const float LIMB_PHI    = 0.55;       // where on the limb the sun meets it, rad
 static const float LIMB_AMP    = 0.026;      // how far it swings across the limb, rad
 static const float LIMB_PERIOD = 48.0;       // one dip and emergence, s
@@ -822,24 +1044,47 @@ SamplerState sRelief : register(s2);
 
 // The shots: what the camera looks down on (lon, lat, degrees), its distance in
 // earth radii, its tilt from nadir toward the horizon, where the earth sits in
-// frame, the lens, and the sun relative to the view (yaw 0 = behind the earth,
-// PI = behind the camera). The order is SHOTS in background_earth.py.
-// horizon and ocean are low orbits too: sunrise along the horizon, and the
-// daylit ocean seen obliquely. The *J columns are the variants' ranges.
-//                              day    dawn   cresc  leo    term   glint   rise   polar  horizon ocean
-static const float SHOT_LON[10]   = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0};
-static const float SHOT_LAT[10]   = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0};
-static const float SHOT_DIST[10]  = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05};
-static const float SHOT_PITCH[10] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95};
-static const float SHOT_OFFX[10]  = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0};
-static const float SHOT_OFFY[10]  = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0};
-static const float SHOT_FOCAL[10] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9};
-static const float SHOT_YAW[10]   = {2.55, 0.45, 0.38, 0.7, 1.55, 2.75, 0.3, 1.9, 0.12, 2.9};
-static const float SHOT_SPITCH[10]= {0.22, 0.06, 0.14, 0.3, 0.12, 0.28, 0.1, 0.35, 0.03, 0.5};
-static const float SHOT_LIMB[10]  = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
-static const float SHOT_ALTJ[10]  = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4};
-static const float SHOT_PITCHJ[10]= {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2};
-static const float SHOT_ROLLJ[10] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416};
+// frame, the lens, and the sun. The sun is set against the camera before its
+// tilt (yaw 0 = behind the earth, PI = behind the camera, pitch toward the
+// horizon the camera tilts to), so tilting never swings the light across the
+// planet. horizon and ocean are low orbits too: night below with the morning
+// lit toward the horizon, and the daylit ocean seen obliquely. night is the dark limb through a longer lens:
+// airglow, stars, and twilight low on one side. eclipse is the earth from far
+// off (16 radii) with the sun right behind it -- only from that far is the air
+// at the edge in sunlight, a ring round a dark disc. limb is a telephoto on the
+// day limb from low orbit. The *J columns are the variants' ranges.
+//
+// The first REGULAR_SHOTS columns are scenes of one slot each, in the order of
+// SHOTS in background_earth.py. The rest are LONG_SHOTS scenes of two slots, a
+// column per half (SHOT_PART 1 and 2): scripted moves, each half a straight run
+// of SHOT_D* per second about its composition (roll SHOT_ROLL), the two halves
+// joined by a flown move. approach falls from high above northern India in
+// low evening sun and tilts up to the Himalaya on the horizon as the sun sets;
+// departure climbs from low over Africa, tilting down and turning as the whole
+// lit disc comes into view; sunrise watches the horizon from low orbit over the
+// Pacific as the sun comes up over it and the ground lights.
+//   columns: day dawn crescent leo terminator glint rise polar horizon ocean
+//            night eclipse limb | approach x2, departure x2, sunrise x2
+static const float SHOT_LON[19] = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0, -30.0, 0.0, 60.0, 85.0, 85.0, 30.0, 30.0, 140.0, 140.0};
+static const float SHOT_LAT[19] = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0, 30.0, 0.0, 10.0, 25.0, 25.0, 0.0, 0.0, 20.0, 20.0};
+static const float SHOT_DIST[19] = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05, 1.06, 16.0, 1.05, 1.6376, 1.045, 1.1003, 2.7333, 1.0414, 1.0462};
+static const float SHOT_PITCH[19] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95, 1.235, 0.0, 1.262, 0.0, 0.625, 0.75, 0.06, 1.25, 1.25};
+static const float SHOT_OFFX[19] = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+static const float SHOT_OFFY[19] = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+static const float SHOT_FOCAL[19] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9, 2.5, 4.5, 5.0, 1.0, 1.0, 1.0, 1.0, 1.1, 1.1};
+static const float SHOT_YAW[19] = {2.55, 0.995, 0.803, 1.563, 1.574, 2.759, 0.3, 1.947, 1.382, 2.909, 0.7363, 0.0, 2.6779, 1.7773, 1.535, 2.751, 2.751, 0.6116, 0.9798};
+static const float SHOT_SPITCH[19] = {0.22, 0.968, 0.27, 0.908, 0.122, 0.187, 0.1, 0.298, 0.864, -0.427, 0.9639, 0.0, 0.6591, 0.9, 0.9, 0.41, 0.41, 1.2113, 1.3146};
+static const float SHOT_LIMB[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+static const float SHOT_ALTJ[19] = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4, 0.08, 0.15, 0.08, 0.15, 0.15, 0.15, 0.15, 0.1, 0.1};
+static const float SHOT_PITCHJ[19] = {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2, 0.01, 0.0, 0.01, 0.05, 0.05, 0.05, 0.05, 0.04, 0.04};
+static const float SHOT_ROLLJ[19] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416, 0.4, 0.5, 0.3, 0.5, 0.5, 0.8, 0.8, 0.4, 0.4};
+static const float SHOT_ROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.125, 0.525, 0.031, 0.129};
+static const float SHOT_DALT[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0742, -0.0129, 0.0581, 0.0581, 0.00226, 0.00226};
+static const float SHOT_DPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0306, -0.0258, -0.0039, 0.0, 0.0};
+static const float SHOT_DYAW[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.00494, -0.00494, 0.0, 0.0, 0.00521, 0.01015};
+static const float SHOT_DSPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00245, 0.00168};
+static const float SHOT_DROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0081, 0.0081, 0.002, 0.002};
+static const int   SHOT_PART[19] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2, 1, 2};
 
 // A camera pose as numbers that interpolate: a = (longitude, latitude, log of
 // the altitude in earth radii, tilt from nadir), b = (frame offset x, y, log of
@@ -848,6 +1093,7 @@ struct Pose { float4 a; float4 b; float4 c; };
 
 struct Cam {
     float3 ro; float3 fw; float3 rt; float3 up; float3 L; float2 off; float focal; float roll;
+    float fade;     // 1 whole, 0 dark: a dip between scenes or across a reseed
 };
 
 float3 rot_y(float a, float3 v) {
@@ -893,14 +1139,6 @@ Pose pose_add(Pose p, Pose q, float k) {
     return r;
 }
 
-Pose pose_lerp(Pose p, Pose q, float w) {
-    Pose r;
-    r.a = lerp(p.a, q.a, w);
-    r.b = lerp(p.b, q.b, w);
-    r.c = lerp(p.c, q.c, w);
-    return r;
-}
-
 float wrap_near(float v, float ref, float period) {
     return v + period * floor((ref - v) / period + 0.5);
 }
@@ -913,20 +1151,43 @@ Pose unwrap_to(Pose p, Pose ref) {
     return p;
 }
 
-// The shot and variant a slot shows.
-int2 scene_of(int slot, float seed) {
-    if (SHOT >= 0) return int2(SHOT, 0);
+// The shot a slot's hash picks, and its variant: any scene, or (alone) only
+// the one-slot ones. A two-slot scene is picked by its first half.
+int2 pick(int slot, float seed, bool alone) {
     uint h = xefm_slot_hash(slot, seed) / uint(LENS_COUNT);
-    return int2(int(h % uint(SHOT_COUNT)), int((h / uint(SHOT_COUNT)) % uint(VARIANTS)));
+    uint n = uint(REGULAR_SHOTS + (alone ? 0 : LONG_SHOTS));
+    int j = int(h % n);
+    int shot = j < REGULAR_SHOTS ? j : REGULAR_SHOTS + 2 * (j - REGULAR_SHOTS);
+    return int2(shot, int((h / n) % uint(VARIANTS)));
+}
+
+// The shot and variant a slot shows. A two-slot scene starts on an even slot
+// and takes the odd one after it; an odd slot whose own pick would start one
+// picks again among the one-slot scenes.
+int2 scene_of(int slot, float seed) {
+    bool odd = (slot & 1) != 0;
+    if (SHOT >= 0) return int2(SHOT_PART[SHOT] == 1 && odd ? SHOT + 1 : SHOT, 0);
+    if (odd) {
+        int2 first = pick(slot - 1, seed, false);
+        if (SHOT_PART[first.x] == 1) return int2(first.x + 1, first.y);
+        return pick(slot, seed, true);
+    }
+    return pick(slot, seed, false);
+}
+
+// The column a scene's variants and coins are drawn for: both halves of a
+// two-slot scene share the first half's, so they compose as one.
+int family(int2 sv) {
+    return (SHOT_PART[sv.x] == 2 ? sv.x - 1 : sv.x) * VARIANTS + sv.y;
 }
 
 // Shot i in variant v, as composed: where the scene is at the middle of its hold.
 Pose composition(int2 sv) {
-    int i = sv.x, id = sv.x * VARIANTS + sv.y;
+    int i = sv.x, id = family(sv);
     Pose p;
     p.a = float4(SHOT_LON[i], SHOT_LAT[i], log(SHOT_DIST[i] - 1.0), SHOT_PITCH[i]);
     p.b = float4(SHOT_OFFX[i], SHOT_OFFY[i], log(SHOT_FOCAL[i]), SHOT_YAW[i]);
-    p.c = float4(SHOT_SPITCH[i], SHOT_LIMB[i], LIMB_PHI, 0.0);
+    p.c = float4(SHOT_SPITCH[i], SHOT_LIMB[i], LIMB_PHI, SHOT_ROLL[i]);
     if (sv.y > 0) {
         p.a += float4(JIT_LON * scene_signed(id, 0), JIT_LAT * scene_signed(id, 1),
                       SHOT_ALTJ[i] * scene_signed(id, 2), SHOT_PITCHJ[i] * scene_signed(id, 3));
@@ -948,16 +1209,28 @@ float4 heading(float4 before, float4 after, int id, int n) {
     return dir;
 }
 
-// How fast a scene moves while it holds, per second: its speeds, pointed the way
-// the camera travels through it (from the scene before to the scene after).
-Pose drift(int2 sv, Pose before, Pose after) {
-    int id = sv.x * VARIANTS + sv.y;
+// How fast a scene (composed as c) moves while it holds, per second: its
+// speeds, pointed the way the camera travels through it (from the scene before
+// to the scene after), round the planet no faster than GROUND_REF allows. A
+// half of a two-slot scene moves as scripted (SHOT_D*) and nothing else, so its
+// halves meet.
+Pose drift(int2 sv, Pose c, Pose before, Pose after) {
+    int i = sv.x, id = family(sv);
+    if (SHOT_PART[i] != 0) {
+        Pose s;
+        s.a = float4(0.0, 0.0, SHOT_DALT[i], SHOT_DPITCH[i]);
+        s.b = float4(0.0, 0.0, 0.0, SHOT_DYAW[i]);
+        s.c = float4(SHOT_DSPITCH[i], 0.0, 0.0, SHOT_DROLL[i]);
+        return s;
+    }
+    float g = min(1.0, exp(c.a.z) / GROUND_REF);
     float4 ka = 0.5 + 0.5 * float4(scene_rand(id, 11), scene_rand(id, 12), scene_rand(id, 13), 0.0);
     float4 kb = 0.5 + 0.5 * float4(scene_rand(id, 14), scene_rand(id, 15), scene_rand(id, 16),
                                    scene_rand(id, 17));
     float kc = 0.5 + 0.5 * scene_rand(id, 18);
     Pose d;
-    d.a = float4(MOVE_LON, MOVE_LAT, MOVE_ALT, 0.0) * ka * heading(before.a, after.a, id, 20);
+    d.a = float4(MOVE_LON * g, MOVE_LAT * g, MOVE_ALT, 0.0) * ka
+        * heading(before.a, after.a, id, 20);
     d.b = float4(MOVE_PAN, MOVE_PAN * 0.6, MOVE_ZOOM, MOVE_YAW) * kb
         * heading(before.b, after.b, id, 24);
     d.c = float4(0.0, 0.0, 0.0, MOVE_ROLL * kc) * heading(before.c, after.c, id, 28);
@@ -1009,15 +1282,37 @@ Pose pose_slope(Pose from, Pose to, float dt) {
     return pose_scale(pose_add(to, from, -1.0), 1.0 / dt);
 }
 
+// Whether the move from x (one scene leaving) to e (the next entering) is slow
+// enough to fly: its average speed over TRANSITION under every GENTLE_ limit.
+bool gentle(Pose x, Pose e) {
+    Pose v = pose_slope(x, e, TRANSITION);
+    float h = min(exp(x.a.z), exp(e.a.z));
+    float ground = length(v.a.xy) * (PI / 180.0) / h;
+    float limb = max(abs(x.c.y), abs(e.c.y));
+    return ground <= GENTLE_GROUND && abs(v.a.z) <= GENTLE_ALT && abs(v.a.w) <= GENTLE_PITCH
+        && length(v.b.xy) <= GENTLE_PAN && abs(v.b.z) <= GENTLE_ZOOM
+        && abs(v.b.w) <= GENTLE_SUN && abs(v.c.x) <= GENTLE_SUN
+        && abs(v.c.y) <= GENTLE_LIMB && abs(v.c.z) * limb <= GENTLE_ROLL
+        && abs(v.c.w) <= GENTLE_ROLL;
+}
+
+// How much of the picture shows at d from the dark middle of a dip.
+float dip(float d, float dark, float fade) {
+    return smoothstep(dark, dark + fade, d);
+}
+
 // The camera's path for one seed. Each slot k holds its scene for HOLD seconds
 // and then moves to the next over TRANSITION. A scene contributes two knots: it
 // enters at its composition minus half its drift over the hold and leaves at
-// the composition plus half. The path runs through every knot as one smooth
-// curve -- a monotone cubic, so the speed changes gradually everywhere and the
-// direction never flicks: the hold drifts steadily, the move out of it starts
-// from that drift and ends in the next scene's, which (headed the same way where
-// it can be) carries straight on.
-Pose path_at(float t, float seed) {
+// the composition plus half. Where the move between two scenes is gentle the
+// path flies it, one smooth curve through the knots -- a monotone cubic, so the
+// speed changes gradually everywhere and the direction never flicks: the hold
+// drifts steadily, the move out of it starts from that drift and ends in the
+// next scene's, which (headed the same way where it can be) carries straight
+// on. Any other move dips: the scene drifts on as it fades out (fade), the cut
+// falls in the dark, and the next scene fades in already drifting into its
+// entry knot -- the camera never moves faster than a scene's own drift.
+Pose path_at(float t, float seed, out float fade) {
     float hold = SHOT_SECONDS - TRANSITION;
     int k = int(floor(t / SHOT_SECONDS));
     float u = t - float(k) * SHOT_SECONDS;
@@ -1028,33 +1323,73 @@ Pose path_at(float t, float seed) {
     Pose c_2 = unwrap_to(composition(s_2), c_1);
     Pose c1 = unwrap_to(composition(s1), c0);
     Pose c2 = unwrap_to(composition(s2), c1);
-    Pose d_1 = drift(s_1, c_2, c0), d0 = drift(s0, c_1, c1), d1 = drift(s1, c0, c2);
+    Pose d_1 = drift(s_1, c_1, c_2, c0), d0 = drift(s0, c0, c_1, c1);
+    Pose d1 = drift(s1, c1, c0, c2);
     Pose x_1 = pose_add(c_1, d_1, 0.5 * hold);           // the scene before leaves here
     Pose e0 = pose_add(c0, d0, -0.5 * hold);             // this one enters
     Pose x0 = pose_add(c0, d0, 0.5 * hold);              // and leaves
     Pose e1 = pose_add(c1, d1, -0.5 * hold);             // the next one enters
+    // The two halves of a two-slot scene are always flown into each other.
+    bool fly_in = SHOT_PART[s0.x] == 2 || gentle(x_1, e0);
+    bool fly_out = SHOT_PART[s0.x] == 1 || gentle(x0, e1);
     Pose s_in = pose_slope(x_1, e0, TRANSITION);
     Pose s_out = pose_slope(x0, e1, TRANSITION);
-    Pose m_x0 = pose_tangent(d0, hold, s_out, TRANSITION);
-    if (u < hold) {
-        return hermite(e0, pose_tangent(s_in, TRANSITION, d0, hold), x0, m_x0, hold, u);
+    // A knot next to a dip has the scene's own drift for its tangent.
+    Pose m_e0 = fly_in ? pose_tangent(s_in, TRANSITION, d0, hold) : d0;
+    Pose m_x0 = fly_out ? pose_tangent(d0, hold, s_out, TRANSITION) : d0;
+    fade = 1.0;
+    if (u < hold) return hermite(e0, m_e0, x0, m_x0, hold, u);
+    float w = u - hold;
+    if (fly_out) {
+        return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION, w);
     }
-    return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION,
-                   u - hold);
+    fade = dip(abs(w - 0.5 * TRANSITION), DIP_DARK, DIP_FADE);
+    return w < 0.5 * TRANSITION ? pose_add(x0, d0, w) : pose_add(e1, d1, w - TRANSITION);
 }
+
+// Whether the move out of slot k is flown (see path_at), for the lens.
+bool flies_out(int k, float seed) {
+    float hold = SHOT_SECONDS - TRANSITION;
+    int2 s_1 = scene_of(k - 1, seed), s0 = scene_of(k, seed);
+    int2 s1 = scene_of(k + 1, seed), s2 = scene_of(k + 2, seed);
+    Pose c0 = composition(s0);
+    Pose c_1 = unwrap_to(composition(s_1), c0);
+    Pose c1 = unwrap_to(composition(s1), c0);
+    Pose c2 = unwrap_to(composition(s2), c1);
+    if (SHOT_PART[s0.x] == 1) return true;
+    Pose x0 = pose_add(c0, drift(s0, c0, c_1, c1), 0.5 * hold);
+    Pose e1 = pose_add(c1, drift(s1, c1, c0, c2), -0.5 * hold);
+    return gentle(x0, e1);
+}
+
+// The slot whose look the lens shows in slot k: a two-slot scene keeps the look
+// its first half drew.
+int earth_look_slot(int k, float seed) {
+    return SHOT_PART[scene_of(k, seed).x] == 2 ? k - 1 : k;
+}
+
+// The lens's blend into the next look (xefm.background_lens): over a flown move
+// as usual, at the dark middle of a dip -- and of a reseed, which dips too.
+float earth_look_weight(int k, float seed, float x) {
+    return flies_out(k, seed) ? x * x * (3.0 - 2.0 * x) : step(0.5, x);
+}
+#define XEFM_LENS_WEIGHT(k, seed, x) earth_look_weight(k, seed, x)
+#define XEFM_LENS_RESEED_WEIGHT(m) step(0.5, m)
+#define XEFM_LENS_SLOT(k, seed) earth_look_slot(k, seed)
 
 // The whole camera and sun, from time and the seeds alone. Each SHOT_SECONDS slot
 // hashes to a scene; the low part of the hash is the lens look the lens passes
 // pick for the same slot (they take it modulo LENS_COUNT), and the rest picks
 // the shot and its variant -- so every combination can come up. A new seed
-// (each launch, each return from idle) means new scenes; while seed_mix is
-// below 1 the path for the old seed blends into the new one, as the lens blends
-// the looks.
+// (each launch, each return from idle) means new scenes; a reseed dips as a
+// move between scenes does -- the old seed's path fades out while seed_mix is
+// below a half, the new one's fades in -- and the lens changes look in the dark.
 Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float fov = aspect < 0.8 ? 0.75 : 1.0;      // portrait: widen the lens
     float spin = SPIN * t;
-    Pose P = path_at(t, seed);
-    if (seed_mix < 1.0) P = pose_lerp(unwrap_to(path_at(t, seed_prev), P), P, seed_mix);
+    float fade;
+    Pose P = path_at(t, seed_mix < 0.5 ? seed_prev : seed, fade);
+    if (seed_mix < 1.0) fade *= dip(abs(seed_mix - 0.5), RESEED_DARK, RESEED_FADE);
     float dist = 1.0 + exp(P.a.z);
     // A gentle hand-held breathing on the tilt and the sun.
     float pitch = P.a.w + sin(t * 0.053) * 0.008;
@@ -1068,6 +1403,7 @@ Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     float3 d = normalize(rot_x(TILT, rot_y(-spin, earth_fixed(P.a.x, clamp(P.a.y, -80.0, 80.0)))));
 
     Cam c;
+    c.fade = fade;
     c.focal = exp(P.b.z) * fov;
     c.off = P.b.xy;
     if (limb > 0.0) {
@@ -1084,8 +1420,10 @@ Cam camera(float t, float aspect, float seed, float seed_prev, float seed_mix) {
     // The roll turns the finished picture on the screen (see the fragment), so the
     // sun keeps its place against the planet and the limb framing still holds.
     c.roll = roll;
-    float3 L = normalize(c.fw * (cos(spitch) * cos(yaw)) + c.rt * (cos(spitch) * sin(yaw))
-                         + c.up * sin(spitch));
+    // The sun against the camera before its tilt (looking straight down, -d, with
+    // upT above): the tilt turns the view, not the light.
+    float3 L = normalize(-d * (cos(spitch) * cos(yaw)) + c.rt * (cos(spitch) * sin(yaw))
+                         + upT * sin(spitch));
     if (limb > 0.001) {
         // The sun sliding behind the limb and back out: its centre swings
         // +-LIMB_AMP about the edge, once per LIMB_PERIOD.
@@ -1249,6 +1587,7 @@ float tex_width(Texture2D map) {
 float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     float t = time;
     Cam cam = camera(t, resolution.x / resolution.y, seed, seed_prev, seed_mix);
+    if (cam.fade <= 0.0) return float4(0.0, 0.0, 0.0, 1.0);    // the dark of a dip
     // y up, as the shot table was composed; then turned by the roll, about the
     // middle of the screen, before the framing offset places the composition.
     float2 uv0 = float2(pos.x - 0.5 * resolution.x, 0.5 * resolution.y - pos.y)
@@ -1380,8 +1719,10 @@ float4 puikit_bg_fragment(float4 pos : SV_Position) : SV_Target {
     float3 flareCol = lerp(float3(1.0, 0.55, 0.25), float3(1.0, 0.92, 0.8), vis);
     col += sunTv * flareCol * swell * prox * (0.25 + 0.75 * vis) * 1.6;
 
-    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop.
-    return float4(max(col * EXPOSURE, 0.0), 1.0);
+    // Linear HDR out: the lens tone-maps, grades and mixes over the backdrop. A
+    // dip stops the exposure down as it fades, so the sun goes with the ground.
+    float iris = cam.fade * exp2(DIP_STOPS * (cam.fade - 1.0));
+    return float4(max(col * (EXPOSURE * iris), 0.0), 1.0);
 }
 """
 
@@ -1454,14 +1795,14 @@ def earth_shader(shot=None, lens=None, clouds=None, exposure=None,
     """The ``Shader`` fields for the Earth scene with a theme's options applied.
 
     ``shot``: a name from :data:`SHOTS` to hold one shot (as composed, still
-    slowly moving), or ``None``/``"auto"`` to pick a shot and variant at random for
+    slowly moving; a two-slot scene plays over and over), or ``None``/``"auto"`` to pick a shot and variant at random for
     every scene. ``lens``: see :func:`_resolve_lens`. ``clouds``: cloud-height
     exaggeration, 0..8 (1 is real height; 3, the default, lets the parallax read
     from orbit). ``exposure``: 0.1..4, scales the light before the lens.
     ``brightness``: 0..1, the ceiling of the result after it (default 0.5). Bad
     values fall back to the defaults."""
     name = shot.strip().lower() if isinstance(shot, str) else None
-    index = SHOTS.index(name) if name in SHOTS else -1
+    index = SHOT_COLUMNS.get(name, -1)
     looks = earth_looks(lens, brightness)
     options = dict(shot=index,
                    clouds=repr(_clamped(clouds, DEFAULT_CLOUDS, 0.0, 8.0)),

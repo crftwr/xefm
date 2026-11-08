@@ -30,7 +30,12 @@ into the source as a table, and each pass picks the look from ``time`` and the
 ``seed`` uniforms: one look per ``period`` seconds, chosen by
 ``xefm_slot_hash(slot, seed) % count``, blended into the next over its last
 ``transition`` seconds, and from the old seed's look into the new one's while
-``seed_mix`` rises. A scene that moves between compositions hashes the same
+``seed_mix`` rises. A scene can take over the shape of either blend by
+defining ``XEFM_LENS_WEIGHT(slot, seed, x)`` (the weight of the next slot's look
+at progress ``x`` through the transition), ``XEFM_LENS_RESEED_WEIGHT(mix)`` or
+``XEFM_LENS_SLOT(slot, seed)`` (the slot whose look a slot shows, for a scene
+that spans several) as macros in its source -- the Earth scene does, to change the look while the
+picture is dark. A scene that moves between compositions hashes the same
 slot (:data:`SLOT_HASH_MSL`) with the bits the look did not use, so its camera
 and its look change together — and the whole picture stays a function of its
 uniforms, which a backend that advances it on its own requires.
@@ -261,6 +266,9 @@ def _constants(looks, period, transition, dialect: str) -> str:
 
 LENS_MSL = r"""
 // --- the lens (xefm.background_lens) -----------------------------------------
+#ifndef XEFM_LENS_SLOT
+#define XEFM_LENS_SLOT(k, seed) (k)   // the slot whose look slot k shows
+#endif
 struct LensLook { float4 r[12]; };
 // r[0] aberration, distortion, bloom, streak   r[1] ghosts, saturation, contrast, grain
 // r[2] vignette, scanlines, curvature, letterbox   r[3] halation, gain, scope, level
@@ -284,20 +292,30 @@ static inline LensLook lens_mix(LensLook a, LensLook b, float w) {
 static inline LensLook lens_at(float t, float seed) {
     if (LENS_LOOK_COUNT == 1) return lens_entry(0);
     int k = int(floor(t / LENS_PERIOD));
-    LensLook a = lens_entry(int(xefm_slot_hash(k, seed) % uint(LENS_LOOK_COUNT)));
+    LensLook a = lens_entry(int(xefm_slot_hash(XEFM_LENS_SLOT(k, seed), seed)
+                                % uint(LENS_LOOK_COUNT)));
     float into = t - float(k) * LENS_PERIOD;
     float start = LENS_PERIOD - LENS_TRANSITION;
     if (into <= start || LENS_TRANSITION <= 0.0) return a;
-    LensLook b = lens_entry(int(xefm_slot_hash(k + 1, seed) % uint(LENS_LOOK_COUNT)));
+    LensLook b = lens_entry(int(xefm_slot_hash(XEFM_LENS_SLOT(k + 1, seed), seed)
+                                % uint(LENS_LOOK_COUNT)));
     float x = min(1.0, (into - start) / LENS_TRANSITION);
+#ifdef XEFM_LENS_WEIGHT
+    return lens_mix(a, b, XEFM_LENS_WEIGHT(k, seed, x));
+#else
     return lens_mix(a, b, x * x * (3.0 - 2.0 * x));
+#endif
 }
 
 // ... and eased from the old seed's look into the new one's after a reseed.
 static inline LensLook lens_look(constant BackgroundUniforms &u) {
     LensLook now = lens_at(u.time, u.seed);
     if (u.seed_mix >= 1.0) return now;
+#ifdef XEFM_LENS_RESEED_WEIGHT
+    return lens_mix(lens_at(u.time, u.seed_prev), now, XEFM_LENS_RESEED_WEIGHT(u.seed_mix));
+#else
     return lens_mix(lens_at(u.time, u.seed_prev), now, u.seed_mix);
+#endif
 }
 
 constant float LENS_FOCUS_SPREAD = 0.012;   // the autofocus taps' distance from the middle
@@ -540,6 +558,9 @@ fragment float4 lens_composite(float4 pos [[position]],
 
 LENS_HLSL = r"""
 // --- the lens (xefm.background_lens) -----------------------------------------
+#ifndef XEFM_LENS_SLOT
+#define XEFM_LENS_SLOT(k, seed) (k)   // the slot whose look slot k shows
+#endif
 struct LensLook { float4 r[12]; };
 
 Texture2D lens_t0 : register(t0);
@@ -564,19 +585,29 @@ LensLook lens_mix(LensLook a, LensLook b, float w) {
 LensLook lens_at(float t, float sd) {
     if (LENS_LOOK_COUNT == 1) return lens_entry(0);
     int k = int(floor(t / LENS_PERIOD));
-    LensLook a = lens_entry(int(xefm_slot_hash(k, sd) % uint(LENS_LOOK_COUNT)));
+    LensLook a = lens_entry(int(xefm_slot_hash(XEFM_LENS_SLOT(k, sd), sd)
+                                % uint(LENS_LOOK_COUNT)));
     float into = t - float(k) * LENS_PERIOD;
     float start = LENS_PERIOD - LENS_TRANSITION;
     if (into <= start || LENS_TRANSITION <= 0.0) return a;
-    LensLook b = lens_entry(int(xefm_slot_hash(k + 1, sd) % uint(LENS_LOOK_COUNT)));
+    LensLook b = lens_entry(int(xefm_slot_hash(XEFM_LENS_SLOT(k + 1, sd), sd)
+                                % uint(LENS_LOOK_COUNT)));
     float x = min(1.0, (into - start) / LENS_TRANSITION);
+#ifdef XEFM_LENS_WEIGHT
+    return lens_mix(a, b, XEFM_LENS_WEIGHT(k, sd, x));
+#else
     return lens_mix(a, b, x * x * (3.0 - 2.0 * x));
+#endif
 }
 
 LensLook lens_look() {
     LensLook now = lens_at(time, seed);
     if (seed_mix >= 1.0) return now;
+#ifdef XEFM_LENS_RESEED_WEIGHT
+    return lens_mix(lens_at(time, seed_prev), now, XEFM_LENS_RESEED_WEIGHT(seed_mix));
+#else
     return lens_mix(lens_at(time, seed_prev), now, seed_mix);
+#endif
 }
 
 float3 lens_tap0(float2 uv) { return lens_t0.SampleLevel(lens_s0, uv, 0).rgb; }
