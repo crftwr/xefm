@@ -46,7 +46,7 @@ MSL and HLSL, and :func:`_dialect` spells it for each: ``CONST`` (``constant`` /
 and ``fract``/``mix`` → ``frac``/``lerp``. The two cannot drift apart, and the
 dialect-parity test still reads both.
 
-Design and measurements: ``doc/dev/PELAGIC_DESIGN.md``; implementation notes:
+Design, measurements and implementation notes:
 ``doc/dev/PELAGIC_IMPLEMENTATION.md``.
 """
 
@@ -863,8 +863,8 @@ def source(dialect: str, jellyfish=DEFAULT_JELLYFISH, exposure=DEFAULT_EXPOSURE)
 
 
 #: The lens, matched against the prototype's post pass on its own HDR frames
-#: (doc/dev/PELAGIC_DESIGN.md §2): its ACES tone map on colour x 1.15, its
-#: vignette, a sun-only bloom, fine grain.
+#: (doc/dev/PELAGIC_IMPLEMENTATION.md, "Matching the lens"): its ACES tone map
+#: on colour x 1.15, its vignette, a sun-only bloom, fine grain.
 LENS = Look(gain=1.15, bloom=1.5, threshold=1.6, vignette=0.47, grain=0.06)
 
 
