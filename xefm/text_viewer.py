@@ -271,6 +271,13 @@ _ERROR_FG = (229, 110, 110)
 _MATCH_HUE = (200, 175, 55)
 _MATCH_TINT = 0.24
 _CURRENT_MATCH_TINT = 0.46
+#: Over a scene (surfaces translucent over a wallpaper) the tints step up -- they
+#: are relative to the surface, and a dark surface's tint was swallowed by the
+#: brighter scene showing through it -- and a hit keeps this least opacity, as a
+#: mark (the file pane's selection does the same).
+_MATCH_TINT_SCENE = 0.46
+_CURRENT_MATCH_TINT_SCENE = 0.62
+_MATCH_MARK_OPACITY = 0.95
 
 
 def _mix(a, b, t):
@@ -287,10 +294,14 @@ def _is_light(bg) -> bool:
     return (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) >= 140
 
 
-def _match_bg(content, current: bool):
-    """Search-highlight background for ``content``, firmer for the current match."""
-    return _mix(content or (30, 30, 38), _MATCH_HUE,
-                _CURRENT_MATCH_TINT if current else _MATCH_TINT)
+def _match_bg(content, current: bool, translucent: bool = False):
+    """Search-highlight background for ``content``, firmer for the current match,
+    and firmer still over a scene (``translucent``)."""
+    if translucent:
+        tint = _CURRENT_MATCH_TINT_SCENE if current else _MATCH_TINT_SCENE
+    else:
+        tint = _CURRENT_MATCH_TINT if current else _MATCH_TINT
+    return _mix(content or (30, 30, 38), _MATCH_HUE, tint)
 
 
 def _syntax_palette(panel) -> dict:
@@ -1157,8 +1168,12 @@ class TextViewer(Widget):
         theme = ctx.theme
         sel_bg = theme.text_selection_bg if theme is not None else (38, 79, 120)
         sub = line[vis_start:vis_end]
-        ctx.draw_text(content_x + span_x(line, col0_int, vis_start) - xfrac, y, sub,
-                      Style(fg=text_fg, bg=sel_bg, font=MONO))
+        sx = content_x + span_x(line, col0_int, vis_start) - xfrac
+        if getattr(ctx, "surface_opacity", 1.0) < 1.0:
+            # Over a scene the selection is a mark with its own opacity floor.
+            ctx.fill_rect(sx, y, ctx.measure_text(sub, Style(font=MONO)), 1.0,
+                          Style(bg=sel_bg), opacity=_MATCH_MARK_OPACITY)
+        ctx.draw_text(sx, y, sub, Style(fg=text_fg, bg=sel_bg, font=MONO))
 
     def _draw_matches(self, ctx, y, line_idx, col0_int, xfrac, window_end, content_x, text_fg) -> None:
         pat = self.pattern.lower()
@@ -1187,9 +1202,15 @@ class TextViewer(Widget):
             if vis_end <= vis_start:
                 continue
             sub = line[vis_start:vis_end]
-            hl_bg = _match_bg(self._bg, is_current)
-            ctx.draw_text(content_x + span_x(line, col0_int, vis_start) - xfrac, y, sub,
-                          Style(fg=text_fg, bg=hl_bg, font=MONO))
+            translucent = getattr(ctx, "surface_opacity", 1.0) < 1.0
+            hl_bg = _match_bg(self._bg, is_current, translucent)
+            hx = content_x + span_x(line, col0_int, vis_start) - xfrac
+            if translucent:
+                # A mark over the scene: filled at its own opacity floor, the
+                # glyphs drawn over the fill (not painted again, see DrawContext).
+                ctx.fill_rect(hx, y, ctx.measure_text(sub, Style(font=MONO)), 1.0,
+                              Style(bg=hl_bg), opacity=_MATCH_MARK_OPACITY)
+            ctx.draw_text(hx, y, sub, Style(fg=text_fg, bg=hl_bg, font=MONO))
 
     # --- events --------------------------------------------------------------
 

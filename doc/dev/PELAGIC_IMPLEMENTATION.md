@@ -156,6 +156,27 @@ The scene opens blue-green with the floor half sand and half coral. All sand
 reads as a pale, shaft-lit band along the bottom of the frame; all coral, as a
 dark one.
 
+## Palette: a white shell over dark water
+
+The first palette was all water colours, and the selected row, the bars and the
+headers vanished into the scene behind them. The chrome is now a white shell
+(`surface`, `status`, `footer` near `#EEE8E0`): the bars and pane headers
+translucent at the theme's opacity over the sea, dialogs and menus opaque. A
+selected file is a white row (`selection_fill`), the cursor coral, and text
+selected with the mouse a deep coral that reads on the dark panes and on the
+white shell alike. The panes stay the dark water, so the file names keep their
+light colours.
+
+`_theme(theme_fields=...)` pins the derived Theme fields that would otherwise
+come out of the dark background and land dark inside the white dialogs: inputs
+(`control_*`), secondary buttons, the popup frame, hover rows and unfocused
+selections. Text over the white is inked dark by auto-ink. PuiKit 1.23.0 is
+what makes that hold on translucent surfaces (it judges a fill as seen, so the
+bars' text goes black rather than a gray that read faint over the water), and
+what keeps inline code, viewer headers, selections and search hits consistent
+with the surfaces they sit on. The text viewer marks its search hits and
+selection the same way over a scene (`_MATCH_*_SCENE`, a mark opacity).
+
 ## Theme and options
 
 - **`ink` is ignored**, as in Earth. The water's colour is its extinction.

@@ -88,8 +88,9 @@ desktop app; a terminal shows the palette alone.
   translucent jellyfish drifting and pulsing through the frame, sun shafts that
   lean and sway with the waves, the rippling surface overhead with the sun
   glinting through it, marine snow, the sea floor fading in along the bottom, and once every few
-  minutes a sea turtle passing low and far off. Deep teal, a pale sea cyan for
-  the chrome, amber for the cursor. See [The Pelagic scene](#the-pelagic-scene).
+  minutes a sea turtle passing low and far off. The panes stay the dark water;
+  the bars, pane headers and dialogs are a white shell, the bars translucent
+  over the sea; a selected file is a white row, and the cursor coral. See [The Pelagic scene](#the-pelagic-scene).
 
 ## What Gets Colored
 
