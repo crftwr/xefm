@@ -5,8 +5,9 @@ A picture theme beside [Earth](EARTH_THEME_IMPLEMENTATION.md),
 metres down, looking up, with jellyfish, sun shafts, Snell's window, marine
 snow, a reef and an occasional turtle. User-facing behaviour is in
 [`doc/COLOR_SCHEMES_FEATURE.md`](../COLOR_SCHEMES_FEATURE.md#the-pelagic-scene).
-The investigation behind it (the lens mapping, the cost breakdown and the
-decisions) is in [PELAGIC_DESIGN.md](PELAGIC_DESIGN.md).
+The design investigation that came before the port (the lens mapping, the fxc
+risk, the decisions and why) is folded in below; the full report is in git
+history as `doc/dev/PELAGIC_DESIGN.md`.
 
 | Where | What |
 |---|---|
@@ -26,8 +27,8 @@ It ports an approved WebGL2 prototype, and the look and motion are kept as
 tuned. Rendered on Metal at the prototype's reference times
 (t40/95/162/300/459), the result matches the prototype's own frames to within
 1.3–1.9 levels of 255 on average (on 8×8 averages). That is the same
-difference the lens alone accounts for (`PELAGIC_DESIGN.md` §2), so the scene
-itself reproduces the prototype's HDR. The remaining difference is the haze
+difference the lens alone accounts for ([Matching the lens](#matching-the-lens)),
+so the scene itself reproduces the prototype's HDR. The remaining difference is the haze
 right around the sun when the camera faces it, which the lens's bloom pyramid
 shapes differently from the prototype's single Gaussian.
 
@@ -35,6 +36,84 @@ The behaviours most easily lost in a port are listed in the module docstring:
 trailing tentacles, the bell's contraction, shafts tilted by the swell's slope,
 no caustic net on the surface, a seamless edge to the window, and a turtle
 locked to the camera's tilt cycle.
+
+## Matching the lens
+
+`LENS` was set against the real lens, not an imitation of it, before the scene
+was ported:
+
+1. A headless Chrome (ANGLE on Metal, the real GPU) rendered the prototype's
+   scene pass at fixed times and read back its **linear HDR** as float32, and
+   rendered the prototype's own post pass from the same buffer.
+2. That HDR went through `lens_shader()` on Metal (a two-texture MSL scene
+   decoding it, via `MetalBackground.render_to_texture`, as the tests render),
+   exact to half a level.
+3. The two were compared cropped by 4 px (the lens antialiases the outermost
+   pixel, as for every picture theme) and averaged 4×4, grain at 0.
+
+| Field | Prototype | `LENS` | Why |
+|---|---|---|---|
+| `gain` | `aces(c × 1.15)` | 1.15 | The lens's tone map is the prototype's Narkowicz ACES and gamma 2.2, so this is exact. |
+| `vignette` | `1 − 0.30·|0.85q|²` | 0.47 | Matches at the corners (0.57) and the edge midpoints (0.78). The lens is flat over the middle third, so the centre is up to ~2 levels brighter: the main residual everywhere. |
+| `bloom`, `threshold` | soft knee 0.45–1.6, one Gaussian at ¼ resolution, ×0.55 | 1.5, 1.6 | Bloom shows only around the sun when the camera faces it (t459); elsewhere the HDR peaks at 0.3–1.0. The lens's six-level pyramid spreads the glow wider than the single Gaussian; more `bloom` brightens the periphery before it fills the core (tried up to 8, all worse), so 1.2–2.0 is the useful range. |
+| `grain` | ±0.006 uniform | 0.06 | At this scene's typical luminance (≈0.36) the lens's grain is ±0.006 at 0.06, Crystal's value. |
+| `dof` | none | 0 | The scene still writes `1/tEnd` to alpha, for a future look. |
+
+Mean / p99 difference in levels of 255, on 4×4 averages:
+
+| t40 | t95 | t162 | t300 | t459 | t459, sun region |
+|---|---|---|---|---|---|
+| 1.5 / 5.4 | 1.7 / 6.2 | 1.4 / 5.6 | 1.4 / 5.2 | 1.9 / 11.9 | 4.8 / 48, max 74 |
+
+Within about 2 levels everywhere except the haze close around the sun, which
+the lens draws a little crisper near the core and wider further out.
+
+## Stateless, and its limits
+
+The scene reads `time` and `resolution` and nothing else: no feedback target,
+no clock of its own. The camera and the jellyfish paths are closed forms in
+time; a beat's surge is `floor(phase) + smoothstep(0.08, 0.55, f)`, a smooth
+step of the path parameter with no integration; the turtle's slot is
+`floor((t − T0)/P)`, its path placed from `camera(T0 + kP + D/2)`. The page's
+own state (its integrated `simT`, speed slider and "Next turtle") is replaced
+by the backend clock.
+
+There is **no seed**. Like Crystal, Pelagic is one continuous take: a
+seed-based start would give a different opening each launch, but the reseed
+after idle would then need a dip (as Earth has) to avoid a cut, which is not
+worth it for a scene that does not repeat within minutes.
+
+Kept as approved:
+
+- Each snow particle sinks through `fract(t·0.004·(1+h.y))` and jumps back up a
+  1.6 m cell every 125–250 s, and one that has sunk out of its home cell can be
+  clipped by the DDA, which tests only the home cells along the ray. Snow is
+  faint, and neither has been seen in review.
+- Float32 `time`: the finest chop octave moves at ω ≈ 8 rad/s, so after about a
+  day of *animated* time its phase loses ~0.06 rad and the last octave
+  shimmers. The idle clock advances only while the app is in use, so this takes
+  weeks. Earth and Crystal share the same class of limit.
+
+## fxc
+
+Crystal crashed fxc because its loops were **nested** (a shadow march and AO
+inside every shading call). Pelagic's long loops are **siblings** at the top
+level (shafts, snow, the jellyfish loop), and the deepest nesting is jellyfish
+× joints × strands around a small body, with no march inside shading and no
+texture derivatives. The risk was judged moderate, and the body is written to
+keep it so:
+
+- `[loop]` on every loop of 6 or more iterations (jellyfish, bell march,
+  joints, strands, arms, shafts, turtle, snow); `[unroll]` only on the 2–4
+  iteration inner loops (`swell`, `fbm`, the gonad rings, the flipper pair).
+- `renderJelly` has a single call site inside a real `[loop]`, so fxc inlines
+  it once, not six times.
+- If fxc ever struggles, hoist `waterLight` and the `trail()` joint positions
+  out of the strand loop: they depend on the jellyfish, not the pixel.
+
+D3D compiles a new scene on worker threads and caches the bytecode on disk
+(PuiKit `_d3d_shader.py`), so a slow compile is a backdrop shown longer on the
+first switch, not a UI freeze.
 
 ## Departures from the prototype (crftwr's tuning, 2026-11-07)
 
@@ -100,8 +179,8 @@ dialects.
 
 ## Speed-ups that leave the picture unchanged
 
-Each was checked on the prototype: the HDR is identical to within 3e-6
-(`PELAGIC_DESIGN.md` §5–6).
+Each was checked on the prototype, rendered on the real GPU: the HDR is
+identical to within 3e-6.
 
 - **Strand culling.** Joints are the outer loop and strands the inner. For
   each joint, the distance from the ray to the axis segment bounds the
@@ -117,6 +196,10 @@ Each was checked on the prototype: the HDR is identical to within 3e-6
 
 (The port first gated the terrain march to downward rays; the floor is now a
 plane, met with one division.)
+
+**Not taken:** fewer fringe strands, and capping how many jellyfish run the
+full strand loop per pixel. Both change the look, and culling already removes
+most of what they would save.
 
 ## Idle: a fade inside the picture
 
@@ -183,17 +266,33 @@ selection the same way over a scene (`_MATCH_*_SCENE`, a mark opacity).
   Pelagic is in `INKLESS`, `PICTURES` and `PARTIAL_FADE` in
   `test_background_shaders.py`.
 - **`brightness` defaults to 0.7**, not the 0.5 of the other picture themes.
-  `level` multiplies the whole picture, and this one is mid-bright everywhere
-  (median brightest channel about 0.4), so 0.5 halved the approved look.
-  Settle it in the legibility review.
+  `level` multiplies the whole picture, and this one is mid-bright everywhere:
+  across the five reference frames the median brightest channel is 0.34–0.45
+  and the brightest pixel 0.70–0.86. Earth is mostly black space, so its 0.5
+  only cut highlights; here 0.5 halves the whole picture and the water reads
+  as dusk. At 0.7 a pixel reaches at most 0.60. Settle it in the legibility
+  review.
 - **`jellyfish`** (0–6, baked as `JELLYFISH`) is also the user's lever on a
   slow GPU: jellyfish are 35–50% of the frame. **`exposure`** scales the HDR
   before the lens.
 - **`resolution_scale` 0.45, `pixel_density` 0.9**: 1440×900 points render
-  1296×810 on any display, more lines than the 720 of the reference frames. **`frame_rate` 30**. **`idle` `"fade"`**,
-  answered inside the picture (above).
-- **`speed` 1.0.** The turtle's period equals the camera's tilt period in scene
-  time, so any speed keeps them locked.
+  1296×810 on any display, more lines than the 720 of the reference frames;
+  the scene is soft and hazy, and at half resolution the strands soften but
+  stay intact. **`frame_rate` 30**: the bell's squeeze takes 1.6–2.6 s and the
+  fastest chop octave cycles at about 1.3 Hz (23 frames a cycle), so neither
+  judders. **`idle` `"fade"`**, answered inside the picture (above).
+- **No `turtle` option.** The turtle is part of the approved picture and costs
+  nothing outside its 60 s pass.
+- **`speed` 1.0.** The turtle's period (216.66 s) equals the camera's tilt
+  period (2π/0.029) in scene time, so any speed keeps them locked.
+- **Built in**, because the scene needs `Target`/`Pass` descriptors, which the
+  `user_api` firewall keeps out of extensions (the reason for every picture
+  theme). Its whole cost is one source file.
+- **The name.** *Pelagic* is the open-water zone, away from shore and floor,
+  which is what the frame mostly shows; one word like Earth, Blocks and
+  Crystal, and unlikely to clash with a user's theme. *Ocean* is the likeliest
+  name for a future plain-colour theme, and *Deep Sea* is wrong (the camera is
+  about 10 m down in sunlit water).
 
 ## Cost
 
