@@ -6,6 +6,10 @@ file managers. Laid over :mod:`xefm.keymaps.common` by
 are in :mod:`xefm.keymap_presets`.
 """
 
+import sys
+
+from xefm.backend_detector import is_desktop_mode
+
 
 def own_bindings() -> dict:
     """Orthodox's keys: action name -> keys, each replacing that action's
@@ -17,7 +21,7 @@ def own_bindings() -> dict:
     # here and is reached from the menus and the command palette. Actions
     # from features not merged yet are listed too: ``apply`` skips any the
     # running XeFM does not have.
-    return {
+    keys = {
         # Application
         "help": ["F1"],
         "reread": ["F2", "Ctrl-R"],
@@ -106,3 +110,10 @@ def own_bindings() -> dict:
         "file_diff.search_next": ["F3"],
         "file_diff.search_prev": ["Shift-F3"],
     }
+    if is_desktop_mode() and sys.platform == "win32":
+        # TC's Ctrl-Num - clears the selection, so the Windows app's Ctrl-MINUS
+        # stays unselect_all here. Larger goes with it rather than standing
+        # alone: both are on View > Font Size. Ctrl-0 (back to FONT_SIZE) stays.
+        keys["increase_font_size"] = []
+        keys["decrease_font_size"] = []
+    return keys

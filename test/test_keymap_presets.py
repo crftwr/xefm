@@ -437,6 +437,68 @@ class QuitAppEverywhere(unittest.TestCase):
                                  (platform_name, preset))
 
 
+class FontSizeKeys(unittest.TestCase):
+    """The desktop app's text size keys: Cmd on macOS, Ctrl on Windows, under
+    every preset, except that Orthodox's Ctrl-MINUS clears the selection, so
+    its Windows app leaves Larger and Smaller to the menu and keeps Ctrl-0. A
+    terminal draws in its own font and gets none."""
+
+    ACTIONS = ("increase_font_size", "decrease_font_size", "reset_font_size")
+
+    def _keys(self, platform_name, backend, preset):
+        with _native_case(platform_name, backend, preset) as t:
+            return {a: t[a]["keys"] if isinstance(t[a], dict) else t[a]
+                    for a in self.ACTIONS}
+
+    def test_the_macos_app(self):
+        for preset in keymap_presets.PRESETS:
+            with self.subTest(preset=preset):
+                self.assertEqual(self._keys("darwin", "gui", preset), {
+                    "increase_font_size": ["Command-+", "Command-="],
+                    "decrease_font_size": ["Command-MINUS"],
+                    "reset_font_size": ["Command-0"]})
+
+    def test_the_windows_app(self):
+        for preset in keymap_presets.PRESETS:
+            with self.subTest(preset=preset):
+                orthodox = preset == keymap_presets.ORTHODOX
+                self.assertEqual(self._keys("win32", "gui", preset), {
+                    "increase_font_size": [] if orthodox else ["Ctrl-+", "Ctrl-="],
+                    "decrease_font_size": [] if orthodox else ["Ctrl-MINUS"],
+                    "reset_font_size": ["Ctrl-0"]})
+
+    def test_orthodox_keeps_ctrl_minus_for_unselect_all(self):
+        with _native_case("win32", "gui", keymap_presets.ORTHODOX) as t:
+            self.assertEqual(t["unselect_all"], ["Ctrl-MINUS"])
+
+    def test_no_preset_clashes_with_them_in_the_windows_app(self):
+        from collections import defaultdict
+        from xefm.actions import FILER, registry
+        own = {a.name for a in registry.actions(FILER)}
+        for preset in keymap_presets.PRESETS:
+            with self.subTest(preset=preset), \
+                    _native_case("win32", "gui", preset) as t:
+                kb = xefm_config.KeyBindings(t)
+                seen = defaultdict(list)
+                for action, value in t.items():
+                    if action not in own:
+                        continue
+                    keys = value["keys"] if isinstance(value, dict) else value
+                    sel = value.get("selection", "any") if isinstance(value, dict) else "any"
+                    for expr in keys:
+                        seen[(kb._parse_key_expression(expr), sel)].append(action)
+                clashes = {k: v for k, v in seen.items()
+                           if len(v) > 1 and set(v) & set(self.ACTIONS)}
+                self.assertEqual(clashes, {})
+
+    def test_a_terminal_gets_none(self):
+        for platform_name in ("darwin", "linux", "win32"):
+            for preset in keymap_presets.PRESETS:
+                self.assertEqual(self._keys(platform_name, "vt", preset),
+                                 {a: [] for a in self.ACTIONS},
+                                 (platform_name, preset))
+
+
 class InTheApp(unittest.TestCase):
 
     #: What keymap_presets.apply writes onto the config it is given.

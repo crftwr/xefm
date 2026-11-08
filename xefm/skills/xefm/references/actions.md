@@ -206,7 +206,13 @@ send them). These replace the row above in that app:
 - `command_palette` (OS native): `Ctrl-Shift-P`, `Ctrl-K`
 - `copy_paths` (OS native): `Ctrl-Shift-C`, `Ctrl-P`
 - `create_directory` (OS native): `Ctrl-Shift-N`, `F7`
+- `decrease_font_size` (AFX style): `Ctrl-MINUS`
+- `decrease_font_size` (OS native): `Ctrl-MINUS`
+- `decrease_font_size` (Vim style): `Ctrl-MINUS`
 - `file_details` (OS native): `Alt-ENTER`, `Alt-I`
+- `increase_font_size` (AFX style): `Ctrl-+`, `Ctrl-=`
+- `increase_font_size` (OS native): `Ctrl-+`, `Ctrl-=`
+- `increase_font_size` (Vim style): `Ctrl-+`, `Ctrl-=`
 - `open_with_os` (AFX style): `Ctrl-ENTER`, `Ctrl-O`
 - `open_with_os` (OS native): `Ctrl-ENTER`, `Ctrl-O`
 - `open_with_os` (Orthodox): `Ctrl-ENTER`, `Ctrl-O`
@@ -214,6 +220,10 @@ send them). These replace the row above in that app:
 - `quit_app` (OS native): `Alt-F4`
 - `quit_app` (Orthodox): `Alt-F4`
 - `quit_app` (Vim style): `Alt-F4`
+- `reset_font_size` (AFX style): `Ctrl-0`
+- `reset_font_size` (OS native): `Ctrl-0`
+- `reset_font_size` (Orthodox): `Ctrl-0`
+- `reset_font_size` (Vim style): `Ctrl-0`
 
 ## Inside viewers and dialogs
 

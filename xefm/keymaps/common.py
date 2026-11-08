@@ -483,8 +483,8 @@ def bindings() -> dict:
     # letters. Ctrl-O is also the search dialog's options key, in its own context
     # — the two surfaces never apply at once, so the letter carries both.
     #
-    # Only two things are worth overriding per case, and both are strong
-    # platform idioms rather than missing keys:
+    # What is overridden per case below are strong platform idioms rather
+    # than missing keys:
     if is_desktop_mode():
         if sys.platform == 'darwin':
             # The Finder gesture: a modifier on the same Enter that opens.
@@ -508,4 +508,12 @@ def bindings() -> dict:
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
+            # Every Windows browser's and Office's text size keys, the macOS
+            # set with Ctrl for Command. PuiKit's Windows window reports Ctrl
+            # on a punctuation key only after 1.23.0 (puikit 1017810); an
+            # older one never delivers Ctrl-+ / Ctrl-= / Ctrl-MINUS, leaving
+            # the View menu.
+            KEY_BINDINGS['increase_font_size'] = ['Ctrl-+', 'Ctrl-=']
+            KEY_BINDINGS['decrease_font_size'] = ['Ctrl-MINUS']
+            KEY_BINDINGS['reset_font_size'] = ['Ctrl-0']
     return KEY_BINDINGS
