@@ -60,12 +60,12 @@ meaning there.
 
 ## Scenes: hundreds of them, chosen at random
 
-A scene is a shot (10), a variant of it (12: variant 0 is the shot as
+A scene is a shot (16), a variant of it (12: variant 0 is the shot as
 composed, the others move longitude, latitude, altitude, tilt, sun direction,
 focal length, framing, the limb angle and the roll by fixed amounts hashed from
 the shot and variant; the altitude, tilt and roll ranges are per shot, so the
 low-orbit shots — `leo`, `horizon`, `ocean`, down to about 170 km — can turn the
-horizon any way round) and a lens look (10) — 1,200 in all. The roll turns the
+horizon any way round) and a lens look (10) — 1,920 in all. The roll turns the
 finished picture on the screen, after the sun and the limb framing are placed,
 so a rolled scene is the same lit composition at a new angle. Each 49-second slot (31 s held, an 18 s move) hashes with the seed:
 `h % LENS_COUNT` is the look, which the lens passes pick from the same hash;
@@ -151,6 +151,78 @@ the shot holds.
 Each slot's evaluation needs the compositions of five scenes (k−2…k+2: the
 knots of k−1…k+1 and the drift headings that place them), all a few dozen
 operations per pixel, small beside the atmosphere.
+
+### Two-slot scenes: `approach`, `departure` and `sunrise`
+
+Most shots are a composition with a small random drift. Two are scripted
+moves that need longer than a slot: `approach` falls from ~2 earth radii
+above northern India into the clouds in low evening sun, then tilts up to the
+horizon as the sun sets; `departure` climbs from ~250 km over Africa to ~7
+earth radii, tilting from the horizon down to nadir and rolling ~40° as the
+lit disc shrinks; `sunrise` holds a low-orbit horizon over the Pacific while
+the sun climbs from 4° below the visible horizon to 10° above it (its yaw and
+pitch both move, `SHOT_DYAW`/`SHOT_DSPITCH`). Each takes two slots (~100 s at `speed` 1), the hold of the
+first, a flown move, and the hold of the second.
+
+- **The table.** A two-slot scene is two columns at the end of the shot
+  arrays, one per half (`SHOT_PART` 1 and 2; `REGULAR_SHOTS` one-slot columns
+  come first). Each half is a straight run about its composition:
+  `SHOT_DALT`/`SHOT_DPITCH`/`SHOT_DYAW`/`SHOT_DSPITCH`/`SHOT_DROLL` per second replace the
+  random drift entirely (`SHOT_ROLL` is the composed roll), so the halves'
+  knots line up. The numbers come from keyframes at scene times 0, 31, 49 and
+  80 s (the two holds' ends): half A's composition is the midpoint of its
+  first two, its drift their slope, and so on.
+- **Picking.** A two-slot scene starts on an even slot and the odd slot after
+  it is its second half; an odd slot whose own pick would start one re-picks
+  among the one-slot shots (`pick(slot, seed, alone)`). The halves share the
+  first column's variant hash (`family`), so their jitter is the same.
+- **The join is always flown,** whatever the `GENTLE_*` limits say: the halves
+  are designed to meet, and the Fritsch–Butland tangents ease the descent to
+  a stop and the tilt in from rest across it.
+- **One look for the scene.** The lens asks `XEFM_LENS_SLOT(k, seed)` which
+  slot's look to show; a second half answers its first half's slot.
+- `scene_at()` in Python mirrors `scene_of`, for the tests.
+
+### The sun is set against the untilted camera
+
+The sun used to be placed relative to the camera's view, tilt included, so
+tilting the camera swung the light across the planet — a flown move between a
+nadir shot and a horizon shot turned the sun with it, and the `approach` tilt
+would have relit the ground as it rose. It is now placed against the camera
+before its tilt (`-d`, `rt`, `upT`): yaw from the earth's centre toward the
+right, pitch toward the horizon the camera tilts to. The one-slot shots'
+`SHOT_YAW`/`SHOT_SPITCH` were converted so each composes exactly as before;
+only a variant's tilt jitter no longer moves its sun.
+
+### Shots that need distance or a long lens
+
+- `eclipse` sits 16 earth radii out. From close in, the edge of the disc you
+  see is already on the night side (the tangent points face the camera, so the
+  sun is `asin(1/dist)` below their horizon) and no ring shows; at 16 radii
+  the sun is under 4° below it and the upper air is lit. A 4.5 lens keeps the
+  disc large.
+- `night` and `limb` are telephoto (2.5 and 5) pointed at the limb
+  (`pitch = asin(1/dist)`), so their tilt and altitude jitter are kept small —
+  a few hundredths of a radian moves the limb across the whole frame. The
+  airglow line is a few pixels only through the long lens; at 1.0 it is
+  sub-pixel. The exaggerated cloud shells (`clouds` 3) fill much of the limb's
+  air in `limb`, which shows as warm bands and, at the very edge, thin streaks.
+
+### Day and night on screen
+
+Measured on a Python port of the camera (every pixel classed as day, twilight,
+night or space by the sun's angle where its ray meets the ground; every shot
+gets 1/16 of the time, a two-slot scene half of that per half): seven of the
+sixteen shots showed no sunlit ground at all, 44 % of the time. `dawn`,
+`horizon` and `crescent` were moved: `dawn` now has the terminator crossing
+the disc (sun 18° below the camera's horizon), `horizon` sits just before
+morning with the ground lit toward the horizon (−7°), and `crescent` shows a
+thin lit sliver of ground (−42°). The split is now about 31 % of the time on
+shots that are all day (`day`, `glint`, `ocean`, `limb`, `departure`), 40 %
+mixed, and 28 % on shots with no lit ground (`crescent`, `rise`, `night`,
+`eclipse`, the first half of `sunrise`), which are kept for what the dark
+shows. Twilight — the sun within a few degrees of the horizon — reads as lit
+on screen, warm and grazing, so it counts on the day side here.
 
 ## Everything is a function of `time`
 

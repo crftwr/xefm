@@ -302,10 +302,10 @@ be distracting during real use.
 
 #### The Earth scene
 
-Left to itself, `earth` makes **scenes** by pairing a shot (one of ten, each in
+Left to itself, `earth` makes **scenes** by pairing a shot (one of sixteen, each in
 twelve compositions — moved round the planet, higher or lower, tilted, and turned
 so the Earth can lie at the bottom, the side or the top of the frame) with a lens
-look (one of ten) — 1,200 combinations. Each scene lasts about 50 seconds at
+look (one of ten) — 1,920 combinations. Each scene lasts about 50 seconds at
 `speed` `1.0` — about half a minute held, then a slow move of about 18 seconds into
 the next — with the camera moving slowly and steadily the whole time — around
 the planet, closer or further, the planet drifting and turning across the frame
@@ -314,7 +314,9 @@ When the next scene is close enough to reach at a calm pace, the camera travels
 there in one smooth move, the drift within a scene and the move between scenes
 flowing into each other; when it is not, the picture fades out and the next
 scene fades in, so the planet and the sun are never swung round faster than they
-drift. XeFM opens on a random scene, and returns from idle to a fresh one.
+drift. Three of the shots, `approach`, `departure` and `sunrise`, are longer —
+about 100 seconds — and tell a small story of their own (see the table below). XeFM opens
+on a random scene, and returns from idle to a fresh one.
 
 The picture is kept dim on purpose: no pixel of it is brighter than half white
 (`brightness`), so file names stay readable over a sunlit ocean.
@@ -339,15 +341,21 @@ The shots:
 | `shot` | What you see |
 |--------|--------------|
 | `day` | The full disc in daylight, Africa and Europe. |
-| `dawn` | Sunrise along the curve of the Earth over the western Pacific. |
-| `crescent` | A thin crescent, lit from behind, the atmosphere glowing on the edge. |
+| `dawn` | Morning over the western Pacific: the line between night and day sweeping across the curve of the Earth. |
+| `crescent` | A thin crescent of daylight on a dark Earth, lit from behind, the atmosphere glowing on the edge. |
 | `leo` | Low orbit, about 250 km up, looking across the Himalaya to the horizon. |
 | `terminator` | The line between day and night across the Andes. |
 | `glint` | The sun reflected off the central Pacific. |
 | `rise` | The sun slipping behind the edge of the Earth and back out — it shrinks and reddens as it goes, and the air beside it flares. |
 | `polar` | Over the Arctic. |
-| `horizon` | Sunrise along the horizon, seen from low orbit. |
+| `horizon` | Low orbit at the edge of morning: still night below, the ground lit toward the horizon and the sun beside it. |
 | `ocean` | The daylit Pacific seen obliquely from low orbit. |
+| `night` | The night side's edge through a longer lens: the thin green line of airglow, stars, and twilight low along one side. |
+| `eclipse` | The Earth from far off with the sun right behind it — a dark disc ringed by the glowing atmosphere. |
+| `limb` | A telephoto view of the daylit edge from low orbit: the layers of air thinning into black. |
+| `approach` | A long scene: falling from high above northern India toward the low evening sun, down into the clouds, then tilting up to the horizon as the sun sets. |
+| `departure` | A long scene: climbing away from low orbit over Africa, tilting down and slowly turning as the whole lit disc comes into view and shrinks among the stars. |
+| `sunrise` | A long scene: watching the horizon from low orbit over the Pacific as the sun comes up over it and the ground and clouds below light up. |
 
 A held shot still moves slowly, and keeps its composition as listed here; the
 other eleven compositions of each shot only come up when `shot` is left to choose.

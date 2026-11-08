@@ -20,7 +20,7 @@ from puikit.backends._metal import HAVE_METAL, MetalBackground
 
 from xefm import app as xefm_app
 from xefm import background_earth as earth
-from xefm.background_lens import Look, slot_hash
+from xefm.background_lens import Look
 from xefm.background_shaders import SCENE_OPTIONS, SHADER_KINDS
 
 metal_only = pytest.mark.skipif(not HAVE_METAL, reason="Metal unavailable")
@@ -55,13 +55,15 @@ class Options(unittest.TestCase):
 
     def test_there_are_hundreds_of_scenes(self):
         variants = int(_consts(earth.EARTH_MSL_BODY)["VARIANTS"])
+        self.assertEqual(variants, earth.VARIANTS)
         self.assertGreaterEqual(len(earth.SHOTS) * variants * len(earth.LENSES), 300)
 
     def test_a_named_shot_is_held(self):
-        for i, name in enumerate(earth.SHOTS):
+        for name in earth.SHOTS:
             for dialect in ("source", "source_hlsl"):
                 consts = _consts(earth.earth_shader(shot=name)[dialect])
-                self.assertEqual(consts["SHOT"].strip(), str(i), (name, dialect))
+                self.assertEqual(consts["SHOT"].strip(), str(earth.SHOT_COLUMNS[name]),
+                                 (name, dialect))
 
     def test_an_unknown_shot_cycles(self):
         self.assertEqual(_consts(earth.earth_shader(shot="moon")["source"])["SHOT"].strip(), "-1")
@@ -112,8 +114,29 @@ class Options(unittest.TestCase):
                              [float(v) for v in hlsl[name].split(",")], name)
 
     def test_every_shot_name_has_a_table_column(self):
+        # One column per one-slot scene, two (a half each) per two-slot scene.
         lon = re.search(r"SHOT_LON\[(\d+)\]", earth.EARTH_MSL_BODY)
-        self.assertEqual(int(lon.group(1)), len(earth.SHOTS))
+        self.assertEqual(int(lon.group(1)), earth.REGULAR_SHOTS + 2 * earth.LONG_SHOTS)
+        consts = _consts(earth.EARTH_MSL_BODY)
+        self.assertEqual(int(consts["REGULAR_SHOTS"]), earth.REGULAR_SHOTS)
+        self.assertEqual(int(consts["LONG_SHOTS"]), earth.LONG_SHOTS)
+        part = re.search(r"SHOT_PART\[\d+\]\s*=\s*\{([^}]*)\}", earth.EARTH_MSL_BODY)
+        parts = [int(v) for v in part.group(1).split(",")]
+        self.assertEqual(parts, [0] * earth.REGULAR_SHOTS + [1, 2] * earth.LONG_SHOTS)
+
+    def test_a_two_slot_scene_takes_an_even_slot_and_the_next(self):
+        firsts = {earth.SHOT_COLUMNS[n] for n in earth.SHOTS[earth.REGULAR_SHOTS:]}
+        seen = 0
+        for seed in range(300):
+            for slot in range(-4, 12):
+                col, var = earth.scene_at(slot, seed, 10)
+                if col in firsts:
+                    seen += 1
+                    self.assertEqual(slot % 2, 0)
+                    self.assertEqual(earth.scene_at(slot + 1, seed, 10), (col + 1, var))
+                elif col >= earth.REGULAR_SHOTS:
+                    self.assertEqual(earth.scene_at(slot - 1, seed, 10), (col - 1, var))
+        self.assertGreater(seen, 100)
 
 
 class ThemeResolution(unittest.TestCase):
@@ -204,13 +227,13 @@ class Rendering(unittest.TestCase):
 
     @staticmethod
     def _shot(slot, seed, lenses=len(earth.LENSES)):
-        """The shot the scene picks for ``slot`` — see ``camera`` in the shader."""
-        return (slot_hash(slot, seed) // lenses) % len(earth.SHOTS)
+        """The table column the scene picks for ``slot`` — see ``scene_of``."""
+        return earth.scene_at(slot, seed, lenses)[0]
 
     def test_auto_moves_to_the_next_scene(self):
         # Pure function of time: one scene in a slot, another a period on.
         fields = earth.earth_shader(lens="clean")
-        seed = next(s for s in range(200)
+        seed = next(s for s in range(5000)
                     if {self._shot(0, s, 1), self._shot(1, s, 1)} == {0, 2})   # day, crescent
         a = self._disc(self._frame(fields, 5.0, seed=seed))
         b = self._disc(self._frame(fields, 5.0 + earth.SHOT_SECONDS, seed=seed))
@@ -243,7 +266,7 @@ class Rendering(unittest.TestCase):
         # flown in 18 s that whips the light across the planet, so the picture
         # fades out, cuts in the dark and fades in on the next scene instead.
         fields = earth.earth_shader(lens="clean")
-        seed = next(s for s in range(200)
+        seed = next(s for s in range(5000)
                     if (self._shot(0, s, 1), self._shot(1, s, 1)) == (0, 2))   # day -> crescent
         hold = earth.SHOT_SECONDS - earth.TRANSITION
         self.assertGreater(self._brightest(self._frame(fields, hold + 1.0, seed=seed)), 40)
