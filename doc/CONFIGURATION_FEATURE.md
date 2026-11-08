@@ -89,6 +89,14 @@ monospaced face makes rows taller. A change to `MONO_FONT_NAME` or `FONT_SIZE`
 applies when you reload the configuration; a change to `UI_FONT_NAME` applies at
 the next launch.
 
+To make the text larger or smaller for a while without editing `config.py`, use
+**View → Font Size** (**Larger**, **Smaller**, **Default Size**); the keys are on
+[Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side). The size
+changes one point at a time, between 8 and 72, and is not saved: the next launch
+starts from `FONT_SIZE` again. Changing `FONT_SIZE` and reloading also replaces
+it. In a terminal this menu is not there; use the terminal's own font setting.
+On Windows these actions have no keys yet.
+
 ### Symbols your terminal font draws full-width (advanced)
 
 Some terminal fonts (HackGen, for one) draw symbols such as `○ □ ★ ●` at full

@@ -64,7 +64,19 @@ every window gets a RESIZE and lays out again, and the file panes drop their
 measured column widths first (`FilePane.forget_measurements`). XeFM keeps no
 other length measured across frames; a new cache of one has to be dropped
 there too. A value that fails validation is left for the next launch rather
-than handed to the backend. Values consumed **once at construction** —
+than handed to the backend.
+
+**View → Font Size** (`increase_font_size` / `decrease_font_size` /
+`reset_font_size`, desktop app only) sets `XeFMApp._font_size_override`, a
+size for this run that is never saved, and pushes the same way
+(`_push_base_font`). A reload that changes `FONT_SIZE` drops the override, since
+the size just written is the one wanted; a reload that changes only
+`MONO_FONT_NAME` keeps it. In a terminal the actions only log that the terminal
+sets the size, and the menu and help rows are left out (`_BACKEND_GATED`).
+Their keys are bound for the macOS app only (`keymap_afx`'s desktop block;
+listed on doc/KEYMAP_PRESETS_FEATURE.md): the Windows backend does not report
+Ctrl with `=` or `-` yet, so the Windows equivalents would be bound and never
+arrive. Values consumed **once at construction** —
 `UI_FONT_NAME` (not part of the base font), splitter fractions
 (`pane_splitter` / `content_splitter`), and file-monitoring intervals — are not
 re-derived, so they apply on next launch. The reload log line states this

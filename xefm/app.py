@@ -936,12 +936,19 @@ def _build_theme_list(config) -> list[tuple[str, Theme]]:
     return themes
 
 
-def _base_font(config) -> Font:
+def _base_font(config, size=None) -> Font:
     """The pixel backends' base (grid) font from ``config``: ``MONO_FONT_NAME``
-    at ``FONT_SIZE``. Given to the backend at launch and again by
-    ``XeFMApp._apply_base_font`` when a config reload changes either."""
-    return Font(family=config.MONO_FONT_NAME, size=float(config.FONT_SIZE),
+    at ``FONT_SIZE``, or at ``size`` when the user has adjusted it for this run
+    (``XeFMApp._step_font_size``). Given to the backend at launch and again
+    whenever either changes."""
+    return Font(family=config.MONO_FONT_NAME,
+                size=float(config.FONT_SIZE if size is None else size),
                 monospace=True)
+
+
+#: The range ``FONT_SIZE`` is validated against, which the temporary
+#: adjustment keeps to as well.
+_FONT_SIZE_MIN, _FONT_SIZE_MAX = 8, 72
 
 
 #: Between a search's banner and the root its rows are named from.
@@ -1991,6 +1998,9 @@ class XeFMApp:
     #: False means "drain queues via the polling tick" — also the right behavior
     #: for a partially constructed app (unit tests that drive listings manually).
     _event_driven = False
+    #: The font size adjusted from View > Font Size for this run, or None to
+    #: use ``FONT_SIZE``. Never saved: a launch starts from config.py.
+    _font_size_override: int | None = None
 
     def __init__(self, backend, left_dir: str, right_dir: str, *,
                  left_provided: bool = True, right_provided: bool = True,
@@ -4194,6 +4204,9 @@ class XeFMApp:
                 "adjust_log_down": (
                     lambda: self._nudge(self.content_splitter, +self._LOG_STEP), True),
                 "reset_log_height": (self._act_reset_log_height, True),
+                "increase_font_size": (lambda: self._step_font_size(+1), True),
+                "decrease_font_size": (lambda: self._step_font_size(-1), True),
+                "reset_font_size": (lambda: self._step_font_size(0), True),
                 "scroll_log_up": (lambda: self.log.scroll_by(-1.0), True),
                 "scroll_log_down": (lambda: self.log.scroll_by(+1.0), True),
                 "scroll_log_page_up": (
@@ -5242,6 +5255,7 @@ class XeFMApp:
             MenuItem("Sort By", submenu=sort_menu),
             SEPARATOR,
             MenuItem("Theme", submenu=self._theme_menu(sc)),
+            *self._font_size_menu(sc),
             SEPARATOR,
             MenuItem("Quick View", on_select=lambda: self._menu("quick_view"),
                      checked=lambda: self._quick_view is not None,
@@ -6133,12 +6147,51 @@ class XeFMApp:
                 and getattr(old_config, "FONT_SIZE", None) == new_config.FONT_SIZE):
             return
         size, family = new_config.FONT_SIZE, new_config.MONO_FONT_NAME
-        if (not isinstance(size, int) or not 8 <= size <= 72
+        if (not isinstance(size, int) or not _FONT_SIZE_MIN <= size <= _FONT_SIZE_MAX
                 or (family is not None and (not isinstance(family, str) or not family.strip()))):
             return  # validate_config has already said what is wrong
+        if getattr(old_config, "FONT_SIZE", None) != size:
+            # The size just written in config.py is the one wanted now, over
+            # one adjusted from the menu; a new face alone keeps that one.
+            self._font_size_override = None
+        self._push_base_font(new_config)
+
+    def _push_base_font(self, config) -> None:
+        """Give the backend the base font for ``config`` at the size in force,
+        after the file panes drop the column widths measured with the old one."""
         for view in (self.left_view, self.right_view):
             view.forget_measurements()
-        self.backend.set_base_font(_base_font(new_config))
+        self.backend.set_base_font(_base_font(config, self._font_size_override))
+
+    def _configured_font_size(self) -> int:
+        """``FONT_SIZE`` from the config, or the default 12 when it is not a
+        valid size (``validate_config`` reports that one)."""
+        size = getattr(self.config, "FONT_SIZE", 12)
+        if isinstance(size, int) and _FONT_SIZE_MIN <= size <= _FONT_SIZE_MAX:
+            return size
+        return 12
+
+    def _step_font_size(self, step: int) -> None:
+        """Make the text one point larger (``step`` 1) or smaller (-1) for
+        this run, or put it back to ``FONT_SIZE`` (0). Not saved: the next
+        launch starts from ``config.py`` again. A terminal draws in its own
+        font, which XeFM cannot change, so there this only says so."""
+        if not is_desktop_mode():
+            self.log_info("Font size: set by the terminal - use the terminal's "
+                          "own setting to change it")
+            return
+        base = self._configured_font_size()
+        current = self._font_size_override or base
+        size = base if step == 0 else max(_FONT_SIZE_MIN, min(_FONT_SIZE_MAX, current + step))
+        if size == current:
+            if step:
+                limit = "largest" if step > 0 else "smallest"
+                self.log_info(f"Font size: {size} pt is the {limit}")
+            return
+        self._font_size_override = None if size == base else size
+        self._push_base_font(self.config)
+        note = " (FONT_SIZE)" if size == base else " until XeFM quits"
+        self.log_info(f"Font size: {size} pt{note}")
 
     def _reload_themes(self, config) -> None:
         """Rebuild ``self.themes`` from ``config`` and stay on the active theme by
@@ -6726,6 +6779,21 @@ class XeFMApp:
                        checked=(lambda i=i: self._theme_index == i))
               for i, (name, _theme) in enumerate(self.themes)],
             title="Theme")
+
+    def _font_size_menu(self, sc) -> list:
+        """View > Font Size, in the desktop app only: a terminal draws in its
+        own font, so there is nothing for it to change there."""
+        if not is_desktop_mode():
+            return []
+        return [MenuItem("Font Size", submenu=Menu(
+            MenuItem("Larger", on_select=lambda: self._menu("increase_font_size"),
+                     shortcut=sc("increase_font_size")),
+            MenuItem("Smaller", on_select=lambda: self._menu("decrease_font_size"),
+                     shortcut=sc("decrease_font_size")),
+            MenuItem("Default Size", on_select=lambda: self._menu("reset_font_size"),
+                     enabled=lambda: self._font_size_override is not None,
+                     shortcut=sc("reset_font_size")),
+            title="Font Size"))]
 
     def _apply_theme(self, index: int) -> None:
         """Switch the active palette. One assignment recolors every widget: the
@@ -12133,6 +12201,9 @@ class XeFMApp:
             ("diff_files", "Compare two selected files"),
             ("toggle_hidden", "Toggle hidden files"),
             ("toggle_color_scheme", "Cycle color theme (View menu)"),
+            ("increase_font_size", "Larger text until XeFM quits (View menu)"),
+            ("decrease_font_size", "Smaller text until XeFM quits (View menu)"),
+            ("reset_font_size", "Text back to FONT_SIZE (View menu)"),
             ("sort", "Sort dialog (key F/E/S/T + order)"),
             ("quick_sort_name", "Quick-sort by name (repeat: reverse)"),
             ("quick_sort_size", "Quick-sort by size (repeat: reverse)"),
@@ -12182,6 +12253,10 @@ class XeFMApp:
     #: only wants to know whether the key it would print does anything.
     _BACKEND_GATED = {
         "menu": lambda self: self.menu_bar.takes_activation_key,
+        # A terminal draws in its own font (View > Font Size is not there).
+        "increase_font_size": lambda self: is_desktop_mode(),
+        "decrease_font_size": lambda self: is_desktop_mode(),
+        "reset_font_size": lambda self: is_desktop_mode(),
     }
 
     def _help_entries(self, entries):

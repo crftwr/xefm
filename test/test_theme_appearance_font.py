@@ -129,3 +129,91 @@ def test_file_pane_forgets_its_measurements():
     view._measure_cache = (("key",), {"values": {0: 5.0}})
     view.forget_measurements()
     assert view._measure_cache == (None, None)
+
+
+# -- temporary font size (View > Font Size) ----------------------------------
+
+def _desktop_app(monkeypatch, *, desktop=True, size=12):
+    monkeypatch.setattr(xefm_app, "is_desktop_mode", lambda: desktop)
+    app = _app()
+    app.config = _cfg(None, size)
+    app.logged = []
+    app.log_info = app.logged.append
+    return app
+
+
+def _sizes(app):
+    return [font.size for kind, font in app.backend.calls if kind == "font"]
+
+
+def test_larger_and_smaller_step_one_point(monkeypatch):
+    app = _desktop_app(monkeypatch)
+    app._step_font_size(+1)
+    app._step_font_size(+1)
+    app._step_font_size(-1)
+    assert _sizes(app) == [13.0, 14.0, 13.0]
+    assert app._font_size_override == 13
+    assert app.left_view.forgotten == 3
+
+
+def test_default_size_goes_back_to_font_size(monkeypatch):
+    app = _desktop_app(monkeypatch, size=14)
+    app._step_font_size(+1)
+    app._step_font_size(0)
+    assert _sizes(app) == [15.0, 14.0]
+    assert app._font_size_override is None
+    app._step_font_size(0)                 # already there: nothing to do
+    assert _sizes(app) == [15.0, 14.0]
+
+
+def test_stepping_back_to_font_size_clears_the_override(monkeypatch):
+    app = _desktop_app(monkeypatch)
+    app._step_font_size(+1)
+    app._step_font_size(-1)
+    assert app._font_size_override is None
+
+
+def test_the_size_stops_at_the_valid_range(monkeypatch):
+    app = _desktop_app(monkeypatch, size=72)
+    app._step_font_size(+1)
+    assert _sizes(app) == [] and "largest" in app.logged[-1]
+    app = _desktop_app(monkeypatch, size=8)
+    app._step_font_size(-1)
+    assert _sizes(app) == [] and "smallest" in app.logged[-1]
+
+
+def test_a_terminal_only_says_so(monkeypatch):
+    app = _desktop_app(monkeypatch, desktop=False)
+    app._step_font_size(+1)
+    assert app.backend.calls == [] and app._font_size_override is None
+    assert "terminal" in app.logged[-1]
+
+
+def test_reload_keeps_the_size_when_font_size_is_unchanged(monkeypatch):
+    app = _desktop_app(monkeypatch)
+    app._step_font_size(+1)                # 13 for this run
+    app._apply_base_font(_cfg(None, 12), _cfg("Menlo", 12))
+    [*_, (kind, font)] = app.backend.calls
+    assert (font.family, font.size) == ("Menlo", 13.0)
+
+
+def test_a_new_font_size_in_config_wins_over_the_adjusted_one(monkeypatch):
+    app = _desktop_app(monkeypatch)
+    app._step_font_size(+1)
+    app._apply_base_font(_cfg(None, 12), _cfg(None, 16))
+    assert _sizes(app)[-1] == 16.0
+    assert app._font_size_override is None
+
+
+# -- how the keys read in a menu and the help ---------------------------------
+
+def test_named_punctuation_shows_as_its_glyph():
+    # A native menu reads the hint as a key: "Cmd-Minus" or "Cmd-Left_bracket"
+    # showed no accelerator at all.
+    from xefm.config import KeyBindings
+    kb = KeyBindings({})
+    assert kb.format_key_for_display("Command-MINUS") == "Cmd--"
+    assert kb.format_key_for_display("Command-LEFT_BRACKET") == "Cmd-["
+    assert kb.format_key_for_display("Command-RIGHT_BRACKET") == "Cmd-]"
+    assert kb.format_key_for_display("Ctrl-COMMA") == "Ctrl-,"
+    assert kb.format_key_for_display("Shift-EQUAL") == "Shift-="
