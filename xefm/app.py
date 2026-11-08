@@ -767,6 +767,26 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                      animation={"type": "crystal", "color": (88, 199, 222), "speed": 1.0,
                                 "opacity": 1.0},
                      opacity=0.6)),
+    # Pelagic: open water about ten metres down, looking up (the ``pelagic``
+    # scene, see xefm.background_pelagic) — jellyfish drifting through sun
+    # shafts, Snell's window overhead, now and then a turtle far off. The base is
+    # the deep water looking down, the chrome its pale cyan; amber marks what to
+    # find. Physically coloured like Earth: the scene ignores ``ink``.
+    ("Pelagic", dict(bg=(3, 22, 26), fg=(207, 230, 234), muted=(127, 166, 173),
+                     accent=(88, 199, 222), surface=(5, 20, 24), selection=(24, 72, 84),
+                     accent2=(255, 154, 82),
+                     status=lambda p: mix(p["bg"], p["accent"], 0.14),
+                     footer=lambda p: mix(p["bg"], p["accent"], 0.14),
+                     file_types={"directory": (159, 216, 227), "link": (236, 132, 200)},
+                     cursor={"active": (255, 154, 82)},
+                     syntax={"keyword": (120, 210, 228), "string": (255, 182, 120),
+                             "comment": (127, 166, 173), "number": (255, 214, 150),
+                             "operator": (196, 176, 255), "builtin": (140, 222, 170)},
+                     post_effect={"drop_shadow": 0.5},
+                     # Tuned at speed 1: the turtle's pass is locked to the
+                     # camera's tilt cycle in scene time, so any speed keeps it.
+                     animation={"type": "pelagic", "speed": 1.0, "opacity": 1.0},
+                     opacity=0.6)),
 ]
 
 THEMES: list[tuple[str, Theme]] = [(name, _theme(**spec)) for name, spec in _THEME_SPECS]

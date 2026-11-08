@@ -61,7 +61,7 @@ you switch to the theme and off when you switch away. You can add your own theme
 
 ### Picture themes
 
-Three themes put a *picture* behind the panes rather than a pattern: a scene
+Four themes put a *picture* behind the panes rather than a pattern: a scene
 lit and filmed like a photograph, slowly moving, kept dim so the file list stays
 readable on top. Like the screen effects, the picture is drawn only by the
 desktop app; a terminal shows the palette alone.
@@ -84,6 +84,12 @@ desktop app; a terminal shows the palette alone.
   life, the camera drifting a few centimetres off the rock with the focus
   following what is in the middle of the frame. Graphite, the icon's cyan and
   amber. See [The Crystal scene](#the-crystal-scene).
+- **Pelagic** — open water seen from about ten metres down, looking up:
+  translucent jellyfish drifting and pulsing through the frame, sun shafts that
+  lean and sway with the waves, the rippling surface overhead with the sun
+  glinting through it, marine snow, the sea floor fading in along the bottom, and once every few
+  minutes a sea turtle passing low and far off. Deep teal, a pale sea cyan for
+  the chrome, amber for the cursor. See [The Pelagic scene](#the-pelagic-scene).
 
 ## What Gets Colored
 
@@ -170,8 +176,8 @@ Animations are drawn in **your theme's own colours** — the line colour comes f
 the theme foreground and the backdrop from the theme background — so a scene stays
 on-palette whichever theme (or custom palette) you use. In `blocks` the colour is
 the light that leaks between the columns, and in `crystal` it is the glass. The
-exception is `earth`, a picture of the planet in its natural colours: it takes
-only the theme background, as the colour it is shown over.
+exceptions are `earth` and `pelagic`, pictures in their natural colours: they take
+only the theme background, as the colour they are shown over.
 
 > **Desktop mode only.** Animations need real pixels. They are rendered by the
 > desktop backend, on macOS/Windows. In a terminal there
@@ -191,6 +197,7 @@ only the theme background, as the colour it is shown over.
 | `earth` | The Earth from orbit — surface, clouds at three heights that slide against the ground as the camera moves, a glowing atmosphere with sunrise and sunset along the edge, sunlight glinting off the oceans, a dark night side with no city lights, stars and a faint Milky Way. A slow camera moves between composed shots, and a choice of lens looks (film, anamorphic, CRT and more) is applied to the picture only, never to the panes. See [The Earth scene](#the-earth-scene). |
 | `blocks` | A field of rounded metal columns in blue fog, rising and falling slowly and unevenly, with light leaking up through the gaps now and then and glowing on their sides; a camera loops through composed shots over about five minutes. See [The Blocks scene](#the-blocks-scene). |
 | `crystal` | A macro of small cyan crystals growing out of craggy black basalt: refracting glass with green inclusions, a mossy coat where glass meets rock, a swinging studio key light and a cyan rim, cyan-tinted shadows, and a depth of field that keeps what is in the middle of the frame sharp. See [The Crystal scene](#the-crystal-scene). |
+| `pelagic` | Open water from about ten metres down, looking up: moon jellyfish swimming slow paths with their tentacles streaming behind, pulsing as they go; the rippling surface with the sun and sky seen through it; sun shafts that sway with the swell; drifting marine snow; the sea floor along the bottom, white sand or dark coral, melting into the water further off; and, every few minutes, a distant turtle. See [The Pelagic scene](#the-pelagic-scene). |
 | `hologram` | A depth of holographic panels drifting toward you, each a small flat readout — pseudo-text that types itself out left to right, bar and line charts, progress bars, ring gauges, wireframe meshes — struck here and there with a warm accent. Panels fade up, hold and vanish on their own clock as the field flies slowly past, with a fine haze of distant ones behind, a few thick speed streaks raking outward from the vanishing point, soft out-of-focus dots and strokes drifting slowly across it all, and bright traffic — barcode bursts, dashes and dots — running fast along horizontal lanes. |
 
 The UI toolkit's own `cube` (a spinning wireframe) also works. It exists as a
@@ -206,16 +213,16 @@ advances the scene behind the UI without XeFM having to redraw the interface.
 They need **desktop mode**, on macOS or Windows. In a
 terminal there are no pixels to draw into, so the `animation` key is ignored and
 you get the plain theme background. The same is true on the rare desktop setup
-with no usable GPU shader support. `earth`, `blocks` and `crystal` also need
-desktop mode in the strict sense: the browser (web) mode shows the plain
+with no usable GPU shader support. `earth`, `blocks`, `crystal` and `pelagic` also
+need desktop mode in the strict sense: the browser (web) mode shows the plain
 background for them.
 
 ### Turning one on
 
 Animations are chosen per theme. Among the built-in themes, **Sci-Fi** ships with
 the starfield, **Cyber** with the hologram, **Shinagawa** with the wave,
-**Earth** with the earth, **Blocks** with the blocks and **Crystal** with the
-crystal; select one from **View → Theme**.
+**Earth** with the earth, **Blocks** with the blocks, **Crystal** with the
+crystal and **Pelagic** with the pelagic scene; select one from **View → Theme**.
 
 To use one in your own theme, add an `animation` key to a theme in the `THEMES`
 dict in `~/.xefm/config.py`:
@@ -264,6 +271,9 @@ battery — while you were reading something else. So it doesn't:
   palette already has.
 - `earth`, `blocks` and `crystal` are the exceptions. Every frame of them is a
   picture, so instead of fading they slow gently to a stop and **hold** it.
+- `pelagic` is in between: it keeps moving while its jellyfish and the water's
+  surface fade away, then holds the still water, sun shafts and floor — nothing
+  left frozen in mid-swim.
 - `earth` then does not resume that scene when you come back to XeFM: over a few
   seconds it fades out and fades in on a new one, picked at random — once per
   return. Moving
@@ -423,6 +433,30 @@ XeFM has, so it renders at 30 frames a second, which its slow camera does not
 show. When the theme is chosen it spends its first half-second preparing the
 rock, with the plain background shown meanwhile. The scene was tuned at
 `speed` `1.0`, which the **Crystal** theme uses.
+
+#### The Pelagic scene
+
+`pelagic` takes these keys of its own:
+
+```python
+'animation': {'type': 'pelagic', 'jellyfish': 3, 'brightness': 0.6},
+```
+
+| Key | Meaning |
+|-----|---------|
+| `jellyfish` | How many jellyfish swim through the scene, 0–6. Default `6`. Fewer also make the scene lighter work for the graphics card. |
+| `exposure` | How much light the camera takes in, 0.1–4. |
+| `brightness` | The brightest the picture may be, as a fraction of white, 0–1. Default `0.7`. |
+
+The water is drawn in its natural colours, so the scene does not follow the
+theme colour. Its colour drifts slowly between blue-green and a clearer blue
+over about eight and a half minutes, and the floor along the bottom of the
+frame between white sand and dark coral over about eleven and a half. A
+jellyfish that drifts very close to the camera fades away rather than filling
+the window. It renders at 30 frames a second, which its slow drift does not
+show. The turtle's passes are timed to the camera's own slow tilt, so it comes
+by while the floor is in view, about once every three and a half minutes. The
+scene was tuned at `speed` `1.0`, which the **Pelagic** theme uses.
 
 ### Using an image instead
 
@@ -599,7 +633,8 @@ With it on:
 - dialogs appear at once instead of scaling in;
 - text appears immediately instead of decoding in;
 - an animated theme background (Sci-Fi's starfield, Shinagawa's wave, Earth's
-  planet, the Blocks columns, the Crystal macro and the rest) decelerates to a
+  planet, the Blocks columns, the Crystal macro, the Pelagic jellyfish and the
+  rest) decelerates to a
   stop and holds a still frame;
 - a CRT-style theme keeps its glow, scanlines and vignette — the screen still
   looks like a CRT — but the rolling band and flicker stop.

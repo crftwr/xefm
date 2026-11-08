@@ -46,10 +46,15 @@ _INK, _BACKDROP = (200, 224, 245), (16, 30, 50)
 #: They are filmed through a lens (passes, and textures or a baked volume), which
 #: the web backend does not run, so they ship no GLSL. See test_background_earth.py and
 #: test_background_blocks_crystal.py for what they promise instead.
-PICTURES = {"earth", "blocks", "crystal"}
+PICTURES = {"earth", "blocks", "crystal", "pelagic"}
 
-#: The one scene that ignores ``ink``: Earth is physically coloured.
-INKLESS = {"earth"}
+#: Scenes that ignore ``ink``: Earth and Pelagic are physically coloured.
+INKLESS = {"earth", "pelagic"}
+
+#: Pictures that answer the idle fade inside the picture rather than dissolving
+#: to the backdrop: Pelagic fades its jellyfish and surface, and parks on the
+#: still water (test_background_pelagic.py holds it to that).
+PARTIAL_FADE = {"pelagic"}
 
 
 def _shader(kind):
@@ -61,7 +66,8 @@ class Registry(unittest.TestCase):
     def test_expected_shaders_are_offered(self):
         self.assertEqual(set(SHADER_KINDS),
                          {"wave", "rain", "starfield", "grid", "constellation",
-                          "datastream", "hologram", "earth", "blocks", "crystal"})
+                          "datastream", "hologram", "earth", "blocks", "crystal",
+                          "pelagic"})
 
     def test_each_entry_is_valid_shader_kwargs(self):
         # The dict is splatted straight into Shader(...), so a stray key would
@@ -83,7 +89,7 @@ class Registry(unittest.TestCase):
         # instead. A scene composed to be looked at still says "freeze" — the
         # pictures, and only they.
         for kind, params in SHADER_KINDS.items():
-            expected = "freeze" if kind in PICTURES else "fade"
+            expected = "freeze" if kind in PICTURES - PARTIAL_FADE else "fade"
             self.assertEqual(Shader(**params).idle, expected, kind)
 
     def test_every_scene_ships_an_hlsl_translation(self):
@@ -270,7 +276,7 @@ class Compilation(unittest.TestCase):
         # uniform to zero, so at zero every scene must leave the *bare backdrop* —
         # not a dimmed version of itself. A scene that added its colour rather than
         # mixing over the backdrop would park on a visible ghost.
-        for kind in SHADER_KINDS:
+        for kind in set(SHADER_KINDS) - PARTIAL_FADE:
             renderer = MetalBackground()
             self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
             px = MetalBackground.texture_pixels(
@@ -334,7 +340,7 @@ class CompilationD3D(unittest.TestCase):
 
     def test_every_shader_vanishes_at_zero_fade(self):
         renderer = D3DShaderBackground()
-        for kind in SHADER_KINDS:
+        for kind in set(SHADER_KINDS) - PARTIAL_FADE:
             self.assertTrue(renderer.set_shader(_shader(kind)), renderer.error)
             px = renderer.render_pixels(160, 100, 2.0, 0.0)   # see the Metal twin
             off = [i for i in range(0, len(px), 4)

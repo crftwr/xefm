@@ -58,6 +58,8 @@ from xefm.background_crystal import AVAILABLE as CRYSTAL_AVAILABLE
 from xefm.background_crystal import OPTIONS as CRYSTAL_OPTIONS, crystal_shader
 from xefm.background_earth import AVAILABLE as EARTH_AVAILABLE
 from xefm.background_earth import OPTIONS as EARTH_OPTIONS, earth_shader
+from xefm.background_pelagic import AVAILABLE as PELAGIC_AVAILABLE
+from xefm.background_pelagic import OPTIONS as PELAGIC_OPTIONS, pelagic_shader
 
 try:
     from puikit.background import Shader as _Shader
@@ -4007,6 +4009,9 @@ SHADER_KINDS: dict[str, dict] = {
     # field (xefm.background_crystal). Each brings its own lens.
     **({"blocks": blocks_shader()} if BLOCKS_AVAILABLE else {}),
     **({"crystal": crystal_shader()} if CRYSTAL_AVAILABLE else {}),
+    # Open water looking up: jellyfish, sun shafts, Snell's window, a turtle now
+    # and then (xefm.background_pelagic). Physically coloured, like Earth.
+    **({"pelagic": pelagic_shader()} if PELAGIC_AVAILABLE else {}),
 }
 
 #: Scenes that take options of their own beyond the shared ``speed``/``opacity``/
@@ -4017,4 +4022,5 @@ SCENE_OPTIONS: dict[str, tuple[tuple[str, ...], Callable[..., dict]]] = {
     **({"earth": (EARTH_OPTIONS, earth_shader)} if EARTH_AVAILABLE else {}),
     **({"blocks": (BLOCKS_OPTIONS, blocks_shader)} if BLOCKS_AVAILABLE else {}),
     **({"crystal": (CRYSTAL_OPTIONS, crystal_shader)} if CRYSTAL_AVAILABLE else {}),
+    **({"pelagic": (PELAGIC_OPTIONS, pelagic_shader)} if PELAGIC_AVAILABLE else {}),
 }

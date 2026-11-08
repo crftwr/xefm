@@ -1,6 +1,6 @@
 # Background lens — system
 
-The picture themes (Earth, Blocks, Crystal) render linear HDR and are filmed
+The picture themes (Earth, Blocks, Crystal, Pelagic) render linear HDR and are filmed
 through a camera look: bloom, a streak, flare ghosts, distortion, a colour
 grade, film grain, CRT and scope masks, depth of field, a brightness ceiling.
 That look is XeFM's (`xefm/background_lens.py`). PuiKit runs it but does not
@@ -9,7 +9,7 @@ know what it is: to PuiKit it is a list of passes through offscreen targets.
 | Where | What |
 |---|---|
 | `xefm/background_lens.py` | `Look` (one look's parameters), `lens_shader()` (a scene plus the lens, as `Shader` fields), the pass shaders in MSL and HLSL, `xefm_slot_hash` |
-| `xefm/background_earth.py`, `_blocks.py`, `_crystal.py` | The scenes; each calls `lens_shader()` with its looks |
+| `xefm/background_earth.py`, `_blocks.py`, `_crystal.py`, `_pelagic.py` | The scenes; each calls `lens_shader()` with its looks |
 | PuiKit `puikit/background.py` | `Target`, `Pass`, `ShaderTexture.name`, `Shader.targets` / `passes` |
 | PuiKit `backends/_bg_graph.py` | Checks a graph, resolves names to slots, lays out bakes, packs `PassUniforms` |
 | PuiKit `backends/_metal.py`, `_d3d_shader.py` | Allocate targets, bind inputs, draw each pass |
@@ -79,7 +79,11 @@ reshape either blend by defining a macro ahead of the lens source:
 `XEFM_LENS_WEIGHT(slot, seed, x)` returns the next look's weight at progress
 `x` through the slot's transition (default: smoothstep of `x`), and
 `XEFM_LENS_RESEED_WEIGHT(mix)` the new seed's weight (default: `mix`). Earth
-uses them to change look in the dark of a dip. It runs per pixel
+uses them to change look in the dark of a dip. Another, `XEFM_LENS_OPACITY(opacity)`,
+is how much of the finished picture covers the backdrop in the composite
+(default: the `opacity` uniform, which the idle fade scales); Pelagic defines it
+as `1.0` and answers the fade inside its picture, fading only its jellyfish and
+surface. `lens_look()` runs per pixel
 in the composite and the first downsample, which costs a few hashes and a dozen
 `mix` calls. What it buys:
 

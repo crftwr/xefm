@@ -35,7 +35,10 @@ defining ``XEFM_LENS_WEIGHT(slot, seed, x)`` (the weight of the next slot's look
 at progress ``x`` through the transition), ``XEFM_LENS_RESEED_WEIGHT(mix)`` or
 ``XEFM_LENS_SLOT(slot, seed)`` (the slot whose look a slot shows, for a scene
 that spans several) as macros in its source -- the Earth scene does, to change the look while the
-picture is dark. A scene that moves between compositions hashes the same
+picture is dark. ``XEFM_LENS_OPACITY(opacity)`` is how much of the finished
+picture covers the backdrop (default: the ``opacity`` uniform, which the idle
+fade scales); a scene that answers the fade itself, inside the picture, defines
+it as ``1.0`` -- the Pelagic scene does, fading only its jellyfish and surface. A scene that moves between compositions hashes the same
 slot (:data:`SLOT_HASH_MSL`) with the bits the look did not use, so its camera
 and its look change together — and the whole picture stays a function of its
 uniforms, which a backend that advances it on its own requires.
@@ -268,6 +271,9 @@ LENS_MSL = r"""
 // --- the lens (xefm.background_lens) -----------------------------------------
 #ifndef XEFM_LENS_SLOT
 #define XEFM_LENS_SLOT(k, seed) (k)   // the slot whose look slot k shows
+#endif
+#ifndef XEFM_LENS_OPACITY
+#define XEFM_LENS_OPACITY(o) (o)      // how much of the picture covers the backdrop
 #endif
 struct LensLook { float4 r[12]; };
 // r[0] aberration, distortion, bloom, streak   r[1] ghosts, saturation, contrast, grain
@@ -552,7 +558,7 @@ fragment float4 lens_composite(float4 pos [[position]],
     col *= 1.0 - smoothstep(vis * 0.5 - 0.001, vis * 0.5, abs(uv.y - 0.5));
 
     col += (lens_hash12(pos.xy + 17.0 * fract(u.time)) - 0.5) / 255.0;
-    return float4(mix(u.backdrop.rgb, clamp(col, 0.0, 1.0) * ld.w, u.opacity), 1.0);
+    return float4(mix(u.backdrop.rgb, clamp(col, 0.0, 1.0) * ld.w, XEFM_LENS_OPACITY(u.opacity)), 1.0);
 }
 """
 
@@ -560,6 +566,9 @@ LENS_HLSL = r"""
 // --- the lens (xefm.background_lens) -----------------------------------------
 #ifndef XEFM_LENS_SLOT
 #define XEFM_LENS_SLOT(k, seed) (k)   // the slot whose look slot k shows
+#endif
+#ifndef XEFM_LENS_OPACITY
+#define XEFM_LENS_OPACITY(o) (o)      // how much of the picture covers the backdrop
 #endif
 struct LensLook { float4 r[12]; };
 
@@ -790,7 +799,7 @@ float4 lens_composite(float4 pos : SV_Position) : SV_Target {
     col *= 1.0 - smoothstep(vis * 0.5 - 0.001, vis * 0.5, abs(uv.y - 0.5));
 
     col += (lens_hash12(pos.xy + 17.0 * frac(time)) - 0.5) / 255.0;
-    return float4(lerp(backdrop.rgb, saturate(col) * ld.w, opacity), 1.0);
+    return float4(lerp(backdrop.rgb, saturate(col) * ld.w, XEFM_LENS_OPACITY(opacity)), 1.0);
 }
 """
 

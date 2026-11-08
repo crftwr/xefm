@@ -238,10 +238,11 @@ XeFM ships fifteen built-in themes. Pick one from the **View â†’ Theme** menu â€
 | <img src="doc/images/theme-light.jpg" width="260"><br>**Light+** | <img src="doc/images/theme-solarized-light.jpg" width="260"><br>**Solarized Light** | <img src="doc/images/theme-sci-fi.jpg" width="260"><br>**Sci-Fi** |
 | <img src="doc/images/theme-cyber.jpg" width="260"><br>**Cyber** | <img src="doc/images/theme-segment-lcd.jpg" width="260"><br>**Segment LCD** | <img src="doc/images/theme-shinagawa.jpg" width="260"><br>**Shinagawa** |
 
-Three more, **Earth**, **Blocks** and **Crystal**, put a slowly moving 3D picture
-behind the panes: the planet from orbit, a field of dark metal columns, and a
-macro study of crystals in black rock. The picture is drawn by the desktop app; a
-terminal shows their palette alone. Watch them on YouTube:
+Four more, **Earth**, **Blocks**, **Crystal** and **Pelagic**, put a slowly moving 3D
+picture behind the panes: the planet from orbit, a field of dark metal columns, a
+macro study of crystals in black rock, and open water full of jellyfish, seen
+from below. The picture is drawn by the desktop app; a terminal shows their
+palette alone. Watch the first three on YouTube:
 
 <a href="https://www.youtube.com/watch?v=ZTpk-sUsPIk">
   <img src="doc/images/theme-picture-video.jpg" alt="Earth, Blocks and Crystal themes behind the XeFM panes: play the video on YouTube" />
