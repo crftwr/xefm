@@ -384,7 +384,7 @@ static inline int2 pick(int slot, float seed, bool alone) {
 // picks again among the one-slot scenes.
 static inline int2 scene_of(int slot, float seed) {
     bool odd = (slot & 1) != 0;
-    if (SHOT >= 0) return int2(SHOT_PART[SHOT] == 1 && odd ? SHOT + 1 : SHOT, 0);
+    if (SHOT >= 0) return int2(SHOT_PART[max(SHOT, 0)] == 1 && odd ? SHOT + 1 : SHOT, 0);
     if (odd) {
         int2 first = pick(slot - 1, seed, false);
         if (SHOT_PART[first.x] == 1) return int2(first.x + 1, first.y);
@@ -553,8 +553,10 @@ static inline Pose path_at(float t, float seed, thread float &fade) {
     Pose s_in = pose_slope(x_1, e0, TRANSITION);
     Pose s_out = pose_slope(x0, e1, TRANSITION);
     // A knot next to a dip has the scene's own drift for its tangent.
-    Pose m_e0 = fly_in ? pose_tangent(s_in, TRANSITION, d0, hold) : d0;
-    Pose m_x0 = fly_out ? pose_tangent(d0, hold, s_out, TRANSITION) : d0;
+    // (if/else, not ?: -- fxc rejects a conditional between structs)
+    Pose m_e0 = d0, m_x0 = d0;
+    if (fly_in) m_e0 = pose_tangent(s_in, TRANSITION, d0, hold);
+    if (fly_out) m_x0 = pose_tangent(d0, hold, s_out, TRANSITION);
     fade = 1.0;
     if (u < hold) return hermite(e0, m_e0, x0, m_x0, hold, u);
     float w = u - hold;
@@ -562,7 +564,8 @@ static inline Pose path_at(float t, float seed, thread float &fade) {
         return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION, w);
     }
     fade = dip(abs(w - 0.5 * TRANSITION), DIP_DARK, DIP_FADE);
-    return w < 0.5 * TRANSITION ? pose_add(x0, d0, w) : pose_add(e1, d1, w - TRANSITION);
+    if (w < 0.5 * TRANSITION) return pose_add(x0, d0, w);   // not ?: (fxc: no struct conditionals)
+    return pose_add(e1, d1, w - TRANSITION);
 }
 
 // Whether the move out of slot k is flown (see path_at), for the lens.
@@ -1166,7 +1169,7 @@ int2 pick(int slot, float seed, bool alone) {
 // picks again among the one-slot scenes.
 int2 scene_of(int slot, float seed) {
     bool odd = (slot & 1) != 0;
-    if (SHOT >= 0) return int2(SHOT_PART[SHOT] == 1 && odd ? SHOT + 1 : SHOT, 0);
+    if (SHOT >= 0) return int2(SHOT_PART[max(SHOT, 0)] == 1 && odd ? SHOT + 1 : SHOT, 0);
     if (odd) {
         int2 first = pick(slot - 1, seed, false);
         if (SHOT_PART[first.x] == 1) return int2(first.x + 1, first.y);
@@ -1335,8 +1338,10 @@ Pose path_at(float t, float seed, out float fade) {
     Pose s_in = pose_slope(x_1, e0, TRANSITION);
     Pose s_out = pose_slope(x0, e1, TRANSITION);
     // A knot next to a dip has the scene's own drift for its tangent.
-    Pose m_e0 = fly_in ? pose_tangent(s_in, TRANSITION, d0, hold) : d0;
-    Pose m_x0 = fly_out ? pose_tangent(d0, hold, s_out, TRANSITION) : d0;
+    // (if/else, not ?: -- fxc rejects a conditional between structs)
+    Pose m_e0 = d0, m_x0 = d0;
+    if (fly_in) m_e0 = pose_tangent(s_in, TRANSITION, d0, hold);
+    if (fly_out) m_x0 = pose_tangent(d0, hold, s_out, TRANSITION);
     fade = 1.0;
     if (u < hold) return hermite(e0, m_e0, x0, m_x0, hold, u);
     float w = u - hold;
@@ -1344,7 +1349,8 @@ Pose path_at(float t, float seed, out float fade) {
         return hermite(x0, m_x0, e1, pose_tangent(s_out, TRANSITION, d1, hold), TRANSITION, w);
     }
     fade = dip(abs(w - 0.5 * TRANSITION), DIP_DARK, DIP_FADE);
-    return w < 0.5 * TRANSITION ? pose_add(x0, d0, w) : pose_add(e1, d1, w - TRANSITION);
+    if (w < 0.5 * TRANSITION) return pose_add(x0, d0, w);   // not ?: (fxc: no struct conditionals)
+    return pose_add(e1, d1, w - TRANSITION);
 }
 
 // Whether the move out of slot k is flown (see path_at), for the lens.
