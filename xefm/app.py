@@ -326,7 +326,7 @@ def _theme(bg, fg, muted, accent, surface, selection, *, accent2=None,
            syntax=None, file_types=None, cursor=None, selection_fill=None,
            post_effect=None, animation=None, wallpaper=None, opacity=1.0,
            pane_frame=None, pane_dim=None, text_effect=None,
-           dialog_effect=None, theme_fields=None) -> Theme:
+           dialog_effect=None, appearance=None, theme_fields=None) -> Theme:
     ac2 = accent if accent2 is None else accent2
     p = {"bg": bg, "fg": fg, "muted": muted, "accent": accent, "accent2": ac2,
          "surface": surface}
@@ -393,6 +393,11 @@ def _theme(bg, fg, muted, accent, surface, selection, *, accent2=None,
         extras["background"] = bg_obj
     if opacity != 1.0:
         extras["opacity"] = min(1.0, max(0.0, float(opacity)))
+    # Whether the OS draws its part of the window (the title bar; on macOS the
+    # native menus too) light or dark, pushed by ``XeFMApp._apply_appearance``.
+    # The background's polarity unless the theme says otherwise: Pelagic's white
+    # shell sits over dark water, and the title bar meets the shell.
+    extras["appearance"] = _theme_appearance(appearance, bg)
     kw: dict = {}
     # Any other derived Theme field, pinned (``control_bg``, ``popup_border``,
     # ...): for a theme whose chrome is far from its background's polarity, like
@@ -406,6 +411,17 @@ def _theme(bg, fg, muted, accent, surface, selection, *, accent2=None,
         kw["extras"] = extras
     return derive_theme(background=bg, foreground=fg, muted=muted, accent=accent,
                         surface=surface, selection=selection, accent2=ac2, **kw)
+
+
+def _theme_appearance(appearance, bg) -> str:
+    """``"light"`` or ``"dark"``: ``appearance`` when it is one of them,
+    otherwise the polarity of ``bg`` (Rec. 601 luma split at 128, as PuiKit's
+    ``derive_theme`` decides its own light/dark direction). Any other value a
+    hand-written theme names falls back to ``bg`` rather than raising."""
+    if appearance in ("light", "dark"):
+        return appearance
+    luma = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
+    return "dark" if luma < 128 else "light"
 
 
 # Theme palettes as data: each spec is the keyword set ``_theme`` needs, kept
@@ -811,6 +827,8 @@ _THEME_SPECS: list[tuple[str, dict]] = [
                                        text_selection_bg=(166, 78, 62),
                                        text_selection_inactive_bg=(214, 206, 196)),
                      post_effect={"drop_shadow": 0.5},
+                     # The title bar meets the white shell, not the water.
+                     appearance="light",
                      # Tuned at speed 1: the turtle's pass is locked to the
                      # camera's tilt cycle in scene time, so any speed keeps it.
                      animation={"type": "pelagic", "speed": 1.0, "opacity": 1.0},
@@ -834,6 +852,9 @@ _THEME_OVERRIDE_MAP = {
     # without a line of app code.
     "pane_frame": "pane_frame", "pane_dim": "pane_dim",
     "text_effect": "text_effect", "dialog_effect": "dialog_effect",
+    # "light" / "dark": what the OS draws around the window (the title bar, and
+    # on macOS the native menus); the background's polarity when left out.
+    "appearance": "appearance",
     # NB: config ``background`` is the base *color* (→ bg, above). The content behind
     # the UI is a separate choice — ``animation`` (a type / params) or ``wallpaper``
     # (an image path / params) — so it never collides with the color key.
@@ -913,6 +934,14 @@ def _build_theme_list(config) -> list[tuple[str, Theme]]:
         except Exception as exc:  # a bad user theme must not block startup
             print(f"Skipping theme {name!r}: {exc}", file=sys.stderr)
     return themes
+
+
+def _base_font(config) -> Font:
+    """The pixel backends' base (grid) font from ``config``: ``MONO_FONT_NAME``
+    at ``FONT_SIZE``. Given to the backend at launch and again by
+    ``XeFMApp._apply_base_font`` when a config reload changes either."""
+    return Font(family=config.MONO_FONT_NAME, size=float(config.FONT_SIZE),
+                monospace=True)
 
 
 #: Between a search's banner and the root its rows are named from.
@@ -2112,6 +2141,7 @@ class XeFMApp:
         self._apply_post_effect(self.themes[self._theme_index][1])
         self._apply_background(self.themes[self._theme_index][1])
         self._apply_surface_opacity(self.themes[self._theme_index][1])
+        self._apply_appearance(self.themes[self._theme_index][1])
         self.left_view = FilePane(
             self.pm.left_pane,
             config=self.config,
@@ -6053,10 +6083,11 @@ class XeFMApp:
         Key bindings and the config reference threaded through the running
         subsystems (file ops, panes, monitoring, views) are refreshed live, so
         rebindings, file associations, external programs, favorites and editor
-        settings take effect immediately. Appearance and layout read once at
-        launch — theme/colors, fonts, pane and log ratios, monitoring
-        intervals — only fully apply on the next start; we say so rather than
-        pretend otherwise."""
+        settings take effect immediately, and so do themes and the base font
+        (``MONO_FONT_NAME`` / ``FONT_SIZE``). What is read once at launch —
+        ``UI_FONT_NAME``, pane and log ratios, monitoring intervals — only
+        applies on the next start; we say so rather than pretend otherwise."""
+        old_config = self.config
         new_config = config_manager.reload_config()
         # Surface non-fatal validation problems (out-of-range ratios, bad sort
         # mode, …) but still apply — a reload should reflect what's on disk.
@@ -6074,6 +6105,7 @@ class XeFMApp:
         # a theme added in config.py or by a newly installed extension joins
         # the picker and the cycle without a restart (#708).
         self._reload_themes(new_config)
+        self._apply_base_font(old_config, new_config)
         # Rebuild the keymap from the (possibly rebound) KEY_BINDINGS, with
         # the keymap preset laid over it again.
         self._rebuild_keymap()
@@ -6083,10 +6115,30 @@ class XeFMApp:
                        self.left_view, self.right_view):
             holder.config = new_config
 
-        self.log_info("Configuration reloaded — key bindings, themes and file "
-                      "settings applied; layout and font changes take effect on "
-                      "the next launch.")
+        self.log_info("Configuration reloaded — key bindings, themes, fonts "
+                      "and file settings applied; layout and UI_FONT_NAME "
+                      "changes take effect on the next launch.")
         self.panel.render()
+
+    def _apply_base_font(self, old_config, new_config) -> None:
+        """Hand the backend the new base font when a reload changed
+        ``MONO_FONT_NAME`` or ``FONT_SIZE``, so the text resizes without a
+        restart (#857). The backend sends every window a RESIZE, on which the
+        next frame lays out again; the file panes drop the column widths they
+        measured with the old font first. ``UI_FONT_NAME`` is not part of the
+        base font and still waits for the next launch. A backend with one
+        font (a terminal) or none to change at run time (the browser)
+        inherits the base no-op."""
+        if (getattr(old_config, "MONO_FONT_NAME", None) == new_config.MONO_FONT_NAME
+                and getattr(old_config, "FONT_SIZE", None) == new_config.FONT_SIZE):
+            return
+        size, family = new_config.FONT_SIZE, new_config.MONO_FONT_NAME
+        if (not isinstance(size, int) or not 8 <= size <= 72
+                or (family is not None and (not isinstance(family, str) or not family.strip()))):
+            return  # validate_config has already said what is wrong
+        for view in (self.left_view, self.right_view):
+            view.forget_measurements()
+        self.backend.set_base_font(_base_font(new_config))
 
     def _reload_themes(self, config) -> None:
         """Rebuild ``self.themes`` from ``config`` and stay on the active theme by
@@ -6686,6 +6738,7 @@ class XeFMApp:
         self._apply_post_effect(theme)
         self._apply_background(theme)
         self._apply_surface_opacity(theme)
+        self._apply_appearance(theme)
         self.state_manager.set_state("theme", name)  # remember across restarts
         self.log_info(f"Theme: {name}")
 
@@ -6717,6 +6770,17 @@ class XeFMApp:
         per-theme knob reused across background kinds, not a property of the cube. A
         backend that can't composite (a terminal) inherits the base no-op."""
         self.backend.set_surface_opacity(theme.extras.get("opacity", 1.0))
+
+    def _apply_appearance(self, theme: Theme) -> None:
+        """Tell the OS whether the theme is light or dark, so what it draws for
+        XeFM -- the title bar, and on macOS the native menus -- matches the
+        theme instead of the OS setting: Light+ no longer sits under a dark
+        title bar (#857). Called while the backend is open (``main`` builds
+        the app inside ``with backend``), which Windows needs to recolor a
+        title bar. Windows' native menus stay light whatever this says. A
+        backend without an OS appearance (a terminal, the browser) inherits
+        the base no-op."""
+        self.backend.set_appearance(theme.extras.get("appearance"))
 
     def _cycle_theme(self) -> None:
         """Advance to the next palette (the ``toggle_color_scheme`` action)."""
@@ -13106,11 +13170,7 @@ def main() -> None:
         # Name the window / tab (and, on native GUI, the macOS app menu, e.g.
         # "Quit XeFM"); without this the backend falls back to its default "PuiKit".
         backend_kwargs["title"] = "XeFM"
-        backend_kwargs["base_font"] = Font(
-            family=cfg.MONO_FONT_NAME,
-            size=float(cfg.FONT_SIZE),
-            monospace=True,
-        )
+        backend_kwargs["base_font"] = _base_font(cfg)
         # The default proportional face that PuiKit's widgets (markdown, message
         # boxes, text fields) — and XeFM's own proportional draws — resolve to via
         # an unnamed Font(). family=None lets PuiKit fall back to its bundled

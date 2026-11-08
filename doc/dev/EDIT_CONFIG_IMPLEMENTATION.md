@@ -57,12 +57,18 @@ Best-effort live reload:
 
 `self.config` is captured once in `__init__` and threaded into many subsystems.
 Values consumed **on demand** (key bindings, file associations, programs,
-favorites, editor) apply immediately once the reference is repointed. Values
-consumed **once at construction** — theme/colors and post effects (`panel.theme`,
-`_build_theme_list`), fonts, splitter fractions (`pane_splitter` /
-`content_splitter`), and file-monitoring intervals — are not re-derived, so they
-apply on next launch. The reload log line states this explicitly rather than
-silently doing nothing.
+favorites, editor) apply immediately once the reference is repointed. Themes are
+rebuilt (`_reload_themes`, #708), and a changed `MONO_FONT_NAME` / `FONT_SIZE`
+goes to the backend through `Backend.set_base_font` (`_apply_base_font`, #857):
+every window gets a RESIZE and lays out again, and the file panes drop their
+measured column widths first (`FilePane.forget_measurements`). XeFM keeps no
+other length measured across frames; a new cache of one has to be dropped
+there too. A value that fails validation is left for the next launch rather
+than handed to the backend. Values consumed **once at construction** —
+`UI_FONT_NAME` (not part of the base font), splitter fractions
+(`pane_splitter` / `content_splitter`), and file-monitoring intervals — are not
+re-derived, so they apply on next launch. The reload log line states this
+explicitly rather than silently doing nothing.
 
 Module-level helpers in `xefm/config.py` (`get_program_for_file`,
 `get_config_favorites`, `get_keys_for_action`, …) go through the
