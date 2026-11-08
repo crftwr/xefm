@@ -235,7 +235,7 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `flat_view` | Show every file below this directory as one list | `Shift-B` | `Ctrl-B` | — | — |
 | `toggle_hidden` | Show or hide hidden files | `.` | `.` | `.`<br>macOS app: `Cmd-Shift-.`, `.` | `za` |
 | `increase_font_size` | Make the text larger until XeFM quits | macOS app: `Cmd-+`, `Cmd-=` | macOS app: `Cmd-+`, `Cmd-=` | macOS app: `Cmd-+`, `Cmd-=` | macOS app: `Cmd-+`, `Cmd-=` |
-| `decrease_font_size` | Make the text smaller until XeFM quits | macOS app: `Cmd-Minus` | macOS app: `Cmd-Minus` | macOS app: `Cmd-Minus` | macOS app: `Cmd-Minus` |
+| `decrease_font_size` | Make the text smaller until XeFM quits | macOS app: `Cmd--` | macOS app: `Cmd--` | macOS app: `Cmd--` | macOS app: `Cmd--` |
 | `reset_font_size` | Put the text back to `FONT_SIZE` | macOS app: `Cmd-0` | macOS app: `Cmd-0` | macOS app: `Cmd-0` | macOS app: `Cmd-0` |
 | `sort` | Open the sort dialog | `S` | — | — | `S` |
 | `quick_sort_name` | Sort by name | `1` | `Ctrl-F3` | — | — |

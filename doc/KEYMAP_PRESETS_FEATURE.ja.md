@@ -165,7 +165,7 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `flat_view` | このディレクトリ以下のすべてのファイルを 1 つの一覧で表示 | `Shift-B` | `Ctrl-B` | — | — |
 | `toggle_hidden` | 隠しファイルの表示を切り替え | `.` | `.` | `.`<br>macOS アプリ：`Cmd-Shift-.`、`.` | `za` |
 | `increase_font_size` | XeFM を終了するまで文字を大きくする | macOS アプリ：`Cmd-+`、`Cmd-=` | macOS アプリ：`Cmd-+`、`Cmd-=` | macOS アプリ：`Cmd-+`、`Cmd-=` | macOS アプリ：`Cmd-+`、`Cmd-=` |
-| `decrease_font_size` | XeFM を終了するまで文字を小さくする | macOS アプリ：`Cmd-Minus` | macOS アプリ：`Cmd-Minus` | macOS アプリ：`Cmd-Minus` | macOS アプリ：`Cmd-Minus` |
+| `decrease_font_size` | XeFM を終了するまで文字を小さくする | macOS アプリ：`Cmd--` | macOS アプリ：`Cmd--` | macOS アプリ：`Cmd--` | macOS アプリ：`Cmd--` |
 | `reset_font_size` | 文字の大きさを `FONT_SIZE` に戻す | macOS アプリ：`Cmd-0` | macOS アプリ：`Cmd-0` | macOS アプリ：`Cmd-0` | macOS アプリ：`Cmd-0` |
 | `sort` | ソートダイアログを開く | `S` | — | — | `S` |
 | `quick_sort_name` | 名前でソート | `1` | `Ctrl-F3` | — | — |

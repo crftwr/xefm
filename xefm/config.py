@@ -600,6 +600,7 @@ class KeyBindings:
             "q" -> "q"
             "ENTER" -> "Enter"
             "Shift-EQUAL" -> "Shift-="
+            "Command-MINUS" -> "Cmd--"
             "Command-Shift-X" -> "Cmd-Shift-X"
         """
         # Single literal character (letter, digit, punctuation) - return as-is.
@@ -614,7 +615,10 @@ class KeyBindings:
 
         # Base key: map a named token (ENTER, UP, EQUAL, …) to its UI label;
         # keep a bare literal char as-is; title-case any other multi-char token.
-        base_disp = self._KEY_DISPLAY.get(base.upper())
+        # Punctuation named in the config (MINUS, LEFT_BRACKET, …) shows as its
+        # glyph, as it would written that way: "Cmd-[" rather than
+        # "Cmd-Left_bracket", which a native menu cannot read as a key either.
+        base_disp = self._KEY_DISPLAY.get(base.upper()) or _PUNCT_NAMES.get(base.upper())
         if base_disp is None:
             base_disp = base if len(base) == 1 else base.capitalize()
 

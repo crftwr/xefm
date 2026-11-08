@@ -203,3 +203,17 @@ def test_a_new_font_size_in_config_wins_over_the_adjusted_one(monkeypatch):
     app._apply_base_font(_cfg(None, 12), _cfg(None, 16))
     assert _sizes(app)[-1] == 16.0
     assert app._font_size_override is None
+
+
+# -- how the keys read in a menu and the help ---------------------------------
+
+def test_named_punctuation_shows_as_its_glyph():
+    # A native menu reads the hint as a key: "Cmd-Minus" or "Cmd-Left_bracket"
+    # showed no accelerator at all.
+    from xefm.config import KeyBindings
+    kb = KeyBindings({})
+    assert kb.format_key_for_display("Command-MINUS") == "Cmd--"
+    assert kb.format_key_for_display("Command-LEFT_BRACKET") == "Cmd-["
+    assert kb.format_key_for_display("Command-RIGHT_BRACKET") == "Cmd-]"
+    assert kb.format_key_for_display("Ctrl-COMMA") == "Ctrl-,"
+    assert kb.format_key_for_display("Shift-EQUAL") == "Shift-="
