@@ -158,8 +158,8 @@ def test_the_default_timeout_is_vims():
 
 @pytest.fixture
 def seq_app(app_with):
-    from xefm import keymap_afx
-    bindings = dict(keymap_afx.bindings(), cursor_bottom=["z z"], cursor_top=["z t"])
+    from xefm import keymap_presets
+    bindings = dict(keymap_presets.table(keymap_presets.AFX), cursor_bottom=["z z"], cursor_top=["z t"])
     app, _tmp = app_with(KEY_BINDINGS=bindings)
     app._keymap_preset = "afx"
     app.keys = KeyBindings(bindings)

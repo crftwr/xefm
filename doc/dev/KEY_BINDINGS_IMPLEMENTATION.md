@@ -56,8 +56,14 @@ two **modes**:
   **and** `event.modifiers == modifiers` (exact set equality, so `Shift-A` differs
   from `a`).
 - **`char` mode** — digits and punctuation. Match iff `event.char == identity`
-  (case-sensitive), **ignoring** `shift`/`alt` (the produced glyph already encodes
-  them); `ctrl`/`cmd` are still significant iff the binding named them.
+  (case-sensitive), **ignoring** `shift` (the produced glyph already encodes
+  it); `ctrl`/`cmd` are still significant iff the binding named them. `alt` is
+  ignored unless the binding names it: on macOS Option types the glyph (`@` is
+  Opt-L on a German layout), so a bare `@` binding still takes it, but a binding
+  that names Alt requires it — Orthodox's `Alt-+` (`select_same_extension`) is
+  not its `+` (`select_by_pattern`). For an event with Alt, a binding that names
+  Alt is tried before one that ignores it (`KeyBindings._alt_exact`), so which is
+  listed first does not decide it.
 
 > **Shifted symbols are their own identity.** A shifted digit/punctuation binds to
 > the glyph it produces — `Shift-EQUAL` → `"+"`, `Shift-1` → `"!"` — matched in
@@ -92,8 +98,8 @@ path changes this.
 
 ### The three cases, and where they live
 
-The AFX keymap (`xefm/keymap_afx.py`, formerly `KEY_BINDINGS` in `xefm/_config.py`)
-is therefore written as **one common table**
+The keys every preset shares (`xefm/keymaps/common.py`; once `KEY_BINDINGS` in
+`xefm/_config.py`, then the AFX table) are therefore written as **one common table**
 — only chords every backend delivers — followed by a small override block keyed
 on `is_desktop_mode()` and `sys.platform`:
 
@@ -128,7 +134,7 @@ binds nothing a terminal cannot send.
 | `PAGE_UP`/`PAGEUP`, `PAGE_DOWN`/`PAGEDOWN` | `pageup` / `pagedown` | `key` + exact mods |
 | `F1`…`F12` | `f1`…`f12` | `key` + exact mods |
 | `ALT` (alone, not as a prefix) | `alt` — a *bare Alt tap*, delivered only by the Windows terminal (PuiKit keyboard contract §1); bound to `menu` alongside `F10` | `key` + exact mods |
-| named punctuation — `MINUS`, `EQUAL`/`EQUALS`, `LEFT_BRACKET`, `RIGHT_BRACKET`, `BACKSLASH`, `SEMICOLON`, `QUOTE`/`APOSTROPHE`, `COMMA`, `PERIOD`/`DOT`, `SLASH`, `GRAVE`/`BACKTICK`/`BACKQUOTE` (the whole set) | base glyph (`-`, `=`, `[`, `]`, `\`, `;`, `'`, `,`, `.`, `/`, `` ` ``) | `char` (ignore shift/alt) |
+| named punctuation — `MINUS`, `EQUAL`/`EQUALS`, `LEFT_BRACKET`, `RIGHT_BRACKET`, `BACKSLASH`, `SEMICOLON`, `QUOTE`/`APOSTROPHE`, `COMMA`, `PERIOD`/`DOT`, `SLASH`, `GRAVE`/`BACKTICK`/`BACKQUOTE` (the whole set) | base glyph (`-`, `=`, `[`, `]`, `\`, `;`, `'`, `,`, `.`, `/`, `` ` ``) | `char` (ignore shift; alt only if named) |
 | digit / punctuation literal (`?`, `.`, `:`, `1`, …) | the produced glyph | `char` |
 | `Shift-<named punct / digit>` | the **shifted** glyph (`Shift-EQUAL` → `+`, `Shift-1` → `!`) | `char` |
 | `Shift-X` (letter) | `x` + `shift` | `key` + exact mods |

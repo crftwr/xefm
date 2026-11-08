@@ -1,15 +1,22 @@
-"""The AFX-style keymap (#565, #597): one letter runs one command.
+"""The keys every keymap preset shares (#565, #597).
 
-``C`` copies, ``M`` moves, ``K`` deletes — the single-key style of the
-Japanese two-pane filers: the X68000 file managers, then AFX (あふ) on
-Windows, then cfiler. XeFM follows that direction rather than copying any one
-of them key for key.
+Every preset (:mod:`xefm.keymap_presets`) is laid over this table, the AFX
+style (:mod:`xefm.keymaps.afx`) included: a preset's entry replaces the
+action's entry here, and an action it does not name keeps these keys. What
+lives here:
 
-This is one of the keymap presets (:mod:`xefm.keymap_presets`), a peer of the
-others, not a default they are laid over. It is also where every viewer's,
-dialog's and search bar's keys live: those surfaces take typed text or have
-no file list, so their keys are the same under every preset, and the other
-presets start from this table's copy of them.
+- every viewer's, dialog's and search bar's keys — those surfaces take typed
+  text or have no file list, so their keys are the same under every preset;
+- the file list's keys that are not a bare letter or digit (``ENTER``,
+  ``Ctrl-W``, ``;``, ``[``), which a preset keeps unless it names the action;
+- the desktop app's platform keys (``Cmd-Q`` / ``Alt-F4``, the font size),
+  at the foot of :func:`bindings`.
+
+It binds **no bare letter or digit** to a file-list or shared action
+(``test_the_common_table_binds_no_letter_in_the_file_list``): a letter is the
+preset's to give — a command in AFX and Vim style, type-ahead in Orthodox and
+OS native. Every action still has an entry, ``[]`` where a preset has to
+give it a key, so none falls through to a built-in default.
 
 ``config.py``'s ``KEY_BINDINGS`` overrides whatever preset is in force, action
 by action; it ships nearly empty.
@@ -21,12 +28,13 @@ from xefm.backend_detector import is_desktop_mode
 
 
 def bindings() -> dict:
-    """The whole table — action name → keys, or ``{'keys': …, 'selection':
-    …}`` — with the per-platform desktop overrides for the platform running.
-    A new dict on every call, so a caller may change it freely."""
+    """The common table — action name → keys, or ``{'keys': …,
+    'selection': …}`` — with the per-platform desktop overrides for the
+    platform running. A new dict on every call, so a caller may change it
+    freely."""
     KEY_BINDINGS = {
         # === Application Control ===
-        'quit': ['Q'],                         # Exit XeFM application
+        'quit': [],                            # Exit XeFM application
         'quit_app': [],                        # Cmd-Q / Alt-F4 in the desktop app (below)
         # F1, not '?': Shift-/ is the directory context menu below, and a
         # terminal cannot tell Shift-/ from '?' -- both arrive as the glyph.
@@ -60,9 +68,7 @@ def bindings() -> dict:
         'reveal_in_os': ['Ctrl-R'],            # Reveal focused file in OS file manager
         'go_parent': ['BACKSPACE'],            # Go to parent directory
         'go_root': ['\\'],                     # Go to the root of the current drive/location
-        # Shift-B, not Ctrl-B: that is tmux's prefix, so inside tmux it would
-        # never arrive. A capital is a glyph, which every terminal delivers.
-        'flat_view': ['Shift-B'],            # Show every file below this directory as one flat list (again to go back)
+        'flat_view': [],                       # Show every file below this directory as one flat list (again to go back)
         'switch_pane': ['TAB'],                # Switch between left and right panes
         'nav_left': ['LEFT'],                  # Left pane: go to parent, Right pane: switch to left pane
         'nav_right': ['RIGHT'],                # Right pane: go to parent, Left pane: switch to right pane
@@ -91,8 +97,8 @@ def bindings() -> dict:
         'toggle_select_up': [],                # Toggle selection and move up
         'select_all': ['HOME'],                # Select all items (Home key)
         'unselect_all': ['END'],               # Unselect all items (End key)
-        'toggle_select_files': ['A'],             # Toggle selection of all files in current pane
-        'toggle_select_items': ['Shift-A'],       # Toggle selection of all items (files + dirs)
+        'toggle_select_files': [],             # Toggle selection of all files in current pane
+        'toggle_select_items': [],             # Toggle selection of all items (files + dirs)
         # Select / unselect by pattern sit beside the filter's ';' and ':' --
         # the same pattern language, one key over. Both are glyphs, so a
         # terminal delivers them like any printable (cfiler's keys, too).
@@ -113,44 +119,43 @@ def bindings() -> dict:
 
         # === File Clipboard ===
         # Copy or cut now, paste wherever you go next -- the folder you stand
-        # in, or (macOS / Windows) another application. C / M above stay the
-        # one-step way to the other pane. The copy key copies the log's
-        # selected text instead when the log has a selection.
-        'clipboard_copy': ['Ctrl-C', 'Y'],     # Copy files to the clipboard
-        'clipboard_cut': ['Ctrl-X', 'Shift-Y'],  # Cut files to the clipboard (moved on paste)
-        'clipboard_paste': ['Ctrl-V', 'G'],    # Paste the clipboard into this folder
+        # in, or (macOS / Windows) another application. The copy key copies
+        # the log's selected text instead when the log has a selection.
+        'clipboard_copy': ['Ctrl-C'],          # Copy files to the clipboard
+        'clipboard_cut': ['Ctrl-X'],           # Cut files to the clipboard (moved on paste)
+        'clipboard_paste': ['Ctrl-V'],         # Paste the clipboard into this folder
         'clipboard_clear': [],                 # Empty the file clipboard (Edit menu)
 
         # === File Operations ===
-        'copy_files': {'keys': ['C'], 'selection': 'required'},  # Copy selected files to other pane
-        'move_files': {'keys': ['M'], 'selection': 'required'},  # Move selected files to other pane
-        'copy_files_to': {'keys': ['Shift-C'], 'selection': 'required'},  # Copy selected files to a typed directory
-        'move_files_to': {'keys': ['Shift-M'], 'selection': 'required'},  # Move selected files to a typed directory
-        'delete_files': {'keys': ['K', 'DELETE'], 'selection': 'required'}, # Delete selected files/directories (to the Trash where there is one)
-        'delete_permanently': {'keys': ['Shift-K', 'Shift-DELETE'], 'selection': 'required'},  # Delete for good, skipping the Trash
-        'rename': ['R'],                  # Rename selected file/directory
-        'rename_in_editor': ['Shift-R'],  # Rename the selection by editing a name list in TEXT_EDITOR
-        'create_file': ['Shift-E'],            # Create new file (prompts for filename)
-        'create_directory': {'keys': ['M'], 'selection': 'none'},  # Create new directory (only when no files selected)
+        'copy_files': [],                      # Copy selected files to other pane
+        'move_files': [],                      # Move selected files to other pane
+        'copy_files_to': [],                   # Copy selected files to a typed directory
+        'move_files_to': [],                   # Move selected files to a typed directory
+        'delete_files': {'keys': ['DELETE'], 'selection': 'required'}, # Delete selected files/directories (to the Trash where there is one)
+        'delete_permanently': {'keys': ['Shift-DELETE'], 'selection': 'required'},  # Delete for good, skipping the Trash
+        'rename': [],                          # Rename selected file/directory
+        'rename_in_editor': [],                # Rename the selection by editing a name list in TEXT_EDITOR
+        'create_file': [],                     # Create new file (prompts for filename)
+        'create_directory': [],                # Create new directory (only when no files selected)
         
         # === File Viewing & Editing ===
-        'view_file': ['V'],                    # View file using configured viewer
-        'quick_view': ['Shift-V'],             # Preview the cursor item in the other pane (again to close)
-        'edit_file': ['E'],                    # Edit selected file with configured text editor (also inside the text viewer)
-        'file_details': ['I'],                 # Show detailed file information dialog
+        'view_file': [],                       # View file using configured viewer
+        'quick_view': [],                      # Preview the cursor item in the other pane (again to close)
+        'edit_file': [],                       # Edit selected file with configured text editor (also inside the text viewer)
+        'file_details': [],                    # Show detailed file information dialog
         
         # === File Comparison ===
         'diff_files': ['EQUAL'],               # Compare two selected files side-by-side
         'diff_directories': ['Shift-EQUAL'],   # Compare directories recursively
         
         # === Archive Operations ===
-        'create_archive': {'keys': ['P'], 'selection': 'required'}, # Create archive from selected files
-        'extract_archive': ['U'],              # Extract selected archive file
+        'create_archive': [],                  # Create archive from selected files
+        'extract_archive': [],                 # Extract selected archive file
         
         # === Search & Filter ===
-        'isearch': ['F'],                       # Enter incremental search mode (isearch)
-        'find_files': ['Shift-F'],          # Show filename search dialog
-        'find_in_files': ['Shift-G'],         # Show content search dialog (grep)
+        'isearch': [],                         # Enter incremental search mode (isearch)
+        'find_files': [],                      # Show filename search dialog
+        'find_in_files': [],                   # Show content search dialog (grep)
         # The OS's own index: Spotlight on macOS, Windows Search on Windows.
         'index_search': ['Ctrl-F'],           # Search the OS index under this folder (results as a list)
         'find_by_tag': [],                    # Find files by tag under this folder (View > Search Tags…)
@@ -158,15 +163,15 @@ def bindings() -> dict:
         'clear_filter': [':'],                 # Clear current file filter
         
         # === Sorting ===
-        'sort': ['S'],                    # Open the sort dialog (key + order)
-        'quick_sort_name': ['1'],              # Quick sort by filename
-        'quick_sort_ext': ['2'],               # Quick sort by file extension
-        'quick_sort_size': ['3'],              # Quick sort by file size
-        'quick_sort_date': ['4'],              # Quick sort by modification date
+        'sort': [],                            # Open the sort dialog (key + order)
+        'quick_sort_name': [],                 # Quick sort by filename
+        'quick_sort_ext': [],                  # Quick sort by file extension
+        'quick_sort_size': [],                 # Quick sort by file size
+        'quick_sort_date': [],                 # Quick sort by modification date
         
         # === Directory Navigation ===
-        'favorites': ['J'],                    # Show favorites dialog
-        'add_favorite': ['B'],                 # Add this directory / the cursor item to favorites
+        'favorites': [],                       # Show favorites dialog
+        'add_favorite': [],                    # Add this directory / the cursor item to favorites
 
         # === Context Menus ===
         # The right-click menus, from the keyboard: '/' for the item under the
@@ -175,26 +180,26 @@ def bindings() -> dict:
         # never sends it, so the punctuation keys are the ones that work there.
         'context_menu': ['/', 'APPS'],         # Context menu for the cursor item
         'context_menu_dir': ['?', 'Shift-APPS'],  # Context menu for the current directory
-        'jump_to_path': ['Shift-J'],           # Jump to path
-        'history': ['H'],                      # Show history for current pane
+        'jump_to_path': [],                    # Jump to path
+        'history': [],                         # Show history for current pane
         'go_back': ['Alt-LEFT'],               # Back to the directory shown before (also the mouse's back button)
         'go_forward': ['Alt-RIGHT'],           # Forward again (also the mouse's forward button)
-        'drives': ['D'],                # Show drives/volumes dialog
-        'connect_server': ['Shift-D'],  # Connect to a network server (macOS/Windows)
+        'drives': [],                          # Show drives/volumes dialog
+        'connect_server': [],                  # Connect to a network server (macOS/Windows)
         
         # === Pane Management ===
-        # Folder tabs, per pane. T is a bare letter nothing else uses; Ctrl-W
-        # is the close every tabbed program has. Next/previous are on
+        # Folder tabs, per pane. Ctrl-W is the close every tabbed program
+        # has. Next/previous are on
         # Ctrl-PAGE_DOWN / Ctrl-PAGE_UP because a terminal never delivers
         # Ctrl-TAB.
-        'new_tab': ['T'],                      # Open a new tab in this pane at the same place
-        'open_in_new_tab': ['Shift-T'],        # Open the directory under the cursor in a new tab
+        'new_tab': [],                         # Open a new tab in this pane at the same place
+        'open_in_new_tab': [],                 # Open the directory under the cursor in a new tab
         'close_tab': ['Ctrl-W'],               # Close this pane's current tab
         'next_tab': ['Ctrl-PAGE_DOWN'],        # Show this pane's next tab
         'prev_tab': ['Ctrl-PAGE_UP'],          # Show this pane's previous tab
-        'sync_current_to_other': ['O'],        # Sync current pane directory to other pane
-        'sync_other_to_current': ['Shift-O'],  # Sync other pane directory to current pane
-        'compare_selection': ['W'],            # Show file and directory comparison options
+        'sync_current_to_other': [],           # Sync current pane directory to other pane
+        'sync_other_to_current': [],           # Sync other pane directory to current pane
+        'compare_selection': [],               # Show file and directory comparison options
         'adjust_pane_left': ['['],             # Make left pane smaller (move boundary left)
         'adjust_pane_right': [']'],            # Make left pane larger (move boundary right)
         'reset_pane_boundary': ['-'],          # Reset pane split to 50% | 50%
@@ -214,13 +219,13 @@ def bindings() -> dict:
         'copy_log_all': [],                    # Copy the whole log (unbound; Edit menu, or bind a key here)
         
         # === Text Viewer ===
-        # Text-viewer-only actions. 'isearch' (F, above) opens incremental search
-        # inside the viewers too. These deliberately share keys with file-list
-        # actions -- 'W' with 'compare_selection', 'M' with 'move_files' /
+        # Text-viewer-only actions. 'isearch' opens incremental search inside
+        # the viewers too. These deliberately share keys with AFX's file-list
+        # letters -- 'W' with 'compare_selection', 'M' with 'move_files' /
         # 'create_directory', 'Shift-E' with 'create_file'. The two surfaces never
         # apply at once, and each only ever looks at its own context's actions, so
-        # a shared key is never ambiguous. Plain 'E' (edit_file, under File
-        # Operations) works inside the text viewer too, editing the viewed file.
+        # a shared key is never ambiguous. 'edit_file' works inside the text
+        # viewer too, editing the viewed file.
         'toggle_wrap': ['W'],                  # Toggle line wrapping
         'toggle_view_mode': ['M'],             # Toggle rendered (Markdown) / raw text
         'change_encoding': ['Shift-E'],        # Choose the text encoding (auto / explicit)
@@ -257,8 +262,8 @@ def bindings() -> dict:
         'reset_font_size': [],
 
         # === External Programs ===
-        'programs': ['X'],                     # Show external programs menu
-        'subshell': ['Shift-X'],               # Enter subshell (command line) mode
+        'programs': [],                        # Show external programs menu
+        'subshell': [],                        # Enter subshell (command line) mode
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to
@@ -478,17 +483,17 @@ def bindings() -> dict:
     # letters. Ctrl-O is also the search dialog's options key, in its own context
     # — the two surfaces never apply at once, so the letter carries both.
     #
-    # Only two things are worth overriding per case, and both are strong
-    # platform idioms rather than missing keys:
+    # What is overridden per case below are strong platform idioms rather
+    # than missing keys:
     if is_desktop_mode():
         if sys.platform == 'darwin':
             # The Finder gesture: a modifier on the same Enter that opens.
             KEY_BINDINGS['open_with_os'] = ['Command-ENTER', 'Ctrl-O']
             # Copy, cut and paste on macOS are Command-C / X / V, wherever --
             # files in a pane, text in the log.
-            KEY_BINDINGS['clipboard_copy'] = ['Command-C', 'Ctrl-C', 'Y']
-            KEY_BINDINGS['clipboard_cut'] = ['Command-X', 'Ctrl-X', 'Shift-Y']
-            KEY_BINDINGS['clipboard_paste'] = ['Command-V', 'Ctrl-V', 'G']
+            KEY_BINDINGS['clipboard_copy'] = ['Command-C', 'Ctrl-C']
+            KEY_BINDINGS['clipboard_cut'] = ['Command-X', 'Ctrl-X']
+            KEY_BINDINGS['clipboard_paste'] = ['Command-V', 'Ctrl-V']
             # Finder's and every Mac browser's Back / Forward.
             KEY_BINDINGS['go_back'] = ['Command-LEFT_BRACKET', 'Alt-LEFT']
             KEY_BINDINGS['go_forward'] = ['Command-RIGHT_BRACKET', 'Alt-RIGHT']
@@ -503,4 +508,12 @@ def bindings() -> dict:
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
+            # Every Windows browser's and Office's text size keys, the macOS
+            # set with Ctrl for Command. PuiKit's Windows window reports Ctrl
+            # on a punctuation key only after 1.23.0 (puikit 1017810); an
+            # older one never delivers Ctrl-+ / Ctrl-= / Ctrl-MINUS, leaving
+            # the View menu.
+            KEY_BINDINGS['increase_font_size'] = ['Ctrl-+', 'Ctrl-=']
+            KEY_BINDINGS['decrease_font_size'] = ['Ctrl-MINUS']
+            KEY_BINDINGS['reset_font_size'] = ['Ctrl-0']
     return KEY_BINDINGS

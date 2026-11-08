@@ -26,7 +26,7 @@ from unittest import mock
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm import filters  # noqa: E402
 from xefm.path import Path  # noqa: E402
@@ -185,7 +185,7 @@ class SelectByPatternKeys(unittest.TestCase):
         from xefm import actions as xa
         from xefm._config import Config
         from xefm.config import KeyBindings
-        self.kb = KeyBindings(keymap_afx.bindings())
+        self.kb = KeyBindings(keymap_presets.table(keymap_presets.AFX))
         self.filer = xa.FILER
         self.key = lambda name, char, mods=(): Event(
             type=EventType.KEY, key=name, char=char, modifiers=frozenset(mods))

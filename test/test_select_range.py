@@ -23,7 +23,7 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
@@ -156,10 +156,10 @@ class SelectRange(unittest.TestCase):
 
     def test_default_bindings(self):
         from xefm._config import Config
-        self.assertEqual(keymap_afx.bindings()["select_range"], ["Shift-SPACE"])
+        self.assertEqual(keymap_presets.table(keymap_presets.AFX)["select_range"], ["Shift-SPACE"])
         # The key it took over, left unbound rather than moved: nothing else
         # says "range", and SPACE already marks and moves.
-        self.assertEqual(keymap_afx.bindings()["toggle_select_up"], [])
+        self.assertEqual(keymap_presets.table(keymap_presets.AFX)["toggle_select_up"], [])
 
     def test_the_search_bar_has_no_range_key(self):
         """An open search is not a surface for this. Its cursor is a match, but
@@ -193,7 +193,7 @@ class SelectRange(unittest.TestCase):
         from xefm.actions import FILER
         from xefm.config import KeyBindings, printable_text_notice
 
-        old = dict(keymap_afx.bindings())
+        old = dict(keymap_presets.table(keymap_presets.AFX))
         old["toggle_select_up"] = ["Shift-SPACE"]
         del old["select_range"]
         keys = KeyBindings(old)
@@ -203,7 +203,7 @@ class SelectRange(unittest.TestCase):
                          "toggle_select_up")
         # And nothing about either config is reported as a printable-key mistake.
         self.assertIsNone(printable_text_notice(old))
-        self.assertIsNone(printable_text_notice(keymap_afx.bindings()))
+        self.assertIsNone(printable_text_notice(keymap_presets.table(keymap_presets.AFX)))
 
     def test_the_select_menu_offers_it(self):
         # The one route for a key a POSIX terminal cannot deliver.

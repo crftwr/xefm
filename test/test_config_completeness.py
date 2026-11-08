@@ -106,8 +106,8 @@ class TestConfigCompleteness(unittest.TestCase):
     
     def test_jump_dialog_key_binding_exists(self):
         """Test that the AFX keymap binds the jump dialog"""
-        from xefm import keymap_afx
-        bindings = keymap_afx.bindings()
+        from xefm import keymap_presets
+        bindings = keymap_presets.table(keymap_presets.AFX)
         self.assertIn('jump_to_path', bindings)
         self.assertIn('Shift-J', bindings['jump_to_path'])
 

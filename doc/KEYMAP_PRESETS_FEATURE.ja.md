@@ -164,9 +164,9 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `clear_filter` | ファイル名のフィルターを解除 | `:` | `Ctrl-F10` | `:` | `zr` |
 | `flat_view` | このディレクトリ以下のすべてのファイルを 1 つの一覧で表示 | `Shift-B` | `Ctrl-B` | — | — |
 | `toggle_hidden` | 隠しファイルの表示を切り替え | `.` | `.` | `.`<br>macOS アプリ：`Cmd-Shift-.`、`.` | `za` |
-| `increase_font_size` | XeFM を終了するまで文字を大きくする | macOS アプリ：`Cmd-+`、`Cmd-=` | macOS アプリ：`Cmd-+`、`Cmd-=` | macOS アプリ：`Cmd-+`、`Cmd-=` | macOS アプリ：`Cmd-+`、`Cmd-=` |
-| `decrease_font_size` | XeFM を終了するまで文字を小さくする | macOS アプリ：`Cmd--` | macOS アプリ：`Cmd--` | macOS アプリ：`Cmd--` | macOS アプリ：`Cmd--` |
-| `reset_font_size` | 文字の大きさを `FONT_SIZE` に戻す | macOS アプリ：`Cmd-0` | macOS アプリ：`Cmd-0` | macOS アプリ：`Cmd-0` | macOS アプリ：`Cmd-0` |
+| `increase_font_size` | XeFM を終了するまで文字を大きくする | macOS アプリ：`Cmd-+`、`Cmd-=`<br>Windows アプリ：`Ctrl-+`、`Ctrl-=` | macOS アプリ：`Cmd-+`、`Cmd-=` | macOS アプリ：`Cmd-+`、`Cmd-=`<br>Windows アプリ：`Ctrl-+`、`Ctrl-=` | macOS アプリ：`Cmd-+`、`Cmd-=`<br>Windows アプリ：`Ctrl-+`、`Ctrl-=` |
+| `decrease_font_size` | XeFM を終了するまで文字を小さくする | macOS アプリ：`Cmd--`<br>Windows アプリ：`Ctrl--` | macOS アプリ：`Cmd--` | macOS アプリ：`Cmd--`<br>Windows アプリ：`Ctrl--` | macOS アプリ：`Cmd--`<br>Windows アプリ：`Ctrl--` |
+| `reset_font_size` | 文字の大きさを `FONT_SIZE` に戻す | macOS アプリ：`Cmd-0`<br>Windows アプリ：`Ctrl-0` | macOS アプリ：`Cmd-0`<br>Windows アプリ：`Ctrl-0` | macOS アプリ：`Cmd-0`<br>Windows アプリ：`Ctrl-0` | macOS アプリ：`Cmd-0`<br>Windows アプリ：`Ctrl-0` |
 | `sort` | ソートダイアログを開く | `S` | — | — | `S` |
 | `quick_sort_name` | 名前でソート | `1` | `Ctrl-F3` | — | — |
 | `quick_sort_ext` | 拡張子でソート | `2` | `Ctrl-F4` | — | — |

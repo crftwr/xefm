@@ -95,7 +95,6 @@ To make the text larger or smaller for a while without editing `config.py`, use
 changes one point at a time, between 8 and 72, and is not saved: the next launch
 starts from `FONT_SIZE` again. Changing `FONT_SIZE` and reloading also replaces
 it. In a terminal this menu is not there; use the terminal's own font setting.
-On Windows these actions have no keys yet.
 
 ### Symbols your terminal font draws full-width (advanced)
 

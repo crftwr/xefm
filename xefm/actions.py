@@ -135,7 +135,8 @@ class Action:
     it does, and how it is bound by default.
 
     ``default_keys`` of ``None`` means "read the AFX keymap table"
-    (:mod:`xefm.keymap_afx`), which is where every built-in action's keys live.
+    (:mod:`xefm.keymaps.afx`, the common table with AFX's letters), which names
+    every built-in action.
     An explicit tuple (including an empty one, for a deliberately unbound
     action) overrides that lookup.
     """
@@ -189,8 +190,9 @@ _template_cache: dict[str, tuple[tuple[str, ...], str]] | None = None
 
 def _template_bindings() -> dict[str, tuple[tuple[str, ...], str]]:
     """``{name: (keys, selection)}`` from the AFX keymap table
-    (:mod:`xefm.keymap_afx`) — what an action is bound to when the table in
-    force never mentions it. Every preset's table starts from that one, so
+    (:mod:`xefm.keymaps.afx`) — what an action is bound to when the table in
+    force never mentions it. Every preset's table starts from the common table
+    (:mod:`xefm.keymaps.common`), which names every action this one does, so
     only an action no table names reaches this.
 
     Read lazily and cached: importing the table at module import would drag
@@ -202,8 +204,8 @@ def _template_bindings() -> dict[str, tuple[tuple[str, ...], str]]:
         return _template_cache
     table: dict[str, tuple[tuple[str, ...], str]] = {}
     try:
-        from xefm.keymap_afx import bindings as _afx_bindings
-        raw = _afx_bindings()
+        from xefm import keymap_presets
+        raw = keymap_presets.table(keymap_presets.AFX)
         for name, binding in raw.items():
             if isinstance(binding, dict):
                 keys = tuple(binding.get("keys") or ())

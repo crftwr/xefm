@@ -131,8 +131,8 @@ def _cmd_q():
 
 
 def _with_cmd_q(app):
-    from xefm.keymap_afx import bindings
-    app.keys = KeyBindings(dict(bindings(), quit_app=["Command-Q"]))
+    from xefm import keymap_presets
+    app.keys = KeyBindings(dict(keymap_presets.table(keymap_presets.AFX), quit_app=["Command-Q"]))
 
 
 def test_cmd_q_quits_over_an_open_dialog(app_with):

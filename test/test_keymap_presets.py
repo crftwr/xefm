@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from puikit import Event, EventType  # noqa: E402
 
-from xefm import keymap_afx, keymap_presets  # noqa: E402
+from xefm import keymaps  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm import config as xefm_config  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
@@ -30,7 +31,7 @@ from xefm.state_manager import XeFMStateManager  # noqa: E402
 def _afx():
     """The AFX table as the presets will build it now — built at the call,
     since its desktop overrides read the backend another test may have set."""
-    return keymap_afx.bindings()
+    return keymap_presets.table(keymap_presets.AFX)
 
 
 def _config_with(**overrides):
@@ -99,7 +100,7 @@ class Apply(unittest.TestCase):
         running XeFM lacks one, its keys stay free."""
         config = _config_with()
         keymap_presets.apply(config, keymap_presets.ORTHODOX)
-        for action in keymap_presets._ORTHODOX.bindings:
+        for action in keymaps.orthodox.own_bindings():
             # Known in any context: the viewers' scoped search keys are (#737).
             if not keymap_presets._known(action):
                 self.assertNotIn(action, config.KEY_BINDINGS, action)
@@ -249,6 +250,25 @@ class Apply(unittest.TestCase):
                 seen.setdefault((k, sel), []).append(action)
         clashes = {k: v for k, v in seen.items() if len(v) > 1}
         self.assertEqual(clashes, {})
+
+    def test_the_common_table_binds_no_letter_in_the_file_list(self):
+        # Every preset is laid over it; a letter there would reach Orthodox
+        # and OS native, whose letters type ahead.
+        from xefm.keymaps import common as keymap_common
+        typing = keymap_presets._typing_contexts()
+        for action, value in keymap_common.bindings().items():
+            if action in typing:
+                keys = value["keys"] if isinstance(value, dict) else value
+                self.assertFalse([k for k in keys if keymap_presets.is_typing_key(k)],
+                                 action)
+
+    def test_a_preset_is_the_common_table_with_its_own_keys(self):
+        from xefm.keymaps import afx, common
+        own = afx.own_bindings()
+        table = keymap_presets.table(keymap_presets.AFX)
+        self.assertEqual(list(table), list(common.bindings()))
+        for action, value in own.items():
+            self.assertEqual(table[action], value, action)
 
     def test_typing_keys(self):
         for k in ("K", "k", "7", "Shift-K"):
@@ -414,6 +434,68 @@ class QuitAppEverywhere(unittest.TestCase):
         for platform_name in ("darwin", "linux", "win32"):
             for preset in keymap_presets.PRESETS:
                 self.assertEqual(self._quit_app(platform_name, "vt", preset), [],
+                                 (platform_name, preset))
+
+
+class FontSizeKeys(unittest.TestCase):
+    """The desktop app's text size keys: Cmd on macOS, Ctrl on Windows, under
+    every preset, except that Orthodox's Ctrl-MINUS clears the selection, so
+    its Windows app leaves Larger and Smaller to the menu and keeps Ctrl-0. A
+    terminal draws in its own font and gets none."""
+
+    ACTIONS = ("increase_font_size", "decrease_font_size", "reset_font_size")
+
+    def _keys(self, platform_name, backend, preset):
+        with _native_case(platform_name, backend, preset) as t:
+            return {a: t[a]["keys"] if isinstance(t[a], dict) else t[a]
+                    for a in self.ACTIONS}
+
+    def test_the_macos_app(self):
+        for preset in keymap_presets.PRESETS:
+            with self.subTest(preset=preset):
+                self.assertEqual(self._keys("darwin", "gui", preset), {
+                    "increase_font_size": ["Command-+", "Command-="],
+                    "decrease_font_size": ["Command-MINUS"],
+                    "reset_font_size": ["Command-0"]})
+
+    def test_the_windows_app(self):
+        for preset in keymap_presets.PRESETS:
+            with self.subTest(preset=preset):
+                orthodox = preset == keymap_presets.ORTHODOX
+                self.assertEqual(self._keys("win32", "gui", preset), {
+                    "increase_font_size": [] if orthodox else ["Ctrl-+", "Ctrl-="],
+                    "decrease_font_size": [] if orthodox else ["Ctrl-MINUS"],
+                    "reset_font_size": ["Ctrl-0"]})
+
+    def test_orthodox_keeps_ctrl_minus_for_unselect_all(self):
+        with _native_case("win32", "gui", keymap_presets.ORTHODOX) as t:
+            self.assertEqual(t["unselect_all"], ["Ctrl-MINUS"])
+
+    def test_no_preset_clashes_with_them_in_the_windows_app(self):
+        from collections import defaultdict
+        from xefm.actions import FILER, registry
+        own = {a.name for a in registry.actions(FILER)}
+        for preset in keymap_presets.PRESETS:
+            with self.subTest(preset=preset), \
+                    _native_case("win32", "gui", preset) as t:
+                kb = xefm_config.KeyBindings(t)
+                seen = defaultdict(list)
+                for action, value in t.items():
+                    if action not in own:
+                        continue
+                    keys = value["keys"] if isinstance(value, dict) else value
+                    sel = value.get("selection", "any") if isinstance(value, dict) else "any"
+                    for expr in keys:
+                        seen[(kb._parse_key_expression(expr), sel)].append(action)
+                clashes = {k: v for k, v in seen.items()
+                           if len(v) > 1 and set(v) & set(self.ACTIONS)}
+                self.assertEqual(clashes, {})
+
+    def test_a_terminal_gets_none(self):
+        for platform_name in ("darwin", "linux", "win32"):
+            for preset in keymap_presets.PRESETS:
+                self.assertEqual(self._keys(platform_name, "vt", preset),
+                                 {a: [] for a in self.ACTIONS},
                                  (platform_name, preset))
 
 

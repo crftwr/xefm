@@ -12,7 +12,7 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from xefm.tips import TIPS, referenced_actions, render_tip, tip_count  # noqa: E402
@@ -95,7 +95,7 @@ class TipsDialogApp(unittest.TestCase):
         from xefm._config import Config
         from xefm.actions import CONTEXTS
         from xefm.config import KeyBindings
-        keys = KeyBindings(keymap_afx.bindings())
+        keys = KeyBindings(keymap_presets.table(keymap_presets.AFX))
         for action in sorted(referenced_actions()):
             # Resolved per context, since a viewer action is only bound within
             # its own — and so an action named by its *old* spelling still

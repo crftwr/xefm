@@ -1,6 +1,6 @@
 """Key-binding matching against the PuiKit keyboard contract.
 
-Drives XeFM's real AFX keymap (`keymap_afx.py`) through
+Drives XeFM's real AFX keymap (`keymap_presets.table(AFX)`) through
 ``find_action_for_event`` using **PuiKit** ``Event`` objects shaped exactly as
 the curses/macOS backends now produce them (see
 ``doc/dev/PUIKIT_KEYBOARD_CONTRACT.md``).
@@ -11,7 +11,7 @@ import os
 import sys
 import unittest
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from puikit import Event, EventType
 from xefm.config import KeyBindings
 
@@ -32,7 +32,7 @@ def case(platform_name, backend):
     os.environ["XEFM_BACKEND"] = backend
     backend_detector._cached_backend = None
     try:
-        yield KeyBindings(keymap_afx.bindings())
+        yield KeyBindings(keymap_presets.table(keymap_presets.AFX))
     finally:
         sys.platform = saved_platform
         if saved_backend is None:
@@ -44,9 +44,9 @@ def case(platform_name, backend):
 
 class TestKeybindingsPuikitContract(unittest.TestCase):
     def setUp(self):
-        # Build against the AFX keymap (keymap_afx.py), so the
+        # Build against the AFX keymap (keymap_presets.table(AFX)), so the
         # test is deterministic and independent of any ~/.xefm/config.py.
-        self.kb = KeyBindings(keymap_afx.bindings())
+        self.kb = KeyBindings(keymap_presets.table(keymap_presets.AFX))
 
     def action(self, event, has_selection=False):
         return self.kb.find_action_for_event(event, has_selection)
@@ -104,7 +104,7 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
         # binding is on the named key rather than the character: a char-mode
         # match would ignore shift and both would mark one item. Only a console
         # that reports modifiers on a printable can deliver it — a POSIX
-        # terminal sends a bare space (see the Three cases note in keymap_afx.py).
+        # terminal sends a bare space (see the Three cases note in xefm/keymaps/common.py).
         self.assertEqual(
             self.action(key("space", " ", {"shift"})), "select_range"
         )
@@ -165,7 +165,7 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
 
 
 class TestThreeCases(unittest.TestCase):
-    """The per-case overrides at the foot of ``keymap_afx.py``: two platform
+    """The per-case overrides at the foot of ``xefm/keymaps/common.py``: two platform
     idioms on the desktop, and nothing a terminal cannot send anywhere."""
 
     def test_macos_desktop_adds_command_chords(self):
@@ -205,7 +205,7 @@ class TestThreeCases(unittest.TestCase):
         # arrives; Ctrl-Shift-<letter> is the same control byte as Ctrl-<letter>;
         # Ctrl-ENTER and Alt-ENTER are plain Enter (or hijacked).
         with case("linux", "vt") as kb:
-            for name, binding in keymap_afx.bindings().items():
+            for name, binding in keymap_presets.table(keymap_presets.AFX).items():
                 keys, _ = KeyBindings._binding_parts(binding)
                 for expr in keys:
                     ident, mods, _mode = kb._parse_key_expression(expr)
@@ -220,6 +220,48 @@ class TestThreeCases(unittest.TestCase):
                         ident == "enter" and mods & {"ctrl", "alt"},
                         f"{name}: {expr} arrives as plain Enter in a terminal",
                     )
+
+
+
+class AltOnAGlyph(unittest.TestCase):
+    """A punctuation binding ignores an Alt it does not name — on macOS Option
+    types the glyph — but one that names Alt is a chord: 'Alt-+' is not '+'.
+    Orthodox binds both (select_same_extension, select_by_pattern)."""
+
+    def setUp(self):
+        self.kb = KeyBindings({
+            "select_by_pattern": ["+"],
+            "select_same_extension": ["Alt-+"],
+            "at_sign": ["@"],
+        })
+
+    def test_the_alt_chord_wins_over_the_bare_glyph(self):
+        for context in (None, "filer"):
+            self.assertEqual(
+                self.kb.find_action_for_event(key("+", "+", {"alt"}), False, context),
+                "select_same_extension", context)
+
+    def test_the_bare_glyph_is_not_the_alt_chord(self):
+        self.assertEqual(self.kb.find_action_for_event(key("+", "+")),
+                         "select_by_pattern")
+
+    def test_order_does_not_decide_it(self):
+        kb = KeyBindings({"select_same_extension": ["Alt-+"],
+                          "select_by_pattern": ["+"]})
+        self.assertEqual(kb.find_action_for_event(key("+", "+")), "select_by_pattern")
+        self.assertEqual(kb.find_action_for_event(key("+", "+", {"alt"})),
+                         "select_same_extension")
+
+    def test_an_alt_the_binding_does_not_name_is_still_ignored(self):
+        # Opt-L types '@' on a German Mac layout: a bare '@' binding takes it.
+        self.assertEqual(self.kb.find_action_for_event(key("@", "@", {"alt"})),
+                         "at_sign")
+
+    def test_one_key_of_a_sequence_lookup_prefers_it_too(self):
+        self.assertEqual(self.kb.sequence_lookup([key("+", "+", {"alt"})], False, "filer"),
+                         ("select_same_extension", False))
+        self.assertEqual(self.kb.sequence_lookup([key("+", "+")], False, "filer"),
+                         ("select_by_pattern", False))
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from puikit import Event, EventType  # noqa: E402
 
-from xefm import keymap_afx  # noqa: E402
+from xefm import keymap_presets  # noqa: E402
 from xefm import _config  # noqa: E402
 from xefm import actions as _ctx  # noqa: E402
 from xefm import app as xefm_app  # noqa: E402
@@ -120,7 +120,7 @@ class DefaultBinding(unittest.TestCase):
                       modifiers=frozenset())
 
     def test_backslash_resolves_to_go_root(self):
-        kb = KeyBindings(keymap_afx.bindings())
+        kb = KeyBindings(keymap_presets.table(keymap_presets.AFX))
         self.assertEqual(
             kb.find_action_for_event(self.BACKSLASH, context=_ctx.FILER),
             "go_root")
@@ -130,7 +130,7 @@ class DefaultBinding(unittest.TestCase):
         missing key inside ``KEY_BINDINGS``, so the registry default is what has
         to reach an existing ~/.xefm/config.py — and only the context lookup
         consults it, which is the one the file list uses."""
-        older = {name: keys for name, keys in keymap_afx.bindings().items()
+        older = {name: keys for name, keys in keymap_presets.table(keymap_presets.AFX).items()
                  if name != "go_root"}
         kb = KeyBindings(older)
         self.assertEqual(
