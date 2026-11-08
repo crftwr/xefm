@@ -242,7 +242,7 @@ class XeFM(adapter.Adapter):
         one folder, xefm/, which becomes the room's skills/xefm."""
         from xefm import extensions as ext
         where = pathlib.Path(tempfile.mkdtemp(prefix="xefm-qa-skill-"))
-        bundle = ext.write_skill_zip(where / ext.skill_zip_name())
+        bundle = ext.write_skill_zip(where)   # named after its stamp
         with zipfile.ZipFile(bundle) as archive:
             archive.extractall(where / "unpacked")
         return where / "unpacked" / "xefm"

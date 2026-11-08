@@ -26,6 +26,8 @@ import tempfile
 import textwrap
 import unittest
 import unittest.mock
+
+import pytest
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -661,25 +663,93 @@ class Distribution(_Tmp):
         self.assertLess(ROUTER.index("## Which XeFM this describes"),
                         ROUTER.index("## Ground rules"))
 
-    def test_a_checkout_off_the_release_tag_is_a_dev_build(self):
-        def git(stdout):
-            return unittest.mock.patch(
-                "subprocess.run",
-                return_value=subprocess.CompletedProcess([], 0, stdout, ""))
+    SHA = "0123456789abcdef0123456789abcdef01234567"
+
+    def _answers(self, head=SHA, tag=SHA, status=""):
+        """A stand-in for git, so the checkout's own state is moot."""
+        def git(*args):
+            if args[0] == "status":
+                return status
+            return tag if "--verify" in args else head
+        return git
+
+    def test_a_clean_tree_at_the_tag_is_the_release(self):
+        self.assertEqual(ext.skill_version(self._answers()), xefm.__version__)
+
+    def test_a_tree_off_the_tag_names_its_commit(self):
+        """#855: two dev builds can be told apart."""
+        self.assertEqual(ext.skill_version(self._answers(tag="f" * 40)),
+                         f"{xefm.__version__}+dev.g{self.SHA[:9]}")
+        self.assertEqual(ext.skill_version(self._answers(tag=None)),   # no tag yet
+                         f"{xefm.__version__}+dev.g{self.SHA[:9]}")
+
+    def test_a_dirty_tree_at_the_tag_says_so(self):
+        """#855: uncommitted changes at the tag do not pass as the release."""
+        self.assertEqual(ext.skill_version(self._answers(status=" M xefm/app.py")),
+                         f"{xefm.__version__}+dev.g{self.SHA[:9]}.dirty")
+
+    def test_with_no_git_answer_it_is_the_release(self):
+        self.assertEqual(ext.skill_version(lambda *_: None), xefm.__version__)
+
+    def _own_checkout(self) -> Path:
         # A checkout of its own: the tree under test need not be one (a copy
         # staged in a VM has no .git - doc/dev/VM_TESTING_SYSTEM.md).
-        (self.tmp / "checkout" / ".git").mkdir(parents=True)
-        skill_dir = self.tmp / "checkout" / "xefm" / "skills" / "xefm"
-        self.assertEqual(skill_dir.parents[2], self.tmp / "checkout")
+        root = self.tmp / "checkout"
+        skill_dir = root / "xefm" / "skills" / "xefm"
+        skill_dir.mkdir(parents=True)
+        self.assertEqual(skill_dir.parents[2], root)
         patcher = unittest.mock.patch.object(ext, "SKILL_DIR", skill_dir)
         patcher.start()
         self.addCleanup(patcher.stop)
-        with git(f"v{xefm.__version__}\n"):
-            self.assertEqual(ext.skill_version(), xefm.__version__)
-        with git(""):
-            self.assertEqual(ext.skill_version(), f"{xefm.__version__}+dev")
+        return root
+
+    def test_git_unavailable_is_the_release(self):
+        (self._own_checkout() / ".git").mkdir()
         with unittest.mock.patch("subprocess.run", side_effect=FileNotFoundError):
             self.assertEqual(ext.skill_version(), xefm.__version__)
+
+    @pytest.mark.host_only  # skills are built on the host; a VM's image need not have git
+    def test_the_real_git_answers_mean_what_skill_version_expects(self):
+        root = self._own_checkout()
+
+        def git(*args):
+            subprocess.run(["git", "-C", str(root), "-c", "user.name=t",
+                            "-c", "user.email=t@example.invalid", *args],
+                           check=True, capture_output=True)
+
+        git("init")
+        (root / "file").write_text("one")
+        git("add", "file")
+        git("commit", "-m", "one")
+        self.assertRegex(ext.skill_version(), r"\+dev\.g[0-9a-f]{9}$", "no tag yet")
+        git("tag", "-a", f"v{xefm.__version__}", "-m", "release")
+        self.assertEqual(ext.skill_version(), xefm.__version__)
+        (root / "file").write_text("two")
+        self.assertTrue(ext.skill_version().endswith(".dirty"))
+        git("commit", "-am", "two")
+        self.assertRegex(ext.skill_version(), r"\+dev\.g[0-9a-f]{9}$")
+
+    def test_a_zip_written_to_a_folder_is_named_after_its_stamp(self):
+        """#855: a dev build cannot overwrite, or pass for, the release zip."""
+        import zipfile
+        dev = f"{xefm.__version__}+dev.g{self.SHA[:9]}"
+        path = ext.write_skill_zip(self.tmp, dev)
+        self.assertEqual(path, self.tmp / ext.skill_zip_name(dev))
+        with zipfile.ZipFile(path) as archive:
+            self.assertIn(f"packaged from **XeFM {dev}**",
+                          archive.read("xefm/SKILL.md").decode())
+
+    def test_release_skill_cannot_upload_a_stale_zip(self):
+        """The release's zip is removed and rebuilt; a dev build leaves it
+        missing, and the upload stops."""
+        makefile = (self.REPO / "Makefile").read_text(encoding="utf-8")
+        recipe = re.search(r"^release-skill:.*?(?=^\S|\Z)", makefile, re.M | re.S).group(0)
+        self.assertNotIn("skill-zip", recipe.splitlines()[0])   # not a prerequisite
+        order = [recipe.index(step) for step in
+                 ('rm -f "$(SKILL_ZIP)"', "skill-zip", 'test -f "$(SKILL_ZIP)"',
+                  "gh release upload")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("write_skill_zip(Path('dist'))", makefile)
 
     def test_an_install_without_a_checkout_is_the_release(self):
         with unittest.mock.patch.object(ext, "SKILL_DIR", self.tmp / "a" / "b" / "xefm"):

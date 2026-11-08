@@ -82,7 +82,8 @@ LEGACY_SKILL_NAME = "xefm-extension-authoring"
 def skill_zip_name(version: str = _XEFM_VERSION) -> str:
     """The release asset's name, ``xefm-X.Y.Z-skill.zip``. Versioned, because
     the skill describes one XeFM's config and API (#639); the install doc
-    resolves the latest tag rather than relying on a fixed URL."""
+    resolves the latest tag rather than relying on a fixed URL. A dev build
+    passes its ``skill_version()`` and gets a name no release has (#855)."""
     return f"xefm-{version}-skill.zip"
 
 
@@ -92,26 +93,50 @@ def skill_zip_name(version: str = _XEFM_VERSION) -> str:
 SKILL_VERSION_TOKEN = "{XEFM_VERSION}"
 
 
-def skill_version() -> str:
-    """The version a skill made from this tree describes: ``__version__``, or
-    ``X.Y.Z+dev`` from a git checkout that is not at the ``vX.Y.Z`` tag — main
-    between releases still carries the last release's ``__version__``, and a
-    skill made there must not pass for that release's. An install with no
-    checkout (a wheel, the app bundle) is the release it says it is."""
+def _skill_git(*args: str) -> Optional[str]:
+    """One git answer about the tree the skill is made from, or None when it
+    cannot give one: no checkout (a wheel, the app bundle), no git, or an error.
+    ``.git`` is checked first because git would otherwise search upward, and an
+    unpacked sdist inside somebody's repository would report theirs."""
     root = SKILL_DIR.parents[2]
     if not (root / ".git").exists():
-        return _XEFM_VERSION
+        return None
     import subprocess
     try:
-        done = subprocess.run(["git", "-C", str(root), "describe", "--tags",
-                               "--exact-match", "HEAD"],
+        done = subprocess.run(["git", "-C", str(root), *args], check=True,
                               capture_output=True, text=True, timeout=10)
+    except subprocess.CalledProcessError:
+        return None
     except (OSError, subprocess.SubprocessError) as e:
-        logger.warning(f"Cannot tell whether the skill is a release build: {e}")
+        logger.warning(f"Cannot ask git about the skill's tree: {e}")
+        return None
+    return done.stdout.strip()
+
+
+def skill_version(git: Optional[Callable[..., Optional[str]]] = None) -> str:
+    """The version a skill made from this tree describes, as a PEP 440 local
+    version (#855):
+
+    - a clean checkout at the ``vX.Y.Z`` tag: ``X.Y.Z``
+    - off the tag: ``X.Y.Z+dev.g<sha>`` - main between releases still carries
+      the last release's ``__version__``, and a skill made there must not pass
+      for that release's
+    - with uncommitted changes: ``X.Y.Z+dev.g<sha>.dirty``, since the sha
+      alone would claim the skill is that commit
+    - no checkout (a wheel, the app bundle) or no git: ``X.Y.Z``, the release
+      it says it is
+
+    ``git`` answers one git command, or None; tests pass their own."""
+    git = git or _skill_git
+    head = git("rev-parse", "HEAD")
+    if not head:
         return _XEFM_VERSION
-    if done.stdout.strip() == f"v{_XEFM_VERSION}":
+    status = git("status", "--porcelain")
+    tag = git("rev-parse", "--verify", "--quiet", f"v{_XEFM_VERSION}^{{commit}}")
+    if head == tag and status == "":
         return _XEFM_VERSION
-    return f"{_XEFM_VERSION}+dev"
+    dirty = "" if status == "" else ".dirty"
+    return f"{_XEFM_VERSION}+dev.g{head[:9]}{dirty}"
 
 
 def _skill_files(version: str) -> Iterable[tuple[str, bytes]]:
@@ -126,14 +151,20 @@ def _skill_files(version: str) -> Iterable[tuple[str, bytes]]:
             yield file.relative_to(SKILL_DIR).as_posix(), data
 
 
-def write_skill_zip(path: Path) -> Path:
+def write_skill_zip(path: Path, version: Optional[str] = None) -> Path:
     """Zip the skill as one top-level folder, ``xefm/SKILL.md`` plus its
     ``references/``, so unzipping it into any agent's skills directory gives
-    the layout every Agent Skills client expects."""
+    the layout every Agent Skills client expects. A ``path`` that is an
+    existing directory gets the zip named after the version it is stamped
+    with, ``skill_zip_name(version)``, so the name and the stamp cannot
+    disagree (#855). ``version`` defaults to ``skill_version()``."""
+    version = version or skill_version()
     path = Path(path)
+    if path.is_dir():
+        path = path / skill_zip_name(version)
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name, data in _skill_files(skill_version()):
+        for name, data in _skill_files(version):
             archive.writestr(f"{SKILL_DIR.name}/{name}", data)
     return path
 
