@@ -59,10 +59,11 @@ KEY_BINDINGS = {
 ```
 
 Reloading applies **live** to key bindings, file associations, external programs,
-favorites, confirmation prompts, and the text-editor / diff-tool
-settings. Themes and post-effects, fonts (desktop mode), the pane-split and
-log-height ratios, and file-monitoring intervals are read once at startup and
-only fully apply on the **next launch**. XeFM logs a reminder after each reload.
+favorites, confirmation prompts, the text-editor / diff-tool settings, themes,
+and `MONO_FONT_NAME` / `FONT_SIZE` (desktop mode). `UI_FONT_NAME`, the
+pane-split and log-height ratios, and file-monitoring intervals are read once at
+startup and only apply on the **next launch**. XeFM logs a reminder after each
+reload.
 
 If your edited config has a Python error, XeFM logs it and falls back to built-in
 defaults rather than crashing; out-of-range values are still applied but logged
@@ -84,8 +85,9 @@ FONT_SIZE      = 12    # point size applied to BOTH faces (8-72)
 `MONO_FONT_NAME` must be a monospaced font; the on-screen grid takes its column
 width from it. A row is tall enough for both faces, and text in either face sits on
 the same baseline, so any pair lines up; a `UI_FONT_NAME` taller than the
-monospaced face makes rows taller. In desktop mode you can also change `FONT_SIZE` live with `Cmd-+` /
-`Cmd--`.
+monospaced face makes rows taller. A change to `MONO_FONT_NAME` or `FONT_SIZE`
+applies when you reload the configuration; a change to `UI_FONT_NAME` applies at
+the next launch.
 
 ### Symbols your terminal font draws full-width (advanced)
 

@@ -131,6 +131,25 @@ contrast against the pane behind it, so a high number — or a flat color close 
 the background — fades as far as that floor and no further. A hidden entry ends
 up quiet enough to skip over and still solid enough to read when you look at it.
 
+### The Title Bar
+
+In desktop mode the window's title bar follows the theme: a light theme gets a
+light title bar and a dark theme a dark one, whatever the OS is set to. On macOS
+the menu bar's menus and the context menus follow it too; on Windows the menus
+stay light.
+
+XeFM tells a light theme from a dark one by its background. A theme whose chrome
+is far from its background says which it is with `appearance` (Pelagic, with its
+white shell over dark water, is light):
+
+```python
+THEMES = {
+    'Ocean': {
+        'appearance': 'light',   # or 'dark'; left out, the background decides
+    },
+}
+```
+
 ## How to Use
 
 ### Switch Themes

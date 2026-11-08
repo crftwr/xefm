@@ -877,6 +877,11 @@ class FilePane(Widget):
             self._records_cache = (id(entries), {str(p): a for p, a in entries})
         return self._records_cache[1]
 
+    def forget_measurements(self) -> None:
+        """Drop the column widths measured for the current listing, so the
+        next draw measures again: the base font changed under them (#857)."""
+        self._measure_cache = (None, None)
+
     def _measure(self, layout, files, records, store, measure, measure_mono) -> dict:
         """The widest value each extra's column has in the current listing —
         what keeps a row tight when extras are sparse: an extra's column is

@@ -391,6 +391,29 @@ same for their selected row (`SELECTION_OPACITY`), which is what keeps a dialog'
 selection from washing out on these themes. A terminal has no translucency and
 ignores it.
 
+## The OS appearance (title bar, native menus)
+
+`Panel.theme` colors what the Panel draws; the title bar, and on macOS the
+native menus, are the OS's. `_theme` stores `extras["appearance"]` on every
+theme — `"light"` or `"dark"`, from the spec's `appearance` when it names one
+of those, otherwise from the background's Rec. 601 luma split at 128 (the same
+split `derive_theme` uses for its own lift direction), via
+`_theme_appearance`. Pelagic pins `"light"`: its title bar meets the white
+shell, not the dark water its `bg` describes. `appearance` is also a
+`config.THEMES` key (`_THEME_OVERRIDE_MAP`).
+
+`XeFMApp._apply_appearance` pushes it with `Backend.set_appearance` (PuiKit
+1.22.0) alongside the post effect, background and surface opacity: in
+`_apply_theme`, and once for the restored theme in `__init__`. Both run while
+the backend is open, since `main` builds the app inside `with backend`, which
+Windows needs to recolor an existing title bar. A terminal or the browser
+inherits the base no-op, so nothing branches on the backend. Windows' native
+menus stay light; `set_appearance` does not reach them.
+
+Following the OS (a light and a dark theme chosen by
+`effective_appearance()`) was considered in #857 and left for later: it needs a
+decision on how it sits with the theme list and Next Theme.
+
 ## Related Files
 
 - `xefm/colors.py` — color-pair constants, `dark`/`light` palettes, `init_colors`, accessors
