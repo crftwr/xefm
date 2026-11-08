@@ -53,8 +53,8 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `copy_paths` | Copy the full path(s) to the clipboard | `Ctrl-P` | `Ctrl-P` | `Ctrl-P` | `Ctrl-P` |
 | `copy_files` | Copy the selection to the other pane | `C` (selection: required) | `F5` | `F5` | `F5` |
 | `move_files` | Move the selection to the other pane | `M` (selection: required) | `F6` | `F6` | `F6` |
-| `copy_files_to` | Copy the selection to a directory typed in a prompt | `Shift-C` (selection: required) | — | — (selection: required) | — (selection: required) |
-| `move_files_to` | Move the selection to a directory typed in a prompt | `Shift-M` (selection: required) | — | — (selection: required) | — (selection: required) |
+| `copy_files_to` | Copy the selection to a directory typed in a prompt | `Shift-C` (selection: required) | — | — | — |
+| `move_files_to` | Move the selection to a directory typed in a prompt | `Shift-M` (selection: required) | — | — | — |
 | `duplicate_files` | Duplicate the selection in place | — | `Shift-F5` | — | — |
 | `delete_files` | Move the selection to the Trash (or delete it where there is none) | `K`, `DELETE` (selection: required) | `F8`, `DELETE` | `DELETE`, `F8` | `d d`, `DELETE`, `F8` |
 | `delete_permanently` | Delete the selection for good, skipping the Trash | `Shift-K`, `Shift-DELETE` (selection: required) | `Shift-F8`, `Shift-DELETE` | `Shift-DELETE`, `Shift-F8` | `Shift-D Shift-D`, `Shift-DELETE`, `Shift-F8` |
@@ -66,7 +66,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `file_details` | Show details for the focused item | `I` | `Alt-ENTER` | `Alt-I` | `Ctrl-G` |
 | `diff_files` | Compare two files side by side | `EQUAL` | `EQUAL` | `EQUAL` | — |
 | `diff_directories` | Compare two directories recursively | `Shift-EQUAL` | — | `Shift-EQUAL` | `Shift-EQUAL` |
-| `create_archive` | Create an archive from the selection | `P` (selection: required) | `Alt-F5` | — (selection: required) | — (selection: required) |
+| `create_archive` | Create an archive from the selection | `P` (selection: required) | `Alt-F5` | — | — |
 | `extract_archive` | Extract the selected archive(s) | `U` | `Alt-F9`, `Alt-F6` | — | — |
 | `find_files` | Search for files by name | `Shift-F` | `Alt-F7` | `Ctrl-F` | — |
 | `find_in_files` | Search inside files | `Shift-G` | — | — | — |

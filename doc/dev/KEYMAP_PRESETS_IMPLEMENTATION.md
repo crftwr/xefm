@@ -8,7 +8,7 @@ in [`doc/KEYMAP_PRESETS_FEATURE.md`](../KEYMAP_PRESETS_FEATURE.md).
 ## Shape
 
 `xefm/keymap_presets.py` holds `Preset` (name, label, description,
-`bindings`, `free_letters`, `type_ahead`) and the `PRESETS` table: `afx`,
+`bindings`, `type_ahead`) and the `PRESETS` table: `afx`,
 `orthodox`, `native` and `vim`. Labels are bare names (`AFX style`, `Orthodox`);
 what each does is the description, which the keymap dialog shows beside it. Discussion #343 asked for one mechanism with several presets on
 it, not a special-cased beginner mode, and that is the reason for this shape.
@@ -21,13 +21,25 @@ only the "untouched" actions (equal to the shipped value). That made AFX the
 default, and the untouched test could not tell an old shipped value from a
 deliberate one.
 
-The AFX table lives in `xefm/keymap_afx.py`, as `bindings()`. The table moved
-there verbatim from `_config.py`, comments and the per-platform desktop
-overrides included. It is a function because those overrides branch on
+Every preset is laid over **`xefm/keymap_common.py`**, `bindings()`: the
+viewers', dialogs' and search bars' keys (the same under every preset), the
+file list's keys that are not a bare letter or digit, and the desktop app's
+platform keys (`quit_app`, the font size). It binds no letter or digit to a
+`filer` or `common` action, and still lists every action, `[]` where a preset
+has to give it a key, so none falls through to `actions._template_bindings`.
+It is a function because the desktop overrides at its foot branch on
 `is_desktop_mode()` and `sys.platform`, and every call returns a new dict.
-It is also where the viewers', dialogs' and search bars' keys live. Those
-surfaces are the same under every preset, so the other presets start from
-this table's copy of them.
+
+The AFX preset is `xefm/keymap_afx.py`: `own_bindings()` is its letters and
+digits (with the shared keys an action keeps, such as `DELETE` beside `K`),
+and `bindings()` is the whole AFX keymap, the common table with those laid
+over it. Until the split (in the same change as the font size keys) the AFX
+table *was* the common table: it held every shared key too, and the other
+presets started from it with a `free_letters` flag that stripped AFX's
+letters. That made a shared key look like an AFX choice; a key for every
+preset (the font size) had to be added to "the AFX file". The split kept
+every preset's table identical, order included, on all three platforms in
+both backends; only an emptied `{'keys': [], 'selection': …}` became `[]`.
 
 Both presets are named for their lineage. AFX's is the single-key Japanese
 filers: the X68000 file managers, then AFX (あふ), then cfiler. The preset
@@ -39,22 +51,23 @@ saved menu choice. `set_keymap_preset` compares canonical names, so
 A per-platform Explorer/Finder preset is one more entry.
 
 `actions._template_bindings`, the built-in default for an action no table
-mentions, reads `keymap_afx.bindings()` too. Every preset's table starts from
-it, so only an action absent from all of them reaches that fallback.
+mentions, reads `keymap_afx.bindings()`. Every preset's table starts from the
+common table, which names every action AFX does, so only an action absent
+from all of them reaches that fallback.
 
 ## `table(name)` and `apply(config, name)`
 
 `table(name)` builds one preset's whole keymap:
 
-1. Start from `keymap_afx.bindings()`. For AFX, that is the result.
-2. `free_letters` removes **typing keys** (`is_typing_key`: a bare letter or
-   digit, or `Shift-<letter>`) from every action of the `filer` and `common`
-   contexts. A viewer's own actions keep their letters, because nothing is
-   typed into a viewer.
-3. `bindings` replaces those actions' keys with a plain list. That drops any
-   `selection` gate: AFX's `copy_files` is `{'keys': ['C'], 'selection':
-   'required'}`, and an orthodox `F5` copies the cursor item when nothing is
-   marked, which `_transfer` already does.
+1. Start from `keymap_common.bindings()`. It has no **typing keys**
+   (`is_typing_key`: a bare letter or digit, or `Shift-<letter>`) on a
+   `filer` or `common` action; a viewer's own actions keep their letters,
+   because nothing is typed into a viewer.
+2. `bindings` replaces the keys of each action it names, in place. A plain
+   list drops any `selection` gate, so an orthodox `F5` copies the cursor
+   item when nothing is marked, which `_transfer` already does. AFX's entries
+   keep theirs: its `copy_files` is `{'keys': ['C'], 'selection':
+   'required'}`.
 
 `apply` writes the result **into `config.KEY_BINDINGS`**. The keymap is built
 from that table in several places: the app's `self.keys`, the shared
@@ -154,7 +167,7 @@ without them, and a missing action never holds a key for nothing.
 `native` (discussion #587) is the first preset whose table depends on where
 XeFM runs. That makes `Preset.bindings` either a dict or a function, and
 `table()` calls the function each time it builds. `_native_bindings()` uses
-the same three cases as the foot of `keymap_afx.py`:
+the same three cases as the foot of `keymap_common.py`:
 
 - **Any terminal** gets a table of chords a terminal can send: no `Command`,
   no `Ctrl-Shift-<letter>`, and no `Ctrl`/`Alt-Enter`.
@@ -210,8 +223,8 @@ action. It is the first preset whose keys are sequences (`'g g'`, `'y y'`,
 reaches past the file list: `text_viewer.*` actions and a context-qualified
 `text_viewer.quit`. `table()` therefore accepts any name `_known` recognizes:
 an action of any context, or `<context>.<action>` as `KEY_BINDINGS` spells a
-scoped rebind. `free_letters` strips AFX's letters; `type_ahead` stays off,
-since letters are commands and `/` searches.
+scoped rebind. `type_ahead` stays off, since letters are commands and `/`
+searches.
 
 New actions it needed, all unbound under the other presets:
 

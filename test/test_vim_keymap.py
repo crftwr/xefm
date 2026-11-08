@@ -55,7 +55,10 @@ def _keys(value):
 
 def test_it_is_a_letter_layout_with_no_type_ahead():
     preset = keymap_presets.PRESETS[keymap_presets.VIM]
-    assert preset.free_letters and not preset.type_ahead
+    assert not preset.type_ahead
+    # Its letters are its own: the common table binds none in the file list.
+    table = keymap_presets.table(keymap_presets.VIM)
+    assert _keys(table["cursor_down"])[0] == "j"
     assert preset.label == "Vim style"
 
 

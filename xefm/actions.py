@@ -135,7 +135,8 @@ class Action:
     it does, and how it is bound by default.
 
     ``default_keys`` of ``None`` means "read the AFX keymap table"
-    (:mod:`xefm.keymap_afx`), which is where every built-in action's keys live.
+    (:mod:`xefm.keymap_afx`, the common table with AFX's letters), which names
+    every built-in action.
     An explicit tuple (including an empty one, for a deliberately unbound
     action) overrides that lookup.
     """
@@ -190,7 +191,8 @@ _template_cache: dict[str, tuple[tuple[str, ...], str]] | None = None
 def _template_bindings() -> dict[str, tuple[tuple[str, ...], str]]:
     """``{name: (keys, selection)}`` from the AFX keymap table
     (:mod:`xefm.keymap_afx`) — what an action is bound to when the table in
-    force never mentions it. Every preset's table starts from that one, so
+    force never mentions it. Every preset's table starts from the common table
+    (:mod:`xefm.keymap_common`), which names every action this one does, so
     only an action no table names reaches this.
 
     Read lazily and cached: importing the table at module import would drag

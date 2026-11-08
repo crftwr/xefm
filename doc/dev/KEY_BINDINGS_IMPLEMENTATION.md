@@ -92,8 +92,8 @@ path changes this.
 
 ### The three cases, and where they live
 
-The AFX keymap (`xefm/keymap_afx.py`, formerly `KEY_BINDINGS` in `xefm/_config.py`)
-is therefore written as **one common table**
+The keys every preset shares (`xefm/keymap_common.py`; once `KEY_BINDINGS` in
+`xefm/_config.py`, then the AFX table) are therefore written as **one common table**
 — only chords every backend delivers — followed by a small override block keyed
 on `is_desktop_mode()` and `sys.platform`:
 

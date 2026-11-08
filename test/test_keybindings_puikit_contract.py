@@ -104,7 +104,7 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
         # binding is on the named key rather than the character: a char-mode
         # match would ignore shift and both would mark one item. Only a console
         # that reports modifiers on a printable can deliver it — a POSIX
-        # terminal sends a bare space (see the Three cases note in keymap_afx.py).
+        # terminal sends a bare space (see the Three cases note in keymap_common.py).
         self.assertEqual(
             self.action(key("space", " ", {"shift"})), "select_range"
         )
@@ -165,7 +165,7 @@ class TestKeybindingsPuikitContract(unittest.TestCase):
 
 
 class TestThreeCases(unittest.TestCase):
-    """The per-case overrides at the foot of ``keymap_afx.py``: two platform
+    """The per-case overrides at the foot of ``keymap_common.py``: two platform
     idioms on the desktop, and nothing a terminal cannot send anywhere."""
 
     def test_macos_desktop_adds_command_chords(self):

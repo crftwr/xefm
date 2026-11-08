@@ -250,6 +250,26 @@ class Apply(unittest.TestCase):
         clashes = {k: v for k, v in seen.items() if len(v) > 1}
         self.assertEqual(clashes, {})
 
+    def test_the_common_table_binds_no_letter_in_the_file_list(self):
+        # Every preset is laid over it; a letter there would reach Orthodox
+        # and OS native, whose letters type ahead.
+        from xefm import keymap_common
+        typing = keymap_presets._typing_contexts()
+        for action, value in keymap_common.bindings().items():
+            if action in typing:
+                keys = value["keys"] if isinstance(value, dict) else value
+                self.assertFalse([k for k in keys if keymap_presets.is_typing_key(k)],
+                                 action)
+
+    def test_afx_is_the_common_table_with_its_own_keys(self):
+        from xefm import keymap_afx, keymap_common
+        own = keymap_afx.own_bindings()
+        table = keymap_presets.table(keymap_presets.AFX)
+        self.assertEqual(list(table), list(keymap_common.bindings()))
+        self.assertEqual(table, keymap_afx.bindings())
+        for action, value in own.items():
+            self.assertEqual(table[action], value, action)
+
     def test_typing_keys(self):
         for k in ("K", "k", "7", "Shift-K"):
             self.assertTrue(keymap_presets.is_typing_key(k), k)

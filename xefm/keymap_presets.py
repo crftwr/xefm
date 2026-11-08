@@ -10,21 +10,21 @@ an upgrade from before presets alike — asks which one to use.
 - **Vim style** — Vim-style keys: ``hjkl``, ``gg`` / ``G``, ``yy`` / ``dd``
   / ``p``, ``/`` and ``n`` (#587).
 
-A preset is **a key table plus behavior flags**:
+A preset is **a key table plus a behavior flag**:
 
 - ``bindings`` — action name → keys, or a function returning that table
-  when it depends on the platform and backend (OS native);
-- ``free_letters`` — take every bare letter and digit (``K``, ``Shift-K``,
-  ``1``) off the file list's actions and the shared ones (``quit``,
-  ``edit_file``), so typing a letter never runs anything;
+  when it depends on the platform and backend (AFX, OS native);
 - ``type_ahead`` — an unbound printable key in the file list starts
   incremental search with that character, the way typing in a file list does
   almost everywhere else.
 
-The viewers, dialogs and search bars have one set of keys under every preset
-— they take typed text or have no file list — and that set lives in the AFX
-table, so a preset other than AFX starts from it, frees the letters, and lays
-its own ``bindings`` on top.
+Every preset is laid over :mod:`xefm.keymap_common`: the viewers', dialogs'
+and search bars' keys (they take typed text or have no file list, so they are
+the same under every preset), the file list's keys that are not letters or
+digits, and the desktop app's platform keys. That table binds no bare letter
+or digit in the file list, so a preset that binds none (Orthodox, OS native)
+leaves typing to type-ahead. A preset's entry replaces the action's entry
+there; an action it does not name keeps the common keys.
 
 ``config.py``'s ``KEY_BINDINGS`` is laid over the preset in force, action by
 action, **always**: an entry there replaces that action's keys whatever the
@@ -76,7 +76,6 @@ class Preset:
     label: str
     description: str
     bindings: Union[dict, Callable[[], dict]] = field(default_factory=dict)
-    free_letters: bool = False
     type_ahead: bool = False
 
 
@@ -87,7 +86,6 @@ _ORTHODOX = Preset(
     label="Orthodox",
     description=("F3 view, F4 edit, F5 copy, F6 move, F7 new folder, F8 "
                  "delete; typing a letter searches."),
-    free_letters=True,
     type_ahead=True,
     # Total Commander's default keys wherever XeFM has the action (its
     # keyboard map: Configuration > Keyboard, KEYBOARD.TXT). Where TC's key
@@ -193,7 +191,7 @@ def _native_bindings() -> dict:
     Finder's keys in the macOS desktop app, Explorer's in the Windows one, and
     in a terminal on any OS the same layout with every chord a terminal can
     actually send — the "three cases" note at the foot of
-    :mod:`xefm.keymap_afx` says which those are. The preset is chosen once for
+    :mod:`xefm.keymap_common` says which those are. The preset is chosen once for
     both apps (``~/.xefm``), so the terminal case has to stand on its own: the
     desktop tables are it with the platform chord in front, never a different
     layout.
@@ -310,14 +308,13 @@ _NATIVE = Preset(
                  "paste, rename and delete; F5 copies and F6 moves to the "
                  "other pane; typing a letter selects by name."),
     bindings=_native_bindings,
-    free_letters=True,
     type_ahead=True,
 )
 
 #: vifm's normal-mode keys (vifm 0.15 manual, and the sample vifmrc a new
 #: install gets: F3-F8, w, s, S), wherever XeFM has the action. Like AFX it
-#: is a letter layout, so every letter AFX had is freed first and nothing is
-#: typed ahead: search is '/', as in Vim. Sequences ('g g', 'y y') are
+#: is a letter layout, laid over the common table (which binds no letter), and
+#: nothing is typed ahead: search is '/', as in Vim. Sequences ('g g', 'y y') are
 #: KEY_BINDINGS key sequences, waiting KEY_SEQUENCE_TIMEOUT where a prefix is
 #: also a key of its own.
 _VIM_BINDINGS = {
@@ -399,14 +396,19 @@ _VIM = Preset(
     description=("hjkl to move, gg / G, yy / dd / p, cw rename, / and n to "
                  "search, ZZ to quit."),
     bindings=_VIM_BINDINGS,
-    free_letters=True,
 )
+
+def _afx_bindings() -> dict:
+    from xefm import keymap_afx
+    return keymap_afx.own_bindings()
+
 
 _AFX = Preset(
     name=AFX,
     label="AFX style",
     description=("C copy, M move, K delete, V view, E edit; one letter runs "
                  "one command."),
+    bindings=_afx_bindings,
 )
 
 PRESETS: dict[str, Preset] = {AFX: _AFX, ORTHODOX: _ORTHODOX, NATIVE: _NATIVE,
@@ -454,39 +456,33 @@ def is_typing_key(expr: str) -> bool:
 
 
 def _typing_contexts() -> set:
-    """The action names whose bare letters a preset frees: the file list's own
-    and the shared ones. A viewer's own actions (``text_viewer.toggle_wrap``)
-    keep their letters — nothing is typed into a viewer."""
+    """The action names the common table binds no bare letter or digit for:
+    the file list's own and the shared ones, where a letter is the preset's
+    to give (a command in AFX and Vim style, type-ahead in Orthodox and OS
+    native). A viewer's own actions (``text_viewer.toggle_wrap``) keep their
+    letters there — nothing is typed into a viewer."""
     from xefm.actions import COMMON, FILER, registry
     return {a.name for a in registry.actions(FILER)} | \
         {a.name for a in registry.actions(COMMON)}
 
 
 def table(name: Optional[str]) -> dict:
-    """Preset ``name``'s whole keymap, before ``config.py`` is laid over it."""
-    from xefm import keymap_afx
+    """Preset ``name``'s whole keymap, before ``config.py`` is laid over it:
+    the common table with the preset's ``bindings`` laid over it, in the
+    common table's order."""
+    from xefm import keymap_common
     preset = get(name)
-    result = keymap_afx.bindings()
-    if preset.name == AFX:
-        return result
-    if preset.free_letters:
-        typing = _typing_contexts()
-        for action, value in list(result.items()):
-            if action not in typing:
-                continue
-            kept = [k for k in _keys_of(value) if not is_typing_key(k)]
-            if len(kept) != len(_keys_of(value)):
-                result[action] = (dict(value, keys=kept) if isinstance(value, dict)
-                                  else kept)
-    # A preset's keys are a plain list, dropping any selection gate: an
-    # orthodox F5 copies the cursor item when nothing is marked.
+    result = keymap_common.bindings()
     bindings = preset.bindings() if callable(preset.bindings) else preset.bindings
     for action, keys in bindings.items():
         # A preset may name actions of features this XeFM does not have yet;
         # binding them would only claim their keys for nothing.
         if not _known(action):
             continue
-        result[action] = list(keys)
+        # A plain list carries no selection gate (an orthodox F5 copies the
+        # cursor item when nothing is marked); AFX's {'keys', 'selection'}
+        # entries keep theirs.
+        result[action] = copy.deepcopy(keys) if isinstance(keys, dict) else list(keys)
     return result
 
 
