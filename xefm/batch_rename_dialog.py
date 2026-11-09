@@ -48,6 +48,20 @@ def _is_valid_name(name: str) -> bool:
     return not any(ch in _INVALID_CHARS for ch in name)
 
 
+def _is_itself(entry: Any, new: str) -> bool:
+    """Whether ``new``, in ``entry``'s directory, names ``entry`` itself in
+    another case. A case-insensitive disk (Windows, and macOS by default) finds
+    a case-only rename's own file under the new name, which is no collision.
+    The disk is asked, not just the names compared, so on a case-sensitive disk
+    another file that differs only in case still is one."""
+    if new.casefold() != name_key.nfc(entry.name).casefold():
+        return False
+    try:
+        return (entry.parent / new).samefile(entry)
+    except OSError:
+        return False
+
+
 def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dict]:
     """Compute the ``original → new`` plan for ``files`` under the search/replace
     patterns. Returns one dict per file with ``original``, ``new``, ``valid``,
@@ -97,7 +111,8 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
             # everything downstream, the collision key included, assume NFC.
             new = name_key.nfc(name[: match.start()] + repl + name[match.end():])
             valid = _is_valid_name(new)
-            conflict = (entry.parent / new).exists() and new != name
+            conflict = ((entry.parent / new).exists() and new != name
+                        and not _is_itself(entry, new))
         else:
             new, valid, conflict = name, True, False
         rows.append({"original": name, "new": new, "valid": valid,
