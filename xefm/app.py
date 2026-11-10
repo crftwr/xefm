@@ -3295,10 +3295,11 @@ class XeFMApp:
         """Block until every in-flight async listing has completed and been
         installed, draining results as workers post them.
 
-        The interactive UI never calls this — it drains listings on the idle tick
-        (``_reload_tick``) so it never blocks. It exists for callers that need a
-        directory listed before they can proceed deterministically — chiefly unit
-        tests, which navigate and then assert on ``pane["files"]``."""
+        The interactive UI drains listings on the idle tick (``_reload_tick``)
+        so it never blocks. This is for callers that need a directory listed
+        before they can proceed deterministically: unit tests, which navigate
+        and then assert on ``pane["files"]``, and :meth:`_terminal_suspended`,
+        whose caller was blocked already and reads the panes next (#872)."""
         deadline = time.monotonic() + timeout
         self._process_result_queue()
         while self._listings_pending():
@@ -3768,7 +3769,8 @@ class XeFMApp:
         pane["scroll_offset"] = max(0, min(pane.get("scroll_offset", 0), max_offset))
         self.pm.adjust_scroll_for_focus(pane, height)
 
-    def _relist(self, pane: dict, *, keep_cursor: bool = True, on_ready=None) -> None:
+    def _relist(self, pane: dict, *, keep_cursor: bool = True, on_ready=None,
+                keep_visible: bool = False) -> None:
         """Re-list ``pane`` **in place** — same directory, cursor held on the same
         file — on a worker thread (see ``_list_pane``), so a sort change, a filter
         change or a post-operation reload never blocks the UI on a slow mount.
@@ -3790,6 +3792,10 @@ class XeFMApp:
         re-reading each path's attributes on a worker thread
         (:meth:`_list_virtual`), and ``on_ready`` fires when it lands.
 
+        ``keep_visible`` is :meth:`_list_pane`'s: the pane keeps its current
+        rows until the re-read lands instead of going blank (a virtual pane
+        always does).
+
         This is the "no directory change" sibling of :meth:`_refresh`, which adds
         the cursor reset and the history record a navigation needs."""
         if self._hold_if_hidden(pane):
@@ -3806,7 +3812,8 @@ class XeFMApp:
         if virtual:
             self._list_virtual(pane, virtual, on_ready=landed)
             return
-        self._list_pane(self._pane_name_of(pane), on_ready=landed)
+        self._list_pane(self._pane_name_of(pane), on_ready=landed,
+                        keep_visible=keep_visible)
 
     def _list_virtual(self, pane: dict, virtual: dict, *, on_ready=None,
                       on_empty=None, on_result=None, load=None,
@@ -5386,6 +5393,10 @@ class XeFMApp:
             self.log_info(f"Command failed: {exc}")
         return result.returncode if result is not None else None
 
+    #: Seconds :meth:`_terminal_suspended` waits for the panes' re-read
+    #: before giving control back.
+    _TERMINAL_RELIST_TIMEOUT = 2.0
+
     @contextlib.contextmanager
     def _terminal_suspended(self):
         """Hand the terminal to whatever runs inside, then take it back: the
@@ -5393,6 +5404,16 @@ class XeFMApp:
         both panes re-read and a repaint, since the child may have changed files
         while we were away. Shared by :meth:`_run_in_terminal` and
         ``ctx.terminal_backend_suspended()`` (#755).
+
+        The re-read has landed by the time the ``with`` exits, so code right
+        after it - an extension reading ``ctx.pane.entries`` - sees the
+        directory as the child left it (#872). The UI thread was blocked for
+        the whole hand-over anyway, so waiting for the listing costs nothing a
+        user can see. The panes keep their rows while it runs
+        (``keep_visible``): a listing slower than
+        :attr:`_TERMINAL_RELIST_TIMEOUT` (a remote or sleeping disk) lands
+        later, and until then the pane shows what it showed before, never
+        nothing.
 
         Not reentrant: a second hand-over while the terminal is already handed
         over is a RuntimeError — there is nothing left to hand."""
@@ -5404,8 +5425,9 @@ class XeFMApp:
                 yield
         finally:
             self._terminal_handed_over = False
-            self._relist(self.pm.left_pane)
-            self._relist(self.pm.right_pane)
+            self._relist(self.pm.left_pane, keep_visible=True)
+            self._relist(self.pm.right_pane, keep_visible=True)
+            self._settle_listings(self._TERMINAL_RELIST_TIMEOUT)
             self.panel.render()
 
     def _open_terminal(self, argv: list, *, cwd: str | None, env: dict,

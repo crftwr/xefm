@@ -941,6 +941,12 @@ class ActionContext:
         out, an exception included, XeFM takes the terminal back, re-reads both
         panes and repaints. It yields nothing.
 
+        The re-read is done by the time the ``with`` exits: ``ctx.pane.entries``
+        right after it lists the directory as your programs left it, so you can
+        go on to select or open what a picker returned. On storage slow enough
+        that the re-read takes more than a moment (a remote host, a sleeping
+        disk), the entries are the ones from before the ``with`` until it lands.
+
         Raises RuntimeError in the desktop app, which has no terminal to hand
         over (check :attr:`is_terminal_backend` first), when called off the UI
         thread, and when the terminal is already handed over.
