@@ -25,7 +25,11 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.24.0 is the floor because the Windows window reports Ctrl and Alt on a
+# 1.24.1 is the floor because the Windows app keeps the text layouts of the
+# file names between frames (puikit#201, #866): a tall window no longer falls
+# behind a held arrow key, which went on scrolling ~1.5 s after release. It is
+# soft: XeFM runs on 1.24.0, only slower to repaint on Windows.
+# 1.24.0 was the floor before because the Windows window reports Ctrl and Alt on a
 # punctuation key (puikit#198): View > Font Size's Ctrl-+ / Ctrl-= / Ctrl-- in
 # the Windows app, and Orthodox's Ctrl-\, Ctrl-MINUS and Alt-+, never arrived
 # before. It also draws the macOS menu's accelerator for a minus-key shortcut
@@ -241,7 +245,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.24.0
+puikit>=1.24.1
 pygments
 boto3
 watchdog
