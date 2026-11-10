@@ -35,6 +35,10 @@ macOS and Windows runs are, so the three differ only in the OS:
   from `requirements.txt` and `requirements-dev.txt`;
 - the log and JUnit XML in `temp/vm-test-qa-linux-<time>/`.
 
+`qa-linux-floor` is the same container on the lowest Python XeFM declares -
+`python:3.11-slim` while `requires-python` is `>=3.11`, read from
+`pyproject.toml` each run - and `make release-test` runs both.
+
 A table named `qa-linux` in `~/.config/quality-loop/guests.toml` overrides the
 built-in one - another image (`docker = "python:3.11-slim"`), another share.
 
