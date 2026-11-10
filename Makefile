@@ -374,7 +374,7 @@ fix-docs: check-venv
 #
 # One path for every platform (#842): quality-loop's guests
 # (~/.config/quality-loop/guests.toml) - qa-mac a Tart clone, qa-win a VMware
-# snapshot, qa-linux a Docker container (python:3.13-slim; no table needed).
+# snapshot, qa-linux a Docker container (python:3.15-slim; no table needed).
 # Each run stages this working tree, installs the packages into a fresh venv
 # and puts the guest away; see doc/dev/VM_TESTING_SYSTEM.md.
 #

@@ -24,7 +24,7 @@ Since #842 the glibc run is the `qa-linux` guest of
 test-vm GUEST=qa-linux`. It is staged, installed and reported exactly as the
 macOS and Windows runs are, so the three differ only in the OS:
 
-- a fresh `python:3.13-slim` container per run, removed after it (`--init`,
+- a fresh `python:3.15-slim` container per run, removed after it (`--init`,
   so what a test orphans is reaped as a real system's init would);
 - `libarchive13` installed at the start - the runtime package, not
   `libarchive-dev`, because the runtime package alone is the state a user's
@@ -36,7 +36,7 @@ macOS and Windows runs are, so the three differ only in the OS:
 - the log and JUnit XML in `temp/vm-test-qa-linux-<time>/`.
 
 A table named `qa-linux` in `~/.config/quality-loop/guests.toml` overrides the
-built-in one - another image (`docker = "python:3.14-slim"`), another share.
+built-in one - another image (`docker = "python:3.11-slim"`), another share.
 
 ## musl keeps its own image
 

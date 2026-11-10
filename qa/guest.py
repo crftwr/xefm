@@ -73,7 +73,7 @@ PACKAGES = ("local", "pypi")
 #: Guests that need no table in guests.toml.
 DEFAULT_GUESTS = {"qa-linux": {"share": "~/.cache/qa-guest=/qa",
                                "python": "/usr/local/bin/python3",
-                               "docker": "python:3.13-slim"}}
+                               "docker": "python:3.15-slim"}}
 
 #: What a Linux container installs before the venv: the runtime library alone,
 #: the state a user's machine is in (doc/dev/LINUX_TESTING_SYSTEM.md).

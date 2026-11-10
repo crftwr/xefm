@@ -19,7 +19,7 @@ XEFM_QA_GUEST=qa-win make qa SCENARIO=01            # quality-loop, the live che
 `GUEST` names a table in `~/.config/quality-loop/guests.toml` that says what
 guest it is, what folder it shares with this Mac, and the image's Python. For
 a VM it is also an SSH host alias. `qa-linux` is a Docker container
-(`python:3.13-slim`) and needs no table. The guest layer is quality-loop's
+(`python:3.15-slim`) and needs no table. The guest layer is quality-loop's
 (`quality_loop.guest`, its `docs/guests.md`), and so are the suite runner and
 the `desktop` / `host_only` marks; the VM images and aliases are shared with
 Keyhac (crftwr/keyhac, `doc/dev/testing.md`, "In a VM"). This page is what
@@ -65,9 +65,11 @@ Decided on xefm#750 for XeFM and Keyhac alike:
 | Also | OpenSSH, the `qa` user's desktop session, an SMB share | Keyhac.app, which holds the Accessibility grant |
 | Not there | Keyhac, git, libarchive, `LIBARCHIVE` | Homebrew, the command line tools |
 
-The Linux container is `python:3.13-slim`: Debian, glibc, Python, nothing
-else. `libarchive13` - the runtime package alone, the state a user's machine
-is in - is installed at the start of each run.
+The Linux container is `python:3.15-slim`: Debian, glibc, Python, nothing
+else. The VMs run the Python the shipped apps carry; the container runs the
+newest release, so a new Python is tested before the apps move to it.
+`libarchive13` - the runtime package alone, the state a user's machine is
+in - is installed at the start of each run.
 
 Everything under test is **staged every run** rather than kept in the image:
 
