@@ -500,7 +500,11 @@ def fuzzy_cd(ctx):
 ```
 
 - When the block ends, an exception included, XeFM takes the terminal back,
-  re-reads both panes and repaints.
+  re-reads both panes and repaints. The re-read is done before the next line
+  runs, so `ctx.pane.entries` after the block already shows what the program
+  changed, and you can go on to select what a picker returned. On a slow
+  storage (a remote host, a sleeping disk) it can still show the files from
+  before the block for a moment.
 - `ctx.program_env()` gives the program what `run_program` would: the active
   pane's directory and the [`XEFM_*` variables](EXTERNAL_PROGRAMS_FEATURE.md#environment-variables).
 - Capture only the stream that carries the answer. `fzf` prints the pick on

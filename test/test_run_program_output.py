@@ -398,11 +398,43 @@ class TestTerminalBackendSuspended(RunProgramBase):
         with patch('xefm.user_api.is_desktop_mode', return_value=False), \
                 patch.object(self.backend, 'suspended', suspended), \
                 patch.object(self.app, '_relist',
-                             side_effect=lambda pane: events.append('relist')):
+                             side_effect=lambda pane, **kw: events.append('relist')):
             with self.ctx().terminal_backend_suspended():
                 events.append('inside')
         self.assertEqual(events, ['suspend', 'inside', 'resume',
                                   'relist', 'relist'])
+
+    def test_entries_are_reread_when_the_with_exits(self):
+        """Right after the ``with``, ``ctx.pane.entries`` is the re-read
+        listing - not the blank pane of a re-read still in flight (#872) -
+        and it holds what the program made while it had the terminal."""
+        open(os.path.join(self.tmp, 'before.txt'), 'w').close()
+        self.app._list_pane('left')
+        self.app._list_pane('right')
+        self.app._settle_listings()
+        with patch('xefm.user_api.is_desktop_mode', return_value=False):
+            ctx = self.ctx()
+            self.assertEqual([e.name for e in ctx.pane.entries], ['before.txt'])
+            with ctx.terminal_backend_suspended():
+                open(os.path.join(self.tmp, 'made.txt'), 'w').close()
+            self.assertEqual(sorted(e.name for e in ctx.pane.entries),
+                             ['before.txt', 'made.txt'])
+
+    def test_a_slow_reread_keeps_the_rows_it_had(self):
+        """A re-read that outlasts the wait leaves the pane showing what it
+        showed before, never an empty one."""
+        open(os.path.join(self.tmp, 'before.txt'), 'w').close()
+        self.app._list_pane('left')
+        self.app._list_pane('right')
+        self.app._settle_listings()
+        with patch('xefm.user_api.is_desktop_mode', return_value=False), \
+                patch.object(self.app, '_settle_listings') as settle:
+            ctx = self.ctx()
+            with ctx.terminal_backend_suspended():
+                pass
+            settle.assert_called_once()
+            self.assertEqual([e.name for e in ctx.pane.entries], ['before.txt'])
+        self.app._settle_listings()
 
     def test_terminal_is_taken_back_after_an_exception(self):
         with patch('xefm.user_api.is_desktop_mode', return_value=False), \

@@ -240,7 +240,8 @@ The public names:
   the rest as in a shell (an `fzf` picker: choices in on stdin, the pick out
   on stdout). Raises in the desktop app; check `ctx.is_terminal_backend`
   (Preview) first. Pass `**ctx.program_env()` (Preview, `{'cwd', 'env'}` with
-  the `XEFM_*` variables) to the `subprocess` call. Never run an interactive
+  the `XEFM_*` variables) to the `subprocess` call. Both panes are re-read
+  before the `with` exits, so `ctx.pane.entries` after it is current. Never run an interactive
   program with `subprocess` outside this block
 - `ctx.copy(items, dest, *, on_done=None)` / `ctx.move(...)` (Preview) — copy
   or move files through XeFM's own operation (confirmation, conflict dialog,
