@@ -59,10 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Optional
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
+import tomllib
 
 from xefm import __version__ as _XEFM_VERSION
 from xefm.log_manager import getLogger
@@ -350,9 +347,6 @@ class ManifestError(Exception):
 def read_manifest(root: Path) -> Manifest:
     root = Path(root)
     path = root / MANIFEST
-    if tomllib is None:
-        raise ManifestError(Problem("error", "(file)",
-                                    "reading a manifest needs Python 3.11 or later"))
     try:
         with open(path, "rb") as f:
             data = tomllib.load(f)
@@ -1338,7 +1332,7 @@ class InstalledEntry:
 
 def read_installed(layout: Layout) -> dict[str, InstalledEntry]:
     path = layout.installed_file
-    if tomllib is None or not path.is_file():
+    if not path.is_file():
         return {}
     try:
         with open(path, "rb") as f:

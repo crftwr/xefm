@@ -68,7 +68,7 @@ Pick the install that matches how you want to run XeFM:
 |---|---|---|
 | **Desktop app** — Windows | the **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** | A real installed application, signed by Microsoft: one click, automatic updates, no SmartScreen prompt. No Python needed. |
 | **Desktop app** — macOS | the [latest release](https://github.com/crftwr/xefm/releases/latest), or Homebrew: `brew install --cask crftwr/tap/xefm` | A real installed application: own icon, Dock entry, own file permissions. No Python needed. |
-| **Terminal app** — Windows, macOS, Linux | [PyPI](https://pypi.org/project/xefm/) | The `xefm` command in any terminal, including over SSH. Needs Python 3.10+. |
+| **Terminal app** — Windows, macOS, Linux | [PyPI](https://pypi.org/project/xefm/) | The `xefm` command in any terminal, including over SSH. Needs Python 3.11+. |
 | **Terminal app** — macOS, Linux | Homebrew: `brew install crftwr/tap/xefm` | The same `xefm` command, managed by Homebrew. Use PyPI instead if you want to add Python libraries of your own. |
 
 The desktop and terminal apps coexist and share their settings in `~/.xefm/` —
@@ -116,7 +116,7 @@ xefm
 
 [pipx](https://pipx.pypa.io) and [uv](https://docs.astral.sh/uv/) keep XeFM in
 its own environment while putting the `xefm` command on your PATH; `uvx xefm`
-tries it once without installing anything. Python 3.10+ is the only
+tries it once without installing anything. Python 3.11+ is the only
 prerequisite — the install for SSH sessions, remote servers, and
 terminal-centric workflows.
 

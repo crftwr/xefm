@@ -64,7 +64,7 @@ XeFM をどう使いたいかに合わせてインストール方法を選んで
 |---|---|---|
 | **デスクトップアプリ** — Windows | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** | Microsoft の署名付きで、通常のアプリとしてインストールされます。ワンクリックで導入でき、自動更新され、SmartScreen の警告も出ません。Python は不要です。 |
 | **デスクトップアプリ** — macOS | [最新リリース](https://github.com/crftwr/xefm/releases/latest)、または Homebrew：`brew install --cask crftwr/tap/xefm` | 通常のアプリとしてインストールされ、専用のアイコンと Dock 項目を持ち、ファイルアクセス権限も XeFM 自身に与えられます。Python は不要です。 |
-| **ターミナルアプリ** — Windows、macOS、Linux | [PyPI](https://pypi.org/project/xefm/) | どのターミナルからでも（SSH 越しでも）使える `xefm` コマンド。Python 3.10 以上が必要です。 |
+| **ターミナルアプリ** — Windows、macOS、Linux | [PyPI](https://pypi.org/project/xefm/) | どのターミナルからでも（SSH 越しでも）使える `xefm` コマンド。Python 3.11 以上が必要です。 |
 | **ターミナルアプリ** — macOS、Linux | Homebrew：`brew install crftwr/tap/xefm` | Homebrew で管理される同じ `xefm` コマンド。自分で Python ライブラリを追加したい場合は PyPI 版を使ってください。 |
 
 デスクトップアプリとターミナルアプリは共存でき、設定は `~/.xefm/` で共有されます。両方をインストールして使うのも、ごく普通の構成です。
@@ -94,7 +94,7 @@ pipx install xefm     # or:  uv tool install xefm,  or:  pip install xefm
 xefm
 ```
 
-[pipx](https://pipx.pypa.io) と [uv](https://docs.astral.sh/uv/) は、XeFM を専用の環境に入れたうえで `xefm` コマンドを PATH に置いてくれます。`uvx xefm` なら何もインストールせずに一度だけ試せます。必要なのは Python 3.10 以上だけです。SSH セッション、リモートサーバー、ターミナル中心の作業にはこのインストール方法が向いています。
+[pipx](https://pipx.pypa.io) と [uv](https://docs.astral.sh/uv/) は、XeFM を専用の環境に入れたうえで `xefm` コマンドを PATH に置いてくれます。`uvx xefm` なら何もインストールせずに一度だけ試せます。必要なのは Python 3.11 以上だけです。SSH セッション、リモートサーバー、ターミナル中心の作業にはこのインストール方法が向いています。
 
 macOS と Linux では、Homebrew でターミナルアプリをインストールすることもできます。
 
