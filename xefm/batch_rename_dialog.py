@@ -35,34 +35,14 @@ from xefm import name_key
 from xefm.archive import release_archives_under
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom)
+from xefm.rename_check import Listings, fold, is_valid_name, obstacle
 
-#: Characters we refuse in a result name.
-_INVALID_CHARS = set('/\\:*?"<>|')
 #: Preview-list scroll keys (unsuffixed backend names, matching ListView).
 _SCROLL_KEYS = frozenset({"up", "down", "pageup", "pagedown", "home", "end"})
 
 
-def _is_valid_name(name: str) -> bool:
-    if not name or name in (".", ".."):
-        return False
-    return not any(ch in _INVALID_CHARS for ch in name)
-
-
-def _is_itself(entry: Any, new: str) -> bool:
-    """Whether ``new``, in ``entry``'s directory, names ``entry`` itself in
-    another case. A case-insensitive disk (Windows, and macOS by default) finds
-    a case-only rename's own file under the new name, which is no collision.
-    The disk is asked, not just the names compared, so on a case-sensitive disk
-    another file that differs only in case still is one."""
-    if new.casefold() != name_key.nfc(entry.name).casefold():
-        return False
-    try:
-        return (entry.parent / new).samefile(entry)
-    except OSError:
-        return False
-
-
-def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dict]:
+def compute_preview(files: Sequence[Any], search: str, replace: str,
+                    listings: Listings | None = None) -> list[dict]:
     """Compute the ``original → new`` plan for ``files`` under the search/replace
     patterns. Returns one dict per file with ``original``, ``new``, ``valid``,
     ``conflict``, and ``file``. Pure (no filesystem writes), so it is unit-test
@@ -110,9 +90,12 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
             # would join the character before it, so settle it here and let
             # everything downstream, the collision key included, assume NFC.
             new = name_key.nfc(name[: match.start()] + repl + name[match.end():])
-            valid = _is_valid_name(new)
-            conflict = ((entry.parent / new).exists() and new != name
-                        and not _is_itself(entry, new))
+            valid = is_valid_name(new)
+            # Anything under the new name but the file itself is a conflict:
+            # this dialog never frees one name for another (Rename in Editor
+            # does), so there is no order to get wrong (xefm.rename_check).
+            conflict = (new != name and valid
+                        and obstacle(entry, new, listings=listings))
         else:
             new, valid, conflict = name, True, False
         rows.append({"original": name, "new": new, "valid": valid,
@@ -123,17 +106,28 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
     # NFC by construction, which is what makes this catch the collision that used
     # to slip through — two rows landing on the same file under different
     # spellings of one name. Finder catches it too, and disambiguates with a
-    # " 2"; here it is the conflict that blocks the rename.
-    seen: dict[tuple, list[dict]] = {}
+    # " 2"; here it is the conflict that blocks the rename. Names that differ
+    # only in case collide too — one file where the disk ignores case, and the
+    # second rename would replace the first — unless the directory is seen to
+    # keep such names apart (#873). Only such a pair costs a listing.
+    listings = listings or Listings()
+    alike: dict[tuple, list[dict]] = {}
     for row in rows:
-        if row["original"] == row["new"]:
+        if row["original"] != row["new"]:
+            alike.setdefault((str(row["file"].parent), fold(row["new"])),
+                             []).append(row)
+    for group_rows in alike.values():
+        if len(group_rows) < 2:
             continue
-        key = (str(row["file"].parent), row["new"])
-        seen.setdefault(key, []).append(row)
-    for group_rows in seen.values():
-        if len(group_rows) > 1:
+        if (len({row["new"] for row in group_rows}) > 1
+                and listings.case_matters(group_rows[0]["file"].parent)):
+            exact: dict[str, list[dict]] = {}
             for row in group_rows:
-                row["conflict"] = True
+                exact.setdefault(row["new"], []).append(row)
+            group_rows = [row for same in exact.values() if len(same) > 1
+                          for row in same]
+        for row in group_rows:
+            row["conflict"] = True
     return rows
 
 
@@ -154,6 +148,9 @@ class BatchRenameDialog(FocusContainer, Widget):
         from puikit.widgets.text_edit import TextEdit
         self.files = list(files)
         self.on_done = on_done
+        # Listings the preview reads, kept across keystrokes; Enter checks each
+        # rename again against the disk as it is then.
+        self._listings = Listings()
         self._panel: Any = None
         self._status = ""
 
@@ -184,7 +181,8 @@ class BatchRenameDialog(FocusContainer, Widget):
 
     def _refresh_preview(self) -> None:
         search = self.search_edit.text
-        self.preview = compute_preview(self.files, search, self.replace_edit.text)
+        self.preview = compute_preview(self.files, search, self.replace_edit.text,
+                                       self._listings)
         rows = []
         for row in self.preview:
             if row["conflict"] or not row["valid"]:
@@ -232,6 +230,11 @@ class BatchRenameDialog(FocusContainer, Widget):
         renamed: dict[str, str] = {}
         for row in self.preview:
             if row["original"] == row["new"]:
+                continue
+            # Again, just before: something may have taken the name since the
+            # preview looked (xefm.rename_check).
+            if obstacle(row["file"], row["new"]):
+                errors.append(f"{row['original']}: {row['new']} already exists")
                 continue
             try:
                 release_archives_under(row["file"])

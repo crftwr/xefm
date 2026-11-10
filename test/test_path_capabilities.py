@@ -24,7 +24,7 @@ from xefm.path import (KNOWN_CAPABILITIES, SEARCH_STRATEGIES, LocalPathImpl,
 MATRIX = {
     'file': (
         {'write_operations', 'directory_rename', 'file_editing',
-         'streaming_read'},
+         'streaming_read', 'entry_identity'},
         'streaming', '', False),
     's3': (
         {'write_operations', 'extraction_for_reading', 'cache_for_search'},

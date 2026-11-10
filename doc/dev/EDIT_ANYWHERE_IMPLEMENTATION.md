@@ -80,21 +80,47 @@ The module is pure:
   CRLF and a missing final newline and strips nothing else. It returns a
   `RenamePlan` with `renames` or with per-line `errors`:
   - line count mismatch;
-  - invalid name (the same `_is_valid_name` as batch rename);
+  - invalid name (`xefm.rename_check.is_valid_name`, shared with batch rename);
   - two lines claiming one name in a directory, including the name of a batch
-    file that keeps its name;
-  - a name that exists on disk and is not being vacated by the batch.
-
-  A case-only rename skips the existence check, because a case-insensitive
-  disk finds the file itself.
+    file that keeps its name. Names that differ only in case claim one name,
+    unless the directory already holds two such names (`Listings.case_matters`,
+    ASCII letters only);
+  - an entry under the new name that is not a batch file renamed away
+    (`obstacle`, below).
 - `apply_plan(plan, rename)` renames in three phases:
-  1. Entries whose target is another renamed entry's current name are parked
-     under `.xefm-rename-<i>-<hex>`.
+  1. Entries whose target is, casefolded, another renamed entry's current name
+     are parked under `.xefm-rename-<i>-<hex>` (`must_park`).
   2. Direct renames run.
   3. Parked entries move to their targets.
 
   By phase 3 every target has been vacated, so swaps, cycles and shifts work.
-  A failure in phase 3 names the temporary file in its error.
+  Phases 2 and 3 call `obstacle` again just before each rename and skip one
+  whose target has been taken since. A failure in phase 3 names the temporary
+  file in its error.
+
+### What a rename may land on (`xefm/rename_check.py`)
+
+Shared by the rename prompt, the batch rename dialog and Rename in Editor
+(#867, #869, #873, #875). A rename replaces an existing entry on macOS, Linux,
+SSH and S3, so the rule is lopsided: comparing names may only refuse or park;
+letting a rename through takes evidence from the storage.
+
+`obstacle(entry, new, leaving, listings)` is true when an entry under `new` is
+neither `entry` nor one of `leaving`:
+
+1. Nothing there (`exists()` or `is_symlink()`, so a dangling link counts):
+   free.
+2. Exactly a leaving file's stored name: that file.
+3. No leaving file with the same casefolded name: an obstacle.
+4. Otherwise the storage says which entry it is. Where the backend declares
+   the `entry_identity` capability (the local disk), `lstat()`'s `st_dev` and
+   `st_ino` — which do not follow symlinks, unlike `samefile`, whose following
+   them was #875. Elsewhere, the directory listing: free only if the exact name
+   is not listed and every listed name with that casefold is a leaving file's.
+
+Steps 1-3 cost one lookup; a listing is read only in step 4 on a backend
+without `entry_identity`, and for `case_matters`, only when two new names
+differ only in case. Anything that cannot be shown is an obstacle.
 
 `XeFMApp.rename_in_editor` writes the list with `tempfile.mkstemp`, and
 `_rename_edit_round` runs the editor through `_run_editor`, which hands over
@@ -118,6 +144,9 @@ has its own action, `rename_in_editor`, bound to `Shift-R`.
   cycles on disk, the failure message for a parked file, and the app round
   trip with `subprocess.run` mocked (confirm, cancel, edit again, the GUI
   Apply step).
+- `test/test_rename_entry_check.py`: every rename path against an in-memory
+  directory that ignores case or not, on a backend with or without
+  `entry_identity`, plus real-disk tests for whichever kind the host has.
 - `test/test_remote_edit.py`: copy paths, sessions against a fake writable
   remote (save detection, conflict, force, reopen, close), and the app flow
   (upload on return, poll-found save, conflict prompt, loud failure, read-only

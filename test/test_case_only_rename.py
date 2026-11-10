@@ -77,6 +77,8 @@ class _Rename(unittest.TestCase):
     holding ``names``."""
 
     names = ()
+    #: (name, target) symlinks made beside ``names``.
+    links = ()
 
     def setUp(self):
         from xefm.state_manager import XeFMStateManager
@@ -86,6 +88,8 @@ class _Rename(unittest.TestCase):
         for name in self.names:
             with open(os.path.join(self.tmp, name), "w") as f:
                 f.write(name)
+        for name, target in self.links:
+            os.symlink(target, os.path.join(self.tmp, name))
         self.sm = XeFMStateManager(db_path=os.path.join(self.cfgdir, "state.db"))
         self.backend = create_backend("memory")
         self.backend.open()
@@ -112,7 +116,11 @@ class _Rename(unittest.TestCase):
         """name -> the name the file was created with."""
         out = {}
         for name in os.listdir(self.tmp):
-            with open(os.path.join(self.tmp, name)) as f:
+            path = os.path.join(self.tmp, name)
+            if os.path.islink(path):
+                out[name] = "->" + os.readlink(path)
+                continue
+            with open(path) as f:
                 out[name] = f.read()
         return out
 
@@ -180,6 +188,27 @@ class AFileThatDiffersOnlyInCaseStillCollides(_Rename):
         self.assertTrue(rows["foo.txt"]["conflict"])
         self.assertEqual(self.contents(),
                          {"foo.txt": "foo.txt", "Foo.txt": "Foo.txt"})
+
+
+@unittest.skipIf(_IGNORES_CASE, "needs a case-sensitive disk")
+@unittest.skipIf(sys.platform == "win32", "symlinks need a privilege there")
+class TheFileASymlinkPointsAtIsNotReplaced(_Rename):
+    """``foo.txt`` links to ``Foo.txt``: the same file, but another entry, so
+    renaming the link to ``Foo.txt`` would replace the file (#875)."""
+    names = ("Foo.txt",)
+    links = (("foo.txt", "Foo.txt"),)
+
+    def test_the_rename_prompt_refuses_it(self):
+        self.assertEqual(self.prompt_rename("foo.txt", "Foo.txt"),
+                         "'Foo.txt' already exists")
+        self.assertEqual(self.contents(),
+                         {"Foo.txt": "Foo.txt", "foo.txt": "->Foo.txt"})
+
+    def test_the_batch_rename_dialog_refuses_it(self):
+        rows = self.batch_rename("^foo", "Foo")
+        self.assertTrue(rows["foo.txt"]["conflict"])
+        self.assertEqual(self.contents(),
+                         {"Foo.txt": "Foo.txt", "foo.txt": "->Foo.txt"})
 
 
 if __name__ == "__main__":
