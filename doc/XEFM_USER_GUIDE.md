@@ -57,7 +57,7 @@ xefm
 [pipx](https://pipx.pypa.io) and [uv](https://docs.astral.sh/uv/) keep XeFM in
 its own environment while putting the `xefm` command on your PATH — the right
 shape for an application. Or run `uvx xefm` to try it once without installing
-anything. Python 3.10 or later is all you need; every dependency, including the
+anything. Python 3.11 or later is all you need; every dependency, including the
 platform-specific ones, comes with it.
 
 **Terminal app with Homebrew (macOS, Linux).**
@@ -204,7 +204,7 @@ Desktop mode provides excellent performance:
 
 **Desktop mode doesn't start:**
 - Verify you're on Windows or macOS (Linux is terminal-mode only)
-- Check Python version (3.10+ required)
+- Check Python version (3.11+ required)
 
 **Window doesn't appear:**
 - Check console output for error messages
@@ -747,7 +747,7 @@ Startup directories set with `--left`/`--right` override any saved pane history 
 ### Common Issues
 
 #### Desktop mode not starting (Windows / macOS)
-- Check Python version: `python3 --version` (3.10+ required)
+- Check Python version: `python3 --version` (3.11+ required)
 - Try terminal mode first: `xefm`
 - Check console output for error messages
 

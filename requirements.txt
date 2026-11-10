@@ -1,4 +1,5 @@
-# Python 3.10+ required (PuiKit, XeFM's UI framework, requires 3.10+)
+# Python 3.11+ required: extensions read their TOML manifests with the standard
+# library's tomllib, new in 3.11 (#870). PuiKit itself still runs on 3.10.
 # pygments for syntax highlighting (will fallback gracefully if not available)
 # boto3 for AWS S3 support
 # watchdog for automatic file list reloading

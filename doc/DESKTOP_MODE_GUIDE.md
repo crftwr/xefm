@@ -347,7 +347,7 @@ Press `F1` at any time for the keys your config is using.
 
 3. Check Python version:
    ```bash
-   python3 --version  # Should be 3.10 or higher
+   python3 --version  # Should be 3.11 or higher
    ```
 
 ### Window Doesn't Appear

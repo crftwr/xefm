@@ -48,7 +48,7 @@ pipx install xefm     # or:  uv tool install xefm,  or:  pip install xefm
 xefm
 ```
 
-[pipx](https://pipx.pypa.io) と [uv](https://docs.astral.sh/uv/) は、XeFM を専用の環境に入れたうえで `xefm` コマンドを PATH に置いてくれます。アプリケーションにはこの形が適しています。`uvx xefm` なら何もインストールせずに一度だけ試せます。必要なのは Python 3.10 以上だけで、プラットフォーム固有のものも含めて、依存関係はすべて一緒にインストールされます。
+[pipx](https://pipx.pypa.io) と [uv](https://docs.astral.sh/uv/) は、XeFM を専用の環境に入れたうえで `xefm` コマンドを PATH に置いてくれます。アプリケーションにはこの形が適しています。`uvx xefm` なら何もインストールせずに一度だけ試せます。必要なのは Python 3.11 以上だけで、プラットフォーム固有のものも含めて、依存関係はすべて一緒にインストールされます。
 
 **Homebrew でターミナルアプリ（macOS、Linux）。**
 
@@ -157,7 +157,7 @@ Linux にはデスクトップのバックエンドがないので、ターミ�
 
 **デスクトップモードが起動しない：**
 - Windows か macOS で実行しているか確認します（Linux ではターミナルモードのみです）
-- Python のバージョンを確認します（3.10 以上が必要です）
+- Python のバージョンを確認します（3.11 以上が必要です）
 
 **ウィンドウが表示されない：**
 - コンソールの出力にエラーメッセージがないか確認します
@@ -610,7 +610,7 @@ python3 -m xefm --backend gui --left ~/projects --right ~/docs
 ### よくある問題
 
 #### デスクトップモードが起動しない（Windows／macOS）
-- Python のバージョンを確認します：`python3 --version`（3.10 以上が必要です）
+- Python のバージョンを確認します：`python3 --version`（3.11 以上が必要です）
 - まずターミナルモードを試します：`xefm`
 - コンソールの出力にエラーメッセージがないか確認します
 

@@ -29,7 +29,7 @@ something, that gap is a good issue to file.
 
 XeFM is a Python package (`xefm/`) on top of
 [PuiKit](https://github.com/crftwr/puikit), its UI framework, which is a
-separate repository. Python 3.10 or later.
+separate repository. Python 3.11 or later.
 
 ```bash
 git clone https://github.com/crftwr/xefm.git

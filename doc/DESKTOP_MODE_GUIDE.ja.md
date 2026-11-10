@@ -253,7 +253,7 @@ xefm --backend tui          # the same thing, stated explicitly
 
 3. Python のバージョンを確認します。
    ```bash
-   python3 --version  # Should be 3.10 or higher
+   python3 --version  # Should be 3.11 or higher
    ```
 
 ### ウィンドウが表示されない
