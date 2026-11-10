@@ -6,10 +6,13 @@ the four kinds the check has to tell apart:
 - whether the disk ignores case (Windows, macOS by default) or not (Linux by
   default, a case-sensitive APFS volume, S3);
 - whether the backend can identify a directory entry (``entry_identity``: the
-  local disk) or only list the directory (SSH, S3).
+  local disk) or only list the directory (SSH, S3);
+- whether ``rename`` replaces an existing target, as ``rename(2)`` does on
+  macOS and Linux (and SSH and S3 do), or refuses, as Windows does.
 
-Its ``rename`` replaces an existing target as ``rename(2)`` does, so a check
-that lets the wrong rename through shows up as a lost file. Each entry holds the
+Where it replaces, a check that lets the wrong rename through shows up as a
+lost file; where it refuses, a plan that runs in the wrong order shows up as an
+error. Each entry holds the
 name it was created with, so the tests can tell which ended up where. The
 real-disk tests at the end run on whichever kind of disk the host has.
 
@@ -22,6 +25,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
@@ -31,11 +35,13 @@ from xefm.rename_check import obstacle  # noqa: E402
 from xefm.rename_in_editor import apply_plan, parse_plan  # noqa: E402
 
 _KINDS = {
-    # name: (ignores case, identifies entries)
-    "local, case ignored": (True, True),
-    "local, case kept": (False, True),
-    "remote, case ignored": (True, False),
-    "remote, case kept": (False, False),
+    # name: (ignores case, identifies entries, rename replaces)
+    "macOS / Linux, case ignored": (True, True, True),
+    "macOS / Linux, case kept": (False, True, True),
+    "Windows": (True, True, False),
+    "Windows, case-sensitive folder": (False, True, False),
+    "remote, case ignored": (True, False, True),
+    "remote, case kept": (False, False, True),
 }
 
 
@@ -45,9 +51,10 @@ class _Disk:
 
     _inodes = itertools.count(1)
 
-    def __init__(self, ignores_case, identifies, *names, links=()):
+    def __init__(self, ignores_case, identifies, replaces, *names, links=()):
         self.ignores_case = ignores_case
         self.identifies = identifies
+        self.replaces = replaces
         self.entries = {n: [n, next(self._inodes), None] for n in names}
         for name, target in links:
             self.entries[name] = [f"->{target}", next(self._inodes), target]
@@ -125,11 +132,12 @@ class _Path:
         src = self.disk.find(self.name)
         if src is None:
             raise FileNotFoundError(self.name)
-        entry = self.disk.entries.pop(src)
         taken = self.disk.find(dst.name)
-        if taken is not None:
+        if taken is not None and taken != src:
+            if not self.disk.replaces:
+                raise FileExistsError(f"[WinError 183] {dst.name}")
             del self.disk.entries[taken]  # rename(2) replaces the target
-        self.disk.entries[dst.name] = entry
+        self.disk.entries[dst.name] = self.disk.entries.pop(src)
 
 
 def _edit(disk, selected, text):
@@ -158,11 +166,11 @@ def _rows(disk, names, search, replace):
 
 class _EveryKind(unittest.TestCase):
     def kinds(self, **only):
-        for label, (ignores, identifies) in _KINDS.items():
-            if only.get("ignores_case", ignores) != ignores:
+        for label, kind in _KINDS.items():
+            if only.get("ignores_case", kind[0]) != kind[0]:
                 continue
             with self.subTest(label):
-                yield ignores, identifies
+                yield kind
 
 
 class CaseOnlyRename(_EveryKind):
@@ -307,6 +315,26 @@ class NewNamesDifferingOnlyInCase(_EveryKind):
 
 
 class CheckedAgainJustBefore(_EveryKind):
+    # The in-memory paths hold no archives; once another test has opened the
+    # archive cache, releasing them would ask these paths for more than they have.
+    @mock.patch("xefm.batch_rename_dialog.release_archives_under", lambda path: None)
+    def test_the_batch_dialog_does_not_replace_a_name_taken_after_its_preview(self):
+        from xefm.batch_rename_dialog import BatchRenameDialog
+        for kind in self.kinds():
+            disk = _Disk(*kind, "a1.txt", "a2.txt")
+            done = []
+            dialog = BatchRenameDialog([disk.path("a1.txt"), disk.path("a2.txt")],
+                                       on_done=lambda *r: done.append(r))
+            dialog.search_edit.text, dialog.replace_edit.text = "^a", "b"
+            dialog._refresh_preview()
+            self.assertFalse(any(r["conflict"] for r in dialog.preview))
+            disk.entries["b1.txt"] = ["late", 999, None]   # another program
+            dialog._accept()
+            success, errors, renamed = done[0]
+            self.assertEqual((success, errors), (1, ["a1.txt: b1.txt already exists"]))
+            self.assertEqual(disk.contents(),
+                             {"a1.txt": "a1.txt", "b1.txt": "late", "b2.txt": "a2.txt"})
+
     def test_a_name_taken_after_the_plan_was_read_is_not_replaced(self):
         for kind in self.kinds():
             disk = _Disk(*kind, "a.txt")
