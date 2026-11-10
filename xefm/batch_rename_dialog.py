@@ -35,31 +35,11 @@ from xefm import name_key
 from xefm.archive import release_archives_under
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom)
+from xefm.rename_check import (folding_dirs, is_itself, is_valid_name,
+                               landing_key)
 
-#: Characters we refuse in a result name.
-_INVALID_CHARS = set('/\\:*?"<>|')
 #: Preview-list scroll keys (unsuffixed backend names, matching ListView).
 _SCROLL_KEYS = frozenset({"up", "down", "pageup", "pagedown", "home", "end"})
-
-
-def _is_valid_name(name: str) -> bool:
-    if not name or name in (".", ".."):
-        return False
-    return not any(ch in _INVALID_CHARS for ch in name)
-
-
-def _is_itself(entry: Any, new: str) -> bool:
-    """Whether ``new``, in ``entry``'s directory, names ``entry`` itself in
-    another case. A case-insensitive disk (Windows, and macOS by default) finds
-    a case-only rename's own file under the new name, which is no collision.
-    The disk is asked, not just the names compared, so on a case-sensitive disk
-    another file that differs only in case still is one."""
-    if new.casefold() != name_key.nfc(entry.name).casefold():
-        return False
-    try:
-        return (entry.parent / new).samefile(entry)
-    except OSError:
-        return False
 
 
 def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dict]:
@@ -110,9 +90,9 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
             # would join the character before it, so settle it here and let
             # everything downstream, the collision key included, assume NFC.
             new = name_key.nfc(name[: match.start()] + repl + name[match.end():])
-            valid = _is_valid_name(new)
+            valid = is_valid_name(new)
             conflict = ((entry.parent / new).exists() and new != name
-                        and not _is_itself(entry, new))
+                        and not is_itself(entry, new))
         else:
             new, valid, conflict = name, True, False
         rows.append({"original": name, "new": new, "valid": valid,
@@ -123,13 +103,19 @@ def compute_preview(files: Sequence[Any], search: str, replace: str) -> list[dic
     # NFC by construction, which is what makes this catch the collision that used
     # to slip through — two rows landing on the same file under different
     # spellings of one name. Finder catches it too, and disambiguates with a
-    # " 2"; here it is the conflict that blocks the rename.
+    # " 2"; here it is the conflict that blocks the rename. Names differing only
+    # in case are one file on a disk that folds case, where the second rename
+    # would replace the first (#873) — so the disk is asked, only when such a
+    # pair turns up, since this runs on every keystroke.
+    renaming = [row for row in rows if row["original"] != row["new"]]
+    exact = {(str(row["file"].parent), row["new"]) for row in renaming}
+    folded = {(where, new.casefold()) for where, new in exact}
+    folding = (folding_dirs(row["file"] for row in rows)
+               if len(folded) < len(exact) else set())
     seen: dict[tuple, list[dict]] = {}
-    for row in rows:
-        if row["original"] == row["new"]:
-            continue
-        key = (str(row["file"].parent), row["new"])
-        seen.setdefault(key, []).append(row)
+    for row in renaming:
+        seen.setdefault(landing_key(folding, row["file"].parent, row["new"]),
+                        []).append(row)
     for group_rows in seen.values():
         if len(group_rows) > 1:
             for row in group_rows:

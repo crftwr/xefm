@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 
 from xefm import name_key
-from xefm.batch_rename_dialog import _is_valid_name
+from xefm.rename_check import (folding_dirs, is_itself, is_valid_name,
+                               landing_key)
 
 
 class UnlistableName(ValueError):
@@ -86,15 +87,22 @@ def parse_plan(files: Sequence[Any], text: str) -> RenamePlan:
 
     originals = [name_key.nfc(f.name) for f in files]
     news = [name_key.nfc(line) for line in lines]
+    # Names are compared the way each directory's disk compares them: where it
+    # folds case, ``b.txt`` and ``B.txt`` are one file (#869, #873).
+    folding = folding_dirs(files)
+
+    def key(i: int, name: str) -> tuple[str, str]:
+        return landing_key(folding, files[i].parent, name)
 
     # Every name each directory will hold once the batch is done, from the
     # files that keep theirs and the files that move — the collision set.
     claimed: dict[tuple[str, str], list[int]] = {}
-    for i, entry in enumerate(files):
-        claimed.setdefault((str(entry.parent), news[i]), []).append(i)
+    for i in range(len(files)):
+        claimed.setdefault(key(i, news[i]), []).append(i)
     # Names the batch vacates: an existing file under one of these is a batch
-    # member on its way out, not an obstacle.
-    vacated = {(str(f.parent), originals[i]) for i, f in enumerate(files)
+    # member on its way out, not an obstacle. A case-only rename on a disk
+    # that folds case vacates the name it lands on, which is its own.
+    vacated = {key(i, originals[i]) for i in range(len(files))
                if news[i] != originals[i]}
 
     for i, entry in enumerate(files):
@@ -102,22 +110,22 @@ def parse_plan(files: Sequence[Any], text: str) -> RenamePlan:
         if new == old:
             continue
         where = f"line {i + 1} ({old})"
-        if not _is_valid_name(new):
+        if not is_valid_name(new):
             plan.errors.append(f"{where}: {new!r} is not a valid name")
             continue
-        key = (str(entry.parent), new)
-        if len(claimed[key]) > 1:
-            others = ", ".join(str(j + 1) for j in claimed[key] if j != i)
+        landing = key(i, new)
+        if len(claimed[landing]) > 1:
+            others = ", ".join(str(j + 1) for j in claimed[landing] if j != i)
             plan.errors.append(f"{where}: {new} is also on line {others}")
             continue
-        if key not in vacated and new.casefold() != old.casefold():
-            # A case-only rename finds itself on a case-insensitive disk; any
-            # other hit is a file the batch does not own.
+        if landing not in vacated:
+            # A file found under the new name is one the batch does not own —
+            # unless it is this one, in another case (the disk says which).
             try:
                 exists = (entry.parent / new).exists()
             except OSError:
                 exists = False
-            if exists:
+            if exists and not is_itself(entry, new):
                 plan.errors.append(f"{where}: {new} already exists")
                 continue
         plan.renames.append((entry, new))
@@ -152,10 +160,17 @@ def apply_plan(plan: RenamePlan,
 
     renamed: dict[str, str] = {}
     errors: list[str] = []
-    current = {(str(e.parent), name_key.nfc(e.name))
-               for e, _ in plan.renames}
-    chained = [(e, n) for e, n in plan.renames if (str(e.parent), n) in current
-               and n.casefold() != name_key.nfc(e.name).casefold()]
+    # A target is taken when it is, the way its disk compares names, another
+    # batch file's current name (#869); a case-only rename where the disk folds
+    # case lands on its own name and goes directly.
+    folding = folding_dirs(e for e, _ in plan.renames)
+
+    def key(entry, name):
+        return landing_key(folding, entry.parent, name)
+
+    current = {key(e, name_key.nfc(e.name)) for e, _ in plan.renames}
+    chained = [(e, n) for e, n in plan.renames if key(e, n) in current
+               and key(e, n) != key(e, name_key.nfc(e.name))]
     direct = [(e, n) for e, n in plan.renames if (e, n) not in chained]
 
     parked: list[tuple[Any, Any, str]] = []   # (entry, temp path, new name)

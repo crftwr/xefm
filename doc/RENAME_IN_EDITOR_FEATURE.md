@@ -29,6 +29,10 @@ renamed, it stays on that file under its new name.
 - **Conflicts are refused, with the line number:** an empty name, a name with
   `/` or another character file names can't hold, two lines with the same new
   name, or a new name already used by a file outside the selection.
+- **Names are compared the way the disk compares them.** Where the disk ignores
+  case (Windows, and macOS by default), `Foo.txt` and `foo.txt` are one name:
+  changing only the case of a name works, and two lines that differ only in case
+  are refused. Where case matters (Linux by default), they are two names.
 - Spaces at the start or end of a line are kept as part of the name.
 
 ## Editors that open their own window

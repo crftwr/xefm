@@ -80,16 +80,27 @@ The module is pure:
   CRLF and a missing final newline and strips nothing else. It returns a
   `RenamePlan` with `renames` or with per-line `errors`:
   - line count mismatch;
-  - invalid name (the same `_is_valid_name` as batch rename);
+  - invalid name (`xefm.rename_check.is_valid_name`, shared with batch rename);
   - two lines claiming one name in a directory, including the name of a batch
     file that keeps its name;
-  - a name that exists on disk and is not being vacated by the batch.
+  - a name that exists on disk and is not being vacated by the batch, unless
+    the file found there is the one being renamed, in another case
+    (`is_itself`: casefold-equal names and `samefile`).
 
-  A case-only rename skips the existence check, because a case-insensitive
-  disk finds the file itself.
+  "One name" is decided the way the directory's disk decides it
+  (`xefm.rename_check`): `folding_dirs` looks one batch file per directory up
+  under its name with the case swapped, and `landing_key` casefolds names in
+  the directories where that finds the file. So on a disk that folds case,
+  `b.txt` is taken when `B.txt` leaves the batch (#869), and `X.txt` and
+  `x.txt` on two lines collide; where case matters, `foo.txt -> Foo.txt` does
+  not skip the existence check and cannot replace a separate `Foo.txt` (#873).
+  A directory whose batch names have no cased letter counts as folding, the
+  cautious side. The rename prompt and the batch rename dialog use the same
+  module (`is_itself`, and `landing_key` for the dialog's row-against-row
+  check).
 - `apply_plan(plan, rename)` renames in three phases:
-  1. Entries whose target is another renamed entry's current name are parked
-     under `.xefm-rename-<i>-<hex>`.
+  1. Entries whose target is another renamed entry's current name, compared
+     with `landing_key`, are parked under `.xefm-rename-<i>-<hex>`.
   2. Direct renames run.
   3. Parked entries move to their targets.
 
@@ -118,6 +129,9 @@ has its own action, `rename_in_editor`, bound to `Shift-R`.
   cycles on disk, the failure message for a parked file, and the app round
   trip with `subprocess.run` mocked (confirm, cancel, edit again, the GUI
   Apply step).
+- `test/test_rename_case_folding.py`: every rename path against an in-memory
+  disk that folds case and one that does not, plus a real-disk test for
+  whichever kind the host has.
 - `test/test_remote_edit.py`: copy paths, sessions against a fake writable
   remote (save detection, conflict, force, reopen, close), and the app flow
   (upload on return, poll-found save, conflict prompt, loud failure, read-only

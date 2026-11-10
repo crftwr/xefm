@@ -134,7 +134,8 @@ from xefm.str_format import abbreviate_path, format_size
 from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
                            load_user_entries, menu_items as user_menu_items,
                            preview_notice, report_user_failure, run_guarded)
-from xefm.batch_rename_dialog import _is_itself, show_batch_rename
+from xefm.batch_rename_dialog import show_batch_rename
+from xefm.rename_check import is_itself
 from xefm.remote_edit import EditSessions, RemoteChanged, can_write_back
 from xefm.rename_in_editor import (UnlistableName, apply_plan, names_text,
                                    parse_plan)
@@ -9178,7 +9179,7 @@ class XeFMApp:
                 return "Name cannot be empty"
             if name == original:
                 return None  # unchanged is allowed (a no-op on accept)
-            if (entry.parent / name).exists() and not _is_itself(entry, name):
+            if (entry.parent / name).exists() and not is_itself(entry, name):
                 return f"'{name}' already exists"
             return None
 
