@@ -129,7 +129,7 @@ help:
 	@echo "  test-linux     - Run all tests on Linux in Docker (glibc/Debian)"
 	@echo "  test-linux-musl- Check libarchive is found on musl (Alpine), and that"
 	@echo "                   its absence degrades cleanly"
-	@echo "  test-vm        - Run all tests in a guest (GUEST=qa-mac|qa-win|qa-linux,"
+	@echo "  test-vm        - Run all tests in a guest (GUEST=qa-mac|qa-win|qa-linux[-floor],"
 	@echo "                   ARGS= for pytest, PACKAGES=pypi for ours from PyPI)"
 	@echo "  run-vm         - Start a VM with XeFM launchers on its desktop (GUEST=alias)"
 	@echo "  shell-vm       - A shell in a guest, on the stage (GUEST=alias)"
@@ -374,7 +374,8 @@ fix-docs: check-venv
 #
 # One path for every platform (#842): quality-loop's guests
 # (~/.config/quality-loop/guests.toml) - qa-mac a Tart clone, qa-win a VMware
-# snapshot, qa-linux a Docker container (python:3.13-slim; no table needed).
+# snapshot, qa-linux a Docker container (python:3.15-slim; no table needed),
+# qa-linux-floor another on requires-python's lower bound.
 # Each run stages this working tree, installs the packages into a fresh venv
 # and puts the guest away; see doc/dev/VM_TESTING_SYSTEM.md.
 #
@@ -388,7 +389,7 @@ fix-docs: check-venv
 # them. A VM run passes --desktop, so the tests that take focus or change the
 # clipboard run there and never here.
 PACKAGES ?= local
-GUEST_CHECK = @test -n "$(GUEST)" || { echo "GUEST= names the guest (qa-mac, qa-win, qa-linux)"; exit 1; }
+GUEST_CHECK = @test -n "$(GUEST)" || { echo "GUEST= names the guest (qa-mac, qa-win, qa-linux, qa-linux-floor)"; exit 1; }
 
 test-vm:
 	$(GUEST_CHECK)
@@ -447,7 +448,7 @@ run-linux-musl: linux-musl-image
 # guest, what reviews a release); the suite runs in every guest on our
 # packages as PyPI has them - what a user's pip installs - and musl's
 # libarchive probe. About half an hour, one guest after another.
-RELEASE_GUESTS ?= qa-mac qa-win qa-linux
+RELEASE_GUESTS ?= qa-mac qa-win qa-linux qa-linux-floor
 
 release-test: check-venv
 	$(PYTHON) -m pytest test --host-only

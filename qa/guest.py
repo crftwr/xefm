@@ -33,9 +33,9 @@ guest's version, and the guest installs from it.
 
 The guest's settings - its share, its VM, the image's `python` - are its
 table in ~/.config/quality-loop/guests.toml (`XEFM_QA_GUESTS` names another
-file). The images are shared with Keyhac, and so are the aliases. `qa-linux`,
-a Docker container, works without a table (:data:`DEFAULT_GUESTS`): Docker
-is all `make test-linux` needs.
+file). The images are shared with Keyhac, and so are the aliases. `qa-linux`
+and `qa-linux-floor`, Docker containers, work without a table
+(:func:`default_guests`): Docker is all `make test-linux` needs.
 """
 
 from __future__ import annotations
@@ -70,10 +70,25 @@ STAGED = {"puikit": "puikit", "doc-files": "doc_files", "similar-files": "simila
 #: PyPI as requirements.txt names them (a release's run, #842).
 PACKAGES = ("local", "pypi")
 
-#: Guests that need no table in guests.toml.
-DEFAULT_GUESTS = {"qa-linux": {"share": "~/.cache/qa-guest=/qa",
-                               "python": "/usr/local/bin/python3",
-                               "docker": "python:3.13-slim"}}
+def floor_python() -> str:
+    """The lowest Python XeFM declares, ``"3.11"`` from ``requires-python =
+    ">=3.11"``, so the floor guest follows a bump of it."""
+    with (ROOT / "pyproject.toml").open("rb") as f:
+        spec = tomllib.load(f)["project"]["requires-python"]
+    found = re.fullmatch(r">=\s*(3\.\d+)", spec.strip())
+    if not found:
+        raise SystemExit(f"pyproject.toml's requires-python is {spec!r}, not '>=3.N'")
+    return found.group(1)
+
+
+def default_guests() -> dict[str, dict[str, str]]:
+    """Guests that need no table in guests.toml: Debian containers on the
+    newest Python (`qa-linux`) and on the lowest XeFM declares
+    (`qa-linux-floor`). The VMs run the Python the shipped apps carry."""
+    def container(python):
+        return {"share": "~/.cache/qa-guest=/qa", "python": "/usr/local/bin/python3",
+                "docker": f"python:{python}-slim"}
+    return {"qa-linux": container("3.15"), "qa-linux-floor": container(floor_python())}
 
 #: What a Linux container installs before the venv: the runtime library alone,
 #: the state a user's machine is in (doc/dev/LINUX_TESTING_SYSTEM.md).
@@ -209,8 +224,8 @@ class Guest(ql.Guest):
         if packages not in PACKAGES:
             raise SystemExit(f"packages is one of {', '.join(PACKAGES)}, not {packages!r}")
         settings = ql.settings_for(alias, os.environ.get("XEFM_QA_GUESTS"))
-        if not settings and alias in DEFAULT_GUESTS:
-            settings = DEFAULT_GUESTS[alias]
+        if not settings and alias in default_guests():
+            settings = default_guests()[alias]
             host = pathlib.Path(settings["share"].partition("=")[0]).expanduser()
             host.mkdir(parents=True, exist_ok=True)
         try:

@@ -98,3 +98,18 @@ def test_a_release_run_installs_ours_from_pypi_as_the_requirements_name_them():
     floor = [line for line in guest._requirement_lines(ROOT / "requirements.txt")
              if line.startswith("puikit")]
     assert floor and floor[0] in requirements
+
+
+def test_the_floor_guest_runs_the_python_requires_python_names(tmp_path, monkeypatch):
+    """#870: qa-linux-floor tests the lowest Python XeFM declares, and moves
+    with a bump of it."""
+    floor = re.fullmatch(r">=\s*(3\.\d+)",
+                         re.search(r'^requires-python = "([^"]+)"',
+                                   (ROOT / "pyproject.toml").read_text(), re.M).group(1)).group(1)
+    assert guest.default_guests()["qa-linux-floor"]["docker"] == f"python:{floor}-slim"
+    (tmp_path / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12"\n')
+    monkeypatch.setattr(guest, "ROOT", tmp_path)
+    assert guest.default_guests()["qa-linux-floor"]["docker"] == "python:3.12-slim"
+    (tmp_path / "pyproject.toml").write_text('[project]\nrequires-python = "~=3.12"\n')
+    with pytest.raises(SystemExit):
+        guest.floor_python()
