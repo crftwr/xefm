@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 
 from xefm import name_key
-from xefm.batch_rename_dialog import _is_valid_name
+from xefm.rename_check import (Listings, fold, is_valid_name, must_park,
+                               obstacle)
 
 
 class UnlistableName(ValueError):
@@ -86,40 +87,47 @@ def parse_plan(files: Sequence[Any], text: str) -> RenamePlan:
 
     originals = [name_key.nfc(f.name) for f in files]
     news = [name_key.nfc(line) for line in lines]
+    listings = Listings()
+    # The files renamed away from their names: an entry under one of those is
+    # a batch member on its way out, not an obstacle (xefm.rename_check).
+    leaving = [f for i, f in enumerate(files) if news[i] != originals[i]]
 
     # Every name each directory will hold once the batch is done, from the
     # files that keep theirs and the files that move — the collision set.
-    claimed: dict[tuple[str, str], list[int]] = {}
-    for i, entry in enumerate(files):
-        claimed.setdefault((str(entry.parent), news[i]), []).append(i)
-    # Names the batch vacates: an existing file under one of these is a batch
-    # member on its way out, not an obstacle.
-    vacated = {(str(f.parent), originals[i]) for i, f in enumerate(files)
-               if news[i] != originals[i]}
+    # Names that differ only in case claim one slot, as they are one file
+    # where the disk ignores case, unless the directory is seen to keep such
+    # names apart (#873); only a pair like that costs a listing.
+    def slot(i: int) -> tuple[str, str]:
+        return (str(files[i].parent), fold(news[i]))
+
+    by_slot: dict[tuple[str, str], list[int]] = {}
+    for i in range(len(files)):
+        by_slot.setdefault(slot(i), []).append(i)
+    claimed: dict[int, list[int]] = {}
+    for members in by_slot.values():
+        if (len({news[j] for j in members}) > 1
+                and listings.case_matters(files[members[0]].parent)):
+            for j in members:
+                claimed[j] = [k for k in members if news[k] == news[j]]
+        else:
+            for j in members:
+                claimed[j] = members
 
     for i, entry in enumerate(files):
         old, new = originals[i], news[i]
         if new == old:
             continue
         where = f"line {i + 1} ({old})"
-        if not _is_valid_name(new):
+        if not is_valid_name(new):
             plan.errors.append(f"{where}: {new!r} is not a valid name")
             continue
-        key = (str(entry.parent), new)
-        if len(claimed[key]) > 1:
-            others = ", ".join(str(j + 1) for j in claimed[key] if j != i)
+        if len(claimed[i]) > 1:
+            others = ", ".join(str(j + 1) for j in claimed[i] if j != i)
             plan.errors.append(f"{where}: {new} is also on line {others}")
             continue
-        if key not in vacated and new.casefold() != old.casefold():
-            # A case-only rename finds itself on a case-insensitive disk; any
-            # other hit is a file the batch does not own.
-            try:
-                exists = (entry.parent / new).exists()
-            except OSError:
-                exists = False
-            if exists:
-                plan.errors.append(f"{where}: {new} already exists")
-                continue
+        if obstacle(entry, new, leaving, listings):
+            plan.errors.append(f"{where}: {new} already exists")
+            continue
         plan.renames.append((entry, new))
     if plan.errors:
         plan.renames.clear()
@@ -152,11 +160,22 @@ def apply_plan(plan: RenamePlan,
 
     renamed: dict[str, str] = {}
     errors: list[str] = []
-    current = {(str(e.parent), name_key.nfc(e.name))
-               for e, _ in plan.renames}
-    chained = [(e, n) for e, n in plan.renames if (str(e.parent), n) in current
-               and n.casefold() != name_key.nfc(e.name).casefold()]
+    # Park every rename whose target is, compared broadly, another batch
+    # file's current name: it may be that file until that file has moved
+    # (#869). Parking one that did not need it only costs a detour.
+    movers = [e for e, _ in plan.renames]
+    chained = [(e, n) for e, n in plan.renames if must_park(e, n, movers)]
     direct = [(e, n) for e, n in plan.renames if (e, n) not in chained]
+
+    def taken(src, entry, new) -> bool:
+        # Checked again just before each rename into a real name: something
+        # may have taken it since the plan was read (xefm.rename_check).
+        if obstacle(src, new):
+            errors.append(f"{entry.name}: {new} already exists"
+                          + (f" — the file is now named {src.name}"
+                             if src is not entry else ""))
+            return True
+        return False
 
     parked: list[tuple[Any, Any, str]] = []   # (entry, temp path, new name)
     for i, (entry, new) in enumerate(chained):
@@ -169,6 +188,8 @@ def apply_plan(plan: RenamePlan,
         parked.append((entry, temp, new))
 
     for entry, new in direct:
+        if taken(entry, entry, new):
+            continue
         try:
             rename(entry, entry.parent / new)
         except OSError as exc:
@@ -177,6 +198,8 @@ def apply_plan(plan: RenamePlan,
         renamed[str(entry)] = new
 
     for entry, temp, new in parked:
+        if taken(temp, entry, new):
+            continue
         try:
             rename(temp, entry.parent / new)
         except OSError as exc:

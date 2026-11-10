@@ -78,6 +78,11 @@ The dialog shows a real-time preview of the rename operation:
 - **Validation**: Filenames are validated for illegal characters
 - **Preview**: See all changes before executing
 - **Selective Rename**: Only files that actually change are renamed
+- **Case**: Changing only the case of a name works (`foo.txt` to `Foo.txt`), and
+  never replaces a separate `Foo.txt`. Two new names that differ only in case
+  (`X.txt` and `x.txt`) are a conflict, since a disk that ignores case (Windows,
+  and macOS by default) holds them as one file — except in a folder that already
+  holds two such names.
 
 ## Notes
 

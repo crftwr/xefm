@@ -34,6 +34,7 @@ KNOWN_CAPABILITIES = frozenset({
     'streaming_read',          # readable line by line, without a full fetch
     'extraction_for_reading',  # content must be fetched or extracted first
     'cache_for_search',        # that fetch is expensive enough to keep
+    'entry_identity',          # lstat()'s st_dev/st_ino name a directory entry
 })
 
 #: The capabilities :meth:`Path.supports` answers for as stable API — the ones
@@ -645,7 +646,8 @@ class LocalPathImpl(PathImpl):
     SCHEME = 'file'
     IS_REMOTE = False
     CAPABILITIES = frozenset({'write_operations', 'directory_rename',
-                              'file_editing', 'streaming_read'})
+                              'file_editing', 'streaming_read',
+                              'entry_identity'})
     SEARCH_STRATEGY = 'streaming'
     DISPLAY_PREFIX = ''
     # Eight requests at once. A copy between two local paths is four files in
