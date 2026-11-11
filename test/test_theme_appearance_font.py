@@ -127,8 +127,41 @@ def test_an_invalid_value_waits_for_the_next_launch():
 def test_file_pane_forgets_its_measurements():
     view = xefm_app.FilePane.__new__(xefm_app.FilePane)
     view._measure_cache = (("key",), {"values": {0: 5.0}})
+    view._widths = (("stamp",), {"a": 1.0}, {})
     view.forget_measurements()
     assert view._measure_cache == (None, None)
+    assert view._widths is None
+
+
+class _Ctx:
+    """Measures a character as one unit, and counts what it measured."""
+
+    def __init__(self):
+        self.base_size = (8.0, 16.0)
+        self.measured = []
+
+    def measure_text(self, text, style=None):
+        self.measured.append((text, style is not None))
+        return float(len(text))
+
+
+def test_file_pane_keeps_row_widths_between_frames():
+    """#884: a row's widths are measured once, not every frame, and measured
+    again when the base unit changes under them (a DPI or font change)."""
+    view = xefm_app.FilePane.__new__(xefm_app.FilePane)
+    view._widths = None
+    ctx = _Ctx()
+    for _frame in range(2):
+        measure, mono = view._row_measures(ctx)
+        assert measure("report.txt") == 10.0
+        assert mono("12 KB") == 5.0
+    texts = [t for t, _ in ctx.measured]
+    assert texts.count("report.txt") == 1 and texts.count("12 KB") == 1
+    assert ("12 KB", True) in ctx.measured      # in the monospace style
+    ctx.base_size = (10.0, 20.0)
+    measure, _mono = view._row_measures(ctx)
+    measure("report.txt")
+    assert [t for t, _ in ctx.measured].count("report.txt") == 2
 
 
 # -- temporary font size (View > Font Size) ----------------------------------
