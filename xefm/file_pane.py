@@ -50,6 +50,10 @@ from xefm.dir_scan import is_hidden_path
 #: line up in their right-aligned columns. (Names keep the Panel's default
 #: proportional UI font on GUI; on TUI everything is the one grid font anyway.)
 MONO = Font(monospace=True)
+_MONO_STYLE = Style(font=MONO)
+# The most widths FilePane keeps between frames for each of its two fonts
+# (see FilePane._row_measures); past it the memo starts over.
+_WIDTH_MEMO_MAX = 8192
 
 #: Gap (base units) between adjacent columns (name|size, size|date).
 COL_GAP = 1
@@ -453,6 +457,8 @@ class FilePane(Widget):
         self._records_cache: tuple = (None, {})
         #: ``(key, measurements)`` — see ``_measure``.
         self._measure_cache: tuple = (None, None)
+        # FilePane._row_measures's widths: (stamp, plain, mono), or None.
+        self._widths: tuple | None = None
         #: The shortest repaint interval a drawn column asked for (a relative
         #: time goes stale), or None; the app repaints on it.
         self.refresh_interval: float | None = None
@@ -763,11 +769,7 @@ class FilePane(Widget):
             band_left = cursor_pad
             band_right = right_edge - cursor_pad
 
-        def measure(s: str) -> float:
-            return ctx.measure_text(s)
-
-        def measure_mono(s: str) -> float:
-            return ctx.measure_text(s, Style(font=MONO))
+        measure, measure_mono = self._row_measures(ctx)
 
         # The columns come from the pane's layout (xefm.layouts). The store is
         # brought up to this listing first, so an automatic attribute the
@@ -881,6 +883,39 @@ class FilePane(Widget):
         """Drop the column widths measured for the current listing, so the
         next draw measures again: the base font changed under them (#857)."""
         self._measure_cache = (None, None)
+        self._widths = None
+
+    def _row_measures(self, ctx):
+        """``(measure, measure_mono)``: the widths of text in the pane's font
+        and in the monospace one, kept between frames. A frame measures each
+        row's name, cells and markers a dozen times over (marker slots, the
+        cells again as they are drawn, a space every time) and the next frame
+        measures the same rows again (#884). Kept while the base unit and a
+        probe of both fonts stay the same, and dropped by
+        ``forget_measurements`` when the font is about to change."""
+        stamp = (ctx.base_size, ctx.measure_text(" "), ctx.measure_text("W"),
+                 ctx.measure_text("W", _MONO_STYLE))
+        widths = self._widths
+        if widths is None or widths[0] != stamp:
+            widths = self._widths = (stamp, {}, {})
+        _stamp, plain, mono = widths
+        for memo in (plain, mono):
+            if len(memo) > _WIDTH_MEMO_MAX:
+                memo.clear()
+
+        def measure(s: str) -> float:
+            w = plain.get(s)
+            if w is None:
+                w = plain[s] = ctx.measure_text(s)
+            return w
+
+        def measure_mono(s: str) -> float:
+            w = mono.get(s)
+            if w is None:
+                w = mono[s] = ctx.measure_text(s, _MONO_STYLE)
+            return w
+
+        return measure, measure_mono
 
     def _measure(self, layout, files, records, store, measure, measure_mono) -> dict:
         """The widest value each extra's column has in the current listing —
