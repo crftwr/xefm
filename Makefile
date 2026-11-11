@@ -1181,6 +1181,11 @@ uninstall-windows-msix:
 #
 # Poll certification afterwards with: msstore submission status <product id>
 #
+# 'msstore publish' never exits after committing: it prints "Submission
+# commit success!" and then hangs while certification runs (hours). The
+# tools/msstore_publish.py wrapper streams its output and returns once that
+# line has appeared, so the target ends when the submission is handed off.
+#
 # Mirrors WINDOWS_ZIP: build_msix.ps1 derives its version from the same
 # __version__ literal as XEFM_VERSION, plus the Store-required ".0" revision,
 # so this is the path the pack above just wrote.
@@ -1211,5 +1216,5 @@ release-windows-msix: windows-msix
 		echo "ERROR: $(WINDOWS_MSIX) missing after packing."; \
 		exit 1; }; \
 	echo "Submitting $(WINDOWS_MSIX) to the Microsoft Store ($$XEFM_STORE_PRODUCT_ID)..."; \
-	msstore publish "$(WINDOWS_MSIX)" -id "$$XEFM_STORE_PRODUCT_ID" -ut 900
+	"$(PYTHON)" tools/msstore_publish.py "$(WINDOWS_MSIX)" -id "$$XEFM_STORE_PRODUCT_ID" -ut 900
 
