@@ -167,8 +167,10 @@ class Run(unittest.TestCase):
         # Windows (cmd, cmd, then a venv launcher's child) — the one #793 found
         # alive, holding stdout, after taskkill was denied.
         pid_file = os.path.join(self.cwd, "pid")
-        started = lambda: os.path.exists(pid_file)
-        out = self._run(py(f"import os, time; open(r'{pid_file}', 'w').write(str(os.getpid())); "
+        # Cancel once the pid is in the file, not once the file exists: the
+        # kill can land between open() creating it and write() filling it.
+        started = lambda: os.path.exists(pid_file) and os.path.getsize(pid_file) > 0
+        out = self._run(py(f"import os, time; f = open(r'{pid_file}', 'w'); f.write(str(os.getpid())); f.close(); "
                            "time.sleep(30)"),
                         cancelled=started)
         self.assertTrue(out.cancelled)
