@@ -125,6 +125,7 @@ preview	method	xefm.user_api.ActionContext.choose	[["self", "pk", null], ["title
 preview	method	xefm.user_api.ActionContext.confirm	[["self", "pk", null], ["prompt", "pk", null], ["title", "kw", "'Confirm'"], ["on_result", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy	[["self", "pk", null], ["items", "pk", null], ["dest", "pk", null], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy_text	[["self", "pk", null], ["text", "pk", null]]
+preview	method	xefm.user_api.ActionContext.delete	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.diff	[["self", "pk", null], ["left", "pk", null], ["right", "pk", null], ["left_title", "kw", "None"], ["right_title", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.input	[["self", "pk", null], ["prompt", "pk", null], ["default", "pk", "''"], ["title", "kw", "''"], ["on_accept", "kw", "None"], ["on_cancel", "kw", "None"], ["complete", "kw", "None"]]
 stable	method	xefm.user_api.ActionContext.invoke	[["self", "pk", null], ["action_name", "pk", null]]
@@ -140,6 +141,7 @@ stable	method	xefm.user_api.ActionContext.run_program	[["self", "pk", null], ["c
 preview	method	xefm.user_api.ActionContext.run_task	[["self", "pk", null], ["title", "pk", null], ["work", "pk", null], ["on_done", "kw", "None"], ["read_only", "kw", "False"]]
 preview	method	xefm.user_api.ActionContext.show_markdown	[["self", "pk", null], ["title", "pk", null], ["source", "pk", null]]
 preview	method	xefm.user_api.ActionContext.terminal_backend_suspended	[["self", "pk", null]]
+preview	method	xefm.user_api.ActionContext.trash	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
 preview	class	xefm.user_api.ActionInfo
 preview	attribute	xefm.user_api.ActionInfo.aliases
 preview	attribute	xefm.user_api.ActionInfo.description
@@ -167,6 +169,7 @@ preview	class	xefm.user_api.ItemResult
 preview	attribute	xefm.user_api.ItemResult.dest
 preview	attribute	xefm.user_api.ItemResult.errors
 preview	property	xefm.user_api.ItemResult.ok	ro
+preview	attribute	xefm.user_api.ItemResult.permanent
 preview	attribute	xefm.user_api.ItemResult.source
 preview	attribute	xefm.user_api.ItemResult.status
 stable	data	xefm.user_api.PREVIEW_APIS	frozenset

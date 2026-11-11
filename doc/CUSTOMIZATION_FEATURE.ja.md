@@ -208,6 +208,8 @@ ACTIONS = {
 | `ctx.run_program(command, terminal=False)` | 外部プログラムを実行 — 後述 |
 | `ctx.copy(items, dest, on_done=fn)` | （Preview）**File → Copy to Other Pane** と同じように（確認、競合ダイアログ、進捗付きで）ファイルをコピーし、それぞれの結果を受け取る — 後述 |
 | `ctx.move(items, dest, on_done=fn)` | （Preview）同じく移動 |
+| `ctx.trash(items, on_done=fn)` | （Preview）**File → Move to Trash…** と同じようにファイルをゴミ箱に移動し、それぞれの結果を受け取る — 後述 |
+| `ctx.delete(items, on_done=fn)` | （Preview）同じく、**File → Delete Permanently…** のように完全に削除 |
 | `ctx.terminal_backend_suspended()` | （Preview）`subprocess` で対話的なプログラムを自分で実行するための `with` ブロック — 後述 |
 | `ctx.program_env()` | （Preview）`subprocess` に渡す `{'cwd': ..., 'env': ...}`。`run_program` がプログラムに渡すものと同じ |
 | `ctx.is_terminal_backend` | （Preview）XeFM がターミナルで動いていて、引き渡すターミナルがあるかどうか |
@@ -384,6 +386,26 @@ def backup_selection(ctx):
 - 呼び出しはすぐに戻ります。`on_done(ctx, outcome)` は、操作が終わったときに新しい `ctx` を渡して実行されます。ジョブキューで待った場合やバックグラウンドで実行した場合も同じです。
   - `outcome.status` は `'done'`、`'cancelled'`（確認、競合ダイアログ、実行中のいずれかで取り消した場合）、`'failed'`（操作自体が失敗した場合。理由は `outcome.error`）のいずれかです。
   - `outcome.value` は、アイテムごとの結果を渡した順に並べたリストです。`r.source`、`r.dest`、`r.status`（`'done'`、競合ダイアログでの `'skipped'`、`'failed'`）、`r.errors`（その下で起きた失敗の `(name, message)` の組）を持ちます。ほとんどのファイルをコピーできたフォルダーは `'done'` になり、コピーできなかったものは `r.errors` に入ります。
+
+### ファイルの削除（Preview）
+
+`ctx.trash(items)` はファイルをシステムのゴミ箱に移動し、`ctx.delete(items)` は完全に削除します。**File → Move to Trash…** や **File → Delete Permanently…** と同じ操作を実行します。確認（完全な削除では **Cancel** が選ばれた状態で開きます）と、**Cancel** の付いた進捗ダイアログも同じです。対象のアイテムは自分で決めます。
+
+```python
+def clear_logs(ctx):
+    logs = [e for e in ctx.pane.entries if e.name.endswith('.log')]
+
+    def done(ctx, outcome):
+        gone = [r for r in outcome.value if r.status == 'done']
+        ctx.message(f'Moved {len(gone)} log(s) to the trash')
+
+    ctx.trash(logs, on_done=done)
+```
+
+- `items` と `on_done` は、前述の `ctx.copy` と同じです。各結果の `r.dest` は `None` で、ゴミ箱に移動せず完全に削除したアイテムでは `r.permanent` が `True` になります。
+- ゴミ箱がない場所（ゴミ箱を持たないストレージ）では、`ctx.trash` は確認でそのことを伝え、すべてを完全に削除します。実行中にゴミ箱に入らないとわかったアイテム（クラウドストレージのオンラインだけのファイル）には、**File → Move to Trash…** と同じく、あとで完全に削除するかどうかを尋ねます。断ったアイテムは `'skipped'` になります。[ゴミ箱への削除](TRASH_FEATURE.ja.md)を参照してください。
+- `DELETE_TO_TRASH` は **File → Move to Trash…** の設定で、ここには効きません。`ctx.trash` は常にゴミ箱を試します。
+- アーカイブの中のアイテムは、呼び出した時点でエラーになります。
 
 ### 自分のファイルリストを開く（Preview）
 

@@ -10557,16 +10557,12 @@ class XeFMApp:
             # What turned out to have no trash (#765) is offered a permanent
             # delete below, so it is not also reported as a failure.
             no_trash = result.get("no_trash") or []
-            names = {str(t) for t in no_trash}
-            self._report_op_failures(verb, {**result, "errors": [
-                e for e in result.get("errors", []) if e[0] not in names]})
+            self._report_removal_failures(verb, result)
             if no_trash:
                 self._fileops.delete(
                     self.panel, no_trash, log=self.log_info,
                     on_complete=lambda r: on_complete(r, "Delete"),
-                    note=(f"These are online-only files in cloud storage, which "
-                          f"the {trash.NAME} does not take. Download them first "
-                          "to keep them recoverable."))
+                    note=self._ONLINE_ONLY_NOTE.format(trash=trash.NAME))
             self.panel.render()
 
         if to_trash:
@@ -10576,11 +10572,105 @@ class XeFMApp:
         note = None
         if not permanent:
             # K was pressed expecting the trash; say plainly that there is none.
-            note = (f"There is no {trash.NAME} here, so these are deleted for "
-                    "good.")
+            note = self._NO_TRASH_NOTE.format(trash=trash.NAME)
         self._fileops.delete(self.panel, targets, on_complete=on_complete,
                              log=self.log_info, note=note)
         return False
+
+    #: The line a permanent-delete confirmation adds when the trash was wanted.
+    _NO_TRASH_NOTE = "There is no {trash} here, so these are deleted for good."
+    _ONLINE_ONLY_NOTE = ("These are online-only files in cloud storage, which "
+                         "the {trash} does not take. Download them first to "
+                         "keep them recoverable.")
+
+    def _report_removal_failures(self, verb: str, result: dict) -> None:
+        """Report a delete's or a trash's failures — leaving out what turned
+        out to have no trash (#765), which is offered a permanent delete
+        instead of being reported."""
+        names = {str(t) for t in result.get("no_trash") or []}
+        self._report_op_failures(verb, {**result, "errors": [
+            e for e in result.get("errors", []) if e[0] not in names]})
+
+    def _remove_for_api(self, kind: str, targets: list,
+                        on_complete: "Callable[[dict], None]",
+                        on_declined: "Callable[[], None]") -> None:
+        """``ctx.trash`` / ``ctx.delete`` (#782): what K (with the trash on)
+        and Shift-K do, on targets the caller chose. ``"trash"`` deletes for
+        good when some target has no trash — after the confirmation that says
+        so — and offers a permanent delete for what turns out to have none
+        (online-only files, #765); ``"delete"`` skips the trash. Every pane
+        showing a target's folder is re-listed and each step's summary logged.
+
+        ``on_complete(result)`` follows once, with the service's result for
+        the whole call: its ``targets`` hold one entry per target, the second
+        step's where there was one, and ``permanent`` the ``str`` of each
+        target that was deleted for good. ``on_declined()`` instead when the
+        user cancels at the first confirmation. The caller has already checked
+        the arguments."""
+        parents = {str(t.parent) for t in targets}
+
+        def settle(verb: str, result: dict) -> None:
+            self._relist_others_showing(parents, besides=None)
+            self.log_info(format_op_summary(verb, result))
+            self._report_removal_failures(verb, result)
+
+        def deleted(result: dict, first: dict | None = None) -> None:
+            settle("Delete", result)
+            done = {str(t) for t, _d, status, _e in result.get("targets", [])
+                    if status == "done"}
+            if first is not None:
+                result = self._merge_removal(first, result)
+                done |= first.get("permanent", set())
+            on_complete({**result, "permanent": done})
+            self.panel.render()
+
+        def trashed(result: dict) -> None:
+            settle("Trash", result)
+            result = {**result, "permanent": set()}
+            no_trash = result.get("no_trash") or []
+            if not no_trash or result.get("cancelled"):
+                on_complete(result)
+                self.panel.render()
+                return
+
+            def kept() -> None:
+                # The offer was declined: those items stay where they are.
+                kept_names = {str(t) for t in no_trash}
+                on_complete({**result, "targets": [
+                    (t, d, "skipped", []) if str(t) in kept_names
+                    else (t, d, s, e)
+                    for t, d, s, e in result.get("targets", [])]})
+                self.panel.render()
+
+            self._fileops.delete(
+                self.panel, no_trash, log=self.log_info,
+                on_complete=lambda r: deleted(r, first=result),
+                on_declined=kept,
+                note=self._ONLINE_ONLY_NOTE.format(trash=trash.NAME))
+
+        if kind == "trash" and all(trash.available(t) for t in targets):
+            self._fileops.trash(self.panel, targets, on_complete=trashed,
+                                log=self.log_info, on_declined=on_declined)
+            return
+        note = (self._NO_TRASH_NOTE.format(trash=trash.NAME)
+                if kind == "trash" else None)
+        self._fileops.delete(self.panel, targets, on_complete=deleted,
+                             log=self.log_info, note=note,
+                             on_declined=on_declined)
+
+    @staticmethod
+    def _merge_removal(first: dict, second: dict) -> dict:
+        """One result for a trash whose leftovers a permanent delete then
+        took: the trash's, with each leftover's entry replaced by the
+        delete's, and the delete's errors and cancel added."""
+        later = {str(t): (t, d, s, e) for t, d, s, e in second.get("targets", [])}
+        targets = [later.get(str(t), (t, d, s, e))
+                   for t, d, s, e in first.get("targets", [])]
+        names = set(later)
+        return {**first, "targets": targets,
+                "cancelled": bool(first.get("cancelled") or second.get("cancelled")),
+                "errors": [e for e in first.get("errors", []) if e[0] not in names]
+                + list(second.get("errors", []))}
 
     # --- archives (create / extract) -----------------------------------------
 

@@ -472,7 +472,8 @@ under local pytest and at the release pre-tag check.
   `min_xefm` to the release that ships this.
 - Follow-up issues:
   - A `ctx` copy/move API that goes through file operations, if one is needed.
-    (Done: `ctx.copy` / `ctx.move`, #716 — see §10.)
+    (Done: `ctx.copy` / `ctx.move`, #716, and `ctx.trash` / `ctx.delete`,
+    #782 — see §10.)
   - Stabilizing the Preview tiers of `PATH_SCHEMES` once a real extension uses
     them.
 
@@ -523,8 +524,8 @@ way to run any action with its inputs given up front.
 - **The outcome** is `TaskOutcome`: `done` / `cancelled` / `failed`, `value`,
   `error`. No new outcome type.
 - **Per-item results**, where an operation has them, are a list of
-  `ItemResult(source, dest, status, errors)`, in the order the items were
-  given; `status` is `done` / `skipped` / `failed`, and `errors` holds the
+  `ItemResult(source, dest, status, errors, permanent)`, in the order the
+  items were given; `status` is `done` / `skipped` / `failed`, and `errors` holds the
   `(name, message)` pairs under that item. A folder is `done` with an inner
   file in `errors`, and `failed` only when nothing of it got through. On
   cancel, `value` holds the items whose outcome is known.
@@ -534,8 +535,6 @@ way to run any action with its inputs given up front.
 - **UI thread only**, like the rest of `ctx`; checked on entry.
 - **Wrong arguments raise `ValueError` at once** — a caller's bug, not an
   outcome.
-
-`ctx.delete`, `ctx.trash` and the like, if they come, follow the same shape.
 
 ### 10.2 Set aside: `invoke()` with inputs
 
@@ -566,3 +565,24 @@ declared in the action's metadata (#718) so the snapshot covers it. A value
 given skips its prompt; one not given is still asked for. Safety
 confirmations are not `args` and are never skipped by them. Nothing needs
 this yet.
+
+### 10.4 `ctx.trash` / `ctx.delete` (#782)
+
+Two calls, mirroring the two built-ins rather than one call that follows
+`DELETE_TO_TRASH`: the setting is the user's choice for a key, and an action
+that asks for the trash should get it, or be told why not.
+
+- `ctx.trash` is `delete_files` with the trash on, step for step: where some
+  item has no trash at all, the confirmation says so and everything is
+  deleted for good; an item that turns out to have none part-way
+  (`NoTrashError`, #765) is offered a permanent delete after the run, and
+  one kept by declining it comes back `skipped`. A cancelled run makes no
+  offer.
+- `ctx.delete` is `delete_permanently`: its confirmation defaults to Cancel.
+- `dest` is always `None`. `ItemResult.permanent` says which items were
+  deleted for good, so an action can tell a trash that fell back from one
+  that did not. The two steps of a trash with a fallback come back as one
+  outcome.
+- An item inside an archive is a `ValueError`.
+- `XeFMApp._remove_for_api` holds the flow; `_delete` (the keys) shares its
+  notes and failure reporting.

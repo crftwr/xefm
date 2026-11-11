@@ -250,6 +250,13 @@ The public names:
   once; `on_done(ctx, outcome)` gets a `TaskOutcome` whose `value` is a list
   of `ItemResult` (`source`, `dest`, `status` done/skipped/failed, `errors`).
   Never copy or move files with `shutil` or the path's own methods instead
+- `ctx.trash(items, *, on_done=None)` / `ctx.delete(...)` (Preview) — move
+  files to the trash, or delete them for good, through XeFM's own operation
+  (confirmation, progress, the permanent-delete offer where there is no
+  trash). Same `items` and `on_done` as `ctx.copy`; each `ItemResult` has
+  `dest` None and `permanent` True when it was deleted for good. Prefer
+  `ctx.trash`. Never remove files with `unlink`, `rmdir` or `shutil.rmtree`
+  instead
 - `ctx.run_task(title, work, *, on_done=None, read_only=False)` (Preview) — run
   `work(job)` on a worker thread behind XeFM's progress dialog (Cancel, Run in
   background); see *Long work* below

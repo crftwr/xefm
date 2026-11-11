@@ -286,6 +286,8 @@ summary with no further page.
 | `ctx.run_program(command, terminal=False)` | run an external program — see below |
 | `ctx.copy(items, dest, on_done=fn)` | (Preview) copy files the way **File → Copy to Other Pane** does — confirmation, conflict dialog, progress — and hear how each fared; see below |
 | `ctx.move(items, dest, on_done=fn)` | (Preview) the same, moving |
+| `ctx.trash(items, on_done=fn)` | (Preview) move files to the trash the way **File → Move to Trash…** does, and hear how each fared; see below |
+| `ctx.delete(items, on_done=fn)` | (Preview) the same, deleting for good as **File → Delete Permanently…** does |
 | `ctx.terminal_backend_suspended()` | (Preview) a `with` block in which you run an interactive program yourself with `subprocess` — see below |
 | `ctx.program_env()` | (Preview) `{'cwd': ..., 'env': ...}` for `subprocess`: what `run_program` gives its programs |
 | `ctx.is_terminal_backend` | (Preview) whether XeFM is running in a terminal, so there is a terminal to hand over |
@@ -554,6 +556,37 @@ def backup_selection(ctx):
     dialog, or `'failed'`) and `r.errors`, the `(name, message)` pairs for what
     went wrong under it. A folder whose files mostly copied is `'done'`, with
     the ones that did not in `r.errors`.
+
+### Deleting files (Preview)
+
+`ctx.trash(items)` moves files to the system's trash, and `ctx.delete(items)`
+deletes them for good. They run the same operations as **File → Move to
+Trash…** and **File → Delete Permanently…**: the confirmation, whose default
+button for a permanent delete is **Cancel**, and the progress dialog with
+**Cancel**. You choose the items:
+
+```python
+def clear_logs(ctx):
+    logs = [e for e in ctx.pane.entries if e.name.endswith('.log')]
+
+    def done(ctx, outcome):
+        gone = [r for r in outcome.value if r.status == 'done']
+        ctx.message(f'Moved {len(gone)} log(s) to the trash')
+
+    ctx.trash(logs, on_done=done)
+```
+
+- `items` and `on_done` work as for `ctx.copy` above. Each result's `r.dest`
+  is `None`, and `r.permanent` is `True` when the item was deleted for good
+  rather than moved to the trash.
+- Where there is no trash (storage that keeps none), `ctx.trash` says so in
+  its confirmation and deletes everything for good. An item that turns out
+  to have no trash during the run (an online-only file in cloud storage) is
+  offered a permanent delete afterwards, as **File → Move to Trash…** does;
+  if you decline, it is `'skipped'`. See [the trash](TRASH_FEATURE.md).
+- `DELETE_TO_TRASH` is the setting of **File → Move to Trash…** and does
+  not apply here: `ctx.trash` always tries the trash.
+- An item inside an archive is an error at once.
 
 ### Opening your own list of files (Preview)
 
