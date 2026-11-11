@@ -292,12 +292,14 @@ class FileOperationService:
                on_complete: Optional[Callable[[dict], None]] = None,
                log: Optional[Callable[[str], None]] = None,
                z: int = 70, background: bool = True,
-               note: Optional[str] = None) -> None:
+               note: Optional[str] = None,
+               on_declined: Optional[Callable[[], None]] = None) -> None:
         """Delete ``targets`` (directories recursively), confirming per
         ``CONFIRM_DELETE`` (whose confirm button defaults to Cancel). ``note``
-        is a line for the confirmation — why this is not going to the trash."""
+        is a line for the confirmation — why this is not going to the trash;
+        ``on_declined`` as for :meth:`copy`."""
         self._start(panel, "delete", targets, None, on_complete, log, z, background,
-                    note=note)
+                    note=note, on_declined=on_declined)
 
     def goes_to_trash(self, path) -> bool:
         """Whether deleting ``path`` sends it to the system's trash: there is
@@ -309,11 +311,14 @@ class FileOperationService:
     def trash(self, panel: Any, targets: list, *,
               on_complete: Optional[Callable[[dict], None]] = None,
               log: Optional[Callable[[str], None]] = None,
-              z: int = 70, background: bool = True) -> None:
+              z: int = 70, background: bool = True,
+              on_declined: Optional[Callable[[], None]] = None) -> None:
         """Send ``targets`` to the system's trash (:mod:`xefm.trash`), each as
         one move — a directory goes whole — confirming per ``CONFIRM_TRASH``.
-        The caller checks :func:`xefm.trash.available` first."""
-        self._start(panel, "trash", targets, None, on_complete, log, z, background)
+        The caller checks :func:`xefm.trash.available` first. ``on_declined``
+        as for :meth:`copy`."""
+        self._start(panel, "trash", targets, None, on_complete, log, z, background,
+                    on_declined=on_declined)
 
     def sync(self, panel: Any, copies: list, deletes: list, *,
              on_complete: Optional[Callable[[dict], None]] = None,

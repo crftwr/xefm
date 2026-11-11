@@ -658,23 +658,29 @@ class TaskOutcome:
 @preview
 class ItemResult:
     """How one item fared in a file operation started from the API —
-    :meth:`ActionContext.copy` or :meth:`ActionContext.move` — a list of which
-    is the ``value`` of the :class:`TaskOutcome` its ``on_done`` gets.
+    :meth:`ActionContext.copy`, :meth:`~ActionContext.move`,
+    :meth:`~ActionContext.trash` or :meth:`~ActionContext.delete` — a list of
+    which is the ``value`` of the :class:`TaskOutcome` its ``on_done`` gets.
 
-    ``source`` is the item as given; ``dest`` where it went (or would have);
-    ``status`` is ``"done"``, ``"skipped"`` (passed over in the conflict
-    dialog) or ``"failed"``. ``errors`` lists ``(name, message)`` for what
-    went wrong under it: a folder can be ``"done"`` with a file inside it in
-    ``errors``, and is ``"failed"`` only when nothing of it got through."""
+    ``source`` is the item as given; ``dest`` where it went (or would have),
+    always ``None`` for a trash or a delete; ``status`` is ``"done"``,
+    ``"skipped"`` (passed over in the conflict dialog, or kept when the offer
+    to delete it for good was declined) or ``"failed"``. ``errors`` lists
+    ``(name, message)`` for what went wrong under it: a folder can be
+    ``"done"`` with a file inside it in ``errors``, and is ``"failed"`` only
+    when nothing of it got through. ``permanent`` is True when the item was
+    deleted for good rather than moved to the trash."""
 
-    __slots__ = ("source", "dest", "status", "errors")
+    __slots__ = ("source", "dest", "status", "errors", "permanent")
 
     def __init__(self, source: Path, dest: Path | None, status: str,
-                 errors: Iterable[tuple[str, str]] = ()):
+                 errors: Iterable[tuple[str, str]] = (), *,
+                 permanent: bool = False):
         self.source = source
         self.dest = dest
         self.status = status
         self.errors = list(errors)
+        self.permanent = permanent
 
     @property
     def ok(self) -> bool:
@@ -1101,6 +1107,81 @@ class ActionContext:
             app._call_later(lambda: report(TaskOutcome("done", [])))
             return
         app._transfer_for_api(kind, targets, dest_dir, complete, declined)
+
+    @preview
+    def trash(self, items: Iterable["EntryInfo | Path | str"], *,
+              on_done: Callable[["ActionContext", TaskOutcome], None]
+              | None = None) -> None:
+        """Move ``items`` to the system's trash the way the built-in delete
+        does with the trash on — its confirmation, progress with Cancel — then
+        re-list the panes showing their folders. Returns at once.
+
+        Where an item has no trash (storage that keeps none), the confirmation
+        says so and everything is deleted for good instead; an item that turns
+        out to have none part-way (an online-only file in cloud storage) is
+        offered a permanent delete afterwards, as the built-in does. Such
+        items come back with ``permanent`` set; one kept by declining that
+        offer comes back ``"skipped"``. ``DELETE_TO_TRASH`` is the built-in
+        key's setting and does not apply: calling ``trash`` asks for it.
+
+        ``items`` takes what ``ctx.pane.selected()`` returns, paths, or
+        absolute path strings; which items to remove is yours to decide (an
+        empty list removes nothing). ``on_done(ctx, outcome)`` follows the
+        rules of :meth:`copy`: ``value`` is a list of :class:`ItemResult`, one
+        per item, with ``dest`` always ``None``; ``"cancelled"`` (at the
+        confirmation or during the run) carries the items settled so far.
+
+        Wrong arguments raise ValueError at once: a relative path string, or
+        an item inside an archive.
+        """
+        self._remove("trash", items, on_done)
+
+    @preview
+    def delete(self, items: Iterable["EntryInfo | Path | str"], *,
+               on_done: Callable[["ActionContext", TaskOutcome], None]
+               | None = None) -> None:
+        """Delete ``items`` for good, folders with their contents, the way the
+        built-in permanent delete does — its confirmation, whose default
+        button is Cancel, and progress with Cancel. Otherwise as
+        :meth:`trash`: every item that is ``"done"`` has ``permanent`` set."""
+        self._remove("delete", items, on_done)
+
+    def _remove(self, kind: str, items, on_done) -> None:
+        self._require_ui_thread(kind)
+        app = self._app
+        targets = [_operation_path(item, f"{kind}: item") for item in items]
+        for target in targets:
+            if app._is_archive(target):
+                raise ValueError(f"{kind}: {target} is inside an archive, "
+                                 f"which is read-only")
+
+        def report(outcome: TaskOutcome) -> None:
+            if on_done is not None:
+                run_guarded(f"{kind} completion", on_done,
+                            ActionContext(app), outcome)
+
+        def complete(result: dict) -> None:
+            error = result.get("error")
+            if error is not None:
+                _report_exception(f"{kind.capitalize()}", error)
+                outcome = TaskOutcome("failed", error=error)
+            else:
+                permanent = result.get("permanent", set())
+                value = [ItemResult(t, None, status, errors,
+                                    permanent=status == "done"
+                                    and str(t) in permanent)
+                         for t, _d, status, errors in result.get("targets", [])]
+                outcome = TaskOutcome(
+                    "cancelled" if result.get("cancelled") else "done", value)
+            app._call_later(lambda: report(outcome))
+
+        def declined() -> None:
+            app._call_later(lambda: report(TaskOutcome("cancelled", [])))
+
+        if not targets:
+            app._call_later(lambda: report(TaskOutcome("done", [])))
+            return
+        app._remove_for_api(kind, targets, complete, declined)
 
     # --- talking to the user ------------------------------------------------ #
 
