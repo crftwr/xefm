@@ -450,14 +450,15 @@ class FilePane(Widget):
         self._view_h = 1.0
         self._viewport_rows = 1
         #: Cached extension-column width keyed on the ``files`` list identity
-        #: (refreshed/sorted/filtered lists are fresh objects), so we measure the
-        #: whole pane once per listing rather than every frame.
-        self._ext_cache: tuple[int, float] = (0, 0.0)
+        #: (refreshed/sorted/filtered lists are fresh objects) and the measure
+        #: epoch, so we measure the whole pane once per listing and font
+        #: rather than every frame (#897).
+        self._ext_cache: tuple = (None, 0.0)
         #: ``(id(listing entries), {str(path): record})`` — see ``_records``.
         self._records_cache: tuple = (None, {})
         #: ``(key, measurements)`` — see ``_measure``.
         self._measure_cache: tuple = (None, None)
-        # FilePane._row_measures's widths: (stamp, plain, mono), or None.
+        # FilePane._row_measures's widths: (measure epoch, plain, mono), or None.
         self._widths: tuple | None = None
         #: The shortest repaint interval a drawn column asked for (a relative
         #: time goes stale), or None; the app repaints on it.
@@ -630,7 +631,8 @@ class FilePane(Widget):
         if self.pane.get("virtual"):
             return 0.0
         files = self.pane["files"]
-        if self._ext_cache[0] == id(files):
+        key = (id(files), self._widths[0] if self._widths else None)
+        if self._ext_cache[0] == key:
             return self._ext_cache[1]
         info_cache = self.pane.get("file_info", {})
         width = 0.0
@@ -645,7 +647,7 @@ class FilePane(Widget):
             _, ext = self._split_name(shown, is_dir)
             if ext:
                 width = max(width, measure(ext))
-        self._ext_cache = (id(files), width)
+        self._ext_cache = (key, width)
         return width
 
     def _clamp(self, count: int, view_h: float) -> None:
@@ -879,25 +881,20 @@ class FilePane(Widget):
             self._records_cache = (id(entries), {str(p): a for p, a in entries})
         return self._records_cache[1]
 
-    def forget_measurements(self) -> None:
-        """Drop the column widths measured for the current listing, so the
-        next draw measures again: the base font changed under them (#857)."""
-        self._measure_cache = (None, None)
-        self._widths = None
-
     def _row_measures(self, ctx):
         """``(measure, measure_mono)``: the widths of text in the pane's font
         and in the monospace one, kept between frames. A frame measures each
         row's name, cells and markers a dozen times over (marker slots, the
         cells again as they are drawn, a space every time) and the next frame
-        measures the same rows again (#884). Kept while the base unit and a
-        probe of both fonts stay the same, and dropped by
-        ``forget_measurements`` when the font is about to change."""
-        stamp = (ctx.base_size, ctx.measure_text(" "), ctx.measure_text("W"),
-                 ctx.measure_text("W", _MONO_STYLE))
+        measures the same rows again (#884). Kept while PuiKit's
+        ``measure_epoch`` stays the same: it moves whenever a width may have
+        changed - a new base font, a new size, a monitor with another DPI.
+        The widths kept for the whole listing (``_measure``, ``_ext_width``)
+        are keyed on the same epoch, so they follow it too (#897)."""
+        epoch = ctx.measure_epoch
         widths = self._widths
-        if widths is None or widths[0] != stamp:
-            widths = self._widths = (stamp, {}, {})
+        if widths is None or widths[0] != epoch:
+            widths = self._widths = (epoch, {}, {})
         _stamp, plain, mono = widths
         for memo in (plain, mono):
             if len(memo) > _WIDTH_MEMO_MAX:
@@ -924,7 +921,8 @@ class FilePane(Widget):
         (#756). Recomputed only when the listing, its values
         (``store.version``) or the layout change. Markers reserve nothing, so
         they are not measured."""
-        key = (id(files), store.version, layout, id(records), measure(" "))
+        key = (id(files), store.version, layout, id(records),
+               self._widths[0] if self._widths else None)
         if self._measure_cache[0] == key:
             return self._measure_cache[1]
         values: dict = {}

@@ -4,7 +4,8 @@ Every theme carries ``extras["appearance"]`` -- ``"light"`` or ``"dark"`` -- whi
 ``XeFMApp._apply_appearance`` hands to ``Backend.set_appearance`` so the title bar
 (and on macOS the native menus) match the theme. A config reload that changes
 ``MONO_FONT_NAME`` or ``FONT_SIZE`` hands the backend the new base font through
-``Backend.set_base_font`` and drops the file panes' measured column widths.
+``Backend.set_base_font``; the file panes measure again because PuiKit's
+``measure_epoch`` moves with it (#897).
 No window: a recording backend stands in for the real one.
 """
 
@@ -28,19 +29,9 @@ class _Backend:
         self.calls.append(("font", font))
 
 
-class _View:
-    def __init__(self):
-        self.forgotten = 0
-
-    def forget_measurements(self):
-        self.forgotten += 1
-
-
 def _app():
     app = xefm_app.XeFMApp.__new__(xefm_app.XeFMApp)
     app.backend = _Backend()
-    app.left_view = _View()
-    app.right_view = _View()
     return app
 
 
@@ -99,15 +90,13 @@ def test_an_unchanged_font_is_left_alone():
     app = _app()
     app._apply_base_font(_cfg("Menlo", 12), _cfg("Menlo", 12))
     assert app.backend.calls == []
-    assert app.left_view.forgotten == 0
 
 
-def test_a_new_size_goes_to_the_backend_and_panes_measure_again():
+def test_a_new_size_goes_to_the_backend():
     app = _app()
     app._apply_base_font(_cfg(None, 12), _cfg(None, 16))
     [(kind, font)] = app.backend.calls
     assert kind == "font" and font.size == 16.0 and font.family is None
-    assert app.left_view.forgotten == 1 and app.right_view.forgotten == 1
 
 
 def test_a_new_mono_face_goes_to_the_backend():
@@ -124,30 +113,24 @@ def test_an_invalid_value_waits_for_the_next_launch():
     assert app.backend.calls == []
 
 
-def test_file_pane_forgets_its_measurements():
-    view = xefm_app.FilePane.__new__(xefm_app.FilePane)
-    view._measure_cache = (("key",), {"values": {0: 5.0}})
-    view._widths = (("stamp",), {"a": 1.0}, {})
-    view.forget_measurements()
-    assert view._measure_cache == (None, None)
-    assert view._widths is None
-
-
 class _Ctx:
-    """Measures a character as one unit, and counts what it measured."""
+    """Measures a character as ``unit`` units, and counts what it measured.
+    ``measure_epoch`` as PuiKit's DrawContext keeps it: moved when the font
+    changes under the measures."""
 
     def __init__(self):
-        self.base_size = (8.0, 16.0)
+        self.measure_epoch = 0
+        self.unit = 1.0
         self.measured = []
 
     def measure_text(self, text, style=None):
         self.measured.append((text, style is not None))
-        return float(len(text))
+        return self.unit * len(text)
 
 
 def test_file_pane_keeps_row_widths_between_frames():
     """#884: a row's widths are measured once, not every frame, and measured
-    again when the base unit changes under them (a DPI or font change)."""
+    again when the measure epoch moves under them (a DPI or font change)."""
     view = xefm_app.FilePane.__new__(xefm_app.FilePane)
     view._widths = None
     ctx = _Ctx()
@@ -158,10 +141,29 @@ def test_file_pane_keeps_row_widths_between_frames():
     texts = [t for t, _ in ctx.measured]
     assert texts.count("report.txt") == 1 and texts.count("12 KB") == 1
     assert ("12 KB", True) in ctx.measured      # in the monospace style
-    ctx.base_size = (10.0, 20.0)
+    ctx.measure_epoch += 1
     measure, _mono = view._row_measures(ctx)
     measure("report.txt")
     assert [t for t, _ in ctx.measured].count("report.txt") == 2
+
+
+def test_extension_column_follows_a_font_change():
+    """#897: the extension column was kept per listing only, so after a font
+    size step it kept the old size's width and cut the longest extensions."""
+    view = xefm_app.FilePane.__new__(xefm_app.FilePane)
+    view.config = types.SimpleNamespace(SEPARATE_EXTENSIONS=True, MAX_EXTENSION_LENGTH=5)
+    view.pane = {"files": ["/d/a.docx", "/d/b.c"], "file_info": {}}
+    view._widths = None
+    view._ext_cache = (None, 0.0)
+    view._display_name = lambda entry: entry.rsplit("/", 1)[1]
+    ctx = _Ctx()
+    measure, _mono = view._row_measures(ctx)
+    assert view._ext_width(measure) == 5.0                  # ".docx"
+    assert view._ext_width(measure) == 5.0                  # kept for the listing
+    assert [t for t, _ in ctx.measured].count(".docx") == 1
+    ctx.unit, ctx.measure_epoch = 1.1, ctx.measure_epoch + 1   # Font Size > Larger
+    measure, _mono = view._row_measures(ctx)
+    assert view._ext_width(measure) == 5.5
 
 
 # -- temporary font size (View > Font Size) ----------------------------------
@@ -186,7 +188,6 @@ def test_larger_and_smaller_step_one_point(monkeypatch):
     app._step_font_size(-1)
     assert _sizes(app) == [13.0, 14.0, 13.0]
     assert app._font_size_override == 13
-    assert app.left_view.forgotten == 3
 
 
 def test_default_size_goes_back_to_font_size(monkeypatch):
