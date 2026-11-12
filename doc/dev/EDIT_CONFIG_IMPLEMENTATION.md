@@ -60,10 +60,12 @@ Values consumed **on demand** (key bindings, file associations, programs,
 favorites, editor) apply immediately once the reference is repointed. Themes are
 rebuilt (`_reload_themes`, #708), and a changed `MONO_FONT_NAME` / `FONT_SIZE`
 goes to the backend through `Backend.set_base_font` (`_apply_base_font`, #857):
-every window gets a RESIZE and lays out again, and the file panes drop their
-measured column widths first (`FilePane.forget_measurements`). XeFM keeps no
-other length measured across frames; a new cache of one has to be dropped
-there too. A value that fails validation is left for the next launch rather
+every window gets a RESIZE and lays out again. The file panes measure again
+on their own: every width they keep across frames (the row widths, the extra
+columns, the extension column) is keyed on PuiKit's `DrawContext.measure_epoch`,
+which moves with the new font, and with a monitor of another DPI, which never
+passes through here (#897). A new cache of a measured length has to be keyed
+on it too. A value that fails validation is left for the next launch rather
 than handed to the backend.
 
 **View → Font Size** (`increase_font_size` / `decrease_font_size` /

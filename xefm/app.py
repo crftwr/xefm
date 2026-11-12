@@ -6161,8 +6161,8 @@ class XeFMApp:
         """Hand the backend the new base font when a reload changed
         ``MONO_FONT_NAME`` or ``FONT_SIZE``, so the text resizes without a
         restart (#857). The backend sends every window a RESIZE, on which the
-        next frame lays out again; the file panes drop the column widths they
-        measured with the old font first. ``UI_FONT_NAME`` is not part of the
+        next frame lays out again, and the file panes measure again because
+        PuiKit's ``measure_epoch`` moved with the font. ``UI_FONT_NAME`` is not part of the
         base font and still waits for the next launch. A backend with one
         font (a terminal) or none to change at run time (the browser)
         inherits the base no-op."""
@@ -6180,10 +6180,9 @@ class XeFMApp:
         self._push_base_font(new_config)
 
     def _push_base_font(self, config) -> None:
-        """Give the backend the base font for ``config`` at the size in force,
-        after the file panes drop the column widths measured with the old one."""
-        for view in (self.left_view, self.right_view):
-            view.forget_measurements()
+        """Give the backend the base font for ``config`` at the size in force.
+        The file panes measure again on their own: PuiKit moves its
+        ``measure_epoch`` with the new font, and they key their widths on it."""
         self.backend.set_base_font(_base_font(config, self._font_size_override))
 
     def _configured_font_size(self) -> int:
