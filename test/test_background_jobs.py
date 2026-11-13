@@ -91,13 +91,135 @@ def test_detached_jobs_run_one_at_a_time_in_order(panel):
     assert manager.queued_count() == 0
 
 
-def test_a_foreground_task_does_not_wait_for_the_queue(panel):
+def test_a_foreground_writer_pauses_the_background_job(panel):
+    """One writer at a time (#887): the foreground task does not wait for the
+    queue, but starts only once the slot's job has paused, and that job
+    resumes when the foreground task is done."""
     manager = TaskManager()
-    _bg, release1, _ = _held_task(manager, panel, detached=True)
+    bg, release1, done1 = _held_task(manager, panel, detached=True)
     fg, release2, done2 = _held_task(manager, panel)
     assert fg.status is TaskStatus.RUNNING
+    assert bg.suspended
+    _pump(panel, lambda: not fg.suspended)
+    assert bg.paused
     release2.set()
     _pump(panel, lambda: done2)
+    _pump(panel, lambda: not bg.suspended)
+    release1.set()
+    _pump(panel, lambda: done1)
+
+
+def test_a_foreground_writer_waits_while_the_background_file_lands(panel):
+    """A job mid-file is not paused: the foreground task waits, and its dialog
+    says what for."""
+    manager = TaskManager()
+    in_file = threading.Event()
+    file_done = threading.Event()
+    bg = Task("Copy…")
+
+    def run_bg(t):
+        t.checkpoint()
+        in_file.set()
+        file_done.wait(5)                   # a file in flight: no checkpoint
+        t.checkpoint()
+        return {}
+
+    manager.submit(bg, panel, run=run_bg, detached=True)
+    _pump(panel, in_file.is_set)
+    fg, release, done = _held_task(manager, panel, title="Move…")
+    for _ in range(10):
+        panel.backend.run_animation_ticks()
+        time.sleep(0.01)
+    assert fg.suspended and fg.waiting_for == "Copy"
+    panel.render()
+    assert "Waiting for Copy to pause" in "\n".join(panel.backend.snapshot())
+    file_done.set()
+    _pump(panel, lambda: not fg.suspended)
+    release.set()
+    _pump(panel, lambda: done)
+
+
+def test_a_read_only_task_in_front_leaves_the_background_job_running(panel):
+    manager = TaskManager()
+    bg, release1, done1 = _held_task(manager, panel, detached=True)
+    reader = Task("Reading tags", exclusive=False)
+    release2 = threading.Event()
+    done2 = []
+
+    def run(t):
+        while not release2.wait(0.01):
+            t.checkpoint()
+        return {}
+
+    manager.submit(reader, panel, run=run, on_done=done2.append)
+    for _ in range(5):
+        panel.backend.run_animation_ticks()
+    assert not bg.suspended and not reader.suspended
+    release2.set()
+    release1.set()
+    _pump(panel, lambda: done1 and done2)
+
+
+def test_sending_the_waiting_writer_back_resumes_the_slot_job(panel):
+    manager = TaskManager()
+    bg, release1, done1 = _held_task(manager, panel, detached=True)
+    fg, release2, done2 = _held_task(manager, panel)
+    _pump(panel, lambda: not fg.suspended)
+    manager.detach(fg)                      # back to the queue, behind bg
+    assert manager.is_queued(fg)
+    _pump(panel, lambda: not bg.suspended)
+    assert fg.suspended
+    release1.set()
+    _pump(panel, lambda: done1)
+    release2.set()
+    _pump(panel, lambda: done2)
+
+
+def test_paused_counts_every_thread_of_the_task():
+    """A copy has several threads; it is paused only when none of them is
+    at work. One waiting in ``idle`` (or on a prompt) does not count."""
+    task = Task("Copy…")
+    worker_in = threading.Event()
+    worker_go = threading.Event()
+    stopped = threading.Event()
+
+    def worker():
+        task.checkpoint()
+        worker_in.set()
+        worker_go.wait(5)
+        try:
+            task.checkpoint()               # parks here once suspended
+        finally:
+            stopped.set()
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    worker_in.wait(5)
+    with task.idle():                       # this thread waits on the worker
+        task.suspend()
+        assert not task.paused              # the worker is mid-file
+        worker_go.set()
+        deadline = time.monotonic() + 5
+        while not task.paused and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert task.paused
+        task.resume()
+    thread.join(5)
+    assert stopped.is_set()
+
+
+def test_a_writer_cancelled_while_it_waits_never_runs(panel):
+    manager = TaskManager()
+    bg, release1, _ = _held_task(manager, panel, detached=True)
+    _pump(panel, lambda: bg._inflight)      # at work, so not paused
+    ran = []
+    done = []
+    fg = Task("Move…")
+    manager.submit(fg, panel, run=lambda t: ran.append(1) or {}, on_done=done.append)
+    assert fg.suspended
+    fg.request_cancel()
+    _pump(panel, lambda: done)
+    assert ran == [] and done[0]["cancelled"]
     release1.set()
 
 
@@ -201,6 +323,7 @@ def test_a_job_sent_back_waits_its_turn_suspended(panel):
     manager = TaskManager()
     first, release1, done1 = _held_task(manager, panel, detached=True, title="One…")
     second, release2, done2 = _held_task(manager, panel, title="Two…")
+    _pump(panel, lambda: not second.suspended)  # in front once One paused
     assert not second.paused
     manager.detach(second)
     assert second.suspended
@@ -229,18 +352,23 @@ def test_a_job_sent_back_to_a_free_slot_keeps_running(panel):
 
 
 def test_bringing_forward_a_suspended_job_runs_it_in_front(panel):
+    """In front it is a writer, so the slot's job pauses for it (#887)."""
     manager = TaskManager()
-    _first, release1, _ = _held_task(manager, panel, detached=True)
+    first, release1, done1 = _held_task(manager, panel, detached=True)
     second, release2, done2 = _held_task(manager, panel)
     manager.detach(second)
     _pump(panel, lambda: second.paused)
     assert manager.bring_forward(second)
-    assert not second.suspended and not second.background
+    assert not second.background
     assert manager.queued_count() == 0
     assert len(_dialogs(panel)) == 1
+    _pump(panel, lambda: not second.suspended)
+    assert first.paused
     release2.set()
     _pump(panel, lambda: done2)
+    _pump(panel, lambda: not first.suspended)
     release1.set()
+    _pump(panel, lambda: done1)
 
 
 def test_a_suspended_job_can_be_cancelled(panel):
@@ -257,6 +385,7 @@ def test_a_suspended_job_can_be_cancelled(panel):
 
 def test_a_transfer_never_pauses_mid_file():
     task = Task("Copy…")
+    task.checkpoint()                          # at work, between files
     task.suspend()
     started = time.monotonic()
     task.checkpoint(pausable=False)            # returns at once
@@ -380,6 +509,30 @@ def test_a_job_waiting_on_a_prompt_is_marked(app):
     assert app._jobs_parts() == [("attention", "Copy")]
     app.panel.render()
     assert "⚠ Copy" in "\n".join(app.panel.backend.snapshot())
+    task._requests.get_nowait()
+    release.set()
+
+
+def test_a_job_waiting_on_a_prompt_blinks_then_stays_highlighted(app):
+    """The waiting job's part was easy to miss (#887 hand check): it blinks
+    once a second for a while, then holds the highlight without ticking."""
+    bar = app.status
+    task, release, _ = _held_task(app.tasks, app.panel, detached=True)
+    task._requests.put(object())
+    app.panel.render()
+    assert bar._attention_text == "Copy" and bar._attention_ticking
+    assert bar._attention_lit()                # the "on" half of the first blink
+    bar._attention_since -= bar._ATTENTION_PERIOD_S * 0.75
+    assert not bar._attention_lit()            # the "off" half
+    bar._attention_since -= bar._ATTENTION_BLINK_S
+    assert bar._attention_lit()                # over: highlighted for good
+    _pump(app.panel, lambda: not bar._attention_ticking)
+    task._requests.get_nowait()
+    app.panel.render()
+    assert bar._attention_text is None
+    task._requests.put(object())               # a new wait blinks afresh
+    app.panel.render()
+    assert bar._attention_ticking
     task._requests.get_nowait()
     release.set()
 

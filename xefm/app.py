@@ -1500,6 +1500,12 @@ class StatusBar(Widget):
         #: The spinner in front of a running job (#599 hand check): PuiKit's
         #: own, so it turns on its own and is one cell wide everywhere.
         self._busy = BusyIndicator()
+        #: A job waiting on an answer (#887 hand check): what its part says,
+        #: and when it began to, so the part blinks for a while and then
+        #: stays highlighted. ``_attention_ticking`` while a blink tick runs.
+        self._attention_text: str | None = None
+        self._attention_since = 0.0
+        self._attention_ticking = False
 
     def invalidate(self) -> None:
         """Drop both cached lines, so the next draw rebuilds them from the
@@ -1617,6 +1623,7 @@ class StatusBar(Widget):
             avail = max(0.0, avail - jw - 2.0)
         else:
             self._jobs_hit = None
+            self._attention_text = None
         full = self._text()
         text = elide(full, avail, where="end", measure=ctx.measure_text)
         ctx.draw_text(x, 0, text, Style(fg=ctx.theme.muted_text))
@@ -1636,6 +1643,55 @@ class StatusBar(Widget):
     #: gets the spinner instead.
     _JOB_MARKS = {"attention": "⚠", "done": "✓", "failed": "⚠"}
     _JOB_GAP = "  "
+    #: A job waiting on an answer is easy to miss as one more accent-colored
+    #: word in the bar (#887 hand check), so its part is drawn highlighted —
+    #: the bar's colors swapped — and blinks for the first few seconds. One
+    #: blink a second (half on, half off): slow enough not to be the flashing
+    #: that troubles people sensitive to it. Then it holds still, so a job
+    #: left waiting for an hour does not repaint the window for an hour.
+    _ATTENTION_BLINK_S = 10.0
+    _ATTENTION_PERIOD_S = 1.0
+
+    def _attention_lit(self) -> bool:
+        """Whether the waiting job's part is highlighted right now: in the
+        "on" half of each blink, and for good once the blinking is over."""
+        elapsed = time.monotonic() - self._attention_since
+        if elapsed >= self._ATTENTION_BLINK_S:
+            return True
+        return (elapsed % self._ATTENTION_PERIOD_S) < self._ATTENTION_PERIOD_S / 2
+
+    def _watch_attention(self, parts) -> None:
+        """Note when a job starts waiting on an answer, and blink its part:
+        a tick repaints at each flip until the blinking is over."""
+        text = next((t for kind, t in parts if kind == "attention"), None)
+        if text != self._attention_text:
+            self._attention_text = text
+            self._attention_since = time.monotonic()
+        if text is None or self._attention_ticking:
+            return
+        if time.monotonic() - self._attention_since >= self._ATTENTION_BLINK_S:
+            return
+        panel = self.app.panel
+        lit = [self._attention_lit()]
+
+        def tick() -> bool:
+            if self._attention_text is None:
+                self._attention_ticking = False
+                return False
+            done = time.monotonic() - self._attention_since >= self._ATTENTION_BLINK_S
+            now = self._attention_lit()
+            if now != lit[0] or done:
+                lit[0] = now
+                panel.render()
+            if done:
+                self._attention_ticking = False
+                return False
+            return True
+
+        # A backend that cannot tick gets the still highlight at once.
+        self._attention_ticking = bool(panel.request_animation_ticks(tick))
+        if not self._attention_ticking:
+            self._attention_since -= self._ATTENTION_BLINK_S
 
     def _draw_jobs(self, ctx, parts, x: float, avail: float) -> float:
         """Draw the job segment flush right in what is left of the bar and
@@ -1643,6 +1699,10 @@ class StatusBar(Widget):
         then its text. The text gives way, elided at its end, before the
         marks do. A click anywhere on it opens the jobs list."""
         style = Style(fg=ctx.theme.accent, attr=TextAttribute.BOLD)
+        self._watch_attention(parts)
+        # The highlight: the bar's background as the ink, on the text color.
+        bar_bg = ctx.theme.surface_bg("status") or ctx.theme.accent
+        lit = Style(fg=bar_bg, bg=ctx.theme.text, attr=TextAttribute.BOLD)
         mark_w = ctx.measure_text("⠋")
         gap_w = ctx.measure_text(self._JOB_GAP, style)
         fixed = len(parts) * (mark_w + 1.0) + gap_w * (len(parts) - 1)
@@ -1659,13 +1719,25 @@ class StatusBar(Widget):
         for i, ((kind, _t), shown) in enumerate(zip(parts, texts)):
             if i:
                 cx += gap_w
+            part_style = style
+            if kind == "attention" and self._attention_lit():
+                part_style = lit
+            if part_style is lit:
+                # One fill under the mark, the gap and the text: drawn as text
+                # runs, the gap was only as wide as a space, which on a
+                # proportional font falls short of the cell the mark is given
+                # and left a sliver of bar between the two (#887 hand check).
+                ctx.fill_rect(cx, 0, mark_w + 1.0 + ctx.measure_text(shown, lit),
+                              1.0, lit, opacity=1.0)
             if kind == "busy":
                 ctx.draw_child(self._busy, cx, 0, mark_w, 1.0)
+            elif part_style is lit:
+                ctx.draw_text(cx, 0, self._JOB_MARKS[kind], lit)
             else:
                 ctx.draw_text(cx, 0, self._JOB_MARKS.get(kind, "•"), style)
             cx += mark_w + 1.0
-            ctx.draw_text(cx, 0, shown, style)
-            cx += ctx.measure_text(shown, style)
+            ctx.draw_text(cx, 0, shown, part_style)
+            cx += ctx.measure_text(shown, part_style)
         # A click on it opens the jobs list (#599 hand check).
         self._jobs_hit = (jx, jx + width)
         return width
@@ -5630,7 +5702,8 @@ class XeFMApp:
         (:meth:`_poll_edit_sessions`). Skipping the directories happens here,
         on the worker, because asking a remote is a round trip."""
         sessions = self.edit_sessions
-        task = Task("Downloading for edit", config=self.config, kind="edit_download")
+        task = Task("Downloading for edit", config=self.config, kind="edit_download",
+                    exclusive=False)
 
         def run(t: Task) -> dict:
             opened, failed = [], []
@@ -7011,7 +7084,8 @@ class XeFMApp:
             parts.append(("attention", f"{waiting.title.rstrip('… ')}{more}"))
         elif running is not None:
             pct = int(running.progress.get_progress_percentage())
-            parts.append(("busy", f"{running.title.rstrip('… ')} {pct}%{more}"))
+            held = " paused" if running.suspended else ""
+            parts.append(("busy", f"{running.title.rstrip('… ')} {pct}%{held}{more}"))
         elif queued:
             parts.append(("busy", f"+{queued}"))
         # One part for the running scans and one for the unseen finished
@@ -7227,6 +7301,9 @@ class XeFMApp:
             if task.needs_attention:
                 return f"{name} — needs you"
             state = f"{int(task.progress.get_progress_percentage())}%"
+            if task.suspended:
+                # Held while an operation in front writes (#887).
+                state += ", paused"
             op = task.progress.get_current_operation() or {}
             if op.get("total_bytes"):
                 state += (f" ({format_size(op.get('processed_bytes', 0), compact=True)}"
@@ -7482,7 +7559,7 @@ class XeFMApp:
             then(store.read_many(targets))
             return
         task = Task("Reading tags", config=self.config, kind="tags",
-                    busy_label="Reading tags…")
+                    busy_label="Reading tags…", exclusive=False)
         self.tasks.submit(task, self.panel,
                           run=lambda t: {"found": store.read_many(targets)},
                           on_done=lambda res: then(res.get("found", {})))
@@ -7779,7 +7856,7 @@ class XeFMApp:
         """Take tag ``name`` off every file that carries it, after saying how
         many and where, and forget it."""
         task = Task(f"Finding tag {name}", config=self.config, kind="tags",
-                    busy_label="Searching…")
+                    busy_label="Searching…", exclusive=False)
 
         def run(t: Task) -> dict:
             paths, where = self._find_tagged(t, root, store, name)
@@ -7864,7 +7941,7 @@ class XeFMApp:
             self.log_info("Tags are not supported here")
             return
         task = Task(f"Finding tag {name}", config=self.config, kind="tags",
-                    busy_label="Searching…")
+                    busy_label="Searching…", exclusive=False)
 
         def run(t: Task) -> dict:
             hits = store.find(root, name, checkpoint=t.checkpoint)
@@ -9489,7 +9566,7 @@ class XeFMApp:
         the progress dialog shows, Esc stops it — then open the text viewer on
         it: raw mode its plain text, rich mode its structure."""
         task = Task(f"Reading {entry.name}…", config=self.config, kind="document",
-                    busy_label="Reading…")
+                    busy_label="Reading…", exclusive=False)
 
         def run(t: Task) -> dict:
             extracted = document_text.extract(entry)
@@ -9904,7 +9981,8 @@ class XeFMApp:
         Esc stops it — and open what it found as ``pane_name``'s list."""
         engine = os_index.engine() or "Index"
         title = title or f"{engine}: {query}"
-        task = Task(title, config=self.config, kind="index_search", busy_label="Searching…")
+        task = Task(title, config=self.config, kind="index_search", busy_label="Searching…",
+                    exclusive=False)
         search = run_search or (lambda t: os_index.search(
             query, scope, cancelled=t.cancelled,
             on_count=lambda n: setattr(t, "counted", n)))
@@ -9977,7 +10055,7 @@ class XeFMApp:
         env, cwd = self._program_env(pane)
         self._record_list_command(command)
         task = Task(command, config=self.config, kind="list_command",
-                    busy_label="Running…")
+                    busy_label="Running…", exclusive=False)
 
         def run(t: Task) -> dict:
             output = command_list.run(
@@ -10183,7 +10261,7 @@ class XeFMApp:
                                if k != "cmp_name"})
                           for f in picked if str(f) in records]
         task = Task(f"Flat view: {root}", config=self.config,
-                    kind="flat_view", busy_label="Reading…")
+                    kind="flat_view", busy_label="Reading…", exclusive=False)
 
         def run(t: Task) -> dict:
             flag = types.SimpleNamespace(is_set=t.cancelled)
@@ -12145,7 +12223,8 @@ class XeFMApp:
         other_attrs = self._pane_attrs(other)
         current_root = self._pane_root(pane)
         other_root = self._pane_root(other)
-        task = Task("Comparing contents", config=self.config, kind="compare")
+        task = Task("Comparing contents", config=self.config, kind="compare",
+                    exclusive=False)
 
         def run(t: Task) -> dict:
             prog = t.progress

@@ -406,9 +406,10 @@ def sha256_selection(ctx):
   `outcome.status` is `'done'` (with `outcome.value`, what `work` returned),
   `'cancelled'`, or `'failed'` (with `outcome.error`; the traceback is already
   in the log). `outcome.ok` is true for `'done'`.
-- `read_only=True` says the work changes nothing. Background jobs otherwise run
-  one at a time, so a task started during a long background copy would wait for
-  it; a read-only one runs beside it instead.
+- `read_only=True` says the work changes nothing. XeFM otherwise runs one
+  writing job at a time: a task started during a long background copy waits
+  for it, and pauses it at its next file while the task runs in front. A
+  read-only one runs beside it instead.
 
 ### Putting an action in a menu: `MENU_ITEMS` (Preview)
 

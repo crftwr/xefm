@@ -25,6 +25,7 @@ import math
 import queue
 import threading
 import time
+from contextlib import contextmanager
 from enum import Enum
 from typing import Any, Callable, Optional
 
@@ -99,7 +100,7 @@ class Task:
     _WAIT_TICK = 0.05
 
     def __init__(self, title: str, *, config: Any = None, kind: str = "",
-                 busy_label: str = "Preparing…"):
+                 busy_label: str = "Preparing…", exclusive: bool = True):
         self.id = next(_task_ids)
         self.title = title
         self.kind = kind
@@ -127,15 +128,22 @@ class Task:
         #: next pausable :meth:`checkpoint`. Set by default — a task runs.
         self._running = threading.Event()
         self._running.set()
-        #: True while the worker is actually waiting there, as against asked
-        #: to and still finishing the files it had in flight.
-        self.paused = False
-        #: Whether the task takes the background queue's slot. A task that
-        #: only reads (#632) says so by clearing this, and then runs in the
-        #: background beside the slot's job instead of waiting behind it: it
-        #: holds up no writer, and a writer it ran beside holds it up only as
-        #: much as sharing a disk does.
-        self.exclusive = True
+        #: The threads of this task that are at work: past a pausable
+        #: checkpoint, and not yet waiting at the next one, on a prompt, or
+        #: in :meth:`idle` (#887). A copy has several (its pool workers), so
+        #: "paused" is this set being empty, not one thread having stopped.
+        #: Read and changed under ``_lock``, together with ``_running``, so a
+        #: thread cannot slip past a checkpoint as the task is suspended.
+        self._inflight: set[int] = set()
+        self._lock = threading.Lock()
+        #: Whether the task writes. A task that only reads (#632, #887) says
+        #: so by clearing this. It then never waits for another task and
+        #: never makes one wait: in the background it runs beside the slot's
+        #: job instead of behind it, and in front it does not suspend that job.
+        self.exclusive = exclusive
+        #: What a writer in front is waiting for, while it waits for a
+        #: background job to pause (#887) — that job's title, for the dialog.
+        self.waiting_for: Optional[str] = None
 
     # --- worker-side API (called on the worker thread) -----------------------
 
@@ -151,9 +159,12 @@ class Task:
             raise Cancelled()
         req = _UiRequest(show_fn)
         self._requests.put(req)
-        while not req.event.wait(self._WAIT_TICK):
-            if self._cancel.is_set():
-                raise Cancelled()
+        # Waiting on the user is not writing: a job blocked here counts as
+        # paused, so a writer in front need not wait for its answer (#887).
+        with self.idle():
+            while not req.event.wait(self._WAIT_TICK):
+                if self._cancel.is_set():
+                    raise Cancelled()
         return req.answer
 
     def checkpoint(self, pausable: bool = True) -> None:
@@ -163,20 +174,63 @@ class Task:
         A **pausable** checkpoint also waits here while the task is suspended
         (:meth:`suspend`), until it is resumed or cancelled. Inside a transfer
         pass ``pausable=False``: a remote stream left stalled for as long as
-        another job takes can time out, so a task pauses only between files."""
+        another job takes can time out, so a task pauses only between files.
+
+        Passing a pausable checkpoint marks the calling thread as at work
+        until it stops at the next one (or in :meth:`idle`, or a prompt):
+        that is what :attr:`paused` counts."""
         if self._cancel.is_set():
             raise Cancelled()
-        if not pausable or self._running.is_set():
-            return
-        self.paused = True
-        try:
+        if pausable:
+            self._join(raise_on_cancel=True)
+
+    def _join(self, raise_on_cancel: bool) -> None:
+        """Mark the calling thread at work, first waiting while the task is
+        suspended. The check and the mark are one step under ``_lock``, so a
+        :meth:`suspend` either comes before (and the thread waits) or after
+        (and the thread is counted, so the task is not :attr:`paused` until it
+        stops again)."""
+        me = threading.get_ident()
+        while True:
+            with self._lock:
+                if self._running.is_set():
+                    self._inflight.add(me)
+                    return
+                self._inflight.discard(me)
             while not self._running.wait(self._WAIT_TICK):
                 if self._cancel.is_set():
+                    if raise_on_cancel:
+                        raise Cancelled()
+                    return
+            if self._cancel.is_set():
+                if raise_on_cancel:
                     raise Cancelled()
-        finally:
-            self.paused = False
-        if self._cancel.is_set():
-            raise Cancelled()
+                return
+
+    def leave(self) -> None:
+        """The calling thread has stopped working for this task — a pool
+        worker between jobs, or the worker once ``run`` returns."""
+        with self._lock:
+            self._inflight.discard(threading.get_ident())
+
+    @contextmanager
+    def idle(self):
+        """A stretch in which the calling thread writes nothing but waits on
+        something else — other threads of this task, a lock, the user. It
+        does not count as at work meanwhile, so the task can be :attr:`paused`
+        while it waits; leaving it is a pausable checkpoint (without the
+        cancel: the caller unwinds as it would have)."""
+        self.leave()
+        yield
+        self._join(raise_on_cancel=False)
+
+    @property
+    def paused(self) -> bool:
+        """Suspended, and none of its threads at work any more: the files it
+        had in flight have landed. A thread blocked on a prompt counts as
+        stopped, since it writes nothing until it is answered."""
+        with self._lock:
+            return not self._running.is_set() and not self._inflight
 
     def cancelled(self) -> bool:
         return self._cancel.is_set()
@@ -197,11 +251,14 @@ class Task:
 
     def suspend(self) -> None:
         """Hold the worker at its next pausable checkpoint. The files it has
-        in flight finish first."""
-        self._running.clear()
+        in flight finish first; :attr:`paused` says when they have."""
+        with self._lock:
+            self._running.clear()
 
     def resume(self) -> None:
-        self._running.set()
+        with self._lock:
+            self._running.set()
+        self.waiting_for = None
 
     @property
     def suspended(self) -> bool:
@@ -259,7 +316,13 @@ class TaskManager:
     detached=True)`` queues a task before it starts. :meth:`detach` sends a
     running one back: it is **suspended first** (it stops at its next file
     boundary) and then queued, and the queue resumes it when the slot frees.
-    A foreground task never waits for the queue.
+
+    **One writer at a time** (#887). A foreground task that writes does not
+    wait for the queue, but it does not write beside the slot's job either:
+    that job is suspended, and the foreground task starts once it has paused
+    (:attr:`Task.paused`) — its dialog says it is waiting meanwhile. The slot's
+    job resumes when no writer is in front any more. :meth:`_arbitrate` holds
+    the rule; a task that only reads (``exclusive`` clear) is outside it.
 
     :meth:`bring_forward` puts a job's dialog back, which is also how a
     background job's pending prompt gets answered: a prompt never opens on its
@@ -353,6 +416,7 @@ class TaskManager:
             panel.render()
             return task
         self._start(task, panel, run, on_done, z)
+        self._arbitrate()
         return task
 
     def _start(self, task: Task, panel: Any, run, on_done, z: int) -> Optional[_Job]:
@@ -361,13 +425,24 @@ class TaskManager:
         if not task.background:
             dialog.show(panel, z=z)
         task.status = TaskStatus.RUNNING
+        if task.exclusive:
+            # A writer starts held, at the checkpoint below, until _arbitrate
+            # lets it go: suspended before its thread exists, it cannot write
+            # a byte beside another writer (#887).
+            task.suspend()
 
         def worker() -> None:
             try:
+                try:
+                    task.checkpoint()  # a writer's turn
+                except Cancelled:
+                    task.result = dict(_empty_result(), cancelled=True)
+                    return
                 task.result = run(task)
             except BaseException as exc:  # noqa: BLE001 — recorded, surfaced on tick
                 task.error = exc
             finally:
+                task.leave()
                 job.finished.set()
 
         def tick() -> bool:
@@ -381,6 +456,7 @@ class TaskManager:
         # the synchronous mode above does.
         if not panel.request_animation_ticks(tick):
             dialog.close()
+            task.resume()  # nothing would ever let it go
             task._headless = True
             result = self._run_inline(task, run)
             self._finish(task)
@@ -397,6 +473,7 @@ class TaskManager:
         while the job is in the foreground), repaint, and on completion tear
         down and report the result."""
         task, panel, dialog = job.task, job.panel, job.dialog
+        self._arbitrate()
         if not task.background:
             dialog.pump(panel)
         if not job.finished.is_set():
@@ -436,15 +513,15 @@ class TaskManager:
         return False
 
     def _start_next(self) -> None:
-        """Hand the slot to the next queued job, if it is free: resume a
-        suspended one, or start one that has not run yet."""
+        """Hand the slot to the next queued job, if it is free: a suspended
+        one, or one that has not run yet. :meth:`_arbitrate` then decides
+        whether it runs at once or waits for a writer in front."""
         while self._slot is None and self._queue:
             entry = self._queue.pop(0)
             task = entry.task
             if entry.job is not None:
                 self._slot = entry.job
-                task.resume()
-                return
+                break
             if task.cancelled():
                 self._finish(task)
                 if entry.on_done is not None:
@@ -452,6 +529,41 @@ class TaskManager:
                 continue
             self._slot = self._start(task, entry.panel, entry.run, entry.on_done,
                                      entry.z)
+        self._arbitrate()
+
+    def _arbitrate(self) -> None:
+        """Let one writer run at a time (#887), on the main thread.
+
+        The writers that should run are the foreground ones — the user is
+        watching them — or, with none in front, the slot's job. Every other
+        writer is suspended. One that should run is let go only once all the
+        others have paused, so a job suspended mid-file finishes that file
+        before anything else writes: a transfer cannot stop mid-file, since a
+        remote stream left stalled times out. Until then it stays held, and a
+        foreground one's dialog names what it waits for.
+
+        Called whenever the set of writers changes and on every tick, which
+        is what notices a job has paused. A task that only reads (``exclusive``
+        clear) is neither held nor waited for."""
+        writers = [j for j in self._jobs.values()
+                   if j.task.exclusive and not j.finished.is_set()]
+        front = [j for j in writers
+                 if not j.task.background and j is not self._slot]
+        if front:
+            runners = front
+        else:
+            runners = [self._slot] if self._slot in writers else []
+        others = [j for j in writers if j not in runners]
+        for job in others:
+            job.task.suspend()
+        blocker = next((j for j in others if not j.task.paused), None)
+        for job in runners:
+            if not job.task.suspended:
+                continue
+            if blocker is None:
+                job.task.resume()
+            else:
+                job.task.waiting_for = blocker.task.title.rstrip("… ")
 
     def cancel_all(self, timeout: float = 3.0) -> bool:
         """Cancel every task — the running ones and the queue — and wait up to
@@ -484,6 +596,7 @@ class TaskManager:
             task.suspend()
             self._queue.append(_Waiting(task, job.panel, job=job))
             self._start_next()
+        self._arbitrate()
         job.panel.render()
 
     def bring_forward(self, task: Task) -> bool:
@@ -498,8 +611,10 @@ class TaskManager:
                 continue
             self._queue.pop(i)
             if entry.job is not None:
+                # In front it is a writer the user watches: the slot's job is
+                # suspended, and this one runs once that job has paused.
                 task.background = False
-                task.resume()
+                self._arbitrate()
                 entry.job.dialog.show(entry.job.panel, z=entry.job.z)
                 entry.job.panel.render()
                 return True
@@ -704,6 +819,12 @@ class ProgressDialog(Widget):
 
         op = self.task.progress.get_current_operation()
         width = max(1.0, box_w - 4)
+        waiting = self.task.waiting_for
+        if waiting and self.task.suspended and not self.task.cancelled():
+            # A writer in front, held until a background job pauses (#887).
+            ctx.draw_child(self._busy, 2, 3.0, 2.0, 1.0, hints=child_hints)
+            ctx.draw_text(4, 3.0, f"Waiting for {waiting} to pause…", text_style)
+            return
         if op is None or op.get("counting"):
             self._draw_preparing(ctx, op, box_w, box_h, text_style, child_hints)
             return
