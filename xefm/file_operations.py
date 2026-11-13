@@ -254,6 +254,10 @@ class FileOperationService:
         self.close_gate = CloseGate()
         #: Source tags read ahead for each running copy, by task id (#763).
         self._tag_ahead: dict[int, tags.CarryAhead] = {}
+        #: Each running operation's conflict answers, by task id (#887): the
+        #: plan and the writes share them, so "Apply to all" given once
+        #: covers both.
+        self._answers_of: dict[int, _Answers] = {}
 
     # --- public API ----------------------------------------------------------
 
@@ -347,6 +351,8 @@ class FileOperationService:
         unpins = _pin_source_archives(sources, "used by a running sync")
 
         def run(task: Task) -> dict:
+            # A conflict found while writing stacks above the caller (#887).
+            self._answers(task, z)
             try:
                 return self._run_sync(task, copies, deletes, log)
             finally:
@@ -393,9 +399,10 @@ class FileOperationService:
             for kind, target, dest, overwrite in steps:
                 task.checkpoint()
                 before = len(errors)
+                collide = _Collide.of(overwrite, dest)
                 try:
                     ok = self._execute_one(
-                        task, kind, target, dest, overwrite,
+                        task, kind, target, dest, collide,
                         dest.parent if dest is not None else None,
                         prog, log, errors)
                 except Cancelled:
@@ -406,14 +413,12 @@ class FileOperationService:
                         log(f"Sync failed for {target.name}: {exc}")
                     ok = 0
                 result["items"] += ok
-                if ok > 0 or len(errors) == before:
-                    result["done"] += 1
-                else:
-                    result["failed"] += 1
+                result[_outcome(ok, len(errors) > before, collide)] += 1
         except Cancelled:
             result["cancelled"] = True
         finally:
             self._tag_ahead.pop(task.id, None)
+            self._answers_of.pop(task.id, None)
             for d in mutated.values():
                 self.monitor.release_path(d)
             prog.finish_operation()
@@ -541,6 +546,7 @@ class FileOperationService:
         mutated = self._mutated_dirs(kind, targets, dest_dir) if self.monitor else []
         for d in mutated:
             self.monitor.suppress_path(d)
+        self._answers(task, z)
         try:
             # Resolve conflicts first (cheap existence checks; may prompt), so the
             # recursive count only covers what will actually be processed.
@@ -550,8 +556,9 @@ class FileOperationService:
                 # In-place copy always collides with itself — never prompt; pre-plan
                 # every target to a fresh ` (N)` name. Distinct target names ⇒
                 # distinct slots, so computing all up front is collision-free.
-                plan = [(t, _unique_dest(dest_dir, t.name, is_dir=t.is_dir()), False)
-                        for t in targets]
+                # A name taken by the time it is written is chosen again then.
+                plan = [(t, _unique_dest(dest_dir, t.name, is_dir=t.is_dir()),
+                         KeepBoth()) for t in targets]
                 result["created"] = [dest.name for _t, dest, _o in plan]
             else:
                 skipped: list = []
@@ -589,9 +596,10 @@ class FileOperationService:
                 for target, dest_base, overwrite in plan:
                     task.checkpoint()
                     before = len(errors)
+                    collide = _Collide.of(overwrite, dest_base)
                     try:
                         ok = self._execute_one(task, kind, target, dest_base,
-                                               overwrite, dest_dir, prog, log,
+                                               collide, dest_dir, prog, log,
                                                errors, result.get("no_trash"))
                     except Cancelled:
                         raise
@@ -601,24 +609,21 @@ class FileOperationService:
                             log(f"{_VERB[kind]} failed for {target.name}: {exc}")
                         ok = 0
                     result["items"] += ok
-                    # A top-level target "done" if any of its entries succeeded;
-                    # "failed" only if it produced nothing and did raise (a single
-                    # bad file / an uncreatable dir). Inner file failures stay in
-                    # ``errors`` and don't sink the target.
-                    if ok > 0 or len(errors) == before:
-                        result["done"] += 1
-                        status = "done"
-                    else:
-                        result["failed"] += 1
-                        status = "failed"
-                    result["targets"].append((target, dest_base, status,
+                    status = _outcome(ok, len(errors) > before, collide)
+                    result[status] += 1
+                    result["targets"].append((target, collide.top, status,
                                               errors[before:]))
         except Cancelled:
             result["cancelled"] = True
         finally:
             order = {id(t): i for i, t in enumerate(targets)}
             result["targets"].sort(key=lambda r: order.get(id(r[0]), len(order)))
+            if kind == "duplicate" and result["targets"]:
+                # The names actually written: one taken since the plan moved on.
+                result["created"] = [dest.name for _t, dest, status, _e
+                                     in result["targets"] if status == "done"]
             self._tag_ahead.pop(task.id, None)
+            self._answers_of.pop(task.id, None)
             for d in mutated:
                 self.monitor.release_path(d)
             prog.finish_operation()
@@ -672,13 +677,16 @@ class FileOperationService:
         task's UI bridge. Returns ``(plan, skipped)`` where plan is a
         list of ``(target, dest_base, overwrite)`` for the survivors; the
         skipped targets themselves go to ``skipped_out`` when given.
-        ``overwrite`` is a bool, or an :class:`OverwriteOlder` for a folder
-        merged under "overwrite older", whose files are decided one by one."""
+        ``overwrite`` is a bool, an :class:`OverwriteOlder` for a folder
+        merged under "overwrite older", whose files are decided one by one,
+        or a :class:`KeepBoth` for a target written under a free name."""
         taken = _existing(task, [dest_dir / t.name for t in targets], dest_dir)
         total = sum(taken)
         plan: list = []
         skipped = 0
-        apply_all: Optional[str] = None
+        # "Apply to all" is kept where the writes find it too (#887): a
+        # conflict that turns up only then gets the same answer, unasked.
+        answers = self._answers(task, z)
         idx = 0
         for t, exists in zip(targets, taken):
             dest = dest_dir / t.name
@@ -686,7 +694,7 @@ class FileOperationService:
                 plan.append((t, dest, False))
                 continue
             idx += 1
-            action = apply_all
+            action = answers.apply_all
             if action is None:
                 summary = (_merge_summary(task, t, dest)
                            if _merges_into(t, dest) else None)
@@ -694,7 +702,7 @@ class FileOperationService:
                     _conflict_prompt(t, dest, idx, total, z, summary),
                     headless=("skip", False))
                 if apply:
-                    apply_all = action
+                    answers.apply_all = action
             if action == "cancel":
                 raise Cancelled()
             if action == "overwrite_older":
@@ -708,7 +716,8 @@ class FileOperationService:
                 if skipped_out is not None:
                     skipped_out.append(t)
             elif action == "keep_both":
-                plan.append((t, _unique_dest(dest_dir, t.name, is_dir=t.is_dir()), False))
+                plan.append((t, _unique_dest(dest_dir, t.name, is_dir=t.is_dir()),
+                             KeepBoth()))
             else:  # overwrite
                 plan.append((t, dest, True))
         return plan, skipped
@@ -757,13 +766,18 @@ class FileOperationService:
         return 1, size
 
     def _execute_one(self, task: Task, kind: str, target: Path,
-                     dest_base: Optional[Path], overwrite: bool,
+                     dest_base: Optional[Path], overwrite: Any,
                      dest_dir: Optional[Path], prog: ProgressManager, log,
                      errors: list, no_trash: Optional[list] = None) -> int:
         """Process one top-level target, returning the count of individual entries
         that succeeded and appending ``(path, reason)`` to ``errors`` for any that
         failed. A single bad entry never aborts the rest of the target. A trash
-        target that turned out to have no trash is also added to ``no_trash``."""
+        target that turned out to have no trash is also added to ``no_trash``.
+
+        ``overwrite`` is the plan's answer for the target, or the
+        :class:`_Collide` the caller made of it to read back afterwards whether
+        the target was skipped after all and where it landed."""
+        collide = _Collide.of(overwrite, dest_base)
         if kind == "delete":
             return self._delete_tree(task, target, prog, log, errors)
         if kind == "trash":
@@ -785,27 +799,51 @@ class FileOperationService:
                 and not _merges_into(target, dest_base)):
             prog.update_progress(target.name)
             try:
-                move_to(target, dest_base, overwrite=overwrite)
+                moved = self._move_atomic(task, target, collide)
             except Cancelled:
                 raise
             except Exception as exc:  # noqa: BLE001
                 errors.append((str(target), str(exc)))
                 return 0
-            _log_op(log, "Moved", target, dest_base)  # atomic: one line per target
+            if moved is None:
+                _log_kept(log, collide, target)
+                return 0
+            _log_op(log, "Moved", target, moved)  # atomic: one line per target
             return 1
         # Copy, duplicate, or a move that crosses a filesystem / storage boundary
         # (copy the tree, then — move only — drop the source).
         verb = {"move": "Moved", "duplicate": "Duplicated"}.get(kind, "Copied")
         before = len(errors)
-        ok = self._copy_tree(task, target, dest_base, overwrite, prog, log, verb, errors)
+        ok = self._copy_tree(task, target, collide.top, collide, prog, log, verb,
+                             errors)
         if (kind == "move" and ok > 0 and len(errors) == before
-                and not _kept_any(overwrite)):
+                and not collide.left_any):
             # Only remove the source once the whole tree copied cleanly — never
-            # drop files a partial copy left behind, nor ones "overwrite older"
-            # kept because the destination's copy was newer. Cleanup errors are
-            # ignored.
+            # drop files a partial copy left behind, nor ones left in place
+            # because the destination held them ("overwrite older" finding its
+            # copy newer, or a Skip). Cleanup errors are ignored.
             self._delete_tree(task, target, None, None, [])
         return ok
+
+    def _move_atomic(self, task: Task, target: Path,
+                     collide: "_Collide") -> Optional[Path]:
+        """Rename ``target`` to ``collide.top``; return where it landed, or
+        None when it was left where it is. The rename refuses an existing
+        destination unless overwriting, and a refusal the plan did not
+        foresee is a conflict like any other (#887)."""
+        dest = collide.top
+        try:
+            move_to(target, dest, overwrite=bool(collide))
+            return dest
+        except FileExistsError:
+            if collide:
+                raise
+        settled = self._settle(task, target, dest, collide)
+        if settled is None:
+            return None
+        dest, replace = settled
+        move_to(target, dest, overwrite=replace)
+        return dest
 
     # --- the parallel copy pool -----------------------------------------------
 
@@ -842,6 +880,7 @@ class FileOperationService:
         if log is not None:
             log = serialized_log(log)
         n = len(plan)
+        collides = [_Collide.of(ow, dest) for _t, dest, ow in plan]
         sync_ok = [0] * n          # dirs + atomic renames, tallied by the walker
         per_async = [0] * n        # files, tallied from the jobs' futures
         per_errors: list[list] = [[] for _ in range(n)]
@@ -850,34 +889,38 @@ class FileOperationService:
         ex = ThreadPoolExecutor(max_workers=workers,
                                 thread_name_prefix=f"xefm-{kind}")
         try:
-            for i, (target, dest_base, overwrite) in enumerate(plan):
+            for i, (target, dest_base, _overwrite) in enumerate(plan):
                 task.checkpoint()
                 terr = per_errors[i]
+                collide = collides[i]
                 if (kind == "move" and _is_atomic_move(kind, target, dest_dir)
                         and not _merges_into(target, dest_base)):
                     prog.update_progress(target.name)
                     try:
-                        move_to(target, dest_base, overwrite=overwrite)
+                        moved = self._move_atomic(task, target, collide)
                     except Cancelled:
                         raise
                     except Exception as exc:  # noqa: BLE001
                         terr.append((str(target), str(exc)))
                         continue
-                    _log_op(log, "Moved", target, dest_base)
+                    if moved is None:
+                        _log_kept(log, collide, target)
+                        continue
+                    _log_op(log, "Moved", target, moved)
                     sync_ok[i] = 1
                     continue
                 dir_target = target.is_dir() and not target.is_symlink()
                 cleanup_src = kind == "move" and not dir_target
 
                 def submit(src: Path, dest: Path, i=i, terr=terr,
-                           overwrite=overwrite, cleanup=cleanup_src) -> None:
+                           collide=collide, cleanup=cleanup_src) -> None:
                     futures.append((i, ex.submit(
-                        self._copy_file_job, task, src, dest, overwrite,
+                        self._copy_file_job, task, src, dest, collide,
                         prog, log, verb, terr, cleanup)))
 
                 try:
-                    sync_ok[i] = self._copy_tree(task, target, dest_base,
-                                                 overwrite, prog, log, verb,
+                    sync_ok[i] = self._copy_tree(task, target, collide.top,
+                                                 collide, prog, log, verb,
                                                  terr, submit=submit)
                 except Cancelled:
                     raise
@@ -890,18 +933,23 @@ class FileOperationService:
                     # targets' jobs running), then drop the source only if the
                     # whole tree copied cleanly. ``result()`` here only tallies
                     # locally — ``per_async`` is filled once, in the final drain.
-                    ok_async = sum(f.result() for j, f in futures if j == i)
+                    # Waiting writes nothing: the task can pause meanwhile,
+                    # its pool workers stopped at their checkpoints (#887).
+                    with task.idle():
+                        ok_async = sum(f.result() for j, f in futures if j == i)
                     if (sync_ok[i] + ok_async > 0 and not terr
-                            and not _kept_any(overwrite)):
+                            and not collide.left_any):
                         self._delete_tree(task, target, None, None, [])
-            for j, f in futures:
-                per_async[j] += f.result()  # re-raises a job's Cancelled
+            with task.idle():
+                for j, f in futures:
+                    per_async[j] += f.result()  # re-raises a job's Cancelled
             completed = True
         finally:
             if not completed:
                 for _j, f in futures:
                     f.cancel()  # drop the queue; running jobs see the cancel flag
-            ex.shutdown(wait=True)
+            with task.idle():
+                ex.shutdown(wait=True)
             if not completed:
                 # Fold in what did land before the unwind, so the summary's
                 # item count reflects the files actually copied.
@@ -915,18 +963,14 @@ class FileOperationService:
                 result["items"] += sync_ok[i] + per_async[i]
                 result["errors"].extend(per_errors[i])
                 if completed:
-                    # Same rule as the sequential loop: done if anything landed
-                    # or nothing went wrong; failed only when a target produced
-                    # nothing but errors. Cancelled targets are not judged.
-                    if sync_ok[i] + per_async[i] > 0 or not per_errors[i]:
-                        result["done"] += 1
-                        status = "done"
-                    else:
-                        result["failed"] += 1
-                        status = "failed"
-                    target, dest_base, _overwrite = plan[i]
+                    # Same rule as the sequential loop. Cancelled targets are
+                    # not judged.
+                    status = _outcome(sync_ok[i] + per_async[i],
+                                      bool(per_errors[i]), collides[i])
+                    result[status] += 1
                     result.setdefault("targets", []).append(
-                        (target, dest_base, status, list(per_errors[i])))
+                        (plan[i][0], collides[i].top, status,
+                         list(per_errors[i])))
 
     def _copy_file_job(self, task: Task, src: Path, dest: Path, overwrite: bool,
                        prog: ProgressManager, log, verb: str, errors: list,
@@ -936,28 +980,34 @@ class FileOperationService:
         entry count (1 copied, 0 skipped or failed). ``cleanup_src`` drops the
         source after a clean copy — a single-file cross-filesystem move, whose
         cleanup errors are ignored exactly as the sequential path ignores
-        them."""
-        task.checkpoint()
-        slot = prog.file_begin(src.name)
+        them.
+
+        The worker counts as at work for this task from its checkpoint until
+        the job returns, and not between jobs (#887)."""
         try:
-            copied = self._copy_file(task, src, dest, overwrite, prog, slot)
-        except Cancelled:
-            raise
-        except Exception as exc:  # noqa: BLE001 — one bad file, keep going
-            errors.append((str(src), str(exc)))
-            prog.file_end(slot)
-            return 0
-        prog.file_end(slot)
-        if not copied:
-            _log_kept(log, overwrite, src)
-            return 0  # skipped (inner collision under a non-overwrite dir)
-        _log_op(log, verb, src, dest)
-        if cleanup_src:
+            task.checkpoint()
+            slot = prog.file_begin(src.name)
             try:
-                src.unlink()
-            except Exception:  # noqa: BLE001
-                pass
-        return 1
+                written = self._copy_file(task, src, dest, overwrite, prog, slot)
+            except Cancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001 — one bad file, keep going
+                errors.append((str(src), str(exc)))
+                prog.file_end(slot)
+                return 0
+            prog.file_end(slot)
+            if written is None:
+                _log_kept(log, overwrite, src)
+                return 0  # left in place: the destination holds that name
+            _log_op(log, verb, src, written)
+            if cleanup_src:
+                try:
+                    src.unlink()
+                except Exception:  # noqa: BLE001
+                    pass
+            return 1
+        finally:
+            task.leave()
 
     # --- per-node IO ---------------------------------------------------------
 
@@ -970,10 +1020,22 @@ class FileOperationService:
         With ``submit`` (the parallel path), directories are still created here,
         synchronously — a child job must never race its parent's mkdir — but each
         *file* is handed to ``submit`` for a pool worker and is not counted in the
-        return value; the pool tallies those as the jobs finish."""
+        return value; the pool tallies those as the jobs finish.
+
+        ``overwrite`` is the target's :class:`_Collide` (a plan value is made
+        into one). A top-level folder the plan did not expect to exist is a
+        conflict, asked about before anything merges into it (#887)."""
         task.checkpoint()
+        overwrite = _Collide.of(overwrite, dest)
         if src.is_dir() and not src.is_symlink():
             try:
+                if (overwrite.is_top(dest) and overwrite.mode == "ask"
+                        and dest.exists()):
+                    settled = self._settle(task, src, dest, overwrite)
+                    if settled is None:
+                        _log_kept(log, overwrite, src)
+                        return 0
+                    dest = settled[0]
                 dest.mkdir(parents=True, exist_ok=True)
             except Cancelled:
                 raise
@@ -996,7 +1058,7 @@ class FileOperationService:
             return 0  # counted by the pool when the job completes
         slot = prog.file_begin(src.name)
         try:
-            copied = self._copy_file(task, src, dest, overwrite, prog, slot)
+            written = self._copy_file(task, src, dest, overwrite, prog, slot)
         except Cancelled:
             raise
         except Exception as exc:  # noqa: BLE001 — one bad file, keep going
@@ -1004,40 +1066,45 @@ class FileOperationService:
             prog.file_end(slot)
             return 0
         prog.file_end(slot)
-        if copied:
-            _log_op(log, verb, src, dest)  # one line per file, with the real dest
+        if written is not None:
+            _log_op(log, verb, src, written)  # one line per file, with the real dest
             return 1
         _log_kept(log, overwrite, src)
-        return 0  # skipped (inner collision under a non-overwrite dir)
+        return 0  # left in place: the destination holds that name
 
-    def _copy_file(self, task: Task, src: Path, dest: Path, overwrite: bool,
-                   prog: ProgressManager, slot: int) -> bool:
-        """Copy one file; return True if it was written, False if skipped (an inner
-        collision under a non-overwrite directory), so the caller logs only real
-        copies. ``slot`` is the file's progress slot (``ProgressManager.file_begin``);
-        the size is published to it up front so ``file_end`` can credit the bytes
-        of whatever path the copy then takes — stream, clone, one-shot, or skip."""
+    def _copy_file(self, task: Task, src: Path, dest: Path, overwrite: Any,
+                   prog: ProgressManager, slot: int) -> Optional[Path]:
+        """Copy one file; return where it was written (``dest``, or a free
+        ` (N)` name a "keep both" chose), or None when it was not, so the
+        caller logs only real copies. ``slot`` is the file's progress slot
+        (``ProgressManager.file_begin``); the size is published to it up front
+        so ``file_end`` can credit the bytes of whatever path the copy then
+        takes — stream, clone, one-shot, or skip.
+
+        A destination that exists is settled here, as the file is written:
+        overwritten when the plan said so, otherwise a conflict (#887)."""
+        overwrite = _Collide.of(overwrite, dest)
         try:
             size = 0 if src.is_symlink() else src.stat().st_size
         except Exception:  # noqa: BLE001
             size = 0
         prog.file_bytes(slot, 0, size)
         exists = dest.exists()
+        replace = False
         if exists:
-            if not overwrite:
-                return False  # inner collision under a non-overwrite dir — leave it
-            if isinstance(overwrite, OverwriteOlder):
-                if not _dest_is_older(src, dest):
-                    overwrite.kept = True
-                    return False  # the destination's copy is as new — keep it
-        overwrite = bool(overwrite)  # the storage layer takes a plain flag
+            settled = self._settle(task, src, dest, overwrite)
+            if settled is None:
+                return None
+            dest, replace = settled
+            exists = replace
+        overwrite = replace  # the storage layer takes a plain flag
         same = src.scheme == dest.scheme
         local = same and src.scheme == "file"
         # Overwriting a read-only file goes through, as in Explorer (#767)
         with readonly_lifted(dest) if exists else nullcontext():
             if local and not src.is_symlink() and _clone_file(src, dest, overwrite):
                 prog.file_bytes(slot, size, size)  # one syscall, all bytes landed
-                return True  # a clone carries every xattr, tags included
+                return dest  # a clone carries every xattr, tags included
             if not src.is_symlink() and (not same or size >= _BYTE_BAR_MIN):
                 self._copy_bytes(task, src, dest, size, overwrite, local, prog, slot)
             else:
@@ -1046,7 +1113,103 @@ class FileOperationService:
         # only, and nothing carries them across storages (#585).
         if not src.is_symlink():
             self._carry_tags(task, src, dest)
-        return True
+        return dest
+
+    # --- conflicts found while writing (#887) --------------------------------
+
+    def _answers(self, task: Task, z: int = 70) -> "_Answers":
+        return self._answers_of.setdefault(task.id, _Answers(z))
+
+    def _settle(self, task: Task, src: Path, dest: Path,
+                collide: "_Collide") -> Optional[tuple[Path, bool]]:
+        """Decide what to do about ``dest`` existing as ``src`` is written:
+        ``(where to write, whether to replace what is there)``, or None to
+        leave it and not write ``src``. Records on ``collide`` what was left —
+        the top-level target itself (``skipped``) or something inside it
+        (``kept``, which keeps a move from deleting its source).
+
+        What the plan already settled is applied without asking: an overwrite,
+        or "overwrite older" file by file. Otherwise the plan expected nothing
+        there, so whatever is there arrived since: a conflict, asked about with
+        the same dialog as at the start. The answer for a top-level folder sets
+        how its contents merge."""
+        top = collide.is_top(dest)
+        src_dir = src.is_dir() and not src.is_symlink()
+        merge = src_dir and dest.is_dir()
+
+        def leave() -> None:
+            if top:
+                collide.skipped = True
+            else:
+                collide.kept = True
+
+        if collide.mode == "overwrite":
+            return dest, True
+        if collide.mode == "older":
+            if merge or _dest_is_older(src, dest):
+                return dest, True
+            leave()
+            return None
+        if top and collide.keep_both:
+            # The free name the plan chose has been taken since: choose again.
+            dest = _unique_dest(dest.parent, src.name, is_dir=src_dir)
+            collide.top = dest
+            return dest, False
+        action = self._ask_write(task, src, dest, merge)
+        if action is None:
+            return dest, False  # gone again by the time it was answered
+        if action == "cancel":
+            raise Cancelled()
+        if action == "skip":
+            leave()
+            return None
+        if action == "keep_both":
+            dest = _unique_dest(dest.parent, src.name, is_dir=src_dir)
+            if top:
+                collide.top = dest
+            return dest, False
+        if action == "overwrite_older":
+            if merge:
+                collide.mode = "older"
+                return dest, True
+            if _dest_is_older(src, dest):
+                return dest, True
+            leave()
+            return None
+        if merge:  # overwrite: merge the folder, replacing what collides
+            collide.mode = "overwrite"
+        return dest, True
+
+    def _ask_write(self, task: Task, src: Path, dest: Path,
+                   merge: bool) -> Optional[str]:
+        """The answer to a conflict found while writing: an "Apply to all"
+        already given, or the conflict dialog's. None when ``dest`` is gone
+        by the time it is answered — a job's prompt can wait while another
+        operation runs — so the file is simply written.
+
+        Pool workers ask one at a time, and one whose turn comes looks first
+        for an "Apply to all" given meanwhile. Waiting for the turn writes
+        nothing, so it does not keep the task from pausing."""
+        answers = self._answers(task)
+        with task.idle():
+            answers.lock.acquire()
+        try:
+            if not dest.exists():
+                return None
+            action = answers.apply_all
+            if action is None:
+                summary = _merge_summary(task, src, dest) if merge else None
+                # No "i of N": how many more there will be is not known yet.
+                action, apply = task.ask(
+                    _conflict_prompt(src, dest, 0, 0, answers.z, summary),
+                    headless=("skip", False))
+                if apply:
+                    answers.apply_all = action
+                if action != "cancel" and not dest.exists():
+                    return None
+            return action
+        finally:
+            answers.lock.release()
 
     def _carry_tags(self, task: Task, src: Path, dest: Path) -> None:
         """Give ``dest`` the tags of ``src``, from what this task read ahead
@@ -1225,10 +1388,17 @@ def _log_op(log, verb: str, src: Path, dest: Path) -> None:
 
 
 def _log_kept(log, overwrite: Any, src: Path) -> None:
-    """Log a file "overwrite older" left alone, so a move that leaves part of
-    its source behind says why."""
-    if log is not None and isinstance(overwrite, OverwriteOlder):
+    """Log an entry not written because the destination holds its name —
+    "overwrite older" finding the destination's copy as new, or a Skip — so
+    a move that leaves part of its source behind says why."""
+    if log is None:
+        return
+    older = (isinstance(overwrite, OverwriteOlder)
+             or (isinstance(overwrite, _Collide) and overwrite.mode == "older"))
+    if older:
         log(f"Kept '{src.name}': the destination's copy is not older")
+    else:
+        log(f"Skipped '{src.name}': it exists at the destination")
 
 
 def _log_del(log, path: Path) -> None:
@@ -1444,25 +1614,106 @@ def _dest_is_older(src: Path, dest: Path) -> bool:
 
 
 class OverwriteOlder:
-    """The ``overwrite`` value of a folder merged under "overwrite older": each
-    colliding file inside is overwritten only when its destination is older.
-    Truthy, so everything that treats ``overwrite`` as a flag sees a merge.
-    ``kept`` turns True once a file was left alone, which is what stops a move
-    from deleting its source afterwards (a plain assignment, so pool workers
-    can set it without a lock)."""
-
-    def __init__(self) -> None:
-        self.kept = False
+    """The plan's ``overwrite`` value for a folder merged under "overwrite
+    older": each colliding file inside is overwritten only when its
+    destination is older. Truthy, so everything that treats ``overwrite`` as
+    a flag sees a merge. The writes carry it as a :class:`_Collide` in mode
+    ``"older"``, which records what was left in place."""
 
     def __bool__(self) -> bool:
         return True
 
     def __repr__(self) -> str:
-        return f"OverwriteOlder(kept={self.kept})"
+        return "OverwriteOlder()"
 
 
-def _kept_any(overwrite: Any) -> bool:
-    return isinstance(overwrite, OverwriteOlder) and overwrite.kept
+class KeepBoth:
+    """The ``overwrite`` value of a target written under a free ` (N)` name —
+    "keep both", or a duplicate. Falsy: nothing is overwritten. The name was
+    free when the plan was made; one taken by the time it is written is
+    chosen again then (#887)."""
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "KeepBoth()"
+
+
+class _Collide:
+    """How one top-level target's writes treat what they find at the
+    destination (#887), made from the plan's ``overwrite`` value and carried
+    down the target's tree:
+
+    - ``mode``: ``"overwrite"``, ``"older"`` (file by file), or ``"ask"`` —
+      the plan expected nothing there, so what is there arrived since and is
+      a conflict. Answering one for the top-level folder changes the mode
+      for everything inside it.
+    - ``top``: where the target itself is written — moved when a "keep both"
+      picks a free name. ``keep_both``: that name may be chosen again.
+    - ``kept``: something inside was left in place; ``skipped``: the target
+      itself was. Either keeps a move from deleting its source. Plain
+      assignments, so pool workers set them without a lock.
+
+    Truthy unless asking, so code that treats ``overwrite`` as a flag still
+    reads it as one."""
+
+    __slots__ = ("mode", "top", "keep_both", "kept", "skipped")
+
+    def __init__(self, mode: str, top: Optional[Path], keep_both: bool = False):
+        self.mode = mode
+        self.top = top
+        self.keep_both = keep_both
+        self.kept = False
+        self.skipped = False
+
+    @classmethod
+    def of(cls, overwrite: Any, top: Optional[Path]) -> "_Collide":
+        if isinstance(overwrite, _Collide):
+            return overwrite
+        if isinstance(overwrite, OverwriteOlder):
+            return cls("older", top)
+        if isinstance(overwrite, KeepBoth):
+            return cls("ask", top, keep_both=True)
+        return cls("overwrite" if overwrite else "ask", top)
+
+    def __bool__(self) -> bool:
+        return self.mode != "ask"
+
+    def is_top(self, dest: Path) -> bool:
+        return self.top is not None and str(dest) == str(self.top)
+
+    @property
+    def left_any(self) -> bool:
+        return self.kept or self.skipped
+
+    def __repr__(self) -> str:
+        return (f"_Collide({self.mode!r}, top={self.top}, kept={self.kept}, "
+                f"skipped={self.skipped})")
+
+
+class _Answers:
+    """One operation's conflict answers, shared by its plan and its writes
+    (#887): the "Apply to all" answer, once given, and the lock that lets
+    pool workers ask one at a time. ``z`` places the dialog."""
+
+    def __init__(self, z: int) -> None:
+        self.z = z
+        self.apply_all: Optional[str] = None
+        self.lock = threading.Lock()
+
+
+def _outcome(ok: int, failed: bool, collide: _Collide) -> str:
+    """A top-level target's status: ``"skipped"`` when it was left in place
+    as it was written (#887), else ``"done"`` if any of its entries landed or
+    nothing went wrong, and ``"failed"`` only if it produced nothing but
+    errors (a single bad file, an uncreatable folder). Inner file failures
+    stay in ``errors`` and do not sink the target."""
+    if collide.skipped and ok == 0 and not failed:
+        return "skipped"
+    if ok > 0 or not failed:
+        return "done"
+    return "failed"
 
 
 # --- conflict dialog ---------------------------------------------------------

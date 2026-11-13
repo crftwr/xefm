@@ -52,10 +52,21 @@ working on are done, never in the middle of a file: a transfer to a server
 held open that long could time out. When its turn comes, it carries on where
 it stopped.
 
-An operation you watch in front never waits for the queue.
+An operation you start in front doesn't join the queue, but it doesn't write
+beside the running job either: that job pauses, again once the file it is on
+is done, and the operation in front starts as soon as it has. Until then its
+progress dialog says `Waiting for Copy to pause…`. When the operation in front
+finishes, or you send it to the background, the paused job carries on. The
+status bar shows it meanwhile as `Copy 42% paused`.
 
-A job that only reads — an extension's checksum, say — never waits either: it
-runs beside whatever is running in the background.
+So only one operation writes at a time. That is what lets each one notice what
+another has written into its destination, and ask about it instead of merging
+or skipping in silence (see
+[File Operations](FILE_OPERATIONS_FEATURE.md#when-something-appears-at-the-destination-later)).
+
+A job that only reads — reading tags, a flat view, an index search, comparing
+files, an extension's checksum — neither waits nor makes anything wait: it
+runs beside whatever is running.
 
 ## When a job needs an answer
 
@@ -66,6 +77,10 @@ work. The status bar shows instead:
 ```
 ⚠ Copy
 ```
+
+It is drawn highlighted, in the bar's colors swapped, and blinks once a second
+for the first ten seconds so that you notice it; then it stays highlighted
+until the question is answered.
 
 Click it to open the jobs list, and choose the job. Its progress dialog comes back with the
 question, and once you answer, it carries on. Send it back with **Run in

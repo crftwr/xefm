@@ -145,7 +145,7 @@ def show_byte_comparison(panel: Any, tasks, left, right, *, config: Any = None,
         return
 
     task = Task(f"Comparing {left.name}", config=config, kind="compare",
-                busy_label="Comparing…")
+                busy_label="Comparing…", exclusive=False)
 
     def run(t: Task) -> dict:
         prog = t.progress

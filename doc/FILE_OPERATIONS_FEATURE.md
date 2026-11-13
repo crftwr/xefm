@@ -219,6 +219,34 @@ contents, the dialog counts what the merge would meet:
 The count stops after 10,000 files, so a huge or remote folder doesn't hold the
 question back; the dialog then says the rest were not checked.
 
+### When something appears at the destination later
+
+The questions above are asked when the operation starts. If something with the
+same name turns up at the destination after that — another program wrote it,
+or a background job ran there in the meantime — XeFM notices when it gets to
+that file, and asks then, with the same dialog. Nothing is merged or skipped
+without your say:
+
+- **Apply to all remaining** keeps working. An answer you gave at the start
+  also covers what turns up later, and an answer you give later covers the
+  rest of the operation.
+- The dialog has no "2 of 5" count, since how many more will turn up isn't
+  known yet.
+- If the item is gone again by the time you answer, the file is copied
+  anyway.
+- **Keep both** picks its free name when the file is written, so a
+  `report (1).pdf` that has appeared in the meantime makes it
+  `report (2).pdf`. Duplicate works the same way.
+- A **move** that leaves anything at the destination alone keeps its source.
+  Nothing is deleted from the source that didn't arrive at the destination.
+- A job in the background waits with the question until you bring it forward
+  (see [Background Jobs](BACKGROUND_JOBS_FEATURE.md#when-a-job-needs-an-answer)).
+
+XeFM runs one writing operation at a time (see
+[Background Jobs](BACKGROUND_JOBS_FEATURE.md#one-at-a-time)), so between
+checking a name and writing it, no other XeFM operation can get in. A program
+outside XeFM still can, as with any file manager.
+
 ### What "older" means
 
 The existing item counts as older when its modification time is more than

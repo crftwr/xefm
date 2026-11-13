@@ -106,9 +106,35 @@ A folder colliding with a folder is a merge (`_merges_into`), and `_resolve` ask
 
 `compare_mtimes(a, b)` is the one newer/older rule — 1, -1, or 0 within `_MTIME_SLACK` or when either time is unknown — shared by the dialog's "newer" mark, the folder summary, and the directory diff viewer's details row. `_dest_is_older(src, dest)` is `compare_mtimes > 0`: true when the source's mtime exceeds the destination's by more than `_MTIME_SLACK` (2 s — FAT/exFAT's resolution, the same allowance as rsync's `--modify-window`). An unreadable time on either side answers false: the rule never overwrites on a guess. The dialog's "newer" mark uses the same slack, so what it shows is what the action will do.
 
-Collisions are resolved at the top level only, so a folder merged under this rule carries the rule down as its `overwrite` value: an `OverwriteOlder` instance, truthy so every flag-style check treats it as a merge. `_copy_file` is the one place that looks inside — on an inner collision it overwrites when `_dest_is_older`, otherwise returns False (skipped, logged by `_log_kept`) and sets the instance's `kept`. It hands only a plain `bool` on to the storage layer. One instance per target, shared by the parallel pool's jobs for that target; `kept` is only ever assigned True, so no lock is needed.
+The plan resolves collisions at the top level only, so a folder merged under this rule carries the rule down: its plan value is an `OverwriteOlder` instance, which the writes turn into a `_Collide` in mode `"older"` (next section). On an inner collision `_settle` overwrites when `_dest_is_older`, otherwise leaves the file (logged by `_log_kept`) and sets `kept`.
 
-A move removes its source after a merge only when nothing failed **and** nothing was kept (`_kept_any`) — in both the sequential `_execute_one` and the parallel `_run_parallel` — so a file whose destination was newer is never deleted from the source without having been carried over.
+A move removes its source after a merge only when nothing failed **and** nothing was left in place (`_Collide.left_any`) — in both the sequential `_execute_one` and the parallel `_run_parallel` — so a file whose destination was newer is never deleted from the source without having been carried over.
+
+### Conflicts found while writing (#887)
+
+The plan is made once, when the operation starts. What lands in the destination after that — another program, or before #887 another XeFM operation — used to meet the writes unasked: `_copy_file` skipped an existing file and counted the target done, the top-level `mkdir(exist_ok=True)` merged into a folder that had appeared, and a cross-volume folder move then deleted its whole source, the skipped files' only copies included. Now every write checks again, and a collision the plan did not foresee goes to the same dialog.
+
+**The rule.** A plan value that does not overwrite, yet the destination exists, is always a new conflict: the destination did not exist when the plan was made. That covers the files inside a folder the plan did not overwrite, too.
+
+**`_Collide`**, one per top-level target, made from its plan value (`_Collide.of`: `True` → `"overwrite"`, `OverwriteOlder` → `"older"`, `KeepBoth` → `"ask"` with `keep_both`, else `"ask"`) and passed down the tree as the `overwrite` argument. It is truthy unless asking, so flag-style checks still read it as a flag. It records where the target landed (`top`), and what was left in place: the target itself (`skipped`, counted as skipped by `_outcome`) or something inside it (`kept`). Either keeps a move from deleting its source. Pool workers only ever assign True to those, so no lock.
+
+**Where the writes check.**
+
+| Site | Before | Now |
+|---|---|---|
+| `_copy_file` | existing file skipped silently, counted done | `_settle` |
+| top-level folder in `_copy_tree` (mode `"ask"` only, one `exists`) | `mkdir(exist_ok=True)` merged | `_settle`; the answer sets the merge mode for the folder's contents |
+| `_move_atomic` (a rename) | `FileExistsError` reported as a failure | caught, `_settle`, rename again |
+
+The other inner folders keep `mkdir(exist_ok=True)`: with a single writer (#887's other half, [BACKGROUND_JOBS_IMPLEMENTATION.md](BACKGROUND_JOBS_IMPLEMENTATION.md)), a folder XeFM just created holds only what an outside program put there, and those files are each settled on their own.
+
+**`_settle(task, src, dest, collide)`** returns `(dest, replace)` or None (leave it). An overwrite or "older" plan is applied without asking. A top-level `keep_both` whose ` (N)` name has been taken picks the next free one: "keep both" chooses its name when the file is written, not in the plan; the same goes for duplicate, whose plan values are `KeepBoth` now. Otherwise `_ask_write` asks.
+
+**`_ask_write`** is the write-time prompt: `_conflict_prompt(src, dest, 0, 0, …)` (no "i of N" — the total isn't known). The operation's `_Answers` (by task id in `_answers_of`, registered by `_run` / `_run_sync`, dropped in their `finally`) carries `apply_all` from `_resolve` into the writes and back, so an "Apply to all" given at either time covers both. Its lock makes pool workers ask one at a time; a worker whose turn comes reads `apply_all` first. It checks `dest.exists()` again after taking the lock and after the answer: a background job's prompt can wait while an operation in front runs, and a destination gone by then is simply written. Waiting for the lock is `task.idle()`, so it does not keep the task from pausing.
+
+`_copy_file` returns the path written (or None), not a bool, since a "keep both" can move it.
+
+Tests: `test/test_conflict_dest_change.py` stages the change between the plan and the writes by wrapping `_release_archives`, which runs right after the plan — the issue's folder move across volumes, a skip inside a moved folder, files and renames, "keep both" and duplicate choosing again, a destination gone by the answer, "Apply to all" from either time, the parallel pool asking once, and a Directory Diff sync.
 
 ## Duplicate
 
@@ -125,10 +151,12 @@ It differs from copy in exactly one place — plan building in `_run()`. A dupli
 
 ```python
 elif kind == "duplicate":
-    plan = [(t, _unique_dest(dest_dir, t.name, is_dir=t.is_dir()), False)
-            for t in targets]
+    plan = [(t, _unique_dest(dest_dir, t.name, is_dir=t.is_dir()),
+             KeepBoth()) for t in targets]
     result["created"] = [dest.name for _t, dest, _o in plan]
 ```
+
+`KeepBoth` is falsy (nothing is overwritten); it lets the write pick the next free name if the planned one has been taken since (#887), and `result["created"]` is then rebuilt from the names actually written.
 
 Because distinct targets in one directory have distinct names, computing all destinations against the pre-op filesystem state is collision-free (unlike duplicating the *same* file twice, which cannot happen — targets are distinct list entries). `result["created"]` carries the new names back to the caller for cursor placement.
 

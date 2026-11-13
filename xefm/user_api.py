@@ -1001,14 +1001,16 @@ class ActionContext:
         or raised; a raised exception is logged with its traceback first.
 
         ``read_only=True`` states that the work changes nothing on disk. XeFM
-        then lets it run beside a background copy rather than queue behind one;
-        how such tasks are scheduled is XeFM's to decide, and may change.
+        then lets it run beside a background copy rather than queue behind one,
+        and in front it does not pause that copy. Without it, the work counts
+        as writing: XeFM runs one writer at a time, so in front it starts once
+        a running background copy has paused at its next file. How such tasks
+        are scheduled is XeFM's to decide, and may change.
         """
         from xefm.task import Task
         app = self._app
         task = Task(str(title), config=app.config, kind="user",
-                    busy_label="Working...")
-        task.exclusive = not read_only
+                    busy_label="Working...", exclusive=not read_only)
         job = TaskJob(task)
 
         def run(_task) -> dict:

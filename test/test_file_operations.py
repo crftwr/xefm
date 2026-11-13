@@ -403,7 +403,8 @@ def test_resolve_keep_both(tmp_path, cfg, svc):
     (dst / "c.txt").write_text("old")
     task = _scripted_task(cfg, [("keep_both", False)])
     plan, skipped = svc._resolve(task, [_P(src / "c.txt")], _P(dst), 70, None)
-    assert plan[0][1].name == "c (1).txt" and plan[0][2] is False
+    assert plan[0][1].name == "c (1).txt" and isinstance(plan[0][2], F.KeepBoth)
+    assert not plan[0][2]  # nothing is overwritten
 
 
 def test_resolve_apply_to_all(tmp_path, cfg, svc):
