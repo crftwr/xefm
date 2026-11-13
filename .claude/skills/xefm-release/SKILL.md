@@ -80,13 +80,15 @@ any of that, do the checks preflight cannot:
 - `make release-test` runs inside `make tag` (#842): `pytest --host-only`
   here, then the whole suite in `qa-mac` (Tart), `qa-win` (VMware) and
   `qa-linux` (Docker) on PuiKit, doc-files, similar-files and quality-loop
-  **as PyPI has them**, and the musl probe - about half an hour, so tell the
-  user before starting it. It needs VMware Fusion, Tart and Docker up on this
+  **as PyPI has them**, and the musl probe - side by side, about ten to
+  fifteen minutes (as long as `qa-win`), so tell the user before starting it. It needs VMware Fusion, Tart and Docker up on this
   Mac, and neither VM held by a `run-vm` here or in Keyhac. Because the
   guests install our packages from PyPI, anything this release relies on
   must already be released there (preflight's editable-PuiKit warning is the
   same point). A failure stops the tag: report it with the log under
-  `temp/vm-test-<guest>-<time>/`, never retry it away. Running it ahead
+  `temp/release-test-<time>/<guest>.log` (and the JUnit XML under
+  `temp/vm-test-<guest>-<time>/`), never retry it away. Docker down is
+  refused before any guest starts: start Docker Desktop and run it again. Running it ahead
   of `make tag` on its own is fine and shortens the tag step's surprises.
 - Nothing automated exercises the real UI, and Claude cannot run it (the TUI/GUI blocks — per CLAUDE.md,
   never launch it). Ask the user whether they have actually run the app on

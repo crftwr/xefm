@@ -51,6 +51,17 @@ The same policy as Keyhac's:
   them alone, which is the host's part of `release-test`.
 - The built DMG, zip and MSIX are not launched by `release-test`: they are
   built after the tag.
+- `release-test` runs the guests and the musl probe side by side
+  (`tools/release_test.py`): they share only pip's download cache on the
+  share, which pip writes atomically. The run takes as long as the slowest
+  guest, `qa-win` at about ten minutes, where one after another took about
+  half an hour. Each job's output goes to
+  `temp/release-test-<time>/<name>.log`; the screen gets one line as each
+  starts and ends, and the tail of every failed job's log at the bottom. A
+  failure lets the others finish. The two VMs take 8 GB each, and the
+  container guests share Docker's allotment; on a host that cannot hold them
+  together, `RELEASE_TEST_JOBS=1 make release-test` runs them in turn. Docker
+  is checked before anything starts.
 
 ---
 

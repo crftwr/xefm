@@ -447,15 +447,15 @@ run-linux-musl: linux-musl-image
 # The host runs only the tests of its own tooling (--host-only: what stages a
 # guest, what reviews a release); the suite runs in every guest on our
 # packages as PyPI has them - what a user's pip installs - and musl's
-# libarchive probe. About half an hour, one guest after another.
+# libarchive probe. The guests and the probe run side by side
+# (tools/release_test.py), so it takes as long as the slowest guest - qa-win,
+# about ten minutes; RELEASE_TEST_JOBS=1 runs them one after another.
 RELEASE_GUESTS ?= qa-mac qa-win qa-linux qa-linux-floor
+RELEASE_TEST_JOBS ?= 0
 
 release-test: check-venv
 	$(PYTHON) -m pytest test --host-only
-	@for guest in $(RELEASE_GUESTS); do \
-		$(PYTHON) tools/vm.py test --packages pypi $$guest || exit 1; \
-	done
-	@$(MAKE) --no-print-directory test-linux-musl
+	@$(PYTHON) tools/release_test.py --jobs $(RELEASE_TEST_JOBS) $(RELEASE_GUESTS)
 	@echo "release-test: passed on the host's tooling and in $(RELEASE_GUESTS) ✓"
 
 test-quick: check-venv
