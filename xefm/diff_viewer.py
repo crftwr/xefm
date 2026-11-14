@@ -332,8 +332,10 @@ class DiffViewer(Widget):
     })
 
     def __init__(self, path1, path2, *, syntax: dict | None = None, on_edited=None,
-                 titles: tuple[str | None, str | None] = (None, None)):
+                 titles: tuple[str | None, str | None] = (None, None),
+                 on_close=None):
         self.path1, self.path2 = path1, path2
+        self._on_close = on_close
         # Each side's header: the file name, unless the opener names the side
         # ("HEAD", "Working tree") — a revision's file has the same name (#824).
         self.titles = (titles[0] or path1.name, titles[1] or path2.name)
@@ -646,6 +648,10 @@ class DiffViewer(Widget):
         panel = self._panel
         if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
             panel.pop_layer()
+        # Once: the opener's callback is released with the first close.
+        on_close, self._on_close = self._on_close, None
+        if on_close is not None:
+            on_close()
 
     def handle_event(self, event: Event) -> bool:
         if event.type is EventType.MOUSE_SCROLL:
@@ -735,13 +741,15 @@ class DiffViewer(Widget):
 
 
 def show_diff_viewer(panel: Any, path1, path2, z: int = 80, on_edited=None,
-                     titles: tuple[str | None, str | None] = (None, None)) -> DiffViewer:
+                     titles: tuple[str | None, str | None] = (None, None),
+                     on_close=None) -> DiffViewer:
     """Push a full-window modal :class:`DiffViewer` comparing two files.
     ``on_edited`` is called after the external ``TEXT_DIFF`` tool has run (the
     ``edit_file`` binding), so the opener can refresh anything it derived from
-    the files. ``titles`` replaces either side's file-name header."""
+    the files. ``titles`` replaces either side's file-name header. ``on_close``
+    is called once the viewer has closed."""
     viewer = DiffViewer(path1, path2, syntax=_syntax_palette(panel), on_edited=on_edited,
-                        titles=titles)
+                        titles=titles, on_close=on_close)
     sw, sh = panel.backend.size_units
     viewer._panel = panel
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer

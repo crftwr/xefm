@@ -126,7 +126,7 @@ preview	method	xefm.user_api.ActionContext.confirm	[["self", "pk", null], ["prom
 preview	method	xefm.user_api.ActionContext.copy	[["self", "pk", null], ["items", "pk", null], ["dest", "pk", null], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy_text	[["self", "pk", null], ["text", "pk", null]]
 preview	method	xefm.user_api.ActionContext.delete	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
-preview	method	xefm.user_api.ActionContext.diff	[["self", "pk", null], ["left", "pk", null], ["right", "pk", null], ["left_title", "kw", "None"], ["right_title", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.diff	[["self", "pk", null], ["left", "pk", null], ["right", "pk", null], ["left_title", "kw", "None"], ["right_title", "kw", "None"], ["on_close", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.input	[["self", "pk", null], ["prompt", "pk", null], ["default", "pk", "''"], ["title", "kw", "''"], ["on_accept", "kw", "None"], ["on_cancel", "kw", "None"], ["complete", "kw", "None"]]
 stable	method	xefm.user_api.ActionContext.invoke	[["self", "pk", null], ["action_name", "pk", null]]
 preview	property	xefm.user_api.ActionContext.is_terminal_backend	ro
@@ -139,7 +139,7 @@ preview	method	xefm.user_api.ActionContext.program_env	[["self", "pk", null]]
 stable	property	xefm.user_api.ActionContext.right	ro
 stable	method	xefm.user_api.ActionContext.run_program	[["self", "pk", null], ["command", "pk", null], ["terminal", "kw", "False"], ["cwd", "kw", "None"], ["env", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.run_task	[["self", "pk", null], ["title", "pk", null], ["work", "pk", null], ["on_done", "kw", "None"], ["read_only", "kw", "False"]]
-preview	method	xefm.user_api.ActionContext.show_markdown	[["self", "pk", null], ["title", "pk", null], ["source", "pk", null]]
+preview	method	xefm.user_api.ActionContext.show_markdown	[["self", "pk", null], ["title", "pk", null], ["source", "pk", null], ["on_close", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.terminal_backend_suspended	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.trash	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
 preview	class	xefm.user_api.ActionInfo

@@ -80,7 +80,7 @@ def _viewer(app):
 def _spy(monkeypatch, app):
     calls = []
     monkeypatch.setattr(app, "open_diff",
-                        lambda left, right, titles=(None, None):
+                        lambda left, right, titles=(None, None), on_close=None:
                         calls.append((str(left), str(right), titles)))
     return calls
 
@@ -142,6 +142,40 @@ def test_a_folder_or_missing_file_is_not_compared(app, monkeypatch, name):
                             os.path.join(app.root, "a.txt"))
     assert calls == []
     assert logged and "is not a file" in logged[-1]
+
+
+def test_on_close_runs_once_the_viewer_has_closed(app):
+    closed = []
+    ActionContext(app).diff(os.path.join(app.root, "a.txt"),
+                            os.path.join(app.root, "b.txt"),
+                            on_close=lambda: closed.append(True))
+    viewer = _viewer(app)
+    assert closed == [], "not before the user closes it"
+    viewer._close()
+    assert _viewer(app) is None
+    viewer._close()                       # a second close does not call again
+    assert closed == [True]
+
+
+def test_on_close_runs_when_the_byte_comparison_is_dismissed(app):
+    from puikit.widgets.message_box import MessageBox
+    closed = []
+    ActionContext(app).diff(os.path.join(app.root, "x.bin"),
+                            os.path.join(app.root, "y.bin"),
+                            on_close=lambda: closed.append(True))
+    box = app.panel._layers[-1].widget
+    assert isinstance(box, MessageBox)
+    assert closed == []
+    box._close(0)
+    assert closed == [True]
+
+
+def test_on_close_is_not_called_when_nothing_was_opened(app):
+    closed = []
+    ActionContext(app).diff(os.path.join(app.root, "missing.txt"),
+                            os.path.join(app.root, "a.txt"),
+                            on_close=lambda: closed.append(True))
+    assert closed == []
 
 
 def test_a_relative_path_is_refused(app):

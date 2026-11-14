@@ -425,8 +425,11 @@ come later by wrapping `Task.ask`.
 ### `show_markdown`, `copy_text` and the Markdown helpers (#632)
 
 `ctx.show_markdown(title, source)` is `text_dialog.show_markdown` — the Help
-and File Details dialog — with no other parameter: `on_link` stays private
-until there is a design for which link schemes an extension may handle. The
+and File Details dialog. `on_link` stays private until there is a design for
+which link schemes an extension may handle. `on_close` is passed through,
+wrapped in `_guard` like a prompt's callback, so an extension can tie a
+resource to the dialog's lifetime (Discussion #881: an HTTP server that stops
+when its QR-code dialog closes). The
 dialog now builds its `MarkdownView` with `selectable=True` and PuiKit's
 `code_copy=True` (a Copy button above each fenced code block, a Tab stop beside
 the links), and the modal forwards Ctrl/Cmd-A and -C to it, so Help and Details
@@ -455,6 +458,11 @@ goes to `show_byte_comparison`, text to `show_diff_viewer`. `left_title` /
 show `path.name`; a Git extension's `HEAD` copy of a file has the working
 file's name. The viewer reads both files on the UI thread when it opens, as
 `diff_files` always has, so a slow virtual folder stalls that moment.
+
+`on_close` goes down both branches: `DiffViewer._close` calls it once (the
+reference is dropped with the first close), and `show_byte_comparison` calls
+it when its message box is dismissed or the read is cancelled. A side that is
+not a file opens nothing, so nothing is called.
 
 ### `actions()` and `ActionInfo` (#718)
 

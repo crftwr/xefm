@@ -198,9 +198,9 @@ ACTIONS = {
 | `ctx.left`, `ctx.right` | 位置で指定したペイン |
 | `ctx.invoke(name)` | 別のアクション（組み込みでも自分のものでも）を実行 |
 | `ctx.message(text)` | ログペインに 1 行書き出す |
-| `ctx.show_markdown(title, source)` | （プレビュー）Markdown をスクロールできるダイアログに表示し、各コードブロックに Copy ボタンを付ける — 後述 |
+| `ctx.show_markdown(title, source)` | （プレビュー）Markdown をスクロールできるダイアログに表示し、各コードブロックに Copy ボタンを付ける。`on_close=` はダイアログが閉じたあとに呼ばれる — 後述 |
 | `ctx.copy_text(text)` | （プレビュー）テキストをクリップボードに置く |
-| `ctx.diff(left, right)` | （プレビュー）**Select → Compare Selected Files…** と同じように 2 つのファイルを比べる。選択は不要。どちらも SSH、S3、アーカイブ、仮想フォルダの中のファイルでよく、`left_title=` / `right_title=` で左右の見出しを付けられる |
+| `ctx.diff(left, right)` | （プレビュー）**Select → Compare Selected Files…** と同じように 2 つのファイルを比べる。選択は不要。どちらも SSH、S3、アーカイブ、仮想フォルダの中のファイルでよく、`left_title=` / `right_title=` で左右の見出しを付けられる。`on_close=` は比較が閉じたあとに呼ばれる |
 | `ctx.run_task(title, work, on_done=fn)` | （プレビュー）時間のかかる処理を進捗ダイアログ付きでバックグラウンドで実行 — 後述 |
 | `ctx.input(prompt, default, on_accept=fn)` | （プレビュー）1 行のテキストを入力してもらう。`complete='path'`（または `'directory'`）を付けると、Jump to Path と同じくパスを Tab で補完できる — 相対パスはアクティブなペインが起点 |
 | `ctx.choose(title, items, on_result=fn)` | （プレビュー）リストから選んでもらう（インデックス、または `None`）。`type='filter'` で検索できるリストになる |
@@ -254,6 +254,8 @@ def show_names(ctx):
 ```
 
 `md_code_block(text, lang='')` は、`text` の中身（バッククォートを含む名前や、それ自体が Markdown であるテキスト）によってブロックが途中で終わってしまわないように `text` をフェンスで囲みます。`md_escape(text)` は、ファイル名を文中でそのまま読めるようにします。`a_b*.txt` は、半分がイタリックになったりせず `a_b*.txt` のまま表示されます。
+
+`ctx.show_markdown(title, source, on_close=stop)` と書くと、ユーザーがダイアログを閉じたあとに、閉じ方にかかわらず `stop()` が呼ばれます。ダイアログが開いている間だけ必要なもの（ページが指しているサーバーや、画像を読み込んだ一時ファイルなど）の後始末に使ってください。`ctx.diff` も同じ `on_close=` を受け取ります。
 
 何も表示せずにコピーするだけなら、`ctx.copy_text(text)` を使います。
 

@@ -358,6 +358,26 @@ def test_show_markdown_copies_a_code_block_from_the_keyboard(app):
     assert not any(isinstance(layer.widget, MarkdownDialog) for layer in app.panel._layers)
 
 
+def test_show_markdown_on_close_runs_once_the_dialog_has_closed(app):
+    closed = []
+    ActionContext(app).show_markdown("Share", "http://192.0.2.1:8000/",
+                                     on_close=lambda: closed.append(True))
+    dialog = _top_dialog(app)
+    assert closed == [], "not before the user closes it"
+    dialog.handle_event(_key("escape"))
+    assert closed == [True]
+    assert not any(isinstance(layer.widget, MarkdownDialog) for layer in app.panel._layers)
+
+
+def test_show_markdown_on_close_failure_is_logged_not_raised(app):
+    def boom():
+        raise RuntimeError("no server")
+    ActionContext(app).show_markdown("Share", "text", on_close=boom)
+    dialog = _top_dialog(app)
+    dialog.handle_event(_key("escape"))        # must not raise into the dialog
+    assert not any(isinstance(layer.widget, MarkdownDialog) for layer in app.panel._layers)
+
+
 def test_show_markdown_text_is_selectable(app):
     ActionContext(app).show_markdown("Result", "hello world")
     dialog = _top_dialog(app)

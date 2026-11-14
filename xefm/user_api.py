@@ -1192,23 +1192,31 @@ class ActionContext:
         self._app.log_info(str(text))
 
     @preview
-    def show_markdown(self, title: str, source: str) -> None:
+    def show_markdown(self, title: str, source: str, *,
+                      on_close: Callable[[], None] | None = None) -> None:
         """Show ``source``, Markdown, in a scrollable dialog headed ``title`` —
         the one Help and File Details use. Returns at once; the user closes it
         with Esc or Enter.
+
+        ``on_close()`` runs on the UI thread once the dialog has closed,
+        however it was closed — for what lasts only as long as the dialog is
+        up: a server the page points at, a temporary file an image in it was
+        read from.
 
         Every fenced code block in it gets a Copy button (a Tab stop, so Enter
         copies it from the keyboard too), and any part of the text can be
         selected and copied. Build the source with :func:`md_code_block` for
         text to be copied and :func:`md_escape` for names in prose."""
         from xefm.text_dialog import show_markdown
-        show_markdown(self._app.panel, str(source), title=str(title))
+        show_markdown(self._app.panel, str(source), title=str(title),
+                      on_close=_guard("show_markdown callback", on_close, arity=0))
         self._app.panel.render()
 
     @preview
     def diff(self, left: "EntryInfo | Path | str", right: "EntryInfo | Path | str",
              *, left_title: str | None = None,
-             right_title: str | None = None) -> None:
+             right_title: str | None = None,
+             on_close: Callable[[], None] | None = None) -> None:
         """Compare two files the way **Compare Selected Files** does, without
         their being selected: side by side in the diff viewer when both are
         text, byte for byte in a message box when either is binary. Returns at
@@ -1221,8 +1229,15 @@ class ActionContext:
         header shows the file name unless ``left_title`` / ``right_title``
         names it (``"HEAD"``, ``"Working tree"``).
 
+        ``on_close()`` runs on the UI thread once the comparison is over: the
+        viewer was closed, or the byte comparison's message was dismissed or
+        its reading cancelled. The files may have been edited from the viewer
+        by then, so it is the place to refresh what was derived from them, or
+        to remove a temporary file that was one of the sides.
+
         A folder on either side, or one that does not exist, is not compared:
-        the log pane says so. Wrong argument types raise ValueError at once.
+        the log pane says so, and ``on_close`` is not called, nothing having
+        been opened. Wrong argument types raise ValueError at once.
         """
         self._require_ui_thread("diff")
         paths = [_operation_path(left, "diff: left"),
@@ -1235,7 +1250,8 @@ class ActionContext:
             if not is_file:
                 self._app.log_info(f"Compare: {path} is not a file")
                 return
-        self._app.open_diff(paths[0], paths[1], titles=(left_title, right_title))
+        self._app.open_diff(paths[0], paths[1], titles=(left_title, right_title),
+                            on_close=_guard("diff callback", on_close, arity=0))
 
     @preview
     def copy_text(self, text: str) -> None:

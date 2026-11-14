@@ -276,9 +276,9 @@ summary with no further page.
 | `ctx.left`, `ctx.right` | the panes by position |
 | `ctx.invoke(name)` | run another action — built-in or your own |
 | `ctx.message(text)` | write one line to the log pane |
-| `ctx.show_markdown(title, source)` | (Preview) show Markdown in a scrollable dialog, with a Copy button on each code block — see below |
+| `ctx.show_markdown(title, source)` | (Preview) show Markdown in a scrollable dialog, with a Copy button on each code block; `on_close=` is called once it has closed — see below |
 | `ctx.copy_text(text)` | (Preview) put text on the clipboard |
-| `ctx.diff(left, right)` | (Preview) compare two files as **Select → Compare Selected Files…** does, without selecting them; either may be on SSH, S3, in an archive or in a virtual folder, and `left_title=` / `right_title=` name the sides |
+| `ctx.diff(left, right)` | (Preview) compare two files as **Select → Compare Selected Files…** does, without selecting them; either may be on SSH, S3, in an archive or in a virtual folder, and `left_title=` / `right_title=` name the sides; `on_close=` is called once the comparison has closed |
 | `ctx.run_task(title, work, on_done=fn)` | (Preview) run slow work in the background, with a progress dialog — see below |
 | `ctx.input(prompt, default, on_accept=fn)` | (Preview) ask for a line of text; `complete='path'` (or `'directory'`) adds Tab completion of paths, as Jump to Path has — relative to the active pane |
 | `ctx.choose(title, items, on_result=fn)` | (Preview) pick from a list (index, or `None`); `type='filter'` for a searchable one |
@@ -349,6 +349,11 @@ def show_names(ctx):
 with backticks, text that is itself Markdown — can end the block early.
 `md_escape(text)` makes a file name read literally in a sentence: `a_b*.txt`
 stays `a_b*.txt` rather than turning half of it italic.
+
+`ctx.show_markdown(title, source, on_close=stop)` calls `stop()` once the user
+has closed the dialog, however they closed it. Use it for what should last
+only as long as the dialog is up — a server the page points at, a temporary
+file an image in it was read from. `ctx.diff` takes the same `on_close=`.
 
 To copy without showing anything, `ctx.copy_text(text)`.
 
