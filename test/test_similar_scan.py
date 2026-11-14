@@ -201,6 +201,64 @@ def test_remove_deletes_a_finished_scan_and_refuses_a_running_one(tmp_path):
     assert running.folder.exists()
 
 
+def test_threshold_steps_center_on_similar_files_default():
+    from similar_files.registry import extractors
+    for method in (similar_scan.IMAGE, similar_scan.VIDEO, similar_scan.AUDIO):
+        default = extractors()[method].default_threshold
+        steps = dict(similar_scan.threshold_steps(method))
+        assert steps[similar_scan.STANDARD] == default
+        assert steps[similar_scan.LOOSE] < default < steps[similar_scan.STRICT] <= 1.0
+    assert similar_scan.threshold_steps(similar_scan.IDENTICAL) == []
+
+
+def test_parse_threshold():
+    assert similar_scan.parse_threshold(" 0.75 ") == 0.75
+    assert similar_scan.parse_threshold("1") == 1.0
+    for bad in ("", "x", "-0.1", "1.5"):
+        assert similar_scan.parse_threshold(bad) is None
+
+
+def test_identical_files_ignore_a_threshold(dirs):
+    src, base = dirs
+    os.environ["SIMILAR_FILES_CACHE"] = str(base.parent / "cache.db")
+    try:
+        job = similar_scan.start([str(src)], similar_scan.IDENTICAL, threshold=0.5,
+                                 base=base, python=sys.executable)
+    finally:
+        os.environ.pop("SIMILAR_FILES_CACHE", None)
+    assert "--threshold" not in job.info()["command"]
+    assert job.threshold is None and job.title == "Identical files"
+    assert _wait(job) == similar_scan.DONE, job.log_path.read_text()
+
+
+class TestMergeRoots:
+    """#890: a place both panes hold is scanned once."""
+
+    def test_the_same_folder_twice(self, tmp_path):
+        a = str(tmp_path)
+        assert similar_scan.merge_roots([a, a + os.sep]) == [a]
+
+    def test_a_folder_inside_another_root_is_dropped_whichever_comes_first(self, tmp_path):
+        inner = tmp_path / "x" / "y"
+        inner.mkdir(parents=True)
+        assert similar_scan.merge_roots([str(inner), str(tmp_path)]) == [str(tmp_path)]
+        assert similar_scan.merge_roots([str(tmp_path), str(inner)]) == [str(tmp_path)]
+
+    def test_siblings_and_prefixes_are_kept(self, tmp_path):
+        a, ab = tmp_path / "a", tmp_path / "ab"
+        a.mkdir()
+        ab.mkdir()
+        assert similar_scan.merge_roots([str(a), str(ab)]) == [str(a), str(ab)]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")
+    def test_a_symlink_to_a_root_is_the_same_place(self, tmp_path):
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real)
+        assert similar_scan.merge_roots([str(real), str(link)]) == [str(real)]
+
+
 def test_unavailable(monkeypatch):
     assert similar_scan.unavailable(similar_scan.IDENTICAL) is None
     assert "no 'nonsense' method" in similar_scan.unavailable("nonsense")
@@ -243,7 +301,16 @@ def test_launching_watching_and_opening_a_scan(app, dirs, monkeypatch):
     monkeypatch.setattr(similar_scan, "xefm_python", sys.executable)
     app.find_similar()
     app.panel.dispatch_event(_key("enter"))          # Identical files
+    # No threshold question for identical files (#889); the confirmation
+    # names the folder, and both panes show it, so only one Scan button.
+    box = app.panel._layers[-1].widget
+    assert str(src) in box.message and "threshold" not in box.message
+    assert tuple(box.buttons) == ("Scan", "Cancel")
+    assert similar_scan.jobs(base) == []
+    app.panel.dispatch_event(_key("enter"))          # Scan
     (job,) = similar_scan.jobs(base)
+    assert job.info()["threshold"] is None
+    assert "--threshold" not in job.info()["command"]
     assert _wait(job) == similar_scan.DONE
     app._scans_dirty = True
     app._pump_scans()
@@ -258,6 +325,101 @@ def test_launching_watching_and_opening_a_scan(app, dirs, monkeypatch):
     assert [f.name for f in pane["files"]] == ["a.bin (1)"]
     assert job.seen
     assert app._jobs_parts() == []
+
+
+def test_cancelling_the_confirmation_starts_nothing(app, dirs):
+    _src, base = dirs
+    app.find_similar()
+    app.panel.dispatch_event(_key("enter"))          # Identical files
+    app.panel.dispatch_event(_key("escape"))
+    assert similar_scan.jobs(base) == []
+
+
+def _start_from_app(app, keys):
+    for key in keys:
+        app.panel.dispatch_event(_key(key))
+
+
+def test_a_threshold_is_asked_for_and_recorded(app, dirs, monkeypatch):
+    # #889: Similar images asks loose / standard / strict, and the job
+    # remembers which threshold produced its groups.
+    src, base = dirs
+    monkeypatch.setenv("SIMILAR_FILES_CACHE", str(base.parent / "cache.db"))
+    monkeypatch.setattr(similar_scan, "xefm_python", sys.executable)
+    from xefm.choice_dialog import ChoiceDialog
+    app.find_similar()
+    _start_from_app(app, ["down", "enter"])          # Similar images
+    dialog = app.panel._layers[-1].widget
+    assert isinstance(dialog, ChoiceDialog)
+    steps = similar_scan.threshold_steps(similar_scan.IMAGE)
+    assert [v for v, _l in dialog._rows] == [v for _s, v in steps] + ["other"]
+    assert dialog._rows[dialog._index][0] == dict(steps)[similar_scan.STANDARD]
+    _start_from_app(app, ["down", "enter"])          # Strict
+    strict = dict(steps)[similar_scan.STRICT]
+    box = app.panel._layers[-1].widget
+    assert f"threshold {similar_scan.format_threshold(strict)}" in box.message
+    app.panel.dispatch_event(_key("enter"))          # Scan
+    (job,) = similar_scan.jobs(base)
+    assert job.threshold == strict
+    command = job.info()["command"]
+    assert command[command.index("--threshold") + 1] == repr(strict)
+    assert job.title == f"Similar images (threshold {similar_scan.format_threshold(strict)})"
+    assert _wait(job) == similar_scan.DONE, job.log_path.read_text()
+
+
+def test_another_threshold_can_be_typed(app, dirs, monkeypatch):
+    src, base = dirs
+    monkeypatch.setenv("SIMILAR_FILES_CACHE", str(base.parent / "cache.db"))
+    monkeypatch.setattr(similar_scan, "xefm_python", sys.executable)
+    app.find_similar()
+    _start_from_app(app, ["down", "enter"])          # Similar images
+    _start_from_app(app, ["down", "down", "enter"])  # Another value...
+    dialog = app.panel._layers[-1].widget
+    dialog.on_accept("0.65")
+    app.panel.render()
+    app.panel.dispatch_event(_key("enter"))          # Scan
+    (job,) = similar_scan.jobs(base)
+    assert job.threshold == 0.65
+    _wait(job)
+
+
+def test_the_other_pane_can_be_scanned_too(app, dirs, tmp_path, monkeypatch):
+    # #890: the confirmation lists both panes and offers to scan both.
+    src, base = dirs
+    monkeypatch.setenv("SIMILAR_FILES_CACHE", str(base.parent / "cache.db"))
+    monkeypatch.setattr(similar_scan, "xefm_python", sys.executable)
+    there = tmp_path / "there"
+    there.mkdir()
+    shutil.copy(src / "a.bin", there / "copy.bin")
+    from xefm.path import Path
+    other = app.pm.get_inactive_pane()
+    other["path"] = Path(os.path.realpath(str(there)))
+    other["files"] = []
+    other["selected_files"] = set()
+    app.find_similar()
+    app.panel.dispatch_event(_key("enter"))          # Identical files
+    box = app.panel._layers[-1].widget
+    assert tuple(box.buttons) == ("Scan This Pane", "Scan Both Panes", "Cancel")
+    assert "there" in box.message
+    _start_from_app(app, ["right", "enter"])         # Scan Both Panes
+    (job,) = similar_scan.jobs(base)
+    assert job.info()["roots"] == [os.path.realpath(str(src)),
+                                   os.path.realpath(str(there))]
+    assert _wait(job) == similar_scan.DONE, job.log_path.read_text()
+    from xefm import xft
+    (group,) = xft.load(str(job.result_path)).root.children
+    assert sorted(c.name for c in group.children) == ["a.bin", "b.bin", "copy.bin"]
+
+
+def test_a_pane_showing_a_list_is_left_out_of_both(app):
+    other = app.pm.get_inactive_pane()
+    other["virtual"] = {"kind": "list", "title": "picked", "root": None}
+    app.find_similar()
+    app.panel.dispatch_event(_key("enter"))          # Identical files
+    box = app.panel._layers[-1].widget
+    assert tuple(box.buttons) == ("Scan", "Cancel")
+    assert "shows a list" in box.message
+    app.panel.dispatch_event(_key("escape"))
 
 
 def test_a_remote_pane_is_refused(app):

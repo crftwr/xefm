@@ -28,8 +28,10 @@ and `--format tree` / `--snapshot-interval`):
 
 | Piece | |
 |---|---|
-| `start(roots, method, base=, python=)` | Makes the job folder, writes `job.json`, starts `python -m similar_files scan … --out result.xft --format tree --method M --status status.json --stop-file stop`, with stdout and stderr going to `scan.log` |
-| `ScanJob` | One folder: `info()`, `status()`, `state()`, `progress_text()`, `summary()`, `seen` / `mark_seen()`, `stop()`, `remove()` (deletes the folder; `ValueError` while running) |
+| `start(roots, method, threshold=, base=, python=)` | Makes the job folder, writes `job.json` (with `threshold`, None for identical), starts `python -m similar_files scan … --out result.xft --format tree --method M [--threshold T] --status status.json --stop-file stop`, with stdout and stderr going to `scan.log`. A threshold given with `identical` is dropped: similar-files refuses it there |
+| `default_threshold(method)` / `threshold_steps(method)` | similar-files' own `default_threshold` for the extractor, and loose / standard / strict around it (`THRESHOLD_STEP` = 0.1, clamped to 0-1); empty for identical (#889) |
+| `merge_roots(roots)` | Drops a root equal to an earlier one or inside another root, compared by `realpath` + `normcase`, keeping order and spelling (#890) |
+| `ScanJob` | One folder: `info()`, `threshold`, `title` (label + threshold, for the jobs list), `status()`, `state()`, `progress_text()`, `summary()`, `seen` / `mark_seen()`, `stop()`, `remove()` (deletes the folder; `ValueError` while running) |
 | `jobs(base)` | Every scan folder, newest first (ids are `YYYYmmdd-HHMMSS-<hex>`) |
 | `prune(base, keep=10)` | Removes finished scans beyond the newest ten, seen ones before unseen (#822). Never a running one |
 | `unavailable(method)` | Why a method cannot run (similar-files missing or older than 0.2, the extractor's own `install_hint()`), or None |
@@ -61,10 +63,28 @@ reboot, but a status that stopped changing cannot be mistaken for a live one.
 
 ## The app
 
-- `find_similar` (Tools → Find Similar Files…, unbound): the scope is the
-  selection or the directory. A virtual or remote pane is refused, because
-  the CLI reads local paths. A `ChoiceDialog` offers the methods, with the
-  `unavailable()` reason in the label.
+- `find_similar` (Tools → Find Similar Files…, unbound) runs three steps,
+  each a callback of the one before:
+  1. A `ChoiceDialog` of the methods, with the `unavailable()` reason in the
+     label.
+  2. `_ask_similar_threshold` (#889), only when `threshold_steps()` is not
+     empty: the three steps with their values, seeded on standard, plus
+     **Another value…**, which opens `show_input` validated by
+     `parse_threshold`. The steps are offsets from similar-files' default
+     rather than a per-method table, so a default that moves in
+     similar-files moves the steps with it.
+  3. `_confirm_similar_scan` (#890): a Markdown `show_message_box` naming
+     the method, the threshold, and each pane's scope (folder, or the first
+     five selected names under their folder, paths in code spans). The
+     buttons are **Scan This Pane / Scan Both Panes / Cancel** when the
+     other pane is scannable and `merge_roots(this + other)` differs from
+     `merge_roots(this)`, otherwise **Scan / Cancel** with a line saying why
+     the other pane adds nothing.
+  `_similar_roots(pane)` holds the scope rule for both panes: the selection
+  or the directory, refusing a virtual pane (it shows a list) or a URI path,
+  because the CLI reads local paths. The active pane being refused stops
+  before the first dialog; the other pane being refused only leaves out the
+  second button. Roots are re-read at the confirmation, after the dialogs.
 - `_scan_rows`: `(job, state, text)` for the status bar and the jobs list,
   rebuilt by `_refresh_scans()`, never read per frame. While any scan runs, a
   daemon poller sets `_scans_dirty` every 2 s and calls `_wake_pump()`.
@@ -117,8 +137,10 @@ should say why 0.2 is the floor. For development: `pip install -e
 
 ## Not done
 
-Remote roots (they need the library in-process and XeFM's path layer), similar
-images and audio in the launcher, running scans on a NAS (similar-files'
+Remote roots (they need the library in-process and XeFM's path layer),
+similar-files' reference mode for two-pane scans (one pane anchors, its files
+never compared with each other), the file clipboard or a virtual pane as
+input, a catalog of earlier scans, running scans on a NAS (similar-files'
 Docker prototype), a "select all but the anchor" helper, and showing
 similarity in the list.
 
@@ -132,5 +154,10 @@ heartbeat, stale with a dead pid (`lost`), stale with a live pid (`running`),
 finished states, no status yet, the stop file, and prune keeping running
 scans. In the app, the launcher's dialog starts a scan, the poller's pump
 reports it finished, and the jobs list takes the pane to its groups. A remote
-pane is refused. Every scan in the tests uses its own cache
+pane is refused. The threshold question appears for images (seeded on
+standard) and not for identical files; a chosen step and a typed value land
+in `job.json` and the command line. Two panes with a shared copy group it
+across both roots; a pane showing a list leaves a single Scan button.
+`merge_roots` is covered for duplicates, nesting in either order, sibling
+prefixes (`a` vs `ab`) and a symlinked root. Every scan in the tests uses its own cache
 (`SIMILAR_FILES_CACHE`), never the user's.

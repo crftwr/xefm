@@ -7180,26 +7180,35 @@ class XeFMApp:
                               f"{self._keys_label('jobs')} to open it")
         return changed
 
-    def find_similar(self) -> None:
-        """Start a similar-files scan of the selection — or of the directory —
-        that keeps running after XeFM closes (#571). Its groups land as one
-        playlist per group, opened from the jobs list."""
-        pane = self.active_pane()
+    def _similar_roots(self, pane: dict) -> tuple[list, list, str | None]:
+        """What a scan of ``pane`` covers: ``(roots, selected, why_not)`` —
+        the selection, or the folder when nothing is selected. ``why_not``
+        says why the pane cannot be scanned: it shows a list, or it is not
+        local (a mounted share counts as local)."""
         if pane.get("virtual"):
-            self.log_info("Find Similar Files scans a directory; this pane shows a list")
-            return
+            return [], [], "this pane shows a list"
         selected = [f for f in pane["files"] if str(f) in pane["selected_files"]]
         roots = selected or [pane["path"]]
-        remote = [r for r in roots if path_schemes.is_uri(str(r))]
-        if remote:
-            self.log_info("Find Similar Files scans local folders (a mounted share "
-                          f"counts); this is {roots[0]}")
+        if any(path_schemes.is_uri(str(r)) for r in roots):
+            return [], [], ("it scans local folders (a mounted share counts); "
+                            f"this is {roots[0]}")
+        return [str(r) for r in roots], selected, None
+
+    def find_similar(self) -> None:
+        """Start a similar-files scan of the selection — or of the directory —
+        that keeps running after XeFM closes (#571). Three steps: the method;
+        the threshold, for a method that has one (#889); and a confirmation
+        that lists what will be scanned, where the other pane can be scanned
+        along with this one (#890). Its groups open from the jobs list."""
+        pane = self.active_pane()
+        roots, selected, why = self._similar_roots(pane)
+        if why is not None:
+            self.log_info(f"Find Similar Files: {why}")
             return
         rows = []
         for method, label in similar_scan.METHODS:
             why = similar_scan.unavailable(method)
             rows.append((method, label if why is None else f"{label} — {why}"))
-        what = f"{len(roots)} selected item(s)" if selected else str(pane["path"])
 
         def chosen(method) -> None:
             self.panel.render()
@@ -7209,18 +7218,128 @@ class XeFMApp:
             if why is not None:
                 self.log_info(f"{similar_scan.LABELS[method]}: {why}")
                 return
-            try:
-                job = similar_scan.start([str(r) for r in roots], method,
-                                         base=self._scans_base)
-            except OSError as e:
-                self.log_info(f"Could not start the scan: {e}")
-                return
-            self._refresh_scans()
-            self.log_info(f"{job.label} scan of {what} started — it keeps running "
-                          f"if you quit XeFM; {self._keys_label('jobs')} shows it")
-            self.panel.render()
+            if similar_scan.threshold_steps(method):
+                self._ask_similar_threshold(method)
+            else:
+                self._confirm_similar_scan(method, None)
 
         show_choice_dialog(self.panel, "Find Similar Files", rows, on_result=chosen)
+        self.panel.render()
+
+    #: What each threshold step means, for the threshold question (#889).
+    _THRESHOLD_HINTS = {
+        similar_scan.LOOSE: "also heavier edits, more false matches",
+        similar_scan.STANDARD: "similar-files' default",
+        similar_scan.STRICT: "only close copies",
+    }
+
+    def _ask_similar_threshold(self, method: str) -> None:
+        """Step two of :meth:`find_similar`: loose, standard or strict, or a
+        number typed in (#889)."""
+        steps = similar_scan.threshold_steps(method)
+        standard = dict(steps)[similar_scan.STANDARD]
+        fmt = similar_scan.format_threshold
+        rows = [(value, f"{step.capitalize()} — {fmt(value)}: {self._THRESHOLD_HINTS[step]}")
+                for step, value in steps]
+        rows.append(("other", "Another value…"))
+
+        def typed(text: str) -> None:
+            self._confirm_similar_scan(method, similar_scan.parse_threshold(text))
+
+        def picked(value) -> None:
+            self.panel.render()
+            if value is None:
+                return
+            if value == "other":
+                show_input(self.panel, title=f"{similar_scan.LABELS[method]} — Threshold",
+                           prompt="Similarity from 0 to 1 (1 = the same):",
+                           text=fmt(standard), on_accept=typed,
+                           validate=lambda t: None if similar_scan.parse_threshold(t) is not None
+                           else "Enter a number from 0 to 1")
+                self.panel.render()
+                return
+            self._confirm_similar_scan(method, value)
+
+        show_choice_dialog(self.panel, f"{similar_scan.LABELS[method]} — Threshold",
+                           rows, current=standard, on_result=picked)
+        self.panel.render()
+
+    @staticmethod
+    def _similar_roots_text(roots: list, selected: list, folder) -> str:
+        """One pane's part of the confirmation, in Markdown: the folder, and
+        under it the selected items, the first few by name."""
+        def code(text) -> str:
+            return f"`{str(text).replace('`', '')}`"
+
+        if not selected:
+            return code(roots[0])
+        names = [code(f.name) for f in selected[:5]]
+        more = len(selected) - len(names)
+        text = (f"{len(selected)} selected item{'' if len(selected) == 1 else 's'} in "
+                f"{code(folder)}:\\\n" + ", ".join(names))
+        if more:
+            text += f" and {more} more"
+        return text
+
+    def _confirm_similar_scan(self, method: str, threshold) -> None:
+        """Step three of :meth:`find_similar`: say what will be scanned, and
+        start it. When the other pane can be scanned too and adds something,
+        a second button scans both (#890); a place both panes hold, or a
+        folder inside the other root, is scanned once."""
+        pane = self.active_pane()
+        roots, selected, why = self._similar_roots(pane)
+        if why is not None:
+            self.log_info(f"Find Similar Files: {why}")
+            return
+        other = self.pm.get_inactive_pane()
+        o_roots, o_selected, o_why = self._similar_roots(other)
+        both = similar_scan.merge_roots(roots + o_roots) if o_why is None else roots
+        offer_both = o_why is None and set(both) != set(similar_scan.merge_roots(roots))
+        label = similar_scan.LABELS[method]
+        what = label
+        if threshold is not None:
+            what += f", threshold {similar_scan.format_threshold(threshold)}"
+        lines = [f"**{what}**", "",
+                 "This pane: " + self._similar_roots_text(roots, selected, pane["path"])]
+        lines.append("")
+        if o_why is not None:
+            lines.append(f"The other pane can't be scanned: {o_why}.")
+        else:
+            lines.append("Other pane: " + self._similar_roots_text(o_roots, o_selected,
+                                                                   other["path"]))
+            if not offer_both:
+                lines += ["", "The other pane holds nothing this pane doesn't, so "
+                              "scanning both is the same."]
+        if offer_both:
+            buttons = ("Scan This Pane", "Scan Both Panes", "Cancel")
+        else:
+            buttons = ("Scan", "Cancel")
+
+        def answered(button: str) -> None:
+            self.panel.render()
+            if button == "Cancel" or button not in buttons:
+                return
+            scan = both if button == "Scan Both Panes" else similar_scan.merge_roots(roots)
+            self._start_similar_scan(method, threshold, scan,
+                                     "both panes" if button == "Scan Both Panes" else
+                                     (f"{len(selected)} selected item(s)" if selected
+                                      else str(pane["path"])))
+
+        show_message_box(self.panel, "\n".join(lines), title="Find Similar Files",
+                         icon="question", buttons=buttons, default=0,
+                         cancel=len(buttons) - 1, on_result=answered, markdown=True)
+        self.panel.render()
+
+    def _start_similar_scan(self, method: str, threshold, roots: list, what: str) -> None:
+        try:
+            job = similar_scan.start(roots, method, threshold=threshold,
+                                     base=self._scans_base)
+        except OSError as e:
+            self.log_info(f"Could not start the scan: {e}")
+            return
+        self._refresh_scans()
+        self.log_info(f"{job.title} scan of {what} started — it keeps running "
+                      f"if you quit XeFM; {self._keys_label('jobs')} shows it")
         self.panel.render()
 
     def _open_scan(self, job) -> None:
@@ -7247,14 +7366,14 @@ class XeFMApp:
                     self._show_scan_log(job)
                 self.panel.render()
 
-            show_choice_dialog(self.panel, f"{job.label} — {job.progress_text()}",
+            show_choice_dialog(self.panel, f"{job.title} — {job.progress_text()}",
                                rows, on_result=act)
             return
         job.mark_seen()
         self._refresh_scans()
         if state in (similar_scan.DONE, similar_scan.CANCELLED) and job.result_path.exists():
             self._open_scan_result(job)
-            self.log_info(f"{job.label}: {job.summary()} — Enter opens a group")
+            self.log_info(f"{job.title}: {job.summary()} — Enter opens a group")
         elif state in (similar_scan.DONE, similar_scan.CANCELLED):
             self.log_info(f"{job.label}: nothing found")
         else:
@@ -7313,7 +7432,7 @@ class XeFMApp:
         def scan_label(job, state, text) -> str:
             when = job.id[:13].replace("-", " ")
             new = "" if job.seen or state not in similar_scan.FINISHED else " · new"
-            return f"{job.label} — {text}{new}  ({when[:4]}-{when[4:6]}-{when[6:8]} {when[9:11]}:{when[11:13]})"
+            return f"{job.title} — {text}{new}  ({when[:4]}-{when[4:6]}-{when[6:8]} {when[9:11]}:{when[11:13]})"
 
         def chosen(value) -> None:
             if value is not None:
