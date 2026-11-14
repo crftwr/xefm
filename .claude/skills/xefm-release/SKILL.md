@@ -192,9 +192,10 @@ gh release edit vX.Y.Z --notes-file <scratch>/release-note-x.y.z.md
   tap checkout and left the edit uncommitted, and this Mac's own
   `brew upgrade` then offers a version with no bottle (404). Restore it:
   `git -C "$(brew --repo crftwr/tap)" checkout -- Formula/xefm.rb`.
-  When test-bot passes on the autobump PR, a github-actions[bot] comment
-  mentions the owner with the exact command to run. That command runs the tap's
-  **brew pr-pull** workflow, which publishes the bottles and merges the PR:
+  When test-bot passes on the autobump PR, the tap's auto-publish workflow
+  starts its **brew pr-pull** workflow, which publishes the bottles and merges
+  the PR. The `xefm-brew-publish` skill checks each of these stages and
+  finishes one that did not start. By hand, the publish is:
   `gh workflow run publish.yml -R crftwr/homebrew-tap -f pull_request=<n>
   -f head_sha=<sha>`. **Never press Merge on a formula PR**, because that
   publishes no bottles and installs of the new version 404 (1.9.0 and 1.10.0).

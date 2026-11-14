@@ -211,7 +211,9 @@ or `make windows-zip`.
 ### The Homebrew tap (not in the Makefile)
 
 [crftwr/homebrew-tap](https://github.com/crftwr/homebrew-tap) carries two
-`xefm` entries, each built from an artifact the steps above publish:
+`xefm` entries, each built from an artifact the steps above publish
+(the `xefm-brew-publish` skill in `.claude/skills/` walks the formula through
+the stages below and reports where it stands):
 
 | Entry | Built from | Bump with |
 |---|---|---|
@@ -231,8 +233,13 @@ the new `xefm` sdist, nor a PuiKit released the same day, and fails with
 So the release bumps only the cask. The formula is bumped by the tap's
 **autobump** workflow (`.github/workflows/autobump.yml`, added after 1.9.0
 missed its day): every six hours it compares PyPI with the formula, and once
-the new sdist is a day old it runs Homebrew's `bump-packages` action, which
-opens the formula's PR. It opens the PR and nothing else. It uses the
+the new sdist is a day old it runs `brew bump-formula-pr --version=X.Y.Z`,
+which opens the formula's PR. It opens the PR and nothing else. It used
+Homebrew's `bump-packages` action (`brew bump`) until 1.15.1, but `brew bump`
+counts any PR titled `xefm X.Y.Z` as a duplicate, merged ones included and
+whatever files they changed. The release-day cask PR has that title, so every
+formula bump after 1.10.1 was skipped behind a green run (fixed in tap PR #28).
+`bump-formula-pr` only counts PRs that touch `Formula/xefm.rb`. It uses the
 `HOMEBREW_TAP_BUMP_TOKEN` secret, because a PR opened with the default
 `GITHUB_TOKEN` would not start the tests that build the bottles. Both bumps
 push a branch named `bump-xefm-X.Y.Z`. So while a PR from that branch is still
@@ -262,10 +269,14 @@ Each bump opens a PR on the tap. Its CI (`brew test-bot`, macOS and Ubuntu)
 builds the formula's bottles. The formula PR is opened with the owner's own
 token, and GitHub notifies nobody about their own actions, so once test-bot
 passes on a `bump-*` PR, a `notify` job in `tests.yml` comments as
-github-actions[bot] and mentions the owner. That comment is the signal to act:
+github-actions[bot] and mentions the owner:
 
-- **Formula PR:** the comment gives the exact command, and it publishes the
-  bottles and merges the PR in one step. Do **not** press Merge.
+- **Formula PR:** nothing to do. When test-bot's run completes, the tap's
+  `auto-publish.yml` (a `workflow_run` trigger) starts `publish.yml` for the PR,
+  passing the head SHA test-bot passed on. It cannot be a job inside
+  `tests.yml`: `pr-pull` refuses while the PR's newest test-bot run is still in
+  progress. The comment gives the same command to run by hand if no publish run
+  appears. Do **not** press Merge.
   ```
   gh workflow run publish.yml -R crftwr/homebrew-tap -f pull_request=<n> -f head_sha=<sha>
   ```
