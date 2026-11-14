@@ -441,7 +441,8 @@ _DETAILS: dict[str, str] = {
         "other file, opens it in the built-in viewer.\n\n"
         "An `enter` rule in `FILE_ASSOCIATIONS` can change what happens to a "
         "file type: `'viewer'`, `'navigate'` (browse as an archive), `'list'` "
-        "(open as a file list) or `None` (do nothing)."),
+        "(open as a file list), `{'action': name}` (run an action on it, such "
+        "as an extension's) or `None` (do nothing)."),
     "open_with_os": (
         "Hands the file under the cursor to another application — the "
         "operating system's default for that type, or the `open` rule in "

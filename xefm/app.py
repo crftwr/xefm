@@ -82,9 +82,10 @@ from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
 from xefm.background_shaders import SCENE_OPTIONS, SHADER_KINDS
-from xefm.config import (KeyBindings, apply_wide_chars, config_manager,
+from xefm.config import (BUILTIN_HANDLERS, KeyBindings, apply_wide_chars, config_manager,
                          deprecated_names_notice,
-                         get_builtin_handler_for_file, get_config,
+                         get_action_for_file, get_builtin_handler_for_file,
+                         get_config,
                          get_drive_locations,
                          get_program_for_file, has_explicit_association,
                          keys_label_for_action, printable_text_notice,
@@ -4752,7 +4753,7 @@ class XeFMApp:
                 # A plain file. Enter is the *casual* open: it stays inside XeFM
                 # (``open_with_os`` is the one that hands off to another app), so
                 # a FILE_ASSOCIATIONS 'enter' rule selects a built-in handler
-                # rather than a program to launch.
+                # or an action rather than a program to launch.
                 self._enter_file(pane, entry)
         except Exception as exc:
             self.log_info(f"Cannot open {entry.name}: {exc}")
@@ -4764,7 +4765,9 @@ class XeFMApp:
         for the built-in viewer, ``'navigate'`` to browse the file as an
         archive (for one whose name XeFM does not recognise; the archive cache
         then tells the format from its bytes, #776), ``'list'`` to open it as a file
-        list (an ``.m3u8`` playlist, a ``.lst``), or ``None`` to do nothing.
+        list (an ``.m3u8`` playlist, a ``.lst``), an action to run on it
+        (``{'action': 'preview.show'}``, an extension's), or ``None`` to do
+        nothing.
 
         With no rule, the default stands: the built-in viewer — the same one V
         uses, which routes *.md to the Markdown renderer and shows a
@@ -4804,6 +4807,13 @@ class XeFMApp:
         if configured and handler is None:
             self.log_info(f"Nothing configured to open {entry.name}")
             return
+        if configured and handler not in BUILTIN_HANDLERS:
+            # An action: an extension's ('preview.show') or a built-in one,
+            # aimed at this entry alone. The rule was resolved against the
+            # registry, so the action exists.
+            if self._run_action_on(pane, handler, [entry]):
+                self.panel.render()
+            return
         if handler == "navigate" and not self._is_archive(entry):
             self._remember_cursor(pane)
             self._exit_virtual(pane)
@@ -4824,6 +4834,38 @@ class XeFMApp:
             self.log_info(self._no_builtin_viewer_message(entry))
             return
         self._ensure_archive_password(entry, lambda: self._open_viewer(entry, pane))
+
+    def _run_associated_action(self, entry, verb: str) -> bool:
+        """Run the action a FILE_ASSOCIATIONS rule names for ``verb`` on the
+        focused entry (``'view': {'action': 'preview.show'}``). False when the
+        rule names none, and the verb goes on with its program or its
+        default."""
+        action = get_action_for_file(entry.name, verb)
+        if action is None:
+            return False
+        if self._run_action_on(self.active_pane(), action, [entry]):
+            self.panel.render()
+        return True
+
+    def _run_action_on(self, pane, action: str, entries) -> bool:
+        """Run ``action`` on exactly ``entries``: the files a FILE_ASSOCIATIONS
+        rule resolved to it.
+
+        An action reads the selection (``ctx.pane.selected()``, a built-in's
+        marked files) and falls back to the cursor only when nothing is
+        marked. So while it runs the selection is those entries alone: the
+        one under the cursor for Enter, open and view, or one group of
+        edit_file's files, which may not include the cursor's. The marks are
+        put back afterwards, unless the action changed the selection itself.
+        Returns whether to repaint."""
+        marked = pane["selected_files"]
+        scoped = {str(e) for e in entries}
+        pane["selected_files"] = set(scoped)
+        try:
+            return self._run_action(_ctx.FILER, action)
+        finally:
+            if pane["selected_files"] == scoped:
+                pane["selected_files"] = marked
 
     @staticmethod
     def _no_builtin_viewer_message(entry) -> str:
@@ -5649,9 +5691,15 @@ class XeFMApp:
         # associated launch falls back to TEXT_EDITOR, as it always has.
         fallback: list = []
         groups: dict[tuple, list] = {}
+        actions: dict[str, list] = {}
         for entry in files:
-            command = get_program_for_file(entry.name, "edit")
-            if command:
+            action = get_action_for_file(entry.name, "edit")
+            command = None if action else get_program_for_file(entry.name, "edit")
+            if action:
+                # Batched like a command: the action runs once, on the files
+                # whose rule names it.
+                actions.setdefault(action, []).append(entry)
+            elif command:
                 groups.setdefault(tuple(command), []).append(entry)
             elif has_explicit_association(entry.name, "edit"):
                 # Explicitly None: the config says this type has no editor (a
@@ -5660,6 +5708,8 @@ class XeFMApp:
                 self.log_info(f"No editor configured for {entry.name}")
             else:
                 fallback.append(entry)
+        for action, group in actions.items():
+            self._run_action_on(self.active_pane(), action, group)
         # Terminal mode logs once the editor is done; a desktop launch returns
         # at once, before anything is edited, so it says what it did instead.
         desktop = is_desktop_mode()
@@ -6627,6 +6677,8 @@ class XeFMApp:
         if entry is None:
             if focused is not None:
                 self.log_info(f"{focused.name} points at no file")
+            return
+        if self._run_associated_action(entry, "open"):
             return
         command = get_program_for_file(entry.name, "open")
         if command:
@@ -9745,6 +9797,8 @@ class XeFMApp:
                 return
         except Exception:
             pass
+        if self._run_associated_action(entry, "view"):
+            return
         command = get_program_for_file(entry.name, "view")
         if command and self._launch_associated([entry], command):
             self.log_info(f"Viewing {entry.name} with {command[0]}")

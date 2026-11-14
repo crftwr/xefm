@@ -69,10 +69,10 @@ Each file pattern can configure up to four actions:
 
 | Action | Run by | What it does | Value |
 |---|---|---|---|
-| **enter** | `open_item` (`Enter`) | Casual open — handled **inside XeFM** | A built-in handler name |
-| **open** | `open_with_os` | Deliberate open — hands off to another app | A command |
-| **view** | `view_file` | View the file | A command |
-| **edit** | `edit_file` | Edit the file | A command |
+| **enter** | `open_item` (`Enter`) | Casual open — handled **inside XeFM** | A built-in handler name, or an XeFM action |
+| **open** | `open_with_os` | Deliberate open — hands off to another app | A command, or an XeFM action |
+| **view** | `view_file` | View the file | A command, or an XeFM action |
+| **edit** | `edit_file` | Edit the file | A command, or an XeFM action |
 
 Keys depend on your keymap preset — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
@@ -109,6 +109,50 @@ handler** rather than a program to launch:
     'open':  ['open', '-a', 'Numbers'],   # open_with_os -> Numbers
 }
 ```
+
+The `enter` value can also name an XeFM action. See the next section.
+
+### Running an XeFM action
+
+Any of the four can run an **XeFM action** instead: a named command of the
+kind keys, menus and the command palette run. It can be one of XeFM's own,
+one from your `ACTIONS`, or one an [extension](EXTENSIONS_FEATURE.md) adds.
+Write it as `{'action': '<name>'}`, in every verb. The dict form leaves
+room for more keys later, and keeps an action apart from a command line or a
+handler name.
+
+For example, with the
+[os-preview](https://github.com/crftwr/xefm-extensions/tree/main/os-preview)
+extension installed, Enter on a video shows it in Quick Look instead of
+reporting that XeFM has no built-in viewer for it:
+
+```python
+{
+    'pattern': ['*.mp4', '*.mov', '*.mp3', '*.m4a'],
+    'enter': {'action': 'preview.show'},      # Enter -> Quick Look
+    'open': ['open', '-a', 'QuickTime Player'],
+},
+{
+    'pattern': ['*.docx', '*.xlsx', '*.pptx'],
+    'view': {'action': 'preview.show'},       # view_file -> Quick Look
+},
+```
+
+- From `enter`, `open_with_os` and `view_file` the action acts on the file
+  under the cursor alone, as those keys do, even when other files are
+  selected. From `edit_file` it acts on the selected files whose rule names
+  it; the others go to their own editors, as with commands.
+- A bare string keeps its meaning: a built-in handler in `enter`, a command
+  line in `open`, `view` and `edit`. An action can share a program's name
+  (`rename`), which is why it is always written as a dict.
+- A name that is not an action (a typo, or an extension that is not loaded)
+  is ignored with a warning in the log, and the rule reads as absent: Enter
+  opens the viewer, `edit_file` falls back to `TEXT_EDITOR`, and so on.
+- The four actions that read `FILE_ASSOCIATIONS` themselves (`open_item`,
+  `open_with_os`, `view_file`, `edit_file`) cannot be named. They could end
+  up running each other round and round.
+- Action names are listed in the command palette and on
+  [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
 ### Command Formats
 
@@ -330,7 +374,8 @@ Enter uses the **enter** action. It never launches an external program.
    rule matches them
 3. For any other file, checks associations for an 'enter' handler
 4. `'viewer'` opens the built-in viewer; `'navigate'` browses the file as an
-   archive; `'list'` opens it as a file list; `None` does nothing
+   archive; `'list'` opens it as a file list; an XeFM action's name runs that
+   action ([Running an XeFM action](#running-an-xefm-action)); `None` does nothing
 5. With no rule, opens the built-in viewer
 6. Unless XeFM has no built-in way to show the file — a PNG, say — in which case
    it logs a warning naming the key bound to `open_with_os`, rather than
@@ -357,7 +402,7 @@ one such rule, for packages like `.jar`, `.apk` and `.whl` (see
 `open_with_os` uses the **open** action.
 
 **Behavior**:
-1. Checks associations for an 'open' command
+1. Checks associations for an 'open' command, or an XeFM action to run
 2. If found, launches it — handing over the display first in terminal mode,
    detaching it in desktop mode (see [Terminal Programs](#terminal-programs))
 3. If explicitly `None`, nothing is launched (this is how you stop a file type
@@ -369,7 +414,7 @@ When you run `view_file` (**File → Open With ▸ Viewer**) on a file, XeFM use
 
 **Behavior**:
 1. Checks file associations for 'view' action
-2. If found, launches the configured viewer
+2. If found, launches the configured viewer, or runs the configured XeFM action
 3. If explicitly `None`, opens the built-in text viewer
 4. If not found, opens the built-in text viewer (binaries show a placeholder)
 
@@ -382,7 +427,8 @@ nothing is selected — using the **edit** action from file associations.
 
 **Behavior** (per file):
 1. Checks file associations for 'edit' action
-2. If found, launches the configured editor
+2. If found, launches the configured editor. A configured XeFM action runs once,
+   however many of the files name it
 3. If explicitly `None`, reports that no editor is configured and stops
 4. If not found, falls back to the `TEXT_EDITOR` config setting
 

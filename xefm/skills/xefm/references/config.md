@@ -250,6 +250,14 @@ leaves an action out lets a later rule supply it.
 
 `enter` names a built-in handler, never a program. `open` (Cmd/Ctrl-Enter),
 `view` (V) and `edit` take a command; `'view': None` means XeFM's own viewer.
+
+Any of the four can run an action instead (a built-in, one from `ACTIONS`, or
+an extension's), written `{'action': 'preview.show'}` in every verb (a bare
+string stays a handler name or a command). From `enter`/`open`/`view` it
+acts on the entry under the cursor alone; from `edit`, on the selected files
+whose rule names it. `open_item`,
+`open_with_os`, `view_file` and `edit_file` cannot be named. A name that is not
+loaded is warned about in the log and the rule reads as absent.
 Put a new rule above a broader one that names the same action. A rule beats
 the built-in viewer: XeFM only sniffs a file when no rule names the action.
 

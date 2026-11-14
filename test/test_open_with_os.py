@@ -39,6 +39,7 @@ class FakeApp:
         self.logged.append(message)
 
     open_with_os = xefm_app.XeFMApp.open_with_os
+    _run_associated_action = xefm_app.XeFMApp._run_associated_action
 
 
 @pytest.fixture
@@ -46,6 +47,7 @@ def windows(monkeypatch):
     """Pretend to be Windows with no association, recording what is launched."""
     started, ran = [], []
     monkeypatch.setattr(xefm_app.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(xefm_app, "get_action_for_file", lambda name, tier: None)
     monkeypatch.setattr(xefm_app, "get_program_for_file", lambda name, tier: None)
     monkeypatch.setattr(xefm_app, "has_explicit_association", lambda name, tier: False)
     monkeypatch.setattr(os, "startfile", started.append, raising=False)

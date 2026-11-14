@@ -746,6 +746,89 @@ def test_file_open_can_claim_the_open(app_with):
     assert seen == ["d.pdf", "a.txt"] and opened == ["viewer"]   # fell through
 
 
+def test_a_file_association_runs_an_action_for_any_verb(app_with):
+    """FILE_ASSOCIATIONS can name an action instead of a handler or a program:
+    an extension's (os-preview's preview.show) or the config's own. From
+    Enter, open and view it acts on the entry under the cursor alone, marks
+    or not; from edit, on the selection, as edit_file does."""
+    seen = []
+
+    def peek(ctx):
+        marked = ctx.pane.selected()
+        seen.append([e.name for e in marked] if marked else ctx.pane.focused.name)
+
+    app, _ = app_with(
+        ACTIONS={"peek.show": peek},
+        FILE_ASSOCIATIONS=[
+            {"pattern": "*.pdf", "enter|open|view|edit": {"action": "peek.show"}},
+            {"pattern": "*.docx", "enter": {"action": "peek.show"}},
+        ])
+    opened, launched = [], []
+    app._open_viewer = lambda *a, **k: opened.append("viewer")
+    app._launch_associated = lambda entries, command: launched.append(command) or True
+    pane = app.active_pane()
+    names = [f.name for f in pane["files"]]
+
+    pane["focused_index"] = names.index("d.pdf")
+    app._open(pane)
+    app.view_file()
+    app.open_with_os()
+    app.edit_file()
+    pane["focused_index"] = names.index("b.docx")
+    app._open(pane)
+    assert seen == [["d.pdf"]] * 4 + [["b.docx"]]
+    assert opened == [] and launched == []
+
+    # With marks, Enter/open/view still reach the cursor's entry alone, and
+    # the marks are back afterwards.
+    seen.clear()
+    marks = {str(f) for f in pane["files"] if f.name in ("a.txt", "d.pdf")}
+    pane["selected_files"] = set(marks)
+    pane["focused_index"] = names.index("d.pdf")
+    app._open(pane)
+    app.view_file()
+    app.open_with_os()
+    assert seen == [["d.pdf"]] * 3
+    assert pane["selected_files"] == marks
+
+
+def test_edit_runs_an_action_on_its_own_files_only(app_with):
+    """edit_file batches an action like a command: it gets the selected files
+    whose rule names it, and the rest go to TEXT_EDITOR."""
+    seen = []
+    app, _ = app_with(
+        ACTIONS={"peek.show": lambda ctx: seen.append(
+            sorted(e.name for e in ctx.pane.selected()))},
+        FILE_ASSOCIATIONS=[{"pattern": "*.pdf", "edit": {"action": "peek.show"}}])
+    launched = []
+    app._launch_associated = lambda entries, command: launched.append(
+        [e.name for e in entries]) or True
+    app._run_editor = lambda argv, label: launched.append(
+        [os.path.basename(a) for a in argv[1:]]) or True
+    pane = app.active_pane()
+    marks = {str(f) for f in pane["files"] if f.name in ("a.txt", "d.pdf")}
+    pane["selected_files"] = set(marks)
+    app.edit_file()
+    assert seen == [["d.pdf"]]
+    assert launched == [["a.txt"]]
+    assert pane["selected_files"] == marks
+
+
+def test_a_file_association_naming_a_verb_action_is_ignored(app_with):
+    """Enter running open_item would run Enter again; the rule is ignored and
+    the default stands."""
+    app, _ = app_with(FILE_ASSOCIATIONS=[
+        {"pattern": "*.txt", "enter": {"action": "open_item"},
+         "view": {"action": "view_file"}}])
+    opened = []
+    app._open_viewer = lambda *a, **k: opened.append("viewer")
+    pane = app.active_pane()
+    pane["focused_index"] = [f.name for f in pane["files"]].index("a.txt")
+    app._open(pane)
+    app.view_file()
+    assert opened == ["viewer", "viewer"]
+
+
 def test_file_open_does_not_fire_for_directories(app_with):
     seen = []
     app, _ = app_with(EVENT_HOOKS={"file_open": [lambda ctx, e: seen.append(e.path.name)]})

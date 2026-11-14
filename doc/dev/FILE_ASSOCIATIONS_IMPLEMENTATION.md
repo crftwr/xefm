@@ -229,6 +229,44 @@ Commands can be specified in multiple formats:
 
 The `get_program_for_file()` function normalizes all formats to list format or `None`.
 
+### Actions as values
+
+A rule can run an XeFM action instead of a handler or a program, in any verb.
+The use that prompted it was os-preview: Enter on a video reported "No
+built-in viewer", and `'enter': {'action': 'preview.show'}` shows it in
+Quick Look.
+
+- **The form.** `{'action': name}` in every verb, and only that. A bare
+  string keeps its old meaning in each verb (a handler name in `enter`, a
+  command line elsewhere), so no existing config changes meaning, and an
+  action never collides with a program or handler of the same name (`rename`
+  is both an action and a program). The dict also leaves room for more keys
+  later; today any other key is refused. `get_program_for_file` already
+  returned `None` for a dict, so it needs no change.
+- **Resolution.** `_resolve_action()` in `xefm/config.py` looks the name up
+  with `actions.registry.canonical(FILER, name)`, which covers built-ins,
+  `ACTIONS` and extensions alike, and returns the current name (an alias
+  resolves). `get_builtin_handler_for_file()` returns it as the handler, and
+  the caller tells handlers from actions with `BUILTIN_HANDLERS` (no handler
+  name is an action name). `get_action_for_file()` answers for the other
+  verbs.
+- **Refusals.** An unknown name, a malformed dict, or one of `VERB_ACTIONS`
+  (`open_item`, `open_with_os`, `view_file`, `edit_file`) logs a warning and
+  reads as no rule, so the verb's default still runs. The verb actions are
+  refused as a set, not only each verb's own: an `enter` rule naming
+  `view_file` and a `view` rule naming `open_item` would loop between them.
+- **Running.** `_run_action_on(pane, name, entries)` runs it like its key
+  (`_run_action(FILER, name)`, through the user-action path when it is one),
+  with the pane's selection set to exactly the entries the rule resolved to
+  it: an action reads the selection first and falls back to the cursor only
+  when nothing is marked. That is the entry under the cursor for `enter`,
+  `open` and `view`, and one group of files for `edit_file`, which batches
+  actions per name as it batches commands per command line. The marks are
+  put back afterwards unless the action changed the selection itself.
+  `_enter_file` runs it after the `.savedSearch`/`.xft` special cases;
+  `open_with_os` and `view_file` call `_run_associated_action()` before
+  looking for a program.
+
 ## Integration Points
 
 ### Configuration System
@@ -524,6 +562,8 @@ Support environment variable expansion in commands:
 def get_file_associations() -> dict
 def get_program_for_file(filename: str, action: str = 'open') -> list | None
 def has_action_for_file(filename: str, action: str = 'open') -> bool
+def get_builtin_handler_for_file(filename: str, action: str = 'enter') -> tuple[bool, str | None]
+def get_action_for_file(filename: str, action: str) -> str | None
 ```
 
 ### Configuration Attributes
