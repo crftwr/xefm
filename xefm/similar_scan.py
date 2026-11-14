@@ -9,7 +9,8 @@ next XeFM finds it again.
 One folder per scan, under :func:`scans_dir`::
 
     <id>/
-      job.json      what was asked: method, roots, command, pid, created, seen
+      job.json      what was asked: method, threshold, roots, command, pid,
+                    created, seen
       status.json   what similar-files says (its --status file)
       stop          created to stop the scan (its --stop-file)
       scan.log      the scan's stdout and stderr
@@ -58,6 +59,13 @@ METHODS = (
 LABELS = {IDENTICAL: "Identical files", IMAGE: "Similar images",
           VIDEO: "Similar videos", AUDIO: "Similar audio"}
 
+#: How far the loose and strict steps sit from a method's default threshold
+#: (#889). Thresholds are similarities from 0 to 1, higher meaning closer.
+THRESHOLD_STEP = 0.1
+LOOSE = "loose"
+STANDARD = "standard"
+STRICT = "strict"
+
 #: A running scan rewrites its status every few seconds (similar_files.status
 #: HEARTBEAT is 5). One quiet for this long, whose process is gone, is lost.
 STALE_S = 30.0
@@ -100,6 +108,74 @@ def unavailable(method: str) -> Optional[str]:
     if not cls.is_available():
         return cls.install_hint()
     return None
+
+
+def default_threshold(method: str) -> Optional[float]:
+    """The threshold similar-files uses for ``method`` when given none, as it
+    reports it (``default_threshold``); None for identical files, which have
+    no threshold, or when similar-files cannot say."""
+    if method == IDENTICAL:
+        return None
+    try:
+        from similar_files.registry import extractors
+        cls = extractors().get(method)
+    except Exception as e:  # noqa: BLE001 — a broken install asks no question
+        logger.warning(f"similar-files could not list its methods: {e}")
+        return None
+    if cls is None:
+        return None
+    return float(cls.default_threshold)
+
+
+def threshold_steps(method: str) -> list[tuple[str, float]]:
+    """The thresholds offered for ``method`` (#889): ``[(step, value)]`` for
+    loose, standard and strict, standard being similar-files' default. Empty
+    when the method takes no threshold."""
+    standard = default_threshold(method)
+    if standard is None:
+        return []
+    return [(LOOSE, round(max(0.0, standard - THRESHOLD_STEP), 4)),
+            (STANDARD, standard),
+            (STRICT, round(min(1.0, standard + THRESHOLD_STEP), 4))]
+
+
+def parse_threshold(text: str) -> Optional[float]:
+    """A threshold typed by the user, or None when it is not a number from
+    0 to 1."""
+    try:
+        value = float(text.strip())
+    except ValueError:
+        return None
+    return value if 0.0 <= value <= 1.0 else None
+
+
+def format_threshold(value: float) -> str:
+    """``0.8``, ``0.75``: as short as the value allows."""
+    return f"{value:g}"
+
+
+def _root_key(root: str) -> str:
+    return os.path.normcase(os.path.realpath(os.path.abspath(root)))
+
+
+def merge_roots(roots: list) -> list[str]:
+    """``roots`` with each place scanned once (#890): a root equal to an
+    earlier one, or inside another root, is dropped. The order is kept, and
+    the roots keep the spelling they were given."""
+    keys = [_root_key(str(r)) for r in roots]
+
+    def inside(key: str, parent: str) -> bool:
+        return key != parent and key.startswith(parent.rstrip(os.sep) + os.sep)
+
+    merged = []
+    for i, root in enumerate(roots):
+        key = keys[i]
+        if key in keys[:i]:
+            continue
+        if any(inside(key, other) for other in keys):
+            continue
+        merged.append(str(root))
+    return merged
 
 
 def _package_root() -> str:
@@ -199,6 +275,21 @@ class ScanJob:
     def label(self) -> str:
         return LABELS.get(self.info().get("method"), "Scan")
 
+    @property
+    def threshold(self) -> Optional[float]:
+        """The threshold the scan was started with (#889); None for identical
+        files, and for a scan started before XeFM recorded it."""
+        value = self.info().get("threshold")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    @property
+    def title(self) -> str:
+        """The label with the threshold: ``Similar images (threshold 0.8)``."""
+        threshold = self.threshold
+        if threshold is None:
+            return self.label
+        return f"{self.label} (threshold {format_threshold(threshold)})"
+
     def progress_text(self) -> str:
         """``hash 120/400``-style progress of a running scan."""
         status = self.status() or {}
@@ -247,10 +338,15 @@ class ScanJob:
         shutil.rmtree(self.folder)
 
 
-def start(roots: list, method: str, *, base: Optional[_StdPath] = None,
+def start(roots: list, method: str, *, threshold: Optional[float] = None,
+          base: Optional[_StdPath] = None,
           python: Optional[str] = None) -> ScanJob:
     """Start a scan of ``roots`` (local paths) with ``method`` in its own
-    session, and return its job. Raises ``OSError`` when it cannot start."""
+    session, and return its job. ``threshold`` (0-1) replaces the method's
+    default; identical files take none, so it is ignored for them. Raises
+    ``OSError`` when it cannot start."""
+    if method == IDENTICAL:
+        threshold = None
     base = scans_dir() if base is None else base
     base.mkdir(parents=True, exist_ok=True)
     prune(base)
@@ -263,6 +359,8 @@ def start(roots: list, method: str, *, base: Optional[_StdPath] = None,
                "--out", str(job.result_path), "--format", "tree", "--method", method,
                "--status", str(folder / "status.json"),
                "--stop-file", str(folder / "stop")]
+    if threshold is not None:
+        command += ["--threshold", repr(float(threshold))]
     env = dict(os.environ)
     root = _package_root()
     env["PYTHONPATH"] = root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
@@ -285,10 +383,12 @@ def start(roots: list, method: str, *, base: Optional[_StdPath] = None,
         proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log,
                                 stderr=subprocess.STDOUT, env=env,
                                 cwd=str(folder), close_fds=True, **kwargs)
-    job._write_info({"method": method, "roots": [str(r) for r in roots],
+    job._write_info({"method": method, "threshold": threshold,
+                     "roots": [str(r) for r in roots],
                      "command": command, "pid": proc.pid, "created": time.time(),
                      "seen": False})
-    logger.info(f"Started {method} scan {job_id} (pid {proc.pid}) of {len(roots)} root(s)")
+    at = "" if threshold is None else f" at threshold {threshold}"
+    logger.info(f"Started {method} scan {job_id} (pid {proc.pid}) of {len(roots)} root(s){at}")
     return job
 
 

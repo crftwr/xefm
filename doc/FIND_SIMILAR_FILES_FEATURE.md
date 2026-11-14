@@ -20,8 +20,21 @@ what to install.
 
 1. Go to the folder to scan, or select the folders and files to scan.
 2. Choose **Tools → Find Similar Files…** and pick a method.
+3. For similar images, videos or audio, pick how close files must be to
+   group together (see [Threshold](#threshold) below). Identical files skip
+   this step.
+4. XeFM shows what it is about to scan: the folder, or the selected items,
+   in this pane and in the other pane. Choose **Scan** to start, or
+   **Cancel**.
 
-The scan starts at once and **runs as a program of its own**. A video scan can
+To find which files in one place already exist in another, show one place
+in each pane and choose **Scan Both Panes**. Each pane counts its selection,
+or its folder when nothing is selected. A place both panes hold, or a folder
+inside the other one, is scanned only once. When the other pane can't add
+anything (it shows the same folder, or shows a list or a remote folder),
+there is a single **Scan** button for this pane.
+
+The scan starts and **runs as a program of its own**. A video scan can
 take hours. You can keep using XeFM, or quit it: the scan carries on, and the
 next time XeFM starts it tells you what finished while it was closed.
 
@@ -41,6 +54,23 @@ With several scans, the bar keeps to one entry for those running
 (`⠋ 2 scans running`) and one for those finished and not looked at yet
 (`✓ 3 scans finished`). A stopped scan counts as finished; `⚠` means one
 failed or ended without finishing.
+
+## Threshold
+
+The threshold is a similarity from 0 to 1. Files at least that similar to a
+group's first file join the group. Three steps are offered, plus a number of
+your own:
+
+| Step | Groups |
+|------|--------|
+| **Loose** | also heavier edits, with more unrelated files grouped by mistake |
+| **Standard** | similar-files' default for the method |
+| **Strict** | only close copies |
+| **Another value…** | type a number from 0 to 1 (1 means the same) |
+
+Standard is 0.8 for images and 0.7 for video and audio. Loose and strict sit
+0.1 below and above it. The jobs list shows each scan with the threshold it
+used, for example `Similar images (threshold 0.9)`.
 
 ## Looking at the results
 
@@ -95,7 +125,7 @@ without opening each one, open **Tools → Background Jobs…**:
   looked at go first.
 - If a scan ends without finishing (its process was killed, for example), the
   jobs list says so, and choosing it shows its log.
-- **similar-files comes with XeFM** (0.5 or later), with numpy, which lets a
+- **similar-files comes with XeFM** (0.6 or later), with numpy, which lets a
   library of thousands of videos be grouped in minutes rather than an hour.
   Video and audio scans still need ffmpeg and fpcalc, as listed above.
 - On a machine numpy has no ready-made package for (32-bit ARM Linux, for
