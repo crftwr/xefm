@@ -300,8 +300,11 @@ doc-files>=0.2.0
 # missing. 0.5.1 brings Pillow and numpy with it,
 # where they have wheels (the same machines as pillow above): numpy groups a
 # large video library in minutes instead of an hour (15,000 films: 18 min
-# against 76), and on the other machines it groups in pure Python.
-similar-files>=0.5.1
+# against 76), and on the other machines it groups in pure Python. 0.6.0
+# declares the similarity in the .xft tree (similar-files#7), which is what
+# makes the Similarity column appear in a scan's groups (#838); with 0.5.1
+# the column is missing.
+similar-files>=0.6.0
 # comtypes reaches Windows Search (the OS's own file index) over COM, for
 # index_search (#579): OLE DB against Search.CollatorDSO. Pure Python on
 # ctypes, Windows only. macOS needs nothing -- Spotlight is queried through

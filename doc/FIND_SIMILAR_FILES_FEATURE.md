@@ -125,7 +125,7 @@ without opening each one, open **Tools → Background Jobs…**:
   looked at go first.
 - If a scan ends without finishing (its process was killed, for example), the
   jobs list says so, and choosing it shows its log.
-- **similar-files comes with XeFM** (0.5 or later), with numpy, which lets a
+- **similar-files comes with XeFM** (0.6 or later), with numpy, which lets a
   library of thousands of videos be grouped in minutes rather than an hour.
   Video and audio scans still need ffmpeg and fpcalc, as listed above.
 - On a machine numpy has no ready-made package for (32-bit ARM Linux, for

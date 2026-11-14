@@ -81,7 +81,7 @@ Their CLAUDE.md files record the new rule, and each `make test-core` installs
 the package with `--no-deps`, so the suites still prove the code runs
 without them.
 
-XeFM's `requirements.txt` therefore reads `similar-files>=0.5.1` and
+XeFM's `requirements.txt` therefore reads `similar-files>=0.6.0` (0.5.1 for the markers, 0.6.0 for the Similarity column) and
 `doc-files>=0.2.0`, with no extras.
 
 ## numpy, and why XeFM ships it
