@@ -212,8 +212,8 @@ or `make windows-zip`.
 
 [crftwr/homebrew-tap](https://github.com/crftwr/homebrew-tap) carries two
 `xefm` entries, each built from an artifact the steps above publish
-(the `xefm-brew-publish` skill in `.claude/skills/` walks the formula through
-the stages below and reports where it stands):
+(the `xefm-release` skill's step 7 walks the formula through the stages below,
+and each release checks there that the previous one reached Homebrew):
 
 | Entry | Built from | Bump with |
 |---|---|---|

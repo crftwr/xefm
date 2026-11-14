@@ -3,9 +3,9 @@
 Read-only: it only queries GitHub (through `gh`) and PyPI. Run it from
 anywhere:
 
-    python3 .claude/skills/xefm-brew-publish/brew_status.py [--json]
+    python3 .claude/skills/xefm-release/brew_status.py [--json]
 
-The last line, "next:", is one of the actions the skill describes.
+The last line, "next:", is one of the actions in SKILL.md step 7.
 """
 
 import base64
