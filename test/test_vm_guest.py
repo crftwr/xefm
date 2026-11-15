@@ -116,3 +116,32 @@ def test_the_floor_guest_runs_the_python_requires_python_names(tmp_path, monkeyp
     (tmp_path / "pyproject.toml").write_text('[project]\nrequires-python = "~=3.12"\n')
     with pytest.raises(SystemExit):
         guest.floor_python()
+
+
+def _guest(tmp_path, windows):
+    g = guest.Guest("some-vm", tmp_path, r"C:\qa" if windows else "/Volumes/My Shared Files/qa")
+    g._windows = windows
+    return g
+
+
+def test_a_vm_guest_runs_on_the_images_free_threaded_python_when_the_table_names_it(tmp_path):
+    """What the apps embed (#914, #915); the table's python stays the shared one."""
+    win = _guest(tmp_path, True)
+    win.settings["python"] = r"C:\Python314\python.exe"
+    assert win.python == r"C:\Python314\python.exe"
+    win.settings["free_threaded_python"] = r"C:\Python315-x64\python3.15t.exe"
+    assert win.python == r"C:\Python315-x64\python3.15t.exe"
+    # The console-less twin of each, for what runs on the desktop.
+    assert win.windowless(win.python) == r"C:\Python315-x64\pythonw3.15t.exe"
+    assert win.windowless(r"C:\v\Scripts\python.exe") == r"C:\v\Scripts\pythonw.exe"
+
+
+def test_a_vm_suite_run_stops_on_a_python_with_the_gil(tmp_path):
+    import types
+    mac = _guest(tmp_path, False)
+    mac.settings["python"] = "/usr/local/bin/python3.14"
+    mac.ssh = lambda command, **kw: types.SimpleNamespace(stdout="0\n", stderr="", returncode=0)
+    with pytest.raises(SystemExit, match="free_threaded_python"):
+        mac.require_free_threaded()
+    mac.ssh = lambda command, **kw: types.SimpleNamespace(stdout="1\n", stderr="", returncode=0)
+    mac.require_free_threaded()

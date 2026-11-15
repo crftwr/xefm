@@ -71,15 +71,17 @@ Decided on xefm#750 for XeFM and Keyhac alike:
 
 | | Windows (VMware Fusion) | macOS (Tart) |
 | --- | --- | --- |
-| Clean state | snapshot `QA-2026-10-31`, reverted each run | a clone of `qa-mac-2026-10-31`, deleted after |
-| Python | python.org 3.14, **x64** (as the shipped app) | python.org 3.14, universal2 |
+| Clean state | snapshot `QA-2026-11-15`, reverted each run | a clone of `qa-mac-2026-11-15`, deleted after |
+| Python | python.org 3.15t (free-threaded), **x64** (emulated on the Arm VM) | python.org 3.15t (free-threaded), universal2 |
 | Also | OpenSSH, the `qa` user's desktop session, an SMB share | Keyhac.app, which holds the Accessibility grant |
 | Not there | Keyhac, git, libarchive, `LIBARCHIVE` | Homebrew, the command line tools |
 
 The Linux containers are `python:N-slim`: Debian, glibc, Python, nothing
 else. Between them and the VMs a release covers three Pythons:
 
-- the VMs run the one the shipped apps carry (3.14);
+- the VMs run the one the shipped apps carry: the free-threaded 3.15t,
+  `free_threaded_python` in the guest's table (or its `python`), and
+  `test-vm` stops before staging anything on a Python with the GIL on;
 - `qa-linux` runs the newest release (3.15), so a new Python is tested
   before the apps move to it;
 - `qa-linux-floor` runs the lowest `requires-python` admits, read from
@@ -110,9 +112,9 @@ metadata is as old as the install. pip's cache sits on the host side of the
 share, so a revert does not throw the downloads away.
 
 A macOS guest has no compiler, and a package without a wheel for its Python
-does not install there (watchdog 6.0.0 has none for 3.14). So when this Mac's
-Python is the guest's version, it builds the wheels into a wheelhouse on the
-share (`.wheels-macos-cp314`) and the guest installs from it with
+does not install there (watchdog 6.0.0 had none for 3.14). So when this Mac's
+Python is the guest's version and ABI, it builds the wheels into a wheelhouse
+on the share (`.wheels-macos-cp315t`) and the guest installs from it with
 `--find-links` — as a `file://` URL, because the share is
 `/Volumes/My Shared Files/…` and a requirements file ends an option's value at
 a space.
