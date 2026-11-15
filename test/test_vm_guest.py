@@ -61,11 +61,14 @@ def test_the_suite_s_plugins_only_for_tests():
 
 
 def test_the_libarchive_pin_is_the_windows_build_s():
-    url, package, sha = guest.libarchive_pin()
     script = (ROOT / "windows_app" / "build.ps1").read_text(encoding="utf-8")
-    assert f"'{sha}'" in script and f"'{package}'" in script
-    assert url.startswith("https://github.com/crftwr/xefm-bin-deps/releases/download/")
-    assert url.endswith(f"/{package}.zip")
+    for arch in ("x64", "arm64"):
+        url, package, sha = guest.libarchive_pin(arch)
+        assert f"'{sha}'" in script
+        assert package.startswith("libarchive-") and package.endswith(f"-windows-{arch}")
+        assert url.startswith("https://github.com/crftwr/xefm-bin-deps/releases/download/")
+        assert url.endswith(f"/{package}.zip")
+    assert guest.libarchive_pin() == guest.libarchive_pin("x64")
 
 
 def test_the_stage_is_the_tree_git_sees():

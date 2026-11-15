@@ -16,12 +16,18 @@ make windows-app                 # or: powershell -ExecutionPolicy Bypass -File 
 # with a version + a distributable zip
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 1.0.0 -Zip
 
+# the arm64 bundle (cross-compiled when the venv is x64, and the other way round)
+powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Arch arm64 -Zip
+
 # clean
 make clean-windows
 ```
 
-Output: `windows_app\build\XeFM\` (the self-contained folder) and, with `-Zip`,
-`windows_app\build\XeFM-<version>-win64.zip`.
+Output: `windows_app\build\XeFM\` (the self-contained folder; arm64:
+`windows_app\build\arm64\XeFM\`) and, with `-Zip`,
+`windows_app\build\XeFM-<version>-win-x64.zip` (`-win-arm64.zip`). Through
+make, `ARCH=arm64` selects the arm64 bundle for every single-architecture
+target; `make windows-msixbundle` packs both into one `.msixbundle`.
 
 Run it:
 
@@ -66,16 +72,18 @@ submission artifact (Microsoft signs it during certification).
 
 ## Requirements
 
-- **Windows 10/11 x64**, PowerShell 5.1+.
-- A working `.venv` (`make venv`) backed by a full CPython install — this
-  provides `Python.h` + `python3XX.lib` (under `sys.base_prefix`) that the
-  launcher links against.
-- **MSVC Build Tools** + **Windows 10/11 SDK** (`cl.exe`, `rc.exe`). Install the
-  *"Desktop development with C++"* workload. `build.ps1` auto-imports the Visual
+- **Windows 10/11, x64 or ARM64**, PowerShell 5.1+.
+- A working **free-threaded** `.venv` (`py install 3.XXt`, then `make venv`)
+  backed by a full CPython install — this provides `Python.h` +
+  `python3XXt.lib` (under `sys.base_prefix`) that the launcher links against.
+  The app ships the free-threaded runtime, and `build.ps1` refuses a GIL venv.
+- **MSVC Build Tools** + **Windows 10/11 SDK** (`cl.exe`, `rc.exe`), with the
+  compilers for both x64 and ARM64: `make windows-toolchain` installs them. `build.ps1` auto-imports the Visual
   Studio environment via `vswhere`/`VsDevCmd.bat` if the tools aren't already on
   `PATH`. This is the analog of the macOS build's Xcode Command Line Tools.
-- Network access on the first build (downloads the CPython embeddable package,
-  version-locked to your `.venv`; cached under `windows_app\.cache\`).
+- Network access on the first build (downloads the free-threaded CPython
+  embeddable package, version-locked to your `.venv` and verified against
+  python.org's published SHA-256; cached under `windows_app\.cache\`).
 
 ## Layout
 
@@ -95,9 +103,11 @@ windows_app/
 │   └── XeFM-small-256.png     # simplified raster master for MSIX tiles <=64px
 ├── .cache/                   # downloaded embeddable zips (gitignored)
 └── build/                    # build output (gitignored)
-    ├── XeFM/                  # the distributable folder
-    ├── obj/                  # launcher intermediates
-    └── XeFM-<version>-win64.zip
+    ├── XeFM/                  # the x64 distributable folder
+    ├── obj/                  # launcher intermediates (x64)
+    ├── arm64/XeFM/, arm64/obj/  # the same for arm64
+    ├── XeFM-<version>-win-x64.zip, XeFM-<version>-win-arm64.zip
+    └── XeFM-<version>.0-x64.msix, -arm64.msix, XeFM-<version>.0.msixbundle
 ```
 
 Dependency collection and license notices are **not** duplicated here — `build.ps1`

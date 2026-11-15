@@ -9,7 +9,7 @@ make tag VERSION=x.y.z     # any machine: bump __version__, commit, tag, push
 make release-github        # any machine: open the GitHub Release at that tag
 make release-whl           # any machine: sdist + wheel -> PyPI (+ the Release)
 make release-macos-dmg     # on macOS:    XeFM-<ver>-macos.dmg  -> the Release
-make release-windows-zip   # on Windows:  XeFM-<ver>-win64.zip  -> the Release
+make release-windows-zip   # on Windows:  XeFM-<ver>-win-x64.zip, -win-arm64.zip -> the Release
 make release-status        #              what has landed so far
 ```
 
@@ -67,8 +67,11 @@ Four artifacts that all name the same version and cannot drift apart:
    which the three `release-<artifact>` targets then attach to.
 3. **A PyPI release** — sdist + wheel uploaded with twine, and the same two
    files attached to the GitHub Release — `release-whl`.
-4. **The desktop bundles** — `XeFM-<ver>-macos.dmg` and `XeFM-<ver>-win64.zip`
-   attached to the GitHub Release — `release-macos-dmg` / `release-windows-zip`.
+4. **The desktop bundles** — `XeFM-<ver>-macos.dmg` and the two Windows zips,
+   `XeFM-<ver>-win-x64.zip` and `XeFM-<ver>-win-arm64.zip`, attached to the
+   GitHub Release — `release-macos-dmg` / `release-windows-zip`. The Windows
+   machine also submits both architectures to the Microsoft Store as one
+   `.msixbundle` (`release-windows-msix`).
 
 Downstream of those, the Homebrew tap's cask and formula point at the DMG and
 the sdist. They are bumped by hand, so they *can* drift; see
@@ -116,7 +119,7 @@ Guide use.
 GitHub also serves `…/releases/latest/download/<asset-name>` as a direct
 download, but only for an asset whose **name does not change between releases**.
 XeFM's bundle filenames embed the version (`XeFM-1.0.1-macos.dmg`,
-`XeFM-1.0.1-win64.zip`), so that form does not apply — a permanent direct link
+`XeFM-1.0.1-win-x64.zip`), so that form does not apply — a permanent direct link
 would mean also attaching a second, version-less copy of each asset
 (`XeFM-macOS.dmg`, `XeFM-Windows-x64.zip`) on every release. The plain
 `/releases/latest` page link avoids that duplication and is what the docs use.

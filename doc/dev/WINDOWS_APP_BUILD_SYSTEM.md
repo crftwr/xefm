@@ -18,6 +18,10 @@ under `windows_app/`.
 - **Hand-rolled and transparent**, mirroring the macOS approach — no PyInstaller
   / cx_Freeze magic. Every file that lands in the bundle is put there by an
   explicit, readable step.
+- **Two architectures, x64 and arm64**, each a native bundle, both buildable
+  from one machine of either kind (see [Architectures](#architectures)).
+- **Free-threaded CPython** (GIL off), like the macOS app (see
+  [The free-threaded runtime](#the-free-threaded-runtime)).
 
 ## Why this mirrors macOS so closely
 
@@ -40,7 +44,8 @@ native code we build is the ~200-line launcher stub itself.
 
 ## Bundle layout
 
-The build produces `windows_app/build/XeFM/`, a self-contained folder (this whole
+The build produces `windows_app/build/XeFM/` (x64) or
+`windows_app/build/arm64/XeFM/` (arm64), a self-contained folder (this whole
 folder is what gets zipped for distribution):
 
 ```
@@ -49,10 +54,10 @@ XeFM/                              <- bundle root = the .exe's directory (5 entr
 ├── LICENSE                       XeFM's own license
 ├── THIRD_PARTY_NOTICES.txt       aggregated license text for bundled components
 ├── runtime/                      the entire embedded CPython, kept out of the root
-│   ├── python3XX.dll             CPython (delay-loaded by XeFM.exe)
-│   ├── python3.dll               stable-ABI forwarder
-│   ├── python3XX.zip             zipped standard library
-│   ├── vcruntime140.dll, vcruntime140_1.dll   the CRT python3XX.dll needs
+│   ├── python3XXt.dll            free-threaded CPython (delay-loaded by XeFM.exe)
+│   ├── python3t.dll              stable-ABI forwarder
+│   ├── python3XX.zip             zipped standard library (no "t" in its name)
+│   ├── vcruntime140.dll, vcruntime140_1.dll   the CRT python3XXt.dll needs
 │   ├── _ctypes.pyd, _ssl.pyd, ...             stdlib C extensions
 │   ├── libffi-8.dll, libssl-3.dll, ...        their support DLLs
 │   ├── python.exe, pythonw.exe                (usable standalone for debugging)
@@ -103,15 +108,21 @@ on a `python3XX._pth` file — so the layout is unambiguous:
   - Failures *after* init (import errors, exceptions from `xefm.app.main()`) are caught
     by a small Python bootstrap that formats the traceback and shows it in a
     message box (and writes `XeFM-error.log` next to the exe).
-- **No import library shipped**: `Python.h` auto-links `python3XX.lib` via
+- **No import library shipped**: `Python.h` auto-links `python3XXt.lib` via
   `#pragma comment(lib, ...)`; the build only has to supply `/I<include>` and
-  `/LIBPATH:<libs>` from the developer's full CPython install (`sys.base_prefix`).
+  `/LIBPATH:<libs>` from a full CPython install of the target architecture (the
+  venv's `sys.base_prefix`, or python.org's package when cross-compiling).
+- **`/DPy_GIL_DISABLED=1`** on the compile line. On Windows one `pyconfig.h`
+  serves the GIL and free-threaded builds alike, so nothing defines it for an
+  embedder: without it the launcher would link `python3XX.lib`, assume the GIL
+  build's object layout, and look for a `python3XX.dll` the runtime does not
+  have. `launcher.c` derives the DLL's `t` suffix from the same macro.
 - **Static CRT + delay-loaded interpreter** so the whole runtime can live in
   `runtime\` (see layout) with nothing beside the exe. `XeFM.exe` is built `/MT`
-  (its only load-time deps are `kernel32`/`user32`), and `python3XX.dll` is
-  delay-loaded (`/DELAYLOAD:python3XX.dll` + `delayimp.lib`). At startup, before
+  (its only load-time deps are `kernel32`/`user32`), and `python3XXt.dll` is
+  delay-loaded (`/DELAYLOAD:python3XXt.dll` + `delayimp.lib`). At startup, before
   the first Python call, the launcher `SetDefaultDllDirectories` +
-  `AddDllDirectory(<root>\runtime)` and pre-loads `python3XX.dll` by full path
+  `AddDllDirectory(<root>\runtime)` and pre-loads `python3XXt.dll` by full path
   (turning a missing runtime into a clear message box instead of a delay-load
   crash); CPython's extension loader then resolves each `.pyd`'s sibling DLLs
   from `runtime\` via `LOAD_WITH_ALTERED_SEARCH_PATH`.
@@ -130,17 +141,66 @@ on a `python3XX._pth` file — so the layout is unambiguous:
 
 ## The embedded runtime — CPython "embeddable" package
 
-`build.ps1` downloads the official `python-<X.Y.Z>-embed-amd64.zip` from
-python.org **matching the exact version of the developer's `.venv`** and extracts
-it into the bundle root. This is the minimal, redistributable CPython: the DLL,
+`build.ps1` downloads python.org's free-threaded embeddable package for the
+target architecture **at the exact version of the developer's `.venv`** and
+extracts it into `runtime\`. The URL and its SHA-256 come from python.org's
+`index-windows.json` — the index Python's install manager reads — rather than
+from a spelled-out file name, which changed between 3.14 (`-embed-amd64.zip`)
+and 3.15 (`-embeddable-amd64.zip`); package ids there are
+`pythonembed-X.Yt-64` and `pythonembed-X.Yt-arm64`. A cached zip is re-hashed on
+every build. This is the minimal, redistributable CPython: the DLL,
 the zipped stdlib, and the stdlib C-extension `.pyd`s + their support DLLs
 (`libffi`, `libssl`/`libcrypto`, etc.). `ctypes` (which the whole Windows backend
 rides on) and its `libffi-8.dll` are included.
 
-**Version lock:** compiled wheels in `.venv\Lib\site-packages` (notably `numpy`)
-are built for the venv's Python ABI (`cp3XX`). The embeddable must be the same
-`X.Y`, so `build.ps1` derives the download version from the venv interpreter and
-refuses to mix ABIs.
+**Version lock:** compiled wheels (notably `numpy` and Pillow) are built for one
+Python ABI (`cp3XXt`). The embeddable must be the same `X.Y` and the same
+free-threaded build, so `build.ps1` derives the download version from the venv
+interpreter and refuses a venv that is not free-threaded.
+
+### The free-threaded runtime
+
+The app ships CPython's free-threaded build, as the macOS app does, so XeFM's
+worker threads (directory reads, copies, searches) run in parallel. What that
+takes on Windows:
+
+- **A free-threaded `.venv`.** `make venv` picks it (`py -X.Yt`); `build.ps1`
+  stops with `py install X.Yt` instructions when the venv has the GIL.
+- **The `t` names.** `python3XXt.dll`, `python3XXt.lib`, `python3t.dll`; the
+  stdlib zip stays `python3XX.zip`.
+- **`Py_GIL_DISABLED`** defined for the launcher (see above).
+- **`cp3XXt` wheels.** Every compiled dependency must publish them. The
+  collector asks pip for that ABI when it fetches wheels for another
+  architecture, and the venv's own are free-threaded already.
+
+A free-threaded interpreter turns the GIL back on when it imports an extension
+module that does not declare free-threading support. About shows which happened
+(`Python 3.15.2 x64 (free-threaded, GIL off)` vs `free-threaded build, GIL on`).
+
+---
+
+## Architectures
+
+`build.ps1 -Arch x64` (the default) and `-Arch arm64` build separate bundles,
+under `build\XeFM` and `build\arm64\XeFM`. Neither is emulated: the arm64
+bundle's launcher, interpreter, numpy, Pillow and libarchive are all ARM64 code.
+
+The `.venv` need not match the target. When it does not (`sysconfig.get_platform()`
+— not `platform.machine()`, which says ARM64 inside an emulated x64 Python), the
+build **cross-compiles**:
+
+| What | Native | Cross |
+|---|---|---|
+| Headers + `python3XXt.lib` | venv's `sys.base_prefix` | python.org's full package for the target (`pythoncore-X.Yt-64` / `-arm64`), unpacked under `.cache\` |
+| Compiler | `VsDevCmd -arch=<target>` | same; ARM64-hosted tools when the host is ARM64 and has them |
+| Dependencies | copied from the venv | the venv's exact versions, installed from `cp3XXt` wheels for `win_amd64` / `win_arm64` |
+| libarchive codec check | loads the DLL | finds the codec literals in the binary |
+
+The venv decides *what* ships and at which versions either way; cross-compiling
+only changes where the files come from. Environment markers are still read on
+the build machine, which is why `requirements.txt` gates a binary dependency on
+every architecture it has wheels for.
+
 
 **Coverage note:** the 3.14 embeddable ships a broad stdlib C-extension set —
 including `_ctypes.pyd` + `libffi-8.dll` (which the whole Windows backend rides
@@ -161,8 +221,9 @@ maintaining Windows-specific copies:
   self-skips off `darwin`; shared with `macos_app/build.sh`). It resolves the
   *runtime dependency closure* of `requirements.txt` from installed package
   metadata (not a blanket `site-packages` copy), honouring environment markers
-  so `windows-curses; sys_platform=="win32"` is collected and `pyobjc; darwin`
-  is not. `build.ps1` passes **`--include-deps-of puikit`** so PuiKit's own
+  so `comtypes; sys_platform=="win32"` is collected and `pyobjc; darwin`
+  is not. With `--target-platform` (a cross build) it installs those versions'
+  wheels for the target instead of copying. `build.ps1` passes **`--include-deps-of puikit`** so PuiKit's own
   runtime deps — notably **`numpy`**, which the win32 Direct2D backend imports —
   are collected *without* copying PuiKit itself (its source is copied into
   `app\puikit` separately). Each distribution is copied file-for-file from its
@@ -184,24 +245,29 @@ PowerShell orchestrator (invoked from the `Makefile` `windows-app` target or
 directly). Steps:
 
 1. **Locate the venv** (`.venv\Scripts\python.exe`); derive Python version,
-   `base_prefix` (for `include/` + `libs/`), and the `python3XX` DLL/lib names.
-2. **Locate the toolchain** — `cl.exe` + `rc.exe`. If not already on `PATH`, find
-   Visual Studio via `vswhere` and import `VsDevCmd.bat`'s environment. If neither
-   MSVC nor the Windows SDK is present, fail with install instructions (this is
-   the Windows analog of the macOS build's Xcode Command Line Tools requirement).
-3. **Fetch + extract** the matching embeddable CPython into `<root>\runtime`
-   (cached under `windows_app/.cache/`).
+   platform and build (it must be free-threaded), whether this is a cross build,
+   and where `include/` + `libs/` come from.
+2. **Locate the toolchain** — `cl.exe` + `rc.exe` for the target architecture.
+   If no compiler for it is on `PATH`, find Visual Studio via `vswhere` and import
+   `VsDevCmd.bat`'s environment. If neither MSVC nor the Windows SDK is present,
+   fail with install instructions (`make windows-toolchain` installs both
+   compilers; this is the Windows analog of the macOS build's Xcode Command Line
+   Tools requirement).
+3. **Fetch + extract** the matching free-threaded embeddable CPython into
+   `<root>\runtime` (cached under `windows_app/.cache/`, verified by SHA-256).
 4. **Assemble app code**: copy `xefm/` (as `app/xefm/`), the resolved `puikit/` package,
    and `LICENSE` into `app/`; `compileall` them.
 4b. **Fetch libarchive** into `app\xefm\_bin\archive.dll` — see below.
 5. **Collect dependencies** into `Lib\site-packages` via the shared
-   `tools/collect_dependencies.py` (`--include-deps-of puikit`), then
+   `tools/collect_dependencies.py` (`--include-deps-of puikit`, plus
+   `--target-platform` when cross-compiling), then
    **generate `THIRD_PARTY_NOTICES.txt`** at the bundle root via
    `tools/generate_third_party_notices.py`. See the section above.
 6. **Generate resources**: `version_generated.h` (from `$VERSION` / xefm/__init__.py's
    `__version__`) and `XeFM.ico` (via `make_icon.py`); compile `XeFM.rc` → `XeFM.res`.
 7. **Compile** `launcher.c` + `XeFM.res` → `XeFM.exe` (GUI subsystem).
-8. **(optional)** `-Zip` → `build\XeFM-<version>-win64.zip` for distribution.
+8. **(optional)** `-Zip` → `build\XeFM-<version>-win-x64.zip` (or `-win-arm64`)
+   for distribution.
 
 ### Step 4b: the bundled libarchive
 
@@ -219,7 +285,9 @@ cutting an XeFM release.
 
 It is pinned by **release tag and SHA-256**, never "latest" — a Store submission
 has to be reproducible, and a pin that moves when nobody is looking is not a pin.
-Bumping it means editing `$LibarchiveTag` and `$LibarchiveSha256` together.
+There is one pin per architecture (`$LibarchivePins`, the
+`libarchive-<version>-windows-x64` and `-arm64` assets); bumping one means
+editing its tag and hash together.
 
 It lands **inside the copied package**, at `app\xefm\_bin\archive.dll`, rather
 than beside the exe. `xefm/archive_libarchive.py` finds it relative to its own
@@ -227,7 +295,9 @@ than beside the exe. `xefm/archive_libarchive.py` finds it relative to its own
 would work from a wheel. The launcher is not involved.
 
 The step then **loads the DLL and checks its codec list**, and fails the build if
-`zlib`, `liblzma`, `bz2lib` or `libzstd` is missing. That check is not
+`zlib`, `liblzma`, `bz2lib` or `libzstd` is missing. A cross build cannot load a
+DLL of the other architecture, so it looks for the literals
+`archive_version_details()` assembles its answer from instead. That check is not
 belt-and-braces: XeFM's capability probe answers a missing codec by not offering
 the format, so a truncated download or a wrongly configured library would
 otherwise ship as a perfectly working XeFM with `.7z` quietly absent. The
@@ -240,11 +310,12 @@ none of those components has a `.dist-info` for the scanner to find.
 # from the project root (or windows_app/)
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 1.0.0 -Zip
+powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Arch arm64 -Zip
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Clean
 
-# or via make (Git-Bash):
+# or via make (Git-Bash); ARCH=arm64 for the arm64 bundle:
 make windows-app
-make windows-zip
+make windows-zip ARCH=arm64
 make clean-windows
 ```
 
@@ -252,14 +323,15 @@ make clean-windows
 
 ## Build requirements
 
-- **Windows 10/11 x64**, PowerShell 5.1+.
-- A **full CPython** install backing the `.venv` (provides `Python.h` and
-  `python3XX.lib` under `sys.base_prefix`). `make venv` already sets this up.
-- **MSVC Build Tools** (or Visual Studio) with the **Windows 10/11 SDK** —
-  supplies `cl.exe`, `rc.exe`, and `vcruntime`. Install the *"Desktop development
-  with C++"* workload, or the standalone *Build Tools for Visual Studio*.
-- Network access on first build (to download the embeddable package; cached
-  afterward).
+- **Windows 10/11, x64 or ARM64**, PowerShell 5.1+.
+- A **full free-threaded CPython** install backing the `.venv` (provides
+  `Python.h` and `python3XXt.lib` under `sys.base_prefix`): `py install X.Yt`,
+  then `make venv`. Either architecture builds both bundles.
+- **MSVC Build Tools** (or Visual Studio) with the **Windows 10/11 SDK** and the
+  compilers for both targets (`VC.Tools.x86.x64` and `VC.Tools.ARM64`):
+  `make windows-toolchain` installs exactly those.
+- Network access on first build (python.org's index and packages, the
+  libarchive asset, and wheels when cross-compiling; cached afterward).
 
 ---
 

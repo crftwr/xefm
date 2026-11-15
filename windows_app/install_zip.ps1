@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     The Windows counterpart of `make install-macos-dmg`: it installs the exact
-    artifact end users download (windows_app\build\XeFM-<version>-win64.zip,
+    artifact end users download (windows_app\build\XeFM-<version>-win-<arch>.zip,
     produced by build.ps1 -Zip) rather than copying windows_app\build\XeFM\
     directly. Expanding the real zip is what catches a truncated or incomplete
     archive here, instead of leaving it for the first person to download it.
@@ -33,10 +33,13 @@
 #>
 [CmdletBinding()]
 param(
-    # Defaults (in the body, not here) to windows_app\build\XeFM-<version>-win64.zip.
+    # Defaults (in the body, not here) to windows_app\build\XeFM-<version>-win-<arch>.zip,
+    # for -Arch, or else this machine's architecture.
     # $PSScriptRoot is not reliably populated in a param default under
     # 'powershell -File' — the form the Makefile uses — so it is resolved below.
     [string]$Zip,
+    [ValidateSet('', 'x64', 'arm64')]
+    [string]$Arch,
     # Defaults (in the body) to %LOCALAPPDATA%\Programs\XeFM.
     [string]$InstallDir,
     [switch]$Uninstall                                    # remove the install, no zip needed
@@ -85,11 +88,18 @@ if (-not $Zip) {
     $m = Select-String -Path $init -Pattern '^__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
     if (-not $m) { Fail "Could not read __version__ from $init" }
     $version = $m.Matches[0].Groups[1].Value
-    $Zip = Join-Path $ScriptDir "build\XeFM-$version-win64.zip"
+    if (-not $Arch) {
+        # The OS's architecture, not this PowerShell's: an x64 one under
+        # emulation on Windows on Arm reports AMD64.
+        $native = $env:PROCESSOR_ARCHITEW6432
+        if (-not $native) { $native = $env:PROCESSOR_ARCHITECTURE }
+        $Arch = if ($native -eq 'ARM64') { 'arm64' } else { 'x64' }
+    }
+    $Zip = Join-Path $ScriptDir "build\XeFM-$version-win-$Arch.zip"
 }
 
 if (-not (Test-Path $Zip)) {
-    Fail "Zip not found: $Zip`nBuild it first with 'make windows-zip'."
+    Fail "Zip not found: $Zip`nBuild it first with 'make windows-zip ARCH=$Arch'."
 }
 
 $parent = Split-Path $InstallDir -Parent

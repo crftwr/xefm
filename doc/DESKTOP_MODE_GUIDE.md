@@ -56,12 +56,13 @@ make run-gui                    # the same thing, through .venv
 
 | Platform | Install | Signed? |
 |---|---|---|
-| Windows 10/11 x64 | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** (recommended) | Yes — signed by Microsoft |
-| Windows 10/11 x64 | `XeFM-<version>-win64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
+| Windows 10/11 (x64, ARM64) | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** (recommended) | Yes — signed by Microsoft |
+| Windows 10/11 x64 | `XeFM-<version>-win-x64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
+| Windows 10/11 ARM64 | `XeFM-<version>-win-arm64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
 | macOS 12+ (Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
 | macOS 12+ (Apple Silicon) | [Homebrew](#macos--homebrew): `brew install --cask crftwr/tap/xefm` (the same DMG) | Yes — Apple Developer ID |
 
-A stable release attaches the ready-to-run DMG and zip, but one that only
+A stable release attaches the ready-to-run DMG and zips, but one that only
 fixes a single platform may carry just that platform's build, so the newest zip
 or DMG can sit on an earlier tag. The
 [latest-release link](https://github.com/crftwr/xefm/releases/latest) always
@@ -128,8 +129,13 @@ Unlike the Store package, which Microsoft signs during certification, the zip
 on GitHub Releases is unsigned — which is what causes the warning handled
 below.
 
+There is one zip per processor: `-win-x64` for Intel and AMD PCs, `-win-arm64`
+for ARM PCs such as Snapdragon laptops. **Settings → System → About → System
+type** says which you have. The x64 zip also runs on an ARM PC, under emulation
+and more slowly. The Store picks the right one by itself.
+
 1. **Unblock the zip first.** Right-click the downloaded
-   `XeFM-<version>-win64.zip` → **Properties** → tick **Unblock** at the bottom
+   `XeFM-<version>-win-x64.zip` (or `-win-arm64.zip`) → **Properties** → tick **Unblock** at the bottom
    of the *General* tab → **OK**.
 
    Windows tags internet downloads with a *Mark of the Web*, and extracting a
@@ -137,7 +143,7 @@ below.
    extracting clears all of them in one step. From PowerShell, the equivalent is:
 
    ```powershell
-   Unblock-File .\XeFM-<version>-win64.zip
+   Unblock-File .\XeFM-<version>-win-x64.zip
    ```
 
 2. **Extract** the `XeFM` folder somewhere convenient:

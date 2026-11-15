@@ -174,18 +174,21 @@ def third_party_requirements(tests: bool = False, packages: str = "local") -> li
     return out
 
 
-def libarchive_pin() -> tuple[str, str, str]:
-    """(url, package name, sha256) of the Windows libarchive, read from
-    windows_app/build.ps1 so that the two never disagree."""
+def libarchive_pin(arch: str = "x64") -> tuple[str, str, str]:
+    """(url, package name, sha256) of the Windows libarchive for *arch*
+    (x64 or arm64), read from windows_app/build.ps1 so that the two never
+    disagree. x64 by default: a guest's Python is x64, emulated on an ARM64
+    host, and the DLL has to match the Python rather than the machine."""
     script = (ROOT / "windows_app" / "build.ps1").read_text(encoding="utf-8")
-
-    def value(name):
-        found = re.search(rf"^\${name}\s*=\s*'([^']+)'", script, re.M)
-        if not found:
-            raise SystemExit(f"windows_app/build.ps1 no longer sets ${name}")
-        return found.group(1)
-
-    tag, package, sha = value("LibarchiveTag"), value("LibarchivePkgName"), value("LibarchiveSha256")
+    pin = re.search(rf"^\s*{arch}\s*=\s*@\{{\s*Tag\s*=\s*'([^']+)';\s*Sha256\s*=\s*'([^']+)'",
+                    script, re.M)
+    if not pin:
+        raise SystemExit(f"windows_app/build.ps1 no longer pins libarchive for {arch} in $LibarchivePins")
+    name = re.search(r'^\$LibarchivePkgName\s*=\s*"([^"]+)"', script, re.M)
+    if not name:
+        raise SystemExit("windows_app/build.ps1 no longer sets $LibarchivePkgName")
+    tag, sha = pin.groups()
+    package = name.group(1).replace("$Arch", arch)
     url = f"https://github.com/crftwr/xefm-bin-deps/releases/download/{tag}/{package}.zip"
     return url, package, sha
 
