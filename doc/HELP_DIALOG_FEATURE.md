@@ -97,8 +97,17 @@ KEY_BINDINGS = {
 ## About dialog
 
 Separate from the help dialog, the **About** dialog shows XeFM's name, version
-number, and GitHub repository URL as a clickable link. Open it from the menu
-bar, under **Help → About XeFM**, on every platform.
+number, the Python it runs on, and GitHub repository URL as a clickable link.
+Open it from the menu bar, under **Help → About XeFM**, on every platform.
+
+The Python line gives the version and whether the GIL is off:
+
+- `Python 3.15.2 (free-threaded, GIL off)`: a free-threaded Python, with
+  threads running in parallel.
+- `Python 3.15.2 (free-threaded build, GIL on)`: a free-threaded Python that
+  turned the GIL back on, because an extension module does not support running
+  without it, or because `PYTHON_GIL=1` is set.
+- `Python 3.14.10 (GIL on)`: a regular Python.
 
 Close it with the OK button, or by pressing Enter, Space or ESC. Under a color
 theme that carries a text effect (Sci-Fi) the text decodes into place as the box

@@ -115,7 +115,7 @@ help:
 	@echo "(run 'make venv' first if .venv does not exist)"
 	@echo ""
 	@echo "Available commands:"
-	@echo "  venv           - Create .venv using the latest python3 in PATH, with runtime + test deps"
+	@echo "  venv           - Create .venv on the latest python3 in PATH (free-threaded when there is one; FREE_THREADED=0 for the regular build), with runtime + test deps"
 	@echo "  clean-venv     - Remove the .venv directory"
 	@echo "  install-puikit - (Re)install PuiKit: editable if PUIKIT_DIR set, else from PyPI"
 	@echo "  run            - Run XeFM (terminal); LEFT=/RIGHT= set startup dirs"
@@ -216,6 +216,14 @@ help:
 	@echo "  make release-windows-zip        # Upload the Windows zip to the GitHub Release"
 	@echo "  make release-windows-msix       # Submit the MSIX to the Microsoft Store"
 
+# The desktop apps ship a free-threaded Python (GIL off), and macos_app/build.sh
+# bundles the framework .venv was made from, so the newest Python's
+# free-threaded build (python3.NNt) wins over its regular one when both are
+# installed. FREE_THREADED=0 picks the regular build. Between two of the same
+# kind, a macOS framework build (python.org's) wins over a standalone one (uv's
+# in ~/.local/bin), since the app bundles the framework.
+FREE_THREADED ?= 1
+
 venv:
 	@if [ -d .venv ]; then \
 		echo ".venv already exists. Run 'make clean-venv' first to recreate it."; \
@@ -236,15 +244,21 @@ ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S))$(findstring 
 		echo "Error: 'py' did not report a Python interpreter."; \
 		exit 1; \
 	fi; \
+	if [ "$(FREE_THREADED)" != "0" ]; then \
+		ver=$$("$$best" -c "import sys; print('%d.%d' % sys.version_info[:2])" | tr -d '\r'); \
+		ft=$$(cmd //c py -$${ver}t -c "import sys; print(sys.executable)" 2>/dev/null | tr -d '\r'); \
+		if [ -n "$$ft" ] && [ -x "$$ft" ]; then best=$$ft; \
+		else echo "No free-threaded Python $$ver found; using the regular build"; fi; \
+	fi; \
 	echo "Using $$best ($$("$$best" --version 2>&1)) to create .venv..."; \
 	"$$best" -m venv .venv
 else
 	@echo "Searching for the latest python3 in PATH..."
 	@best=""; best_key=0; \
 	for dir in $$(echo "$$PATH" | tr ':' '\n'); do \
-		for py in "$$dir"/python3.[0-9] "$$dir"/python3.[0-9][0-9]; do \
+		for py in "$$dir"/python3.[0-9] "$$dir"/python3.[0-9][0-9] "$$dir"/python3.[0-9]t "$$dir"/python3.[0-9][0-9]t; do \
 			[ -x "$$py" ] || continue; \
-			key=$$("$$py" -c 'import sys; print(sys.version_info[0]*100 + sys.version_info[1])' 2>/dev/null) || continue; \
+			key=$$("$$py" -c 'import sys, sysconfig; ft = bool(sysconfig.get_config_var("Py_GIL_DISABLED")); print(((sys.version_info[0]*100 + sys.version_info[1]) * 2 + (ft if "$(FREE_THREADED)" != "0" else 1 - ft)) * 2 + bool(sysconfig.get_config_var("PYTHONFRAMEWORK")))' 2>/dev/null) || continue; \
 			if [ -n "$$key" ] && [ "$$key" -gt "$$best_key" ]; then \
 				best_key=$$key; best="$$py"; \
 			fi; \
