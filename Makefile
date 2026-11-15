@@ -248,7 +248,8 @@ ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S))$(findstring 
 		ver=$$("$$best" -c "import sys; print('%d.%d' % sys.version_info[:2])" | tr -d '\r'); \
 		ft=$$(cmd //c py -$${ver}t -c "import sys; print(sys.executable)" 2>/dev/null | tr -d '\r'); \
 		if [ -n "$$ft" ] && [ -x "$$ft" ]; then best=$$ft; \
-		else echo "No free-threaded Python $$ver found; using the regular build"; fi; \
+		else echo "No free-threaded Python $$ver found; using the regular build"; \
+			echo "  (install it with 'py install $${ver}t', then 'make clean-venv' and 'make venv')"; fi; \
 	fi; \
 	echo "Using $$best ($$("$$best" --version 2>&1)) to create .venv..."; \
 	"$$best" -m venv .venv

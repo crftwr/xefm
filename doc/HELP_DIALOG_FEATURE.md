@@ -100,14 +100,16 @@ Separate from the help dialog, the **About** dialog shows XeFM's name, version
 number, the Python it runs on, and GitHub repository URL as a clickable link.
 Open it from the menu bar, under **Help → About XeFM**, on every platform.
 
-The Python line gives the version and whether the GIL is off:
+The Python line gives the version, the CPU architecture the Python was built
+for (`x64`, `arm64` or `x86`; an x64 Python running emulated on an ARM machine
+says `x64`), and whether the GIL is off:
 
-- `Python 3.15.2 (free-threaded, GIL off)`: a free-threaded Python, with
+- `Python 3.15.2 arm64 (free-threaded, GIL off)`: a free-threaded Python, with
   threads running in parallel.
-- `Python 3.15.2 (free-threaded build, GIL on)`: a free-threaded Python that
+- `Python 3.15.2 x64 (free-threaded build, GIL on)`: a free-threaded Python that
   turned the GIL back on, because an extension module does not support running
   without it, or because `PYTHON_GIL=1` is set.
-- `Python 3.14.10 (GIL on)`: a regular Python.
+- `Python 3.14.10 x64 (GIL on)`: a regular Python.
 
 Close it with the OK button, or by pressing Enter, Space or ESC. Under a color
 theme that carries a text effect (Sci-Fi) the text decodes into place as the box
