@@ -51,6 +51,11 @@ from puikit.panel import DrawContext
 #: before that it always said False and every move had to redraw.
 _MOVE_TELLS_REDRAW = hasattr(DrawContext, "pointer_in")
 
+#: Starting a status poller and a poller deciding to end take this lock, so a
+#: poller on its way out is never taken for one still watching (no GIL keeps
+#: the check and the exit together).
+_POLLER_LOCK = threading.Lock()
+
 
 def _set_shader_cache_dir(path) -> None:
     """PuiKit's set_shader_cache_dir, where PuiKit has it (older ones keep
@@ -2534,9 +2539,14 @@ class XeFMApp:
         """On the UI thread: refuse a package that failed, or show what it adds
         and install it on Install."""
         from xefm import extensions as _ext
-        outcome, self._ext_fetch_done = self._ext_fetch_done, None
+        # Read, then clear only what was read: a swap could clear an outcome
+        # the worker stored between its load and its store (no GIL to keep the
+        # two together), and the busy flag would stay set for good. One
+        # worker runs per busy spell, so nothing lands after the read.
+        outcome = self._ext_fetch_done
         if outcome is None:
             return False
+        self._ext_fetch_done = None
         self._ext_fetch_busy = False
         if isinstance(outcome, (_ext.InstallError, _ext.ManifestError, OSError)):
             self.log_info(f"Install Extension: {outcome}")
@@ -2659,9 +2669,10 @@ class XeFMApp:
     def _pump_extension_updates(self) -> bool:
         """On the UI thread: show what a check found, or report an upgrade
         and reload the config so the new versions load."""
-        done, self._ext_updates_done = self._ext_updates_done, None
+        done = self._ext_updates_done          # read, then clear (_pump_extension_fetch)
         if done is None:
             return False
+        self._ext_updates_done = None
         self._ext_updates_busy = False
         stage, outcome = done
         if stage == "upgraded":
@@ -2775,9 +2786,10 @@ class XeFMApp:
         """On the UI thread: report a finished sync and reload the config, so a
         config.py import that failed for want of a package gets another try."""
         from xefm import python_packages
-        outcome, self._python_packages_done = self._python_packages_done, None
+        outcome = self._python_packages_done   # read, then clear (_pump_extension_fetch)
         if outcome is None:
             return False
+        self._python_packages_done = None
         self._python_packages_syncing = False
         if isinstance(outcome, python_packages.SyncError):
             self.log_info(f"Sync Python Packages failed: {outcome}")
@@ -7147,22 +7159,28 @@ class XeFMApp:
         """A daemon thread that re-reads the scans every two seconds while one
         runs, and wakes the UI only when something changed. It ends with the
         last running scan."""
-        poller = self._scan_poller
-        if poller is not None and poller.is_alive():
-            return
+        with _POLLER_LOCK:
+            poller = self._scan_poller
+            if poller is not None and poller.is_alive():
+                return
 
-        def poll() -> None:
-            while True:
-                time.sleep(2.0)
-                self._scans_dirty = True
-                self._wake_pump()
-                if not any(st in (similar_scan.RUNNING, similar_scan.STARTING)
-                           for _j, st, _t in self._scan_rows):
-                    return
+            def poll() -> None:
+                while True:
+                    time.sleep(2.0)
+                    self._scans_dirty = True
+                    self._wake_pump()
+                    # Decided under the lock this method starts pollers under:
+                    # a poller still alive but on its way out would otherwise
+                    # be taken for the one watching a scan just started.
+                    with _POLLER_LOCK:
+                        if not any(st in (similar_scan.RUNNING, similar_scan.STARTING)
+                                   for _j, st, _t in self._scan_rows):
+                            self._scan_poller = None
+                            return
 
-        self._scan_poller = threading.Thread(target=poll, name="xefm-scan-poll",
-                                             daemon=True)
-        self._scan_poller.start()
+            self._scan_poller = threading.Thread(target=poll, name="xefm-scan-poll",
+                                                 daemon=True)
+            self._scan_poller.start()
 
     def _pump_scans(self) -> bool:
         """On the UI thread, from the pump: refresh the scans when the poller
@@ -8899,9 +8917,14 @@ class XeFMApp:
         """While a pane shows a provisional ``.xft`` tree, look at the file
         every two seconds and re-read the pane when a producer has rewritten
         it. The poller ends once no pane shows a provisional tree."""
-        poller = self._xft_poller
-        if poller is not None and poller.is_alive():
-            return
+        with _POLLER_LOCK:
+            poller = self._xft_poller
+            if poller is not None and poller.is_alive():
+                return
+            self._start_xft_poller()
+
+    def _start_xft_poller(self) -> None:
+        """Start _watch_xft's poller (under _POLLER_LOCK)."""
 
         def provisional_files() -> set:
             files = set()
@@ -8920,7 +8943,10 @@ class XeFMApp:
             stamps = {}
             while True:
                 time.sleep(2.0)
-                files = provisional_files()
+                with _POLLER_LOCK:               # as the scan poller (_ensure_scan_poller)
+                    files = provisional_files()
+                    if not files:
+                        self._xft_poller = None
                 if not files:
                     self._xft_dirty = True
                     self._wake_pump()

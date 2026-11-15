@@ -110,13 +110,15 @@ class ProgressManager:
         if not self.current_operation:
             return
 
-        self.current_operation['total_items'] = total_items
-        if description:
-            self.current_operation['description'] = description
-        self.current_operation['total_bytes'] = max(0, int(total_bytes))
-
-        # Mark counting as complete
-        self.current_operation['counting'] = False
+        # Under the lock the per-item updates take, so the totals and the end
+        # of counting land together.
+        with self._lock:
+            self.current_operation['total_items'] = total_items
+            if description:
+                self.current_operation['description'] = description
+            self.current_operation['total_bytes'] = max(0, int(total_bytes))
+            # Mark counting as complete
+            self.current_operation['counting'] = False
 
         # Trigger callback to update display
         self._trigger_callback_if_needed(force=True)

@@ -304,6 +304,7 @@ class SSHCache:
 
 # Global SSH cache instance
 _ssh_cache = None
+_ssh_cache_lock = threading.Lock()
 
 
 def get_ssh_cache() -> SSHCache:
@@ -315,16 +316,20 @@ def get_ssh_cache() -> SSHCache:
     """
     global _ssh_cache
     if _ssh_cache is None:
-        # Get TTL from configuration
-        try:
-            from xefm.config import get_config
-            config = get_config()
-            ttl = config.SSH_CACHE_TTL
-            error_ttl = config.SSH_CACHE_ERROR_TTL
-        except (ImportError, Exception):
-            ttl = 30  # Fallback to default
-            error_ttl = 300  # Fallback to 5 minutes for errors
-        
-        _ssh_cache = SSHCache(default_ttl=ttl, error_ttl=error_ttl)
-    
+        # Double-checked: two threads making their first call at once
+        # would each build one, and a holder of the other would miss
+        # the invalidations sent to this one.
+        with _ssh_cache_lock:
+            if _ssh_cache is None:
+                # Get TTL from configuration
+                try:
+                    from xefm.config import get_config
+                    config = get_config()
+                    ttl = config.SSH_CACHE_TTL
+                    error_ttl = config.SSH_CACHE_ERROR_TTL
+                except (ImportError, Exception):
+                    ttl = 30  # Fallback to default
+                    error_ttl = 300  # Fallback to 5 minutes for errors
+
+                _ssh_cache = SSHCache(default_ttl=ttl, error_ttl=error_ttl)
     return _ssh_cache

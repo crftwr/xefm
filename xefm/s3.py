@@ -188,6 +188,7 @@ class S3Cache:
 
 # Global S3 cache instance
 _s3_cache = None
+_s3_cache_lock = threading.Lock()
 
 #: The shared boto3 S3 clients, keyed by the region they are bound to — ``None``
 #: meaning "whichever region the session resolves". One client per region, and
@@ -325,20 +326,25 @@ def get_s3_cache() -> S3Cache:
     """Get or create the global S3 cache instance"""
     global _s3_cache
     if _s3_cache is None:
-        # Get TTL from configuration
-        try:
-            from .xefm.config import get_config
-            config = get_config()
-            ttl = config.S3_CACHE_TTL
-        except ImportError:
-            try:
-                from xefm.config import get_config
-                config = get_config()
-                ttl = config.S3_CACHE_TTL
-            except (ImportError, Exception):
-                ttl = 60  # Fallback to default
-        
-        _s3_cache = S3Cache(default_ttl=ttl)
+        # Double-checked: two threads making their first call at once
+        # would each build one, and a holder of the other would miss
+        # the invalidations sent to this one.
+        with _s3_cache_lock:
+            if _s3_cache is None:
+                # Get TTL from configuration
+                try:
+                    from .xefm.config import get_config
+                    config = get_config()
+                    ttl = config.S3_CACHE_TTL
+                except ImportError:
+                    try:
+                        from xefm.config import get_config
+                        config = get_config()
+                        ttl = config.S3_CACHE_TTL
+                    except (ImportError, Exception):
+                        ttl = 60  # Fallback to default
+
+                _s3_cache = S3Cache(default_ttl=ttl)
     return _s3_cache
 
 
@@ -1233,10 +1239,12 @@ class S3PathImpl(PathImpl):
 
         def report(chunk_bytes):
             nonlocal transferred
+            # Reported under the lock too: the manager works out a delta from
+            # the absolute value, and a late, smaller one from another thread
+            # would step the bar back.
             with lock:
                 transferred += chunk_bytes
-                so_far = transferred
-            progress_callback(so_far, total_bytes)
+                progress_callback(transferred, total_bytes)
 
         # Show an empty bar right away rather than after the first chunk lands
         progress_callback(0, total_bytes)
