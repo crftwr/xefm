@@ -5993,7 +5993,8 @@ class XeFMApp:
             command = _subshell_command(self.config)
             view = self._console = ConsoleView(
                 command, cwd=cwd, env=self._console_env(),
-                on_hide=self._hide_console, action_bound=self._console_bound)
+                on_hide=self._hide_console, action_bound=self._console_bound,
+                on_exited=self._console_exited)
             self.log_info(f"Console in {cwd} - "
                           f"{self._menu_shortcut('console') or 'F12'} "
                           "returns to the panes")
@@ -6006,16 +6007,36 @@ class XeFMApp:
         from xefm.embedded_console import ConsoleView
         view = ConsoleView(argv, cwd=cwd or os.path.expanduser("~"), env=env,
                            on_hide=self._hide_console, action_bound=self._console_bound,
-                           one_shot=True, label=label)
+                           on_exited=self._console_exited, one_shot=True, label=label)
         self.log_info(f"Running in the console: {label}")
         self._push_console(view)
 
     def _push_console(self, view) -> None:
         from puikit.panel import Rect
+        from xefm.text_viewer import viewer_layer_hints
         self.panel.remove_layer(view)
-        self.panel.push_layer(view, z=self._CONSOLE_Z,
+        # The viewers' hints: the console covers the panes and paints the
+        # content surface itself, so over an animated background it leaves
+        # its page unpainted and the scene shows through (ctx.wallpaper).
+        sw, sh = self.panel.backend.size_units
+        self.panel.push_layer(view, z=self._CONSOLE_Z, hints=viewer_layer_hints(sw, sh),
                               reflow=lambda sw, sh: Rect(0, 0, sw, sh))
         self.panel.render()
+
+    def _console_exited(self, view, code) -> None:
+        """The process a console started has exited: close the console and
+        return to the panes. The persistent shell is dropped with it, so the
+        next console starts a fresh one. A program that failed stays on
+        screen with its exit bar, so its last output can be read — the TUI's
+        ``pause_on_error`` — and Enter closes it."""
+        if getattr(view, "one_shot", False) and code not in (0, None):
+            self.log_info(f"{view.label} exited with code {code} - press Enter to return")
+            return
+        if view is getattr(self, "_console", None):
+            self._console = None
+            self.log_info("Console shell exited")
+            view.one_shot = True  # closed for good, like a program's console
+        self._hide_console(view)
 
     def _hide_console(self, view) -> None:
         """Put a console away. A one-shot one is closed for good (its child is

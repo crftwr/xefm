@@ -50,14 +50,19 @@ class ConsoleView(_Base):  # type: ignore[misc,valid-type]
     the program inside, so it has to be one a shell does not need. With the
     action unbound (the default while this is a prototype, so no preset loses
     a key to it) F12 does, inside the console only; ``action_bound`` tells
-    which. ``one_shot`` is a program run on the user's behalf: once it exits,
-    Enter or Escape closes the layer instead of restarting it."""
+    which. When the child the console started exits, ``on_exited`` gets the
+    view and the exit code; the app closes the console and returns to the
+    panes. ``one_shot`` marks a program run on the user's behalf rather than
+    the persistent shell; if it is left on screen (a failure the user should
+    read), Enter or Escape closes it."""
 
     def __init__(self, argv: list[str], *, cwd: str, env: dict,
                  on_hide: Callable[["ConsoleView"], None],
                  action_bound: Callable[[], bool],
+                 on_exited: Callable[["ConsoleView", int | None], None] | None = None,
                  one_shot: bool = False, label: str = "") -> None:
-        super().__init__(argv, cwd=cwd, env=env)
+        super().__init__(argv, cwd=cwd, env=env,
+                         on_exit=(lambda code: on_exited(self, code)) if on_exited else None)
         self.on_hide = on_hide
         self.action_bound = action_bound
         self.one_shot = one_shot
