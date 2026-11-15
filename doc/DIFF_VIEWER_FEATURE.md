@@ -128,20 +128,20 @@ the same rule the copy conflict dialog's **Overwrite older** uses.
 | `copy_files` | Copy the focused item to the other side |
 | `move_files` | Move the focused item to the other side |
 | `delete_files` | Delete the focused item (on the active side) |
-| `edit_file` | Merge the two sides in your configured `TEXT_DIFF` tool |
+| `edit_files` | Merge the two sides in your configured `TEXT_DIFF` tool |
 | `s` | Sync: plan copying from the active side, then press again to run — see [Directory Sync](DIRECTORY_SYNC_FEATURE.md) |
 | `d` | Show only the differences, or everything |
 | `r` | Rescan |
 | `Esc`, or `quit` | Close the viewer |
 
 The rows that name an action (`copy_files`, `move_files`, `delete_files`,
-`edit_file`, `quit`) use that action's keys from the file list, so they depend
+`edit_files`, `quit`) use that action's keys from the file list, so they depend
 on your keymap preset — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 The other keys are the same in every preset.
 
 The copy / move / delete keys mirror the main file manager's and run through the
 same file-operation engine, so you can reconcile the two trees in place.
-`edit_file` launches the external tool set in `TEXT_DIFF` (for example `vimdiff` in a
+`edit_files` launches the external tool set in `TEXT_DIFF` (for example `vimdiff` in a
 terminal, or `code --diff` in the desktop app).
 
 ## Notes
@@ -150,7 +150,7 @@ terminal, or `code --diff` in the desktop app).
 - Files are read as UTF-8, falling back to Latin-1 then CP1252. A file is
   treated as binary when its first bytes contain a NUL; XeFM keeps no list of
   binary extensions.
-- `edit_file` still launches your `TEXT_DIFF` tool on any pair, so a binary-capable tool
+- `edit_files` still launches your `TEXT_DIFF` tool on any pair, so a binary-capable tool
   can be used explicitly.
 - The keys of `diff_files` and `diff_directories`, and the file-operation keys
   inside the directory diff, are all rebindable in your config's `KEY_BINDINGS`.

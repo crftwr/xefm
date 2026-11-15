@@ -33,7 +33,7 @@ def own_bindings() -> dict:
         "command_palette": ["Ctrl-Shift-P"],   # TC has none; Ctrl-T is tabs
         # Files
         "view_file": ["F3"],
-        "edit_file": ["F4"],
+        "edit_files": ["F4"],
         "create_file": ["Shift-F4"],
         "copy_files": ["F5"],
         "duplicate_files": ["Shift-F5"],        # TC: copy with rename, same dir

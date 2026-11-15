@@ -48,7 +48,7 @@ _BINDINGS = {
     "view_file": ["e", "F3"],
     "open_with_os": ["g x"],                   # Vim's gx; Ctrl-O goes back here
     "diff_files": [],                          # '=' filters here
-    "edit_file": ["F4"],
+    "edit_files": ["F4"],
     "copy_files": ["F5"],
     "move_files": ["F6"],
     "create_directory": ["F7"],

@@ -64,7 +64,8 @@ def bindings() -> dict:
         'cursor_top': ['Ctrl-HOME'],           # Move cursor to the first item
         'cursor_bottom': ['Ctrl-END'],         # Move cursor to the last item
         'open_item': ['ENTER'],                # Open file/directory or enter directory
-        'open_with_os': ['Ctrl-O'],            # Open file(s) with OS default application (desktop adds Cmd/Ctrl-ENTER)
+        'open_with_os': ['Ctrl-O'],            # Open the focused file with OS default application (desktop adds Cmd/Ctrl-ENTER)
+        'open_items_with_os': [],              # Open the selected items, each with its application
         'reveal_in_os': ['Ctrl-R'],            # Reveal focused file in OS file manager
         'go_parent': ['BACKSPACE'],            # Go to parent directory
         'go_root': ['\\'],                     # Go to the root of the current drive/location
@@ -140,8 +141,14 @@ def bindings() -> dict:
         
         # === File Viewing & Editing ===
         'view_file': [],                       # View file using configured viewer
+        'view_files': [],                      # View the selected files, each with its viewer
         'quick_view': [],                      # Preview the cursor item in the other pane (again to close)
-        'edit_file': [],                       # Edit selected file with configured text editor (also inside the text viewer)
+        # The edit key belongs to 'edit_files': the selection, or the cursor's
+        # file when nothing is selected. Every viewer understands it too (the
+        # text viewer edits the viewed file, the diff viewers merge).
+        # 'edit_file' edits the cursor's file alone and is unbound.
+        'edit_files': [],                      # Edit selected files with configured text editor (also inside the viewers)
+        'edit_file': [],                       # Edit only the focused file
         'file_details': [],                    # Show detailed file information dialog
         
         # === File Comparison ===
@@ -224,7 +231,7 @@ def bindings() -> dict:
         # letters -- 'W' with 'compare_selection', 'M' with 'move_files' /
         # 'create_directory', 'Shift-E' with 'create_file'. The two surfaces never
         # apply at once, and each only ever looks at its own context's actions, so
-        # a shared key is never ambiguous. 'edit_file' works inside the text
+        # a shared key is never ambiguous. 'edit_files' works inside the text
         # viewer too, editing the viewed file.
         'toggle_wrap': ['W'],                  # Toggle line wrapping
         'toggle_view_mode': ['M'],             # Toggle rendered (Markdown) / raw text
@@ -317,7 +324,7 @@ def bindings() -> dict:
         # 'text_viewer.page_up': ['B'],
         #
         # The same prefix also scopes a *shared* action to one viewer. 'quit',
-        # 'help', 'isearch' and 'edit_file' are understood everywhere, so rebinding
+        # 'help', 'isearch' and 'edit_files' are understood everywhere, so rebinding
         # 'quit' above changes it in the file list and in every viewer; writing
         # 'file_diff.quit' changes it in the file diff viewer alone:
         # 'file_diff.quit': ['X'],

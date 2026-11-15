@@ -69,10 +69,16 @@ Each file pattern can configure up to four actions:
 
 | Action | Run by | What it does | Value |
 |---|---|---|---|
-| **enter** | `open_item` (`Enter`) | Casual open — handled **inside XeFM** | A built-in handler name |
-| **open** | `open_with_os` | Deliberate open — hands off to another app | A command |
-| **view** | `view_file` | View the file | A command |
-| **edit** | `edit_file` | Edit the file | A command |
+| **enter** | `open_item` (`Enter`) | Casual open — handled **inside XeFM** | A built-in handler name, or an XeFM action |
+| **open** | `open_with_os`, `open_items_with_os` | Deliberate open — hands off to another app | A command, or an XeFM action |
+| **view** | `view_file`, `view_files` | View the file | A command, or an XeFM action |
+| **edit** | `edit_file`, `edit_files` | Edit the file | A command, or an XeFM action |
+
+Each of open, view and edit has two actions: one for the file under the
+cursor (`open_with_os`, `view_file`, `edit_file`) and one for the
+selection, or the file under the cursor when nothing is selected
+(`open_items_with_os`, `view_files`, `edit_files`). Both read the same rule;
+with several files, each goes where its own rule sends it.
 
 Keys depend on your keymap preset — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
@@ -109,6 +115,53 @@ handler** rather than a program to launch:
     'open':  ['open', '-a', 'Numbers'],   # open_with_os -> Numbers
 }
 ```
+
+The `enter` value can also name an XeFM action. See the next section.
+
+### Running an XeFM action
+
+Any of the four can run an **XeFM action** instead: a named command of the
+kind keys, menus and the command palette run. It can be one of XeFM's own,
+one from your `ACTIONS`, or one an [extension](EXTENSIONS_FEATURE.md) adds.
+Write it as `{'action': '<name>'}`, in every verb. The dict form leaves
+room for more keys later, and keeps an action apart from a command line or a
+handler name.
+
+For example, with the
+[os-preview](https://github.com/crftwr/xefm-extensions/tree/main/os-preview)
+extension installed, Enter on a video shows it in Quick Look instead of
+reporting that XeFM has no built-in viewer for it:
+
+```python
+{
+    'pattern': ['*.mp4', '*.mov', '*.mp3', '*.m4a'],
+    'enter': {'action': 'preview.show'},      # Enter -> Quick Look
+    'open': ['open', '-a', 'QuickTime Player'],
+},
+{
+    'pattern': ['*.docx', '*.xlsx', '*.pptx'],
+    'view': {'action': 'preview.show'},       # view_file -> Quick Look
+},
+```
+
+- The action acts on the files whose rule names it, and only those. From
+  `enter`, `open_with_os`, `view_file` and `edit_file` that is the file
+  under the cursor, even when other files are selected. From
+  `open_items_with_os`, `view_files` and `edit_files` it is the selected files
+  whose rule names it; the others go where their own rules send them, as
+  with commands.
+- A bare string keeps its meaning: a built-in handler in `enter`, a command
+  line in `open`, `view` and `edit`. An action can share a program's name
+  (`rename`), which is why it is always written as a dict.
+- A name that is not an action (a typo, or an extension that is not loaded)
+  is ignored with a warning in the log, and the rule reads as absent: Enter
+  opens the viewer, `edit_file` falls back to `TEXT_EDITOR`, and so on.
+- The actions that read `FILE_ASSOCIATIONS` themselves (`open_item`,
+  `open_with_os`, `open_items_with_os`, `view_file`, `view_files`,
+  `edit_file`, `edit_files`) cannot be named. They could end up running
+  each other round and round.
+- Action names are listed in the command palette and on
+  [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
 ### Command Formats
 
@@ -330,7 +383,8 @@ Enter uses the **enter** action. It never launches an external program.
    rule matches them
 3. For any other file, checks associations for an 'enter' handler
 4. `'viewer'` opens the built-in viewer; `'navigate'` browses the file as an
-   archive; `'list'` opens it as a file list; `None` does nothing
+   archive; `'list'` opens it as a file list; an XeFM action's name runs that
+   action ([Running an XeFM action](#running-an-xefm-action)); `None` does nothing
 5. With no rule, opens the built-in viewer
 6. Unless XeFM has no built-in way to show the file — a PNG, say — in which case
    it logs a warning naming the key bound to `open_with_os`, rather than
@@ -357,34 +411,47 @@ one such rule, for packages like `.jar`, `.apk` and `.whl` (see
 `open_with_os` uses the **open** action.
 
 **Behavior**:
-1. Checks associations for an 'open' command
+1. Checks associations for an 'open' command, or an XeFM action to run
 2. If found, launches it — handing over the display first in terminal mode,
    detaching it in desktop mode (see [Terminal Programs](#terminal-programs))
 3. If explicitly `None`, nothing is launched (this is how you stop a file type
    from ever being handed to the OS)
 4. Otherwise falls back to the OS default app (`open` / `xdg-open` / `start`)
 
+`open_items_with_os` does the same for every selected item (or the item under
+the cursor). Items whose rule names the same program open in one launch.
+More than 10 items ask before anything opens.
+
 #### view_file - View File
 When you run `view_file` (**File → Open With ▸ Viewer**) on a file, XeFM uses the **view** action from file associations.
 
 **Behavior**:
 1. Checks file associations for 'view' action
-2. If found, launches the configured viewer
+2. If found, launches the configured viewer, or runs the configured XeFM action
 3. If explicitly `None`, opens the built-in text viewer
 4. If not found, opens the built-in text viewer (binaries show a placeholder)
 
 Remote and in-archive files always use the built-in viewer — an external
 program has no path on disk it could open.
 
-#### edit_file - Edit File
-When you run `edit_file` (**File → Open With ▸ Text Editor**), XeFM edits the selected files — or the focused file when
+`view_files` does the same for every selected file (or the file under the
+cursor). Files whose rule names the same program open in one launch. The
+built-in viewer shows one file at a time: of the files left for it, the first
+opens and the rest are named in the log.
+
+#### edit_files - Edit Files
+When you run `edit_files` (**File → Open With ▸ Text Editor**), XeFM edits the selected files — or the focused file when
 nothing is selected — using the **edit** action from file associations.
 
 **Behavior** (per file):
 1. Checks file associations for 'edit' action
-2. If found, launches the configured editor
+2. If found, launches the configured editor. A configured XeFM action runs once,
+   on the files that name it
 3. If explicitly `None`, reports that no editor is configured and stops
 4. If not found, falls back to the `TEXT_EDITOR` config setting
+
+`edit_file` does the same for the file under the cursor alone, whatever is
+selected.
 
 Files that resolve to the same program are passed to it in one launch
 (`vim a.txt b.txt`), so a multi-file edit is one editor session — a mixed

@@ -229,6 +229,68 @@ Commands can be specified in multiple formats:
 
 The `get_program_for_file()` function normalizes all formats to list format or `None`.
 
+### Actions as values
+
+A rule can run an XeFM action instead of a handler or a program, in any verb.
+The use that prompted it was os-preview: Enter on a video reported "No
+built-in viewer", and `'enter': {'action': 'preview.show'}` shows it in
+Quick Look.
+
+- **The form.** `{'action': name}` in every verb, and only that. A bare
+  string keeps its old meaning in each verb (a handler name in `enter`, a
+  command line elsewhere), so no existing config changes meaning, and an
+  action never collides with a program or handler of the same name (`rename`
+  is both an action and a program). The dict also leaves room for more keys
+  later; today any other key is refused. `get_program_for_file` already
+  returned `None` for a dict, so it needs no change.
+- **Resolution.** `_resolve_action()` in `xefm/config.py` looks the name up
+  with `actions.registry.canonical(FILER, name)`, which covers built-ins,
+  `ACTIONS` and extensions alike, and returns the current name (an alias
+  resolves). `get_builtin_handler_for_file()` returns it as the handler, and
+  the caller tells handlers from actions with `BUILTIN_HANDLERS` (no handler
+  name is an action name). `get_action_for_file()` answers for the other
+  verbs.
+- **Refusals.** An unknown name, a malformed dict, or one of `VERB_ACTIONS`
+  (`VERB_ACTIONS`: `open_item` and the open/view/edit actions) logs a warning and
+  reads as no rule, so the verb's default still runs. The verb actions are
+  refused as a set, not only each verb's own: an `enter` rule naming
+  `view_file` and a `view` rule naming `open_item` would loop between them.
+- **Running.** `_run_action_on(pane, name, entries)` runs it like its key
+  (`_run_action(FILER, name)`, through the user-action path when it is one),
+  with the pane's selection set to exactly the entries the rule resolved to
+  it: an action reads the selection first and falls back to the cursor only
+  when nothing is marked. That is the entry under the cursor for `enter`,
+  `open` and `view`, and one group of files for `edit_files`, which batches
+  actions per name as it batches commands per command line. The marks are
+  put back afterwards unless the action changed the selection itself.
+  `_enter_file` runs it after the `.savedSearch`/`.xft` special cases.
+
+### One body per verb, two scopes
+
+Open, view and edit each have an action for the entry under the cursor and
+one for the selection (or the cursor when nothing is selected):
+`open_with_os`/`open_items_with_os`, `view_file`/`view_files`,
+`edit_file`/`edit_files`. Each pair shares one body that takes a list of
+entries: `_open_entries`, `_view_entries`, `_edit_entries`. The body resolves
+every entry's rule and batches the result, so one entry and many go through
+the same code:
+
+- an action, batched per name, runs once through `_run_action_on` on its
+  files;
+- a command, batched per command line, launches once with all its files
+  (`_launch_associated`); a failed launch falls back to the verb's default;
+- the default: `_open_with_system` (macOS `open` takes every path in one
+  call; ShellExecute and `xdg-open` take one each), the built-in viewer, or
+  `TEXT_EDITOR`.
+
+The built-in viewer shows one file, so `_view_entries` opens the first of the
+files left for it (in listing order) and names the rest in the log. With
+several files, a remote or in-archive file goes straight to the built-in
+viewer instead of failing its command's whole batch; a single file keeps the
+old path, where `_launch_associated` logs why and falls back.
+`open_items_with_os` asks above `_OPEN_MANY` (10) items, since every item can
+start a program. All seven verb actions are in `VERB_ACTIONS`.
+
 ## Integration Points
 
 ### Configuration System
@@ -248,7 +310,7 @@ Four handlers in `xefm/app.py` consult associations, one per action:
 | `_enter_file()` (via `_open`) | `enter` | Built-in viewer |
 | `open_with_os()` | `open` | OS default app (`open`/`xdg-open`/`start`) |
 | `view_file()` | `view` | Built-in viewer |
-| `edit_file()` | `edit` | `TEXT_EDITOR` |
+| `edit_file()` / `edit_files()` | `edit` | `TEXT_EDITOR` |
 
 > **History**: these call sites were wired in the pre-PuiKit `xefm_main.py`
 > (commit `f2f60c51`), lost when that file was removed during the port, and
@@ -524,6 +586,8 @@ Support environment variable expansion in commands:
 def get_file_associations() -> dict
 def get_program_for_file(filename: str, action: str = 'open') -> list | None
 def has_action_for_file(filename: str, action: str = 'open') -> bool
+def get_builtin_handler_for_file(filename: str, action: str = 'enter') -> tuple[bool, str | None]
+def get_action_for_file(filename: str, action: str) -> str | None
 ```
 
 ### Configuration Attributes

@@ -1138,6 +1138,8 @@ class Config:
     #                             'list'     - open the file as a file list,
     #                                          one path per line (*.m3u8, ...)
     #                             None       - do nothing
+    #                           or the name of an action to run instead (see
+    #                           "Running an action" below).
     #                           With no rule, XeFM's default applies: directories
     #                           and archives are entered, files open in the
     #                           built-in viewer.
@@ -1160,6 +1162,19 @@ class Config:
     # 3. Commands: List ['open', '-a', 'Preview'] or string 'open -a Preview'
     # 4. None: Action not available -- except 'view': None, which selects the
     #    built-in viewer, and 'enter': None, which does nothing.
+    #
+    # Running an action: any of enter/open/view/edit can run an action instead
+    # -- a built-in one, one from ACTIONS, or an extension's -- written
+    # {'action': 'name'} in every verb (a bare string stays a handler name or
+    # a command line). It acts on the files whose rule names it: the one under
+    # the cursor, or the selected ones for open_items_with_os / view_files /
+    # edit_files. With the os-preview extension, Enter on a video shows it in
+    # Quick Look:
+    #     {'pattern': ['*.mp4', '*.mov'], 'enter': {'action': 'preview.show'}},
+    # The verb actions (open_item, open_with_os, open_items_with_os,
+    # view_file, view_files, edit_file, edit_files) read this table
+    # themselves and cannot be named; an unknown name is warned about and the
+    # rule reads as absent.
     #
     # You do NOT declare whether a program takes over the terminal. That follows
     # from the backend, not from the program: in terminal mode XeFM suspends and

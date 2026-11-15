@@ -309,7 +309,7 @@ KEY_BINDINGS = {
 
 Because each surface only looks at its own names, a viewer key may share a key
 with a file-list key with no conflict. The same prefix also scopes a *shared*
-action — `quit`, `help`, `isearch`, `edit_file` — to one viewer:
+action — `quit`, `help`, `isearch`, `edit_files` — to one viewer:
 `'file_diff.quit': ['X']` changes it there and nowhere else.
 
 The full list of viewer actions and their defaults is in

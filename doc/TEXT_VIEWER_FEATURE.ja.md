@@ -20,13 +20,13 @@ XeFM には、ソースコード、設定ファイル、ログ、その他あら
 | `isearch` | インクリメンタルサーチ。その後 `↑` / `↓` で一致箇所を移動 |
 | `toggle_view_mode` | 整形表示／生テキスト表示を切り替え（Markdown などのリッチな形式） |
 | `change_encoding` | テキストのエンコーディングを選択（Auto／明示的な指定） |
-| `edit_file` | 表示中のファイルを設定したエディターで編集 |
+| `edit_files` | 表示中のファイルを設定したエディターで編集 |
 | `Cmd`/`Ctrl` + `C` | 現在の選択範囲をコピー |
 | `Cmd`/`Ctrl` + `A` | ファイル全体を選択 |
 | `F1` | キーのヘルプ |
 | `quit` / `Esc` | ビューアーを閉じる |
 
-`isearch`、`edit_file`、`quit` のキーと、Vim style の追加のスクロールキーは、キーマッププリセットによって異なります。[キーマッププリセット](KEYMAP_PRESETS_FEATURE.ja.md#すべてのキーの一覧)を参照してください。
+`isearch`、`edit_files`、`quit` のキーと、Vim style の追加のスクロールキーは、キーマッププリセットによって異なります。[キーマッププリセット](KEYMAP_PRESETS_FEATURE.ja.md#すべてのキーの一覧)を参照してください。
 
 固定の `Esc` とコピー／すべて選択のキーを除き、ここにあるキーはすべてアクションで、設定の `KEY_BINDINGS` で割り当て直せます。スクロールキーもアクションです（`text_viewer.scroll_up`／`scroll_down`、`text_viewer.page_up`／`page_down`、`text_viewer.scroll_top`／`scroll_bottom`、`text_viewer.scroll_left`／`scroll_right`）。`KEY_BINDINGS` に書かなければ、矢印、ページ、Home、End のキーのままです。
 

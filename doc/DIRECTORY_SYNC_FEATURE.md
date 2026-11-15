@@ -51,7 +51,7 @@ Press `Space` on an item to move it to its next action:
 - **A directory on both sides**: skip it and everything inside it, or decide
   item by item (the default).
 
-While the plan is open, `Enter` still opens the file diff and `edit_file` still
+While the plan is open, `Enter` still opens the file diff and `edit_files` still
 opens your merge tool (its key depends on your keymap preset — see
 [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side)). After a merge, the comparison updates and that item's action
 is worked out again. Your other changes are kept.

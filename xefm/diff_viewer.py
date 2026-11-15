@@ -626,7 +626,7 @@ class DiffViewer(Widget):
         # Unbound under a preset that types ahead: say nothing then (#737).
         search_k = _label("isearch")
         search_seg = f"{search_k} search · " if search_k else ""
-        edit_k = _label("edit_file", "E")
+        edit_k = _label("edit_files", "E")
         quit_k = _label("quit", "q")
         # Block jumps and the horizontal pan are named from the live keymap like
         # the rest of the bar, so a rebind reads the same here as in the help
@@ -697,6 +697,7 @@ class DiffViewer(Widget):
                 "file_diff.search_next": lambda: self._enter_search(1),
                 "file_diff.search_prev": lambda: self._enter_search(-1),
                 "edit_file": self._edit_in_tool,
+                "edit_files": self._edit_in_tool,
                 "file_diff.next_block": lambda: self._step_block(1),
                 "file_diff.prev_block": lambda: self._step_block(-1),
                 "file_diff.scroll_down": lambda: self._scroll(1),
@@ -731,7 +732,7 @@ class DiffViewer(Widget):
             (_pair("file_diff.next_block", "file_diff.prev_block"),
              "next / prev diff block"),
             *_search_help_rows(_CONTEXT),
-            (_label("edit_file", "E"), "edit both sides in $TEXT_DIFF"),
+            (_label("edit_files", "E"), "edit both sides in $TEXT_DIFF"),
             ("Drag gutter", "move centre split"),
             (_label("help", "F1"), "this help"),
             (_label("quit", "q") + " / Esc", "close"),

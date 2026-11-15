@@ -1614,6 +1614,14 @@ def get_file_associations():
 #:   'list'     -- open the file as a file list, one path per line (m3u8, lst)
 BUILTIN_HANDLERS = ('viewer', 'navigate', 'list')
 
+#: The actions that read FILE_ASSOCIATIONS themselves: Enter, Open with OS,
+#: View and Edit. A rule naming one of them as its action could run it again,
+#: or run another that runs it back (an 'enter' rule naming view_file, and a
+#: 'view' rule naming open_item), round and round. Such a rule is ignored with
+#: a warning.
+VERB_ACTIONS = ('open_item', 'open_with_os', 'open_items_with_os', 'view_file',
+                'view_files', 'edit_file', 'edit_files')
+
 #: Entry keys that configure the entry itself rather than naming an action.
 #: 'terminal' is obsolete -- whether to hand over the display follows from
 #: the backend, not the config -- but stays reserved so a leftover key in a
@@ -1749,19 +1757,27 @@ def get_open_with_for_file(filename):
 
 
 def get_builtin_handler_for_file(filename, action='enter'):
-    """The built-in handler configured for the casual (Enter) open.
+    """The handler configured for the casual (Enter) open.
 
-    This is the inside-XeFM tier: the value names a handler XeFM implements, not
-    a program to launch. Kept separate from :func:`get_program_for_file`
-    because that function coerces bare strings into command lists, which would
-    silently turn the handler name 'viewer' into the command ``['viewer']``.
+    This is the inside-XeFM tier: the value names a handler XeFM implements, or
+    an action, not a program to launch. Kept separate from
+    :func:`get_program_for_file` because that function coerces bare strings
+    into command lists, which would silently turn the handler name 'viewer'
+    into the command ``['viewer']``.
+
+    An action is written ``{'action': 'preview.show'}``, as in every verb; a
+    bare string is only ever a handler name, so the two never collide. See
+    :func:`get_action_for_file`.
 
     Returns:
         ``(configured, handler)``. ``configured`` False means no rule matched,
         so the caller should apply its own default dispatch; ``(True, None)``
-        means a rule explicitly asked for nothing to happen. An unrecognised
-        handler name is warned about and treated as unconfigured, so a typo
-        falls back to sensible behavior instead of silently doing nothing.
+        means a rule explicitly asked for nothing to happen. ``handler`` is a
+        built-in handler's name or an action's current name; the caller tells
+        them apart by :data:`BUILTIN_HANDLERS`. A name that is neither is
+        warned about and treated as unconfigured, so a typo (or an extension
+        that is not loaded) falls back to sensible behavior instead of silently
+        doing nothing.
     """
     found, value, _entry = _lookup_action(filename, action)
     if not found:
@@ -1769,11 +1785,60 @@ def get_builtin_handler_for_file(filename, action='enter'):
     if value is None:
         return (True, None)
 
-    handler = str(value).strip().lower()
-    if handler not in BUILTIN_HANDLERS:
+    if not isinstance(value, dict):
+        handler = str(value).strip().lower()
+        if handler not in BUILTIN_HANDLERS:
+            logger.warning(
+                f"Unknown '{action}' handler {value!r} for {filename!r}; "
+                f"expected one of {', '.join(BUILTIN_HANDLERS)}, "
+                f"{{'action': '<name>'}} or None"
+            )
+            return (False, None)
+        return (True, handler)
+    name = _resolve_action(filename, action, value)
+    return (True, name) if name is not None else (False, None)
+
+
+def get_action_for_file(filename, action):
+    """The action a rule runs for a file and verb, or ``None``.
+
+    Any verb can run an action instead of a program:
+    ``'view': {'action': 'preview.show'}``. The name is a file-list action, a
+    built-in one or an extension's. It runs as its key would run it, on the
+    selection or the entry under the cursor. The dict marks it, because a bare
+    string in ``open``/``view``/``edit`` is a command line (``'open'``,
+    ``'code'``), and an action can share a program's name (``rename``).
+
+    ``None`` when no rule matches, when the rule is a program or ``None``, and
+    when the name is not an action or is one of :data:`VERB_ACTIONS` (warned
+    about): the caller then goes on as before, with the program or its
+    default.
+    """
+    found, value, _entry = _lookup_action(filename, action)
+    if not found or not isinstance(value, dict):
+        return None
+    return _resolve_action(filename, action, value)
+
+
+def _resolve_action(filename, verb, value):
+    """The current name of the action ``value`` (``{'action': name}``) names,
+    or ``None`` with a warning when it cannot be run for ``verb``."""
+    raw = value.get('action')
+    if not isinstance(raw, str) or not raw.strip() or set(value) != {'action'}:
         logger.warning(
-            f"Unknown '{action}' handler {value!r} for {filename!r}; "
-            f"expected one of {', '.join(BUILTIN_HANDLERS)} or None"
-        )
-        return (False, None)
-    return (True, handler)
+            f"'{verb}' rule for {filename!r}: {value!r} is not an action - "
+            f"write {{'action': '<name>'}}")
+        return None
+    from xefm import actions as _actions
+    name = _actions.registry.canonical(_actions.FILER, raw.strip())
+    if name is None:
+        logger.warning(
+            f"'{verb}' rule for {filename!r} names {raw!r}, which is not "
+            "an action here (not a built-in, or its extension is not loaded)")
+        return None
+    if name in VERB_ACTIONS:
+        logger.warning(
+            f"'{verb}' rule for {filename!r} names {raw!r}, which reads "
+            f"FILE_ASSOCIATIONS itself and could run again; ignored")
+        return None
+    return name

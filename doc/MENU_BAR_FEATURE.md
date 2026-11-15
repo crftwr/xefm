@@ -79,7 +79,7 @@ see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 |------|--------|
 | Open | `open_item` |
 | Open With ▸ Viewer | `view_file` |
-| Open With ▸ Text Editor | `edit_file` |
+| Open With ▸ Text Editor | `edit_files` |
 | Open With ▸ Default App | `open_with_os` |
 | Open With ▸ Choose App… | `open_with` — see [Open With](OPEN_WITH_FEATURE.md) |
 | Details… | `file_details` |

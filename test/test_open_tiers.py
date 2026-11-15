@@ -12,8 +12,8 @@ Run with: python -m pytest test/test_open_tiers.py -v
 import pytest
 
 import xefm.config
-from xefm.config import (BUILTIN_HANDLERS, get_builtin_handler_for_file,
-                        get_program_for_file)
+from xefm.config import (BUILTIN_HANDLERS, VERB_ACTIONS, get_action_for_file,
+                        get_builtin_handler_for_file, get_program_for_file)
 
 
 class _Config:
@@ -65,6 +65,52 @@ class TestBuiltinHandler:
         ])
         assert get_builtin_handler_for_file('test_a.py') == (True, 'navigate')
         assert get_builtin_handler_for_file('lib.py') == (True, 'viewer')
+
+
+class TestActions:
+    """Any verb can run a file-list action, written ``{'action': name}``. A
+    built-in action stands in for an extension's here."""
+
+    def test_enter_takes_the_dict_only(self, associations):
+        associations([{'pattern': '*.x', 'enter': {'action': 'quick_view'}},
+                      {'pattern': '*.y', 'enter': 'quick_view'}])
+        assert get_builtin_handler_for_file('a.x') == (True, 'quick_view')
+        # A bare string is a handler name, and this one is not a handler.
+        assert get_builtin_handler_for_file('a.y') == (False, None)
+
+    @pytest.mark.parametrize("verb", ['open', 'view', 'edit'])
+    def test_a_program_verb_needs_the_dict(self, associations, verb):
+        associations([{'pattern': '*.x', verb: {'action': 'quick_view'}},
+                      {'pattern': '*.y', verb: 'quick_view'}])
+        assert get_action_for_file('a.x', verb) == 'quick_view'
+        assert get_program_for_file('a.x', verb) is None
+        # A bare string is a command line, even when it is an action's name.
+        assert get_action_for_file('a.y', verb) is None
+        assert get_program_for_file('a.y', verb) == ['quick_view']
+
+    def test_unknown_action_reads_as_unconfigured(self, associations):
+        associations([{'pattern': '*.x', 'enter': {'action': 'nope.nothing'},
+                       'view': {'action': 'nope.nothing'}}])
+        assert get_builtin_handler_for_file('a.x') == (False, None)
+        assert get_action_for_file('a.x', 'view') is None
+
+    @pytest.mark.parametrize("action", VERB_ACTIONS)
+    def test_a_verb_action_is_refused(self, associations, action):
+        """It reads FILE_ASSOCIATIONS itself, so it could run round and round."""
+        associations([{'pattern': '*.x', 'enter': {'action': action},
+                       'view': {'action': action}}])
+        assert get_builtin_handler_for_file('a.x') == (False, None)
+        assert get_action_for_file('a.x', 'view') is None
+
+    def test_a_malformed_dict_is_refused(self, associations):
+        associations([{'pattern': '*.x', 'view': {'action': 'quick_view', 'x': 1}},
+                      {'pattern': '*.y', 'view': {'name': 'quick_view'}}])
+        assert get_action_for_file('a.x', 'view') is None
+        assert get_action_for_file('a.y', 'view') is None
+
+    def test_handler_names_stay_handlers(self, associations):
+        associations([{'pattern': '*.x', 'enter': 'list'}])
+        assert get_builtin_handler_for_file('a.x') == (True, 'list')
 
 
 class TestTiersAreIndependent:

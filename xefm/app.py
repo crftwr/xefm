@@ -87,9 +87,10 @@ from xefm.backend_detector import is_desktop_mode
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
 from xefm.background_shaders import SCENE_OPTIONS, SHADER_KINDS
-from xefm.config import (KeyBindings, apply_wide_chars, config_manager,
+from xefm.config import (BUILTIN_HANDLERS, KeyBindings, apply_wide_chars, config_manager,
                          deprecated_names_notice,
-                         get_builtin_handler_for_file, get_config,
+                         get_action_for_file, get_builtin_handler_for_file,
+                         get_config,
                          get_drive_locations,
                          get_program_for_file, has_explicit_association,
                          keys_label_for_action, printable_text_notice,
@@ -4329,8 +4330,11 @@ class XeFMApp:
                 "open_with_os": (self.open_with_os, False),
                 "open_with": (self.open_with, False),
                 "reveal_in_os": (self.reveal_in_os, False),
+                "open_items_with_os": (self.open_items_with_os, False),
                 "edit_file": (self.edit_file, False),
+                "edit_files": (self.edit_files, False),
                 "view_file": (self.view_file, False),
+                "view_files": (self.view_files, False),
                 "diff_files": (self.diff_files, False),
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
@@ -4764,7 +4768,7 @@ class XeFMApp:
                 # A plain file. Enter is the *casual* open: it stays inside XeFM
                 # (``open_with_os`` is the one that hands off to another app), so
                 # a FILE_ASSOCIATIONS 'enter' rule selects a built-in handler
-                # rather than a program to launch.
+                # or an action rather than a program to launch.
                 self._enter_file(pane, entry)
         except Exception as exc:
             self.log_info(f"Cannot open {entry.name}: {exc}")
@@ -4776,7 +4780,9 @@ class XeFMApp:
         for the built-in viewer, ``'navigate'`` to browse the file as an
         archive (for one whose name XeFM does not recognise; the archive cache
         then tells the format from its bytes, #776), ``'list'`` to open it as a file
-        list (an ``.m3u8`` playlist, a ``.lst``), or ``None`` to do nothing.
+        list (an ``.m3u8`` playlist, a ``.lst``), an action to run on it
+        (``{'action': 'preview.show'}``, an extension's), or ``None`` to do
+        nothing.
 
         With no rule, the default stands: the built-in viewer — the same one V
         uses, which routes *.md to the Markdown renderer and shows a
@@ -4816,6 +4822,13 @@ class XeFMApp:
         if configured and handler is None:
             self.log_info(f"Nothing configured to open {entry.name}")
             return
+        if configured and handler not in BUILTIN_HANDLERS:
+            # An action: an extension's ('preview.show') or a built-in one,
+            # aimed at this entry alone. The rule was resolved against the
+            # registry, so the action exists.
+            if self._run_action_on(pane, handler, [entry]):
+                self.panel.render()
+            return
         if handler == "navigate" and not self._is_archive(entry):
             self._remember_cursor(pane)
             self._exit_virtual(pane)
@@ -4836,6 +4849,27 @@ class XeFMApp:
             self.log_info(self._no_builtin_viewer_message(entry))
             return
         self._ensure_archive_password(entry, lambda: self._open_viewer(entry, pane))
+
+    def _run_action_on(self, pane, action: str, entries) -> bool:
+        """Run ``action`` on exactly ``entries``: the files a FILE_ASSOCIATIONS
+        rule resolved to it.
+
+        An action reads the selection (``ctx.pane.selected()``, a built-in's
+        marked files) and falls back to the cursor only when nothing is
+        marked. So while it runs the selection is those entries alone: the
+        one under the cursor for Enter, or one batch of the files an open,
+        view or edit action resolved to it, which may not include the
+        cursor's. The marks are
+        put back afterwards, unless the action changed the selection itself.
+        Returns whether to repaint."""
+        marked = pane["selected_files"]
+        scoped = {str(e) for e in entries}
+        pane["selected_files"] = set(scoped)
+        try:
+            return self._run_action(_ctx.FILER, action)
+        finally:
+            if pane["selected_files"] == scoped:
+                pane["selected_files"] = marked
 
     @staticmethod
     def _no_builtin_viewer_message(entry) -> str:
@@ -5113,8 +5147,8 @@ class XeFMApp:
             MenuItem("Open With", submenu=Menu(
                 MenuItem("Viewer", on_select=self.view_file,
                          enabled=has_files, shortcut=sc("view_file")),
-                MenuItem("Text Editor", on_select=self.edit_file,
-                         enabled=has_files, shortcut=sc("edit_file")),
+                MenuItem("Text Editor", on_select=self.edit_files,
+                         enabled=has_files, shortcut=sc("edit_files")),
                 MenuItem("Default App", on_select=self.open_with_os,
                          enabled=has_files, shortcut=sc("open_with_os")),
                 MenuItem("Choose App…", on_select=self.open_with,
@@ -5615,15 +5649,29 @@ class XeFMApp:
         from xefm.external_programs import command_argv
         return command_argv(getattr(self.config, "TEXT_EDITOR", "vim"))
 
-    def edit_file(self) -> None:
+    def edit_files(self) -> None:
         """Open the selected files — or the focused file when nothing is
-        selected — for editing (#273). See :meth:`_edit_entries`."""
+        selected — for editing (#273). See :meth:`_edit_entries`;
+        :meth:`edit_file` is the same for the file under the cursor alone."""
         targets = [_real_entry(t) for t in self._selected_or_focused(self.active_pane())]
         self._edit_entries([t for t in targets if t is not None])
 
+    def edit_file(self) -> None:
+        """:meth:`edit_files` for the file under the cursor alone, whatever is
+        selected. Inside a viewer the same action name edits the viewed file
+        (the text viewer) or merges in TEXT_DIFF (the diff viewers); those
+        surfaces run their own handlers."""
+        focused = self._focused_entry()
+        entry = _real_entry(focused)
+        if entry is None:
+            if focused is not None:
+                self.log_info(f"{focused.name} points at no file")
+            return
+        self._edit_entries([entry])
+
     def _edit_entries(self, targets: list) -> None:
-        """Open ``targets`` for editing — the ``edit_file`` machinery, shared
-        by the file list and the text viewer (which passes the viewed file as
+        """Open ``targets`` for editing — the ``edit_file``/``edit_files``
+        machinery, shared by the file list and the text viewer (which passes the viewed file as
         the single target).
 
         Per file, a matching ``edit`` entry in FILE_ASSOCIATIONS wins;
@@ -5661,9 +5709,15 @@ class XeFMApp:
         # associated launch falls back to TEXT_EDITOR, as it always has.
         fallback: list = []
         groups: dict[tuple, list] = {}
+        actions: dict[str, list] = {}
         for entry in files:
-            command = get_program_for_file(entry.name, "edit")
-            if command:
+            action = get_action_for_file(entry.name, "edit")
+            command = None if action else get_program_for_file(entry.name, "edit")
+            if action:
+                # Batched like a command: the action runs once, on the files
+                # whose rule names it.
+                actions.setdefault(action, []).append(entry)
+            elif command:
                 groups.setdefault(tuple(command), []).append(entry)
             elif has_explicit_association(entry.name, "edit"):
                 # Explicitly None: the config says this type has no editor (a
@@ -5672,6 +5726,8 @@ class XeFMApp:
                 self.log_info(f"No editor configured for {entry.name}")
             else:
                 fallback.append(entry)
+        for action, group in actions.items():
+            self._run_action_on(self.active_pane(), action, group)
         # Terminal mode logs once the editor is done; a desktop launch returns
         # at once, before anything is edited, so it says what it did instead.
         desktop = is_desktop_mode()
@@ -6627,43 +6683,115 @@ class XeFMApp:
 
     def open_with_os(self) -> None:
         """Hand the focused entry to an external program — the deliberate open,
-        as opposed to ``open_item``'s open-inside-XeFM.
-
-        A matching ``open`` entry in FILE_ASSOCIATIONS wins; otherwise the OS
-        default application ('open' / 'xdg-open' / 'start') handles it. An
-        association set explicitly to ``None`` suppresses the launch entirely,
-        which is how you stop a file type from being handed to the OS at all.
-        Errors are logged, not raised."""
+        as opposed to ``open_item``'s open-inside-XeFM. See
+        :meth:`_open_entries`; :meth:`open_items_with_os` is the same for the
+        selection."""
         focused = self._focused_entry()
         entry = _real_entry(focused)
         if entry is None:
             if focused is not None:
                 self.log_info(f"{focused.name} points at no file")
             return
-        command = get_program_for_file(entry.name, "open")
-        if command:
-            if self._launch_associated([entry], command):
-                self.log_info(f"Opened {entry.name} with {command[0]}")
-                return
-        elif has_explicit_association(entry.name, "open"):
-            self.log_info(f"No external program configured for {entry.name}")
-            return
-        system = platform.system()
-        try:
-            if system == "Darwin":
-                subprocess.run(["open", str(entry)], check=True)
-            elif system == "Windows":
-                # ShellExecute directly, not cmd.exe's `start`: the shell=True
-                # command line quotes only ASCII blanks, so cmd.exe split a
-                # name at a full-width space (U+3000) and opened its first
-                # half (#508).
-                os.startfile(str(entry))
+        self._open_entries([entry])
+
+    #: More items than this at once are opened only after a question.
+    _OPEN_MANY = 10
+
+    def open_items_with_os(self) -> None:
+        """:meth:`open_with_os` for the selection, or the entry under the
+        cursor when nothing is selected. Each item goes where its own rule (or
+        the OS) sends it. More than :attr:`_OPEN_MANY` items ask first, since
+        a stray Select All would otherwise start a program per file."""
+        entries = []
+        for item in self._selected_or_focused(self.active_pane()):
+            real = _real_entry(item)
+            if real is None:
+                self.log_info(f"{item.name} points at no file")
             else:
-                subprocess.run(["xdg-open", str(entry)], check=True)
-        except Exception as exc:
-            self.log_info(f"Failed to open {entry.name}: {exc}")
-        else:
-            self.log_info(f"Opened {entry.name} with the default app")
+                entries.append(real)
+        if not entries:
+            return
+        if len(entries) <= self._OPEN_MANY:
+            self._open_entries(entries)
+            return
+
+        def answered(button: str) -> None:
+            self.panel.render()
+            if button == "Open":
+                self._open_entries(entries)
+
+        show_message_box(self.panel,
+                         f"Open {len(entries)} items, each with its application?",
+                         title="Open With Default App", icon="question",
+                         buttons=("Open", "Cancel"), default=0, cancel=1,
+                         on_result=answered)
+        self.panel.render()
+
+    def _open_entries(self, entries: list) -> None:
+        """Open ``entries`` outside XeFM, each by its ``open`` rule.
+
+        A rule naming an action runs it on the files it names; a command
+        launches once per command, with every file that shares it (falling
+        back to the OS default when it cannot be run); an explicit ``None``
+        opens nothing; no rule hands the file to the OS default application
+        ('open' / 'xdg-open' / ShellExecute). Errors are logged, not raised."""
+        pane = self.active_pane()
+        actions: dict[str, list] = {}
+        groups: dict[tuple, list] = {}
+        refused, system = [], []
+        for entry in entries:
+            action = get_action_for_file(entry.name, "open")
+            if action:
+                actions.setdefault(action, []).append(entry)
+                continue
+            command = get_program_for_file(entry.name, "open")
+            if command:
+                groups.setdefault(tuple(command), []).append(entry)
+            elif has_explicit_association(entry.name, "open"):
+                refused.append(entry)
+            else:
+                system.append(entry)
+        redraw = False
+        for action, group in actions.items():
+            redraw = self._run_action_on(pane, action, group) or redraw
+        for command, batch in groups.items():
+            if self._launch_associated(batch, list(command)):
+                self.log_info(f"Opened {self._files_label(batch)} with {command[0]}")
+            else:
+                system.extend(batch)
+        if refused:
+            self.log_info(f"No external program configured for "
+                          f"{self._files_label(refused)}")
+        if system:
+            self._open_with_system(system)
+        if redraw:
+            self.panel.render()
+
+    def _open_with_system(self, entries: list) -> None:
+        """Hand ``entries`` to the OS default application. macOS ``open``
+        takes them all in one call; ShellExecute and ``xdg-open`` take one
+        path each."""
+        system = platform.system()
+        batches = [entries] if system == "Darwin" else [[e] for e in entries]
+        opened = []
+        for batch in batches:
+            try:
+                if system == "Darwin":
+                    subprocess.run(["open", *[str(e) for e in batch]], check=True)
+                elif system == "Windows":
+                    # ShellExecute directly, not cmd.exe's `start`: the
+                    # shell=True command line quotes only ASCII blanks, so
+                    # cmd.exe split a name at a full-width space (U+3000) and
+                    # opened its first half (#508).
+                    os.startfile(str(batch[0]))
+                else:
+                    subprocess.run(["xdg-open", str(batch[0])], check=True)
+            except Exception as exc:
+                self.log_info(f"Failed to open {self._files_label(batch)}: {exc}")
+            else:
+                opened.extend(batch)
+        if opened:
+            self.log_info(f"Opened {self._files_label(opened)} with the default app")
 
     #: State key of the app last chosen in Open With, per file type.
     _OPEN_WITH_STATE = "open_with.last"
@@ -9752,30 +9880,73 @@ class XeFMApp:
                 return
 
     def view_file(self) -> None:
-        """View the focused file (directories are skipped).
-
-        A matching ``view`` entry in FILE_ASSOCIATIONS wins; otherwise the
-        built-in viewer opens it, showing a placeholder for binaries rather
-        than garbage. Setting ``view`` to ``None`` explicitly selects the
-        built-in viewer, which is also what a remote or in-archive file gets —
-        an external viewer has no path it could open. A file inside a
-        password-protected zip prompts for the password first."""
+        """View the focused file (directories are skipped). See
+        :meth:`_view_entries`; :meth:`view_files` is the same for the
+        selection."""
         pane = self.active_pane()
         files = pane["files"]
         if not files:
             return
-        entry = files[pane["focused_index"]]
-        try:
-            if entry.is_dir():
-                self.log_info(f"{entry.name} is a directory")
-                return
-        except Exception:
-            pass
-        command = get_program_for_file(entry.name, "view")
-        if command and self._launch_associated([entry], command):
-            self.log_info(f"Viewing {entry.name} with {command[0]}")
+        self._view_entries([files[pane["focused_index"]]], pane)
+
+    def view_files(self) -> None:
+        """:meth:`view_file` for the selection, or the entry under the cursor
+        when nothing is selected."""
+        pane = self.active_pane()
+        self._view_entries(self._selected_or_focused(pane), pane)
+
+    def _view_entries(self, entries: list, pane: dict) -> None:
+        """View ``entries``, each by its ``view`` rule.
+
+        A rule naming an action runs it on the files it names; a command
+        launches once per command with every file that shares it. Everything
+        else goes to the built-in viewer: no rule, ``None`` (which selects it
+        explicitly), a command that could not be run, and a remote or
+        in-archive file, which an external viewer has no path for. The
+        built-in viewer shows one file, so only the first of those opens and
+        the rest are named in the log. A file inside a password-protected zip
+        prompts for the password first."""
+        files, dirs = [], []
+        for entry in entries:
+            try:
+                is_dir = entry.is_dir()
+            except Exception:
+                is_dir = False
+            (dirs if is_dir else files).append(entry)
+        if dirs:
+            self.log_info(f"{dirs[0].name} is a directory" if len(dirs) == 1
+                          else f"Skipped {len(dirs)} directories")
+        actions: dict[str, list] = {}
+        groups: dict[tuple, list] = {}
+        builtin = []
+        for entry in files:
+            action = get_action_for_file(entry.name, "view")
+            if action:
+                actions.setdefault(action, []).append(entry)
+                continue
+            command = get_program_for_file(entry.name, "view")
+            if command and (len(files) == 1 or self._is_local(entry)):
+                groups.setdefault(tuple(command), []).append(entry)
+            else:
+                builtin.append(entry)
+        redraw = False
+        for action, group in actions.items():
+            redraw = self._run_action_on(pane, action, group) or redraw
+        for command, batch in groups.items():
+            if self._launch_associated(batch, list(command)):
+                self.log_info(f"Viewing {self._files_label(batch)} with {command[0]}")
+            else:
+                builtin.extend(batch)
+        if not builtin:
+            if redraw:
+                self.panel.render()
             return
-        self._ensure_archive_password(entry, lambda: self._open_viewer(entry, pane))
+        builtin.sort(key=files.index)
+        first, rest = builtin[0], builtin[1:]
+        if rest:
+            self.log_info(f"Not shown: {', '.join(e.name for e in rest)} - the "
+                          f"built-in viewer shows one file at a time")
+        self._ensure_archive_password(first, lambda: self._open_viewer(first, pane))
 
     def diff_files(self) -> None:
         """Compare exactly two selected files side by side. Files may be selected
@@ -12506,7 +12677,7 @@ class XeFMApp:
             ("create_archive", "Create archive from selection"),
             ("extract_archive", "Extract the selected archive(s)"),
             ("file_details", "Show file details"),
-            ("edit_file", "Edit the selected file(s) in the configured TEXT_EDITOR"),
+            ("edit_files", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
             ("open_with_os", "Open with the default app"),
             ("open_with", "Choose the app that opens the selection (File menu)"),

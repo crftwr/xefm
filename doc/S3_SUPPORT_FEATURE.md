@@ -218,7 +218,7 @@ bucket) appear once `S3_CACHE_TTL` expires — up to 60 seconds by default.
 
 1. **No True Directories**: S3 uses prefixes, not real directories
 2. **No Rename**: S3 doesn't support rename (XeFM performs copy + delete)
-3. **Edit Through a Copy**: **File → Open With ▸ Text Editor** (`edit_file`) edits a local copy and uploads it on each save
+3. **Edit Through a Copy**: **File → Open With ▸ Text Editor** (`edit_files`) edits a local copy and uploads it on each save
    (see [Remote Editing](REMOTE_EDIT_FEATURE.md)); each save rewrites the whole object
 4. **API Rate Limits**: AWS may throttle requests for high-volume operations
 5. **Costs**: S3 operations incur AWS charges (requests and data transfer)

@@ -1206,6 +1206,7 @@ class DirectoryDiffView(Widget):
             "move_files": self._move_focused,
             "delete_files": self._delete_focused,
             "edit_file": self._edit_merge,
+            "edit_files": self._edit_merge,
             "view_file": self._open_file_diff,
         }
 
@@ -1253,7 +1254,7 @@ class DirectoryDiffView(Widget):
         copy = self._keys_label("copy_files", "C")
         move = self._keys_label("move_files", "M")
         delete = self._keys_label("delete_files", "K / Del")
-        merge = self._keys_label("edit_file", "E")
+        merge = self._keys_label("edit_files", "E")
         rows = [
             (f'{self._keys_pair("dir_diff.cursor_up", "dir_diff.cursor_down")} · '
              f'{self._keys_pair("dir_diff.page_up", "dir_diff.page_down")} · '
@@ -1472,7 +1473,7 @@ class DirectoryDiffView(Widget):
              "resize"),
             (self._footer_key("dir_diff.switch_side", "Tab"), "side"),
             (self._footer_key("dir_diff.activate", "Enter"), "diff"),
-            (self._footer_key("edit_file", "E"), "merge"),
+            (self._footer_key("edit_files", "E"), "merge"),
             (self._footer_key("dir_diff.sync", "s"), "sync"),
             (self._footer_key("quit", "q"), "close"),
         )

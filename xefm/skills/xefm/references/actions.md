@@ -25,6 +25,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `cursor_bottom` | Move the cursor to the last item | `Ctrl-END` | `END`, `Ctrl-END` | `END`, `Ctrl-END` | `Shift-G`, `END`, `Ctrl-END` |
 | `open_item` | Open the file, or enter the directory | `ENTER` | `ENTER`, `Ctrl-PAGE_DOWN` | `ENTER` | `l`, `g l`, `ENTER` |
 | `open_with_os` | Open with the OS default application | `Ctrl-O` | `Ctrl-O` | `Ctrl-O` | `g x` |
+| `open_items_with_os` | Open the selection with the OS default applications | — | — | — | — |
 | `open_with` | Choose the application that opens the selection | — | — | — | — |
 | `reveal_in_os` | Reveal in the OS file manager | `Ctrl-R` | — | — | `Ctrl-R` |
 | `go_parent` | Go to the parent directory | `BACKSPACE` | `BACKSPACE`, `Ctrl-PAGE_UP` | `BACKSPACE`, `Alt-UP` | `h`, `g h`, `BACKSPACE` |
@@ -63,6 +64,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `create_file` | Create a new file | `Shift-E` | `Shift-F4` | — | — |
 | `create_directory` | Create a new directory | `M` (selection: none) | `F7` | `F7` | `F7` |
 | `view_file` | View the focused file in the built-in viewer | `V` | `F3` | `F3` | `e`, `F3` |
+| `view_files` | View the selected files | — | — | — | — |
 | `file_details` | Show details for the focused item | `I` | `Alt-ENTER` | `Alt-I` | `Ctrl-G` |
 | `diff_files` | Compare two files side by side | `EQUAL` | `EQUAL` | `EQUAL` | — |
 | `diff_directories` | Compare two directories recursively | `Shift-EQUAL` | — | `Shift-EQUAL` | `Shift-EQUAL` |
@@ -146,7 +148,8 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — | — | — | — |
 | `help` | Show the key bindings for what is on screen | `F1` | `F1` | `F1` | `F1` |
 | `isearch` | Incremental search | `F` | — | — | `/` |
-| `edit_file` | Edit in the configured text editor | `E` | `F4` | `F4` | `F4` |
+| `edit_file` | Edit the focused file in the configured text editor | — | — | — | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` | `F4` | `F4` | `F4` |
 
 ### Desktop app additions
 
@@ -253,7 +256,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ### `image_viewer`
 
@@ -274,7 +278,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ### `file_diff`
 
@@ -296,7 +301,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ### `dir_diff`
 
@@ -328,7 +334,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ### `isearch`
 
@@ -345,7 +352,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ### `filter_list`
 
@@ -357,7 +365,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ### `search`
 
@@ -375,7 +384,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ### `common`
 
@@ -385,7 +395,8 @@ viewer only.
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
 | `isearch` | Incremental search | `F` |
-| `edit_file` | Edit in the configured text editor | `E` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
 
 ## Old names
 

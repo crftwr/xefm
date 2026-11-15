@@ -79,7 +79,7 @@ class EditFile(EditSubshellBase):
         # empties them until the results land.
         entry = self.app._focused_entry()
         with patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         run.assert_called_once()
         argv = run.call_args.args[0]
         self.assertEqual(argv[-1], str(entry))
@@ -92,7 +92,7 @@ class EditFile(EditSubshellBase):
         self._focus("note.txt")
         with patch("shutil.which", return_value=r"C:\shims\code.cmd"), \
              patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         self.assertEqual(run.call_args.args[0][0], r"C:\shims\code.cmd")
 
     def test_desktop_mode_detaches_the_editor(self):
@@ -106,7 +106,7 @@ class EditFile(EditSubshellBase):
              patch.object(self.app.backend, "suspended") as suspended, \
              patch("subprocess.run") as run, \
              patch("subprocess.Popen") as popen:
-            self.app.edit_file()
+            self.app.edit_files()
         run.assert_not_called()
         suspended.assert_not_called()
         popen.assert_called_once()
@@ -126,7 +126,7 @@ class EditFile(EditSubshellBase):
                           side_effect=lambda m: events.append(("log", m))), \
              patch.object(self.app.panel, "render",
                           side_effect=lambda *a, **k: events.append(("render",))):
-            self.app.edit_file()
+            self.app.edit_files()
         self.assertEqual(events, [("log", "Opened note.txt in code"), ("render",)])
 
     def test_desktop_mode_reports_a_missing_editor(self):
@@ -135,7 +135,7 @@ class EditFile(EditSubshellBase):
         with patch("xefm.app.is_desktop_mode", return_value=True), \
              patch("subprocess.Popen", side_effect=FileNotFoundError), \
              patch.object(self.app, "log_info") as log:
-            self.app.edit_file()
+            self.app.edit_files()
         logged = [str(c.args[0]) for c in log.call_args_list]
         self.assertEqual(logged, ["Command not found: no-such-editor"])
 
@@ -146,7 +146,7 @@ class EditFile(EditSubshellBase):
         suspended_cm.__exit__ = MagicMock(return_value=False)
         with patch.object(self.app.backend, "suspended", return_value=suspended_cm), \
              patch("subprocess.run"):
-            self.app.edit_file()
+            self.app.edit_files()
         suspended_cm.__enter__.assert_called_once()
 
     def test_refreshes_panes_after_edit(self):
@@ -155,7 +155,7 @@ class EditFile(EditSubshellBase):
         def fake_run(*a, **k):
             open(os.path.join(self.tmp, "created.txt"), "w").close()
         with patch("subprocess.run", side_effect=fake_run):
-            self.app.edit_file()
+            self.app.edit_files()
         self.app._settle_listings()  # the post-edit re-list runs on a worker
         names = [f.name for f in self.app.pm.left_pane["files"]]
         self.assertIn("created.txt", names)
@@ -166,7 +166,7 @@ class EditFile(EditSubshellBase):
         self.app._settle_listings()  # _refresh lists on a worker; wait for it
         self._focus("adir")
         with patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         run.assert_not_called()
 
     def test_skips_remote_path(self):
@@ -174,7 +174,7 @@ class EditFile(EditSubshellBase):
         pane["files"] = [Path("ssh://host/remote.txt")]
         pane["focused_index"] = 0
         with patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         run.assert_not_called()
 
 
@@ -192,7 +192,7 @@ class EditorSetting(EditSubshellBase):
         self.app.config.TEXT_EDITOR = editor
         entry = self.app._focused_entry()
         with patch("shutil.which", return_value=None),              patch("xefm.app.is_desktop_mode", return_value=False),              patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         return run, str(entry)
 
     def test_a_list_editor_launches_as_written(self):
@@ -248,7 +248,7 @@ class EditSelectedFiles(EditSubshellBase):
         pane = self.app.active_pane()
         expected = [str(f) for f in pane["files"] if f.name in ("a.txt", "b.txt")]
         with patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         run.assert_called_once()
         argv = run.call_args.args[0]
         self.assertEqual(argv[-2:], expected)
@@ -263,7 +263,7 @@ class EditSelectedFiles(EditSubshellBase):
         pane = self.app.active_pane()
         expected = [str(f) for f in pane["files"] if f.name == "a.txt"]
         with patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         run.assert_called_once()
         self.assertEqual(run.call_args.args[0][-1:], expected)
 
@@ -283,7 +283,7 @@ class EditSelectedFiles(EditSubshellBase):
              patch("xefm.app.has_explicit_association", return_value=False), \
              patch("xefm.app.is_desktop_mode", return_value=False), \
              patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         # One run for the .md pair (mdedit a.md b.md), one TEXT_EDITOR run
         # for the leftover .txt.
         argvs = [c.args[0] for c in run.call_args_list]
@@ -297,7 +297,7 @@ class EditSelectedFiles(EditSubshellBase):
         with patch("xefm.app.get_program_for_file", return_value=None), \
              patch("xefm.app.has_explicit_association", return_value=True), \
              patch("subprocess.run") as run:
-            self.app.edit_file()
+            self.app.edit_files()
         run.assert_not_called()
 
 

@@ -219,7 +219,7 @@ not listed: find it in the menus or the command palette, or give it a key in
 | **Viewing, editing and comparing** | | | | | |
 | `view_file` | View the focused file in the built-in viewer | `V` | `F3` | `F3` | `e`, `F3` |
 | `quick_view` | Preview the item under the cursor in the other pane | `Shift-V` | `Ctrl-Q` | `Alt-P`<br>macOS app: `Space`, `Opt-P` | `w` |
-| `edit_file` | Edit in the configured text editor | `E` | `F4` | `F4` | `F4` |
+| `edit_files` | Edit the selected files in the configured text editor | `E` | `F4` | `F4` | `F4` |
 | `file_details` | Show details for the focused item | `I` | `Alt-Enter` | `Alt-I`<br>macOS app: `Cmd-I`, `Opt-I`<br>Windows app: `Alt-Enter`, `Alt-I` | `Ctrl-G` |
 | `diff_files` | Compare two files side by side | `=` | `=` | `=` | — |
 | `diff_directories` | Compare two directories recursively | `Shift-=` | — | `Shift-=` | `Shift-=` |
@@ -275,7 +275,7 @@ not listed: find it in the menus or the command palette, or give it a key in
 ### Viewers and dialogs
 
 These keys are the same under every preset unless a cell says otherwise. In
-every viewer `Esc` closes it, and `quit`, `help`, `isearch` and `edit_file`
+every viewer `Esc` closes it, and `quit`, `help`, `isearch` and `edit_files`
 work there on their keys from the file list table. Vim style also closes the
 text viewer with `q`.
 

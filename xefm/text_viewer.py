@@ -1407,7 +1407,7 @@ class TextViewer(Widget):
         # (associations + TEXT_EDITOR), then the viewer re-reads it. A terminal
         # editor runs synchronously via suspend/resume, so the reload shows its
         # result; in desktop mode the editor is detached and the reload is a no-op.
-        if self._on_edit is not None and action == "edit_file":
+        if self._on_edit is not None and action in ("edit_file", "edit_files"):
             self._edit_file()
             return True
         # Rich mode: the embedded renderer owns navigation (arrows / page / home /
@@ -1657,7 +1657,7 @@ class TextViewer(Widget):
         viewer constructed without editor machinery."""
         if self._on_edit is None:
             return ""
-        return f"{_label('edit_file', 'E')} edit · "
+        return f"{_label('edit_files', 'E')} edit · "
 
     def _scroll_hint_segment(self) -> str:
         """The footer's vertical-scroll hint (with trailing separator), named
@@ -1698,7 +1698,7 @@ class TextViewer(Widget):
             (_label("change_encoding", "Shift-E"), "change text encoding"),
         ]
         if self._on_edit is not None:
-            rows.append((_label("edit_file", "E"),
+            rows.append((_label("edit_files", "E"),
                          "edit in the configured editor"))
         # Only offer the view-mode toggle for a file type that has a rich renderer.
         if self._rich is not None:
