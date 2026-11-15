@@ -25,7 +25,14 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.25.0 is the floor because the file panes key the widths they keep on
+# 1.26.0 is the floor because the Windows app draws on a render thread when the
+# GIL is off (puikit#215, xefm#901), which the free-threaded Windows build ships:
+# a held PageDown keeps up with the key repeat (~19 -> 31 frames a second in the
+# ARM VM), a frame where only the background moves skips the list (~12 -> 1.5 ms),
+# and a theme's blurred text shadow costs a few ms instead of half a frame. It
+# also closes races the GIL had kept rare (puikit#216). It is soft: XeFM runs on
+# 1.25.0, only slower to draw on Windows.
+# 1.25.0 was the floor before because the file panes key the widths they keep on
 # DrawContext.measure_epoch (puikit 1.25.0, #897), which moves whenever a width
 # may have changed: a font size step, a new face, a monitor with another DPI.
 # Before it the extension column kept its old width after View > Font Size and
@@ -254,7 +261,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.25.0
+puikit>=1.26.0
 pygments
 boto3
 watchdog
