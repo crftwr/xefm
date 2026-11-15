@@ -40,6 +40,7 @@ import threading
 import time
 import types
 import sys
+import sysconfig
 from pathlib import Path as _StdPath
 from urllib.parse import quote, unquote, urlsplit
 
@@ -13055,18 +13056,42 @@ class XeFMApp:
 
     @staticmethod
     def _about_text() -> str:
-        """The About box body: name, version, and project URL (mirrors the legacy
+        """The About box body: name, version, the Python it runs on, and project URL (mirrors the legacy
         About dialog's content; its cosmetic Matrix-rain background is answered
         now by the theme's arriving-text effect, not a background animation).
 
         Written as Markdown: the trailing backslash is a hard line break keeping
-        name and version on their own rows, and the URL sits in its own paragraph
+        name, version and Python on their own rows, and the URL sits in its own paragraph
         so it renders as a real clickable link on every backend — the desktop
         About showed it as inert text while the terminal auto-linked it (#307)."""
         from xefm.const import VERSION, GITHUB_URL
         return (f"XeFM — a dual-pane file manager for desktop and terminal\\\n"
-                f"Version {VERSION}\n\n"
+                f"Version {VERSION}\\\n"
+                f"{XeFMApp._python_text()}\n\n"
                 f"{GITHUB_URL}")
+
+    @staticmethod
+    def _python_text(version: str | None = None, free_threaded: bool | None = None,
+                     gil: bool | None = None) -> str:
+        """The Python XeFM runs on, for the About box: its version, and whether
+        the GIL is off - what tells a free-threaded app build from one that
+        is not. A free-threaded build can still run with the GIL on (an
+        extension module that does not support running without it turns it
+        back on, as does ``PYTHON_GIL=1``), so build and state are both told.
+        The arguments stand in for the running interpreter in tests."""
+        if version is None:
+            version = platform.python_version()
+        if free_threaded is None:
+            free_threaded = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+        if gil is None:
+            gil = getattr(sys, "_is_gil_enabled", lambda: True)()
+        if not free_threaded:
+            state = "GIL on"
+        elif gil:
+            state = "free-threaded build, GIL on"
+        else:
+            state = "free-threaded, GIL off"
+        return f"Python {version} ({state})"
 
     def show_about(self) -> None:
         """The About box.
