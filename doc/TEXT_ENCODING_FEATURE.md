@@ -42,7 +42,7 @@ EUC-JP; the match is shown at the dialog's bottom). `Enter` applies — the
 file is re-decoded in place, keeping your scroll position — and `Esc`
 cancels. The selection opens on whatever is currently in effect.
 
-`edit_file` also works inside the viewer, on the same key as in the file list
+`edit_files` also works inside the viewer, on the same key as in the file list
 (it depends on your keymap preset — see
 [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side)): it opens
 the viewed file in your configured editor, exactly as it does from the file

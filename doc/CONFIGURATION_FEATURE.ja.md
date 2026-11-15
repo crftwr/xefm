@@ -234,7 +234,7 @@ PROGRESS_ANIMATION_SPEED   = 0.2        # frame interval in seconds
 ## 外部ツール
 
 ```python
-# Editor launched by edit_file. String ('vim') or list (['code', '--wait']).
+# Editor launched by edit_files / edit_file. String ('vim') or list (['code', '--wait']).
 # Defaults are chosen per backend: 'vim' in the terminal, 'code' in desktop mode.
 TEXT_EDITOR = 'code' if is_desktop_mode() else 'vim'
 

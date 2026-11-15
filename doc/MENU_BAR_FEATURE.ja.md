@@ -52,7 +52,7 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 |------|--------|
 | Open | `open_item` |
 | Open With ▸ Viewer | `view_file` |
-| Open With ▸ Text Editor | `edit_file` |
+| Open With ▸ Text Editor | `edit_files` |
 | Open With ▸ Default App | `open_with_os` |
 | Open With ▸ Choose App… | `open_with` — [アプリケーションを選んで開く](OPEN_WITH_FEATURE.ja.md)を参照 |
 | Details… | `file_details` |

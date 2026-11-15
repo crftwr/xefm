@@ -160,11 +160,11 @@ directory diff.
 
 The directory diff also understands the file-list actions it can perform on the
 focused node — `copy_files`, `move_files`, `delete_files`, `view_file` and
-`edit_file` — under those same names, so one rebind moves both.
+`edit_files` — under those same names, so one rebind moves both.
 
 ### Rebinding a shared key in one place only
 
-`quit`, `help`, `isearch` and `edit_file` mean something on every surface, which
+`quit`, `help`, `isearch` and `edit_files` mean something on every surface, which
 is why rebinding `quit` changes it in the file list *and* in every viewer. To
 change it in one viewer alone, prefix it with that viewer's name:
 

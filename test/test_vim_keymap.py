@@ -279,3 +279,20 @@ def test_viewer_sends_the_rich_renderer_the_key_it_understands(viewer):
     v._act("text_viewer.scroll_down", key("j", "j"))
     v._act("text_viewer.scroll_top", None)     # completed by a sequence's timeout
     assert seen == ["down", "home"]
+
+
+@pytest.mark.parametrize("preset, name", [(keymap_presets.AFX, "e"),
+                                          (keymap_presets.ORTHODOX, "f4"),
+                                          (keymap_presets.VIM, "f4")])
+def test_the_edit_key_edits_the_selection_or_the_cursor(preset, name):
+    """The edit key is edit_files everywhere: the selection or the cursor's
+    file in the file list, the viewed file in the text viewer, a merge in the
+    directory diff. edit_file is unbound."""
+    from xefm.actions import DIR_DIFF
+    kb = KeyBindings(keymap_presets.table(preset))
+    event = key(name, name if len(name) == 1 else None)
+    assert kb.find_action_for_event(event, True, FILER) == "edit_files"
+    assert kb.find_action_for_event(event, False, FILER) == "edit_files"
+    assert kb.find_action_for_event(event, False, TEXT_VIEWER) == "edit_files"
+    assert kb.find_action_for_event(event, True, DIR_DIFF) == "edit_files"
+    assert kb.get_keys_for_action("edit_file", FILER)[0] == []

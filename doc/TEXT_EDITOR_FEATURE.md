@@ -3,14 +3,14 @@
 English \| [日本語](TEXT_EDITOR_FEATURE.ja.md)
 
 XeFM can hand files straight to your text editor. Put the cursor on a file —
-or select several — and choose **File → Open With ▸ Text Editor** (`edit_file`): XeFM steps aside while the
+or select several — and choose **File → Open With ▸ Text Editor** (`edit_files`): XeFM steps aside while the
 editor runs and comes back automatically when you save and quit. Any editor
 that takes filename arguments works.
 
 ## Usage
 
 1. Move the cursor to the file you want to edit, or select multiple files.
-2. Choose **File → Open With ▸ Text Editor** (`edit_file`). With a selection, every selected file is passed to the editor in
+2. Choose **File → Open With ▸ Text Editor** (`edit_files`). With a selection, every selected file is passed to the editor in
    one launch (`vim a.txt b.txt`), so you get one session over all of them.
 3. Edit, save, and exit the editor — XeFM redraws where you left off.
 
@@ -18,13 +18,15 @@ Files on SSH and S3 panes can be edited too: XeFM edits a local copy and
 uploads it each time you save — see [Remote Editing](REMOTE_EDIT_FEATURE.md).
 Files inside archives are read-only and can't be edited in place. Directories
 (and the `..` parent) can't be edited, and a warning is shown if you try; in a
-mixed selection they are simply skipped. The key for `edit_file` depends on
+mixed selection they are simply skipped. `edit_file` edits only the file
+under the cursor, whatever is selected; no preset binds it. The key of
+`edit_files` depends on
 your keymap preset — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side) — and can be rebound in your
 config's `KEY_BINDINGS`.
 
 ## Which editor is used
 
-When you run `edit_file`, XeFM picks the editor like this:
+When you run `edit_files` or `edit_file`, XeFM picks the editor like this:
 
 1. **A matching `edit` entry in `FILE_ASSOCIATIONS`** wins — so you can send,
    say, images to an image editor and `.md` files to a Markdown app. If an

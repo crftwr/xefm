@@ -286,7 +286,8 @@ it is the one list of keys that is always right for your config.
 | `create_directory` | Create a directory (the same key, with nothing selected) |
 | `delete_files` | Delete selected files |
 | `rename` | Rename a file (or batch-rename several) |
-| `edit_file` | Edit the selection (or the focused file) in the external editor |
+| `edit_files` | Edit the selection (or the focused file) in the external editor |
+| `edit_file` | Edit only the focused file in the external editor |
 | `create_file` | Create a new file |
 
 **See detailed documentation**: 
@@ -458,17 +459,17 @@ for a file with no `enter` rule of its own.
 The arrows, paging and Home/End scroll; `toggle_wrap` turns line wrapping on and
 off, `toggle_view_mode` switches between the rendered and raw view of a Markdown
 or other rich file, `change_encoding` picks the text encoding, `isearch` searches
-inside the file and `edit_file` hands it to your editor. `quit` (or Esc) closes
+inside the file and `edit_files` hands it to your editor. `quit` (or Esc) closes
 the viewer. The viewer draws its own keys along the bottom, and `F1` inside it
 lists them all — see
 [Text Viewer Feature](TEXT_VIEWER_FEATURE.md).
 
 ### External Editor
 
-`edit_file` edits the selection (or the focused file); `create_file` makes a new
-one.
+`edit_files` edits the selection (or the focused file), and `edit_file` only the
+focused file; `create_file` makes a new one.
 
-With several files selected, `edit_file` opens them all — files sharing an editor
+With several files selected, `edit_files` opens them all — files sharing an editor
 are passed to it in one launch (`vim a.txt b.txt`).
 
 Configure your preferred editor in `~/.xefm/config.py`:
@@ -938,7 +939,7 @@ See the [Configuration](#customization) section and [Key Bindings Feature](KEY_B
 #### Development Workflow
 1. Set up favorites for project directories
 2. Use external programs for git operations
-3. Edit files with `edit_file` (**File → Open With ▸ Text Editor**)
+3. Edit files with `edit_files` (**File → Open With ▸ Text Editor**)
 4. Use content search to find code
 
 #### S3 Data Management

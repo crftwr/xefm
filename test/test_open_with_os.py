@@ -38,8 +38,13 @@ class FakeApp:
     def log_info(self, message):
         self.logged.append(message)
 
+    def active_pane(self):
+        return {}
+
     open_with_os = xefm_app.XeFMApp.open_with_os
-    _run_associated_action = xefm_app.XeFMApp._run_associated_action
+    _open_entries = xefm_app.XeFMApp._open_entries
+    _open_with_system = xefm_app.XeFMApp._open_with_system
+    _files_label = staticmethod(xefm_app.XeFMApp._files_label)
 
 
 @pytest.fixture

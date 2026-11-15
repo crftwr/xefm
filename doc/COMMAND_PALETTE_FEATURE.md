@@ -25,7 +25,7 @@ file list understands and run the one you pick.
 
 - Every action of the file list — including the ones with no key and no menu
   item, such as `duplicate_files`, `focus_left` or `copy_log_all`.
-- The actions every screen shares (`quit`, `help`, `isearch`, `edit_file`).
+- The actions every screen shares (`quit`, `help`, `isearch`, `edit_files`).
 - Your own actions from `ACTIONS` in `config.py`.
 
 Actions that only mean something inside a viewer (scrolling the text viewer,

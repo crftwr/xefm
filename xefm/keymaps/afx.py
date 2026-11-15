@@ -63,7 +63,7 @@ def own_bindings() -> dict:
         # === File Viewing & Editing ===
         'view_file': ['V'],                    # View file using configured viewer
         'quick_view': ['Shift-V'],             # Preview the cursor item in the other pane (again to close)
-        'edit_file': ['E'],                    # Edit selected file with configured text editor (also inside the text viewer)
+        'edit_files': ['E'],                   # Edit selected files with configured text editor (also inside the viewers)
         'file_details': ['I'],                 # Show detailed file information dialog
 
         # === Archive Operations ===

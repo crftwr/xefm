@@ -39,7 +39,7 @@ def own_bindings() -> dict:
         # Files
         "rename": ["F2"],
         "view_file": ["F3"],
-        "edit_file": ["F4"],
+        "edit_files": ["F4"],
         "copy_files": ["F5"],
         "move_files": ["F6"],
         "create_directory": ["F7"],

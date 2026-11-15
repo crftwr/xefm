@@ -1619,7 +1619,8 @@ BUILTIN_HANDLERS = ('viewer', 'navigate', 'list')
 #: or run another that runs it back (an 'enter' rule naming view_file, and a
 #: 'view' rule naming open_item), round and round. Such a rule is ignored with
 #: a warning.
-VERB_ACTIONS = ('open_item', 'open_with_os', 'view_file', 'edit_file')
+VERB_ACTIONS = ('open_item', 'open_with_os', 'open_items_with_os', 'view_file',
+                'view_files', 'edit_file', 'edit_files')
 
 #: Entry keys that configure the entry itself rather than naming an action.
 #: 'terminal' is obsolete -- whether to hand over the display follows from

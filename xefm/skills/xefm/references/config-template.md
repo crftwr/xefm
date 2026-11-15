@@ -1183,11 +1183,13 @@ class Config:
     # Running an action: any of enter/open/view/edit can run an action instead
     # -- a built-in one, one from ACTIONS, or an extension's -- written
     # {'action': 'name'} in every verb (a bare string stays a handler name or
-    # a command line). From enter/open/view it acts on the entry under the
-    # cursor alone. With the os-preview extension, Enter on a video shows it
-    # in Quick Look:
+    # a command line). It acts on the files whose rule names it: the one under
+    # the cursor, or the selected ones for open_items_with_os / view_files /
+    # edit_files. With the os-preview extension, Enter on a video shows it in
+    # Quick Look:
     #     {'pattern': ['*.mp4', '*.mov'], 'enter': {'action': 'preview.show'}},
-    # open_item, open_with_os, view_file and edit_file read this table
+    # The verb actions (open_item, open_with_os, open_items_with_os,
+    # view_file, view_files, edit_file, edit_files) read this table
     # themselves and cannot be named; an unknown name is warned about and the
     # rule reads as absent.
     #

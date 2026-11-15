@@ -23,7 +23,7 @@ Contexts
 
 A context names one key-consuming surface. ``common`` holds the handful of
 actions every surface understands — ``quit``, ``help``, ``search``,
-``edit_file`` — and every other context inherits it, so one rebind of ``quit``
+``edit_file`` / ``edit_files`` — and every other context inherits it, so one rebind of ``quit``
 applies in the file list and inside every viewer, exactly as before.
 
 Names
@@ -425,6 +425,15 @@ _DETAILS: dict[str, str] = {
         "match and Esc puts the cursor back where it was. Those are the "
         "default keys; the Help dialog lists yours."),
     "edit_file": (
+        "Opens the file under the cursor in your editor, even when other files "
+        "are selected; `edit_files` opens the selection. An `edit` rule in "
+        "`FILE_ASSOCIATIONS` picks the program per file type; otherwise "
+        "`TEXT_EDITOR` is used. Inside the text viewer it edits the viewed "
+        "file; in the diff viewers it merges the two sides in `TEXT_DIFF`.\n\n"
+        "No preset binds it: the edit key belongs to `edit_files`, which "
+        "does the same when nothing is selected. Bind a key to `edit_file` to "
+        "edit only the cursor's file whatever is selected."),
+    "edit_files": (
         "Opens the selected files — or the file under the cursor when nothing "
         "is selected — in your editor. An `edit` rule in `FILE_ASSOCIATIONS` "
         "picks the program per file type; otherwise `TEXT_EDITOR` is used. "
@@ -448,6 +457,11 @@ _DETAILS: dict[str, str] = {
         "operating system's default for that type, or the `open` rule in "
         "`FILE_ASSOCIATIONS`. A rule set to `None` stops the file type from "
         "being opened this way at all."),
+    "open_items_with_os": (
+        "Like `open_with_os`, but for the selected items, or the item under "
+        "the cursor when nothing is selected. Each one goes where its own "
+        "`open` rule sends it, and files that share a program open in one "
+        "launch. More than 10 items ask first."),
     "open_with": (
         "Lists the applications that can open the selected files — or the "
         "file under the cursor — and opens them in the one you pick: first "
@@ -598,6 +612,12 @@ _DETAILS: dict[str, str] = {
         "built-in viewer picks by type — text with syntax highlighting, "
         "rendered Markdown, a JSON tree, a CSV grid, images. Files on remote "
         "and archive panes always use the built-in viewer."),
+    "view_files": (
+        "Like `view_file`, but for the selected files, or the file under the "
+        "cursor when nothing is selected. Each one goes where its own `view` "
+        "rule sends it, and files that share a program open in one launch. "
+        "The built-in viewer shows one file at a time, so of the files left "
+        "for it only the first opens and the rest are named in the log."),
     "file_details": (
         "Shows size, dates, permissions and the rest for the item under the "
         "cursor, or a summary plus details for each selected item. For a "
@@ -930,7 +950,8 @@ _COMMON_ACTIONS = [
     _a("help", COMMON, "Show the key bindings for what is on screen"),
     _a("isearch", COMMON, "Incremental search",
        aliases=("search",)),
-    _a("edit_file", COMMON, "Edit in the configured text editor"),
+    _a("edit_file", COMMON, "Edit the focused file in the configured text editor"),
+    _a("edit_files", COMMON, "Edit the selected files in the configured text editor"),
 ]
 
 _FILER_ACTIONS = [
@@ -946,6 +967,7 @@ _FILER_ACTIONS = [
     _a("cursor_bottom", FILER, "Move the cursor to the last item"),
     _a("open_item", FILER, "Open the file, or enter the directory"),
     _a("open_with_os", FILER, "Open with the OS default application"),
+    _a("open_items_with_os", FILER, "Open the selection with the OS default applications"),
     _a("open_with", FILER, "Choose the application that opens the selection"),
     _a("reveal_in_os", FILER, "Reveal in the OS file manager"),
     _a("go_parent", FILER, "Go to the parent directory"),
@@ -1011,6 +1033,7 @@ _FILER_ACTIONS = [
     _a("create_directory", FILER, "Create a new directory"),
     # Viewing
     _a("view_file", FILER, "View the focused file in the built-in viewer"),
+    _a("view_files", FILER, "View the selected files"),
     _a("file_details", FILER, "Show details for the focused item"),
     _a("diff_files", FILER, "Compare two files side by side"),
     _a("diff_directories", FILER, "Compare two directories recursively"),

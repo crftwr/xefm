@@ -30,13 +30,13 @@ The viewer draws its own keys along the bottom, and `F1` inside it lists them al
 | `isearch` | Incremental search — then `↑` / `↓` step between matches |
 | `toggle_view_mode` | Toggle rendered / raw view (Markdown and other rich types) |
 | `change_encoding` | Choose the text encoding (Auto / explicit) |
-| `edit_file` | Edit the viewed file in the configured editor |
+| `edit_files` | Edit the viewed file in the configured editor |
 | `Cmd`/`Ctrl` + `C` | Copy the current selection |
 | `Cmd`/`Ctrl` + `A` | Select the whole file |
 | `F1` | Key help |
 | `quit` / `Esc` | Close the viewer |
 
-The keys of `isearch`, `edit_file` and `quit`, and Vim style's extra scroll
+The keys of `isearch`, `edit_files` and `quit`, and Vim style's extra scroll
 keys, depend on your keymap preset — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
 Apart from `Esc` and the copy / select-all chords, which are fixed, every key

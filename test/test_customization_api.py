@@ -793,7 +793,7 @@ def test_a_file_association_runs_an_action_for_any_verb(app_with):
 
 
 def test_edit_runs_an_action_on_its_own_files_only(app_with):
-    """edit_file batches an action like a command: it gets the selected files
+    """edit_files batches an action like a command: it gets the selected files
     whose rule names it, and the rest go to TEXT_EDITOR."""
     seen = []
     app, _ = app_with(
@@ -808,10 +808,95 @@ def test_edit_runs_an_action_on_its_own_files_only(app_with):
     pane = app.active_pane()
     marks = {str(f) for f in pane["files"] if f.name in ("a.txt", "d.pdf")}
     pane["selected_files"] = set(marks)
-    app.edit_file()
+    app.edit_files()
     assert seen == [["d.pdf"]]
     assert launched == [["a.txt"]]
     assert pane["selected_files"] == marks
+
+
+def _mark(pane, *names):
+    pane["selected_files"] = {str(f) for f in pane["files"] if f.name in names}
+
+
+def _focus(pane, name):
+    pane["focused_index"] = [f.name for f in pane["files"]].index(name)
+
+
+def test_view_files_sends_each_file_by_its_rule(app_with):
+    """view_files: a command gets its files in one launch; the built-in
+    viewer shows the first file left for it and names the rest."""
+    app, _ = app_with(FILE_ASSOCIATIONS=[{"pattern": "*.pdf", "view": "pdfview"}])
+    opened, launched, logged = [], [], []
+    app._open_viewer = lambda entry, *a, **k: opened.append(entry.name)
+    app._launch_associated = lambda entries, command: launched.append(
+        (command[0], [e.name for e in entries])) or True
+    app.log_info = logged.append
+    pane = app.active_pane()
+    _mark(pane, "a.txt", "b.docx", "c.docx", "d.pdf", "sub")
+    app.view_files()
+    assert launched == [("pdfview", ["d.pdf"])]
+    assert opened == ["a.txt"]
+    assert "Not shown: b.docx, c.docx - the built-in viewer shows one file at a time" in logged
+    assert "sub is a directory" in logged
+
+
+def test_view_file_still_views_the_cursor_alone(app_with):
+    app, _ = app_with()
+    opened = []
+    app._open_viewer = lambda entry, *a, **k: opened.append(entry.name)
+    pane = app.active_pane()
+    _mark(pane, "a.txt", "b.docx")
+    _focus(pane, "d.pdf")
+    app.view_file()
+    assert opened == ["d.pdf"]
+
+
+def test_open_items_with_os_sends_each_item_by_its_rule(app_with):
+    seen = []
+    app, _ = app_with(
+        ACTIONS={"peek.show": lambda ctx: seen.append(
+            sorted(e.name for e in ctx.pane.selected()))},
+        FILE_ASSOCIATIONS=[{"pattern": "*.pdf", "open": {"action": "peek.show"}},
+                           {"pattern": "c.docx", "open": None}])
+    system = []
+    app._open_with_system = lambda entries: system.append([e.name for e in entries])
+    pane = app.active_pane()
+    _mark(pane, "a.txt", "b.docx", "c.docx", "d.pdf")
+    app.open_items_with_os()
+    assert seen == [["d.pdf"]]
+    assert system == [["a.txt", "b.docx"]]
+
+
+def test_open_items_with_os_asks_before_many(app_with, monkeypatch):
+    app, tmp = app_with()
+    for i in range(12):
+        with open(os.path.join(tmp, f"n{i:02}.txt"), "w") as fh:
+            fh.write("x")
+    app.reread()
+    app._settle_listings()
+    asked, system = [], []
+    monkeypatch.setattr(xefm_app, "show_message_box",
+                        lambda panel, text, **k: asked.append(k["on_result"]))
+    app._open_with_system = lambda entries: system.append(len(entries))
+    pane = app.active_pane()
+    pane["selected_files"] = {str(f) for f in pane["files"] if f.name.endswith(".txt")}
+    assert len(pane["selected_files"]) > app._OPEN_MANY
+    app.open_items_with_os()
+    assert system == [] and len(asked) == 1
+    asked[0]("Open")
+    assert system == [len(pane["selected_files"])]
+
+
+def test_edit_file_edits_the_cursor_alone(app_with):
+    app, _ = app_with()
+    edited = []
+    app._run_editor = lambda argv, label: edited.append(
+        [os.path.basename(a) for a in argv[1:]]) or True
+    pane = app.active_pane()
+    _mark(pane, "b.docx", "d.pdf")
+    _focus(pane, "a.txt")
+    app.edit_file()
+    assert edited == [["a.txt"]]
 
 
 def test_a_file_association_naming_a_verb_action_is_ignored(app_with):

@@ -83,7 +83,7 @@ class Apply(unittest.TestCase):
         keymap_presets.apply(config, keymap_presets.ORTHODOX)
         expected = {
             "help": ["F1"], "reread": ["F2", "Ctrl-R"], "view_file": ["F3"],
-            "edit_file": ["F4"], "copy_files": ["F5"], "move_files": ["F6"],
+            "edit_files": ["F4"], "copy_files": ["F5"], "move_files": ["F6"],
             "create_directory": ["F7"], "delete_files": ["F8", "DELETE"],
             "quit": ["Alt-F4"], "rename": ["Shift-F6", "Ctrl-M"],
             "duplicate_files": ["Shift-F5"], "compare_selection": ["Shift-F2"],

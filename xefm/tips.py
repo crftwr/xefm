@@ -125,7 +125,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "Explorer)."),
 
     ("Edit in your editor",
-     "{key:edit_file} opens the selected files — or the focused file when "
+     "{key:edit_files} opens the selected files — or the focused file when "
      "nothing is selected — in your text editor, all in one session: the "
      "`TEXT_EDITOR` command in `~/.xefm/config.py` (VS Code in desktop mode, "
      "vim in the terminal, by default). An `edit` entry in "
