@@ -1124,6 +1124,12 @@ class Config:
     # - ['wezterm', 'start', '--']   (a terminal that takes the command as args)
     TERMINAL = None
 
+    # Embedded console (prototype, discussion #900)
+    # With libghostty available, the 'console' action shows a persistent shell
+    # over the panes, and in desktop mode the subshell and PROGRAMS entries with
+    # {'terminal': True} run there instead of in TERMINAL. False keeps TERMINAL.
+    EMBEDDED_TERMINAL = True
+
     # S3 settings
     S3_CACHE_TTL = 60  # S3 cache TTL in seconds (default: 60 seconds)
     

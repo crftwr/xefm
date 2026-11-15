@@ -904,6 +904,13 @@ _DETAILS: dict[str, str] = {
         "opens in the terminal application set by `TERMINAL`. The shell is "
         "`SUBSHELL` from `config.py`, else your `$SHELL`, and it gets the "
         "`XEFM_*` variables. Local directories only."),
+    "console": (
+        "Shows a shell over the panes, and puts it away again with the same "
+        "key; the shell keeps running in between, so a long command can be "
+        "left to finish while you work in the panes. It starts in the active "
+        "pane's directory. The panes re-read when the console is put away. "
+        "Needs libghostty; `EMBEDDED_TERMINAL = False` in `config.py` turns "
+        "it off. Prototype (discussion #900)."),
     "edit_config": (
         "Opens `~/.xefm/config.py` in your `TEXT_EDITOR`, creating it on first "
         "use. In a terminal the configuration reloads when the editor exits; "
@@ -1154,6 +1161,7 @@ _FILER_ACTIONS = [
     # External programs and configuration
     _a("programs", FILER, "Run an external program"),
     _a("subshell", FILER, "Open a subshell in this directory"),
+    _a("console", FILER, "Show or hide the embedded console"),
     _a("edit_config", FILER, "Edit config.py, then reload it"),
     _a("reload_config", FILER, "Re-read config.py and apply it live"),
     _a("install_extension", FILER,

@@ -4339,6 +4339,7 @@ class XeFMApp:
                 "diff_files": (self.diff_files, False),
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
+                "console": (self.toggle_console, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
                 "install_extension": (self.install_extension, False),
@@ -5298,6 +5299,7 @@ class XeFMApp:
                      shortcut=sc("find_similar")),
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
             MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
+            MenuItem("Console", on_select=self.toggle_console, shortcut=sc("console")),
             SEPARATOR,
             # Editing the config and reloading it are the loop a user tuning
             # XeFM goes round, so they stay at the top. What is set up once or
@@ -5934,6 +5936,11 @@ class XeFMApp:
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
         prefix_prompt_markers(env, command)
+        if is_desktop_mode() and self._console_unavailable() is None:
+            # The embedded console (#900): the shell runs in the window, the
+            # panes re-read when it is put away.
+            self._show_console(cwd=str(path))
+            return
         if is_desktop_mode():
             if self._open_terminal(command, cwd=str(path), env=env):
                 self.log_info(f"Opened a terminal in {path}")
@@ -5941,6 +5948,86 @@ class XeFMApp:
             return
         self.log_info(f"Subshell in {path} — exit the shell to return")
         self._run_in_terminal(command, cwd=str(path), env=env)
+
+    # --- embedded console (prototype, #900) -----------------------------------
+
+    #: Layer z of the console: over the panes and the isearch bar (70), under
+    #: the viewers (80), so a viewer opened from the console still shows.
+    _CONSOLE_Z = 75
+
+    def _console_unavailable(self) -> str | None:
+        from xefm.embedded_console import unavailable
+        return unavailable(self.config)
+
+    def _console_env(self) -> dict:
+        """The environment a console child gets: the subshell's, so the
+        ``XEFM_*`` variables describe the panes as they were when it started."""
+        from xefm.external_programs import build_xefm_env, ensure_common_paths_in_env
+        env = os.environ.copy()
+        ensure_common_paths_in_env(env)
+        env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
+                                  self.pm.get_current_pane(),
+                                  self.pm.get_inactive_pane()))
+        return env
+
+    def _console_bound(self) -> bool:
+        return self._menu_shortcut("console") is not None
+
+    def toggle_console(self) -> None:
+        """Show the persistent console over the panes, or put it away. The
+        shell starts in the active pane's directory the first time and keeps
+        running in between; exiting it leaves a bar that restarts it."""
+        why = self._console_unavailable()
+        if why is not None:
+            self.log_info(f"Console not available: {why}")
+            self.panel.render()
+            return
+        path = self.active_pane()["path"]
+        cwd = str(path) if self._is_local(path) else os.path.expanduser("~")
+        self._show_console(cwd=cwd)
+
+    def _show_console(self, *, cwd: str) -> None:
+        from xefm.embedded_console import ConsoleView
+        view = getattr(self, "_console", None)
+        if view is None:
+            command = _subshell_command(self.config)
+            view = self._console = ConsoleView(
+                command, cwd=cwd, env=self._console_env(),
+                on_hide=self._hide_console, action_bound=self._console_bound)
+            self.log_info(f"Console in {cwd} - "
+                          f"{self._menu_shortcut('console') or 'F12'} "
+                          "returns to the panes")
+        self._push_console(view)
+
+    def _run_in_console(self, argv: list, *, cwd: str | None, env: dict,
+                        label: str) -> None:
+        """Run ``argv`` once in a console of its own, over the panes; it
+        closes with Enter once the program exits."""
+        from xefm.embedded_console import ConsoleView
+        view = ConsoleView(argv, cwd=cwd or os.path.expanduser("~"), env=env,
+                           on_hide=self._hide_console, action_bound=self._console_bound,
+                           one_shot=True, label=label)
+        self.log_info(f"Running in the console: {label}")
+        self._push_console(view)
+
+    def _push_console(self, view) -> None:
+        from puikit.panel import Rect
+        self.panel.remove_layer(view)
+        self.panel.push_layer(view, z=self._CONSOLE_Z,
+                              reflow=lambda sw, sh: Rect(0, 0, sw, sh))
+        self.panel.render()
+
+    def _hide_console(self, view) -> None:
+        """Put a console away. A one-shot one is closed for good (its child is
+        hung up if still running); the persistent one keeps its session. Either
+        way the panes re-read, as after the TUI's hand-over: whatever ran may
+        have changed files."""
+        self.panel.remove_layer(view)
+        if getattr(view, "one_shot", False):
+            view.close()
+        self._relist(self.pm.left_pane, keep_visible=True)
+        self._relist(self.pm.right_pane, keep_visible=True)
+        self.panel.render()
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor
@@ -9371,6 +9458,12 @@ class XeFMApp:
         ``None`` at once."""
         from xefm.external_programs import SUBPROCESS_NO_WINDOW, resolve_command
         if terminal:
+            if is_desktop_mode() and self._console_unavailable() is None:
+                # The embedded console (#900): the program runs modally in the
+                # window, like the TUI's hand-over, and the panes re-read when
+                # it is closed. Still not waited for: the UI thread is ours.
+                self._run_in_console(argv, cwd=cwd, env=env, label=name)
+                return None
             if is_desktop_mode():
                 # No tty of ours to lend: the program gets a terminal window
                 # of its own, and we do not wait for it (#472).

@@ -271,6 +271,7 @@ def bindings() -> dict:
         # === External Programs ===
         'programs': [],                        # Show external programs menu
         'subshell': [],                        # Enter subshell (command line) mode
+        'console': [],                         # Show/hide the embedded console (#900 prototype)
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to

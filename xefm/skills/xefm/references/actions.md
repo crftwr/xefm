@@ -138,6 +138,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `choose_keymap` | Choose the keymap preset | — | — | — | — |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
+| `console` | Show or hide the embedded console | — | — | — | — |
 | `edit_config` | Edit config.py, then reload it | — | — | — | — |
 | `reload_config` | Re-read config.py and apply it live | — | — | — | — |
 | `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
