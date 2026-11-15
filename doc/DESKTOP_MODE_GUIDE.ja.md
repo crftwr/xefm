@@ -36,8 +36,8 @@ make run-gui                    # the same thing, through .venv
 | Windows 10/11（x64、ARM64） | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)**（推奨） | あり — Microsoft による署名 |
 | Windows 10/11 x64 | `XeFM-<version>-win-x64.zip`（ポータブル版の代替手段） | なし — [一度だけブロックの解除](#windows--ポータブル-zip)が必要 |
 | Windows 10/11 ARM64 | `XeFM-<version>-win-arm64.zip`（ポータブル版の代替手段） | なし — [一度だけブロックの解除](#windows--ポータブル-zip)が必要 |
-| macOS 12+（Apple Silicon） | `XeFM-<version>-macos.dmg` | あり — Apple Developer ID |
-| macOS 12+（Apple Silicon） | [Homebrew](#macos--homebrew)：`brew install --cask crftwr/tap/xefm`（中身は同じ DMG） | あり — Apple Developer ID |
+| macOS 14+（Apple Silicon） | `XeFM-<version>-macos.dmg` | あり — Apple Developer ID |
+| macOS 14+（Apple Silicon） | [Homebrew](#macos--homebrew)：`brew install --cask crftwr/tap/xefm`（中身は同じ DMG） | あり — Apple Developer ID |
 
 安定版のリリースには、すぐに実行できる DMG と zip が添付されます。ただし、1 つのプラットフォームの修正だけを含むリリースにはそのプラットフォームのビルドしか添付されないことがあるので、最新の zip や DMG がそれより前のタグにある場合があります。[最新リリースのリンク](https://github.com/crftwr/xefm/releases/latest)は、常に最新の安定版リリースを指します。特定のリリースに直接リンクすることもできます（例：`https://github.com/crftwr/xefm/releases/tag/v1.0.1`）。
 

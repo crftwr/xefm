@@ -45,8 +45,9 @@ run the child process, then restore the renderer and stdio in a `finally` block.
 - `xefm_python` — path to the correct Python interpreter, resolved once at
   import by `_resolve_xefm_python()`. In an app bundle `sys.executable` names
   the bundle's own launcher, which ignores a script argument, so each bundle
-  gets the interpreter shipped inside it: `Contents/Frameworks/`
-  `Python.framework/bin/python3` on macOS, `runtime\python.exe` on Windows.
+  gets the interpreter shipped inside it: `bin/python3` under `sys.base_prefix`
+  on macOS (the embedded framework's `Versions/Current`, `PythonT.framework`
+  for the free-threaded build), `runtime\python.exe` on Windows.
   Everywhere else it is `sys.executable`.
 - `SUBPROCESS_NO_WINDOW` — `{'creationflags': CREATE_NO_WINDOW}` on Windows,
   empty elsewhere, spread into every *piped* launch (`_run_program`, the legacy

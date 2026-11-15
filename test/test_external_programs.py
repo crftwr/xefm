@@ -168,3 +168,26 @@ class TestHelperFunctions(unittest.TestCase):
         # This is a basic test - the function will return the tool name if not found
         result = xefm_tool('nonexistent_tool.sh')
         self.assertEqual(result, 'nonexistent_tool.sh')
+
+
+class TestResolveXefmPython(unittest.TestCase):
+    """The interpreter external programs run with, inside the macOS bundle."""
+
+    def test_macos_bundle_uses_the_embedded_framework_home(self):
+        # The launcher sets the embedded framework's Versions/Current as home,
+        # so sys.base_prefix names it whatever the framework is called -
+        # PythonT.framework for the free-threaded build.
+        from xefm.external_programs import _resolve_xefm_python
+        home = '/Applications/XeFM.app/Contents/Frameworks/PythonT.framework/Versions/Current'
+        with patch('xefm.external_programs.sys') as fake_sys:
+            fake_sys.platform = 'darwin'
+            fake_sys.executable = '/Applications/XeFM.app/Contents/MacOS/XeFM'
+            fake_sys.base_prefix = home
+            self.assertEqual(_resolve_xefm_python(), os.path.join(home, 'bin', 'python3'))
+
+    def test_outside_a_bundle_uses_sys_executable(self):
+        from xefm.external_programs import _resolve_xefm_python
+        with patch('xefm.external_programs.sys') as fake_sys:
+            fake_sys.platform = 'darwin'
+            fake_sys.executable = '/usr/local/bin/python3.15t'
+            self.assertEqual(_resolve_xefm_python(), '/usr/local/bin/python3.15t')

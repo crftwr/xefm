@@ -1,7 +1,7 @@
 """List the guest's display modes, or set one (points w, h, pixel width).
 Runs inside the VM on XeFM.app's bundled Python, which has PyObjC:
 
-    PY=/Applications/XeFM.app/Contents/Frameworks/Python.framework/Versions/3.14/bin/python3
+    PY=/Applications/XeFM.app/Contents/Frameworks/PythonT.framework/Versions/Current/bin/python3
     tools/gui_demo/vm.sh "PYTHONPATH=/Applications/XeFM.app/Contents/Resources/python_packages $PY - 960 600 1920" < tools/gui_demo/modes.py
 """
 import sys

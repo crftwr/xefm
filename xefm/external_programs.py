@@ -23,7 +23,8 @@ def _resolve_xefm_python():
     script argument does not run the script.
 
     - macOS: ``XeFM.app/Contents/MacOS/XeFM`` -> the interpreter bundled at
-      ``Contents/Frameworks/Python.framework/bin/python3``.
+      ``Contents/Frameworks/<Python|PythonT>.framework/Versions/Current/bin/python3``,
+      i.e. ``sys.base_prefix``'s ``bin/python3``.
     - Windows: ``<root>\XeFM.exe`` -> ``<root>\runtime\python.exe`` from the
       embedded CPython. The C launcher (windows_app/src/launcher.c) hardcodes
       ``sys.argv`` and sets ``parse_argv = 0``, so handing XeFM.exe a script
@@ -37,9 +38,11 @@ def _resolve_xefm_python():
       :data:`SUBPROCESS_NO_WINDOW`, applied at the launch sites.
     """
     if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
-        # The bundled Python is at: XeFM.app/Contents/Frameworks/Python.framework/bin/python3
-        bundle_path = sys.executable.rsplit('.app/Contents/MacOS', 1)[0] + '.app'
-        return os.path.join(bundle_path, 'Contents', 'Frameworks', 'Python.framework', 'bin', 'python3')
+        # The launcher sets the embedded framework's Versions/Current as the
+        # interpreter's home, so its bin/python3 is under sys.base_prefix -
+        # whatever the framework is called (PythonT.framework when the bundle
+        # embeds the free-threaded build, Python.framework otherwise).
+        return os.path.join(sys.base_prefix, 'bin', 'python3')
 
     if sys.platform == 'win32':
         # Any real interpreter is named python*.exe (python.exe, pythonw.exe,

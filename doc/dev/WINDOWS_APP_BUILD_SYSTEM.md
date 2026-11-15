@@ -25,7 +25,7 @@ under `windows_app/`.
 
 ## Why this mirrors macOS so closely
 
-The macOS bundle embeds a `Python.framework` and drives it from a small Obj-C
+The macOS bundle embeds a framework Python (`PythonT.framework`, free-threaded) and drives it from a small Obj-C
 launcher (`macos_app/src/{main.m,XeFMAppDelegate.m}`) that:
 
 1. initializes CPython with `PyConfig` (Python home = the embedded runtime),

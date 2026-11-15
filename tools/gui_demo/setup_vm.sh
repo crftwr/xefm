@@ -28,7 +28,7 @@ EXP
     # Tips posts "See what's new in macOS" as a banner that stays on screen,
     # in the corner of every take. Off from the next login on.
     "$HERE/vm.sh" 'launchctl disable gui/$(id -u)/com.apple.tipsd'
-    PY=/Applications/XeFM.app/Contents/Frameworks/Python.framework/Versions/3.14/bin/python3
+    PY=/Applications/XeFM.app/Contents/Frameworks/PythonT.framework/Versions/Current/bin/python3
     "$HERE/vm.sh" "PYTHONPATH=/Applications/XeFM.app/Contents/Resources/python_packages $PY - 960 600 1920" < "$HERE/modes.py"
     echo "Now grant XeFM's folder permissions once: see README.md."
     ;;

@@ -118,7 +118,7 @@ create_install_doc() {
 
 ## Requirements
 
-- macOS 12 (Monterey) or later
+- macOS 14 (Sonoma) or later
 - No additional software installation required
 
 ## Features
@@ -135,7 +135,7 @@ create_install_doc() {
 If XeFM fails to launch:
 
 1. Check Console.app for error messages
-2. Ensure you're running macOS 12 or later
+2. Ensure you're running macOS 14 or later
 3. Try reinstalling by dragging XeFM.app to Trash and reinstalling
 
 For more information, visit: https://github.com/crftwr/xefm

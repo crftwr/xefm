@@ -9,6 +9,12 @@
 #import "XeFMAppDelegate.h"
 #include <Python.h>
 
+// The embedded framework's directory under Contents/Frameworks; build.sh
+// defines it from the venv's Python (PythonT.framework when free-threaded).
+#ifndef XEFM_PYTHON_FRAMEWORK
+#define XEFM_PYTHON_FRAMEWORK "Python.framework"
+#endif
+
 @implementation XeFMAppDelegate {
     BOOL pythonInitialized;
 }
@@ -30,7 +36,7 @@
         // Display detailed error dialog
         NSString *errorMessage = @"Failed to initialize Python interpreter.\n\n"
                                  @"Possible causes:\n"
-                                 @"• Python.framework is missing or corrupted\n"
+                                 @"• The embedded " XEFM_PYTHON_FRAMEWORK " is missing or corrupted\n"
                                  @"• XeFM source files are missing from the bundle\n"
                                  @"• Incompatible Python version\n\n"
                                  @"Please reinstall XeFM or check Console.app for detailed error logs.";
@@ -65,15 +71,17 @@
 - (BOOL)initializePython {
     // Get bundle paths
     NSBundle *mainBundle = [NSBundle mainBundle];
-    // Use "Current" symlink to support any Python version
-    NSString *frameworksPath = [[mainBundle privateFrameworksPath] 
-        stringByAppendingPathComponent:@"Python.framework/Versions/Current"];
+    // Use "Current" symlink to support any Python version. The framework's
+    // name is the embedded Python's own: PythonT.framework for the
+    // free-threaded build python.org ships (build.sh passes it in).
+    NSString *frameworksPath = [[mainBundle privateFrameworksPath]
+        stringByAppendingPathComponent:@XEFM_PYTHON_FRAMEWORK "/Versions/Current"];
     NSString *resourcesPath = [mainBundle resourcePath];
     
-    // Verify Python.framework exists
+    // Verify the embedded framework exists
     NSFileManager *fileManager = [NSFileManager defaultManager];
     if (![fileManager fileExistsAtPath:frameworksPath]) {
-        NSLog(@"ERROR: Python.framework not found at path: %@", frameworksPath);
+        NSLog(@"ERROR: " XEFM_PYTHON_FRAMEWORK " not found at path: %@", frameworksPath);
         return NO;
     }
     
