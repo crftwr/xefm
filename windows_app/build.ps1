@@ -420,6 +420,22 @@ Expand-Archive -Path $CachedZip -DestinationPath $RuntimeDir -Force
 # explicitly via PyConfig; remove it so the two mechanisms can't disagree.
 Get-ChildItem -Path $RuntimeDir -Filter '*._pth' -File | Remove-Item -Force -ErrorAction SilentlyContinue
 
+# python.org's arm64 embeddable carries an x64 vcruntime140_1.dll (that DLL has
+# no arm64 build; nothing arm64 imports it). A binary for another CPU can never
+# load in this bundle, so drop any the package ships rather than distribute it.
+$PeMachine = @{ x64 = 0x8664; arm64 = 0xAA64 }[$Arch]
+Get-ChildItem -Path $RuntimeDir -Recurse -File -Include '*.dll', '*.pyd', '*.exe' | ForEach-Object {
+    $bytes = [IO.File]::ReadAllBytes($_.FullName)
+    if ($bytes.Length -lt 0x40) { return }
+    $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
+    if ($peOff -lt 0 -or $peOff + 6 -gt $bytes.Length) { return }
+    $machine = [BitConverter]::ToUInt16($bytes, $peOff + 4)
+    if ($machine -ne $PeMachine) {
+        Info ("Dropping {0} from the runtime: built for machine 0x{1:X4}, not {2}" -f $_.Name, $machine, $Arch)
+        Remove-Item -Force $_.FullName
+    }
+}
+
 if (-not (Test-Path (Join-Path $RuntimeDir "$PyDllName.dll"))) {
     Fail "$PyDllName.dll missing after extraction - the embeddable package may not be Python $PyFull's free-threaded one."
 }
@@ -774,7 +790,29 @@ if ($Zip) {
     $ZipOut = Join-Path $BuildDir "XeFM-$Version-$ZipSuffix.zip"
     if (Test-Path $ZipOut) { Remove-Item -Force $ZipOut }
     Info "Creating $ZipOut"
-    Compress-Archive -Path $AppRoot -DestinationPath $ZipOut -Force
+    # Not Compress-Archive: Windows PowerShell 5.1's writes '\' into entry names,
+    # which the zip format forbids - macOS/Linux unzip then drops most files and
+    # makes folders with no permissions. Write the entries with '/' ourselves,
+    # under the same top-level XeFM/ folder.
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $RootName = Split-Path -Leaf $AppRoot
+    $RootLen = $AppRoot.TrimEnd('\').Length + 1
+    $archive = [IO.Compression.ZipFile]::Open($ZipOut, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $null = $archive.CreateEntry("$RootName/")
+        Get-ChildItem -Path $AppRoot -Recurse -Force | Sort-Object FullName | ForEach-Object {
+            $rel = $RootName + '/' + $_.FullName.Substring($RootLen).Replace('\', '/')
+            if ($_.PSIsContainer) {
+                $null = $archive.CreateEntry("$rel/")
+            } else {
+                $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $archive, $_.FullName, $rel, [IO.Compression.CompressionLevel]::Optimal)
+            }
+        }
+    } finally {
+        $archive.Dispose()
+    }
     Success "Created $ZipOut"
 }
 
