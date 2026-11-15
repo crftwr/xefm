@@ -1,6 +1,6 @@
 # XeFM Makefile
 
-.PHONY: api-snapshot api-compat release-review check-docs fix-docs skill-zip skill-references release-skill qa help banner run run-gui run-web run-linux run-linux-musl run-linux-shell linux-musl-image test test-quick test-linux test-linux-musl test-vm run-vm shell-vm release-test clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-toolchainwindows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix install-windows-msix uninstall-windows-msix install-config keymap-reset venv clean-venv check-venv install-puikit
+.PHONY: api-snapshot api-compat release-review check-docs fix-docs skill-zip skill-references release-skill qa help banner run run-gui run-web run-linux run-linux-musl run-linux-shell linux-musl-image test test-quick test-linux test-linux-musl test-vm run-vm shell-vm release-test clean clean-python install uninstall dev-install lint format demo build publish-testpypi tag release-github release-whl release-macos-dmg release-windows-zip release-status icons icons-check macos-app clean-macos macos-refresh-icon macos-dmg install-macos-dmg uninstall-macos-dmg windows-toolchain windows-app clean-windows clean-windows-cache windows-zip install-windows-zip uninstall-windows-zip windows-msix windows-msixbundle install-windows-msix uninstall-windows-msix install-config keymap-reset venv clean-venv check-venv install-puikit
 
 # Python interpreter selection
 # All Python is run through the project virtual environment (.venv). There is no
@@ -160,8 +160,8 @@ help:
 	@echo "  qa                 - quality-loop: every scenario against the skill (SCENARIO=name for one)"
 	@echo "  release-whl        - Upload sdist + wheel to PyPI, and to the Release"
 	@echo "  release-macos-dmg  - (on macOS)   attach XeFM-<ver>-macos.dmg to the Release"
-	@echo "  release-windows-zip- (on Windows) attach XeFM-<ver>-win64.zip to the Release"
-	@echo "  release-windows-msix - (on Windows) submit the MSIX to the Microsoft Store"
+	@echo "  release-windows-zip- (on Windows) attach the -win-x64 and -win-arm64 zips to the Release"
+	@echo "  release-windows-msix - (on Windows) submit the x64+arm64 .msixbundle to the Microsoft Store"
 	@echo "  release-status     - Show which artifacts have landed so far"
 	@echo ""
 	@echo "  The three release-<artifact> targets are independent and re-runnable,"
@@ -190,6 +190,7 @@ help:
 	@echo "Windows App Bundle:"
 	@echo "  windows-toolchain      - Install the MSVC compiler + Windows SDK with winget"
 	@echo "  windows-app            - Build self-contained Windows application bundle"
+	@echo "                           (ARCH=arm64 for this and the targets below; default x64)"
 	@echo "  clean-windows          - Remove windows_app/build/ (bundle, zip, .msix) + tiles"
 	@echo "  clean-windows-cache    - Remove the downloaded CPython embeddable zips"
 	@echo "  windows-zip            - Build the bundle and zip it for distribution"
@@ -200,6 +201,7 @@ help:
 	@echo "                           SIGN=1 to self-sign for local testing instead)"
 	@echo "  install-windows-msix   - Pack + self-sign, trust cert (elevates), install per-user"
 	@echo "  uninstall-windows-msix - Remove the MSIX package + throwaway signing cert"
+	@echo "  windows-msixbundle     - x64 + arm64 in one .msixbundle (what the Store gets)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run                        # Run XeFM in the terminal"
@@ -213,11 +215,12 @@ help:
 	@echo "  make release-github             # Open the GitHub Release for that tag"
 	@echo "  make release-whl                # Publish its sdist + wheel to PyPI"
 	@echo "  make release-macos-dmg          # Upload the DMG to the GitHub Release"
-	@echo "  make release-windows-zip        # Upload the Windows zip to the GitHub Release"
-	@echo "  make release-windows-msix       # Submit the MSIX to the Microsoft Store"
+	@echo "  make release-windows-zip        # Upload the Windows zips to the GitHub Release"
+	@echo "  make release-windows-msix       # Submit the MSIX bundle to the Microsoft Store"
 
-# The desktop apps ship a free-threaded Python (GIL off), and macos_app/build.sh
-# bundles the framework .venv was made from, so the newest Python's
+# The desktop apps ship a free-threaded Python (GIL off): macos_app/build.sh
+# bundles the framework .venv was made from, and windows_app/build.ps1 refuses a
+# venv that is not free-threaded, so the newest Python's
 # free-threaded build (python3.NNt) wins over its regular one when both are
 # installed. FREE_THREADED=0 picks the regular build. Between two of the same
 # kind, a macOS framework build (python.org's) wins over a standalone one (uv's
@@ -607,8 +610,8 @@ demo: check-venv
 #                                           (and attach the AI-agent skill zip)
 #   make release-whl           any machine  sdist + wheel -> PyPI (+ the Release)
 #   make release-macos-dmg     macOS        XeFM-<ver>-macos.dmg  -> the Release
-#   make release-windows-zip   Windows      XeFM-<ver>-win64.zip  -> the Release
-#   make release-windows-msix  Windows      XeFM-<ver>.0-x64.msix -> the Microsoft Store
+#   make release-windows-zip   Windows      XeFM-<ver>-win-x64.zip, -win-arm64.zip -> the Release
+#   make release-windows-msix  Windows      XeFM-<ver>.0.msixbundle -> the Microsoft Store
 #   make release-status        any machine  what has landed so far
 #
 # Order matters only twice: `tag` first (everything else names the tag it
@@ -689,8 +692,8 @@ tag: check-venv
 	@echo "  make release-github          # open the GitHub Release at v$(VERSION)"
 	@echo "  make release-whl             # here:       sdist + wheel -> PyPI"
 	@echo "  make release-macos-dmg       # on macOS:   XeFM-$(VERSION)-macos.dmg"
-	@echo "  make release-windows-zip     # on Windows: XeFM-$(VERSION)-win64.zip"
-	@echo "  make release-windows-msix    # on Windows: submit the MSIX to the Microsoft Store"
+	@echo "  make release-windows-zip     # on Windows: XeFM-$(VERSION)-win-x64.zip, -win-arm64.zip"
+	@echo "  make release-windows-msix    # on Windows: submit the MSIX bundle to the Microsoft Store"
 
 # --- release-github: open the Release the artifacts upload into -------------
 # Reads the version from the checkout, so the usual path is `make tag` then
@@ -1022,7 +1025,15 @@ uninstall-macos-dmg:
 # packaging target from silently shipping a stale .exe -- the failure mode that
 # once put a pre-icon-update launcher inside an .msix whose tiles were current.
 # 'make windows-app' still forces an unconditional rebuild.
-WINDOWS_APP_BUNDLE := windows_app/build/XeFM/XeFM.exe
+#
+# Two architectures, x64 and arm64, each in its own tree (build.ps1 -Arch). ARCH
+# picks the one a single-architecture target builds, installs or packs; the
+# release targets always take both. One machine of either kind builds both: the
+# one that does not match the venv is cross-compiled.
+ARCH ?= x64
+WINDOWS_APP_BUNDLE_x64 := windows_app/build/XeFM/XeFM.exe
+WINDOWS_APP_BUNDLE_arm64 := windows_app/build/arm64/XeFM/XeFM.exe
+WINDOWS_APP_BUNDLE := $(WINDOWS_APP_BUNDLE_$(ARCH))
 
 # Inputs compiled or copied into the bundle. XeFM.ico is here because it is
 # compiled into XeFM.exe as a resource, so an icon change has to reach the .exe.
@@ -1041,9 +1052,13 @@ WINDOWS_APP_SOURCES := $(wildcard windows_app/src/*.c) \
                        $(wildcard xefm/*.py) \
                        $(wildcard xefm/tools/*.py)
 
-$(WINDOWS_APP_BUNDLE): $(WINDOWS_APP_SOURCES)
-	@echo "Windows app bundle missing or stale; building it first..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
+$(WINDOWS_APP_BUNDLE_x64): $(WINDOWS_APP_SOURCES)
+	@echo "Windows x64 app bundle missing or stale; building it first..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch x64
+
+$(WINDOWS_APP_BUNDLE_arm64): $(WINDOWS_APP_SOURCES)
+	@echo "Windows arm64 app bundle missing or stale; building it first..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch arm64
 
 # The MSVC toolchain windows-app needs on a fresh machine, through winget: Build
 # Tools for Visual Studio with only the compiler and the Windows SDK. Idempotent;
@@ -1052,13 +1067,13 @@ windows-toolchain:
 	@powershell -ExecutionPolicy Bypass -File windows_app/install_toolchain.ps1
 
 windows-app:
-	@echo "Building Windows application bundle..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
+	@echo "Building Windows application bundle ($(ARCH))..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch $(ARCH)
 
 # Named for the artifact it produces, matching macos-dmg on the macOS side.
 windows-zip:
-	@echo "Building Windows application bundle (+ zip)..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Zip
+	@echo "Building Windows application bundle ($(ARCH), + zip)..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch $(ARCH) -Zip
 
 # --- release-windows-zip: publish the Windows portable zip ------------------
 # The portable zip is the artifact end users can actually install today: it is
@@ -1069,28 +1084,35 @@ windows-zip:
 # useful as a Partner Center submission (Microsoft re-signs it during
 # certification), never as a download.
 #
-# Filename mirrors build.ps1's own naming (XeFM-<version>-win64.zip), derived
-# from the same version literal as XEFM_VERSION above, so the two cannot drift.
-WINDOWS_ZIP := windows_app/build/XeFM-$(XEFM_VERSION)-win64.zip
+# Filename mirrors build.ps1's own naming (XeFM-<version>-win-x64.zip,
+# -win-arm64), derived from the same version literal as XEFM_VERSION above, so
+# the two cannot drift.
+WINDOWS_ZIP_x64 := windows_app/build/XeFM-$(XEFM_VERSION)-win-x64.zip
+WINDOWS_ZIP_arm64 := windows_app/build/XeFM-$(XEFM_VERSION)-win-arm64.zip
+WINDOWS_ZIP := $(WINDOWS_ZIP_$(ARCH))
 
-# File target so the upload builds the zip on demand when it is missing (e.g.
+# File targets so the upload builds a zip on demand when it is missing (e.g.
 # after 'make clean-windows') instead of failing at the upload. An existing
-# zip is NOT rebuilt; run 'make windows-zip' to force a fresh one.
-$(WINDOWS_ZIP):
+# zip is NOT rebuilt; run 'make windows-zip ARCH=...' to force a fresh one.
+$(WINDOWS_ZIP_x64):
 	@echo "Windows zip not found at $@; building it first..."
-	@$(MAKE) windows-zip
+	@$(MAKE) windows-zip ARCH=x64
 
-# Attach the portable zip to the GitHub Release for this version. Kept separate
-# from 'windows-zip' on purpose: building is local, uploading publishes. The
-# Release must already exist ('make release-github'). --clobber replaces an
-# asset of the same name, so re-uploading a rebuilt zip supersedes the previous
-# one rather than erroring.
+$(WINDOWS_ZIP_arm64):
+	@echo "Windows zip not found at $@; building it first..."
+	@$(MAKE) windows-zip ARCH=arm64
+
+# Attach both portable zips to the GitHub Release for this version. Kept
+# separate from 'windows-zip' on purpose: building is local, uploading
+# publishes. The Release must already exist ('make release-github'). --clobber
+# replaces an asset of the same name, so re-uploading a rebuilt zip supersedes
+# the previous one rather than erroring.
 # Prereq: an authenticated `gh` (gh auth login).
-release-windows-zip: $(WINDOWS_ZIP)
+release-windows-zip: $(WINDOWS_ZIP_x64) $(WINDOWS_ZIP_arm64)
 	@$(call check_release_exists)
-	@echo "Uploading $(WINDOWS_ZIP) to GitHub Release v$(XEFM_VERSION)..."
-	gh release upload v$(XEFM_VERSION) "$(WINDOWS_ZIP)" --clobber
-	@echo "Uploaded $(notdir $(WINDOWS_ZIP)) to release v$(XEFM_VERSION) ✓"
+	@echo "Uploading the Windows zips to GitHub Release v$(XEFM_VERSION)..."
+	gh release upload v$(XEFM_VERSION) "$(WINDOWS_ZIP_x64)" "$(WINDOWS_ZIP_arm64)" --clobber
+	@echo "Uploaded $(notdir $(WINDOWS_ZIP_x64)) and $(notdir $(WINDOWS_ZIP_arm64)) to release v$(XEFM_VERSION) ✓"
 
 # --- install-windows-zip: install what we actually ship ---------------------
 # The counterpart of install-macos-dmg: expands the portable zip a user would
@@ -1154,25 +1176,33 @@ clean-windows-cache:
 # is only useful for sideloading on the dev box, so it is opt-in via SIGN=1 --
 # and 'install-windows-msix' below passes it for you.
 #
-# Note the identity values are still Partner Center placeholders; a real
-# submission also needs -IdentityName / -Publisher / -PublisherDisplayName
-# (see WINDOWS_STORE_MSIX_PLAN.md 2a).
+# Identity values come from the gitignored windows_app/store.env (copy
+# store.env.example); without it the pack falls back to a XeFM.Prototype
+# identity that sideloads fine but cannot be submitted (WINDOWS_STORE_MSIX_PLAN.md 2a).
 windows-msix: $(WINDOWS_APP_BUNDLE)
-	@echo "Packaging Windows app as MSIX$(if $(SIGN), (self-signed, local testing), (unsigned, Store submission))..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 $(if $(SIGN),-Sign)
+	@echo "Packaging Windows app ($(ARCH)) as MSIX$(if $(SIGN), (self-signed, local testing), (unsigned, Store submission))..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch $(ARCH) $(if $(SIGN),-Sign)
+
+# Both architectures in one .msixbundle: one Store listing, and the Store
+# delivers the payload that matches the device. The second pack reuses the
+# tiles the first one rendered.
+windows-msixbundle: $(WINDOWS_APP_BUNDLE_x64) $(WINDOWS_APP_BUNDLE_arm64)
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch x64
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch arm64 -SkipAssets
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Bundle $(if $(SIGN),-Sign)
 
 # Trust the self-signed cert (self-elevates via UAC) then install per-user.
 #
 # Always re-packs with -Sign first rather than reusing whatever .msix is on
 # disk: both this and 'windows-msix' write the same
-# build\XeFM-<version>-x64.msix, so an unsigned pack may have overwritten a
+# build\XeFM-<version>-<arch>.msix, so an unsigned pack may have overwritten a
 # signed one. Add-AppxPackage cannot install an unsigned package, so packing
 # here is what guarantees the artifact it installs is actually signed.
 install-windows-msix: $(WINDOWS_APP_BUNDLE)
-	@echo "Packaging + self-signing MSIX for local install..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Sign
+	@echo "Packaging + self-signing MSIX ($(ARCH)) for local install..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch $(ARCH) -Sign
 	@echo "Installing MSIX package locally..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Install
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch $(ARCH) -Install
 
 # Removes the package (per-user) and the throwaway signing cert; untrusting the
 # machine-store cert self-elevates via UAC.
@@ -1180,11 +1210,12 @@ uninstall-windows-msix:
 	@echo "Removing installed MSIX package and throwaway cert..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Uninstall
 
-# --- release-windows-msix: submit the MSIX to the Microsoft Store -----------
-# Packs first via the 'windows-msix' target, not the file: signed and unsigned
-# packs write the same path, and Partner Center takes only the UNSIGNED form,
-# so repacking is what guarantees the upload is not a leftover self-signed
-# .msix from 'install-windows-msix'. The msstore CLI then uploads the package,
+# --- release-windows-msix: submit the MSIX bundle to the Microsoft Store -----
+# Packs first via the 'windows-msixbundle' target, not the file: signed and
+# unsigned packs write the same path, and Partner Center takes only the UNSIGNED
+# form, so repacking is what guarantees the upload holds no leftover self-signed
+# .msix from 'install-windows-msix'. Once a listing has taken a bundle, every
+# later submission must be one too, so this is the only form submitted. The msstore CLI then uploads the package,
 # creates a new submission carrying the listing metadata of the previous one,
 # and commits it -- certification proceeds exactly as for a browser submission.
 #
@@ -1204,16 +1235,16 @@ uninstall-windows-msix:
 # Mirrors WINDOWS_ZIP: build_msix.ps1 derives its version from the same
 # __version__ literal as XEFM_VERSION, plus the Store-required ".0" revision,
 # so this is the path the pack above just wrote.
-WINDOWS_MSIX := windows_app/build/XeFM-$(XEFM_VERSION).0-x64.msix
+WINDOWS_MSIXBUNDLE := windows_app/build/XeFM-$(XEFM_VERSION).0.msixbundle
 
-# -ut 900 is not optional at XeFM's package size. msstore's upload timeout
-# defaults to 100 seconds and the MSIX is ~90 MB, so the default expires
+# -ut 1800 is not optional at XeFM's package size. msstore's upload timeout
+# defaults to 100 seconds and the bundle is ~200 MB, so the default expires
 # mid-upload and the CLI reports a bare "Error while uploading the
 # application package." at 0% -- naming neither the timeout nor the size,
 # so it reads as a network or auth failure and sends you debugging the wrong
 # thing. A failed publish deletes the pending submission and opens a fresh
 # one, so re-running after a timeout leaves no orphan draft behind.
-release-windows-msix: windows-msix
+release-windows-msix: windows-msixbundle
 	@command -v msstore >/dev/null 2>&1 || { \
 		echo "ERROR: msstore CLI not found on PATH."; \
 		echo "       Install: winget install \"Microsoft Store Developer CLI\", then run 'msstore reconfigure'."; \
@@ -1227,9 +1258,9 @@ release-windows-msix: windows-msix
 		echo "ERROR: XEFM_STORE_PRODUCT_ID is not set in windows_app/store.env."; \
 		echo "       Add the listing's 9N... product ID (see store.env.example)."; \
 		exit 1; }; \
-	test -f "$(WINDOWS_MSIX)" || { \
-		echo "ERROR: $(WINDOWS_MSIX) missing after packing."; \
+	test -f "$(WINDOWS_MSIXBUNDLE)" || { \
+		echo "ERROR: $(WINDOWS_MSIXBUNDLE) missing after packing."; \
 		exit 1; }; \
-	echo "Submitting $(WINDOWS_MSIX) to the Microsoft Store ($$XEFM_STORE_PRODUCT_ID)..."; \
-	"$(PYTHON)" tools/msstore_publish.py "$(WINDOWS_MSIX)" -id "$$XEFM_STORE_PRODUCT_ID" -ut 900
+	echo "Submitting $(WINDOWS_MSIXBUNDLE) to the Microsoft Store ($$XEFM_STORE_PRODUCT_ID)..."; \
+	"$(PYTHON)" tools/msstore_publish.py "$(WINDOWS_MSIXBUNDLE)" -id "$$XEFM_STORE_PRODUCT_ID" -ut 1800
 

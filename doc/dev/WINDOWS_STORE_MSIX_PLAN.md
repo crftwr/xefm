@@ -249,7 +249,7 @@ Two things that are easy to get wrong here:
 
 - **Strip `<packaging>` from the generated `priconfig.xml`.** Its
   `autoResourcePackage` entries split the scale-200 tiles into a second
-  `resources.scale-200.pri` — a resource *package* that a single non-bundle `.msix`
+  `resources.scale-200.pri` — a resource *package* that an architecture `.msix`
   never carries, leaving those tiles unresolvable. Without the element every
   candidate lands in the one `resources.pri` that ships.
 - **Point `/pr` at a throwaway root holding just `AppxManifest.xml` and `Assets\`**,
@@ -265,6 +265,20 @@ makeappx pack /d <payload-dir> /p windows_app\build\XeFM-<version>-x64.msix /o
 ```
 
 `makeappx` validates the manifest during packing; fix any schema errors it reports.
+
+**Both architectures, one submission.** The package above is per architecture
+(`ProcessorArchitecture="x64"` or `"arm64"`, from `build\XeFM` or
+`build\arm64\XeFM`). What goes to the Store is the two of them in one bundle,
+which delivers the payload matching each device:
+
+```powershell
+makeappx bundle /d <dir holding both .msix> /p windows_app\build\XeFM-<version>.msixbundle /bv <version> /o
+```
+
+`build_msix.ps1 -Bundle` does this, and `make windows-msixbundle` runs the two
+packs and the bundle. **Once a listing has taken a bundle, every later
+submission must be a bundle too**, which is why `release-windows-msix` submits
+only that form.
 
 ### Step 5 — Local test install (self-signed; Store submission does NOT use this)
 To run/test the package on the dev machine before submitting, sign it with a
@@ -352,8 +366,8 @@ can redirect writes at runtime — but prefer fixing paths in code over shipping
 - Config/state is already under `~/.xefm/` (MSIX-safe, confirmed). Remaining to
   check: any **temp-file / cache** writes (archive extraction, S3/SFTP staging)
   resolve to a writable per-user temp dir, not the install tree.
-- Is a **single-architecture x64** package sufficient, or is an arm64 build wanted
-  later? (Manifest `ProcessorArchitecture` / a bundle would change.)
+- ~~Is a **single-architecture x64** package sufficient, or is an arm64 build
+  wanted later?~~ Settled: x64 and arm64 packages in one `.msixbundle` (Step 4).
 - Individual vs company Store account — the identity/Publisher differs; pick before
   reserving the name.
 

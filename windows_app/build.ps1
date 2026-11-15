@@ -8,15 +8,28 @@
     "embeddable" package matching the .venv's version), XeFM's own code, PuiKit,
     and all third-party dependencies. See doc/dev/WINDOWS_APP_BUILD_SYSTEM.md.
 
+    The embedded CPython is the free-threaded build (GIL off), like the macOS
+    app's, so the .venv has to be one too: 'make venv' picks it (py -3.XXt).
+
+.PARAMETER Arch
+    The architecture the bundle is for: x64 (the default, in build\XeFM) or
+    arm64 (in build\arm64\XeFM). The .venv need not match it. When it does not,
+    the build cross-compiles: the embeddable, the headers and import library
+    (python.org's full package for the target) and the dependency wheels are all
+    fetched for the target, at the versions the venv holds. So one machine of
+    either architecture builds both.
+
 .PARAMETER Version
     Version string embedded in XeFM.exe (e.g. 1.0.0). Defaults to xefm/__init__.py's __version__.
 
 .PARAMETER PythonEmbedUrl
     Override the embeddable-package download URL (default: python.org, matching
-    the venv's exact version).
+    the venv's exact version, verified against the SHA-256 python.org's
+    index-windows.json publishes; an override is not verified).
 
 .PARAMETER Zip
-    Also produce build\XeFM-<version>-win64.zip for distribution.
+    Also produce build\XeFM-<version>-win-x64.zip (arm64: -win-arm64) for
+    distribution.
 
 .PARAMETER Clean
     Remove the build directory and exit.
@@ -31,10 +44,13 @@
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File windows_app\build.ps1
     powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 1.0.0 -Zip
+    powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Arch arm64 -Zip
     powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Install
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet('x64', 'arm64')]
+    [string]$Arch = 'x64',
     [string]$Version,
     [string]$PythonEmbedUrl,
     [switch]$Zip,
@@ -53,8 +69,10 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 $SrcDir      = Join-Path $ScriptDir 'src'
 $ResDir      = Join-Path $ScriptDir 'resources'
 $BuildDir    = Join-Path $ScriptDir 'build'
-$AppRoot     = Join-Path $BuildDir 'XeFM'      # the distributable folder
-$ObjDir      = Join-Path $BuildDir 'obj'      # launcher intermediates
+# Named XeFM under either, because that is the folder a zip unpacks to.
+$ArchDir     = if ($Arch -eq 'x64') { $BuildDir } else { Join-Path $BuildDir $Arch }
+$AppRoot     = Join-Path $ArchDir 'XeFM'      # the distributable folder
+$ObjDir      = Join-Path $ArchDir 'obj'      # launcher intermediates
 $CacheDir    = Join-Path $ScriptDir '.cache'  # downloaded embeddable zips
 
 $AppName = 'XeFM'
@@ -78,7 +96,7 @@ if ($Clean) {
 # ---------------------------------------------------------------------------
 function Invoke-Install {
     if (-not (Test-Path (Join-Path $AppRoot 'XeFM.exe'))) {
-        Fail "No built bundle at $AppRoot. Run 'make windows-app' first."
+        Fail "No built bundle at $AppRoot. Run 'make windows-app ARCH=$Arch' first."
     }
 
     $isAdmin = ([Security.Principal.WindowsPrincipal] `
@@ -89,7 +107,7 @@ function Invoke-Install {
         Info "Administrator rights are required to write to '$InstallDir'."
         Info 'Requesting elevation (accept the UAC prompt)...'
         $psExe = (Get-Process -Id $PID).Path
-        $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Install -InstallDir `"$InstallDir`""
+        $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Arch $Arch -Install -InstallDir `"$InstallDir`""
         try {
             Start-Process -FilePath $psExe -Verb RunAs -Wait -ArgumentList $argLine
         } catch {
@@ -155,33 +173,128 @@ if (-not (Test-Path $VenvPy)) {
 $probe = & $VenvPy -c @"
 import sys, sysconfig, platform
 print('\t'.join([
-    platform.python_version(),                                   # 3.14.6
-    '%d.%d' % sys.version_info[:2],                              # 3.14
-    '%d%d' % sys.version_info[:2],                               # 314
+    platform.python_version(),                                   # 3.15.2
+    '%d.%d' % sys.version_info[:2],                              # 3.15
+    '%d%d' % sys.version_info[:2],                               # 315
     sys.base_prefix,                                             # full-CPython root
     sysconfig.get_paths()['purelib'],                           # venv site-packages
+    sysconfig.get_platform(),                                    # win-amd64 / win-arm64
+    str(int(bool(sysconfig.get_config_var('Py_GIL_DISABLED')))), # 1 = free-threaded
 ]))
 "@
 if ($LASTEXITCODE -ne 0) { Fail 'Failed to probe the venv interpreter.' }
-$parts       = $probe.Trim() -split "`t"
-$PyFull      = $parts[0]
-$PyXY        = $parts[1]
-$PyNoDot     = $parts[2]
-$BasePrefix  = $parts[3]
-$SitePkgs    = $parts[4]
+$parts        = $probe.Trim() -split "`t"
+$PyFull       = $parts[0]
+$PyXY         = $parts[1]
+$PyNoDot      = $parts[2]
+$BasePrefix   = $parts[3]
+$SitePkgs     = $parts[4]
+$VenvPlatform = $parts[5]
+$FreeThreaded = $parts[6] -eq '1'
+
+# The app ships the free-threaded interpreter, so the .venv must be one: its
+# version picks the embeddable, and its compileall and its wheels' ABI (cp3XXt)
+# are what go into the bundle. A regular venv would build a bundle whose
+# extension modules the embedded interpreter refuses to load.
+if (-not $FreeThreaded) {
+    Fail @"
+The .venv is a regular (GIL) Python $PyFull; the Windows app ships the free-threaded build.
+Install it and recreate the venv:
+  py install $($PyXY)t
+  make clean-venv
+  make venv
+"@
+}
+# The free-threaded runtime's own names: python315t.dll / python315t.lib. Its
+# stdlib zip keeps the plain python315.zip name.
+$PyDllName = "python$($PyNoDot)t"
+
+# platform.machine() will not do here: it says ARM64 in an x64 Python running
+# under emulation, which is how a build machine on Windows on Arm often is.
+$Cross = $VenvPlatform -ne @{ x64 = 'win-amd64'; arm64 = 'win-arm64' }[$Arch]
+
+Info "Python:        $PyFull free-threaded (ABI cp$($PyNoDot)t), $VenvPlatform"
+Info "Target:        $Arch$(if ($Cross) { ' (cross-compiling)' })"
+Info "base_prefix:   $BasePrefix"
+Info "site-packages: $SitePkgs"
+
+New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+
+# python.org's index of its Windows packages - what Python's install manager
+# reads - names each package's URL and SHA-256, so a download is verified, and
+# the URL is looked up rather than spelled: the embeddable's file name changed
+# between 3.14 (-embed-) and 3.15 (-embeddable-). The index is paged by "next".
+function Find-PythonPackage([string]$Id, [string]$PyVersion) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $url = 'https://www.python.org/ftp/python/index-windows.json'
+    while ($url) {
+        try {
+            $page = Invoke-RestMethod -Uri $url -UseBasicParsing
+        } catch {
+            Fail "Could not read $url to find $Id $PyVersion.`n$($_.Exception.Message)"
+        }
+        $hit = $page.versions | Where-Object { $_.id -eq $Id -and $_.'sort-version' -eq $PyVersion } |
+               Select-Object -First 1
+        if ($hit) { return $hit }
+        $url = if ($page.next) { [Uri]::new([Uri]$url, $page.next).AbsoluteUri } else { $null }
+    }
+    Fail "python.org lists no $Id at $PyVersion (index-windows.json)."
+}
+
+# Download a python.org package into the cache once, checking its SHA-256 on
+# every use: a cached zip is no more trusted than a fresh one.
+function Get-PythonPackage([string]$Id) {
+    $pkg = Find-PythonPackage $Id $PyFull
+    $name = Split-Path -Leaf ([Uri]$pkg.url).AbsolutePath
+    $file = Join-Path $CacheDir $name
+    if (Test-Path $file) {
+        if ((Get-FileHash -Algorithm SHA256 $file).Hash.ToLower() -eq $pkg.hash.sha256) {
+            Info "Using cached $name"
+            return $file
+        }
+        Warn "Cached $name has the wrong hash; re-downloading."
+        Remove-Item -Force $file
+    }
+    Info "Downloading $($pkg.url)"
+    try {
+        Invoke-WebRequest -Uri $pkg.url -OutFile $file -UseBasicParsing
+    } catch {
+        Fail "Failed to download $($pkg.url)`n$($_.Exception.Message)"
+    }
+    $have = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
+    if ($have -ne $pkg.hash.sha256) {
+        Remove-Item -Force $file
+        Fail "SHA-256 mismatch for $name`n  expected $($pkg.hash.sha256)`n  got      $have"
+    }
+    return $file
+}
+
+# python.org's package ids name the architecture its own way.
+$PyOrgArch = @{ x64 = '64'; arm64 = 'arm64' }[$Arch]
 
 $PyInclude = Join-Path $BasePrefix 'include'
 $PyLibs    = Join-Path $BasePrefix 'libs'
-
-Info "Python:        $PyFull (ABI cp$PyNoDot)"
-Info "base_prefix:   $BasePrefix"
-Info "site-packages: $SitePkgs"
+if ($Cross) {
+    # The venv's own headers and import library are for its architecture, and
+    # the embeddable has neither, so they come from python.org's full package for
+    # the target - the one Python's install manager installs - at the venv's
+    # exact version.
+    $CoreZip = Get-PythonPackage "pythoncore-$($PyXY)t-$PyOrgArch"
+    $CoreDir = Join-Path $CacheDir ([IO.Path]::GetFileNameWithoutExtension($CoreZip))
+    if (-not (Test-Path (Join-Path $CoreDir "libs\$PyDllName.lib"))) {
+        if (Test-Path $CoreDir) { Remove-Item -Recurse -Force $CoreDir }
+        Info "Extracting the headers and import library from $(Split-Path -Leaf $CoreZip)"
+        Expand-Archive -Path $CoreZip -DestinationPath $CoreDir -Force
+    }
+    $PyInclude = Join-Path $CoreDir 'include'
+    $PyLibs    = Join-Path $CoreDir 'libs'
+}
 
 if (-not (Test-Path (Join-Path $PyInclude 'Python.h'))) {
     Fail "Python.h not found under $PyInclude. The .venv must be backed by a full CPython install (headers + libs), which 'make venv' provides."
 }
-if (-not (Test-Path (Join-Path $PyLibs "python$PyNoDot.lib"))) {
-    Fail "python$PyNoDot.lib not found under $PyLibs."
+if (-not (Test-Path (Join-Path $PyLibs "$PyDllName.lib"))) {
+    Fail "$PyDllName.lib not found under $PyLibs."
 }
 
 # Resolve the version string to embed.
@@ -211,17 +324,32 @@ function Get-ProgramFilesX86 {
     return (Join-Path $drive 'Program Files (x86)')
 }
 
+$VsTarget    = @{ x64 = 'amd64'; arm64 = 'arm64' }[$Arch]
+$VsComponent = @{ x64 = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+                  arm64 = 'Microsoft.VisualStudio.Component.VC.Tools.ARM64' }[$Arch]
+
 function Import-VsDevEnv {
     $vswhere = Join-Path (Get-ProgramFilesX86) 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path $vswhere)) { return $false }
     $vsPath = & $vswhere -latest -products * `
-        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -requires $VsComponent `
         -property installationPath
     if (-not $vsPath) { return $false }
     $devCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
     if (-not (Test-Path $devCmd)) { return $false }
-    Info "Importing environment from $devCmd"
-    cmd /c "`"$devCmd`" -arch=amd64 -host_arch=amd64 && set" | ForEach-Object {
+    # The compiler that runs here. Windows on Arm can run an x64-hosted one too,
+    # and may only have that, so the x64 tools are the fallback. Asked of the
+    # OS rather than of PROCESSOR_ARCHITECTURE alone, which an x64 PowerShell
+    # under emulation reports as AMD64.
+    $hostArch = 'amd64'
+    $native = $env:PROCESSOR_ARCHITEW6432
+    if (-not $native) { $native = $env:PROCESSOR_ARCHITECTURE }
+    if ($native -eq 'ARM64' -and
+            (Test-Path "$vsPath\VC\Tools\MSVC\*\bin\HostARM64\$($Arch)\cl.exe")) {
+        $hostArch = 'arm64'
+    }
+    Info "Importing environment from $devCmd (host $hostArch, target $VsTarget)"
+    cmd /c "`"$devCmd`" -arch=$VsTarget -host_arch=$hostArch && set" | ForEach-Object {
         if ($_ -match '^([^=]+)=(.*)$') {
             [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2])
         }
@@ -229,13 +357,17 @@ function Import-VsDevEnv {
     return $true
 }
 
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+# A cl.exe already on PATH is used only if it builds for this target. A developer
+# prompt says what it targets; one that does not say is taken to be x64.
+$ClTarget = if ($env:VSCMD_ARG_TGT_ARCH) { $env:VSCMD_ARG_TGT_ARCH } else { 'x64' }
+if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue) -or $ClTarget -ne $Arch) {
     if (-not (Import-VsDevEnv)) {
         Fail @"
-MSVC toolchain (cl.exe) not found.
+MSVC toolchain (cl.exe) for $Arch not found.
 
 Install the 'Build Tools for Visual Studio' with the 'Desktop development with
-C++' workload (includes cl.exe, rc.exe, and the Windows SDK):
+C++' workload (includes cl.exe, rc.exe, and the Windows SDK), plus, for arm64,
+the 'MSVC ARM64/ARM64EC build tools' component (make windows-toolchain adds both):
   https://visualstudio.microsoft.com/downloads/  (scroll to 'Tools for Visual Studio')
 
 This is the Windows analog of the macOS build's Xcode Command Line Tools.
@@ -256,26 +388,26 @@ Info 'Step 3: Preparing the embedded CPython runtime...'
 
 if (Test-Path $AppRoot) { Remove-Item -Recurse -Force $AppRoot }
 New-Item -ItemType Directory -Force -Path $AppRoot | Out-Null
-New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
 
-$EmbedZipName = "python-$PyFull-embed-amd64.zip"
-if (-not $PythonEmbedUrl) { $PythonEmbedUrl = "https://www.python.org/ftp/python/$PyFull/$EmbedZipName" }
-$CachedZip = Join-Path $CacheDir $EmbedZipName
-
-if (-not (Test-Path $CachedZip)) {
-    Info "Downloading $PythonEmbedUrl"
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    try {
-        Invoke-WebRequest -Uri $PythonEmbedUrl -OutFile $CachedZip -UseBasicParsing
-    } catch {
-        Fail "Failed to download the embeddable package for Python $PyFull.`n$($_.Exception.Message)`nProvide it manually via -PythonEmbedUrl or place '$EmbedZipName' in $CacheDir."
+if ($PythonEmbedUrl) {
+    $EmbedZipName = Split-Path -Leaf ([Uri]$PythonEmbedUrl).AbsolutePath
+    $CachedZip = Join-Path $CacheDir $EmbedZipName
+    if (-not (Test-Path $CachedZip)) {
+        Info "Downloading $PythonEmbedUrl"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        try {
+            Invoke-WebRequest -Uri $PythonEmbedUrl -OutFile $CachedZip -UseBasicParsing
+        } catch {
+            Fail "Failed to download $PythonEmbedUrl`n$($_.Exception.Message)"
+        }
     }
+    Warn "Using $EmbedZipName from -PythonEmbedUrl, unverified."
 } else {
-    Info "Using cached $EmbedZipName"
+    $CachedZip = Get-PythonPackage "pythonembed-$($PyXY)t-$PyOrgArch"
 }
 
 # The whole embedded CPython goes under runtime\ (keeps the bundle root tidy).
-# XeFM.exe delay-loads python3XX.dll from here after adding runtime\ to the DLL
+# XeFM.exe delay-loads python3XXt.dll from here after adding runtime\ to the DLL
 # search path - see launcher.c - so nothing from the runtime needs to sit at the
 # root next to the exe.
 $RuntimeDir = Join-Path $AppRoot 'runtime'
@@ -288,8 +420,8 @@ Expand-Archive -Path $CachedZip -DestinationPath $RuntimeDir -Force
 # explicitly via PyConfig; remove it so the two mechanisms can't disagree.
 Get-ChildItem -Path $RuntimeDir -Filter '*._pth' -File | Remove-Item -Force -ErrorAction SilentlyContinue
 
-if (-not (Test-Path (Join-Path $RuntimeDir "python$PyNoDot.dll"))) {
-    Fail "python$PyNoDot.dll missing after extraction - the embeddable package may not match Python $PyFull."
+if (-not (Test-Path (Join-Path $RuntimeDir "$PyDllName.dll"))) {
+    Fail "$PyDllName.dll missing after extraction - the embeddable package may not be Python $PyFull's free-threaded one."
 }
 
 # ---------------------------------------------------------------------------
@@ -349,9 +481,14 @@ if (Test-Path (Join-Path $ProjectRoot 'LICENSE')) {
 # nobody is looking.
 Info 'Step 4b: Fetching the bundled libarchive...'
 
-$LibarchiveTag     = 'libarchive-3.8.9-2'
-$LibarchivePkgName = 'libarchive-3.8.9-windows-x64'
-$LibarchiveSha256  = 'f481d48a63c8fcb28a5ad53d76999f60f0c5f89b90be36e1fb956c07f6a707cb'
+# One pin per architecture, each from the release that holds it.
+$LibarchivePins = @{
+    x64   = @{ Tag = 'libarchive-3.8.9-3'; Sha256 = 'f32bfafc74dff57573abd5b87292f2b08d011e9f8878cb7fe405fb906a13ea9a' }
+    arm64 = @{ Tag = 'libarchive-3.8.9-3'; Sha256 = '647dac9070a301dbbde54434ded4cf08f3a84985df87305f5d57d965908f2d86' }
+}
+$LibarchiveTag     = $LibarchivePins[$Arch].Tag
+$LibarchivePkgName = "libarchive-3.8.9-windows-$Arch"
+$LibarchiveSha256  = $LibarchivePins[$Arch].Sha256
 $LibarchiveUrl     = "https://github.com/crftwr/xefm-bin-deps/releases/download/$LibarchiveTag/$LibarchivePkgName.zip"
 
 $LibarchiveZip = Join-Path $CacheDir "$LibarchivePkgName.zip"
@@ -412,11 +549,21 @@ if missing:
 '@
 $LibarchiveCheckFile = Join-Path $CacheDir 'check_libarchive.py'
 Set-Content -Path $LibarchiveCheckFile -Value $LibarchiveCheck -Encoding utf8
-$details = & $VenvPy $LibarchiveCheckFile (Join-Path $LibarchiveDest 'archive.dll')
-if ($LASTEXITCODE -ne 0) {
-    Fail "The bundled libarchive is not usable: $details"
+if (-not $Cross) {
+    $details = & $VenvPy $LibarchiveCheckFile (Join-Path $LibarchiveDest 'archive.dll')
+    if ($LASTEXITCODE -ne 0) {
+        Fail "The bundled libarchive is not usable: $details"
+    }
+    Info "Bundled libarchive: $details"
+} else {
+    # A DLL of another architecture cannot load into the venv's interpreter. The
+    # string archive_version_details() returns is assembled from literals - " zlib/"
+    # and the rest - so finding each in the binary settles the same question.
+    $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $LibarchiveDest 'archive.dll')))
+    $missing = @('zlib', 'liblzma', 'bz2lib', 'libzstd') | Where-Object { $text -notmatch [regex]::Escape(" $_/") }
+    if ($missing) { Fail "The bundled libarchive is missing codecs: $($missing -join ', ')" }
+    Info "Bundled libarchive ($Arch, cross-built here): zlib, liblzma, bz2lib and libzstd present"
 }
-Info "Bundled libarchive: $details"
 
 # Everything statically linked into that DLL has to appear in the bundle's
 # notices, and none of it has a .dist-info for Step 5b's scanner to find - the
@@ -450,13 +597,19 @@ foreach ($n in $LibarchiveNotices) {
 # --include-deps-of puikit pulls in PuiKit's own runtime deps (numpy, which the
 # win32 Direct2D backend imports) without copying PuiKit itself (its source is
 # copied into app\puikit above). Each dist is copied with its .dist-info, whose
-# license text the notices generator reads in Step 5b.
+# license text the notices generator reads in Step 5b. Cross-compiling, the venv
+# still decides what goes in and at which versions, but its files are for the
+# wrong architecture, so the collector installs wheels for the target instead.
 Info 'Step 5: Collecting third-party dependencies...'
 
 $SitePkgsDest = Join-Path $AppRoot 'Lib\site-packages'
 $SharedCollector = Join-Path $ProjectRoot 'tools\collect_dependencies.py'
 $Requirements = Join-Path $ProjectRoot 'requirements.txt'
-& $VenvPy $SharedCollector --requirements $Requirements --dest $SitePkgsDest --include-deps-of puikit
+$CollectorArgs = @('--requirements', $Requirements, '--dest', $SitePkgsDest, '--include-deps-of', 'puikit')
+if ($Cross) {
+    $CollectorArgs += @('--target-platform', @{ x64 = 'win_amd64'; arm64 = 'win_arm64' }[$Arch])
+}
+& $VenvPy $SharedCollector @CollectorArgs
 if ($LASTEXITCODE -ne 0) { Fail 'Dependency collection failed.' }
 
 # ---------------------------------------------------------------------------
@@ -578,12 +731,18 @@ if ($LASTEXITCODE -ne 0) { Fail 'rc.exe failed.' }
 
 # Compile + link the launcher -> XeFM.exe (GUI subsystem, no console).
 # /MT (static CRT) so XeFM.exe has no load-time DLL dependency of its own - the
-# whole CPython runtime, CRT included, lives under runtime\. python3XX.dll is
+# whole CPython runtime, CRT included, lives under runtime\. python3XXt.dll is
 # delay-loaded (delayimp.lib) so it is not resolved until the launcher has added
 # runtime\ to the DLL search path.
+#
+# Py_GIL_DISABLED is defined here because on Windows nothing else defines it:
+# one pyconfig.h serves both builds, and an embedder of the free-threaded one
+# has to say so. It picks python3XXt.lib (pyconfig.h's #pragma), the object
+# layout of the free-threaded ABI, and the DLL name launcher.c loads.
 $ExeOut = Join-Path $AppRoot "$AppName.exe"
 $clArgs = @(
     '/nologo', '/O2', '/MT', '/W3',
+    '/DPy_GIL_DISABLED=1',
     "/I$PyInclude",
     (Join-Path $SrcDir 'launcher.c'),
     $ResOut,
@@ -592,7 +751,7 @@ $clArgs = @(
     '/link',
     "/LIBPATH:$PyLibs",
     '/SUBSYSTEM:WINDOWS',
-    "/DELAYLOAD:python$PyNoDot.dll",
+    "/DELAYLOAD:$PyDllName.dll",
     'delayimp.lib',
     # We embed our own application manifest via XeFM.rc (RT_MANIFEST). Suppress
     # the linker's auto-generated manifest so the exe doesn't end up with two
@@ -611,7 +770,8 @@ Success "Built $ExeOut"
 # Step 8 (optional): Zip for distribution
 # ---------------------------------------------------------------------------
 if ($Zip) {
-    $ZipOut = Join-Path $BuildDir "XeFM-$Version-win64.zip"
+    $ZipSuffix = @{ x64 = 'win-x64'; arm64 = 'win-arm64' }[$Arch]
+    $ZipOut = Join-Path $BuildDir "XeFM-$Version-$ZipSuffix.zip"
     if (Test-Path $ZipOut) { Remove-Item -Force $ZipOut }
     Info "Creating $ZipOut"
     Compress-Archive -Path $AppRoot -DestinationPath $ZipOut -Force

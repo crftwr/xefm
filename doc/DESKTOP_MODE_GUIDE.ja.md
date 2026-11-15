@@ -33,8 +33,9 @@ make run-gui                    # the same thing, through .venv
 
 | プラットフォーム | インストール方法 | 署名 |
 |---|---|---|
-| Windows 10/11 x64 | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)**（推奨） | あり — Microsoft による署名 |
-| Windows 10/11 x64 | `XeFM-<version>-win64.zip`（ポータブル版の代替手段） | なし — [一度だけブロックの解除](#windows--ポータブル-zip)が必要 |
+| Windows 10/11（x64、ARM64） | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)**（推奨） | あり — Microsoft による署名 |
+| Windows 10/11 x64 | `XeFM-<version>-win-x64.zip`（ポータブル版の代替手段） | なし — [一度だけブロックの解除](#windows--ポータブル-zip)が必要 |
+| Windows 10/11 ARM64 | `XeFM-<version>-win-arm64.zip`（ポータブル版の代替手段） | なし — [一度だけブロックの解除](#windows--ポータブル-zip)が必要 |
 | macOS 12+（Apple Silicon） | `XeFM-<version>-macos.dmg` | あり — Apple Developer ID |
 | macOS 12+（Apple Silicon） | [Homebrew](#macos--homebrew)：`brew install --cask crftwr/tap/xefm`（中身は同じ DMG） | あり — Apple Developer ID |
 
@@ -76,12 +77,14 @@ zip は Store からのインストールに代わる手段で、インストー
 
 認定の過程で Microsoft が署名する Store のパッケージとは違い、GitHub Releases の zip には署名がありません。下で説明する警告はこれが原因です。
 
-1. **最初に zip のブロックを解除します。** ダウンロードした `XeFM-<version>-win64.zip` を右クリック → **Properties**（プロパティ）→ *General*（全般）タブの下部にある **Unblock**（許可する）にチェック → **OK**。
+zip はプロセッサーごとに分かれています。Intel や AMD の PC には `-win-x64`、Snapdragon のノート PC などの ARM の PC には `-win-arm64` を使います。どちらの PC かは **Settings → System → About → System type**（設定 → システム → バージョン情報 → システムの種類）で確認できます。x64 の zip は ARM の PC でもエミュレーションで動きますが、遅くなります。Store は合うほうを自動で選びます。
+
+1. **最初に zip のブロックを解除します。** ダウンロードした `XeFM-<version>-win-x64.zip`（または `-win-arm64.zip`）を右クリック → **Properties**（プロパティ）→ *General*（全般）タブの下部にある **Unblock**（許可する）にチェック → **OK**。
 
    Windows はインターネットからダウンロードしたファイルに *Mark of the Web* を付けます。このマークが付いた zip を展開すると、中のすべてのファイルにマークがコピーされます。展開する*前に* zip のブロックを解除すれば、すべてのマークを一度に消せます。PowerShell では次のコマンドで同じことができます。
 
    ```powershell
-   Unblock-File .\XeFM-<version>-win64.zip
+   Unblock-File .\XeFM-<version>-win-x64.zip
    ```
 
 2. `XeFM` フォルダーを使いやすい場所に**展開します**。

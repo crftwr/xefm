@@ -55,6 +55,15 @@ The bundle ships what the venv holds, so two more checks stop the collection
 
 Requirement **extras** are honoured: ``doc-files[pdf]`` brings pypdf, which
 plain ``doc-files`` does not.
+
+``--target-platform`` is for a bundle of another architecture than the venv's
+(``win_arm64`` from an x64 venv, ``win_amd64`` from an arm64 one): the venv
+still decides what is shipped and at which versions, and those versions' wheels
+for the target are installed in place of the venv's files, for the venv's
+Python version and ABI (``cp315t`` from a free-threaded venv). A version with
+no wheel for the target fails the build. Environment markers are still read on
+the build machine, which is why ``requirements.txt`` gates a binary dependency
+on every architecture it has wheels for, not on the one building.
 """
 
 import argparse
@@ -62,7 +71,9 @@ import importlib.metadata as importlib_metadata
 import os
 import re
 import shutil
+import subprocess
 import sys
+import sysconfig
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
@@ -385,7 +396,35 @@ def verify_pyobjc(dest_dir):
     return True
 
 
-def collect_dependencies(requirements_file, dest_dir, include_deps_of=None):
+def install_for_platform(dists, dest_dir, target_platform):
+    """
+    Install *dists*' exact versions into *dest_dir* from wheels for
+    *target_platform*, for this interpreter's version and ABI. --no-deps
+    because the closure is already resolved. Returns True on success.
+    """
+    major, minor = sys.version_info[:2]
+    # A free-threaded interpreter loads only cp3XXt extension modules; pip's
+    # default ABI for --python-version is the GIL build's cp3XX. "none" keeps
+    # the version-specific pure wheels; py3-none-any needs no --abi at all.
+    abi = f"cp{major}{minor}" + ("t" if sysconfig.get_config_var("Py_GIL_DISABLED") else "")
+    command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
+               "--no-deps", "--only-binary=:all:", "--implementation", "cp",
+               "--python-version", f"{major}.{minor}", "--abi", abi, "--abi", "none",
+               "--platform", target_platform, "--target", str(dest_dir)]
+    command += [f"{dist.metadata['Name']}=={dist.version}" for dist in dists]
+    log_info(f"Installing {len(dists)} distribution(s) for {target_platform} ({abi})")
+    if subprocess.run(command).returncode != 0:
+        log_error(f"pip could not install every distribution for {target_platform} ({abi})")
+        return False
+    # Console scripts: the build venv's are outside site-packages, so
+    # copy_distribution leaves them behind, and these go the same way.
+    for scripts in ("bin", "Scripts"):
+        shutil.rmtree(Path(dest_dir) / scripts, ignore_errors=True)
+    return True
+
+
+def collect_dependencies(requirements_file, dest_dir, include_deps_of=None,
+                         target_platform=None):
     """
     Resolve and copy the runtime dependency closure. Returns True on success.
 
@@ -395,6 +434,9 @@ def collect_dependencies(requirements_file, dest_dir, include_deps_of=None):
     dependency closure is included, but the named distributions themselves are
     not copied. This is how the Windows bundle picks up PuiKit's ``numpy``
     dependency (the win32 backend imports numpy; the macOS backend does not).
+
+    With *target_platform*, the closure's versions are installed from wheels
+    for that platform rather than copied from the venv.
     """
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -460,6 +502,13 @@ def collect_dependencies(requirements_file, dest_dir, include_deps_of=None):
         log_error("Bring the venv up to the requirements first: pip install -r requirements.txt")
         return False
 
+    if target_platform:
+        to_install = [dist for cname, dist in sorted(resolved.items()) if cname not in deps_only]
+        if not install_for_platform(to_install, dest_dir, target_platform):
+            return False
+        log_success(f"Collected {len(to_install)} distributions for {target_platform}")
+        return True
+
     total_files = 0
     failed = []
     for cname in sorted(resolved):
@@ -504,6 +553,10 @@ def main():
                         help="Collect the runtime deps of NAME (a package bundled "
                              "separately, e.g. puikit) without copying NAME itself. "
                              "Repeatable.")
+    parser.add_argument("--target-platform", metavar="TAG",
+                        help="Install the closure's versions from wheels for this "
+                             "platform tag (e.g. win_arm64) instead of copying the "
+                             "venv's files: a bundle of another architecture.")
     args = parser.parse_args()
 
     requirements_file = os.path.abspath(args.requirements)
@@ -513,7 +566,8 @@ def main():
     log_info(f"Requirements file: {requirements_file}")
     log_info(f"Destination directory: {dest_dir}")
 
-    if collect_dependencies(requirements_file, dest_dir, include_deps_of=args.include_deps_of):
+    if collect_dependencies(requirements_file, dest_dir, include_deps_of=args.include_deps_of,
+                            target_platform=args.target_platform):
         sys.exit(0)
     else:
         sys.exit(1)

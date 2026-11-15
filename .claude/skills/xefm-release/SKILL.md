@@ -1,6 +1,6 @@
 ---
 name: xefm-release
-description: Release a new version of XeFM — confirm the version bump, run the pre-tag checks, cut the tag, publish the GitHub Release with a hand-written note, attach the PyPI sdist + wheel, macOS DMG, and Windows zip, bump the Homebrew tap (crftwr/homebrew-tap), and submit the MSIX to the Microsoft Store. Use when the user says "release XeFM", "release a patch/minor/major version of XeFM", or "ship xefm X.Y.Z" — and also on the Windows machine afterwards, when they say "finish the XeFM release on Windows" or "attach the Windows artifacts" (step 6: no new tag — the Windows zip and the Store MSIX at the existing tag) — and for the Homebrew formula, which goes out a day later, when they say "is the formula out yet", "check the Homebrew tap" or "publish the brew formula" (step 7).
+description: Release a new version of XeFM — confirm the version bump, run the pre-tag checks, cut the tag, publish the GitHub Release with a hand-written note, attach the PyPI sdist + wheel, macOS DMG, and Windows x64 + arm64 zips, bump the Homebrew tap (crftwr/homebrew-tap), and submit the MSIX to the Microsoft Store. Use when the user says "release XeFM", "release a patch/minor/major version of XeFM", or "ship xefm X.Y.Z" — and also on the Windows machine afterwards, when they say "finish the XeFM release on Windows" or "attach the Windows artifacts" (step 6: no new tag — the Windows zips and the Store MSIX bundle at the existing tag) — and for the Homebrew formula, which goes out a day later, when they say "is the formula out yet", "check the Homebrew tap" or "publish the brew formula" (step 7).
 ---
 
 # Releasing XeFM
@@ -8,7 +8,7 @@ description: Release a new version of XeFM — confirm the version bump, run the
 Run every command from the root of the xefm checkout. One version
 (`__version__` in `xefm/__init__.py`) covers everything, but the artifacts
 build on three platforms — the sdist/wheel anywhere, the DMG on macOS, the
-win64 zip (and the Store MSIX) on Windows — so a release usually finishes
+x64 and arm64 zips (and the Store MSIX bundle) on Windows — so a release usually finishes
 across two sessions. Run each OS's targets on that OS and report the other
 side as remaining; never mark the release done with artifacts missing. The
 pipeline is documented in `doc/dev/RELEASE_SYSTEM.md`; the note-writing step
@@ -118,13 +118,18 @@ make release-status      # read-only: GitHub assets + PyPI published?
 ```
 
 On the Windows machine, from the same checkout at the tag, run both Windows
-targets: `make release-windows-zip` attaches the portable zip, and
+targets: `make release-windows-zip` attaches the two portable zips (x64 and
+arm64; the one that does not match the venv is cross-compiled), and
 `make release-windows-msix` — the odd one out — submits the *unsigned* MSIX
-to the Microsoft Store rather than the GitHub Release. The Store re-signs the
+bundle (both architectures) to the Microsoft Store rather than the GitHub
+Release. The Store re-signs the
 package during certification, which proceeds asynchronously (poll with
 `msstore submission status`).
 
-The bundle targets (DMG, Windows zip, MSIX) refuse a venv holding anything
+The Windows targets need a free-threaded venv (`py install 3.XXt`, then
+`make clean-venv` and `make venv`); `build.ps1` stops on a GIL one.
+
+The bundle targets (DMG, Windows zips, MSIX) refuse a venv holding anything
 not installed from a package index — an editable PuiKit included — or below
 a requirement (#809). Before `release-macos-dmg` and the Windows targets, put
 the released versions in: `make install-puikit PUIKIT_DIR=`, `pip install
@@ -197,7 +202,8 @@ gh release edit vX.Y.Z --notes-file <scratch>/release-note-x.y.z.md
   only must be added to that block by hand: autobump resolves on Ubuntu and
   never sees it. See `doc/dev/RELEASE_SYSTEM.md`, "The Homebrew tap".
 - `make release-status` must show all of it: `XeFM-<ver>-macos.dmg`,
-  `XeFM-<ver>-win64.zip`, the sdist + wheel, and "PyPI: published".
+  `XeFM-<ver>-win-x64.zip`, `XeFM-<ver>-win-arm64.zip`, the sdist + wheel, and
+  "PyPI: published".
 - The Store submission never appears there — it is not a Release asset. Its
   check is `msstore submission status <product id>`; report certification as
   in progress rather than waiting for it.
@@ -220,17 +226,18 @@ finished and get a yes before uploading.
    on the release commit, `git checkout vX.Y.Z` when it has moved on. The
    artifacts must be built from the tagged code, not from whatever `main`
    has become.
-3. `make release-windows-zip` — builds the bundle and the portable zip, and
-   attaches the zip to the GitHub Release. If the collector refuses the venv
-   (a local install, a version below `requirements.txt`), bring it to the
-   released versions as above and rebuild with `make windows-zip`.
-4. `make release-windows-msix` — repacks the unsigned MSIX and submits it to
-   the Microsoft Store (needs `windows_app/store.env` and the configured
+3. `make release-windows-zip` — builds both bundles and their portable zips
+   (x64 and arm64), and attaches both to the GitHub Release. If the collector
+   refuses the venv (a local install, a version below `requirements.txt`),
+   bring it to the released versions as above and rebuild with
+   `make windows-zip ARCH=x64` and `ARCH=arm64`.
+4. `make release-windows-msix` — repacks both architectures' unsigned MSIX
+   packages into one `.msixbundle` and submits it to the Microsoft Store (needs `windows_app/store.env` and the configured
    `msstore` CLI; the target checks both). Certification proceeds
    asynchronously — poll with `msstore submission status <product id>` and
    report it as in progress rather than waiting for it.
 5. `make release-status` — the release is finished when everything shows:
-   DMG, win64 zip, sdist + wheel, PyPI published — with the Store submission
+   DMG, both Windows zips, sdist + wheel, PyPI published — with the Store submission
    handed off to certification.
 
 ## 7. The Homebrew formula (a day later, and before the next release)
