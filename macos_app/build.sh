@@ -96,9 +96,36 @@ fi
 # Get Python version and paths from venv
 PYTHON_VERSION=$("${VENV_PYTHON}" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 PYTHON_BASE_PREFIX=$("${VENV_PYTHON}" -c "import sys; print(sys.base_prefix)")
-PYTHON_SITE_PACKAGES="${PROJECT_ROOT}/.venv/lib/python${PYTHON_VERSION}/site-packages"
+# The free-threaded build carries its ABI flag ("t") in every name that is
+# per-ABI: lib/python3.15t/, bin/python3.15t, include/python3.15t,
+# config-3.15t-darwin, libpython3.15t.dylib. PY_LIBVER is that name's version
+# part, and equals PYTHON_VERSION for a regular build.
+PY_ABIFLAGS=$("${VENV_PYTHON}" -c "import sys; print(sys.abiflags)")
+PY_LIBVER="${PYTHON_VERSION}${PY_ABIFLAGS}"
+PY_GIL_DISABLED=$("${VENV_PYTHON}" -c "import sysconfig; print(int(bool(sysconfig.get_config_var('Py_GIL_DISABLED'))))")
+# python.org installs the free-threaded build as a framework of its own,
+# PythonT.framework, whose dylib is PythonT. The bundle embeds it under that
+# same name (the launcher is told which, see XEFM_PYTHON_FRAMEWORK below);
+# a standalone (non-framework) Python is embedded as Python.framework.
+PY_FW=$("${VENV_PYTHON}" -c "import sysconfig; print(sysconfig.get_config_var('PYTHONFRAMEWORK') or 'Python')")
+PYTHON_SITE_PACKAGES="${PROJECT_ROOT}/.venv/lib/python${PY_LIBVER}/site-packages"
 
-log_info "Detected Python ${PYTHON_VERSION} from venv"
+# The app ships the free-threaded interpreter (GIL off), as the Windows app
+# does: the #901 render pipeline only pays off without the GIL. A regular venv
+# would build a bundle with the GIL back on and nothing saying so, so refuse
+# it. ALLOW_GIL_PYTHON=1 overrides this for a local comparison build.
+if [ "${PY_GIL_DISABLED}" != "1" ]; then
+    if [ "${ALLOW_GIL_PYTHON:-0}" != "1" ]; then
+        log_error "The .venv is a regular (GIL) Python ${PYTHON_VERSION}; the macOS app ships the free-threaded build."
+        log_error "Install python.org's ${PYTHON_VERSION} with the 'Free-threaded Python' option and recreate the venv:"
+        log_error "  make clean-venv && make venv"
+        log_error "(ALLOW_GIL_PYTHON=1 overrides this for a local build.)"
+        exit 1
+    fi
+    log_warning "Building on a regular (GIL) Python (ALLOW_GIL_PYTHON=1)"
+fi
+
+log_info "Detected Python ${PY_LIBVER} from venv (framework ${PY_FW}.framework, free-threaded: ${PY_GIL_DISABLED})"
 log_info "Python base: ${PYTHON_BASE_PREFIX}"
 log_info "Site packages: ${PYTHON_SITE_PACKAGES}"
 
@@ -128,7 +155,7 @@ esac
 
 # Check if using Python.framework or standard Python installation
 # Python.framework can be in /Library/Frameworks (python.org) or /opt/homebrew (Homebrew)
-if [[ "${PYTHON_BASE_PREFIX}" == *"/Python.framework/Versions/"* ]]; then
+if [[ "${PYTHON_BASE_PREFIX}" == *"/${PY_FW}.framework/Versions/"* ]]; then
     # Python.framework installation (python.org or Homebrew)
     # Extract framework root by removing /Versions/X.Y suffix
     PYTHON_FRAMEWORK="${PYTHON_BASE_PREFIX%/Versions/*}"
@@ -151,26 +178,33 @@ CFLAGS="-framework Cocoa"
 # release - a 1.5.0 built on macOS 27 refused to launch on macOS 26 with "You
 # can't use this version of the application with this version of macOS"
 # (issue #455). Pinning it keeps the floor a decision rather than an accident.
-# 12.0 is the oldest macOS anyone has run XeFM on (1.8.0 in a Tart VM; Apple
-# silicon virtualizes 12 and later only, so 11 was never run). Every bundled
-# wheel already goes lower; the embedded Homebrew Python is the one component
-# that can sit higher, so the bundle's real floor is what Step 5 reads back.
-MACOS_MIN_VERSION="12.0"
+# 14.0 because that is where the bundle already was: numpy (similar-files
+# brings it, for grouping large video libraries) installs as its
+# macosx_14_0_arm64 wheel, the one linked against Accelerate, on any build
+# machine on macOS 14 or later, and Step 5 read 14.0 back off it for every
+# release since. Declaring it here makes the launcher and Info.plist say the
+# same and keeps the floor a decision. (numpy also has a macosx_11_0 OpenBLAS
+# wheel; going back below 14 means pinning that one, and re-running the app
+# on the older macOS, as 12.0 was in a Tart VM for 1.8.0.) The bundle's real
+# floor is still what Step 5 reads back.
+MACOS_MIN_VERSION="14.0"
 CFLAGS="${CFLAGS} -mmacosx-version-min=${MACOS_MIN_VERSION}"
 
 # Configure compiler flags based on Python installation type
 if [ "$USE_FRAMEWORK" = true ]; then
     # Python.framework style
     CFLAGS="${CFLAGS} -F${PYTHON_FRAMEWORK}/Versions/${PYTHON_VERSION}"
-    CFLAGS="${CFLAGS} -I${PYTHON_FRAMEWORK}/Versions/${PYTHON_VERSION}/include/python${PYTHON_VERSION}"
+    CFLAGS="${CFLAGS} -I${PYTHON_FRAMEWORK}/Versions/${PYTHON_VERSION}/include/python${PY_LIBVER}"
     CFLAGS="${CFLAGS} -L${PYTHON_FRAMEWORK}/Versions/${PYTHON_VERSION}/lib"
 else
     # Standard Python style
-    CFLAGS="${CFLAGS} -I${PYTHON_BASE_PREFIX}/include/python${PYTHON_VERSION}"
+    CFLAGS="${CFLAGS} -I${PYTHON_BASE_PREFIX}/include/python${PY_LIBVER}"
     CFLAGS="${CFLAGS} -L${PYTHON_BASE_PREFIX}/lib"
 fi
 
-CFLAGS="${CFLAGS} -lpython${PYTHON_VERSION}"
+CFLAGS="${CFLAGS} -lpython${PY_LIBVER}"
+# The launcher finds the embedded runtime under Contents/Frameworks by this name.
+CFLAGS="${CFLAGS} -DXEFM_PYTHON_FRAMEWORK=\"${PY_FW}.framework\""
 LDFLAGS="-rpath @executable_path/../Frameworks"
 
 # Local signing configuration (optional, gitignored). CODESIGN_IDENTITY and
@@ -219,7 +253,7 @@ fi
 log_info "Starting XeFM macOS app bundle build..."
 log_info "Project root: ${PROJECT_ROOT}"
 log_info "Build directory: ${BUILD_DIR}"
-log_info "Python version: ${PYTHON_VERSION}"
+log_info "Python version: ${PY_LIBVER}"
 
 # ============================================================================
 # Step 1: Compile Objective-C Source Files
@@ -444,9 +478,9 @@ log_success "Resources copied successfully"
 log_info "Step 4: Embedding Python..."
 
 # Clean up old Python versions from previous builds
-if [ -d "${FRAMEWORKS_DIR}/Python.framework/Versions" ]; then
+if [ -d "${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions" ]; then
     log_info "Cleaning up old Python versions..."
-    for old_version in "${FRAMEWORKS_DIR}/Python.framework/Versions"/*; do
+    for old_version in "${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions"/*; do
         if [ -d "${old_version}" ] && [ "$(basename "${old_version}")" != "Current" ] && [ "$(basename "${old_version}")" != "${PYTHON_VERSION}" ]; then
             log_info "  Removing old version: $(basename "${old_version}")"
             rm -rf "${old_version}"
@@ -459,23 +493,23 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # Python.framework installation
     PYTHON_SOURCE="${PYTHON_FRAMEWORK}/Versions/${PYTHON_VERSION}"
     if [ ! -d "${PYTHON_SOURCE}" ]; then
-        log_error "Python.framework not found at ${PYTHON_SOURCE}"
+        log_error "${PY_FW}.framework not found at ${PYTHON_SOURCE}"
         exit 1
     fi
     
     # Copy Python.framework to bundle
-    log_info "Copying Python.framework from ${PYTHON_SOURCE}..."
-    PYTHON_DEST="${FRAMEWORKS_DIR}/Python.framework/Versions/${PYTHON_VERSION}"
+    log_info "Copying ${PY_FW}.framework from ${PYTHON_SOURCE}..."
+    PYTHON_DEST="${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions/${PYTHON_VERSION}"
     mkdir -p "${PYTHON_DEST}"
     
     # Copy essential framework components
     if command -v rsync > /dev/null 2>&1; then
-        rsync -a --no-perms --chmod=u+rw "${PYTHON_SOURCE}/Python" "${PYTHON_DEST}/"
+        rsync -a --no-perms --chmod=u+rw "${PYTHON_SOURCE}/${PY_FW}" "${PYTHON_DEST}/"
         rsync -a --no-perms --chmod=u+rw "${PYTHON_SOURCE}/Resources" "${PYTHON_DEST}/" 2>/dev/null || true
         rsync -a --no-perms --chmod=u+rw "${PYTHON_SOURCE}/lib" "${PYTHON_DEST}/"
         rsync -a --no-perms --chmod=u+rw "${PYTHON_SOURCE}/bin" "${PYTHON_DEST}/"
     else
-        cp -R "${PYTHON_SOURCE}/Python" "${PYTHON_DEST}/" 2>/dev/null || true
+        cp -R "${PYTHON_SOURCE}/${PY_FW}" "${PYTHON_DEST}/" 2>/dev/null || true
         cp -R "${PYTHON_SOURCE}/Resources" "${PYTHON_DEST}/" 2>/dev/null || true
         cp -R "${PYTHON_SOURCE}/lib" "${PYTHON_DEST}/"
         cp -R "${PYTHON_SOURCE}/bin" "${PYTHON_DEST}/"
@@ -483,24 +517,24 @@ if [ "$USE_FRAMEWORK" = true ]; then
     fi
     
     # Create version symlinks
-    cd "${FRAMEWORKS_DIR}/Python.framework/Versions"
+    cd "${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions"
     ln -sf "${PYTHON_VERSION}" Current
-    cd "${FRAMEWORKS_DIR}/Python.framework"
-    ln -sf "Versions/Current/Python" Python
+    cd "${FRAMEWORKS_DIR}/${PY_FW}.framework"
+    ln -sf "Versions/Current/${PY_FW}" "${PY_FW}"
     ln -sf "Versions/Current/bin" bin
-    
+
     # Create python3 symlink in bin directory
     log_info "Creating python3 symlink in bin directory..."
     cd "${PYTHON_DEST}/bin"
-    if [ -f "python${PYTHON_VERSION}" ]; then
-        ln -sf "python${PYTHON_VERSION}" python3
-        log_info "  Created python3 -> python${PYTHON_VERSION}"
+    if [ -f "python${PY_LIBVER}" ]; then
+        ln -sf "python${PY_LIBVER}" python3
+        log_info "  Created python3 -> python${PY_LIBVER}"
     fi
     
     # Add sitecustomize.py to disable user site-packages
     log_info "Adding sitecustomize.py to disable user site-packages..."
     SITECUSTOMIZE_SOURCE="${SCRIPT_DIR}/resources/sitecustomize.py"
-    SITECUSTOMIZE_DEST="${PYTHON_DEST}/lib/python${PYTHON_VERSION}/sitecustomize.py"
+    SITECUSTOMIZE_DEST="${PYTHON_DEST}/lib/python${PY_LIBVER}/sitecustomize.py"
     if [ -f "${SITECUSTOMIZE_SOURCE}" ]; then
         cp "${SITECUSTOMIZE_SOURCE}" "${SITECUSTOMIZE_DEST}"
         log_info "  Installed sitecustomize.py"
@@ -509,7 +543,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
         exit 1
     fi
     
-    log_success "Python.framework embedded successfully"
+    log_success "${PY_FW}.framework embedded successfully"
     
     # Remove unnecessary files from embedded Python
     log_info "Removing unnecessary files from embedded Python..."
@@ -526,24 +560,20 @@ if [ "$USE_FRAMEWORK" = true ]; then
         log_info "  Removed Resources/"
     fi
 
-    # Remove development tools from bin/
-    for tool in "idle${PYTHON_VERSION}" pip3 "pip${PYTHON_VERSION}" "pydoc${PYTHON_VERSION}" "python${PYTHON_VERSION}-config"; do
-        if [ -f "${PYTHON_DEST}/bin/${tool}" ]; then
-            rm -f "${PYTHON_DEST}/bin/${tool}"
-            log_info "  Removed bin/${tool}"
-        fi
-    done
-
-    # The python.org framework also ships an x86_64-only launcher for running
-    # the interpreter under Rosetta. XeFM's own executable is built for this
-    # machine alone, so the bundle is single-architecture and that launcher can
-    # never be the one that runs; it is dead weight that still names the system
-    # framework in its load commands, which is exactly what Step 4e refuses.
-    for tool in "python${PYTHON_VERSION}-intel64" python3-intel64; do
-        if [ -e "${PYTHON_DEST}/bin/${tool}" ]; then
-            rm -f "${PYTHON_DEST}/bin/${tool}"
-            log_info "  Removed bin/${tool}"
-        fi
+    # bin/ keeps the interpreter and its python3 alias, nothing else. The rest
+    # are development tools (idle, pip, pydoc, pythonX.Y-config) and stubs:
+    # the x86_64-only -intel64 launcher for Rosetta, which can never be the one
+    # that runs in this single-architecture bundle, and - in the free-threaded
+    # framework - a second pythonX.Y stub beside pythonX.Yt. Each stub still
+    # names the system framework in its load commands, which is exactly what
+    # Step 4e refuses. A list of what to keep, because a list of what to drop
+    # missed every name the free-threaded build spells differently.
+    for tool in "${PYTHON_DEST}/bin/"*; do
+        case "$(basename "${tool}")" in
+            "python${PY_LIBVER}"|python3) continue ;;
+        esac
+        rm -f "${tool}"
+        log_info "  Removed bin/$(basename "${tool}")"
     done
 
     # Remove pkg-config files
@@ -560,16 +590,16 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # ("The binary is not signed"), and signing an .o is not a thing to do -
     # Step 6 signs the code the app loads, which this is not. Homebrew leaves
     # the directory out, so the rejection only appeared with python.org.
-    PYTHON_CONFIG_DIR="${PYTHON_DEST}/lib/python${PYTHON_VERSION}/config-${PYTHON_VERSION}-darwin"
+    PYTHON_CONFIG_DIR="${PYTHON_DEST}/lib/python${PY_LIBVER}/config-${PY_LIBVER}-darwin"
     if [ -d "${PYTHON_CONFIG_DIR}" ]; then
         rm -rf "${PYTHON_CONFIG_DIR}"
-        log_info "  Removed lib/python${PYTHON_VERSION}/config-${PYTHON_VERSION}-darwin/"
+        log_info "  Removed lib/python${PY_LIBVER}/config-${PY_LIBVER}-darwin/"
     fi
 
     # Remove Python test suite (saves ~68MB)
-    if [ -d "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test" ]; then
-        rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
-        log_info "  Removed lib/python${PYTHON_VERSION}/test/"
+    if [ -d "${PYTHON_DEST}/lib/python${PY_LIBVER}/test" ]; then
+        rm -rf "${PYTHON_DEST}/lib/python${PY_LIBVER}/test"
+        log_info "  Removed lib/python${PY_LIBVER}/test/"
     fi
 
     # Tkinter and the standard library that depends on it (~16MB with Tcl/Tk).
@@ -581,12 +611,12 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # launches through the bundled interpreter loses tkinter with this - the
     # same trade the removed test suite already makes, and a file manager's
     # embedded runtime is not a general-purpose Python install.
-    STDLIB_DIR="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
+    STDLIB_DIR="${PYTHON_DEST}/lib/python${PY_LIBVER}"
     for tk_path in "${STDLIB_DIR}/lib-dynload/_tkinter."*.so "${STDLIB_DIR}/tkinter" \
                    "${STDLIB_DIR}/idlelib" "${STDLIB_DIR}/turtledemo" "${STDLIB_DIR}/turtle.py"; do
         if [ -e "${tk_path}" ]; then
             rm -rf "${tk_path}"
-            log_info "  Removed lib/python${PYTHON_VERSION}/${tk_path#${STDLIB_DIR}/}"
+            log_info "  Removed lib/python${PY_LIBVER}/${tk_path#${STDLIB_DIR}/}"
         fi
     done
 
@@ -605,7 +635,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
     for lib in "${PYTHON_DEST}"/lib/*.dylib; do
         [ -e "${lib}" ] || continue
         case "$(basename "${lib}")" in
-            "libpython${PYTHON_VERSION}.dylib") continue ;;
+            "libpython${PYTHON_VERSION}.dylib"|"libpython${PY_LIBVER}.dylib") continue ;;
         esac
         rm -f "${lib}"
         log_info "  Removed lib/$(basename "${lib}")"
@@ -615,6 +645,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
 
     # Make the bundled interpreter self-contained. bin/pythonX.Y in a framework
     # build is a stub that posix_spawns Resources/Python.app/Contents/MacOS/Python
+    # (.../MacOS/PythonT in the free-threaded framework)
     # — an app this bundle strips — and both binaries reference the framework by
     # the build machine's absolute path, so external programs launched via
     # xefm_python only ran on machines where that exact path still existed.
@@ -625,20 +656,20 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # the versioned Cellar path there, not the opt path) — because
     # install_name_tool -change no-ops silently on a mismatch.
     log_info "Making bundled interpreter self-contained..."
-    EMBEDDED_PYTHON_BIN="${PYTHON_DEST}/bin/python${PYTHON_VERSION}"
-    REAL_PYTHON_BIN="${PYTHON_SOURCE}/Resources/Python.app/Contents/MacOS/Python"
+    EMBEDDED_PYTHON_BIN="${PYTHON_DEST}/bin/python${PY_LIBVER}"
+    REAL_PYTHON_BIN="${PYTHON_SOURCE}/Resources/Python.app/Contents/MacOS/${PY_FW}"
     if [ ! -f "${REAL_PYTHON_BIN}" ]; then
         log_error "Real interpreter not found at ${REAL_PYTHON_BIN}"
         exit 1
     fi
     cp -f "${REAL_PYTHON_BIN}" "${EMBEDDED_PYTHON_BIN}"
     chmod u+wx "${EMBEDDED_PYTHON_BIN}"
-    OLD_PYTHON_DYLIB=$(otool -L "${EMBEDDED_PYTHON_BIN}" | awk -v ver="${PYTHON_VERSION}" \
-        'index($1, "/Python.framework/Versions/" ver "/Python") && $1 !~ /^@/ {print $1; exit}')
+    OLD_PYTHON_DYLIB=$(otool -L "${EMBEDDED_PYTHON_BIN}" | awk -v tail="/${PY_FW}.framework/Versions/${PYTHON_VERSION}/${PY_FW}" \
+        'index($1, tail) && $1 !~ /^@/ {print $1; exit}')
     if [ -n "${OLD_PYTHON_DYLIB}" ]; then
         install_name_tool -change \
             "${OLD_PYTHON_DYLIB}" \
-            "@executable_path/../Python" \
+            "@executable_path/../${PY_FW}" \
             "${EMBEDDED_PYTHON_BIN}"
     fi
     # install_name_tool invalidates the signature the interpreter was shipped
@@ -655,7 +686,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # below included. Homebrew's framework is linker-signed with nothing sealed
     # beside it, which is why this only began to matter off Homebrew. Step 6
     # writes a minimal Info.plist and signs the framework for real.
-    codesign --force --sign - "${PYTHON_DEST}/Python"
+    codesign --force --sign - "${PYTHON_DEST}/${PY_FW}"
     # Only otool -L's tab-indented lines are load commands. A universal binary
     # prints a "<path> (architecture X):" header per slice, and that path is the
     # file's own — under the build tree — so a filter that reads every line
@@ -663,7 +694,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # line was enough while the embedded Python was a single-architecture
     # Homebrew build; a universal2 python.org one has a header per slice.
     if otool -L "${EMBEDDED_PYTHON_BIN}" | awk '/^\t/ && $1 !~ /^@/ && $1 !~ /^\/usr\/lib\// && $1 !~ /^\/System\//' | grep -q .; then
-        log_error "Embedded python${PYTHON_VERSION} still links a build-machine path:"
+        log_error "Embedded python${PY_LIBVER} still links a build-machine path:"
         otool -L "${EMBEDDED_PYTHON_BIN}"
         exit 1
     fi
@@ -673,7 +704,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # bytecode matches the runtime exactly. See compile_bytecode for why a
     # failure here stops the build.
     log_info "Pre-compiling Python standard library..."
-    STDLIB_PATH="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
+    STDLIB_PATH="${PYTHON_DEST}/lib/python${PY_LIBVER}"
     BUNDLE_PYTHON="${PYTHON_DEST}/bin/python3"
     if [ ! -d "${STDLIB_PATH}" ] || [ ! -f "${BUNDLE_PYTHON}" ]; then
         log_error "No standard library or interpreter to compile it with under ${PYTHON_DEST}"
@@ -683,14 +714,24 @@ if [ "$USE_FRAMEWORK" = true ]; then
     
     # Update install names to use embedded framework
     log_info "Updating install names to use embedded framework..."
+    # The old name is the source dylib's own install name, read rather than
+    # assumed, for the same reason as the interpreter's above; and the result
+    # is checked, since install_name_tool -change no-ops on a mismatch and the
+    # launcher would then load the build machine's framework.
+    OLD_LAUNCHER_DYLIB=$(otool -D "${PYTHON_SOURCE}/${PY_FW}" | awk '/^\// && !/:$/ {print; exit}')
     install_name_tool -change \
-        "${PYTHON_BASE_PREFIX}/Python" \
-        "@executable_path/../Frameworks/Python.framework/Versions/${PYTHON_VERSION}/Python" \
+        "${OLD_LAUNCHER_DYLIB}" \
+        "@executable_path/../Frameworks/${PY_FW}.framework/Versions/${PYTHON_VERSION}/${PY_FW}" \
         "${MACOS_DIR}/${APP_NAME}"
+    if otool -L "${MACOS_DIR}/${APP_NAME}" | awk '/^\t/ && $1 !~ /^@/ && $1 !~ /^\/usr\/lib\// && $1 !~ /^\/System\//' | grep -q .; then
+        log_error "${APP_NAME} still links a build-machine path:"
+        otool -L "${MACOS_DIR}/${APP_NAME}"
+        exit 1
+    fi
 else
     # Standard Python installation (mise, pyenv, homebrew, etc.)
     log_info "Copying Python from ${PYTHON_BASE_PREFIX}..."
-    PYTHON_DEST="${FRAMEWORKS_DIR}/Python.framework/Versions/${PYTHON_VERSION}"
+    PYTHON_DEST="${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions/${PYTHON_VERSION}"
     mkdir -p "${PYTHON_DEST}"
     
     # Copy Python components (excluding problematic symlinks from source)
@@ -724,7 +765,7 @@ else
     # Add sitecustomize.py to disable user site-packages
     log_info "Adding sitecustomize.py to disable user site-packages..."
     SITECUSTOMIZE_SOURCE="${SCRIPT_DIR}/resources/sitecustomize.py"
-    SITECUSTOMIZE_DEST="${PYTHON_DEST}/lib/python${PYTHON_VERSION}/sitecustomize.py"
+    SITECUSTOMIZE_DEST="${PYTHON_DEST}/lib/python${PY_LIBVER}/sitecustomize.py"
     if [ -f "${SITECUSTOMIZE_SOURCE}" ]; then
         cp "${SITECUSTOMIZE_SOURCE}" "${SITECUSTOMIZE_DEST}"
         log_info "  Installed sitecustomize.py"
@@ -735,15 +776,15 @@ else
     
     # Create python3 symlink in bin directory
     log_info "Creating python3 symlink in bin directory..."
-    if [ -f "${PYTHON_DEST}/bin/python${PYTHON_VERSION}" ]; then
-        (cd "${PYTHON_DEST}/bin" && ln -sf "python${PYTHON_VERSION}" python3)
-        log_info "  Created python3 -> python${PYTHON_VERSION}"
+    if [ -f "${PYTHON_DEST}/bin/python${PY_LIBVER}" ]; then
+        (cd "${PYTHON_DEST}/bin" && ln -sf "python${PY_LIBVER}" python3)
+        log_info "  Created python3 -> python${PY_LIBVER}"
     fi
     
     # Create version symlinks
     log_info "Creating framework-level symlinks..."
-    VERSIONS_DIR="${FRAMEWORKS_DIR}/Python.framework/Versions"
-    FRAMEWORK_DIR="${FRAMEWORKS_DIR}/Python.framework"
+    VERSIONS_DIR="${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions"
+    FRAMEWORK_DIR="${FRAMEWORKS_DIR}/${PY_FW}.framework"
     
     # Create Current -> 3.12 symlink
     (cd "${VERSIONS_DIR}" && ln -sfn "${PYTHON_VERSION}" Current)
@@ -761,7 +802,7 @@ else
     log_info "Removing unnecessary files from embedded Python..."
     
     # Remove development tools from bin/
-    for tool in "idle${PYTHON_VERSION}" pip3 "pip${PYTHON_VERSION}" "pydoc${PYTHON_VERSION}" "python${PYTHON_VERSION}-config"; do
+    for tool in "idle${PY_LIBVER}" pip3 "pip${PY_LIBVER}" "pydoc${PY_LIBVER}" "python${PY_LIBVER}-config"; do
         if [ -f "${PYTHON_DEST}/bin/${tool}" ]; then
             rm -f "${PYTHON_DEST}/bin/${tool}"
             log_info "  Removed bin/${tool}"
@@ -775,9 +816,9 @@ else
     fi
     
     # Remove Python test suite (saves ~68MB)
-    if [ -d "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test" ]; then
-        rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
-        log_info "  Removed lib/python${PYTHON_VERSION}/test/"
+    if [ -d "${PYTHON_DEST}/lib/python${PY_LIBVER}/test" ]; then
+        rm -rf "${PYTHON_DEST}/lib/python${PY_LIBVER}/test"
+        log_info "  Removed lib/python${PY_LIBVER}/test/"
     fi
     
     log_success "Unnecessary files removed"
@@ -786,7 +827,7 @@ else
     # bytecode matches the runtime exactly. See compile_bytecode for why a
     # failure here stops the build.
     log_info "Pre-compiling Python standard library..."
-    STDLIB_PATH="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
+    STDLIB_PATH="${PYTHON_DEST}/lib/python${PY_LIBVER}"
     BUNDLE_PYTHON="${PYTHON_DEST}/bin/python3"
     if [ ! -d "${STDLIB_PATH}" ] || [ ! -f "${BUNDLE_PYTHON}" ]; then
         log_error "No standard library or interpreter to compile it with under ${PYTHON_DEST}"
@@ -797,19 +838,19 @@ else
     # Update install names for Python shared library
     log_info "Updating install names to use embedded Python..."
     # Find the Python shared library
-    PYTHON_LIB=$(find "${PYTHON_DEST}/lib" -name "libpython${PYTHON_VERSION}*.dylib" -type f | head -1)
+    PYTHON_LIB=$(find "${PYTHON_DEST}/lib" -name "libpython${PY_LIBVER}*.dylib" -type f | head -1)
     if [ -n "${PYTHON_LIB}" ]; then
         PYTHON_LIB_NAME=$(basename "${PYTHON_LIB}")
         
         # Update the XeFM executable to use bundled Python library
         install_name_tool -change \
             "${PYTHON_BASE_PREFIX}/lib/${PYTHON_LIB_NAME}" \
-            "@executable_path/../Frameworks/Python.framework/Versions/${PYTHON_VERSION}/lib/${PYTHON_LIB_NAME}" \
+            "@executable_path/../Frameworks/${PY_FW}.framework/Versions/${PYTHON_VERSION}/lib/${PYTHON_LIB_NAME}" \
             "${MACOS_DIR}/${APP_NAME}" 2>/dev/null || true
         
         # Update the Python library's own install name (id)
         install_name_tool -id \
-            "@executable_path/../Frameworks/Python.framework/Versions/${PYTHON_VERSION}/lib/${PYTHON_LIB_NAME}" \
+            "@executable_path/../Frameworks/${PY_FW}.framework/Versions/${PYTHON_VERSION}/lib/${PYTHON_LIB_NAME}" \
             "${PYTHON_LIB}"
         log_info "  Updated Python library install name"
         
@@ -867,7 +908,7 @@ fi
 # with @executable_path) are left untouched. This is the only part of the
 # bundle with external dependencies; the pip packages under Resources ship
 # self-contained wheels.
-LIB_DYNLOAD="${FRAMEWORKS_DIR}/Python.framework/Versions/${PYTHON_VERSION}/lib/python${PYTHON_VERSION}/lib-dynload"
+LIB_DYNLOAD="${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions/${PYTHON_VERSION}/lib/python${PY_LIBVER}/lib-dynload"
 if [ -d "${LIB_DYNLOAD}" ]; then
     "${DELOCATE_PATH}" "${LIB_DYNLOAD}"
     log_info "  Vendored external libraries into ${LIB_DYNLOAD}/.dylibs"
@@ -1001,7 +1042,7 @@ NOTICES_EXTRAS=()
 
 # Embedded interpreter's PSF license (under lib/, survives the Resources/
 # cleanup performed while embedding Python above).
-PYTHON_LICENSE="${PYTHON_DEST}/lib/python${PYTHON_VERSION}/LICENSE.txt"
+PYTHON_LICENSE="${PYTHON_DEST}/lib/python${PY_LIBVER}/LICENSE.txt"
 if [ -f "${PYTHON_LICENSE}" ]; then
     NOTICES_EXTRAS+=(--extra "Python ${PYTHON_VERSION} interpreter and standard library (Python Software Foundation License Agreement)=${PYTHON_LICENSE}")
 else
@@ -1165,18 +1206,18 @@ if [ -n "${CODESIGN_IDENTITY}" ]; then
     # which removes the Info.plist codesign needs to seal Python.framework as a
     # nested bundle. Synthesize a minimal one so the framework signs cleanly and
     # `codesign --verify --deep` accepts it as valid nested code.
-    FRAMEWORK_VERSION_DIR="${FRAMEWORKS_DIR}/Python.framework/Versions/${PYTHON_VERSION}"
+    FRAMEWORK_VERSION_DIR="${FRAMEWORKS_DIR}/${PY_FW}.framework/Versions/${PYTHON_VERSION}"
     if [ -d "${FRAMEWORK_VERSION_DIR}" ] && [ ! -f "${FRAMEWORK_VERSION_DIR}/Resources/Info.plist" ]; then
-        log_info "  Writing minimal Python.framework Info.plist for signing..."
+        log_info "  Writing minimal ${PY_FW}.framework Info.plist for signing..."
         mkdir -p "${FRAMEWORK_VERSION_DIR}/Resources"
         cat > "${FRAMEWORK_VERSION_DIR}/Resources/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key><string>org.python.python</string>
-    <key>CFBundleName</key><string>Python</string>
-    <key>CFBundleExecutable</key><string>Python</string>
+    <key>CFBundleIdentifier</key><string>org.python.$(echo "${PY_FW}" | tr '[:upper:]' '[:lower:]')</string>
+    <key>CFBundleName</key><string>${PY_FW}</string>
+    <key>CFBundleExecutable</key><string>${PY_FW}</string>
     <key>CFBundlePackageType</key><string>FMWK</string>
     <key>CFBundleShortVersionString</key><string>${PYTHON_VERSION}</string>
     <key>CFBundleVersion</key><string>${PYTHON_VERSION}</string>
@@ -1207,10 +1248,10 @@ PLIST
     # 3. Python.framework itself (seals its versioned contents as nested code).
     #    Present only in the Python.framework build path; the standard-Python
     #    path ships libpythonX.Y.dylib instead, already signed in step 1.
-    if [ -f "${FRAMEWORK_VERSION_DIR}/Python" ]; then
-        log_info "  Signing Python.framework..."
-        "${SIGN[@]}" "${FRAMEWORKS_DIR}/Python.framework" \
-            || { log_error "Failed to sign Python.framework"; exit 1; }
+    if [ -f "${FRAMEWORK_VERSION_DIR}/${PY_FW}" ]; then
+        log_info "  Signing ${PY_FW}.framework..."
+        "${SIGN[@]}" "${FRAMEWORKS_DIR}/${PY_FW}.framework" \
+            || { log_error "Failed to sign ${PY_FW}.framework"; exit 1; }
     fi
 
     # 4. The main executable.

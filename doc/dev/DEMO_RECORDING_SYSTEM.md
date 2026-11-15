@@ -93,7 +93,7 @@ tart run xefm-demo --vnc-experimental --no-graphics
   `CGConfigureDisplayWithDisplayMode`, `kCGConfigurePermanently`):
 
   ```bash
-  PY=/Applications/XeFM.app/Contents/Frameworks/Python.framework/Versions/3.14/bin/python3
+  PY=/Applications/XeFM.app/Contents/Frameworks/PythonT.framework/Versions/Current/bin/python3
   ssh … "PYTHONPATH=/Applications/XeFM.app/Contents/Resources/python_packages $PY - 960 600 1920" < modes.py
   ```
 

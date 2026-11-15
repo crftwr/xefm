@@ -5,7 +5,7 @@ This guide provides comprehensive testing procedures for the XeFM macOS applicat
 ## Prerequisites
 
 - XeFM.app built successfully (run `cd macos_app && ./build.sh`)
-- macOS 12 or later
+- macOS 14 or later
 - Application bundle located at: `macos_app/build/XeFM.app`
 
 ## Quick Test Checklist
@@ -273,11 +273,20 @@ Essential tests to verify basic functionality:
 
 ## The oldest supported macOS
 
-The floor is `MACOS_MIN_VERSION` in `macos_app/build.sh`: **12.0**, the oldest
-macOS XeFM has actually been run on. Apple silicon virtualizes macOS 12 and
-later only, so 11 has never been run, and the floor was raised to 12 rather than
-kept unverified. To repeat the check, run the release DMG in a
-[Tart](https://tart.run) VM (`ghcr.io/cirruslabs/macos-monterey-vanilla`).
+The floor is `MACOS_MIN_VERSION` in `macos_app/build.sh`: **14.0** (Sonoma),
+since the free-threaded 3.15 build (2026-11-15). numpy, which similar-files
+brings, installs as its `macosx_14_0_arm64` wheel (linked against Accelerate) on
+any build machine on 14 or later, so Step 5 had been reading 14.0 back off the
+bundle for every release while the build still declared 12.0; the Info.plist
+said 14.0 and the docs said 12. The declared floor now matches what ships, and
+the Homebrew cask already says `depends_on macos: :sonoma`.
+
+It was 12.0 before: the oldest macOS XeFM has actually been run on (Apple
+silicon virtualizes macOS 12 and later only). The 1.8.0 notes below are from
+that floor. Going back below 14 means bundling numpy's `macosx_11_0` OpenBLAS
+wheel and re-running the release DMG on the older macOS in a
+[Tart](https://tart.run) VM (`ghcr.io/cirruslabs/macos-monterey-vanilla` for 12,
+`macos-sonoma-vanilla` for the current floor).
 
 **2026-10-21, XeFM 1.8.0 release DMG, macOS 12.7.6 in a Tart VM on an M5 host
 running macOS 27.** Gatekeeper accepts the notarized app. It launches with no

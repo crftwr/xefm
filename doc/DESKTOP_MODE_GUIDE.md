@@ -59,8 +59,8 @@ make run-gui                    # the same thing, through .venv
 | Windows 10/11 (x64, ARM64) | **[Microsoft Store](https://apps.microsoft.com/detail/9PK2X44W810V)** (recommended) | Yes — signed by Microsoft |
 | Windows 10/11 x64 | `XeFM-<version>-win-x64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
 | Windows 10/11 ARM64 | `XeFM-<version>-win-arm64.zip` (portable alternative) | No — needs [unblocking once](#windows--the-portable-zip) |
-| macOS 12+ (Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
-| macOS 12+ (Apple Silicon) | [Homebrew](#macos--homebrew): `brew install --cask crftwr/tap/xefm` (the same DMG) | Yes — Apple Developer ID |
+| macOS 14+ (Apple Silicon) | `XeFM-<version>-macos.dmg` | Yes — Apple Developer ID |
+| macOS 14+ (Apple Silicon) | [Homebrew](#macos--homebrew): `brew install --cask crftwr/tap/xefm` (the same DMG) | Yes — Apple Developer ID |
 
 A stable release attaches the ready-to-run DMG and zips, but one that only
 fixes a single platform may carry just that platform's build, so the newest zip

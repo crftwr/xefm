@@ -42,16 +42,57 @@ The build script detects Python configuration from `.venv`:
 VENV_PYTHON="${PROJECT_ROOT}/.venv/bin/python3"
 PYTHON_VERSION=$("${VENV_PYTHON}" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 PYTHON_BASE_PREFIX=$("${VENV_PYTHON}" -c "import sys; print(sys.base_prefix)")
+PY_ABIFLAGS=$("${VENV_PYTHON}" -c "import sys; print(sys.abiflags)")      # "t" when free-threaded
+PY_LIBVER="${PYTHON_VERSION}${PY_ABIFLAGS}"                              # 3.15t
+PY_FW=$("${VENV_PYTHON}" -c "import sysconfig; print(sysconfig.get_config_var('PYTHONFRAMEWORK') or 'Python')")
 ```
+
+### Free-threaded Python (GIL off)
+
+The app ships the free-threaded interpreter, as the Windows app does
+(`WINDOWS_APP_BUILD_SYSTEM.md`): the render pipeline (#901) only pays off with
+the GIL off. `build.sh` refuses a venv whose `Py_GIL_DISABLED` is not set;
+`ALLOW_GIL_PYTHON=1` lets a local comparison build through. `make venv` already
+prefers a `python3.NNt` over the regular build (`FREE_THREADED=1`).
+
+The toolchain is python.org's universal2 installer with the **Free-threaded
+Python** option ticked. It installs a framework of its own beside the regular
+one, and every per-ABI name carries the `t`:
+
+| | Regular | Free-threaded |
+|---|---|---|
+| Framework | `Python.framework` | `PythonT.framework` |
+| Framework dylib | `Versions/X.Y/Python` | `Versions/X.Y/PythonT` |
+| Real interpreter | `Resources/Python.app/Contents/MacOS/Python` | `Resources/Python.app/Contents/MacOS/PythonT` |
+| Interpreter / stdlib / headers | `pythonX.Y` | `pythonX.Yt` |
+| Link config | `config-X.Y-darwin` | `config-X.Yt-darwin` |
+
+`build.sh` derives these from `PY_FW` and `PY_LIBVER` instead of spelling them.
+The bundle embeds the framework under its own name (`PythonT.framework`), and
+the launcher is compiled with `-DXEFM_PYTHON_FRAMEWORK="PythonT.framework"` so
+it sets the right home; `XeFMAppDelegate.m` defaults to `Python.framework` when
+the macro is absent. The launcher's `pyconfig.h` comes from `include/python3.15t`,
+which defines `Py_GIL_DISABLED` itself, so on macOS (unlike Windows) the embedder
+does not have to.
+
+The free-threaded framework's `bin/` also holds a second `pythonX.Y` stub beside
+`pythonX.Yt`. The embedding step keeps only `pythonX.Yt` and the `python3` alias
+and deletes the rest of `bin/`, because each stub still names
+`/Library/Frameworks` in its load commands and Step 4e would refuse it.
+
+Every compiled dependency needs a `cp3XXt` macOS arm64 wheel; the venv cannot
+install one without, so a missing wheel shows up at `make venv`, not in the
+bundle.
 
 ### 2. Installation Type Detection
 
 The script detects whether Python is installed as:
-- **Python.framework** (python.org installer or Homebrew)
+- **Python.framework** / **PythonT.framework** (python.org installer or Homebrew;
+  the name is `PY_FW`)
 - **Standard Python** (mise, pyenv, system Python)
 
 ```bash
-if [[ "${PYTHON_BASE_PREFIX}" == *"/Python.framework/Versions/"* ]]; then
+if [[ "${PYTHON_BASE_PREFIX}" == *"/${PY_FW}.framework/Versions/"* ]]; then
     # Framework installation
     USE_FRAMEWORK=true
 else
@@ -109,22 +150,24 @@ All Python components are copied from the venv's base_prefix:
 
 ### 4. Framework Structure
 
-The build script creates a Python.framework-like structure:
+The build script creates a framework structure named after the embedded Python
+(`PythonT.framework` for the free-threaded build shown here; a regular build has
+`Python.framework`, `Python` and `python3.15` in the same places):
 
 ```
-XeFM.app/Contents/Frameworks/Python.framework/
+XeFM.app/Contents/Frameworks/PythonT.framework/
   Versions/
-    3.13/                    # Version-specific directory (auto-detected)
-      Python                 # Shared library (framework style only)
+    3.15/                    # Version-specific directory (auto-detected)
+      PythonT                # Shared library (framework style only)
       bin/
-        python3.13           # Actual Python executable
-        python3 -> python3.13
+        python3.15t          # Actual Python executable
+        python3 -> python3.15t
       lib/
-        python3.13/          # Standard library
-        libpython3.13.dylib  # Shared library (standard style)
-    Current -> 3.13          # Symlink to current version
+        python3.15t/         # Standard library
+        libpython3.15t.dylib # Shared library (standard style)
+    Current -> 3.15          # Symlink to current version
+  PythonT -> Versions/Current/PythonT
   bin -> Versions/Current/bin
-  lib -> Versions/Current/lib
 ```
 
 **Version Flexibility:** The Objective-C launcher uses the `Current` symlink instead of hardcoded version numbers, allowing the app to work with any Python version embedded during build time.
@@ -169,12 +212,16 @@ python3 -m compileall -q -f "${STDLIB_PATH}"
 
 ### 7. Install Name Updates
 
-The build script updates the XeFM executable to use the bundled Python:
+The build script updates the XeFM executable to use the bundled Python. The old
+name is the source dylib's own install name (`otool -D`), read rather than
+assumed, and the result is checked: `install_name_tool -change` no-ops silently
+on a mismatch, which would leave the launcher loading the build machine's
+framework.
 
 ```bash
 install_name_tool -change \
-    "${PYTHON_BASE_PREFIX}/lib/libpython3.13.dylib" \
-    "@executable_path/../Frameworks/Python.framework/Versions/3.13/lib/libpython3.13.dylib" \
+    "/Library/Frameworks/PythonT.framework/Versions/3.15/PythonT" \
+    "@executable_path/../Frameworks/PythonT.framework/Versions/3.15/PythonT" \
     "${MACOS_DIR}/XeFM"
 ```
 
@@ -217,10 +264,9 @@ The `xefm_python` variable in `xefm/external_programs.py` automatically detects 
 
 ```python
 if sys.platform == 'darwin' and '.app/Contents/MacOS' in sys.executable:
-    # Running from macOS app bundle - use bundled python3
-    bundle_path = sys.executable.rsplit('.app/Contents/MacOS', 1)[0] + '.app'
-    xefm_python = os.path.join(bundle_path, 'Contents', 'Frameworks', 
-                               'Python.framework', 'bin', 'python3')
+    # The launcher sets the embedded framework's Versions/Current as home,
+    # so this holds whatever the framework is called.
+    xefm_python = os.path.join(sys.base_prefix, 'bin', 'python3')
 else:
     # Normal execution - use current Python interpreter
     xefm_python = sys.executable
@@ -330,9 +376,9 @@ signing an outer container first would invalidate the inner signatures:
 
 1. Nested `.so` / `.dylib` — extension modules, the vendored `.dylibs/` produced
    by delocate, and any dylibs shipped inside pip packages
-2. The embedded interpreter executables (`bin/pythonX.Y`)
-3. `Python.framework` (framework build path only; the standard-Python path ships
-   `libpythonX.Y.dylib`, already signed in step 1)
+2. The embedded interpreter executables (`bin/pythonX.Yt`)
+3. `PythonT.framework` (framework build path only; the standard-Python path ships
+   `libpythonX.Yt.dylib`, already signed in step 1)
 4. The main executable (`Contents/MacOS/XeFM`)
 5. The `.app` bundle last — the outermost seal over everything above
 
@@ -352,8 +398,8 @@ relaxations in `resources/entitlements.plist`:
 
 **Framework Info.plist.** The Python-embedding step (Step 4) strips the
 framework's `Resources/` directory, which removes the `Info.plist` that
-`codesign` needs to seal `Python.framework` as a nested bundle. Step 6
-synthesizes a minimal one before signing so `codesign --verify --deep` accepts
+`codesign` needs to seal `PythonT.framework` as a nested bundle. Step 6
+synthesizes a minimal one (`CFBundleExecutable` = `PythonT`) before signing so `codesign --verify --deep` accepts
 the framework as valid nested code.
 
 ### How notarization works (`build.sh` Step 7, `create_dmg.sh`)
