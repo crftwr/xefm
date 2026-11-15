@@ -36,6 +36,13 @@ table in ~/.config/quality-loop/guests.toml (`XEFM_QA_GUESTS` names another
 file). The images are shared with Keyhac, and so are the aliases. `qa-linux`
 and `qa-linux-floor`, Docker containers, work without a table
 (:func:`default_guests`): Docker is all `make test-linux` needs.
+
+**The image's free-threaded Python.** The macOS and Windows apps embed 3.15t
+(#914, #915), so a VM guest runs on the image's free-threaded interpreter,
+``free_threaded_python`` in the table when it names one (the key Keyhac's
+runs read too), and `test-vm` stops on a Python with the GIL on. The Linux
+containers stay on the regular build: there XeFM runs on whatever Python pip
+or Homebrew gives it.
 """
 
 from __future__ import annotations
@@ -43,6 +50,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import ntpath
 import os
 import pathlib
 import re
@@ -238,6 +246,42 @@ class Guest(ql.Guest):
         guest.packages = packages
         return guest
 
+    @property
+    def python(self) -> str:
+        """The image's free-threaded interpreter, ``free_threaded_python`` in
+        the table - what the apps embed - or, where the table names none, its
+        ``python``. :meth:`require_free_threaded` refuses the second for a
+        run that has to be on the first."""
+        return self.settings.get("free_threaded_python") or super().python
+
+    def require_free_threaded(self) -> None:
+        """Stop unless `python` is a free-threaded build with the GIL off: the
+        suite on a GIL Python would pass without testing what the apps ship.
+        A Linux container is exempt (see the module's docstring)."""
+        if self.docker:
+            return
+        # No quotes inside -c: through SSH into PowerShell they get mangled.
+        code = "import sys; print(int(not sys._is_gil_enabled()))"
+        if self.windows:
+            said = self.ssh(f"& {ql.ps_quote(self.python)} -c \"{code}\"")
+        else:
+            said = self.ssh(f"{ql.sh_quote(self.python)} -c {ql.sh_quote(code)}")
+        if said.returncode != 0 or said.stdout.strip().splitlines()[-1:] != ["1"]:
+            raise SystemExit(
+                f"{self.alias}: {self.python} is not a free-threaded Python with the GIL "
+                f"off, and the apps ship one. Name the image's in "
+                f"~/.config/quality-loop/guests.toml as free_threaded_python, or as "
+                f"python.\n{said.stdout}{said.stderr}")
+
+    def windowless(self, python: str) -> str:
+        """``pythonw.exe`` beside ``python.exe`` (quality-loop's), and
+        ``pythonw3.15t.exe`` beside ``python3.15t.exe``: the free-threaded
+        build installs beside a regular one under those names."""
+        name = ntpath.basename(python) if self.windows else ""
+        if re.fullmatch(r"python3\.\d+t\.exe", name, re.IGNORECASE):
+            return python[:-len(name)] + "pythonw" + name[len("python"):]
+        return super().windowless(python)
+
     def stage(self, prefix: str = "xefm-qa-stage-") -> pathlib.Path:
         """This working tree as <stage>/tree, our packages in <stage>/lib in a
         development run, and on Windows the libarchive DLL in
@@ -273,11 +317,14 @@ class Guest(ql.Guest):
         wanted = third_party_requirements(tests, self.packages)
         if self.system != "Darwin" or sys.platform != "darwin":
             return wanted
+        # The ABI as well as the version: a free-threaded Python loads only
+        # cp3XXt wheels, and a regular one only cp3XX.
         said = self.ssh(f"{ql.sh_quote(self.python)} -c "
-                        "'import sys; print(*sys.version_info[:2])'")
-        if said.stdout.split() != [str(n) for n in sys.version_info[:2]]:
+                        "'import sys; print(*sys.version_info[:2], sys.abiflags or \"-\")'")
+        if said.stdout.split() != [*map(str, sys.version_info[:2]), sys.abiflags or "-"]:
             return wanted
-        house = self.host_share / f".wheels-macos-cp{sys.version_info[0]}{sys.version_info[1]}"
+        house = self.host_share / (f".wheels-macos-cp{sys.version_info[0]}"
+                                   f"{sys.version_info[1]}{sys.abiflags}")
         built = subprocess.run([sys.executable, "-m", "pip", "wheel", "-q",
                                 "--disable-pip-version-check", "-w", str(house), *wanted],
                                capture_output=True, text=True)

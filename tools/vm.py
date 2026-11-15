@@ -69,6 +69,7 @@ def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str
     started = time.monotonic()
     code = 3
     with guest.machine():
+        guest.require_free_threaded()
         stage = guest.stage("xefm-test-")
         try:
             python = _venv(guest, stage)
