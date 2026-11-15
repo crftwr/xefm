@@ -13072,15 +13072,19 @@ class XeFMApp:
 
     @staticmethod
     def _python_text(version: str | None = None, free_threaded: bool | None = None,
-                     gil: bool | None = None) -> str:
-        """The Python XeFM runs on, for the About box: its version, and whether
-        the GIL is off - what tells a free-threaded app build from one that
-        is not. A free-threaded build can still run with the GIL on (an
-        extension module that does not support running without it turns it
-        back on, as does ``PYTHON_GIL=1``), so build and state are both told.
-        The arguments stand in for the running interpreter in tests."""
+                     gil: bool | None = None, arch: str | None = None) -> str:
+        """The Python XeFM runs on, for the About box: its version, the CPU
+        architecture it was built for, and whether the GIL is off - what tells
+        a free-threaded app build from one that is not, and an x64 Python
+        running emulated on an ARM machine from a native one. A free-threaded
+        build can still run with the GIL on (an extension module that does not
+        support running without it turns it back on, as does ``PYTHON_GIL=1``),
+        so build and state are both told. The arguments stand in for the
+        running interpreter in tests."""
         if version is None:
             version = platform.python_version()
+        if arch is None:
+            arch = XeFMApp._python_arch()
         if free_threaded is None:
             free_threaded = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
         if gil is None:
@@ -13091,7 +13095,35 @@ class XeFMApp:
             state = "free-threaded build, GIL on"
         else:
             state = "free-threaded, GIL off"
-        return f"Python {version} ({state})"
+        arch = f" {arch}" if arch else ""
+        return f"Python {version}{arch} ({state})"
+
+    # The spellings each OS reports, to the one name a user knows the CPU by.
+    _ARCH_NAMES = {
+        "amd64": "x64", "x86_64": "x64", "x64": "x64",
+        "arm64": "arm64", "aarch64": "arm64",
+        "win32": "x86", "x86": "x86", "i386": "x86", "i686": "x86",
+    }
+
+    @staticmethod
+    def _python_arch(platform_tag: str | None = None, machine: str | None = None) -> str:
+        """The CPU architecture the running Python was built for: ``x64``,
+        ``arm64``, ``x86``, or the OS's own word for anything else.
+
+        On Windows that is the interpreter's build tag (``win-amd64``,
+        ``win-arm64``, ``win32``), not ``platform.machine()``: an x64 Python
+        emulated on an ARM64 machine must say x64, and the build tag is fixed
+        when the interpreter is built. Elsewhere ``platform.machine()`` already
+        names the process's architecture (``x86_64`` under Rosetta), where the
+        build tag can be ``universal2``. The arguments stand in for the
+        running interpreter in tests."""
+        if platform_tag is None:
+            platform_tag = sysconfig.get_platform()
+        if platform_tag.startswith("win"):
+            raw = platform_tag.split("-", 1)[-1]
+        else:
+            raw = machine if machine is not None else platform.machine()
+        return XeFMApp._ARCH_NAMES.get(raw.lower(), raw)
 
     def show_about(self) -> None:
         """The About box.

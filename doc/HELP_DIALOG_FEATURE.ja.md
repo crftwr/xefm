@@ -58,10 +58,10 @@ KEY_BINDINGS = {
 
 ヘルプダイアログとは別に、**About** ダイアログには XeFM の名前、バージョン番号、動作している Python、クリックできるリンクとして GitHub リポジトリの URL が表示されます。どのプラットフォームでも、メニューバーの **Help → About XeFM** から開けます。
 
-Python の行には、バージョンと、GIL が無効かどうかが表示されます。
+Python の行には、バージョン、その Python がビルドされた CPU アーキテクチャ（`x64`、`arm64`、`x86` のいずれか。ARM のマシンでエミュレーションで動く x64 版の Python は `x64` と表示されます）、GIL が無効かどうかが表示されます。
 
-- `Python 3.15.2 (free-threaded, GIL off)`: フリースレッド版の Python で、スレッドが並列に動いています。
-- `Python 3.15.2 (free-threaded build, GIL on)`: フリースレッド版の Python ですが、GIL が有効に戻っています。GIL なしでの動作に対応していない拡張モジュールがあるか、`PYTHON_GIL=1` が設定されています。
-- `Python 3.14.10 (GIL on)`: 通常版の Python です。
+- `Python 3.15.2 arm64 (free-threaded, GIL off)`: フリースレッド版の Python で、スレッドが並列に動いています。
+- `Python 3.15.2 x64 (free-threaded build, GIL on)`: フリースレッド版の Python ですが、GIL が有効に戻っています。GIL なしでの動作に対応していない拡張モジュールがあるか、`PYTHON_GIL=1` が設定されています。
+- `Python 3.14.10 x64 (GIL on)`: 通常版の Python です。
 
 OK ボタンを押すか、Enter、Space、ESC のいずれかを押すと閉じます。テキスト効果を持つカラーテーマ（Sci-Fi）では、ボックスが開くと同時にテキストが解読されるように現れます。ほかのテーマでは単に表示されます。
