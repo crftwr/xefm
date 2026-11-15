@@ -199,7 +199,8 @@ class EditSessions:
         """The sessions whose copy was saved since the last call with content
         the remote has not got. Cheap when nothing moved: one stat per copy."""
         out = []
-        for session in self._sessions.values():
+        # A copy: open() adds sessions from a worker thread meanwhile.
+        for session in list(self._sessions.values()):
             stat = _local_stat(session.local)
             if stat is None or stat == session.seen_stat:
                 continue
@@ -212,7 +213,7 @@ class EditSessions:
         """End every session: remove the copies the remote already matches and
         keep the rest, which are returned so the caller can name them."""
         kept = []
-        for session in self._sessions.values():
+        for session in list(self._sessions.values()):   # a copy, as in saved()
             if session.pending:
                 kept.append(session)
                 continue

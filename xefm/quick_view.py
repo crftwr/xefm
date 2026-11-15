@@ -92,7 +92,10 @@ class QuickView(Widget):
         self._gen = 0
         self._due = 0.0
         self._ticking = False
-        self._result = None            # (gen, kind, lines, note, image)
+        # Finished loads, (gen, kind, lines, note, image) by generation. Each
+        # worker stores its own key - one dict operation, safe with no GIL - so
+        # a slow load for an older entry never overwrites the current result.
+        self._results: dict = {}
         self._last_scan_render = 0.0
         #: The generation whose load has started, so a tick starts it once.
         self._load_started = -1
@@ -131,11 +134,13 @@ class QuickView(Widget):
             self._ticking = True
 
     def _tick(self) -> bool:
-        if self.kind == "pending" and self._result is None \
+        if self.kind == "pending" and self._gen not in self._results \
                 and time.monotonic() >= self._due and self._load_started != self._gen:
             self._start_load()
-        result, self._result = self._result, None
-        if result is not None and result[0] == self._gen:
+        for stale in [g for g in list(self._results) if g != self._gen]:
+            self._results.pop(stale, None)
+        result = self._results.pop(self._gen, None)
+        if result is not None:
             _gen, self.kind, self.lines, self.note, self.image = result
             self.panel.render()
         # The finished scan stays on self._scan: its totals are what the pane
@@ -177,7 +182,7 @@ class QuickView(Widget):
             except Exception as e:  # noqa: BLE001 — a preview never takes the app down
                 logger.error(f"Quick view could not read {entry}: {e}")
                 out = ("error", [], f"Cannot read: {e}", None)
-            self._result = (gen,) + out
+            self._results[gen] = (gen,) + out
 
         threading.Thread(target=worker, name="xefm-quickview", daemon=True).start()
 

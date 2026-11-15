@@ -1004,16 +1004,30 @@ class DirectoryDiffView(Widget):
             self.top = float(self.cursor - self._view_h + 1)
         self._clamp_scroll()
 
+    # The scanner and comparator workers swap in a new ``visible`` list as
+    # they classify nodes, and with differences-only on it can get shorter.
+    # So a handler on the UI thread takes the list once and uses only that,
+    # as _draw_rows does: read twice, it can raise IndexError in between.
+
     def _move_cursor(self, delta: int) -> None:
-        if not self.visible:
+        rows = self.visible
+        if not rows:
             return
-        self.cursor = max(0, min(self.cursor + delta, len(self.visible) - 1))
+        self.cursor = max(0, min(self.cursor + delta, len(rows) - 1))
         self._ensure_cursor_visible()
 
     def _current(self) -> Optional[TreeNode]:
-        if 0 <= self.cursor < len(self.visible):
-            return self.visible[self.cursor]
+        rows, cursor = self.visible, self.cursor
+        if 0 <= cursor < len(rows):
+            return rows[cursor]
         return None
+
+    def _row_of(self, node: TreeNode) -> Optional[int]:
+        """``node``'s row in the visible list, or None when it is not shown."""
+        try:
+            return self.visible.index(node)
+        except ValueError:
+            return None
 
     def _toggle(self, expand: Optional[bool] = None) -> None:
         """Expand/collapse the focused directory. ``expand`` forces a direction;
@@ -1032,19 +1046,21 @@ class DirectoryDiffView(Widget):
             else:
                 self._lazy_scan(node)
         self._reflow()
-        if node in self.visible:
-            self.cursor = self.visible.index(node)
+        row = self._row_of(node)
+        if row is not None:
+            self.cursor = row
         self._ensure_cursor_visible()
         self._update_priorities()
 
     def _step_diff(self, delta: int) -> None:
         """Move the cursor to the next/previous node that is a difference."""
-        n = len(self.visible)
+        rows = self.visible
+        n = len(rows)
         if n == 0:
             return
         for step in range(1, n + 1):
             idx = (self.cursor + delta * step) % n
-            if self.visible[idx].difference_type in _IS_DIFF:
+            if rows[idx].difference_type in _IS_DIFF:
                 self.cursor = idx
                 self._ensure_cursor_visible()
                 return
@@ -1824,8 +1840,9 @@ class DirectoryDiffView(Widget):
         if node is not None and node.is_directory and node.is_expanded:
             self._toggle(expand=False)
         elif node is not None and node.parent is not None and node.parent.depth > 0:
-            if node.parent in self.visible:
-                self._go_row(self.visible.index(node.parent))
+            row = self._row_of(node.parent)
+            if row is not None:
+                self._go_row(row)
 
     def _activate(self) -> None:
         """Enter on a row: expand/collapse a directory, diff a file."""
@@ -1852,8 +1869,9 @@ class DirectoryDiffView(Widget):
         node = self._current()
         self._diff_only = not self._diff_only
         self._reflow()
-        if node is not None and node in self.visible:
-            self.cursor = self.visible.index(node)
+        row = self._row_of(node) if node is not None else None
+        if row is not None:
+            self.cursor = row
         self._ensure_cursor_visible()
 
     def _sync(self) -> None:

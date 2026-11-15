@@ -204,7 +204,8 @@ def get(name: str) -> Optional[Attribute]:
 
 def names() -> list[str]:
     out = list(BUILTIN) + [n for n in _user if n not in BUILTIN]
-    return out + [n for n in _declared if n not in out]
+    # A copy: a listing worker loading an .xft tree declares names meanwhile.
+    return out + [n for n in list(_declared) if n not in out]
 
 
 def is_known(name: str) -> bool:
@@ -521,10 +522,14 @@ class AttributeStore:
     # --- the worker -----------------------------------------------------------
 
     def _ensure_worker(self) -> None:
-        if self._thread is None or not self._thread.is_alive():
-            self._thread = threading.Thread(target=self._work, name="xefm-attrs",
-                                            daemon=True)
-            self._thread.start()
+        # Under the lock _work takes to decide it is done: a worker whose
+        # queue wait has just timed out is still alive, and would otherwise
+        # be trusted with the jobs just queued and leave them there.
+        with self._lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(target=self._work, name="xefm-attrs",
+                                                daemon=True)
+                self._thread.start()
 
     #: Values landed between two repaint requests while more are queued, so a
     #: large folder fills in as it goes without asking for a frame per row.
@@ -536,7 +541,11 @@ class AttributeStore:
             try:
                 generation, name, parent, paths = self._queue.get(timeout=5)
             except queue.Empty:
-                return
+                with self._lock:              # as _ensure_worker
+                    if self._queue.empty():
+                        self._thread = None
+                        return
+                continue
             if generation != self._generation:
                 continue
             attr = get(name)

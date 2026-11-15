@@ -266,11 +266,14 @@ class SFTPClient:
             pass
 
     def _shutdown(self, reason: str) -> None:
-        if self._closed.is_set():
-            return
-        self._close_reason = reason
-        self._closed.set()
+        # Tested and set under the lock submit() checks it under: the reader
+        # hitting end-of-stream and a writer's broken pipe (or close()) reach
+        # here together when ssh dies, and only one may run the rest.
         with self._pending_lock:
+            if self._closed.is_set():
+                return
+            self._close_reason = reason
+            self._closed.set()
             pending = list(self._pending.values())
             self._pending.clear()
         if not self._version.done():
