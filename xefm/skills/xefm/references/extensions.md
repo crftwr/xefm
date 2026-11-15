@@ -262,14 +262,18 @@ The public names:
   background); see *Long work* below
 - `ctx.message(text)` — one line in the log pane (XeFM's "log"); call it
   once per line rather than passing a string with newlines
-- `ctx.show_markdown(title, source)` (Preview) — a scrollable dialog showing Markdown;
-  each fenced code block gets a Copy button, and the text is selectable. The
-  way to show a result
+- `ctx.show_markdown(title, source, *, on_close=None)` (Preview) — a scrollable
+  dialog showing Markdown; each fenced code block gets a Copy button, and the
+  text is selectable. The way to show a result. `on_close()` runs once the
+  user has closed it: stop there what lasts only while the dialog is up (a
+  server, a temporary file)
 - `ctx.copy_text(text)` (Preview) — put text on the clipboard without showing anything
-- `ctx.diff(left, right, *, left_title=None, right_title=None)` (Preview) — compare
-  two files in XeFM's diff viewer (byte for byte when either is binary), without
-  selecting them. Either side may be any path XeFM reads, including your own
-  `PATH_SCHEMES` folder — the way to show a file beside an older version of it
+- `ctx.diff(left, right, *, left_title=None, right_title=None, on_close=None)`
+  (Preview) — compare two files in XeFM's diff viewer (byte for byte when
+  either is binary), without selecting them. Either side may be any path XeFM
+  reads, including your own `PATH_SCHEMES` folder — the way to show a file
+  beside an older version of it. `on_close()` runs once the comparison has
+  been closed (not when a side was no file and nothing opened)
 - `md_code_block(text, lang="")` and `md_escape(text)` (Preview; import them from
   `xefm.user_api`) — build that Markdown safely: a code block whose fence no
   line of `text` can close, and a file name escaped for prose

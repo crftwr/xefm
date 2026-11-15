@@ -123,18 +123,23 @@ def _inline(left, right) -> bool:
 
 def show_byte_comparison(panel: Any, tasks, left, right, *, config: Any = None,
                          z: int = 80, background: bool = True,
-                         known: Optional[ByteComparison] = None) -> None:
+                         known: Optional[ByteComparison] = None,
+                         on_close: Optional[Callable[[], None]] = None) -> None:
     """Compare ``left`` and ``right`` and report the verdict in a message box.
 
     ``known`` is a result the caller already holds (the directory diff's), shown
     without reading anything. Otherwise a small local pair is compared inline,
-    and the rest on a task from ``tasks`` with a cancellable progress dialog."""
+    and the rest on a task from ``tasks`` with a cancellable progress dialog.
+
+    ``on_close`` is called once it is over: the message box was dismissed, or
+    the comparison was cancelled before there was a verdict to show."""
 
     def report(result: ByteComparison) -> None:
         if result.error is not None:
             logger.warning(f"Compare {left} / {right}: {result.error}")
         show_message_box(panel, describe(left, right, result),
-                         title="Compare Files", icon="info", z=z)
+                         title="Compare Files", icon="info", z=z,
+                         on_result=(lambda _label: on_close()) if on_close else None)
         panel.render()
 
     if known is not None:
@@ -161,6 +166,8 @@ def show_byte_comparison(panel: Any, tasks, left, right, *, config: Any = None,
         if result is None:  # cancelled
             logger.info(f"Compare {left.name} cancelled")
             panel.render()
+            if on_close is not None:
+                on_close()
             return
         report(result)
 
