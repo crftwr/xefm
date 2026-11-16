@@ -13740,7 +13740,9 @@ class XeFMApp:
         if event.type is EventType.MOUSE_MOVE:
             # Pointer movement only updates hover state — let the Splitters under
             # the cursor swap in their resize cursor (and drop it again on the way
-            # out). GUI emits these; the TUI does not, so it's a GUI-only affordance.
+            # out). Every backend emits these: the GUI ones, the Windows console,
+            # and a POSIX terminal under PuiKit's all-motion tracking (unless
+            # PUIKIT_VT_HOVER=0), so hover cues work in the TUI too.
             # The Panel says whether the move changed anything the last frame drew
             # from the pointer; redrawing the window for every move that did not
             # held the frame's time hostage to the mouse (the background stopped
