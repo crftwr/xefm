@@ -197,8 +197,8 @@ def _palette_everywhere(result: dict) -> None:
     """In the desktop app, give the command palette a key every surface takes
     (#900): a chord no terminal program receives - Command-Shift-P on macOS,
     Ctrl-Shift-P elsewhere - so the same key opens it over the file list, a
-    viewer and the embedded console, whatever else the preset binds it to (a
-    plain Ctrl-T or ':' stays the shell's inside the console). config.py's
+    viewer and XeFM's terminal, whatever else the preset binds it to (a
+    plain Ctrl-T or ':' stays the shell's inside the terminal). config.py's
     KEY_BINDINGS still has the last word."""
     from xefm.backend_detector import is_desktop_mode
     if not is_desktop_mode():

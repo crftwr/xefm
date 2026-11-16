@@ -1,8 +1,8 @@
 """App-wide actions a surface runs on the app's behalf (#900).
 
-A viewer or the embedded console handles its own actions. A few of the app's
+A viewer or XeFM's terminal handles its own actions. A few of the app's
 actions do not depend on the file list at all - the text size, the theme, the
-config, the console itself - so any surface may offer them too: by key, in the
+keymap, the config - so any surface may offer them too: by key, in the
 surface's own context (they are ``common`` actions, which every context
 inherits), and in the command palette opened over it. The palette lists what
 the surface can run and nothing else, so an action that would act on the file
@@ -20,7 +20,6 @@ from collections.abc import Callable
 APP_WIDE = frozenset({
     "increase_font_size", "decrease_font_size", "reset_font_size",
     "toggle_color_scheme", "choose_keymap", "reload_config", "edit_config",
-    "console",
 })
 
 _run: Callable[[str], None] | None = None

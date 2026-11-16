@@ -148,7 +148,6 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `reset_font_size` | Put the text back to FONT_SIZE | — | — | — | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` | `Ctrl-K` | `:`, `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — | — | — | — |
-| `console` | Show or hide the embedded console | — | — | — | — |
 | `edit_config` | Edit config.py, then reload it | — | — | — | — |
 | `reload_config` | Re-read config.py and apply it live | — | — | — | — |
 
@@ -267,7 +266,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -298,7 +296,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -330,7 +327,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -372,7 +368,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -399,7 +394,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -421,7 +415,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -449,15 +442,14 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
-### `console`
+### `terminal`
 
 | Action | What it does | Keys |
 |---|---|---|
-| `console.close` | Put the console away and return to the panes | — |
+| `terminal.close` | Close the terminal and return to the panes, stopping a program still running | — |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
@@ -470,7 +462,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -490,7 +481,6 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `console` | Show or hide the embedded console | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
