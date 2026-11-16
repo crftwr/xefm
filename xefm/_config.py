@@ -1075,7 +1075,7 @@ class Config:
     # - Terminal mode (TUI): vim
     # - Desktop mode (GUI): code (VS Code)
     # A terminal editor in the desktop app: mark it as PROGRAMS entries are
-    # marked, and it opens in the embedded console (when libghostty is there)
+    # marked, and it opens in XeFM's own terminal (when libghostty is there)
     # instead of a detached window - e.g.
     #     TEXT_EDITOR = {'command': 'vim', 'terminal': True}
     TEXT_EDITOR = 'code' if is_desktop_mode() else 'vim'
@@ -1099,11 +1099,13 @@ class Config:
     # - List format: ['powershell', '-NoLogo'] (command with arguments)
     SUBSHELL = None
 
-    # Terminal application (desktop mode only)
-    # Desktop mode has no terminal of its own to hand over, so the subshell and
-    # PROGRAMS entries with {'terminal': True} open in this application instead.
-    # TERMINAL decides the window; SUBSHELL decides the shell inside it. The
-    # command to run is appended as trailing arguments.
+    # Terminal application (desktop mode only, a fallback)
+    # Desktop mode has no terminal to hand over, so the subshell and PROGRAMS
+    # entries with {'terminal': True} run in XeFM's own terminal. Only where
+    # that cannot run (no libghostty yet; Windows for now) do they open in this
+    # application instead; it is ignored otherwise and will go once XeFM's
+    # terminal runs everywhere. The command to run is appended as trailing
+    # arguments.
     # None: the platform default -- Terminal.app on macOS; Windows Terminal
     # (wt.exe) on Windows if installed, otherwise a new console window.
     # Supports both string and list formats:
@@ -1111,10 +1113,10 @@ class Config:
     # - ['wezterm', 'start', '--']   (a terminal that takes the command as args)
     TERMINAL = None
 
-    # Embedded console (prototype, discussion #900)
-    # With libghostty available, the 'console' action shows a persistent shell
-    # over the panes, and in desktop mode the subshell and PROGRAMS entries with
-    # {'terminal': True} run there instead of in TERMINAL. False keeps TERMINAL.
+    # XeFM's own terminal (desktop mode, discussion #900)
+    # With libghostty available, the subshell, PROGRAMS entries with
+    # {'terminal': True} and a terminal TEXT_EDITOR run in a terminal XeFM draws
+    # over the panes, as terminal mode hands them its own. False uses TERMINAL.
     EMBEDDED_TERMINAL = True
 
     # S3 settings

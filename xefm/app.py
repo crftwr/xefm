@@ -2260,7 +2260,7 @@ class XeFMApp:
         # land.
         self._attrs_dirty = False
         attributes.on_ready = self._on_attrs_ready
-        # The app-wide actions a viewer or the console runs on our behalf - by
+        # The app-wide actions a viewer or the terminal runs on our behalf - by
         # its keys and from the palette over it (#900).
         surface_actions.set_runner(self._run_app_action, self._app_action_available)
         # Same chrome inset as the bars: the log's surface fills its slot, its
@@ -4343,7 +4343,6 @@ class XeFMApp:
                 "diff_files": (self.diff_files, False),
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
-                "console": (self.toggle_console, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
                 "install_extension": (self.install_extension, False),
@@ -5303,7 +5302,6 @@ class XeFMApp:
                      shortcut=sc("find_similar")),
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
             MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
-            MenuItem("Console", on_select=self.toggle_console, shortcut=sc("console")),
             SEPARATOR,
             # Editing the config and reloading it are the loop a user tuning
             # XeFM goes round, so they stay at the top. What is set up once or
@@ -5623,14 +5621,14 @@ class XeFMApp:
             return False
         return True
 
-    def _editor_in_console(self) -> bool:
-        """Whether the desktop app runs ``TEXT_EDITOR`` in the embedded
-        console: it is marked ``{'terminal': True}`` (vim, nano) and the
-        console can run (#900)."""
+    def _editor_in_terminal_view(self) -> bool:
+        """Whether the desktop app runs ``TEXT_EDITOR`` in its own terminal:
+        it is marked ``{'terminal': True}`` (vim, nano) and the terminal can
+        run (#900)."""
         from xefm.external_programs import command_wants_terminal
         return (is_desktop_mode()
                 and command_wants_terminal(getattr(self.config, "TEXT_EDITOR", None))
-                and self._console_unavailable() is None)
+                and self._terminal_unavailable() is None)
 
     def _run_editor(self, argv: list, subject: str,
                     on_done=None) -> bool:
@@ -5646,13 +5644,13 @@ class XeFMApp:
         line would wait for some later repaint to appear."""
         if not is_desktop_mode():
             return self._run_in_terminal(argv) is not None
-        if self._editor_in_console():
-            # A terminal editor runs over the panes, and XeFM knows when it is
-            # done: ``on_done`` (given the exit code) carries on from there, as
-            # the code after a terminal-mode editor does.
+        if self._editor_in_terminal_view():
+            # A terminal editor runs in XeFM's terminal, and XeFM knows when it
+            # is done: ``on_done`` (given the exit code) carries on from there,
+            # as the code after a terminal-mode editor does.
             path = self.active_pane()["path"]
-            self._run_in_console(argv, cwd=str(path) if self._is_local(path) else None,
-                                 env=os.environ.copy(), label=subject, on_done=on_done)
+            self._run_in_terminal_view(argv, cwd=str(path) if self._is_local(path) else None,
+                                       env=os.environ.copy(), label=subject, on_done=on_done)
             return True
         launched = self._spawn_detached(argv, subject)
         if not launched:
@@ -5961,10 +5959,12 @@ class XeFMApp:
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
         prefix_prompt_markers(env, command)
-        if is_desktop_mode() and self._console_unavailable() is None:
-            # The embedded console (#900): the shell runs in the window, the
-            # panes re-read when it is put away.
-            self._show_console(cwd=str(path))
+        if is_desktop_mode() and self._terminal_unavailable() is None:
+            # XeFM's terminal (#900): the desktop app's stand-in for handing
+            # over its terminal - the shell runs in the window, and exiting it
+            # returns to the panes, which re-read.
+            self._run_in_terminal_view(command, cwd=str(path), env=env,
+                                       label="Subshell")
             return
         if is_desktop_mode():
             if self._open_terminal(command, cwd=str(path), env=env):
@@ -5974,123 +5974,89 @@ class XeFMApp:
         self.log_info(f"Subshell in {path} — exit the shell to return")
         self._run_in_terminal(command, cwd=str(path), env=env)
 
-    # --- embedded console (prototype, #900) -----------------------------------
+    # --- XeFM's terminal (#900) --------------------------------------------------
 
-    #: Least layer z of the console: over the panes and the isearch bar (70).
+    #: Least layer z of the terminal: over the panes and the isearch bar (70).
     #: Opened from a viewer (its edit key runs a terminal TEXT_EDITOR here) it
-    #: goes above whatever is on top - see _push_console.
-    _CONSOLE_Z = 75
+    #: goes above whatever is on top - see _push_terminal.
+    _TERMINAL_Z = 75
 
-    def _console_unavailable(self) -> str | None:
-        from xefm.embedded_console import unavailable
+    def _terminal_unavailable(self) -> str | None:
+        from xefm.terminal import unavailable
         return unavailable(self.config)
 
-    def _console_env(self) -> dict:
-        """The environment a console child gets: the subshell's, so the
-        ``XEFM_*`` variables describe the panes as they were when it started."""
-        from xefm.external_programs import build_xefm_env, ensure_common_paths_in_env
-        env = os.environ.copy()
-        ensure_common_paths_in_env(env)
-        env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
-                                  self.pm.get_current_pane(),
-                                  self.pm.get_inactive_pane()))
-        return env
-
-    def _console_bound(self) -> bool:
-        return self._menu_shortcut("console") is not None
-
-    def toggle_console(self) -> None:
-        """Show the persistent console over the panes, or put it away. The
-        shell starts in the active pane's directory the first time and keeps
-        running in between; exiting it leaves a bar that restarts it."""
-        from xefm.embedded_console import ConsoleView
-        top = self.panel._layers[-1].widget if self.panel.has_layers else None
-        if isinstance(top, ConsoleView):
-            # The same action from inside it (its key, or the palette over it).
-            self._hide_console(top)
-            return
-        why = self._console_unavailable()
-        if why is not None:
-            self.log_info(f"Console not available: {why}")
-            self.panel.render()
-            return
-        path = self.active_pane()["path"]
-        cwd = str(path) if self._is_local(path) else os.path.expanduser("~")
-        self._show_console(cwd=cwd)
-
-    def _show_console(self, *, cwd: str) -> None:
-        from xefm.embedded_console import ConsoleView
-        view = getattr(self, "_console", None)
-        if view is None:
-            command = _subshell_command(self.config)
-            view = self._console = ConsoleView(
-                command, cwd=cwd, env=self._console_env(),
-                on_hide=self._hide_console, action_bound=self._console_bound,
-                on_exited=self._console_exited)
-            self.log_info(f"Console in {cwd} - "
-                          f"{self._menu_shortcut('console') or 'F12'} "
-                          "returns to the panes")
-        self._push_console(view)
-
-    def _run_in_console(self, argv: list, *, cwd: str | None, env: dict,
-                        label: str, on_done=None) -> None:
-        """Run ``argv`` once in a console of its own, over the panes; it
-        closes with Enter once the program exits."""
-        from xefm.embedded_console import ConsoleView
-        view = ConsoleView(argv, cwd=cwd or os.path.expanduser("~"), env=env,
-                           on_hide=self._hide_console, action_bound=self._console_bound,
-                           on_exited=self._console_exited, one_shot=True, label=label)
+    def _run_in_terminal_view(self, argv: list, *, cwd: str | None, env: dict,
+                              label: str, on_done=None) -> None:
+        """Run ``argv`` in XeFM's terminal over the panes - the desktop app's
+        stand-in for terminal mode's _run_in_terminal. ``on_done`` (given the
+        exit code) runs once it has closed, where code after a blocking
+        terminal-mode run would."""
+        from xefm.terminal import TerminalView
+        view = TerminalView(argv, cwd=cwd or os.path.expanduser("~"), env=env,
+                            label=label, on_exited=self._terminal_exited,
+                            on_close_request=self._terminal_close_request)
         view.on_done = on_done
-        self.log_info(f"Running in the console: {label}")
-        self._push_console(view)
+        self._push_terminal(view)
 
-    def _push_console(self, view) -> None:
+    def _push_terminal(self, view) -> None:
         from puikit.panel import Rect
         from xefm.text_viewer import viewer_layer_hints
-        self.panel.remove_layer(view)
-        # The viewers' hints: the console covers the panes and paints the
+        # The viewers' hints: the terminal covers the panes and paints the
         # content surface itself, so over an animated background it leaves
         # its page unpainted and the scene shows through (ctx.wallpaper).
         sw, sh = self.panel.backend.size_units
-        # Above every layer already up: the console is modal, so it must be the
-        # top one. Under a viewer (z 80) it was hidden while the viewer kept the
-        # keys, and each press of the viewer's edit key stacked another.
+        # Above every layer already up: the terminal is modal, so it must be
+        # the top one. Under a viewer (z 80) it was hidden while the viewer
+        # kept the keys, and each press of the viewer's edit key stacked
+        # another.
         top = max((slot.z for slot in self.panel._layers), default=0)
-        z = max(self._CONSOLE_Z, top + 1)
+        z = max(self._TERMINAL_Z, top + 1)
         self.panel.push_layer(view, z=z, hints=viewer_layer_hints(sw, sh),
                               reflow=lambda sw, sh: Rect(0, 0, sw, sh))
         self.panel.render()
 
-    def _console_exited(self, view, code) -> None:
-        """The process a console started has exited: close the console and
-        return to the panes. The persistent shell is dropped with it, so the
-        next console starts a fresh one. A program that failed stays on
-        screen with its exit bar, so its last output can be read — the TUI's
-        ``pause_on_error`` — and Enter closes it."""
-        if getattr(view, "one_shot", False) and code not in (0, None):
+    def _terminal_exited(self, view, code) -> None:
+        """The program in the terminal exited: close it and return to the
+        panes. One that failed stays on screen with its exit bar, so its last
+        output can be read - terminal mode's ``pause_on_error`` - and Enter
+        closes it."""
+        if code not in (0, None):
             self.log_info(f"{view.label} exited with code {code} - press Enter to return")
+            self.panel.render()
             return
-        if view is getattr(self, "_console", None):
-            self._console = None
-            self.log_info("Console shell exited")
-            view.one_shot = True  # closed for good, like a program's console
-        self._hide_console(view)
+        self._close_terminal(view)
 
-    def _hide_console(self, view) -> None:
-        """Put a console away. A one-shot one is closed for good (its child is
-        hung up if still running); the persistent one keeps its session. Either
-        way the panes re-read, as after the TUI's hand-over: whatever ran may
-        have changed files."""
+    def _terminal_close_request(self, view) -> None:
+        """``terminal.close``, or Enter on a finished program. A program still
+        running is stopped only once the user says so."""
+        if not view.running:
+            self._close_terminal(view)
+            return
+
+        def answered(label: str) -> None:
+            if label == "Close":
+                self._close_terminal(view)
+            self.panel.render()
+
+        show_message_box(
+            self.panel, f"{view.label} is still running. Close the terminal and stop it?",
+            title="Terminal", icon="warning", buttons=("Close", "Cancel"),
+            default=1, cancel=1, on_result=answered)
+        self.panel.render()
+
+    def _close_terminal(self, view) -> None:
+        """Close the terminal (hanging up a program still in it) and re-read
+        the panes, as after terminal mode's hand-over: whatever ran may have
+        changed files. Then the caller's on_done."""
         self.panel.remove_layer(view)
-        done = None
-        if getattr(view, "one_shot", False):
-            done, view.on_done = getattr(view, "on_done", None), None
-            view.close()
+        done, view.on_done = view.on_done, None
+        code = view._exited if view._exited is not False else None
+        view.close()
         self._relist(self.pm.left_pane, keep_visible=True)
         self._relist(self.pm.right_pane, keep_visible=True)
         self.panel.render()
         if done is not None:
-            done(view._exited if view._exited is not False else None)
+            done(code)
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor
@@ -6113,7 +6079,7 @@ class XeFMApp:
         if not argv:
             self.log_info(f"No editor configured: set TEXT_EDITOR in {path}")
             return
-        if self._editor_in_console():
+        if self._editor_in_terminal_view():
             # The editor's exit is known, as in terminal mode: reload then.
             self._run_editor(argv + [str(path)], path.name,
                              on_done=lambda code: self.reload_config())
@@ -9526,11 +9492,11 @@ class XeFMApp:
         ``None`` at once."""
         from xefm.external_programs import SUBPROCESS_NO_WINDOW, resolve_command
         if terminal:
-            if is_desktop_mode() and self._console_unavailable() is None:
-                # The embedded console (#900): the program runs modally in the
-                # window, like the TUI's hand-over, and the panes re-read when
-                # it is closed. Still not waited for: the UI thread is ours.
-                self._run_in_console(argv, cwd=cwd, env=env, label=name)
+            if is_desktop_mode() and self._terminal_unavailable() is None:
+                # XeFM's terminal (#900): the program runs modally in the
+                # window, like terminal mode's hand-over, and the panes re-read
+                # when it is closed. Still not waited for: the UI thread is ours.
+                self._run_in_terminal_view(argv, cwd=cwd, env=env, label=name)
                 return None
             if is_desktop_mode():
                 # No tty of ours to lend: the program gets a terminal window
@@ -9803,8 +9769,8 @@ class XeFMApp:
                            argv: list, written: str) -> None:
         """One trip to the editor and back for :meth:`rename_in_editor`; the
         review that follows may send the user round again ("Edit Again")."""
-        if self._editor_in_console():
-            # The console tells us when the editor is done: review then, as
+        if self._editor_in_terminal_view():
+            # The terminal tells us when the editor is done: review then, as
             # after a terminal-mode editor that blocked until it was.
             self._run_editor(argv + [list_path], "the name list",
                              on_done=lambda code: self._review_rename_list(
@@ -13012,13 +12978,13 @@ class XeFMApp:
 
         Over the file list the rows are the actions it can run - the
         ``filer`` context's own, the inherited ``common`` ones, and the
-        config's ``ACTIONS``. Over a viewer or the console (#900) they are what
+        config's ``ACTIONS``. Over a viewer or the terminal (#900) they are what
         that surface runs - its own actions and the app-wide ones it takes
         (xefm.surface_actions) - and never a file-list action, which would act
         on panes hidden behind it."""
         surface = self._palette_surface()
         if surface is not None:
-            # Over a viewer or the console: what that surface runs, and nothing
+            # Over a viewer or the terminal: what that surface runs, and nothing
             # else - a file-list action would act on panes the user cannot see.
             names = surface.palette_actions()
             rows = [a for a in _action_registry.actions(surface.palette_context)
@@ -13041,7 +13007,7 @@ class XeFMApp:
                 self._menu(action.name)
 
         # Over the surface it was opened from: the picker's own z (70) is under
-        # a viewer (80) and the console.
+        # a viewer (80) and the terminal.
         top = max((slot.z for slot in self.panel._layers), default=0)
         show_filter_list(
             self.panel, rows, title="Command Palette",
@@ -13077,7 +13043,7 @@ class XeFMApp:
         return gate is None or gate(self)
 
     def _palette_surface(self):
-        """The viewer or console on top, when it can tell the palette what it
+        """The viewer or terminal on top, when it can tell the palette what it
         does (``palette_context`` / ``palette_actions`` / ``run_action``)."""
         if not self.panel.has_layers:
             return None
@@ -13759,9 +13725,9 @@ class XeFMApp:
             self.key_sequence.cancel()
             self._on_quit_request()
             return
-        # The command palette opens over a viewer or the console too (#900),
+        # The command palette opens over a viewer or the terminal too (#900),
         # by the key bound to it in that surface's context - offering the
-        # surface's own actions first. The console takes it only on a chord a
+        # surface's own actions first. The terminal takes it only on a chord a
         # terminal never receives.
         if event.type is EventType.KEY and self.panel.has_layers:
             surface = self._palette_surface()
@@ -13961,6 +13927,30 @@ def _web_access_message(url: str) -> str:
     )
 
 
+def _confirm_nested_launch() -> bool:
+    """Whether to go on starting the TUI. Run from XeFM's subshell or from a
+    program XeFM started (``XEFM_ACTIVE``, which every such child gets - see
+    build_xefm_env), a second XeFM would take over the terminal the user meant
+    to leave by exiting back to the first: say so and ask, defaulting to no.
+    Without a terminal to ask on, warn and go on. ASCII only: this reaches the
+    stream before any UI exists (#829)."""
+    if not os.environ.get("XEFM_ACTIVE"):
+        return True
+    sys.stderr.write(
+        "xefm: you are already inside XeFM (this shell or program was started\n"
+        "      by it). To return to it, exit (type 'exit' or press Ctrl-D in a\n"
+        "      shell). Starting XeFM here runs a second one inside the first.\n")
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return True
+    sys.stderr.write("Start another XeFM anyway? [y/N] ")
+    sys.stderr.flush()
+    try:
+        answer = sys.stdin.readline()
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+    return answer.strip().lower() in ("y", "yes")
+
+
 def main() -> None:
     # Redirected to a file or a pipe on Windows, stdout takes the ANSI code page
     # (cp932 in Japan), which cannot hold every character a config, a path or an
@@ -14066,6 +14056,8 @@ def main() -> None:
         # UI font if the bundled files are unavailable; size comes from base_font
         # (both share FONT_SIZE).
         backend_kwargs["ui_font"] = Font(family=cfg.UI_FONT_NAME)
+    if backend_name not in ("gui", "web") and not _confirm_nested_launch():
+        return
     backend = create_backend(backend_name, **backend_kwargs)
     with backend:
         if backend_name == "web":

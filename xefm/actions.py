@@ -106,18 +106,19 @@ FILTER_LIST = "filter_list"
 #: same reason ``isearch``'s and ``filter_list``'s do — and the first one to
 #: carry live options, which is why it is where the ``options`` key starts.
 SEARCH = "search"
-#: The embedded console (``xefm.embedded_console``, prototype #900). A terminal
-#: needs every key a program could read, so the console takes a key from it
-#: only when the binding is explicit for this context (a ``console.*`` action,
-#: or a context-qualified ``'console.<action>'`` entry), or when an inherited
-#: ``common`` binding is a chord no terminal receives (Command, Ctrl+Shift).
-CONSOLE = "console"
+#: XeFM's terminal (``xefm.terminal``, #900): the desktop app's stand-in for
+#: terminal mode handing over its own terminal. A program in it needs every key
+#: it could read, so the terminal takes a key only when the binding is explicit
+#: for this context (a ``terminal.*`` action, or a context-qualified
+#: ``'terminal.<action>'`` entry), or when an inherited ``common`` binding is a
+#: chord no terminal program receives (Command, Ctrl+Shift).
+TERMINAL = "terminal"
 
 #: Every context a binding or a user action may name, most-specific first.
 #: ``common`` is deliberately included: a config may bind (or a future release
 #: may allow overriding) an action there.
 CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, ISEARCH,
-            FILTER_LIST, SEARCH, CONSOLE, COMMON)
+            FILTER_LIST, SEARCH, TERMINAL, COMMON)
 
 #: The contexts whose keys compete with a text field. Every one of them is
 #: subject to the printable-key rule stated on ``isearch`` below, and
@@ -903,20 +904,14 @@ _DETAILS: dict[str, str] = {
         "pick on the selected files — or the file under the cursor — in the "
         "active pane's directory. Output goes to the log pane. A program "
         "marked `'terminal': True` gets the terminal (or, in the desktop app, "
-        "a terminal window) for full-screen tools like `vim`."),
+        "its own terminal) for full-screen tools like `vim`."),
     "subshell": (
-        "Opens a shell in the active pane's directory. In a terminal XeFM "
-        "steps aside until you exit the shell; in the desktop app the shell "
-        "opens in the terminal application set by `TERMINAL`. The shell is "
-        "`SUBSHELL` from `config.py`, else your `$SHELL`, and it gets the "
-        "`XEFM_*` variables. Local directories only."),
-    "console": (
-        "Shows a shell over the panes, and puts it away again with the same "
-        "key; the shell keeps running in between, so a long command can be "
-        "left to finish while you work in the panes. It starts in the active "
-        "pane's directory. The panes re-read when the console is put away. "
-        "Needs libghostty; `EMBEDDED_TERMINAL = False` in `config.py` turns "
-        "it off. Prototype (discussion #900)."),
+        "Opens a shell in the active pane's directory, and exiting it returns "
+        "to XeFM, which re-reads the panes. In a terminal XeFM hands the shell "
+        "the terminal it runs in; the desktop app opens it in a terminal of "
+        "its own, over the panes. The shell is `SUBSHELL` from `config.py`, "
+        "else your `$SHELL`, and it gets the `XEFM_*` variables. Local "
+        "directories only."),
     "edit_config": (
         "Opens `~/.xefm/config.py` in your `TEXT_EDITOR`, creating it on first "
         "use. In a terminal the configuration reloads when the editor exits; "
@@ -1162,14 +1157,13 @@ _FILER_ACTIONS = [
     _a("menu", FILER, "Open the menu bar"),
     # Every action of the file list, searchable and runnable — the long tail
     # the menu bar deliberately leaves out (discussion #550).
-    # Common since #900: the palette opens over a viewer or the console too,
+    # Common since #900: the palette opens over a viewer or the terminal too,
     # offering that surface's actions first.
     _a("command_palette", COMMON, "Search every action by name and run it"),
     _a("choose_keymap", COMMON, "Choose the keymap preset"),
     # External programs and configuration
     _a("programs", FILER, "Run an external program"),
     _a("subshell", FILER, "Open a subshell in this directory"),
-    _a("console", COMMON, "Show or hide the embedded console"),
     _a("edit_config", COMMON, "Edit config.py, then reload it"),
     _a("reload_config", COMMON, "Re-read config.py and apply it live"),
     _a("install_extension", FILER,
@@ -1192,8 +1186,9 @@ _TEXT_VIEWER_ACTIONS = [
     _a("toggle_wrap", TEXT_VIEWER, "Toggle line wrapping"),
     _a("toggle_view_mode", TEXT_VIEWER, "Toggle the rendered / raw view"),
     _a("change_encoding", TEXT_VIEWER, "Choose the text encoding"),
-    # The embedded console (prototype #900)
-    _a("console.close", CONSOLE, "Put the console away and return to the panes"),
+    # XeFM's terminal (#900)
+    _a("terminal.close", TERMINAL,
+       "Close the terminal and return to the panes, stopping a program still running"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",

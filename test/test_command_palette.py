@@ -392,7 +392,7 @@ def test_without_a_docstring_the_name_stands_in():
 
 
 # --------------------------------------------------------------------------- #
-# Over a viewer or the console (#900)
+# Over a viewer or the terminal (#900)
 # --------------------------------------------------------------------------- #
 
 def _viewer(app):
@@ -438,20 +438,20 @@ def test_a_dialog_an_app_wide_action_opens_shows_over_the_viewer(app_with):
     assert app.panel._layers[-1].z > 80
 
 
-class _Console:
-    """A stand-in for the console: its palette protocol and key rule, no
-    terminal (libghostty is not installed where the tests run)."""
+class _Terminal:
+    """A stand-in for XeFM's terminal: its palette protocol and key rule, no
+    emulator (libghostty is not installed where the tests run)."""
 
-    palette_context = "console"
+    palette_context = "terminal"
 
     def __init__(self):
-        from xefm.embedded_console import ConsoleView
+        from xefm.terminal import TerminalView
         self.ran = []
-        self.takes_binding = lambda e, a: ConsoleView.takes_binding(self, e, a)
-        self._qualified = ConsoleView._qualified
+        self.takes_binding = lambda e, a: TerminalView.takes_binding(self, e, a)
+        self._qualified = TerminalView._qualified
 
     def palette_actions(self):
-        return {"console.close"}
+        return {"terminal.close"}
 
     def run_action(self, name):
         self.ran.append(name)
@@ -464,27 +464,27 @@ class _Console:
         return True
 
 
-def test_an_inherited_palette_key_stays_the_terminals(app_with):
+def test_an_inherited_palette_key_stays_the_programs(app_with):
     app = app_with(KEY_BINDINGS={**DefaultConfig().KEY_BINDINGS,
                                  "command_palette": ["Ctrl-T", "Ctrl-Shift-P"]})
-    console = _Console()
-    app.panel.push_layer(console, z=75)
+    terminal = _Terminal()
+    app.panel.push_layer(terminal, z=75)
     app.on_event(key("t", None, {"ctrl"}))            # the shell's Ctrl-T
-    assert app.panel._layers[-1].widget is console
+    assert app.panel._layers[-1].widget is terminal
     app.on_event(key("p", None, {"ctrl", "shift"}))   # a chord no terminal gets
     dialog = app.panel._layers[-1].widget
     assert isinstance(dialog, FilterListDialog)
-    assert [a.name for a in dialog.all_items] == ["console.close"]
-    _type(dialog, "console.close")
+    assert [a.name for a in dialog.all_items] == ["terminal.close"]
+    _type(dialog, "terminal.close")
     dialog.handle_event(key("enter"))
-    assert console.ran == ["console.close"]
+    assert terminal.ran == ["terminal.close"]
 
 
-def test_a_binding_qualified_for_the_console_wins_over_the_terminal(app_with):
+def test_a_binding_qualified_for_the_terminal_wins_over_the_program(app_with):
     app = app_with(KEY_BINDINGS={**DefaultConfig().KEY_BINDINGS,
                                  "command_palette": ["Ctrl-T"],
-                                 "console.command_palette": ["Ctrl-T"]})
-    console = _Console()
-    app.panel.push_layer(console, z=75)
+                                 "terminal.command_palette": ["Ctrl-T"]})
+    terminal = _Terminal()
+    app.panel.push_layer(terminal, z=75)
     app.on_event(key("t", None, {"ctrl"}))
     assert isinstance(app.panel._layers[-1].widget, FilterListDialog)
