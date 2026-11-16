@@ -26,14 +26,19 @@ its window the way your terminal normally does when the shell exits.
 ## Choosing the terminal
 
 `TERMINAL` in `~/.xefm/config.py` picks the application; `SUBSHELL` still picks
-the shell inside it. Leave `TERMINAL` as `None` for the platform default:
+the shell inside it.
+
+Left as `None`, these run in XeFM's own terminal instead, drawn over the panes
+in the window; closing it returns to the panes. It needs libghostty. Where that
+is not installed, they open in the platform default:
 
 | Platform | Default |
 |---|---|
 | macOS | Terminal.app |
 | Windows | Windows Terminal (`wt.exe`) when installed, otherwise a new console window |
 
-To use another terminal, give its command line. What XeFM needs to run is
+To use a terminal application instead of XeFM's own terminal, give its
+command line. What XeFM needs to run is
 appended to it as trailing arguments, so name a terminal the way you would to
 have it run a command:
 

@@ -176,7 +176,7 @@ KEY_BINDINGS = {
 TEXT_EDITOR = ['code', '--wait']   # edit_file(s); a string or an argv list
 TEXT_DIFF = ['code', '--diff']     # E in the diff viewers
 SUBSHELL = None                    # None = $SHELL, else the platform's
-TERMINAL = None                    # desktop app only: where terminal programs open
+TERMINAL = None                    # desktop app only: None = XeFM's own terminal, else this app
 ```
 
 A string is split like a shell command line; a list is taken as argv, and is
@@ -229,7 +229,8 @@ PROGRAMS = [
 ```
 
 `command` is an argv list. `options: {'terminal': True}` hands the terminal to
-a full-screen program (in the desktop app it opens in `TERMINAL`). The
+a full-screen program (in the desktop app it runs in XeFM's own terminal, or
+in the `TERMINAL` application when one is set). The
 program gets the panes' directories and selections as `XEFM_*` environment
 variables. `xefm_tool('x.py')` finds a script in `~/.xefm/tools/` first.
 

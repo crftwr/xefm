@@ -36,10 +36,19 @@ except ImportError:  # a PuiKit without the widget
 CONTEXT = "terminal"
 
 
+def chosen_elsewhere(config) -> bool:
+    """Whether config.py names a ``TERMINAL`` application: then that one runs
+    what needs a terminal, and XeFM's own is not used. ``None`` (the default)
+    leaves it to XeFM's terminal, and to the platform's own where that cannot
+    run."""
+    from xefm.external_programs import command_argv
+    return bool(command_argv(getattr(config, "TERMINAL", None)))
+
+
 def unavailable(config) -> str | None:
-    """None when XeFM's terminal can run here, else the reason it cannot."""
-    if not getattr(config, "EMBEDDED_TERMINAL", True):
-        return "EMBEDDED_TERMINAL is off in config.py"
+    """None when XeFM's terminal is to run things here, else why not."""
+    if chosen_elsewhere(config):
+        return "TERMINAL is set in config.py"
     if _PuiKitTerminalView is None or _terminal_available is None:
         return "this PuiKit has no TerminalView"
     return _terminal_available()
