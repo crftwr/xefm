@@ -45,6 +45,22 @@ def unavailable(config) -> str | None:
     return _terminal_available()
 
 
+def _term_program_kwargs() -> dict:
+    """``TERM_PROGRAM=XeFM`` for the programs in the terminal: the terminal
+    they run in is XeFM's, as VS Code's says ``vscode`` (PuiKit sets its own
+    ``PUIKIT_TERMINAL`` beside it either way). An older PuiKit takes no name
+    and says ``PuiKit``."""
+    import inspect
+    try:
+        params = inspect.signature(_PuiKitTerminalView.__init__).parameters
+    except (TypeError, ValueError):
+        return {}
+    if "term_program" not in params:
+        return {}
+    from xefm import __version__
+    return {"term_program": ("XeFM", __version__)}
+
+
 _Base = _PuiKitTerminalView if _PuiKitTerminalView is not None else object
 
 
@@ -66,7 +82,7 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         # by the same few pixels; flush on a character grid.
         super().__init__(argv, cwd=cwd, env=env,
                          on_exit=lambda code: on_exited(self, code),
-                         padding_px=VIEWER_PAD_PX)
+                         padding_px=VIEWER_PAD_PX, **_term_program_kwargs())
         self.label = label
         self.on_close_request = on_close_request
         #: Called once with the exit code after the layer closes: the caller's
