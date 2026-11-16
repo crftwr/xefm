@@ -61,8 +61,12 @@ class ConsoleView(_Base):  # type: ignore[misc,valid-type]
                  action_bound: Callable[[], bool],
                  on_exited: Callable[["ConsoleView", int | None], None] | None = None,
                  one_shot: bool = False, label: str = "") -> None:
+        from xefm.text_viewer import VIEWER_PAD_PX
+        # The viewers' inset: the grid breathes in from the window frame on GUI
+        # by the same few pixels; flush on a character grid.
         super().__init__(argv, cwd=cwd, env=env,
-                         on_exit=(lambda code: on_exited(self, code)) if on_exited else None)
+                         on_exit=(lambda code: on_exited(self, code)) if on_exited else None,
+                         padding_px=VIEWER_PAD_PX)
         self.on_hide = on_hide
         self.action_bound = action_bound
         self.one_shot = one_shot
