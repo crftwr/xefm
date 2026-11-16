@@ -5558,9 +5558,20 @@ class XeFMApp:
         """Desktop mode's stand-in for :meth:`_run_in_terminal`: open the
         ``TERMINAL`` application running ``argv`` and return at once (see
         :mod:`xefm.external_terminal`). Returns False — having logged why —
-        when no terminal could be opened."""
+        when no terminal could be opened.
+
+        Every caller comes here because XeFM's own terminal cannot run, so
+        the first time in a session the reason is logged too - otherwise a
+        user expecting the terminal in the window only sees another window
+        open, with no word on why."""
         from xefm.external_terminal import (NoTerminalError, launch_in_terminal,
                                            terminal_command)
+        if not getattr(self, "_terminal_fallback_explained", False):
+            reason = self._terminal_unavailable()
+            if reason:
+                self._terminal_fallback_explained = True
+                self.log_info(f"XeFM's terminal is unavailable ({reason}); "
+                              f"using the TERMINAL application instead")
         terminal = terminal_command(self.config)
         try:
             launch_in_terminal(terminal, argv, cwd=cwd, env=env,
