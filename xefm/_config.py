@@ -1102,7 +1102,7 @@ class Config:
     # Terminal application (desktop mode only, a fallback)
     # Desktop mode has no terminal to hand over, so the subshell and PROGRAMS
     # entries with {'terminal': True} run in XeFM's own terminal. Only where
-    # that cannot run (no libghostty yet; Windows for now) do they open in this
+    # that cannot run (libghostty not installed) do they open in this
     # application instead; it is ignored otherwise and will go once XeFM's
     # terminal runs everywhere. The command to run is appended as trailing
     # arguments.
