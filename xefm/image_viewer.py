@@ -52,6 +52,7 @@ from puikit.text import elide
 from puikit.widgets.base import Widget
 
 from xefm import image_decoders
+from xefm import surface_actions
 from xefm.actions import IMAGE_VIEWER as _CONTEXT
 from xefm.config import (find_action_for_event, format_key_for_display,
                         get_keys_for_action)
@@ -825,6 +826,26 @@ class ImageViewer(Widget):
             handler()
         return True
 
+    #: The command palette's view of this surface (#900): its action context,
+    #: the actions it can run by name, and running one without a key - so the
+    #: palette opened over it offers what this surface does first.
+    palette_context = _CONTEXT
+
+    def palette_actions(self) -> set:
+        return {"quit", "help", *self._handlers_table()}
+
+    def run_action(self, name: str) -> bool:
+        if name == "quit":
+            self._close()
+        elif name == "help":
+            self._show_help()
+        else:
+            handler = self._handlers_table().get(name)
+            if handler is None:
+                return False
+            handler()
+        return True
+
     def _handlers_table(self) -> dict:
         """This viewer's actions, by name."""
         if self._handlers is None:
@@ -842,6 +863,8 @@ class ImageViewer(Widget):
                 "image_viewer.last": lambda: self._step_image(
                     len(self.paths) - 1 - self.index),
             }
+            # The app-wide actions any surface may run (#900).
+            self._handlers.update(surface_actions.handlers())
         return self._handlers
 
     def _zoom_reset(self) -> None:

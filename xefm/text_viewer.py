@@ -32,6 +32,7 @@ from puikit.widgets._input import EdgeAutoScroll, MultiClickTracker
 from puikit.widgets.base import Widget
 
 from xefm.actions import ISEARCH
+from xefm import surface_actions
 from xefm.actions import TEXT_VIEWER as _CONTEXT
 from xefm.choice_dialog import show_choice_dialog
 from xefm import key_sequence
@@ -1347,6 +1348,19 @@ class TextViewer(Widget):
         # ISearchBar is the top layer and receives keys, so this isn't reached.
         return self._act(find_action_for_event(event, context=_CONTEXT), event)
 
+    #: The command palette's view of this surface (#900): its action context,
+    #: the actions it can run by name, and running one without a key - so the
+    #: palette opened over it offers what this surface does first.
+    palette_context = _CONTEXT
+
+    def palette_actions(self) -> set:
+        # Everything _act runs: the mode-free table and the movement actions
+        # (raw handlers; the rich renderer takes the same names, _RICH_KEYS).
+        return {*self._mode_free(), *self._raw_handlers()}
+
+    def run_action(self, name: str) -> bool:
+        return self._act(name, None)
+
     def _sequence(self) -> key_sequence.KeySequencer:
         """This viewer's key-sequence state, built on first use (the panel it
         schedules its timeout on is only known once the viewer is shown)."""
@@ -1379,36 +1393,14 @@ class TextViewer(Widget):
         sequence (``event`` is then its last key, or None when a timeout ran
         it)."""
         key = event.key if event is not None else None
-        # Quit / help / the view-mode toggle apply in both raw and rich modes.
-        if key == "escape" or action == "quit":
+        if key == "escape":
             self._close()
             return True
-        if action == "help":
-            self._show_help()
-            return True
-        if action == "toggle_view_mode":
-            self._toggle_view_mode()
-            return True
-        # Incremental search applies in both modes: open it before the rich
-        # renderer would swallow the key (it has no search of its own — this
-        # viewer drives the shared bar and delegates to the renderer's match set).
-        if action == "isearch":
-            self._enter_search()
-            return True
-        if action in ("text_viewer.search_next", "text_viewer.search_prev"):
-            self._enter_search(1 if action.endswith("next") else -1)
-            return True
-        # The encoding picker applies in both modes too — re-decoding rebuilds
-        # the raw lines and the rich renderer's source alike.
-        if action == "change_encoding":
-            self._change_encoding()
-            return True
-        # So does editing: the viewed file goes to the app's editor machinery
-        # (associations + TEXT_EDITOR), then the viewer re-reads it. A terminal
-        # editor runs synchronously via suspend/resume, so the reload shows its
-        # result; in desktop mode the editor is detached and the reload is a no-op.
-        if self._on_edit is not None and action in ("edit_file", "edit_files"):
-            self._edit_file()
+        # The actions that mean the same in raw and rich mode (_mode_free):
+        # run before the rich renderer would swallow the key.
+        handler = self._mode_free().get(action)
+        if handler is not None:
+            handler()
             return True
         # Rich mode: the embedded renderer owns navigation (arrows / page / home /
         # end / in-document link jumps); forward and let it repaint. A renderer
@@ -1436,6 +1428,32 @@ class TextViewer(Widget):
             handler()
         self._clamp()
         return True
+
+    def _mode_free(self) -> dict:
+        """The actions that apply in raw and rich mode alike, by name - the one
+        list of what this viewer does besides moving through the text, read by
+        the key dispatch and the command palette both (#900).
+
+        Quit, help and the view-mode toggle; incremental search, whose bar this
+        viewer drives in either mode (the rich renderer delegates its match
+        set); the encoding picker, which re-decodes the raw lines and the rich
+        source alike; editing, which hands the file to the app's editor
+        machinery and re-reads it (see _edit_file); and the app-wide actions
+        any surface may run (xefm.surface_actions)."""
+        table = {
+            "quit": self._close,
+            "help": self._show_help,
+            "isearch": self._enter_search,
+            "text_viewer.search_next": lambda: self._enter_search(1),
+            "text_viewer.search_prev": lambda: self._enter_search(-1),
+            "change_encoding": self._change_encoding,
+        }
+        if self._rich is not None:
+            table["toggle_view_mode"] = self._toggle_view_mode
+        if self._on_edit is not None:
+            table["edit_file"] = table["edit_files"] = self._edit_file
+        table.update(surface_actions.handlers())
+        return table
 
     def _raw_handlers(self) -> dict:
         """Raw-text-mode actions, by name. Horizontal scrolling is inert while
@@ -1677,9 +1695,14 @@ class TextViewer(Widget):
     def _edit_file(self) -> None:
         """Hand the viewed file to the app's editor machinery (the
         ``edit_file`` action — same key as the file list's), then re-read it so
-        a terminal editor's changes show the moment it returns."""
+        a terminal editor's changes show the moment it returns. An editor that
+        returns before it is done - one run in the desktop app's console - calls
+        ``on_done`` when it is, and the viewer re-reads again then."""
         try:
-            self._on_edit(self.path)
+            if _accepts_on_done(self._on_edit):
+                self._on_edit(self.path, on_done=lambda code: self._reload_text())
+            else:
+                self._on_edit(self.path)
         except Exception as e:
             logger.error(f"Editor launch failed for {self.path.name}: {e}")
         self._reload_text()
@@ -1710,6 +1733,18 @@ class TextViewer(Widget):
         ]
         show_markdown(self._panel, keys_markdown(rows),
                       title="Text Viewer — Keys", z=self._child_z)
+
+
+def _accepts_on_done(fn) -> bool:
+    """Whether an ``on_edit`` callback takes ``on_done`` (the app's does; a
+    plain one-argument callback, as tests and older callers pass, does not)."""
+    import inspect
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "on_done" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 def show_text_viewer(panel: Any, path, z: int = 80, state_manager=None,

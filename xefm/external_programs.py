@@ -311,6 +311,10 @@ def command_argv(command) -> list:
     than it looks: ``shlex.split(None)`` reads a command line from *stdin*,
     which in terminal mode would hang XeFM with its display already suspended.
     """
+    if isinstance(command, dict):
+        # {'command': ..., 'terminal': True}: a terminal program (vim) - see
+        # command_wants_terminal.
+        command = command.get('command')
     if not command:
         return []
     if isinstance(command, (list, tuple)):
@@ -318,6 +322,14 @@ def command_argv(command) -> list:
     if isinstance(command, str):
         return shlex.split(command)
     return [str(command)]
+
+
+def command_wants_terminal(command) -> bool:
+    """Whether a ``config.py`` command was marked as a terminal program, in
+    the form ``PROGRAMS`` entries use: ``{'command': 'vim', 'terminal': True}``.
+    The desktop app then runs it in its embedded console instead of detaching
+    it (#900); terminal mode hands it the terminal either way."""
+    return isinstance(command, dict) and bool(command.get('terminal'))
 
 
 def resolve_command(command, env=None):
