@@ -33,6 +33,7 @@ from puikit.widgets.base import Widget
 
 from xefm import migemo_search
 from xefm.actions import ISEARCH
+from xefm import surface_actions
 from xefm.actions import FILE_DIFF as _CONTEXT
 from xefm.backend_detector import is_desktop_mode
 from xefm.config import (find_action_for_event, format_key_for_display,
@@ -688,6 +689,25 @@ class DiffViewer(Widget):
         self._clamp()
         return True
 
+    #: The command palette's view of this surface (#900): its action context,
+    #: the actions it can run by name, and running one without a key - so the
+    #: palette opened over it offers what this surface does first.
+    palette_context = _CONTEXT
+
+    def palette_actions(self) -> set:
+        return {"quit", *self._handlers_table()}
+
+    def run_action(self, name: str) -> bool:
+        if name == "quit":
+            self._close()
+            return True
+        handler = self._handlers_table().get(name)
+        if handler is None:
+            return False
+        handler()
+        self._clamp()
+        return True
+
     def _handlers_table(self) -> dict:
         """This viewer's actions, by name."""
         if self._handlers is None:
@@ -709,6 +729,8 @@ class DiffViewer(Widget):
                 "file_diff.scroll_right": lambda: self._pan(4),
                 "file_diff.scroll_left": lambda: self._pan(-4),
             }
+            # The app-wide actions any surface may run (#900).
+            self._handlers.update(surface_actions.handlers())
         return self._handlers
 
     def _scroll(self, rows: float) -> None:

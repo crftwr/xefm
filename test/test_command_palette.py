@@ -389,3 +389,102 @@ def test_without_a_docstring_the_name_stands_in():
     action = _loaded(lambda ctx: None)
     assert action.description == "User action 'mine'"
     assert action.details == ""
+
+
+# --------------------------------------------------------------------------- #
+# Over a viewer or the console (#900)
+# --------------------------------------------------------------------------- #
+
+def _viewer(app):
+    from pathlib import Path
+    from xefm.text_viewer import show_text_viewer
+    return show_text_viewer(app.panel, Path(app.pm.left_pane["path"]) / "a.txt")
+
+
+def test_the_palette_over_a_viewer_lists_only_what_the_viewer_runs(app_with):
+    app = app_with()
+    viewer = _viewer(app)
+    app.on_event(key("t", None, {"ctrl"}))
+    dialog = app.panel._layers[-1].widget
+    assert isinstance(dialog, FilterListDialog)
+    names = {a.name for a in dialog.all_items}
+    assert names == viewer.palette_actions() - {"command_palette"}
+    # Its own actions and the app-wide ones it takes - never a file-list
+    # action, which would act on the panes hidden behind it.
+    assert "text_viewer.scroll_down" in names and "toggle_color_scheme" in names
+    assert "copy_files" not in names and "delete_files" not in names
+    # A row runs in the viewer, which is on top again.
+    wrap = viewer.wrap
+    _type(dialog, "toggle_wrap")
+    dialog.handle_event(key("enter"))
+    assert app.panel._layers[-1].widget is viewer
+    assert viewer.wrap is not wrap
+
+
+def test_an_app_wide_action_runs_from_the_viewer_by_its_key_too(app_with):
+    app = app_with(KEY_BINDINGS={**DefaultConfig().KEY_BINDINGS,
+                                 "toggle_color_scheme": ["Ctrl-Y"]})
+    _viewer(app)
+    before = app._theme_index
+    app.on_event(key("y", None, {"ctrl"}))
+    assert app._theme_index != before
+
+
+def test_a_dialog_an_app_wide_action_opens_shows_over_the_viewer(app_with):
+    app = app_with()
+    viewer = _viewer(app)
+    viewer.run_action("choose_keymap")
+    assert app.panel._layers[-1].widget is not viewer
+    assert app.panel._layers[-1].z > 80
+
+
+class _Console:
+    """A stand-in for the console: its palette protocol and key rule, no
+    terminal (libghostty is not installed where the tests run)."""
+
+    palette_context = "console"
+
+    def __init__(self):
+        from xefm.embedded_console import ConsoleView
+        self.ran = []
+        self.takes_binding = lambda e, a: ConsoleView.takes_binding(self, e, a)
+        self._qualified = ConsoleView._qualified
+
+    def palette_actions(self):
+        return {"console.close"}
+
+    def run_action(self, name):
+        self.ran.append(name)
+        return True
+
+    def draw(self, ctx):
+        pass
+
+    def handle_event(self, event):
+        return True
+
+
+def test_an_inherited_palette_key_stays_the_terminals(app_with):
+    app = app_with(KEY_BINDINGS={**DefaultConfig().KEY_BINDINGS,
+                                 "command_palette": ["Ctrl-T", "Ctrl-Shift-P"]})
+    console = _Console()
+    app.panel.push_layer(console, z=75)
+    app.on_event(key("t", None, {"ctrl"}))            # the shell's Ctrl-T
+    assert app.panel._layers[-1].widget is console
+    app.on_event(key("p", None, {"ctrl", "shift"}))   # a chord no terminal gets
+    dialog = app.panel._layers[-1].widget
+    assert isinstance(dialog, FilterListDialog)
+    assert [a.name for a in dialog.all_items] == ["console.close"]
+    _type(dialog, "console.close")
+    dialog.handle_event(key("enter"))
+    assert console.ran == ["console.close"]
+
+
+def test_a_binding_qualified_for_the_console_wins_over_the_terminal(app_with):
+    app = app_with(KEY_BINDINGS={**DefaultConfig().KEY_BINDINGS,
+                                 "command_palette": ["Ctrl-T"],
+                                 "console.command_palette": ["Ctrl-T"]})
+    console = _Console()
+    app.panel.push_layer(console, z=75)
+    app.on_event(key("t", None, {"ctrl"}))
+    assert isinstance(app.panel._layers[-1].widget, FilterListDialog)

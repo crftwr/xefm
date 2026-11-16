@@ -106,12 +106,18 @@ FILTER_LIST = "filter_list"
 #: same reason ``isearch``'s and ``filter_list``'s do — and the first one to
 #: carry live options, which is why it is where the ``options`` key starts.
 SEARCH = "search"
+#: The embedded console (``xefm.embedded_console``, prototype #900). A terminal
+#: needs every key a program could read, so the console takes a key from it
+#: only when the binding is explicit for this context (a ``console.*`` action,
+#: or a context-qualified ``'console.<action>'`` entry), or when an inherited
+#: ``common`` binding is a chord no terminal receives (Command, Ctrl+Shift).
+CONSOLE = "console"
 
 #: Every context a binding or a user action may name, most-specific first.
 #: ``common`` is deliberately included: a config may bind (or a future release
 #: may allow overriding) an action there.
 CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, ISEARCH,
-            FILTER_LIST, SEARCH, COMMON)
+            FILTER_LIST, SEARCH, CONSOLE, COMMON)
 
 #: The contexts whose keys compete with a text field. Every one of them is
 #: subject to the printable-key rule stated on ``isearch`` below, and
@@ -1141,10 +1147,10 @@ _FILER_ACTIONS = [
     _a("copy_log_all", FILER, "Copy the whole log to the clipboard"),
     # Appearance
     _a("toggle_hidden", FILER, "Show or hide hidden files"),
-    _a("toggle_color_scheme", FILER, "Cycle to the next color theme"),
-    _a("increase_font_size", FILER, "Make the text larger until XeFM quits"),
-    _a("decrease_font_size", FILER, "Make the text smaller until XeFM quits"),
-    _a("reset_font_size", FILER, "Put the text back to FONT_SIZE"),
+    _a("toggle_color_scheme", COMMON, "Cycle to the next color theme"),
+    _a("increase_font_size", COMMON, "Make the text larger until XeFM quits"),
+    _a("decrease_font_size", COMMON, "Make the text smaller until XeFM quits"),
+    _a("reset_font_size", COMMON, "Put the text back to FONT_SIZE"),
     _a("choose_layout", FILER, "Choose how the pane presents its rows", default_keys=()),
     _a("choose_extras", FILER, "Turn an extra such as Git status on or off in this tab",
        default_keys=()),
@@ -1156,14 +1162,16 @@ _FILER_ACTIONS = [
     _a("menu", FILER, "Open the menu bar"),
     # Every action of the file list, searchable and runnable — the long tail
     # the menu bar deliberately leaves out (discussion #550).
-    _a("command_palette", FILER, "Search every action by name and run it"),
-    _a("choose_keymap", FILER, "Choose the keymap preset"),
+    # Common since #900: the palette opens over a viewer or the console too,
+    # offering that surface's actions first.
+    _a("command_palette", COMMON, "Search every action by name and run it"),
+    _a("choose_keymap", COMMON, "Choose the keymap preset"),
     # External programs and configuration
     _a("programs", FILER, "Run an external program"),
     _a("subshell", FILER, "Open a subshell in this directory"),
-    _a("console", FILER, "Show or hide the embedded console"),
-    _a("edit_config", FILER, "Edit config.py, then reload it"),
-    _a("reload_config", FILER, "Re-read config.py and apply it live"),
+    _a("console", COMMON, "Show or hide the embedded console"),
+    _a("edit_config", COMMON, "Edit config.py, then reload it"),
+    _a("reload_config", COMMON, "Re-read config.py and apply it live"),
     _a("install_extension", FILER,
        "Install an extension package from a folder, a .zip, a URL or GitHub"),
     _a("extensions", FILER, "List the extension packages and whether they loaded"),
@@ -1184,6 +1192,8 @@ _TEXT_VIEWER_ACTIONS = [
     _a("toggle_wrap", TEXT_VIEWER, "Toggle line wrapping"),
     _a("toggle_view_mode", TEXT_VIEWER, "Toggle the rendered / raw view"),
     _a("change_encoding", TEXT_VIEWER, "Choose the text encoding"),
+    # The embedded console (prototype #900)
+    _a("console.close", CONSOLE, "Put the console away and return to the panes"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",

@@ -55,6 +55,7 @@ from xefm.binary_compare import ByteComparison, compare_bytes, show_byte_compari
 from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
 from xefm.diff_viewer import show_diff_viewer
 from xefm.text_dialog import keys_markdown, show_markdown
+from xefm import surface_actions
 from xefm.actions import DIR_DIFF as _CONTEXT
 from xefm.config import (KeyBindings, find_action_for_event,
                          format_key_for_display, get_keys_for_action)
@@ -1804,6 +1805,30 @@ class DirectoryDiffView(Widget):
         self._update_priorities()  # bias scanning toward the new viewport
         return True
 
+    #: The command palette's view of this surface (#900): its action context,
+    #: the actions it can run by name, and running one without a key - so the
+    #: palette opened over it offers what this surface does first.
+    palette_context = _CONTEXT
+
+    def palette_actions(self) -> set:
+        names = {"quit", *self._handlers_table()}
+        if self._keys is not None:
+            names |= set(self._file_op_handlers())
+        return names
+
+    def run_action(self, name: str) -> bool:
+        if self._keys is not None and name in self._file_op_handlers():
+            self._file_op_handlers()[name]()
+        elif name == "quit":
+            self._leave_plan() if self._plan is not None else self._close()
+        else:
+            handler = self._handlers_table().get(name)
+            if handler is None:
+                return False
+            handler()
+        self._update_priorities()
+        return True
+
     def _handlers_table(self) -> dict:
         """The viewer-local actions, by name."""
         if self._handlers is None:
@@ -1828,6 +1853,8 @@ class DirectoryDiffView(Widget):
                 "dir_diff.cycle_sync_action": self._cycle_focused,
                 "dir_diff.toggle_identical": self._toggle_identical,
             }
+            # The app-wide actions any surface may run (#900).
+            self._handlers.update(surface_actions.handlers())
         return self._handlers
 
     def _go_row(self, index: int) -> None:

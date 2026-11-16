@@ -272,6 +272,9 @@ def bindings() -> dict:
         'programs': [],                        # Show external programs menu
         'subshell': [],                        # Enter subshell (command line) mode
         'console': [],                         # Show/hide the embedded console (#900 prototype)
+        # The embedded console's own keys (#900 prototype): desktop chords
+        # only, set below, since a terminal needs every key it can receive.
+        'console.close': [],
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to
@@ -513,6 +516,14 @@ def bindings() -> dict:
             KEY_BINDINGS['increase_font_size'] = ['Command-+', 'Command-=']
             KEY_BINDINGS['decrease_font_size'] = ['Command-MINUS']
             KEY_BINDINGS['reset_font_size'] = ['Command-0']
+            # The console (#900): the Mac's close key; a Command chord never
+            # reaches a terminal program. (The text-size keys above are common
+            # actions now and serve the console as they are.)
+            # The palette by a chord every surface takes, the embedded console
+            # included (#900); keymap_presets.apply lays it over a preset that
+            # binds the palette itself without one.
+            KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Command-Shift-P']
+            KEY_BINDINGS['console.close'] = ['Command-W']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
@@ -524,4 +535,8 @@ def bindings() -> dict:
             KEY_BINDINGS['increase_font_size'] = ['Ctrl-+', 'Ctrl-=']
             KEY_BINDINGS['decrease_font_size'] = ['Ctrl-MINUS']
             KEY_BINDINGS['reset_font_size'] = ['Ctrl-0']
+            # The console (#900): Ctrl-Shift-W, Windows Terminal's close-tab
+            # key, since Ctrl-W is a shell's.
+            KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Ctrl-Shift-P']
+            KEY_BINDINGS['console.close'] = ['Ctrl-Shift-W']
     return KEY_BINDINGS

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from xefm import surface_actions
 from xefm.config import find_action_for_event
 from xefm.log_manager import getLogger
 
@@ -41,7 +42,6 @@ def unavailable(config) -> str | None:
 
 
 _Base = TerminalView if TerminalView is not None else object
-
 
 class ConsoleView(_Base):  # type: ignore[misc,valid-type]
     """A ``TerminalView`` shown as a full-window layer.
@@ -69,10 +69,66 @@ class ConsoleView(_Base):  # type: ignore[misc,valid-type]
                          padding_px=VIEWER_PAD_PX)
         self.on_hide = on_hide
         self.action_bound = action_bound
+        #: Called once with the exit code after a one-shot console closes (an
+        #: editor run here, whose caller continues when it is done).
+        self.on_done: Callable[[int | None], None] | None = None
         self.one_shot = one_shot
         self.label = label
         if one_shot:
             self.exit_hint = "press Enter to return to XeFM"
+
+    # --- actions (#900) -------------------------------------------------------
+    #: The command palette's view of this surface, as the viewers': its
+    #: context, what it runs, and running one by name.
+    palette_context = "console"
+
+    def _actions(self) -> dict:
+        """What the console runs, by name: putting itself away, and the
+        app-wide actions any surface may run (text size, theme, config, the
+        console toggle - xefm.surface_actions). Nothing that acts on the file
+        list behind it."""
+        table = {"console.close": lambda: self.on_hide(self)}
+        table.update(surface_actions.handlers())
+        return table
+
+    def palette_actions(self) -> set:
+        return set(self._actions())
+
+    def run_action(self, name: str) -> bool:
+        handler = self._actions().get(name)
+        if handler is None:
+            return False
+        handler()
+        return True
+
+    def takes_binding(self, event, action: str) -> bool:
+        """Whether the key bound to ``action`` is taken from the terminal.
+
+        A binding made for the console wins over whatever the program would do
+        with the key: a ``console.*`` action, the console's own show / hide
+        (``console``, without which there is no way out), and a
+        context-qualified ``'console.<action>'`` entry in config.py. A binding
+        it merely inherits - ``'command_palette': ['Ctrl-T']``, written for the
+        file list - is taken only on a chord no terminal program receives
+        (Command, Ctrl+Shift); otherwise the key stays the program's (Ctrl-T
+        transposes in a shell)."""
+        if action == "console" or action.startswith("console."):
+            return True
+        if self._qualified(event, action):
+            return True
+        mods = event.modifiers
+        return "cmd" in mods or {"ctrl", "shift"} <= mods
+
+    @staticmethod
+    def _qualified(event, action: str) -> bool:
+        """Whether config.py binds ``event`` to ``action`` for the console
+        specifically (``'console.command_palette': ['Ctrl-T']``)."""
+        from xefm.config import KeyBindings, config_manager
+        keys = (getattr(config_manager.get_config(), "KEY_BINDINGS", None) or {}).get(
+            f"console.{action}")
+        if not keys:
+            return False
+        return KeyBindings({action: keys}).is_action_for_event(event, action)
 
     def _is_hide_key(self, event) -> bool:
         if find_action_for_event(event, context="filer") == "console":
@@ -82,6 +138,10 @@ class ConsoleView(_Base):  # type: ignore[misc,valid-type]
 
     def handle_event(self, event) -> bool:
         if event.type is EventType.KEY:
+            action = find_action_for_event(event, context="console")
+            if action is not None and self.takes_binding(event, action) \
+                    and self.run_action(action):
+                return True
             if self._is_hide_key(event):
                 self.on_hide(self)
                 return True

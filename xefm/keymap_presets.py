@@ -193,6 +193,22 @@ def table(name: Optional[str]) -> dict:
     return result
 
 
+def _palette_everywhere(result: dict) -> None:
+    """In the desktop app, give the command palette a key every surface takes
+    (#900): a chord no terminal program receives - Command-Shift-P on macOS,
+    Ctrl-Shift-P elsewhere - so the same key opens it over the file list, a
+    viewer and the embedded console, whatever else the preset binds it to (a
+    plain Ctrl-T or ':' stays the shell's inside the console). config.py's
+    KEY_BINDINGS still has the last word."""
+    from xefm.backend_detector import is_desktop_mode
+    if not is_desktop_mode():
+        return
+    chord = "Command-Shift-P" if sys.platform == "darwin" else "Ctrl-Shift-P"
+    keys = result.get("command_palette")
+    if isinstance(keys, list) and chord not in keys:
+        result["command_palette"] = [*keys, chord]
+
+
 def _known(action: str) -> bool:
     """Whether a preset may bind ``action``: an action of any context — a
     viewer's own ('text_viewer.scroll_down') as much as the file list's, since
@@ -310,6 +326,9 @@ def apply(config, name: Optional[str]) -> None:
     None applies :data:`FALLBACK`."""
     own = overrides(config)
     result = table(name)
+    # Laid over the preset here, not in it: a preset stays the keys a terminal
+    # can send, and this one is the desktop's (config.py's entry still wins).
+    _palette_everywhere(result)
     for action in own:
         # Under an old name, the entry still replaces the action: the preset's
         # entry under the current name would otherwise be matched first.

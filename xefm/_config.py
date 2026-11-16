@@ -1074,6 +1074,10 @@ class Config:
     # Automatically set based on actual running backend mode:
     # - Terminal mode (TUI): vim
     # - Desktop mode (GUI): code (VS Code)
+    # A terminal editor in the desktop app: mark it as PROGRAMS entries are
+    # marked, and it opens in the embedded console (when libghostty is there)
+    # instead of a detached window - e.g.
+    #     TEXT_EDITOR = {'command': 'vim', 'terminal': True}
     TEXT_EDITOR = 'code' if is_desktop_mode() else 'vim'
     
     # Text diff tool settings

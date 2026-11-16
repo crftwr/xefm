@@ -124,23 +124,14 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `copy_log_selection` | Copy the log pane's selected text to the clipboard | — | — | — | — |
 | `copy_log_all` | Copy the whole log to the clipboard | — | — | — | — |
 | `toggle_hidden` | Show or hide hidden files | `.` | `.` | `.` | `z a` |
-| `toggle_color_scheme` | Cycle to the next color theme | — | — | — | — |
-| `increase_font_size` | Make the text larger until XeFM quits | — | — | — | — |
-| `decrease_font_size` | Make the text smaller until XeFM quits | — | — | — | — |
-| `reset_font_size` | Put the text back to FONT_SIZE | — | — | — | — |
 | `choose_layout` | Choose how the pane presents its rows | — | — | — | — |
 | `choose_extras` | Turn an extra such as Git status on or off in this tab | — | — | — | — |
 | `resolve_attribute` | Work out an attribute that takes time, such as a folder's total size | — | — | — | — |
 | `redraw` | Redraw the screen | `F5` | — | — | — |
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
-| `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` | `Ctrl-K` | `:`, `Ctrl-T` |
-| `choose_keymap` | Choose the keymap preset | — | — | — | — |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `console` | Show or hide the embedded console | — | — | — | — |
-| `edit_config` | Edit config.py, then reload it | — | — | — | — |
-| `reload_config` | Re-read config.py and apply it live | — | — | — | — |
 | `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
 | `extensions` | List the extension packages and whether they loaded | — | — | — | — |
 | `check_extension_updates` | Look for newer versions of the installed extension packages | — | — | — | — |
@@ -151,6 +142,15 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `isearch` | Incremental search | `F` | — | — | `/` |
 | `edit_file` | Edit the focused file in the configured text editor | — | — | — | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` | `F4` | `F4` | `F4` |
+| `toggle_color_scheme` | Cycle to the next color theme | — | — | — | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — | — | — | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — | — | — | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — | — | — | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` | `Ctrl-K` | `:`, `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — | — | — | — |
+| `console` | Show or hide the embedded console | — | — | — | — |
+| `edit_config` | Edit config.py, then reload it | — | — | — | — |
+| `reload_config` | Re-read config.py and apply it live | — | — | — | — |
 
 ### Desktop app additions
 
@@ -166,6 +166,7 @@ send them). These replace the row above in that app:
 - `clipboard_paste` (AFX style): `Command-V`, `Ctrl-V`, `G`
 - `clipboard_paste` (OS native): `Command-V`, `Ctrl-V`
 - `close_tab` (OS native): `Command-W`, `Ctrl-W`
+- `command_palette` (AFX style): `Ctrl-T`, `Command-Shift-P`
 - `command_palette` (OS native): `Command-Shift-P`, `Ctrl-K`
 - `copy_paths` (OS native): `Command-Alt-C`, `Ctrl-P`
 - `create_directory` (OS native): `Command-Shift-N`, `F7`
@@ -207,6 +208,7 @@ send them). These replace the row above in that app:
 
 **Windows desktop app:**
 
+- `command_palette` (AFX style): `Ctrl-T`, `Ctrl-Shift-P`
 - `command_palette` (OS native): `Ctrl-Shift-P`, `Ctrl-K`
 - `copy_paths` (OS native): `Ctrl-Shift-C`, `Ctrl-P`
 - `create_directory` (OS native): `Ctrl-Shift-N`, `F7`
@@ -259,6 +261,15 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ### `image_viewer`
 
@@ -281,6 +292,15 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ### `file_diff`
 
@@ -304,6 +324,15 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ### `dir_diff`
 
@@ -337,6 +366,15 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ### `isearch`
 
@@ -355,6 +393,15 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ### `filter_list`
 
@@ -368,6 +415,15 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ### `search`
 
@@ -387,6 +443,36 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
+
+### `console`
+
+| Action | What it does | Keys |
+|---|---|---|
+| `console.close` | Put the console away and return to the panes | — |
+| `quit` | Quit XeFM — or close the open viewer | `Q` |
+| `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
+| `help` | Show the key bindings for what is on screen | `F1` |
+| `isearch` | Incremental search | `F` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ### `common`
 
@@ -398,6 +484,15 @@ viewer only.
 | `isearch` | Incremental search | `F` |
 | `edit_file` | Edit the focused file in the configured text editor | — |
 | `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `console` | Show or hide the embedded console | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
 
 ## Old names
 
