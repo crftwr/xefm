@@ -1099,25 +1099,18 @@ class Config:
     # - List format: ['powershell', '-NoLogo'] (command with arguments)
     SUBSHELL = None
 
-    # Terminal application (desktop mode only, a fallback)
-    # Desktop mode has no terminal to hand over, so the subshell and PROGRAMS
-    # entries with {'terminal': True} run in XeFM's own terminal. Only where
-    # that cannot run (libghostty not installed) do they open in this
-    # application instead; it is ignored otherwise and will go once XeFM's
-    # terminal runs everywhere. The command to run is appended as trailing
-    # arguments.
-    # None: the platform default -- Terminal.app on macOS; Windows Terminal
-    # (wt.exe) on Windows if installed, otherwise a new console window.
-    # Supports both string and list formats:
+    # Terminal application (desktop mode only)
+    # Desktop mode has no terminal to hand over, so the subshell, PROGRAMS
+    # entries with {'terminal': True} and a terminal TEXT_EDITOR run in one:
+    # None: XeFM's own terminal, drawn over the panes (needs libghostty);
+    #   where it cannot run, the platform default -- Terminal.app on macOS;
+    #   Windows Terminal (wt.exe) on Windows if installed, otherwise a new
+    #   console window.
+    # A command: always that terminal application, with the command to run
+    # appended as trailing arguments. Supports both string and list formats:
     # - ['open', '-a', 'iTerm']      (macOS: any app that runs a script it opens)
     # - ['wezterm', 'start', '--']   (a terminal that takes the command as args)
     TERMINAL = None
-
-    # XeFM's own terminal (desktop mode, discussion #900)
-    # With libghostty available, the subshell, PROGRAMS entries with
-    # {'terminal': True} and a terminal TEXT_EDITOR run in a terminal XeFM draws
-    # over the panes, as terminal mode hands them its own. False uses TERMINAL.
-    EMBEDDED_TERMINAL = True
 
     # S3 settings
     S3_CACHE_TTL = 60  # S3 cache TTL in seconds (default: 60 seconds)
