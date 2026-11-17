@@ -711,6 +711,11 @@ tag: check-venv
 #
 # Idempotent on purpose: an existing Release is reported and left alone rather
 # than erroring, so re-running the pipeline from the top costs nothing.
+#
+# A pre-release version (1.17.0rc1, 1.17.0b2, 1.17.0.dev1) opens the Release
+# as a GitHub pre-release, so /releases/latest - the docs' download link, the
+# agent skill's install lookup, the cask's livecheck - keeps pointing at the
+# last stable release.
 release-github:
 	@$(call check_gh)
 	@git ls-remote --exit-code --tags origin "v$(XEFM_VERSION)" >/dev/null 2>&1 || { \
@@ -721,8 +726,12 @@ release-github:
 	@if gh release view v$(XEFM_VERSION) >/dev/null 2>&1; then \
 		echo "GitHub Release v$(XEFM_VERSION) already exists; leaving it as is."; \
 	else \
-		gh release create v$(XEFM_VERSION) --title "v$(XEFM_VERSION)" --generate-notes --verify-tag && \
-		echo "Opened GitHub Release v$(XEFM_VERSION) ✓"; \
+		case "$(XEFM_VERSION)" in \
+			*a[0-9]*|*b[0-9]*|*rc[0-9]*|*dev[0-9]*|*alpha*|*beta*) pre=--prerelease; kind="pre-release ";; \
+			*) pre=; kind=;; \
+		esac; \
+		gh release create v$(XEFM_VERSION) --title "v$(XEFM_VERSION)" --generate-notes --verify-tag $$pre && \
+		echo "Opened GitHub $${kind}Release v$(XEFM_VERSION) ✓"; \
 	fi
 	@$(MAKE) --no-print-directory release-skill
 
