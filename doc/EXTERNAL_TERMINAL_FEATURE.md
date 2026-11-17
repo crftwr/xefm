@@ -29,8 +29,10 @@ its window the way your terminal normally does when the shell exits.
 the shell inside it.
 
 Left as `None`, these run in XeFM's own terminal instead, drawn over the panes
-in the window; closing it returns to the panes. It needs libghostty. Where that
-is not installed, they open in the platform default:
+in the window; closing it returns to the panes. It runs on libghostty, which the
+macOS and Windows apps include. XeFM installed with pip finds it only when it
+is installed on the system's library path. Where it finds none, these open in
+the platform default:
 
 | Platform | Default |
 |---|---|

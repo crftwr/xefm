@@ -604,6 +604,33 @@ foreach ($n in $LibarchiveNotices) {
 }
 
 # ---------------------------------------------------------------------------
+# Step 4c: Fetch libghostty-vt and place it inside the copied puikit package
+# ---------------------------------------------------------------------------
+# XeFM's terminal (discussion #900) is PuiKit's TerminalView on libghostty-vt.
+# puikit._ghostty looks for the library at puikit\_bin\ beside itself and
+# searches nothing per-user, so without this the app has no terminal of its
+# own and falls back to the TERMINAL application. tools/fetch_libghostty.py
+# takes ghostty-vt.dll from Ghostty's official release, pinned by version and
+# SHA-256 per architecture, and loads it to check when the host can (a cross
+# build cannot load the other architecture's DLL). The DLL imports only system
+# DLLs and the UCRT. Whatever a development checkout had in _bin\ is replaced.
+Info 'Step 4c: Fetching the bundled libghostty-vt...'
+$GhosttyDest = Join-Path $AppDir 'puikit\_bin'
+if (Test-Path $GhosttyDest) { Remove-Item -Recurse -Force $GhosttyDest }
+& $VenvPy (Join-Path $ProjectRoot 'tools\fetch_libghostty.py') --target "windows-$Arch" `
+    --dest $GhosttyDest --cache (Join-Path $CacheDir 'libghostty')
+if ($LASTEXITCODE -ne 0) { Fail "Could not bundle libghostty-vt (see above); the app would have no terminal." }
+if (-not (Test-Path (Join-Path $GhosttyDest 'ghostty-vt.dll'))) { Fail "ghostty-vt.dll missing from $GhosttyDest" }
+
+# Its license and those of the libraries compiled into it. The release zip
+# names only Ghostty's own, so the texts are kept in tools\licenses\libghostty\.
+$GhosttyNoticeExtras = @()
+foreach ($line in (& $VenvPy (Join-Path $ProjectRoot 'tools\fetch_libghostty.py') --print-notices)) {
+    if ($line) { $GhosttyNoticeExtras += @('--extra', $line) }
+}
+if ($LASTEXITCODE -ne 0 -or $GhosttyNoticeExtras.Count -eq 0) { Fail "Could not list libghostty-vt's license notices." }
+
+# ---------------------------------------------------------------------------
 # Step 5: Collect third-party dependencies into Lib\site-packages
 # ---------------------------------------------------------------------------
 # Uses the shared, platform-agnostic collector in tools/ (it makes no OS
@@ -690,6 +717,7 @@ if (Test-Path $FontsOfl) {
 # libarchive and the four compression libraries linked into it (built in Step 4b
 # from crftwr/xefm-bin-deps).
 $NoticesExtras += $LibarchiveNoticeExtras
+$NoticesExtras += $GhosttyNoticeExtras
 
 $NoticesArgs = @('--title', 'XeFM', '--scan', $SitePkgsDest) + $NoticesExtras + @('--output', $NoticesOut)
 & $VenvPy $NoticesScript @NoticesArgs
