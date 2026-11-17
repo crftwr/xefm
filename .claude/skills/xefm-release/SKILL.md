@@ -23,6 +23,18 @@ The single source of truth is `__version__` in `xefm/__init__.py`
 - "minor" → bump Y, reset Z (1.0.6 → 1.1.0)
 - "major" → bump X, reset Y and Z
 - An explicit version wins; preflight also accepts pre-releases (`1.1.0a1`).
+- "release candidate" / "rc" → the next version with `rc1` (1.16.0 →
+  1.17.0rc1 for a minor), or the next `rcN` after an existing one.
+
+**A release candidate** (`rcN`, `aN`, `bN`, `.devN`) runs the same steps
+with these differences (`doc/dev/RELEASE_SYSTEM.md`, "Release candidates"):
+`release-github` opens it as a GitHub pre-release by itself; PyPI, the DMG
+and the Windows zips go out as usual; **skip** `release-windows-msix` and the
+cask bump in step 5, and expect no formula autobump. Don't report the
+missing MSIX and cask as remaining. The note's heading is
+`## XeFM X.Y.ZrcN (release candidate)` and it says how to install it
+(`pip install --pre xefm`, or the DMG/zips on the Release page). Step 7's
+status script keeps judging the stable release.
 
 **Confirm the number with the user before proceeding.** State the mapping
 explicitly — "current is X.Y.Z, this releases X.Y.Z′" — and wait for a yes

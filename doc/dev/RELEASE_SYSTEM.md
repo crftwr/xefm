@@ -109,6 +109,26 @@ See [MACOS_APP_BUILD_SYSTEM.md](MACOS_APP_BUILD_SYSTEM.md) and
 [WINDOWS_APP_BUILD_SYSTEM.md](WINDOWS_APP_BUILD_SYSTEM.md) for signing and
 notarization, which the bundles need and the PyPI artifacts do not.
 
+## Release candidates
+
+A release candidate runs the same pipeline with a PEP 440 pre-release number:
+`make tag VERSION=1.17.0rc1`. Where each artifact goes differs from a stable
+release:
+
+| Artifact | A release candidate |
+|---|---|
+| GitHub Release | opened as a **pre-release**: not "Latest", so the docs' `/releases/latest` links, the agent skill's install lookup and the cask's `:github_latest` livecheck stay on the stable release |
+| PyPI sdist + wheel | uploaded; pip skips pre-releases unless asked (`pip install --pre xefm`, or `xefm==1.17.0rc1`) |
+| macOS DMG | built and attached; `CFBundleVersion` is cut to `1.17.0` (Apple allows only numbers there), `CFBundleShortVersionString` and the DMG name keep `1.17.0rc1` |
+| Windows zips | built and attached; the exe's numeric version resource drops the suffix (`1.17.0.0`), its strings keep it |
+| Microsoft Store MSIX | **not submitted**: a Store version is four numbers, and `build_msix.ps1` refuses a pre-release on purpose |
+| Homebrew cask | **not bumped** |
+| Homebrew formula | not bumped: autobump follows PyPI's `info.version`, which names only stable releases |
+
+The final release after it is an ordinary `make tag VERSION=1.17.0`, which
+rebuilds everything and is the one the Store and the tap get. Preflight allows
+`1.17.0rc1` → `1.17.0rc2` → `1.17.0`.
+
 ## Linking to the latest release
 
 `https://github.com/crftwr/xefm/releases/latest` always redirects to the newest
@@ -181,6 +201,9 @@ Checks `gh` is usable and the tag is **on `origin`** (`--verify-tag` will not
 invent a tag GitHub does not have, which is why `tag` pushes it), then
 `gh release create vX.Y.Z --generate-notes --verify-tag`. If the Release already
 exists it says so and changes nothing, so re-running the pipeline is free.
+A pre-release version (`1.17.0rc1`, `b2`, `.dev1`) adds `--prerelease`, so
+`/releases/latest` keeps pointing at the last stable release (see
+[Release candidates](#release-candidates)).
 
 It then runs `make release-skill`, which builds
 `dist/xefm-X.Y.Z-skill.zip` (`make skill-zip`) and uploads it with

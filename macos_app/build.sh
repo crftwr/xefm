@@ -1187,9 +1187,16 @@ else
     log_success "  Every binary runs on macOS ${BUNDLE_MIN_OS}"
 fi
 
-# Substitute version number and the minimum OS just measured
-log_info "Substituting version: ${VERSION}"
+# Substitute version number and the minimum OS just measured.
+# CFBundleVersion must be numbers and periods only, so a pre-release
+# (1.17.0rc1) is cut back to its X.Y.Z there. CFBundleShortVersionString keeps
+# the whole string: it is what the user sees, and create_dmg.sh names the DMG
+# after it.
+BUNDLE_VERSION="$(printf '%s' "${VERSION}" | sed -nE 's/^([0-9]+(\.[0-9]+)*).*/\1/p')"
+BUNDLE_VERSION="${BUNDLE_VERSION:-0.0.0}"
+log_info "Substituting version: ${VERSION} (CFBundleVersion ${BUNDLE_VERSION})"
 sed -e "s/{{VERSION}}/${VERSION}/g" \
+    -e "s/{{BUNDLE_VERSION}}/${BUNDLE_VERSION}/g" \
     -e "s/{{MIN_OS}}/${BUNDLE_MIN_OS}/g" \
     "${TEMPLATE_FILE}" > "${PLIST_FILE}"
 

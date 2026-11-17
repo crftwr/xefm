@@ -18,7 +18,7 @@
     <string>XeFM.icns</string>
     
     <key>CFBundleVersion</key>
-    <string>{{VERSION}}</string>
+    <string>{{BUNDLE_VERSION}}</string>
     
     <key>CFBundleShortVersionString</key>
     <string>{{VERSION}}</string>
