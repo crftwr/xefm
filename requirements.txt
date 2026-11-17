@@ -25,7 +25,16 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.27.0 is the floor because it carries XeFM's own terminal (puikit#218,
+# 1.27.1 is the floor because the macOS and Windows apps ship libghostty-vt
+# inside their copy of PuiKit, at puikit/_bin/, and 1.27.1 is the first PuiKit
+# that looks there (puikit#227, xefm#940). It also declares the libghostty
+# release its binding is written for (LIBGHOSTTY_VERSION), which
+# tools/fetch_libghostty.py must match to bundle one, and refuses a library
+# outside upstream's compatibility promise for it. Soft at run time: on 1.27.0
+# XeFM runs and its terminal falls back to the TERMINAL application, as it did
+# for nearly everyone. Hard for building a bundle: the tool stops without the
+# declared version.
+# 1.27.0 was the floor before because it carries XeFM's own terminal (puikit#218,
 # #222, #223, discussion #900): the desktop app runs the subshell, terminal
 # PROGRAMS and a terminal TEXT_EDITOR in TerminalView, on ConPTY on Windows,
 # and it names itself in TERM_PROGRAM. It also carries the transitions the
@@ -271,7 +280,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.27.0
+puikit>=1.27.1
 pygments
 boto3
 watchdog
