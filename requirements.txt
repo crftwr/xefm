@@ -25,7 +25,17 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.26.0 is the floor because the Windows app draws on a render thread when the
+# 1.27.0 is the floor because it carries XeFM's own terminal (puikit#218,
+# #222, #223, discussion #900): the desktop app runs the subshell, terminal
+# PROGRAMS and a terminal TEXT_EDITOR in TerminalView, on ConPTY on Windows,
+# and it names itself in TERM_PROGRAM. It also carries the transitions the
+# full-window layers use (puikit#225, #226): viewers fade across the screen
+# they cover, the terminal comes from behind the file manager. Those need
+# fade "out", which a 1.26.0 plays as a fade *in*, so every viewer and the
+# terminal flash back to full before they close. It is soft: on 1.26.0 XeFM
+# runs, the terminal falls back to the TERMINAL application, and the
+# transitions play wrong.
+# 1.26.0 was the floor before because the Windows app draws on a render thread when the
 # GIL is off (puikit#215, xefm#901), which the free-threaded Windows build ships:
 # a held PageDown keeps up with the key repeat (~19 -> 31 frames a second in the
 # ARM VM), a frame where only the background moves skips the list (~12 -> 1.5 ms),
@@ -261,7 +271,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.26.0
+puikit>=1.27.0
 pygments
 boto3
 watchdog
