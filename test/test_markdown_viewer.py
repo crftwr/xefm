@@ -22,6 +22,7 @@ from puikit.backends.memory_backend import MemoryBackend
 from xefm.path import Path
 from xefm.text_viewer import TextViewer, show_text_viewer
 from xefm.viewer_registry import RichRenderer, rich_renderer_for
+from anim_helper import settle
 
 
 # Blocks are blank-line separated (joined with "\n\n") so each stays its own
@@ -170,6 +171,7 @@ def test_quit_closes_from_rich_mode(backend, md_file):
     panel.render()
     assert type(panel._layers[-1].widget).__name__ == "TextViewer"
     v.handle_event(_key("escape"))
+    settle(panel)
     assert not panel.has_layers or type(panel._layers[-1].widget).__name__ != "TextViewer"
 
 

@@ -40,6 +40,7 @@ from xefm.path import Path
 # the xefm/app.py app entry. Binding it here, right after the inserts above, gets the
 # entry point -- the same thing test_xefm_app_open_viewer.py relies on.
 from xefm import app as xefm_app  # noqa: E402
+from anim_helper import settle
 
 
 def _png(path, w, h):
@@ -597,6 +598,7 @@ def test_escape_closes_the_viewer(images):
     panel.render()
     assert panel.has_layers
     viewer.handle_event(_key(key="escape"))
+    settle(panel)  # it fades out, then leaves
     assert not panel.has_layers
 
 
@@ -614,7 +616,11 @@ def test_on_close_fires_once_when_closed(images):
     viewer = show_image_viewer(panel, images[0], on_close=lambda: calls.append(1))
     panel.render()
     viewer.handle_event(_key(key="escape"))
-    assert calls == [1]  # exactly once, and only after the layer was popped
+    assert calls == []  # not while it is still fading out
+    settle(panel)
+    viewer.handle_event(_key(key="escape"))
+    settle(panel)
+    assert calls == [1]  # exactly once, and only after the layer was removed
 
 
 def test_on_close_does_not_fire_if_not_top_layer(images):
@@ -768,6 +774,7 @@ def test_post_effect_is_suspended_for_the_image_and_restored_on_close(images):
     assert backend.effect_calls == [None]  # suspended on open
 
     panel._layers[-1].widget.handle_event(_key(key="escape"))
+    settle(panel)
     # Restored on close (the theme's effect pushed back).
     assert len(backend.effect_calls) == 2
     assert backend.effect_calls[1] is theme.extras["post_effect"]

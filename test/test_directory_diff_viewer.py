@@ -33,6 +33,7 @@ from xefm.directory_diff_viewer import (
 
 
 from xefm import _config
+from anim_helper import settle
 
 
 def _sync_view(left, right, **kw):
@@ -223,6 +224,7 @@ def test_escape_closes(backend, trees):
     show_directory_diff_viewer(panel, *trees, background=False)
     panel.render()
     panel.dispatch_event(_key("escape"))
+    settle(panel)  # it fades out, then leaves
     assert panel._layers == []
 
 

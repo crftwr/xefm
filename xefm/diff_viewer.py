@@ -40,7 +40,7 @@ from xefm.config import (find_action_for_event, format_key_for_display,
                          get_config, get_keys_for_action)
 from xefm.external_programs import command_argv, resolve_command
 from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the main panes
-from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
+from xefm.dialog_geometry import animate_viewer_open, close_viewer
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_viewer import (MONO, _ScrollBody, _content_bg, _header_bg, _highlight,
@@ -648,7 +648,14 @@ class DiffViewer(Widget):
     def _close(self) -> None:
         panel = self._panel
         if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+            close_viewer(panel, self, lambda: self._closed(panel))
+            return
+        self._closed(None)
+
+    def _closed(self, panel) -> None:
+        """The layer is gone (it faded out, or was not on top to begin with)."""
+        if panel is not None:
+            panel.remove_layer(self)
         # Once: the opener's callback is released with the first close.
         on_close, self._on_close = self._on_close, None
         if on_close is not None:
@@ -778,5 +785,5 @@ def show_diff_viewer(panel: Any, path1, path2, z: int = 80, on_edited=None,
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer
     panel.push_layer(viewer, z=z, hints=viewer_layer_hints(sw, sh),
                      reflow=lambda sw, sh: Rect(0, 0, sw, sh))
-    animate_open(panel, viewer, OPEN_MS_VIEWER)
+    animate_viewer_open(panel, viewer)
     return viewer

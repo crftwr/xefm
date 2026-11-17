@@ -24,6 +24,7 @@ from xefm import keymaps  # noqa: E402
 from xefm import keymap_presets  # noqa: E402
 from xefm.actions import COMMON, FILER, TEXT_VIEWER, registry  # noqa: E402
 from xefm.config import KeyBindings, config_manager  # noqa: E402
+from anim_helper import settle
 
 
 def press(target, *keys):
@@ -264,6 +265,7 @@ def test_viewer_jk_gg_G_and_q(viewer):
     press(panel.dispatch_event, "g", "g")
     assert v.top == 0
     press(panel.dispatch_event, "q")
+    settle(panel)
     assert not panel.has_layers
 
 

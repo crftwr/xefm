@@ -19,6 +19,7 @@ from xefm.diff_viewer import DiffViewer  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.path_base import ReadOnlyPathImpl, UriStatResult  # noqa: E402
 from xefm.user_api import ActionContext  # noqa: E402
+from anim_helper import settle
 
 OLD = "one\ntwo\n"
 
@@ -152,6 +153,7 @@ def test_on_close_runs_once_the_viewer_has_closed(app):
     viewer = _viewer(app)
     assert closed == [], "not before the user closes it"
     viewer._close()
+    settle(app.panel)  # it fades out, then leaves
     assert _viewer(app) is None
     viewer._close()                       # a second close does not call again
     assert closed == [True]
