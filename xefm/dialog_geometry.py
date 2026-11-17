@@ -47,9 +47,10 @@ _OPEN_TRANSITION = {
     "easing": "ease_out_expo",
 }
 
-#: Viewers (text, diff, directory-diff) open a little faster than pickers: they
-#: are full-screen and usually opened deliberately, so a shorter beat keeps them
-#: from feeling like they lag behind the keystroke.
+#: The progress and task dialogs open a little faster than pickers: they come up
+#: in answer to a command already given, so a shorter beat keeps them from
+#: feeling like they lag behind the keystroke. (The full-window viewers fade
+#: instead - see VIEWER_FADE_IN_MS.)
 OPEN_MS_DIALOG = 180
 OPEN_MS_VIEWER = 140
 
@@ -70,6 +71,61 @@ def animate_open(panel: Any, widget: Any, duration_ms: int = OPEN_MS_DIALOG) -> 
     if not _dialog_effect(panel):
         return False
     return panel.animate(widget, hints={**_OPEN_TRANSITION, "duration_ms": duration_ms})
+
+
+#: A full-window viewer replaces the screen rather than growing out of it: a
+#: scale shows the window's edge and gives away that the viewer is a box laid
+#: over the file manager. So it only fades, crossing what it covers: the screen
+#: going away fades out quickly, the one arriving fades in over the usual beat.
+#: Both ways, opening and closing.
+VIEWER_FADE_IN_MS = 180
+VIEWER_FADE_OUT_MS = 70
+
+
+def _beneath(panel: Any, layer: Any) -> list:
+    """What ``layer`` covers (``Panel.beneath``): the screen before it came up."""
+    beneath = getattr(panel, "beneath", None)
+    if beneath is not None:
+        return beneath(layer)
+    base = getattr(panel, "base", None)  # an older PuiKit
+    return [base] if base is not None else []
+
+
+def animate_viewer_open(panel: Any, viewer: Any) -> bool:
+    """Open a full-window viewer already pushed as a layer: it fades in while
+    what it covers - the file manager, or the viewer it was opened from -
+    fades out quickly. Returns whether it plays."""
+    if not _dialog_effect(panel):
+        return False
+    if not panel.animate(viewer, hints={"transition": "fade",
+                                        "duration_ms": VIEWER_FADE_IN_MS}):
+        return False
+    for widget in _beneath(panel, viewer):
+        panel.animate(widget, hints={"transition": "fade", "out": True,
+                                     "duration_ms": VIEWER_FADE_OUT_MS})
+    return True
+
+
+def close_viewer(panel: Any, viewer: Any, finish: Any) -> None:
+    """Close a full-window viewer opened by :func:`animate_viewer_open`: it
+    fades out quickly while the screen it returns to fades in, and ``finish``
+    (which removes the layer) runs once it has faded.
+
+    Without motion - a still backend, reduced motion, ``dialog_effect=False`` -
+    ``finish`` runs at once. A second call while it is leaving does nothing."""
+    if getattr(viewer, "_closing", False):
+        return
+    viewer._closing = True
+    beneath = _beneath(panel, viewer)  # while it is still in the stack
+    played = _dialog_effect(panel) and panel.animate(viewer, hints={
+        "transition": "fade", "out": True, "duration_ms": VIEWER_FADE_OUT_MS,
+        "on_complete": finish})
+    if not played:
+        finish()
+        return
+    for widget in beneath:
+        panel.animate(widget, hints={"transition": "fade",
+                                     "duration_ms": VIEWER_FADE_IN_MS})
 
 
 #: The terminal's gesture: it was behind the file manager all along. Opening it,
@@ -93,17 +149,17 @@ def animate_from_behind(panel: Any, widget: Any, *, out: bool = False,
     has *not* run and the caller does its follow-up at once."""
     if not _dialog_effect(panel):
         return False
-    base = getattr(panel, "base", None)  # PuiKit's whole-screen key
+    beneath = _beneath(panel, widget)  # the screen it lies behind
     layer = {"transition": "fade", "out": out, "duration_ms": duration_ms}
     if on_complete is not None:
         layer["on_complete"] = on_complete
     if not panel.animate(widget, hints=layer):
         return False
-    if base is not None:
+    for screen in beneath:
         # Into view as the layer goes out, out of view as it comes in.
-        panel.animate(base, hints={"transition": "scale", "from_scale": BEHIND_SCALE,
-                                   "fade": True, "out": not out,
-                                   "duration_ms": duration_ms})
+        panel.animate(screen, hints={"transition": "scale", "from_scale": BEHIND_SCALE,
+                                     "fade": True, "out": not out,
+                                     "duration_ms": duration_ms})
     return True
 
 

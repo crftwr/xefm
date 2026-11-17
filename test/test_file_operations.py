@@ -17,6 +17,7 @@ from xefm.file_operations import FileOperationService, _unique_dest
 from xefm.path import Path, move_to
 from xefm.progress_manager import ProgressManager
 from xefm.task import Cancelled, Task, TaskManager
+from anim_helper import settle
 
 
 def _P(p):
@@ -858,6 +859,7 @@ def test_conflict_dialog_compare_opens_diff_and_returns(tmp_path):
         assert answers == []
         panel.dispatch_event(Event(EventType.KEY, key="escape", char=None,
                                    modifiers=set()))
+        settle(panel)  # the viewer fades out, then leaves
         assert _top(panel) == "ConflictDialog"
     panel.dispatch_event(Event(EventType.KEY, key="u", char="u", modifiers=set()))
     assert answers == [("overwrite_older", False)]

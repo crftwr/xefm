@@ -56,7 +56,7 @@ from xefm import surface_actions
 from xefm.actions import IMAGE_VIEWER as _CONTEXT
 from xefm.config import (find_action_for_event, format_key_for_display,
                         get_keys_for_action)
-from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
+from xefm.dialog_geometry import animate_viewer_open, close_viewer
 from xefm.log_manager import getLogger
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm.text_viewer import (_content_bg, _header_bg, draw_status_bar,
@@ -902,12 +902,15 @@ class ImageViewer(Widget):
         self._load_gen += 1
         self._loading = False
         if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
-            # Only after we actually popped: the callback restores the theme's
-            # post-effect the app suspended while the picture was up. Guarded so a
-            # stray close on a viewer that is not the top layer cannot fire it.
-            if self._on_close is not None:
-                self._on_close()
+            close_viewer(panel, self, lambda: self._closed(panel))
+
+    def _closed(self, panel) -> None:
+        panel.remove_layer(self)
+        # Only after the layer is gone: the callback restores the theme's
+        # post-effect the app suspended while the picture was up. Reached only
+        # from a close on the top layer, so a stray close cannot fire it.
+        if self._on_close is not None:
+            self._on_close()
 
     def _show_help(self) -> None:
         if self._panel is None:
@@ -957,5 +960,5 @@ def show_image_viewer(panel: Any, path, siblings: Sequence | None = None,
     viewer._child_z = z + 10  # help overlay stacks above the viewer's own layer
     panel.push_layer(viewer, z=z, hints=viewer_layer_hints(sw, sh),
                      reflow=lambda sw, sh: Rect(0, 0, sw, sh))
-    animate_open(panel, viewer, OPEN_MS_VIEWER)
+    animate_viewer_open(panel, viewer)
     return viewer

@@ -52,7 +52,7 @@ from xefm.text_viewer import (MONO, _ScrollBody, _header_bg, draw_status_bar,
                              footer_key, footer_pair, looks_binary,
                              viewer_layer_hints, viewer_pad)
 from xefm.binary_compare import ByteComparison, compare_bytes, show_byte_comparison
-from xefm.dialog_geometry import OPEN_MS_VIEWER, animate_open
+from xefm.dialog_geometry import animate_viewer_open, close_viewer
 from xefm.diff_viewer import show_diff_viewer
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm import surface_actions
@@ -1765,7 +1765,7 @@ class DirectoryDiffView(Widget):
         self.cancel()
         panel = self._panel
         if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+            close_viewer(panel, self, lambda: panel.remove_layer(self))
 
     def handle_event(self, event: Event) -> bool:
         if event.type is EventType.MOUSE_SCROLL:
@@ -2074,5 +2074,5 @@ def show_directory_diff_viewer(panel: Any, left_path: Path, right_path: Path,
     panel.push_layer(viewer, z=z, hints=viewer_layer_hints(sw, sh),
                      reflow=lambda sw, sh: Rect(0, 0, sw, sh))
     panel.request_animation_ticks(viewer._tick)
-    animate_open(panel, viewer, OPEN_MS_VIEWER)
+    animate_viewer_open(panel, viewer)
     return viewer
