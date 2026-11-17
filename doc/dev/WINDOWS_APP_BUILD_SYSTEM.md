@@ -67,6 +67,7 @@ XeFM/                              <- bundle root = the .exe's directory (5 entr
 │   ├── xefm/_bin/archive.dll     libarchive, for .7z .rar .iso .cab .cpio .rpm
 │   ├── src/                      xefm_* business-logic modules
 │   └── puikit/                   PuiKit toolkit (copied from the sibling repo)
+│       └── _bin/ghostty-vt.dll   libghostty-vt, for XeFM's terminal
 └── Lib/
     └── site-packages/            third-party deps: numpy, pygments, boto3, watchdog, ...
 ```
@@ -303,6 +304,41 @@ the format, so a truncated download or a wrongly configured library would
 otherwise ship as a perfectly working XeFM with `.7z` quietly absent. The
 licenses shipped in the asset are fed to Step 5b as `--extra` entries, since
 none of those components has a `.dist-info` for the scanner to find.
+
+### Step 4c: the bundled libghostty-vt
+
+XeFM's terminal (discussion #900) is PuiKit's `TerminalView`, which runs on
+libghostty-vt. `puikit._ghostty` looks for the library at `_bin\` inside the
+puikit package, then on the system's library path, and nowhere else (no
+per-user location, no environment variable). So the bundle puts it at `app\puikit\_bin\ghostty-vt.dll`;
+without it the app has no terminal of its own and runs those programs in the
+`TERMINAL` application instead.
+
+`tools/fetch_libghostty.py` does the work for both desktop builds. It takes the
+DLL from Ghostty's **official release** (release.files.ghostty.org, the
+`*-windows-gnu.zip` for each architecture), pinned by version and SHA-256 in its
+`PINS` table, and caches the zip under `.cache\libghostty\`. A cached zip is
+checked as strictly as a fresh one. When the host can load the DLL (same
+architecture), it does, and looks up the calls PuiKit binds, so a truncated
+download fails the build. A cross build cannot load it and says so. The DLL
+imports only system DLLs and the UCRT, so it needs no redistributable.
+
+The release zip carries Ghostty's MIT `LICENSE` but does not name what is
+compiled into the library (simdutf, Wuffs). Those license texts are kept in
+`tools/licenses/libghostty/` (its README says how they were found) and reach
+Step 5b through `fetch_libghostty.py --print-notices`.
+
+The version is PuiKit's to choose: `LIBGHOSTTY_VERSION` in `puikit/_ghostty.py`
+is the release its binding is written for, and PuiKit refuses at load a library
+that breaks upstream's compatibility promise for it (another major version, or
+an older one). The tool reads that line from the PuiKit being bundled, without
+importing it, and stops the build when it differs from its own `VERSION`. So a
+PuiKit moved to a new release cannot ship with the old library. Bumping means
+`VERSION` and new hashes in `PINS`, and looking at what is compiled in again.
+After loading the DLL, the tool also checks that it reports exactly `VERSION`.
+
+Linux needs none of this: XeFM runs in terminal mode there, and the terminal it
+was started in runs the subshell.
 
 ### Usage
 

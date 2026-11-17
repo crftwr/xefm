@@ -116,3 +116,21 @@ def no_real_trash(monkeypatch):
 
     monkeypatch.setattr(trash, "_trash_macos", refuse)
     monkeypatch.setattr(trash, "_trash_windows", refuse)
+
+
+@pytest.fixture(autouse=True)
+def no_embedded_terminal(monkeypatch):
+    """Tests run as if libghostty-vt were absent: XeFM's own terminal is
+    unavailable and terminal programs take the TERMINAL-application path.
+
+    Whether the library is there depends on the machine - a development
+    checkout fetches it into puikit/_bin/, the VMs have none - so a test that
+    did not say which it expects would pass on one and fail on the other. A
+    test of the embedded terminal stubs its view, or undoes this with
+    ``monkeypatch.setattr(xefm.terminal, "_terminal_available", ...)``. The
+    stub sits under ``terminal.unavailable``, so its own rules (TERMINAL set in
+    config.py comes first) are still what the tests see."""
+    from xefm import terminal
+    if terminal._terminal_available is not None:
+        monkeypatch.setattr(terminal, "_terminal_available",
+                            lambda: "libghostty-vt is not used in tests")

@@ -406,6 +406,25 @@ if [ -n "${MISSING_FONTS}" ]; then
 fi
 log_info "  Bundled Noto fonts present in ${FONTS_DEST}"
 
+# libghostty-vt for XeFM's terminal (discussion #900), inside the copied PuiKit
+# at puikit/_bin/ where puikit._ghostty looks for it - nothing per-user is
+# searched, so without it the app has no terminal of its own. The official
+# release ships only a static universal library; tools/fetch_libghostty.py
+# fetches it pinned by version and SHA-256, links the dylib for this bundle's
+# floor (with no target clang would stamp the build machine's macOS on it), and
+# loads it to check. Step 4c thins it and Step 6 signs it with every other
+# Mach-O file in the bundle. Whatever a development checkout had in _bin/ is
+# replaced, so the bundle always carries the pinned build.
+GHOSTTY_DEST="${PUIKIT_DEST}/_bin"
+rm -rf "${GHOSTTY_DEST}"
+if ! "${VENV_PYTHON}" "${PROJECT_ROOT}/tools/fetch_libghostty.py" --target macos \
+        --dest "${GHOSTTY_DEST}" --cache "${BUILD_DIR}/cache/libghostty" \
+        --macos-min "${MACOS_MIN_VERSION}"; then
+    log_error "Could not bundle libghostty-vt (see above); the app would have no terminal."
+    exit 1
+fi
+log_info "  Bundled libghostty-vt in ${GHOSTTY_DEST}"
+
 log_info "Pre-compiling PuiKit Python files..."
 compile_bytecode "${VENV_PYTHON}" "${PUIKIT_DEST}"
 
@@ -1078,6 +1097,12 @@ else
     log_error "Font license OFL.txt not found at ${FONTS_OFL}"
     exit 1
 fi
+
+# libghostty-vt and the libraries compiled into it (Step 3). Its release carries
+# no license text on macOS, so the texts are kept in tools/licenses/libghostty/.
+while IFS= read -r notice; do
+    [ -n "${notice}" ] && NOTICES_EXTRAS+=(--extra "${notice}")
+done < <("${VENV_PYTHON}" "${PROJECT_ROOT}/tools/fetch_libghostty.py" --print-notices)
 
 if "${VENV_PYTHON}" "${NOTICES_SCRIPT}" \
         --title "XeFM" \

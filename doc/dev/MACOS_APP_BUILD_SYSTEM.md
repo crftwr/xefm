@@ -148,6 +148,30 @@ All Python components are copied from the venv's base_prefix:
   be read — the bundle must name the PuiKit it actually ships
 - Bundled fonts (`puikit/fonts/`) are fetched into the source tree before copying so Core Text can register them at runtime
 
+**libghostty-vt** (XeFM's terminal, discussion #900):
+- Destination: `XeFM.app/Contents/Resources/puikit/_bin/libghostty-vt.dylib`, where
+  `puikit._ghostty` looks for it. It searches that `_bin/` and the system's
+  library path, and nothing else (no per-user location, no environment
+  variable), so without this the app
+  runs its subshell and terminal programs in the `TERMINAL` application instead.
+- `tools/fetch_libghostty.py --target macos` takes Ghostty's official
+  xcframework (pinned by version and SHA-256, cached under
+  `build/cache/libghostty/`). The xcframework carries only a static universal
+  `libghostty-vt.a`, which is linked into a dylib with the system clang **for
+  `MACOS_MIN_VERSION`**: with no target, clang stamps the build machine's macOS
+  on it (27.2 on the first try), so the dylib would not load on anything older
+  and Step 5 would raise the app's floor to match. The xcframework's objects are
+  built for 13.0, and the tool refuses a lower target.
+- The tool then loads the dylib, looks up the calls PuiKit binds and checks that
+  it reports exactly the pinned version, so a bad download fails the build. The
+  pin must equal `LIBGHOSTTY_VERSION` in the bundled PuiKit's `_ghostty.py` (the
+  release its binding is written for), or the build stops; see the Windows
+  build doc's Step 4c. Step 4c thins it with the other Mach-O files and
+  Step 6 signs it. Its only dependency is libSystem.
+- The xcframework carries no license text and does not name what is compiled
+  into the library (simdutf, Highway, Wuffs). Those texts are in
+  `tools/licenses/libghostty/` and reach Step 4d through `--print-notices`.
+
 ### 4. Framework Structure
 
 The build script creates a framework structure named after the embedded Python
