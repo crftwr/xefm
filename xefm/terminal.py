@@ -97,6 +97,9 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         #: Called once with the exit code after the layer closes: the caller's
         #: "after the program", as code after terminal mode's blocking run.
         self.on_done: Callable[[int | None], None] | None = None
+        #: Set once the app starts closing it: it is sliding out, and keys and
+        #: clicks no longer reach the program (or close it a second time).
+        self.closing = False
         self.exit_hint = "press Enter to return to XeFM"
 
     @property
@@ -155,6 +158,8 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         return KeyBindings({action: keys}).is_action_for_event(event, action)
 
     def handle_event(self, event) -> bool:
+        if self.closing:
+            return True  # sliding out: the layer is leaving
         if event.type is EventType.KEY:
             action = find_action_for_event(event, context=CONTEXT)
             if action is not None and self.takes_binding(event, action) \

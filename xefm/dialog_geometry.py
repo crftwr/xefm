@@ -67,11 +67,51 @@ def animate_open(panel: Any, widget: Any, duration_ms: int = OPEN_MS_DIALOG) -> 
     backend, under reduced motion, or when the theme opted out, where the widget
     is simply already in its final state on the next render.
     """
-    theme = getattr(panel, "theme", None)
-    extras = getattr(theme, "extras", None) if theme is not None else None
-    if extras is not None and not extras.get("dialog_effect", True):
+    if not _dialog_effect(panel):
         return False
     return panel.animate(widget, hints={**_OPEN_TRANSITION, "duration_ms": duration_ms})
+
+
+#: The terminal's gesture: it was behind the file manager all along. Opening it,
+#: the file manager zooms up toward the viewer and fades away while the terminal
+#: fades in beneath it; closing it, the file manager settles back to its own size
+#: as the terminal fades out.
+BEHIND_MS = 220
+#: How far the file manager zooms up as it gives way: enough to read as moving
+#: toward the viewer, not so much that the panes lurch.
+BEHIND_SCALE = 1.08
+
+
+def animate_from_behind(panel: Any, widget: Any, *, out: bool = False,
+                        duration_ms: int = BEHIND_MS,
+                        on_complete: Any = None) -> bool:
+    """Reveal ``widget`` (a full-window layer) as if it lay behind the screen,
+    or, with ``out``, put it back there, then call ``on_complete``.
+
+    Returns whether it was scheduled. When it was not - a still backend,
+    reduced motion, or a theme with ``dialog_effect=False`` - ``on_complete``
+    has *not* run and the caller does its follow-up at once."""
+    if not _dialog_effect(panel):
+        return False
+    base = getattr(panel, "base", None)  # PuiKit's whole-screen key
+    layer = {"transition": "fade", "out": out, "duration_ms": duration_ms}
+    if on_complete is not None:
+        layer["on_complete"] = on_complete
+    if not panel.animate(widget, hints=layer):
+        return False
+    if base is not None:
+        # Into view as the layer goes out, out of view as it comes in.
+        panel.animate(base, hints={"transition": "scale", "from_scale": BEHIND_SCALE,
+                                   "fade": True, "out": not out,
+                                   "duration_ms": duration_ms})
+    return True
+
+
+def _dialog_effect(panel: Any) -> bool:
+    """Whether the theme lets modals move at all (``dialog_effect``)."""
+    theme = getattr(panel, "theme", None)
+    extras = getattr(theme, "extras", None) if theme is not None else None
+    return extras is None or bool(extras.get("dialog_effect", True))
 
 
 def pane_anchored_box(
