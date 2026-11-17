@@ -29,16 +29,22 @@ def opened(tmp_path):
     return make
 
 
+def _hints(backend, widget):
+    """What the backend was asked to play for ``widget``, without the
+    completion hook PuiKit's Panel adds to every moving transition."""
+    return [{k: v for k, v in h.items() if k != "on_complete"}
+            for w, h in backend.animate_calls if w is widget]
+
+
 def _base_hints(backend, panel):
-    return [h for w, h in backend.animate_calls if w is panel.base]
+    return _hints(backend, panel.base)
 
 
 def test_opening_fades_in_while_the_file_manager_fades_out_quickly(opened):
     backend, panel, viewer = opened()
-    [mine] = [h for w, h in backend.animate_calls if w is viewer]
+    [mine] = _hints(backend, viewer)
     [base] = _base_hints(backend, panel)
     assert mine == {"transition": "fade", "duration_ms": VIEWER_FADE_IN_MS}
-    base = {k: v for k, v in base.items() if k != "on_complete"}  # the Panel's own
     assert base == {"transition": "fade", "out": True, "duration_ms": VIEWER_FADE_OUT_MS}
     assert VIEWER_FADE_OUT_MS < VIEWER_FADE_IN_MS
 
@@ -49,7 +55,7 @@ def test_closing_fades_out_quickly_while_the_file_manager_fades_in(opened):
     backend.animate_calls.clear()
     viewer._close()
     assert panel._layers[-1].widget is viewer  # still there while it fades out
-    [mine] = [h for w, h in backend.animate_calls if w is viewer]
+    [mine] = _hints(backend, viewer)
     [base] = _base_hints(backend, panel)
     assert mine["transition"] == "fade" and mine["out"]
     assert mine["duration_ms"] == VIEWER_FADE_OUT_MS
