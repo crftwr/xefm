@@ -6014,6 +6014,7 @@ class XeFMApp:
 
     def _push_terminal(self, view) -> None:
         from puikit.panel import Rect
+        from xefm.dialog_geometry import animate_from_behind
         from xefm.text_viewer import viewer_layer_hints
         # The viewers' hints: the terminal covers the panes and paints the
         # content surface itself, so over an animated background it leaves
@@ -6027,6 +6028,9 @@ class XeFMApp:
         z = max(self._TERMINAL_Z, top + 1)
         self.panel.push_layer(view, z=z, hints=viewer_layer_hints(sw, sh),
                               reflow=lambda sw, sh: Rect(0, 0, sw, sh))
+        # It was behind the file manager, which zooms up and fades away;
+        # _close_terminal puts it back.
+        animate_from_behind(self.panel, view)
         self.panel.render()
 
     def _terminal_exited(self, view, code) -> None:
@@ -6034,6 +6038,8 @@ class XeFMApp:
         panes. One that failed stays on screen with its exit bar, so its last
         output can be read - terminal mode's ``pause_on_error`` - and Enter
         closes it."""
+        if view.closing:
+            return  # already on its way out
         if code not in (0, None):
             self.log_info(f"{view.label} exited with code {code} - press Enter to return")
             self.panel.render()
@@ -6061,7 +6067,24 @@ class XeFMApp:
     def _close_terminal(self, view) -> None:
         """Close the terminal (hanging up a program still in it) and re-read
         the panes, as after terminal mode's hand-over: whatever ran may have
-        changed files. Then the caller's on_done."""
+        changed files. Then the caller's on_done.
+
+        It fades back behind the file manager first, still drawing the
+        program's last screen, and is torn down when that ends. The program
+        is hung up only then: PuiKit's view starts a fresh child on the next
+        draw once closed under a program still running, so closing it before
+        the transition would launch another."""
+        from xefm.dialog_geometry import animate_from_behind
+        if view.closing:
+            return
+        view.closing = True  # takes no more input (TerminalView.handle_event)
+        if not animate_from_behind(self.panel, view, out=True,
+                                   on_complete=lambda: self._finish_close_terminal(view)):
+            self._finish_close_terminal(view)
+            return
+        self.panel.render()
+
+    def _finish_close_terminal(self, view) -> None:
         self.panel.remove_layer(view)
         done, view.on_done = view.on_done, None
         code = view._exited if view._exited is not False else None
