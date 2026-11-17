@@ -25,7 +25,13 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.27.1 is the floor because the macOS and Windows apps ship libghostty-vt
+# 1.27.2 is the floor because it removes two flashes from the screens XeFM
+# crosses (puikit#228, #229): closing the terminal or a viewer could flash the
+# window dark for a frame, the Panel settling the fade by a timer that raced
+# the backend's last frames; and on a light theme a viewer's crossfade showed a
+# fixed near-black under both screens, now the theme's page color. Soft: on
+# 1.27.1 the flashes come back and nothing else changes.
+# 1.27.1 was the floor before because the macOS and Windows apps ship libghostty-vt
 # inside their copy of PuiKit, at puikit/_bin/, and 1.27.1 is the first PuiKit
 # that looks there (puikit#227, xefm#940). It also declares the libghostty
 # release its binding is written for (LIBGHOSTTY_VERSION), which
@@ -280,7 +286,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.27.1
+puikit>=1.27.2
 pygments
 boto3
 watchdog
