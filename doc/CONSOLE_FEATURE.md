@@ -37,9 +37,40 @@ for where that runs).
 The console's shell gets `XEFM_ACTIVE` and the `[XeFM]` prompt marker, but not
 the `XEFM_*` variables with the pane directories and selections that the
 subshell gets: those would be out of date as soon as you changed anything in
-the panes.
+the panes. Ask XeFM with the [`xefm` command](#asking-xefm-from-the-shell)
+instead.
 
 The keys are on [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
+
+## Asking XeFM from the shell
+
+In a shell XeFM started (the console, the subshell, a `PROGRAMS` entry, or a
+shell opened through `TERMINAL`) the `xefm` command asks that XeFM for its
+state at the moment it runs:
+
+| Command | What it does |
+|---|---|
+| `xefm selected` | Prints the full paths of the selected items, one per line (`-0`: separated by NUL, for `xargs -0`) |
+| `xefm focused` | Prints the full path of the item under the cursor |
+| `xefm pwd` | Prints the pane's directory |
+| `xefm cd [PATH]` | Points the pane at `PATH`, relative to the shell's directory; without `PATH`, at the shell's directory. A file: its folder, with the cursor on it |
+| `xefm view FILE` | Opens `FILE` in XeFM's viewer |
+| `xefm sessions` | Lists the console sessions; `*` marks the one you are in |
+
+`--pane this` (the default, the active pane), `--pane other`, `--pane left`
+or `--pane right` picks the pane. For example:
+
+```sh
+cp $(xefm selected) /tmp           # names without spaces
+xefm selected -0 | xargs -0 du -sh
+xefm cd .                          # bring the active pane to this shell's directory
+xefm view build.log
+```
+
+Other `xefm` commands, such as `xefm ext check`, work there as usual. If the
+XeFM that started the shell has quit, the command says so. While a subshell
+in terminal mode runs, XeFM is waiting for it, so only the commands that read
+(`selected`, `focused`, `pwd`, `sessions`) work there.
 
 ## In a terminal
 

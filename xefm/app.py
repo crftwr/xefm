@@ -3012,6 +3012,8 @@ class XeFMApp:
             self.file_monitor.stop_monitoring()
         self._close_edit_sessions()
         self._close_terminal_sessions()
+        if getattr(self, "_remote_server", None) is not None:
+            self._remote_server.close()
         self._save_application_state()
         self.backend.quit()
 
@@ -5984,6 +5986,7 @@ class XeFMApp:
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
         prefix_prompt_markers(env, command)
+        self._with_remote_env(env, "subshell")
         if is_desktop_mode() and self._terminal_unavailable() is None:
             # XeFM's terminal (#900): the desktop app's stand-in for handing
             # over its terminal - the shell runs in the window, and exiting it
@@ -6106,6 +6109,114 @@ class XeFMApp:
         if done is not None:
             done(code)
 
+    # --- the xefm command: shells talking back (#900) ----------------------------
+
+    #: Requests that only read the panes: answered even while terminal mode
+    #: has its terminal handed over, when the UI thread is parked in the
+    #: child's wait and cannot run anything else.
+    _REMOTE_READS = frozenset({"pwd", "selected", "focused", "sessions"})
+
+    #: Seconds a request waits for the UI thread before reporting XeFM busy
+    #: (under remote_cli.TIMEOUT, so the answer still reaches the client).
+    _REMOTE_WAIT = 8.0
+
+    def _remote(self):
+        """The socket ``xefm selected`` and friends reach this XeFM on, started
+        the first time a shell is about to be given its address. None where
+        it cannot be started (logged once)."""
+        server = getattr(self, "_remote_server", None)
+        if server is None and not getattr(self, "_remote_failed", False):
+            from xefm import remote_server
+            from xefm.external_programs import xefm_python
+            server = remote_server.start(self._remote_handle, python=xefm_python)
+            self._remote_server = server
+            self._remote_failed = server is None
+        return server
+
+    def _with_remote_env(self, env: dict, session: str) -> dict:
+        """``env`` plus what a shell needs to run ``xefm`` commands against
+        this XeFM, as ``session`` (see :mod:`xefm.remote_cli`)."""
+        server = self._remote()
+        if server is not None:
+            server.apply_env(env, session)
+            env["XEFM_BIN"] = server.bin_dir
+        return env
+
+    def _remote_handle(self, req: dict) -> dict:
+        """A request from :mod:`xefm.remote_cli`, on the listener's thread.
+        The answer is worked out on the UI thread, between frames."""
+        cmd = req.get("cmd")
+        if self._terminal_handed_over:
+            if cmd in self._REMOTE_READS:
+                # The UI thread is parked in the child's wait (_run_in_terminal):
+                # nothing else reads or changes the panes until it returns.
+                return self._remote_answer(req)
+            return {"ok": False, "error": "XeFM is waiting for this shell to "
+                    "exit; run it after you return, or from the console"}
+        done = threading.Event()
+        box: dict = {}
+
+        def run() -> None:
+            try:
+                box["answer"] = self._remote_answer(req)
+            except Exception as exc:
+                getLogger("Remote").error(f"xefm {cmd} failed: {exc}")
+                box["answer"] = {"ok": False, "error": str(exc)}
+            finally:
+                done.set()
+
+        self._call_later(run)
+        if not done.wait(self._REMOTE_WAIT):
+            return {"ok": False, "error": "XeFM is busy; try again", "code": 4}
+        return box["answer"]
+
+    def _remote_pane(self, name: str) -> dict:
+        if name == "other":
+            return self.pm.get_inactive_pane()
+        if name in ("left", "right"):
+            return self.pane(name)
+        return self.pm.get_current_pane()
+
+    def _remote_answer(self, req: dict) -> dict:
+        """What one ``xefm`` command answers, on the UI thread (or with it
+        parked): ``{"ok": True, "lines": [...]}`` or an error."""
+        cmd = req.get("cmd")
+        pane = self._remote_pane(req.get("pane") or "this")
+        if cmd == "pwd":
+            return {"ok": True, "lines": [str(pane["path"])]}
+        if cmd == "selected":
+            chosen = pane["selected_files"]
+            lines = [str(f) for f in pane["files"] if str(f) in chosen]
+            return {"ok": True, "lines": lines, "nul": bool(req.get("nul"))}
+        if cmd == "focused":
+            files, idx = pane["files"], pane["focused_index"]
+            lines = [str(files[idx])] if files and 0 <= idx < len(files) else []
+            return {"ok": True, "lines": lines}
+        if cmd == "sessions":
+            here = str(req.get("session") or "")
+            return {"ok": True, "lines": [
+                f"{'*' if str(s.id) == here else ' '} {s.id}\t{s.name}\t{s.state}\t{s.cwd}"
+                for s in self._sessions]}
+        if cmd in ("cd", "view"):
+            text = req.get("path")
+            if not isinstance(text, str) or not text:
+                return {"ok": False, "error": "no path given", "code": 2}
+            target = self._resolve_jump_target(text, str(pane["path"]))
+            if not target.exists():
+                return {"ok": False, "error": f"no such file or directory: {target}"}
+            if cmd == "view":
+                if target.is_dir():
+                    return {"ok": False, "error": f"{target} is a directory"}
+                self._open_viewer(target)
+                return {"ok": True, "lines": []}
+            if target.is_dir():
+                self._go_to_dir(pane, target, None)
+            else:
+                self._go_to_dir(pane, target.parent, target.name)
+            self.log_info(f"Jumped to: {target} (xefm cd)")
+            return {"ok": True, "lines": []}
+        return {"ok": False, "error": f"unknown command {cmd!r}", "code": 2}
+
     # --- persistent terminal sessions: the console (#900) ------------------------
 
     def _console_env(self) -> tuple[list, dict]:
@@ -6155,12 +6266,15 @@ class XeFMApp:
         if not is_desktop_mode() or self._terminal_unavailable() is not None:
             self._open_console_elsewhere()
             return
-        from xefm.terminal_sessions import SHELL, Session
+        from xefm.terminal_sessions import SHELL, Session, next_id
         cwd = self._console_dir() or os.path.expanduser("~")
         command, env = self._console_env()
+        sid = next_id()
+        self._with_remote_env(env, str(sid))
         name = self._sessions.next_name(os.path.basename(command[0]) or "shell")
         view = self._make_session_view(command, cwd=cwd, env=env, label=name)
-        session = self._sessions.add(Session(view=view, kind=SHELL, name=name, cwd=cwd))
+        session = self._sessions.add(Session(view=view, kind=SHELL, name=name,
+                                             cwd=cwd, id=sid))
         self._show_session(session)
 
     def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str):
@@ -6185,6 +6299,7 @@ class XeFMApp:
             self.log_info("The console is only available for local directories")
             return
         command, env = self._console_env()
+        self._with_remote_env(env, "console")
         terminal = terminal_command(self.config, terminal_mode=not is_desktop_mode(),
                                     cwd=cwd)
         try:
@@ -9784,6 +9899,8 @@ class XeFMApp:
         env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
+        # A program can ask for the panes as they are now, too (#900).
+        self._with_remote_env(env, "program")
         virtual = pane.get("virtual")
         if not virtual:
             return env, str(pane["path"])
@@ -14292,6 +14409,14 @@ def main() -> None:
     # own, once, before anything looks a program up.
     from xefm.external_programs import ensure_common_paths_in_env
     ensure_common_paths_in_env(os.environ)
+    # `xefm selected`, `xefm cd .` ... from a shell XeFM started (#900): the
+    # shim XeFM puts on PATH answers these without loading the UI, but an
+    # `xefm` installed on PATH by pip may come first. A directory of the
+    # same name to open is still opened, outside such a shell.
+    from xefm import remote_cli
+    if len(sys.argv) > 1 and sys.argv[1] in remote_cli.COMMANDS and (
+            os.environ.get("XEFM_SOCKET") or not os.path.exists(sys.argv[1])):
+        sys.exit(remote_cli.main(sys.argv[1:]))
     # `xefm ext …` manages extension packages and never opens a window, so it
     # is dispatched before the UI's own arguments are parsed.
     if len(sys.argv) > 1 and sys.argv[1] == "ext":

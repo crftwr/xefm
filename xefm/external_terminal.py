@@ -108,6 +108,10 @@ def posix_wrapper(argv: list, cwd: str | None, env: dict,
     q = shlex.quote
     lines = ['#!/bin/sh', 'rm -f -- "$0"']
     lines += [f'export {k}={q(v)}' for k, v in env.items() if _POSIX_NAME.match(k)]
+    if env.get('XEFM_BIN'):
+        # The xefm command (#900): first on PATH, whatever PATH the terminal's
+        # own shell set up (the variable itself is not delivered).
+        lines.append('PATH="$XEFM_BIN:$PATH"; export PATH')
     if cwd:
         lines.append(f'cd -- {q(cwd)} || {{ printf "Press Enter to close"; read _; exit 1; }}')
     command = ' '.join(q(a) for a in argv)
@@ -138,6 +142,8 @@ except OSError:
     pass
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 os.environ.update({env!r})
+if os.environ.get('XEFM_BIN'):
+    os.environ['PATH'] = os.environ['XEFM_BIN'] + os.pathsep + os.environ.get('PATH', '')
 argv = {list(argv)!r}
 cwd = {cwd!r}
 pause = {bool(pause_on_error)!r}

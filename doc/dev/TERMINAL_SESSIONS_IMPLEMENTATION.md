@@ -58,8 +58,10 @@ UI-free, so it is tested on its own:
 `_console_env` gives the shell XeFM's environment with the common `PATH`
 entries, `XEFM_ACTIVE=1` and the prompt marker, but **no** `XEFM_*_DIR`,
 `_SELECTED` or `_FOCUSED`: a snapshot taken when a session starts is stale
-from its first prompt on. The live channel that replaces it (a local socket
-and an `xefm` command) is the next step in #900.
+from its first prompt on. The live channel that replaces it is the `xefm`
+command ([XEFM_COMMAND_IMPLEMENTATION.md](XEFM_COMMAND_IMPLEMENTATION.md));
+`XEFM_SESSION` is the session's `id`, allocated (`next_id`) before the view
+is built.
 
 ## Keys
 
@@ -92,7 +94,7 @@ session up in `_close_terminal_sessions` before saving state.
 
 ## Not yet
 
-From #900's list: the local socket and `xefm` command, shell integration
+From #900's list: shell integration
 (OSC 7 / OSC 133), inserting the selection at an idle prompt (needs
 libghostty's semantic-prompt state bound in PuiKit), pane following,
 `ctx.run_program(on_done=)` and `ctx.start_session`, attention states in the

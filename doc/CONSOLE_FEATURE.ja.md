@@ -16,9 +16,33 @@
 - **複数のセッション。** **Tools → Terminal Sessions…**（`terminal_sessions`、コンソールの中からは `terminal.sessions`）で、各セッションとその状態が一覧になります。`Enter` で選んだセッションに切り替わり、最後の行はアクティブなペインのディレクトリで別のシェルを起動し、削除キー（`remove_list_item`）はハイライト中のセッションを終わらせます。コンソールのキーは、最後に使ったセッションに戻ります。
 - セッションが動いている間に **XeFM を終了**すると、先に確認してから、そのセッションを止めます。
 
-コンソールのシェルには `XEFM_ACTIVE` と `[XeFM]` プロンプトマーカーが設定されますが、サブシェルに設定される、ペインのディレクトリや選択項目を表す `XEFM_*` 変数は設定されません。ペインで何かを変えた途端に古くなってしまうからです。
+コンソールのシェルには `XEFM_ACTIVE` と `[XeFM]` プロンプトマーカーが設定されますが、サブシェルに設定される、ペインのディレクトリや選択項目を表す `XEFM_*` 変数は設定されません。ペインで何かを変えた途端に古くなってしまうからです。代わりに [`xefm` コマンド](#シェルから-xefm-に問い合わせる)で XeFM に問い合わせてください。
 
 キーは[キーマッププリセット](KEYMAP_PRESETS_FEATURE.ja.md#すべてのキーの一覧)にあります。
+
+## シェルから XeFM に問い合わせる
+
+XeFM が起動したシェル（コンソール、サブシェル、`PROGRAMS` のエントリ、`TERMINAL` で開いたシェル）では、`xefm` コマンドで、その XeFM の実行した時点での状態を問い合わせられます。
+
+| コマンド | 動作 |
+|---|---|
+| `xefm selected` | 選択項目のフルパスを 1 行に 1 つずつ表示（`-0`：`xargs -0` 用に NUL で区切る） |
+| `xefm focused` | カーソル位置の項目のフルパスを表示 |
+| `xefm pwd` | ペインのディレクトリを表示 |
+| `xefm cd [PATH]` | ペインを `PATH`（シェルのディレクトリからの相対パス）に移動。`PATH` を省略するとシェルのディレクトリに移動。ファイルを指定すると、そのフォルダーに移動してカーソルをそのファイルに置く |
+| `xefm view FILE` | `FILE` を XeFM のビューアーで開く |
+| `xefm sessions` | コンソールのセッションを一覧表示。`*` は自分のいるセッション |
+
+`--pane this`（既定、アクティブなペイン）、`--pane other`、`--pane left`、`--pane right` でペインを選びます。例：
+
+```sh
+cp $(xefm selected) /tmp           # names without spaces
+xefm selected -0 | xargs -0 du -sh
+xefm cd .                          # bring the active pane to this shell's directory
+xefm view build.log
+```
+
+`xefm ext check` など、ほかの `xefm` コマンドはそこでも通常どおり使えます。シェルを起動した XeFM が終了している場合は、コマンドがそう伝えます。ターミナルモードのサブシェルの実行中は XeFM がその終了を待っているため、そこで使えるのは読み取るだけのコマンド（`selected`、`focused`、`pwd`、`sessions`）だけです。
 
 ## ターミナルでは
 

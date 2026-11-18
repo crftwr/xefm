@@ -27,6 +27,15 @@ import itertools
 import os
 from dataclasses import dataclass, field
 
+_ids = itertools.count(1)
+
+
+def next_id() -> int:
+    """A session id not used before in this process: what ``XEFM_SESSION``
+    says, so it is known before the session's program starts."""
+    return next(_ids)
+
+
 #: Session kinds, as the session list names them.
 SHELL = "shell"
 PROGRAM = "program"
@@ -40,7 +49,7 @@ class Session:
     kind: str
     name: str
     cwd: str
-    id: int = field(default_factory=itertools.count(1).__next__)
+    id: int = field(default_factory=next_id)
 
     @property
     def state(self) -> str:

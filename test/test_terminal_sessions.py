@@ -113,6 +113,9 @@ def _app(monkeypatch, *, desktop=True):
     app.active_pane = lambda: {"path": "/tmp"}
     app._is_local = lambda p: True
     app._terminal_unavailable = lambda: None
+    app.remote_sessions = []
+    app._with_remote_env = lambda env, session: (app.remote_sessions.append(session),
+                                                 env.update(XEFM_SESSION=session))[1] or env
 
     def relist(pane, keep_visible=False):
         app.relisted += 1
@@ -152,6 +155,9 @@ def test_a_console_shell_gets_no_stale_selection(monkeypatch):
     app.new_terminal_session()
     env = app.made[0].env
     assert env["XEFM_ACTIVE"] == "1"
+    # Instead: the live channel, as this session.
+    [session] = app._sessions
+    assert env["XEFM_SESSION"] == str(session.id)
     assert not any(k.endswith(("_SELECTED", "_FOCUSED", "_DIR")) and k.startswith("XEFM_")
                    for k in env)
 

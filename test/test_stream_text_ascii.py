@@ -33,7 +33,7 @@ _PKG = _ROOT / "xefm"
 STREAM_MODULES = (
     "keys_cli", "deps_cli", "extension_cli", "try_cli", "trial",
     "python_packages", "extensions", "user_api", "config", "keymap_presets",
-    "layouts", "sort_keys", "attributes",
+    "layouts", "sort_keys", "attributes", "remote_cli",
 )
 
 # What app.py itself writes to a stream: the --help text and the startup notices.
