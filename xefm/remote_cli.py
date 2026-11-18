@@ -157,6 +157,18 @@ def run(command: str, args: list[str], out=None) -> int:
     return 0
 
 
+def _exited(args: list[str]) -> int:
+    """``xefm _exited ID CODE``: the external terminal's wrapper telling XeFM
+    that the program it ran has exited (``ctx.run_program(on_done=...)``).
+    Quiet: the window belongs to the program's own output."""
+    try:
+        exit_id, code = args[0], int(args[1])
+        request({"cmd": "_exited", "id": exit_id, "code": code})
+    except (IndexError, ValueError, RemoteError):
+        return 1
+    return 0
+
+
 def _forward(args: list[str]) -> int:
     """Hand anything else (``xefm ext check``, ``xefm --help``) to XeFM."""
     python = os.environ.get("XEFM_PYTHON") or sys.executable
@@ -179,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
             pass
     if args and args[0] in COMMANDS:
         return run(args[0], args[1:])
+    if args and args[0] == "_exited":
+        return _exited(args[1:])
     return _forward(args)
 
 

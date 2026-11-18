@@ -2402,6 +2402,9 @@ class XeFMApp:
         self._terminal_handed_over = False
         #: Persistent terminal sessions, the console (#900).
         self._sessions = SessionRegistry()
+        #: Programs in a TERMINAL window whose exit someone waits for, by the
+        #: XEFM_EXIT_ID their wrapper reports it under (_expect_exit).
+        self._exit_waiters: dict = {}
         self._orig_stdout = sys.stdout
         self._orig_stderr = sys.stderr
         sys.stdout = _StreamToLog("STDOUT", self._log_queue, on_write=self._wake_pump)
@@ -6215,6 +6218,13 @@ class XeFMApp:
                 self._go_to_dir(pane, target.parent, target.name)
             self.log_info(f"Jumped to: {target} (xefm cd)")
             return {"ok": True, "lines": []}
+        if cmd == "_exited":
+            # A TERMINAL window's wrapper: its program has exited.
+            callback = self._exit_waiters.pop(str(req.get("id")), None)
+            if callback is not None:
+                code = req.get("code")
+                callback(code if isinstance(code, int) else None)
+            return {"ok": True, "lines": []}
         return {"ok": False, "error": f"unknown command {cmd!r}", "code": 2}
 
     # --- persistent terminal sessions: the console (#900) ------------------------
@@ -9921,32 +9931,54 @@ class XeFMApp:
         return env, cwd
 
     def _launch_program(self, name: str, argv: list, *, cwd: str | None,
-                        env: dict, terminal: bool) -> int | None:
+                        env: dict, terminal: bool, on_exit=None) -> int | None:
         """Launch ``argv`` one of two ways. ``terminal`` hands the child the
         tty via suspend/resume and waits, returning its exit code — or, in
-        desktop mode, opens it in the ``TERMINAL`` application and returns
-        ``None`` at once. Otherwise it runs in the background
-        with stdout/stderr streamed into the log pane, and this returns
-        ``None`` at once."""
+        desktop mode, runs it in XeFM's terminal or the ``TERMINAL``
+        application and returns ``None`` at once. Otherwise it runs in the
+        background with stdout/stderr streamed into the log pane, and this
+        returns ``None`` at once.
+
+        ``on_exit(code)``, when given, runs on the UI thread once the program
+        has exited, in every one of those ways, and never before this
+        returns (#900). ``code`` is None when it could not be started or the
+        exit could not be learned."""
         from xefm.external_programs import SUBPROCESS_NO_WINDOW, resolve_command
+
+        def exited(code) -> None:
+            if on_exit is not None:
+                self._call_later(lambda: on_exit(code))
+
         if terminal:
             if is_desktop_mode() and self._terminal_unavailable() is None:
                 # XeFM's terminal (#900): the program runs modally in the
                 # window, like terminal mode's hand-over, and the panes re-read
                 # when it is closed. Still not waited for: the UI thread is ours.
-                self._run_in_terminal_view(argv, cwd=cwd, env=env, label=name)
+                self._run_in_terminal_view(argv, cwd=cwd, env=env, label=name,
+                                           on_done=exited if on_exit else None)
                 return None
             if is_desktop_mode():
                 # No tty of ours to lend: the program gets a terminal window
-                # of its own, and we do not wait for it (#472).
+                # of its own, and we do not wait for it (#472). Its wrapper
+                # reports the exit back over the xefm socket.
+                exit_id = self._expect_exit(exited) if on_exit else None
+                if exit_id is not None:
+                    env = dict(env, XEFM_EXIT_ID=exit_id)
                 if self._open_terminal(argv, cwd=cwd, env=env,
                                        pause_on_error=True):
                     self.log_info(f"Launched in a terminal: {name}")
+                    if on_exit is not None and exit_id is None:
+                        exited(None)  # no socket: the exit cannot be learned
+                else:
+                    self._exit_waiters.pop(exit_id, None)
+                    exited(None)
                 self.panel.render()
                 return None
             # Full-screen child (vim, less, a REPL): hand over the tty and wait.
-            return self._run_in_terminal(argv, cwd=cwd, env=env,
+            code = self._run_in_terminal(argv, cwd=cwd, env=env,
                                          pause_on_error=True)
+            exited(code)
+            return code
         try:
             # Pipes, never the terminal: in TUI mode a direct write would corrupt
             # the screen we own; in desktop mode there may be no terminal at all.
@@ -9960,13 +9992,26 @@ class XeFMApp:
                 **SUBPROCESS_NO_WINDOW)
         except Exception as exc:
             self.log_info(f"Failed to launch {name}: {exc}")
+            exited(None)
         else:
             self.log_info(f"Launched: {name}")
-            self._watch_program(name, proc)
+            self._watch_program(name, proc, on_exit=exited if on_exit else None)
         self.panel.render()
         return None
 
-    def _watch_program(self, name: str, proc: subprocess.Popen) -> None:
+    def _expect_exit(self, callback) -> str | None:
+        """An id for a program in a ``TERMINAL`` window to report its exit
+        under (``XEFM_EXIT_ID``; the wrapper runs ``xefm _exited ID CODE``),
+        with ``callback(code)`` waiting for it. None without the socket."""
+        if self._remote() is None:
+            return None
+        import secrets
+        exit_id = secrets.token_hex(8)
+        self._exit_waiters[exit_id] = callback
+        return exit_id
+
+    def _watch_program(self, name: str, proc: subprocess.Popen,
+                       on_exit=None) -> None:
         """Stream a launched program's output into the log pane without blocking
         the UI. Reader threads post complete lines to ``_log_queue`` — the same
         channel as captured stdout/stderr, drained only by the UI thread — and a
@@ -9993,6 +10038,8 @@ class XeFMApp:
             if code != 0:
                 self._log_queue.put(("STDERR", f"'{name}' exited with code {code}"))
                 self._wake_pump()
+            if on_exit is not None:
+                on_exit(code)  # queues itself onto the UI thread
 
         threading.Thread(target=waiter, name="xefm-program-wait",
                          daemon=True).start()

@@ -52,8 +52,6 @@ class RemoteServer:
         self._handle = handle
         self._key = secrets.token_bytes(32)
         self._dir = tempfile.mkdtemp(prefix="xefm-")  # 0700
-        # Gone at exit even when close() never runs (a crash, a test's app).
-        weakref.finalize(self, shutil.rmtree, self._dir, True)
         if sys.platform == "win32":
             self.address = rf"\\.\pipe\xefm-{os.getpid()}-{secrets.token_hex(8)}"
             family = "AF_PIPE"
@@ -61,9 +59,12 @@ class RemoteServer:
             self.address = os.path.join(self._dir, "socket")
             family = "AF_UNIX"
         self._listener = Listener(self.address, family=family, authkey=self._key)
+        # Gone at exit even when close() never runs (a crash, a test's app):
+        # the listener first, so its own finalizer has nothing left to unlink.
+        self._stop = threading.Event()
+        weakref.finalize(self, _cleanup, self._listener, self._dir, self._stop)
         self.python = python
         self.bin_dir = self._write_shim(python)
-        self._closed = False
         self._thread = threading.Thread(target=self._serve, name="xefm-remote",
                                         daemon=True)
         self._thread.start()
@@ -112,16 +113,16 @@ class RemoteServer:
 
     # --- serving -----------------------------------------------------------------------
     def _serve(self) -> None:
-        while not self._closed:
+        while not self._stop.is_set():
             try:
                 conn = self._listener.accept()
             except OSError:
-                if self._closed:
+                if self._stop.is_set():
                     return
                 logger.warning("The remote socket stopped accepting connections")
                 return
             except Exception as exc:  # AuthenticationError: not one of ours
-                if self._closed:
+                if self._stop.is_set():
                     return
                 logger.warning(f"Refused a connection to the remote socket: {exc}")
                 continue
@@ -151,14 +152,18 @@ class RemoteServer:
 
     def close(self) -> None:
         """Stop listening and remove the socket and the shim."""
-        if self._closed:
+        if self._stop.is_set():
             return
-        self._closed = True
-        try:
-            self._listener.close()
-        except OSError as exc:
-            logger.info(f"Closing the remote socket: {exc}")
-        shutil.rmtree(self._dir, ignore_errors=True)
+        _cleanup(self._listener, self._dir, self._stop)
+
+
+def _cleanup(listener, directory: str, stop: threading.Event) -> None:
+    stop.set()
+    try:
+        listener.close()
+    except OSError:
+        pass
+    shutil.rmtree(directory, ignore_errors=True)
 
 
 def start(handle: Callable[[dict], dict], *, python: str) -> RemoteServer | None:

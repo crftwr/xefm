@@ -97,7 +97,7 @@ session up in `_close_terminal_sessions` before saving state.
 From #900's list: shell integration
 (OSC 7 / OSC 133), inserting the selection at an idle prompt (needs
 libghostty's semantic-prompt state bound in PuiKit), pane following,
-`ctx.run_program(on_done=)` and `ctx.start_session`, attention states in the
+`ctx.start_session`, attention states in the
 status bar, the one-shot drawn as a dialog over dimmed panes.
 
 ## Tests

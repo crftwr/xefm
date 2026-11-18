@@ -115,18 +115,24 @@ def posix_wrapper(argv: list, cwd: str | None, env: dict,
     if cwd:
         lines.append(f'cd -- {q(cwd)} || {{ printf "Press Enter to close"; read _; exit 1; }}')
     command = ' '.join(q(a) for a in argv)
-    if not pause_on_error:
+    # Someone waits for the exit (ctx.run_program's on_done, #900): the script
+    # stays to report it to XeFM over the xefm command, so it cannot exec.
+    report = bool(env.get('XEFM_EXIT_ID'))
+    if not pause_on_error and not report:
         lines.append(f'exec {command}')
     else:
-        lines += [
-            command,
-            'status=$?',
-            'if [ "$status" -ne 0 ]; then',
-            f'  printf "\\n%s exited with code %s - press Enter to close\\n" {q(argv[0])} "$status"',
-            '  read _',
-            'fi',
-            'exit "$status"',
-        ]
+        lines += [command, 'status=$?']
+        if report:
+            lines.append('"$XEFM_BIN/xefm" _exited "$XEFM_EXIT_ID" "$status" '
+                         '>/dev/null 2>&1')
+        if pause_on_error:
+            lines += [
+                'if [ "$status" -ne 0 ]; then',
+                f'  printf "\\n%s exited with code %s - press Enter to close\\n" {q(argv[0])} "$status"',
+                '  read _',
+                'fi',
+            ]
+        lines.append('exit "$status"')
     return '\n'.join(lines) + '\n'
 
 
@@ -155,6 +161,11 @@ except OSError as exc:
     # Not started at all: say so and hold the window, or it closes unread.
     print(f"{{argv[0]}}: {{exc}}")
     code, pause = 1, True
+if os.environ.get('XEFM_EXIT_ID') and os.environ.get('XEFM_BIN'):
+    # Tell XeFM the program has exited (ctx.run_program's on_done, #900).
+    subprocess.call(['cmd', '/c', os.path.join(os.environ['XEFM_BIN'], 'xefm.cmd'),
+                     '_exited', os.environ['XEFM_EXIT_ID'], str(code)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 if pause and code != 0:
     input(f"\\n{{argv[0]}} exited with code {{code}} - press Enter to close")
 sys.exit(code)

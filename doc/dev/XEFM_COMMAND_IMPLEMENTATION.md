@@ -80,6 +80,22 @@ the same reason; `cd` and `view` are refused with a message.
 `sessions`, `cd` (`_resolve_jump_target` against the pane, then
 `_go_to_dir`; a file lands the cursor on it) and `view` (`_open_viewer`).
 
+## Exit reports: `ctx.run_program(on_done=)`
+
+`_launch_program(..., on_exit=)` calls `on_exit(code)` on the UI thread (via
+`_call_later`, so never inside the call) on every path: terminal mode's
+hand-over, XeFM's terminal (`_run_in_terminal_view`'s `on_done`), the
+background waiter thread, and a launch that failed (`None`). A `TERMINAL`
+window is a separate application, so its wrapper reports instead:
+`_expect_exit` registers a callback under a random `XEFM_EXIT_ID`, the
+wrapper keeps running after the program (no `exec`) and calls
+`"$XEFM_BIN/xefm" _exited ID STATUS` (Windows: `xefm.cmd` from the Python
+wrapper), which `remote_cli._exited` sends quietly and `_remote_answer`
+pops and calls once. Without the socket the callback gets `None` at once.
+
+`on_done` is a new optional parameter on the stable `run_program`; the
+docstring and the docs mark it Preview.
+
 ## Not yet
 
 - The session registry built from socket registrations, so shells in a
@@ -91,3 +107,4 @@ the same reason; `cd` and `view` are refused with a message.
 `test/test_remote.py`: argument parsing, a real server round trip, a wrong
 key, the server gone, the shim run as its own process, what the app answers,
 the hand-over rule, and the wrapper's `PATH` line.
+`test/test_run_program_on_done.py`: `on_done` on every launch path.

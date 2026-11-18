@@ -205,7 +205,7 @@ ACTIONS = {
 | `ctx.input(prompt, default, on_accept=fn)` | （プレビュー）1 行のテキストを入力してもらう。`complete='path'`（または `'directory'`）を付けると、Jump to Path と同じくパスを Tab で補完できる — 相対パスはアクティブなペインが起点 |
 | `ctx.choose(title, items, on_result=fn)` | （プレビュー）リストから選んでもらう（インデックス、または `None`）。`type='filter'` で検索できるリストになる |
 | `ctx.confirm(prompt, on_result=fn)` | （プレビュー）はい / いいえ |
-| `ctx.run_program(command, terminal=False)` | 外部プログラムを実行 — 後述 |
+| `ctx.run_program(command, terminal=False, on_done=None)` | 外部プログラムを実行 — 後述（`on_done` は Preview） |
 | `ctx.copy(items, dest, on_done=fn)` | （Preview）**File → Copy to Other Pane** と同じように（確認、競合ダイアログ、進捗付きで）ファイルをコピーし、それぞれの結果を受け取る — 後述 |
 | `ctx.move(items, dest, on_done=fn)` | （Preview）同じく移動 |
 | `ctx.trash(items, on_done=fn)` | （Preview）**File → Move to Trash…** と同じようにファイルをゴミ箱に移動し、それぞれの結果を受け取る — 後述 |
@@ -335,7 +335,20 @@ def open_selection_in_vim(ctx):
 ```
 
 - `terminal=True` を付けない場合、プログラムはバックグラウンドで起動し、その出力はログペインに送られ、XeFM はそのまま動き続けます。
-- `terminal=True` を付けた場合、XeFM はターミナルをプログラムに引き渡し、終了を待ちます。エディターやページャーなど、画面に描画したりキーボードから読み込んだりするものにはこれが必要です。プログラムが終了すると両方のペインが読み直され、終了コードが返されます。終了コードが 0 以外の場合は、エラー出力を読めるよう、まず Enter を待ちます。デスクトップのウィンドウには引き渡すターミナルがないため、そこではプログラムは代わりに [`TERMINAL`](EXTERNAL_TERMINAL_FEATURE.ja.md) のアプリケーションで開き、XeFM はその終了を待ちません。
+- `terminal=True` を付けた場合、XeFM はターミナルをプログラムに引き渡し、終了を待ちます。エディターやページャーなど、画面に描画したりキーボードから読み込んだりするものにはこれが必要です。プログラムが終了すると両方のペインが読み直され、終了コードが返されます。終了コードが 0 以外の場合は、エラー出力を読めるよう、まず Enter を待ちます。デスクトップのウィンドウには引き渡すターミナルがないため、そこではプログラムはペインの上に描画される XeFM 自身のターミナル、または [`TERMINAL`](EXTERNAL_TERMINAL_FEATURE.ja.md) のアプリケーションで動き、`run_program` はすぐに `None` を返します。
+
+どちらのモードでも、プログラムの終了後に何かをするには `on_done`（Preview）を渡します。`on_done(ctx, code)` の形で、新しい `ctx` と終了コード（プログラムを起動できなかった場合や、終了を知る手段がなかった場合は `None`）を受け取って UI スレッドで呼ばれます。`run_program` から戻る前に呼ばれることはありません。
+
+```python
+def edit_list(ctx):
+    path = str(ctx.pane.path / 'todo.txt')
+
+    def done(ctx, code):
+        if code == 0:
+            ctx.message(f'todo.txt saved')
+
+    ctx.run_program(['vim', path], terminal=True, on_done=done)
+```
 
 対話的なプログラムに対して自分で `subprocess.run()` を呼び出さないでください。ただし `ctx.terminal_backend_suspended()`（後述）の中は例外です。ターミナルは XeFM が管理しているので、XeFM の知らないところでターミナルに描画したりキーボードから読み込んだりするプログラムは、画面を乱してしまいます。あるいは、両者が同じキーを待ち続けることになります。
 
