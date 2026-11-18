@@ -196,6 +196,7 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `context_menu_dir` | 現在のディレクトリのコンテキストメニューを開く | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` |
 | `programs` | 外部プログラムを実行 | `X` | — | — | — |
 | `subshell` | このディレクトリでサブシェルを開く | `Shift-X` | — | — | `s` |
+| `toggle_terminal` | コンソール（ペインの裏で動き続けるシェル）を表示または非表示にする | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` |
 | `jobs` | バックグラウンドジョブの一覧 | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | 両方のペインのディレクトリを読み直す | — | `F2`、`Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `redraw` | 画面を再描画 | `F5` | — | — | — |
@@ -311,6 +312,16 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 | アクション名 | 動作 | キー |
 |---|---|---|
 | `options` | 検索オプションを開く | `Ctrl-O`、`F9` |
+
+**XeFM のターミナル**（デスクトップアプリのサブシェル、ターミナルプログラム、[コンソール](CONSOLE_FEATURE.ja.md)）
+
+それ以外のキーはすべてターミナル内のプログラムに送られます。ファイル一覧のキーがそこで XeFM に届くのは、どのターミナルプログラムも受け取らない `Cmd` か `Ctrl-Shift` の組み合わせの場合だけです。
+
+| アクション名 | 動作 | キー |
+|---|---|---|
+| `terminal.close` | ターミナルを閉じてペインに戻る。実行中のプログラムは停止する | macOS アプリ：`Cmd-W`<br>Windows アプリ：`Ctrl-Shift-W` |
+| `terminal.hide` | コンソールを隠してペインに戻る。中のプログラムは動き続ける | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` |
+| `command_palette` | ターミナルのアクションを名前で探して実行 | macOS アプリ：`Cmd-Shift-P`<br>Windows アプリ：`Ctrl-Shift-P` |
 
 ## 自分のキーバインドが優先される
 

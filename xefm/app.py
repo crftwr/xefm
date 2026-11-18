@@ -158,6 +158,7 @@ from xefm.file_operations import (CloseGate, FileOperationService,
                                   format_op_errors, format_op_summary,
                                   serialized_log, transfer_workers)
 from xefm.task import Cancelled, Task, TaskManager, TaskStatus
+from xefm.terminal_sessions import SessionRegistry
 from xefm.text_dialog import show_markdown
 from xefm.tips import tip_count
 from xefm.tips_dialog import show_tips_dialog
@@ -2399,6 +2400,8 @@ class XeFMApp:
         self._ui_thread = threading.current_thread()
         #: Set while :meth:`_terminal_suspended` has the terminal handed over.
         self._terminal_handed_over = False
+        #: Persistent terminal sessions, the console (#900).
+        self._sessions = SessionRegistry()
         self._orig_stdout = sys.stdout
         self._orig_stderr = sys.stderr
         sys.stdout = _StreamToLog("STDOUT", self._log_queue, on_write=self._wake_pump)
@@ -3008,6 +3011,7 @@ class XeFMApp:
         if getattr(self, "file_monitor", None) is not None:
             self.file_monitor.stop_monitoring()
         self._close_edit_sessions()
+        self._close_terminal_sessions()
         self._save_application_state()
         self.backend.quit()
 
@@ -4343,6 +4347,8 @@ class XeFMApp:
                 "diff_files": (self.diff_files, False),
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
+                "toggle_terminal": (self.toggle_terminal, False),
+                "terminal_sessions": (self.terminal_sessions, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
                 "install_extension": (self.install_extension, False),
@@ -5302,6 +5308,11 @@ class XeFMApp:
                      shortcut=sc("find_similar")),
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
             MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
+            MenuItem("Console", on_select=self.toggle_terminal,
+                     shortcut=sc("toggle_terminal")),
+            MenuItem("Terminal Sessions…", on_select=self.terminal_sessions,
+                     enabled=lambda: len(self._sessions) > 0,
+                     shortcut=sc("terminal_sessions")),
             SEPARATOR,
             # Editing the config and reloading it are the loop a user tuning
             # XeFM goes round, so they stay at the top. What is set up once or
@@ -6094,6 +6105,257 @@ class XeFMApp:
         self.panel.render()
         if done is not None:
             done(code)
+
+    # --- persistent terminal sessions: the console (#900) ------------------------
+
+    def _console_env(self) -> tuple[list, dict]:
+        """The shell a console session runs, and its environment: XeFM's own,
+        with ``XEFM_ACTIVE`` and the ``[XeFM]`` prompt marker - but not the
+        ``XEFM_*`` pane and selection variables a one-shot subshell gets. A
+        session that outlives the moment it was started would carry them
+        stale from its first prompt on."""
+        from xefm.external_programs import (ensure_common_paths_in_env,
+                                           prefix_prompt_markers)
+        command = _subshell_command(self.config)
+        env = os.environ.copy()
+        ensure_common_paths_in_env(env)
+        env["XEFM_ACTIVE"] = "1"
+        prefix_prompt_markers(env, command)
+        return command, env
+
+    def _console_dir(self) -> str | None:
+        """Where a new console session starts: the active pane's directory,
+        or the home directory when that is not a local one."""
+        path = self.active_pane()["path"]
+        return str(path) if self._is_local(path) else None
+
+    def toggle_terminal(self) -> None:
+        """Show the console - the terminal session used last, or a new shell in
+        the active pane's directory when there is none - or hide it when it is
+        on screen. Its programs keep running while it is hidden.
+
+        Where XeFM's terminal cannot run (terminal mode, or no libghostty) a
+        persistent shell opens through ``TERMINAL`` instead: a window, a tab or
+        a multiplexer window, which XeFM does not own and cannot hide."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self._open_console_elsewhere()
+            return
+        shown = self._shown_session()
+        if shown is not None:
+            self._hide_session(shown.view)
+            return
+        session = self._sessions.last
+        if session is None:
+            self.new_terminal_session()
+            return
+        self._show_session(session)
+
+    def new_terminal_session(self) -> None:
+        """Start another console shell, in the active pane's directory."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self._open_console_elsewhere()
+            return
+        from xefm.terminal_sessions import SHELL, Session
+        cwd = self._console_dir() or os.path.expanduser("~")
+        command, env = self._console_env()
+        name = self._sessions.next_name(os.path.basename(command[0]) or "shell")
+        view = self._make_session_view(command, cwd=cwd, env=env, label=name)
+        session = self._sessions.add(Session(view=view, kind=SHELL, name=name, cwd=cwd))
+        self._show_session(session)
+
+    def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str):
+        from xefm.terminal import TerminalView
+        return TerminalView(argv, cwd=cwd, env=env, label=label,
+                            on_exited=self._session_exited,
+                            on_close_request=self._session_close_request,
+                            persistent=True,
+                            on_hide_request=self._hide_session,
+                            on_sessions_request=self.terminal_sessions)
+
+    def _open_console_elsewhere(self) -> None:
+        """The console where XeFM cannot draw a terminal: a shell opened
+        through ``TERMINAL`` in the active pane's directory. In terminal mode
+        the default is the multiplexer or terminal XeFM runs in, when it can
+        open a window of its own (see
+        :func:`xefm.external_terminal.terminal_mode_default`)."""
+        from xefm.external_terminal import (NoTerminalError, launch_in_terminal,
+                                           terminal_command)
+        cwd = self._console_dir()
+        if cwd is None:
+            self.log_info("The console is only available for local directories")
+            return
+        command, env = self._console_env()
+        terminal = terminal_command(self.config, terminal_mode=not is_desktop_mode(),
+                                    cwd=cwd)
+        try:
+            launch_in_terminal(terminal, command, cwd=cwd, env=env)
+        except NoTerminalError:
+            self.log_info("No terminal to open a shell in: set TERMINAL in "
+                          "~/.xefm/config.py (in a terminal, running XeFM inside "
+                          "tmux, WezTerm or kitty opens one there)")
+            return
+        except FileNotFoundError:
+            self.log_info(f"Terminal not found: {terminal[0]}")
+            return
+        except Exception as exc:
+            self.log_info(f"Could not open a terminal: {exc}")
+            return
+        self.log_info(f"Opened a shell in {cwd}")
+        self.panel.render()
+
+    def _shown_session(self):
+        return next((s for s in self._sessions if s.view.shown), None)
+
+    def _show_session(self, session) -> None:
+        """Bring ``session`` on screen, in place of another one shown."""
+        shown = self._shown_session()
+        if shown is session:
+            return
+        if shown is not None:
+            # One full-window view replaces the other at once: crossing two
+            # terminals through the file manager would only flash the panes.
+            self.panel.remove_layer(shown.view)
+            shown.view.shown = False
+        self._sessions.touch(session)
+        session.view.shown = True
+        session.view.closing = False
+        self._push_terminal(session.view)
+
+    def _hide_session(self, view) -> None:
+        """Put the console back behind the file manager; its program keeps
+        running. The panes re-read: what ran there may have changed files."""
+        if view.closing or not view.shown:
+            return
+        view.closing = True  # takes no input while it fades
+
+        def hidden() -> None:
+            self.panel.remove_layer(view)
+            view.closing = False
+            view.shown = False
+            self._relist(self.pm.left_pane, keep_visible=True)
+            self._relist(self.pm.right_pane, keep_visible=True)
+            self.panel.render()
+
+        from xefm.dialog_geometry import animate_from_behind
+        if not animate_from_behind(self.panel, view, out=True, on_complete=hidden):
+            hidden()
+            return
+        self.panel.render()
+
+    def _session_exited(self, view, code) -> None:
+        """A console program exited. A clean exit (``exit`` in the shell) ends
+        the session; a failure keeps its last screen and the exit bar, where
+        Enter starts it again and Escape hides it."""
+        session = self._sessions.for_view(view)
+        if session is None or view.closing:
+            return
+        if code in (0, None):
+            self._close_session(session)
+            return
+        self.log_info(f"{session.name} exited with code {code}")
+        self.panel.render()
+
+    def _session_close_request(self, view) -> None:
+        """``terminal.close`` in a console session: end it, asking first while
+        its program still runs."""
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        if not view.running:
+            self._close_session(session)
+            return
+
+        def answered(label: str) -> None:
+            if label == "Close":
+                self._close_session(session)
+            self.panel.render()
+
+        show_message_box(
+            self.panel, f"{session.name} is still running. Close the session and stop it?",
+            title="Terminal", icon="warning", buttons=("Close", "Cancel"),
+            default=1, cancel=1, on_result=answered)
+        self.panel.render()
+
+    def _close_session(self, session) -> None:
+        """End ``session``: hang up its program and forget it. On screen it
+        fades back behind the file manager first."""
+        view = session.view
+        self._sessions.remove(session)
+
+        def finish() -> None:
+            if view.shown:
+                self.panel.remove_layer(view)
+            view.shown = False
+            view.closing = True
+            view.close()
+            self._relist(self.pm.left_pane, keep_visible=True)
+            self._relist(self.pm.right_pane, keep_visible=True)
+            self.panel.render()
+
+        if not view.shown or view.closing:
+            finish()
+            return
+        view.closing = True
+        from xefm.dialog_geometry import animate_from_behind
+        if not animate_from_behind(self.panel, view, out=True, on_complete=finish):
+            finish()
+            return
+        self.panel.render()
+
+    def _close_terminal_sessions(self) -> None:
+        """At exit: hang up every console session (the quit confirm said so)."""
+        for session in self._sessions:
+            self._sessions.remove(session)
+            try:
+                session.view.close()
+            except Exception as e:
+                getLogger("Terminal").error(
+                    f"Could not close terminal session {session.name}: {e}")
+
+    def terminal_sessions(self) -> None:
+        """The session list: every console session with its state, and a row
+        to start a new shell. Enter shows the chosen one; the remove key ends
+        it."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self.log_info("Terminal sessions run in a TERMINAL window here: "
+                          "use the terminal application to switch between them")
+            return
+        new_row = object()
+        cwd = self._console_dir() or os.path.expanduser("~")
+        from xefm.terminal_sessions import _short
+        items = [*self._sessions, new_row]
+
+        def label(item) -> str:
+            if item is new_row:
+                return f"New shell in {_short(cwd)}"
+            return item.label
+
+        def right(item) -> str:
+            if item is new_row:
+                return ""
+            return ("shown, " if item.view.shown else "") + item.state
+
+        def accept(item) -> None:
+            if item is new_row:
+                self.new_terminal_session()
+            else:
+                self._show_session(item)
+            self.panel.render()
+
+        def remove(item) -> bool:
+            if item is new_row:
+                return False
+            self._close_session(item)
+            self.log_info(f"Closed terminal session {item.name}")
+            return True
+
+        # Over the terminal it may be opened from (terminal.sessions).
+        top = max((slot.z for slot in self.panel._layers), default=0)
+        show_filter_list(self.panel, items, title="Terminal Sessions",
+                         to_label=label, to_right=right, on_accept=accept,
+                         on_remove=remove, remove_label="close",
+                         z=max(70, top + 1))
+        self.panel.render()
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor
@@ -7325,10 +7587,30 @@ class XeFMApp:
         if self._quit_confirming:
             return
         jobs = self._busy_tasks()
-        if only_if_busy and not jobs:
+        sessions = self._sessions.running()
+        if only_if_busy and not jobs and not sessions:
             self._quit()
             return
         self._quit_confirming = True
+        if not jobs and sessions:
+            # Programs in XeFM's own terminal end with it (#900): say so, and
+            # default to Cancel - a shell may be in the middle of a build.
+            n = len(sessions)
+
+            def answered_sessions(label: str) -> None:
+                self._quit_confirming = False
+                if label == "Quit":
+                    self._quit()
+
+            show_message_box(
+                self.panel,
+                f"**{n}** terminal session{'' if n == 1 else 's'} "
+                f"{'is' if n == 1 else 'are'} still running. Quitting "
+                f"stops {'it' if n == 1 else 'them'}.",
+                title="Quit XeFM?", icon="warning", buttons=("Quit", "Cancel"),
+                default=1, cancel=1, on_result=answered_sessions, markdown=True)
+            self.panel.render()
+            return
         if not jobs:
             def answered(label: str) -> None:
                 self._quit_confirming = False
@@ -7358,7 +7640,9 @@ class XeFMApp:
             self.panel,
             f"**{n}** job{'' if n == 1 else 's'} "
             f"{'is' if n == 1 else 'are'} still running or queued. Quitting "
-            f"stops {'it' if n == 1 else 'them'} part-way.",
+            f"stops {'it' if n == 1 else 'them'} part-way."
+            + (f" **{len(sessions)}** running terminal session"
+               f"{'' if len(sessions) == 1 else 's'} stop too." if sessions else ""),
             title="Quit XeFM?", icon="warning", buttons=("Quit", "Cancel"),
             default=1, cancel=1, on_result=on_result, markdown=True)
         self.panel.render()
@@ -12851,6 +13135,7 @@ class XeFMApp:
             ("file_details", "Show file details"),
             ("edit_files", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
+            ("toggle_terminal", "Show or hide the console (Tools menu)"),
             ("open_with_os", "Open with the default app"),
             ("open_with", "Choose the app that opens the selection (File menu)"),
             ("reveal_in_os", "Reveal in the OS file manager"),

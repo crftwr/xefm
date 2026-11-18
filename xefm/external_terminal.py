@@ -53,11 +53,38 @@ def default_terminal() -> list | None:
     return None
 
 
-def terminal_command(config) -> list | None:
+def terminal_mode_default(cwd: str | None, environ=None) -> list | None:
+    """Where terminal mode opens a window of its own - the console (#900),
+    a shell that keeps running beside XeFM - when ``TERMINAL`` is unset.
+
+    The multiplexer or terminal XeFM itself runs in comes first, since a new
+    window there is beside the one the user is looking at: tmux, WezTerm,
+    kitty (which needs ``allow_remote_control``). Without one, over SSH there
+    is none: the platform's GUI terminal would open on the far machine's
+    screen, not the user's. Locally it is :func:`default_terminal`."""
+    env = os.environ if environ is None else environ
+    cwd_args = (lambda flag: [flag, cwd] if cwd else [])
+    if env.get('TMUX'):
+        return ['tmux', 'new-window', *cwd_args('-c')]
+    if env.get('WEZTERM_PANE'):
+        return ['wezterm', 'cli', 'spawn', *cwd_args('--cwd'), '--']
+    if env.get('KITTY_WINDOW_ID'):
+        return ['kitty', '@', 'launch', '--type=tab', *cwd_args('--cwd')]
+    if env.get('SSH_CONNECTION') or env.get('SSH_TTY'):
+        return None
+    return default_terminal()
+
+
+def terminal_command(config, *, terminal_mode: bool = False,
+                     cwd: str | None = None) -> list | None:
     """``TERMINAL`` from the config as an argv prefix — string or list, like
-    ``TEXT_EDITOR`` — or :func:`default_terminal` when it is unset."""
+    ``TEXT_EDITOR`` — or, when it is unset, :func:`default_terminal` (the
+    desktop app) or :func:`terminal_mode_default` (a window opened from
+    terminal mode, in ``cwd``)."""
     configured = command_argv(getattr(config, 'TERMINAL', None))
-    return configured or default_terminal()
+    if configured:
+        return configured
+    return terminal_mode_default(cwd) if terminal_mode else default_terminal()
 
 
 def delivered_env(env: dict) -> dict:
