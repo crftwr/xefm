@@ -35,6 +35,12 @@ except ImportError:  # a PuiKit without the widget
 #: The action context of the terminal (xefm.actions.TERMINAL).
 CONTEXT = "terminal"
 
+# Shell integration marks (OSC 133) and progress states (OSC 9;4), as PuiKit's
+# TerminalView reports them (libghostty-vt's enums).
+PROMPT_START, INPUT_START, OUTPUT_START, COMMAND_END = 1, 2, 3, 4
+PROGRESS_REMOVE, PROGRESS_SET, PROGRESS_ERROR, PROGRESS_INDETERMINATE, PROGRESS_PAUSE = \
+    0, 1, 2, 3, 4
+
 
 def chosen_elsewhere(config) -> bool:
     """Whether config.py names a ``TERMINAL`` application: then that one runs
@@ -70,6 +76,18 @@ def _term_program_kwargs() -> dict:
     return {"term_program": ("XeFM", __version__)}
 
 
+def _supported_kwargs(**kwargs) -> dict:
+    """The keyword arguments this PuiKit's TerminalView takes, of ``kwargs``:
+    shell integration, notifications and progress came in a later release
+    than the widget itself."""
+    import inspect
+    try:
+        params = inspect.signature(_PuiKitTerminalView.__init__).parameters
+    except (TypeError, ValueError):
+        return {}
+    return {k: v for k, v in kwargs.items() if k in params and v is not None}
+
+
 _Base = _PuiKitTerminalView if _PuiKitTerminalView is not None else object
 
 
@@ -88,13 +106,20 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
                  on_close_request: Callable[["TerminalView"], None],
                  persistent: bool = False,
                  on_hide_request: Callable[["TerminalView"], None] | None = None,
-                 on_sessions_request: Callable[[], None] | None = None) -> None:
+                 on_sessions_request: Callable[[], None] | None = None,
+                 on_insert_request: Callable[["TerminalView"], None] | None = None,
+                 on_prompt: Callable[[int, int | None, str], None] | None = None,
+                 on_notification: Callable[[str, str], None] | None = None,
+                 on_progress: Callable[[int, int | None], None] | None = None) -> None:
         from xefm.text_viewer import VIEWER_PAD_PX
         # The viewers' inset: the grid breathes in from the window frame on GUI
         # by the same few pixels; flush on a character grid.
         super().__init__(argv, cwd=cwd, env=env,
                          on_exit=lambda code: on_exited(self, code),
-                         padding_px=VIEWER_PAD_PX, **_term_program_kwargs())
+                         padding_px=VIEWER_PAD_PX, **_term_program_kwargs(),
+                         **_supported_kwargs(on_prompt=on_prompt,
+                                             on_notification=on_notification,
+                                             on_progress=on_progress))
         self.label = label
         self.on_close_request = on_close_request
         #: Called once with the exit code after the layer closes: the caller's
@@ -110,6 +135,7 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         self.persistent = persistent
         self.on_hide_request = on_hide_request
         self.on_sessions_request = on_sessions_request
+        self.on_insert_request = on_insert_request
         #: Whether the view is on screen (a hidden persistent session is not).
         self.shown = False
         self.exit_hint = ("press Enter to restart, Escape to hide" if persistent
@@ -118,6 +144,13 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
     @property
     def running(self) -> bool:
         return self._exited is False
+
+    @property
+    def idle_at_prompt(self) -> bool:
+        """Whether its shell sits at its prompt, so typed text becomes the
+        next command (shell integration; False where PuiKit or the shell
+        cannot tell)."""
+        return bool(getattr(self, "at_prompt", False))
 
     @property
     def exit_code(self) -> int | None:
@@ -144,6 +177,8 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
             table["terminal.hide"] = lambda: self.on_hide_request(self)
         if self.on_sessions_request is not None:
             table["terminal.sessions"] = self.on_sessions_request
+        if self.on_insert_request is not None:
+            table["terminal.insert_selection"] = lambda: self.on_insert_request(self)
         table.update(surface_actions.handlers())
         return table
 

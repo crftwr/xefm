@@ -920,6 +920,17 @@ _DETAILS: dict[str, str] = {
         "the session. In the desktop app it is drawn in the window; in a "
         "terminal it opens as a new window of tmux, WezTerm or kitty when XeFM "
         "runs inside one, or in `TERMINAL`."),
+    "insert_into_console": (
+        "Types the full paths of the selected items - or the item under the "
+        "cursor - at the console's prompt, quoted for its shell, and shows "
+        "the console, so you finish the command and press Enter. It types "
+        "only while the shell is idle at its prompt, which XeFM can tell for "
+        "zsh and bash 4.4 or later; otherwise, and in a terminal, the text "
+        "goes to the clipboard instead."),
+    "cd_console_here": (
+        "Types `cd` and the active pane's directory at the console's prompt "
+        "and shows the console; press Enter to go there. The same rules as "
+        "for typing the selection apply."),
     "terminal_sessions": (
         "Lists the console sessions with their state and switches to the one "
         "you pick. The last row starts another shell in the active pane's "
@@ -1180,6 +1191,9 @@ _FILER_ACTIONS = [
     _a("toggle_terminal", FILER,
        "Show or hide the console, a shell that keeps running behind the panes"),
     _a("terminal_sessions", FILER, "List the console sessions and switch between them"),
+    _a("insert_into_console", FILER,
+       "Type the selected items' paths at the console's prompt"),
+    _a("cd_console_here", FILER, "Type cd to this directory at the console's prompt"),
     _a("edit_config", COMMON, "Edit config.py, then reload it"),
     _a("reload_config", COMMON, "Re-read config.py and apply it live"),
     _a("install_extension", FILER,
@@ -1208,6 +1222,8 @@ _TEXT_VIEWER_ACTIONS = [
     _a("terminal.hide", TERMINAL,
        "Hide the console and return to the panes; its programs keep running"),
     _a("terminal.sessions", TERMINAL, "List the console sessions and switch between them"),
+    _a("terminal.insert_selection", TERMINAL,
+       "Type the active pane's selected paths at this console's prompt"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",

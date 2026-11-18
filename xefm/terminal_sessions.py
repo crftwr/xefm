@@ -50,12 +50,29 @@ class Session:
     name: str
     cwd: str
     id: int = field(default_factory=next_id)
+    #: Text to type at the prompt once the shell first reaches it: inserting
+    #: into a session that is still starting (#900).
+    pending_insert: str = ""
+    #: What a hidden session has to say - a notification, a long command
+    #: that finished - until it is next shown: ``(kind, text)`` with kind
+    #: ``done``, ``failed`` or ``attention``, as the status bar's parts.
+    attention: tuple | None = None
+    #: The last progress report (OSC 9;4) while it lasts: percent or None.
+    progress: object = None
+    #: When the command now running started (monotonic), from the prompt
+    #: marks; None at the prompt.
+    command_since: float | None = None
 
     @property
     def state(self) -> str:
-        """``running`` or ``exited`` (with the code, when there is one)."""
+        """``at prompt``, ``running a command`` (both known from shell
+        integration), ``running``, or ``exited`` (with the code)."""
         view = self.view
         if getattr(view, "running", False):
+            if getattr(view, "idle_at_prompt", False):
+                return "at prompt"
+            if self.command_since is not None:
+                return "running a command"
             return "running"
         code = getattr(view, "exit_code", None)
         return "exited" if code in (None, 0) else f"exited ({code})"

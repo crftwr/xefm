@@ -42,6 +42,31 @@ instead.
 
 The keys are on [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
+### Typing into the console
+
+**Tools → Type Selection into Console** (`insert_into_console`) types the full
+paths of the selected items, or of the item under the cursor, at the console's
+prompt, quoted for its shell, and shows the console: finish the command and
+press `Enter`. `cd_console_here` types `cd` and the active pane's directory the
+same way. From inside the console, `terminal.insert_selection` types the
+active pane's selection. None of these has a key until you give it one in
+`KEY_BINDINGS`.
+
+XeFM types only while the shell is idle at its prompt, never into a command
+that is running. It can tell that for zsh and for bash 4.4 or later (macOS's
+own bash is 3.2), through a few lines of shell integration it adds when it
+starts them in its terminal; your own startup files still run as usual. With
+any other shell, while a command runs, and in a terminal, the text goes to the
+clipboard instead, and the log says why.
+
+### News from a hidden console
+
+While the console is hidden, the status bar shows what needs your attention:
+a command that ran for 10 seconds or more has finished or failed, or a program
+in it sent a notification (OSC 9 or OSC 777), as Claude Code and other tools
+can. A program that reports its progress (OSC 9;4) shows it there too. Click it
+to bring the console back.
+
 ## Asking XeFM from the shell
 
 In a shell XeFM started (the console, the subshell, a `PROGRAMS` entry, or a

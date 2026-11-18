@@ -281,6 +281,9 @@ def bindings() -> dict:
         'terminal_sessions': [],
         'terminal.hide': [],
         'terminal.sessions': [],
+        'insert_into_console': [],
+        'cd_console_here': [],
+        'terminal.insert_selection': [],
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to

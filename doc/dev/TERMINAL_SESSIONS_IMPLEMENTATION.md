@@ -63,6 +63,53 @@ command ([XEFM_COMMAND_IMPLEMENTATION.md](XEFM_COMMAND_IMPLEMENTATION.md));
 `XEFM_SESSION` is the session's `id`, allocated (`next_id`) before the view
 is built.
 
+## Shell integration
+
+`xefm/shell_integration.py` `apply(argv, env)` runs in `new_terminal_session`
+and the desktop subshell (XeFM's terminal only; not `TERMINAL` windows, not
+terminal mode). It makes the shell emit OSC 133 A/B/C/D and OSC 7:
+
+- zsh: `ZDOTDIR` → a per-process temp dir whose `.zshenv`, `.zprofile`,
+  `.zshrc`, `.zlogin` source the user's own file (from `XEFM_USER_ZDOTDIR`,
+  the `ZDOTDIR` the user had, else `$HOME`), following a `ZDOTDIR` the user's
+  `.zshenv` sets. `.zshrc` adds `precmd` / `preexec` hooks after the user's
+  rc (themes are set up by then); the last file read gives `ZDOTDIR` back.
+  `precmd` re-appends the B mark when a theme rebuilt `PS1`.
+- bash ≥ 4.4: `--rcfile`; `-l` is dropped and `XEFM_BASH_LOGIN=1` makes the
+  rc read `/etc/profile` and the first profile file instead of `~/.bashrc`.
+  C comes from `PS0`, which bash < 4.4 lacks, so there the rc adds nothing:
+  without C, libghostty would keep reporting "at prompt" while a command runs.
+- Left alone: `-c` commands, `--norc` / `--rcfile` / `--posix`, any other
+  shell.
+
+PuiKit (≥ the release after 1.27.3) binds libghostty's semantic-prompt
+callback, `CURSOR_AT_PROMPT`, notifications and progress, and `TerminalView`
+passes them on (`on_prompt`, `at_prompt`, `on_notification`,
+`on_progress`). `xefm.terminal.TerminalView` forwards only the keywords the
+installed PuiKit takes (`_supported_kwargs`), so an older PuiKit simply never
+reports "at prompt".
+
+## Typing at the prompt
+
+`_console_type(make_text)`: the text depends on the session's shell
+(`_shell_quote`: `shlex.quote` for POSIX shells, double quotes for cmd and
+PowerShell). It is sent with `view.send` only when `view.idle_at_prompt`; a
+session not started yet keeps it in `pending_insert` until its first
+`INPUT_START` mark. A busy shell, one without integration, terminal mode
+and the no-libghostty desktop get the clipboard and a log line instead. The
+user presses Enter; XeFM never runs the command.
+
+## Attention
+
+`_session_prompt` times commands between `OUTPUT_START` and `COMMAND_END`;
+one of at least `_LONG_COMMAND_S` (10 s) ending while the session is hidden
+sets `session.attention` (`done` / `failed`). A notification while hidden sets
+`attention`; progress sets `session.progress`. `_session_parts` adds those to
+`_jobs_parts`, so they share the job segment's drawing (blink for
+`attention`); a click goes to `_jobs_part_clicked`, which shows the session
+(or the list) when nothing else is in the segment. Showing a session clears
+its `attention`.
+
 ## Keys
 
 `toggle_terminal` (filer) and `terminal.hide` (terminal) share one key,
@@ -94,14 +141,15 @@ session up in `_close_terminal_sessions` before saving state.
 
 ## Not yet
 
-From #900's list: shell integration
-(OSC 7 / OSC 133), inserting the selection at an idle prompt (needs
-libghostty's semantic-prompt state bound in PuiKit), pane following,
-`ctx.start_session`, attention states in the
-status bar, the one-shot drawn as a dialog over dimmed panes.
+From #900's list: pane following (OSC 7 is emitted; nothing reads it yet),
+shell integration reported through the socket from `TERMINAL` windows,
+`ctx.start_session`, agent presets (#880), the session list built from
+socket registrations, the one-shot drawn as a dialog over dimmed panes.
 
 ## Tests
 
-`test/test_terminal_sessions.py`: the registry; toggle, switch, exit and
+`test/test_shell_integration.py`: `apply` per shell, a real zsh in a pty
+read through libghostty (skipped without zsh or a PuiKit with prompt marks),
+typing at the prompt, attention. `test/test_terminal_sessions.py`: the registry; toggle, switch, exit and
 quit against a stand-in panel and view; `terminal_mode_default` per
 environment.

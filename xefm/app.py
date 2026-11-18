@@ -32,6 +32,7 @@ import os
 import platform
 import queue
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -1763,7 +1764,7 @@ class StatusBar(Widget):
             return True
         jobs = getattr(self, "_jobs_hit", None)
         if jobs is not None and jobs[0] <= x < jobs[1]:
-            self.app.show_jobs()
+            self.app._jobs_part_clicked()
             return True
         for x0, x1, action in self._hits:
             if x0 <= x < x1:
@@ -4354,6 +4355,8 @@ class XeFMApp:
                 "subshell": (self.subshell, False),
                 "toggle_terminal": (self.toggle_terminal, False),
                 "terminal_sessions": (self.terminal_sessions, False),
+                "insert_into_console": (self.insert_into_console, False),
+                "cd_console_here": (self.cd_console_here, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
                 "install_extension": (self.install_extension, False),
@@ -5315,6 +5318,8 @@ class XeFMApp:
             MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
             MenuItem("Console", on_select=self.toggle_terminal,
                      shortcut=sc("toggle_terminal")),
+            MenuItem("Type Selection into Console", on_select=self.insert_into_console,
+                     shortcut=sc("insert_into_console")),
             MenuItem("Terminal Sessions…", on_select=self.terminal_sessions,
                      enabled=lambda: len(self._sessions) > 0,
                      shortcut=sc("terminal_sessions")),
@@ -5994,6 +5999,8 @@ class XeFMApp:
             # XeFM's terminal (#900): the desktop app's stand-in for handing
             # over its terminal - the shell runs in the window, and exiting it
             # returns to the panes, which re-read.
+            from xefm import shell_integration
+            command = shell_integration.apply(command, env)
             self._run_in_terminal_view(command, cwd=str(path), env=env,
                                        label="Subshell")
             return
@@ -6281,7 +6288,10 @@ class XeFMApp:
         command, env = self._console_env()
         sid = next_id()
         self._with_remote_env(env, str(sid))
-        name = self._sessions.next_name(os.path.basename(command[0]) or "shell")
+        from xefm import shell_integration
+        command = shell_integration.apply(command, env)
+        name = self._sessions.next_name(
+            os.path.splitext(os.path.basename(command[0]))[0] or "shell")
         view = self._make_session_view(command, cwd=cwd, env=env, label=name)
         session = self._sessions.add(Session(view=view, kind=SHELL, name=name,
                                              cwd=cwd, id=sid))
@@ -6289,12 +6299,21 @@ class XeFMApp:
 
     def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str):
         from xefm.terminal import TerminalView
-        return TerminalView(argv, cwd=cwd, env=env, label=label,
-                            on_exited=self._session_exited,
-                            on_close_request=self._session_close_request,
-                            persistent=True,
-                            on_hide_request=self._hide_session,
-                            on_sessions_request=self.terminal_sessions)
+        box: dict = {}
+        view = TerminalView(
+            argv, cwd=cwd, env=env, label=label,
+            on_exited=self._session_exited,
+            on_close_request=self._session_close_request,
+            persistent=True,
+            on_hide_request=self._hide_session,
+            on_sessions_request=self.terminal_sessions,
+            on_insert_request=self._terminal_insert_selection,
+            on_prompt=lambda kind, code, cmd: self._session_prompt(box["view"], kind, code),
+            on_notification=lambda title, body: self._session_notification(
+                box["view"], title, body),
+            on_progress=lambda state, pct: self._session_progress(box["view"], state, pct))
+        box["view"] = view
+        return view
 
     def _open_console_elsewhere(self) -> None:
         """The console where XeFM cannot draw a terminal: a shell opened
@@ -6342,6 +6361,7 @@ class XeFMApp:
             self.panel.remove_layer(shown.view)
             shown.view.shown = False
         self._sessions.touch(session)
+        session.attention = None  # seen
         session.view.shown = True
         session.view.closing = False
         self._push_terminal(session.view)
@@ -6366,6 +6386,144 @@ class XeFMApp:
             hidden()
             return
         self.panel.render()
+
+    #: A command in a hidden console that ran at least this long is worth a
+    #: word in the status bar when it ends (#900).
+    _LONG_COMMAND_S = 10.0
+
+    def _session_prompt(self, view, kind: int, code) -> None:
+        """A shell integration mark from a console session (OSC 133)."""
+        from xefm import terminal as T
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        if kind == T.OUTPUT_START:
+            session.command_since = time.monotonic()
+        elif kind == T.COMMAND_END:
+            since, session.command_since = session.command_since, None
+            if (not view.shown and since is not None
+                    and time.monotonic() - since >= self._LONG_COMMAND_S):
+                ok = code in (0, None)
+                text = f"{session.name}: {'finished' if ok else f'failed ({code})'}"
+                session.attention = ("done" if ok else "failed", text)
+                self.log_info(text)
+                self.panel.render()
+        elif kind == T.INPUT_START and session.pending_insert and view.idle_at_prompt:
+            text, session.pending_insert = session.pending_insert, ""
+            view.send(text)
+
+    def _session_notification(self, view, title: str, body: str) -> None:
+        """A program in a console session asked for a notification (OSC 9 /
+        OSC 777): the log, and the status bar while the session is hidden."""
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        text = f"{session.name}: {body or title}"
+        self.log_info(text)
+        if not view.shown:
+            session.attention = ("attention", text)
+        self.panel.render()
+
+    def _session_progress(self, view, state: int, pct) -> None:
+        """A progress report from a console session (OSC 9;4)."""
+        from xefm import terminal as T
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        if state in (T.PROGRESS_SET, T.PROGRESS_INDETERMINATE, T.PROGRESS_PAUSE):
+            session.progress = pct if state == T.PROGRESS_SET else "-"
+        else:
+            session.progress = None
+            if state == T.PROGRESS_ERROR and not view.shown:
+                session.attention = ("failed", f"{session.name}: failed")
+        if not view.shown:
+            self.panel.render()
+
+    # --- typing into the console ---------------------------------------------------
+
+    def _shell_quote(self, text: str, argv: list) -> str:
+        from xefm.external_programs import shell_family
+        family = shell_family(argv)
+        if family in ("cmd", "powershell"):
+            return f'"{text}"' if any(c in text for c in ' &()[]{}^=;!\'+,`~') else text
+        return shlex.quote(text)
+
+    def _selection_paths(self, pane: dict) -> list[str]:
+        chosen = pane["selected_files"]
+        paths = [str(f) for f in pane["files"] if str(f) in chosen]
+        if not paths:
+            files, idx = pane["files"], pane["focused_index"]
+            if files and 0 <= idx < len(files):
+                paths = [str(files[idx])]
+        return paths
+
+    def insert_into_console(self) -> None:
+        """Type the selected items' paths (or the one under the cursor) at the
+        console's prompt, quoted for its shell, and show it: the command is
+        yours to finish and run."""
+        pane = self.active_pane()
+        if not self._is_local(pane["path"]):
+            self.log_info("Only local paths can be typed into the console")
+            return
+        paths = self._selection_paths(pane)
+        if not paths:
+            return
+        self._console_type(lambda argv: " ".join(self._shell_quote(p, argv)
+                                                 for p in paths) + " ")
+
+    def cd_console_here(self) -> None:
+        """Type ``cd`` to the active pane's directory at the console's
+        prompt, and show it; Enter runs it."""
+        path = self.active_pane()["path"]
+        if not self._is_local(path):
+            self.log_info("The console can only change to a local directory")
+            return
+        self._console_type(lambda argv: f"cd {self._shell_quote(str(path), argv)}")
+
+    def _console_type(self, make_text) -> None:
+        """Type ``make_text(shell argv)`` at the console's prompt: only while
+        its shell is idle there, which shell integration tells. A console
+        still starting gets it at its first prompt. Elsewhere - terminal
+        mode, a busy shell, a shell XeFM cannot read - the text goes to the
+        clipboard instead, and the log says so."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self._console_type_to_clipboard(make_text(_subshell_command(self.config)),
+                                            "XeFM cannot type into a TERMINAL window")
+            return
+        session = self._shown_session() or self._sessions.last
+        if session is None:
+            self.new_terminal_session()
+            session = self._sessions.last
+            if session is not None:
+                session.pending_insert = make_text(session.view.argv)
+            return
+        text = make_text(session.view.argv)
+        view = session.view
+        if view.running and not view.started:
+            session.pending_insert = text
+        elif view.idle_at_prompt:
+            view.send(text)
+        else:
+            why = ("its shell is not at its prompt" if view.running
+                   and session.command_since is not None
+                   else "XeFM cannot tell whether its shell is at its prompt")
+            self._console_type_to_clipboard(text, f"{session.name}: {why}")
+        self._show_session(session)
+        self.panel.render()
+
+    def _console_type_to_clipboard(self, text: str, why: str) -> None:
+        self.panel.set_clipboard(text)
+        self.log_info(f"Copied to the clipboard instead ({why}): {text}")
+        self.panel.render()
+
+    def _terminal_insert_selection(self, view) -> None:
+        """``terminal.insert_selection``: from inside the console, the active
+        pane's selection typed at its prompt."""
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        self._sessions.touch(session)
+        self.insert_into_console()
 
     def _session_exited(self, view, code) -> None:
         """A console program exited. A clean exit (``exit`` in the shell) ends
@@ -7821,7 +7979,40 @@ class XeFMApp:
             if failed:
                 text += f", {failed} failed"
             parts.append((kind, text))
+        parts += self._session_parts()
         return parts
+
+    def _session_parts(self) -> list:
+        """The status bar's word from console sessions out of view (#900):
+        only what needs attention - a notification, a long command that
+        finished or failed - and the progress a program reports."""
+        parts = []
+        for session in getattr(self, "_sessions", ()):
+            if session.view.shown:
+                continue
+            if session.attention is not None:
+                parts.append(session.attention)
+            elif session.progress is not None:
+                pct = session.progress
+                parts.append(("busy", f"{session.name} {pct}%" if isinstance(pct, int)
+                              else session.name))
+        return parts
+
+    def _jobs_part_clicked(self) -> None:
+        """A click on the status bar's job segment: the jobs list, or the
+        console session that has something to say when that is all there
+        is."""
+        jobs_or_scans = bool(self.tasks.background_tasks() or self.tasks.running_task()
+                             or self.tasks.queued_count() or self._scan_rows)
+        if not jobs_or_scans and self._session_parts():
+            noisy = [s for s in self._sessions if not s.view.shown
+                     and (s.attention or s.progress is not None)]
+            if len(noisy) == 1:
+                self._show_session(noisy[0])
+            else:
+                self.terminal_sessions()
+            return
+        self.show_jobs()
 
     # --- similar-file scans (#571) -------------------------------------------
 
