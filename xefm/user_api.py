@@ -857,7 +857,9 @@ class ActionContext:
 
     def run_program(self, command, *, terminal: bool = False,
                     cwd: str | None = None,
-                    env: Mapping[str, str] | None = None) -> int | None:
+                    env: Mapping[str, str] | None = None,
+                    on_done: Callable[["ActionContext", int | None], None]
+                    | None = None) -> int | None:
         """Run an external program the way a ``PROGRAMS`` entry runs — but from
         an action, so it can have a key of its own.
 
@@ -881,6 +883,14 @@ class ActionContext:
           ``TERMINAL`` application instead and ``None`` comes back at once —
           the terminal window is on its own from then on.
 
+        ``on_done(ctx, code)`` (**Preview**) runs on the UI thread once the
+        program has exited, in every one of those cases and both modes, with
+        a new ``ctx`` and the exit code (``None`` when the program could not
+        be started or its exit could not be learned) - and never before
+        ``run_program`` returns. It is how the desktop app, which does not
+        wait, tells you a terminal program is done: re-read a file it wrote,
+        or apply what a picker printed to a file you gave it.
+
         Never call :mod:`subprocess` directly for an interactive program: XeFM
         owns the terminal, and a child drawing on it unannounced leaves the
         screen corrupted and the keyboard fought over (#454). To run one
@@ -900,9 +910,17 @@ class ActionContext:
             launch["env"].update({str(k): str(v) for k, v in env.items()})
         if cwd is None:
             cwd = launch["cwd"]
+        on_exit = None
+        if on_done is not None:
+            app = self._app
+
+            def on_exit(code: int | None) -> None:
+                run_guarded(f"'{argv[0]}' completion", on_done,
+                            ActionContext(app), code)
+                app.panel.render()
         return self._app._launch_program(
             argv[0], argv, cwd=str(cwd) if cwd is not None else None,
-            env=launch["env"], terminal=terminal)
+            env=launch["env"], terminal=terminal, on_exit=on_exit)
 
     @preview
     def program_env(self) -> dict[str, Any]:

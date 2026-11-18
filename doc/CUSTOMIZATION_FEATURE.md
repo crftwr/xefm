@@ -283,7 +283,7 @@ summary with no further page.
 | `ctx.input(prompt, default, on_accept=fn)` | (Preview) ask for a line of text; `complete='path'` (or `'directory'`) adds Tab completion of paths, as Jump to Path has — relative to the active pane |
 | `ctx.choose(title, items, on_result=fn)` | (Preview) pick from a list (index, or `None`); `type='filter'` for a searchable one |
 | `ctx.confirm(prompt, on_result=fn)` | (Preview) yes / no |
-| `ctx.run_program(command, terminal=False)` | run an external program — see below |
+| `ctx.run_program(command, terminal=False, on_done=None)` | run an external program — see below (`on_done` is Preview) |
 | `ctx.copy(items, dest, on_done=fn)` | (Preview) copy files the way **File → Copy to Other Pane** does — confirmation, conflict dialog, progress — and hear how each fared; see below |
 | `ctx.move(items, dest, on_done=fn)` | (Preview) the same, moving |
 | `ctx.trash(items, on_done=fn)` | (Preview) move files to the trash the way **File → Move to Trash…** does, and hear how each fared; see below |
@@ -473,8 +473,25 @@ def open_selection_in_vim(ctx):
   or reads the keyboard needs. When it exits, both panes are re-read and the
   exit code is returned. A nonzero exit waits for Enter first, so its error
   output stays readable. The desktop window has no terminal to hand over, so
-  there the program opens in your [`TERMINAL`](EXTERNAL_TERMINAL_FEATURE.md)
-  application instead, and XeFM does not wait for it.
+  there the program runs in XeFM's own terminal over the panes, or in your
+  [`TERMINAL`](EXTERNAL_TERMINAL_FEATURE.md) application, and `run_program`
+  returns `None` at once.
+
+To act once the program has exited, in either mode, pass `on_done` (Preview).
+It is called as `on_done(ctx, code)` with a new `ctx` and the exit code
+(`None` when the program could not be started or its exit could not be
+learned), on the UI thread, never before `run_program` returns:
+
+```python
+def edit_list(ctx):
+    path = str(ctx.pane.path / 'todo.txt')
+
+    def done(ctx, code):
+        if code == 0:
+            ctx.message(f'todo.txt saved')
+
+    ctx.run_program(['vim', path], terminal=True, on_done=done)
+```
 
 Don't call `subprocess.run()` yourself for an interactive program, except
 inside `ctx.terminal_backend_suspended()` (below). XeFM owns the terminal, and

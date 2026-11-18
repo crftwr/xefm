@@ -53,11 +53,38 @@ def default_terminal() -> list | None:
     return None
 
 
-def terminal_command(config) -> list | None:
+def terminal_mode_default(cwd: str | None, environ=None) -> list | None:
+    """Where terminal mode opens a window of its own - the console (#900),
+    a shell that keeps running beside XeFM - when ``TERMINAL`` is unset.
+
+    The multiplexer or terminal XeFM itself runs in comes first, since a new
+    window there is beside the one the user is looking at: tmux, WezTerm,
+    kitty (which needs ``allow_remote_control``). Without one, over SSH there
+    is none: the platform's GUI terminal would open on the far machine's
+    screen, not the user's. Locally it is :func:`default_terminal`."""
+    env = os.environ if environ is None else environ
+    cwd_args = (lambda flag: [flag, cwd] if cwd else [])
+    if env.get('TMUX'):
+        return ['tmux', 'new-window', *cwd_args('-c')]
+    if env.get('WEZTERM_PANE'):
+        return ['wezterm', 'cli', 'spawn', *cwd_args('--cwd'), '--']
+    if env.get('KITTY_WINDOW_ID'):
+        return ['kitty', '@', 'launch', '--type=tab', *cwd_args('--cwd')]
+    if env.get('SSH_CONNECTION') or env.get('SSH_TTY'):
+        return None
+    return default_terminal()
+
+
+def terminal_command(config, *, terminal_mode: bool = False,
+                     cwd: str | None = None) -> list | None:
     """``TERMINAL`` from the config as an argv prefix — string or list, like
-    ``TEXT_EDITOR`` — or :func:`default_terminal` when it is unset."""
+    ``TEXT_EDITOR`` — or, when it is unset, :func:`default_terminal` (the
+    desktop app) or :func:`terminal_mode_default` (a window opened from
+    terminal mode, in ``cwd``)."""
     configured = command_argv(getattr(config, 'TERMINAL', None))
-    return configured or default_terminal()
+    if configured:
+        return configured
+    return terminal_mode_default(cwd) if terminal_mode else default_terminal()
 
 
 def delivered_env(env: dict) -> dict:
@@ -81,21 +108,31 @@ def posix_wrapper(argv: list, cwd: str | None, env: dict,
     q = shlex.quote
     lines = ['#!/bin/sh', 'rm -f -- "$0"']
     lines += [f'export {k}={q(v)}' for k, v in env.items() if _POSIX_NAME.match(k)]
+    if env.get('XEFM_BIN'):
+        # The xefm command (#900): first on PATH, whatever PATH the terminal's
+        # own shell set up (the variable itself is not delivered).
+        lines.append('PATH="$XEFM_BIN:$PATH"; export PATH')
     if cwd:
         lines.append(f'cd -- {q(cwd)} || {{ printf "Press Enter to close"; read _; exit 1; }}')
     command = ' '.join(q(a) for a in argv)
-    if not pause_on_error:
+    # Someone waits for the exit (ctx.run_program's on_done, #900): the script
+    # stays to report it to XeFM over the xefm command, so it cannot exec.
+    report = bool(env.get('XEFM_EXIT_ID'))
+    if not pause_on_error and not report:
         lines.append(f'exec {command}')
     else:
-        lines += [
-            command,
-            'status=$?',
-            'if [ "$status" -ne 0 ]; then',
-            f'  printf "\\n%s exited with code %s - press Enter to close\\n" {q(argv[0])} "$status"',
-            '  read _',
-            'fi',
-            'exit "$status"',
-        ]
+        lines += [command, 'status=$?']
+        if report:
+            lines.append('"$XEFM_BIN/xefm" _exited "$XEFM_EXIT_ID" "$status" '
+                         '>/dev/null 2>&1')
+        if pause_on_error:
+            lines += [
+                'if [ "$status" -ne 0 ]; then',
+                f'  printf "\\n%s exited with code %s - press Enter to close\\n" {q(argv[0])} "$status"',
+                '  read _',
+                'fi',
+            ]
+        lines.append('exit "$status"')
     return '\n'.join(lines) + '\n'
 
 
@@ -111,6 +148,8 @@ except OSError:
     pass
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 os.environ.update({env!r})
+if os.environ.get('XEFM_BIN'):
+    os.environ['PATH'] = os.environ['XEFM_BIN'] + os.pathsep + os.environ.get('PATH', '')
 argv = {list(argv)!r}
 cwd = {cwd!r}
 pause = {bool(pause_on_error)!r}
@@ -122,6 +161,11 @@ except OSError as exc:
     # Not started at all: say so and hold the window, or it closes unread.
     print(f"{{argv[0]}}: {{exc}}")
     code, pause = 1, True
+if os.environ.get('XEFM_EXIT_ID') and os.environ.get('XEFM_BIN'):
+    # Tell XeFM the program has exited (ctx.run_program's on_done, #900).
+    subprocess.call(['cmd', '/c', os.path.join(os.environ['XEFM_BIN'], 'xefm.cmd'),
+                     '_exited', os.environ['XEFM_EXIT_ID'], str(code)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 if pause and code != 0:
     input(f"\\n{{argv[0]}} exited with code {{code}} - press Enter to close")
 sys.exit(code)

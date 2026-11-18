@@ -912,6 +912,30 @@ _DETAILS: dict[str, str] = {
         "its own, over the panes. The shell is `SUBSHELL` from `config.py`, "
         "else your `$SHELL`, and it gets the `XEFM_*` variables. Local "
         "directories only."),
+    "toggle_terminal": (
+        "Shows the console: a shell that keeps running while you work in the "
+        "panes. The first time it starts in the active pane's directory; "
+        "after that the same key brings back the session you used last, with "
+        "everything still in it, and hides it again. `exit` in the shell ends "
+        "the session. In the desktop app it is drawn in the window; in a "
+        "terminal it opens as a new window of tmux, WezTerm or kitty when XeFM "
+        "runs inside one, or in `TERMINAL`."),
+    "insert_into_console": (
+        "Types the full paths of the selected items - or the item under the "
+        "cursor - at the console's prompt, quoted for its shell, and shows "
+        "the console, so you finish the command and press Enter. It types "
+        "only while the shell is idle at its prompt, which XeFM can tell for "
+        "zsh and bash 4.4 or later; otherwise, and in a terminal, the text "
+        "goes to the clipboard instead."),
+    "cd_console_here": (
+        "Types `cd` and the active pane's directory at the console's prompt "
+        "and shows the console; press Enter to go there. The same rules as "
+        "for typing the selection apply."),
+    "terminal_sessions": (
+        "Lists the console sessions with their state and switches to the one "
+        "you pick. The last row starts another shell in the active pane's "
+        "directory, and the remove key ends the highlighted session. Desktop "
+        "app only."),
     "edit_config": (
         "Opens `~/.xefm/config.py` in your `TEXT_EDITOR`, creating it on first "
         "use. In a terminal the configuration reloads when the editor exits; "
@@ -1164,6 +1188,12 @@ _FILER_ACTIONS = [
     # External programs and configuration
     _a("programs", FILER, "Run an external program"),
     _a("subshell", FILER, "Open a subshell in this directory"),
+    _a("toggle_terminal", FILER,
+       "Show or hide the console, a shell that keeps running behind the panes"),
+    _a("terminal_sessions", FILER, "List the console sessions and switch between them"),
+    _a("insert_into_console", FILER,
+       "Type the selected items' paths at the console's prompt"),
+    _a("cd_console_here", FILER, "Type cd to this directory at the console's prompt"),
     _a("edit_config", COMMON, "Edit config.py, then reload it"),
     _a("reload_config", COMMON, "Re-read config.py and apply it live"),
     _a("install_extension", FILER,
@@ -1189,6 +1219,11 @@ _TEXT_VIEWER_ACTIONS = [
     # XeFM's terminal (#900)
     _a("terminal.close", TERMINAL,
        "Close the terminal and return to the panes, stopping a program still running"),
+    _a("terminal.hide", TERMINAL,
+       "Hide the console and return to the panes; its programs keep running"),
+    _a("terminal.sessions", TERMINAL, "List the console sessions and switch between them"),
+    _a("terminal.insert_selection", TERMINAL,
+       "Type the active pane's selected paths at this console's prompt"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",

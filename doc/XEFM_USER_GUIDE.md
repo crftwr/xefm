@@ -488,6 +488,9 @@ terminal of its own to hand over, so it opens the shell in a terminal window
 instead — see [External Terminal](EXTERNAL_TERMINAL_FEATURE.md). The shell sees the `XEFM_*` environment
 variables (pane directories and selections) and a `[XeFM]` prompt prefix.
 
+For a shell that keeps running while you work in the panes, use the
+[Console](CONSOLE_FEATURE.md) instead.
+
 The prefix is passed via the `PS1`/`PROMPT` environment variables, so a shell
 whose startup files set their own prompt overwrites it. zsh always does — on
 macOS, `/etc/zshrc` resets the prompt for every interactive shell, even if you
@@ -870,6 +873,7 @@ For detailed information about specific features, see these dedicated guides:
 - [Trying XeFM in a Throwaway Home](TRY_FEATURE.md) - `xefm try`: run XeFM in a temporary home, leaving your own `~/.xefm` untouched
 - [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md) - Custom program integration (incl. the VSCode recipe)
 - [External Terminal](EXTERNAL_TERMINAL_FEATURE.md) - The terminal window the desktop app opens for the subshell and terminal programs
+- [Console](CONSOLE_FEATURE.md) - A shell that keeps running behind the panes, shown and hidden with one key
 - [Virtual Folders](VIRTUAL_FOLDERS_FEATURE.md) - Browse something that is not a directory - a registry, a database, an API - as if it were one
 
 ---

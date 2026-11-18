@@ -32,6 +32,7 @@ import os
 import platform
 import queue
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -158,6 +159,7 @@ from xefm.file_operations import (CloseGate, FileOperationService,
                                   format_op_errors, format_op_summary,
                                   serialized_log, transfer_workers)
 from xefm.task import Cancelled, Task, TaskManager, TaskStatus
+from xefm.terminal_sessions import SessionRegistry
 from xefm.text_dialog import show_markdown
 from xefm.tips import tip_count
 from xefm.tips_dialog import show_tips_dialog
@@ -1762,7 +1764,7 @@ class StatusBar(Widget):
             return True
         jobs = getattr(self, "_jobs_hit", None)
         if jobs is not None and jobs[0] <= x < jobs[1]:
-            self.app.show_jobs()
+            self.app._jobs_part_clicked()
             return True
         for x0, x1, action in self._hits:
             if x0 <= x < x1:
@@ -2399,6 +2401,11 @@ class XeFMApp:
         self._ui_thread = threading.current_thread()
         #: Set while :meth:`_terminal_suspended` has the terminal handed over.
         self._terminal_handed_over = False
+        #: Persistent terminal sessions, the console (#900).
+        self._sessions = SessionRegistry()
+        #: Programs in a TERMINAL window whose exit someone waits for, by the
+        #: XEFM_EXIT_ID their wrapper reports it under (_expect_exit).
+        self._exit_waiters: dict = {}
         self._orig_stdout = sys.stdout
         self._orig_stderr = sys.stderr
         sys.stdout = _StreamToLog("STDOUT", self._log_queue, on_write=self._wake_pump)
@@ -3008,6 +3015,9 @@ class XeFMApp:
         if getattr(self, "file_monitor", None) is not None:
             self.file_monitor.stop_monitoring()
         self._close_edit_sessions()
+        self._close_terminal_sessions()
+        if getattr(self, "_remote_server", None) is not None:
+            self._remote_server.close()
         self._save_application_state()
         self.backend.quit()
 
@@ -4343,6 +4353,10 @@ class XeFMApp:
                 "diff_files": (self.diff_files, False),
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
+                "toggle_terminal": (self.toggle_terminal, False),
+                "terminal_sessions": (self.terminal_sessions, False),
+                "insert_into_console": (self.insert_into_console, False),
+                "cd_console_here": (self.cd_console_here, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
                 "install_extension": (self.install_extension, False),
@@ -5302,6 +5316,13 @@ class XeFMApp:
                      shortcut=sc("find_similar")),
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
             MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
+            MenuItem("Console", on_select=self.toggle_terminal,
+                     shortcut=sc("toggle_terminal")),
+            MenuItem("Type Selection into Console", on_select=self.insert_into_console,
+                     shortcut=sc("insert_into_console")),
+            MenuItem("Terminal Sessions…", on_select=self.terminal_sessions,
+                     enabled=lambda: len(self._sessions) > 0,
+                     shortcut=sc("terminal_sessions")),
             SEPARATOR,
             # Editing the config and reloading it are the loop a user tuning
             # XeFM goes round, so they stay at the top. What is set up once or
@@ -5973,10 +5994,13 @@ class XeFMApp:
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
         prefix_prompt_markers(env, command)
+        self._with_remote_env(env, "subshell")
         if is_desktop_mode() and self._terminal_unavailable() is None:
             # XeFM's terminal (#900): the desktop app's stand-in for handing
             # over its terminal - the shell runs in the window, and exiting it
             # returns to the panes, which re-read.
+            from xefm import shell_integration
+            command = shell_integration.apply(command, env)
             self._run_in_terminal_view(command, cwd=str(path), env=env,
                                        label="Subshell")
             return
@@ -6094,6 +6118,527 @@ class XeFMApp:
         self.panel.render()
         if done is not None:
             done(code)
+
+    # --- the xefm command: shells talking back (#900) ----------------------------
+
+    #: Requests that only read the panes: answered even while terminal mode
+    #: has its terminal handed over, when the UI thread is parked in the
+    #: child's wait and cannot run anything else.
+    _REMOTE_READS = frozenset({"pwd", "selected", "focused", "sessions"})
+
+    #: Seconds a request waits for the UI thread before reporting XeFM busy
+    #: (under remote_cli.TIMEOUT, so the answer still reaches the client).
+    _REMOTE_WAIT = 8.0
+
+    def _remote(self):
+        """The socket ``xefm selected`` and friends reach this XeFM on, started
+        the first time a shell is about to be given its address. None where
+        it cannot be started (logged once)."""
+        server = getattr(self, "_remote_server", None)
+        if server is None and not getattr(self, "_remote_failed", False):
+            from xefm import remote_server
+            from xefm.external_programs import xefm_python
+            server = remote_server.start(self._remote_handle, python=xefm_python)
+            self._remote_server = server
+            self._remote_failed = server is None
+        return server
+
+    def _with_remote_env(self, env: dict, session: str) -> dict:
+        """``env`` plus what a shell needs to run ``xefm`` commands against
+        this XeFM, as ``session`` (see :mod:`xefm.remote_cli`)."""
+        server = self._remote()
+        if server is not None:
+            server.apply_env(env, session)
+            env["XEFM_BIN"] = server.bin_dir
+        return env
+
+    def _remote_handle(self, req: dict) -> dict:
+        """A request from :mod:`xefm.remote_cli`, on the listener's thread.
+        The answer is worked out on the UI thread, between frames."""
+        cmd = req.get("cmd")
+        if self._terminal_handed_over:
+            if cmd in self._REMOTE_READS:
+                # The UI thread is parked in the child's wait (_run_in_terminal):
+                # nothing else reads or changes the panes until it returns.
+                return self._remote_answer(req)
+            return {"ok": False, "error": "XeFM is waiting for this shell to "
+                    "exit; run it after you return, or from the console"}
+        done = threading.Event()
+        box: dict = {}
+
+        def run() -> None:
+            try:
+                box["answer"] = self._remote_answer(req)
+            except Exception as exc:
+                getLogger("Remote").error(f"xefm {cmd} failed: {exc}")
+                box["answer"] = {"ok": False, "error": str(exc)}
+            finally:
+                done.set()
+
+        self._call_later(run)
+        if not done.wait(self._REMOTE_WAIT):
+            return {"ok": False, "error": "XeFM is busy; try again", "code": 4}
+        return box["answer"]
+
+    def _remote_pane(self, name: str) -> dict:
+        if name == "other":
+            return self.pm.get_inactive_pane()
+        if name in ("left", "right"):
+            return self.pane(name)
+        return self.pm.get_current_pane()
+
+    def _remote_answer(self, req: dict) -> dict:
+        """What one ``xefm`` command answers, on the UI thread (or with it
+        parked): ``{"ok": True, "lines": [...]}`` or an error."""
+        cmd = req.get("cmd")
+        pane = self._remote_pane(req.get("pane") or "this")
+        if cmd == "pwd":
+            return {"ok": True, "lines": [str(pane["path"])]}
+        if cmd == "selected":
+            chosen = pane["selected_files"]
+            lines = [str(f) for f in pane["files"] if str(f) in chosen]
+            return {"ok": True, "lines": lines, "nul": bool(req.get("nul"))}
+        if cmd == "focused":
+            files, idx = pane["files"], pane["focused_index"]
+            lines = [str(files[idx])] if files and 0 <= idx < len(files) else []
+            return {"ok": True, "lines": lines}
+        if cmd == "sessions":
+            here = str(req.get("session") or "")
+            return {"ok": True, "lines": [
+                f"{'*' if str(s.id) == here else ' '} {s.id}\t{s.name}\t{s.state}\t{s.cwd}"
+                for s in self._sessions]}
+        if cmd in ("cd", "view"):
+            text = req.get("path")
+            if not isinstance(text, str) or not text:
+                return {"ok": False, "error": "no path given", "code": 2}
+            target = self._resolve_jump_target(text, str(pane["path"]))
+            if not target.exists():
+                return {"ok": False, "error": f"no such file or directory: {target}"}
+            if cmd == "view":
+                if target.is_dir():
+                    return {"ok": False, "error": f"{target} is a directory"}
+                self._open_viewer(target)
+                return {"ok": True, "lines": []}
+            if target.is_dir():
+                self._go_to_dir(pane, target, None)
+            else:
+                self._go_to_dir(pane, target.parent, target.name)
+            self.log_info(f"Jumped to: {target} (xefm cd)")
+            return {"ok": True, "lines": []}
+        if cmd == "_exited":
+            # A TERMINAL window's wrapper: its program has exited.
+            callback = self._exit_waiters.pop(str(req.get("id")), None)
+            if callback is not None:
+                code = req.get("code")
+                callback(code if isinstance(code, int) else None)
+            return {"ok": True, "lines": []}
+        return {"ok": False, "error": f"unknown command {cmd!r}", "code": 2}
+
+    # --- persistent terminal sessions: the console (#900) ------------------------
+
+    def _console_env(self) -> tuple[list, dict]:
+        """The shell a console session runs, and its environment: XeFM's own,
+        with ``XEFM_ACTIVE`` and the ``[XeFM]`` prompt marker - but not the
+        ``XEFM_*`` pane and selection variables a one-shot subshell gets. A
+        session that outlives the moment it was started would carry them
+        stale from its first prompt on."""
+        from xefm.external_programs import (ensure_common_paths_in_env,
+                                           prefix_prompt_markers)
+        command = _subshell_command(self.config)
+        env = os.environ.copy()
+        ensure_common_paths_in_env(env)
+        env["XEFM_ACTIVE"] = "1"
+        prefix_prompt_markers(env, command)
+        return command, env
+
+    def _console_dir(self) -> str | None:
+        """Where a new console session starts: the active pane's directory,
+        or the home directory when that is not a local one."""
+        path = self.active_pane()["path"]
+        return str(path) if self._is_local(path) else None
+
+    def toggle_terminal(self) -> None:
+        """Show the console - the terminal session used last, or a new shell in
+        the active pane's directory when there is none - or hide it when it is
+        on screen. Its programs keep running while it is hidden.
+
+        Where XeFM's terminal cannot run (terminal mode, or no libghostty) a
+        persistent shell opens through ``TERMINAL`` instead: a window, a tab or
+        a multiplexer window, which XeFM does not own and cannot hide."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self._open_console_elsewhere()
+            return
+        shown = self._shown_session()
+        if shown is not None:
+            self._hide_session(shown.view)
+            return
+        session = self._sessions.last
+        if session is None:
+            self.new_terminal_session()
+            return
+        self._show_session(session)
+
+    def new_terminal_session(self) -> None:
+        """Start another console shell, in the active pane's directory."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self._open_console_elsewhere()
+            return
+        from xefm.terminal_sessions import SHELL, Session, next_id
+        cwd = self._console_dir() or os.path.expanduser("~")
+        command, env = self._console_env()
+        sid = next_id()
+        self._with_remote_env(env, str(sid))
+        from xefm import shell_integration
+        command = shell_integration.apply(command, env)
+        name = self._sessions.next_name(
+            os.path.splitext(os.path.basename(command[0]))[0] or "shell")
+        view = self._make_session_view(command, cwd=cwd, env=env, label=name)
+        session = self._sessions.add(Session(view=view, kind=SHELL, name=name,
+                                             cwd=cwd, id=sid))
+        self._show_session(session)
+
+    def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str):
+        from xefm.terminal import TerminalView
+        box: dict = {}
+        view = TerminalView(
+            argv, cwd=cwd, env=env, label=label,
+            on_exited=self._session_exited,
+            on_close_request=self._session_close_request,
+            persistent=True,
+            on_hide_request=self._hide_session,
+            on_sessions_request=self.terminal_sessions,
+            on_insert_request=self._terminal_insert_selection,
+            on_prompt=lambda kind, code, cmd: self._session_prompt(box["view"], kind, code),
+            on_notification=lambda title, body: self._session_notification(
+                box["view"], title, body),
+            on_progress=lambda state, pct: self._session_progress(box["view"], state, pct))
+        box["view"] = view
+        return view
+
+    def _open_console_elsewhere(self) -> None:
+        """The console where XeFM cannot draw a terminal: a shell opened
+        through ``TERMINAL`` in the active pane's directory. In terminal mode
+        the default is the multiplexer or terminal XeFM runs in, when it can
+        open a window of its own (see
+        :func:`xefm.external_terminal.terminal_mode_default`)."""
+        from xefm.external_terminal import (NoTerminalError, launch_in_terminal,
+                                           terminal_command)
+        cwd = self._console_dir()
+        if cwd is None:
+            self.log_info("The console is only available for local directories")
+            return
+        command, env = self._console_env()
+        self._with_remote_env(env, "console")
+        terminal = terminal_command(self.config, terminal_mode=not is_desktop_mode(),
+                                    cwd=cwd)
+        try:
+            launch_in_terminal(terminal, command, cwd=cwd, env=env)
+        except NoTerminalError:
+            self.log_info("No terminal to open a shell in: set TERMINAL in "
+                          "~/.xefm/config.py (in a terminal, running XeFM inside "
+                          "tmux, WezTerm or kitty opens one there)")
+            return
+        except FileNotFoundError:
+            self.log_info(f"Terminal not found: {terminal[0]}")
+            return
+        except Exception as exc:
+            self.log_info(f"Could not open a terminal: {exc}")
+            return
+        self.log_info(f"Opened a shell in {cwd}")
+        self.panel.render()
+
+    def _shown_session(self):
+        return next((s for s in self._sessions if s.view.shown), None)
+
+    def _show_session(self, session) -> None:
+        """Bring ``session`` on screen, in place of another one shown."""
+        shown = self._shown_session()
+        if shown is session:
+            return
+        if shown is not None:
+            # One full-window view replaces the other at once: crossing two
+            # terminals through the file manager would only flash the panes.
+            self.panel.remove_layer(shown.view)
+            shown.view.shown = False
+        self._sessions.touch(session)
+        session.attention = None  # seen
+        session.view.shown = True
+        session.view.closing = False
+        self._push_terminal(session.view)
+
+    def _hide_session(self, view) -> None:
+        """Put the console back behind the file manager; its program keeps
+        running. The panes re-read: what ran there may have changed files."""
+        if view.closing or not view.shown:
+            return
+        view.closing = True  # takes no input while it fades
+
+        def hidden() -> None:
+            self.panel.remove_layer(view)
+            view.closing = False
+            view.shown = False
+            self._relist(self.pm.left_pane, keep_visible=True)
+            self._relist(self.pm.right_pane, keep_visible=True)
+            self.panel.render()
+
+        from xefm.dialog_geometry import animate_from_behind
+        if not animate_from_behind(self.panel, view, out=True, on_complete=hidden):
+            hidden()
+            return
+        self.panel.render()
+
+    #: A command in a hidden console that ran at least this long is worth a
+    #: word in the status bar when it ends (#900).
+    _LONG_COMMAND_S = 10.0
+
+    def _session_prompt(self, view, kind: int, code) -> None:
+        """A shell integration mark from a console session (OSC 133)."""
+        from xefm import terminal as T
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        if kind == T.OUTPUT_START:
+            session.command_since = time.monotonic()
+        elif kind == T.COMMAND_END:
+            since, session.command_since = session.command_since, None
+            if (not view.shown and since is not None
+                    and time.monotonic() - since >= self._LONG_COMMAND_S):
+                ok = code in (0, None)
+                text = f"{session.name}: {'finished' if ok else f'failed ({code})'}"
+                session.attention = ("done" if ok else "failed", text)
+                self.log_info(text)
+                self.panel.render()
+        elif kind == T.INPUT_START and session.pending_insert and view.idle_at_prompt:
+            text, session.pending_insert = session.pending_insert, ""
+            view.send(text)
+
+    def _session_notification(self, view, title: str, body: str) -> None:
+        """A program in a console session asked for a notification (OSC 9 /
+        OSC 777): the log, and the status bar while the session is hidden."""
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        text = f"{session.name}: {body or title}"
+        self.log_info(text)
+        if not view.shown:
+            session.attention = ("attention", text)
+        self.panel.render()
+
+    def _session_progress(self, view, state: int, pct) -> None:
+        """A progress report from a console session (OSC 9;4)."""
+        from xefm import terminal as T
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        if state in (T.PROGRESS_SET, T.PROGRESS_INDETERMINATE, T.PROGRESS_PAUSE):
+            session.progress = pct if state == T.PROGRESS_SET else "-"
+        else:
+            session.progress = None
+            if state == T.PROGRESS_ERROR and not view.shown:
+                session.attention = ("failed", f"{session.name}: failed")
+        if not view.shown:
+            self.panel.render()
+
+    # --- typing into the console ---------------------------------------------------
+
+    def _shell_quote(self, text: str, argv: list) -> str:
+        from xefm.external_programs import shell_family
+        family = shell_family(argv)
+        if family in ("cmd", "powershell"):
+            return f'"{text}"' if any(c in text for c in ' &()[]{}^=;!\'+,`~') else text
+        return shlex.quote(text)
+
+    def _selection_paths(self, pane: dict) -> list[str]:
+        chosen = pane["selected_files"]
+        paths = [str(f) for f in pane["files"] if str(f) in chosen]
+        if not paths:
+            files, idx = pane["files"], pane["focused_index"]
+            if files and 0 <= idx < len(files):
+                paths = [str(files[idx])]
+        return paths
+
+    def insert_into_console(self) -> None:
+        """Type the selected items' paths (or the one under the cursor) at the
+        console's prompt, quoted for its shell, and show it: the command is
+        yours to finish and run."""
+        pane = self.active_pane()
+        if not self._is_local(pane["path"]):
+            self.log_info("Only local paths can be typed into the console")
+            return
+        paths = self._selection_paths(pane)
+        if not paths:
+            return
+        self._console_type(lambda argv: " ".join(self._shell_quote(p, argv)
+                                                 for p in paths) + " ")
+
+    def cd_console_here(self) -> None:
+        """Type ``cd`` to the active pane's directory at the console's
+        prompt, and show it; Enter runs it."""
+        path = self.active_pane()["path"]
+        if not self._is_local(path):
+            self.log_info("The console can only change to a local directory")
+            return
+        self._console_type(lambda argv: f"cd {self._shell_quote(str(path), argv)}")
+
+    def _console_type(self, make_text) -> None:
+        """Type ``make_text(shell argv)`` at the console's prompt: only while
+        its shell is idle there, which shell integration tells. A console
+        still starting gets it at its first prompt. Elsewhere - terminal
+        mode, a busy shell, a shell XeFM cannot read - the text goes to the
+        clipboard instead, and the log says so."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self._console_type_to_clipboard(make_text(_subshell_command(self.config)),
+                                            "XeFM cannot type into a TERMINAL window")
+            return
+        session = self._shown_session() or self._sessions.last
+        if session is None:
+            self.new_terminal_session()
+            session = self._sessions.last
+            if session is not None:
+                session.pending_insert = make_text(session.view.argv)
+            return
+        text = make_text(session.view.argv)
+        view = session.view
+        if view.running and not view.started:
+            session.pending_insert = text
+        elif view.idle_at_prompt:
+            view.send(text)
+        else:
+            why = ("its shell is not at its prompt" if view.running
+                   and session.command_since is not None
+                   else "XeFM cannot tell whether its shell is at its prompt")
+            self._console_type_to_clipboard(text, f"{session.name}: {why}")
+        self._show_session(session)
+        self.panel.render()
+
+    def _console_type_to_clipboard(self, text: str, why: str) -> None:
+        self.panel.set_clipboard(text)
+        self.log_info(f"Copied to the clipboard instead ({why}): {text}")
+        self.panel.render()
+
+    def _terminal_insert_selection(self, view) -> None:
+        """``terminal.insert_selection``: from inside the console, the active
+        pane's selection typed at its prompt."""
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        self._sessions.touch(session)
+        self.insert_into_console()
+
+    def _session_exited(self, view, code) -> None:
+        """A console program exited. A clean exit (``exit`` in the shell) ends
+        the session; a failure keeps its last screen and the exit bar, where
+        Enter starts it again and Escape hides it."""
+        session = self._sessions.for_view(view)
+        if session is None or view.closing:
+            return
+        if code in (0, None):
+            self._close_session(session)
+            return
+        self.log_info(f"{session.name} exited with code {code}")
+        self.panel.render()
+
+    def _session_close_request(self, view) -> None:
+        """``terminal.close`` in a console session: end it, asking first while
+        its program still runs."""
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        if not view.running:
+            self._close_session(session)
+            return
+
+        def answered(label: str) -> None:
+            if label == "Close":
+                self._close_session(session)
+            self.panel.render()
+
+        show_message_box(
+            self.panel, f"{session.name} is still running. Close the session and stop it?",
+            title="Terminal", icon="warning", buttons=("Close", "Cancel"),
+            default=1, cancel=1, on_result=answered)
+        self.panel.render()
+
+    def _close_session(self, session) -> None:
+        """End ``session``: hang up its program and forget it. On screen it
+        fades back behind the file manager first."""
+        view = session.view
+        self._sessions.remove(session)
+
+        def finish() -> None:
+            if view.shown:
+                self.panel.remove_layer(view)
+            view.shown = False
+            view.closing = True
+            view.close()
+            self._relist(self.pm.left_pane, keep_visible=True)
+            self._relist(self.pm.right_pane, keep_visible=True)
+            self.panel.render()
+
+        if not view.shown or view.closing:
+            finish()
+            return
+        view.closing = True
+        from xefm.dialog_geometry import animate_from_behind
+        if not animate_from_behind(self.panel, view, out=True, on_complete=finish):
+            finish()
+            return
+        self.panel.render()
+
+    def _close_terminal_sessions(self) -> None:
+        """At exit: hang up every console session (the quit confirm said so)."""
+        for session in self._sessions:
+            self._sessions.remove(session)
+            try:
+                session.view.close()
+            except Exception as e:
+                getLogger("Terminal").error(
+                    f"Could not close terminal session {session.name}: {e}")
+
+    def terminal_sessions(self) -> None:
+        """The session list: every console session with its state, and a row
+        to start a new shell. Enter shows the chosen one; the remove key ends
+        it."""
+        if not is_desktop_mode() or self._terminal_unavailable() is not None:
+            self.log_info("Terminal sessions run in a TERMINAL window here: "
+                          "use the terminal application to switch between them")
+            return
+        new_row = object()
+        cwd = self._console_dir() or os.path.expanduser("~")
+        from xefm.terminal_sessions import _short
+        items = [*self._sessions, new_row]
+
+        def label(item) -> str:
+            if item is new_row:
+                return f"New shell in {_short(cwd)}"
+            return item.label
+
+        def right(item) -> str:
+            if item is new_row:
+                return ""
+            return ("shown, " if item.view.shown else "") + item.state
+
+        def accept(item) -> None:
+            if item is new_row:
+                self.new_terminal_session()
+            else:
+                self._show_session(item)
+            self.panel.render()
+
+        def remove(item) -> bool:
+            if item is new_row:
+                return False
+            self._close_session(item)
+            self.log_info(f"Closed terminal session {item.name}")
+            return True
+
+        # Over the terminal it may be opened from (terminal.sessions).
+        top = max((slot.z for slot in self.panel._layers), default=0)
+        show_filter_list(self.panel, items, title="Terminal Sessions",
+                         to_label=label, to_right=right, on_accept=accept,
+                         on_remove=remove, remove_label="close",
+                         z=max(70, top + 1))
+        self.panel.render()
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor
@@ -7325,10 +7870,30 @@ class XeFMApp:
         if self._quit_confirming:
             return
         jobs = self._busy_tasks()
-        if only_if_busy and not jobs:
+        sessions = self._sessions.running()
+        if only_if_busy and not jobs and not sessions:
             self._quit()
             return
         self._quit_confirming = True
+        if not jobs and sessions:
+            # Programs in XeFM's own terminal end with it (#900): say so, and
+            # default to Cancel - a shell may be in the middle of a build.
+            n = len(sessions)
+
+            def answered_sessions(label: str) -> None:
+                self._quit_confirming = False
+                if label == "Quit":
+                    self._quit()
+
+            show_message_box(
+                self.panel,
+                f"**{n}** terminal session{'' if n == 1 else 's'} "
+                f"{'is' if n == 1 else 'are'} still running. Quitting "
+                f"stops {'it' if n == 1 else 'them'}.",
+                title="Quit XeFM?", icon="warning", buttons=("Quit", "Cancel"),
+                default=1, cancel=1, on_result=answered_sessions, markdown=True)
+            self.panel.render()
+            return
         if not jobs:
             def answered(label: str) -> None:
                 self._quit_confirming = False
@@ -7358,7 +7923,9 @@ class XeFMApp:
             self.panel,
             f"**{n}** job{'' if n == 1 else 's'} "
             f"{'is' if n == 1 else 'are'} still running or queued. Quitting "
-            f"stops {'it' if n == 1 else 'them'} part-way.",
+            f"stops {'it' if n == 1 else 'them'} part-way."
+            + (f" **{len(sessions)}** running terminal session"
+               f"{'' if len(sessions) == 1 else 's'} stop too." if sessions else ""),
             title="Quit XeFM?", icon="warning", buttons=("Quit", "Cancel"),
             default=1, cancel=1, on_result=on_result, markdown=True)
         self.panel.render()
@@ -7412,7 +7979,40 @@ class XeFMApp:
             if failed:
                 text += f", {failed} failed"
             parts.append((kind, text))
+        parts += self._session_parts()
         return parts
+
+    def _session_parts(self) -> list:
+        """The status bar's word from console sessions out of view (#900):
+        only what needs attention - a notification, a long command that
+        finished or failed - and the progress a program reports."""
+        parts = []
+        for session in getattr(self, "_sessions", ()):
+            if session.view.shown:
+                continue
+            if session.attention is not None:
+                parts.append(session.attention)
+            elif session.progress is not None:
+                pct = session.progress
+                parts.append(("busy", f"{session.name} {pct}%" if isinstance(pct, int)
+                              else session.name))
+        return parts
+
+    def _jobs_part_clicked(self) -> None:
+        """A click on the status bar's job segment: the jobs list, or the
+        console session that has something to say when that is all there
+        is."""
+        jobs_or_scans = bool(self.tasks.background_tasks() or self.tasks.running_task()
+                             or self.tasks.queued_count() or self._scan_rows)
+        if not jobs_or_scans and self._session_parts():
+            noisy = [s for s in self._sessions if not s.view.shown
+                     and (s.attention or s.progress is not None)]
+            if len(noisy) == 1:
+                self._show_session(noisy[0])
+            else:
+                self.terminal_sessions()
+            return
+        self.show_jobs()
 
     # --- similar-file scans (#571) -------------------------------------------
 
@@ -9500,6 +10100,8 @@ class XeFMApp:
         env.update(build_xefm_env(self.pm.left_pane, self.pm.right_pane,
                                   self.pm.get_current_pane(),
                                   self.pm.get_inactive_pane()))
+        # A program can ask for the panes as they are now, too (#900).
+        self._with_remote_env(env, "program")
         virtual = pane.get("virtual")
         if not virtual:
             return env, str(pane["path"])
@@ -9520,32 +10122,54 @@ class XeFMApp:
         return env, cwd
 
     def _launch_program(self, name: str, argv: list, *, cwd: str | None,
-                        env: dict, terminal: bool) -> int | None:
+                        env: dict, terminal: bool, on_exit=None) -> int | None:
         """Launch ``argv`` one of two ways. ``terminal`` hands the child the
         tty via suspend/resume and waits, returning its exit code — or, in
-        desktop mode, opens it in the ``TERMINAL`` application and returns
-        ``None`` at once. Otherwise it runs in the background
-        with stdout/stderr streamed into the log pane, and this returns
-        ``None`` at once."""
+        desktop mode, runs it in XeFM's terminal or the ``TERMINAL``
+        application and returns ``None`` at once. Otherwise it runs in the
+        background with stdout/stderr streamed into the log pane, and this
+        returns ``None`` at once.
+
+        ``on_exit(code)``, when given, runs on the UI thread once the program
+        has exited, in every one of those ways, and never before this
+        returns (#900). ``code`` is None when it could not be started or the
+        exit could not be learned."""
         from xefm.external_programs import SUBPROCESS_NO_WINDOW, resolve_command
+
+        def exited(code) -> None:
+            if on_exit is not None:
+                self._call_later(lambda: on_exit(code))
+
         if terminal:
             if is_desktop_mode() and self._terminal_unavailable() is None:
                 # XeFM's terminal (#900): the program runs modally in the
                 # window, like terminal mode's hand-over, and the panes re-read
                 # when it is closed. Still not waited for: the UI thread is ours.
-                self._run_in_terminal_view(argv, cwd=cwd, env=env, label=name)
+                self._run_in_terminal_view(argv, cwd=cwd, env=env, label=name,
+                                           on_done=exited if on_exit else None)
                 return None
             if is_desktop_mode():
                 # No tty of ours to lend: the program gets a terminal window
-                # of its own, and we do not wait for it (#472).
+                # of its own, and we do not wait for it (#472). Its wrapper
+                # reports the exit back over the xefm socket.
+                exit_id = self._expect_exit(exited) if on_exit else None
+                if exit_id is not None:
+                    env = dict(env, XEFM_EXIT_ID=exit_id)
                 if self._open_terminal(argv, cwd=cwd, env=env,
                                        pause_on_error=True):
                     self.log_info(f"Launched in a terminal: {name}")
+                    if on_exit is not None and exit_id is None:
+                        exited(None)  # no socket: the exit cannot be learned
+                else:
+                    self._exit_waiters.pop(exit_id, None)
+                    exited(None)
                 self.panel.render()
                 return None
             # Full-screen child (vim, less, a REPL): hand over the tty and wait.
-            return self._run_in_terminal(argv, cwd=cwd, env=env,
+            code = self._run_in_terminal(argv, cwd=cwd, env=env,
                                          pause_on_error=True)
+            exited(code)
+            return code
         try:
             # Pipes, never the terminal: in TUI mode a direct write would corrupt
             # the screen we own; in desktop mode there may be no terminal at all.
@@ -9559,13 +10183,26 @@ class XeFMApp:
                 **SUBPROCESS_NO_WINDOW)
         except Exception as exc:
             self.log_info(f"Failed to launch {name}: {exc}")
+            exited(None)
         else:
             self.log_info(f"Launched: {name}")
-            self._watch_program(name, proc)
+            self._watch_program(name, proc, on_exit=exited if on_exit else None)
         self.panel.render()
         return None
 
-    def _watch_program(self, name: str, proc: subprocess.Popen) -> None:
+    def _expect_exit(self, callback) -> str | None:
+        """An id for a program in a ``TERMINAL`` window to report its exit
+        under (``XEFM_EXIT_ID``; the wrapper runs ``xefm _exited ID CODE``),
+        with ``callback(code)`` waiting for it. None without the socket."""
+        if self._remote() is None:
+            return None
+        import secrets
+        exit_id = secrets.token_hex(8)
+        self._exit_waiters[exit_id] = callback
+        return exit_id
+
+    def _watch_program(self, name: str, proc: subprocess.Popen,
+                       on_exit=None) -> None:
         """Stream a launched program's output into the log pane without blocking
         the UI. Reader threads post complete lines to ``_log_queue`` — the same
         channel as captured stdout/stderr, drained only by the UI thread — and a
@@ -9592,6 +10229,8 @@ class XeFMApp:
             if code != 0:
                 self._log_queue.put(("STDERR", f"'{name}' exited with code {code}"))
                 self._wake_pump()
+            if on_exit is not None:
+                on_exit(code)  # queues itself onto the UI thread
 
         threading.Thread(target=waiter, name="xefm-program-wait",
                          daemon=True).start()
@@ -12851,6 +13490,7 @@ class XeFMApp:
             ("file_details", "Show file details"),
             ("edit_files", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
+            ("toggle_terminal", "Show or hide the console (Tools menu)"),
             ("open_with_os", "Open with the default app"),
             ("open_with", "Choose the app that opens the selection (File menu)"),
             ("reveal_in_os", "Reveal in the OS file manager"),
@@ -14007,6 +14647,14 @@ def main() -> None:
     # own, once, before anything looks a program up.
     from xefm.external_programs import ensure_common_paths_in_env
     ensure_common_paths_in_env(os.environ)
+    # `xefm selected`, `xefm cd .` ... from a shell XeFM started (#900): the
+    # shim XeFM puts on PATH answers these without loading the UI, but an
+    # `xefm` installed on PATH by pip may come first. A directory of the
+    # same name to open is still opened, outside such a shell.
+    from xefm import remote_cli
+    if len(sys.argv) > 1 and sys.argv[1] in remote_cli.COMMANDS and (
+            os.environ.get("XEFM_SOCKET") or not os.path.exists(sys.argv[1])):
+        sys.exit(remote_cli.main(sys.argv[1:]))
     # `xefm ext …` manages extension packages and never opens a window, so it
     # is dispatched before the UI's own arguments are parsed.
     if len(sys.argv) > 1 and sys.argv[1] == "ext":

@@ -137,7 +137,7 @@ stable	property	xefm.user_api.ActionContext.other	ro
 stable	property	xefm.user_api.ActionContext.pane	ro
 preview	method	xefm.user_api.ActionContext.program_env	[["self", "pk", null]]
 stable	property	xefm.user_api.ActionContext.right	ro
-stable	method	xefm.user_api.ActionContext.run_program	[["self", "pk", null], ["command", "pk", null], ["terminal", "kw", "False"], ["cwd", "kw", "None"], ["env", "kw", "None"]]
+stable	method	xefm.user_api.ActionContext.run_program	[["self", "pk", null], ["command", "pk", null], ["terminal", "kw", "False"], ["cwd", "kw", "None"], ["env", "kw", "None"], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.run_task	[["self", "pk", null], ["title", "pk", null], ["work", "pk", null], ["on_done", "kw", "None"], ["read_only", "kw", "False"]]
 preview	method	xefm.user_api.ActionContext.show_markdown	[["self", "pk", null], ["title", "pk", null], ["source", "pk", null], ["on_close", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.terminal_backend_suspended	[["self", "pk", null]]
