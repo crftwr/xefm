@@ -192,17 +192,15 @@ class TestS3VirtualDirectoryStatsSimplified(unittest.TestCase):
         virtual_dir = S3PathImpl('s3://test-bucket/virtual-dir/', metadata=metadata)
         
         # Time multiple calls
-        start_time = time.time()
+        start_time = time.perf_counter()
         for _ in range(1000):
             virtual_dir._get_virtual_directory_stats()
-        elapsed_time = time.time() - start_time
-        
-        # Should be very fast (< 1ms total for 1000 calls)
-        self.assertLess(elapsed_time, 0.001)
-        
-        # Average per call should be sub-microsecond
-        avg_per_call = elapsed_time / 1000
-        self.assertLess(avg_per_call, 0.000001)  # < 1 microsecond
+        elapsed_time = time.perf_counter() - start_time
+
+        # No request, so 1000 calls take well under 50 ms. The bound was 1 ms,
+        # which a busy VM missed (1.4 ms in a 1.17.0rc2 release-test): what it
+        # guards is that nothing is fetched, not the CPU's speed.
+        self.assertLess(elapsed_time, 0.05)
 
 
 def main():

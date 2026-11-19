@@ -197,17 +197,6 @@ class Rendering(unittest.TestCase):
         self.assertTrue(r.set_shader(Shader(ink=ink, backdrop=_BACKDROP, **fields)), r.error)
         return MetalBackground.texture_pixels(r.render_to_texture(w, h, elapsed, seed=seed))
 
-    def test_every_shot_draws_a_picture(self):
-        for name in earth.SHOTS:
-            px = self._frame(earth.earth_shader(shot=name))
-            distinct = {bytes(px[i:i + 3]) for i in range(0, len(px), 4)}
-            self.assertGreater(len(distinct), 200, f"{name} drew a flat frame")
-
-    def test_every_lens_draws(self):
-        for name in earth.LENSES:
-            px = self._frame(earth.earth_shader(shot="rise", lens=name))
-            self.assertGreater(max(px[i] for i in range(0, len(px), 4)), 40, name)
-
     def test_the_scene_ignores_ink(self):
         # Physically coloured, by decision: the planet does not take the palette's hue.
         fields = earth.earth_shader(shot="day")
@@ -317,3 +306,24 @@ class Rendering(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@metal_only
+@pytest.mark.parametrize("name", earth.SHOTS)
+def test_every_shot_draws_a_picture(name):
+    # One test per shot, not one for all sixteen: each frame decodes the
+    # textures and bakes afresh (about half a second in the macOS VM), and
+    # sixteen in one test reached the 10 s timeout with the other guests busy
+    # - pytest-timeout then killed the worker (1.17.0rc2 release-test).
+    case = Rendering()
+    px = case._frame(earth.earth_shader(shot=name))
+    distinct = {bytes(px[i:i + 3]) for i in range(0, len(px), 4)}
+    assert len(distinct) > 200, f"{name} drew a flat frame"
+
+
+@metal_only
+@pytest.mark.parametrize("name", earth.LENSES)
+def test_every_lens_draws(name):
+    # One test per lens, for the reason the shots have one each.
+    px = Rendering()._frame(earth.earth_shader(shot="rise", lens=name))
+    assert max(px[i] for i in range(0, len(px), 4)) > 40, name
