@@ -119,6 +119,24 @@ def no_real_trash(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def test_loggers_start_clean():
+    """The logging tests name their loggers ``Test*`` and each builds its own
+    LogManager, which attaches its handlers to the process-wide logger of
+    that name, never takes them off, and makes it non-propagating - and
+    pytest attaches its own capture handlers to every non-propagating logger
+    for each phase of a test. A test that counted the handlers then saw what
+    an earlier test in the same worker had left (8, not 2, in a 1.17.0rc2
+    release-test), so each test ends with those loggers back as new."""
+    yield
+    import logging
+    for name, logger in list(logging.Logger.manager.loggerDict.items()):
+        if name.startswith("Test") and isinstance(logger, logging.Logger):
+            logger.handlers.clear()
+            logger.propagate = True
+            logger.setLevel(logging.NOTSET)
+
+
+@pytest.fixture(autouse=True)
 def no_configured_runner():
     """A test app registers its launcher for the viewers' TEXT_DIFF
     (``external_programs.set_configured_runner``); the next test - a viewer

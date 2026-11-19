@@ -176,7 +176,13 @@ class Run(unittest.TestCase):
         self.assertTrue(out.cancelled)
         with open(pid_file) as f:
             pid = int(f.read())
-        deadline = time.monotonic() + 2
+        # Not at once: where sh does not exec its last command (the
+        # python:3.11-slim container), the interpreter is sh's child, so
+        # run() returns once sh is reaped, while the SIGKILLed interpreter
+        # may still be on its way out - more than 2 s in a 1.17.0rc2
+        # release-test with three guests busy. The loop ends as soon as it is
+        # gone, so only a real survivor waits it out.
+        deadline = time.monotonic() + 10
         while _alive(pid) and time.monotonic() < deadline:
             time.sleep(0.05)
         self.assertFalse(_alive(pid), f"the command (pid {pid}) is still running")
