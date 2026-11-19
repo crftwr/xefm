@@ -377,7 +377,7 @@ class InThePane(_Files):
         with patch.object(xefm_app.subprocess, "run",
                           lambda argv, **k: opened.append(argv)), \
                 patch.object(xefm_app.platform, "system", lambda: "Darwin"), \
-                patch.object(xefm_app, "get_program_for_file", lambda *a: None), \
+                patch.object(xefm_app, "get_command_for_file", lambda *a: None), \
                 patch.object(xefm_app, "has_explicit_association", lambda *a: False):
             self.app.open_with_os()
             self.app.reveal_in_os()

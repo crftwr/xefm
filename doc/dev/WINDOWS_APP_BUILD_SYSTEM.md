@@ -311,8 +311,8 @@ XeFM's terminal (discussion #900) is PuiKit's `TerminalView`, which runs on
 libghostty-vt. `puikit._ghostty` looks for the library at `_bin\` inside the
 puikit package, then on the system's library path, and nowhere else (no
 per-user location, no environment variable). So the bundle puts it at `app\puikit\_bin\ghostty-vt.dll`;
-without it the app has no terminal of its own and runs those programs in the
-`TERMINAL` application instead.
+without it the app has no terminal of its own, and the subshell and terminal
+programs do not start there.
 
 `tools/fetch_libghostty.py` does the work for both desktop builds. It takes the
 DLL from Ghostty's **official release** (release.files.ghostty.org, the

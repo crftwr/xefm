@@ -324,11 +324,11 @@ install-puikit: check-venv
 	@# libghostty-vt for XeFM's terminal, into the editable checkout's puikit/_bin/
 	@# (gitignored there): the release that checkout's _ghostty.py declares,
 	@# hash-checked, and left alone when it is already in place. A PuiKit from
-	@# PyPI carries none, so XeFM run that way uses the TERMINAL application.
-	@# Not fatal: without it XeFM still runs, with that same fallback.
+	@# PyPI carries none, so XeFM run that way has no terminal in the desktop app.
+	@# Not fatal: without it XeFM still runs, just without that terminal.
 	@if [ -n "$(PUIKIT_DIR)" ] && [ -f "$(PUIKIT_DIR)/scripts/fetch_libghostty.py" ]; then \
 		$(PYTHON) "$(PUIKIT_DIR)/scripts/fetch_libghostty.py" \
-			|| echo "Warning: libghostty-vt not fetched; XeFM's terminal falls back to the TERMINAL application."; \
+			|| echo "Warning: libghostty-vt not fetched; the desktop app will have no terminal."; \
 	fi
 
 clean-venv:

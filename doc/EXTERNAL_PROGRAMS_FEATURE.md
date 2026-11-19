@@ -95,24 +95,25 @@ pane, in both terminal and desktop mode, and a nonzero exit code is reported
 there too. XeFM stays fully responsive throughout.
 
 By default the program's input is closed at launch, so interactive terminal
-programs can't run this way. Give such an entry `'options': {'terminal': True}`
+programs can't run this way. Give such an entry `'terminal': True`
 instead: in terminal mode XeFM suspends its own display and hands the program
 the terminal — with the same working directory, arguments, and `XEFM_*`
 environment — then repaints when it exits, so `vim`, `less`, or a REPL work as
 expected:
 
 ```python
-{'name': 'View with less', 'command': ['less'], 'options': {'terminal': True}},
+{'name': 'View with less', 'command': ['less'], 'terminal': True},
 ```
+
+(`'options': {'terminal': True}`, the older spelling, works too.)
 
 If the program exits with a nonzero code, XeFM waits for Enter before
 repainting, so whatever error output it left on the terminal stays readable.
 
 In desktop mode there is no terminal to hand over, so a `terminal: True`
-entry opens in a terminal window of its own instead — Terminal.app on macOS,
-Windows Terminal on Windows, or whatever `TERMINAL` names — with the same
-working directory, arguments and `XEFM_*` environment. XeFM does not wait for
-it. See [External Terminal](EXTERNAL_TERMINAL_FEATURE.md).
+entry runs in XeFM's own terminal instead, as a terminal session you can hide
+while it runs, with the same working directory, arguments and `XEFM_*`
+environment. XeFM does not wait for it. See [Terminal](TERMINAL_FEATURE.md).
 
 ## Example Use Cases
 

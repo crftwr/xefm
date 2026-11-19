@@ -108,7 +108,7 @@ PROGRAMS = [
     {'name': 'Git Log', 'command': ['git', 'log', '--oneline', '-10']},
     {'name': 'My Tool', 'command': [xefm_python, xefm_tool('my_script.py')]},
     {'name': 'Python REPL', 'command': ['python3'],
-     'options': {'terminal': True}},
+     'terminal': True},
 ]
 ```
 
@@ -150,15 +150,17 @@ terminal and desktop mode:
    search-results pane passes absolute paths and runs from the search root;
    its `XEFM_THIS_DIR` / `XEFM_THIS_SELECTED` are overridden to match).
 2. Build the environment: `ensure_common_paths_in_env` + `build_xefm_env`.
-   An entry with `options {'terminal': True}` diverts here in terminal mode:
+   An entry marked `'terminal': True` (or `options {'terminal': True}`, the
+   older spelling; `program_wants_terminal` reads both) diverts here in
+   terminal mode:
    `_run_in_terminal(command + args, cwd, env, pause_on_error=True)` suspends
    the display via `backend.suspended()` and blocks until the child exits —
    the same hand-off `edit_file` and the sub-shell use — and a nonzero exit
    holds the terminal until Enter (the prompt goes to `sys.__stdout__`, since
    `sys.stdout` is captured into the log pane). In desktop mode there is no
-   terminal, so `_open_terminal` opens the `TERMINAL` application running the
-   same command instead and returns `None` at once — see
-   [EXTERNAL_TERMINAL_IMPLEMENTATION.md](EXTERNAL_TERMINAL_IMPLEMENTATION.md).
+   terminal, so `_start_session` runs the same command as a terminal session
+   in XeFM's own terminal instead and `None` comes back at once — see
+   [TERMINAL_SESSIONS_IMPLEMENTATION.md](TERMINAL_SESSIONS_IMPLEMENTATION.md).
 3. `subprocess.Popen` — the program name resolved through `resolve_command`
    first — with `stdin=DEVNULL`, `stdout=PIPE`, `stderr=PIPE`, so the
    child never touches the terminal. In TUI mode a direct write would corrupt
@@ -169,10 +171,38 @@ terminal and desktop mode:
    `XeFMApp._log_queue` — the same thread-safe channel as the app's own
    captured stdout/stderr, drained only by the UI thread — tagged `STDOUT`
    (dim) or `STDERR` (red). A waiter thread reports a nonzero exit code once
-   both streams close.
+   the program has exited, giving the pipes `_OUTPUT_DRAIN_S` to empty: a
+   launcher such as `code` can leave the editor it started holding them.
 
 Because stdin reads EOF on the piped path, interactive terminal programs must
-opt into the hand-off with `options {'terminal': True}`.
+opt into the hand-off with `'terminal': True`.
+
+### Commands from config.py: `XeFMApp._run_configured`
+
+`TEXT_EDITOR`, `TEXT_DIFF` and the `FILE_ASSOCIATIONS` verbs share one rule
+(#900). `command_terminal(value)` reads the marking of a command written
+`{'command': ..., 'terminal': bool}`: True, False, or None when unmarked.
+`_run_configured(argv, args, terminal=, subject=, on_exit=)`:
+
+| Marking | Terminal mode | Desktop |
+|---|---|---|
+| True | `_run_in_terminal` (hand-over, waits) | `_start_session` |
+| False | `_start_program` background | the same |
+| None | as True | as False |
+
+The background launch here is `outlives=True`: a child that may stay after
+XeFM quits (an editor) gets `start_new_session=True` and
+`restore_signals=False` on POSIX, so the terminal hanging up does not reach
+it and SIGPIPE stays ignored - when XeFM is gone and the log pane's pipe
+breaks, a write fails with EPIPE rather than killing the editor. It replaced
+`_spawn_detached` (a bare `Popen`: output lost, exit unknown, and a console
+window flashing on Windows for a `.cmd` launcher, #933).
+
+The viewers reach it through `external_programs.configured_runner()`, which
+the app registers at startup (`set_configured_runner`): the diff viewers run
+`TEXT_DIFF` there and re-read on `on_exit`, so the directory diff merge no
+longer waits inside `backend.suspended()` in the desktop app. Without an app
+(a viewer under test) they keep their own launch.
 
 ### Legacy path: `ExternalProgramManager.execute_external_program`
 
@@ -298,5 +328,5 @@ if platform.system() == 'Darwin':
 
 - [External Programs Feature](../EXTERNAL_PROGRAMS_FEATURE.md) — user documentation
 - [Subshell System](SUBSHELL_SYSTEM.md) — interactive sub-shell details
-- [External Terminal](EXTERNAL_TERMINAL_IMPLEMENTATION.md) — desktop mode's terminal window
+- [Terminal Sessions](TERMINAL_SESSIONS_IMPLEMENTATION.md) — desktop mode's terminal
 - [Configuration System](CONFIGURATION_SYSTEM.md) — configuration management

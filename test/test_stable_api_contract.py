@@ -166,7 +166,8 @@ def test_run_program_on_the_terminal_returns_the_exit_code(app_with):
 def test_run_program_on_the_desktop_opens_a_terminal_and_returns_none(app_with):
     app, _ = app_with()
     with patch("xefm.app.is_desktop_mode", return_value=True), \
-            patch.object(app, "_open_terminal", return_value=True) as opened:
+            patch.object(app, "_terminal_unavailable", return_value=None), \
+            patch.object(app, "_start_session") as opened:
         assert run(app, lambda ctx: ctx.run_program(["vim"], terminal=True)) is None
     assert opened.called
 

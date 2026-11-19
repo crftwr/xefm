@@ -1165,9 +1165,11 @@ class DirectoryDiffView(Widget):
     def _edit_merge(self) -> None:
         """Launch the configured ``TEXT_DIFF`` tool (e.g. ``vimdiff`` / ``code
         --diff``) on the focused file's two sides so the user can merge them,
-        handing the terminal over via the backend suspend/resume, then rescan (a
-        merged file's verdict flips ``!`` → ``=`` live). Two-sided local files
-        only."""
+        then rescan once it exits (a merged file's verdict flips ``!`` → ``=``
+        live). It runs through the app's launcher, as the file diff viewer's
+        does: an unmarked tool gets the terminal in terminal mode and is
+        started without one in the desktop app, so ``code --diff --wait`` does
+        not freeze the window. Two-sided local files only."""
         node = self._current()
         if node is None or node.is_directory or self._panel is None:
             return
@@ -1183,6 +1185,23 @@ class DirectoryDiffView(Widget):
         tool = getattr(self._config, "TEXT_DIFF", None) if self._config is not None else None
         if not tool:
             self._notify("No TEXT_DIFF tool is configured.")
+            return
+        from xefm.external_programs import command_terminal, configured_runner
+        runner = configured_runner()
+        if runner is not None:
+            # The app's launcher (#900): the desktop app no longer waits for
+            # the tool inside a suspended backend, which froze the window on
+            # `code --diff --wait`; the rescan follows the tool's exit.
+            def done(_code) -> None:
+                if self._panel is None or self not in [
+                        slot.widget for slot in self._panel._layers]:
+                    return  # closed meanwhile
+                self._restart_scan()
+                self._render()
+
+            runner(command_argv(tool), [str(node.left_path), str(node.right_path)],
+                   terminal=command_terminal(tool), subject=self._node_rel_path(node),
+                   on_exit=done)
             return
         argv = command_argv(tool)
         argv = argv + [str(node.left_path), str(node.right_path)]

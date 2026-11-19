@@ -465,7 +465,8 @@ class Config:
     #   ctx.choose(title, items, on_result=fn)        pick from a list
     #   ctx.confirm(prompt, on_result=fn)             yes / no
     #   ctx.run_program(['cmd', ...], terminal=False) run an external program;
-    #       terminal=True lends it the terminal (vim, massren...) and waits.
+    #       terminal=True gives it a terminal (vim, massren...): terminal mode
+    #       waits for it, the desktop app runs it in a terminal session.
     #       Don't subprocess.run() one yourself -- the screen breaks.
     # ...and on each pane:
     #   pane.path, pane.entries, pane.cursor, pane.focused, pane.selected()
@@ -1084,50 +1085,38 @@ class Config:
     MIGEMO_MIN_LENGTH = 3  # Shortest pattern handed to Migemo
     MIGEMO_ROMAJI_TABLE = 'default'  # 'default' or 'azik'
     
-    # Text editor settings
-    # Supports both string and list formats:
-    # - String format: 'vim' (single command, no arguments)
-    # - List format: ['code', '--wait'] (command with arguments)
-    # Automatically set based on actual running backend mode:
-    # - Terminal mode (TUI): vim
-    # - Desktop mode (GUI): code (VS Code)
-    # A terminal editor in the desktop app: mark it as PROGRAMS entries are
-    # marked, and it opens in XeFM's own terminal (when libghostty is there)
-    # instead of a detached window - e.g.
-    #     TEXT_EDITOR = {'command': 'vim', 'terminal': True}
+    # Commands: TEXT_EDITOR, TEXT_DIFF and the open/view/edit commands in
+    # FILE_ASSOCIATIONS below are written the same three ways:
+    # - String: 'vim', or 'code --wait' (split like a shell command line)
+    # - List: ['code', '--wait'] (argv as written; a Windows path needs this)
+    # - Dict: {'command': 'vim', 'terminal': True} -- a marked command:
+    #     'terminal': True   a terminal program (vim, less, vimdiff). Terminal
+    #                        mode hands it the terminal and waits; the desktop
+    #                        app runs it in a terminal session of its own.
+    #     'terminal': False  needs no terminal. Started in the background in
+    #                        both modes, never waited for; output to the log pane.
+    #   Unmarked (a string or list): terminal mode hands it the terminal, the
+    #   desktop app starts it in the background.
+
+    # Text editor. Automatically set for the backend actually running:
+    # vim in terminal mode, VS Code in the desktop app. A terminal editor in
+    # the desktop app: TEXT_EDITOR = {'command': 'vim', 'terminal': True}
     TEXT_EDITOR = 'code' if is_desktop_mode() else 'vim'
-    
-    # Text diff tool settings
-    # Tool invoked when pressing 'E' (edit_file) key in DiffViewer or DirectoryDiffViewer
-    # Supports both string and list formats:
-    # - String format: 'vimdiff' (single command, no arguments)
-    # - List format: ['code', '--diff'] (command with arguments)
-    # Automatically set based on actual running backend mode:
-    # - Terminal mode (TUI): vimdiff (string format example)
-    # - Desktop mode (GUI): code --diff (list format example)
+
+    # Text diff tool, run by edit_file in the file diff and directory diff
+    # viewers on the two sides. Automatically set like TEXT_EDITOR. In the
+    # desktop app: TEXT_DIFF = {'command': 'vimdiff', 'terminal': True}
     TEXT_DIFF = ['code', '--diff'] if is_desktop_mode() else 'vimdiff'
 
     # Subshell settings
-    # Shell launched by the 'subshell' action (Shift-X), in both modes.
+    # Shell launched by the 'subshell' action, and by every shell session in
+    # the desktop app's terminal.
     # None: use $SHELL if set, otherwise the platform default
     # (%COMSPEC% / cmd.exe on Windows, /bin/sh elsewhere).
     # Supports both string and list formats:
     # - String format: 'zsh' (single command, no arguments)
     # - List format: ['powershell', '-NoLogo'] (command with arguments)
     SUBSHELL = None
-
-    # Terminal application (desktop mode only)
-    # Desktop mode has no terminal to hand over, so the subshell, PROGRAMS
-    # entries with {'terminal': True} and a terminal TEXT_EDITOR run in one:
-    # None: XeFM's own terminal, drawn over the panes (needs libghostty);
-    #   where it cannot run, the platform default -- Terminal.app on macOS;
-    #   Windows Terminal (wt.exe) on Windows if installed, otherwise a new
-    #   console window.
-    # A command: always that terminal application, with the command to run
-    # appended as trailing arguments. Supports both string and list formats:
-    # - ['open', '-a', 'iTerm']      (macOS: any app that runs a script it opens)
-    # - ['wezterm', 'start', '--']   (a terminal that takes the command as args)
-    TERMINAL = None
 
     # S3 settings
     S3_CACHE_TTL = 60  # S3 cache TTL in seconds (default: 60 seconds)
@@ -1198,12 +1187,13 @@ class Config:
     # themselves and cannot be named; an unknown name is warned about and the
     # rule reads as absent.
     #
-    # You do NOT declare whether a program takes over the terminal. That follows
-    # from the backend, not from the program: in terminal mode XeFM suspends and
-    # waits for the child (correct for less/vim; a launcher like `open -a` just
-    # returns straight away), and in desktop mode there is no terminal to hand
-    # over, so the child is detached and XeFM stays responsive. As with
-    # TEXT_EDITOR above, pick programs that suit the mode you run in.
+    # The commands are written like TEXT_EDITOR (see "Commands" above). Left
+    # unmarked, terminal mode hands the program the terminal and waits (right
+    # for less or vim; a launcher like `open -a` just returns straight away),
+    # and the desktop app starts it in the background. Mark a terminal program
+    # {'command': [...], 'terminal': True} to run it in the desktop app's
+    # terminal too, or a GUI program 'terminal': False to start it in the
+    # background in terminal mode too.
     #
     # Format:
     # {
@@ -1326,11 +1316,10 @@ class Config:
         #     'open|view': ['command', 'args'],   # external programs
         #     'edit': ['command', 'args'],
         # },
-        # Terminal programs need no special marking -- in terminal mode XeFM
-        # hands the display over and waits:
+        # A terminal program, in both modes:
         # {
         #     'pattern': '*.log',
-        #     'view': ['less'],
+        #     'view': {'command': ['less'], 'terminal': True},
         # },
         # Programs for Open With. A '*' rule's programs are offered for every
         # file, so a mixed selection always has them in common:
@@ -1338,7 +1327,7 @@ class Config:
         #     'pattern': '*',
         #     'open_with': [
         #         {'name': 'VS Code', 'command': ['code']},
-        #         {'name': 'Hex view', 'command': ['hexyl'], 'options': {'terminal': True}},
+        #         {'name': 'Hex view', 'command': ['hexyl'], 'terminal': True},
         #     ],
         # },
     ]
@@ -1351,13 +1340,12 @@ class Config:
     #   2. {xefm/app.py directory}/tools/ (system tools, fallback)
     # ~/.xefm/tools/ is created on first launch with example_tool.py in it —
     # copy that file as the starting point for your own tools.
-    # The "options" field is a dictionary with program-specific options:
-    #   - terminal: if True, hand the terminal over to the program and wait for
-    #     it to exit — for full-screen / interactive programs (vim, less, a
-    #     REPL). If it exits with an error, XeFM waits for Enter so the output
-    #     stays readable. Desktop mode has no terminal to hand over, so the
-    #     program opens in a TERMINAL window instead (see TERMINAL above).
-    #   - auto_return: deprecated and ignored — launches never block XeFM.
+    # A program runs in the background, its output in the log pane. Mark it
+    # 'terminal': True for a full-screen / interactive program (vim, less, a
+    # REPL): terminal mode hands it the terminal and waits, holding the screen
+    # on an error so the output stays readable; the desktop app runs it in a
+    # terminal session of its own. ('options': {'terminal': True} is the older
+    # spelling and still works; 'auto_return' there is ignored.)
     PROGRAMS = [
         {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')]},
         {'name': 'Open in Kiro', 'command': [xefm_python, xefm_tool('kiro.py')]},
@@ -1368,8 +1356,17 @@ class Config:
         # {'name': 'My Script (direct path)', 'command': [xefm_python, '/path/to/script.py']},
         # {'name': 'Quick Command', 'command': ['ls', '-la']},
 
-        # Full-screen / interactive programs need the terminal handed over:
-        # {'name': 'View with less', 'command': ['less'], 'options': {'terminal': True}},
-        # {'name': 'Python REPL', 'command': ['python3'], 'options': {'terminal': True}},
+        # Full-screen / interactive programs need a terminal:
+        # {'name': 'View with less', 'command': ['less'], 'terminal': True},
+        # {'name': 'Python REPL', 'command': ['python3'], 'terminal': True},
+
+        # Another terminal application in the active pane's directory. A
+        # program gets the selected names as trailing arguments; the
+        # 'sh -c ... sh' and 'python -c' forms leave them unused.
+        # {'name': 'Terminal.app here', 'command': ['sh', '-c', 'open -a Terminal "$PWD"', 'sh']},
+        # {'name': 'iTerm here', 'command': ['sh', '-c', 'open -a iTerm "$PWD"', 'sh']},
+        # {'name': 'tmux window here', 'command': ['sh', '-c', 'tmux new-window -c "$PWD"', 'sh']},
+        # {'name': 'Windows Terminal here',
+        #  'command': [xefm_python, '-c', "import subprocess; subprocess.Popen(['wt.exe', '-d', '.'])"]},
     ]
 ```

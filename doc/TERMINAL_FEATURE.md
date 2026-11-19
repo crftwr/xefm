@@ -1,0 +1,151 @@
+# Terminal
+
+English \| [日本語](TERMINAL_FEATURE.ja.md)
+
+Some things XeFM runs need a terminal: the subshell (`subshell`, **Tools →
+Subshell Here**) and programs that draw a screen or read the keyboard, such as
+`vim`, `less` or a REPL. How XeFM gives them one depends on how it runs:
+
+- **In a terminal**, XeFM hands over the terminal it runs in, waits until the
+  program exits, then re-reads the panes.
+- **In the desktop app**, XeFM has a terminal of its own, drawn in its window.
+  Each shell or program runs there as a *terminal session*, which you can hide
+  behind the panes while it keeps running.
+
+## Which commands get a terminal
+
+`TEXT_EDITOR`, `TEXT_DIFF`, the `open`, `view` and `edit` commands in
+`FILE_ASSOCIATIONS`, and `PROGRAMS` entries can all be marked the same way:
+
+```python
+TEXT_EDITOR = {'command': 'vim', 'terminal': True}
+TEXT_DIFF = {'command': ['code', '--diff', '--wait'], 'terminal': False}
+{'pattern': '*.log', 'view': {'command': ['less'], 'terminal': True}},
+{'name': 'Python REPL', 'command': ['python3'], 'terminal': True},
+```
+
+| Marking | In a terminal | In the desktop app |
+|---|---|---|
+| `'terminal': True` | gets the terminal; XeFM waits | runs in a terminal session |
+| `'terminal': False` | runs in the background, output in the log pane | the same |
+| unmarked (a plain string or list) | gets the terminal; XeFM waits | runs in the background, output in the log pane |
+
+A `PROGRAMS` entry without a marking runs in the background in both modes, as
+it always has. See [External Programs](EXTERNAL_PROGRAMS_FEATURE.md) and
+[File Associations](FILE_ASSOCIATIONS_FEATURE.md) for the rest of those
+settings.
+
+A program in the background is never waited for. If it exits with an error,
+the log pane says so. A program that keeps running after XeFM quits, such as
+an editor, is not stopped by XeFM quitting.
+
+## In the desktop app: terminal sessions
+
+**Subshell Here** starts your shell in the active pane's directory, in XeFM's
+terminal over the panes. A program marked `'terminal': True` opens the same
+way. Each is a terminal session:
+
+- **Switch** with **Tools → Terminal Sessions…** (`terminal_sessions`, or
+  `terminal.sessions` from inside a session). The list holds the file
+  manager's screen (the panes, with any viewer you have open), each session
+  with its state, and a last row that starts another shell in the active
+  pane's directory. The screen you are on comes first and the rest follow in
+  the order you last used them, with the cursor on the one you were on
+  before, so `Enter` takes you back there. Picking the file manager hides the
+  session: it keeps running behind the panes, and the panes re-read their
+  directories. A session you come back to has everything still in it. The
+  remove key (`remove_list_item`) ends the highlighted session.
+- **When it ends.** `exit` in a shell, or a program that finishes, closes the
+  session and returns to the panes, whether it was on screen or hidden. A
+  shell or program that fails keeps its last screen up so you can read it.
+  For a shell, `Enter` starts it again and `Esc` hides it; for a program,
+  `Enter` or `Esc` closes it.
+- **Close it** with `terminal.close` while it still runs. XeFM asks first,
+  since that stops whatever runs there.
+- **Quitting XeFM** asks first only when a session is busy: a program
+  running, or a shell in the middle of a command. A shell waiting at its
+  prompt just ends.
+
+The keys are on [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
+
+XeFM's terminal runs on libghostty, which the macOS and Windows apps include.
+XeFM installed with pip has no libghostty, so its desktop app has no terminal:
+the subshell and terminal programs do not start there, and the log says why.
+Run XeFM in a terminal (`--backend vt`) for them instead.
+
+### The shell's environment
+
+A shell XeFM starts gets the `XEFM_*` variables with the pane directories and
+selections, `XEFM_ACTIVE`, and the `[XeFM]` prompt marker (see
+[User Guide: Subshell](XEFM_USER_GUIDE.md#subshell)). Those variables hold the
+panes as they were when the shell started; a session you keep for a while
+should ask [`xefmctl`](#asking-xefm-from-the-shell) instead.
+
+For zsh and for bash 4.4 or later (macOS's own bash is 3.2), XeFM adds a few
+lines of shell integration when it starts them, so it can tell when the shell
+waits at its prompt and when a command ends. Your own startup files still run
+as usual.
+
+### News from a hidden session
+
+While a session is hidden, the status bar shows what needs your attention: a
+command that ran for 10 seconds or more has finished or failed, a program
+failed, or a program sent a notification (OSC 9 or OSC 777), as Claude Code
+and other tools can. A program that reports its progress (OSC 9;4) shows it
+there too. Click it to bring the session back.
+
+## In a terminal
+
+XeFM in a terminal does not draw a second terminal inside itself. The subshell
+and terminal programs get the terminal XeFM runs in, and you return to XeFM
+when they exit. There are no terminal sessions, so **Terminal Sessions** is not in
+the menu or the command palette.
+
+This is the one difference between the two: the desktop app can keep a shell
+running behind the panes, and XeFM in a terminal cannot. To work in parallel
+there, use the tabs or windows of your terminal, or tmux. To open another
+terminal window from XeFM, add a `PROGRAMS` entry for it; the config template
+has examples for Terminal.app, iTerm, Windows Terminal and tmux.
+
+## Asking XeFM from the shell
+
+In a shell XeFM started (the subshell, a terminal session, a `PROGRAMS`
+entry), the `xefmctl` command asks that XeFM for its state at the moment it
+runs:
+
+| Command | What it does |
+|---|---|
+| `xefmctl selected` | Prints the full paths of the selected items, one per line (`-0`: separated by NUL, for `xargs -0`) |
+| `xefmctl focused` | Prints the full path of the item under the cursor |
+| `xefmctl pwd` | Prints the pane's directory |
+| `xefmctl cd [PATH]` | Points the pane at `PATH`, relative to the shell's directory; without `PATH`, at the shell's directory. A file: its folder, with the cursor on it |
+| `xefmctl view FILE` | Opens `FILE` in XeFM's viewer |
+| `xefmctl sessions` | Lists the terminal sessions; `*` marks the one you are in |
+
+`--pane this` (the default, the active pane), `--pane other`, `--pane left`
+or `--pane right` picks the pane. For example:
+
+```sh
+cp $(xefmctl selected) /tmp           # names without spaces
+xefmctl selected -0 | xargs -0 du -sh
+xefmctl cd .                          # bring the active pane to this shell's directory
+xefmctl view build.log
+```
+
+If the XeFM that started the shell has quit, the command says so. While a
+subshell in a terminal runs, XeFM is waiting for it, so only the commands
+that read (`selected`, `focused`, `pwd`, `sessions`) work there.
+
+## The `TERMINAL` setting
+
+Earlier versions read `TERMINAL` in `config.py` to choose a terminal
+application for the desktop app. XeFM's own terminal runs those things now,
+and `TERMINAL` is no longer used: XeFM says so once when it loads a config
+that still sets it. To open your terminal application from XeFM, add a
+`PROGRAMS` entry for it.
+
+## See also
+
+- [External Programs](EXTERNAL_PROGRAMS_FEATURE.md): `PROGRAMS` and `'terminal': True`
+- [File Associations](FILE_ASSOCIATIONS_FEATURE.md): commands per file type
+- [User Guide: Subshell](XEFM_USER_GUIDE.md#subshell): the prompt marker and `SUBSHELL`

@@ -142,7 +142,10 @@ The other keys are the same in every preset.
 The copy / move / delete keys mirror the main file manager's and run through the
 same file-operation engine, so you can reconcile the two trees in place.
 `edit_files` launches the external tool set in `TEXT_DIFF` (for example `vimdiff` in a
-terminal, or `code --diff` in the desktop app).
+terminal, or `code --diff` in the desktop app), and both viewers re-read the
+files once it exits. `TEXT_DIFF` is marked like `TEXT_EDITOR`: in the desktop
+app, `{'command': 'vimdiff', 'terminal': True}` runs in XeFM's own terminal,
+and a GUI tool told to wait (`code --diff --wait`) never freezes the window.
 
 ## Notes
 

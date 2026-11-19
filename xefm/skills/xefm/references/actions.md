@@ -132,10 +132,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `toggle_terminal` | Show or hide the console, a shell that keeps running behind the panes | — | — | — | — |
-| `terminal_sessions` | List the console sessions and switch between them | — | — | — | — |
-| `insert_into_console` | Type the selected items' paths at the console's prompt | — | — | — | — |
-| `cd_console_here` | Type cd to this directory at the console's prompt | — | — | — | — |
+| `terminal_sessions` | Switch between the file manager and the terminal sessions | — | — | — | — |
 | `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
 | `extensions` | List the extension packages and whether they loaded | — | — | — | — |
 | `check_extension_updates` | Look for newer versions of the installed extension packages | — | — | — | — |
@@ -206,12 +203,12 @@ send them). These replace the row above in that app:
 - `reset_font_size` (Orthodox): `Command-0`
 - `reset_font_size` (Vim style): `Command-0`
 - `select_all` (OS native): `Command-A`, `Ctrl-A`
+- `terminal_sessions` (AFX style): `Ctrl-GRAVE`
+- `terminal_sessions` (OS native): `Ctrl-GRAVE`
+- `terminal_sessions` (Orthodox): `Ctrl-GRAVE`
+- `terminal_sessions` (Vim style): `Ctrl-GRAVE`
 - `toggle_hidden` (OS native): `Command-Shift-.`, `.`
 - `toggle_select_down` (OS native): `Ctrl-SPACE`, `INSERT`
-- `toggle_terminal` (AFX style): `Ctrl-GRAVE`
-- `toggle_terminal` (OS native): `Ctrl-GRAVE`
-- `toggle_terminal` (Orthodox): `Ctrl-GRAVE`
-- `toggle_terminal` (Vim style): `Ctrl-GRAVE`
 
 **Windows desktop app:**
 
@@ -237,10 +234,10 @@ send them). These replace the row above in that app:
 - `reset_font_size` (OS native): `Ctrl-0`
 - `reset_font_size` (Orthodox): `Ctrl-0`
 - `reset_font_size` (Vim style): `Ctrl-0`
-- `toggle_terminal` (AFX style): `Ctrl-GRAVE`
-- `toggle_terminal` (OS native): `Ctrl-GRAVE`
-- `toggle_terminal` (Orthodox): `Ctrl-GRAVE`
-- `toggle_terminal` (Vim style): `Ctrl-GRAVE`
+- `terminal_sessions` (AFX style): `Ctrl-GRAVE`
+- `terminal_sessions` (OS native): `Ctrl-GRAVE`
+- `terminal_sessions` (Orthodox): `Ctrl-GRAVE`
+- `terminal_sessions` (Vim style): `Ctrl-GRAVE`
 
 ## Inside viewers and dialogs
 
@@ -462,9 +459,7 @@ viewer only.
 | Action | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | — |
-| `terminal.hide` | Hide the console and return to the panes; its programs keep running | — |
-| `terminal.sessions` | List the console sessions and switch between them | — |
-| `terminal.insert_selection` | Type the active pane's selected paths at this console's prompt | — |
+| `terminal.sessions` | Switch to the file manager or another terminal session | — |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |

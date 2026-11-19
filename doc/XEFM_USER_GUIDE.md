@@ -484,12 +484,10 @@ TEXT_EDITOR = 'vim'  # or 'nano', 'code', etc.
 `subshell` opens a shell in the current directory.
 
 In terminal mode, exit the shell to return to XeFM. The desktop app has no
-terminal of its own to hand over, so it opens the shell in a terminal window
-instead — see [External Terminal](EXTERNAL_TERMINAL_FEATURE.md). The shell sees the `XEFM_*` environment
+terminal to hand over, so it runs the shell in a terminal session of its own,
+which you can hide to keep it running behind the panes — see
+[Terminal](TERMINAL_FEATURE.md). The shell sees the `XEFM_*` environment
 variables (pane directories and selections) and a `[XeFM]` prompt prefix.
-
-For a shell that keeps running while you work in the panes, use the
-[Console](CONSOLE_FEATURE.md) instead.
 
 The prefix is passed via the `PS1`/`PROMPT` environment variables, so a shell
 whose startup files set their own prompt overwrites it. zsh always does — on
@@ -573,8 +571,8 @@ s3://my-bucket/path/to/files/
 ## Advanced Features
 
 ### Sub-shell Mode
-`subshell` enters sub-shell mode (in the desktop app, in a terminal window —
-see [External Terminal](EXTERNAL_TERMINAL_FEATURE.md)) with environment variables:
+`subshell` enters sub-shell mode (in the desktop app, a terminal session —
+see [Terminal](TERMINAL_FEATURE.md)) with environment variables:
 - `XEFM_LEFT_DIR`: Left pane directory
 - `XEFM_RIGHT_DIR`: Right pane directory
 - `XEFM_THIS_DIR`: Current pane directory
@@ -693,8 +691,7 @@ FAVORITES = [
 PROGRAMS = [
     {'name': 'Git Status', 'command': ['git', 'status']},
     {'name': 'Open in VSCode', 'command': ['code', '.']},
-    {'name': 'View with less', 'command': ['less'],
-     'options': {'terminal': True}},
+    {'name': 'View with less', 'command': ['less'], 'terminal': True},
 ]
 ```
 
@@ -872,8 +869,7 @@ For detailed information about specific features, see these dedicated guides:
 - [The XeFM Skill for AI Agents](AGENT_SKILL_FEATURE.md) - Let an AI coding agent edit your configuration and write extensions
 - [Trying XeFM in a Throwaway Home](TRY_FEATURE.md) - `xefm try`: run XeFM in a temporary home, leaving your own `~/.xefm` untouched
 - [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md) - Custom program integration (incl. the VSCode recipe)
-- [External Terminal](EXTERNAL_TERMINAL_FEATURE.md) - The terminal window the desktop app opens for the subshell and terminal programs
-- [Console](CONSOLE_FEATURE.md) - A shell that keeps running behind the panes, shown and hidden with one key
+- [Terminal](TERMINAL_FEATURE.md) - The subshell and terminal programs, terminal sessions in the desktop app, and `xefmctl`
 - [Virtual Folders](VIRTUAL_FOLDERS_FEATURE.md) - Browse something that is not a directory - a registry, a database, an API - as if it were one
 
 ---

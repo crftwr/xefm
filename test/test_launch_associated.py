@@ -1,23 +1,24 @@
 """How an associated external program is launched.
 
-The one decision this makes is display handover, and it is answered by the
-*backend*, not by the configuration:
+Unmarked, the one decision this makes is display handover, and it is
+answered by the *backend*:
 
-* terminal mode — suspend, run, wait, restore (``less`` and ``vim`` need this)
-* desktop mode  — detach, never block the event loop (no tty exists to release)
+* terminal mode - suspend, run, wait, restore (``less`` and ``vim`` need this)
+* desktop mode  - start it in the background, never block the event loop (no
+  tty exists to release)
 
-Exercised against the real ``XeFMApp._launch_associated`` bound to a stand-in
-self, so the method under test is production code rather than a restatement of
-it. A per-entry ``'terminal'`` flag used to make this decision; see
-test_open_tiers.py for why it was removed.
-
-Run with: python -m pytest test/test_launch_associated.py -v
+A command marked ``{'command': ..., 'terminal': True/False}`` overrides that
+(#900; see test_configured_commands.py). Exercised against a real ``XeFMApp``
+over the memory backend, so the method under test is production code rather
+than a restatement of it.
 """
 
 import shutil
+from unittest.mock import patch
 
 import pytest
 
+from test_customization_api import app_with, config_with  # noqa: F401
 from xefm import app as xefm_app
 
 
@@ -30,41 +31,36 @@ class FakeEntry:
         return self._path
 
 
-class FakeApp:
-    """Minimal stand-in exposing only what _launch_associated touches."""
-
-    def __init__(self, local=True):
-        self._local = local
-        self.logged = []
-        self.ran_in_terminal = None
-
-    _is_local = staticmethod(lambda entry: FakeApp._current_local)
-    _current_local = True
-
-    def log_info(self, message):
-        self.logged.append(message)
-
-    def _run_in_terminal(self, argv, cwd=None):
-        self.ran_in_terminal = argv
-
-    launch = xefm_app.XeFMApp._launch_associated
-    _spawn_detached = xefm_app.XeFMApp._spawn_detached
-    _files_label = staticmethod(xefm_app.XeFMApp._files_label)
-
-
 @pytest.fixture
-def app(monkeypatch):
+def app(app_with, monkeypatch):
     def make(desktop, local=True, popen=None):
+        real, _ = app_with()
         monkeypatch.setattr(xefm_app, "is_desktop_mode", lambda: desktop)
-        FakeApp._current_local = local
-        a = FakeApp()
-        a.popen_calls = []
+        monkeypatch.setattr(real, "_is_local", lambda entry: local)
+        real.logged = []
+        monkeypatch.setattr(real, "log_info", real.logged.append)
+        real.ran_in_terminal = None
+
+        def hand_over(argv, cwd=None, env=None, pause_on_error=False):
+            real.ran_in_terminal = argv
+            return 0
+        monkeypatch.setattr(real, "_run_in_terminal", hand_over)
+        real.popen_calls = []
+
+        import io
+
+        class _Proc:
+            def __init__(self):
+                self.stdout, self.stderr = io.StringIO(), io.StringIO()
+
+            def wait(self):
+                return 0
 
         def fake_popen(argv, *args, **kwargs):
-            a.popen_calls.append(argv)
+            real.popen_calls.append(argv)
             if popen is not None:
                 raise popen
-            return object()
+            return _Proc()
 
         monkeypatch.setattr(xefm_app.subprocess, "Popen", fake_popen)
         # Resolving the program against PATH (#345) is orthogonal to the
@@ -72,7 +68,8 @@ def app(monkeypatch):
         # read as the argv that was written, whatever this machine has
         # installed. TestPathResolution below covers the resolution itself.
         monkeypatch.setattr(shutil, "which", lambda cmd, path=None: None)
-        return a
+        real.launch = real._launch_associated
+        return real
     return make
 
 
@@ -90,6 +87,12 @@ class TestTerminalMode:
         a.launch([FakeEntry("/x/photo.png")], ["open", "-a", "Preview"])
         assert a.ran_in_terminal == ["open", "-a", "Preview", "/x/photo.png"]
 
+    def test_marked_false_runs_in_the_background_here_too(self, app):
+        a = app(desktop=False)
+        assert a.launch([FakeEntry()], ["code"], False) is True
+        assert a.popen_calls == [["code", "/home/me/a.log"]]
+        assert a.ran_in_terminal is None
+
 
 class TestDesktopMode:
     def test_detaches_and_never_blocks(self, app):
@@ -106,7 +109,15 @@ class TestDesktopMode:
     def test_other_launch_errors_are_logged_not_raised(self, app):
         a = app(desktop=True, popen=PermissionError("denied"))
         assert a.launch([FakeEntry()], ["blocked"]) is False
-        assert "Failed to open a.log" in a.logged[0]
+        assert "Failed to launch a.log" in a.logged[0]
+
+    def test_marked_true_runs_in_a_terminal_session(self, app):
+        a = app(desktop=True)
+        with patch.object(a, "_terminal_unavailable", return_value=None), \
+                patch.object(a, "_start_session") as start:
+            assert a.launch([FakeEntry()], ["less"], True) is True
+        assert start.call_args.args[0] == ["less", "/home/me/a.log"]
+        assert a.popen_calls == []
 
 
 class TestPathResolution:

@@ -444,18 +444,37 @@ class DiffViewer(Widget):
     def _edit_in_tool(self) -> None:
         """Launch the configured ``TEXT_DIFF`` tool (e.g. ``vimdiff`` / ``code
         --diff``) on the two compared files so the user can edit/merge them (the
-        ``edit_file`` binding), handing the terminal over via the backend
-        suspend/resume, then re-read both sides so the diff shows the result.
-        In desktop mode there is no terminal to hand over: the tool is detached
-        into a window of its own, so one told to wait (``code --diff --wait``)
-        cannot freeze ours (#644), and the reload is a no-op. Local files
-        only."""
+        ``edit_file`` binding), then re-read both sides once it exits so the
+        diff shows the result. It runs through the app's launcher, which
+        honors a ``'terminal'`` marking: in terminal mode an unmarked tool gets
+        the terminal; in the desktop app it is started without one, so a tool
+        told to wait (``code --diff --wait``) cannot freeze the window (#644).
+        Without an app (a viewer under test) it does the same by itself, with
+        no re-read in desktop mode. Local files only."""
         if "://" in str(self.path1) or "://" in str(self.path2):
             self._notify("Editing is only available for local files.")
             return
         tool = getattr(get_config(), "TEXT_DIFF", None)
         if not tool:
             self._notify("No TEXT_DIFF tool is configured.")
+            return
+        from xefm.external_programs import command_terminal, configured_runner
+        runner = configured_runner()
+        if runner is not None:
+            # The app's launcher (#900): marked or not, in a terminal session,
+            # a hand-over or the background; the re-read follows the tool's
+            # exit whichever it was.
+            def done(_code) -> None:
+                if self._panel is None or self not in [
+                        slot.widget for slot in self._panel._layers]:
+                    return  # closed meanwhile
+                self._reload()
+                if self._on_edited is not None:
+                    self._on_edited()
+                self._render()
+
+            runner(command_argv(tool), [str(self.path1), str(self.path2)],
+                   terminal=command_terminal(tool), subject="the diff", on_exit=done)
             return
         argv = command_argv(tool)
         argv = argv + [str(self.path1), str(self.path2)]

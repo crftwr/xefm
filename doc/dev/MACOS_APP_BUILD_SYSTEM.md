@@ -153,7 +153,7 @@ All Python components are copied from the venv's base_prefix:
   `puikit._ghostty` looks for it. It searches that `_bin/` and the system's
   library path, and nothing else (no per-user location, no environment
   variable), so without this the app
-  runs its subshell and terminal programs in the `TERMINAL` application instead.
+  has no terminal: its subshell and terminal programs do not start.
 - `tools/fetch_libghostty.py --target macos` takes Ghostty's official
   xcframework (pinned by version and SHA-256, cached under
   `build/cache/libghostty/`). The xcframework carries only a static universal

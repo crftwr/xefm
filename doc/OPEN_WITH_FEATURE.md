@@ -76,7 +76,7 @@ FILE_ASSOCIATIONS = [
         'pattern': '*',
         'open_with': [
             {'name': 'VS Code', 'command': ['code']},
-            {'name': 'Hex view', 'command': ['hexyl'], 'options': {'terminal': True}},
+            {'name': 'Hex view', 'command': ['hexyl'], 'terminal': True},
         ],
     },
 ]
@@ -91,8 +91,8 @@ FILE_ASSOCIATIONS = [
   The program runs in the active pane's directory with the same `XEFM_*`
   environment a `PROGRAMS` entry gets.
 - **`'terminal': True`** hands the terminal to the program and waits, for
-  full-screen tools like `less` or `hexyl` — in the desktop app it opens in a
-  terminal window instead (see [External Terminal](EXTERNAL_TERMINAL_FEATURE.md)).
+  full-screen tools like `less` or `hexyl` — in the desktop app it runs in a
+  terminal session of XeFM's own instead (see [Terminal](TERMINAL_FEATURE.md)).
   Without it the program runs in the background and its output goes to the
   log pane.
 

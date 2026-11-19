@@ -1065,6 +1065,15 @@ class ConfigManager:
                 "never block XeFM; remove it, or use {'terminal': True} for "
                 "full-screen terminal programs. Entries: " + ", ".join(legacy))
 
+        # TERMINAL picked the application the desktop app ran terminal
+        # programs in; XeFM's own terminal runs them now (#900).
+        if getattr(config, 'TERMINAL', None):
+            errors.append(
+                "TERMINAL is no longer used - the desktop app runs the subshell "
+                "and terminal programs in its own terminal. To open another "
+                "terminal application, add a PROGRAMS entry for it; then remove "
+                "TERMINAL from config.py")
+
         return errors
     
     def get_key_for_action(self, action):
@@ -1580,10 +1589,15 @@ def _program_entry(prog):
     if isinstance(prog, dict) and 'name' in prog and 'command' in prog:
         if isinstance(prog['command'], list) and prog['command']:
             options = prog.get('options')
+            options = dict(options) if isinstance(options, dict) else {}
+            if 'terminal' in prog:
+                # {'name': ..., 'command': ..., 'terminal': True}: marked the way
+                # TEXT_EDITOR and FILE_ASSOCIATIONS commands are (#900).
+                options['terminal'] = bool(prog['terminal'])
             return {
                 'name': prog['name'],
                 'command': prog['command'],
-                'options': options if isinstance(options, dict) else {},
+                'options': options,
             }
         logger.warning(f"Program command must be a non-empty list: {prog['name']}")
     else:
@@ -1684,6 +1698,28 @@ def _lookup_action(filename, action):
     return (False, None, None)
 
 
+def _command_value(value):
+    """``(argv, terminal)`` for a FILE_ASSOCIATIONS command value - a command
+    line, an argv list, or ``{'command': ..., 'terminal': bool}`` - or None
+    when ``value`` is not a command. ``terminal`` is None when unmarked."""
+    from xefm.external_programs import command_argv, command_terminal
+    if isinstance(value, dict) and 'command' not in value:
+        return None
+    if not isinstance(value, (str, list, tuple, dict)):
+        return None
+    argv = command_argv(value)
+    return (argv, command_terminal(value)) if argv else None
+
+
+def get_command_for_file(filename, action='open'):
+    """The external command configured for a file and action, as ``(argv,
+    terminal)``: ``terminal`` is the rule's ``'terminal'`` marking (True,
+    False, or None when the command is a bare string or list). None when no
+    command is configured, as for :func:`get_program_for_file`."""
+    _found, value, _entry = _lookup_action(filename, action)
+    return _command_value(value)
+
+
 def get_program_for_file(filename, action='open'):
     """The external command configured for a file and action.
 
@@ -1696,13 +1732,8 @@ def get_program_for_file(filename, action='open'):
         is also what an explicit ``None`` in the config produces -- use
         :func:`has_explicit_association` when the difference matters.
     """
-    _found, value, _entry = _lookup_action(filename, action)
-
-    if isinstance(value, str):
-        return value.split()
-    if isinstance(value, list):
-        return value
-    return None
+    command = get_command_for_file(filename, action)
+    return command[0] if command else None
 
 
 def has_action_for_file(filename, action='open'):
@@ -1815,8 +1846,8 @@ def get_action_for_file(filename, action):
     default.
     """
     found, value, _entry = _lookup_action(filename, action)
-    if not found or not isinstance(value, dict):
-        return None
+    if not found or not isinstance(value, dict) or 'command' in value:
+        return None  # a {'command': ...} value is a program (get_command_for_file)
     return _resolve_action(filename, action, value)
 
 

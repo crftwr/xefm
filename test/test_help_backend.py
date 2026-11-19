@@ -62,7 +62,7 @@ class TestBackendGatedRows(HelpMarkdownCase):
         self.assertIn("Open the menu bar", self.terminal_help())
 
     def test_subshell_row_is_present_in_desktop_mode(self):
-        # Desktop mode opens the shell in the TERMINAL application (#472).
+        # Desktop mode runs the shell as a terminal session (#900).
         self.assertIn("Open a shell in the current directory",
                       self.desktop_help())
 

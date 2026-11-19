@@ -187,15 +187,15 @@ Programs can be specified in two formats:
 
 ### Terminal Programs
 
-**You do not declare this.** Whether XeFM hands over the display is a property of
-the backend you are running, not of the program you configured:
+**Unmarked, you do not declare this.** Whether XeFM hands over the display is a
+property of the backend you are running, not of the program you configured:
 
-| Mode | What happens when a program launches |
+| Mode | What happens when an unmarked program launches |
 |---|---|
 | Terminal (`--backend tui`) | XeFM suspends, the program owns the terminal, XeFM restores and repaints when it exits |
-| Desktop mode | There is no terminal to hand over, so the program is detached and XeFM stays responsive |
+| Desktop mode | There is no terminal to hand over, so the program runs in the background and XeFM stays responsive |
 
-So `'view': ['less']` simply works in terminal mode — no flag needed:
+So `'view': ['less']` simply works in terminal mode — no marking needed:
 
 ```python
 {
@@ -205,16 +205,26 @@ So `'view': ['less']` simply works in terminal mode — no flag needed:
 }
 ```
 
-The practical consequence is the same one that governs `TEXT_EDITOR`: **pick
-programs that suit the mode you run in.** A terminal program configured while
-running in desktop mode has no terminal to draw on and will not appear; a GUI
-launcher used in terminal mode works, with a brief repaint as XeFM resumes.
+To have a command behave the same in both modes, mark that command, the way
+`TEXT_EDITOR` is marked:
+
+```python
+{
+    'pattern': '*.log',
+    'view': {'command': ['less'], 'terminal': True},   # the desktop app's terminal too
+    'edit': {'command': ['code'], 'terminal': False},  # never takes the terminal
+}
+```
+
+`'terminal': True` runs it in a terminal session in the desktop app; `False`
+starts it in the background in terminal mode too, with its output in the log
+pane. See [Terminal](TERMINAL_FEATURE.md#which-commands-get-a-terminal).
 
 > Earlier drafts of this feature had a per-entry `'terminal': True` flag. It was
-> removed: it duplicated a decision XeFM can already make, could not express one
-> entry mixing a terminal viewer with a GUI editor, and failed unsafely —
-> forgetting it on `less` corrupted the terminal. A leftover `terminal` key in a
-> hand-written config is ignored.
+> removed: it could not express one entry mixing a terminal viewer with a GUI
+> editor, and failed unsafely — forgetting it on `less` corrupted the terminal.
+> A leftover `terminal` key on an entry is ignored; the marking now belongs to
+> each command, and an unmarked one still follows the backend.
 
 ### Compact Format Features
 

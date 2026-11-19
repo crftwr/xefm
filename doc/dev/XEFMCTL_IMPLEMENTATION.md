@@ -1,31 +1,40 @@
-# The xefm Command: Implementation
+# xefmctl: Implementation
 
-`xefm selected`, `xefm cd .` and friends from a shell XeFM started
+`xefmctl selected`, `xefmctl cd .` and friends from a shell XeFM started
 (discussion #900, "Interaction between the file manager and a persistent
 shell", channel 1). User documentation:
-[CONSOLE_FEATURE.md](../CONSOLE_FEATURE.md#asking-xefm-from-the-shell).
+[TERMINAL_FEATURE.md](../TERMINAL_FEATURE.md#asking-xefm-from-the-shell).
 
 ## Why
 
-A persistent shell cannot use the `XEFM_*_SELECTED` snapshot: it is stale
-from its first prompt on. Each `xefm` command instead asks the running XeFM
-for its state at that moment. The same socket is meant to carry the MCP
-bridge, one-shot results and hook reports later (#880); only the shell
-commands exist so far.
+A shell that keeps running cannot use the `XEFM_*_SELECTED` snapshot: it is
+stale from its first prompt on. Each `xefmctl` command instead asks the
+running XeFM for its state at that moment.
+
+It was first called `xefm`, which collided with the command that starts
+XeFM: `xefm ext check` and `xefm selected` read as one program, and a shim
+named `xefm` had to forward everything it did not know to the real one. The
+in-shell command has its own name now and answers only its own commands.
+
+It is the one channel to XeFM. MCP was considered for agents (#880), but an
+agent running in a shell XeFM started can run `xefmctl` like any command and
+read `xefmctl --help`, and the key is only in XeFM's own children either way.
+If MCP is wanted later, it is a thin `xefmctl mcp` (a stdio server over the
+same socket), not a second protocol.
 
 ## Pieces
 
 ```
-shell ── xefm (shim on PATH) ── python -I remote_cli.py ──┐
-                                                           │ multiprocessing.connection
+shell ── xefmctl (shim on PATH) ── python -I remote_cli.py ──┐
+                                                              │ multiprocessing.connection
 XeFM:  RemoteServer (listener thread) ── XeFMApp._remote_handle ── _call_later ── _remote_answer (UI thread)
 ```
 
 - `xefm/remote_cli.py`: the client. Standard library only, run as a script
   with `-I` (safe path: `xefm/` is not put on `sys.path`, so no XeFM module
-  can shadow the stdlib). Commands it does not know (`ext`, `--help`) are
-  `exec`ed as `XEFM_PYTHON -m xefm ...`. Messages are ASCII
-  (`test_stream_text_ascii`), stdout/stderr use `errors="replace"`.
+  can shadow the stdlib). An unknown command is a usage error (exit 2).
+  Messages are ASCII (`test_stream_text_ascii`), stdout/stderr use
+  `errors="replace"`.
 - `xefm/remote_server.py`: the listener. `multiprocessing.connection` gives
   a Unix socket (in a `mkdtemp` 0700 directory) or a named pipe (Windows)
   with an HMAC challenge on a per-process 32-byte key before any request byte
@@ -33,13 +42,12 @@ XeFM:  RemoteServer (listener thread) ── XeFMApp._remote_handle ── _call
   most 64 KiB), never pickles. One thread accepts; each connection is
   answered on a short-lived thread. A `weakref.finalize` removes the
   directory at exit even when `close()` never runs.
-- The shim: `bin/xefm` (`sh`) or `bin\xefm.cmd` in the same directory,
+- The shim: `bin/xefmctl` (`sh`) or `bin\xefmctl.cmd` in the same directory,
   running the client with `external_programs.xefm_python`, so it works from
-  the app bundles, where no `xefm` is on the system `PATH`, and answers
-  without importing the UI.
-- `app.main()` also dispatches these commands, for a pip-installed `xefm`
-  that comes before the shim on `PATH` (a login shell's `path_helper`). A
-  directory named like a command is still opened when no `XEFM_SOCKET` is set.
+  the app bundles, where nothing of XeFM's is on the system `PATH`, and
+  answers without importing the UI. There is no pip entry point: the shim is
+  first on `PATH` in every shell XeFM starts, the only place the command
+  means anything.
 
 ## Environment
 
@@ -49,16 +57,13 @@ XeFM:  RemoteServer (listener thread) ── XeFMApp._remote_handle ── _call
 |---|---|
 | `XEFM_SOCKET` | the address |
 | `XEFM_TOKEN` | the key, hex |
-| `XEFM_SESSION` | the console session's id, or `subshell`, `program`, `console` (a `TERMINAL` window) |
-| `XEFM_PYTHON` | the interpreter the shim and forwarding use |
+| `XEFM_SESSION` | the terminal session's id, or `subshell` (terminal mode), `program` (a background `PROGRAMS` / `ctx.run_program` launch) |
+| `XEFM_PYTHON` | XeFM's interpreter |
 | `XEFM_BIN` | the shim directory |
 | `PATH` | the shim directory prepended |
 
-Given to console sessions, the subshell (both modes), every `PROGRAMS` /
-`ctx.run_program` launch (`_program_env`) and the console opened through
-`TERMINAL`. The external terminal wrapper does not deliver `PATH` (the
-terminal's own shell sets it up better), so both wrappers prepend
-`$XEFM_BIN` themselves.
+Given to every terminal session (`_start_session`), terminal mode's subshell
+and every `PROGRAMS` / `ctx.run_program` launch (`_program_env`).
 
 The key says a request comes from a shell XeFM started; it does not keep out
 other processes of the same user, which can read it from that shell's
@@ -84,27 +89,22 @@ the same reason; `cd` and `view` are refused with a message.
 
 `_launch_program(..., on_exit=)` calls `on_exit(code)` on the UI thread (via
 `_call_later`, so never inside the call) on every path: terminal mode's
-hand-over, XeFM's terminal (`_run_in_terminal_view`'s `on_done`), the
-background waiter thread, and a launch that failed (`None`). A `TERMINAL`
-window is a separate application, so its wrapper reports instead:
-`_expect_exit` registers a callback under a random `XEFM_EXIT_ID`, the
-wrapper keeps running after the program (no `exec`) and calls
-`"$XEFM_BIN/xefm" _exited ID STATUS` (Windows: `xefm.cmd` from the Python
-wrapper), which `remote_cli._exited` sends quietly and `_remote_answer`
-pops and calls once. Without the socket the callback gets `None` at once.
+hand-over, a terminal session (`Session.on_done`, when it ends), the
+background waiter thread, and a launch that failed or found no terminal
+(`None`). The socket is no longer involved: the `TERMINAL` window and its
+wrapper's `xefm _exited` report are gone with `TERMINAL` itself.
 
 `on_done` is a new optional parameter on the stable `run_program`; the
 docstring and the docs mark it Preview.
 
 ## Not yet
 
-- The session registry built from socket registrations, so shells in a
-  `TERMINAL` window appear in the session list (#900).
-- MCP and hooks on the same socket (#880).
+- Write commands (selection, file operations), when one is asked for.
+- MCP and hooks on the same socket (#880), as `xefmctl` subcommands.
 
 ## Tests
 
 `test/test_remote.py`: argument parsing, a real server round trip, a wrong
 key, the server gone, the shim run as its own process, what the app answers,
-the hand-over rule, and the wrapper's `PATH` line.
+the hand-over rule, and that `xefmctl` forwards nothing.
 `test/test_run_program_on_done.py`: `on_done` on every launch path.

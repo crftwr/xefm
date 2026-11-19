@@ -1,7 +1,6 @@
-"""Shell integration in XeFM's terminal and what the console does with it
-(#900): the injected startup files, a real zsh read through libghostty,
-typing at the prompt only while the shell is idle there, and the status bar's
-word from a hidden session."""
+"""Shell integration in XeFM's terminal and what the sessions do with it
+(#900): the injected startup files, a real zsh read through libghostty, and
+the status bar's word from a hidden session."""
 
 import os
 import queue
@@ -114,7 +113,7 @@ def test_zsh_marks_its_prompt_and_keeps_the_user_s_startup(tmp_path):
         term.close()
 
 
-# --- the console ----------------------------------------------------------------------
+# --- hidden sessions -----------------------------------------------------------------
 
 class _View:
     def __init__(self, *, idle=False, running=True, started=True, shown=False):
@@ -124,32 +123,16 @@ class _View:
         self.started = started
         self.shown = shown
         self.closing = False
-        self.sent = []
-
-    def send(self, text):
-        self.sent.append(text)
 
 
 def _app(monkeypatch, *, desktop=True):
     import xefm.app as app_mod
     monkeypatch.setattr(app_mod, "is_desktop_mode", lambda: desktop)
-    pane = {"path": "/w d", "files": ["/w d/a b", "/w d/c"],
-            "selected_files": {"/w d/c"}, "focused_index": 0}
-    app = SimpleNamespace(_sessions=SessionRegistry(), logged=[], clip=[], shown=[],
-                          started=0, rendered=0)
-    app.panel = SimpleNamespace(set_clipboard=app.clip.append,
-                                render=lambda: None)
-    app.config = SimpleNamespace(SUBSHELL=["/bin/zsh"])
+    app = SimpleNamespace(_sessions=SessionRegistry(), logged=[])
+    app.panel = SimpleNamespace(render=lambda: None)
     app.log_info = app.logged.append
-    app.active_pane = lambda: pane
-    app._is_local = lambda p: "://" not in str(p)
-    app._terminal_unavailable = lambda: None
-    app._show_session = lambda s: app.shown.append(s)
-    app._shown_session = lambda: None
     app._LONG_COMMAND_S = 10.0
-    for name in ("_console_type", "_console_type_to_clipboard", "insert_into_console",
-                 "cd_console_here", "_shell_quote", "_selection_paths",
-                 "_session_prompt", "_session_notification", "_session_progress",
+    for name in ("_session_prompt", "_session_notification", "_session_progress",
                  "_session_parts"):
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
     return app
@@ -157,65 +140,6 @@ def _app(monkeypatch, *, desktop=True):
 
 def _add(app, view, name="zsh"):
     return app._sessions.add(Session(view=view, kind=SHELL, name=name, cwd="/w d"))
-
-
-def test_typed_only_while_idle_at_the_prompt(monkeypatch):
-    app = _app(monkeypatch)
-    view = _View(idle=True)
-    session = _add(app, view)
-    app.insert_into_console()
-    assert view.sent == ["'/w d/c' "] and app.shown == [session] and not app.clip
-    app.cd_console_here()
-    assert view.sent[-1] == "cd '/w d'"
-
-
-def test_a_busy_shell_gets_the_clipboard_instead(monkeypatch):
-    app = _app(monkeypatch)
-    view = _View(idle=False)
-    session = _add(app, view)
-    session.command_since = time.monotonic()
-    app.insert_into_console()
-    assert not view.sent and app.clip == ["'/w d/c' "]
-    assert "not at its prompt" in app.logged[-1]
-
-
-def test_a_shell_xefm_cannot_read_gets_the_clipboard(monkeypatch):
-    app = _app(monkeypatch)
-    _add(app, _View(idle=False))
-    app.insert_into_console()
-    assert app.clip and "cannot tell" in app.logged[-1]
-
-
-def test_a_console_still_starting_gets_it_at_its_first_prompt(monkeypatch):
-    app = _app(monkeypatch)
-    view = _View(started=False)
-    session = _add(app, view)
-    app.insert_into_console()
-    assert session.pending_insert == "'/w d/c' " and not view.sent
-    view.idle_at_prompt = True
-    app._session_prompt(view, T.INPUT_START, None)
-    assert view.sent == ["'/w d/c' "] and session.pending_insert == ""
-
-
-def test_nothing_selected_types_the_item_under_the_cursor(monkeypatch):
-    app = _app(monkeypatch)
-    app.active_pane()["selected_files"].clear()
-    view = _View(idle=True)
-    _add(app, view)
-    app.insert_into_console()
-    assert view.sent == ["'/w d/a b' "]
-
-
-def test_terminal_mode_uses_the_clipboard(monkeypatch):
-    app = _app(monkeypatch, desktop=False)
-    app.insert_into_console()
-    assert app.clip == ["'/w d/c' "] and "TERMINAL" in app.logged[-1]
-
-
-def test_cmd_quoting():
-    app = SimpleNamespace()
-    assert XeFMApp._shell_quote(app, r"C:\a b", ["cmd.exe"]) == '"C:\\a b"'
-    assert XeFMApp._shell_quote(app, "plain", ["cmd.exe"]) == "plain"
 
 
 def test_a_long_command_ending_out_of_view_is_news(monkeypatch):

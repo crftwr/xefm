@@ -473,9 +473,8 @@ def open_selection_in_vim(ctx):
   or reads the keyboard needs. When it exits, both panes are re-read and the
   exit code is returned. A nonzero exit waits for Enter first, so its error
   output stays readable. The desktop window has no terminal to hand over, so
-  there the program runs in XeFM's own terminal over the panes, or in your
-  [`TERMINAL`](EXTERNAL_TERMINAL_FEATURE.md) application, and `run_program`
-  returns `None` at once.
+  there the program runs in a [terminal session](TERMINAL_FEATURE.md) over
+  the panes, and `run_program` returns `None` at once.
 
 To act once the program has exited, in either mode, pass `on_done` (Preview).
 It is called as `on_done(ctx, code)` with a new `ctx` and the exit code

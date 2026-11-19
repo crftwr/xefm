@@ -275,11 +275,11 @@ class EditSelectedFiles(EditSubshellBase):
         txt = [str(f) for f in pane["files"] if f.name == "c.txt"]
 
         def assoc(name, verb):
-            return ["mdedit"] if name.endswith(".md") else None
+            return (["mdedit"], None) if name.endswith(".md") else None
 
         # Pin terminal mode (is_desktop_mode caches process-global detection
         # other tests can pollute) so both launches go through subprocess.run.
-        with patch("xefm.app.get_program_for_file", side_effect=assoc), \
+        with patch("xefm.app.get_command_for_file", side_effect=assoc), \
              patch("xefm.app.has_explicit_association", return_value=False), \
              patch("xefm.app.is_desktop_mode", return_value=False), \
              patch("subprocess.run") as run:
@@ -294,7 +294,7 @@ class EditSelectedFiles(EditSubshellBase):
     def test_explicit_none_association_is_skipped(self):
         self._make("a.pdf")
         self._select("a.pdf")
-        with patch("xefm.app.get_program_for_file", return_value=None), \
+        with patch("xefm.app.get_command_for_file", return_value=None), \
              patch("xefm.app.has_explicit_association", return_value=True), \
              patch("subprocess.run") as run:
             self.app.edit_files()

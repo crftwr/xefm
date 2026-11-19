@@ -1,7 +1,7 @@
 """``ctx.run_program(..., on_done=)`` (Preview, #900): the exit code reaches
-the extension in every way a program runs - terminal mode's hand-over, XeFM's
-terminal, a TERMINAL window, the background - and never before the call
-returns."""
+the extension in every way a program runs - terminal mode's hand-over, a
+terminal session in the desktop app, the background - and never before the
+call returns."""
 
 import os
 import sys
@@ -44,51 +44,30 @@ def test_terminal_mode_reports_the_code_after_returning(app_with):
     assert c == 3 and isinstance(ctx, user_api.ActionContext)
 
 
-def test_xefm_terminal_reports_when_the_view_closes(app_with):
+def test_a_terminal_session_reports_when_it_ends(app_with):
     app, _ = app_with()
     got = []
     with patch("xefm.app.is_desktop_mode", return_value=True), \
             patch.object(app, "_terminal_unavailable", return_value=None), \
-            patch.object(app, "_run_in_terminal_view") as view:
+            patch.object(app, "_start_session") as start:
         assert run(app, lambda ctx: ctx.run_program(
             ["vim"], terminal=True, on_done=lambda ctx, c: got.append(c))) is None
-    view.call_args.kwargs["on_done"](0)  # the layer closed
+    assert start.call_args.kwargs["shell"] is False
+    start.call_args.kwargs["on_done"](0)  # the session ended
     assert got == []
     _pump(app, lambda: got)
     assert got == [0]
 
 
-def test_a_terminal_window_reports_over_the_socket(app_with):
+def test_no_terminal_in_the_desktop_app_reports_none(app_with):
     app, _ = app_with()
     got = []
     with patch("xefm.app.is_desktop_mode", return_value=True), \
-            patch.object(app, "_terminal_unavailable", return_value="no libghostty"), \
-            patch.object(app, "_open_terminal", return_value=True) as opened:
-        run(app, lambda ctx: ctx.run_program(
-            ["vim"], terminal=True, on_done=lambda ctx, c: got.append(c)))
-    env = opened.call_args.kwargs["env"]
-    exit_id = env["XEFM_EXIT_ID"]
-    assert env["XEFM_SOCKET"]
-    # What the wrapper's `xefm _exited ID CODE` arrives as.
-    assert app._remote_answer({"cmd": "_exited", "id": exit_id, "code": 2})["ok"]
-    _pump(app, lambda: got)
-    assert got == [2]
-    # Once only.
-    app._remote_answer({"cmd": "_exited", "id": exit_id, "code": 2})
-    _pump(app, lambda: False, timeout=0.1)
-    assert got == [2]
-
-
-def test_a_window_that_did_not_open_reports_none(app_with):
-    app, _ = app_with()
-    got = []
-    with patch("xefm.app.is_desktop_mode", return_value=True), \
-            patch.object(app, "_terminal_unavailable", return_value="no libghostty"), \
-            patch.object(app, "_open_terminal", return_value=False):
+            patch.object(app, "_terminal_unavailable", return_value="no libghostty"):
         run(app, lambda ctx: ctx.run_program(
             ["vim"], terminal=True, on_done=lambda ctx, c: got.append(c)))
     _pump(app, lambda: got)
-    assert got == [None] and not app._exit_waiters
+    assert got == [None]
 
 
 def test_the_background_reports_the_real_exit(app_with):

@@ -187,7 +187,8 @@ the mouse for the first, take the whole buffer with the second. See
 | Background Jobs… | `jobs` — see [Background Jobs](BACKGROUND_JOBS_FEATURE.md) |
 | Find Similar Files… | `find_similar` *(ships unbound)* — see [Find Similar Files](FIND_SIMILAR_FILES_FEATURE.md) |
 | External Programs… | `programs` |
-| Subshell Here | `subshell` *(desktop mode: in a terminal window)* |
+| Subshell Here | `subshell` *(desktop mode: a terminal session)* — see [Terminal](TERMINAL_FEATURE.md) |
+| Terminal Sessions… | `terminal_sessions` *(desktop mode only)* |
 | Edit Configuration… | `edit_config` *(ships unbound)* |
 | Reload Configuration | `reload_config` *(ships unbound)* |
 | Advanced ▸ Keymap… | Choose AFX style, Orthodox, OS native or Vim style, each described — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md) |

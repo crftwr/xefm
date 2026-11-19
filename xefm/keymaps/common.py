@@ -274,16 +274,10 @@ def bindings() -> dict:
         # XeFM's terminal's own keys (#900): desktop chords only, set below,
         # since a program in it needs every key a terminal can deliver.
         'terminal.close': [],
-        # The console (#900): a shell that keeps running behind the panes. No
-        # key in a terminal - there it opens a TERMINAL window, which the key
-        # could not hide again; the desktop's Ctrl-` is set below.
-        'toggle_terminal': [],
+        # Terminal sessions (#900), the desktop app's: terminal mode hands its
+        # terminal over and has none. The desktop's Ctrl-` is set below.
         'terminal_sessions': [],
-        'terminal.hide': [],
         'terminal.sessions': [],
-        'insert_into_console': [],
-        'cd_console_here': [],
-        'terminal.insert_selection': [],
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to
@@ -533,10 +527,10 @@ def bindings() -> dict:
             # binds the palette itself without one.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Command-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Command-W']
-            # The console (#900): Ctrl-`, VS Code's terminal toggle, shows it
-            # from the panes and hides it again from inside.
-            KEY_BINDINGS['toggle_terminal'] = ['Ctrl-GRAVE']
-            KEY_BINDINGS['terminal.hide'] = ['Ctrl-GRAVE']
+            # The screen switcher (#900) on Ctrl-`, VS Code's terminal toggle,
+            # from the panes and from inside a session alike.
+            KEY_BINDINGS['terminal_sessions'] = ['Ctrl-GRAVE']
+            KEY_BINDINGS['terminal.sessions'] = ['Ctrl-GRAVE']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
@@ -552,6 +546,6 @@ def bindings() -> dict:
             # key, since Ctrl-W is a shell's.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Ctrl-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Ctrl-Shift-W']
-            KEY_BINDINGS['toggle_terminal'] = ['Ctrl-GRAVE']
-            KEY_BINDINGS['terminal.hide'] = ['Ctrl-GRAVE']
+            KEY_BINDINGS['terminal_sessions'] = ['Ctrl-GRAVE']
+            KEY_BINDINGS['terminal.sessions'] = ['Ctrl-GRAVE']
     return KEY_BINDINGS

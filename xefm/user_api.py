@@ -879,9 +879,10 @@ class ActionContext:
           waits for it. The panes are re-read on return, and the exit code is
           returned (``None`` if it could not be started). A nonzero exit holds
           the screen until Enter so its last words stay readable. The desktop
-          window has no terminal to lend, so there the program opens in the
-          ``TERMINAL`` application instead and ``None`` comes back at once —
-          the terminal window is on its own from then on.
+          window has no terminal to lend, so there the program runs in a
+          terminal session of XeFM's own, which the user can hide while it
+          runs, and ``None`` comes back at once; ``on_done`` tells you when it
+          is done.
 
         ``on_done(ctx, code)`` (**Preview**) runs on the UI thread once the
         program has exited, in every one of those cases and both modes, with
