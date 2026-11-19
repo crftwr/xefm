@@ -53,7 +53,7 @@ def windows(monkeypatch):
     started, ran = [], []
     monkeypatch.setattr(xefm_app.platform, "system", lambda: "Windows")
     monkeypatch.setattr(xefm_app, "get_action_for_file", lambda name, tier: None)
-    monkeypatch.setattr(xefm_app, "get_program_for_file", lambda name, tier: None)
+    monkeypatch.setattr(xefm_app, "get_command_for_file", lambda name, tier: None)
     monkeypatch.setattr(xefm_app, "has_explicit_association", lambda name, tier: False)
     monkeypatch.setattr(os, "startfile", started.append, raising=False)
     monkeypatch.setattr(xefm_app.subprocess, "run",

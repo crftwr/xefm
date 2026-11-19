@@ -1,17 +1,16 @@
 """XeFM's terminal (discussion #900).
 
-Terminal mode hands its own terminal to a subshell, to ``PROGRAMS`` entries
-with ``{'terminal': True}`` and to a ``TEXT_EDITOR`` marked
+Terminal mode hands its own terminal to a subshell and to any command marked
 ``{'terminal': True}``, waits, and re-reads the panes when they are done. The
 desktop app has no terminal to hand over, so it runs them in one of its own:
-:class:`TerminalView`, a full-window layer over the panes. The same actions
-therefore do the same thing in both modes; only the terminal they run in
-differs - the one XeFM runs in, or the one XeFM draws.
+:class:`TerminalView`, a full-window layer over the panes. Each one there is a
+terminal session (:mod:`xefm.terminal_sessions`): it can be hidden behind the
+panes and keeps running until its program exits.
 
 The emulation is PuiKit's ``TerminalView`` (libghostty-vt over a pty); this
 module decides what runs in it and what XeFM does around it. Where the widget
-or libghostty is missing, :func:`unavailable` says why and the caller falls
-back to the ``TERMINAL`` application.
+or libghostty is missing, :func:`unavailable` says why; the desktop app then
+has no terminal to run such things in.
 """
 
 from __future__ import annotations
@@ -42,19 +41,8 @@ PROGRESS_REMOVE, PROGRESS_SET, PROGRESS_ERROR, PROGRESS_INDETERMINATE, PROGRESS_
     0, 1, 2, 3, 4
 
 
-def chosen_elsewhere(config) -> bool:
-    """Whether config.py names a ``TERMINAL`` application: then that one runs
-    what needs a terminal, and XeFM's own is not used. ``None`` (the default)
-    leaves it to XeFM's terminal, and to the platform's own where that cannot
-    run."""
-    from xefm.external_programs import command_argv
-    return bool(command_argv(getattr(config, "TERMINAL", None)))
-
-
-def unavailable(config) -> str | None:
-    """None when XeFM's terminal is to run things here, else why not."""
-    if chosen_elsewhere(config):
-        return "TERMINAL is set in config.py"
+def unavailable(config=None) -> str | None:
+    """None when XeFM's terminal can run here, else why not."""
     if _PuiKitTerminalView is None or _terminal_available is None:
         return "this PuiKit has no TerminalView"
     return _terminal_available()
@@ -92,22 +80,25 @@ _Base = _PuiKitTerminalView if _PuiKitTerminalView is not None else object
 
 
 class TerminalView(_Base):  # type: ignore[misc,valid-type]
-    """One program - a subshell, a terminal program, a terminal editor - run
-    in a full-window layer, as terminal mode runs it in its own terminal.
+    """One terminal session's view - a shell, a terminal program, a terminal
+    editor - run in a full-window layer, as terminal mode runs it in its own
+    terminal.
 
     When the program exits, ``on_exited`` gets the view and the exit code;
-    the app closes the layer and re-reads the panes. A program that failed is
-    left on screen with its exit bar so its last output can be read, and Enter
-    or Escape closes it then. ``terminal.close`` asks the app to close it
-    early (``on_close_request``), which stops a program still running."""
+    the app closes a clean exit and keeps a failed one on screen with its exit
+    bar, so its last output can be read. What a key does then depends on what
+    ran (``shell``): a shell restarts on Enter and hides on Escape, a program
+    closes on either - starting vim again would mean nothing.
+    ``terminal.close`` asks the app to close it early (``on_close_request``),
+    which stops a program still running; ``terminal.hide`` puts it behind the
+    panes while it keeps running."""
 
     def __init__(self, argv: list[str], *, cwd: str, env: dict, label: str,
                  on_exited: Callable[["TerminalView", int | None], None],
                  on_close_request: Callable[["TerminalView"], None],
-                 persistent: bool = False,
-                 on_hide_request: Callable[["TerminalView"], None] | None = None,
+                 on_hide_request: Callable[["TerminalView"], None],
+                 shell: bool = False,
                  on_sessions_request: Callable[[], None] | None = None,
-                 on_insert_request: Callable[["TerminalView"], None] | None = None,
                  on_prompt: Callable[[int, int | None, str], None] | None = None,
                  on_notification: Callable[[str, str], None] | None = None,
                  on_progress: Callable[[int, int | None], None] | None = None) -> None:
@@ -122,24 +113,18 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
                                              on_progress=on_progress))
         self.label = label
         self.on_close_request = on_close_request
-        #: Called once with the exit code after the layer closes: the caller's
-        #: "after the program", as code after terminal mode's blocking run.
-        self.on_done: Callable[[int | None], None] | None = None
-        #: Set once the app starts closing it: it is sliding out, and keys and
-        #: clicks no longer reach the program (or close it a second time).
-        self.closing = False
-        #: A persistent session (the console, #900) rather than a one-shot
-        #: run: it can be hidden and shown again while its program keeps
-        #: running, and it stays after the program exits - Enter starts it
-        #: again, Escape hides it.
-        self.persistent = persistent
         self.on_hide_request = on_hide_request
         self.on_sessions_request = on_sessions_request
-        self.on_insert_request = on_insert_request
-        #: Whether the view is on screen (a hidden persistent session is not).
+        #: A shell rather than a program: Enter starts it again after a failed
+        #: exit (PuiKit's own handling) instead of closing it.
+        self.shell = shell
+        #: Set once the app starts closing or hiding it: it is sliding out, and
+        #: keys and clicks no longer reach the program.
+        self.closing = False
+        #: Whether the view is on screen (a hidden session is not).
         self.shown = False
-        self.exit_hint = ("press Enter to restart, Escape to hide" if persistent
-                          else "press Enter to return to XeFM")
+        self.exit_hint = ("press Enter to restart, Escape to hide" if shell
+                          else "press Enter to close")
 
     @property
     def running(self) -> bool:
@@ -158,6 +143,20 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         return None if self._exited is False else self._exited
 
     @property
+    def busy(self) -> bool:
+        """Whether quitting would interrupt something: a program still running,
+        or a shell running a command. A shell idle at its prompt is not busy -
+        known from shell integration, or on POSIX from the pty's foreground
+        process. A shell that neither can read counts as busy."""
+        if not self.running:
+            return False
+        if not self.shell:
+            return True
+        if self.idle_at_prompt:
+            return False
+        return getattr(self, "child_in_foreground", None) is not True
+
+    @property
     def started(self) -> bool:
         """Whether the program has been started: PuiKit starts it on the
         view's first draw, when it knows the grid size."""
@@ -172,13 +171,10 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         """What the terminal runs, by name: closing itself, and the app-wide
         actions any surface may run (xefm.surface_actions). Nothing that acts
         on the file list behind it."""
-        table = {"terminal.close": lambda: self.on_close_request(self)}
-        if self.persistent and self.on_hide_request is not None:
-            table["terminal.hide"] = lambda: self.on_hide_request(self)
+        table = {"terminal.close": lambda: self.on_close_request(self),
+                 "terminal.hide": lambda: self.on_hide_request(self)}
         if self.on_sessions_request is not None:
             table["terminal.sessions"] = self.on_sessions_request
-        if self.on_insert_request is not None:
-            table["terminal.insert_selection"] = lambda: self.on_insert_request(self)
         table.update(surface_actions.handlers())
         return table
 
@@ -228,8 +224,8 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
             if action is not None and self.takes_binding(event, action) \
                     and self.run_action(action):
                 return True
-            if not self.running and self.persistent:
-                if event.key == "escape" and self.on_hide_request is not None:
+            if not self.running and self.shell:
+                if event.key == "escape":
                     self.on_hide_request(self)
                     return True
                 # Enter restarts it (PuiKit's own exit handling, below).

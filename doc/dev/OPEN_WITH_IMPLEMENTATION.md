@@ -82,8 +82,8 @@ XeFM's own entries are still offered.
 ## Launching XeFM's entries
 
 Through `_launch_program`, exactly as a `PROGRAMS` entry — `_program_env`
-supplies the pane directory and `XEFM_*`, `options['terminal']` picks
-suspend/resume (TUI) or a `TERMINAL` window (desktop) — with one difference:
+supplies the pane directory and `XEFM_*`, `program_wants_terminal` picks
+suspend/resume (TUI) or a terminal session (desktop) — with one difference:
 the files are passed as absolute paths, since an Open With selection is
 already resolved to real files (`_real_entry`, for `.xft` references).
 

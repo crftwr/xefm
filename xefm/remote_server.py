@@ -1,17 +1,17 @@
 """The local socket a shell XeFM started talks back on (discussion #900).
 
-:mod:`xefm.remote_cli` is the client: ``xefm selected``, ``xefm cd .``,
-``xefm view foo.log``. This is the listening side. It owns three things:
+:mod:`xefm.remote_cli` is the client: ``xefmctl selected``, ``xefmctl cd .``,
+``xefmctl view foo.log``. This is the listening side. It owns three things:
 
 - **The listener.** ``multiprocessing.connection`` over a Unix socket in a
   private (0700) temp directory, or a named pipe on Windows. Every connection
   authenticates with a per-process key (HMAC challenge) before a byte of its
   request is read. Requests and answers are JSON, never pickles.
-- **The shim directory.** An ``xefm`` script (``xefm.cmd`` on Windows) that
-  runs the client with XeFM's own interpreter. It goes first on ``PATH`` in
-  every shell XeFM starts, so ``xefm`` works there even from an app bundle
-  that put no ``xefm`` on the system's ``PATH``, and answers without loading
-  the file manager.
+- **The shim directory.** An ``xefmctl`` script (``xefmctl.cmd`` on Windows)
+  that runs the client with XeFM's own interpreter. It goes first on ``PATH``
+  in every shell XeFM starts, so ``xefmctl`` works there even from an app
+  bundle that put nothing on the system's ``PATH``, and answers without
+  loading the file manager.
 - **The environment.** :meth:`RemoteServer.env` - ``XEFM_SOCKET``,
   ``XEFM_TOKEN``, ``XEFM_SESSION``, ``XEFM_PYTHON`` and the ``PATH`` entry.
 
@@ -75,12 +75,12 @@ class RemoteServer:
         os.mkdir(bin_dir)
         client = os.path.join(os.path.dirname(os.path.abspath(__file__)), "remote_cli.py")
         if sys.platform == "win32":
-            path = os.path.join(bin_dir, "xefm.cmd")
+            path = os.path.join(bin_dir, "xefmctl.cmd")
             with open(path, "w", encoding="utf-8", newline="\r\n") as f:
                 f.write(f'@"{python}" -I "{client}" %*\n')
         else:
             import shlex
-            path = os.path.join(bin_dir, "xefm")
+            path = os.path.join(bin_dir, "xefmctl")
             with open(path, "w", encoding="utf-8") as f:
                 f.write("#!/bin/sh\n"
                         f"exec {shlex.quote(python)} -I {shlex.quote(client)} \"$@\"\n")
@@ -172,5 +172,5 @@ def start(handle: Callable[[dict], dict], *, python: str) -> RemoteServer | None
     try:
         return RemoteServer(handle, python=python)
     except Exception as exc:
-        logger.warning(f"The xefm command is unavailable in XeFM's shells: {exc}")
+        logger.warning(f"xefmctl is unavailable in XeFM's shells: {exc}")
         return None

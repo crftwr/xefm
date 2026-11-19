@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from xefm.app import XeFMApp
 from xefm.dialog_geometry import BEHIND_SCALE, animate_from_behind
+from xefm.terminal_sessions import PROGRAM, Session, SessionRegistry
 
 
 class _Panel:
@@ -52,14 +53,18 @@ class _Panel:
 class _View:
     def __init__(self, exited=False):
         self.closing = False
+        self.shown = False
         self._exited = exited
         self.closed = 0
-        self.on_done = None
         self.label = "zsh"
 
     @property
     def running(self):
         return self._exited is False
+
+    @property
+    def exit_code(self):
+        return None if self._exited is False else self._exited
 
     def close(self):
         self.closed += 1
@@ -74,9 +79,19 @@ def _app(panel):
         app.relisted += 1
     app._relist = relist
     app.log_info = app.logged.append
-    app._finish_close_terminal = lambda v: XeFMApp._finish_close_terminal(app, v)
-    app._close_terminal = lambda v: XeFMApp._close_terminal(app, v)
+    app._sessions = SessionRegistry()
+    app._relist_both = lambda: XeFMApp._relist_both(app)
+    app._close_session = lambda s: XeFMApp._close_session(app, s)
     return app
+
+
+def _shown(app, view, on_done=None):
+    """``view`` as a session on screen."""
+    session = app._sessions.add(Session(view=view, kind=PROGRAM, name="vim",
+                                        cwd="/", on_done=on_done))
+    XeFMApp._push_terminal(app, view)
+    view.shown = True
+    return session
 
 
 def test_opening_fades_the_terminal_in_as_the_file_manager_zooms_away():
@@ -96,10 +111,9 @@ def test_closing_plays_it_back_then_tears_down():
     app = _app(panel)
     view = _View(exited=0)
     done = []
-    view.on_done = done.append
-    XeFMApp._push_terminal(app, view)
+    session = _shown(app, view, on_done=done.append)
     panel.animations.clear()
-    XeFMApp._close_terminal(app, view)
+    XeFMApp._close_session(app, session)
     [term] = panel.of(view)
     [base] = panel.of(panel.base)
     assert term["transition"] == "fade" and term["out"]
@@ -115,10 +129,12 @@ def test_a_second_close_while_closing_does_nothing():
     panel = _Panel()
     app = _app(panel)
     view = _View()
-    XeFMApp._close_terminal(app, view)
-    XeFMApp._close_terminal(app, view)
-    XeFMApp._terminal_exited(app, view, 0)
-    XeFMApp._terminal_exited(app, view, 1)
+    session = _shown(app, view)
+    panel.animations.clear()
+    XeFMApp._close_session(app, session)
+    XeFMApp._close_session(app, session)
+    XeFMApp._session_exited(app, view, 0)
+    XeFMApp._session_exited(app, view, 1)
     assert len(panel.of(view)) == 1 and not app.logged
     panel.finish()
     assert view.closed == 1
@@ -128,7 +144,9 @@ def test_without_motion_it_closes_at_once():
     for panel in (_Panel(animates=False), _Panel(extras={"dialog_effect": False})):
         app = _app(panel)
         view = _View(exited=0)
-        XeFMApp._close_terminal(app, view)
+        session = _shown(app, view)
+        panel.animations.clear()
+        XeFMApp._close_session(app, session)
         assert panel.removed == [view] and view.closed == 1
         assert not panel.animations
 

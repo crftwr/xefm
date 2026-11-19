@@ -828,7 +828,7 @@ def test_view_files_sends_each_file_by_its_rule(app_with):
     app, _ = app_with(FILE_ASSOCIATIONS=[{"pattern": "*.pdf", "view": "pdfview"}])
     opened, launched, logged = [], [], []
     app._open_viewer = lambda entry, *a, **k: opened.append(entry.name)
-    app._launch_associated = lambda entries, command: launched.append(
+    app._launch_associated = lambda entries, command, terminal=None: launched.append(
         (command[0], [e.name for e in entries])) or True
     app.log_info = logged.append
     pane = app.active_pane()

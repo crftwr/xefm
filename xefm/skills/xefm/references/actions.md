@@ -132,10 +132,8 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `toggle_terminal` | Show or hide the console, a shell that keeps running behind the panes | — | — | — | — |
-| `terminal_sessions` | List the console sessions and switch between them | — | — | — | — |
-| `insert_into_console` | Type the selected items' paths at the console's prompt | — | — | — | — |
-| `cd_console_here` | Type cd to this directory at the console's prompt | — | — | — | — |
+| `toggle_terminal` | Show or hide the terminal; its programs keep running behind the panes | — | — | — | — |
+| `terminal_sessions` | List the terminal sessions and switch between them | — | — | — | — |
 | `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
 | `extensions` | List the extension packages and whether they loaded | — | — | — | — |
 | `check_extension_updates` | Look for newer versions of the installed extension packages | — | — | — | — |
@@ -462,9 +460,8 @@ viewer only.
 | Action | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | — |
-| `terminal.hide` | Hide the console and return to the panes; its programs keep running | — |
-| `terminal.sessions` | List the console sessions and switch between them | — |
-| `terminal.insert_selection` | Type the active pane's selected paths at this console's prompt | — |
+| `terminal.hide` | Hide the terminal and return to the panes; its program keeps running | — |
+| `terminal.sessions` | List the terminal sessions and switch between them | — |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |

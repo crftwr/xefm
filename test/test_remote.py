@@ -1,8 +1,7 @@
-"""The xefm command and the socket it reaches XeFM on (#900).
+"""xefmctl and the socket it reaches XeFM on (#900).
 
 The client's argument handling, the server end to end (a real socket, a real
-shim run as a separate process), what the app answers, and the external
-terminal wrapper putting the shim on PATH."""
+shim run as a separate process), and what the app answers."""
 
 import os
 import subprocess
@@ -13,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from xefm import external_terminal, remote_cli, remote_server
+from xefm import remote_cli, remote_server
 from xefm.app import XeFMApp
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32",
@@ -124,9 +123,9 @@ def test_after_xefm_quits(server, monkeypatch, capsys):
 
 def test_the_shim_runs_the_client_as_its_own_process(server):
     env = remote_server.RemoteServer.apply_env(server, {"PATH": os.environ["PATH"]}, "9")
-    shim = os.path.join(server.bin_dir, "xefm")
+    shim = os.path.join(server.bin_dir, "xefmctl")
     assert os.access(shim, os.X_OK)
-    done = subprocess.run(["xefm", "pwd"], env=env, capture_output=True, text=True,
+    done = subprocess.run(["xefmctl", "pwd"], env=env, capture_output=True, text=True,
                           timeout=20)
     assert done.returncode == 0, done.stderr
     assert done.stdout == "/some/where\n"
@@ -245,13 +244,10 @@ def test_while_terminal_mode_has_handed_over_only_reads_run():
     assert not refused["ok"] and not app.went
 
 
-# --- the external terminal's wrapper ------------------------------------------------
+# --- the command line -----------------------------------------------------------------
 
-def test_the_wrapper_puts_the_shim_on_path():
-    text = external_terminal.posix_wrapper(["zsh"], "/w", {"XEFM_BIN": "/tmp/x/bin"}, False)
-    lines = text.splitlines()
-    assert "PATH=\"$XEFM_BIN:$PATH\"; export PATH" in lines
-    assert lines.index("PATH=\"$XEFM_BIN:$PATH\"; export PATH") > \
-        lines.index("export XEFM_BIN=/tmp/x/bin")
-    assert "XEFM_BIN" in external_terminal.python_wrapper(["cmd"], None, {"XEFM_BIN": "x"}, False)
-    assert "XEFM_BIN" not in external_terminal.posix_wrapper(["zsh"], "/w", {}, False)
+def test_xefmctl_has_its_own_commands_only(capsys):
+    assert remote_cli.main([]) == 0 and "usage: xefmctl" in capsys.readouterr().out
+    # Not a front for xefm: anything else is a usage error, not forwarded.
+    assert remote_cli.main(["ext", "list"]) == 2
+    assert "unknown command 'ext'" in capsys.readouterr().err

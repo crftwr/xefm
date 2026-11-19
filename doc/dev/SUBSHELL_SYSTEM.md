@@ -32,9 +32,10 @@ The Subshell System allows users to temporarily suspend the XeFM interface and e
   (`XeFMApp.subshell` → `_run_in_terminal`, with the environment built by
   `build_xefm_env` and the prompt marked by `prefix_prompt_markers`)
 - **Desktop mode**: there is no terminal to hand over, so the same command,
-  directory and environment go to `_open_terminal` instead, which opens the
-  `TERMINAL` application and returns at once — see
-  [EXTERNAL_TERMINAL_IMPLEMENTATION.md](EXTERNAL_TERMINAL_IMPLEMENTATION.md)
+  directory and environment (`_shell_launch`) start a terminal session in
+  XeFM's own terminal and return at once — see
+  [TERMINAL_SESSIONS_IMPLEMENTATION.md](TERMINAL_SESSIONS_IMPLEMENTATION.md).
+  Without libghostty nothing starts and the log says why
 - **Visual indicator**: Shell prompt includes `[XeFM]` label for easy identification
 - **Working directory**: Automatically set to appropriate directory (with remote fallback)
 

@@ -381,9 +381,7 @@ TEXT_EDITOR = 'vim'  # or 'nano', 'code', etc.
 
 `subshell` は、カレントディレクトリでシェルを開きます。
 
-ターミナルモードでは、シェルを終了すると XeFM に戻ります。デスクトップアプリには引き渡せる自前のターミナルがないので、代わりにターミナルのウィンドウでシェルを開きます。[外部ターミナル](EXTERNAL_TERMINAL_FEATURE.ja.md)を参照してください。シェルからは `XEFM_*` 環境変数（ペインのディレクトリと選択項目）が見え、プロンプトの先頭に `[XeFM]` が付きます。
-
-ペインで作業している間も動き続けるシェルには、代わりに[コンソール](CONSOLE_FEATURE.ja.md)を使ってください。
+ターミナルモードでは、シェルを終了すると XeFM に戻ります。デスクトップアプリには引き渡せるターミナルがないので、シェルを自分のターミナルセッションで動かします。セッションを隠せば、シェルはペインの裏で動き続けます。[ターミナル](TERMINAL_FEATURE.ja.md)を参照してください。シェルからは `XEFM_*` 環境変数（ペインのディレクトリと選択項目）が見え、プロンプトの先頭に `[XeFM]` が付きます。
 
 この先頭の文字列は `PS1`/`PROMPT` 環境変数で渡されるので、起動ファイルで独自のプロンプトを設定するシェルでは上書きされます。zsh は必ずそうなります。macOS では、`~/.zshrc` がなくても、`/etc/zshrc` が対話シェルのたびにプロンプトをリセットするからです。その場合は、代わりに `~/.zshrc` の**最後**で `XEFM_ACTIVE` を見て設定してください。
 
@@ -452,7 +450,7 @@ s3://my-bucket/path/to/files/
 ## 高度な機能
 
 ### サブシェルモード
-`subshell` でサブシェルモードに入ります（デスクトップアプリではターミナルのウィンドウで開きます。[外部ターミナル](EXTERNAL_TERMINAL_FEATURE.ja.md)を参照してください）。次の環境変数が設定されます。
+`subshell` でサブシェルモードに入ります（デスクトップアプリではターミナルセッションになります。[ターミナル](TERMINAL_FEATURE.ja.md)を参照してください）。次の環境変数が設定されます。
 - `XEFM_LEFT_DIR`：左ペインのディレクトリ
 - `XEFM_RIGHT_DIR`：右ペインのディレクトリ
 - `XEFM_THIS_DIR`：アクティブなペインのディレクトリ
@@ -559,8 +557,7 @@ FAVORITES = [
 PROGRAMS = [
     {'name': 'Git Status', 'command': ['git', 'status']},
     {'name': 'Open in VSCode', 'command': ['code', '.']},
-    {'name': 'View with less', 'command': ['less'],
-     'options': {'terminal': True}},
+    {'name': 'View with less', 'command': ['less'], 'terminal': True},
 ]
 ```
 
@@ -731,8 +728,7 @@ AWS の認証情報とバケットの権限を確認してください
 - [AI エージェント向け XeFM スキル](AGENT_SKILL_FEATURE.ja.md) - AI コーディングエージェントに設定の編集や拡張機能の作成を任せる
 - [使い捨てのホームで XeFM を試す](TRY_FEATURE.ja.md) - `xefm try`：一時的なホームで XeFM を実行し、自分の `~/.xefm` には手を付けない
 - [外部プログラム](EXTERNAL_PROGRAMS_FEATURE.ja.md) - 独自のプログラムとの連携（VSCode のレシピを含む）
-- [外部ターミナル](EXTERNAL_TERMINAL_FEATURE.ja.md) - デスクトップアプリがサブシェルやターミナルのプログラムのために開くターミナルのウィンドウ
-- [コンソール](CONSOLE_FEATURE.ja.md) - ペインの裏で動き続け、1 つのキーで表示と非表示を切り替えるシェル
+- [ターミナル](TERMINAL_FEATURE.ja.md) - サブシェルとターミナル向けのプログラム、デスクトップアプリのターミナルセッション、`xefmctl`
 - [仮想フォルダー](VIRTUAL_FOLDERS_FEATURE.ja.md) - レジストリ、データベース、API など、ディレクトリではないものをディレクトリのようにブラウズ
 
 ---

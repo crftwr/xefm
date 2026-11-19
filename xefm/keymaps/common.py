@@ -274,16 +274,12 @@ def bindings() -> dict:
         # XeFM's terminal's own keys (#900): desktop chords only, set below,
         # since a program in it needs every key a terminal can deliver.
         'terminal.close': [],
-        # The console (#900): a shell that keeps running behind the panes. No
-        # key in a terminal - there it opens a TERMINAL window, which the key
-        # could not hide again; the desktop's Ctrl-` is set below.
+        # Terminal sessions (#900), the desktop app's: terminal mode hands its
+        # terminal over and has none. The desktop's Ctrl-` is set below.
         'toggle_terminal': [],
         'terminal_sessions': [],
         'terminal.hide': [],
         'terminal.sessions': [],
-        'insert_into_console': [],
-        'cd_console_here': [],
-        'terminal.insert_selection': [],
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to

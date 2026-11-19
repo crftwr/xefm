@@ -133,13 +133,16 @@ class TestTiersAreIndependent:
 
 
 class TestNoTerminalDeclaration:
-    """Associations do not describe display handover.
+    """An entry does not describe display handover; a command may.
 
-    Whether to suspend follows from the backend: terminal mode hands over the
-    tty and waits, desktop mode detaches. A per-entry flag used to exist here
-    and was removed -- it duplicated a decision XeFM can already make, and its
-    failure mode was bad: forgetting it on `less` corrupts the terminal, while
-    the backend rule cannot be forgotten.
+    Unmarked, whether to suspend follows from the backend: terminal mode hands
+    over the tty and waits, desktop mode detaches. A per-entry flag used to
+    exist here and was removed -- its failure mode was bad: forgetting it on
+    `less` corrupts the terminal, while the backend rule cannot be forgotten.
+    That rule is still what an unmarked command gets. A single command may be
+    marked {'command': ..., 'terminal': True/False} (#900), the way
+    TEXT_EDITOR is, to run in the desktop app's terminal or in the background
+    in terminal mode - see test_configured_commands.py.
     """
 
     def test_a_leftover_terminal_key_is_inert(self, associations):

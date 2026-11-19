@@ -50,7 +50,7 @@ FILE_ASSOCIATIONS = [
         'pattern': '*',
         'open_with': [
             {'name': 'VS Code', 'command': ['code']},
-            {'name': 'Hex view', 'command': ['hexyl'], 'options': {'terminal': True}},
+            {'name': 'Hex view', 'command': ['hexyl'], 'terminal': True},
         ],
     },
 ]
@@ -59,7 +59,7 @@ FILE_ASSOCIATIONS = [
 - **マッチしたルールすべてのリストが加わります。** 最初にマッチしたルールが使われる `open`、`view`、`edit` とは異なります。リストは上から順につなげられるので、上の例の写真には GIMP、Pixelmator、VS Code、Hex view が表示されます。
 - **同じ名前が 2 回書かれた場合は、最初のエントリが使われます。** そのため、特定のルールで、そのファイル向けに別のコマンドを指定できます。
 - **ファイルはコマンドの末尾にフルパスで追加されます。** プログラムはアクティブなペインのディレクトリで、`PROGRAMS` のエントリと同じ `XEFM_*` 環境変数付きで実行されます。
-- **`'terminal': True`** を指定すると、プログラムにターミナルを渡して終了を待ちます。`less` や `hexyl` のような全画面のツール向けです。デスクトップアプリでは代わりにターミナルウィンドウで開きます（[外部ターミナル](EXTERNAL_TERMINAL_FEATURE.ja.md)を参照）。指定しない場合、プログラムはバックグラウンドで実行され、出力はログペインに表示されます。
+- **`'terminal': True`** を指定すると、プログラムにターミナルを渡して終了を待ちます。`less` や `hexyl` のような全画面のツール向けです。デスクトップアプリでは代わりに XeFM 自身のターミナルセッションで動きます（[ターミナル](TERMINAL_FEATURE.ja.md)を参照）。指定しない場合、プログラムはバックグラウンドで実行され、出力はログペインに表示されます。
 
 ## Open With と外部プログラム
 

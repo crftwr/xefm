@@ -170,31 +170,41 @@ KEY_BINDINGS = {
   point at it.
 
 
-### Editor, diff tool, shell, terminal
+### Editor, diff tool, shell
 
 ```python
-TEXT_EDITOR = ['code', '--wait']   # edit_file(s); a string or an argv list
+TEXT_EDITOR = ['code', '--wait']   # edit_file(s); a string, an argv list, or a dict
 TEXT_DIFF = ['code', '--diff']     # E in the diff viewers
 SUBSHELL = None                    # None = $SHELL, else the platform's
-TERMINAL = None                    # desktop app only: None = XeFM's own terminal, else this app
 ```
 
 A string is split like a shell command line; a list is taken as argv, and is
 the form to use for a Windows path with spaces or backslashes. The file paths
-are appended to it.
+are appended to it. A dict marks whether it is a terminal program:
+`{'command': 'vim', 'terminal': True}` or `{'command': ['code'], 'terminal':
+False}`. The same three spellings work for `TEXT_DIFF` and for the `open`,
+`view` and `edit` commands in `FILE_ASSOCIATIONS`:
+
+| Marking | In the terminal | In the desktop app |
+|---|---|---|
+| `'terminal': True` | gets the screen; XeFM waits | runs in a terminal session of XeFM's own |
+| `'terminal': False` | background, output to the log pane | the same |
+| unmarked | gets the screen; XeFM waits | background, output to the log pane |
 
 - `TEXT_EDITOR` is the fallback: a `FILE_ASSOCIATIONS` rule with an `edit`
   command for that kind of file wins over it, and `'edit': None` means "no
   editor for this kind of file". If the user's request is about one file
   type, that is the place; if it is about every file, check no rule overrides
   it for the files they mean.
-- **In the terminal XeFM waits for `TEXT_EDITOR` to exit**: that is what
-  hands the editor the screen, and what makes Edit Configuration reload on
-  return. **The desktop app never waits**: the editor is started in a window
-  of its own and XeFM stays responsive, so a wait flag (`code --wait`,
-  `subl -w`) changes nothing there — harmless, but not needed. Edit
+- **XeFM waits for the editor only when it gets the screen** (the terminal,
+  unmarked or `True`): that is what makes Edit Configuration reload on
+  return. Otherwise XeFM stays responsive, so a wait flag (`code --wait`,
+  `subl -w`) changes nothing for it — harmless, but not needed. Edit
   Configuration then asks the user to run Reload Configuration once saved,
-  and Rename in Editor asks them to press Apply.
+  and Rename in Editor asks them to press Apply. A terminal editor in the
+  desktop app (`'terminal': True`) is waited for too, without blocking.
+- There is no terminal-application setting any more; a config that still sets one gets a
+  warning. To open another terminal application, add a `PROGRAMS` entry.
 - The desktop app adds `/usr/local/bin` and `/opt/homebrew/bin` to the PATH
   it runs programs with (macOS). A program elsewhere needs its full path.
 
@@ -224,13 +234,14 @@ and `NETWORK_SERVERS` (`{'name', 'url', 'user'}`) have the same shape.
 PROGRAMS = [
     {'name': 'Open in VSCode', 'command': [xefm_python, xefm_tool('vscode.py')]},
     {'name': 'Disk usage', 'command': ['du', '-sh']},
-    {'name': 'View with less', 'command': ['less'], 'options': {'terminal': True}},
+    {'name': 'View with less', 'command': ['less'], 'terminal': True},
 ]
 ```
 
-`command` is an argv list. `options: {'terminal': True}` hands the terminal to
-a full-screen program (in the desktop app it runs in XeFM's own terminal, or
-in the `TERMINAL` application when one is set). The
+`command` is an argv list. A program runs in the background, its output in
+the log pane. `'terminal': True` gives a full-screen program the terminal (in
+the desktop app it runs in a terminal session of XeFM's own); the older
+spelling `'options': {'terminal': True}` still works. The
 program gets the panes' directories and selections as `XEFM_*` environment
 variables. `xefm_tool('x.py')` finds a script in `~/.xefm/tools/` first.
 
@@ -264,18 +275,12 @@ the built-in viewer: XeFM only sniffs a file when no rule names the action.
 
 - The command gets the file paths appended, all in one launch; there is no
   placeholder.
-- There is no terminal option. In the terminal XeFM hands the screen to the
-  program and waits, which is what `less` or `vim` needs. In the desktop app
-  the program is started detached, with no terminal — a terminal program
-  there shows nothing. To make a rule terminal-only, add it conditionally:
-
-  ```python
-  FILE_ASSOCIATIONS = [
-      # ... the user's rules ...
-  ] + ([] if is_desktop_mode() else [
-      {'pattern': '*.log', 'view': ['less']},
-  ])
-  ```
+- An unmarked command gets the screen in the terminal, and XeFM waits, which
+  is what `less` or `vim` needs; in the desktop app it is started in the
+  background, with no terminal — a terminal program there shows nothing.
+  Mark it `{'command': ['less'], 'terminal': True}` to have the desktop app
+  run it in its own terminal too, or `'terminal': False` to keep a GUI
+  program from taking the screen in the terminal.
 
 `open_with` is not an action: it is a list of `PROGRAMS`-shaped entries
 (`name`, `command`, optional `options`) that Open With (the `open_with`
@@ -283,8 +288,7 @@ action, File → Open With ▸ Choose App…) offers for the rule's files, above
 the OS's own applications. Unlike the actions, **every** matching rule's list
 is offered, top to bottom, and a name declared twice keeps its first entry —
 so "offer VS Code for every file" is one `'*'` rule, and it does not need to
-sit at the bottom. Unlike the associations, `'options': {'terminal': True}`
-applies here, as in `PROGRAMS`.
+sit at the bottom. `'terminal': True` applies here as in `PROGRAMS`.
 
 ```python
 {'pattern': '*', 'open_with': [{'name': 'VS Code', 'command': ['code']}]},

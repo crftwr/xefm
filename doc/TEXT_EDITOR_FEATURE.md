@@ -60,9 +60,20 @@ as it has handed the file over, so XeFM comes back immediately rather than when
 you finish editing. What you save then shows up the way any outside change
 does; see [File Monitoring](FILE_MONITORING_FEATURE.md).
 
-In the desktop app XeFM never waits for the editor: it opens in a window of its
-own and XeFM's window keeps responding, even with a wait flag such as
-`code --wait` or `subl -w`.
+In the desktop app XeFM does not block on the editor: it opens in a window of
+its own and XeFM's window keeps responding, even with a wait flag such as
+`code --wait` or `subl -w`. A terminal editor runs in XeFM's own terminal
+there, as a terminal session, once you mark it:
+
+```python
+class Config:
+    TEXT_EDITOR = {'command': 'vim', 'terminal': True}
+```
+
+XeFM then knows when you are done, as in terminal mode: Edit Configuration
+reloads when the editor exits. `'terminal': False` does the opposite in
+terminal mode: a GUI editor starts in the background instead of taking the
+screen. See [Terminal](TERMINAL_FEATURE.md#which-commands-get-a-terminal).
 
 The shipped default depends on how you run XeFM: `vim` in a terminal, and VS Code
 (`code`) in the desktop app. Common choices include `vim`, `nano`, `emacs`,

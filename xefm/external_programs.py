@@ -296,9 +296,9 @@ def ensure_common_paths_in_env(env):
 
 
 def command_argv(command) -> list:
-    r"""A command configured in ``config.py`` (``TEXT_EDITOR``, ``TEXT_DIFF``)
-    as an argv list, in either spelling the config template documents for
-    those settings.
+    r"""A command configured in ``config.py`` (``TEXT_EDITOR``, ``TEXT_DIFF``,
+    a ``FILE_ASSOCIATIONS`` verb) as an argv list, in any spelling the config
+    template documents for those settings.
 
     A string is a command line and is shlex-split, so ``'code --wait'`` carries
     its flag. A list or tuple is already argv and is taken as written:
@@ -312,8 +312,7 @@ def command_argv(command) -> list:
     which in terminal mode would hang XeFM with its display already suspended.
     """
     if isinstance(command, dict):
-        # {'command': ..., 'terminal': True}: a terminal program (vim) - see
-        # command_wants_terminal.
+        # {'command': ..., 'terminal': bool} - see command_terminal.
         command = command.get('command')
     if not command:
         return []
@@ -324,12 +323,54 @@ def command_argv(command) -> list:
     return [str(command)]
 
 
+def command_terminal(command) -> bool | None:
+    """How a ``config.py`` command (``TEXT_EDITOR``, ``TEXT_DIFF``, a
+    ``FILE_ASSOCIATIONS`` verb) was marked: ``{'command': 'vim', 'terminal':
+    True}`` is a terminal program, ``'terminal': False`` one that needs no
+    terminal, and anything unmarked - a bare string or list - None (#900).
+
+    - True: terminal mode hands it the terminal and waits; the desktop app
+      runs it in a terminal session of its own.
+    - False: started without a terminal in both modes and never waited for,
+      its output in the log pane.
+    - None: terminal mode hands the terminal over, the desktop app starts it
+      without one - what an unmarked command has always done."""
+    if isinstance(command, dict) and 'terminal' in command:
+        return bool(command['terminal'])
+    return None
+
+
 def command_wants_terminal(command) -> bool:
-    """Whether a ``config.py`` command was marked as a terminal program, in
-    the form ``PROGRAMS`` entries use: ``{'command': 'vim', 'terminal': True}``.
-    The desktop app then runs it in its embedded console instead of detaching
-    it (#900); terminal mode hands it the terminal either way."""
-    return isinstance(command, dict) and bool(command.get('terminal'))
+    """Whether a ``config.py`` command is marked ``{'terminal': True}``."""
+    return command_terminal(command) is True
+
+
+def program_wants_terminal(program: dict) -> bool:
+    """Whether a ``PROGRAMS`` entry (or an ``open_with`` one) runs in a
+    terminal: ``'terminal': True`` in the entry itself, the way the other
+    command settings are marked, or in its ``options`` (the older spelling,
+    still read)."""
+    if 'terminal' in program:
+        return bool(program['terminal'])
+    return bool((program.get('options') or {}).get('terminal'))
+
+
+#: The running app's launcher for config.py commands
+#: (``XeFMApp._run_configured``), so a viewer runs ``TEXT_DIFF`` exactly as the
+#: file list runs ``TEXT_EDITOR``: the ``'terminal'`` marking honored, never
+#: freezing the desktop window, the exit reported (#900). None outside the app.
+_configured_runner = None
+
+
+def set_configured_runner(runner) -> None:
+    global _configured_runner
+    _configured_runner = runner
+
+
+def configured_runner():
+    """The app's ``runner(argv, args, *, terminal, subject, on_exit)``, or
+    None when no app is running (a viewer under test)."""
+    return _configured_runner
 
 
 def resolve_command(command, env=None):

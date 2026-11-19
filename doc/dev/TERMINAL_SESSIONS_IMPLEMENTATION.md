@@ -1,73 +1,90 @@
 # Terminal Sessions: Implementation
 
-The console: persistent terminal sessions (discussion #900, "Update: the
-session model"). User documentation: [CONSOLE_FEATURE.md](../CONSOLE_FEATURE.md).
+The desktop app's terminal (discussion #900). User documentation:
+[TERMINAL_FEATURE.md](../TERMINAL_FEATURE.md).
 
-## One mechanism, two launch policies
+## One kind of session
 
-A terminal session is one program in a terminal: PuiKit's `TerminalView`
-(libghostty-vt over a pty) wrapped by `xefm.terminal.TerminalView`. What it
-does around its program is a policy of the view, not a separate class:
+Everything the desktop app runs in its terminal is a terminal session:
+PuiKit's `TerminalView` (libghostty-vt over a pty) wrapped by
+`xefm.terminal.TerminalView`, registered in
+`xefm.terminal_sessions.SessionRegistry` (`XeFMApp._sessions`). Started by:
 
-| | one-shot | persistent |
+| | kind | how |
 |---|---|---|
-| started by | `subshell`, `PROGRAMS` `terminal: True`, a terminal `TEXT_EDITOR` | `toggle_terminal`, the session list |
-| app methods | `_run_in_terminal_view`, `_terminal_exited`, `_close_terminal` | `new_terminal_session`, `_session_exited`, `_close_session` |
-| clean exit | closes, panes re-read, `on_done(code)` | session ends, panes re-read |
-| failed exit | exit bar; Enter / Esc close | exit bar; Enter restarts (PuiKit), Esc hides |
-| hidden | never | `terminal.hide`, `_hide_session`; the program keeps running |
-| registry | none | `xefm.terminal_sessions.SessionRegistry` (`XeFMApp._sessions`) |
+| `subshell`, `toggle_terminal` with none, the list's "New shell" | shell | `_new_shell_session` → `_start_session(shell=True)` |
+| `'terminal': True` from `PROGRAMS`, Open With, `ctx.run_program`, `TEXT_EDITOR`, `TEXT_DIFF`, `FILE_ASSOCIATIONS` | program | `_start_program` / `_run_configured` → `_start_session(shell=False)` |
 
-A one-shot never runs inside a persistent shell. Typing a command into a
-long-lived shell only works while it is idle at a prompt, and the subshell
-and terminal programs must work whatever the console is doing.
+Each can be hidden (`terminal.hide`, `_hide_session`) and keeps running. The
+kind decides only the end:
 
-The clean-exit rule follows #880's for agent sessions (a clean exit closes,
-an error keeps the screen) rather than "stays after its program exits": a
-shell left with `exit` is one the user is done with.
+| | shell | program |
+|---|---|---|
+| clean exit (shown or hidden) | session closes | session closes, then `on_done(code)` |
+| failed exit | exit bar; Enter restarts (PuiKit), Esc hides | exit bar; Enter / Esc close, then `on_done(code)` |
+| failed while hidden | `attention` in the status bar | the same |
+
+This replaced two policies, a modal one-shot (`_run_in_terminal_view`) and
+the persistent "console", which were one mechanism with two names. A
+subshell started for a quick look closes on `exit` as before; one that
+turned into a long task is hidden instead of being restarted elsewhere.
+
+An earlier draft kept result-returning launches (`on_done`, pickers) modal.
+That was unnecessary: `on_done` fires when the session ends, shown or not.
+What a late result may then do to the panes is Discussion #946's question,
+not this module's.
+
+Terminal mode has no sessions: `_run_in_terminal` hands the terminal over and
+waits. `toggle_terminal` and `terminal_sessions` are in `_BACKEND_GATED`
+(palette, help) and `_terminal_menu` (menu) for the desktop only, and log a
+note when a binding reaches them in terminal mode (`_desktop_only`). The
+parity difference is that one: the desktop can keep a shell running behind
+the panes.
 
 ## `xefm/terminal_sessions.py`
 
 UI-free, so it is tested on its own:
 
-- `Session`: the view, `kind` (`shell`, later `program` / agent presets),
-  `name`, `cwd`, a process-unique `id`; `state` / `running` read the view.
+- `Session`: the view, `kind` (`shell` / `program`), `name`, `cwd`, a
+  process-unique `id` (what `XEFM_SESSION` says), `on_done`; `state`,
+  `running` and `busy` read the view.
 - `SessionRegistry`: sessions in start order, `last` (what the toggle shows;
   `touch` on every show, the next newest after a remove), `for_view`,
-  `running()` (what quitting stops), `next_name` (`zsh`, `zsh 2`, ...).
+  `running()`, `busy()` (what quitting asks about), `next_name` (`zsh`,
+  `zsh 2`, ...).
 
-## Showing and hiding
+## Showing, hiding, closing
 
 - `_show_session` removes another session's layer at once (crossing two
   terminals through the file manager would only flash the panes), then
-  pushes through the one-shot's `_push_terminal`: same z rule (over every
-  layer), same `animate_from_behind` entrance.
+  `_push_terminal`: above every layer already up (a session opened from a
+  viewer's edit key must take the keys), with the `animate_from_behind`
+  entrance.
 - `_hide_session` plays `animate_from_behind(out=True)` and removes the layer
   on completion **without** `view.close()`. The child keeps its pty; its
-  output still reaches libghostty through `call_on_main_thread`, since the
-  view kept the panel from its first draw. `view.closing` swallows input
-  while it fades and is reset when it lands; `view.shown` says which session
-  is on screen.
-- `_close_session` forgets the session first, then fades and closes. A view
-  closed under a running child would start a fresh one on its next draw
-  (PuiKit's lifecycle), so `close()` comes after the layer is gone, as in
-  `_close_terminal`.
+  output still reaches libghostty through `call_on_main_thread`. `view.closing`
+  swallows input while it fades and is reset when it lands; `view.shown`
+  says which session is on screen. The panes re-read.
+- `_close_session` returns at once if the session is already gone (a second
+  close while the first fades), forgets it, fades it out, and only then
+  `view.close()`: a view closed under a running child would start a fresh
+  one on its next draw (PuiKit's lifecycle). Then the panes re-read and
+  `on_done(view.exit_code)` runs.
 
 ## Environment
 
-`_console_env` gives the shell XeFM's environment with the common `PATH`
-entries, `XEFM_ACTIVE=1` and the prompt marker, but **no** `XEFM_*_DIR`,
-`_SELECTED` or `_FOCUSED`: a snapshot taken when a session starts is stale
-from its first prompt on. The live channel that replaces it is the `xefm`
-command ([XEFM_COMMAND_IMPLEMENTATION.md](XEFM_COMMAND_IMPLEMENTATION.md));
-`XEFM_SESSION` is the session's `id`, allocated (`next_id`) before the view
-is built.
+`_shell_launch` gives a shell XeFM's environment with the common `PATH`
+entries, the `XEFM_*` snapshot (`build_xefm_env`), `XEFM_ACTIVE` and the
+prompt marker - the same for the terminal-mode subshell and every shell
+session. The snapshot goes stale in a session kept for a while; the live
+channel is `xefmctl` ([XEFMCTL_IMPLEMENTATION.md](XEFMCTL_IMPLEMENTATION.md)).
+`_start_session` adds the socket variables with `XEFM_SESSION` = the
+session's `id`, allocated (`next_id`) before the view is built.
 
 ## Shell integration
 
-`xefm/shell_integration.py` `apply(argv, env)` runs in `new_terminal_session`
-and the desktop subshell (XeFM's terminal only; not `TERMINAL` windows, not
-terminal mode). It makes the shell emit OSC 133 A/B/C/D and OSC 7:
+`xefm/shell_integration.py` `apply(argv, env)` runs in `_start_session` for
+shells. It makes the shell emit OSC 133 A/B/C/D and OSC 7:
 
 - zsh: `ZDOTDIR` → a per-process temp dir whose `.zshenv`, `.zprofile`,
   `.zshrc`, `.zlogin` source the user's own file (from `XEFM_USER_ZDOTDIR`,
@@ -82,74 +99,63 @@ terminal mode). It makes the shell emit OSC 133 A/B/C/D and OSC 7:
 - Left alone: `-c` commands, `--norc` / `--rcfile` / `--posix`, any other
   shell.
 
-PuiKit (≥ the release after 1.27.3) binds libghostty's semantic-prompt
-callback, `CURSOR_AT_PROMPT`, notifications and progress, and `TerminalView`
-passes them on (`on_prompt`, `at_prompt`, `on_notification`,
-`on_progress`). `xefm.terminal.TerminalView` forwards only the keywords the
-installed PuiKit takes (`_supported_kwargs`), so an older PuiKit simply never
-reports "at prompt".
+PuiKit binds libghostty's semantic-prompt callback, `CURSOR_AT_PROMPT`,
+notifications and progress, and `TerminalView` passes them on (`on_prompt`,
+`at_prompt`, `on_notification`, `on_progress`). `xefm.terminal.TerminalView`
+forwards only the keywords the installed PuiKit takes (`_supported_kwargs`).
 
-## Typing at the prompt
+## Quitting
 
-`_console_type(make_text)`: the text depends on the session's shell
-(`_shell_quote`: `shlex.quote` for POSIX shells, double quotes for cmd and
-PowerShell). It is sent with `view.send` only when `view.idle_at_prompt`; a
-session not started yet keeps it in `pending_insert` until its first
-`INPUT_START` mark. A busy shell, one without integration, terminal mode
-and the no-libghostty desktop get the clipboard and a log line instead. The
-user presses Enter; XeFM never runs the command.
+`confirm_quit` asks only about `self._sessions.busy()`. `TerminalView.busy`:
+a program running is busy; a shell is not when it is idle at its prompt -
+`idle_at_prompt` (shell integration) or, without it, PuiKit's
+`child_in_foreground` (the pty's foreground process group is the shell's
+own; POSIX only). A shell neither can read (cmd.exe, PowerShell, an old
+bash on Windows) counts as busy, so quitting asks. `_quit` hangs every
+session up in `_close_terminal_sessions`.
 
 ## Attention
 
 `_session_prompt` times commands between `OUTPUT_START` and `COMMAND_END`;
 one of at least `_LONG_COMMAND_S` (10 s) ending while the session is hidden
-sets `session.attention` (`done` / `failed`). A notification while hidden sets
-`attention`; progress sets `session.progress`. `_session_parts` adds those to
-`_jobs_parts`, so they share the job segment's drawing (blink for
-`attention`); a click goes to `_jobs_part_clicked`, which shows the session
-(or the list) when nothing else is in the segment. Showing a session clears
-its `attention`.
+sets `session.attention` (`done` / `failed`). A failed exit while hidden, a
+notification while hidden, and progress (`session.progress`) do the same.
+`_session_parts` adds those to `_jobs_parts`, so they share the job
+segment's drawing; a click goes to `_jobs_part_clicked`, which shows the
+session (or the list) when nothing else is in the segment. Showing a session
+clears its `attention`.
 
 ## Keys
 
 `toggle_terminal` (filer) and `terminal.hide` (terminal) share one key,
 Ctrl-` in both desktop apps (VS Code's terminal toggle). The terminal takes
 it because the action is `terminal.*` (`TerminalView.takes_binding`). There
-is no default in the common table: in a terminal the action opens a window
-XeFM cannot hide, so a toggle key would only stack windows.
-`terminal.sessions` lets the list be opened from inside the console; the
-list is pushed above the top layer for that.
+is no default in the common table: terminal mode has no sessions.
+`terminal.sessions` opens the list from inside a session; the list is pushed
+above the top layer for that.
 
-## Terminal mode and no libghostty
+## Without libghostty
 
-`_open_console_elsewhere` launches the shell through
-`external_terminal.launch_in_terminal` with
-`terminal_command(config, terminal_mode=True, cwd=...)`. Unset `TERMINAL` in
-terminal mode resolves through `terminal_mode_default`: `$TMUX` → `tmux
-new-window -c`, `$WEZTERM_PANE` → `wezterm cli spawn --cwd ... --`,
-`$KITTY_WINDOW_ID` → `kitty @ launch --type=tab --cwd` (remote control must
-be on), then `None` over SSH (a GUI terminal would open on the far screen),
-then `default_terminal()`. The desktop app without libghostty uses
-`default_terminal()` as before. XeFM does not own those processes; they are
-not in the registry and do not end with XeFM.
-
-## Quitting
-
-`confirm_quit` counts `self._sessions.running()` as a reason to ask, also for
-`quit_app` (`only_if_busy`), defaulting to Cancel. `_quit` hangs every
-session up in `_close_terminal_sessions` before saving state.
+`_terminal_ready` logs why (`terminal.unavailable`) and what to do instead
+(the app bundles include it; terminal mode); nothing starts, and an
+`on_done` gets `None`. A PyPI install has no libghostty, so its desktop app
+has no terminal. The `TERMINAL` application that used to stand in is gone,
+with its wrappers (`external_terminal.py`); a config that still sets
+`TERMINAL` gets a warning from `validate_config`.
 
 ## Not yet
 
 From #900's list: pane following (OSC 7 is emitted; nothing reads it yet),
-shell integration reported through the socket from `TERMINAL` windows,
-`ctx.start_session`, agent presets (#880), the session list built from
-socket registrations, the one-shot drawn as a dialog over dimmed panes.
+`ctx.start_session`, agent presets (#880), the session drawn as a dialog over
+dimmed panes.
 
 ## Tests
 
-`test/test_shell_integration.py`: `apply` per shell, a real zsh in a pty
-read through libghostty (skipped without zsh or a PuiKit with prompt marks),
-typing at the prompt, attention. `test/test_terminal_sessions.py`: the registry; toggle, switch, exit and
-quit against a stand-in panel and view; `terminal_mode_default` per
-environment.
+`test/test_terminal_sessions.py`: the registry; toggle, subshell, switch,
+exit, program sessions' `on_done`, quit only when busy, terminal mode's
+hand-over and missing actions, no libghostty - against a stand-in panel and
+view. `test/test_terminal_transition.py`: the entrance and the fade-out
+close. `test/test_shell_integration.py`: `apply` per shell, a real zsh in a
+pty read through libghostty (skipped without zsh or a PuiKit with prompt
+marks), attention. `test/test_configured_commands.py`: the marking and the
+launcher.

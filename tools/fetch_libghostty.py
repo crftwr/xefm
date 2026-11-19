@@ -3,8 +3,8 @@
 XeFM's terminal is PuiKit's TerminalView, which runs on libghostty-vt. The
 desktop bundles ship the library inside their copy of PuiKit, at
 ``puikit/_bin/``, where ``puikit._ghostty`` looks for it; nothing per-user is
-searched, so a bundle without it has no terminal of its own and falls back to
-the TERMINAL application.
+searched, so a bundle without it has no terminal of its own: the subshell and
+terminal programs do not start in it.
 
 The library comes from Ghostty's official release on release.files.ghostty.org,
 pinned by version and SHA-256 per asset (a Store submission must be
@@ -174,7 +174,7 @@ def loadable_here(target: str) -> bool:
 def check(path: str) -> None:
     """Load the library and look up the calls PuiKit binds first, so a
     truncated or wrong file stops the build instead of shipping an app whose
-    terminal quietly falls back to the TERMINAL application."""
+    terminal quietly goes missing."""
     import ctypes
     try:
         lib = ctypes.CDLL(path)

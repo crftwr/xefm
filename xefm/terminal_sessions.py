@@ -1,24 +1,21 @@
-"""Terminal sessions: the persistent side of XeFM's terminal (discussion #900).
+"""Terminal sessions in the desktop app (discussion #900).
 
-A *terminal session* is one program in a terminal - a pty and libghostty in
-the desktop app (:class:`xefm.terminal.TerminalView`). One-shot and persistent
-are two launch policies of the same thing:
+A *terminal session* is one program in XeFM's terminal - a pty and
+libghostty (:class:`xefm.terminal.TerminalView`). Everything the desktop app
+runs in its terminal is one: the subshell, a command marked
+``{'terminal': True}`` (``PROGRAMS``, ``TEXT_EDITOR``, ``TEXT_DIFF``,
+``FILE_ASSOCIATIONS``, ``ctx.run_program``), and a shell started from the
+session list. Each can be hidden behind the panes and keeps running there; a
+clean exit ends it, a failed one keeps its last screen until it is closed.
+What it ran decides only what happens at that end: a shell restarts on Enter,
+a program closes, then its ``on_done`` runs.
 
-- **One-shot** (the subshell, a ``{'terminal': True}`` program, a terminal
-  editor): modal, XeFM waits, and on exit the session closes and the panes
-  re-read. Those never come here; ``XeFMApp._run_in_terminal_view`` runs them.
-- **Persistent** (the console): toggled in and out of view, it keeps running
-  while hidden and stays after its program exits, until it is closed.
+Terminal mode has none of this: it hands its own terminal over and waits.
 
-This module is the registry of the persistent ones, kept free of the UI so it
-can be tested on its own: which sessions exist, which one the toggle returns
-to, and what the session list shows for each. The app owns the views and the
-layers they are pushed as.
-
-A one-shot never runs *inside* a persistent shell: typing a command into a
-long-lived shell works only while it is idle at a prompt, and Subshell Here or
-a terminal program must work whatever the console is doing, so each gets a
-session of its own.
+This module is the registry, kept free of the UI so it can be tested on its
+own: which sessions exist, which one the toggle returns to, and what the
+session list shows for each. The app owns the views and the layers they are
+pushed as.
 """
 
 from __future__ import annotations
@@ -43,16 +40,17 @@ PROGRAM = "program"
 
 @dataclass(eq=False)
 class Session:
-    """One persistent session: its view, what it runs and where."""
+    """One terminal session: its view, what it runs and where."""
 
     view: object
     kind: str
     name: str
     cwd: str
     id: int = field(default_factory=next_id)
-    #: Text to type at the prompt once the shell first reaches it: inserting
-    #: into a session that is still starting (#900).
-    pending_insert: str = ""
+    #: Called once with the exit code when the session ends (closed by its
+    #: program's clean exit, or by the user after a failed one): what the
+    #: code after terminal mode's blocking run would do.
+    on_done: object = None
     #: What a hidden session has to say - a notification, a long command
     #: that finished - until it is next shown: ``(kind, text)`` with kind
     #: ``done``, ``failed`` or ``attention``, as the status bar's parts.
@@ -82,6 +80,12 @@ class Session:
         return bool(getattr(self.view, "running", False))
 
     @property
+    def busy(self) -> bool:
+        """Whether closing it would interrupt something (see
+        :attr:`xefm.terminal.TerminalView.busy`)."""
+        return bool(getattr(self.view, "busy", self.running))
+
+    @property
     def label(self) -> str:
         """The list row: the name, then where it started."""
         return f"{self.name} - {_short(self.cwd)}"
@@ -97,8 +101,8 @@ def _short(path: str) -> str:
 
 
 class SessionRegistry:
-    """The persistent sessions, in the order they were started, and which one
-    was used last - the one the console toggle shows."""
+    """The sessions, in the order they were started, and which one was used
+    last - the one ``toggle_terminal`` shows."""
 
     def __init__(self) -> None:
         self._sessions: list[Session] = []
@@ -134,8 +138,13 @@ class SessionRegistry:
         return next((s for s in self._sessions if s.view is view), None)
 
     def running(self) -> list[Session]:
-        """The sessions whose program still runs: what quitting would stop."""
+        """The sessions whose program still runs."""
         return [s for s in self._sessions if s.running]
+
+    def busy(self) -> list[Session]:
+        """The sessions quitting would interrupt: a program running, or a
+        shell in the middle of a command - not a shell idle at its prompt."""
+        return [s for s in self._sessions if s.busy]
 
     def next_name(self, base: str) -> str:
         """``base`` for the first session of that name, then ``base 2``, ...:

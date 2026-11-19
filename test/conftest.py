@@ -119,17 +119,25 @@ def no_real_trash(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_configured_runner():
+    """A test app registers its launcher for the viewers' TEXT_DIFF
+    (``external_programs.set_configured_runner``); the next test - a viewer
+    built alone - must not reach an app that is gone."""
+    yield
+    from xefm import external_programs
+    external_programs.set_configured_runner(None)
+
+
+@pytest.fixture(autouse=True)
 def no_embedded_terminal(monkeypatch):
     """Tests run as if libghostty-vt were absent: XeFM's own terminal is
-    unavailable and terminal programs take the TERMINAL-application path.
+    unavailable, so the desktop app has nowhere to run terminal programs.
 
     Whether the library is there depends on the machine - a development
     checkout fetches it into puikit/_bin/, the VMs have none - so a test that
     did not say which it expects would pass on one and fail on the other. A
     test of the embedded terminal stubs its view, or undoes this with
-    ``monkeypatch.setattr(xefm.terminal, "_terminal_available", ...)``. The
-    stub sits under ``terminal.unavailable``, so its own rules (TERMINAL set in
-    config.py comes first) are still what the tests see."""
+    ``monkeypatch.setattr(xefm.terminal, "_terminal_available", ...)``."""
     from xefm import terminal
     if terminal._terminal_available is not None:
         monkeypatch.setattr(terminal, "_terminal_available",
