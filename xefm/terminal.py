@@ -90,8 +90,9 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
     ran (``shell``): a shell restarts on Enter and hides on Escape, a program
     closes on either - starting vim again would mean nothing.
     ``terminal.close`` asks the app to close it early (``on_close_request``),
-    which stops a program still running; ``terminal.hide`` puts it behind the
-    panes while it keeps running."""
+    which stops a program still running; ``terminal.sessions`` opens the
+    app's screen switcher, where picking the file manager hides it while it
+    keeps running (``on_hide_request`` is the exit bar's Escape)."""
 
     def __init__(self, argv: list[str], *, cwd: str, env: dict, label: str,
                  on_exited: Callable[["TerminalView", int | None], None],
@@ -171,8 +172,7 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         """What the terminal runs, by name: closing itself, and the app-wide
         actions any surface may run (xefm.surface_actions). Nothing that acts
         on the file list behind it."""
-        table = {"terminal.close": lambda: self.on_close_request(self),
-                 "terminal.hide": lambda: self.on_hide_request(self)}
+        table = {"terminal.close": lambda: self.on_close_request(self)}
         if self.on_sessions_request is not None:
             table["terminal.sessions"] = self.on_sessions_request
         table.update(surface_actions.handlers())

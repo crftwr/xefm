@@ -159,7 +159,7 @@ from xefm.file_operations import (CloseGate, FileOperationService,
                                   format_op_errors, format_op_summary,
                                   serialized_log, transfer_workers)
 from xefm.task import Cancelled, Task, TaskManager, TaskStatus
-from xefm.terminal_sessions import SessionRegistry
+from xefm.terminal_sessions import FILES, SessionRegistry
 from xefm.text_dialog import show_markdown
 from xefm.tips import tip_count
 from xefm.tips_dialog import show_tips_dialog
@@ -4353,7 +4353,6 @@ class XeFMApp:
                 "diff_files": (self.diff_files, False),
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
-                "toggle_terminal": (self.toggle_terminal, False),
                 "terminal_sessions": (self.terminal_sessions, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
@@ -6097,23 +6096,6 @@ class XeFMApp:
         self._relist(self.pm.left_pane, keep_visible=True)
         self._relist(self.pm.right_pane, keep_visible=True)
 
-    def toggle_terminal(self) -> None:
-        """Show the terminal - the session used last, or a new shell in the
-        active pane's directory when there is none - or hide it when it is on
-        screen. Its programs keep running while it is hidden. Desktop app
-        only."""
-        if not self._desktop_only("Show/hide terminal"):
-            return
-        shown = self._shown_session()
-        if shown is not None:
-            self._hide_session(shown.view)
-            return
-        session = self._sessions.last
-        if session is None:
-            self.new_terminal_session()
-            return
-        self._show_session(session)
-
     def new_terminal_session(self) -> None:
         """Start another shell, in the active pane's directory (the home
         directory when that is not a local one)."""
@@ -6157,6 +6139,7 @@ class XeFMApp:
             self.panel.remove_layer(view)
             view.closing = False
             view.shown = False
+            self._sessions.touch(FILES)
             self._relist_both()
             self.panel.render()
 
@@ -6268,6 +6251,7 @@ class XeFMApp:
         def finish() -> None:
             if view.shown:
                 self.panel.remove_layer(view)
+                self._sessions.touch(FILES)
             view.shown = False
             view.closing = True
             code = view.exit_code
@@ -6299,35 +6283,50 @@ class XeFMApp:
                     f"Could not close terminal session {session.name}: {e}")
 
     def terminal_sessions(self) -> None:
-        """The session list: every terminal session with its state, and a row
-        to start a new shell. Enter shows the chosen one; the remove key ends
-        it. Desktop app only."""
+        """The screen switcher: the file manager's screen (the panes, with any
+        viewer over them), every terminal session with its state, and a row
+        to start a new shell. The screen on now comes first, the rest most
+        recently on screen first, and the cursor starts on the one before it,
+        so Enter goes back to where you were. Choosing the file manager hides
+        the session on screen; the remove key ends a session. Desktop app
+        only."""
         if not self._desktop_only("Terminal sessions"):
             return
         new_row = object()
         cwd = self._session_dir() or os.path.expanduser("~")
         from xefm.terminal_sessions import _short
-        items = [*self._sessions, new_row]
+        shown = self._shown_session()
+        current = shown if shown is not None else FILES
+        items = [current, *(s for s in self._sessions.screens() if s is not current),
+                 new_row]
 
         def label(item) -> str:
             if item is new_row:
                 return f"New shell in {_short(cwd)}"
+            if item is FILES:
+                return "File manager"
             return item.label
 
         def right(item) -> str:
             if item is new_row:
                 return ""
+            if item is FILES:
+                return "shown" if item is current else ""
             return ("shown, " if item.view.shown else "") + item.state
 
         def accept(item) -> None:
             if item is new_row:
                 self.new_terminal_session()
+            elif item is FILES:
+                now = self._shown_session()
+                if now is not None:
+                    self._hide_session(now.view)
             else:
                 self._show_session(item)
             self.panel.render()
 
         def remove(item) -> bool:
-            if item is new_row:
+            if item is new_row or item is FILES:
                 return False
             self._close_session(item)
             self.log_info(f"Closed terminal session {item.name}")
@@ -6335,10 +6334,11 @@ class XeFMApp:
 
         # Over the terminal it may be opened from (terminal.sessions).
         top = max((slot.z for slot in self.panel._layers), default=0)
-        show_filter_list(self.panel, items, title="Terminal Sessions",
-                         to_label=label, to_right=right, on_accept=accept,
-                         on_remove=remove, remove_label="close",
-                         z=max(70, top + 1))
+        dialog = show_filter_list(self.panel, items, title="Terminal Sessions",
+                                  to_label=label, to_right=right, on_accept=accept,
+                                  on_remove=remove, remove_label="close",
+                                  z=max(70, top + 1))
+        dialog.list.selected = 1  # the screen before this one (or New shell)
         self.panel.render()
 
     # --- xefmctl: shells talking back (#900) ------------------------------------
@@ -7530,15 +7530,12 @@ class XeFMApp:
             title="Theme")
 
     def _terminal_menu(self, sc) -> list:
-        """Tools > Show/Hide Terminal and Terminal Sessions, in the desktop app
-        only: terminal mode hands its terminal over and has no sessions to
-        show (#900). The list is enabled with no session too - it starts
-        one."""
+        """Tools > Terminal Sessions, in the desktop app only: terminal mode
+        hands its terminal over and has no sessions to show (#900). It is
+        enabled with no session too - it starts one."""
         if not is_desktop_mode():
             return []
         return [
-            MenuItem("Show/Hide Terminal", on_select=self.toggle_terminal,
-                     shortcut=sc("toggle_terminal")),
             MenuItem("Terminal Sessions…", on_select=self.terminal_sessions,
                      shortcut=sc("terminal_sessions")),
         ]
@@ -13334,7 +13331,7 @@ class XeFMApp:
             ("file_details", "Show file details"),
             ("edit_files", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
-            ("toggle_terminal", "Show or hide the terminal (Tools menu)"),
+            ("terminal_sessions", "Switch between the file manager and the terminal sessions"),
             ("open_with_os", "Open with the default app"),
             ("open_with", "Choose the app that opens the selection (File menu)"),
             ("reveal_in_os", "Reveal in the OS file manager"),
@@ -13424,7 +13421,6 @@ class XeFMApp:
         "reset_font_size": lambda self: is_desktop_mode(),
         # Terminal sessions are the desktop app's: terminal mode hands its
         # terminal over instead (#900).
-        "toggle_terminal": lambda self: is_desktop_mode(),
         "terminal_sessions": lambda self: is_desktop_mode(),
     }
 

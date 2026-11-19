@@ -266,7 +266,7 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `context_menu_dir` | Open the context menu for the current directory | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `toggle_terminal` | Show or hide the terminal; its programs keep running behind the panes | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `terminal_sessions` | Switch between the file manager and the terminal sessions | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
 | `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `redraw` | Redraw the screen | `F5` | — | — | — |
@@ -400,7 +400,7 @@ program receives.
 | Action name | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | macOS app: `Cmd-W`<br>Windows app: `Ctrl-Shift-W` |
-| `terminal.hide` | Hide the terminal and return to the panes; its program keeps running | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `terminal.sessions` | Switch to the file manager or another terminal session | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
 | `command_palette` | Search the terminal's actions by name and run one | macOS app: `Cmd-Shift-P`<br>Windows app: `Ctrl-Shift-P` |
 
 ## Your own key bindings come on top

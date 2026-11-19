@@ -159,7 +159,6 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | Find Similar Files… | `find_similar` *（既定でキー未割り当て）* — [類似ファイルの検索](FIND_SIMILAR_FILES_FEATURE.ja.md)を参照 |
 | External Programs… | `programs` |
 | Subshell Here | `subshell` *（デスクトップモードではターミナルセッションで）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
-| Show/Hide Terminal | `toggle_terminal` *（デスクトップモードのみ）* |
 | Terminal Sessions… | `terminal_sessions` *（デスクトップモードのみ）* |
 | Edit Configuration… | `edit_config` *（既定でキー未割り当て）* |
 | Reload Configuration | `reload_config` *（既定でキー未割り当て）* |

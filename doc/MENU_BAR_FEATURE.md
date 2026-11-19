@@ -188,7 +188,6 @@ the mouse for the first, take the whole buffer with the second. See
 | Find Similar Files… | `find_similar` *(ships unbound)* — see [Find Similar Files](FIND_SIMILAR_FILES_FEATURE.md) |
 | External Programs… | `programs` |
 | Subshell Here | `subshell` *(desktop mode: a terminal session)* — see [Terminal](TERMINAL_FEATURE.md) |
-| Show/Hide Terminal | `toggle_terminal` *(desktop mode only)* |
 | Terminal Sessions… | `terminal_sessions` *(desktop mode only)* |
 | Edit Configuration… | `edit_config` *(ships unbound)* |
 | Reload Configuration | `reload_config` *(ships unbound)* |

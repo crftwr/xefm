@@ -12,10 +12,11 @@ PuiKit's `TerminalView` (libghostty-vt over a pty) wrapped by
 
 | | kind | how |
 |---|---|---|
-| `subshell`, `toggle_terminal` with none, the list's "New shell" | shell | `_new_shell_session` → `_start_session(shell=True)` |
+| `subshell`, the switcher's "New shell" row | shell | `_new_shell_session` → `_start_session(shell=True)` |
 | `'terminal': True` from `PROGRAMS`, Open With, `ctx.run_program`, `TEXT_EDITOR`, `TEXT_DIFF`, `FILE_ASSOCIATIONS` | program | `_start_program` / `_run_configured` → `_start_session(shell=False)` |
 
-Each can be hidden (`terminal.hide`, `_hide_session`) and keeps running. The
+Each can be hidden (the switcher's file manager row, the exit bar's Escape:
+`_hide_session`) and keeps running. The
 kind decides only the end:
 
 | | shell | program |
@@ -35,7 +36,7 @@ What a late result may then do to the panes is Discussion #946's question,
 not this module's.
 
 Terminal mode has no sessions: `_run_in_terminal` hands the terminal over and
-waits. `toggle_terminal` and `terminal_sessions` are in `_BACKEND_GATED`
+waits. `terminal_sessions` is in `_BACKEND_GATED`
 (palette, help) and `_terminal_menu` (menu) for the desktop only, and log a
 note when a binding reaches them in terminal mode (`_desktop_only`). The
 parity difference is that one: the desktop can keep a shell running behind
@@ -48,8 +49,10 @@ UI-free, so it is tested on its own:
 - `Session`: the view, `kind` (`shell` / `program`), `name`, `cwd`, a
   process-unique `id` (what `XEFM_SESSION` says), `on_done`; `state`,
   `running` and `busy` read the view.
-- `SessionRegistry`: sessions in start order, `last` (what the toggle shows;
-  `touch` on every show, the next newest after a remove), `for_view`,
+- `SessionRegistry`: sessions in start order; `screens()`, the file
+  manager's screen (`FILES`) and the sessions most recently on screen first
+  (`touch` whenever one comes on screen: `_show_session`, and `FILES` when a
+  shown session is hidden or closed); `for_view`,
   `running()`, `busy()` (what quitting asks about), `next_name` (`zsh`,
   `zsh 2`, ...).
 
@@ -125,14 +128,23 @@ segment's drawing; a click goes to `_jobs_part_clicked`, which shows the
 session (or the list) when nothing else is in the segment. Showing a session
 clears its `attention`.
 
-## Keys
+## The switcher
 
-`toggle_terminal` (filer) and `terminal.hide` (terminal) share one key,
-Ctrl-` in both desktop apps (VS Code's terminal toggle). The terminal takes
-it because the action is `terminal.*` (`TerminalView.takes_binding`). There
-is no default in the common table: terminal mode has no sessions.
-`terminal.sessions` opens the list from inside a session; the list is pushed
-above the top layer for that.
+`terminal_sessions` (filer) and `terminal.sessions` (terminal) open one list
+and share one key, Ctrl-` in both desktop apps (VS Code's terminal toggle);
+the terminal takes it because the action is `terminal.*`
+(`TerminalView.takes_binding`). There is no default in the common table:
+terminal mode has no sessions.
+
+Rows: the screen on now (`FILES` or the shown session), the rest of
+`screens()` in order, then "New shell". The cursor starts on row 1 - the
+screen before this one, or "New shell" with no session - so Enter flips
+back, as `toggle_terminal` and `terminal.hide` did before the switcher
+replaced them. `FILES` hides the shown session (`_hide_session`); it and
+"New shell" refuse the remove key. The list is pushed above the top layer,
+so it opens over a session too.
+
+A second press of the key as "accept" (flip in key, key) is left for later.
 
 ## Without libghostty
 
@@ -151,7 +163,7 @@ dimmed panes.
 
 ## Tests
 
-`test/test_terminal_sessions.py`: the registry; toggle, subshell, switch,
+`test/test_terminal_sessions.py`: the registry; the switcher, subshell, switch,
 exit, program sessions' `on_done`, quit only when busy, terminal mode's
 hand-over and missing actions, no libghostty - against a stand-in panel and
 view. `test/test_terminal_transition.py`: the entrance and the fade-out

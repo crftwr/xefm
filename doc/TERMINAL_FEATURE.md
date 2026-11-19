@@ -45,10 +45,16 @@ an editor, is not stopped by XeFM quitting.
 terminal over the panes. A program marked `'terminal': True` opens the same
 way. Each is a terminal session:
 
-- **Hide it** with `terminal.hide` (**Tools → Show/Hide Terminal** from the
-  panes, `toggle_terminal`). It keeps running behind the panes, and the panes
-  re-read their directories. The same key brings back the session you used
-  last, with everything still in it. With no session yet, it starts a shell.
+- **Switch** with **Tools → Terminal Sessions…** (`terminal_sessions`, or
+  `terminal.sessions` from inside a session). The list holds the file
+  manager's screen (the panes, with any viewer you have open), each session
+  with its state, and a last row that starts another shell in the active
+  pane's directory. The screen you are on comes first and the rest follow in
+  the order you last used them, with the cursor on the one you were on
+  before, so `Enter` takes you back there. Picking the file manager hides the
+  session: it keeps running behind the panes, and the panes re-read their
+  directories. A session you come back to has everything still in it. The
+  remove key (`remove_list_item`) ends the highlighted session.
 - **When it ends.** `exit` in a shell, or a program that finishes, closes the
   session and returns to the panes, whether it was on screen or hidden. A
   shell or program that fails keeps its last screen up so you can read it.
@@ -56,11 +62,6 @@ way. Each is a terminal session:
   `Enter` or `Esc` closes it.
 - **Close it** with `terminal.close` while it still runs. XeFM asks first,
   since that stops whatever runs there.
-- **Several sessions.** **Tools → Terminal Sessions…** (`terminal_sessions`,
-  or `terminal.sessions` from inside a session) lists each one with its state.
-  `Enter` switches to the one you pick, the last row starts another shell in
-  the active pane's directory, and the remove key (`remove_list_item`) ends
-  the highlighted one.
 - **Quitting XeFM** asks first only when a session is busy: a program
   running, or a shell in the middle of a command. A shell waiting at its
   prompt just ends.
@@ -97,8 +98,8 @@ there too. Click it to bring the session back.
 
 XeFM in a terminal does not draw a second terminal inside itself. The subshell
 and terminal programs get the terminal XeFM runs in, and you return to XeFM
-when they exit. There are no terminal sessions, so **Show/Hide Terminal** and
-**Terminal Sessions** are not in the menu or the command palette.
+when they exit. There are no terminal sessions, so **Terminal Sessions** is not in
+the menu or the command palette.
 
 This is the one difference between the two: the desktop app can keep a shell
 running behind the panes, and XeFM in a terminal cannot. To work in parallel

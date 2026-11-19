@@ -8,7 +8,7 @@ the terminal), then what terminal mode does instead."""
 from types import SimpleNamespace
 
 from xefm.app import XeFMApp
-from xefm.terminal_sessions import PROGRAM, SHELL, Session, SessionRegistry
+from xefm.terminal_sessions import FILES, PROGRAM, SHELL, Session, SessionRegistry
 
 
 # --- the registry ------------------------------------------------------------------
@@ -43,17 +43,22 @@ def _session(registry, name="zsh", **kw):
     return registry.add(Session(view=_View(**kw), kind=SHELL, name=name, cwd="/tmp"))
 
 
-def test_the_last_one_used_is_the_one_the_toggle_returns_to():
+def test_screens_come_most_recently_on_screen_first():
     reg = SessionRegistry()
+    assert reg.screens() == [FILES]
     a = _session(reg)
-    b = _session(reg, "zsh 2")
-    assert reg.last is b
     reg.touch(a)
-    assert reg.last is a
+    b = _session(reg, "zsh 2")
+    reg.touch(b)
+    assert reg.screens() == [b, a, FILES]
+    reg.touch(FILES)
+    assert reg.screens() == [FILES, b, a]
+    reg.touch(a)
+    assert reg.screens() == [a, FILES, b]
     reg.remove(a)
-    assert reg.last is b
+    assert reg.screens() == [FILES, b]
     reg.remove(b)
-    assert reg.last is None and len(reg) == 0
+    assert reg.screens() == [FILES] and len(reg) == 0
 
 
 def test_names_stay_apart():
@@ -146,7 +151,7 @@ def _app(monkeypatch, *, desktop=True):
         app.made.append(view)
         return view
     app._make_session_view = make
-    for name in ("toggle_terminal", "new_terminal_session", "subshell", "_show_session",
+    for name in ("new_terminal_session", "subshell", "_show_session",
                  "_hide_session", "_shown_session", "_close_session",
                  "_session_exited", "_session_close_request", "_start_session",
                  "_new_shell_session", "_terminal_ready", "_desktop_only",
@@ -156,17 +161,65 @@ def _app(monkeypatch, *, desktop=True):
     return app
 
 
-def test_the_toggle_starts_a_shell_then_hides_and_shows_the_same_one(monkeypatch):
+class _Switcher:
+    """show_filter_list's stand-in: what the list offers, and Enter."""
+
+    def __init__(self, monkeypatch):
+        import xefm.app as app_mod
+        self.calls = []
+        monkeypatch.setattr(app_mod, "show_filter_list", self._show)
+
+    def _show(self, panel, items, **kw):
+        dialog = SimpleNamespace(list=SimpleNamespace(selected=0), items=items, kw=kw)
+        self.calls.append(dialog)
+        return dialog
+
+    @property
+    def last(self):
+        return self.calls[-1]
+
+    def labels(self):
+        return [self.last.kw["to_label"](i) for i in self.last.items]
+
+    def enter(self):
+        """Accept the row the cursor starts on."""
+        dialog = self.last
+        dialog.kw["on_accept"](dialog.items[dialog.list.selected])
+
+
+def test_the_switcher_goes_back_and_forth_with_enter(monkeypatch):
     app = _app(monkeypatch)
-    app.toggle_terminal()
+    switcher = _Switcher(monkeypatch)
+    app.terminal_sessions()  # no session yet: the cursor is on New shell
+    assert switcher.labels() == ["File manager", "New shell in /tmp"]
+    switcher.enter()
     [view] = app.made
-    assert view.shown and app.panel.widgets == [view]
-    assert view.cwd == "/tmp"
-    app.toggle_terminal()  # hide: still running, layer gone
+    assert view.shown and app.panel.widgets == [view] and view.cwd == "/tmp"
+    app.terminal_sessions()  # from the session: the file manager is next
+    assert switcher.labels()[:2] == ["zsh - /tmp", "File manager"]
+    switcher.enter()  # hide: still running, layer gone
     assert not view.shown and view.closed == 0 and app.panel.widgets == []
     assert app.relisted == 2
-    app.toggle_terminal()  # back: the same session, no new one
+    app.terminal_sessions()  # from the panes: the session is next
+    assert switcher.labels()[:2] == ["File manager", "zsh - /tmp"]
+    switcher.enter()
     assert app.made == [view] and view.shown
+
+
+def test_the_switcher_offers_the_screen_before_this_one(monkeypatch):
+    app = _app(monkeypatch)
+    switcher = _Switcher(monkeypatch)
+    app.new_terminal_session()
+    app.new_terminal_session()
+    first, second = app.made
+    app.terminal_sessions()  # in the second: the first was on before it
+    assert switcher.last.items[:3] == [app._sessions.for_view(second),
+                                       app._sessions.for_view(first), FILES]
+    switcher.enter()
+    assert first.shown and not second.shown
+    # The file manager and the new-shell row cannot be closed.
+    remove = switcher.last.kw["on_remove"]
+    assert remove(FILES) is False and remove(switcher.last.items[-1]) is False
 
 
 def test_the_subshell_is_a_session_with_the_snapshot_and_xefmctl(monkeypatch):
@@ -190,9 +243,8 @@ def test_terminal_mode_hands_the_terminal_to_the_subshell(monkeypatch):
     assert argv == ["/bin/zsh"] and cwd == "/tmp" and env["XEFM_SESSION"] == "subshell"
 
 
-def test_terminal_mode_has_no_toggle_or_list(monkeypatch):
+def test_terminal_mode_has_no_switcher(monkeypatch):
     app = _app(monkeypatch, desktop=False)
-    app.toggle_terminal()
     app.terminal_sessions()
     assert not app.made and not app.handed
     assert all("only in the desktop app" in line for line in app.logged)
@@ -215,7 +267,7 @@ def test_showing_another_session_replaces_the_one_on_screen(monkeypatch):
     assert [s.name for s in app._sessions][1].endswith(" 2")
     app._show_session(app._sessions.for_view(first))
     assert app.panel.widgets == [first] and not second.shown
-    assert app._sessions.last.view is first
+    assert app._sessions.screens()[0].view is first
 
 
 def test_a_clean_exit_ends_the_session_a_failure_keeps_it(monkeypatch):

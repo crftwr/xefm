@@ -13,8 +13,8 @@ a program closes, then its ``on_done`` runs.
 Terminal mode has none of this: it hands its own terminal over and waits.
 
 This module is the registry, kept free of the UI so it can be tested on its
-own: which sessions exist, which one the toggle returns to, and what the
-session list shows for each. The app owns the views and the layers they are
+own: which sessions exist, in what order they were last on screen, and what
+the session list shows for each. The app owns the views and the layers they are
 pushed as.
 """
 
@@ -100,13 +100,20 @@ def _short(path: str) -> str:
     return path
 
 
+#: The file manager's own screen - the panes, with any viewer open over them -
+#: as a row of :meth:`SessionRegistry.screens`.
+FILES = "files"
+
+
 class SessionRegistry:
-    """The sessions, in the order they were started, and which one was used
-    last - the one ``toggle_terminal`` shows."""
+    """The sessions, in the order they were started, and the screens - the
+    file manager's (:data:`FILES`) and each session's - in the order they were
+    last on screen, which is how the session list offers them."""
 
     def __init__(self) -> None:
         self._sessions: list[Session] = []
-        self._last: Session | None = None
+        #: Most recently on screen first; FILES is always in it.
+        self._recent: list = [FILES]
 
     def __iter__(self):
         return iter(list(self._sessions))
@@ -116,23 +123,24 @@ class SessionRegistry:
 
     def add(self, session: Session) -> Session:
         self._sessions.append(session)
-        self._last = session
+        self._recent.append(session)  # last until it is first shown
         return session
 
     def remove(self, session: Session) -> None:
         if session in self._sessions:
             self._sessions.remove(session)
-        if self._last is session:
-            self._last = self._sessions[-1] if self._sessions else None
+        if session in self._recent:
+            self._recent.remove(session)
 
-    def touch(self, session: Session) -> None:
-        """``session`` was just shown: the toggle returns to it next."""
-        if session in self._sessions:
-            self._last = session
+    def touch(self, screen) -> None:
+        """``screen`` (a session, or FILES) just came on screen."""
+        if screen is FILES or screen in self._sessions:
+            self._recent.remove(screen)
+            self._recent.insert(0, screen)
 
-    @property
-    def last(self) -> Session | None:
-        return self._last
+    def screens(self) -> list:
+        """FILES and the sessions, most recently on screen first."""
+        return list(self._recent)
 
     def for_view(self, view) -> Session | None:
         return next((s for s in self._sessions if s.view is view), None)
