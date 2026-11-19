@@ -241,6 +241,24 @@ class SyncTest(_Fixture):
                          run=self.run_ok, popen=popen, **kw)
         return result, lines
 
+    def test_a_dist_info_the_prune_could_not_remove_is_skipped(self):
+        # Windows: a scanner holding a file there turns its delete into a
+        # pending one, so neither rmtree nor rmdir can remove the pruned
+        # dist-info, which is left empty once the scanner lets go. Python
+        # 3.15 raises reading it (a 1.17.0rc2 release-test in qa-win).
+        self.write_requirements("pillow-heif\n")
+        fake = _FakePip(dists=[("pillow_heif", "1.1.0", {"pillow_heif/__init__.py": ""}),
+                               ("Pillow", "11.3.0", {"PIL/__init__.py": ""})])
+        def rmdir(path):
+            raise OSError("directory is not empty")
+        with mock.patch.object(pp.shutil, "rmtree", lambda *a, **k: None), \
+                mock.patch.object(pp.Path, "rmdir", rmdir):
+            result, _ = self.sync(fake)
+        self.assertTrue(any(self.layout.target.glob("Pillow-*.dist-info")))
+        self.assertEqual(result.installed, ["pillow_heif 1.1.0"])
+        self.assertEqual(result.pruned, ["Pillow"])
+        self.assertEqual(pp.check(self.layout, HOST).state, pp.IN_SYNC)
+
     def test_installs_prunes_stamps_and_loads(self):
         self.write_requirements("pillow-heif\n")
         fake = _FakePip(dists=[("pillow_heif", "1.1.0", {"pillow_heif/__init__.py": ""}),

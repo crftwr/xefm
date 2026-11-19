@@ -137,6 +137,21 @@ def normalize(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def _dist_name(dist) -> str | None:
+    """``dist``'s project name, or None when its metadata cannot be read.
+
+    A ``*.dist-info`` directory without its ``METADATA`` - one a prune on
+    Windows could not finish removing while a scanner held a file in it -
+    reads as an empty name before Python 3.15 and raises from 3.15 on; both
+    mean there is no distribution there to count."""
+    try:
+        return dist.metadata["Name"] or None
+    except (OSError, ValueError) as e:  # MetadataNotFound is an OSError
+        logger.warning(f"Skipping unreadable package metadata at "
+                       f"{getattr(dist, '_path', '?')}: {e}")
+        return None
+
+
 def host_distributions(layout: Layout) -> dict[str, str]:
     """``{normalized name: version}`` for every distribution XeFM can import
     without the synced directory — what it ships with, or what the venv it was
@@ -145,7 +160,8 @@ def host_distributions(layout: Layout) -> dict[str, str]:
     own = str(layout.root.resolve())
     found: dict[str, str] = {}
     for dist in importlib.metadata.distributions():
-        name, version = dist.metadata["Name"], dist.version
+        name = _dist_name(dist)
+        version = dist.version if name else None
         if not name or not version:
             continue
         try:
@@ -419,7 +435,7 @@ def _prune(directory: Path, host: dict[str, str]) -> list[str]:
     pruned = []
     root = directory.resolve()
     for dist in list(importlib.metadata.distributions(path=[str(directory)])):
-        name = dist.metadata["Name"]
+        name = _dist_name(dist)
         if not name or normalize(name) not in host:
             continue
         dirs = set()
@@ -509,9 +525,9 @@ def sync(layout: Layout | None = None, python: str | None = None,
         shutil.rmtree(layout.staging, ignore_errors=True)
         raise
     installed = sorted(
-        (f"{d.metadata['Name']} {d.version}"
+        (f"{name} {d.version}"
          for d in importlib.metadata.distributions(path=[str(layout.staging)])
-         if d.metadata["Name"]), key=str.lower)
+         if (name := _dist_name(d))), key=str.lower)
     # Swapped in even when nothing is declared: an empty directory replaces
     # the old one the same way, waiting for a restart if it has to.
     swapped = _swap_in(layout)
