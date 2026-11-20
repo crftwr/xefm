@@ -213,6 +213,9 @@ ACTIONS = {
 | `ctx.terminal_backend_suspended()` | （Preview）`subprocess` で対話的なプログラムを自分で実行するための `with` ブロック — 後述 |
 | `ctx.program_env()` | （Preview）`subprocess` に渡す `{'cwd': ..., 'env': ...}`。`run_program` がプログラムに渡すものと同じ |
 | `ctx.is_terminal_backend` | （Preview）XeFM がターミナルで動いていて、引き渡すターミナルがあるかどうか |
+| `ctx.start_terminal_session(command=None)` | （Preview）XeFM のターミナルでシェルかプログラムを起動する。下記を参照 |
+| `ctx.screens()`、`ctx.current_screen` | （Preview）切り替えの対象になる画面と、今の画面。下記を参照 |
+| `ctx.terminal_sessions()` | （Preview）今あるターミナルセッション |
 | `ctx.action_names()` | `invoke()` が受け付けるすべての名前 |
 | `ctx.actions()` | （プレビュー）同じアクションを、それぞれの `name`、`description`、`aliases`（以前の名前）、`keys`（`KEY_BINDINGS` を反映した、いま割り当てられているキー）付きで返す |
 
@@ -381,6 +384,56 @@ def fuzzy_cd(ctx):
 - デスクトップアプリには引き渡すターミナルがないため、そこではこのブロックはエラーになります。先に `ctx.is_terminal_backend` を確かめてください。
 
 `ctx` のほかのすべてと同じく、これらはアクションが動く UI スレッドでのみ使えます。`ctx.run_task` の処理の中や、自分で立てたスレッドからは使えません。
+
+### ターミナルセッションと画面（Preview）
+
+`ctx.start_terminal_session()` は、サブシェルと同じように XeFM のターミナルでシェルを起動します。コマンド（リスト、または `run_program` と同じ形の文字列）を渡すと、代わりにそのプログラムを起動します。
+
+```python
+def build_in_background(ctx):
+    """Run the build in a terminal session of its own, out of view."""
+    ctx.start_terminal_session(['make', 'test'], name='build', show=False,
+                               on_done=lambda ctx, code: ctx.message(f'build: {code}'))
+```
+
+- デスクトップアプリでは、セッションは専用の画面で動き、呼び出しはすぐに戻ります。`show=False` を指定すると、表示せずに動かしたままにします。ターミナルモードでは XeFM がターミナルを引き渡し、セッションが終わってから呼び出しが戻ります。どちらの場合も `on_done(ctx, code)` はセッションが終わったときに呼ばれ、呼び出しが戻る前に呼ばれることはありません。そのため、続きの処理を `on_done` に書けば、どちらのモードでも同じように動きます。
+- `cwd=`（既定はアクティブなペインのディレクトリ）、`env=`（`XEFM_*` 変数の上に重ねる）、`name=`（切り替えの一覧での名前）は省略できます。
+- 戻り値は `TerminalSession` です。`id`、`name`、`kind`（`"shell"` か `"program"`）、`cwd`、`state`、`running`、`started_at`、`screen`、そして確認なしでセッションを終わらせる `close()` があります。
+
+*画面*とは、**Screens** で切り替える対象のことです。ファイルマネージャーの画面と、各セッションの画面があります。`ctx.screens()` はそれらを、今の画面を先頭に、ほかを最後に表示した順に返します（`order='started'` を指定すると作られた順）。それぞれに `id`、`kind`（`"files"` か `"terminal"`）、`name`、`last_shown_at`、`terminal_session`、`show()` があります。ターミナルモードでは、ファイルマネージャーの画面だけです。そのため、ダイアログを使わずに切り替える処理は、どちらのモードでも数行で書けます。
+
+```python
+def previous_screen(ctx):
+    """Back to the screen before this one."""
+    screens = ctx.screens()
+    if len(screens) > 1:
+        screens[1].show()
+
+
+def next_session(ctx):
+    """The next terminal session, in the order they were started."""
+    sessions = [s for s in ctx.terminal_sessions() if s.screen]
+    if not sessions:
+        return
+    now = ctx.current_screen.terminal_session
+    i = sessions.index(now) + 1 if now in sessions else 0
+    sessions[i % len(sessions)].screen.show()
+```
+
+ターミナルが表示されている間もこうしたキーを使うには、アクションをターミナルのコンテキストに置きます。するとそのキーは、ターミナルで動いているプログラムではなく、アクションに届きます。
+
+```python
+class Config:
+    ACTIONS = {
+        'next-session': {'func': next_session, 'context': 'terminal'},
+    }
+    KEY_BINDINGS = {
+        ...
+        'next-session': ['Ctrl-Shift-N'],
+    }
+```
+
+アクションを置けるコンテキストは `filer`（既定）と `terminal` です。ビューアーでは、組み込みのアクションのキーを変更することだけができます。
 
 ### ファイルのコピーと移動（Preview）
 

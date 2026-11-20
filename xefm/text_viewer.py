@@ -1218,7 +1218,7 @@ class TextViewer(Widget):
     def _close(self) -> None:
         self._edge_scroll.stop()  # a mid-drag close leaves no timer behind
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
+        if panel is not None and panel.has_layer(self):
             close_viewer(panel, self, lambda: panel.remove_layer(self))
 
     def _ensure_rich_widget(self) -> bool:

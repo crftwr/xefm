@@ -13,15 +13,16 @@ a program closes, then its ``on_done`` runs.
 Terminal mode has none of this: it hands its own terminal over and waits.
 
 This module is the registry, kept free of the UI so it can be tested on its
-own: which sessions exist, in what order they were last on screen, and what
-the session list shows for each. The app owns the views and the layers they are
-pushed as.
+own: which sessions exist and what the screen switcher shows for each. Each
+session has a screen (:mod:`xefm.screens`), which keeps the order screens were
+on; the app owns the views and the layers they are pushed as.
 """
 
 from __future__ import annotations
 
 import itertools
 import os
+import time
 from dataclasses import dataclass, field
 
 _ids = itertools.count(1)
@@ -60,6 +61,15 @@ class Session:
     #: When the command now running started (monotonic), from the prompt
     #: marks; None at the prompt.
     command_since: float | None = None
+    #: The command line now running, from shell integration (OSC 133;C
+    #: with ``cmdline_url``); "" when unknown or at the prompt.
+    command: str = ""
+    #: The program it started, by file name without extension (``zsh``).
+    program: str = ""
+    #: When it was started (time.time()).
+    started_at: float = field(default_factory=time.time)
+    #: Its screen (:class:`xefm.screens.Screen`) while it has one.
+    screen: object = None
 
     @property
     def state(self) -> str:
@@ -86,9 +96,40 @@ class Session:
         return bool(getattr(self.view, "busy", self.running))
 
     @property
+    def activity(self) -> str:
+        """What runs in it now, for the switcher (#954), or "": the command
+        line shell integration reported, else the program holding the pty's
+        foreground (POSIX) when it is not the shell itself, else the title a
+        program set (the only word from cmd or PowerShell). A program
+        session's own name already says what it runs."""
+        view = self.view
+        if not getattr(view, "running", False):
+            return ""
+        if self.command_since is not None and self.command:
+            return self.command
+        if getattr(view, "idle_at_prompt", False):
+            return ""
+        fg = getattr(view, "foreground_program", None)
+        if fg:
+            return "" if _same_program(fg, self.program) else fg
+        if self.kind == SHELL:
+            title = getattr(view, "title", "") or ""
+            return title.strip()
+        return ""
+
+    @property
     def label(self) -> str:
-        """The list row: the name, then where it started."""
-        return f"{self.name} - {_short(self.cwd)}"
+        """The list row: the name, what runs now, then where it started."""
+        doing = self.activity
+        parts = [self.name] + ([doing] if doing else []) + [_short(self.cwd)]
+        return " - ".join(parts)
+
+
+def _same_program(a: str, b: str) -> bool:
+    """Whether two program names name the same thing (``-zsh``, ``zsh.exe``)."""
+    def norm(n: str) -> str:
+        return os.path.splitext(os.path.basename(n))[0].lstrip("-").lower()
+    return bool(b) and norm(a) == norm(b)
 
 
 def _short(path: str) -> str:
@@ -100,20 +141,11 @@ def _short(path: str) -> str:
     return path
 
 
-#: The file manager's own screen - the panes, with any viewer open over them -
-#: as a row of :meth:`SessionRegistry.screens`.
-FILES = "files"
-
-
 class SessionRegistry:
-    """The sessions, in the order they were started, and the screens - the
-    file manager's (:data:`FILES`) and each session's - in the order they were
-    last on screen, which is how the session list offers them."""
+    """The sessions, in the order they were started."""
 
     def __init__(self) -> None:
         self._sessions: list[Session] = []
-        #: Most recently on screen first; FILES is always in it.
-        self._recent: list = [FILES]
 
     def __iter__(self):
         return iter(list(self._sessions))
@@ -123,24 +155,11 @@ class SessionRegistry:
 
     def add(self, session: Session) -> Session:
         self._sessions.append(session)
-        self._recent.append(session)  # last until it is first shown
         return session
 
     def remove(self, session: Session) -> None:
         if session in self._sessions:
             self._sessions.remove(session)
-        if session in self._recent:
-            self._recent.remove(session)
-
-    def touch(self, screen) -> None:
-        """``screen`` (a session, or FILES) just came on screen."""
-        if screen is FILES or screen in self._sessions:
-            self._recent.remove(screen)
-            self._recent.insert(0, screen)
-
-    def screens(self) -> list:
-        """FILES and the sessions, most recently on screen first."""
-        return list(self._recent)
 
     def for_view(self, view) -> Session | None:
         return next((s for s in self._sessions if s.view is view), None)

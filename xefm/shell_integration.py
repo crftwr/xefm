@@ -56,7 +56,11 @@ if [[ -o interactive && -z ${_xefm_hooked-} ]]; then
     [[ $PS1 == *$'\e]133;B'* ]] || PS1="${PS1}%{"$'\e]133;B\a'"%}"
   }
   _xefm_preexec() {
-    printf '\e]133;C\a'
+    # The command line goes with the mark (#954): percent-encoded where it
+    # would end the sequence or split its options.
+    local c=$1
+    c=${c//\%/%25}; c=${c//;/%3B}; c=${c//$'\n'/%0A}; c=${c//$'\a'/%07}; c=${c//$'\e'/%1B}
+    printf '\e]133;C;cmdline_url=%s\a' "$c"
     _xefm_ran=1
   }
   typeset -ga precmd_functions preexec_functions
@@ -113,7 +117,16 @@ if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )
     return $ret
   }
   PROMPT_COMMAND="_xefm_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
-  PS0="${PS0-}"$'\e]133;C\a'
+  # The command line goes with the mark (#954), read back from the history
+  # (empty where history is off: the mark goes alone).
+  _xefm_ps0() {
+    local c
+    c=$(HISTTIMEFORMAT= builtin history 1 2>/dev/null)
+    c=${c#"${c%%[![:space:]]*}"}; c=${c#*[[:space:]]}; c=${c#"${c%%[![:space:]]*}"}
+    c=${c//\%/%25}; c=${c//;/%3B}; c=${c//$'\n'/%0A}; c=${c//$'\a'/%07}; c=${c//$'\e'/%1B}
+    if [[ -n $c ]]; then printf '\e]133;C;cmdline_url=%s\a' "$c"; else printf '\e]133;C\a'; fi
+  }
+  PS0="${PS0-}"'$(_xefm_ps0)'
 fi
 '''
 

@@ -158,8 +158,8 @@ class InputDialog(FocusContainer, Widget):
             self._completion.dismiss()  # drop any in-flight candidate fetch
         self._remove_overlay()  # never leave a stray candidate layer behind
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+        if panel is not None and panel.has_layer(self):
+            panel.remove_layer(self)
 
     # --- completion overlay --------------------------------------------------
 

@@ -178,7 +178,8 @@ modules, and from each only the names in its `__all__`:
 
 - `xefm.user_api.__all__` — `API_VERSION`, `PREVIEW_APIS`,
   `DEPRECATED_APIS`, `ActionContext`, `PaneApi`, `EntryInfo`, `HookEvent`, `extension`,
-  `TaskJob`, `TaskOutcome`, `ItemResult`, `ActionInfo`, `md_code_block`,
+  `TaskJob`, `TaskOutcome`, `ItemResult`, `ActionInfo`, `Screen`,
+  `TerminalSession`, `md_code_block`,
   `md_escape`, `Cell`, `xefm_tool`, `xefm_python`, `is_desktop_mode`
 - `xefm.path_base.__all__` — `ReadOnlyPathImpl`, `UriPathImpl`,
   `UriStatResult`

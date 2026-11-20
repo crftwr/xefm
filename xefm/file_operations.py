@@ -2007,8 +2007,8 @@ class ConflictDialog(FocusContainer, Widget):
             return
         apply_all = self._checkbox.checked
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+        if panel is not None and panel.has_layer(self):
+            panel.remove_layer(self)
         if self.on_result is not None:
             self.on_result((action, apply_all))
 

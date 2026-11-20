@@ -82,8 +82,17 @@ commands (`_REMOTE_READS`) are answered directly then, which is safe for
 the same reason; `cd` and `view` are refused with a message.
 
 `_remote_answer`: `pwd`, `selected` (pane order, selection only), `focused`,
-`sessions`, `cd` (`_resolve_jump_target` against the pane, then
-`_go_to_dir`; a file lands the cursor on it) and `view` (`_open_viewer`).
+`cd` (`_resolve_jump_target` against the pane, then `_go_to_dir`; a file
+lands the cursor on it), `view` (`_view_on_file_manager`), `screen list`,
+`screen switch ID` (`_show_screen`; desktop only) and `session list`.
+
+The grammar (#952): a command about a pane is one verb (`selected`, `cd`,
+`view`); one about anything else is a noun and a verb, sent as
+`{"cmd": noun, "verb": verb}` (`VERBS` in the client). Every command acts on
+the file manager, whichever session it comes from: `view` opens on the file
+manager's screen and switches there (#951), so the switcher goes back to the
+terminal for a side-by-side look. `sessions` became `session list`; it was
+out in 1.17.0 RCs only, so no alias is kept.
 
 ## Exit reports: `ctx.run_program(on_done=)`
 
@@ -99,7 +108,8 @@ docstring and the docs mark it Preview.
 
 ## Not yet
 
-- Write commands (selection, file operations), when one is asked for.
+- More commands - selection, `action NAME`, `view -` and the rest - are
+  discussed in #952.
 - MCP and hooks on the same socket (#880), as `xefmctl` subcommands.
 
 ## Tests

@@ -9,8 +9,8 @@ Subshell Here**) and programs that draw a screen or read the keyboard, such as
 - **In a terminal**, XeFM hands over the terminal it runs in, waits until the
   program exits, then re-reads the panes.
 - **In the desktop app**, XeFM has a terminal of its own, drawn in its window.
-  Each shell or program runs there as a *terminal session*, which you can hide
-  behind the panes while it keeps running.
+  Each shell or program runs there as a *terminal session* on a *screen* of
+  its own, which you can leave while it keeps running.
 
 ## Which commands get a terminal
 
@@ -39,27 +39,33 @@ A program in the background is never waited for. If it exits with an error,
 the log pane says so. A program that keeps running after XeFM quits, such as
 an editor, is not stopped by XeFM quitting.
 
-## In the desktop app: terminal sessions
+## In the desktop app: terminal sessions and screens
 
 **Subshell Here** starts your shell in the active pane's directory, in XeFM's
 terminal over the panes. A program marked `'terminal': True` opens the same
-way. Each is a terminal session:
+way. Each is a terminal session, shown on a screen of its own.
 
-- **Switch** with **Tools → Terminal Sessions…** (`terminal_sessions`, or
-  `terminal.sessions` from inside a session). The list holds the file
-  manager's screen (the panes, with any viewer you have open), each session
-  with its state, and a last row that starts another shell in the active
-  pane's directory. The screen you are on comes first and the rest follow in
-  the order you last used them, with the cursor on the one you were on
-  before, so `Enter` takes you back there. Picking the file manager hides the
-  session: it keeps running behind the panes, and the panes re-read their
-  directories. A session you come back to has everything still in it. The
-  remove key (`remove_list_item`) ends the highlighted session.
+A *screen* is what fills the window: the file manager's (the panes) or a
+session's. A screen keeps what is open on it. A viewer you opened over the
+panes is still there when you come back from a terminal, so you can look at a
+file and a terminal by turns, switching between the two screens.
+
+- **Switch** with **Tools → Screens…** (`screens`, which works over a viewer
+  too, or `terminal.screens` from inside a session). The list holds the file
+  manager's screen, each session's, and a last row that starts another shell
+  in the active pane's directory. Each row says what is on that screen: the
+  command running in a session (`zsh - make test - ~/src`), or the viewer
+  open over the panes (`File manager - viewing notes.txt`). The screen you
+  are on comes first and the rest follow in the order you last used them,
+  with the cursor on the one you were on before, so `Enter` takes you back
+  there. A session you leave keeps running. Coming back to the file manager
+  re-reads the panes. The remove key (`remove_list_item`) ends the
+  highlighted session.
 - **When it ends.** `exit` in a shell, or a program that finishes, closes the
-  session and returns to the panes, whether it was on screen or hidden. A
-  shell or program that fails keeps its last screen up so you can read it.
-  For a shell, `Enter` starts it again and `Esc` hides it; for a program,
-  `Enter` or `Esc` closes it.
+  session and returns to the screen you were on before it, whether it was on
+  screen or not. A shell or program that fails keeps its last screen up so
+  you can read it. For a shell, `Enter` starts it again and `Esc` goes back
+  to the panes; for a program, `Enter` or `Esc` closes it.
 - **Close it** with `terminal.close` while it still runs. XeFM asks first,
   since that stops whatever runs there.
 - **Quitting XeFM** asks first only when a session is busy: a program
@@ -94,12 +100,16 @@ failed, or a program sent a notification (OSC 9 or OSC 777), as Claude Code
 and other tools can. A program that reports its progress (OSC 9;4) shows it
 there too. Click it to bring the session back.
 
+Shell integration also tells the switcher the command line running in a
+session. Without it, macOS and Linux still show the name of the program
+running there; on Windows, the title the program sets.
+
 ## In a terminal
 
 XeFM in a terminal does not draw a second terminal inside itself. The subshell
 and terminal programs get the terminal XeFM runs in, and you return to XeFM
-when they exit. There are no terminal sessions, so **Terminal Sessions** is not in
-the menu or the command palette.
+when they exit. There are no terminal sessions and no screens to switch
+between, so **Screens** is not in the menu or the command palette.
 
 This is the one difference between the two: the desktop app can keep a shell
 running behind the panes, and XeFM in a terminal cannot. To work in parallel
@@ -111,7 +121,8 @@ has examples for Terminal.app, iTerm, Windows Terminal and tmux.
 
 In a shell XeFM started (the subshell, a terminal session, a `PROGRAMS`
 entry), the `xefmctl` command asks that XeFM for its state at the moment it
-runs:
+runs, and acts on its file manager. A command about a pane is a single word;
+one about anything else is a noun and a verb:
 
 | Command | What it does |
 |---|---|
@@ -119,8 +130,10 @@ runs:
 | `xefmctl focused` | Prints the full path of the item under the cursor |
 | `xefmctl pwd` | Prints the pane's directory |
 | `xefmctl cd [PATH]` | Points the pane at `PATH`, relative to the shell's directory; without `PATH`, at the shell's directory. A file: its folder, with the cursor on it |
-| `xefmctl view FILE` | Opens `FILE` in XeFM's viewer |
-| `xefmctl sessions` | Lists the terminal sessions; `*` marks the one you are in |
+| `xefmctl view FILE` | Opens `FILE` in XeFM's viewer, over the panes, and switches to the file manager; **Screens** takes you back to the terminal to compare |
+| `xefmctl screen list` | Lists the screens, the one on now first (`*`), each with its id |
+| `xefmctl screen switch ID` | Switches to screen `ID`: `files` for the file manager, or a session's number |
+| `xefmctl session list` | Lists the terminal sessions; `*` marks the one you are in |
 
 `--pane this` (the default, the active pane), `--pane other`, `--pane left`
 or `--pane right` picks the pane. For example:
@@ -134,7 +147,8 @@ xefmctl view build.log
 
 If the XeFM that started the shell has quit, the command says so. While a
 subshell in a terminal runs, XeFM is waiting for it, so only the commands
-that read (`selected`, `focused`, `pwd`, `sessions`) work there.
+that read (`selected`, `focused`, `pwd`, `screen list`, `session list`) work
+there.
 
 ## The `TERMINAL` setting
 

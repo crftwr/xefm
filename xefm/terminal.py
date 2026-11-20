@@ -76,6 +76,12 @@ def _supported_kwargs(**kwargs) -> dict:
     return {k: v for k, v in kwargs.items() if k in params and v is not None}
 
 
+def _user_actions() -> set:
+    """The actions a config or extension put in the terminal's context."""
+    from xefm.actions import registry
+    return {a.name for a in registry.actions(CONTEXT) if a.is_user and a.context == CONTEXT}
+
+
 _Base = _PuiKitTerminalView if _PuiKitTerminalView is not None else object
 
 
@@ -90,16 +96,19 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
     ran (``shell``): a shell restarts on Enter and hides on Escape, a program
     closes on either - starting vim again would mean nothing.
     ``terminal.close`` asks the app to close it early (``on_close_request``),
-    which stops a program still running; ``terminal.sessions`` opens the
-    app's screen switcher, where picking the file manager hides it while it
-    keeps running (``on_hide_request`` is the exit bar's Escape)."""
+    which stops a program still running; ``terminal.screens`` opens the
+    app's screen switcher, where picking another screen leaves it running
+    out of view (``on_hide_request`` is the exit bar's Escape). An action a
+    config or extension put in the ``terminal`` context runs through
+    ``on_user_action``."""
 
     def __init__(self, argv: list[str], *, cwd: str, env: dict, label: str,
                  on_exited: Callable[["TerminalView", int | None], None],
                  on_close_request: Callable[["TerminalView"], None],
                  on_hide_request: Callable[["TerminalView"], None],
                  shell: bool = False,
-                 on_sessions_request: Callable[[], None] | None = None,
+                 on_screens_request: Callable[[], None] | None = None,
+                 on_user_action: Callable[[str], bool] | None = None,
                  on_prompt: Callable[[int, int | None, str], None] | None = None,
                  on_notification: Callable[[str, str], None] | None = None,
                  on_progress: Callable[[int, int | None], None] | None = None) -> None:
@@ -115,7 +124,8 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         self.label = label
         self.on_close_request = on_close_request
         self.on_hide_request = on_hide_request
-        self.on_sessions_request = on_sessions_request
+        self.on_screens_request = on_screens_request
+        self.on_user_action = on_user_action
         #: A shell rather than a program: Enter starts it again after a failed
         #: exit (PuiKit's own handling) instead of closing it.
         self.shell = shell
@@ -173,20 +183,22 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         actions any surface may run (xefm.surface_actions). Nothing that acts
         on the file list behind it."""
         table = {"terminal.close": lambda: self.on_close_request(self)}
-        if self.on_sessions_request is not None:
-            table["terminal.sessions"] = self.on_sessions_request
+        if self.on_screens_request is not None:
+            table["terminal.screens"] = self.on_screens_request
         table.update(surface_actions.handlers())
         return table
 
     def palette_actions(self) -> set:
-        return set(self._actions())
+        return set(self._actions()) | set(_user_actions())
 
     def run_action(self, name: str) -> bool:
         handler = self._actions().get(name)
-        if handler is None:
-            return False
-        handler()
-        return True
+        if handler is not None:
+            handler()
+            return True
+        if self.on_user_action is not None and name in _user_actions():
+            return bool(self.on_user_action(name))
+        return False
 
     def takes_binding(self, event, action: str) -> bool:
         """Whether the key bound to ``action`` is taken from the program.
@@ -198,7 +210,7 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         list - is taken only on a chord no terminal program receives
         (Command, Ctrl+Shift); otherwise the key stays the program's (Ctrl-T
         transposes in a shell)."""
-        if action.startswith(CONTEXT + "."):
+        if action.startswith(CONTEXT + ".") or action in _user_actions():
             return True
         if self._qualified(event, action):
             return True

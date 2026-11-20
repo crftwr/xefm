@@ -185,6 +185,7 @@ def _app():
     app._resolve_jump_target = lambda text, current: targets[text]
     app._go_to_dir = lambda pane, d, name: app.went.append((pane["path"], d, name))
     app._open_viewer = lambda target: app.viewed.append(target)
+    app._view_on_file_manager = lambda target: app.viewed.append(target)
     app.log_info = app.logged.append
     return app
 

@@ -158,6 +158,8 @@ __all__ = [
     "ItemResult",
     # what ctx.actions() describes
     "ActionInfo",
+    # what ctx.screens() and ctx.start_terminal_session() hand out
+    "Screen", "TerminalSession",
     # building Markdown for ctx.show_markdown
     "md_code_block", "md_escape",
     # what a LAYOUTS format may return
@@ -804,6 +806,194 @@ def _operation_path(item: Any, what: str) -> Path:
 
 
 # --------------------------------------------------------------------------- #
+# Screens and terminal sessions (#951)
+# --------------------------------------------------------------------------- #
+
+@preview
+class Screen:
+    """What fills the window, and what the screen switcher switches between:
+    the file manager (``kind == "files"``) or a terminal session
+    (``kind == "terminal"``). A screen keeps what is open on it - a viewer,
+    a dialog - while another one is on.
+
+    Both modes have screens; in terminal mode the file manager's is the only
+    one (:meth:`ActionContext.screens`). A screen is not a terminal session:
+    the session is a process, the screen is what shows it, and a failed
+    session keeps its screen after its process is gone
+    (:attr:`terminal_session`, :attr:`TerminalSession.screen`).
+
+    Handed out by :meth:`ActionContext.screens` and
+    :attr:`ActionContext.current_screen`; compare two with ``==``."""
+
+    __slots__ = ("_app", "_screen")
+
+    def __init__(self, app, screen):
+        self._app = app
+        self._screen = screen
+
+    @property
+    def id(self) -> str:
+        """``"files"`` for the file manager; a terminal session's id
+        (``"1"``, ``"2"``, ... - what ``XEFM_SESSION`` says in it)
+        otherwise. What ``xefmctl screen switch`` takes."""
+        return self._screen.id
+
+    @property
+    def kind(self) -> str:
+        """``"files"`` or ``"terminal"``."""
+        return self._screen.kind
+
+    @property
+    def name(self) -> str:
+        """``"File manager"``, or the session's name (``"zsh 2"``)."""
+        return self._screen.name
+
+    @property
+    def last_shown_at(self) -> float:
+        """When it was last on (``time.time()``); when it was made, for one
+        never shown."""
+        return self._screen.last_shown_at
+
+    @property
+    def terminal_session(self) -> "TerminalSession | None":
+        """The session it shows; None for the file manager."""
+        session = self._screen.session
+        return TerminalSession(self._app, session) if session is not None else None
+
+    @property
+    def shown(self) -> bool:
+        """Whether it is the screen on now."""
+        return self._app._screens.current is self._screen
+
+    def show(self) -> None:
+        """Bring it on, in place of the one on now (which keeps what is open
+        on it). Raises RuntimeError once the screen is gone (its session
+        closed), and off the UI thread."""
+        ActionContext(self._app)._require_ui_thread("Screen.show")
+        if self._app._screens.by_id(self._screen.id) is not self._screen:
+            raise RuntimeError(f"Screen.show: screen {self.id!r} is gone")
+        self._app._show_screen(self._screen)
+        self._app.panel.render()
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, Screen) and other._screen is self._screen
+
+    def __hash__(self) -> int:
+        return id(self._screen)
+
+    def __repr__(self) -> str:
+        return f"<Screen {self.id} {self.name!r}>"
+
+
+@preview
+class TerminalSession:
+    """A program in XeFM's terminal - a shell or a terminal program - started
+    by the subshell, a ``{'terminal': True}`` command, the screen switcher or
+    :meth:`ActionContext.start_terminal_session`.
+
+    In the desktop app a session runs on a screen of its own
+    (:attr:`screen`) and keeps running while another screen is on. In
+    terminal mode XeFM hands its terminal over instead, so a session lives
+    only while it has it: :meth:`ActionContext.start_terminal_session`
+    returns one that has already ended, and :meth:`ActionContext.terminal_sessions`
+    is empty.
+
+    Compare two with ``==``."""
+
+    __slots__ = ("_app", "_session")
+
+    def __init__(self, app, session):
+        self._app = app
+        self._session = session
+
+    @property
+    def id(self) -> str:
+        """What ``XEFM_SESSION`` says in it; its screen's id."""
+        return str(self._session.id)
+
+    @property
+    def name(self) -> str:
+        """Its name in the switcher (``"zsh"``, ``"zsh 2"``, ``"vim"``)."""
+        return self._session.name
+
+    @property
+    def kind(self) -> str:
+        """``"shell"`` or ``"program"``: a shell restarts on Enter after a
+        failed exit, a program closes."""
+        return self._session.kind
+
+    @property
+    def cwd(self) -> str:
+        """The directory it started in."""
+        return self._session.cwd
+
+    @property
+    def state(self) -> str:
+        """``"at prompt"``, ``"running a command"`` (both known only from
+        shell integration), ``"running"``, ``"exited"`` or ``"exited (N)"``."""
+        return self._session.state
+
+    @property
+    def running(self) -> bool:
+        """Whether its program still runs."""
+        return self._session.running
+
+    @property
+    def started_at(self) -> float:
+        """When it was started (``time.time()``)."""
+        return self._session.started_at
+
+    @property
+    def screen(self) -> Screen | None:
+        """Its screen while it has one; None in terminal mode and once it is
+        closed."""
+        screen = getattr(self._session, "screen", None)
+        if screen is None or self._app._screens.by_id(screen.id) is not screen:
+            return None
+        return Screen(self._app, screen)
+
+    def close(self) -> None:
+        """End it: its program is hung up if it still runs - without asking
+        - and its screen goes away. ``on_done`` runs as for any end. Does
+        nothing once it has ended. Raises RuntimeError off the UI thread."""
+        ActionContext(self._app)._require_ui_thread("TerminalSession.close")
+        if self._app._sessions.for_view(self._session.view) is self._session:
+            self._app._close_session(self._session)
+            self._app.panel.render()
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, TerminalSession) and other._session is self._session
+
+    def __hash__(self) -> int:
+        return id(self._session)
+
+    def __repr__(self) -> str:
+        return f"<TerminalSession {self.id} {self.name!r} {self.state}>"
+
+
+class _EndedSession:
+    """What terminal mode's :meth:`ActionContext.start_terminal_session`
+    returns a :class:`TerminalSession` over: the session ran with the
+    terminal handed over, and has ended."""
+
+    def __init__(self, kind: str, name: str, cwd: str, code: int | None, started: float):
+        self.id = "subshell" if kind == "shell" else "program"
+        self.kind = kind
+        self.name = name
+        self.cwd = cwd
+        self.started_at = started
+        self.screen = None
+        self.view = None
+        self._code = code
+
+    @property
+    def state(self) -> str:
+        return "exited" if self._code in (0, None) else f"exited ({self._code})"
+
+    running = False
+
+
+# --------------------------------------------------------------------------- #
 # Action context
 # --------------------------------------------------------------------------- #
 
@@ -988,6 +1178,110 @@ class ActionContext:
                                "has no terminal to hand over")
         with self._app._terminal_suspended():
             yield
+
+    # --- screens and terminal sessions (#951) ------------------------------- #
+
+    @preview
+    def screens(self, order: str = "recent") -> list[Screen]:
+        """Every screen: the file manager's and each terminal session's.
+
+        ``order="recent"`` (the default) puts the screen on now first, then
+        the rest most recently shown first - what the screen switcher lists,
+        so ``ctx.screens()[1].show()`` goes back to the previous screen.
+        ``order="started"`` lists them in the order they were made, the file
+        manager first. In terminal mode the file manager's is the only one,
+        so code walking this list needs no mode check."""
+        if order not in ("recent", "started"):
+            raise ValueError(f"screens: order is 'recent' or 'started', not {order!r}")
+        manager = self._app._screens
+        found = manager.recent() if order == "recent" else manager.started()
+        return [Screen(self._app, s) for s in found]
+
+    @property
+    @preview
+    def current_screen(self) -> Screen:
+        """The screen on now."""
+        return Screen(self._app, self._app._screens.current)
+
+    @preview
+    def terminal_sessions(self) -> list[TerminalSession]:
+        """The terminal sessions there are, in the order they were started.
+        Empty in terminal mode, where a session lives only while it has the
+        terminal and XeFM runs nothing meanwhile."""
+        return [TerminalSession(self._app, s) for s in self._app._sessions]
+
+    @preview
+    def start_terminal_session(self, command=None, *, cwd: str | None = None,
+                               env: Mapping[str, str] | None = None,
+                               name: str | None = None, show: bool = True,
+                               on_done: Callable[["ActionContext", int | None], None]
+                               | None = None) -> TerminalSession:
+        """Start a shell or a program in XeFM's terminal.
+
+        ``command=None`` starts the shell the subshell starts (``SUBSHELL``),
+        with shell integration; a list (argv) or a string (a command line)
+        starts that program, as :meth:`run_program` takes it. ``cwd`` defaults
+        to the active pane's directory (the home directory when it is not on
+        the local disk); ``env`` is merged over what the subshell or a
+        program gets (the ``XEFM_*`` variables, ``xefmctl``'s address).
+        ``name`` names it in the switcher.
+
+        In the desktop app the session runs on a screen of its own, brought on
+        at once - or, with ``show=False``, left out of view, running - and
+        this returns at once. In terminal mode XeFM hands its terminal over
+        and returns once the session has ended, with a session that has
+        (``show`` means nothing there: a terminal cannot be hidden). Either
+        way ``on_done(ctx, code)`` runs on the UI thread once it ends, with a
+        new ``ctx`` and the exit code, never before this returns - so code
+        that goes on in ``on_done`` behaves the same in both modes.
+
+        Raises RuntimeError when the desktop app's terminal is unavailable
+        (the log says why), and off the UI thread."""
+        self._require_ui_thread("start_terminal_session")
+        import time as _time
+        from xefm.external_programs import command_argv
+        app = self._app
+        shell = command is None
+        if shell:
+            argv, launch_env = app._shell_launch()
+            default_name = os.path.splitext(os.path.basename(argv[0]))[0] or "shell"
+            if cwd is None:
+                cwd = app._session_dir()
+        else:
+            argv = command_argv(command)
+            if not argv:
+                raise ValueError("start_terminal_session: the command is empty")
+            launch = self.program_env()
+            launch_env = launch["env"]
+            default_name = os.path.splitext(os.path.basename(argv[0]))[0] or "program"
+            if cwd is None:
+                cwd = launch["cwd"]
+        if env:
+            launch_env.update({str(k): str(v) for k, v in env.items()})
+        cwd = str(cwd) if cwd is not None else None
+
+        def on_exit(code: int | None) -> None:
+            if on_done is not None:
+                run_guarded(f"'{argv[0]}' completion", on_done, ActionContext(app), code)
+                app.panel.render()
+
+        if is_desktop_mode():
+            if not app._terminal_ready():
+                raise RuntimeError("start_terminal_session: XeFM's terminal is "
+                                   "unavailable here (see the log)")
+            session = app._start_session(argv, cwd=cwd, env=launch_env,
+                                         name=name or default_name, shell=shell,
+                                         on_done=on_exit, show=show)
+            return TerminalSession(app, session)
+        if shell:
+            app._with_remote_env(launch_env, "subshell")
+        started = _time.time()
+        code = app._run_in_terminal(argv, cwd=cwd or os.path.expanduser("~"),
+                                    env=launch_env, pause_on_error=not shell)
+        ended = _EndedSession("shell" if shell else "program", name or default_name,
+                              cwd or os.path.expanduser("~"), code, started)
+        app._call_later(lambda: on_exit(code))
+        return TerminalSession(app, ended)
 
     def _require_ui_thread(self, api: str) -> None:
         """Raise unless called on the thread that runs XeFM's UI. An API that
@@ -1999,14 +2293,17 @@ def _build_action(name, spec) -> tuple[_actions.Action | None, str | None]:
     if context not in _actions.CONTEXTS:
         return None, (f"ACTIONS['{name}'] names unknown context '{context}' - "
                       f"known contexts: {', '.join(_actions.CONTEXTS)}")
-    if context != _actions.FILER:
+    if context not in (_actions.FILER, _actions.TERMINAL):
         # Deliberate for this version: a user function running inside a viewer
         # would need a per-view API (scroll position, block list, zoom) that has
         # not been designed yet, and shipping a half-one would freeze it by
-        # accident. Rebinding a viewer's *built-in* actions is unaffected.
+        # accident. Rebinding a viewer's *built-in* actions is unaffected. The
+        # terminal needs no API of its own: ctx.current_screen says which
+        # session it is (#951).
         return None, (f"ACTIONS['{name}'] targets context '{context}'; user "
-                      f"functions are accepted only in '{_actions.FILER}' in this "
-                      f"preview (viewer key bindings are rebindable via KEY_BINDINGS)")
+                      f"functions are accepted only in '{_actions.FILER}' and "
+                      f"'{_actions.TERMINAL}' in this preview (viewer key "
+                      f"bindings are rebindable via KEY_BINDINGS)")
     # The action is described the way any Python function is: by its
     # docstring, whose summary line is the one-liner the help dialog and the
     # command palette show, and whose body is the palette's help page. A

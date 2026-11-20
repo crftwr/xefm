@@ -159,7 +159,7 @@ from xefm.file_operations import (CloseGate, FileOperationService,
                                   format_op_errors, format_op_summary,
                                   serialized_log, transfer_workers)
 from xefm.task import Cancelled, Task, TaskManager, TaskStatus
-from xefm.terminal_sessions import FILES, SessionRegistry
+from xefm.terminal_sessions import SessionRegistry
 from xefm.text_dialog import show_markdown
 from xefm.tips import tip_count
 from xefm.tips_dialog import show_tips_dialog
@@ -2403,6 +2403,9 @@ class XeFMApp:
         self._terminal_handed_over = False
         #: The desktop app's terminal sessions (#900).
         self._sessions = SessionRegistry()
+        from xefm.screens import ScreenManager
+        #: The file manager's screen and one per terminal session (#951).
+        self._screens = ScreenManager(self.panel)
         # The viewers launch TEXT_DIFF through the same path as TEXT_EDITOR.
         from xefm.external_programs import set_configured_runner
         set_configured_runner(self._run_configured)
@@ -4353,7 +4356,7 @@ class XeFMApp:
                 "diff_files": (self.diff_files, False),
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
-                "terminal_sessions": (self.terminal_sessions, False),
+                "screens": (self.screens, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
                 "install_extension": (self.install_extension, False),
@@ -5992,12 +5995,7 @@ class XeFMApp:
         self.log_info(f"Subshell in {path} — exit the shell to return")
         self._run_in_terminal(command, cwd=str(path), env=env)
 
-    # --- XeFM's terminal: terminal sessions (#900) -------------------------------
-
-    #: Least layer z of the terminal: over the panes and the isearch bar (70).
-    #: Opened from a viewer (its edit key runs a terminal TEXT_EDITOR here) it
-    #: goes above whatever is on top - see _push_terminal.
-    _TERMINAL_Z = 75
+    # --- XeFM's terminal: terminal sessions (#900) and screens (#951) -----------
 
     def _terminal_unavailable(self) -> str | None:
         from xefm.terminal import unavailable
@@ -6026,15 +6024,19 @@ class XeFMApp:
         return False
 
     def _start_session(self, argv: list, *, cwd: str | None, env: dict, name: str,
-                       shell: bool, on_done=None):
-        """Run ``argv`` as a new terminal session and show it. ``shell`` marks
+                       shell: bool, on_done=None, show: bool = True):
+        """Run ``argv`` as a new terminal session on a screen of its own, shown
+        unless ``show`` is False (then it starts out of view). ``shell`` marks
         a shell (shell integration, Enter restarts after a failed exit) as
         opposed to a program; ``on_done(code)`` runs once the session ends.
         The caller has checked :meth:`_terminal_ready`."""
+        from puikit.panel import Rect
         from xefm import shell_integration
         from xefm.terminal_sessions import PROGRAM, SHELL, Session, next_id
+        from xefm.text_viewer import viewer_layer_hints
         sid = next_id()
         self._with_remote_env(env, str(sid))
+        program = os.path.splitext(os.path.basename(str(argv[0])))[0] if argv else ""
         if shell:
             argv = shell_integration.apply(argv, env)
         name = self._sessions.next_name(name or "terminal")
@@ -6042,17 +6044,32 @@ class XeFMApp:
         view = self._make_session_view(argv, cwd=cwd, env=env, label=name, shell=shell)
         session = self._sessions.add(Session(
             view=view, kind=SHELL if shell else PROGRAM, name=name, cwd=cwd,
-            id=sid, on_done=on_done))
-        self._show_session(session)
+            id=sid, on_done=on_done, program=program))
+        # The viewers' hints: the terminal covers the panes and paints the
+        # content surface itself, so over an animated background it leaves its
+        # page unpainted and the scene shows through (ctx.wallpaper).
+        sw, sh = self.panel.backend.size_units
+        screen = self._screens.add_terminal(
+            session, view, hints=viewer_layer_hints(sw, sh),
+            reflow=lambda sw, sh: Rect(0, 0, sw, sh))
+        if show:
+            self._show_screen(screen)
+        else:
+            # Hidden, it draws nothing, and PuiKit starts the program on the
+            # first draw: start it now.
+            start = getattr(view, "start", None)
+            if start is not None:
+                start(self.panel)
         return session
 
-    def _new_shell_session(self, cwd: str | None):
+    def _new_shell_session(self, cwd: str | None, *, show: bool = True, name: str = ""):
         """A new shell session in ``cwd`` (the home directory when None)."""
         if not self._terminal_ready():
             return None
         command, env = self._shell_launch()
-        name = os.path.splitext(os.path.basename(command[0]))[0] or "shell"
-        return self._start_session(command, cwd=cwd, env=env, name=name, shell=True)
+        name = name or os.path.splitext(os.path.basename(command[0]))[0] or "shell"
+        return self._start_session(command, cwd=cwd, env=env, name=name, shell=True,
+                                   show=show)
 
     def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str,
                            shell: bool):
@@ -6063,34 +6080,22 @@ class XeFMApp:
             on_exited=self._session_exited,
             on_close_request=self._session_close_request,
             on_hide_request=self._hide_session,
-            on_sessions_request=self.terminal_sessions,
-            on_prompt=lambda kind, code, cmd: self._session_prompt(box["view"], kind, code),
+            on_screens_request=self.screens,
+            on_user_action=self._run_terminal_user_action,
+            on_prompt=lambda kind, code, cmd: self._session_prompt(box["view"], kind, code, cmd),
             on_notification=lambda title, body: self._session_notification(
                 box["view"], title, body),
             on_progress=lambda state, pct: self._session_progress(box["view"], state, pct))
         box["view"] = view
         return view
 
-    def _push_terminal(self, view) -> None:
-        from puikit.panel import Rect
-        from xefm.dialog_geometry import animate_from_behind
-        from xefm.text_viewer import viewer_layer_hints
-        # The viewers' hints: the terminal covers the panes and paints the
-        # content surface itself, so over an animated background it leaves
-        # its page unpainted and the scene shows through (ctx.wallpaper).
-        sw, sh = self.panel.backend.size_units
-        # Above every layer already up: the terminal takes the keys, so it
-        # must be the top one. Under a viewer (z 80) it was hidden while the
-        # viewer kept the keys, and each press of the viewer's edit key
-        # stacked another.
-        top = max((slot.z for slot in self.panel._layers), default=0)
-        z = max(self._TERMINAL_Z, top + 1)
-        self.panel.push_layer(view, z=z, hints=viewer_layer_hints(sw, sh),
-                              reflow=lambda sw, sh: Rect(0, 0, sw, sh))
-        # It was behind the file manager, which zooms up and fades away;
-        # _hide_session and _close_session put it back.
-        animate_from_behind(self.panel, view)
+    def _run_terminal_user_action(self, name: str) -> bool:
+        """An action a config or extension put in the terminal's context,
+        run with the usual ``ctx``."""
+        from xefm.actions import TERMINAL
+        self._run_action(TERMINAL, name)
         self.panel.render()
+        return True
 
     def _relist_both(self) -> None:
         self._relist(self.pm.left_pane, keep_visible=True)
@@ -6110,50 +6115,76 @@ class XeFMApp:
         return str(path) if self._is_local(path) else None
 
     def _shown_session(self):
-        return next((s for s in self._sessions if s.view.shown), None)
+        """The terminal session whose screen is on now, or None."""
+        return self._screens.current.session
 
     def _show_session(self, session) -> None:
-        """Bring ``session`` on screen, in place of another one shown."""
-        shown = self._shown_session()
-        if shown is session:
+        """Bring ``session``'s screen on."""
+        if session.screen is not None:
+            self._show_screen(session.screen)
+
+    def _show_screen(self, screen) -> None:
+        """Bring ``screen`` on, in place of the one on now; the one left keeps
+        what is open on it, out of view. A terminal comes from behind the file
+        manager and goes back behind it; between two terminals, or with the
+        theme's effects off, the switch is at once. Coming back to the file
+        manager re-reads the panes: what ran may have changed files."""
+        from xefm.dialog_geometry import animate_from_behind
+        from xefm.screens import FILES, TERMINAL
+        screens = self._screens
+        current = screens.current
+        if screen is current:
             return
-        if shown is not None:
-            # One full-window view replaces the other at once: crossing two
-            # terminals through the file manager would only flash the panes.
-            self.panel.remove_layer(shown.view)
-            shown.view.shown = False
-        self._sessions.touch(session)
-        session.attention = None  # seen
-        session.view.shown = True
-        session.view.closing = False
-        self._push_terminal(session.view)
+        if screen.session is not None:
+            screen.session.attention = None  # seen
+            screen.session.view.closing = False
+        if current.kind == FILES and screen.kind == TERMINAL:
+            view = screen.session.view
+            for other in screens.recent():
+                if other is not screen and other is not current:
+                    screens.conceal(other)
+            screens.make_current(screen, conceal_others=False)
+
+            def came() -> None:
+                if screens.current is screen:
+                    screens.conceal(current)
+                self.panel.render()
+
+            if not animate_from_behind(self.panel, view, on_complete=came):
+                came()
+        elif current.kind == TERMINAL and screen.kind == FILES:
+            view = current.session.view
+            view.closing = True  # takes no input while it fades
+            screens.make_current(screen, conceal_others=False)
+
+            def went() -> None:
+                view.closing = False
+                if screens.current is not current:
+                    screens.conceal(current)
+                self._relist_both()
+                self.panel.render()
+
+            if not animate_from_behind(self.panel, view, out=True, on_complete=went):
+                went()
+        else:
+            # One full-window terminal replaces the other at once: crossing
+            # two terminals through the file manager would only flash the panes.
+            screens.make_current(screen)
+        self.panel.render()
 
     def _hide_session(self, view) -> None:
-        """Put a session back behind the file manager; its program keeps
-        running. The panes re-read: what ran there may have changed files."""
-        if view.closing or not view.shown:
+        """Put a session back behind the file manager (the exit bar's Escape);
+        its program, if any, keeps running."""
+        session = self._sessions.for_view(view)
+        if session is None or session.screen is not self._screens.current or view.closing:
             return
-        view.closing = True  # takes no input while it fades
-
-        def hidden() -> None:
-            self.panel.remove_layer(view)
-            view.closing = False
-            view.shown = False
-            self._sessions.touch(FILES)
-            self._relist_both()
-            self.panel.render()
-
-        from xefm.dialog_geometry import animate_from_behind
-        if not animate_from_behind(self.panel, view, out=True, on_complete=hidden):
-            hidden()
-            return
-        self.panel.render()
+        self._show_screen(self._screens.files)
 
     #: A command in a hidden shell session that ran at least this long is
     #: worth a word in the status bar when it ends (#900).
     _LONG_COMMAND_S = 10.0
 
-    def _session_prompt(self, view, kind: int, code) -> None:
+    def _session_prompt(self, view, kind: int, code, cmd: str = "") -> None:
         """A shell integration mark from a session (OSC 133)."""
         from xefm import terminal as T
         session = self._sessions.for_view(view)
@@ -6161,8 +6192,10 @@ class XeFMApp:
             return
         if kind == T.OUTPUT_START:
             session.command_since = time.monotonic()
+            session.command = cmd or ""
         elif kind == T.COMMAND_END:
             since, session.command_since = session.command_since, None
+            session.command = ""
             if (not view.shown and since is not None
                     and time.monotonic() - since >= self._LONG_COMMAND_S):
                 ok = code in (0, None)
@@ -6237,21 +6270,24 @@ class XeFMApp:
         self.panel.render()
 
     def _close_session(self, session) -> None:
-        """End ``session``: forget it, hang up its program, re-read the panes
-        (what ran may have changed files), then its ``on_done``. On screen it
-        fades back behind the file manager first, still drawing its last
-        screen; the program is hung up only once the layer is gone, since
-        PuiKit's view starts a fresh child on its next draw once closed under
-        a program still running."""
+        """End ``session``: forget it, take its screen away, hang up its
+        program, re-read the panes (what ran may have changed files), then its
+        ``on_done``. On screen, going back to the file manager, it fades back
+        behind it first, still drawing its last screen; the program is hung up
+        only once the layer is gone, since PuiKit's view starts a fresh child
+        on its next draw once closed under a program still running. Going
+        back to another terminal, the switch is at once."""
+        from xefm.dialog_geometry import animate_from_behind
+        from xefm.screens import FILES
         view = session.view
         if self._sessions.for_view(view) is not session:
             return  # already on its way out
         self._sessions.remove(session)
+        screen = session.screen
 
         def finish() -> None:
-            if view.shown:
-                self.panel.remove_layer(view)
-                self._sessions.touch(FILES)
+            if screen is not None and self.panel.has_layer(screen.group):
+                self._screens.remove(screen)
             view.shown = False
             view.closing = True
             code = view.exit_code
@@ -6262,11 +6298,15 @@ class XeFMApp:
             if done is not None:
                 done(code)
 
-        if not view.shown or view.closing:
+        if screen is None or screen is not self._screens.current or view.closing:
+            finish()
+            return
+        back = self._screens.previous(screen)
+        if back.kind != FILES:
             finish()
             return
         view.closing = True
-        from xefm.dialog_geometry import animate_from_behind
+        self._screens.make_current(back, conceal_others=False)
         if not animate_from_behind(self.panel, view, out=True, on_complete=finish):
             finish()
             return
@@ -6282,62 +6322,70 @@ class XeFMApp:
                 getLogger("Terminal").error(
                     f"Could not close terminal session {session.name}: {e}")
 
-    def terminal_sessions(self) -> None:
-        """The screen switcher: the file manager's screen (the panes, with any
-        viewer over them), every terminal session with its state, and a row
-        to start a new shell. The screen on now comes first, the rest most
-        recently on screen first, and the cursor starts on the one before it,
-        so Enter goes back to where you were. Choosing the file manager hides
-        the session on screen; the remove key ends a session. Desktop app
-        only."""
-        if not self._desktop_only("Terminal sessions"):
+    def _screen_label(self, screen) -> str:
+        """A screen's row in the switcher: the file manager or the session
+        (what runs in it, where), then what is open on top of it."""
+        from xefm.screens import FILES
+        base = "File manager" if screen.kind == FILES else screen.session.label
+        on_top = self._screen_top_text(screen)
+        return f"{base} - {on_top}" if on_top else base
+
+    def _screen_top_text(self, screen) -> str:
+        """``viewing NAME`` when a viewer is open on ``screen``, else ""."""
+        for layer in reversed(self._screens.layers(screen)):
+            path = getattr(layer, "path", None) or getattr(layer, "left_path", None)
+            if path is not None and hasattr(layer, "palette_actions") \
+                    and layer is not getattr(screen.session, "view", None):
+                return f"viewing {os.path.basename(str(path)) or path}"
+        return ""
+
+    def screens(self) -> None:
+        """The screen switcher: the file manager's screen and every terminal
+        session's, each with what is on it, and a row to start a new shell.
+        The screen on now comes first, the rest most recently on screen
+        first, and the cursor starts on the one before it, so Enter goes back
+        to where you were. A screen keeps what is open on it - a viewer stays
+        over the panes while a terminal is on. The remove key ends a session.
+        Desktop app only."""
+        if not self._desktop_only("Screens"):
             return
+        from xefm.screens import FILES
+        from xefm.terminal_sessions import _short
         new_row = object()
         cwd = self._session_dir() or os.path.expanduser("~")
-        from xefm.terminal_sessions import _short
-        shown = self._shown_session()
-        current = shown if shown is not None else FILES
-        items = [current, *(s for s in self._sessions.screens() if s is not current),
-                 new_row]
+        current = self._screens.current
+        items = [*self._screens.recent(), new_row]
 
         def label(item) -> str:
             if item is new_row:
                 return f"New shell in {_short(cwd)}"
-            if item is FILES:
-                return "File manager"
-            return item.label
+            return self._screen_label(item)
 
         def right(item) -> str:
             if item is new_row:
                 return ""
-            if item is FILES:
-                return "shown" if item is current else ""
-            return ("shown, " if item.view.shown else "") + item.state
+            shown = "shown" if item is current else ""
+            if item.kind == FILES:
+                return shown
+            return ", ".join(p for p in (shown, item.session.state) if p)
 
         def accept(item) -> None:
             if item is new_row:
                 self.new_terminal_session()
-            elif item is FILES:
-                now = self._shown_session()
-                if now is not None:
-                    self._hide_session(now.view)
-            else:
-                self._show_session(item)
+            elif self._screens.by_id(item.id) is item:
+                self._show_screen(item)
             self.panel.render()
 
         def remove(item) -> bool:
-            if item is new_row or item is FILES:
+            if item is new_row or item.kind == FILES:
                 return False
-            self._close_session(item)
-            self.log_info(f"Closed terminal session {item.name}")
+            self._close_session(item.session)
+            self.log_info(f"Closed terminal session {item.session.name}")
             return True
 
-        # Over the terminal it may be opened from (terminal.sessions).
-        top = max((slot.z for slot in self.panel._layers), default=0)
-        dialog = show_filter_list(self.panel, items, title="Terminal Sessions",
+        dialog = show_filter_list(self.panel, items, title="Screens",
                                   to_label=label, to_right=right, on_accept=accept,
-                                  on_remove=remove, remove_label="close",
-                                  z=max(70, top + 1))
+                                  on_remove=remove, remove_label="close", z=70)
         dialog.list.selected = 1  # the screen before this one (or New shell)
         self.panel.render()
 
@@ -6346,7 +6394,7 @@ class XeFMApp:
     #: Requests that only read the panes: answered even while terminal mode
     #: has its terminal handed over, when the UI thread is parked in the
     #: child's wait and cannot run anything else.
-    _REMOTE_READS = frozenset({"pwd", "selected", "focused", "sessions"})
+    _REMOTE_READS = frozenset({"pwd", "selected", "focused", "screen", "session"})
 
     #: Seconds a request waits for the UI thread before reporting XeFM busy
     #: (under remote_cli.TIMEOUT, so the answer still reaches the client).
@@ -6424,11 +6472,25 @@ class XeFMApp:
             files, idx = pane["files"], pane["focused_index"]
             lines = [str(files[idx])] if files and 0 <= idx < len(files) else []
             return {"ok": True, "lines": lines}
-        if cmd == "sessions":
+        if cmd == "session" and req.get("verb") == "list":
             here = str(req.get("session") or "")
             return {"ok": True, "lines": [
                 f"{'*' if str(s.id) == here else ' '} {s.id}\t{s.name}\t{s.state}\t{s.cwd}"
                 for s in self._sessions]}
+        if cmd == "screen" and req.get("verb") == "list":
+            current = self._screens.current
+            return {"ok": True, "lines": [
+                f"{'*' if sc is current else ' '} {sc.id}\t{self._screen_label(sc)}"
+                for sc in self._screens.recent()]}
+        if cmd == "screen" and req.get("verb") == "switch":
+            if not is_desktop_mode():
+                return {"ok": False, "error": "screens are only in the desktop app"}
+            target = self._screens.by_id(str(req.get("id") or ""))
+            if target is None:
+                return {"ok": False, "error": f"no screen {req.get('id')!r} "
+                        f"(see xefmctl screen list)"}
+            self._show_screen(target)
+            return {"ok": True, "lines": []}
         if cmd in ("cd", "view"):
             text = req.get("path")
             if not isinstance(text, str) or not text:
@@ -6439,7 +6501,7 @@ class XeFMApp:
             if cmd == "view":
                 if target.is_dir():
                     return {"ok": False, "error": f"{target} is a directory"}
-                self._open_viewer(target)
+                self._view_on_file_manager(target)
                 return {"ok": True, "lines": []}
             if target.is_dir():
                 self._go_to_dir(pane, target, None)
@@ -6448,6 +6510,22 @@ class XeFMApp:
             self.log_info(f"Jumped to: {target} (xefmctl cd)")
             return {"ok": True, "lines": []}
         return {"ok": False, "error": f"unknown command {cmd!r}", "code": 2}
+
+    def _view_on_file_manager(self, target) -> None:
+        """``xefmctl view``: open ``target`` in a viewer on the file manager's
+        screen and switch there (#951) - ``screens`` goes back to the terminal
+        it was asked from, for a side-by-side look. A viewer already open
+        over the panes gives way: a screen shows one viewer at a time."""
+        screens = self._screens
+        self._show_screen(screens.files)
+        for layer in list(screens.layers(screens.files)):
+            if hasattr(layer, "palette_actions"):  # a viewer
+                close = getattr(layer, "_close", None)
+                if close is not None:
+                    close()
+                else:
+                    self.panel.remove_layer(layer)
+        self._open_viewer(target)
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor
@@ -7536,8 +7614,8 @@ class XeFMApp:
         if not is_desktop_mode():
             return []
         return [
-            MenuItem("Terminal Sessions…", on_select=self.terminal_sessions,
-                     shortcut=sc("terminal_sessions")),
+            MenuItem("Screens…", on_select=self.screens,
+                     shortcut=sc("screens")),
         ]
 
     def _font_size_menu(self, sc) -> list:
@@ -7833,7 +7911,7 @@ class XeFMApp:
             if len(noisy) == 1:
                 self._show_session(noisy[0])
             else:
-                self.terminal_sessions()
+                self.screens()
             return
         self.show_jobs()
 
@@ -13331,7 +13409,7 @@ class XeFMApp:
             ("file_details", "Show file details"),
             ("edit_files", "Edit the selected file(s) in the configured TEXT_EDITOR"),
             ("subshell", "Open a shell in the current directory"),
-            ("terminal_sessions", "Switch between the file manager and the terminal sessions"),
+            ("screens", "Switch between the file manager and the terminal sessions"),
             ("open_with_os", "Open with the default app"),
             ("open_with", "Choose the app that opens the selection (File menu)"),
             ("reveal_in_os", "Reveal in the OS file manager"),
@@ -13421,7 +13499,7 @@ class XeFMApp:
         "reset_font_size": lambda self: is_desktop_mode(),
         # Terminal sessions are the desktop app's: terminal mode hands its
         # terminal over instead (#900).
-        "terminal_sessions": lambda self: is_desktop_mode(),
+        "screens": lambda self: is_desktop_mode(),
     }
 
     def _help_entries(self, entries):
@@ -13527,33 +13605,40 @@ class XeFMApp:
             else:
                 self._menu(action.name)
 
-        # Over the surface it was opened from: the picker's own z (70) is under
-        # a viewer (80) and the terminal.
-        top = max((slot.z for slot in self.panel._layers), default=0)
-        show_filter_list(
-            self.panel, rows, title="Command Palette",
-            to_label=lambda a: a.name,
-            to_right=keys,
-            to_detail=lambda a: a.description,
-            to_help=self._action_page,
-            on_accept=accept, z=max(70, top + 1))
+        # Over the surface it was opened from: a child of it in the layer tree.
+        with self._over_top_layer():
+            show_filter_list(
+                self.panel, rows, title="Command Palette",
+                to_label=lambda a: a.name,
+                to_right=keys,
+                to_detail=lambda a: a.description,
+                to_help=self._action_page,
+                on_accept=accept, z=70)
         self.panel.render()
 
     def _run_app_action(self, name: str) -> None:
         """Run an app-wide action for the surface on top (xefm.surface_actions).
-        A dialog it opens is pushed at its usual z, which may be under the
-        surface (a viewer is 80) - modal yet hidden - so every layer it adds is
-        lifted above the layers that were there, keeping their order."""
-        layers = self.panel._layers
-        before = {id(slot) for slot in layers}
-        base = max((slot.z for slot in layers), default=0)
-        self.dispatch(name)
-        added = [slot for slot in layers if id(slot) not in before]
-        for i, slot in enumerate(sorted(added, key=lambda sl: sl.z)):
-            if slot.z <= base:
-                slot.z = base + 1 + i
-        layers.sort(key=lambda sl: sl.z)
+        A dialog it opens is pushed under that surface in the layer tree, so it
+        comes up over it (a viewer is z 80 in its screen, a dialog 70) and
+        goes away with it."""
+        with self._over_top_layer():
+            self.dispatch(name)
         self.panel.render()
+
+    @contextlib.contextmanager
+    def _over_top_layer(self):
+        """Inside, a layer pushed without a parent goes under the topmost
+        layer shown - a viewer, the terminal - so it comes up over it and goes
+        with it. Afterwards they go to the screen on now again (which what ran
+        inside may have changed)."""
+        surface = self.panel.top_layer()
+        if surface is not None:
+            self.panel.set_default_layer_parent(surface)
+        try:
+            yield
+        finally:
+            if surface is not None and self.panel.default_layer_parent is surface:
+                self.panel.set_default_layer_parent(self._screens.current.group)
 
     def _app_action_available(self, name: str) -> bool:
         """Whether this app runs ``name`` here: it has a handler, and the

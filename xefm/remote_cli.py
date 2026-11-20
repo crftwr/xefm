@@ -27,8 +27,12 @@ import json
 import os
 import sys
 
-#: The commands this module answers.
-COMMANDS = ("selected", "focused", "pwd", "cd", "view", "sessions")
+#: The commands this module answers. A command about a pane is one verb;
+#: one about anything else is a noun and a verb (#952).
+COMMANDS = ("selected", "focused", "pwd", "cd", "view", "screen", "session")
+
+#: The verbs of each noun command.
+VERBS = {"screen": ("list", "switch"), "session": ("list",)}
 
 PANES = ("this", "other", "left", "right")
 
@@ -37,11 +41,15 @@ usage: xefmctl selected [--pane PANE] [-0]   the selected items' full paths
        xefmctl focused  [--pane PANE]        the item under the cursor
        xefmctl pwd      [--pane PANE]        the pane's directory
        xefmctl cd       [PATH] [--pane PANE] point the pane at PATH (default: .)
-       xefmctl view     FILE                 open FILE in XeFM's viewer
-       xefmctl sessions                      list XeFM's terminal sessions
+       xefmctl view     FILE                 open FILE in XeFM's viewer, on the
+                                             file manager's screen
+       xefmctl screen list                   the screens, the one on now first
+       xefmctl screen switch ID              show screen ID (files, or a session's)
+       xefmctl session list                  XeFM's terminal sessions
 
 PANE is this (the active pane, the default), other, left or right.
-These work in a shell XeFM started; they ask that XeFM for its state now."""
+These work in a shell XeFM started and act on that XeFM's file manager;
+they ask it for its state now."""
 
 #: Seconds to wait for XeFM's answer. A modal dialog does not hold a request
 #: up (they run between frames), but a file manager busy for longer than this
@@ -83,6 +91,20 @@ def _parse(command: str, args: list[str]) -> dict:
             raise RemoteError(f"xefmctl {command}: unknown option {arg}\n\n{USAGE}", 2)
         else:
             rest.append(arg)
+    if command in VERBS:
+        if not rest or rest[0] not in VERBS[command]:
+            raise RemoteError(f"xefmctl {command}: which one? "
+                              f"{' or '.join(VERBS[command])}\n\n{USAGE}", 2)
+        request["verb"] = rest.pop(0)
+        if (command, request["verb"]) == ("screen", "switch"):
+            if len(rest) != 1:
+                raise RemoteError("xefmctl screen switch: which screen? "
+                                  "(an id from xefmctl screen list)", 2)
+            request["id"] = rest.pop(0)
+        if rest:
+            raise RemoteError(f"xefmctl {command} {request['verb']}: "
+                              f"unexpected argument {rest[0]}", 2)
+        return request
     if command in ("cd", "view"):
         if len(rest) > 1:
             raise RemoteError(f"xefmctl {command}: one path only", 2)

@@ -348,8 +348,8 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         if self._cancel is not None:
             self._cancel.set()  # stop the worker; its results are dropped
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+        if panel is not None and panel.has_layer(self):
+            panel.remove_layer(self)
 
     def _next_mode(self) -> str:
         modes = self.modes or (self.mode,)
