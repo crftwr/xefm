@@ -865,6 +865,54 @@ def test_open_agent_starts_a_restricted_session_with_the_skill(monkeypatch, tmp_
     assert session.name == "Claude Code" and app._screens.current.session is session
 
 
+def test_the_codex_preset_hands_the_rules_naming_the_skill(monkeypatch, tmp_path):
+    import pathlib
+    import tomllib
+    app = _agent_app(monkeypatch, tmp_path, [
+        {"name": "Codex", "command": ["codex", "-m", "gpt-x"], "preset": "codex"}])
+    app.config.AGENT_RULES = 'Say "done" when\tfinished.'
+    switcher = _Switcher(monkeypatch)
+    app.ask_agent()
+    switcher.last.kw["on_accept_text"]("sort these by month")
+    [view] = app.made
+    argv = view.argv
+    assert argv[:4] == ["codex", "-m", "gpt-x", "-c"]
+    # The value Codex parses as TOML is the rules, verbatim.
+    key, _, value = argv[4].partition("=")
+    assert key == "developer_instructions"
+    text = tomllib.loads(f"v = {value}")["v"]
+    assert "xefmctl state" in text and 'Say "done" when\tfinished.' in text
+    skill_md = text.split("read `", 1)[1].split("`", 1)[0]
+    assert skill_md.endswith("/xefm/SKILL.md") and pathlib.Path(skill_md).exists()
+    # The request is the last argument, as for `codex "request"`.
+    assert argv[5].startswith("sort these by month") and "/tmp/a.jpg" in argv[5]
+    assert len(argv) == 6
+    assert app.remote_policies[-1] == "agent"
+
+
+def test_the_codex_preset_without_a_request_starts_bare(tmp_path):
+    from xefm import agents
+    entry = agents.normalize({"name": "Codex", "command": ["codex"], "preset": "codex"})
+    values = agents.prepare(SimpleNamespace(), entry, root=tmp_path, version="t")
+    argv = agents.argv(entry, values)
+    assert argv[:2] == ["codex", "-c"] and len(argv) == 3
+
+
+def test_toml_string_quotes_what_toml_requires():
+    import tomllib
+    from xefm import agents
+    for text in ['plain', 'a "quote" and \\ back', 'line\nbreak\ttab', 'del\x7f bell\x07',
+                 '日本語 😀']:
+        assert tomllib.loads(f"v = {agents._toml_string(text)}")["v"] == text
+
+
+def test_codex_is_set_up_out_of_the_box():
+    from xefm import agents
+    from xefm._config import Config
+    names = {e["name"]: e["preset"] for e in agents.entries(Config)}
+    assert names == {"Claude Code": "claude-code", "Codex": "codex"}
+
+
 def _agent_app(monkeypatch, tmp_path, agents_cfg, installed=lambda e: True):
     from xefm import agents
     app = _app(monkeypatch)

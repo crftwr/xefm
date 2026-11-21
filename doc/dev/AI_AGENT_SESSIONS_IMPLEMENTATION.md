@@ -74,11 +74,33 @@ The `claude-code` preset appends `--plugin-dir`, `--append-system-prompt`
 `--settings`, and the request as the last argument (`claude "request"`
 starts an interactive session with it).
 
+The `codex` preset appends `-c developer_instructions=<TOML string>` and
+the request as the last argument (`codex "request"` starts the TUI with
+it). Codex (0.171) has no option that adds a skills folder: `skills.config`
+only enables or disables skills Codex already found, and its user folder
+`~/.agents/skills` is global. So the instructions (`codex_instructions`)
+are the rules plus a paragraph naming `{skill_dir}/SKILL.md` - the same
+thing Codex's own skill list gives the model, a name and a path to read.
+The value is always written as a quoted TOML string (`_toml_string`):
+`-c` takes an unparsable value raw, but rules that happened to parse as
+TOML would be silently changed. It replaces a `developer_instructions` in
+the user's `~/.codex/config.toml` for the session; `AGENTS.md` still
+applies. Codex is a native `codex.exe` on Windows (the standalone
+installer), so the multi-line request reaches it intact; an npm install's
+`codex.cmd` goes through cmd.exe, which cuts an argument at its first
+newline.
+
+Checked against the real CLI with `codex debug prompt-input`, which prints
+the model-visible input without calling the model: the rules arrive as a
+developer message and the request whole.
+
 ## The two hard layers
 
 1. **The agent's own permissions** (Claude Code): the settings file above.
    Only the preset knows how to say it; other agents get `{settings_file}`
-   to pass if their CLI has an equivalent.
+   to pass if their CLI has an equivalent. Codex 0.171 has no
+   command-line option that denies a command: its sandbox and approvals
+   apply as configured.
 2. **XeFM's** (any agent): in `remote_dispatch`, for policy `agent`:
    - `copy`, `move`, `trash`: the operation's own confirmation, shown
      whatever `CONFIRM_*` says (`_ALWAYS_CONFIRM` forced for the call, read
@@ -112,14 +134,16 @@ nor a docstring (read with `ast`, not imported).
 
 ## Not yet
 
-- Built-in presets for other agents: the wiki page "AI agents" for now,
-  kept up by their users (CLAUDE.md, "Core or extension?").
+- Built-in presets beyond Claude Code and Codex: the wiki page "AI agents"
+  for now, kept up by their users (CLAUDE.md, "Core or extension?").
 - #880's later steps: answers shown in XeFM rather than a terminal
   session, proposals confirmed in XeFM's own dialogs beyond copy/move/trash.
 
 ## Tests
 
-`test/test_terminal_sessions.py`: `agent` (argv, the plugin folder,
+`test/test_terminal_sessions.py`: the `codex` preset (the TOML value
+parsed back, the skill path, the request last, the default `AGENTS`),
+`agent` (argv, the plugin folder,
 the rules with `AGENT_RULES`, the settings, the `agent` policy, the session
 and its screen), `ask_agent` (the request with the selection, placeholders,
 `restrict: False`), entry checking; the policy tests named in

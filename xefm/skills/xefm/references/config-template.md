@@ -1127,6 +1127,8 @@ class Config:
     #   'command'  : the program and its arguments
     #   'preset'   : 'claude-code' - XeFM adds the arguments that pass Claude
     #                Code the skill, the rules and its permission settings.
+    #                'codex' - XeFM passes Codex the rules, which name the
+    #                skill (Codex's own sandbox and approvals still apply).
     #                Without a preset, put the placeholders in 'command'
     #                yourself: {plugin_dir} {skills_dir} {skill_dir} {rules}
     #                {rules_file} {settings_file} (and {prompt} in
@@ -1138,9 +1140,11 @@ class Config:
     #   'settings' : (Claude Code) the settings file to pass instead of
     #                XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
     #   'env'      : extra environment variables
+    # An entry is offered only while its program is on PATH.
     # Other agent CLIs: see the wiki page "AI agents".
     AGENTS = [
         {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
+        {'name': 'Codex', 'command': ['codex'], 'preset': 'codex'},
     ]
 
     # Your own rules for every agent session, after XeFM's (a string), e.g.
