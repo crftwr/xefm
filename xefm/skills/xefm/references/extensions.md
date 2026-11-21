@@ -122,7 +122,11 @@ Rules the check enforces — each violation is an `error:` naming the field:
   assignment or import). The check reads the file; it does not import it.
 - Contribution kinds: `actions`, `event_hooks`, `sort_keys`, `filters`,
   `image_decoders`, `path_schemes`, `lexers`, `themes`, `menus`,
-  `attributes`, `layouts`, `layout_extras`, `key_suggestions`.
+  `attributes`, `layouts`, `layout_extras`, `agent_prompts`, `key_suggestions`.
+- An `agent_prompts` entry (Preview) is a request an AI agent can be asked
+  from **Ask AI Agent...**: `"Durations" = "List these videos: length and
+  resolution."`, or `{ prompt = "...", agent = "Claude Code" }`. Plain text,
+  never a reference, colons and all.
 - An `attributes` entry is a table like its `ATTRIBUTES` entry, with
   `read` a reference (`"pkg.git:status"`). `layouts` and `layout_extras` entries
   are plain data like their `LAYOUTS` / `LAYOUT_EXTRAS` entries; a column's or

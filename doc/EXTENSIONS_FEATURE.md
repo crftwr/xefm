@@ -13,8 +13,8 @@ Extensions run against the same API as `config.py` customization, version 1
 marked Preview may still change, and `xefm ext check` lists every Preview part
 a package uses. In the manifest, `[contributes.actions]`, `sort_keys`,
 `filters`, `path_schemes` and `key_suggestions` are stable; `menus`,
-`event_hooks`, `image_decoders`, `lexers`, `themes`, `[settings]`, `[requires]`
-and `updates` are Preview.
+`event_hooks`, `image_decoders`, `lexers`, `themes`, `agent_prompts`,
+`[settings]`, `[requires]`, `updates` and `agent_guide` are Preview.
 
 ## Finding extensions
 
@@ -288,6 +288,7 @@ Each `[contributes.<kind>]` table feeds the `config.py` table of the same name
 | `lexers` | `LEXERS` | a Pygments alias, or `{ entry = "mod:LexerClass" }` |
 | `themes` | `THEMES` | a table of colors, as in `config.py` |
 | `menus` | `MENU_ITEMS` | `{ menus = ["file", "context"], label = "...", when = "entry" }`, for the package's own actions |
+| `agent_prompts` | `AGENT_PROMPTS` | a request, `"Summarize these files."`, or `{ prompt = "...", agent = "Claude Code" }` |
 | `key_suggestions` | `KEY_BINDINGS` | a list of keys, for the package's own actions |
 
 A package with only themes, glob filters, lexer aliases, menus and key

@@ -184,13 +184,13 @@ the mouse for the first, take the whole buffer with the second. See
 | Item | Action |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Background Jobs… | `jobs` — see [Background Jobs](BACKGROUND_JOBS_FEATURE.md) |
-| Find Similar Files… | `find_similar` *(ships unbound)* — see [Find Similar Files](FIND_SIMILAR_FILES_FEATURE.md) |
-| External Programs… | `programs` |
 | Subshell Here | `subshell` *(desktop mode: a terminal session)* — see [Terminal](TERMINAL_FEATURE.md) |
+| AI Agent Here | `agent` — see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
+| Ask AI Agent… | `ask_agent` *(ships unbound)* — your `AGENT_PROMPTS`, or a request you type |
 | Screens… | `screens` *(desktop mode only)* |
-| Open AI Agent… | `open_agent` *(ships unbound)* — see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md) |
-| Ask AI Agent… | `ask_agent` *(ships unbound)* |
+| External Programs… | `programs` |
+| Find Similar Files… | `find_similar` *(ships unbound)* — see [Find Similar Files](FIND_SIMILAR_FILES_FEATURE.md) |
+| Background Jobs… | `jobs` — see [Background Jobs](BACKGROUND_JOBS_FEATURE.md) |
 | Edit Configuration… | `edit_config` *(ships unbound)* |
 | Reload Configuration | `reload_config` *(ships unbound)* |
 | Advanced ▸ Keymap… | Choose AFX style, Orthodox, OS native or Vim style, each described — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md) |

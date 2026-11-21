@@ -59,3 +59,25 @@ def test_an_action_with_nothing_to_say_is_warned(package):
     _set(package, '{ entry = "demo_pkg.actions:hello" }',
          '{ entry = "demo_pkg.actions:hello", description = "Say hello" }')
     assert not [p for p in _problems(package) if "says nothing" in p.message]
+
+
+def test_an_extension_contributes_agent_prompts(package):
+    with open(package / "xefm-extension.toml", "a", encoding="utf-8") as f:
+        f.write('\n[contributes.agent_prompts]\n'
+                '"Durations" = "List these videos: length and resolution."\n'
+                '"Review" = { prompt = "Review the diff.", agent = "Claude Code" }\n')
+    problems = _problems(package)
+    assert not [p for p in problems if p.severity == "error"], problems
+    manifest = ext.read_manifest(package)
+    # Text with a colon is a request, not a module:name reference.
+    assert not [w for w, _ref in manifest.references() if "agent_prompts" in w]
+    assert "contributes.agent_prompts" in ext.preview_sections(manifest)
+    value = manifest.contributes["agent_prompts"]["Durations"]
+    assert ext._value_for("agent_prompts", value, manifest, None, []) == value
+
+
+def test_a_bad_agent_prompt_is_refused(package):
+    with open(package / "xefm-extension.toml", "a", encoding="utf-8") as f:
+        f.write('\n[contributes.agent_prompts]\n"Broken" = { text = "x" }\n')
+    assert any(p.where.startswith("contributes.agent_prompts") and p.severity == "error"
+               for p in _problems(package))

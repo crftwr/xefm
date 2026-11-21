@@ -794,6 +794,38 @@ def test_xefmctl_parses_by_the_table():
     assert caught.value.code == 0 and "--focus" in str(caught.value)
 
 
+_AGENT_METHODS = ("open_agent", "ask_agent", "_pick_agent", "_agent_request",
+                  "_start_agent", "_agents_ready", "_agent_installed")
+
+
+def test_the_switcher_offers_a_new_session_of_each_installed_agent(monkeypatch):
+    from xefm import agents
+    app = _app(monkeypatch)
+    switcher = _Switcher(monkeypatch)
+    app.config.AGENTS = [{"name": "Claude Code", "command": ["claude"], "preset": "claude-code"},
+                         {"name": "Codex", "command": ["codex"]},
+                         {"name": "Missing", "command": ["nope"]}]
+    monkeypatch.setattr(agents, "installed", lambda e: e["name"] != "Missing")
+    started = []
+    app._start_agent = lambda entry, prompt=None: started.append(entry["name"])
+    app.screens()
+    assert switcher.labels() == ["File manager", "New shell in /tmp",
+                                 "New Claude Code in /tmp", "New Codex in /tmp"]
+    dialog = switcher.last
+    assert not dialog.kw["on_remove"](dialog.items[2])  # nothing to close
+    dialog.kw["on_accept"](dialog.items[3])
+    assert started == ["Codex"]
+
+
+def test_agent_is_the_action_and_greater_than_its_key():
+    from xefm import actions as A
+    from xefm import keymap_presets as kp
+    assert A.registry.resolve(A.FILER, "agent") is not None
+    assert A.registry.resolve(A.FILER, "open_agent") is None
+    for preset in kp.PRESETS:
+        assert kp.table(preset)["agent"] == [">"], preset
+
+
 def test_open_agent_starts_a_restricted_session_with_the_skill(monkeypatch, tmp_path):
     from xefm import agents
     app = _app(monkeypatch)
@@ -805,7 +837,7 @@ def test_open_agent_starts_a_restricted_session_with_the_skill(monkeypatch, tmp_
     app._program_env = lambda pane: ({"XEFM_ACTIVE": "1"}, "/tmp")
     app.active_pane = lambda: {"path": "/tmp", "files": [], "selected_files": set()}
     app._focused_entry = lambda: None
-    for name in ("open_agent", "ask_agent", "_pick_agent", "_agent_request", "_start_agent"):
+    for name in _AGENT_METHODS:
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
     app.open_agent()
     [view] = app.made
@@ -825,29 +857,76 @@ def test_open_agent_starts_a_restricted_session_with_the_skill(monkeypatch, tmp_
     assert session.name == "Claude Code" and app._screens.current.session is session
 
 
-def test_ask_agent_passes_the_request_and_the_selection(monkeypatch, tmp_path):
+def _agent_app(monkeypatch, tmp_path, agents_cfg, installed=lambda e: True):
     from xefm import agents
     app = _app(monkeypatch)
-    app.config.AGENTS = [{"name": "Codex", "command": ["codex", "--skills", "{skills_dir}"],
-                          "restrict": False}]
+    app.config.AGENTS = agents_cfg
     monkeypatch.setattr(agents, "cache_root", lambda: tmp_path)
-    monkeypatch.setattr(agents, "installed", lambda entry: True)
+    monkeypatch.setattr(agents, "installed", installed)
     app._program_env = lambda pane: ({}, "/tmp")
     app.active_pane = lambda: {"path": "/tmp", "files": ["/tmp/a.jpg", "/tmp/b.jpg"],
                                "selected_files": {"/tmp/a.jpg"}}
     app._focused_entry = lambda: "/tmp/b.jpg"
-    ctx = _ctx(app, monkeypatch)
-    ctx.input = lambda prompt, default="", *, title="", on_accept=None, **k: \
-        on_accept("sort these by month")
-    app._user_ctx = ctx
-    for name in ("open_agent", "ask_agent", "_pick_agent", "_agent_request", "_start_agent"):
+    app._user_ctx = _ctx(app, monkeypatch)
+    for name in _AGENT_METHODS:
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
+    return app
+
+
+def test_ask_agent_takes_a_typed_request_with_the_selection(monkeypatch, tmp_path):
+    app = _agent_app(monkeypatch, tmp_path, [
+        {"name": "Codex", "command": ["codex", "--skills", "{skills_dir}"],
+         "restrict": False}])
+    switcher = _Switcher(monkeypatch)
     app.ask_agent()
+    assert switcher.last.items == []  # no saved prompts: type one
+    switcher.last.kw["on_accept_text"]("sort these by month")
     [view] = app.made
     assert view.argv[:2] == ["codex", "--skills"] and view.argv[2].endswith("skills")
     prompt = view.argv[-1]
     assert prompt.startswith("sort these by month") and "/tmp/a.jpg" in prompt
     assert app.remote_policies[-1] == "user"  # restrict: False
+
+
+def test_ask_agent_offers_the_saved_prompts(monkeypatch, tmp_path):
+    app = _agent_app(monkeypatch, tmp_path, [
+        {"name": "Claude Code", "command": ["claude"]},
+        {"name": "Codex", "command": ["codex"]}])
+    app.config.AGENT_PROMPTS = {
+        "Summarize": "Summarize these files: a few lines each.",
+        "Review": {"prompt": "Review the diff.", "agent": "Codex"},
+        "Broken": {"text": "x"},
+    }
+    switcher = _Switcher(monkeypatch)
+    app.ask_agent()
+    dialog = switcher.last
+    assert [dialog.kw["to_label"](p) for p in dialog.items] == ["Summarize", "Review"]
+    assert dialog.kw["to_right"](dialog.items[1]) == "Codex"
+    dialog.kw["on_accept"](dialog.items[1])  # names its agent: no question
+    [view] = app.made
+    assert view.argv[0] == "codex" and view.argv[-1].startswith("Review the diff.")
+
+
+def test_without_an_installed_agent_the_menu_is_off_and_the_key_says_why(monkeypatch,
+                                                                         tmp_path):
+    app = _agent_app(monkeypatch, tmp_path, [{"name": "Claude Code", "command": ["claude"]}],
+                     installed=lambda e: False)
+    assert app._agent_installed() is False
+    app.open_agent()
+    assert app.made == []
+    assert "No AI agent is installed: Claude Code (claude) not found on PATH" in app.logged[-1]
+    app.config.AGENTS = []
+    app.ask_agent()
+    assert "No AI agent is set up" in app.logged[-1]
+
+
+def test_agent_prompts_are_checked():
+    from xefm import agents
+    assert agents.check_prompt("ok", "Do it.") is None
+    assert agents.check_prompt("ok", {"prompt": "Do it.", "agent": "Codex"}) is None
+    assert "empty" in agents.check_prompt("x", "  ")
+    assert "unknown key" in agents.check_prompt("x", {"prompt": "a", "model": "b"})
+    assert "needs prompt" in agents.check_prompt("x", {"agent": "Codex"})
 
 
 def test_agents_entries_are_checked():

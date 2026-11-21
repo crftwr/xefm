@@ -155,13 +155,13 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | 項目 | アクション |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Background Jobs… | `jobs` — [バックグラウンドジョブ](BACKGROUND_JOBS_FEATURE.ja.md)を参照 |
-| Find Similar Files… | `find_similar` *（既定でキー未割り当て）* — [類似ファイルの検索](FIND_SIMILAR_FILES_FEATURE.ja.md)を参照 |
-| External Programs… | `programs` |
 | Subshell Here | `subshell` *（デスクトップモードではターミナルセッションで）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
+| AI Agent Here | `agent` — [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
+| Ask AI Agent… | `ask_agent` *（既定でキー未割り当て）* — `AGENT_PROMPTS` の依頼か、打ち込んだ依頼 |
 | Screens… | `screens` *（デスクトップモードのみ）* |
-| Open AI Agent… | `open_agent` *（既定でキー未割り当て）* — [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照 |
-| Ask AI Agent… | `ask_agent` *（既定でキー未割り当て）* |
+| External Programs… | `programs` |
+| Find Similar Files… | `find_similar` *（既定でキー未割り当て）* — [類似ファイルの検索](FIND_SIMILAR_FILES_FEATURE.ja.md)を参照 |
+| Background Jobs… | `jobs` — [バックグラウンドジョブ](BACKGROUND_JOBS_FEATURE.ja.md)を参照 |
 | Edit Configuration… | `edit_config` *（既定でキー未割り当て）* |
 | Reload Configuration | `reload_config` *（既定でキー未割り当て）* |
 | Advanced ▸ Keymap… | AFX スタイル、Orthodox、OS ネイティブ、Vim スタイルから、それぞれの説明を見ながら選びます — [キーマッププリセット](KEYMAP_PRESETS_FEATURE.ja.md)を参照 |

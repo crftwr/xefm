@@ -4357,7 +4357,7 @@ class XeFMApp:
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
                 "screens": (self.screens, False),
-                "open_agent": (self.open_agent, False),
+                "agent": (self.open_agent, False),
                 "ask_agent": (self.ask_agent, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
@@ -5310,17 +5310,21 @@ class XeFMApp:
             MenuItem("Command Palette…", on_select=self.show_command_palette,
                      shortcut=sc("command_palette")),
             SEPARATOR,
-            # The jobs list beside the longest job that lands in it.
+            # What opens a screen in XeFM's terminal, then the switch between
+            # them; what runs work, then where that work is followed.
+            MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
+            MenuItem("AI Agent Here", on_select=self.open_agent, shortcut=sc("agent"),
+                     enabled=self._agent_installed),
+            MenuItem("Ask AI Agent…", on_select=self.ask_agent, shortcut=sc("ask_agent"),
+                     enabled=self._agent_installed),
+            *self._terminal_menu(sc),
+            SEPARATOR,
+            MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
+            MenuItem("Find Similar Files…", on_select=self.find_similar,
+                     shortcut=sc("find_similar")),
             MenuItem("Background Jobs…", on_select=self.show_jobs,
                      enabled=lambda: bool(self.tasks.background_tasks()),
                      shortcut=sc("jobs")),
-            MenuItem("Find Similar Files…", on_select=self.find_similar,
-                     shortcut=sc("find_similar")),
-            MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
-            MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
-            *self._terminal_menu(sc),
-            MenuItem("Open AI Agent…", on_select=self.open_agent, shortcut=sc("open_agent")),
-            MenuItem("Ask AI Agent…", on_select=self.ask_agent, shortcut=sc("ask_agent")),
             SEPARATOR,
             # Editing the config and reloading it are the loop a user tuning
             # XeFM goes round, so they stay at the top. What is set up once or
@@ -6082,33 +6086,67 @@ class XeFMApp:
     # --- AI agent sessions (AGENTS, #880) ----------------------------------------
 
     def open_agent(self) -> None:
-        """``open_agent``: start an ``AGENTS`` entry as a terminal session in
+        """``agent``: start an ``AGENTS`` entry as a terminal session in
         the active pane's folder (terminal mode hands it the terminal), with
         the skill, the rules and a restricted ``xefmctl`` key
         (:mod:`xefm.agents`)."""
         self._pick_agent(lambda entry: self._start_agent(entry))
 
     def ask_agent(self) -> None:
-        """``ask_agent``: ask for a request, then start the agent with it and
-        what the active pane shows (its folder, the selection)."""
-        def asked(entry: dict) -> None:
-            def accept(text: str) -> None:
-                if text.strip():
-                    self._start_agent(entry, prompt=self._agent_request(text))
-            self._user_ctx.input(f"Ask {entry['name']}:", title=entry["name"],
-                                 on_accept=accept)
-        self._pick_agent(asked)
+        """``ask_agent``: a request - one of ``AGENT_PROMPTS``, or typed - then
+        the agent started with it and what the active pane shows (its
+        folder, the selection)."""
+        from xefm import agents
+        if not self._agents_ready():
+            return
+        saved = agents.prompts(self.config)
 
-    def _pick_agent(self, then) -> None:
-        """Run ``then(entry)`` with the ``AGENTS`` entry to use: the only one,
-        or the one the user picks."""
+        def send(text: str, agent: str | None = None) -> None:
+            if not text.strip():
+                return
+            request = self._agent_request(text)
+            self._pick_agent(lambda entry: self._start_agent(entry, prompt=request),
+                             prefer=agent)
+
+        show_filter_list(
+            self.panel, saved, title="Ask AI Agent",
+            to_label=lambda p: p["name"],
+            to_right=lambda p: p["agent"] or "",
+            to_detail=lambda p: p["prompt"],
+            on_accept=lambda p: send(p["prompt"], p["agent"]),
+            on_accept_text=send, z=70)
+        self.panel.render()
+
+    def _agents_ready(self) -> bool:
+        """Whether an ``AGENTS`` entry can start; when none can, the log pane
+        says why (none set up, or none installed)."""
         from xefm import agents
         found = agents.entries(self.config)
         if not found:
             self.log_info("No AI agent is set up: add one to AGENTS in config.py "
                           "(see doc/AI_AGENT_SESSIONS_FEATURE.md)")
-            self.panel.render()
+        elif not agents.available(self.config):
+            missing = ", ".join(f"{e['name']} ({e['command'][0]})" for e in found)
+            self.log_info(f"No AI agent is installed: {missing} not found on PATH")
+        else:
+            return True
+        self.panel.render()
+        return False
+
+    def _pick_agent(self, then, prefer: str | None = None) -> None:
+        """Run ``then(entry)`` with the ``AGENTS`` entry to use: ``prefer``
+        when it names an installed one, else the only installed one, or the
+        one the user picks."""
+        from xefm import agents
+        if not self._agents_ready():
             return
+        found = agents.available(self.config)
+        if prefer:
+            chosen = next((e for e in found if e["name"] == prefer), None)
+            if chosen is not None:
+                then(chosen)
+                return
+            self.log_info(f"{prefer} is not set up or not installed; choose another agent")
         if len(found) == 1:
             then(found[0])
             return
@@ -6117,6 +6155,12 @@ class XeFMApp:
             if index is not None:
                 then(found[index])
         self._user_ctx.choose("AI agent", [e["name"] for e in found], on_result=picked)
+
+    def _agent_installed(self) -> bool:
+        """For the menu: whether an ``AGENTS`` entry's program is on PATH,
+        checked each time the menu opens."""
+        from xefm import agents
+        return bool(agents.available(self.config))
 
     def _agent_request(self, text: str) -> str:
         """``ask_agent``'s request, with where it was asked from."""
@@ -6440,7 +6484,8 @@ class XeFMApp:
 
     def screens(self) -> None:
         """The screen switcher: the file manager's screen and every terminal
-        session's, each with what is on it, and a row to start a new shell.
+        session's, each with what is on it, then rows to start a new shell
+        and, for each ``AGENTS`` entry, a new agent session (#880).
         The screen on now comes first, the rest most recently on screen
         first, and the cursor starts on the one before it, so Enter goes back
         to where you were. A screen keeps what is open on it - a viewer stays
@@ -6450,22 +6495,27 @@ class XeFMApp:
             return
         from xefm.screens import FILES
         from xefm.terminal_sessions import _short
+        from xefm import agents
         new_row = object()
         cwd = self._session_dir() or os.path.expanduser("~")
         current = self._screens.current
-        items = [*self._screens.recent(), new_row]
+        screens = self._screens.recent()
+        new_agents = {object(): entry for entry in agents.available(self.config)}
+        items = [*screens, new_row, *new_agents]
 
-        short = [self._screen_label(s) for s in items[:-1]]
+        short = [self._screen_label(s) for s in screens]
         rows = {s: self._screen_label(s, full=short.count(text) > 1)
-                for s, text in zip(items[:-1], short)}
+                for s, text in zip(screens, short)}
 
         def label(item) -> str:
             if item is new_row:
                 return f"New shell in {_short(cwd)}"
+            if item in new_agents:
+                return f"New {new_agents[item]['name']} in {_short(cwd)}"
             return rows.get(item) or self._screen_label(item)
 
         def right(item) -> str:
-            if item is new_row:
+            if item is new_row or item in new_agents:
                 return ""
             shown = "shown" if item is current else ""
             if item.kind == FILES:
@@ -6475,12 +6525,14 @@ class XeFMApp:
         def accept(item) -> None:
             if item is new_row:
                 self.new_terminal_session()
+            elif item in new_agents:
+                self._start_agent(new_agents[item])
             elif self._screens.by_id(item.id) is item:
                 self._show_screen(item)
             self.panel.render()
 
         def remove(item) -> bool:
-            if item is new_row or item.kind == FILES:
+            if item is new_row or item in new_agents or item.kind == FILES:
                 return False
             self._close_session(item.session)
             self.log_info(f"Closed terminal session {item.session.name}")

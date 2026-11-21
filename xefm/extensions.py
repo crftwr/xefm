@@ -201,10 +201,12 @@ CONTRIBUTION_TABLES = {
     "attributes": "ATTRIBUTES",
     "layouts": "LAYOUTS",
     "layout_extras": "LAYOUT_EXTRAS",
+    "agent_prompts": "AGENT_PROMPTS",
 }
 #: Kinds whose entries may be plain data rather than a code reference — the
 #: tier that runs no code at all.
-_DATA_KINDS = {"themes", "filters", "lexers", "menus", "layouts", "layout_extras"}
+_DATA_KINDS = {"themes", "filters", "lexers", "menus", "layouts", "layout_extras",
+               "agent_prompts"}
 
 _KNOWN_SECTIONS = {"extension", "contributes", "requires", "settings"}
 _KNOWN_EXTENSION_KEYS = {"id", "version", "api_version", "min_xefm", "name",
@@ -297,7 +299,8 @@ class Manifest:
         """Every ``module:name`` reference, as ``(where, reference)``."""
         out = []
         for kind, table in self.contributes.items():
-            if kind == "key_suggestions" or not isinstance(table, dict):
+            # A prompt is text, never a reference, colons and all.
+            if kind in ("key_suggestions", "agent_prompts") or not isinstance(table, dict):
                 continue
             for key, value in table.items():
                 where = f"contributes.{kind}.{_quote(key)}"
@@ -1069,6 +1072,10 @@ def _check_contribution(kind: str, key: str, value, action_names: set) -> Option
         return "must be 'module:function' or { entry = ..., description = ... }"
     if kind == "menus":
         return _check_menu(key, value, action_names)
+    if kind == "agent_prompts":
+        from xefm import agents
+        problem = agents.check_prompt(key, value)
+        return problem
     if kind == "attributes":
         # Its own table — 'entry' here is the provider, beside the rest of the
         # attribute, not the "this table is a reference" shorthand.
@@ -2173,6 +2180,8 @@ def _value_for(kind: str, value, manifest: Manifest, handle: ExtensionHandle,
     """The ``Config`` table value a manifest entry stands for, importing what
     it references."""
     root = manifest.root
+    if kind == "agent_prompts":
+        return value  # text, never a reference
     if kind == "actions":
         if isinstance(value, str):
             value = {"entry": value}

@@ -1,7 +1,7 @@
-"""AI agent sessions: ``AGENTS``, ``open_agent`` and ``ask_agent`` (#880).
+"""AI agent sessions: ``AGENTS``, ``agent`` and ``ask_agent`` (#880).
 
 An entry of ``AGENTS`` names an agent CLI the user installed and signed in to
-(Claude Code: ``claude``). ``open_agent`` starts it as a terminal session in
+(Claude Code: ``claude``). ``agent`` starts it as a terminal session in
 the active pane's folder; ``ask_agent`` starts it with a request and the
 selection. XeFM never touches credentials, models or providers: it runs a
 program it finds on ``PATH``, the way it runs an editor.
@@ -145,6 +145,53 @@ def normalize(item: Any) -> dict | str:
         "env": {str(k): str(v) for k, v in env.items()},
         "prompt_args": list(prompt_args),
     }
+
+
+PROMPT_KEYS = ("prompt", "agent")
+
+
+def check_prompt(name: Any, value: Any) -> str | None:
+    """What is wrong with one ``AGENT_PROMPTS`` entry, or None: a string (the
+    request), or ``{'prompt': ..., 'agent': ...}``."""
+    if not isinstance(name, str) or not name.strip():
+        return "names must be non-empty strings"
+    if isinstance(value, str):
+        return None if value.strip() else "the prompt is empty"
+    if not isinstance(value, dict):
+        return "must be the request (a string) or { prompt = ..., agent = ... }"
+    unknown = sorted(set(value) - set(PROMPT_KEYS))
+    if unknown:
+        return f"unknown key(s) {', '.join(unknown)} - known: {', '.join(PROMPT_KEYS)}"
+    if not isinstance(value.get("prompt"), str) or not value["prompt"].strip():
+        return "needs prompt = 'the request'"
+    if "agent" in value and not isinstance(value["agent"], str):
+        return "agent is the name of an AGENTS entry"
+    return None
+
+
+def prompts(config: Any) -> list[dict]:
+    """``AGENT_PROMPTS`` (config.py's and the extensions') as ``{'name',
+    'prompt', 'agent'}``, in order; a malformed entry is skipped with a
+    warning in the log."""
+    raw = getattr(config, "AGENT_PROMPTS", None) or {}
+    if not isinstance(raw, dict):
+        logger.warning("AGENT_PROMPTS is a dict of name -> request")
+        return []
+    out = []
+    for name, value in raw.items():
+        problem = check_prompt(name, value)
+        if problem:
+            logger.warning(f"AGENT_PROMPTS[{name!r}]: {problem}")
+            continue
+        spec = {"prompt": value} if isinstance(value, str) else value
+        out.append({"name": name.strip(), "prompt": spec["prompt"].strip(),
+                    "agent": spec.get("agent")})
+    return out
+
+
+def available(config: Any) -> list[dict]:
+    """The ``AGENTS`` entries whose program is installed."""
+    return [e for e in entries(config) if installed(e)]
 
 
 def rules_text(config: Any) -> str:
