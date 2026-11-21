@@ -189,6 +189,8 @@ the mouse for the first, take the whole buffer with the second. See
 | External Programs… | `programs` |
 | Subshell Here | `subshell` *(desktop mode: a terminal session)* — see [Terminal](TERMINAL_FEATURE.md) |
 | Screens… | `screens` *(desktop mode only)* |
+| Open AI Agent… | `open_agent` *(ships unbound)* — see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md) |
+| Ask AI Agent… | `ask_agent` *(ships unbound)* |
 | Edit Configuration… | `edit_config` *(ships unbound)* |
 | Reload Configuration | `reload_config` *(ships unbound)* |
 | Advanced ▸ Keymap… | Choose AFX style, Orthodox, OS native or Vim style, each described — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md) |

@@ -45,7 +45,7 @@ XeFM のターミナルは libghostty で動いており、macOS と Windows の
 
 ### シェルの環境
 
-XeFM が起動したシェルには、ペインのディレクトリと選択項目を表す `XEFM_*` 変数、`XEFM_ACTIVE`、`[XeFM]` プロンプトマーカーが設定されます（[ユーザーガイド：サブシェル](XEFM_USER_GUIDE.ja.md#サブシェル)を参照）。これらの変数が表すのは、シェルが起動した時点のペインです。しばらく使い続けるセッションでは、代わりに [`xefmctl`](#シェルから-xefm-に問い合わせる) で問い合わせてください。
+XeFM が起動したシェルには、ペインのディレクトリと選択項目を表す `XEFM_*` 変数、`XEFM_ACTIVE`、`[XeFM]` プロンプトマーカーが設定されます（[ユーザーガイド：サブシェル](XEFM_USER_GUIDE.ja.md#サブシェル)を参照）。これらの変数が表すのは、シェルが起動した時点のペインです。しばらく使い続けるセッションでは、代わりに [`xefmctl`](XEFMCTL_FEATURE.ja.md) で問い合わせてください。
 
 zsh と bash 4.4 以降（macOS 標準の bash は 3.2）を起動するとき、XeFM は数行のシェル統合を追加します。これで、シェルがプロンプトで待っているときと、コマンドが終わったときがわかります。自分の起動ファイルはこれまでどおり実行されます。
 
@@ -63,29 +63,17 @@ zsh と bash 4.4 以降（macOS 標準の bash は 3.2）を起動するとき�
 
 ## シェルから XeFM に問い合わせる
 
-XeFM が起動したシェル（サブシェル、ターミナルセッション、`PROGRAMS` のエントリ）では、`xefmctl` コマンドで、その XeFM の実行した時点での状態を問い合わせられます。`xefmctl` が操作するのは、その XeFM のファイルマネージャーです。ペインについてのコマンドは 1 語、それ以外についてのコマンドは名詞と動詞の 2 語です。
-
-| コマンド | 動作 |
-|---|---|
-| `xefmctl selected` | 選択項目のフルパスを 1 行に 1 つずつ表示（`-0`：`xargs -0` 用に NUL で区切る） |
-| `xefmctl focused` | カーソル位置の項目のフルパスを表示 |
-| `xefmctl pwd` | ペインのディレクトリを表示 |
-| `xefmctl cd [PATH]` | ペインを `PATH`（シェルのディレクトリからの相対パス）に移動。`PATH` を省くとシェルのディレクトリに移動。ファイルを指定すると、そのフォルダーに移動してカーソルをそのファイルに置く |
-| `xefmctl view FILE` | `FILE` を XeFM のビューアーでペインの上に開き、ファイルマネージャーに切り替える。**Screens** でターミナルに戻れば見比べられる |
-| `xefmctl screen list` | 画面を一覧表示。今の画面（`*`）が先頭で、それぞれに ID がつく |
-| `xefmctl screen switch ID` | 画面 `ID` に切り替える。ファイルマネージャーは `files`、セッションはその番号 |
-| `xefmctl session list` | ターミナルセッションを一覧表示。`*` は自分がいるセッション |
-
-ペインは `--pane this`（既定。アクティブなペイン）、`--pane other`、`--pane left`、`--pane right` で選びます。例：
+XeFM が起動したシェル（サブシェル、ターミナルセッション、`PROGRAMS` のエントリ）では、[`xefmctl`](XEFMCTL_FEATURE.ja.md) コマンドで、その XeFM の実行した時点での状態を問い合わせ、そのファイルマネージャーを操作できます。
 
 ```sh
-cp $(xefmctl selected) /tmp           # names without spaces
-xefmctl selected -0 | xargs -0 du -sh
-xefmctl cd .                          # bring the active pane to this shell's directory
-xefmctl view build.log
+xefmctl state                                  # what XeFM shows now
+cp $(xefmctl pane selected) /tmp               # names without spaces
+xefmctl pane cd .                              # bring the active pane here
+xefmctl view build.log                         # Screens takes you back to compare
+xefmctl screen show files
 ```
 
-シェルを起動した XeFM が終了している場合は、コマンドがそう表示します。ターミナルでサブシェルが動いている間は XeFM がその終了を待っているため、そこで使えるのは読み取るコマンド（`selected`、`focused`、`pwd`、`screen list`、`session list`）だけです。
+XeFM が開ける場所ならどこでも検索し、ペインに一覧を表示し、XeFM を通してコピーし、あなたに質問することもできます。すべてのコマンドは [xefmctl](XEFMCTL_FEATURE.ja.md) を参照してください。XeFM が開く [AI エージェント](AI_AGENT_SESSIONS_FEATURE.ja.md)は、これを使ってあなたの隣で作業します。
 
 ## `TERMINAL` 設定項目
 
@@ -93,6 +81,8 @@ xefmctl view build.log
 
 ## 関連項目
 
+- [xefmctl](XEFMCTL_FEATURE.ja.md)：XeFM が起動したシェルから送れるすべてのコマンド
+- [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)：ターミナルセッションとして動く AI エージェント
 - [外部プログラム](EXTERNAL_PROGRAMS_FEATURE.ja.md)：`PROGRAMS` と `'terminal': True`
 - [ファイルの関連付け](FILE_ASSOCIATIONS_FEATURE.ja.md)：ファイルの種類ごとのコマンド
 - [ユーザーガイド：サブシェル](XEFM_USER_GUIDE.ja.md#サブシェル)：プロンプトマーカーと `SUBSHELL`

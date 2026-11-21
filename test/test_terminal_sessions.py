@@ -108,8 +108,10 @@ def _app(monkeypatch, *, desktop=True):
     app._is_local = lambda p: True
     app._terminal_unavailable = lambda: None
     app.remote_sessions = []
-    app._with_remote_env = lambda env, session: (app.remote_sessions.append(session),
-                                                 env.update(XEFM_SESSION=session))[1] or env
+    app.remote_policies = []
+    app._with_remote_env = lambda env, session, policy="user": (
+        app.remote_sessions.append(session), app.remote_policies.append(policy),
+        env.update(XEFM_SESSION=session))[2] or env
     app._shell_launch = lambda: (["/bin/zsh"], {"XEFM_ACTIVE": "1",
                                                 "XEFM_THIS_DIR": "/tmp"})
     app.handed = []
@@ -570,52 +572,257 @@ def test_ctx_start_terminal_session_in_terminal_mode_hands_the_terminal_over(mon
     assert [s.kind for s in ctx.screens()] == ["files"] and ctx.terminal_sessions() == []
 
 
-def test_xefmctl_lists_and_switches_screens(monkeypatch):
+def _xefmctl(app, line, *, session="", policy="user", stdin=None):
+    """Run one xefmctl command line against ``app`` as XeFM would, on its UI
+    thread: parsed by the client, carried out by remote_dispatch."""
+    import shlex
+    from xefm import remote_commands as T
+    from xefm import remote_dispatch as D
+    from xefm.remote_cli import parse
+    req = parse(shlex.split(line), stdin)
+    req.update(session=session, policy=policy)
+    cmd = T.find(req["cmd"].split())[0]
+    answer = D._answer(app, cmd, req)
+    return answer
+
+
+def _answered(answer):
+    from xefm import remote_dispatch as D
+    return answer.wait() if isinstance(answer, D.Pending) else answer
+
+
+def test_xefmctl_lists_and_shows_screens(monkeypatch):
     app = _app(monkeypatch)
+    app._user_ctx = _ctx(app, monkeypatch)
     app.new_terminal_session()
     [view] = app.made
-    answer = XeFMApp._remote_answer.__get__(app)
-    app._remote_pane = lambda name: {"path": "/tmp"}
-    app._screen_label = XeFMApp._screen_label.__get__(app)
     sid = app._sessions.for_view(view).id
-    lines = answer({"cmd": "screen", "verb": "list"})["lines"]
-    assert lines[0].startswith(f"* {sid}\tzsh") and lines[1] == "  files\tFile manager"
-    assert answer({"cmd": "screen", "verb": "switch", "id": "files"})["ok"]
+    items = _xefmctl(app, "screen list")["items"]
+    assert [(i["marker"], i["id"]) for i in items] == [("*", str(sid)), (" ", "files")]
+    assert items[1]["label"] == "File manager"
+    assert _xefmctl(app, "screen show files")["ok"]
     assert not view.shown
-    assert not answer({"cmd": "screen", "verb": "switch", "id": "nope"})["ok"]
-    [line] = answer({"cmd": "session", "verb": "list", "session": str(sid)})["lines"]
-    assert line.startswith(f"* {sid}\tzsh\t")
+    refused = _xefmctl(app, "screen show nope")
+    assert not refused["ok"] and "screen list" in refused["error"]
+    [row] = _xefmctl(app, "terminal-session list", session=str(sid))["items"]
+    assert row["marker"] == "*" and row["name"] == "zsh"
 
 
-def test_xefmctl_view_opens_on_the_file_manager(monkeypatch):
+def test_xefmctl_view_replaces_the_viewer_at_once(monkeypatch, tmp_path):
     app = _app(monkeypatch)
+    app._user_ctx = _ctx(app, monkeypatch)
+    log = tmp_path / "log.txt"
+    log.write_text("x\n")
     opened = []
-    app._open_viewer = lambda target: (opened.append(target),
+    new_viewer = _Viewer()
+    app._open_viewer = lambda target: (opened.append(str(target)),
                                        app.panel.push_layer(new_viewer, z=80))
     old_viewer = _Viewer()
     old_viewer._close = lambda: (old_viewer.closed.append(1),
                                  app.panel.remove_layer(old_viewer))
-    new_viewer = _Viewer()
     app.panel.push_layer(old_viewer, z=80)
     app.new_terminal_session()
-    XeFMApp._view_on_file_manager(app, "/tmp/log.txt")
+    assert _xefmctl(app, f"view {log}")["ok"]
     assert app._screens.current is app._screens.files
-    assert old_viewer.closed == [1] and opened == ["/tmp/log.txt"]
+    assert old_viewer.closed == [1] and opened == [str(log)]
     assert _shown(app.panel) == [new_viewer]
     assert app.panel.layer_parent(new_viewer) is app._screens.files.group
 
 
-def test_xefmctl_parses_the_noun_commands():
+def test_xefmctl_waits_for_what_a_key_could_not_reach(monkeypatch):
+    app = _app(monkeypatch)
+    app.new_terminal_session()
+    files = app._screens.files.group
+    dialog = _Dialog("Copy")
+    app.panel.push_layer(dialog, z=70, parent=files)
+    refused = _xefmctl(app, "invoke reread")
+    assert refused["code"] == 5 and "dialog is open" in refused["error"]
+    assert "(Copy)" in refused["error"]
+    assert _xefmctl(app, "screen list")["ok"]  # reads are never refused
+    app.panel.remove_layer(dialog)
+    app.panel.push_layer(_Viewer(), z=80, parent=files)
+    refused = _xefmctl(app, "invoke reread")  # a file-list action, over a viewer
+    assert refused["code"] == 5 and "viewer is open" in refused["error"]
+
+
+def _run_later(app):
+    while app.later:
+        app.later.pop(0)()
+
+
+class _Dialog:
+    def __init__(self, title):
+        self.title = title
+
+
+def _asking_ctx(app, monkeypatch, answer=True):
+    ctx = _ctx(app, monkeypatch)
+    asked, copied = [], []
+
+    def confirm(prompt, *, title="Confirm", on_result=None):
+        asked.append(prompt)
+        dialog = _Dialog(title)
+        app.panel.push_layer(dialog, z=70)
+        # The user answers later, as a dialog is answered.
+        app.later.append(lambda: (app.panel.remove_layer(dialog), on_result(answer)))
+    ctx.confirm = confirm
+    ctx.copy = lambda items, dest, on_done=None: copied.append((list(items), dest)) or (
+        on_done and on_done(ctx, SimpleNamespace(status="done", error=None)))
+    app._user_ctx = ctx
+    return asked, copied
+
+
+def test_an_agents_copy_is_confirmed_in_xefm(monkeypatch):
+    app = _app(monkeypatch)
+    asked, copied = _asking_ctx(app, monkeypatch)
+    app.new_terminal_session()
+    agent = app._screens.current
+    sid = str(agent.session.id)
+    pending = _xefmctl(app, "copy /tmp/a /tmp/b --to /tmp/out --wait",
+                       session=sid, policy="agent")
+    assert app._screens.current is app._screens.files  # asked there
+    _run_later(app)
+    answer = _answered(pending)
+    assert answer["ok"] and answer["status"] == 0 and answer["outcome"] == "done"
+    assert copied == [(["/tmp/a", "/tmp/b"], "/tmp/out")]
+    assert "zsh wants to copy 2 item(s) to /tmp/out" in asked[0]
+    # The question took the user to the file manager, the answer back.
+    assert app._screens.current is agent
+    # A shell of the user's own is not asked.
+    asked.clear()
+    _answered(_xefmctl(app, "copy /tmp/a --to /tmp/out --wait"))
+    _run_later(app)
+    assert asked == [] and len(copied) == 2
+
+
+def test_an_agent_told_no_gets_a_failure(monkeypatch):
+    app = _app(monkeypatch)
+    asked, copied = _asking_ctx(app, monkeypatch, answer=False)
+    pending = _xefmctl(app, "copy /tmp/a --to /tmp/out", policy="agent")
+    _run_later(app)
+    answer = _answered(pending)
+    assert answer["status"] == 1 and "did not allow" in answer["note"]
+    assert copied == []
+
+
+def test_an_agent_may_not_delete_for_good(monkeypatch):
+    app = _app(monkeypatch)
+    _asking_ctx(app, monkeypatch)
+    refused = _xefmctl(app, "delete /tmp/a", policy="agent")
+    assert refused["code"] == 5 and "xefmctl trash" in refused["error"]
+    refused = _xefmctl(app, "invoke delete_permanently", policy="agent")
+    assert refused["code"] == 5
+
+
+def test_an_agents_invoke_runs_with_the_confirmations_on(monkeypatch):
+    app = _app(monkeypatch)
+    ctx = _ctx(app, monkeypatch)
+    app.config.CONFIRM_DELETE = False
+    app.config.DELETE_TO_TRASH = False
+    seen = []
+    ctx.invoke = lambda name: seen.append((name, app.config.CONFIRM_DELETE,
+                                           app.config.DELETE_TO_TRASH))
+    app._user_ctx = ctx
+    assert _xefmctl(app, "invoke delete_files", policy="agent")["ok"]
+    assert seen == [("delete_files", True, True)]
+    assert app.config.CONFIRM_DELETE is False and app.config.DELETE_TO_TRASH is False
+    _xefmctl(app, "invoke delete_files")
+    assert seen[-1] == ("delete_files", False, False)
+
+
+def test_xefmctl_parses_by_the_table():
+    import io
     import pytest
-    from xefm.remote_cli import RemoteError, _parse
-    assert _parse("screen", ["list"])["verb"] == "list"
-    req = _parse("screen", ["switch", "files"])
-    assert req["verb"] == "switch" and req["id"] == "files"
-    assert _parse("session", ["list"])["verb"] == "list"
-    for bad in (["screen", []], ["screen", ["switch"]], ["session", ["switch", "1"]],
-                ["screen", ["list", "x"]]):
-        with pytest.raises(RemoteError):
-            _parse(*bad)
+    from xefm.remote_cli import RemoteError, parse
+    assert parse(["screen", "list"])["cmd"] == "screen list"
+    req = parse(["screen", "show", "files"])
+    assert req["args"] == {"id": "files"}
+    req = parse(["copy", "a", "b", "--to", "/out", "--wait", "--json"])
+    assert req["args"]["source"][1].endswith("/b") and req["opts"] == {"to": "/out", "wait": True}
+    assert req["json"]
+    req = parse(["find-in-files", "TODO", "--case", "--limit", "5"])
+    assert req["args"] == {"pattern": "TODO", "url": []} and req["opts"]["limit"] == 5
+    req = parse(["pane", "open-list", "-"], io.StringIO('{"path": "/x/a"}\n/x/b\n'))
+    assert req["args"]["path"] == ["/x/a", "/x/b"]
+    req = parse(["pane", "cd"])
+    assert req["args"]["path"]  # this shell's directory
+    for bad in (["screen"], ["screen", "show"], ["screen", "list", "x"],
+                ["copy", "--pane", "up", "a"], ["nope"], ["pane", "selected", "--frob"]):
+        with pytest.raises(RemoteError) as caught:
+            parse(bad)
+        assert caught.value.code == 2
+    with pytest.raises(RemoteError) as caught:
+        parse(["pane", "cd", "--help"])
+    assert caught.value.code == 0 and "--focus" in str(caught.value)
+
+
+def test_open_agent_starts_a_restricted_session_with_the_skill(monkeypatch, tmp_path):
+    from xefm import agents
+    app = _app(monkeypatch)
+    app.config.AGENTS = [{"name": "Claude Code", "command": ["claude"],
+                          "preset": "claude-code"}]
+    app.config.AGENT_RULES = "Leave ~/Taxes alone."
+    monkeypatch.setattr(agents, "cache_root", lambda: tmp_path)
+    monkeypatch.setattr(agents, "installed", lambda entry: True)
+    app._program_env = lambda pane: ({"XEFM_ACTIVE": "1"}, "/tmp")
+    app.active_pane = lambda: {"path": "/tmp", "files": [], "selected_files": set()}
+    app._focused_entry = lambda: None
+    for name in ("open_agent", "ask_agent", "_pick_agent", "_agent_request", "_start_agent"):
+        setattr(app, name, getattr(XeFMApp, name).__get__(app))
+    app.open_agent()
+    [view] = app.made
+    argv = view.argv
+    assert argv[0] == "claude" and argv[1] == "--plugin-dir"
+    plugin = argv[2]
+    assert (tmp_path / "x").parent == tmp_path
+    import pathlib
+    assert (pathlib.Path(plugin) / "skills" / "xefm" / "SKILL.md").exists()
+    assert (pathlib.Path(plugin) / ".claude-plugin" / "plugin.json").exists()
+    rules = argv[argv.index("--append-system-prompt") + 1]
+    assert "xefmctl state" in rules and "Leave ~/Taxes alone." in rules
+    settings = pathlib.Path(argv[argv.index("--settings") + 1]).read_text()
+    assert "Bash(rm:*)" in settings
+    assert app.remote_policies[-1] == "agent"
+    session = app._sessions.for_view(view)
+    assert session.name == "Claude Code" and app._screens.current.session is session
+
+
+def test_ask_agent_passes_the_request_and_the_selection(monkeypatch, tmp_path):
+    from xefm import agents
+    app = _app(monkeypatch)
+    app.config.AGENTS = [{"name": "Codex", "command": ["codex", "--skills", "{skills_dir}"],
+                          "restrict": False}]
+    monkeypatch.setattr(agents, "cache_root", lambda: tmp_path)
+    monkeypatch.setattr(agents, "installed", lambda entry: True)
+    app._program_env = lambda pane: ({}, "/tmp")
+    app.active_pane = lambda: {"path": "/tmp", "files": ["/tmp/a.jpg", "/tmp/b.jpg"],
+                               "selected_files": {"/tmp/a.jpg"}}
+    app._focused_entry = lambda: "/tmp/b.jpg"
+    ctx = _ctx(app, monkeypatch)
+    ctx.input = lambda prompt, default="", *, title="", on_accept=None, **k: \
+        on_accept("sort these by month")
+    app._user_ctx = ctx
+    for name in ("open_agent", "ask_agent", "_pick_agent", "_agent_request", "_start_agent"):
+        setattr(app, name, getattr(XeFMApp, name).__get__(app))
+    app.ask_agent()
+    [view] = app.made
+    assert view.argv[:2] == ["codex", "--skills"] and view.argv[2].endswith("skills")
+    prompt = view.argv[-1]
+    assert prompt.startswith("sort these by month") and "/tmp/a.jpg" in prompt
+    assert app.remote_policies[-1] == "user"  # restrict: False
+
+
+def test_agents_entries_are_checked():
+    from xefm import agents
+    config = SimpleNamespace(AGENTS=[
+        {"name": "ok", "command": "claude --verbose"},
+        {"command": ["x"]},
+        {"name": "bad", "command": ["x"], "preset": "gpt"},
+        {"name": "typo", "command": ["x"], "restirct": False},
+    ])
+    [entry] = agents.entries(config)
+    assert entry["command"] == ["claude", "--verbose"] and entry["restrict"] is True
+    assert "unknown key" in agents.normalize({"name": "t", "command": ["x"], "rest": 1})
 
 
 def test_an_action_can_live_in_the_terminal_context():

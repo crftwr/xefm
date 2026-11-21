@@ -4357,6 +4357,8 @@ class XeFMApp:
                 "diff_directories": (self.diff_directories, False),
                 "subshell": (self.subshell, False),
                 "screens": (self.screens, False),
+                "open_agent": (self.open_agent, False),
+                "ask_agent": (self.ask_agent, False),
                 "edit_config": (self.edit_config, False),
                 "reload_config": (self.reload_config, False),
                 "install_extension": (self.install_extension, False),
@@ -5317,6 +5319,8 @@ class XeFMApp:
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
             MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
             *self._terminal_menu(sc),
+            MenuItem("Open AI Agent…", on_select=self.open_agent, shortcut=sc("open_agent")),
+            MenuItem("Ask AI Agent…", on_select=self.ask_agent, shortcut=sc("ask_agent")),
             SEPARATOR,
             # Editing the config and reloading it are the loop a user tuning
             # XeFM goes round, so they stay at the top. What is set up once or
@@ -6025,7 +6029,8 @@ class XeFMApp:
 
     def _start_session(self, argv: list, *, cwd: str | None, env: dict, name: str,
                        named: bool = False,
-                       shell: bool, on_done=None, show: bool = True):
+                       shell: bool, on_done=None, show: bool = True,
+                       policy: str = "user"):
         """Run ``argv`` as a new terminal session on a screen of its own, shown
         unless ``show`` is False (then it starts out of view). ``shell`` marks
         a shell (shell integration, Enter restarts after a failed exit) as
@@ -6036,7 +6041,7 @@ class XeFMApp:
         from xefm.terminal_sessions import PROGRAM, SHELL, Session, next_id
         from xefm.text_viewer import viewer_layer_hints
         sid = next_id()
-        self._with_remote_env(env, str(sid))
+        self._with_remote_env(env, str(sid), policy)
         program = os.path.splitext(os.path.basename(str(argv[0])))[0] if argv else ""
         if shell:
             argv = shell_integration.apply(argv, env)
@@ -6073,6 +6078,85 @@ class XeFMApp:
         return self._start_session(command, cwd=cwd, env=env, name=name, named=named,
                                    shell=True,
                                    show=show)
+
+    # --- AI agent sessions (AGENTS, #880) ----------------------------------------
+
+    def open_agent(self) -> None:
+        """``open_agent``: start an ``AGENTS`` entry as a terminal session in
+        the active pane's folder (terminal mode hands it the terminal), with
+        the skill, the rules and a restricted ``xefmctl`` key
+        (:mod:`xefm.agents`)."""
+        self._pick_agent(lambda entry: self._start_agent(entry))
+
+    def ask_agent(self) -> None:
+        """``ask_agent``: ask for a request, then start the agent with it and
+        what the active pane shows (its folder, the selection)."""
+        def asked(entry: dict) -> None:
+            def accept(text: str) -> None:
+                if text.strip():
+                    self._start_agent(entry, prompt=self._agent_request(text))
+            self._user_ctx.input(f"Ask {entry['name']}:", title=entry["name"],
+                                 on_accept=accept)
+        self._pick_agent(asked)
+
+    def _pick_agent(self, then) -> None:
+        """Run ``then(entry)`` with the ``AGENTS`` entry to use: the only one,
+        or the one the user picks."""
+        from xefm import agents
+        found = agents.entries(self.config)
+        if not found:
+            self.log_info("No AI agent is set up: add one to AGENTS in config.py "
+                          "(see doc/AI_AGENT_SESSIONS_FEATURE.md)")
+            self.panel.render()
+            return
+        if len(found) == 1:
+            then(found[0])
+            return
+
+        def picked(index) -> None:
+            if index is not None:
+                then(found[index])
+        self._user_ctx.choose("AI agent", [e["name"] for e in found], on_result=picked)
+
+    def _agent_request(self, text: str) -> str:
+        """``ask_agent``'s request, with where it was asked from."""
+        from xefm import agents
+        pane = self.active_pane()
+        picked = [str(f) for f in pane["files"] if str(f) in pane["selected_files"]]
+        focused = self._focused_entry()
+        return agents.prompt_with_context(text, str(pane["path"]), picked,
+                                          str(focused) if focused is not None else None)
+
+    def _start_agent(self, entry: dict, prompt: str | None = None) -> None:
+        from xefm import agents
+        from xefm.remote_dispatch import AGENT, USER
+        if not agents.installed(entry):
+            self.log_info(f"{entry['name']}: {entry['command'][0]} is not installed "
+                           f"(not found on PATH)")
+            self.panel.render()
+            return
+        try:
+            values = agents.prepare(self.config, entry)
+        except OSError as exc:
+            self.log_info(f"{entry['name']}: could not prepare the session: {exc}")
+            self.panel.render()
+            return
+        argv = agents.argv(entry, values, prompt)
+        pane = self.active_pane()
+        env, cwd = self._program_env(pane)
+        env.update(entry["env"])
+        if pane.get("virtual") or path_schemes.is_uri(str(cwd)):
+            cwd = os.path.expanduser("~")  # an agent works on the local disk
+        policy = AGENT if entry["restrict"] else USER
+        self.log_info(f"Starting {entry['name']} in {cwd}")
+        if is_desktop_mode():
+            if not self._terminal_ready():
+                return
+            self._start_session(argv, cwd=cwd, env=env, name=entry["name"],
+                                shell=False, policy=policy)
+            return
+        self._with_remote_env(env, "agent", policy)
+        self._run_in_terminal(argv, cwd=cwd, env=env, pause_on_error=True)
 
     def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str,
                            shell: bool):
@@ -6410,17 +6494,8 @@ class XeFMApp:
 
     # --- xefmctl: shells talking back (#900) ------------------------------------
 
-    #: Requests that only read the panes: answered even while terminal mode
-    #: has its terminal handed over, when the UI thread is parked in the
-    #: child's wait and cannot run anything else.
-    _REMOTE_READS = frozenset({"pwd", "selected", "focused", "screen", "session"})
-
-    #: Seconds a request waits for the UI thread before reporting XeFM busy
-    #: (under remote_cli.TIMEOUT, so the answer still reaches the client).
-    _REMOTE_WAIT = 8.0
-
     def _remote(self):
-        """The socket ``xefmctl selected`` and friends reach this XeFM on, started
+        """The socket ``xefmctl pane selected`` and friends reach this XeFM on, started
         the first time a shell is about to be given its address. None where
         it cannot be started (logged once)."""
         server = getattr(self, "_remote_server", None)
@@ -6432,119 +6507,21 @@ class XeFMApp:
             self._remote_failed = server is None
         return server
 
-    def _with_remote_env(self, env: dict, session: str) -> dict:
+    def _with_remote_env(self, env: dict, session: str, policy: str = "user") -> dict:
         """``env`` plus what a shell needs to run ``xefmctl`` against
-        this XeFM, as ``session`` (see :mod:`xefm.remote_cli`)."""
+        this XeFM, as ``session`` with ``policy`` (``"agent"`` restricts what
+        it may do; see :mod:`xefm.remote_dispatch`)."""
         server = self._remote()
         if server is not None:
-            server.apply_env(env, session)
+            server.apply_env(env, session, policy)
             env["XEFM_BIN"] = server.bin_dir
         return env
 
-    def _remote_handle(self, req: dict) -> dict:
-        """A request from :mod:`xefm.remote_cli`, on the listener's thread.
-        The answer is worked out on the UI thread, between frames."""
-        cmd = req.get("cmd")
-        if self._terminal_handed_over:
-            if cmd in self._REMOTE_READS:
-                # The UI thread is parked in the child's wait (_run_in_terminal):
-                # nothing else reads or changes the panes until it returns.
-                return self._remote_answer(req)
-            return {"ok": False, "error": "XeFM is waiting for this shell to "
-                    "exit; run it after you return"}
-        done = threading.Event()
-        box: dict = {}
-
-        def run() -> None:
-            try:
-                box["answer"] = self._remote_answer(req)
-            except Exception as exc:
-                getLogger("Remote").error(f"xefmctl {cmd} failed: {exc}")
-                box["answer"] = {"ok": False, "error": str(exc)}
-            finally:
-                done.set()
-
-        self._call_later(run)
-        if not done.wait(self._REMOTE_WAIT):
-            return {"ok": False, "error": "XeFM is busy; try again", "code": 4}
-        return box["answer"]
-
-    def _remote_pane(self, name: str) -> dict:
-        if name == "other":
-            return self.pm.get_inactive_pane()
-        if name in ("left", "right"):
-            return self.pane(name)
-        return self.pm.get_current_pane()
-
-    def _remote_answer(self, req: dict) -> dict:
-        """What one ``xefmctl`` command answers, on the UI thread (or with it
-        parked): ``{"ok": True, "lines": [...]}`` or an error."""
-        cmd = req.get("cmd")
-        pane = self._remote_pane(req.get("pane") or "this")
-        if cmd == "pwd":
-            return {"ok": True, "lines": [str(pane["path"])]}
-        if cmd == "selected":
-            chosen = pane["selected_files"]
-            lines = [str(f) for f in pane["files"] if str(f) in chosen]
-            return {"ok": True, "lines": lines, "nul": bool(req.get("nul"))}
-        if cmd == "focused":
-            files, idx = pane["files"], pane["focused_index"]
-            lines = [str(files[idx])] if files and 0 <= idx < len(files) else []
-            return {"ok": True, "lines": lines}
-        if cmd == "session" and req.get("verb") == "list":
-            here = str(req.get("session") or "")
-            return {"ok": True, "lines": [
-                f"{'*' if str(s.id) == here else ' '} {s.id}\t{s.name}\t{s.state}\t{s.directory}"
-                for s in self._sessions]}
-        if cmd == "screen" and req.get("verb") == "list":
-            current = self._screens.current
-            return {"ok": True, "lines": [
-                f"{'*' if sc is current else ' '} {sc.id}\t{self._screen_label(sc)}"
-                for sc in self._screens.recent()]}
-        if cmd == "screen" and req.get("verb") == "switch":
-            if not is_desktop_mode():
-                return {"ok": False, "error": "screens are only in the desktop app"}
-            target = self._screens.by_id(str(req.get("id") or ""))
-            if target is None:
-                return {"ok": False, "error": f"no screen {req.get('id')!r} "
-                        f"(see xefmctl screen list)"}
-            self._show_screen(target)
-            return {"ok": True, "lines": []}
-        if cmd in ("cd", "view"):
-            text = req.get("path")
-            if not isinstance(text, str) or not text:
-                return {"ok": False, "error": "no path given", "code": 2}
-            target = self._resolve_jump_target(text, str(pane["path"]))
-            if not target.exists():
-                return {"ok": False, "error": f"no such file or directory: {target}"}
-            if cmd == "view":
-                if target.is_dir():
-                    return {"ok": False, "error": f"{target} is a directory"}
-                self._view_on_file_manager(target)
-                return {"ok": True, "lines": []}
-            if target.is_dir():
-                self._go_to_dir(pane, target, None)
-            else:
-                self._go_to_dir(pane, target.parent, target.name)
-            self.log_info(f"Jumped to: {target} (xefmctl cd)")
-            return {"ok": True, "lines": []}
-        return {"ok": False, "error": f"unknown command {cmd!r}", "code": 2}
-
-    def _view_on_file_manager(self, target) -> None:
-        """``xefmctl view``: open ``target`` in a viewer on the file manager's
-        screen and switch there (#951) - ``screens`` goes back to the terminal
-        it was asked from, for a side-by-side look. A viewer already open
-        over the panes gives way: a screen shows one viewer at a time."""
-        screens = self._screens
-        self._show_screen(screens.files)
-        for layer in list(screens.layers(screens.files)):
-            if hasattr(layer, "palette_actions"):  # a viewer
-                close = getattr(layer, "_close", None)
-                if close is not None:
-                    close()
-                else:
-                    self.panel.remove_layer(layer)
-        self._open_viewer(target)
+    def _remote_handle(self, req: dict):
+        """A request from :mod:`xefm.remote_cli`, on the listener's thread
+        (see :mod:`xefm.remote_dispatch`)."""
+        from xefm import remote_dispatch
+        return remote_dispatch.handle(self, req)
 
     def edit_config(self) -> None:
         """Open the user's ``~/.xefm/config.py`` in the configured editor

@@ -160,6 +160,8 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | External Programs… | `programs` |
 | Subshell Here | `subshell` *（デスクトップモードではターミナルセッションで）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
 | Screens… | `screens` *（デスクトップモードのみ）* |
+| Open AI Agent… | `open_agent` *（既定でキー未割り当て）* — [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照 |
+| Ask AI Agent… | `ask_agent` *（既定でキー未割り当て）* |
 | Edit Configuration… | `edit_config` *（既定でキー未割り当て）* |
 | Reload Configuration | `reload_config` *（既定でキー未割り当て）* |
 | Advanced ▸ Keymap… | AFX スタイル、Orthodox、OS ネイティブ、Vim スタイルから、それぞれの説明を見ながら選びます — [キーマッププリセット](KEYMAP_PRESETS_FEATURE.ja.md)を参照 |

@@ -699,16 +699,21 @@ class ActionInfo:
     ``name`` is what ``invoke()`` takes; ``description`` the one line the
     command palette shows; ``aliases`` the names it used to have, which still
     resolve to it; ``keys`` the keys bound to it in the file list right now —
-    the keymap preset's, with ``KEY_BINDINGS`` applied — empty when unbound."""
+    the keymap preset's, with ``KEY_BINDINGS`` applied — empty when unbound;
+    ``details`` the Markdown that says more than the one line (the command
+    palette's help page; for an action of your own, what follows the first
+    paragraph of its docstring or ``'description'``), or ""."""
 
-    __slots__ = ("name", "description", "aliases", "keys")
+    __slots__ = ("name", "description", "aliases", "keys", "details")
 
     def __init__(self, name: str, description: str = "",
-                 aliases: tuple[str, ...] = (), keys: tuple[str, ...] = ()):
+                 aliases: tuple[str, ...] = (), keys: tuple[str, ...] = (),
+                 details: str = ""):
         self.name = name
         self.description = description
         self.aliases = tuple(aliases)
         self.keys = tuple(keys)
+        self.details = details
 
     def __repr__(self) -> str:
         return f"<ActionInfo {self.name}>"
@@ -835,7 +840,7 @@ class Screen:
     def id(self) -> str:
         """``"files"`` for the file manager; a terminal session's id
         (``"1"``, ``"2"``, ... - what ``XEFM_SESSION`` says in it)
-        otherwise. What ``xefmctl screen switch`` takes."""
+        otherwise. What ``xefmctl screen show`` takes."""
         return self._screen.id
 
     @property
@@ -1039,6 +1044,57 @@ class ActionContext:
         return PaneApi(self._app, "right")
 
     # --- running other actions ---------------------------------------------- #
+
+    @preview
+    def view(self, path: "EntryInfo | Path | str", *, line: int | None = None) -> None:
+        """Open ``path`` in XeFM's built-in viewer - the one ``view_file``
+        opens for it (text, image, document) - over whatever is shown, at
+        ``line`` (1-based) in a text file. A local path or a URI
+        (``ssh://...``, ``archive://...``)."""
+        self._require_ui_thread("view")
+        target = _operation_path(path, "view")
+        if target.is_dir():
+            raise ValueError(f"view: {target} is a folder")
+        app = self._app
+        app._open_viewer(target)
+        if line:
+            panel = app.panel
+            top = panel.top_layer()
+            scroll = getattr(top, "_scroll_to_line", None)
+            if scroll is not None:
+                scroll(max(0, int(line) - 1))
+                panel.render()
+
+    @preview
+    def find_files(self, root: "Path | str", pattern: str, *, case: bool = False,
+                   recursive: bool = True, cancel: Any = None):
+        """The files below ``root`` whose names match ``pattern``, as
+        :class:`Path` objects, found the way ``find_files`` finds them: a glob
+        (``*.psd``) or a part of the name, on any storage XeFM can open.
+        A generator: it reads as it goes, so run it off the UI thread (from
+        :meth:`run_task`). ``cancel``, a ``threading.Event``, stops it."""
+        import threading as _threading
+        cancel = cancel if cancel is not None else _threading.Event()
+        root = root if isinstance(root, Path) else Path(str(root))
+        yield from self._app._iter_filename_matches(root, pattern or "*", cancel,
+                                                    case=case, recursive=recursive)
+
+    @preview
+    def find_in_files(self, root: "Path | str", pattern: str, *, case: bool = False,
+                      word: bool = False, regex: bool = False, recursive: bool = True,
+                      cancel: Any = None):
+        """The lines that match ``pattern`` in the files below ``root``, as
+        ``{"path": Path, "line": int, "text": str}``, found the way
+        ``find_in_files`` finds them, on any storage XeFM can open. A
+        generator, like :meth:`find_files`. An invalid regular expression
+        raises ``re.error`` before anything is read."""
+        import threading as _threading
+        from xefm import search_options as _search_opts
+        compiled = _search_opts.content_regex(pattern, case=case, word=word, regex=regex)
+        cancel = cancel if cancel is not None else _threading.Event()
+        root = root if isinstance(root, Path) else Path(str(root))
+        yield from self._app._iter_content_matches(root, compiled, cancel,
+                                                   recursive=recursive)
 
     def invoke(self, action_name: str) -> None:
         """Run another action by name, in the file-list context.
@@ -1694,7 +1750,8 @@ class ActionContext:
         order :meth:`action_names` lists them."""
         keys = self._app.keys
         return [ActionInfo(a.name, a.description, a.aliases,
-                           keys.get_keys_for_action(a.name, _actions.FILER)[0])
+                           keys.get_keys_for_action(a.name, _actions.FILER)[0],
+                           getattr(a, "details", "") or "")
                 for a in _actions.registry.actions(_actions.FILER)]
 
 

@@ -267,6 +267,8 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
 | `screens` | Switch between the file manager and the terminal sessions | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `open_agent` | Open an AI agent session in this directory | — | — | — | — |
+| `ask_agent` | Ask an AI agent about the selection | — | — | — | — |
 | `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `redraw` | Redraw the screen | `F5` | — | — | — |

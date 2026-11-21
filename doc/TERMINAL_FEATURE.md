@@ -87,7 +87,7 @@ A shell XeFM starts gets the `XEFM_*` variables with the pane directories and
 selections, `XEFM_ACTIVE`, and the `[XeFM]` prompt marker (see
 [User Guide: Subshell](XEFM_USER_GUIDE.md#subshell)). Those variables hold the
 panes as they were when the shell started; a session you keep for a while
-should ask [`xefmctl`](#asking-xefm-from-the-shell) instead.
+should ask [`xefmctl`](XEFMCTL_FEATURE.md) instead.
 
 For zsh and for bash 4.4 or later (macOS's own bash is 3.2), XeFM adds a few
 lines of shell integration when it starts them, so it can tell when the shell
@@ -122,35 +122,21 @@ has examples for Terminal.app, iTerm, Windows Terminal and tmux.
 ## Asking XeFM from the shell
 
 In a shell XeFM started (the subshell, a terminal session, a `PROGRAMS`
-entry), the `xefmctl` command asks that XeFM for its state at the moment it
-runs, and acts on its file manager. A command about a pane is a single word;
-one about anything else is a noun and a verb:
-
-| Command | What it does |
-|---|---|
-| `xefmctl selected` | Prints the full paths of the selected items, one per line (`-0`: separated by NUL, for `xargs -0`) |
-| `xefmctl focused` | Prints the full path of the item under the cursor |
-| `xefmctl pwd` | Prints the pane's directory |
-| `xefmctl cd [PATH]` | Points the pane at `PATH`, relative to the shell's directory; without `PATH`, at the shell's directory. A file: its folder, with the cursor on it |
-| `xefmctl view FILE` | Opens `FILE` in XeFM's viewer, over the panes, and switches to the file manager; **Screens** takes you back to the terminal to compare |
-| `xefmctl screen list` | Lists the screens, the one on now first (`*`), each with its id |
-| `xefmctl screen switch ID` | Switches to screen `ID`: `files` for the file manager, or a session's number |
-| `xefmctl session list` | Lists the terminal sessions; `*` marks the one you are in |
-
-`--pane this` (the default, the active pane), `--pane other`, `--pane left`
-or `--pane right` picks the pane. For example:
+entry), the [`xefmctl`](XEFMCTL_FEATURE.md) command asks that XeFM for its
+state at the moment it runs, and acts on its file manager:
 
 ```sh
-cp $(xefmctl selected) /tmp           # names without spaces
-xefmctl selected -0 | xargs -0 du -sh
-xefmctl cd .                          # bring the active pane to this shell's directory
-xefmctl view build.log
+xefmctl state                                  # what XeFM shows now
+cp $(xefmctl pane selected) /tmp               # names without spaces
+xefmctl pane cd .                              # bring the active pane here
+xefmctl view build.log                         # Screens takes you back to compare
+xefmctl screen show files
 ```
 
-If the XeFM that started the shell has quit, the command says so. While a
-subshell in a terminal runs, XeFM is waiting for it, so only the commands
-that read (`selected`, `focused`, `pwd`, `screen list`, `session list`) work
-there.
+It also searches anywhere XeFM can go, shows lists in a pane, copies
+through XeFM and asks you questions: see [xefmctl](XEFMCTL_FEATURE.md) for
+every command. An [AI agent](AI_AGENT_SESSIONS_FEATURE.md) that XeFM opens
+uses it to work beside you.
 
 ## The `TERMINAL` setting
 
@@ -162,6 +148,8 @@ that still sets it. To open your terminal application from XeFM, add a
 
 ## See also
 
+- [xefmctl](XEFMCTL_FEATURE.md): every command a shell XeFM started can send it
+- [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md): an AI agent as a terminal session
 - [External Programs](EXTERNAL_PROGRAMS_FEATURE.md): `PROGRAMS` and `'terminal': True`
 - [File Associations](FILE_ASSOCIATIONS_FEATURE.md): commands per file type
 - [User Guide: Subshell](XEFM_USER_GUIDE.md#subshell): the prompt marker and `SUBSHELL`

@@ -185,8 +185,10 @@ def render_template() -> str:
 
 def main(argv: list[str]) -> int:
     sys.path.insert(0, str(ROOT))
+    from xefm import remote_commands
     outputs = {REFERENCES / "actions.md": render(),
-               REFERENCES / "config-template.md": render_template()}
+               REFERENCES / "config-template.md": render_template(),
+               REFERENCES / "xefmctl.md": remote_commands.reference_markdown()}
     if "--check" in argv:
         stale = [p for p, text in outputs.items()
                  if not p.exists() or p.read_text(encoding="utf-8") != text]

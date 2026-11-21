@@ -3,7 +3,7 @@
 English \| [日本語](AGENT_SKILL_FEATURE.ja.md)
 
 XeFM provides an [Agent Skills](https://agentskills.io) skill, **`xefm`**, that
-teaches an AI agent to work with XeFM for you. It covers two things:
+teaches an AI agent to work with XeFM for you. It covers three things:
 
 - **Editing your configuration**, `~/.xefm/config.py`: key bindings and the
   keymap preset, your editor and diff tool, favorites, file associations,
@@ -14,8 +14,18 @@ teaches an AI agent to work with XeFM for you. It covers two things:
   is `xefm ext check`, which confirms the package meets every extension
   requirement.
 
-The skill is a folder with a `SKILL.md` file and two reference files, so any
-agent that reads Agent Skills can use it.
+- **Working beside you in XeFM**: in a terminal session XeFM started, the
+  agent reads what you are looking at and works through
+  [`xefmctl`](XEFMCTL_FEATURE.md) - searching, showing you results, asking
+  before it changes anything.
+
+The skill is a folder with a `SKILL.md` file and a few reference files, so
+any agent that reads Agent Skills can use it.
+
+An agent XeFM opens itself (**Tools → Open AI Agent…**) is handed the skill
+when it starts, and needs nothing installed: see
+[AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md). This page is for an agent
+you run on your own.
 
 ## The quickest way: let your agent install it
 

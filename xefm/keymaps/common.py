@@ -278,6 +278,9 @@ def bindings() -> dict:
         # terminal over and has none. The desktop's Ctrl-` is set below.
         'screens': [],
         'terminal.screens': [],
+        # AI agent sessions (AGENTS, #880). Unbound: Tools > Open AI Agent.
+        'open_agent': [],
+        'ask_agent': [],
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to

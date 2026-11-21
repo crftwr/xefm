@@ -19,7 +19,8 @@ English \| [日本語](CUSTOMIZATION_FEATURE.ja.md)
 > Preview: `EVENT_HOOKS`, `MENU_ITEMS`, `IMAGE_DECODERS`, `LEXERS`,
 > `ATTRIBUTES`, `LAYOUTS`, `DEFAULT_LAYOUT`, `LAYOUT_EXTRAS`, `entry.attr`, `Cell`, the
 > prompts (`ctx.input` / `choose` / `confirm`), `ctx.run_task`,
-> `ctx.show_markdown`, `ctx.copy_text`, `ctx.diff`, `ctx.actions` and `pane.open_list`. A config that
+> `ctx.show_markdown`, `ctx.copy_text`, `ctx.diff`, `ctx.view`, `ctx.find_files`,
+> `ctx.find_in_files`, `ctx.actions` and `pane.open_list`. A config that
 > uses a Preview table gets one line in the log pane saying so, and the first
 > call to a Preview function logs one line naming it.
 
@@ -279,6 +280,9 @@ summary with no further page.
 | `ctx.show_markdown(title, source)` | (Preview) show Markdown in a scrollable dialog, with a Copy button on each code block; `on_close=` is called once it has closed — see below |
 | `ctx.copy_text(text)` | (Preview) put text on the clipboard |
 | `ctx.diff(left, right)` | (Preview) compare two files as **Select → Compare Selected Files…** does, without selecting them; either may be on SSH, S3, in an archive or in a virtual folder, and `left_title=` / `right_title=` name the sides; `on_close=` is called once the comparison has closed |
+| `ctx.view(path)` | (Preview) open `path` in the built-in viewer `view_file` would use; `line=` scrolls a text file to that line. A local path or a URI |
+| `ctx.find_files(root, pattern)` | (Preview) the files below `root` whose names match, found as `find_files` finds them, on any storage; a generator, so run it in `ctx.run_task`. `case=`, `recursive=`, `cancel=` (a `threading.Event`) |
+| `ctx.find_in_files(root, pattern)` | (Preview) the matching lines below `root`, as `{'path', 'line', 'text'}`, found as `find_in_files` finds them; a generator like `find_files`. `case=`, `word=`, `regex=`, `recursive=`, `cancel=` |
 | `ctx.run_task(title, work, on_done=fn)` | (Preview) run slow work in the background, with a progress dialog — see below |
 | `ctx.input(prompt, default, on_accept=fn)` | (Preview) ask for a line of text; `complete='path'` (or `'directory'`) adds Tab completion of paths, as Jump to Path has — relative to the active pane |
 | `ctx.choose(title, items, on_result=fn)` | (Preview) pick from a list (index, or `None`); `type='filter'` for a searchable one |
@@ -295,7 +299,7 @@ summary with no further page.
 | `ctx.screens()`, `ctx.current_screen` | (Preview) the screens the switcher switches between, and the one on now — see below |
 | `ctx.terminal_sessions()` | (Preview) the terminal sessions there are |
 | `ctx.action_names()` | every name `invoke()` accepts |
-| `ctx.actions()` | (Preview) the same actions, each with its `name`, `description`, `aliases` (names it used to have) and `keys` (bound right now, after your `KEY_BINDINGS`) |
+| `ctx.actions()` | (Preview) the same actions, each with its `name`, `description`, `details` (what the palette's help page says beyond that line), `aliases` (names it used to have) and `keys` (bound right now, after your `KEY_BINDINGS`) |
 
 And each pane:
 

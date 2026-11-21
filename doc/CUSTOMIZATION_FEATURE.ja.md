@@ -6,7 +6,7 @@
 >
 > 安定版：`ACTIONS`、`SORT_KEYS`、`FILTERS`、`PATH_SCHEMES`（組み込みのスキームの置き換えを除く）、関数に渡されるペインとエントリ、`ctx.pane` / `other` / `left` / `right`、`ctx.invoke`、`ctx.run_program`、`ctx.message`、`ctx.action_names`、そして `PROGRAMS` 用の `xefm_tool`、`xefm_python`、`is_desktop_mode`。
 >
-> プレビュー：`EVENT_HOOKS`、`MENU_ITEMS`、`IMAGE_DECODERS`、`LEXERS`、`ATTRIBUTES`、`LAYOUTS`、`DEFAULT_LAYOUT`、`LAYOUT_EXTRAS`、`entry.attr`、`Cell`、プロンプト（`ctx.input` / `choose` / `confirm`）、`ctx.run_task`、`ctx.show_markdown`、`ctx.copy_text`、`ctx.diff`、`ctx.actions`、`pane.open_list`。プレビューのテーブルを使う設定では、そのことを伝える 1 行がログペインに表示されます。また、プレビューの関数を初めて呼び出すと、その名前を示す 1 行がログに出ます。
+> プレビュー：`EVENT_HOOKS`、`MENU_ITEMS`、`IMAGE_DECODERS`、`LEXERS`、`ATTRIBUTES`、`LAYOUTS`、`DEFAULT_LAYOUT`、`LAYOUT_EXTRAS`、`entry.attr`、`Cell`、プロンプト（`ctx.input` / `choose` / `confirm`）、`ctx.run_task`、`ctx.show_markdown`、`ctx.copy_text`、`ctx.diff`、`ctx.view`、`ctx.find_files`、`ctx.find_in_files`、`ctx.actions`、`pane.open_list`。プレビューのテーブルを使う設定では、そのことを伝える 1 行がログペインに表示されます。また、プレビューの関数を初めて呼び出すと、その名前を示す 1 行がログに出ます。
 
 `~/.xefm/config.py` は XeFM が起動時に実行する本物の Python なので、以前からロジックを書くことができました。`if sys.platform == 'win32':` のブロック、計算で求めたパス、リスト内包表記などです。この機能はその一歩先を行きます。設定の中で**関数**を定義し、キーに割り当て、何かが起きたときに実行できます。
 
@@ -201,6 +201,9 @@ ACTIONS = {
 | `ctx.show_markdown(title, source)` | （プレビュー）Markdown をスクロールできるダイアログに表示し、各コードブロックに Copy ボタンを付ける。`on_close=` はダイアログが閉じたあとに呼ばれる — 後述 |
 | `ctx.copy_text(text)` | （プレビュー）テキストをクリップボードに置く |
 | `ctx.diff(left, right)` | （プレビュー）**Select → Compare Selected Files…** と同じように 2 つのファイルを比べる。選択は不要。どちらも SSH、S3、アーカイブ、仮想フォルダの中のファイルでよく、`left_title=` / `right_title=` で左右の見出しを付けられる。`on_close=` は比較が閉じたあとに呼ばれる |
+| `ctx.view(path)` | （プレビュー）`view_file` が使う内蔵ビューアーで `path` を開く。`line=` でテキストファイルをその行までスクロールする。ローカルのパスでも URI でもよい |
+| `ctx.find_files(root, pattern)` | （プレビュー）`root` の下で名前が一致するファイルを、`find_files` と同じ方法で、どのストレージでも探す。ジェネレーターなので `ctx.run_task` の中で回す。`case=`、`recursive=`、`cancel=`（`threading.Event`） |
+| `ctx.find_in_files(root, pattern)` | （プレビュー）`root` の下で一致する行を、`find_in_files` と同じ方法で `{'path', 'line', 'text'}` として返す。`find_files` と同じくジェネレーター。`case=`、`word=`、`regex=`、`recursive=`、`cancel=` |
 | `ctx.run_task(title, work, on_done=fn)` | （プレビュー）時間のかかる処理を進捗ダイアログ付きでバックグラウンドで実行 — 後述 |
 | `ctx.input(prompt, default, on_accept=fn)` | （プレビュー）1 行のテキストを入力してもらう。`complete='path'`（または `'directory'`）を付けると、Jump to Path と同じくパスを Tab で補完できる — 相対パスはアクティブなペインが起点 |
 | `ctx.choose(title, items, on_result=fn)` | （プレビュー）リストから選んでもらう（インデックス、または `None`）。`type='filter'` で検索できるリストになる |
@@ -217,7 +220,7 @@ ACTIONS = {
 | `ctx.screens()`、`ctx.current_screen` | （Preview）切り替えの対象になる画面と、今の画面。下記を参照 |
 | `ctx.terminal_sessions()` | （Preview）今あるターミナルセッション |
 | `ctx.action_names()` | `invoke()` が受け付けるすべての名前 |
-| `ctx.actions()` | （プレビュー）同じアクションを、それぞれの `name`、`description`、`aliases`（以前の名前）、`keys`（`KEY_BINDINGS` を反映した、いま割り当てられているキー）付きで返す |
+| `ctx.actions()` | （プレビュー）同じアクションを、それぞれの `name`、`description`、`details`（パレットのヘルプページがその 1 行のほかに示す説明）、`aliases`（以前の名前）、`keys`（`KEY_BINDINGS` を反映した、いま割り当てられているキー）付きで返す |
 
 各ペインには次のものがあります。
 

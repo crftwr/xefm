@@ -205,7 +205,7 @@ refuse the remove key.
 which the zsh and bash integration sends at every prompt) as a path -
 `host:/path` for another machine - else `cwd`, where the session started.
 `TerminalSession.cwd` stays the start directory; `.directory` is the
-current one, and `xefmctl session list` prints it.
+current one, and `xefmctl terminal-session list` prints it.
 
 A second press of the key as "accept" (flip in key, key) is left for later.
 
@@ -235,7 +235,7 @@ with its wrappers (`external_terminal.py`); a config that still sets
 
 Agent presets (#880); what a late `on_done` may change on screen (#946).
 Panes do not follow the shell's `cd` (decided in #900): OSC 7 is emitted for
-libghostty but nothing reads it; `xefmctl cd` moves a pane explicitly.
+libghostty but nothing reads it; `xefmctl pane cd` moves a pane explicitly.
 
 ## Tests
 
@@ -243,7 +243,7 @@ libghostty but nothing reads it; `xefmctl cd` moves a pane explicitly.
 exit, program sessions' `on_done`, quit only when busy, terminal mode's
 hand-over and missing actions, no libghostty; screens (closing back to the
 previous one, hidden start, a dialog closing out of view, row labels), the
-`ctx` API in both modes, `xefmctl screen` / `session` / `view`, the terminal
+`ctx` API in both modes, `xefmctl screen` / `terminal-session` / `view`, the terminal
 context - against a PuiKit Panel on the memory backend and a stand-in view.
 `test/test_terminal_transition.py`: the entrance, a viewer zooming away with
 the panes and staying, and the fade-out close. `test/test_shell_integration.py`: `apply` per shell, a real zsh in a

@@ -253,6 +253,17 @@ PROGRAMS = [
 
 各エントリは `name`、`command`（リストまたは文字列）、省略可能な `options`（`vim` や `less` のような全画面のプログラムには `{'terminal': True}` など）を持ちます。プログラムは **Tools → External Programs…**（`programs`）で開きます。[外部プログラム](EXTERNAL_PROGRAMS_FEATURE.ja.md)を参照してください。
 
+### AI エージェント
+
+```python
+AGENTS = [
+    {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
+]
+AGENT_RULES = ""   # your own rules for every agent session
+```
+
+**Tools → Open AI Agent…**（`open_agent`）と **Ask AI Agent…**（`ask_agent`）が起動するエージェントと、それにできることを設定します。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
+
 ### ファイルの関連付け
 
 ```python

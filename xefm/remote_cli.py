@@ -1,60 +1,60 @@
-"""``xefmctl``: talking to the XeFM that started this shell (discussion #900).
+"""``xefmctl``: talking to the XeFM that started this shell (#900, #951, #952).
 
-``xefmctl selected``, ``xefmctl cd .`` and the rest. A shell XeFM starts - a
-terminal session, the subshell, a terminal program, a background program -
-gets three variables:
+A shell XeFM starts - a terminal session, the subshell, a terminal program,
+a background program, an AI agent's session - gets four variables:
 
 - ``XEFM_SOCKET``: the address XeFM listens on (a Unix socket, or a named
   pipe on Windows);
-- ``XEFM_TOKEN``: the key that connection authenticates with;
-- ``XEFM_SESSION``: which session the request comes from.
+- ``XEFM_TOKEN``: the key the connection authenticates with;
+- ``XEFM_SESSION_KEY``: this shell's own key, which tells XeFM which
+  session asks and what that session may do (an agent's session has its
+  writes confirmed in XeFM);
+- ``XEFM_SESSION``: the session's id, for people and scripts to read.
 
-Each command asks XeFM for the state *at the moment it runs*, unlike the
-``XEFM_*_SELECTED`` snapshot taken when the shell started, which goes stale
-in a shell that keeps running.
+Each command asks XeFM for the state *at the moment it runs*. The commands
+themselves are described in :mod:`xefm.remote_commands`, one table that the
+parser, ``xefmctl help`` and the skill's reference are all made from.
 
-This module is imported by nothing heavy and imports only the standard
-library: the ``xefmctl`` shim XeFM puts first on ``PATH`` runs it as a
-script, so that ``$(xefmctl selected)`` returns at once, without loading the
-file manager. It is named apart from ``xefm``, the command that starts XeFM.
+This module imports only the standard library: the ``xefmctl`` shim XeFM puts
+first on ``PATH`` runs it as a script, with ``-I``, so that
+``$(xefmctl pane selected)`` returns at once, without loading the file
+manager. The command table is loaded from the file next to this one.
 
 Every message is ASCII (CLAUDE.md, "Text written to stdout/stderr").
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import sys
 
-#: The commands this module answers. A command about a pane is one verb;
-#: one about anything else is a noun and a verb (#952).
-COMMANDS = ("selected", "focused", "pwd", "cd", "view", "screen", "session")
-
-#: The verbs of each noun command.
-VERBS = {"screen": ("list", "switch"), "session": ("list",)}
-
-PANES = ("this", "other", "left", "right")
-
-USAGE = """\
-usage: xefmctl selected [--pane PANE] [-0]   the selected items' full paths
-       xefmctl focused  [--pane PANE]        the item under the cursor
-       xefmctl pwd      [--pane PANE]        the pane's directory
-       xefmctl cd       [PATH] [--pane PANE] point the pane at PATH (default: .)
-       xefmctl view     FILE                 open FILE in XeFM's viewer, on the
-                                             file manager's screen
-       xefmctl screen list                   the screens, the one on now first
-       xefmctl screen switch ID              show screen ID (files, or a session's)
-       xefmctl session list                  XeFM's terminal sessions
-
-PANE is this (the active pane, the default), other, left or right.
-These work in a shell XeFM started and act on that XeFM's file manager;
-they ask it for its state now."""
-
-#: Seconds to wait for XeFM's answer. A modal dialog does not hold a request
-#: up (they run between frames), but a file manager busy for longer than this
-#: is better reported than waited on forever.
+#: Seconds to wait for XeFM's answer to a command that neither streams nor
+#: waits for the user. A modal dialog does not hold a request up (they run
+#: between frames), but a file manager busy for longer than this is better
+#: reported than waited on forever.
 TIMEOUT = 10.0
+
+
+def _table():
+    """:mod:`xefm.remote_commands`, loaded by path (``-I`` keeps this file's
+    directory off ``sys.path``)."""
+    name = "xefm_remote_commands"
+    module = sys.modules.get(name)
+    if module is not None:
+        return module
+    try:
+        from xefm import remote_commands  # imported within XeFM, or by tests
+        return remote_commands
+    except ImportError:
+        pass
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "remote_commands.py")
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclasses look their module up
+    spec.loader.exec_module(module)
+    return module
 
 
 class RemoteError(Exception):
@@ -66,59 +66,120 @@ class RemoteError(Exception):
         self.code = code
 
 
-def _parse(command: str, args: list[str]) -> dict:
-    request: dict = {"cmd": command, "pane": "this"}
-    rest: list[str] = []
-    it = iter(args)
-    for arg in it:
-        if arg in ("-h", "--help"):
-            raise RemoteError(USAGE, 0)
-        if arg == "--pane":
-            pane = next(it, None)
-            if pane not in PANES:
-                raise RemoteError(f"xefmctl {command}: --pane takes one of "
-                                  f"{', '.join(PANES)}", 2)
-            request["pane"] = pane
-        elif arg.startswith("--pane="):
-            pane = arg.split("=", 1)[1]
-            if pane not in PANES:
-                raise RemoteError(f"xefmctl {command}: --pane takes one of "
-                                  f"{', '.join(PANES)}", 2)
-            request["pane"] = pane
-        elif arg == "-0" and command == "selected":
-            request["nul"] = True
-        elif arg.startswith("-") and arg != "-":
-            raise RemoteError(f"xefmctl {command}: unknown option {arg}\n\n{USAGE}", 2)
+def _abs(value: str) -> str:
+    """A path as XeFM should read it: relative to this shell's directory, not
+    to the pane's (``xefmctl pane cd .`` brings the pane to where the shell
+    is); a URL as written."""
+    if value == "-" or "://" in value:
+        return value
+    return os.path.abspath(os.path.expanduser(value))
+
+
+def parse(argv: list[str], stdin=None) -> dict:
+    """``argv`` (after ``xefmctl``) as a request: ``{"cmd": "pane cd", "args":
+    {...}, "opts": {...}, "json": bool}``. Raises :class:`RemoteError` with
+    exit status 2 for a usage mistake, 0 for ``--help``."""
+    T = _table()
+    cmd, used = T.find(argv)
+    if cmd is None:
+        verbs = T.nouns().get(argv[0]) if argv else None
+        if verbs:
+            raise RemoteError(f"xefmctl {argv[0]}: which one? {', '.join(verbs)}", 2)
+        what = f"unknown command {argv[0]!r}" if argv else "which command?"
+        raise RemoteError(f"xefmctl: {what}\n\n{T.usage()}", 2)
+    rest = argv[used:]
+    opts: dict = {}
+    positional: list[str] = []
+    want_json = False
+    it = iter(rest)
+    for token in it:
+        if token in ("-h", "--help"):
+            raise RemoteError(T.command_help(cmd), 0)
+        if token == "--json":
+            want_json = True
+            continue
+        if token.startswith("-") and token != "-":
+            name, eq, value = token.partition("=")
+            opt = cmd.opt(name)
+            if opt is None:
+                raise RemoteError(f"xefmctl {cmd.name}: unknown option {name}\n\n"
+                                  f"{T.synopsis(cmd)}", 2)
+            if opt.value:
+                if not eq:
+                    value = next(it, None)
+                    if value is None:
+                        raise RemoteError(f"xefmctl {cmd.name}: {name} takes {opt.value}", 2)
+                if opt.choices and value not in opt.choices:
+                    raise RemoteError(f"xefmctl {cmd.name}: {name} takes one of "
+                                      f"{', '.join(opt.choices)}", 2)
+                opts[opt.name.lstrip("-")] = _abs(value) if opt.path else value
+            else:
+                if eq:
+                    raise RemoteError(f"xefmctl {cmd.name}: {name} takes no value", 2)
+                opts[opt.name.lstrip("-")] = True
+            continue
+        positional.append(token)
+    args = _bind(cmd, positional, stdin)
+    if cmd.name == "pane cd" and not args.get("path"):
+        args["path"] = _abs(".")  # the pane comes to where the shell is
+    for key in ("limit", "depth", "line", "max-bytes"):
+        if key in opts:
+            try:
+                opts[key] = int(opts[key])
+            except ValueError:
+                raise RemoteError(f"xefmctl {cmd.name}: --{key} takes a number", 2) from None
+    return {"cmd": cmd.name, "args": args, "opts": opts, "json": want_json}
+
+
+def _bind(cmd, positional: list[str], stdin) -> dict:
+    """Give the positional words to the command's arguments in order."""
+    args: dict = {}
+    pending = list(positional)
+    for i, a in enumerate(cmd.args):
+        later_required = sum(1 for b in cmd.args[i + 1:] if b.nargs in ("1", "+"))
+        if a.nargs == "1":
+            if not pending:
+                raise RemoteError(f"xefmctl {cmd.name}: {a.name.upper()} is missing\n\n"
+                                  f"{_table().synopsis(cmd)}", 2)
+            values = [pending.pop(0)]
+        elif a.nargs == "?":
+            values = [pending.pop(0)] if len(pending) > later_required else []
         else:
-            rest.append(arg)
-    if command in VERBS:
-        if not rest or rest[0] not in VERBS[command]:
-            raise RemoteError(f"xefmctl {command}: which one? "
-                              f"{' or '.join(VERBS[command])}\n\n{USAGE}", 2)
-        request["verb"] = rest.pop(0)
-        if (command, request["verb"]) == ("screen", "switch"):
-            if len(rest) != 1:
-                raise RemoteError("xefmctl screen switch: which screen? "
-                                  "(an id from xefmctl screen list)", 2)
-            request["id"] = rest.pop(0)
-        if rest:
-            raise RemoteError(f"xefmctl {command} {request['verb']}: "
-                              f"unexpected argument {rest[0]}", 2)
-        return request
-    if command in ("cd", "view"):
-        if len(rest) > 1:
-            raise RemoteError(f"xefmctl {command}: one path only", 2)
-        if command == "view" and not rest:
-            raise RemoteError("xefmctl view: which file?", 2)
-        target = rest[0] if rest else "."
-        # Relative to this shell's directory, not to the pane's: "xefmctl cd ."
-        # brings the pane to where the shell is.
-        if "://" not in target:
-            target = os.path.abspath(os.path.expanduser(target))
-        request["path"] = target
-    elif rest:
-        raise RemoteError(f"xefmctl {command}: unexpected argument {rest[0]}", 2)
-    return request
+            take = max(0, len(pending) - later_required)
+            values, pending = pending[:take], pending[take:]
+            if a.nargs == "+" and not values:
+                raise RemoteError(f"xefmctl {cmd.name}: {a.name.upper()} is missing\n\n"
+                                  f"{_table().synopsis(cmd)}", 2)
+        if a.stdin and values == ["-"]:
+            stream = stdin if stdin is not None else sys.stdin
+            text = stream.read()
+            if a.nargs in ("*", "+"):
+                values = [line for line in text.splitlines() if line.strip()]
+                values = [_path_of(line) for line in values]
+            else:
+                args[a.name + "_text"] = text
+                values = ["-"]
+        if a.path:
+            values = [_abs(v) for v in values]
+        args[a.name] = values[0] if a.nargs in ("1", "?") and values else (
+            None if a.nargs in ("1", "?") else values)
+    if pending:
+        raise RemoteError(f"xefmctl {cmd.name}: unexpected argument {pending[0]}", 2)
+    return args
+
+
+def _path_of(line: str) -> str:
+    """A line of standard input as a path: a JSON object from another
+    ``xefmctl ... --json`` gives its ``path``; anything else is the path."""
+    line = line.strip()
+    if line.startswith("{"):
+        try:
+            item = json.loads(line)
+            if isinstance(item, dict) and item.get("path"):
+                return str(item["path"])
+        except ValueError:
+            pass
+    return line
 
 
 def _connect():
@@ -141,41 +202,113 @@ def _connect():
         raise RemoteError(f"xefmctl: XeFM refused the connection: {exc}", 3) from None
 
 
-def request(req: dict) -> dict:
-    """Send one request to XeFM and return its answer."""
-    req = dict(req, session=os.environ.get("XEFM_SESSION", ""))
+def exchange(req: dict, on_items=None) -> dict:
+    """Send one request; hand every chunk of items to ``on_items`` as it
+    arrives; return the last answer. A command that streams or waits for the
+    user is waited on for as long as it takes (Ctrl-C stops it)."""
+    T = _table()
+    cmd = T.find(req["cmd"].split())[0]
+    # Waited on for as long as it takes: a search, a question to the user,
+    # and anything XeFM may first ask the user about (a write from an
+    # agent's session, its first read outside the local disk).
+    patient = bool(cmd and (cmd.stream or cmd.effect in (T.WRITE, T.ASK)
+                            or cmd.name in ("read", "fetch")
+                            or (cmd.wait and req["opts"].get("wait"))))
+    req = dict(req, key=os.environ.get("XEFM_SESSION_KEY", ""),
+               session=os.environ.get("XEFM_SESSION", ""))
     conn = _connect()
     try:
         conn.send_bytes(json.dumps(req).encode("utf-8"))
-        if not conn.poll(TIMEOUT):
-            raise RemoteError("xefmctl: XeFM did not answer in time", 4)
-        answer = json.loads(conn.recv_bytes().decode("utf-8"))
+        while True:
+            if patient:
+                while not conn.poll(0.5):
+                    pass
+            elif not conn.poll(TIMEOUT):
+                raise RemoteError("xefmctl: XeFM did not answer in time", 4)
+            answer = json.loads(conn.recv_bytes().decode("utf-8"))
+            if not answer.get("ok"):
+                raise RemoteError(f"xefmctl {req['cmd']}: {answer.get('error', 'failed')}",
+                                  int(answer.get("code", 1)))
+            if on_items is not None and answer.get("items"):
+                on_items(answer["items"])
+            if not answer.get("more"):
+                return answer
     except (EOFError, OSError) as exc:
         raise RemoteError(f"xefmctl: the connection to XeFM broke: {exc}", 3) from None
     finally:
         conn.close()
-    if not answer.get("ok"):
-        raise RemoteError(f"xefmctl {req['cmd']}: {answer.get('error', 'failed')}",
-                          int(answer.get("code", 1)))
-    return answer
 
 
-def run(command: str, args: list[str], out=None) -> int:
-    """Run ``xefmctl <command> <args>``; return the exit status."""
-    out = out if out is not None else sys.stdout
+def format_item(cmd, item, as_json: bool) -> str | None:
+    """One answered item as a line of output, or None for nothing."""
+    if as_json:
+        return json.dumps(item, ensure_ascii=False)
+    if isinstance(item, str):
+        return item
+    if not cmd.text:
+        return None
     try:
-        answer = request(_parse(command, args))
+        return cmd.text.format(**item)
+    except (KeyError, IndexError, ValueError):
+        return item.get("path") or json.dumps(item, ensure_ascii=False)
+
+
+def run(argv: list[str], out=None, stdin=None) -> int:
+    """Run ``xefmctl <argv>``; return the exit status."""
+    out = out if out is not None else sys.stdout
+    T = _table()
+    try:
+        req = parse(argv, stdin)
     except RemoteError as exc:
-        stream = out if exc.code == 0 else sys.stderr
-        print(str(exc), file=stream)
+        print(str(exc), file=out if exc.code == 0 else sys.stderr)
         return exc.code
-    lines = answer.get("lines") or []
-    if lines:
-        if answer.get("nul"):
-            out.write("".join(line + "\0" for line in lines))
-        else:
-            out.write("".join(line + "\n" for line in lines))
+    cmd = T.find(req["cmd"].split())[0]
+    if cmd.local:
+        return _help(req, out)
+    end = "\0" if req["opts"].get("0") else "\n"
+
+    def emit(items) -> None:
+        for item in items:
+            line = format_item(cmd, item, req["json"])
+            if line is not None:
+                out.write(line + end)
         out.flush()
+
+    try:
+        answer = exchange(req, emit)
+    except RemoteError as exc:
+        print(str(exc), file=sys.stderr)
+        return exc.code
+    except KeyboardInterrupt:
+        return 130
+    if answer.get("note"):
+        print(answer["note"], file=sys.stderr)
+    return int(answer.get("status", 0))
+
+
+def _help(req: dict, out) -> int:
+    T = _table()
+    words = req["args"].get("command") or []
+    if req["json"]:
+        data = T.describe()
+        if words:
+            name = " ".join(words)
+            data = [d for d in data if d["command"] == name or d["command"].startswith(name + " ")]
+        out.write(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
+        return 0
+    if not words:
+        out.write(T.usage() + "\n")
+        return 0
+    cmd, used = T.find(words)
+    if cmd is None or used != len(words):
+        verbs = T.nouns().get(words[0])
+        if verbs and len(words) == 1:
+            out.write("\n\n".join(T.command_help(T.find([words[0], v])[0])
+                                  for v in verbs) + "\n")
+            return 0
+        print(f"xefmctl help: no command {' '.join(words)!r}", file=sys.stderr)
+        return 2
+    out.write(T.command_help(cmd) + "\n")
     return 0
 
 
@@ -188,13 +321,10 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
         except (AttributeError, ValueError):
             pass
-    if not args or args[0] in ("-h", "--help", "help"):
-        print(USAGE)
+    if not args or args[0] in ("-h", "--help"):
+        print(_table().usage())
         return 0
-    if args[0] in COMMANDS:
-        return run(args[0], args[1:])
-    print(f"xefmctl: unknown command {args[0]!r}\n\n{USAGE}", file=sys.stderr)
-    return 2
+    return run(args)
 
 
 if __name__ == "__main__":

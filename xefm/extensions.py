@@ -209,7 +209,7 @@ _DATA_KINDS = {"themes", "filters", "lexers", "menus", "layouts", "layout_extras
 _KNOWN_SECTIONS = {"extension", "contributes", "requires", "settings"}
 _KNOWN_EXTENSION_KEYS = {"id", "version", "api_version", "min_xefm", "name",
                          "description", "backends", "platforms", "homepage",
-                         "updates"}
+                         "updates", "agent_guide"}
 #: The keys of an ``[contributes.actions]`` entry's table form, and of
 #: ``[settings]``.
 ACTION_ENTRY_KEYS = ("entry", "description")
@@ -275,6 +275,13 @@ class Manifest:
         """``[extension] updates``: where newer versions are tagged, or ""."""
         value = self.data.get("extension", {}).get("updates")
         return value if isinstance(value, str) else ""
+
+    @property
+    def agent_guide(self) -> Optional[Path]:
+        """``[extension] agent_guide``: the package's guide for AI agents (a
+        Markdown file in the package), or None."""
+        value = self.data.get("extension", {}).get("agent_guide")
+        return self.root / value if isinstance(value, str) and value else None
 
     @property
     def contributes(self) -> dict:
@@ -529,6 +536,14 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
                 "'github:owner/repo/path/to/package' for a package in a "
                 "subdirectory - with no @ref: newer versions are found from the "
                 "repository's tags")
+    guide = ext.get("agent_guide")
+    if guide is not None:
+        if not isinstance(guide, str) or not guide or Path(guide).is_absolute() \
+                or ".." in Path(guide).parts:
+            err("extension.agent_guide", "must be the path of a Markdown file in the "
+                "package, such as 'AGENT.md'")
+        elif not (manifest.root / guide).is_file():
+            err("extension.agent_guide", f"{guide} is not in the package")
     ext_id = ext.get("id")
     if not isinstance(ext_id, str) or not _ID_RE.match(ext_id):
         err("extension.id", "required: lowercase letters, digits, '.', '_' or "
@@ -594,6 +609,12 @@ def check_manifest(manifest: Manifest, *, others: Iterable[Manifest] = (),
             elif "." not in name:
                 warn(where, f"name it '<extension>.{name}' so it cannot collide "
                      "with another extension's or a future built-in action")
+            value = actions.get(name)
+            if not (isinstance(value, dict) and value.get("description")) \
+                    and not _has_docstring(manifest.root, value):
+                warn(where, "says nothing about what it does: give it a description "
+                     "(or a docstring) - the command palette and AI agents "
+                     "(xefmctl action show) learn the action from it")
 
     for where, ref in manifest.references():
         kind = where.split(".")[1] if where.startswith("contributes.") else ""
@@ -848,6 +869,30 @@ def _marked_members(cls_name: str, marked: Marked) -> dict[str, str]:
     return found
 
 
+def _has_docstring(root: Path, value: Any) -> bool:
+    """Whether an action's ``module:function`` has a docstring, read from
+    the source without running it. True when it cannot be told."""
+    ref = value.get("entry") if isinstance(value, dict) else value
+    if not isinstance(ref, str) or ":" not in ref:
+        return True
+    module, _, func = ref.partition(":")
+    base = root.joinpath(*module.split("."))
+    for file in (base.with_suffix(".py"), base / "__init__.py"):
+        if file.is_file():
+            break
+    else:
+        return True
+    import ast
+    try:
+        tree = ast.parse(file.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return True
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
+            return bool(ast.get_docstring(node))
+    return True
+
+
 def _marked_sections(manifest: Manifest, marked: Marked) -> list[tuple[str, str]]:
     """``(section, note)`` for the parts of the manifest the package uses that
     ``marked`` reports, each named the way a finding's ``where`` names it:
@@ -857,8 +902,9 @@ def _marked_sections(manifest: Manifest, marked: Marked) -> list[tuple[str, str]
                   for kind in data.get("contributes", {}) or {}]
     candidates += [(section, f"manifest.{section}") for section in ("settings", "requires")
                    if data.get(section) is not None]
-    if "updates" in (data.get("extension") or {}):
-        candidates.append(("extension.updates", "manifest.extension.updates"))
+    for key in ("updates", "agent_guide"):
+        if key in (data.get("extension") or {}):
+            candidates.append((f"extension.{key}", f"manifest.extension.{key}"))
     return [(where, note) for where, name in candidates if (note := marked(name))]
 
 
@@ -2016,6 +2062,7 @@ class ExtensionHandle:
     def __init__(self, manifest: Manifest, layout: Layout, state_manager=None):
         self.id = manifest.id
         self.version = manifest.version
+        self._manifest = manifest
         self._layout = layout
         self._sm = state_manager
 
@@ -2050,6 +2097,14 @@ def handle_for_module(module: str) -> Optional[ExtensionHandle]:
     to, or None — for ``config.py``'s own code, a hand-written module in
     ``~/.xefm/extensions/``, or a package that did not load."""
     return _handles_by_module.get(str(module).partition(".")[0])
+
+
+def package_of(func: Any) -> Optional[Manifest]:
+    """The manifest of the loaded package a contributed callable comes from,
+    or None (a built-in, ``config.py``'s own code)."""
+    module = getattr(func, "__module__", None)
+    handle = handle_for_module(module) if module else None
+    return handle._manifest if handle is not None else None
 
 
 def _in_extension(handle: ExtensionHandle, func: Callable, *,

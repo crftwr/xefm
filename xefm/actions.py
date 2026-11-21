@@ -1180,6 +1180,8 @@ _FILER_ACTIONS = [
     _a("subshell", FILER, "Open a subshell in this directory"),
     _a("screens", COMMON,
        "Switch between the file manager and the terminal sessions"),
+    _a("open_agent", FILER, "Open an AI agent session in this directory"),
+    _a("ask_agent", FILER, "Ask an AI agent about the selection"),
     _a("edit_config", COMMON, "Edit config.py, then reload it"),
     _a("reload_config", COMMON, "Re-read config.py and apply it live"),
     _a("install_extension", FILER,
