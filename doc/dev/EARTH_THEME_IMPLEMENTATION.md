@@ -42,8 +42,8 @@ is the reference; in short:
   offscreen targets. The lens is XeFM's, built from them
   ([BACKGROUND_LENS_SYSTEM.md](BACKGROUND_LENS_SYSTEM.md)): the scene renders
   linear HDR into an RGBA16F target; a 6-level bloom pyramid, an optional
-  streak, and one composite pass tone-map, grade, cap at `Look.level` (0.5 for
-  Earth: no pixel above half white) and mix it over the backdrop by `opacity` ×
+  streak, and one composite pass tone-map, grade, cap at `Look.level` (0.35 for
+  Earth: no pixel above 35 % of white) and mix it over the backdrop by `opacity` ×
   idle fade.
 
 ### Why a separate lens, not `PostEffect`
@@ -60,12 +60,12 @@ meaning there.
 
 ## Scenes: hundreds of them, chosen at random
 
-A scene is a shot (16), a variant of it (12: variant 0 is the shot as
+A scene is a shot (13), a variant of it (12: variant 0 is the shot as
 composed, the others move longitude, latitude, altitude, tilt, sun direction,
 focal length, framing, the limb angle and the roll by fixed amounts hashed from
 the shot and variant; the altitude, tilt and roll ranges are per shot, so the
 low-orbit shots — `leo`, `horizon`, `ocean`, down to about 170 km — can turn the
-horizon any way round) and a lens look (10) — 1,920 in all. The roll turns the
+horizon any way round) and a lens look (10) — 1,560 in all. The roll turns the
 finished picture on the screen, after the sun and the limb framing are placed,
 so a rolled scene is the same lit composition at a new angle. Each 49-second slot (31 s held, an 18 s move) hashes with the seed:
 `h % LENS_COUNT` is the look, which the lens passes pick from the same hash;
@@ -194,35 +194,33 @@ right, pitch toward the horizon the camera tilts to. The one-slot shots'
 `SHOT_YAW`/`SHOT_SPITCH` were converted so each composes exactly as before;
 only a variant's tilt jitter no longer moves its sun.
 
-### Shots that need distance or a long lens
+### No telephoto on the limb
 
-- `eclipse` sits 16 earth radii out. From close in, the edge of the disc you
-  see is already on the night side (the tangent points face the camera, so the
-  sun is `asin(1/dist)` below their horizon) and no ring shows; at 16 radii
-  the sun is under 4° below it and the upper air is lit. A 4.5 lens keeps the
-  disc large.
-- `night` and `limb` are telephoto (2.5 and 5) pointed at the limb
-  (`pitch = asin(1/dist)`), so their tilt and altitude jitter are kept small —
-  a few hundredths of a radian moves the limb across the whole frame. The
-  airglow line is a few pixels only through the long lens; at 1.0 it is
-  sub-pixel. The exaggerated cloud shells (`clouds` 3) fill much of the limb's
-  air in `limb`, which shows as warm bands and, at the very edge, thin streaks.
+There were three more shots: `night` (the dark limb through a 2.5 lens,
+airglow), `limb` (the day limb through a 5 lens from low orbit) and `eclipse`
+(16 earth radii out, a 4.5 lens, the sun behind the disc). They were removed
+on the user's call: watched from far off, the horizon through a long lens shows
+nothing you can name, and it magnifies the simulation's limits — the shell
+clouds, the few-pixel airglow line, the banding in the air — instead of hiding
+them. Two of the three were also all night (below).
 
 ### Day and night on screen
 
-Measured on a Python port of the camera (every pixel classed as day, twilight,
-night or space by the sun's angle where its ray meets the ground; every shot
-gets 1/16 of the time, a two-slot scene half of that per half): seven of the
-sixteen shots showed no sunlit ground at all, 44 % of the time. `dawn`,
-`horizon` and `crescent` were moved: `dawn` now has the terminator crossing
-the disc (sun 18° below the camera's horizon), `horizon` sits just before
-morning with the ground lit toward the horizon (−7°), and `crescent` shows a
-thin lit sliver of ground (−42°). The split is now about 31 % of the time on
-shots that are all day (`day`, `glint`, `ocean`, `limb`, `departure`), 40 %
-mixed, and 28 % on shots with no lit ground (`crescent`, `rise`, `night`,
-`eclipse`, the first half of `sunrise`), which are kept for what the dark
-shows. Twilight — the sun within a few degrees of the horizon — reads as lit
-on screen, warm and grazing, so it counts on the day side here.
+Measured on a Python port of `composition` and `camera` (every pixel classed as
+lit ground, night ground or space by the sun's elevation where its ray meets
+the ground, twilight down to about −6° counting as lit; scenes drawn with
+`scene_at` over 59 seeds × 120 slots, so the two-slot scenes and the variants
+weigh as they do on screen). Earlier, `dawn`, `horizon` and `crescent` had
+already been relit; still, **24 %** of the time showed less than 3 % lit ground
+— `crescent` was a sliver (3 % of the frame), and `rise`, `night`, `eclipse`
+and the first half of `sunrise` none at all.
+
+With the telephoto shots gone and `crescent`'s sun turned further round
+(`SHOT_YAW` 0.803 → 1.3, about half the disc lit), that is **11 %**: `rise`
+and the first half of `sunrise`, both kept for what the dark shows. The mean
+frame is now about 40 % lit ground, 14 % night ground and 46 % space. The
+space is the full-disc shots (`day`, `crescent`, `polar`, the end of
+`departure`) and the black above a low-orbit horizon, left as composed.
 
 ## Everything is a function of `time`
 
@@ -329,10 +327,21 @@ with mips is about 100 MB.
 The scene ignores `ink` — it is physically coloured — and uses `backdrop` as
 what the lens mixes it over. The theme keeps text readable with `opacity` 0.72
 for surfaces, a `drop_shadow`, and the scene's brightness ceiling (`Look.level`
-0.5): whatever the shot and the look, no background pixel is brighter than half
+0.35, lowered from 0.5 on 2026-11-21): whatever the shot and the look, no background pixel is brighter than 35 % of
 white, which a test asserts over the brightest shots and looks. That replaced an
 earlier `opacity` 0.85 / `exposure` 0.85 trim, which still let the glint and the
 night-vision gain through.
+
+## The looks
+
+The Earth looks never narrow the view: every one has `vignette` 0, and none
+uses `letterbox`, `scope`, `curvature` or a strong `distortion` (a fisheye's
+barrel pulls the corners off the frame, which `lens_in_frame` blacks out).
+The picture is behind the panes and should reach every edge of them; those
+`Look` fields stay in `background_lens` for other scenes. The grey `mono` look
+was replaced: a grey Earth reads as the Moon, so the one-colour look is
+`cyanotype` (Prussian blue, highlights a little warm) — monochrome away from
+grey, not toward it. `vivid` (saturation 1.65) takes the place of `fisheye`.
 
 ## Built in, not an extension
 

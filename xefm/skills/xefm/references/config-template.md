@@ -186,15 +186,15 @@ class Config:
     #   #       'animation': 'starfield'                     # the tuned default
     #   #       'animation': {'type': 'rain', 'speed': 1.0, 'opacity': 0.8}
     #   #     'earth' also takes a shot, a lens look, a cloud height, exposure and
-    #   #     brightness (its ceiling, 0..1, default 0.5 — kept dim for the text):
+    #   #     brightness (its ceiling, 0..1, default 0.35 — kept dim for the text):
     #   #       'animation': {'type': 'earth', 'shot': 'rise', 'lens': 'film',
     #   #                     'clouds': 3.0, 'exposure': 0.85}
     #   #       shot: 'auto' (default: a random one per scene) | 'day' | 'dawn' |
     #   #             'crescent' | 'leo' | 'terminator' | 'glint' | 'rise' | 'polar' |
     #   #             'horizon' | 'ocean'
     #   #       lens: 'auto' (default: a random one per scene) | 'clean' |
-    #   #             'aberration' | 'mono' | 'film' | 'anamorphic' | 'flare' |
-    #   #             'fisheye' | 'crt' | 'infrared' | 'night-vision' — a list to
+    #   #             'aberration' | 'cyanotype' | 'vivid' | 'film' | 'anamorphic' |
+    #   #             'flare' | 'crt' | 'infrared' | 'night-vision' — a list to
     #   #             pick among, or {'preset': 'film', 'grain': 0} to tune one
     #   #     'blocks' takes leaks, leak_strength, motion, camera (each 1 as tuned),
     #   #     exposure and brightness; 'crystal' takes focus (1 as tuned, 0 = all

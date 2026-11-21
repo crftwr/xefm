@@ -90,7 +90,7 @@ class Options(unittest.TestCase):
         self.assertEqual(float(consts["EXPOSURE"]), earth.DEFAULT_EXPOSURE)
 
     def test_brightness_is_the_ceiling_of_every_look(self):
-        self.assertEqual({l.level for l in earth.earth_looks()}, {0.5})
+        self.assertEqual({l.level for l in earth.earth_looks()}, {earth.DEFAULT_BRIGHTNESS})
         self.assertEqual(earth.earth_looks("film", brightness=0.8)[0].level, 0.8)
         self.assertEqual(earth.earth_looks("film", brightness=7)[0].level, 1.0)
 
@@ -289,14 +289,14 @@ class Rendering(unittest.TestCase):
         self.assertLessEqual(self._brightest(frame(0.5)), 2)
         self.assertEqual(bytes(frame(1.0)), bytes(self._frame(fields, 5.0, seed=7.0)))
 
-    def test_no_pixel_passes_half_white(self):
+    def test_no_pixel_passes_the_ceiling(self):
         # Whatever the shot and the look — the sunlit disc, the glint, the
-        # night-vision gain — file names never sit on more than half white.
+        # night-vision gain — file names never sit on more than 35% of white.
         for shot in ("day", "glint", "rise"):
             for lens in ("clean", "night-vision", "flare"):
                 px = self._frame(earth.earth_shader(shot=shot, lens=lens))
                 brightest = max(max(px[i], px[i + 1], px[i + 2]) for i in range(0, len(px), 4))
-                self.assertLessEqual(brightest, 128, (shot, lens))
+                self.assertLessEqual(brightest, 90, (shot, lens))
 
     def test_exposure_scales_the_picture(self):
         dim = self._frame(earth.earth_shader(shot="day", exposure=0.3))
