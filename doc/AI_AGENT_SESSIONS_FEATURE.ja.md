@@ -13,7 +13,7 @@ XeFM は、ファイルマネージャーの隣で AI コーディングエー�
 
 ## 必要なもの
 
-エージェントのコマンドラインプログラムです。インストールとサインインは、それぞれ自分で済ませておきます。XeFM はエディターを起動するのと同じようにそれを起動するだけで、アカウント、認証情報、モデルには触れません。Claude Code（`claude`）、Codex（`codex`）、GitHub Copilot CLI（`copilot`）は最初から設定されています。ほかのエージェントは wiki にあります（[ほかのエージェント](#ほかのエージェント)を参照）。
+エージェントのコマンドラインプログラムです。インストールとサインインは、それぞれ自分で済ませておきます。XeFM はエディターを起動するのと同じようにそれを起動するだけで、アカウント、認証情報、モデルには触れません。Claude Code（`claude`）、Codex（`codex`）、GitHub Copilot CLI（`copilot`）、Antigravity CLI（`agy`。Gemini CLI の後継）は最初から設定されています。ほかのエージェントは wiki にあります（[ほかのエージェント](#ほかのエージェント)を参照）。
 
 ## セッションを開く
 
@@ -37,7 +37,7 @@ XeFM は、ファイルマネージャーの隣で AI コーディングエー�
 ルールは無視されることがあります。そこで、エージェントが何を決めても、次の 2 つは必ず守られます。
 
 - **XeFM がすべての変更を確認します。** `xefmctl` で頼まれたコピー、移動、ゴミ箱への移動は、`CONFIRM_*` の設定でオフにしていても、その操作自身の確認ダイアログ（項目の一覧付き）を XeFM に出し、あなたが許可したときだけ実行されます。終わるか取り消されると、XeFM はエージェントの画面に戻ります。`xefmctl delete` は拒否され（ゴミ箱なら元に戻せます）、`delete_permanently` アクションも同様です。エージェントが `xefmctl invoke` で実行するアクションも先に確認し、削除はゴミ箱への移動になります。エージェントがこのコンピューターのディスクの外（サーバー、クラウドストレージ、アーカイブ）を初めて読むときは、残りのセッションの間それを許すかどうかを XeFM が尋ねます。
-- **エージェント自身のシェルを制限します**（Claude Code、Copilot）。ファイルを削除・移動するコマンド（`rm`、`rmdir`、`mv`、`unlink`、`shred`、`git clean`。Copilot では PowerShell の `Remove-Item`、`Move-Item`、`del` などの仲間も）を権限の設定で拒否するので、そうした変更は `xefmctl` を通ることになります。Codex にはこうした設定を渡す手段がありません。Codex のシェルで何を実行できるかは、XeFM の外と同じく Codex 自身のサンドボックスと承認の設定で決まります。
+- **エージェント自身のシェルを制限します**（Claude Code、Copilot、Antigravity）。ファイルを削除・移動するコマンド（`rm`、`rmdir`、`mv`、`unlink`、`shred`、`git clean`。Copilot と Antigravity では PowerShell の `Remove-Item`、`Move-Item`、`del` などの仲間も）を権限の設定で拒否するので、そうした変更は `xefmctl` を通ることになります。Codex にはこうした設定を渡す手段がありません。Codex のシェルで何を実行できるかは、XeFM の外と同じく Codex 自身のサンドボックスと承認の設定で決まります。
 
 ファイルを任せられるエージェントでこの 2 つを外すには、そのエントリに `'restrict': False` を設定します。
 
@@ -48,6 +48,7 @@ AGENTS = [
     {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
     {'name': 'Codex', 'command': ['codex'], 'preset': 'codex'},
     {'name': 'Copilot', 'command': ['copilot'], 'preset': 'copilot'},
+    {'name': 'Antigravity', 'command': ['agy'], 'preset': 'antigravity'},
 ]
 
 # Your own rules, added after XeFM's in every session.
@@ -58,9 +59,9 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 |---|---|
 | `name` | メニューと画面の一覧での名前 |
 | `command` | プログラムとその引数のリスト（またはシェルと同じように分割される文字列） |
-| `preset` | `'claude-code'`：スキル、ルール、権限の設定を Claude Code に渡す引数を XeFM が加える。`'codex'`：XeFM が Codex にルールを渡し、そのルールでスキルの場所を伝える。`'copilot'`：スキル、ルール、実行させないコマンドを XeFM が GitHub Copilot CLI に渡す |
+| `preset` | `'claude-code'`：スキル、ルール、権限の設定を Claude Code に渡す引数を XeFM が加える。`'codex'`：XeFM が Codex にルールを渡し、そのルールでスキルの場所を伝える。`'copilot'`：スキル、ルール、実行させないコマンドを XeFM が GitHub Copilot CLI に渡す。`'antigravity'`：スキル、ルール、権限の設定を XeFM が Antigravity CLI に渡す |
 | `restrict` | `True`（既定）：上の制限をかける。`False`：かけない |
-| `settings` | Claude Code のみ：XeFM の設定の代わりに渡す設定。例：`{'permissions': {'deny': ['Bash(rm:*)']}}` |
+| `settings` | Claude Code と Antigravity：XeFM の設定の代わりに渡す設定。そのエージェント自身の書式で書く。例：Claude Code なら `{'permissions': {'deny': ['Bash(rm:*)']}}`、Antigravity なら `{'permissions': {'deny': ['command(rm)']}}` |
 | `env` | 追加の環境変数 |
 | `prompt_args` | プリセットなしの場合：`ask_agent` が依頼のために加えるもの（既定は `['{prompt}']`） |
 
@@ -68,9 +69,9 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 
 `codex` プリセットはセッションの間 Codex の `developer_instructions` を設定するので、`~/.codex/config.toml` に書いたものはそこでは使われません。どのセッションにも伝えたいことは `AGENT_RULES`（または Codex 自身の `AGENTS.md`）に書いてください。
 
-Copilot は、あるフォルダーで初めて起動したときに、そのフォルダーを信頼するかどうかを尋ねます。セッションの中で答えてください。
+Copilot と Antigravity は、あるフォルダーで初めて起動したときに、そのフォルダーを信頼するかどうかを尋ねます。セッションの中で答えてください。
 
-`config.py` に自分の `AGENTS` がある場合は、そちらが使われます。Codex や Copilot を使うには、その中にその行を加えてください。
+`config.py` に自分の `AGENTS` がある場合は、そちらが使われます。Codex、Copilot、Antigravity を使うには、その中にその行を加えてください。
 
 ### 登録した依頼：`AGENT_PROMPTS`
 
