@@ -278,8 +278,10 @@ def bindings() -> dict:
         # terminal over and has none. The desktop's Ctrl-` is set below.
         'screens': [],
         'terminal.screens': [],
-        # AI agent sessions (AGENTS, #880). Unbound: Tools > Open AI Agent.
-        'open_agent': [],
+        # AI agent sessions (AGENTS, #880). '>': the prompt an agent's CLI
+        # shows (Claude Code's). A glyph, so no preset's type-ahead takes it,
+        # and every terminal delivers it. ask_agent: Tools > Ask AI Agent.
+        'agent': ['>'],
         'ask_agent': [],
 
         # === Configuration ===

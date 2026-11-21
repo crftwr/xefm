@@ -9,10 +9,10 @@ show you what it found, and ask you before it changes a file.
 
 | Action | Menu |
 |--------|------|
-| `open_agent` | Tools → Open AI Agent… |
+| `agent` | Tools → AI Agent Here |
 | `ask_agent` | Tools → Ask AI Agent… |
 
-Both ship unbound; to give them keys, see [Key Bindings](KEY_BINDINGS_FEATURE.md).
+`agent` is `>` in every keymap preset, the prompt an agent's command line shows; `ask_agent` ships unbound. To change them, see [Key Bindings](KEY_BINDINGS_FEATURE.md) and [Keymap Presets](KEYMAP_PRESETS_FEATURE.md).
 
 ## What you need
 
@@ -23,14 +23,22 @@ agents are on the wiki (see [Other agents](#other-agents)).
 
 ## Opening a session
 
-- **Open AI Agent…** (`open_agent`) starts the agent in the active pane's
+- **AI Agent Here** (`agent`) starts the agent in the active pane's
   directory. Ask it anything; it reads what XeFM shows when you say "this
   file" or "these".
-- **Ask AI Agent…** (`ask_agent`) asks for a request first, then starts the
-  agent with it, the directory, and the selected items (or the item under
-  the cursor).
+- **Ask AI Agent…** (`ask_agent`) asks for a request first - one of your
+  [saved requests](#saved-requests-agent_prompts), or one you type - then
+  starts the agent with it, the directory, and the selected items (or the
+  item under the cursor).
 
-With more than one agent set up, XeFM asks which one. The session gets a
+Both are off in the menu while no agent in `AGENTS` is installed (its
+program is not on `PATH`); from a key or the command palette, the log pane
+says which program is missing. They come on once it is installed, with no
+restart.
+
+With more than one agent set up, XeFM asks which one. The **Screens…**
+switcher also has a row for each, **New Claude Code in ~/...**, beside **New
+shell in ~/...**. The session gets a
 screen of its own, like any terminal session: **Screens…** switches between
 it and the file manager, and it keeps running while you are away. In the
 screen switcher, its row shows what the agent calls itself in its title
@@ -99,6 +107,26 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 
 To pass Claude Code more options, add them to `command`:
 `['claude', '--model', 'opus']`.
+
+### Saved requests: `AGENT_PROMPTS`
+
+Requests you make often, listed in **Ask AI Agent…**: pick one, or type
+your own. The agent gets the directory and the selection with it, so
+"these files" means what you selected.
+
+```python
+AGENT_PROMPTS = {
+    'Summarize': 'Summarize these files, a few lines each.',
+    'Sort photos by month': 'Move these photos into folders named YYYY-MM by the date taken.',
+    'Review': {'prompt': 'Review the uncommitted changes here.', 'agent': 'Claude Code'},
+}
+```
+
+A request is a string, or a table with `prompt` and `agent` (the `name` of
+an `AGENTS` entry, to send it there without asking). The config template
+has more examples, commented out. [Extension packages](EXTENSIONS_FEATURE.md)
+can add their own (`[contributes.agent_prompts]`). `AGENT_PROMPTS` is
+Preview.
 
 ### Other agents
 

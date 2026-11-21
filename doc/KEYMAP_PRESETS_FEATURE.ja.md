@@ -197,7 +197,7 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `programs` | 外部プログラムを実行 | `X` | — | — | — |
 | `subshell` | このディレクトリでサブシェルを開く | `Shift-X` | — | — | `s` |
 | `screens` | ファイルマネージャーとターミナルセッションを切り替える | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` |
-| `open_agent` | このディレクトリで AI エージェントのセッションを開く | — | — | — | — |
+| `agent` | このディレクトリで AI エージェントのセッションを開く | `>` | `>` | `>` | `>` |
 | `ask_agent` | 選択項目について AI エージェントに尋ねる | — | — | — | — |
 | `jobs` | バックグラウンドジョブの一覧 | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | 両方のペインのディレクトリを読み直す | — | `F2`、`Ctrl-R` | `Ctrl-R` | `Ctrl-L` |

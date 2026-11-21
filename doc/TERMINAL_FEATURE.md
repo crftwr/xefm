@@ -52,7 +52,8 @@ file and a terminal by turns, switching between the two screens.
 
 - **Switch** with **Tools → Screens…** (`screens`, which works over a viewer
   too, or `terminal.screens` from inside a session). The list holds the file
-  manager's screen, each session's, and a last row that starts another shell
+  manager's screen, each session's, and last rows that start another shell,
+  or a session of each [AI agent](AI_AGENT_SESSIONS_FEATURE.md) you set up,
   in the active pane's directory. Each row says what is on that screen: the
   command running in a session - the title the program gives itself, as a
   terminal's tab shows it - and the directory its shell is in now

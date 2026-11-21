@@ -4,7 +4,7 @@
 
 拡張パッケージは、XeFM にアクション、イベントフック、テーマ、ソート順、フィルター、画像形式、ロケーション、シンタックスハイライトを追加するフォルダーです。これらは `config.py` で追加できるのと同じ種類のものですが、`config.py` に 1 行も書く必要はありません。パッケージは 1 つの単位としてインストール、共有、無効化、削除できます。
 
-拡張機能は、`config.py` によるカスタマイズと同じ API（バージョン 1）の上で動作します（[カスタマイズ](CUSTOMIZATION_FEATURE.ja.md)を参照）。その大部分は安定版です。プレビューと記された部分はまだ変わる可能性があり、`xefm ext check` はパッケージが使っているプレビューの部分をすべて一覧表示します。マニフェストでは、`[contributes.actions]`、`sort_keys`、`filters`、`path_schemes`、`key_suggestions` が安定版で、`menus`、`event_hooks`、`image_decoders`、`lexers`、`themes`、`[settings]`、`[requires]`、`updates` がプレビューです。
+拡張機能は、`config.py` によるカスタマイズと同じ API（バージョン 1）の上で動作します（[カスタマイズ](CUSTOMIZATION_FEATURE.ja.md)を参照）。その大部分は安定版です。プレビューと記された部分はまだ変わる可能性があり、`xefm ext check` はパッケージが使っているプレビューの部分をすべて一覧表示します。マニフェストでは、`[contributes.actions]`、`sort_keys`、`filters`、`path_schemes`、`key_suggestions` が安定版で、`menus`、`event_hooks`、`image_decoders`、`lexers`、`themes`、`agent_prompts`、`[settings]`、`[requires]`、`updates`、`agent_guide` がプレビューです。
 
 ## 拡張機能を探す
 
@@ -204,6 +204,7 @@ class Settings:
 | `lexers` | `LEXERS` | Pygments のエイリアス、または `{ entry = "mod:LexerClass" }` |
 | `themes` | `THEMES` | `config.py` と同じ色のテーブル |
 | `menus` | `MENU_ITEMS` | `{ menus = ["file", "context"], label = "...", when = "entry" }`（パッケージ自身のアクション用） |
+| `agent_prompts` | `AGENT_PROMPTS` | 依頼の文（`"Summarize these files."`）、または `{ prompt = "...", agent = "Claude Code" }` |
 | `key_suggestions` | `KEY_BINDINGS` | キーのリスト（パッケージ自身のアクション用） |
 
 テーマ、glob フィルター、レクサーのエイリアス、メニュー、キーの提案だけを持つパッケージは、コードをまったく実行しません。

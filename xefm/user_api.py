@@ -192,6 +192,8 @@ TABLE_KEYS: dict[str, tuple[str, ...]] = {
     "ATTRIBUTES": ("label", "type", "read", "values", "where", "compute"),
     "LAYOUTS": _layouts.LAYOUT_KEYS,
     "LAYOUT_EXTRAS": _layouts.EXTRA_KEYS,
+    # name -> the request, or a table with these keys (Preview, #880).
+    "AGENT_PROMPTS": ("prompt", "agent"),
 }
 
 #: The menus ``MENU_ITEMS`` can put an action in: the menu bar's File menu, and

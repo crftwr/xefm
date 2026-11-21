@@ -1118,7 +1118,7 @@ class Config:
     # - List format: ['powershell', '-NoLogo'] (command with arguments)
     SUBSHELL = None
 
-    # AI agent sessions (Tools > Open AI Agent / Ask AI Agent; open_agent and
+    # AI agent sessions (Tools > AI Agent Here / Ask AI Agent; agent and
     # ask_agent). Each entry names an agent CLI you installed and signed in
     # to; XeFM runs it as a terminal session in the active pane's folder
     # (terminal mode hands it the terminal) and hands it the xefm skill and
@@ -1146,6 +1146,20 @@ class Config:
     # Your own rules for every agent session, after XeFM's (a string), e.g.
     # AGENT_RULES = "Never touch ~/Documents/Taxes."
     AGENT_RULES = ""
+
+    # Requests you make often, listed in Tools > Ask AI Agent... (ask_agent):
+    # pick one, or type your own. The agent also gets the active pane's
+    # folder and the selection, so "these files" means what you selected.
+    # name -> the request, or name -> {'prompt': ..., 'agent': 'Claude Code'}
+    # to send it to one AGENTS entry. Extensions can add their own.
+    AGENT_PROMPTS = {
+        # 'Summarize': 'Summarize these files, a few lines each.',
+        # 'Sort photos by month':
+        #     'Move these photos into folders named YYYY-MM by the date taken.',
+        # 'Find duplicates': 'Find the files here that are duplicates of each '
+        #                    'other and show them to me as a list in XeFM.',
+        # 'Explain this folder': 'What is this folder for? Look around and tell me.',
+    }
 
     # S3 settings
     S3_CACHE_TTL = 60  # S3 cache TTL in seconds (default: 60 seconds)

@@ -79,6 +79,9 @@ PREVIEW_APIS: set[str] = {
         "attributes", "layouts", "layout_extras")),
     "manifest.extension.updates",
     "manifest.extension.agent_guide",
+    "manifest.contributes.agent_prompts",
+    # AI agent sessions (#880).
+    "config.AGENTS", "config.AGENT_RULES", "config.AGENT_PROMPTS",
     "manifest.settings",
     "manifest.requires",
 }

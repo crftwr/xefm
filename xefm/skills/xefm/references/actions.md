@@ -132,7 +132,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `open_agent` | Open an AI agent session in this directory | — | — | — | — |
+| `agent` | Open an AI agent session in this directory | `>` | `>` | `>` | `>` |
 | `ask_agent` | Ask an AI agent about the selection | — | — | — | — |
 | `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
 | `extensions` | List the extension packages and whether they loaded | — | — | — | — |

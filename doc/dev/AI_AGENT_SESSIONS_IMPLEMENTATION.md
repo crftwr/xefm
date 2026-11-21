@@ -1,6 +1,6 @@
 # AI agent sessions: Implementation
 
-`AGENTS`, `open_agent`, `ask_agent` (discussion #880, the "open an agent
+`AGENTS`, `agent`, `ask_agent` (discussion #880, the "open an agent
 here" step, made concrete in #952). User documentation:
 [AI_AGENT_SESSIONS_FEATURE.md](../AI_AGENT_SESSIONS_FEATURE.md).
 
@@ -24,6 +24,28 @@ its way around.
 - The policy rides the session key (see
   [XEFMCTL_IMPLEMENTATION.md](XEFMCTL_IMPLEMENTATION.md)): `agent` for an
   entry with `restrict` (the default), `user` without.
+
+## Entry points and availability
+
+Opening an agent parallels opening a shell: the action `agent` (`>` in
+every preset: the prompt an agent's CLI shows, a glyph no type-ahead takes)
+beside `subshell`, **Tools > AI Agent Here** beside Subshell Here, and a
+"New <agent> in <dir>" row per installed entry in the Screens switcher
+beside "New shell in <dir>".
+
+`agents.available()` is the entries whose program `shutil.which` finds.
+The menu items' `enabled` asks it each time the menu opens (cheap, and a
+fresh install counts without a restart); `_agents_ready()` says in the log
+why nothing can start, for a key or the palette, which a greyed menu item
+cannot explain.
+
+`ask_agent` is a filter list of `agents.prompts()` - `AGENT_PROMPTS`, name
+-> request or `{prompt, agent}`, config.py's and the extensions'
+(`[contributes.agent_prompts]`, merged like any dict table) - with
+`on_accept_text` for a request typed instead. A prompt's `agent` picks its
+entry without asking. A contributed prompt is text: `_value_for` returns
+it as is and `Manifest.references()` skips the kind, so a colon in it is
+never taken for `module:name`.
 
 ## What a session is handed
 
@@ -97,7 +119,7 @@ nor a docstring (read with `ast`, not imported).
 
 ## Tests
 
-`test/test_terminal_sessions.py`: `open_agent` (argv, the plugin folder,
+`test/test_terminal_sessions.py`: `agent` (argv, the plugin folder,
 the rules with `AGENT_RULES`, the settings, the `agent` policy, the session
 and its screen), `ask_agent` (the request with the selection, placeholders,
 `restrict: False`), entry checking; the policy tests named in

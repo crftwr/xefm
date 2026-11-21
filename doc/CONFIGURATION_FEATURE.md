@@ -346,9 +346,12 @@ AGENTS = [
     {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
 ]
 AGENT_RULES = ""   # your own rules for every agent session
+AGENT_PROMPTS = {  # requests listed in Ask AI Agent...
+    'Summarize': 'Summarize these files, a few lines each.',
+}
 ```
 
-The agents **Tools → Open AI Agent…** (`open_agent`) and **Ask AI Agent…**
+The agents **Tools → AI Agent Here** (`agent`) and **Ask AI Agent…**
 (`ask_agent`) start, and what they may do. See
 [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md).
 
