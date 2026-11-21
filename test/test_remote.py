@@ -109,6 +109,8 @@ def server():
         if req["cmd"] == "find-files":
             return iter([{"ok": True, "items": [{"path": "/1", "name": "1"}]},
                          {"ok": True, "items": [{"path": "/2", "name": "2"}]}])
+        if req["cmd"] == "diff":  # slow work: acknowledged, then answered
+            return iter([{"ok": True}, {"ok": True, "status": 1, "note": "it differs"}])
         if req["cmd"] == "confirm":
             return {"ok": True, "items": [{"answer": "no"}], "status": 1}
         return {"ok": False, "error": "nope", "code": 5}
@@ -173,6 +175,12 @@ def test_a_request_too_large_is_refused_before_it_is_sent(server, monkeypatch, c
 def test_the_limit_takes_a_long_document():
     assert remote_commands.MAX_REQUEST >= 4 * 1024 * 1024
     assert remote_server.MAX_REQUEST == remote_commands.MAX_REQUEST
+
+
+def test_the_status_of_a_late_answer_reaches_the_exit_code(server, monkeypatch, capsys):
+    _env(monkeypatch, server)
+    assert remote_cli.run(["diff", "/a", "/b"], out=io.StringIO()) == 1
+    assert "it differs" in capsys.readouterr().err
 
 
 def test_a_refusal_carries_its_code(server, monkeypatch, capsys):
@@ -335,6 +343,29 @@ def test_requests_wait_for_the_ui_thread(tmp_path):
     queued[0]()
     t.join(5)
     assert result["items"] == [{"path": str(left)}]
+
+
+def test_slow_work_is_acknowledged_then_answered(tmp_path, monkeypatch):
+    app, left = _app(tmp_path)
+    monkeypatch.setattr(remote_dispatch, "ACK_AFTER", 0.05)
+    slow = remote_dispatch._HANDLERS["pane path"]
+    monkeypatch.setitem(remote_dispatch._HANDLERS, "pane path",
+                        lambda app, req: (time.sleep(0.3), slow(app, req))[1])
+    app._call_later = lambda fn: threading.Thread(target=fn).start()
+    answers = list(remote_dispatch.handle(app, dict(remote_cli.parse(["pane", "path"]))))
+    assert answers[0] == {"ok": True, "items": []}  # XeFM has it
+    assert answers[1]["items"] == [{"path": str(left)}]
+
+
+def test_work_the_ui_thread_never_started_is_not_done_late(tmp_path, monkeypatch):
+    app, left = _app(tmp_path)
+    monkeypatch.setattr(remote_dispatch, "UI_WAIT", 0.05)
+    queued = []
+    app._call_later = queued.append
+    answer = remote_dispatch.handle(app, dict(remote_cli.parse(["pane", "cd", str(left)])))
+    assert answer["code"] == 4 and "busy" in answer["error"]
+    queued[0]()  # the UI thread gets to it after all
+    assert app.went == []  # told busy, so nothing happens
 
 
 def test_while_terminal_mode_has_handed_over_only_reads_run(tmp_path):
