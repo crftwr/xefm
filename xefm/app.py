@@ -6024,6 +6024,7 @@ class XeFMApp:
         return False
 
     def _start_session(self, argv: list, *, cwd: str | None, env: dict, name: str,
+                       named: bool = False,
                        shell: bool, on_done=None, show: bool = True):
         """Run ``argv`` as a new terminal session on a screen of its own, shown
         unless ``show`` is False (then it starts out of view). ``shell`` marks
@@ -6044,7 +6045,7 @@ class XeFMApp:
         view = self._make_session_view(argv, cwd=cwd, env=env, label=name, shell=shell)
         session = self._sessions.add(Session(
             view=view, kind=SHELL if shell else PROGRAM, name=name, cwd=cwd,
-            id=sid, on_done=on_done, program=program))
+            id=sid, on_done=on_done, program=program, named=named))
         # The viewers' hints: the terminal covers the panes and paints the
         # content surface itself, so over an animated background it leaves its
         # page unpainted and the scene shows through (ctx.wallpaper).
@@ -6067,8 +6068,10 @@ class XeFMApp:
         if not self._terminal_ready():
             return None
         command, env = self._shell_launch()
+        named = bool(name)
         name = name or os.path.splitext(os.path.basename(command[0]))[0] or "shell"
-        return self._start_session(command, cwd=cwd, env=env, name=name, shell=True,
+        return self._start_session(command, cwd=cwd, env=env, name=name, named=named,
+                                   shell=True,
                                    show=show)
 
     def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str,
@@ -6083,6 +6086,7 @@ class XeFMApp:
             on_screens_request=self.screens,
             on_user_action=self._run_terminal_user_action,
             on_prompt=lambda kind, code, cmd: self._session_prompt(box["view"], kind, code, cmd),
+            on_title=lambda title: self._session_title(box["view"], title),
             on_notification=lambda title, body: self._session_notification(
                 box["view"], title, body),
             on_progress=lambda state, pct: self._session_progress(box["view"], state, pct))
@@ -6183,6 +6187,12 @@ class XeFMApp:
     #: A command in a hidden shell session that ran at least this long is
     #: worth a word in the status bar when it ends (#900).
     _LONG_COMMAND_S = 10.0
+
+    def _session_title(self, view, title: str) -> None:
+        """A session's program set the terminal's title (OSC 0/2)."""
+        session = self._sessions.for_view(view)
+        if session is not None:
+            session.title_changed(title)
 
     def _session_prompt(self, view, kind: int, code, cmd: str = "") -> None:
         """A shell integration mark from a session (OSC 133)."""
@@ -6322,11 +6332,16 @@ class XeFMApp:
                 getLogger("Terminal").error(
                     f"Could not close terminal session {session.name}: {e}")
 
-    def _screen_label(self, screen) -> str:
+    def _screen_label(self, screen, *, full: bool = False) -> str:
         """A screen's row in the switcher: the file manager or the session
-        (what runs in it, where), then what is open on top of it."""
+        (what runs in it, where), then what is open on top of it. ``full``
+        puts the session's name first, to tell apart rows that read the
+        same."""
         from xefm.screens import FILES
-        base = "File manager" if screen.kind == FILES else screen.session.label
+        if screen.kind == FILES:
+            base = "File manager"
+        else:
+            base = screen.session.full_label if full else screen.session.label
         on_top = self._screen_top_text(screen)
         return f"{base} - {on_top}" if on_top else base
 
@@ -6356,10 +6371,14 @@ class XeFMApp:
         current = self._screens.current
         items = [*self._screens.recent(), new_row]
 
+        short = [self._screen_label(s) for s in items[:-1]]
+        rows = {s: self._screen_label(s, full=short.count(text) > 1)
+                for s, text in zip(items[:-1], short)}
+
         def label(item) -> str:
             if item is new_row:
                 return f"New shell in {_short(cwd)}"
-            return self._screen_label(item)
+            return rows.get(item) or self._screen_label(item)
 
         def right(item) -> str:
             if item is new_row:
@@ -6475,7 +6494,7 @@ class XeFMApp:
         if cmd == "session" and req.get("verb") == "list":
             here = str(req.get("session") or "")
             return {"ok": True, "lines": [
-                f"{'*' if str(s.id) == here else ' '} {s.id}\t{s.name}\t{s.state}\t{s.cwd}"
+                f"{'*' if str(s.id) == here else ' '} {s.id}\t{s.name}\t{s.state}\t{s.directory}"
                 for s in self._sessions]}
         if cmd == "screen" and req.get("verb") == "list":
             current = self._screens.current
@@ -10065,6 +10084,7 @@ class XeFMApp:
                     exited(None)
                     return False, None
                 self._start_session(argv, cwd=cwd, env=env, name=name or label,
+                                    named=bool(name),
                                     shell=False,
                                     on_done=exited if on_exit else None)
                 return True, None

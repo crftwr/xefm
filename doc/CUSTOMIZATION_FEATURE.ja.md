@@ -398,7 +398,7 @@ def build_in_background(ctx):
 
 - デスクトップアプリでは、セッションは専用の画面で動き、呼び出しはすぐに戻ります。`show=False` を指定すると、表示せずに動かしたままにします。ターミナルモードでは XeFM がターミナルを引き渡し、セッションが終わってから呼び出しが戻ります。どちらの場合も `on_done(ctx, code)` はセッションが終わったときに呼ばれ、呼び出しが戻る前に呼ばれることはありません。そのため、続きの処理を `on_done` に書けば、どちらのモードでも同じように動きます。
 - `cwd=`（既定はアクティブなペインのディレクトリ）、`env=`（`XEFM_*` 変数の上に重ねる）、`name=`（切り替えの一覧での名前）は省略できます。
-- 戻り値は `TerminalSession` です。`id`、`name`、`kind`（`"shell"` か `"program"`）、`cwd`、`state`、`running`、`started_at`、`screen`、そして確認なしでセッションを終わらせる `close()` があります。
+- 戻り値は `TerminalSession` です。`id`、`name`、`kind`（`"shell"` か `"program"`）、`cwd`（起動した場所）、`directory`（シェルが今いる場所）、`state`、`running`、`started_at`、`screen`、そして確認なしでセッションを終わらせる `close()` があります。
 
 *画面*とは、**Screens** で切り替える対象のことです。ファイルマネージャーの画面と、各セッションの画面があります。`ctx.screens()` はそれらを、今の画面を先頭に、ほかを最後に表示した順に返します（`order='started'` を指定すると作られた順）。それぞれに `id`、`kind`（`"files"` か `"terminal"`）、`name`、`last_shown_at`、`terminal_session`、`show()` があります。ターミナルモードでは、ファイルマネージャーの画面だけです。そのため、ダイアログを使わずに切り替える処理は、どちらのモードでも数行で書けます。
 

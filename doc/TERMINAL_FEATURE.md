@@ -54,8 +54,10 @@ file and a terminal by turns, switching between the two screens.
   too, or `terminal.screens` from inside a session). The list holds the file
   manager's screen, each session's, and a last row that starts another shell
   in the active pane's directory. Each row says what is on that screen: the
-  command running in a session (`zsh - make test - ~/src`), or the viewer
-  open over the panes (`File manager - viewing notes.txt`). The screen you
+  command running in a session - the title the program gives itself, as a
+  terminal's tab shows it - and the directory its shell is in now
+  (`make test - ~/src`, or `zsh - ~/src` at the prompt), or the viewer open
+  over the panes (`File manager - viewing notes.txt`). The screen you
   are on comes first and the rest follow in the order you last used them,
   with the cursor on the one you were on before, so `Enter` takes you back
   there. A session you leave keeps running. Coming back to the file manager

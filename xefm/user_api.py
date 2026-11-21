@@ -928,6 +928,13 @@ class TerminalSession:
         return self._session.cwd
 
     @property
+    def directory(self) -> str:
+        """Where it is now: the directory its shell last reported (with
+        shell integration, at every prompt), else :attr:`cwd`. On another
+        machine (a shell over ssh) it reads ``host:/path``."""
+        return self._session.directory
+
+    @property
     def state(self) -> str:
         """``"at prompt"``, ``"running a command"`` (both known only from
         shell integration), ``"running"``, ``"exited"`` or ``"exited (N)"``."""
@@ -1270,7 +1277,8 @@ class ActionContext:
                 raise RuntimeError("start_terminal_session: XeFM's terminal is "
                                    "unavailable here (see the log)")
             session = app._start_session(argv, cwd=cwd, env=launch_env,
-                                         name=name or default_name, shell=shell,
+                                         name=name or default_name, named=bool(name),
+                                         shell=shell,
                                          on_done=on_exit, show=show)
             return TerminalSession(app, session)
         if shell:

@@ -6,6 +6,7 @@ the memory backend (libghostty is not installed where the tests run, so a
 stand-in view plays the terminal), then what terminal mode does instead.
 Screens (#951) are groups in the Panel's layer tree."""
 
+import time
 from types import SimpleNamespace
 
 from xefm.app import XeFMApp
@@ -372,8 +373,94 @@ def test_the_switcher_says_what_is_on_each_screen(monkeypatch):
     session = app._sessions.for_view(view)
     session.command_since, session.command = 1.0, "make test"
     app.screens()
-    assert switcher.labels()[:2] == ["zsh - make test - /tmp",
+    assert switcher.labels()[:2] == ["make test - /tmp",
                                      "File manager - viewing notes.txt"]
+
+
+def test_rows_that_read_the_same_get_the_sessions_name(monkeypatch):
+    app = _app(monkeypatch)
+    switcher = _Switcher(monkeypatch)
+    app.new_terminal_session()
+    app.new_terminal_session()
+    app.screens()
+    assert switcher.labels()[:3] == ["zsh 2 - /tmp", "zsh - /tmp", "File manager"]
+    first = app._sessions.for_view(app.made[0])
+    first.command_since, first.command = 1.0, "claude"
+    app.screens()
+    assert switcher.labels()[:3] == ["zsh - /tmp", "claude - /tmp", "File manager"]
+
+
+def test_a_chosen_name_heads_its_row():
+    reg = SessionRegistry()
+    view = _View()
+    s = reg.add(Session(view=view, kind=SHELL, name="build", cwd="/tmp",
+                        program="zsh", named=True))
+    assert s.label == "build - /tmp"
+    s.command_since, s.command = 1.0, "make"
+    assert s.label == "build - make - /tmp"
+    p = reg.add(Session(view=_View(), kind=PROGRAM, name="htop", cwd="/tmp", program="htop"))
+    assert p.label == "htop - /tmp"
+
+
+def test_the_running_programs_own_title_wins_while_it_runs():
+    reg = SessionRegistry()
+    view = _View()
+    s = reg.add(Session(view=view, kind=SHELL, name="zsh", cwd="/tmp", program="zsh"))
+    view.child_in_foreground = True
+    s.title_changed("~/src")  # the shell's own title at its prompt: ignored
+    s.command_since, s.command = time.monotonic(), "claude"
+    s.title_changed("claude")  # a preexec title hook, before the job runs
+    assert s.activity == "claude"
+    view.child_in_foreground, view.foreground_program = False, "claude"
+    s.title_changed("\u2733 Claude")
+    assert s.activity == "\u2733 Claude"
+    s.command_since, s.command = None, ""  # back at the prompt
+    view.idle_at_prompt = True
+    assert s.activity == ""
+    view.idle_at_prompt = False
+    s.command_since, s.command = time.monotonic() + 1, "make"
+    assert s.activity == "make"  # the old title was the last job's
+
+
+def test_without_integration_a_title_lasts_while_its_program_does():
+    reg = SessionRegistry()
+    view = _View()
+    s = reg.add(Session(view=view, kind=SHELL, name="zsh", cwd="/tmp", program="zsh"))
+    view.child_in_foreground, view.foreground_program = False, "claude"
+    s.title_changed("\u2733 Claude")
+    assert s.activity == "\u2733 Claude"
+    view.foreground_program = "vim"  # the title is claude's, not vim's
+    assert s.activity == "vim"
+
+
+def test_a_shell_that_runs_jobs_on_its_own_ptys_passes_their_titles_on():
+    reg = SessionRegistry()
+    view = _View()
+    s = reg.add(Session(view=view, kind=SHELL, name="eosh", cwd="/tmp", program="eosh"))
+    view.child_in_foreground, view.foreground_program = True, "python3.14"
+    assert s.activity == ""
+    s.title_changed("\u2733 Claude Code")  # eosh relays claude's title
+    assert s.activity == "\u2733 Claude Code"
+    s.title_changed("")  # and clears it when claude exits
+    assert s.activity == ""
+
+
+def test_the_label_shows_where_the_shell_is_now(monkeypatch):
+    import socket
+    monkeypatch.setattr(socket, "gethostname", lambda: "mac.local")
+    reg = SessionRegistry()
+    view = _View()
+    s = reg.add(Session(view=view, kind=SHELL, name="zsh", cwd="/tmp", program="zsh"))
+    assert s.directory == "/tmp"  # nothing reported yet: where it started
+    view.pwd = "file://mac.local/opt/My%20Notes"
+    assert s.directory == "/opt/My Notes" and s.label == "zsh - /opt/My Notes"
+    assert s.cwd == "/tmp"
+    view.pwd = "file://mac/srv"
+    assert s.directory == "/srv"
+    view.pwd = "file://build-box/home/me"  # a shell over ssh
+    assert s.directory == "build-box:/home/me"
+    view.pwd = "/var/log"  # a bare path
+    assert s.directory == "/var/log"
 
 
 def test_activity_reads_the_command_then_the_foreground_then_the_title():
@@ -383,6 +470,10 @@ def test_activity_reads_the_command_then_the_foreground_then_the_title():
     assert s.activity == "" and s.label == "zsh - /tmp"
     view.foreground_program = "zsh"
     assert s.activity == ""  # the shell itself holds the foreground
+    view.foreground_program = "python3.14"  # a shell written in Python
+    view.child_in_foreground = True         # ... at its own prompt
+    assert s.activity == ""
+    view.child_in_foreground = False
     view.foreground_program = "vim"
     assert s.activity == "vim"
     s.command_since, s.command = 1.0, "vim notes.txt"

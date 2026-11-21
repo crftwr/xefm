@@ -64,6 +64,15 @@ class Session:
     #: The command line now running, from shell integration (OSC 133;C
     #: with ``cmdline_url``); "" when unknown or at the prompt.
     command: str = ""
+    #: The last title (OSC 0/2) set while it runs: ``(title, when
+    #: (monotonic), the foreground program then, whether the session's own
+    #: process held the foreground)``, or None. What the program calls itself
+    #: (``* Claude``), as a terminal's tab shows.
+    job_title: tuple | None = None
+    #: Whether its name was chosen (``name=``) rather than made up from the
+    #: program (``zsh``, ``zsh 2``): a chosen name heads its row in the
+    #: switcher, a made-up one only when nothing else tells rows apart.
+    named: bool = False
     #: The program it started, by file name without extension (``zsh``).
     program: str = ""
     #: When it was started (time.time()).
@@ -95,34 +104,121 @@ class Session:
         :attr:`xefm.terminal.TerminalView.busy`)."""
         return bool(getattr(self.view, "busy", self.running))
 
+    def title_changed(self, title: str) -> None:
+        """The terminal's title changed (OSC 0/2)."""
+        view = self.view
+        title = title.strip()
+        self.job_title = (title, time.monotonic(),
+                          getattr(view, "foreground_program", None),
+                          getattr(view, "child_in_foreground", None) is True) \
+            if title else None
+
+    def _job_title(self) -> str:
+        """The title of what runs now, or "" when there is none or it is
+        stale. With shell integration, one set since the command started
+        (the shell's own title at its prompt is not). Without, one set by
+        the program still in the foreground - or by the session's own
+        process while it still holds it: a shell that runs its jobs on ptys
+        of its own (eosh) passes their titles on, and is the only one that
+        can."""
+        if self.job_title is None:
+            return ""
+        title, at, fg, own = self.job_title
+        if self.command_since is not None:
+            return title if at >= self.command_since else ""
+        view = self.view
+        if getattr(view, "idle_at_prompt", False):
+            return ""
+        in_front = getattr(view, "child_in_foreground", None) is True
+        if own:
+            return title if in_front else ""
+        if in_front:
+            return ""
+        return title if getattr(view, "foreground_program", None) == fg else ""
+
     @property
     def activity(self) -> str:
-        """What runs in it now, for the switcher (#954), or "": the command
+        """What runs in it now, for the switcher (#954), or "": the title the
+        running program set (what a terminal's tab shows), else the command
         line shell integration reported, else the program holding the pty's
-        foreground (POSIX) when it is not the shell itself, else the title a
+        foreground (POSIX) when it is not the session's own process, else the title a
         program set (the only word from cmd or PowerShell). A program
         session's own name already says what it runs."""
         view = self.view
         if not getattr(view, "running", False):
             return ""
+        own = self._job_title()
+        if own:
+            return own
         if self.command_since is not None and self.command:
             return self.command
         if getattr(view, "idle_at_prompt", False):
             return ""
         fg = getattr(view, "foreground_program", None)
         if fg:
-            return "" if _same_program(fg, self.program) else fg
+            # The session's own process holds the foreground: the shell
+            # itself, whatever its executable is called - a shell written in
+            # Python reads as "python3.14". By name too, for a view that
+            # cannot compare process ids.
+            if getattr(view, "child_in_foreground", None) is True \
+                    or _same_program(fg, self.program):
+                return ""
+            return fg
         if self.kind == SHELL:
             title = getattr(view, "title", "") or ""
             return title.strip()
         return ""
 
     @property
+    def directory(self) -> str:
+        """Where it is now: the directory the shell last reported (OSC 7,
+        which XeFM's zsh and bash integration sends at every prompt), else
+        where it started. A directory on another machine (a shell over ssh)
+        reads ``host:/path``."""
+        reported = _pwd_path(getattr(self.view, "pwd", "") or "")
+        return reported or self.cwd
+
+    @property
     def label(self) -> str:
-        """The list row: the name, what runs now, then where it started."""
+        """The list row: what runs now (``claude``), else what the session
+        is (``zsh``), then where it is - a chosen name first. Two rows that
+        read the same are told apart with :attr:`full_label`."""
         doing = self.activity
-        parts = [self.name] + ([doing] if doing else []) + [_short(self.cwd)]
+        if self.named:
+            return self.full_label
+        what = doing or (self.program if self.kind == SHELL and self.program else self.name)
+        return f"{what} - {_short(self.directory)}"
+
+    @property
+    def full_label(self) -> str:
+        """The name, what runs now, then where it is (``zsh 2 - make - ~``)."""
+        doing = self.activity
+        parts = [self.name] + ([doing] if doing else []) + [_short(self.directory)]
         return " - ".join(parts)
+
+
+def _pwd_path(pwd: str) -> str:
+    """The path in an OSC 7 report: a ``file://host/path`` URL, its path
+    percent-encoded (some shells send a bare path). "" when it says none."""
+    pwd = pwd.strip()
+    if not pwd.startswith("file://"):
+        return pwd
+    from urllib.parse import unquote, urlsplit
+    url = urlsplit(pwd)
+    path = unquote(url.path)
+    if os.name == "nt" and len(path) > 2 and path[0] == "/" and path[2] == ":":
+        path = path[1:]  # file:///C:/Users -> C:/Users
+    host = url.hostname or ""
+    if host and host != "localhost" and not _is_this_host(host):
+        return f"{host}:{path}"
+    return path
+
+
+def _is_this_host(host: str) -> bool:
+    import socket
+    names = {socket.gethostname().lower()}
+    names.add(next(iter(names)).split(".")[0])
+    return host.lower() in names or host.lower().split(".")[0] in names
 
 
 def _same_program(a: str, b: str) -> bool:

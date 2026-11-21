@@ -80,9 +80,9 @@ both modes):
 
 `xefm/terminal_sessions.py` stays UI-free: `Session` (the view, `kind`,
 `name`, `cwd`, the process-unique `id` that `XEFM_SESSION` says, `on_done`,
-`program`, `started_at`, `command`; `state`, `running`, `busy`, `activity`,
-`label`) and `SessionRegistry` (start order, `for_view`, `running()`,
-`busy()`, `next_name`).
+`program`, `started_at`, `command`, `job_title`; `state`, `running`, `busy`,
+`activity`, `directory`, `label`) and `SessionRegistry` (start order,
+`for_view`, `running()`, `busy()`, `next_name`).
 
 ## Showing, leaving, closing
 
@@ -178,11 +178,34 @@ default in the common table: terminal mode has no screens to switch.
 Rows: `ScreenManager.recent()` (the screen on now first), then "New shell".
 The cursor starts on row 1 - the screen before this one, or "New shell" with
 no session - so Enter flips back. A row is `_screen_label`: the file manager
-or `Session.label` (name, `activity`, directory), then `viewing NAME` when a
-viewer is open on that screen. `activity` is the shell integration command
-line, else PuiKit's `foreground_program` (POSIX) when it is not the shell
-itself, else a shell's title (cmd, PowerShell). The file manager and "New
-shell" refuse the remove key.
+or `Session.label`, then `viewing NAME` when a viewer is open on that
+screen. `label` is `activity` (else the shell's program, `zsh`, or a
+program session's name) and `directory`; a name given with `name=`
+(`named`) comes first. Rows that would read the same take
+`Session.full_label` (name, `activity`, `directory`: `zsh 2 - ~/src`), so
+two idle shells in one directory stay apart. The file manager and "New shell"
+refuse the remove key.
+
+`activity`, first that answers:
+
+1. `job_title`, the last title (OSC 0/2, `on_title`), while it is current:
+   with shell integration, set after the command started (the shell's own
+   title at its prompt is not); without, set by the program still in the
+   foreground, or by the session's own process while it still holds it - a
+   shell that runs its jobs on ptys of its own (eosh) relays their titles
+   and is the only one that can say what runs. This is what a terminal's
+   tab shows (`* Claude`).
+2. The shell integration command line (`cmdline_url`).
+3. PuiKit's `foreground_program` (POSIX), unless the session's own process
+   holds the foreground (`child_in_foreground`, so a shell written in
+   Python is not called `python3.14`) or it has the session's program name.
+4. A shell's title (cmd, PowerShell: no foreground to read).
+
+`directory` is PuiKit's `view.pwd` (OSC 7, a `file://host/path` URL,
+which the zsh and bash integration sends at every prompt) as a path -
+`host:/path` for another machine - else `cwd`, where the session started.
+`TerminalSession.cwd` stays the start directory; `.directory` is the
+current one, and `xefmctl session list` prints it.
 
 A second press of the key as "accept" (flip in key, key) is left for later.
 

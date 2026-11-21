@@ -212,6 +212,7 @@ preview	attribute	xefm.user_api.TaskOutcome.value
 preview	class	xefm.user_api.TerminalSession
 preview	method	xefm.user_api.TerminalSession.close	[["self", "pk", null]]
 preview	property	xefm.user_api.TerminalSession.cwd	ro
+preview	property	xefm.user_api.TerminalSession.directory	ro
 preview	property	xefm.user_api.TerminalSession.id	ro
 preview	property	xefm.user_api.TerminalSession.kind	ro
 preview	property	xefm.user_api.TerminalSession.name	ro

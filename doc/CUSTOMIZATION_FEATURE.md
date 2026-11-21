@@ -568,8 +568,9 @@ def build_in_background(ctx):
 - `cwd=` (default: the active pane's directory), `env=` (merged over the
   `XEFM_*` variables) and `name=` (its name in the switcher) are optional.
 - It returns a `TerminalSession`: `id`, `name`, `kind` (`"shell"` or
-  `"program"`), `cwd`, `state`, `running`, `started_at`, `screen` and
-  `close()`, which ends it without asking.
+  `"program"`), `cwd` (where it started), `directory` (where its shell is
+  now), `state`, `running`, `started_at`, `screen` and `close()`, which
+  ends it without asking.
 
 A *screen* is what the **Screens** switcher switches between: the file
 manager's, or a session's. `ctx.screens()` lists them, the one on now first
