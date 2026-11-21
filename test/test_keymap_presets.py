@@ -755,6 +755,27 @@ class InTheApp(unittest.TestCase):
         self.assertEqual([i.label for i in keymap], ["Keymap…"])
         self.assertIsNone(keymap[0].submenu)
 
+    def test_agents_set_to_nothing_take_their_items_off_the_tools_menu(self):
+        def labels():
+            tools = next(i for i in self.app._build_menu().items if i.label == "Tools")
+            return [getattr(i, "label", "") for i in tools.submenu.items]
+        saved = self.app.config.__dict__.get("AGENTS", None)
+        try:
+            self.app.config.AGENTS = [{"name": "Nope", "command": ["no-such-agent-xyz"]}]
+            items = labels()
+            self.assertIn("AI Agent Here", items)  # not installed: there, greyed
+            self.assertIn("Ask AI Agent…", items)
+            self.app.config.AGENTS = []
+            items = labels()
+            self.assertNotIn("AI Agent Here", items)
+            self.assertNotIn("Ask AI Agent…", items)
+            self.assertIn("Subshell Here", items)
+        finally:
+            if saved is None:
+                self.app.config.__dict__.pop("AGENTS", None)
+            else:
+                self.app.config.AGENTS = saved
+
     def test_quitting_unanswered_asks_again_at_the_next_launch(self):
         self._forget()
         self._reopen()

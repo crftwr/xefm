@@ -33,6 +33,13 @@ beside `subshell`, **Tools > AI Agent Here** beside Subshell Here, and a
 "New <agent> in <dir>" row per installed entry in the Screens switcher
 beside "New shell in <dir>".
 
+`agents.turned_off()` is `AGENTS` empty (`[]`, or `None`/`{}`): a config.py
+without `AGENTS` gets the template's through `_copy_missing_fields`, so an
+empty one was written on purpose. `_agent_menu` then leaves both Tools items
+out of the menu it builds (rebuilt by `_rebuild_keymap` on a config reload,
+as MenuItem has no visibility predicate), and `_agents_ready` logs that
+agents are off rather than how to set one up.
+
 `agents.available()` is the entries whose program `shutil.which` finds.
 The menu items' `enabled` asks it each time the menu opens (cheap, and a
 fresh install counts without a restart); `_agents_ready()` says in the log

@@ -38,6 +38,11 @@ program is not on `PATH`); from a key or the command palette, the log pane
 says which program is missing. They come on once it is installed, with no
 restart.
 
+To turn agent sessions off, set `AGENTS = []` in `config.py`: the two
+items leave the menu, no agent can start, and `agent` and `ask_agent` only
+say in the log pane that agents are off. To free the `>` key as well, unbind
+`agent` (see [Key Bindings](KEY_BINDINGS_FEATURE.md)).
+
 With more than one agent set up, XeFM asks which one. The **Screens…**
 switcher also has a row for each, **New Claude Code in ~/...**, beside **New
 shell in ~/...**. The session gets a
