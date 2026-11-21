@@ -656,74 +656,90 @@ class _Dialog:
 
 
 def _asking_ctx(app, monkeypatch, answer=True):
+    """A ctx whose copy and trash ask, as the real ones do, when their
+    CONFIRM_* setting is on: a dialog on the default layer parent, answered
+    later."""
     ctx = _ctx(app, monkeypatch)
-    asked, copied = [], []
+    asked, done = [], []
+    app.config.CONFIRM_COPY = False  # the user's own setting: no question
+    app.config.CONFIRM_TRASH = False
 
-    def confirm(prompt, *, title="Confirm", on_result=None):
-        asked.append(prompt)
-        dialog = _Dialog(title)
+    def operation(kind, setting, items, dest, on_done):
+        items = list(items)
+        if not getattr(app.config, setting):
+            done.append((kind, items, dest))
+            if on_done:
+                on_done(ctx, SimpleNamespace(status="done", error=None))
+            return
+        asked.append((kind, items, dest))
+        dialog = _Dialog(kind)
         app.panel.push_layer(dialog, z=70)
-        # The user answers later, as a dialog is answered.
-        app.later.append(lambda: (app.panel.remove_layer(dialog), on_result(answer)))
-    ctx.confirm = confirm
-    ctx.copy = lambda items, dest, on_done=None: copied.append((list(items), dest)) or (
-        on_done and on_done(ctx, SimpleNamespace(status="done", error=None)))
+
+        def answered():
+            app.panel.remove_layer(dialog)
+            if answer:
+                done.append((kind, items, dest))
+            if on_done:
+                on_done(ctx, SimpleNamespace(status="done" if answer else "cancelled",
+                                             error=None))
+        app.later.append(answered)
+    ctx.copy = lambda items, dest, on_done=None: operation(
+        "copy", "CONFIRM_COPY", items, dest, on_done)
+    ctx.trash = lambda items, on_done=None: operation(
+        "trash", "CONFIRM_TRASH", items, None, on_done)
     app._user_ctx = ctx
-    return asked, copied
+    return asked, done
 
 
-def test_an_agents_copy_is_confirmed_in_xefm(monkeypatch):
+def test_an_agents_copy_asks_with_the_copys_own_dialog(monkeypatch):
     app = _app(monkeypatch)
-    asked, copied = _asking_ctx(app, monkeypatch)
+    asked, done = _asking_ctx(app, monkeypatch)
     app.new_terminal_session()
     agent = app._screens.current
     sid = str(agent.session.id)
     pending = _xefmctl(app, "copy /tmp/a /tmp/b --to /tmp/out --wait",
                        session=sid, policy="agent")
-    assert app._screens.current is app._screens.files  # asked there
+    # Asked once, by the copy itself, though the user turned CONFIRM_COPY off;
+    # on the file manager's screen, where XeFM took the user.
+    assert asked == [("copy", ["/tmp/a", "/tmp/b"], "/tmp/out")]
+    assert app._screens.current is app._screens.files
+    assert app.config.CONFIRM_COPY is False  # put back at once
     _run_later(app)
     answer = _answered(pending)
     assert answer["ok"] and answer["status"] == 0 and answer["outcome"] == "done"
-    assert copied == [(["/tmp/a", "/tmp/b"], "/tmp/out")]
-    assert "zsh wants to copy 2 item(s) to /tmp/out" in asked[0]
-    # The question took the user to the file manager, the answer back.
-    assert app._screens.current is agent
-    # A shell of the user's own is not asked.
+    assert done == [("copy", ["/tmp/a", "/tmp/b"], "/tmp/out")]
+    assert app._screens.current is agent  # back once it ended
+    # A shell of the user's own follows the user's setting.
     asked.clear()
     _answered(_xefmctl(app, "copy /tmp/a --to /tmp/out --wait"))
-    _run_later(app)
-    assert asked == [] and len(copied) == 2
+    assert asked == [] and len(done) == 2
 
 
-def test_an_agents_trash_reads_naturally(monkeypatch):
+def test_an_agents_trash_returns_to_its_screen_without_wait(monkeypatch):
     app = _app(monkeypatch)
-    asked, _ = _asking_ctx(app, monkeypatch)
-    trashed = []
-    app._user_ctx.trash = lambda items, on_done=None: trashed.append(list(items))
-    titles = []
-    confirm = app._user_ctx.confirm
-    app._user_ctx.confirm = lambda prompt, *, title="Confirm", on_result=None: (
-        titles.append(title), confirm(prompt, title=title, on_result=on_result))
-    pending = _xefmctl(app, "trash /tmp/x", policy="agent")
+    asked, done = _asking_ctx(app, monkeypatch)
+    app.new_terminal_session()
+    agent = app._screens.current
+    answer = _xefmctl(app, "trash /tmp/x", session=str(agent.session.id), policy="agent")
+    assert answer["outcome"] == "started" and asked == [("trash", ["/tmp/x"], None)]
+    assert app._screens.current is app._screens.files
     _run_later(app)
-    _answered(pending)
-    assert "wants to move 1 item(s) to the trash:" in asked[0]
-    assert titles == ["Allow move to the trash?"] and trashed == [["/tmp/x"]]
+    assert done == [("trash", ["/tmp/x"], None)] and app._screens.current is agent
+
+
+def test_an_agent_told_no_gets_a_failure(monkeypatch):
+    app = _app(monkeypatch)
+    asked, done = _asking_ctx(app, monkeypatch, answer=False)
+    pending = _xefmctl(app, "copy /tmp/a --to /tmp/out --wait", policy="agent")
+    _run_later(app)
+    answer = _answered(pending)
+    assert answer["status"] == 1 and answer["outcome"] == "cancelled"
+    assert "cancelled" in answer["note"] and done == []
 
 
 def test_the_rules_name_the_skill_xefm_handed_over():
     from xefm import agents
     assert "xefm:xefm" in agents.DEFAULT_RULES
-
-
-def test_an_agent_told_no_gets_a_failure(monkeypatch):
-    app = _app(monkeypatch)
-    asked, copied = _asking_ctx(app, monkeypatch, answer=False)
-    pending = _xefmctl(app, "copy /tmp/a --to /tmp/out", policy="agent")
-    _run_later(app)
-    answer = _answered(pending)
-    assert answer["status"] == 1 and "did not allow" in answer["note"]
-    assert copied == []
 
 
 def test_an_agent_may_not_delete_for_good(monkeypatch):

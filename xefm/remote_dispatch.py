@@ -63,6 +63,10 @@ AGENT_FORCED_SETTINGS = {
     "DELETE_TO_TRASH": True,
 }
 
+#: The operations' own confirmations, always shown for an agent's write.
+_ALWAYS_CONFIRM = {"CONFIRM_COPY": True, "CONFIRM_MOVE": True,
+                   "CONFIRM_TRASH": True}
+
 READ_LIMIT = 1_000_000
 
 
@@ -271,10 +275,11 @@ def _asker(app, req) -> str:
 
 
 @contextlib.contextmanager
-def _forced(app):
-    """``AGENT_FORCED_SETTINGS`` on ``app.config`` while held."""
+def _forced(app, settings: dict | None = None):
+    """``settings`` (``AGENT_FORCED_SETTINGS`` by default) on ``app.config``
+    while held."""
     saved = {}
-    for name, value in AGENT_FORCED_SETTINGS.items():
+    for name, value in (AGENT_FORCED_SETTINGS if settings is None else settings).items():
         saved[name] = getattr(app.config, name, None)
         setattr(app.config, name, value)
     try:
@@ -737,58 +742,43 @@ def _c_show_markdown(app, req):
 # --- files ----------------------------------------------------------------------------------
 
 
-def _write(app, req, verb: str, run, *, where: str | None = None) -> Any:
-    """A file operation: for an agent's session, confirmed in XeFM first.
-    ``run(on_done)`` starts it. With --wait (and for the confirmation in any
-    case) the answer waits for the outcome."""
+def _write(app, req, verb: str, run) -> Any:
+    """A file operation, through the operation's own path: ``run(on_done)``
+    starts it, with its confirmation, conflict dialog and progress. For an
+    agent's session its confirmation is shown whatever ``CONFIRM_*`` says
+    (the question the user answers is the operation's own, naming what and
+    where), and the user is taken back to the agent's screen once it has
+    ended or been declined. With --wait the answer is the outcome."""
     items = req["args"].get("source") or req["args"].get("path") or []
     wait = bool(req["opts"].get("wait"))
+    agent = _is_agent(req)
     pending = Pending()
     came_from = [None]
 
     def finished(_ctx, outcome) -> None:
+        if agent:
+            back, came_from[0] = came_from[0], None
+            _go_back(app, back)
         status = getattr(outcome, "status", "done")
         if status == "done":
-            pending.set(ok([{"path": p} for p in items], status=0, outcome="done"))
+            answer = ok([{"path": p} for p in items], status=0, outcome="done")
+        elif status == "cancelled":
+            answer = ok([], status=FAILED, outcome="cancelled",
+                        note=f"{verb}: the user cancelled it")
         else:
             error = getattr(outcome, "error", None)
-            pending.set(ok([], status=FAILED, outcome=status,
-                           note=f"{verb}: {status}" + (f" ({error})" if error else "")))
+            answer = ok([], status=FAILED, outcome=status,
+                        note=f"{verb}: {status}" + (f" ({error})" if error else ""))
+        pending.set(answer)
 
-    def start() -> None:
-        on_done = finished if wait else None
-        _, moved = _ui(app, lambda: run(on_done))
-        came_from[0] = came_from[0] or moved
-        if not wait:
-            pending.set(ok(outcome="started"))
+    def begin():
+        with (_forced(app, _ALWAYS_CONFIRM) if agent else contextlib.nullcontext()):
+            run(finished if (wait or agent) else None)
 
-    if not _is_agent(req):
-        start()
-        return pending if wait else pending.answer
-
-    who = _asker(app, req)
-    listing = "\n".join(f"  {p}" for p in items[:12])
-    more = f"\n  ... and {len(items) - 12} more" if len(items) > 12 else ""
-    if where is None:
-        dest = req["opts"].get("to")
-        where = f" to {dest}" if dest else ""
-
-    def answered(yes: bool) -> None:
-        # Back to the agent's screen once answered; the operation itself
-        # takes the user to the file manager again only if it asks something
-        # (a name conflict).
-        back, came_from[0] = came_from[0], None
-        _go_back(app, back)
-        if not yes:
-            pending.set(ok([], status=FAILED, outcome="cancelled",
-                           note=f"the user did not allow the {verb}{where}"))
-            return
-        start()
-
-    _, came_from[0] = _ui(app, lambda: app._user_ctx.confirm(
-        f"{who} wants to {verb} {len(items)} item(s){where}:\n{listing}{more}",
-        title=f"Allow {verb}{'' if req['opts'].get('to') else where}?", on_result=answered))
-    return pending
+    _, came_from[0] = _ui(app, begin)
+    if wait:
+        return pending
+    return ok(outcome="started")
 
 
 def _c_copy(app, req):
@@ -808,8 +798,8 @@ def _c_move(app, req):
 
 
 def _c_trash(app, req):
-    return _write(app, req, "move", lambda on_done: app._user_ctx.trash(
-        req["args"]["path"], on_done=on_done), where=" to the trash")
+    return _write(app, req, "trash", lambda on_done: app._user_ctx.trash(
+        req["args"]["path"], on_done=on_done))
 
 
 def _c_delete(app, req):

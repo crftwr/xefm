@@ -115,9 +115,9 @@ that screen and skip the gate.
 What a command opens lands on the file manager's screen whichever screen is
 shown: `on_files()` sets PuiKit's default layer parent to the file manager's
 group for the duration. `_bring_user()` then switches there when a layer
-was added; a question asked for the agent (`_ask`, the write confirmation,
-the remote-read question) returns the user to the asking screen once
-answered (`_go_back`).
+was added; a question asked for the agent (`_ask`, the remote-read
+question) returns the user to the asking screen once answered, and an
+agent's write once it has ended or been declined (`_go_back`).
 
 `view`, `diff` and `show-markdown` switch to the file manager first and close
 its viewers inside `dialog_geometry.no_motion()`, which makes

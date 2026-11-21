@@ -58,9 +58,12 @@ starts an interactive session with it).
    Only the preset knows how to say it; other agents get `{settings_file}`
    to pass if their CLI has an equivalent.
 2. **XeFM's** (any agent): in `remote_dispatch`, for policy `agent`:
-   - `copy`, `move`, `trash`: `ctx.confirm` naming the session and listing
-     the items first, whatever `CONFIRM_*` says; the user is taken to the
-     file manager for it and back once answered.
+   - `copy`, `move`, `trash`: the operation's own confirmation, shown
+     whatever `CONFIRM_*` says (`_ALWAYS_CONFIRM` forced for the call, read
+     when the operation starts). The question is the operation's, naming
+     what and where; a separate "the agent wants to..." dialog asked the
+     same thing twice. The user is taken to the file manager for it and
+     back when the operation ends or is declined (its `on_done`).
    - `delete`, and `invoke` of `delete_permanently`, `quit`, `quit_app`:
      refused (exit 5).
    - `invoke`: run with `AGENT_FORCED_SETTINGS` set on `app.config` (every

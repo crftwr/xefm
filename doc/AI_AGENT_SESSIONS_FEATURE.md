@@ -59,8 +59,10 @@ anything: those need the desktop app.
 Rules can be ignored, so two things hold whatever the agent decides:
 
 - **XeFM confirms every change.** A copy, move or trash asked for through
-  `xefmctl` opens a dialog in XeFM that names the agent and lists the items,
-  whatever your `CONFIRM_*` settings say; it goes ahead only if you allow it.
+  `xefmctl` shows that operation's own confirmation in XeFM, listing the
+  items, even where your `CONFIRM_*` settings turned it off; it goes ahead
+  only if you allow it, and XeFM takes you back to the agent once it is done
+  or declined.
   `xefmctl delete` is refused (the trash can be undone), and so is the
   `delete_permanently` action. An action the agent runs with `xefmctl
   invoke` asks first too, and deletes to the trash. The first time the agent
