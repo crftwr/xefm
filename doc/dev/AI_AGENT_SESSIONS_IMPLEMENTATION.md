@@ -90,13 +90,35 @@ installer), so the multi-line request reaches it intact; an npm install's
 `codex.cmd` goes through cmd.exe, which cuts an argument at its first
 newline.
 
-Checked against the real CLI with `codex debug prompt-input`, which prints
-the model-visible input without calling the model: the rules arrive as a
-developer message and the request whole.
+The `copilot` preset (GitHub Copilot CLI 1.0.114) appends `--plugin-dir`
+(Copilot loads the Claude Code plugin folder as is: `copilot --plugin-dir
+<dir> skill list` lists `xefm` as a plugin skill), a `--deny-tool=` per
+`COPILOT_DENY_TOOLS` for a restricted entry, and `-i <request>` (interactive,
+starting with the request; `-p` would exit after it). Copilot matches a
+shell rule by the command name as typed, aliases not included, so the list
+names PowerShell's `Remove-Item`, `ri`, `del`, `erase`, `rd`, `Move-Item`,
+`mi`, `move` beside the POSIX names; `xefmctl delete` is left to XeFM, which
+refuses it (a `shell(xefmctl)` rule would deny every xefmctl command).
+Copilot has no option for system-prompt text, so the rules go in
+`sessions/instructions/xefm.instructions.md` with `applyTo: "**"`, a folder
+`session_env` appends to `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` (after the
+user's own, comma-separated). An `AGENTS.md` in that folder is listed as a
+"nested" one, read only when the agent works under it, and a
+`.github/copilot-instructions.md` there is not read at all; an
+`*.instructions.md` file is. `--no-custom-instructions` in the user's
+`command` turns the rules off.
+
+Checked against the real CLIs. Codex: `codex debug prompt-input`, which
+prints the model-visible input without calling the model: the rules arrive
+as a developer message and the request whole. Copilot: a `-p` run answered
+from the rules and quoted the skill, and `rm` was denied with
+`--allow-all-tools` on; on a ConPTY the session loaded "1 instruction, 1
+plugin" and answered a two-line request after the folder-trust question.
 
 ## The two hard layers
 
-1. **The agent's own permissions** (Claude Code): the settings file above.
+1. **The agent's own permissions** (Claude Code: the settings file above;
+   Copilot: the `--deny-tool` rules).
    Only the preset knows how to say it; other agents get `{settings_file}`
    to pass if their CLI has an equivalent. Codex 0.171 has no
    command-line option that denies a command: its sandbox and approvals
@@ -134,7 +156,7 @@ nor a docstring (read with `ast`, not imported).
 
 ## Not yet
 
-- Built-in presets beyond Claude Code and Codex: the wiki page "AI agents"
+- Built-in presets beyond Claude Code, Codex and Copilot: the wiki page "AI agents"
   for now, kept up by their users (CLAUDE.md, "Core or extension?").
 - #880's later steps: answers shown in XeFM rather than a terminal
   session, proposals confirmed in XeFM's own dialogs beyond copy/move/trash.
@@ -142,7 +164,9 @@ nor a docstring (read with `ast`, not imported).
 ## Tests
 
 `test/test_terminal_sessions.py`: the `codex` preset (the TOML value
-parsed back, the skill path, the request last, the default `AGENTS`),
+parsed back, the skill path, the request last, the default `AGENTS`), the
+`copilot` preset (plugin folder, deny rules and `restrict: False`, `-i`,
+the instructions file and the folder added to the user's own),
 `agent` (argv, the plugin folder,
 the rules with `AGENT_RULES`, the settings, the `agent` policy, the session
 and its screen), `ask_agent` (the request with the selection, placeholders,

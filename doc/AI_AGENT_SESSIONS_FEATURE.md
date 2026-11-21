@@ -18,8 +18,9 @@ show you what it found, and ask you before it changes a file.
 
 An agent's command-line program, installed and signed in to on its own:
 XeFM starts it the way it starts an editor, and never sees its account,
-credentials or model. Claude Code (`claude`) and Codex (`codex`) are set up
-out of the box; other agents are on the wiki (see [Other agents](#other-agents)).
+credentials or model. Claude Code (`claude`), Codex (`codex`) and GitHub
+Copilot CLI (`copilot`) are set up out of the box; other agents are on the
+wiki (see [Other agents](#other-agents)).
 
 ## Opening a session
 
@@ -76,10 +77,11 @@ Rules can be ignored, so two things hold whatever the agent decides:
   invoke` asks first too, and deletes to the trash. The first time the agent
   reads somewhere off this computer's disk - a server, cloud storage, an
   archive - XeFM asks whether it may, for the rest of the session.
-- **The agent's own shell is limited** (Claude Code): the commands that
-  delete or move files (`rm`, `rmdir`, `mv`, `unlink`, `shred`, `git clean`)
-  are denied in its permission settings, so those changes go through
-  `xefmctl`. Codex has no such setting to pass: its own sandbox and
+- **The agent's own shell is limited** (Claude Code, Copilot): the commands
+  that delete or move files (`rm`, `rmdir`, `mv`, `unlink`, `shred`, `git
+  clean`, and for Copilot PowerShell's `Remove-Item`, `Move-Item`, `del` and
+  their kin) are denied in its permission settings, so those changes go
+  through `xefmctl`. Codex has no such setting to pass: its own sandbox and
   approvals decide what its shell may run, as they do outside XeFM.
 
 To lift both, for an agent you trust with your files, set `'restrict':
@@ -91,6 +93,7 @@ False` on its entry.
 AGENTS = [
     {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
     {'name': 'Codex', 'command': ['codex'], 'preset': 'codex'},
+    {'name': 'Copilot', 'command': ['copilot'], 'preset': 'copilot'},
 ]
 
 # Your own rules, added after XeFM's in every session.
@@ -101,7 +104,7 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 |---|---|
 | `name` | Its name in the menu and the screen switcher |
 | `command` | The program and its arguments, a list (or a string, split like a shell would) |
-| `preset` | `'claude-code'`: XeFM adds the arguments that hand Claude Code the skill, the rules and its permission settings. `'codex'`: XeFM hands Codex the rules, which tell it where the skill is |
+| `preset` | `'claude-code'`: XeFM adds the arguments that hand Claude Code the skill, the rules and its permission settings. `'codex'`: XeFM hands Codex the rules, which tell it where the skill is. `'copilot'`: XeFM hands GitHub Copilot CLI the skill, the rules and the commands it may not run |
 | `restrict` | `True` (the default): the limits above. `False`: none |
 | `settings` | Claude Code only: the settings to pass instead of XeFM's, e.g. `{'permissions': {'deny': ['Bash(rm:*)']}}` |
 | `env` | Extra environment variables |
@@ -114,8 +117,11 @@ The `codex` preset sets Codex's `developer_instructions` for the session,
 so one in your `~/.codex/config.toml` is not used there; put what you want
 every session to know in `AGENT_RULES` (or Codex's own `AGENTS.md`).
 
-A `config.py` that has its own `AGENTS` keeps it: add the Codex line to
-it to get Codex.
+Copilot asks whether you trust a folder the first time it starts there;
+answer it in the session.
+
+A `config.py` that has its own `AGENTS` keeps it: add the Codex or Copilot
+line to it to get that agent.
 
 ### Saved requests: `AGENT_PROMPTS`
 

@@ -910,7 +910,45 @@ def test_codex_is_set_up_out_of_the_box():
     from xefm import agents
     from xefm._config import Config
     names = {e["name"]: e["preset"] for e in agents.entries(Config)}
-    assert names == {"Claude Code": "claude-code", "Codex": "codex"}
+    assert names == {"Claude Code": "claude-code", "Codex": "codex", "Copilot": "copilot"}
+
+
+def test_the_copilot_preset_hands_the_plugin_rules_and_deny_rules(monkeypatch, tmp_path):
+    import pathlib
+    from xefm import agents
+    app = _agent_app(monkeypatch, tmp_path, [
+        {"name": "Copilot", "command": ["copilot", "--model", "x"], "preset": "copilot",
+         "env": {"COPILOT_CUSTOM_INSTRUCTIONS_DIRS": "/mine"}}])
+    app.config.AGENT_RULES = "Leave ~/Taxes alone."
+    envs = []
+    real = app._start_session
+    app._start_session = lambda argv, **kw: (envs.append(kw["env"]), real(argv, **kw))[1]
+    switcher = _Switcher(monkeypatch)
+    app.ask_agent()
+    switcher.last.kw["on_accept_text"]("sort these by month")
+    [view] = app.made
+    argv = view.argv
+    assert argv[:4] == ["copilot", "--model", "x", "--plugin-dir"]
+    assert (pathlib.Path(argv[4]) / "skills" / "xefm" / "SKILL.md").exists()
+    assert "--deny-tool=shell(rm)" in argv and "--deny-tool=shell(Remove-Item)" in argv
+    assert argv[-2] == "-i" and argv[-1].startswith("sort these by month")
+    # The rules, as an instructions file in a folder added to the user's own.
+    dirs = envs[-1]["COPILOT_CUSTOM_INSTRUCTIONS_DIRS"].split(",")
+    assert dirs[0] == "/mine"
+    text = (pathlib.Path(dirs[1]) / "xefm.instructions.md").read_text(encoding="utf-8")
+    assert text.startswith('---\napplyTo: "**"\n---\n')
+    assert "xefmctl state" in text and "Leave ~/Taxes alone." in text
+    assert app.remote_policies[-1] == "agent"
+    assert agents.session_env({"preset": "codex"}, {}, {}) == {}
+
+
+def test_an_unrestricted_copilot_gets_no_deny_rules(tmp_path):
+    from xefm import agents
+    entry = agents.normalize({"name": "Copilot", "command": ["copilot"],
+                              "preset": "copilot", "restrict": False})
+    values = agents.prepare(SimpleNamespace(), entry, root=tmp_path, version="t")
+    argv = agents.argv(entry, values)
+    assert argv == ["copilot", "--plugin-dir", values["{plugin_dir}"]]
 
 
 def _agent_app(monkeypatch, tmp_path, agents_cfg, installed=lambda e: True):

@@ -6189,6 +6189,7 @@ class XeFMApp:
         pane = self.active_pane()
         env, cwd = self._program_env(pane)
         env.update(entry["env"])
+        env.update(agents.session_env(entry, values, env))
         if pane.get("virtual") or path_schemes.is_uri(str(cwd)):
             cwd = os.path.expanduser("~")  # an agent works on the local disk
         policy = AGENT if entry["restrict"] else USER
