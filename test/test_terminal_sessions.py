@@ -910,7 +910,46 @@ def test_codex_is_set_up_out_of_the_box():
     from xefm import agents
     from xefm._config import Config
     names = {e["name"]: e["preset"] for e in agents.entries(Config)}
-    assert names == {"Claude Code": "claude-code", "Codex": "codex", "Copilot": "copilot"}
+    assert names == {"Claude Code": "claude-code", "Codex": "codex", "Copilot": "copilot",
+                     "Antigravity": "antigravity"}
+
+
+def test_the_antigravity_preset_hands_a_workspace_and_its_settings(monkeypatch, tmp_path):
+    import json
+    import pathlib
+    app = _agent_app(monkeypatch, tmp_path, [
+        {"name": "Antigravity", "command": ["agy", "--model", "x"], "preset": "antigravity"}])
+    app.config.AGENT_RULES = "Leave ~/Taxes alone."
+    switcher = _Switcher(monkeypatch)
+    app.ask_agent()
+    switcher.last.kw["on_accept_text"]("sort these by month")
+    [view] = app.made
+    argv = view.argv
+    assert argv[:4] == ["agy", "--model", "x", "--add-dir"]
+    # The workspace it adds holds the rules (AGENTS.md) and the skill.
+    workspace = pathlib.Path(argv[4])
+    rules = (workspace / "AGENTS.md").read_text(encoding="utf-8")
+    assert "xefmctl state" in rules and "Leave ~/Taxes alone." in rules
+    assert (workspace / ".agents" / "skills" / "xefm" / "SKILL.md").exists()
+    assert argv[5] == "--settings"
+    deny = json.loads(pathlib.Path(argv[6]).read_text())["permissions"]["deny"]
+    assert "command(rm)" in deny and "command(Remove-Item)" in deny
+    assert argv[7:] == ["-i", argv[8]] and argv[8].startswith("sort these by month")
+    assert app.remote_policies[-1] == "agent"
+
+
+def test_antigravity_takes_the_entrys_settings_or_none_unrestricted(tmp_path):
+    import json
+    import pathlib
+    from xefm import agents
+    for item, expected in [({"restrict": False}, {}),
+                           ({"settings": {"permissions": {"deny": ["command(sudo)"]}}},
+                            {"permissions": {"deny": ["command(sudo)"]}})]:
+        entry = agents.normalize({"name": "A", "command": ["agy"], "preset": "antigravity",
+                                  **item})
+        values = agents.prepare(SimpleNamespace(), entry, root=tmp_path, version="t")
+        argv = agents.argv(entry, values)
+        assert json.loads(pathlib.Path(argv[argv.index("--settings") + 1]).read_text()) == expected
 
 
 def test_the_copilot_preset_hands_the_plugin_rules_and_deny_rules(monkeypatch, tmp_path):

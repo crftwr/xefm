@@ -25,9 +25,16 @@ gets:
   ``delete`` refused, and its first read outside the local disk asked (see
   :mod:`xefm.remote_dispatch`). ``'restrict': False`` lifts both hard layers.
 
-Claude Code (``'preset': 'claude-code'``), Codex (``'preset': 'codex'``) and
-GitHub Copilot CLI (``'preset': 'copilot'``) are supported here; another
-agent CLI is configured with placeholders in its ``command`` - see the wiki.
+Claude Code (``'preset': 'claude-code'``), Codex (``'preset': 'codex'``),
+GitHub Copilot CLI (``'preset': 'copilot'``) and Antigravity CLI
+(``'preset': 'antigravity'``, the ``agy`` that replaced Gemini CLI) are
+supported here; another agent CLI is configured with placeholders in its
+``command`` - see the wiki.
+
+Antigravity has no option for a skills folder or system-prompt text, but
+reads a workspace's ``AGENTS.md`` and ``.agents/skills/``, and ``--add-dir``
+adds a workspace folder: XeFM writes one holding both. Its deny rules go in
+a session-only settings file (``--settings``).
 
 Copilot loads the same plugin folder (``--plugin-dir``), denies commands with
 ``--deny-tool``, and takes the rules as an instructions file
@@ -56,7 +63,8 @@ logger = getLogger("Agents")
 CLAUDE_CODE = "claude-code"
 CODEX = "codex"
 COPILOT = "copilot"
-PRESETS = (CLAUDE_CODE, CODEX, COPILOT)
+ANTIGRAVITY = "antigravity"
+PRESETS = (CLAUDE_CODE, CODEX, COPILOT, ANTIGRAVITY)
 
 #: The placeholders a ``command`` (or ``prompt_args``) may hold.
 PLACEHOLDERS = ("{plugin_dir}", "{skills_dir}", "{skill_dir}", "{rules}",
@@ -100,15 +108,22 @@ CLAUDE_DEFAULT_SETTINGS = {
     },
 }
 
-#: Copilot's ``--deny-tool`` rules for a restricted session. Copilot matches
-#: a command by the name as typed, aliases not included, so PowerShell's
-#: names and aliases are listed beside the POSIX ones.
-COPILOT_DENY_TOOLS = (
-    "shell(rm)", "shell(rmdir)", "shell(unlink)", "shell(shred)",
-    "shell(mv)", "shell(trash)", "shell(srm)", "shell(git clean)",
-    "shell(Remove-Item)", "shell(ri)", "shell(del)", "shell(erase)",
-    "shell(rd)", "shell(Move-Item)", "shell(mi)", "shell(move)",
+#: The shell commands that delete or move files, denied in a restricted
+#: session by the agents that take command rules (Copilot, Antigravity).
+#: Both match a command by the name as typed, aliases not included, so
+#: PowerShell's names and aliases are listed beside the POSIX ones.
+DENIED_COMMANDS = (
+    "rm", "rmdir", "unlink", "shred", "mv", "trash", "srm", "git clean",
+    "Remove-Item", "ri", "del", "erase", "rd", "Move-Item", "mi", "move",
 )
+
+#: Copilot's ``--deny-tool`` rules for a restricted session.
+COPILOT_DENY_TOOLS = tuple(f"shell({c})" for c in DENIED_COMMANDS)
+
+#: Antigravity's settings (``--settings``) for a restricted session.
+ANTIGRAVITY_DEFAULT_SETTINGS = {
+    "permissions": {"deny": [f"command({c})" for c in DENIED_COMMANDS]},
+}
 
 #: The environment variable naming Copilot's extra instructions folders.
 COPILOT_INSTRUCTIONS_ENV = "COPILOT_CUSTOM_INSTRUCTIONS_DIRS"
@@ -278,11 +293,17 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     (instructions / "xefm.instructions.md").write_text(
         '---\napplyTo: "**"\n---\n\n' + rules, encoding="utf-8")
     settings = entry.get("settings")
-    if settings is None:
-        settings = CLAUDE_DEFAULT_SETTINGS if entry.get("restrict", True) else {}
+    if settings is None and not entry.get("restrict", True):
+        settings = {}
+    elif settings is None:
+        settings = (ANTIGRAVITY_DEFAULT_SETTINGS if entry.get("preset") == ANTIGRAVITY
+                    else CLAUDE_DEFAULT_SETTINGS)
     settings_file = session_dir / f"settings-{_safe(entry['name'])}.json"
     settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    return {
+    extra = {}
+    if entry.get("preset") == ANTIGRAVITY:
+        extra["workspace_dir"] = str(_antigravity_workspace(session_dir, skill, rules))
+    return {**extra,
         "{plugin_dir}": str(plugin),
         "{skills_dir}": str(plugin / "skills"),
         "{skill_dir}": str(skill),
@@ -291,6 +312,17 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
         "{settings_file}": str(settings_file),
         "instructions_dir": str(instructions),  # for the copilot preset; not a placeholder
     }
+
+
+def _antigravity_workspace(session_dir: _FsPath, skill: _FsPath, rules: str) -> _FsPath:
+    """A folder for Antigravity's ``--add-dir``: it reads a workspace's
+    ``AGENTS.md`` as rules and its ``.agents/skills/`` as skills."""
+    folder = session_dir / "antigravity"
+    skills = folder / ".agents" / "skills"
+    shutil.rmtree(skills, ignore_errors=True)
+    shutil.copytree(skill, skills / skill.name)
+    (folder / "AGENTS.md").write_text(rules, encoding="utf-8")
+    return folder
 
 
 def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
@@ -317,6 +349,12 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
         out += ["--plugin-dir", values["{plugin_dir}"]]
         if entry.get("restrict", True):
             out += [f"--deny-tool={rule}" for rule in COPILOT_DENY_TOOLS]
+        if prompt:
+            out += ["-i", prompt]  # interactive, starting with the request
+        return out
+    if entry.get("preset") == ANTIGRAVITY:
+        out += ["--add-dir", values["workspace_dir"],
+                "--settings", values["{settings_file}"]]
         if prompt:
             out += ["-i", prompt]  # interactive, starting with the request
         return out

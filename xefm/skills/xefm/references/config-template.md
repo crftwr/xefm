@@ -1131,6 +1131,9 @@ class Config:
     #                skill (Codex's own sandbox and approvals still apply).
     #                'copilot' - XeFM passes GitHub Copilot CLI the skill,
     #                the rules and --deny-tool rules.
+    #                'antigravity' - XeFM passes Antigravity CLI (agy) the
+    #                skill and the rules in a workspace folder, and its
+    #                permission settings.
     #                Without a preset, put the placeholders in 'command'
     #                yourself: {plugin_dir} {skills_dir} {skill_dir} {rules}
     #                {rules_file} {settings_file} (and {prompt} in
@@ -1138,9 +1141,10 @@ class Config:
     #   'restrict' : True (the default): xefmctl from the session has every
     #                file change confirmed in XeFM, may not delete for good,
     #                and asks before its first read outside this disk; for
-    #                Claude Code and Copilot, its shell may not rm or mv either.
-    #   'settings' : (Claude Code) the settings file to pass instead of
-    #                XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
+    #                Claude Code, Copilot and Antigravity, its shell may not
+    #                rm or mv either.
+    #   'settings' : (Claude Code, Antigravity) the settings to pass instead
+    #                of XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
     #   'env'      : extra environment variables
     # An entry is offered only while its program is on PATH.
     # Other agent CLIs: see the wiki page "AI agents".
@@ -1148,6 +1152,7 @@ class Config:
         {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
         {'name': 'Codex', 'command': ['codex'], 'preset': 'codex'},
         {'name': 'Copilot', 'command': ['copilot'], 'preset': 'copilot'},
+        {'name': 'Antigravity', 'command': ['agy'], 'preset': 'antigravity'},
     ]
 
     # Your own rules for every agent session, after XeFM's (a string), e.g.

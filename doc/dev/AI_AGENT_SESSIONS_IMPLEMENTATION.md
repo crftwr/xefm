@@ -108,17 +108,35 @@ user's own, comma-separated). An `AGENTS.md` in that folder is listed as a
 `*.instructions.md` file is. `--no-custom-instructions` in the user's
 `command` turns the rules off.
 
+The `antigravity` preset (Antigravity CLI `agy` 1.5.14, Gemini CLI's
+successor) appends `--add-dir <workspace>`, `--settings <settings file>`
+and `-i <request>`. Antigravity has no option for a skills folder or for
+system-prompt text, but it reads a workspace's `AGENTS.md` (always on, no
+frontmatter) and `.agents/skills/`, and a folder added with `--add-dir`
+counts: `prepare` writes `sessions/antigravity/` with the rules as
+`AGENTS.md` and a copy of the skill under `.agents/skills/xefm/`.
+`--settings` takes a session-only settings JSON (inline or a file; it is in
+`agy --help` though not in the online reference); a restricted entry gets
+`ANTIGRAVITY_DEFAULT_SETTINGS`, `permissions.deny` of `command(<name>)` for
+each of `DENIED_COMMANDS` (the list Copilot's rules are made from too), and
+the entry's own `settings` replace it. A deny rule wins over an allow:
+with `command(hostname)` in both, agy answered "Permission denied for
+command(hostname). Matches user-configured deny rule."
+
 Checked against the real CLIs. Codex: `codex debug prompt-input`, which
 prints the model-visible input without calling the model: the rules arrive
 as a developer message and the request whole. Copilot: a `-p` run answered
 from the rules and quoted the skill, and `rm` was denied with
 `--allow-all-tools` on; on a ConPTY the session loaded "1 instruction, 1
 plugin" and answered a two-line request after the folder-trust question.
+Antigravity: a `-p` run with the workspace answered from the rules and
+named the skill; on a ConPTY, from a trusted folder, the preset's argv
+answered from the rules, listed `xefm` and quoted a two-line request.
 
 ## The two hard layers
 
 1. **The agent's own permissions** (Claude Code: the settings file above;
-   Copilot: the `--deny-tool` rules).
+   Copilot: the `--deny-tool` rules; Antigravity: its `--settings` file).
    Only the preset knows how to say it; other agents get `{settings_file}`
    to pass if their CLI has an equivalent. Codex 0.171 has no
    command-line option that denies a command: its sandbox and approvals
@@ -156,7 +174,7 @@ nor a docstring (read with `ast`, not imported).
 
 ## Not yet
 
-- Built-in presets beyond Claude Code, Codex and Copilot: the wiki page "AI agents"
+- Built-in presets beyond Claude Code, Codex, Copilot and Antigravity: the wiki page "AI agents"
   for now, kept up by their users (CLAUDE.md, "Core or extension?").
 - #880's later steps: answers shown in XeFM rather than a terminal
   session, proposals confirmed in XeFM's own dialogs beyond copy/move/trash.
@@ -166,7 +184,9 @@ nor a docstring (read with `ast`, not imported).
 `test/test_terminal_sessions.py`: the `codex` preset (the TOML value
 parsed back, the skill path, the request last, the default `AGENTS`), the
 `copilot` preset (plugin folder, deny rules and `restrict: False`, `-i`,
-the instructions file and the folder added to the user's own),
+the instructions file and the folder added to the user's own), the
+`antigravity` preset (the workspace with `AGENTS.md` and the skill, the
+settings file, the entry's `settings`, `restrict: False`),
 `agent` (argv, the plugin folder,
 the rules with `AGENT_RULES`, the settings, the `agent` policy, the session
 and its screen), `ask_agent` (the request with the selection, placeholders,
