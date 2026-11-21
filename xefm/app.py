@@ -5313,10 +5313,7 @@ class XeFMApp:
             # What opens a screen in XeFM's terminal, then the switch between
             # them; what runs work, then where that work is followed.
             MenuItem("Subshell Here", on_select=self.subshell, shortcut=sc("subshell")),
-            MenuItem("AI Agent Here", on_select=self.open_agent, shortcut=sc("agent"),
-                     enabled=self._agent_installed),
-            MenuItem("Ask AI Agent…", on_select=self.ask_agent, shortcut=sc("ask_agent"),
-                     enabled=self._agent_installed),
+            *self._agent_menu(sc),
             *self._terminal_menu(sc),
             SEPARATOR,
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
@@ -6122,7 +6119,10 @@ class XeFMApp:
         says why (none set up, or none installed)."""
         from xefm import agents
         found = agents.entries(self.config)
-        if not found:
+        if agents.turned_off(self.config):
+            self.log_info("AI agents are turned off: AGENTS is empty in config.py "
+                          "(see doc/AI_AGENT_SESSIONS_FEATURE.md)")
+        elif not found:
             self.log_info("No AI agent is set up: add one to AGENTS in config.py "
                           "(see doc/AI_AGENT_SESSIONS_FEATURE.md)")
         elif not agents.available(self.config):
@@ -6155,6 +6155,21 @@ class XeFMApp:
             if index is not None:
                 then(found[index])
         self._user_ctx.choose("AI agent", [e["name"] for e in found], on_result=picked)
+
+    def _agent_menu(self, sc) -> list:
+        """The Tools menu's agent items: none when ``AGENTS = []`` turned
+        agents off (the menu is rebuilt on a config reload); otherwise both,
+        greyed while no entry's program is installed, so the menu still says
+        the feature is there."""
+        from xefm import agents
+        if agents.turned_off(self.config):
+            return []
+        return [
+            MenuItem("AI Agent Here", on_select=self.open_agent, shortcut=sc("agent"),
+                     enabled=self._agent_installed),
+            MenuItem("Ask AI Agent…", on_select=self.ask_agent, shortcut=sc("ask_agent"),
+                     enabled=self._agent_installed),
+        ]
 
     def _agent_installed(self) -> bool:
         """For the menu: whether an ``AGENTS`` entry's program is on PATH,

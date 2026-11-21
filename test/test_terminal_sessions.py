@@ -1050,6 +1050,9 @@ def test_without_an_installed_agent_the_menu_is_off_and_the_key_says_why(monkeyp
     assert "No AI agent is installed: Claude Code (claude) not found on PATH" in app.logged[-1]
     app.config.AGENTS = []
     app.ask_agent()
+    assert "AI agents are turned off: AGENTS is empty" in app.logged[-1]
+    app.config.AGENTS = [{"name": "broken"}]  # entries, none of them usable
+    app.ask_agent()
     assert "No AI agent is set up" in app.logged[-1]
 
 

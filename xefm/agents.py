@@ -231,6 +231,14 @@ def prompts(config: Any) -> list[dict]:
     return out
 
 
+def turned_off(config: Any) -> bool:
+    """Whether the user turned agent sessions off: ``AGENTS = []`` in
+    config.py. (A config.py without ``AGENTS`` gets the template's, so an
+    empty one is always written on purpose.) The menu then leaves the agent
+    items out; with entries none of which is installed, they stay, greyed."""
+    return not getattr(config, "AGENTS", None)
+
+
 def available(config: Any) -> list[dict]:
     """The ``AGENTS`` entries whose program is installed."""
     return [e for e in entries(config) if installed(e)]

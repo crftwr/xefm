@@ -1147,6 +1147,7 @@ class Config:
     #                of XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
     #   'env'      : extra environment variables
     # An entry is offered only while its program is on PATH.
+    # AGENTS = [] turns agent sessions off; their menu items go too.
     # Other agent CLIs: see the wiki page "AI agents".
     AGENTS = [
         {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
