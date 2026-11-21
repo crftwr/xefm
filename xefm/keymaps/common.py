@@ -276,8 +276,11 @@ def bindings() -> dict:
         'terminal.close': [],
         # Terminal sessions (#900), the desktop app's: terminal mode hands its
         # terminal over and has none. The desktop's Ctrl-` is set below.
-        'terminal_sessions': [],
-        'terminal.sessions': [],
+        'screens': [],
+        'terminal.screens': [],
+        # AI agent sessions (AGENTS, #880). Unbound: Tools > Open AI Agent.
+        'open_agent': [],
+        'ask_agent': [],
 
         # === Configuration ===
         # Unbound by default (reachable via the Tools menu). Assign a key here to
@@ -529,8 +532,8 @@ def bindings() -> dict:
             KEY_BINDINGS['terminal.close'] = ['Command-W']
             # The screen switcher (#900) on Ctrl-`, VS Code's terminal toggle,
             # from the panes and from inside a session alike.
-            KEY_BINDINGS['terminal_sessions'] = ['Ctrl-GRAVE']
-            KEY_BINDINGS['terminal.sessions'] = ['Ctrl-GRAVE']
+            KEY_BINDINGS['screens'] = ['Ctrl-GRAVE']
+            KEY_BINDINGS['terminal.screens'] = ['Ctrl-GRAVE']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
@@ -546,6 +549,6 @@ def bindings() -> dict:
             # key, since Ctrl-W is a shell's.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Ctrl-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Ctrl-Shift-W']
-            KEY_BINDINGS['terminal_sessions'] = ['Ctrl-GRAVE']
-            KEY_BINDINGS['terminal.sessions'] = ['Ctrl-GRAVE']
+            KEY_BINDINGS['screens'] = ['Ctrl-GRAVE']
+            KEY_BINDINGS['terminal.screens'] = ['Ctrl-GRAVE']
     return KEY_BINDINGS

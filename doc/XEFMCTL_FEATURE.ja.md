@@ -1,0 +1,90 @@
+# xefmctl
+
+[English](XEFMCTL_FEATURE.md) \| 日本語
+
+XeFM が起動したシェル（サブシェル、[ターミナルセッション](TERMINAL_FEATURE.ja.md)、`PROGRAMS` のエントリ、[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)）では、`xefmctl` コマンドでその XeFM とやり取りできます。実行した時点での状態を問い合わせ、その XeFM のファイルマネージャーを操作します。
+
+いちばんの利用者は、隣で作業する AI エージェントです。あなたが見ているものを読み、XeFM が開ける場所ならどこでも検索し、見つけたものを見せ、何かを変える前にあなたに確認します。自分のシェルスクリプトから使うこともできます。
+
+## コマンド
+
+ペインについてのコマンドは `pane` で始まり、それ以外はすることの名前がついています。名前は XeFM 自身の名前にそろえてあります。`pane cd` はアクションの `ctx.pane.cd` と同じことをし、検索をするコマンドには、その検索を開くアクションの名前がついています（`find-files`、`find-in-files`）。
+
+| コマンド | すること |
+|---|---|
+| `xefmctl state` | 両方のペイン（ディレクトリ、カーソル、選択項目、フィルター）、表示中の画面、ペインの上に開いているもの。まずこれを使います |
+| `xefmctl pane path` / `entries` / `focused` / `selected` | ペインのディレクトリ、項目、カーソル位置の項目、選択項目 |
+| `xefmctl pane cd [PATH] [--focus NAME]` | ペインを `PATH`（既定はシェルのディレクトリ）に移動。ファイルを指定すると、そのフォルダーに移動してカーソルをそのファイルに置く |
+| `xefmctl pane select PATTERN...` / `unselect` | 名前かグロブで項目を選択（選択解除）。`--all` ですべての項目 |
+| `xefmctl pane open-list PATH...` | パスをペインに[一覧](FILE_LIST_IMPORT_FEATURE.ja.md)として表示。`-` で標準入力から読む |
+| `xefmctl pane refresh` / `activate` | ペインを読み直す。ペインをアクティブにする |
+| `xefmctl entries URL...` | XeFM が開ける場所にあるフォルダーの中身。`--recursive` で下のフォルダーも |
+| `xefmctl find-files PATTERN [URL...]` | フォルダーの下にある、名前が一致するファイル |
+| `xefmctl find-in-files PATTERN [URL...]` | フォルダーの下のファイルで一致する行（`--case`、`--word`、`--regex`） |
+| `xefmctl index-search QUERY` | OS のインデックス。macOS は Spotlight、Windows は Windows Search |
+| `xefmctl read URL` / `fetch URL [LOCAL]` | ファイルのテキスト。ローカルディスクへのファイルのコピー |
+| `xefmctl view FILE [--line N]` | `FILE` をファイルマネージャーの画面の XeFM のビューアーで開く。そこに開いていたビューアーと入れ替わる |
+| `xefmctl diff A B` | 2 つのファイル、または 2 つのフォルダーを比べる |
+| `xefmctl show-markdown FILE` | Markdown を XeFM のビューアーで表示。`-` で標準入力から読む |
+| `xefmctl copy SOURCE... --to DIR` / `move` | XeFM 自身のコピー（移動）で、競合ダイアログ付きでコピー（移動）する |
+| `xefmctl trash PATH...` / `delete` | OS のゴミ箱に移動する。完全に削除する |
+| `xefmctl confirm` / `choose` / `input` | XeFM であなたに尋ね（はい・いいえ、一覧からひとつ、1 行のテキスト）、答えを表示する |
+| `xefmctl message TEXT` | ログペインに 1 行書く |
+| `xefmctl action list` / `action show NAME` | すべてのアクションと、その説明とキー。ひとつのアクションの詳細 |
+| `xefmctl invoke NAME` | ファイルマネージャーの画面でキーを押したのと同じようにアクションを実行する |
+| `xefmctl screen list` / `screen show ID` | 画面の一覧。画面を表示する（ファイルマネージャーは `files`） |
+| `xefmctl terminal-session list` / `start` / `close ID` | XeFM のターミナルセッション |
+| `xefmctl help [COMMAND]` | すべてのコマンド、またはひとつのコマンドの詳細 |
+
+各コマンドのオプションは `xefmctl help COMMAND` で確認できます。
+
+### XeFM が開ける場所ならどこでも
+
+`entries`、`find-files`、`find-in-files`、`read`、`fetch`、`view`、`diff` には、このコンピューターのパスのほか、XeFM が開けるものなら何でも渡せます。`ssh://host/path`、`s3://bucket/key`、アーカイブの中のファイル（`archive:///path/a.zip#inner/file`）、[仮想フォルダー](VIRTUAL_FOLDERS_FEATURE.ja.md)です。接続は XeFM が持っているので、シェルに SSH の鍵やクラウドの認証情報は要りません。
+
+### 見つけたものを見せる
+
+`entries` や検索に `--show` を付けると、見つけたものがアクティブなペイン（`--pane` で別のペインも指定できます）に一覧として表示されます。XeFM 自身の検索と同じく、ソート、絞り込み、操作ができます。
+
+### どのペインか
+
+`--pane active`（既定）、`--pane other`、`--pane left`、`--pane right` です。
+
+### スクリプトとエージェント向け
+
+- どのコマンドも、`--json` を付けると 1 行に 1 つずつ JSON オブジェクトを出力します。空白や改行を含むパスでも曖昧になりません。
+- 検索は、見つけたそばから出力します。`--limit N` で `N` 件で止まり、Ctrl-C で中断できます。
+- パスを複数取るコマンドでは、`-` で標準入力から読みます。1 行に 1 つのパスでも、別の `xefmctl --json` が出力した JSON の行でもかまいません：`xefmctl find-files '*.log' --json | xefmctl trash -`。
+- `copy`、`move`、`trash`、`delete` は、始めた時点で戻ります。`--wait` を付けると終わるまで待ち、結果を伝えます。
+- 終了ステータス：0 は完了、1 は失敗（またはあなたが「いいえ」と答えた）、2 はコマンドの誤り、3 は XeFM に届かない、4 は XeFM が取り込み中、5 は拒否です。拒否するときは、その理由を、エージェントがそのままあなたに伝えられる言葉で返します。
+
+```sh
+cp $(xefmctl pane selected) /tmp               # names without spaces
+xefmctl pane selected -0 | xargs -0 du -sh
+xefmctl pane cd .                              # bring the active pane here
+xefmctl find-in-files TODO ~/src --show        # the hits, as a list in the pane
+xefmctl view build.log --line 120
+xefmctl confirm "Delete the 3 old backups?" && xefmctl trash backup-*.zip
+```
+
+## 手でできることだけ
+
+ファイルマネージャーを変えるコマンドは、その画面でキーが届く状態のときに受け付けます。
+
+- ペインがいちばん上なら、何でも受け付けます。
+- ペインの上にビューアーが開いているときは、ファイル一覧のアクション以外を受け付けます。`view` はそのビューアーを閉じてから新しいものを開くので、2 つ開くことはありません。
+- ファイルマネージャーの画面でダイアログ、メニュー、コマンドパレットが開いているときは、何も受け付けません。何が開いているかを示すメッセージとともに拒否します。それを閉じてから、コマンドをもう一度実行してください。
+
+コマンドが開くもの（ビューアー、質問）は、ファイルマネージャーの画面に開き、XeFM はあなたをそこに連れて行きます。エージェントのために出した質問なら、答えたあとエージェントのターミナルに戻ります。
+
+## サブシェルがターミナルを使っている間
+
+ターミナルモードでは、サブシェルやターミナルプログラムが動いている間 XeFM は待っているので、読むだけのコマンドしか使えません。`state`、`pane` の読み取り、`entries`、検索、`read`、`fetch`、`action list`、`screen list`、`terminal-session list` です。ほかのコマンドは XeFM が待っていることを伝え、戻ってから使えるようになります。
+
+シェルを起動した XeFM が終了していれば、どのコマンドもそう伝えます。
+
+## 関連項目
+
+- [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)：エージェントのセッションができること、できないこと
+- [ターミナル](TERMINAL_FEATURE.ja.md)：サブシェル、ターミナルセッション、画面
+- [ファイルリスト](FILE_LIST_IMPORT_FEATURE.ja.md)：ペインに表示するパスの一覧

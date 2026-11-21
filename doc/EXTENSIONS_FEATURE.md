@@ -47,6 +47,7 @@ xefm ext enable hello-xefm
 xefm ext uninstall hello-xefm # asks whether to delete its data too
 xefm ext sync                 # reinstall anything listed but missing
 xefm ext settings hello-xefm  # its settings class, ready to paste into config.py
+xefm ext guide hello-xefm     # its guide for AI agents, if it has one
 
 xefm ext outdated             # which packages have a newer version
 xefm ext upgrade              # install the newer versions (asks first)
@@ -231,6 +232,7 @@ min_xefm = "1.8.0"
 backends = ["desktop", "tui"]         # default: both
 platforms = ["macos", "windows", "linux"]   # default: all
 updates = "github:someone/hello-xefm" # where newer versions are published
+agent_guide = "AGENT.md"              # how AI agents should use it (Preview)
 
 [contributes.actions]
 "hello.greet" = { entry = "hello_xefm.actions:greet", description = "Say hello" }
@@ -292,7 +294,27 @@ A package with only themes, glob filters, lexer aliases, menus and key
 suggestions runs no code at all.
 
 Name actions `<something>.<name>`, such as `hello.greet`. A name without a dot
-gets a warning, and a built-in action's name is refused.
+gets a warning, and a built-in action's name is refused. Give each action a
+description, in the manifest or as its function's docstring: the command
+palette shows it, and an AI agent learns the action from it (`xefmctl action
+show`). An action with neither gets a warning.
+
+### A guide for AI agents
+
+An [AI agent](AI_AGENT_SESSIONS_FEATURE.md) working in XeFM finds your actions
+with `xefmctl action list` and reads each one's description. What a single
+description cannot say - when to use the package, how its actions go
+together, how its settings change them, how to read what they produce - goes
+in a Markdown file in the package, named by `agent_guide` (Preview):
+
+```toml
+[extension]
+agent_guide = "AGENT.md"
+```
+
+An agent sees it with `xefmctl action show` on any of the package's actions,
+and `xefm ext guide <id>` prints it. Write it for the agent: what to run, in
+what order, and what not to do. Keep the README for people.
 
 ### What your code is given
 

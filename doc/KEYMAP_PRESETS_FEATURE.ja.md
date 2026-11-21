@@ -196,7 +196,9 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `context_menu_dir` | 現在のディレクトリのコンテキストメニューを開く | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` |
 | `programs` | 外部プログラムを実行 | `X` | — | — | — |
 | `subshell` | このディレクトリでサブシェルを開く | `Shift-X` | — | — | `s` |
-| `terminal_sessions` | ファイルマネージャーとターミナルセッションを切り替える | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` |
+| `screens` | ファイルマネージャーとターミナルセッションを切り替える | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` |
+| `open_agent` | このディレクトリで AI エージェントのセッションを開く | — | — | — | — |
+| `ask_agent` | 選択項目について AI エージェントに尋ねる | — | — | — | — |
 | `jobs` | バックグラウンドジョブの一覧 | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | 両方のペインのディレクトリを読み直す | — | `F2`、`Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `redraw` | 画面を再描画 | `F5` | — | — | — |
@@ -205,7 +207,7 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 
 ### ビューアーとダイアログ
 
-ここに挙げたキーは、欄に断りがない限りどのプリセットでも同じです。どのビューアーも `Esc` で閉じ、`quit`、`help`、`isearch`、`edit_files` はファイル一覧の表と同じキーで使えます。Vim style では、テキストビューアーを `q` でも閉じられます。
+ここに挙げたキーは、欄に断りがない限りどのプリセットでも同じです。どのビューアーも `Esc` で閉じ、`quit`、`help`、`isearch`、`edit_files` はファイル一覧の表と同じキーで使えます。デスクトップアプリでは `screens` も同じです。Vim style では、テキストビューアーを `q` でも閉じられます。
 
 Orthodox と OS native では、ファイル一覧で文字を入力すると検索になるので、`isearch` にキーがありません。代わりにテキストビューアーとファイル差分ビューアーでは、手本にしているビューアーの検索キーを使います。Orthodox は Total Commander の Lister、OS native は各プラットフォーム標準の検索キーです。「次を検索」と「前を検索」は検索バーを開いている間も使え、バーを閉じたあとに押すと、直前の検索でバーを開き直して次または前の一致へ移動します。
 
@@ -320,7 +322,7 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 | アクション名 | 動作 | キー |
 |---|---|---|
 | `terminal.close` | ターミナルを閉じてペインに戻る。実行中のプログラムは停止する | macOS アプリ：`Cmd-W`<br>Windows アプリ：`Ctrl-Shift-W` |
-| `terminal.sessions` | ファイルマネージャーか別のターミナルセッションに切り替える | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` |
+| `terminal.screens` | ファイルマネージャーか別のターミナルセッションに切り替える | macOS アプリ：`` Ctrl-` ``<br>Windows アプリ：`` Ctrl-` `` |
 | `command_palette` | ターミナルのアクションを名前で探して実行 | macOS アプリ：`Cmd-Shift-P`<br>Windows アプリ：`Ctrl-Shift-P` |
 
 ## 自分のキーバインドが優先される

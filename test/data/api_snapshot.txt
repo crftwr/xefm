@@ -31,7 +31,7 @@ preview	section	manifest.contributes.menus
 stable	section	manifest.contributes.path_schemes
 stable	section	manifest.contributes.sort_keys
 preview	section	manifest.contributes.themes
-stable	keys	manifest.extension	api_version,backends,description,homepage,id,min_xefm,name,platforms,updates,version
+stable	keys	manifest.extension	agent_guide,api_version,backends,description,homepage,id,min_xefm,name,platforms,updates,version
 preview	key	manifest.extension.updates
 preview	keys	manifest.requires	host_packages,programs,python_packages
 preview	keys	manifest.settings	config_class,defaults
@@ -125,8 +125,11 @@ preview	method	xefm.user_api.ActionContext.choose	[["self", "pk", null], ["title
 preview	method	xefm.user_api.ActionContext.confirm	[["self", "pk", null], ["prompt", "pk", null], ["title", "kw", "'Confirm'"], ["on_result", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy	[["self", "pk", null], ["items", "pk", null], ["dest", "pk", null], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy_text	[["self", "pk", null], ["text", "pk", null]]
+preview	property	xefm.user_api.ActionContext.current_screen	ro
 preview	method	xefm.user_api.ActionContext.delete	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.diff	[["self", "pk", null], ["left", "pk", null], ["right", "pk", null], ["left_title", "kw", "None"], ["right_title", "kw", "None"], ["on_close", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.find_files	[["self", "pk", null], ["root", "pk", null], ["pattern", "pk", null], ["case", "kw", "False"], ["recursive", "kw", "True"], ["cancel", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.find_in_files	[["self", "pk", null], ["root", "pk", null], ["pattern", "pk", null], ["case", "kw", "False"], ["word", "kw", "False"], ["regex", "kw", "False"], ["recursive", "kw", "True"], ["cancel", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.input	[["self", "pk", null], ["prompt", "pk", null], ["default", "pk", "''"], ["title", "kw", "''"], ["on_accept", "kw", "None"], ["on_cancel", "kw", "None"], ["complete", "kw", "None"]]
 stable	method	xefm.user_api.ActionContext.invoke	[["self", "pk", null], ["action_name", "pk", null]]
 preview	property	xefm.user_api.ActionContext.is_terminal_backend	ro
@@ -139,12 +142,17 @@ preview	method	xefm.user_api.ActionContext.program_env	[["self", "pk", null]]
 stable	property	xefm.user_api.ActionContext.right	ro
 stable	method	xefm.user_api.ActionContext.run_program	[["self", "pk", null], ["command", "pk", null], ["terminal", "kw", "False"], ["cwd", "kw", "None"], ["env", "kw", "None"], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.run_task	[["self", "pk", null], ["title", "pk", null], ["work", "pk", null], ["on_done", "kw", "None"], ["read_only", "kw", "False"]]
+preview	method	xefm.user_api.ActionContext.screens	[["self", "pk", null], ["order", "pk", "'recent'"]]
 preview	method	xefm.user_api.ActionContext.show_markdown	[["self", "pk", null], ["title", "pk", null], ["source", "pk", null], ["on_close", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.start_terminal_session	[["self", "pk", null], ["command", "pk", "None"], ["cwd", "kw", "None"], ["env", "kw", "None"], ["name", "kw", "None"], ["show", "kw", "True"], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.terminal_backend_suspended	[["self", "pk", null]]
+preview	method	xefm.user_api.ActionContext.terminal_sessions	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.trash	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.view	[["self", "pk", null], ["path", "pk", null], ["line", "kw", "None"]]
 preview	class	xefm.user_api.ActionInfo
 preview	attribute	xefm.user_api.ActionInfo.aliases
 preview	attribute	xefm.user_api.ActionInfo.description
+preview	attribute	xefm.user_api.ActionInfo.details
 preview	attribute	xefm.user_api.ActionInfo.keys
 preview	attribute	xefm.user_api.ActionInfo.name
 preview	class	xefm.user_api.Cell
@@ -187,6 +195,14 @@ stable	method	xefm.user_api.PaneApi.refresh	[["self", "pk", null]]
 stable	method	xefm.user_api.PaneApi.select	[["self", "pk", null], ["predicate", "pk", "None"]]
 stable	method	xefm.user_api.PaneApi.selected	[["self", "pk", null]]
 stable	method	xefm.user_api.PaneApi.unselect	[["self", "pk", null], ["predicate", "pk", "None"]]
+preview	class	xefm.user_api.Screen
+preview	property	xefm.user_api.Screen.id	ro
+preview	property	xefm.user_api.Screen.kind	ro
+preview	property	xefm.user_api.Screen.last_shown_at	ro
+preview	property	xefm.user_api.Screen.name	ro
+preview	method	xefm.user_api.Screen.show	[["self", "pk", null]]
+preview	property	xefm.user_api.Screen.shown	ro
+preview	property	xefm.user_api.Screen.terminal_session	ro
 preview	class	xefm.user_api.TaskJob
 preview	method	xefm.user_api.TaskJob.cancelled	[["self", "pk", null]]
 preview	method	xefm.user_api.TaskJob.checkpoint	[["self", "pk", null]]
@@ -197,6 +213,17 @@ preview	attribute	xefm.user_api.TaskOutcome.error
 preview	property	xefm.user_api.TaskOutcome.ok	ro
 preview	attribute	xefm.user_api.TaskOutcome.status
 preview	attribute	xefm.user_api.TaskOutcome.value
+preview	class	xefm.user_api.TerminalSession
+preview	method	xefm.user_api.TerminalSession.close	[["self", "pk", null]]
+preview	property	xefm.user_api.TerminalSession.cwd	ro
+preview	property	xefm.user_api.TerminalSession.directory	ro
+preview	property	xefm.user_api.TerminalSession.id	ro
+preview	property	xefm.user_api.TerminalSession.kind	ro
+preview	property	xefm.user_api.TerminalSession.name	ro
+preview	property	xefm.user_api.TerminalSession.running	ro
+preview	property	xefm.user_api.TerminalSession.screen	ro
+preview	property	xefm.user_api.TerminalSession.started_at	ro
+preview	property	xefm.user_api.TerminalSession.state	ro
 preview	function	xefm.user_api.extension	[["module", "pk", null]]
 stable	function	xefm.user_api.is_desktop_mode	[]
 preview	function	xefm.user_api.md_code_block	[["text", "pk", null], ["lang", "pk", "''"]]

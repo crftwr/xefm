@@ -728,7 +728,9 @@ AWS の認証情報とバケットの権限を確認してください
 - [AI エージェント向け XeFM スキル](AGENT_SKILL_FEATURE.ja.md) - AI コーディングエージェントに設定の編集や拡張機能の作成を任せる
 - [使い捨てのホームで XeFM を試す](TRY_FEATURE.ja.md) - `xefm try`：一時的なホームで XeFM を実行し、自分の `~/.xefm` には手を付けない
 - [外部プログラム](EXTERNAL_PROGRAMS_FEATURE.ja.md) - 独自のプログラムとの連携（VSCode のレシピを含む）
-- [ターミナル](TERMINAL_FEATURE.ja.md) - サブシェルとターミナル向けのプログラム、デスクトップアプリのターミナルセッション、`xefmctl`
+- [ターミナル](TERMINAL_FEATURE.ja.md) - サブシェルとターミナル向けのプログラム、デスクトップアプリのターミナルセッション
+- [xefmctl](XEFMCTL_FEATURE.ja.md) - XeFM が起動したシェルから XeFM に問い合わせ、操作する
+- [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md) - ファイルマネージャーの隣で動く AI エージェント
 - [仮想フォルダー](VIRTUAL_FOLDERS_FEATURE.ja.md) - レジストリ、データベース、API など、ディレクトリではないものをディレクトリのようにブラウズ
 
 ---

@@ -153,7 +153,8 @@ def test_the_directory_diff_merge_does_not_block_the_desktop_app(app_with, tmp_p
     viewer = SimpleNamespace(
         _config=SimpleNamespace(TEXT_DIFF={"command": ["code", "--diff", "--wait"],
                                            "terminal": False}),
-        _panel=SimpleNamespace(_layers=[], backend=None),
+        _panel=SimpleNamespace(_layers=[], backend=None,
+                               has_layer=lambda w: any(sl.widget is w for sl in viewer._panel._layers)),
         _notify=calls.append, _render=lambda: None,
         _node_rel_path=lambda node: "f.txt")
     viewer._current = lambda: SimpleNamespace(

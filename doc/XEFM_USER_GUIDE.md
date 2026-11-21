@@ -869,7 +869,9 @@ For detailed information about specific features, see these dedicated guides:
 - [The XeFM Skill for AI Agents](AGENT_SKILL_FEATURE.md) - Let an AI coding agent edit your configuration and write extensions
 - [Trying XeFM in a Throwaway Home](TRY_FEATURE.md) - `xefm try`: run XeFM in a temporary home, leaving your own `~/.xefm` untouched
 - [External Programs Feature](EXTERNAL_PROGRAMS_FEATURE.md) - Custom program integration (incl. the VSCode recipe)
-- [Terminal](TERMINAL_FEATURE.md) - The subshell and terminal programs, terminal sessions in the desktop app, and `xefmctl`
+- [Terminal](TERMINAL_FEATURE.md) - The subshell and terminal programs, terminal sessions in the desktop app
+- [xefmctl](XEFMCTL_FEATURE.md) - Asking and driving XeFM from a shell it started
+- [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md) - An AI agent beside the file manager
 - [Virtual Folders](VIRTUAL_FOLDERS_FEATURE.md) - Browse something that is not a directory - a registry, a database, an API - as if it were one
 
 ---

@@ -19,7 +19,8 @@ English \| [日本語](CUSTOMIZATION_FEATURE.ja.md)
 > Preview: `EVENT_HOOKS`, `MENU_ITEMS`, `IMAGE_DECODERS`, `LEXERS`,
 > `ATTRIBUTES`, `LAYOUTS`, `DEFAULT_LAYOUT`, `LAYOUT_EXTRAS`, `entry.attr`, `Cell`, the
 > prompts (`ctx.input` / `choose` / `confirm`), `ctx.run_task`,
-> `ctx.show_markdown`, `ctx.copy_text`, `ctx.diff`, `ctx.actions` and `pane.open_list`. A config that
+> `ctx.show_markdown`, `ctx.copy_text`, `ctx.diff`, `ctx.view`, `ctx.find_files`,
+> `ctx.find_in_files`, `ctx.actions` and `pane.open_list`. A config that
 > uses a Preview table gets one line in the log pane saying so, and the first
 > call to a Preview function logs one line naming it.
 
@@ -279,6 +280,9 @@ summary with no further page.
 | `ctx.show_markdown(title, source)` | (Preview) show Markdown in a scrollable dialog, with a Copy button on each code block; `on_close=` is called once it has closed — see below |
 | `ctx.copy_text(text)` | (Preview) put text on the clipboard |
 | `ctx.diff(left, right)` | (Preview) compare two files as **Select → Compare Selected Files…** does, without selecting them; either may be on SSH, S3, in an archive or in a virtual folder, and `left_title=` / `right_title=` name the sides; `on_close=` is called once the comparison has closed |
+| `ctx.view(path)` | (Preview) open `path` in the built-in viewer `view_file` would use; `line=` scrolls a text file to that line. A local path or a URI |
+| `ctx.find_files(root, pattern)` | (Preview) the files below `root` whose names match, found as `find_files` finds them, on any storage; a generator, so run it in `ctx.run_task`. `case=`, `recursive=`, `cancel=` (a `threading.Event`) |
+| `ctx.find_in_files(root, pattern)` | (Preview) the matching lines below `root`, as `{'path', 'line', 'text'}`, found as `find_in_files` finds them; a generator like `find_files`. `case=`, `word=`, `regex=`, `recursive=`, `cancel=` |
 | `ctx.run_task(title, work, on_done=fn)` | (Preview) run slow work in the background, with a progress dialog — see below |
 | `ctx.input(prompt, default, on_accept=fn)` | (Preview) ask for a line of text; `complete='path'` (or `'directory'`) adds Tab completion of paths, as Jump to Path has — relative to the active pane |
 | `ctx.choose(title, items, on_result=fn)` | (Preview) pick from a list (index, or `None`); `type='filter'` for a searchable one |
@@ -291,8 +295,11 @@ summary with no further page.
 | `ctx.terminal_backend_suspended()` | (Preview) a `with` block in which you run an interactive program yourself with `subprocess` — see below |
 | `ctx.program_env()` | (Preview) `{'cwd': ..., 'env': ...}` for `subprocess`: what `run_program` gives its programs |
 | `ctx.is_terminal_backend` | (Preview) whether XeFM is running in a terminal, so there is a terminal to hand over |
+| `ctx.start_terminal_session(command=None)` | (Preview) start a shell or a program in XeFM's terminal — see below |
+| `ctx.screens()`, `ctx.current_screen` | (Preview) the screens the switcher switches between, and the one on now — see below |
+| `ctx.terminal_sessions()` | (Preview) the terminal sessions there are |
 | `ctx.action_names()` | every name `invoke()` accepts |
-| `ctx.actions()` | (Preview) the same actions, each with its `name`, `description`, `aliases` (names it used to have) and `keys` (bound right now, after your `KEY_BINDINGS`) |
+| `ctx.actions()` | (Preview) the same actions, each with its `name`, `description`, `details` (what the palette's help page says beyond that line), `aliases` (names it used to have) and `keys` (bound right now, after your `KEY_BINDINGS`) |
 
 And each pane:
 
@@ -543,6 +550,75 @@ def fuzzy_cd(ctx):
 
 Like everything on `ctx`, these work only on the UI thread, where your action
 runs — not inside `ctx.run_task`'s work or a thread of your own.
+
+### Terminal sessions and screens (Preview)
+
+`ctx.start_terminal_session()` starts a shell in XeFM's terminal, as the
+subshell does; given a command (a list, or a string as `run_program` takes it)
+it starts that program instead:
+
+```python
+def build_in_background(ctx):
+    """Run the build in a terminal session of its own, out of view."""
+    ctx.start_terminal_session(['make', 'test'], name='build', show=False,
+                               on_done=lambda ctx, code: ctx.message(f'build: {code}'))
+```
+
+- In the desktop app the session runs on a screen of its own and the call
+  returns at once; `show=False` leaves it out of view, running. In terminal
+  mode XeFM hands its terminal over and the call returns once the session has
+  ended. Either way `on_done(ctx, code)` runs when it ends, never before the
+  call returns, so code that goes on in `on_done` works the same in both.
+- `cwd=` (default: the active pane's directory), `env=` (merged over the
+  `XEFM_*` variables) and `name=` (its name in the switcher) are optional.
+- It returns a `TerminalSession`: `id`, `name`, `kind` (`"shell"` or
+  `"program"`), `cwd` (where it started), `directory` (where its shell is
+  now), `state`, `running`, `started_at`, `screen` and `close()`, which
+  ends it without asking.
+
+A *screen* is what the **Screens** switcher switches between: the file
+manager's, or a session's. `ctx.screens()` lists them, the one on now first
+and the rest most recently shown first (`order='started'` for the order they
+were made), and each has `id`, `kind` (`"files"` or `"terminal"`), `name`,
+`last_shown_at`, `terminal_session` and `show()`. In terminal mode the file
+manager's is the only one. So switching without the dialog is a few lines,
+in either mode:
+
+```python
+def previous_screen(ctx):
+    """Back to the screen before this one."""
+    screens = ctx.screens()
+    if len(screens) > 1:
+        screens[1].show()
+
+
+def next_session(ctx):
+    """The next terminal session, in the order they were started."""
+    sessions = [s for s in ctx.terminal_sessions() if s.screen]
+    if not sessions:
+        return
+    now = ctx.current_screen.terminal_session
+    i = sessions.index(now) + 1 if now in sessions else 0
+    sessions[i % len(sessions)].screen.show()
+```
+
+To have such a key work while a terminal is on screen, put the action in the
+terminal's context. Its key then reaches the action instead of the program
+running there:
+
+```python
+class Config:
+    ACTIONS = {
+        'next-session': {'func': next_session, 'context': 'terminal'},
+    }
+    KEY_BINDINGS = {
+        ...
+        'next-session': ['Ctrl-Shift-N'],
+    }
+```
+
+An action is put in `filer` (the default) or `terminal`; viewers take
+rebound built-in keys only.
 
 ### Copying and moving files (Preview)
 

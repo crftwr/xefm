@@ -29,6 +29,7 @@ xefm ext enable hello-xefm
 xefm ext uninstall hello-xefm # asks whether to delete its data too
 xefm ext sync                 # reinstall anything listed but missing
 xefm ext settings hello-xefm  # its settings class, ready to paste into config.py
+xefm ext guide hello-xefm     # its guide for AI agents, if it has one
 
 xefm ext outdated             # which packages have a newer version
 xefm ext upgrade              # install the newer versions (asks first)
@@ -149,6 +150,7 @@ min_xefm = "1.8.0"
 backends = ["desktop", "tui"]         # default: both
 platforms = ["macos", "windows", "linux"]   # default: all
 updates = "github:someone/hello-xefm" # where newer versions are published
+agent_guide = "AGENT.md"              # how AI agents should use it (Preview)
 
 [contributes.actions]
 "hello.greet" = { entry = "hello_xefm.actions:greet", description = "Say hello" }
@@ -206,7 +208,18 @@ class Settings:
 
 テーマ、glob フィルター、レクサーのエイリアス、メニュー、キーの提案だけを持つパッケージは、コードをまったく実行しません。
 
-アクションには `hello.greet` のように `<something>.<name>` の形で名前を付けてください。ドットのない名前には警告が出て、組み込みアクションの名前は拒否されます。
+アクションには `hello.greet` のように `<something>.<name>` の形で名前を付けてください。ドットのない名前には警告が出て、組み込みアクションの名前は拒否されます。各アクションには、マニフェストか関数の docstring で説明を付けてください。コマンドパレットがそれを表示し、AI エージェントもそれでアクションを知ります（`xefmctl action show`）。どちらもないアクションには警告が出ます。
+
+### AI エージェント向けのガイド
+
+XeFM の中で作業する [AI エージェント](AI_AGENT_SESSIONS_FEATURE.ja.md)は、`xefmctl action list` であなたのアクションを見つけ、それぞれの説明を読みます。ひとつの説明では伝えきれないこと（どんなときにパッケージを使うか、アクションどうしをどう組み合わせるか、設定でどう変わるか、出力をどう読むか）は、パッケージの中の Markdown ファイルに書き、`agent_guide` でその名前を指定します（プレビュー）。
+
+```toml
+[extension]
+agent_guide = "AGENT.md"
+```
+
+エージェントはパッケージのどのアクションでも `xefmctl action show` でこれを読め、`xefm ext guide <id>` でも表示できます。エージェントに向けて、何をどの順で実行するか、何をしてはいけないかを書いてください。README は人向けのままにしておきます。
 
 ### コードに渡されるもの
 

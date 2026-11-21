@@ -78,6 +78,7 @@ PREVIEW_APIS: set[str] = {
         "event_hooks", "image_decoders", "lexers", "themes", "menus",
         "attributes", "layouts", "layout_extras")),
     "manifest.extension.updates",
+    "manifest.extension.agent_guide",
     "manifest.settings",
     "manifest.requires",
 }

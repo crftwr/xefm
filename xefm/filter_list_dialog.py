@@ -533,8 +533,8 @@ class FilterListDialog(FocusContainer, Widget):
         self._closed = True
         self._load_cancel.set()  # stop a background loader; its rows are dropped
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+        if panel is not None and panel.has_layer(self):
+            panel.remove_layer(self)
 
     # --- drawing -------------------------------------------------------------
 

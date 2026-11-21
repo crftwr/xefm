@@ -266,7 +266,9 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `context_menu_dir` | Open the context menu for the current directory | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `terminal_sessions` | Switch between the file manager and the terminal sessions | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `screens` | Switch between the file manager and the terminal sessions | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `open_agent` | Open an AI agent session in this directory | — | — | — | — |
+| `ask_agent` | Ask an AI agent about the selection | — | — | — | — |
 | `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `redraw` | Redraw the screen | `F5` | — | — | — |
@@ -277,7 +279,8 @@ not listed: find it in the menus or the command palette, or give it a key in
 
 These keys are the same under every preset unless a cell says otherwise. In
 every viewer `Esc` closes it, and `quit`, `help`, `isearch` and `edit_files`
-work there on their keys from the file list table. Vim style also closes the
+work there on their keys from the file list table, as does `screens` in the
+desktop app. Vim style also closes the
 text viewer with `q`.
 
 Orthodox and OS native give `isearch` no key in the file list, since typing
@@ -400,7 +403,7 @@ program receives.
 | Action name | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | macOS app: `Cmd-W`<br>Windows app: `Ctrl-Shift-W` |
-| `terminal.sessions` | Switch to the file manager or another terminal session | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `terminal.screens` | Switch to the file manager or another terminal session | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
 | `command_palette` | Search the terminal's actions by name and run one | macOS app: `Cmd-Shift-P`<br>Windows app: `Ctrl-Shift-P` |
 
 ## Your own key bindings come on top

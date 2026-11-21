@@ -404,7 +404,7 @@ class SkillMatchesTheChecker(_Tmp):
         self.assertEqual(cited, {"references/config.md", "references/extensions.md",
                                  "references/actions.md",
                                  "references/config-template.md",
-                                 "references/try.md"})
+                                 "references/try.md", "references/xefmctl.md"})
         for ref in cited:
             self.assertTrue((ext.SKILL_DIR / ref).is_file(), ref)
 

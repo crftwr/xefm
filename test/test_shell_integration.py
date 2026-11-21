@@ -74,8 +74,10 @@ def test_zsh_marks_its_prompt_and_keeps_the_user_s_startup(tmp_path):
     argv = SI.apply(["zsh"], env)
     out = queue.Queue()
     events = []
+    commands = []
     term = G.Terminal(80, 24, write_pty=lambda b: proc.write(b),
-                      on_semantic_prompt=lambda k, c, cmd: events.append((k, c)))
+                      on_semantic_prompt=lambda k, c, cmd: (events.append((k, c)),
+                                                            commands.append((k, cmd))))
     proc = _pty.PtyProcess(argv, cols=80, rows=24, cwd=home, env=env,
                            term_program=None, on_output=out.put,
                            on_exit=lambda code: out.put(None))
@@ -105,9 +107,67 @@ def test_zsh_marks_its_prompt_and_keeps_the_user_s_startup(tmp_path):
         pump(lambda: (T.COMMAND_END, 1) in events)
         pump(term.at_prompt)
         assert term.at_prompt() and (T.COMMAND_END, 1) in events
+        # The command line came with the output mark, as typed (#954).
+        ran = [cmd for k, cmd in commands if k == T.OUTPUT_START]
+        assert ran and ran[0].startswith('print -r -- "$FROM_RC|$ZDOTDIR"')
+        assert ran[0].endswith("sleep 0.3; false")
         rc, zdotdir = open(result).read().strip().split("|")
         # The user's .zshrc ran, and ZDOTDIR is the user's again afterwards.
         assert rc == "yes" and zdotdir == home
+    finally:
+        proc.close()
+        term.close()
+
+
+def _bash_44():
+    bash = shutil.which("bash")
+    if bash is None or sys.platform == "win32":
+        return None
+    import subprocess
+    try:
+        ver = subprocess.run([bash, "-c", "echo ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        major, minor = (int(x) for x in ver.split("."))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return bash if (major, minor) >= (4, 4) else None
+
+
+@pytest.mark.skipif(_bash_44() is None or _libghostty() is None,
+                    reason="needs bash 4.4+, a pty and a libghostty with prompt marks")
+def test_bash_sends_the_command_line_with_its_mark(tmp_path):
+    G, _pty = _libghostty()
+    home = str(tmp_path)
+    env = dict(os.environ, HOME=home, PS1="$ ")
+    argv = SI.apply([_bash_44(), "-i"], env)
+    out = queue.Queue()
+    commands = []
+    term = G.Terminal(80, 24, write_pty=lambda b: proc.write(b),
+                      on_semantic_prompt=lambda k, c, cmd: commands.append((k, cmd)))
+    proc = _pty.PtyProcess(argv, cols=80, rows=24, cwd=home, env=env,
+                           term_program=None, on_output=out.put,
+                           on_exit=lambda code: out.put(None))
+
+    def pump(until, timeout=10.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                data = out.get(timeout=0.05)
+            except queue.Empty:
+                data = b""
+            if data is None:
+                return
+            if data:
+                term.write(data)
+            if until():
+                return
+
+    try:
+        pump(term.at_prompt)
+        proc.write(b"echo 50%; true\r")
+        pump(lambda: any(k == T.COMMAND_END for k, _ in commands))
+        ran = [cmd for k, cmd in commands if k == T.OUTPUT_START]
+        assert ran == ["echo 50%; true"]
     finally:
         proc.close()
         term.close()

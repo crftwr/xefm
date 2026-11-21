@@ -434,8 +434,10 @@ def test_a_dialog_an_app_wide_action_opens_shows_over_the_viewer(app_with):
     app = app_with()
     viewer = _viewer(app)
     viewer.run_action("choose_keymap")
-    assert app.panel._layers[-1].widget is not viewer
-    assert app.panel._layers[-1].z > 80
+    top = app.panel.top_layer()
+    assert top is not viewer
+    # Over the viewer in the layer tree (#951): its child, whatever its z.
+    assert app.panel.layer_parent(top) is viewer
 
 
 class _Terminal:

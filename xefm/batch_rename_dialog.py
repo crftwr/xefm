@@ -252,8 +252,8 @@ class BatchRenameDialog(FocusContainer, Widget):
 
     def _close(self) -> None:
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+        if panel is not None and panel.has_layer(self):
+            panel.remove_layer(self)
 
     def _render(self) -> None:
         if self._panel is not None:

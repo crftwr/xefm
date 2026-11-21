@@ -6,7 +6,7 @@
 >
 > 安定版：`ACTIONS`、`SORT_KEYS`、`FILTERS`、`PATH_SCHEMES`（組み込みのスキームの置き換えを除く）、関数に渡されるペインとエントリ、`ctx.pane` / `other` / `left` / `right`、`ctx.invoke`、`ctx.run_program`、`ctx.message`、`ctx.action_names`、そして `PROGRAMS` 用の `xefm_tool`、`xefm_python`、`is_desktop_mode`。
 >
-> プレビュー：`EVENT_HOOKS`、`MENU_ITEMS`、`IMAGE_DECODERS`、`LEXERS`、`ATTRIBUTES`、`LAYOUTS`、`DEFAULT_LAYOUT`、`LAYOUT_EXTRAS`、`entry.attr`、`Cell`、プロンプト（`ctx.input` / `choose` / `confirm`）、`ctx.run_task`、`ctx.show_markdown`、`ctx.copy_text`、`ctx.diff`、`ctx.actions`、`pane.open_list`。プレビューのテーブルを使う設定では、そのことを伝える 1 行がログペインに表示されます。また、プレビューの関数を初めて呼び出すと、その名前を示す 1 行がログに出ます。
+> プレビュー：`EVENT_HOOKS`、`MENU_ITEMS`、`IMAGE_DECODERS`、`LEXERS`、`ATTRIBUTES`、`LAYOUTS`、`DEFAULT_LAYOUT`、`LAYOUT_EXTRAS`、`entry.attr`、`Cell`、プロンプト（`ctx.input` / `choose` / `confirm`）、`ctx.run_task`、`ctx.show_markdown`、`ctx.copy_text`、`ctx.diff`、`ctx.view`、`ctx.find_files`、`ctx.find_in_files`、`ctx.actions`、`pane.open_list`。プレビューのテーブルを使う設定では、そのことを伝える 1 行がログペインに表示されます。また、プレビューの関数を初めて呼び出すと、その名前を示す 1 行がログに出ます。
 
 `~/.xefm/config.py` は XeFM が起動時に実行する本物の Python なので、以前からロジックを書くことができました。`if sys.platform == 'win32':` のブロック、計算で求めたパス、リスト内包表記などです。この機能はその一歩先を行きます。設定の中で**関数**を定義し、キーに割り当て、何かが起きたときに実行できます。
 
@@ -201,6 +201,9 @@ ACTIONS = {
 | `ctx.show_markdown(title, source)` | （プレビュー）Markdown をスクロールできるダイアログに表示し、各コードブロックに Copy ボタンを付ける。`on_close=` はダイアログが閉じたあとに呼ばれる — 後述 |
 | `ctx.copy_text(text)` | （プレビュー）テキストをクリップボードに置く |
 | `ctx.diff(left, right)` | （プレビュー）**Select → Compare Selected Files…** と同じように 2 つのファイルを比べる。選択は不要。どちらも SSH、S3、アーカイブ、仮想フォルダの中のファイルでよく、`left_title=` / `right_title=` で左右の見出しを付けられる。`on_close=` は比較が閉じたあとに呼ばれる |
+| `ctx.view(path)` | （プレビュー）`view_file` が使う内蔵ビューアーで `path` を開く。`line=` でテキストファイルをその行までスクロールする。ローカルのパスでも URI でもよい |
+| `ctx.find_files(root, pattern)` | （プレビュー）`root` の下で名前が一致するファイルを、`find_files` と同じ方法で、どのストレージでも探す。ジェネレーターなので `ctx.run_task` の中で回す。`case=`、`recursive=`、`cancel=`（`threading.Event`） |
+| `ctx.find_in_files(root, pattern)` | （プレビュー）`root` の下で一致する行を、`find_in_files` と同じ方法で `{'path', 'line', 'text'}` として返す。`find_files` と同じくジェネレーター。`case=`、`word=`、`regex=`、`recursive=`、`cancel=` |
 | `ctx.run_task(title, work, on_done=fn)` | （プレビュー）時間のかかる処理を進捗ダイアログ付きでバックグラウンドで実行 — 後述 |
 | `ctx.input(prompt, default, on_accept=fn)` | （プレビュー）1 行のテキストを入力してもらう。`complete='path'`（または `'directory'`）を付けると、Jump to Path と同じくパスを Tab で補完できる — 相対パスはアクティブなペインが起点 |
 | `ctx.choose(title, items, on_result=fn)` | （プレビュー）リストから選んでもらう（インデックス、または `None`）。`type='filter'` で検索できるリストになる |
@@ -213,8 +216,11 @@ ACTIONS = {
 | `ctx.terminal_backend_suspended()` | （Preview）`subprocess` で対話的なプログラムを自分で実行するための `with` ブロック — 後述 |
 | `ctx.program_env()` | （Preview）`subprocess` に渡す `{'cwd': ..., 'env': ...}`。`run_program` がプログラムに渡すものと同じ |
 | `ctx.is_terminal_backend` | （Preview）XeFM がターミナルで動いていて、引き渡すターミナルがあるかどうか |
+| `ctx.start_terminal_session(command=None)` | （Preview）XeFM のターミナルでシェルかプログラムを起動する。下記を参照 |
+| `ctx.screens()`、`ctx.current_screen` | （Preview）切り替えの対象になる画面と、今の画面。下記を参照 |
+| `ctx.terminal_sessions()` | （Preview）今あるターミナルセッション |
 | `ctx.action_names()` | `invoke()` が受け付けるすべての名前 |
-| `ctx.actions()` | （プレビュー）同じアクションを、それぞれの `name`、`description`、`aliases`（以前の名前）、`keys`（`KEY_BINDINGS` を反映した、いま割り当てられているキー）付きで返す |
+| `ctx.actions()` | （プレビュー）同じアクションを、それぞれの `name`、`description`、`details`（パレットのヘルプページがその 1 行のほかに示す説明）、`aliases`（以前の名前）、`keys`（`KEY_BINDINGS` を反映した、いま割り当てられているキー）付きで返す |
 
 各ペインには次のものがあります。
 
@@ -381,6 +387,56 @@ def fuzzy_cd(ctx):
 - デスクトップアプリには引き渡すターミナルがないため、そこではこのブロックはエラーになります。先に `ctx.is_terminal_backend` を確かめてください。
 
 `ctx` のほかのすべてと同じく、これらはアクションが動く UI スレッドでのみ使えます。`ctx.run_task` の処理の中や、自分で立てたスレッドからは使えません。
+
+### ターミナルセッションと画面（Preview）
+
+`ctx.start_terminal_session()` は、サブシェルと同じように XeFM のターミナルでシェルを起動します。コマンド（リスト、または `run_program` と同じ形の文字列）を渡すと、代わりにそのプログラムを起動します。
+
+```python
+def build_in_background(ctx):
+    """Run the build in a terminal session of its own, out of view."""
+    ctx.start_terminal_session(['make', 'test'], name='build', show=False,
+                               on_done=lambda ctx, code: ctx.message(f'build: {code}'))
+```
+
+- デスクトップアプリでは、セッションは専用の画面で動き、呼び出しはすぐに戻ります。`show=False` を指定すると、表示せずに動かしたままにします。ターミナルモードでは XeFM がターミナルを引き渡し、セッションが終わってから呼び出しが戻ります。どちらの場合も `on_done(ctx, code)` はセッションが終わったときに呼ばれ、呼び出しが戻る前に呼ばれることはありません。そのため、続きの処理を `on_done` に書けば、どちらのモードでも同じように動きます。
+- `cwd=`（既定はアクティブなペインのディレクトリ）、`env=`（`XEFM_*` 変数の上に重ねる）、`name=`（切り替えの一覧での名前）は省略できます。
+- 戻り値は `TerminalSession` です。`id`、`name`、`kind`（`"shell"` か `"program"`）、`cwd`（起動した場所）、`directory`（シェルが今いる場所）、`state`、`running`、`started_at`、`screen`、そして確認なしでセッションを終わらせる `close()` があります。
+
+*画面*とは、**Screens** で切り替える対象のことです。ファイルマネージャーの画面と、各セッションの画面があります。`ctx.screens()` はそれらを、今の画面を先頭に、ほかを最後に表示した順に返します（`order='started'` を指定すると作られた順）。それぞれに `id`、`kind`（`"files"` か `"terminal"`）、`name`、`last_shown_at`、`terminal_session`、`show()` があります。ターミナルモードでは、ファイルマネージャーの画面だけです。そのため、ダイアログを使わずに切り替える処理は、どちらのモードでも数行で書けます。
+
+```python
+def previous_screen(ctx):
+    """Back to the screen before this one."""
+    screens = ctx.screens()
+    if len(screens) > 1:
+        screens[1].show()
+
+
+def next_session(ctx):
+    """The next terminal session, in the order they were started."""
+    sessions = [s for s in ctx.terminal_sessions() if s.screen]
+    if not sessions:
+        return
+    now = ctx.current_screen.terminal_session
+    i = sessions.index(now) + 1 if now in sessions else 0
+    sessions[i % len(sessions)].screen.show()
+```
+
+ターミナルが表示されている間もこうしたキーを使うには、アクションをターミナルのコンテキストに置きます。するとそのキーは、ターミナルで動いているプログラムではなく、アクションに届きます。
+
+```python
+class Config:
+    ACTIONS = {
+        'next-session': {'func': next_session, 'context': 'terminal'},
+    }
+    KEY_BINDINGS = {
+        ...
+        'next-session': ['Ctrl-Shift-N'],
+    }
+```
+
+アクションを置けるコンテキストは `filer`（既定）と `terminal` です。ビューアーでは、組み込みのアクションのキーを変更することだけができます。
 
 ### ファイルのコピーと移動（Preview）
 

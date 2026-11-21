@@ -1118,6 +1118,35 @@ class Config:
     # - List format: ['powershell', '-NoLogo'] (command with arguments)
     SUBSHELL = None
 
+    # AI agent sessions (Tools > Open AI Agent / Ask AI Agent; open_agent and
+    # ask_agent). Each entry names an agent CLI you installed and signed in
+    # to; XeFM runs it as a terminal session in the active pane's folder
+    # (terminal mode hands it the terminal) and hands it the xefm skill and
+    # the rules below. XeFM never touches its credentials.
+    #   'name'     : its name in the menu and the screen switcher
+    #   'command'  : the program and its arguments
+    #   'preset'   : 'claude-code' - XeFM adds the arguments that pass Claude
+    #                Code the skill, the rules and its permission settings.
+    #                Without a preset, put the placeholders in 'command'
+    #                yourself: {plugin_dir} {skills_dir} {skill_dir} {rules}
+    #                {rules_file} {settings_file} (and {prompt} in
+    #                'prompt_args', default ['{prompt}'], for ask_agent).
+    #   'restrict' : True (the default): xefmctl from the session has every
+    #                file change confirmed in XeFM, may not delete for good,
+    #                and asks before its first read outside this disk; for
+    #                Claude Code, its shell may not rm or mv either.
+    #   'settings' : (Claude Code) the settings file to pass instead of
+    #                XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
+    #   'env'      : extra environment variables
+    # Other agent CLIs: see the wiki page "AI agents".
+    AGENTS = [
+        {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
+    ]
+
+    # Your own rules for every agent session, after XeFM's (a string), e.g.
+    # AGENT_RULES = "Never touch ~/Documents/Taxes."
+    AGENT_RULES = ""
+
     # S3 settings
     S3_CACHE_TTL = 60  # S3 cache TTL in seconds (default: 60 seconds)
     

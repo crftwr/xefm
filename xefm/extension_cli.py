@@ -68,6 +68,8 @@ def _parser() -> argparse.ArgumentParser:
                          help="do not ask before upgrading")
 
     sub.add_parser("sync", help="reinstall listed packages whose files are missing")
+    guide = sub.add_parser("guide", help="print a package's guide for AI agents")
+    guide.add_argument("id")
     settings = sub.add_parser("settings", help="print a package's settings class "
                               "for config.py, with every default")
     settings.add_argument("id")
@@ -278,6 +280,8 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
             if manifest.data.get("settings") is not None:
                 print(f"    settings: class {ext.config_class_name(manifest)} "
                       "in config.py")
+            if manifest.agent_guide is not None:
+                print(f"    agent guide: xefm ext guide {manifest.id}")
         for ext_id, entry in sorted(installed.items()):
             if ext_id not in seen:
                 print(f"{ext_id} {entry.version} [missing - run `xefm ext sync`]")
@@ -304,6 +308,23 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
 
     if args.command == "skill":
         return _skill(args)
+
+    if args.command == "guide":
+        manifest = next((m for m in ext.discover(layout) if m.id == args.id), None)
+        if manifest is None:
+            print(f"error: {args.id} is not installed", file=sys.stderr)
+            return 1
+        guide = manifest.agent_guide
+        if guide is None:
+            print(f"{args.id} has no agent guide; its actions say what they do "
+                  "(xefmctl action list, xefmctl action show NAME)")
+            return 0
+        try:
+            sys.stdout.write(guide.read_text(encoding="utf-8"))
+        except OSError as exc:
+            print(f"error: could not read {guide}: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     if args.command == "settings":
         manifest = next((m for m in ext.discover(layout) if m.id == args.id), None)

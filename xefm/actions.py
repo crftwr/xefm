@@ -914,16 +914,18 @@ _DETAILS: dict[str, str] = {
         "`config.py`, else your `$SHELL`, and it gets the `XEFM_*` variables; "
         "`xefmctl` asks XeFM for its state as it is now. Local directories "
         "only."),
-    "terminal_sessions": (
-        "Switches between the file manager's screen and the terminal sessions "
-        "- shells and terminal programs. The list shows each with its state, "
-        "the screen on now first and the rest most recently used first, with "
-        "the cursor on the screen you were on before, so `Enter` goes back "
-        "there. Picking the file manager hides the session on screen, which "
-        "keeps running behind the panes. The last row starts another shell in "
-        "the active pane's directory, and the remove key ends the highlighted "
-        "session. Desktop app only: in a terminal, XeFM hands its terminal "
-        "over instead."),
+    "screens": (
+        "Switches between screens: the file manager's and each terminal "
+        "session's - shells and terminal programs. A screen keeps what is "
+        "open on it, so a viewer stays over the panes while you look at a "
+        "terminal and back, which is how a file and a terminal are compared. "
+        "The list shows the screen on now first and the rest most recently "
+        "used first, each with what is on it, with the cursor on the screen "
+        "you were on before, so `Enter` goes back there. The last row starts "
+        "another shell in the active pane's directory, and the remove key "
+        "ends the highlighted session. Works over a viewer too. Desktop app "
+        "only: in a terminal, XeFM hands its terminal to the subshell "
+        "instead."),
     "edit_config": (
         "Opens `~/.xefm/config.py` in your `TEXT_EDITOR`, creating it on first "
         "use. In a terminal the configuration reloads when the editor exits; "
@@ -1176,8 +1178,10 @@ _FILER_ACTIONS = [
     # External programs and configuration
     _a("programs", FILER, "Run an external program"),
     _a("subshell", FILER, "Open a subshell in this directory"),
-    _a("terminal_sessions", FILER,
+    _a("screens", COMMON,
        "Switch between the file manager and the terminal sessions"),
+    _a("open_agent", FILER, "Open an AI agent session in this directory"),
+    _a("ask_agent", FILER, "Ask an AI agent about the selection"),
     _a("edit_config", COMMON, "Edit config.py, then reload it"),
     _a("reload_config", COMMON, "Re-read config.py and apply it live"),
     _a("install_extension", FILER,
@@ -1203,7 +1207,7 @@ _TEXT_VIEWER_ACTIONS = [
     # XeFM's terminal (#900)
     _a("terminal.close", TERMINAL,
        "Close the terminal and return to the panes, stopping a program still running"),
-    _a("terminal.sessions", TERMINAL,
+    _a("terminal.screens", TERMINAL,
        "Switch to the file manager or another terminal session"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),

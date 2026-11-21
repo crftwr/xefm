@@ -1,6 +1,6 @@
 ---
 name: xefm
-description: Work with the XeFM file manager on the user's behalf — edit its configuration file (~/.xefm/config.py) and write, check and install extension packages. Use when the user wants to change how XeFM behaves or looks ("bind Ctrl-T to …", "make the editor code --wait", "add a favorite", "open .log files with less", "add an external program", "use the function-key keymap", "define a theme"), or wants a new XeFM feature that can live outside the core ("add an XeFM action that…", "make an XeFM extension", "turn my config.py action into an extension"), or asks to fix an extension that `xefm ext check` rejects.
+description: Work with the XeFM file manager on the user's behalf — edit its configuration file (~/.xefm/config.py), write, check and install extension packages, and, in a terminal session XeFM started (XEFM_SESSION is set), see what the user is looking at, search, show results and change files through xefmctl. Use when the user wants to change how XeFM behaves or looks ("bind Ctrl-T to …", "make the editor code --wait", "add a favorite", "open .log files with less", "add an external program", "use the function-key keymap", "define a theme"), or wants a new XeFM feature that can live outside the core ("add an XeFM action that…", "make an XeFM extension", "turn my config.py action into an extension"), or asks to fix an extension that `xefm ext check` rejects.
 metadata:
   xefm-version: "{XEFM_VERSION}"
 ---
@@ -50,6 +50,30 @@ the XeFM the user runs (`XeFM X.Y.Z`); if it is not, skip this check.
   never needs it; the `xefm ext …` commands and `xefm keys` do. If it is
   missing, tell the user rather than searching the disk for an XeFM to run.
 
+## Inside an XeFM session
+
+When `XEFM_SESSION` is set, you run in a terminal session XeFM started,
+beside a user looking at XeFM's window, and `xefmctl` talks to that XeFM:
+
+1. Run `xefmctl state` first: both panes, the cursor, the selection, what is
+   open. "This file", "these", "here" mean what XeFM shows - read it, never
+   guess.
+2. Search and read through XeFM when the place is not on the local disk
+   (`ssh://`, `s3://`, archives, virtual folders): `xefmctl entries`,
+   `find-files`, `find-in-files`, `read`, `fetch`. XeFM holds the connections.
+3. Show results in XeFM, not as long terminal output: `--show` on a search,
+   `xefmctl pane open-list -`, `view`, `diff`, `show-markdown`.
+4. Change files only with `xefmctl copy|move|trash --wait`, so the user
+   confirms each change in XeFM; never delete for good. Ask with `xefmctl
+   confirm|choose|input`.
+5. To use an action, `xefmctl action list`, then `action show NAME` (with an
+   extension's guide for agents, when it has one), then `xefmctl invoke NAME`
+   after `pane select` / `pane cd` put the operands in place.
+
+Add `--json` to any command for one JSON object per line. A refusal (exit
+status 5) says why: pass it on to the user. Every command, its options and
+its exit statuses: `references/xefmctl.md` (generated), or `xefmctl help`.
+
 ## Which reference to read
 
 | The user wants… | Read |
@@ -60,6 +84,7 @@ the XeFM the user runs (`XeFM X.Y.Z`); if it is not, skip this check.
 | what a setting is called, its default, what it does | `references/config-template.md` (XeFM's template, generated) |
 | a feature to package, share, or keep apart from their config; anything with settings of its own, tests, or several files | `references/extensions.md` |
 | an extension fixed that `xefm ext check` rejects | `references/extensions.md` |
+| to know what the user is looking at, search where XeFM can go, show them something, or change files with their confirmation, from a session XeFM started | `references/xefmctl.md` (generated from XeFM) |
 | to see a change work in XeFM itself — an extension's dialogs, a key a config edit bound — or a recorded demo | `references/try.md` |
 
 **`config.py` or an extension?** Edit `config.py` for the user's own settings

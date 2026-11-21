@@ -465,8 +465,7 @@ class DiffViewer(Widget):
             # a hand-over or the background; the re-read follows the tool's
             # exit whichever it was.
             def done(_code) -> None:
-                if self._panel is None or self not in [
-                        slot.widget for slot in self._panel._layers]:
+                if self._panel is None or not self._panel.has_layer(self):
                     return  # closed meanwhile
                 self._reload()
                 if self._on_edited is not None:
@@ -666,7 +665,7 @@ class DiffViewer(Widget):
 
     def _close(self) -> None:
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
+        if panel is not None and panel.has_layer(self):
             close_viewer(panel, self, lambda: self._closed(panel))
             return
         self._closed(None)

@@ -901,7 +901,7 @@ class ImageViewer(Widget):
         # (and its staged copy) instead of adopting it.
         self._load_gen += 1
         self._loading = False
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
+        if panel is not None and panel.has_layer(self):
             close_viewer(panel, self, lambda: self._closed(panel))
 
     def _closed(self, panel) -> None:

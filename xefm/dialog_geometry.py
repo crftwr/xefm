@@ -163,8 +163,29 @@ def animate_from_behind(panel: Any, widget: Any, *, out: bool = False,
     return True
 
 
+#: Set while :func:`no_motion` holds: modals open and close without moving.
+_STILL = [0]
+
+
+class no_motion:
+    """While held, viewers and dialogs open and close at once, as with
+    ``dialog_effect=False``: what one command replaces must be gone before
+    what replaces it arrives (``xefmctl view`` over a viewer already open,
+    #952), not fading out underneath it."""
+
+    def __enter__(self):
+        _STILL[0] += 1
+        return self
+
+    def __exit__(self, *exc):
+        _STILL[0] -= 1
+        return False
+
+
 def _dialog_effect(panel: Any) -> bool:
     """Whether the theme lets modals move at all (``dialog_effect``)."""
+    if _STILL[0]:
+        return False
     theme = getattr(panel, "theme", None)
     extras = getattr(theme, "extras", None) if theme is not None else None
     return extras is None or bool(extras.get("dialog_effect", True))

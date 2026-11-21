@@ -1193,8 +1193,7 @@ class DirectoryDiffView(Widget):
             # the tool inside a suspended backend, which froze the window on
             # `code --diff --wait`; the rescan follows the tool's exit.
             def done(_code) -> None:
-                if self._panel is None or self not in [
-                        slot.widget for slot in self._panel._layers]:
+                if self._panel is None or not self._panel.has_layer(self):
                     return  # closed meanwhile
                 self._restart_scan()
                 self._render()
@@ -1783,7 +1782,7 @@ class DirectoryDiffView(Widget):
     def _close(self) -> None:
         self.cancel()
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
+        if panel is not None and panel.has_layer(self):
             close_viewer(panel, self, lambda: panel.remove_layer(self))
 
     def handle_event(self, event: Event) -> bool:

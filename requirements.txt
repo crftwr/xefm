@@ -25,7 +25,15 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.28.0 is the floor because the terminal sessions read what their shell is
+# 1.29.0 is the floor because screens are groups in PuiKit's layer tree
+# (puikit#233, discussion #951): push_layer(parent=), push_layer_group,
+# set_layer_hidden, set_default_layer_parent and the reads of the tree
+# (has_layer, top_layer, shown_layers, layer_children). A screen keeps its
+# viewers and dialogs while another is on, hidden in place. It also brings
+# TerminalView.start, for a session started out of view, and
+# foreground_program, which names what runs in a session (#954). It is hard:
+# XeFM builds its screens from the tree at startup.
+# 1.28.0 was the floor before because the terminal sessions read what their shell is
 # doing (puikit#231, #232, discussion #900): shell-integration marks (OSC 133)
 # tell a prompt from a running command, so quitting asks only about a busy
 # session and a long command ending in a hidden session shows in the status
@@ -294,7 +302,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.28.0
+puikit>=1.29.0
 pygments
 boto3
 watchdog

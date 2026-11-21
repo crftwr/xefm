@@ -1,7 +1,7 @@
 """The local socket a shell XeFM started talks back on (discussion #900).
 
-:mod:`xefm.remote_cli` is the client: ``xefmctl selected``, ``xefmctl cd .``,
-``xefmctl view foo.log``. This is the listening side. It owns three things:
+:mod:`xefm.remote_cli` is the client: ``xefmctl pane selected``, ``xefmctl pane cd .``,
+``xefmctl view foo.log``. This is the listening side. It owns four things:
 
 - **The listener.** ``multiprocessing.connection`` over a Unix socket in a
   private (0700) temp directory, or a named pipe on Windows. Every connection
@@ -13,15 +13,25 @@
   bundle that put nothing on the system's ``PATH``, and answers without
   loading the file manager.
 - **The environment.** :meth:`RemoteServer.env` - ``XEFM_SOCKET``,
-  ``XEFM_TOKEN``, ``XEFM_SESSION``, ``XEFM_PYTHON`` and the ``PATH`` entry.
+  ``XEFM_TOKEN``, ``XEFM_SESSION_KEY``, ``XEFM_SESSION``, ``XEFM_PYTHON`` and
+  the ``PATH`` entry.
+- **Session keys.** Every shell gets a key of its own
+  (``XEFM_SESSION_KEY``), registered with the session it belongs to and what
+  that session may do (its *policy*: an AI agent's session is restricted).
+  XeFM reads who asks from the key, never from what the request claims, so
+  an agent cannot pass for another session by changing ``XEFM_SESSION``. A
+  request with no key, or one XeFM never handed out, is refused.
 
 What a request does is the app's business: the server hands each one to a
-``handle(request) -> answer`` callable. It is called on the listener's worker
-thread; the app moves the work to its UI thread.
+``handle(request) -> answer`` callable, with ``session`` and ``policy`` set
+from the key. It is called on the listener's worker thread; the app moves
+the work to its UI thread. An answer that is an iterator of answers is sent
+one by one, each but the last marked ``more`` (a search streaming its hits);
+the iterator is closed when the client goes away.
 
-The key tells XeFM that a request comes from a shell it started, not who is
-typing; it is not meant to keep out other programs running as the same user,
-which could read the key from the shell's environment anyway.
+The keys tell XeFM that a request comes from a shell it started, and which
+one; they do not keep out other programs running as the same user, which
+could read a key from a shell's environment anyway.
 """
 
 from __future__ import annotations
@@ -51,6 +61,9 @@ class RemoteServer:
         from multiprocessing.connection import Listener
         self._handle = handle
         self._key = secrets.token_bytes(32)
+        #: Session key -> (session id, policy).
+        self._sessions: dict[str, tuple[str, str]] = {}
+        self._lock = threading.Lock()
         self._dir = tempfile.mkdtemp(prefix="xefm-")  # 0700
         if sys.platform == "win32":
             self.address = rf"\\.\pipe\xefm-{os.getpid()}-{secrets.token_hex(8)}"
@@ -88,22 +101,38 @@ class RemoteServer:
         return bin_dir
 
     # --- the environment -------------------------------------------------------------
-    def env(self, session: str) -> dict:
-        """What a shell XeFM starts needs to reach it, as session ``session``.
-        ``PATH`` is the shim directory alone: :func:`apply_env` puts it in
-        front of the shell's own."""
+    def register(self, session: str, policy: str = "user") -> str:
+        """A new key for ``session`` with ``policy`` (``"user"``, or
+        ``"agent"`` for an AI agent's session)."""
+        key = secrets.token_hex(16)
+        with self._lock:
+            self._sessions[key] = (session, policy)
+        return key
+
+    def lookup(self, key: str) -> tuple[str, str] | None:
+        """``(session, policy)`` for a key this server handed out, or None."""
+        if not isinstance(key, str) or not key:
+            return None
+        with self._lock:
+            return self._sessions.get(key)
+
+    def env(self, session: str, policy: str = "user") -> dict:
+        """What a shell XeFM starts needs to reach it, as session ``session``
+        with ``policy``. ``PATH`` is the shim directory alone: :func:`apply_env`
+        puts it in front of the shell's own."""
         return {
             "XEFM_SOCKET": self.address,
             "XEFM_TOKEN": self._key.hex(),
+            "XEFM_SESSION_KEY": self.register(session, policy),
             "XEFM_SESSION": session,
             "XEFM_PYTHON": self.python,
             "PATH": self.bin_dir,
         }
 
-    def apply_env(self, env: dict, session: str) -> dict:
+    def apply_env(self, env: dict, session: str, policy: str = "user") -> dict:
         """Add :meth:`env` to ``env`` in place, prepending the shim directory
         to its ``PATH``; return ``env``."""
-        extra = self.env(session)
+        extra = self.env(session, policy)
         shim = extra.pop("PATH")
         env.update(extra)
         current = env.get("PATH", "")
@@ -139,16 +168,46 @@ class RemoteServer:
             except ValueError as exc:
                 answer = {"ok": False, "error": f"bad request: {exc}", "code": 2}
             else:
-                try:
-                    answer = self._handle(req)
-                except Exception as exc:
-                    logger.error(f"Remote request {req.get('cmd')!r} failed: {exc}")
-                    answer = {"ok": False, "error": str(exc)}
-            conn.send_bytes(json.dumps(answer).encode("utf-8"))
+                who = self.lookup(req.get("key"))
+                if who is None:
+                    answer = {"ok": False, "code": 3, "error":
+                              "this shell's XEFM_SESSION_KEY is not one XeFM handed "
+                              "out; run xefmctl from a shell XeFM started"}
+                else:
+                    req["session"], req["policy"] = who
+                    try:
+                        answer = self._handle(req)
+                    except Exception as exc:
+                        logger.error(f"Remote request {req.get('cmd')!r} failed: {exc}")
+                        answer = {"ok": False, "error": str(exc)}
+            if isinstance(answer, dict):
+                conn.send_bytes(json.dumps(answer).encode("utf-8"))
+            else:
+                self._stream(conn, answer)
         except (EOFError, OSError) as exc:
             logger.info(f"A remote request was dropped: {exc}")
         finally:
             conn.close()
+
+    def _stream(self, conn, answers) -> None:
+        """Send each answer of an iterator, all but the last marked ``more``;
+        close the iterator when the client goes away."""
+        try:
+            for answer in answers:
+                if not answer.get("ok", True):
+                    conn.send_bytes(json.dumps(answer).encode("utf-8"))
+                    return
+                conn.send_bytes(json.dumps(dict(answer, ok=True, more=True)).encode("utf-8"))
+            conn.send_bytes(json.dumps({"ok": True, "more": False}).encode("utf-8"))
+        except (EOFError, OSError):
+            raise
+        except Exception as exc:
+            logger.error(f"A streamed remote answer failed: {exc}")
+            conn.send_bytes(json.dumps({"ok": False, "error": str(exc)}).encode("utf-8"))
+        finally:
+            close = getattr(answers, "close", None)
+            if close is not None:
+                close()
 
     def close(self) -> None:
         """Stop listening and remove the socket and the shim."""

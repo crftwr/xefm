@@ -339,6 +339,19 @@ Each entry has a `name`, a `command` (list or string), and optional `options`
 Open programs with **Tools → External Programs…** (`programs`). See
 [External Programs](EXTERNAL_PROGRAMS_FEATURE.md).
 
+### AI agents
+
+```python
+AGENTS = [
+    {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
+]
+AGENT_RULES = ""   # your own rules for every agent session
+```
+
+The agents **Tools → Open AI Agent…** (`open_agent`) and **Ask AI Agent…**
+(`ask_agent`) start, and what they may do. See
+[AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md).
+
 ### File Associations
 
 ```python

@@ -233,8 +233,8 @@ class HistoryInputDialog(FocusContainer, Widget):
     def _close(self) -> None:
         self._closed = True
         panel = self._panel
-        if panel is not None and panel.has_layers and panel._layers[-1].widget is self:
-            panel.pop_layer()
+        if panel is not None and panel.has_layer(self):
+            panel.remove_layer(self)
 
     def _clicked(self, index: int, _label: Any) -> None:
         """A row was clicked: copy it in; a second click on it soon after uses
