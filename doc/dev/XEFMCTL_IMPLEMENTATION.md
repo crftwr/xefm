@@ -59,7 +59,10 @@ XeFM:  RemoteServer (listener) ── remote_dispatch.handle ── _call_later 
 - `xefm/remote_server.py`: the listener. `multiprocessing.connection` gives
   a Unix socket (in a 0700 `mkdtemp` directory) or a named pipe with an HMAC
   challenge on a per-process key before any request byte is read. Requests
-  and answers are JSON, never pickles. An answer that is an iterator is sent
+  and answers are JSON, never pickles. A request is at most
+  `remote_commands.MAX_REQUEST` (8 MiB: it carries what `show-markdown -`
+  and `pane open-list -` read from stdin); the client refuses a longer one
+  with exit 2 before sending, since the listener can only drop it. An answer that is an iterator is sent
   as several, all but the last marked `more`; the iterator is closed when
   the client goes away (Ctrl-C ends a search).
 - `xefm/remote_dispatch.py`: what each command does. `handle()` runs on the

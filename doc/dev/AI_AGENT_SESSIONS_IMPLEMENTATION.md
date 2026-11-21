@@ -34,7 +34,9 @@ its way around.
   the version token resolved). Rewritten on every launch through
   `plugin.tmp` and a rename: a development tree keeps its version while the
   skill changes, and a session already running has read its copy.
-- `sessions/rules.md`: the rules.
+- `sessions/rules.md`: the rules. They name the skill (`xefm:xefm` in Claude
+  Code): a copy of an older `xefm` skill installed in the agent's own
+  folders, or uploaded to the user's account, is listed beside it.
 - `sessions/settings-<name>.json`: the entry's `settings`, else
   `CLAUDE_DEFAULT_SETTINGS` for a restricted entry (deny `rm`, `rmdir`,
   `unlink`, `shred`, `mv`, `trash`, `srm`, `git clean`, `xefmctl delete`),

@@ -695,6 +695,27 @@ def test_an_agents_copy_is_confirmed_in_xefm(monkeypatch):
     assert asked == [] and len(copied) == 2
 
 
+def test_an_agents_trash_reads_naturally(monkeypatch):
+    app = _app(monkeypatch)
+    asked, _ = _asking_ctx(app, monkeypatch)
+    trashed = []
+    app._user_ctx.trash = lambda items, on_done=None: trashed.append(list(items))
+    titles = []
+    confirm = app._user_ctx.confirm
+    app._user_ctx.confirm = lambda prompt, *, title="Confirm", on_result=None: (
+        titles.append(title), confirm(prompt, title=title, on_result=on_result))
+    pending = _xefmctl(app, "trash /tmp/x", policy="agent")
+    _run_later(app)
+    _answered(pending)
+    assert "wants to move 1 item(s) to the trash:" in asked[0]
+    assert titles == ["Allow move to the trash?"] and trashed == [["/tmp/x"]]
+
+
+def test_the_rules_name_the_skill_xefm_handed_over():
+    from xefm import agents
+    assert "xefm:xefm" in agents.DEFAULT_RULES
+
+
 def test_an_agent_told_no_gets_a_failure(monkeypatch):
     app = _app(monkeypatch)
     asked, copied = _asking_ctx(app, monkeypatch, answer=False)

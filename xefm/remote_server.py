@@ -47,11 +47,10 @@ import weakref
 from collections.abc import Callable
 
 from xefm.log_manager import getLogger
+# The longest request accepted, which the client checks before sending.
+from xefm.remote_commands import MAX_REQUEST
 
 logger = getLogger("Remote")
-
-#: Longest request accepted, in bytes: a path or two, never more.
-MAX_REQUEST = 64 * 1024
 
 
 class RemoteServer:

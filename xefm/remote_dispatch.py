@@ -737,7 +737,7 @@ def _c_show_markdown(app, req):
 # --- files ----------------------------------------------------------------------------------
 
 
-def _write(app, req, verb: str, run) -> Any:
+def _write(app, req, verb: str, run, *, where: str | None = None) -> Any:
     """A file operation: for an agent's session, confirmed in XeFM first.
     ``run(on_done)`` starts it. With --wait (and for the confirmation in any
     case) the answer waits for the outcome."""
@@ -769,8 +769,9 @@ def _write(app, req, verb: str, run) -> Any:
     who = _asker(app, req)
     listing = "\n".join(f"  {p}" for p in items[:12])
     more = f"\n  ... and {len(items) - 12} more" if len(items) > 12 else ""
-    dest = req["opts"].get("to")
-    where = f" to {dest}" if dest else ""
+    if where is None:
+        dest = req["opts"].get("to")
+        where = f" to {dest}" if dest else ""
 
     def answered(yes: bool) -> None:
         # Back to the agent's screen once answered; the operation itself
@@ -780,13 +781,13 @@ def _write(app, req, verb: str, run) -> Any:
         _go_back(app, back)
         if not yes:
             pending.set(ok([], status=FAILED, outcome="cancelled",
-                           note=f"the user did not allow the {verb}"))
+                           note=f"the user did not allow the {verb}{where}"))
             return
         start()
 
     _, came_from[0] = _ui(app, lambda: app._user_ctx.confirm(
         f"{who} wants to {verb} {len(items)} item(s){where}:\n{listing}{more}",
-        title=f"Allow {verb}?", on_result=answered))
+        title=f"Allow {verb}{'' if req['opts'].get('to') else where}?", on_result=answered))
     return pending
 
 
@@ -807,8 +808,8 @@ def _c_move(app, req):
 
 
 def _c_trash(app, req):
-    return _write(app, req, "move to the trash", lambda on_done: app._user_ctx.trash(
-        req["args"]["path"], on_done=on_done))
+    return _write(app, req, "move", lambda on_done: app._user_ctx.trash(
+        req["args"]["path"], on_done=on_done), where=" to the trash")
 
 
 def _c_delete(app, req):

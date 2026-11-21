@@ -68,6 +68,9 @@ rather than making them.
 `xefmctl confirm`, `choose` or `input`.
 - Do not change ~/.xefm/ unless the user asked. After editing config.py, run \
 `xefmctl invoke reload_config`.
+- Use the `xefm` skill XeFM handed this session (in Claude Code it is \
+`xefm:xefm`): it matches this XeFM. Another copy of an xefm skill installed \
+elsewhere may describe a different version; do not follow it.
 """
 
 #: Claude Code's settings for a restricted session: the shell commands that
