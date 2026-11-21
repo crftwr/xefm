@@ -21,7 +21,7 @@ option: without it the HDR would clip. Which look is a theme choice
 of ``VARIANTS`` compositions of it (variant 0 is the shot as composed; the others
 move the longitude, latitude, altitude, tilt, sun, lens length, framing and roll
 by fixed amounts drawn from a hash, the low orbits turning the horizon any way
-round), and a lens look — 16 x 12 x 10 = 1,920. Each ``SHOT_SECONDS`` slot of the
+round), and a lens look — 13 x 12 x 10 = 1,560. Each ``SHOT_SECONDS`` slot of the
 clock hashes, with PuiKit's ``seed`` uniform, to one of them:
 ``xefm_slot_hash(slot, seed)`` modulo the number of looks is the look (the lens
 passes take it the same way), and the rest picks the shot and variant. PuiKit draws a new seed when the background is set and once each time
@@ -79,12 +79,12 @@ TEXTURES = (
 ) if AVAILABLE else ()
 
 #: Shot names. ``auto`` (or ``None``) picks one at random per scene; a name
-#: holds that one shot. The first thirteen are scenes of one slot, in the order of
+#: holds that one shot. The first ten are scenes of one slot, in the order of
 #: the shader's shot arrays; the rest are scripted scenes of two slots
 #: (:data:`LONG_SHOTS`), a pair of columns each.
 SHOTS = ("day", "dawn", "crescent", "leo", "terminator", "glint", "rise", "polar",
-         "horizon", "ocean", "night", "eclipse", "limb", "approach", "departure", "sunrise")
-REGULAR_SHOTS = 13
+         "horizon", "ocean", "approach", "departure", "sunrise")
+REGULAR_SHOTS = 10
 LONG_SHOTS = len(SHOTS) - REGULAR_SHOTS
 VARIANTS = 12          # compositions per shot, as in the shader
 
@@ -121,24 +121,33 @@ def scene_at(slot: int, seed: float, lens_count: int, shot: int = -1) -> "tuple[
 #: Lens looks, by the name a theme's ``lens`` option uses. Pure data
 #: (``background_lens.Look``); the thresholds are tuned to this scene's radiance
 #: (exposure 1).
+#:
+#: None of them narrows the view: no vignette, no letterbox bars, no eyepiece
+#: mask, no rounded tube corners and no fisheye (whose barrel pulls the corners
+#: off the frame). The picture sits behind the panes and should reach every
+#: edge of them. There is no grey monochrome either — a grey Earth reads as the
+#: Moon — so the one-colour look is a blue print (``cyanotype``), and
+#: ``vivid`` goes the other way, pushing the colour up.
 LENSES: "dict[str, Look]" = {
-    "clean": Look(),
-    "aberration": Look(aberration=0.018, distortion=0.06, vignette=0.35, bloom=0.45),
-    "mono": Look(saturation=0.0, contrast=1.3, grain=0.45, vignette=0.5, bloom=0.35,
-                 mono_tint=(1.0, 0.98, 0.94)),
-    "film": Look(halation=0.9, grain=0.32, vignette=0.4, saturation=0.88, contrast=1.08,
+    "clean": Look(vignette=0.0),
+    "aberration": Look(aberration=0.018, vignette=0.0, bloom=0.45),
+    "cyanotype": Look(saturation=0.0, mono_tint=(0.42, 0.72, 1.22), contrast=1.2,
+                      highlight_tint=(1.12, 1.06, 0.94), grain=0.3, vignette=0.0, bloom=0.35),
+    "vivid": Look(saturation=1.65, contrast=1.12, bloom=0.4, vignette=0.0,
+                  shadow_tint=(0.92, 0.98, 1.1)),
+    "film": Look(halation=0.9, grain=0.32, vignette=0.0, saturation=0.88, contrast=1.08,
                  bloom=0.45, aberration=0.002, shadow_tint=(0.86, 0.97, 1.08),
                  highlight_tint=(1.08, 1.0, 0.88)),
-    "anamorphic": Look(streak=1.0, letterbox=1.0, bloom=0.5, aberration=0.003, ghosts=0.3,
-                       vignette=0.25, threshold=1.2),
-    "flare": Look(ghosts=1.0, bloom=0.65, aberration=0.004, vignette=0.2, threshold=1.2),
-    "fisheye": Look(distortion=1.4, aberration=0.006, vignette=0.5, bloom=0.4),
-    "crt": Look(scanlines=1.0, curvature=1.0, distortion=0.18, aberration=0.004, bloom=0.7,
-                saturation=1.1, grain=0.2, vignette=0.6, contrast=1.1, threshold=1.0),
+    "anamorphic": Look(streak=1.0, bloom=0.5, aberration=0.003, ghosts=0.3,
+                       vignette=0.0, threshold=1.2),
+    "flare": Look(ghosts=1.0, bloom=0.65, aberration=0.004, vignette=0.0, threshold=1.2),
+    "crt": Look(scanlines=1.0, aberration=0.004, bloom=0.7, saturation=1.1, grain=0.2,
+                vignette=0.0, contrast=1.1, threshold=1.0),
     "infrared": Look(color_matrix=(0.1, 1.3, -0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
-                     saturation=1.15, contrast=1.1, bloom=0.4, grain=0.15, vignette=0.3),
+                     saturation=1.15, contrast=1.1, bloom=0.4, grain=0.15, vignette=0.0),
     "night-vision": Look(saturation=0.0, mono_tint=(0.35, 1.0, 0.45), gain=2.4, grain=0.9,
-                         scope=1.0, bloom=0.8, contrast=1.15, scanlines=0.25, threshold=1.0),
+                         bloom=0.8, contrast=1.15, scanlines=0.25, threshold=1.0,
+                         vignette=0.0),
 }
 
 #: The defaults a theme gets for the options it does not name. ``"auto"`` lets
@@ -147,9 +156,9 @@ DEFAULT_LENS = "auto"
 DEFAULT_CLOUDS = 3.0
 DEFAULT_EXPOSURE = 1.0
 #: The ceiling of the picture, as a fraction of white: file names sit on it, so
-#: by default no pixel of it is brighter than half white, whatever the shot and
+#: by default no pixel of it is brighter than 35% of white, whatever the shot and
 #: the look (``Look.level``).
-DEFAULT_BRIGHTNESS = 0.5
+DEFAULT_BRIGHTNESS = 0.35
 
 #: How long each scene holds on the scene clock (speed applied), and how much of
 #: that is the move into the next (a flight or a dip). Baked into the shader and
@@ -195,8 +204,8 @@ constant float SPIN        = 0.0025;     // earth rotation, rad/s
 constant float CLOUD_DRIFT = 0.0009;     // cloud map drift, u per second
 constant float RELIEF      = 0.35;       // strength of the relief map
 constant int   VIEW_STEPS  = 14;         // atmosphere samples along the view ray
-constant int   SHOT_COUNT  = 19;         // table columns (below)
-constant int   REGULAR_SHOTS = 13;       // one-slot scenes, then the two-slot ones
+constant int   SHOT_COUNT  = 16;         // table columns (below)
+constant int   REGULAR_SHOTS = 10;       // one-slot scenes, then the two-slot ones
 constant int   LONG_SHOTS  = 3;
 constant int   VARIANTS    = 12;         // compositions per shot; 0 is the shot as composed
 // How far a variant may move from its shot: degrees, radians, a fraction. The
@@ -266,11 +275,10 @@ constant float3 BR = float3(5.8e-3, 13.5e-3, 33.1e-3);   // Rayleigh, 1/km
 // tilt (yaw 0 = behind the earth, PI = behind the camera, pitch toward the
 // horizon the camera tilts to), so tilting never swings the light across the
 // planet. horizon and ocean are low orbits too: night below with the morning
-// lit toward the horizon, and the daylit ocean seen obliquely. night is the dark limb through a longer lens:
-// airglow, stars, and twilight low on one side. eclipse is the earth from far
-// off (16 radii) with the sun right behind it -- only from that far is the air
-// at the edge in sunlight, a ring round a dark disc. limb is a telephoto on the
-// day limb from low orbit. The *J columns are the variants' ranges.
+// lit toward the horizon, and the daylit ocean seen obliquely. There is no
+// telephoto on the limb from far off: through a long lens the horizon shows
+// nothing you can name, and the simulation's limits with it. The *J columns
+// are the variants' ranges.
 //
 // The first REGULAR_SHOTS columns are scenes of one slot each, in the order of
 // SHOTS in background_earth.py. The rest are LONG_SHOTS scenes of two slots, a
@@ -282,27 +290,27 @@ constant float3 BR = float3(5.8e-3, 13.5e-3, 33.1e-3);   // Rayleigh, 1/km
 // lit disc comes into view; sunrise watches the horizon from low orbit over the
 // Pacific as the sun comes up over it and the ground lights.
 //   columns: day dawn crescent leo terminator glint rise polar horizon ocean
-//            night eclipse limb | approach x2, departure x2, sunrise x2
-constant float SHOT_LON[19] = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0, -30.0, 0.0, 60.0, 85.0, 85.0, 30.0, 30.0, 140.0, 140.0};
-constant float SHOT_LAT[19] = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0, 30.0, 0.0, 10.0, 25.0, 25.0, 0.0, 0.0, 20.0, 20.0};
-constant float SHOT_DIST[19] = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05, 1.06, 16.0, 1.05, 1.6376, 1.045, 1.1003, 2.7333, 1.0414, 1.0462};
-constant float SHOT_PITCH[19] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95, 1.235, 0.0, 1.262, 0.0, 0.625, 0.75, 0.06, 1.25, 1.25};
-constant float SHOT_OFFX[19] = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-constant float SHOT_OFFY[19] = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-constant float SHOT_FOCAL[19] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9, 2.5, 4.5, 5.0, 1.0, 1.0, 1.0, 1.0, 1.1, 1.1};
-constant float SHOT_YAW[19] = {2.55, 0.995, 0.803, 1.563, 1.574, 2.759, 0.3, 1.947, 1.382, 2.909, 0.7363, 0.0, 2.6779, 1.7773, 1.535, 2.751, 2.751, 0.6116, 0.9798};
-constant float SHOT_SPITCH[19] = {0.22, 0.968, 0.27, 0.908, 0.122, 0.187, 0.1, 0.298, 0.864, -0.427, 0.9639, 0.0, 0.6591, 0.9, 0.9, 0.41, 0.41, 1.2113, 1.3146};
-constant float SHOT_LIMB[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-constant float SHOT_ALTJ[19] = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4, 0.08, 0.15, 0.08, 0.15, 0.15, 0.15, 0.15, 0.1, 0.1};
-constant float SHOT_PITCHJ[19] = {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2, 0.01, 0.0, 0.01, 0.05, 0.05, 0.05, 0.05, 0.04, 0.04};
-constant float SHOT_ROLLJ[19] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416, 0.4, 0.5, 0.3, 0.5, 0.5, 0.8, 0.8, 0.4, 0.4};
-constant float SHOT_ROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.125, 0.525, 0.031, 0.129};
-constant float SHOT_DALT[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0742, -0.0129, 0.0581, 0.0581, 0.00226, 0.00226};
-constant float SHOT_DPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0306, -0.0258, -0.0039, 0.0, 0.0};
-constant float SHOT_DYAW[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.00494, -0.00494, 0.0, 0.0, 0.00521, 0.01015};
-constant float SHOT_DSPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00245, 0.00168};
-constant float SHOT_DROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0081, 0.0081, 0.002, 0.002};
-constant int   SHOT_PART[19] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2, 1, 2};
+//            | approach x2, departure x2, sunrise x2
+constant float SHOT_LON[16] = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0, 85.0, 85.0, 30.0, 30.0, 140.0, 140.0};
+constant float SHOT_LAT[16] = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0, 25.0, 25.0, 0.0, 0.0, 20.0, 20.0};
+constant float SHOT_DIST[16] = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05, 1.6376, 1.045, 1.1003, 2.7333, 1.0414, 1.0462};
+constant float SHOT_PITCH[16] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95, 0.0, 0.625, 0.75, 0.06, 1.25, 1.25};
+constant float SHOT_OFFX[16] = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+constant float SHOT_OFFY[16] = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+constant float SHOT_FOCAL[16] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9, 1.0, 1.0, 1.0, 1.0, 1.1, 1.1};
+constant float SHOT_YAW[16] = {2.55, 0.995, 1.3, 1.563, 1.574, 2.759, 0.3, 1.947, 1.382, 2.909, 1.7773, 1.535, 2.751, 2.751, 0.6116, 0.9798};
+constant float SHOT_SPITCH[16] = {0.22, 0.968, 0.27, 0.908, 0.122, 0.187, 0.1, 0.298, 0.864, -0.427, 0.9, 0.9, 0.41, 0.41, 1.2113, 1.3146};
+constant float SHOT_LIMB[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+constant float SHOT_ALTJ[16] = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4, 0.15, 0.15, 0.15, 0.15, 0.1, 0.1};
+constant float SHOT_PITCHJ[16] = {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2, 0.05, 0.05, 0.05, 0.05, 0.04, 0.04};
+constant float SHOT_ROLLJ[16] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416, 0.5, 0.5, 0.8, 0.8, 0.4, 0.4};
+constant float SHOT_ROLL[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.125, 0.525, 0.031, 0.129};
+constant float SHOT_DALT[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0742, -0.0129, 0.0581, 0.0581, 0.00226, 0.00226};
+constant float SHOT_DPITCH[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0306, -0.0258, -0.0039, 0.0, 0.0};
+constant float SHOT_DYAW[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.00494, -0.00494, 0.0, 0.0, 0.00521, 0.01015};
+constant float SHOT_DSPITCH[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00245, 0.00168};
+constant float SHOT_DROLL[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0081, 0.0081, 0.002, 0.002};
+constant int   SHOT_PART[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2, 1, 2};
 
 // A camera pose as numbers that interpolate: a = (longitude, latitude, log of
 // the altitude in earth radii, tilt from nadir), b = (frame offset x, y, log of
@@ -973,8 +981,8 @@ static const float SPIN        = 0.0025;     // earth rotation, rad/s
 static const float CLOUD_DRIFT = 0.0009;     // cloud map drift, u per second
 static const float RELIEF      = 0.35;       // strength of the relief map
 static const int   VIEW_STEPS  = 14;         // atmosphere samples along the view ray
-static const int   SHOT_COUNT  = 19;         // table columns (below)
-static const int   REGULAR_SHOTS = 13;       // one-slot scenes, then the two-slot ones
+static const int   SHOT_COUNT  = 16;         // table columns (below)
+static const int   REGULAR_SHOTS = 10;       // one-slot scenes, then the two-slot ones
 static const int   LONG_SHOTS  = 3;
 static const int   VARIANTS    = 12;         // compositions per shot; 0 is the shot as composed
 // How far a variant may move from its shot: degrees, radians, a fraction. The
@@ -1051,11 +1059,10 @@ SamplerState sRelief : register(s2);
 // tilt (yaw 0 = behind the earth, PI = behind the camera, pitch toward the
 // horizon the camera tilts to), so tilting never swings the light across the
 // planet. horizon and ocean are low orbits too: night below with the morning
-// lit toward the horizon, and the daylit ocean seen obliquely. night is the dark limb through a longer lens:
-// airglow, stars, and twilight low on one side. eclipse is the earth from far
-// off (16 radii) with the sun right behind it -- only from that far is the air
-// at the edge in sunlight, a ring round a dark disc. limb is a telephoto on the
-// day limb from low orbit. The *J columns are the variants' ranges.
+// lit toward the horizon, and the daylit ocean seen obliquely. There is no
+// telephoto on the limb from far off: through a long lens the horizon shows
+// nothing you can name, and the simulation's limits with it. The *J columns
+// are the variants' ranges.
 //
 // The first REGULAR_SHOTS columns are scenes of one slot each, in the order of
 // SHOTS in background_earth.py. The rest are LONG_SHOTS scenes of two slots, a
@@ -1067,27 +1074,27 @@ SamplerState sRelief : register(s2);
 // lit disc comes into view; sunrise watches the horizon from low orbit over the
 // Pacific as the sun comes up over it and the ground lights.
 //   columns: day dawn crescent leo terminator glint rise polar horizon ocean
-//            night eclipse limb | approach x2, departure x2, sunrise x2
-static const float SHOT_LON[19] = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0, -30.0, 0.0, 60.0, 85.0, 85.0, 30.0, 30.0, 140.0, 140.0};
-static const float SHOT_LAT[19] = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0, 30.0, 0.0, 10.0, 25.0, 25.0, 0.0, 0.0, 20.0, 20.0};
-static const float SHOT_DIST[19] = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05, 1.06, 16.0, 1.05, 1.6376, 1.045, 1.1003, 2.7333, 1.0414, 1.0462};
-static const float SHOT_PITCH[19] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95, 1.235, 0.0, 1.262, 0.0, 0.625, 0.75, 0.06, 1.25, 1.25};
-static const float SHOT_OFFX[19] = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-static const float SHOT_OFFY[19] = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-static const float SHOT_FOCAL[19] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9, 2.5, 4.5, 5.0, 1.0, 1.0, 1.0, 1.0, 1.1, 1.1};
-static const float SHOT_YAW[19] = {2.55, 0.995, 0.803, 1.563, 1.574, 2.759, 0.3, 1.947, 1.382, 2.909, 0.7363, 0.0, 2.6779, 1.7773, 1.535, 2.751, 2.751, 0.6116, 0.9798};
-static const float SHOT_SPITCH[19] = {0.22, 0.968, 0.27, 0.908, 0.122, 0.187, 0.1, 0.298, 0.864, -0.427, 0.9639, 0.0, 0.6591, 0.9, 0.9, 0.41, 0.41, 1.2113, 1.3146};
-static const float SHOT_LIMB[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-static const float SHOT_ALTJ[19] = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4, 0.08, 0.15, 0.08, 0.15, 0.15, 0.15, 0.15, 0.1, 0.1};
-static const float SHOT_PITCHJ[19] = {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2, 0.01, 0.0, 0.01, 0.05, 0.05, 0.05, 0.05, 0.04, 0.04};
-static const float SHOT_ROLLJ[19] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416, 0.4, 0.5, 0.3, 0.5, 0.5, 0.8, 0.8, 0.4, 0.4};
-static const float SHOT_ROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.125, 0.525, 0.031, 0.129};
-static const float SHOT_DALT[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0742, -0.0129, 0.0581, 0.0581, 0.00226, 0.00226};
-static const float SHOT_DPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0306, -0.0258, -0.0039, 0.0, 0.0};
-static const float SHOT_DYAW[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.00494, -0.00494, 0.0, 0.0, 0.00521, 0.01015};
-static const float SHOT_DSPITCH[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00245, 0.00168};
-static const float SHOT_DROLL[19] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0081, 0.0081, 0.002, 0.002};
-static const int   SHOT_PART[19] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2, 1, 2};
+//            | approach x2, departure x2, sunrise x2
+static const float SHOT_LON[16] = {20.0, 150.0, -40.0, 82.0, -68.0, -155.0, 120.0, 10.0, 100.0, -140.0, 85.0, 85.0, 30.0, 30.0, 140.0, 140.0};
+static const float SHOT_LAT[16] = {5.0, 10.0, 0.0, 22.0, -18.0, 8.0, 5.0, 72.0, 10.0, -10.0, 25.0, 25.0, 0.0, 0.0, 20.0, 20.0};
+static const float SHOT_DIST[16] = {3.1, 1.55, 3.3, 1.04, 1.9, 2.4, 3.0, 2.5, 1.03, 1.05, 1.6376, 1.045, 1.1003, 2.7333, 1.0414, 1.0462};
+static const float SHOT_PITCH[16] = {0.0, 0.55, 0.0, 1.18, 0.2, 0.1, 0.0, 0.15, 1.3, 0.95, 0.0, 0.625, 0.75, 0.06, 1.25, 1.25};
+static const float SHOT_OFFX[16] = {0.0, 0.05, 0.0, 0.0, -0.08, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+static const float SHOT_OFFY[16] = {0.0, -0.05, 0.02, 0.0, 0.0, -0.04, 0.0, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+static const float SHOT_FOCAL[16] = {1.25, 1.0, 1.15, 0.85, 1.1, 1.15, 1.6, 1.15, 0.9, 0.9, 1.0, 1.0, 1.0, 1.0, 1.1, 1.1};
+static const float SHOT_YAW[16] = {2.55, 0.995, 1.3, 1.563, 1.574, 2.759, 0.3, 1.947, 1.382, 2.909, 1.7773, 1.535, 2.751, 2.751, 0.6116, 0.9798};
+static const float SHOT_SPITCH[16] = {0.22, 0.968, 0.27, 0.908, 0.122, 0.187, 0.1, 0.298, 0.864, -0.427, 0.9, 0.9, 0.41, 0.41, 1.2113, 1.3146};
+static const float SHOT_LIMB[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+static const float SHOT_ALTJ[16] = {0.15, 0.2, 0.15, 0.45, 0.2, 0.15, 0.1, 0.15, 0.4, 0.4, 0.15, 0.15, 0.15, 0.15, 0.1, 0.1};
+static const float SHOT_PITCHJ[16] = {0.06, 0.12, 0.06, 0.18, 0.1, 0.08, 0.0, 0.1, 0.12, 0.2, 0.05, 0.05, 0.05, 0.05, 0.04, 0.04};
+static const float SHOT_ROLLJ[16] = {0.5, 0.6, 0.5, 3.1416, 0.6, 0.5, 0.4, 0.8, 3.1416, 3.1416, 0.5, 0.5, 0.8, 0.8, 0.4, 0.4};
+static const float SHOT_ROLL[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.125, 0.525, 0.031, 0.129};
+static const float SHOT_DALT[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0742, -0.0129, 0.0581, 0.0581, 0.00226, 0.00226};
+static const float SHOT_DPITCH[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0306, -0.0258, -0.0039, 0.0, 0.0};
+static const float SHOT_DYAW[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.00494, -0.00494, 0.0, 0.0, 0.00521, 0.01015};
+static const float SHOT_DSPITCH[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00245, 0.00168};
+static const float SHOT_DROLL[16] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0081, 0.0081, 0.002, 0.002};
+static const int   SHOT_PART[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2, 1, 2};
 
 // A camera pose as numbers that interpolate: a = (longitude, latitude, log of
 // the altitude in earth radii, tilt from nadir), b = (frame offset x, y, log of
@@ -1805,7 +1812,7 @@ def earth_shader(shot=None, lens=None, clouds=None, exposure=None,
     every scene. ``lens``: see :func:`_resolve_lens`. ``clouds``: cloud-height
     exaggeration, 0..8 (1 is real height; 3, the default, lets the parallax read
     from orbit). ``exposure``: 0.1..4, scales the light before the lens.
-    ``brightness``: 0..1, the ceiling of the result after it (default 0.5). Bad
+    ``brightness``: 0..1, the ceiling of the result after it (default 0.35). Bad
     values fall back to the defaults."""
     name = shot.strip().lower() if isinstance(shot, str) else None
     index = SHOT_COLUMNS.get(name, -1)

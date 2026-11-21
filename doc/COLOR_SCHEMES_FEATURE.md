@@ -332,10 +332,10 @@ be distracting during real use.
 
 #### The Earth scene
 
-Left to itself, `earth` makes **scenes** by pairing a shot (one of sixteen, each in
+Left to itself, `earth` makes **scenes** by pairing a shot (one of thirteen, each in
 twelve compositions — moved round the planet, higher or lower, tilted, and turned
 so the Earth can lie at the bottom, the side or the top of the frame) with a lens
-look (one of ten) — 1,920 combinations. Each scene lasts about 50 seconds at
+look (one of ten) — 1,560 combinations. Each scene lasts about 50 seconds at
 `speed` `1.0` — about half a minute held, then a slow move of about 18 seconds into
 the next — with the camera moving slowly and steadily the whole time — around
 the planet, closer or further, the planet drifting and turning across the frame
@@ -348,8 +348,8 @@ drift. Three of the shots, `approach`, `departure` and `sunrise`, are longer —
 about 100 seconds — and tell a small story of their own (see the table below). XeFM opens
 on a random scene, and returns from idle to a fresh one.
 
-The picture is kept dim on purpose: no pixel of it is brighter than half white
-(`brightness`), so file names stay readable over a sunlit ocean.
+The picture is kept dim on purpose: no pixel of it is brighter than 35% of
+white (`brightness`), so file names stay readable over a sunlit ocean.
 
 It takes five keys of its own in the same dict:
 
@@ -364,7 +364,7 @@ It takes five keys of its own in the same dict:
 | `lens` | The camera look (below). Leave it out (or `'auto'`) to pick one at random for every scene; name one to keep it, or give a list to pick among those: `['clean', 'film', 'anamorphic']`. A dict tunes a look: `{'preset': 'film', 'grain': 0}`. |
 | `clouds` | How far the clouds are lifted above the ground, 0–8. `1` is their real height; the default `3` lets them visibly slide against the surface from orbit. |
 | `exposure` | How much light the camera takes in, 0.1–4. Default `1`. |
-| `brightness` | The brightest the picture may be, as a fraction of white, 0–1. Default `0.5`. |
+| `brightness` | The brightest the picture may be, as a fraction of white, 0–1. Default `0.35`. |
 
 The shots:
 
@@ -372,7 +372,7 @@ The shots:
 |--------|--------------|
 | `day` | The full disc in daylight, Africa and Europe. |
 | `dawn` | Morning over the western Pacific: the line between night and day sweeping across the curve of the Earth. |
-| `crescent` | A thin crescent of daylight on a dark Earth, lit from behind, the atmosphere glowing on the edge. |
+| `crescent` | The Earth half in daylight, lit from the side and a little behind, the atmosphere glowing on the edge. |
 | `leo` | Low orbit, about 250 km up, looking across the Himalaya to the horizon. |
 | `terminator` | The line between day and night across the Andes. |
 | `glint` | The sun reflected off the central Pacific. |
@@ -380,9 +380,6 @@ The shots:
 | `polar` | Over the Arctic. |
 | `horizon` | Low orbit at the edge of morning: still night below, the ground lit toward the horizon and the sun beside it. |
 | `ocean` | The daylit Pacific seen obliquely from low orbit. |
-| `night` | The night side's edge through a longer lens: the thin green line of airglow, stars, and twilight low along one side. |
-| `eclipse` | The Earth from far off with the sun right behind it — a dark disc ringed by the glowing atmosphere. |
-| `limb` | A telephoto view of the daylit edge from low orbit: the layers of air thinning into black. |
 | `approach` | A long scene: falling from high above northern India toward the low evening sun, down into the clouds, then tilting up to the horizon as the sun sets. |
 | `departure` | A long scene: climbing away from low orbit over Africa, tilting down and slowly turning as the whole lit disc comes into view and shrinks among the stars. |
 | `sunrise` | A long scene: watching the horizon from low orbit over the Pacific as the sun comes up over it and the ground and clouds below light up. |
@@ -395,16 +392,19 @@ never distorted, blurred or grained:
 
 | `lens` | Look |
 |--------|------|
-| `clean` | A light glow around the brightest light and a soft vignette. |
-| `aberration` | Colour fringing toward the edges, with slight barrel distortion. |
-| `mono` | Black and white with grain. |
+| `clean` | A light glow around the brightest light. |
+| `aberration` | Colour fringing toward the edges. |
+| `cyanotype` | One colour, as a blueprint: the Earth in shades of Prussian blue, with grain. |
+| `vivid` | Saturated colour: deep blue oceans, rich deserts and forests. |
 | `film` | Warm highlights, cool shadows, a red halo around light, grain. |
-| `anamorphic` | Wide-screen bars, a blue horizontal streak through the sun, faint flare. |
+| `anamorphic` | A blue horizontal streak through the sun, faint flare. |
 | `flare` | Lens-flare ghosts mirrored through the centre of the frame. |
-| `fisheye` | A strong fisheye. |
-| `crt` | A curved CRT tube with scanlines. |
+| `crt` | Scanlines and an aperture grille. |
 | `infrared` | False colour, as infrared film renders foliage and sky. |
-| `night-vision` | A green intensified-image scope. |
+| `night-vision` | A green intensified image. |
+
+None of the looks darkens the edges or crops the frame: the picture always
+reaches every edge of the window.
 
 The textures are NASA's Blue Marble imagery; their credits are in
 `xefm/assets/earth/SOURCES.md`. On a laptop the scene costs noticeably more GPU
