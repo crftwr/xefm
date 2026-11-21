@@ -1112,6 +1112,8 @@ class Config:
     #                Code the skill, the rules and its permission settings.
     #                'codex' - XeFM passes Codex the rules, which name the
     #                skill (Codex's own sandbox and approvals still apply).
+    #                'copilot' - XeFM passes GitHub Copilot CLI the skill,
+    #                the rules and --deny-tool rules.
     #                Without a preset, put the placeholders in 'command'
     #                yourself: {plugin_dir} {skills_dir} {skill_dir} {rules}
     #                {rules_file} {settings_file} (and {prompt} in
@@ -1119,7 +1121,7 @@ class Config:
     #   'restrict' : True (the default): xefmctl from the session has every
     #                file change confirmed in XeFM, may not delete for good,
     #                and asks before its first read outside this disk; for
-    #                Claude Code, its shell may not rm or mv either.
+    #                Claude Code and Copilot, its shell may not rm or mv either.
     #   'settings' : (Claude Code) the settings file to pass instead of
     #                XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
     #   'env'      : extra environment variables
@@ -1128,6 +1130,7 @@ class Config:
     AGENTS = [
         {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
         {'name': 'Codex', 'command': ['codex'], 'preset': 'codex'},
+        {'name': 'Copilot', 'command': ['copilot'], 'preset': 'copilot'},
     ]
 
     # Your own rules for every agent session, after XeFM's (a string), e.g.

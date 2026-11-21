@@ -25,9 +25,15 @@ gets:
   ``delete`` refused, and its first read outside the local disk asked (see
   :mod:`xefm.remote_dispatch`). ``'restrict': False`` lifts both hard layers.
 
-Claude Code (``'preset': 'claude-code'``) and Codex (``'preset': 'codex'``)
-are supported here; another agent CLI is configured with placeholders in its
-``command`` - see the wiki.
+Claude Code (``'preset': 'claude-code'``), Codex (``'preset': 'codex'``) and
+GitHub Copilot CLI (``'preset': 'copilot'``) are supported here; another
+agent CLI is configured with placeholders in its ``command`` - see the wiki.
+
+Copilot loads the same plugin folder (``--plugin-dir``), denies commands with
+``--deny-tool``, and takes the rules as an instructions file
+(``xefm.instructions.md``, ``applyTo: "**"``) in a folder named by
+``COPILOT_CUSTOM_INSTRUCTIONS_DIRS``: it has no option for system-prompt text,
+and an ``AGENTS.md`` there is read only as a nested one.
 
 Codex has no option that adds a skills folder, so its preset hands the skill
 the way Codex lists its own: the rules (``-c developer_instructions=...``)
@@ -49,7 +55,8 @@ logger = getLogger("Agents")
 
 CLAUDE_CODE = "claude-code"
 CODEX = "codex"
-PRESETS = (CLAUDE_CODE, CODEX)
+COPILOT = "copilot"
+PRESETS = (CLAUDE_CODE, CODEX, COPILOT)
 
 #: The placeholders a ``command`` (or ``prompt_args``) may hold.
 PLACEHOLDERS = ("{plugin_dir}", "{skills_dir}", "{skill_dir}", "{rules}",
@@ -92,6 +99,19 @@ CLAUDE_DEFAULT_SETTINGS = {
         ],
     },
 }
+
+#: Copilot's ``--deny-tool`` rules for a restricted session. Copilot matches
+#: a command by the name as typed, aliases not included, so PowerShell's
+#: names and aliases are listed beside the POSIX ones.
+COPILOT_DENY_TOOLS = (
+    "shell(rm)", "shell(rmdir)", "shell(unlink)", "shell(shred)",
+    "shell(mv)", "shell(trash)", "shell(srm)", "shell(git clean)",
+    "shell(Remove-Item)", "shell(ri)", "shell(del)", "shell(erase)",
+    "shell(rd)", "shell(Move-Item)", "shell(mi)", "shell(move)",
+)
+
+#: The environment variable naming Copilot's extra instructions folders.
+COPILOT_INSTRUCTIONS_ENV = "COPILOT_CUSTOM_INSTRUCTIONS_DIRS"
 
 _KEYS = {"name", "command", "preset", "restrict", "settings", "env", "prompt_args"}
 
@@ -252,6 +272,11 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     session_dir.mkdir(parents=True, exist_ok=True)
     rules_file = session_dir / "rules.md"
     rules_file.write_text(rules, encoding="utf-8")
+    # The rules as an instructions file for Copilot (applied to everything).
+    instructions = session_dir / "instructions"
+    instructions.mkdir(exist_ok=True)
+    (instructions / "xefm.instructions.md").write_text(
+        '---\napplyTo: "**"\n---\n\n' + rules, encoding="utf-8")
     settings = entry.get("settings")
     if settings is None:
         settings = CLAUDE_DEFAULT_SETTINGS if entry.get("restrict", True) else {}
@@ -264,6 +289,7 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
         "{rules}": rules,
         "{rules_file}": str(rules_file),
         "{settings_file}": str(settings_file),
+        "instructions_dir": str(instructions),  # for the copilot preset; not a placeholder
     }
 
 
@@ -287,9 +313,25 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
         if prompt:
             out.append(prompt)  # `codex "request"` starts the TUI with it
         return out
+    if entry.get("preset") == COPILOT:
+        out += ["--plugin-dir", values["{plugin_dir}"]]
+        if entry.get("restrict", True):
+            out += [f"--deny-tool={rule}" for rule in COPILOT_DENY_TOOLS]
+        if prompt:
+            out += ["-i", prompt]  # interactive, starting with the request
+        return out
     if prompt:
         out += [_fill(a, values) for a in entry["prompt_args"]]
     return out
+
+
+def session_env(entry: dict, values: dict, env: dict) -> dict:
+    """The environment variables the entry's preset adds to ``env`` (the
+    session's, the entry's own ``env`` already in it)."""
+    if entry.get("preset") != COPILOT:
+        return {}
+    dirs = [d for d in env.get(COPILOT_INSTRUCTIONS_ENV, "").split(",") if d.strip()]
+    return {COPILOT_INSTRUCTIONS_ENV: ",".join([*dirs, values["instructions_dir"]])}
 
 
 def codex_instructions(values: dict) -> str:
