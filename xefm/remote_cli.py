@@ -216,9 +216,14 @@ def exchange(req: dict, on_items=None) -> dict:
                             or (cmd.wait and req["opts"].get("wait"))))
     req = dict(req, key=os.environ.get("XEFM_SESSION_KEY", ""),
                session=os.environ.get("XEFM_SESSION", ""))
+    payload = json.dumps(req).encode("utf-8")
+    if len(payload) > T.MAX_REQUEST:
+        raise RemoteError(f"xefmctl {req['cmd']}: the request is too large "
+                          f"({len(payload)} bytes; XeFM takes at most "
+                          f"{T.MAX_REQUEST}). Send less at once.", 2)
     conn = _connect()
     try:
-        conn.send_bytes(json.dumps(req).encode("utf-8"))
+        conn.send_bytes(payload)
         while True:
             if patient:
                 while not conn.poll(0.5):

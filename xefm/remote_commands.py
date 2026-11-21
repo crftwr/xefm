@@ -26,6 +26,13 @@ from dataclasses import dataclass, field
 
 PANES = ("active", "other", "left", "right")
 
+#: The longest request XeFM takes, in bytes. A request carries what the
+#: command reads from standard input (``show-markdown -``, ``pane open-list
+#: -``), so it is sized for a long document or many thousand paths. The
+#: client refuses a longer one before sending it, with a message; the
+#: listener would drop it with nothing to say back.
+MAX_REQUEST = 8 * 1024 * 1024
+
 # What a command does to XeFM, for the gate (what a key could do now) and the
 # session policy (what an agent's session may do).
 READ = "read"          # answers from the state; never refused for the UI

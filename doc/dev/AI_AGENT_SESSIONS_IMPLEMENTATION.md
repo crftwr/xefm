@@ -34,7 +34,9 @@ its way around.
   the version token resolved). Rewritten on every launch through
   `plugin.tmp` and a rename: a development tree keeps its version while the
   skill changes, and a session already running has read its copy.
-- `sessions/rules.md`: the rules.
+- `sessions/rules.md`: the rules. They name the skill (`xefm:xefm` in Claude
+  Code): a copy of an older `xefm` skill installed in the agent's own
+  folders, or uploaded to the user's account, is listed beside it.
 - `sessions/settings-<name>.json`: the entry's `settings`, else
   `CLAUDE_DEFAULT_SETTINGS` for a restricted entry (deny `rm`, `rmdir`,
   `unlink`, `shred`, `mv`, `trash`, `srm`, `git clean`, `xefmctl delete`),
@@ -56,9 +58,12 @@ starts an interactive session with it).
    Only the preset knows how to say it; other agents get `{settings_file}`
    to pass if their CLI has an equivalent.
 2. **XeFM's** (any agent): in `remote_dispatch`, for policy `agent`:
-   - `copy`, `move`, `trash`: `ctx.confirm` naming the session and listing
-     the items first, whatever `CONFIRM_*` says; the user is taken to the
-     file manager for it and back once answered.
+   - `copy`, `move`, `trash`: the operation's own confirmation, shown
+     whatever `CONFIRM_*` says (`_ALWAYS_CONFIRM` forced for the call, read
+     when the operation starts). The question is the operation's, naming
+     what and where; a separate "the agent wants to..." dialog asked the
+     same thing twice. The user is taken to the file manager for it and
+     back when the operation ends or is declined (its `on_done`).
    - `delete`, and `invoke` of `delete_permanently`, `quit`, `quit_app`:
      refused (exit 5).
    - `invoke`: run with `AGENT_FORCED_SETTINGS` set on `app.config` (every

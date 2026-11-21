@@ -59,7 +59,10 @@ XeFM:  RemoteServer (listener) ── remote_dispatch.handle ── _call_later 
 - `xefm/remote_server.py`: the listener. `multiprocessing.connection` gives
   a Unix socket (in a 0700 `mkdtemp` directory) or a named pipe with an HMAC
   challenge on a per-process key before any request byte is read. Requests
-  and answers are JSON, never pickles. An answer that is an iterator is sent
+  and answers are JSON, never pickles. A request is at most
+  `remote_commands.MAX_REQUEST` (8 MiB: it carries what `show-markdown -`
+  and `pane open-list -` read from stdin); the client refuses a longer one
+  with exit 2 before sending, since the listener can only drop it. An answer that is an iterator is sent
   as several, all but the last marked `more`; the iterator is closed when
   the client goes away (Ctrl-C ends a search).
 - `xefm/remote_dispatch.py`: what each command does. `handle()` runs on the
@@ -112,9 +115,9 @@ that screen and skip the gate.
 What a command opens lands on the file manager's screen whichever screen is
 shown: `on_files()` sets PuiKit's default layer parent to the file manager's
 group for the duration. `_bring_user()` then switches there when a layer
-was added; a question asked for the agent (`_ask`, the write confirmation,
-the remote-read question) returns the user to the asking screen once
-answered (`_go_back`).
+was added; a question asked for the agent (`_ask`, the remote-read
+question) returns the user to the asking screen once answered, and an
+agent's write once it has ended or been declined (`_go_back`).
 
 `view`, `diff` and `show-markdown` switch to the file manager first and close
 its viewers inside `dialog_geometry.no_motion()`, which makes

@@ -162,6 +162,19 @@ def test_an_answer_carries_its_exit_status(server, monkeypatch):
     assert out.getvalue() == "no\n"
 
 
+def test_a_request_too_large_is_refused_before_it_is_sent(server, monkeypatch, capsys):
+    _env(monkeypatch, server)
+    monkeypatch.setattr(remote_commands, "MAX_REQUEST", 200)
+    paths = io.StringIO("".join(f"/some/long/path/{i:04d}\n" for i in range(50)))
+    assert remote_cli.run(["pane", "open-list", "-"], stdin=paths) == 2
+    assert "too large" in capsys.readouterr().err and not server.seen
+
+
+def test_the_limit_takes_a_long_document():
+    assert remote_commands.MAX_REQUEST >= 4 * 1024 * 1024
+    assert remote_server.MAX_REQUEST == remote_commands.MAX_REQUEST
+
+
 def test_a_refusal_carries_its_code(server, monkeypatch, capsys):
     _env(monkeypatch, server)
     assert remote_cli.run(["view", "/x"]) == 5
