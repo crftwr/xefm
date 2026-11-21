@@ -6,6 +6,7 @@ the memory backend (libghostty is not installed where the tests run, so a
 stand-in view plays the terminal), then what terminal mode does instead.
 Screens (#951) are groups in the Panel's layer tree."""
 
+import os
 import time
 from types import SimpleNamespace
 
@@ -579,11 +580,17 @@ def _xefmctl(app, line, *, session="", policy="user", stdin=None):
     from xefm import remote_commands as T
     from xefm import remote_dispatch as D
     from xefm.remote_cli import parse
-    req = parse(shlex.split(line), stdin)
+    # A Windows path keeps its backslashes (shell-style splitting eats them).
+    req = parse(shlex.split(line, posix=os.name != "nt"), stdin)
     req.update(session=session, policy=policy)
     cmd = T.find(req["cmd"].split())[0]
     answer = D._answer(app, cmd, req)
     return answer
+
+
+def _P(path):
+    """A path as xefmctl sends it: absolute on this OS (C:\\tmp\\a on Windows)."""
+    return os.path.abspath(path)
 
 
 def _answered(answer):
@@ -701,14 +708,14 @@ def test_an_agents_copy_asks_with_the_copys_own_dialog(monkeypatch):
                        session=sid, policy="agent")
     # Asked once, by the copy itself, though the user turned CONFIRM_COPY off;
     # on the file manager's screen, where XeFM took the user.
-    assert asked == [("copy", ["/tmp/a", "/tmp/b"], "/tmp/out")]
+    assert asked == [("copy", [_P("/tmp/a"), _P("/tmp/b")], _P("/tmp/out"))]
     assert app._screens.current is app._screens.files
     assert app.config.CONFIRM_COPY is False  # put back at once
     _run_later(app)
     answer = _answered(pending)
     assert answer["ok"] and answer["status"] == 0 and answer["outcome"] == "done"
     assert answer["note"] == "copy: 2 item(s) done"
-    assert done == [("copy", ["/tmp/a", "/tmp/b"], "/tmp/out")]
+    assert done == [("copy", [_P("/tmp/a"), _P("/tmp/b")], _P("/tmp/out"))]
     assert app._screens.current is agent  # back once it ended
     # A shell of the user's own follows the user's setting.
     asked.clear()
@@ -722,10 +729,10 @@ def test_an_agents_trash_returns_to_its_screen_without_wait(monkeypatch):
     app.new_terminal_session()
     agent = app._screens.current
     answer = _xefmctl(app, "trash /tmp/x", session=str(agent.session.id), policy="agent")
-    assert answer["outcome"] == "started" and asked == [("trash", ["/tmp/x"], None)]
+    assert answer["outcome"] == "started" and asked == [("trash", [_P("/tmp/x")], None)]
     assert app._screens.current is app._screens.files
     _run_later(app)
-    assert done == [("trash", ["/tmp/x"], None)] and app._screens.current is agent
+    assert done == [("trash", [_P("/tmp/x")], None)] and app._screens.current is agent
 
 
 def test_an_agent_told_no_gets_a_failure(monkeypatch):
@@ -776,12 +783,13 @@ def test_xefmctl_parses_by_the_table():
     req = parse(["screen", "show", "files"])
     assert req["args"] == {"id": "files"}
     req = parse(["copy", "a", "b", "--to", "/out", "--wait", "--json"])
-    assert req["args"]["source"][1].endswith("/b") and req["opts"] == {"to": "/out", "wait": True}
+    assert os.path.basename(req["args"]["source"][1]) == "b"
+    assert req["opts"] == {"to": os.path.abspath("/out"), "wait": True}
     assert req["json"]
     req = parse(["find-in-files", "TODO", "--case", "--limit", "5"])
     assert req["args"] == {"pattern": "TODO", "url": []} and req["opts"]["limit"] == 5
     req = parse(["pane", "open-list", "-"], io.StringIO('{"path": "/x/a"}\n/x/b\n'))
-    assert req["args"]["path"] == ["/x/a", "/x/b"]
+    assert req["args"]["path"] == [os.path.abspath("/x/a"), os.path.abspath("/x/b")]
     req = parse(["pane", "cd"])
     assert req["args"]["path"]  # this shell's directory
     for bad in (["screen"], ["screen", "show"], ["screen", "list", "x"],
