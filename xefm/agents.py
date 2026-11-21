@@ -25,8 +25,14 @@ gets:
   ``delete`` refused, and its first read outside the local disk asked (see
   :mod:`xefm.remote_dispatch`). ``'restrict': False`` lifts both hard layers.
 
-Claude Code is supported here (``'preset': 'claude-code'``); another agent
-CLI is configured with placeholders in its ``command`` - see the wiki.
+Claude Code (``'preset': 'claude-code'``) and Codex (``'preset': 'codex'``)
+are supported here; another agent CLI is configured with placeholders in its
+``command`` - see the wiki.
+
+Codex has no option that adds a skills folder, so its preset hands the skill
+the way Codex lists its own: the rules (``-c developer_instructions=...``)
+name the skill's ``SKILL.md`` for the agent to read. Codex has no settings
+file to deny ``rm`` with either; its own sandbox and approvals apply.
 """
 
 from __future__ import annotations
@@ -42,7 +48,8 @@ from xefm.log_manager import getLogger
 logger = getLogger("Agents")
 
 CLAUDE_CODE = "claude-code"
-PRESETS = (CLAUDE_CODE,)
+CODEX = "codex"
+PRESETS = (CLAUDE_CODE, CODEX)
 
 #: The placeholders a ``command`` (or ``prompt_args``) may hold.
 PLACEHOLDERS = ("{plugin_dir}", "{skills_dir}", "{skill_dir}", "{rules}",
@@ -272,9 +279,47 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
         if prompt:
             out.append(prompt)
         return out
+    if entry.get("preset") == CODEX:
+        # `codex -c key=value` parses the value as TOML; a string that fails
+        # to parse would be taken raw, so it is always given quoted.
+        out += ["-c", "developer_instructions="
+                + _toml_string(codex_instructions(values))]
+        if prompt:
+            out.append(prompt)  # `codex "request"` starts the TUI with it
+        return out
     if prompt:
         out += [_fill(a, values) for a in entry["prompt_args"]]
     return out
+
+
+def codex_instructions(values: dict) -> str:
+    """What the ``codex`` preset hands Codex as its developer instructions:
+    the rules, then where the skill is, the way Codex names its own skills
+    (a path to ``SKILL.md`` for the agent to read)."""
+    skill = _FsPath(values["{skill_dir}"]).as_posix()
+    return (values["{rules}"]
+            + "\n## The xefm skill\n\n"
+            "XeFM handed this session its `xefm` skill: read "
+            f"`{skill}/SKILL.md` before running xefmctl or changing XeFM's "
+            "configuration, and resolve the paths it mentions against that "
+            "folder.\n")
+
+
+def _toml_string(text: str) -> str:
+    """``text`` as a TOML basic string."""
+    out = []
+    for ch in text:
+        if ch in ('"', "\\"):
+            out.append("\\" + ch)
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
 
 
 def _fill(arg: str, values: dict) -> str:
