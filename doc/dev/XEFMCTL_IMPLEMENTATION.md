@@ -67,7 +67,12 @@ XeFM:  RemoteServer (listener) ── remote_dispatch.handle ── _call_later 
   the client goes away (Ctrl-C ends a search).
 - `xefm/remote_dispatch.py`: what each command does. `handle()` runs on the
   request thread, queues the handler on the UI thread (`_call_later`) and
-  waits up to 8 s for it. A handler returns an answer, a `Pending` (the
+  waits up to 8 s for it to *start*: only then is XeFM "busy" (exit 4), and
+  a request refused that way is dropped when the UI thread reaches it.
+  Work that has started is waited for however long it takes; past 2 s
+  (`ACK_AFTER`) the client is sent an empty answer first, so it stops
+  timing out, then the real one. The client keeps the `status` and `note`
+  of whichever piece carried them. A handler returns an answer, a `Pending` (the
   request thread then waits for a dialog's callback or an operation's
   `on_done`), or an iterator built on the UI thread and run on the request
   thread (a search reads off the UI thread, as the search dialog's worker

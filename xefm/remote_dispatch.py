@@ -48,6 +48,10 @@ AGENT = "agent"
 #: (under remote_cli.TIMEOUT, so the answer still reaches the client).
 UI_WAIT = 8.0
 
+#: Seconds of UI-thread work after which the client is told XeFM has the
+#: request and is still at it (under the client's own TIMEOUT).
+ACK_AFTER = 2.0
+
 #: Exit statuses (``xefmctl``'s, documented in the skill's reference).
 FAILED, USAGE, UNREACHABLE, BUSY, REFUSED = 1, 2, 3, 4, 5
 
@@ -121,10 +125,15 @@ def handle(app, req: dict):
         # nothing else reads or changes the panes until it returns.
         req["opts"].pop("show", None)
         return _finish(_answer(app, cmd, req))
-    done = threading.Event()
+    started, done = threading.Event(), threading.Event()
+    lock = threading.Lock()
     box: dict = {}
 
     def run() -> None:
+        with lock:
+            if box.get("abandoned"):
+                return  # the client was told XeFM is busy: do nothing late
+            started.set()
         try:
             box["answer"] = _answer(app, cmd, req)
         except _Refused as exc:
@@ -136,9 +145,30 @@ def handle(app, req: dict):
             done.set()
 
     app._call_later(run)
-    if not done.wait(UI_WAIT):
-        return refuse("XeFM is busy; try again", BUSY)
-    return _finish(box["answer"])
+    # Busy means the UI thread did not get to it: once it has started, the
+    # work is waited for however long it takes (a long document laid out
+    # for show-markdown), so a slow success is never reported as a failure.
+    if not started.wait(UI_WAIT):
+        with lock:
+            if not started.is_set():
+                box["abandoned"] = True
+                return refuse("XeFM is busy; try again", BUSY)
+    if done.wait(ACK_AFTER):
+        return _finish(box["answer"])
+    return _late(done, box)
+
+
+def _late(done, box):
+    """The answers of work still running on the UI thread: an empty one at
+    once, which tells the client XeFM has the request (it then waits as long
+    as it takes), then the work's own."""
+    yield ok()
+    done.wait()
+    answer = _finish(box["answer"])
+    if isinstance(answer, dict):
+        yield answer
+    else:
+        yield from answer
 
 
 def _finish(answer):
@@ -761,7 +791,8 @@ def _write(app, req, verb: str, run) -> Any:
             _go_back(app, back)
         status = getattr(outcome, "status", "done")
         if status == "done":
-            answer = ok([{"path": p} for p in items], status=0, outcome="done")
+            answer = ok([{"path": p} for p in items], status=0, outcome="done",
+                        note=f"{verb}: {len(items)} item(s) done")
         elif status == "cancelled":
             answer = ok([], status=FAILED, outcome="cancelled",
                         note=f"{verb}: the user cancelled it")

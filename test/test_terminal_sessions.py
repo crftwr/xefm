@@ -707,6 +707,7 @@ def test_an_agents_copy_asks_with_the_copys_own_dialog(monkeypatch):
     _run_later(app)
     answer = _answered(pending)
     assert answer["ok"] and answer["status"] == 0 and answer["outcome"] == "done"
+    assert answer["note"] == "copy: 2 item(s) done"
     assert done == [("copy", ["/tmp/a", "/tmp/b"], "/tmp/out")]
     assert app._screens.current is agent  # back once it ended
     # A shell of the user's own follows the user's setting.

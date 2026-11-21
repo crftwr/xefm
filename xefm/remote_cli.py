@@ -222,6 +222,7 @@ def exchange(req: dict, on_items=None) -> dict:
                           f"({len(payload)} bytes; XeFM takes at most "
                           f"{T.MAX_REQUEST}). Send less at once.", 2)
     conn = _connect()
+    outcome: dict = {}
     try:
         conn.send_bytes(payload)
         while True:
@@ -236,8 +237,14 @@ def exchange(req: dict, on_items=None) -> dict:
                                   int(answer.get("code", 1)))
             if on_items is not None and answer.get("items"):
                 on_items(answer["items"])
+            # The exit status and the closing note may come in any piece of
+            # a streamed answer, not only the last.
+            outcome.update({k: answer[k] for k in ("status", "note", "outcome")
+                            if k in answer})
             if not answer.get("more"):
-                return answer
+                return dict(answer, **outcome)
+            # XeFM has the request and is at it: wait however long it takes.
+            patient = True
     except (EOFError, OSError) as exc:
         raise RemoteError(f"xefmctl: the connection to XeFM broke: {exc}", 3) from None
     finally:
