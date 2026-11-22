@@ -314,6 +314,55 @@ def test_filter_dialog_substring_unchanged():
     assert d.filtered == ["apple", "apricot"]
 
 
+# --- Romaji table repair (#926) ---------------------------------------------
+
+
+@needs_migemo
+def test_zu_converts_to_kana():
+    # pymigemo's lookup missed its romaji table's last key, "zu", so every
+    # word spelled with ず went unfound.
+    assert migemo_search.match("kouzui", "洪水.txt")
+    assert migemo_search.match("kouzui", "こうずい.txt")
+    assert migemo_search.match("zubon", "ズボン.md")
+
+
+@needs_migemo
+def test_every_romaji_key_converts():
+    # Each key of pymigemo's table converts to its own kana, including the
+    # last one and the out-of-order "~".
+    from migemo import romajiconverter as converter
+    pairs = [(k, v) for k, v in zip(converter.ROMAJI_KEYS,
+                                    converter.ROMAJI_VALUES)
+             if k != migemo_search._SENTINEL_KEY]
+    assert ("zu", "ず") in pairs and ("~", "～") in pairs
+    broken = [(k, v, converter.convert_romaji_to_hiragana(k))
+              for k, v in pairs
+              if converter.convert_romaji_to_hiragana(k) != v]
+    assert broken == []
+
+
+@needs_migemo
+def test_every_azik_key_converts():
+    from migemo import romajiconverter as converter
+    table = migemo_search._alternate_table("azik")
+    assert table[0][-1] == migemo_search._SENTINEL_KEY
+    with migemo_search._installed(table):
+        broken = [(k, v, converter.convert_romaji_to_hiragana(k))
+                  for k, v in zip(*table)
+                  if k != migemo_search._SENTINEL_KEY
+                  and converter.convert_romaji_to_hiragana(k) != v]
+    assert broken == []
+
+
+def test_romaji_table_repair_is_idempotent():
+    keys, values = ["zu", "~", "a"], ["ず", "～", "あ"]
+    migemo_search._repair_romaji_table(keys, values)
+    assert keys == ["a", "zu", "~", migemo_search._SENTINEL_KEY]
+    assert values[:3] == ["あ", "ず", "～"]
+    migemo_search._repair_romaji_table(keys, values)
+    assert keys == ["a", "zu", "~", migemo_search._SENTINEL_KEY]
+
+
 # --- AZIK romaji table (#346) -----------------------------------------------
 
 
