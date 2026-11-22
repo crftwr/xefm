@@ -374,7 +374,32 @@ def test_while_terminal_mode_has_handed_over_only_reads_run(tmp_path):
     answer = remote_dispatch.handle(app, dict(remote_cli.parse(["pane", "selected"])))
     assert _paths(answer) == ["a", "d"]
     refused = remote_dispatch.handle(app, dict(remote_cli.parse(["pane", "cd", str(left)])))
-    assert not refused["ok"] and refused["code"] == 4 and not app.went
+    # Not "busy" (4): it lasts until the shell exits, so not worth a retry (#961).
+    assert not refused["ok"] and refused["code"] == 6 and not app.went
+    assert "suspended" in refused["error"] and refused["error"].isascii()
+
+
+def test_state_says_xefm_is_suspended(tmp_path, monkeypatch):
+    app, _left = _app(tmp_path)
+    app._screens.current = SimpleNamespace(id="files", kind="files")
+    app._screen_label = lambda screen: "Files"
+    monkeypatch.setattr(remote_dispatch, "_pane_api", lambda app, req: SimpleNamespace(
+        path=Path(str(tmp_path)), focused=None, selected=lambda: []))
+    item, = _ask(app, "state")["items"]
+    assert item["suspended"] is False and "suspended" not in item["text"]
+    app._terminal_handed_over = True
+    item, = remote_dispatch.handle(app, dict(remote_cli.parse(["state"])))["items"]
+    assert item["suspended"] is True and "suspended" in item["text"]
+
+
+def test_which_commands_need_the_screen_is_in_the_help():
+    from xefm import remote_commands as T
+    cd, = [c for c in T.COMMANDS if c.name == "pane cd"]
+    state, = [c for c in T.COMMANDS if c.name == "state"]
+    assert T.needs_screen(cd) and not T.needs_screen(state)
+    assert " *pane cd" in T.usage() and "  state" in T.usage()
+    assert "exit status 6" in T.command_help(cd)
+    assert {d["command"]: d["needs_screen"] for d in T.describe()}["view"] is True
 
 
 def test_an_agents_first_read_outside_the_disk_is_asked(tmp_path, monkeypatch):

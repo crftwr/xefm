@@ -70,8 +70,21 @@ beside a user looking at XeFM's window, and `xefmctl` talks to that XeFM:
    extension's guide for agents, when it has one), then `xefmctl invoke NAME`
    after `pane select` / `pane cd` put the operands in place.
 
+**When XeFM is suspended.** In terminal mode XeFM gives its terminal to
+your shell and waits until the shell exits. `xefmctl state` then says *XeFM
+is suspended* (`"suspended": true` with `--json`), and for the whole session
+only the commands that read work: `state`, `pane path|entries|focused|selected`,
+`entries`, the searches (`--show` is ignored), `read`, `fetch`, `action list|show`.
+Everything that needs XeFM's screen - pane changes, `view`, `diff`,
+`show-markdown`, `confirm|choose|input`, `message`, `invoke`, `copy|move|trash`
+- ends with exit status 6. Don't retry it. Instead, show results in the
+terminal (or in a file the user can open later), ask in the chat, and don't
+change files: give the user the copy/move/trash steps to carry out in XeFM
+afterwards.
+
 Add `--json` to any command for one JSON object per line. A refusal (exit
-status 5) says why: pass it on to the user. Every command, its options and
+status 5) says why: pass it on to the user. Exit status 4 (busy) is worth one
+retry; 6 (suspended) is not. Every command, its options and
 its exit statuses: `references/xefmctl.md` (generated), or `xefmctl help`.
 
 ## Which reference to read

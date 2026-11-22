@@ -36,6 +36,8 @@ MAX_REQUEST = 8 * 1024 * 1024
 # What a command does to XeFM, for the gate (what a key could do now) and the
 # session policy (what an agent's session may do).
 READ = "read"          # answers from the state; never refused for the UI
+# Every other effect needs XeFM's screen: refused (exit status 6) while
+# terminal mode has handed the terminal to the shell xefmctl runs in.
 CHANGE = "change"      # changes the file manager: let in as a key would be
 WRITE = "write"        # changes files: confirmed in XeFM for an agent
 ASK = "ask"            # asks the user in XeFM and waits for the answer
@@ -261,6 +263,12 @@ def nouns() -> dict[str, list[str]]:
     return out
 
 
+def needs_screen(cmd: Command) -> bool:
+    """Whether ``cmd`` needs XeFM's screen, and so is refused while terminal
+    mode has handed the terminal to the shell (exit status 6)."""
+    return cmd.effect != READ
+
+
 def synopsis(cmd: Command) -> str:
     parts = ["xefmctl", *cmd.words]
     for a in cmd.args:
@@ -277,8 +285,11 @@ def usage() -> str:
     width = max(len(c.name) for c in COMMANDS)
     lines = ["usage: xefmctl COMMAND [ARGS] [--json]", ""]
     for cmd in COMMANDS:
-        lines.append(f"  {cmd.name.ljust(width)}  {cmd.summary}")
+        mark = "*" if needs_screen(cmd) and not cmd.local else " "
+        lines.append(f" {mark}{cmd.name.ljust(width)}  {cmd.summary}")
     lines += ["",
+              "* uses XeFM's screen: refused (exit status 6) while XeFM is "
+              "suspended until this shell exits (terminal mode).",
               "Start with `xefmctl state`. `xefmctl help COMMAND` tells one command "
               "in full; `xefmctl help --json` describes them all.",
               "These work in a shell XeFM started and act on that XeFM's file "
@@ -301,6 +312,9 @@ def command_help(cmd: Command) -> str:
         lines.append(f"  {flag:<14}{o.help}")
     if cmd.wait == "always":
         lines += ["", "Waits for the user's answer."]
+    if needs_screen(cmd) and not cmd.local:
+        lines += ["", "Uses XeFM's screen: refused (exit status 6) while XeFM is "
+                      "suspended until this shell exits."]
     return "\n".join(lines)
 
 
@@ -316,6 +330,7 @@ def describe() -> list[dict]:
             "summary": cmd.summary,
             "details": cmd.details,
             "effect": cmd.effect,
+            "needs_screen": needs_screen(cmd),
             "streams": cmd.stream,
             "waits": cmd.wait or "no",
             "args": [{"name": a.name, "nargs": a.nargs, "path": a.path,
@@ -337,9 +352,16 @@ def reference_markdown() -> str:
         "`xefmctl` works in a terminal session XeFM started (`XEFM_SESSION` is "
         "set) and acts on that XeFM's file manager. Add `--json` to any command "
         "for one JSON object per line. Exit status: 0 done, 1 failed or the user "
-        "said no, 2 a usage mistake, 3 XeFM cannot be reached, 4 XeFM is busy, "
-        "5 refused (a dialog is open in XeFM, or this session may not do that); "
-        "the message says what to tell the user.",
+        "said no, 2 a usage mistake, 3 XeFM cannot be reached, 4 XeFM is busy "
+        "(try again), 5 refused (a dialog is open in XeFM, or this session may "
+        "not do that), 6 XeFM is suspended until this shell exits (terminal "
+        "mode: only commands that read work, for the rest of the session; do "
+        "not retry); the message says what to tell the user.",
+        "",
+        "Commands marked *Uses XeFM's screen* are the ones refused with 6. "
+        "While XeFM is suspended, `--show` is ignored and the results come "
+        "back to the terminal only. `xefmctl state` says whether XeFM is "
+        "suspended (`suspended` in `--json`).",
         "",
     ]
     for noun in _sections():
@@ -356,6 +378,8 @@ def reference_markdown() -> str:
                 lines.append(f"- `{(o.name + ' ' + o.value).strip()}`: {o.help}")
             if cmd.wait == "always":
                 lines.append("- Waits for the user's answer.")
+            if needs_screen(cmd):
+                lines.append("- *Uses XeFM's screen.*")
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
