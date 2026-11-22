@@ -66,9 +66,11 @@ file and a terminal by turns, switching between the two screens.
   highlighted session.
 - **When it ends.** `exit` in a shell, or a program that finishes, closes the
   session and returns to the screen you were on before it, whether it was on
-  screen or not. A shell or program that fails keeps its last screen up so
-  you can read it. For a shell, `Enter` starts it again and `Esc` goes back
-  to the panes; for a program, `Enter` or `Esc` closes it.
+  screen or not. `exit` closes a shell even when it passes on an error from
+  an earlier command, as cmd's `exit` does. A program that fails, or a shell
+  that ends before you typed anything into it (it could not start), keeps its
+  last screen up so you can read it; `Enter` or `Esc` closes it. To start a
+  shell again, open a new one (**Subshell Here**).
 - **Close it** with `terminal.close` while it still runs. XeFM asks first,
   since that stops whatever runs there.
 - **Quitting XeFM** asks first only when a session is busy: a program

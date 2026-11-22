@@ -28,6 +28,7 @@ class _View:
         self.closed = 0
         self.label = "zsh"
         self.shell = shell
+        self.typed = False
         self._busy = busy
 
     @property
@@ -263,6 +264,38 @@ def test_a_clean_exit_ends_the_session_a_failure_keeps_it(monkeypatch):
     a._exited = 0
     app._session_exited(a, 0)
     assert app._sessions.for_view(a) is None and a.closed == 1
+
+
+def test_exit_in_a_shell_ends_the_session_whatever_its_status(monkeypatch):
+    # cmd's `exit` passes on ERRORLEVEL, which a failed command long before
+    # left set; it looked like a crash, and the next Enter restarted the shell.
+    app = _app(monkeypatch)
+    app.new_terminal_session()
+    view = app.made[-1]
+    view.typed = True
+    view._exited = 1
+    app._session_exited(view, 1)
+    assert app._sessions.for_view(view) is None and view.closed == 1
+
+
+def test_a_shell_that_ends_before_anything_was_typed_keeps_its_screen(monkeypatch):
+    # It could not start (a SUBSHELL that is not there): its message stays.
+    app = _app(monkeypatch)
+    app.new_terminal_session()
+    view = app.made[-1]
+    view._exited = 9009
+    app._session_exited(view, 9009)
+    assert app._sessions.for_view(view) is not None and view.closed == 0
+
+
+def test_a_program_that_fails_after_input_still_keeps_its_screen(monkeypatch):
+    app = _app(monkeypatch)
+    session = app._start_session(["make"], cwd="/tmp", env={}, name="make",
+                                 shell=False, on_done=lambda code: None)
+    session.view.typed = True
+    session.view._exited = 2
+    app._session_exited(session.view, 2)
+    assert app._sessions.for_view(session.view) is session
 
 
 def test_a_program_session_reports_when_it_ends_shown_or_hidden(monkeypatch):

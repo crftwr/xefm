@@ -17,14 +17,22 @@ PuiKit's `TerminalView` (libghostty-vt over a pty) wrapped by
 | `'terminal': True` from `PROGRAMS`, Open With, `ctx.run_program`, `TEXT_EDITOR`, `TEXT_DIFF`, `FILE_ASSOCIATIONS` | program | `_start_program` / `_run_configured` → `_start_session(shell=False)` |
 
 Each runs on a screen of its own and keeps running while another screen is
-on (the switcher, the exit bar's Escape: `_hide_session`). The kind decides
-only the end:
+on (the switcher: `_hide_session`). The kind decides only the end:
 
 | | shell | program |
 |---|---|---|
 | clean exit (shown or hidden) | session closes | session closes, then `on_done(code)` |
-| failed exit | exit bar; Enter restarts (PuiKit), Esc hides | exit bar; Enter / Esc close, then `on_done(code)` |
+| non-zero exit after the user typed into it (`view.typed`) | session closes | exit bar; Enter / Esc close, then `on_done(code)` |
+| non-zero exit before anything was typed | exit bar; Enter / Esc close | the same |
 | failed while hidden | `attention` in the status bar | the same |
+
+A shell's non-zero exit is not a failure once the user typed into it:
+`exit` passes on the last command's status, and cmd's ERRORLEVEL stays set
+from a failure long before. Treated as a failure, it kept the exit bar, and
+a stray Enter restarted the shell (PuiKit's own exit bar restarts on Enter).
+`TerminalView` therefore takes Enter itself and closes; the shell left on
+the bar is one that could not start, which a restart would only repeat, and
+**Subshell Here** opens a new one in the pane's directory now.
 
 This replaced two policies, a modal one-shot (`_run_in_terminal_view`) and
 the persistent "console", which were one mechanism with two names. A

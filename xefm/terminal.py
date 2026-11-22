@@ -92,20 +92,20 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
 
     When the program exits, ``on_exited`` gets the view and the exit code;
     the app closes a clean exit and keeps a failed one on screen with its exit
-    bar, so its last output can be read. What a key does then depends on what
-    ran (``shell``): a shell restarts on Enter and hides on Escape, a program
-    closes on either - starting vim again would mean nothing.
+    bar, so its last output can be read, until Enter or Escape closes it
+    (``on_close_request``). A shell is not started again there, as PuiKit's
+    own exit bar would on Enter: the one left on screen is a shell that
+    could not start, which would fail the same way, and a restart from a
+    stray Enter was what an ``exit`` that looked like a failure ran into.
     ``terminal.close`` asks the app to close it early (``on_close_request``),
     which stops a program still running; ``terminal.screens`` opens the
     app's screen switcher, where picking another screen leaves it running
-    out of view (``on_hide_request`` is the exit bar's Escape). An action a
-    config or extension put in the ``terminal`` context runs through
-    ``on_user_action``."""
+    out of view. An action a config or extension put in the ``terminal``
+    context runs through ``on_user_action``."""
 
     def __init__(self, argv: list[str], *, cwd: str, env: dict, label: str,
                  on_exited: Callable[["TerminalView", int | None], None],
                  on_close_request: Callable[["TerminalView"], None],
-                 on_hide_request: Callable[["TerminalView"], None],
                  shell: bool = False,
                  on_screens_request: Callable[[], None] | None = None,
                  on_user_action: Callable[[str], bool] | None = None,
@@ -130,23 +130,33 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
                                              ctrl_clipboard=None if ctrl_clipboard else False))
         self.label = label
         self.on_close_request = on_close_request
-        self.on_hide_request = on_hide_request
         self.on_screens_request = on_screens_request
         self.on_user_action = on_user_action
-        #: A shell rather than a program: Enter starts it again after a failed
-        #: exit (PuiKit's own handling) instead of closing it.
+        #: A shell rather than a program: its exit after the user typed into
+        #: it ends the session whatever its status (app._session_exited).
         self.shell = shell
         #: Set once the app starts closing or hiding it: it is sliding out, and
         #: keys and clicks no longer reach the program.
         self.closing = False
         #: Whether the view is on screen (a hidden session is not).
         self.shown = False
-        self.exit_hint = ("press Enter to restart, Escape to hide" if shell
-                          else "press Enter to close")
+        #: Whether the user has typed (or pasted) into the program since it
+        #: started. A shell that exits after that was told to - its exit
+        #: status is the last command's (cmd's ``exit`` passes on ERRORLEVEL,
+        #: bash's and zsh's ``$?``) - while one that exits before it could
+        #: not start.
+        self.typed = False
+        self.exit_hint = "press Enter to close"
 
     @property
     def running(self) -> bool:
         return self._exited is False
+
+    def send(self, data) -> None:
+        # Every key and paste PuiKit passes to the program comes through here.
+        if self.running:
+            self.typed = True
+        super().send(data)
 
     @property
     def idle_at_prompt(self) -> bool:
@@ -243,13 +253,12 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
             if action is not None and self.takes_binding(event, action) \
                     and self.run_action(action):
                 return True
-            if not self.running and self.shell:
-                if event.key == "escape":
-                    self.on_hide_request(self)
-                    return True
-                # Enter restarts it (PuiKit's own exit handling, below).
-            elif not self.running and event.key in ("enter", "escape"):
-                self.on_close_request(self)
+            if not self.running:
+                # The exit bar: Enter or Escape closes it, shell or program,
+                # before PuiKit's own handling would start the shell again.
+                # Any other key is nobody's: the program is gone.
+                if event.key in ("enter", "escape"):
+                    self.on_close_request(self)
                 return True
         super().handle_event(event)
         return True  # modal: nothing reaches the panes underneath

@@ -6,9 +6,10 @@ runs in its terminal is one: the subshell, a command marked
 ``{'terminal': True}`` (``PROGRAMS``, ``TEXT_EDITOR``, ``TEXT_DIFF``,
 ``FILE_ASSOCIATIONS``, ``ctx.run_program``), and a shell started from the
 session list. Each can be hidden behind the panes and keeps running there; a
-clean exit ends it, a failed one keeps its last screen until it is closed.
-What it ran decides only what happens at that end: a shell restarts on Enter,
-a program closes, then its ``on_done`` runs.
+clean exit ends it, a failed one keeps its last screen until Enter or Escape
+closes it, then its ``on_done`` runs. What it ran decides only what counts as
+failed: a shell's exit after the user typed into it never does (``exit``
+passes on the last command's status), a program's non-zero exit does.
 
 Terminal mode has none of this: it hands its own terminal over and waits.
 

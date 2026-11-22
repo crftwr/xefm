@@ -6035,8 +6035,8 @@ class XeFMApp:
                        policy: str = "user"):
         """Run ``argv`` as a new terminal session on a screen of its own, shown
         unless ``show`` is False (then it starts out of view). ``shell`` marks
-        a shell (shell integration, Enter restarts after a failed exit) as
-        opposed to a program; ``on_done(code)`` runs once the session ends.
+        a shell (shell integration; its ``exit`` is never a failure once typed
+        into) as opposed to a program; ``on_done(code)`` runs once the session ends.
         The caller has checked :meth:`_terminal_ready`."""
         from puikit.panel import Rect
         from xefm import shell_integration
@@ -6231,7 +6231,6 @@ class XeFMApp:
             argv, cwd=cwd, env=env, label=label, shell=shell,
             on_exited=self._session_exited,
             on_close_request=self._session_close_request,
-            on_hide_request=self._hide_session,
             on_screens_request=self.screens,
             on_user_action=self._run_terminal_user_action,
             on_prompt=lambda kind, code, cmd: self._session_prompt(box["view"], kind, code, cmd),
@@ -6392,15 +6391,22 @@ class XeFMApp:
             self.panel.render()
 
     def _session_exited(self, view, code) -> None:
-        """A session's program exited. A clean exit (``exit`` in a shell, a
-        program done) ends the session, shown or hidden; a failure keeps its
-        last screen and the exit bar - for a shell, Enter starts it again and
-        Escape hides it; for a program either closes it. A hidden one says so
-        in the status bar."""
+        """A session's program exited. A clean exit (a program done) ends the
+        session, shown or hidden; a failure keeps its last screen and the exit
+        bar, which Enter or Escape closes. A hidden one says so in the status
+        bar.
+
+        A shell the user typed into ends the session whatever its exit
+        status: ``exit`` there was asked for, and passes on the last
+        command's status (cmd's ERRORLEVEL, which stays set until a command
+        resets it, so a failure long before made ``exit`` look like a crash
+        and the next Enter restarted the shell). A shell that ends before
+        anything was typed could not start, and keeps its screen."""
         session = self._sessions.for_view(view)
         if session is None:
             return  # already closed
-        if code in (0, None):
+        if code in (0, None) or (getattr(view, "shell", False)
+                                 and getattr(view, "typed", False)):
             self._close_session(session)
             return
         self.log_info(f"{session.name} exited with code {code}")
