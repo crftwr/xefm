@@ -810,6 +810,28 @@ if (-not (Test-Path $ExeOut)) { Fail "Launcher was not produced at $ExeOut." }
 
 Success "Built $ExeOut"
 
+# Compile + link xefmctl.exe (CONSOLE subsystem: it forwards its standard
+# handles to runtime\python.exe running the xefmctl client). The Store
+# package's app execution alias names it - the only way a shell outside the
+# package can start anything in it (#983, src/xefmctl.c). It embeds no Python,
+# so it needs neither the Python headers nor the delay-load machinery; /MT
+# keeps it free of any load-time DLL of its own.
+$CtlOut = Join-Path $AppRoot 'xefmctl.exe'
+$ctlArgs = @(
+    '/nologo', '/O2', '/MT', '/W3',
+    (Join-Path $SrcDir 'xefmctl.c'),
+    "/Fe:$CtlOut",
+    "/Fo:$ObjDir\",
+    '/link',
+    '/SUBSYSTEM:CONSOLE'
+)
+Info "cl.exe $($ctlArgs -join ' ')"
+& cl.exe @ctlArgs
+if ($LASTEXITCODE -ne 0) { Fail 'cl.exe failed to build xefmctl.exe.' }
+if (-not (Test-Path $CtlOut)) { Fail "xefmctl.exe was not produced at $CtlOut." }
+
+Success "Built $CtlOut"
+
 # ---------------------------------------------------------------------------
 # Step 8 (optional): Zip for distribution
 # ---------------------------------------------------------------------------

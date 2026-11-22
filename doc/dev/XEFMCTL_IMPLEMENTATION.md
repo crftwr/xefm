@@ -99,7 +99,45 @@ XeFM:  RemoteServer (listener) ── remote_dispatch.handle ── _call_later 
   thread (a search reads off the UI thread, as the search dialog's worker
   does).
 - The shim: `bin/xefmctl` or `bin\xefmctl.cmd`, running the client with
-  `xefm_python`, first on `PATH` in every shell XeFM starts.
+  `xefm_python`, first on `PATH` in every shell XeFM starts. In the Store
+  package it calls the package's app execution alias instead (below).
+
+## The Store (MSIX) package (#983)
+
+Nothing under `C:\Program Files\WindowsApps` can be started by a process
+without the package's identity: `CreateProcess` fails with
+`STATUS_ACCESS_DENIED` ("Access is denied"), although the files stay
+readable. A process XeFM starts inherits the identity, so the shim worked
+from cmd. A Store app started through its own alias (the Store's PowerShell,
+an agent's shell tool using it, Windows Terminal) runs as *its* package, and
+its child could not start the shim's `runtime\python.exe`.
+
+The way in from anywhere is an app execution alias. The manifest
+(`windows_app/build_msix.ps1`) declares `xefmctl.exe` as one; Windows puts a
+stub in `%LOCALAPPDATA%\Microsoft\WindowsApps`, and the stub starts the
+target with the package's identity. An alias names an `.exe` of the same
+file name and carries no arguments, so `xefmctl.exe`
+(`windows_app/src/xefmctl.c`) bakes in `runtime\python.exe -I
+app\xefm\remote_cli.py`, forwards its arguments verbatim, its standard
+handles and the exit status, and leaves Ctrl-C to the client. Keyhac's
+`keyhac-mcp-bridge.exe` is the same thing for the same reason.
+
+`remote_server.windows_shim()` picks the shim's line:
+
+- no package identity (`GetCurrentPackageFullName` answers
+  `APPMODEL_ERROR_NO_PACKAGE`): the interpreter, as before;
+- package identity and the stub present (`os.path.lexists`: it is a
+  reparse point): the stub;
+- package identity and no stub (the user turned the alias off): a line
+  saying how to turn it on, exit 3. Never the interpreter's path, which
+  exists there and cannot work.
+
+The stub also puts `xefmctl` on the `PATH` of every shell, where without
+`XEFM_SOCKET` it says it is not in a shell XeFM started.
+
+`XEFM_PYTHON` is still the interpreter inside the package. A `PROGRAMS`
+entry XeFM starts directly has the identity; a script run from a Store
+shell that calls `XEFM_PYTHON` does not, and is not covered.
 
 ## Session keys and policies
 
@@ -197,6 +235,8 @@ every command, the new APIs and commands, the pick keys, rename's review.
 reference entry, names), parsing, help, a real server round trip with
 session keys, streamed answers, exit statuses, the shim as its own process,
 what XeFM answers, the hand-over rule, the remote-read question.
+`test/test_xefmctl_msix_983.py`: the shim's three lines, the manifest's
+alias, the launcher's client path against the tree, the shim as cmd runs it.
 `test/test_terminal_sessions.py`: screens, `view` replacing a viewer at
 once, the gate, an agent's writes and refusals, forced confirmations on
 `invoke`. `test/test_run_program_on_done.py`: `on_done` on every launch path.

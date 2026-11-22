@@ -100,6 +100,10 @@ xefmctl find-similar --method image --from selection --show
 
 シェルを起動した XeFM が終了していれば、どのコマンドもそう伝えます。
 
+## Microsoft Store のパッケージ
+
+Microsoft Store の XeFM は `xefmctl` をアプリ実行エイリアス経由で実行するので、Store の PowerShell や Windows Terminal を含め、XeFM が起動したどのシェルでも動きます。`xefmctl` がエイリアスがオフになっていると伝えたら、Windows の **設定 > アプリ > アプリの詳細設定 > アプリ実行エイリアス** で XeFM の `xefmctl.exe` をオンにし、XeFM を再起動してください。このエイリアスにより、XeFM が起動していないシェルの `PATH` にも `xefmctl` が入りますが、そこでは XeFM が起動したシェルではないと伝えます。
+
 ## 関連項目
 
 - [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)：エージェントのセッションができること、できないこと

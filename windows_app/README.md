@@ -94,7 +94,8 @@ windows_app/
 ├── make_icon.py              # fallback: PNG master -> XeFM.ico (Pillow), else placeholder
 ├── make_store_assets.py      # PNG masters -> resources/Assets/*.png (MSIX tiles)
 ├── src/
-│   └── launcher.c            # the embedded-CPython launcher (-> XeFM.exe)
+│   ├── launcher.c            # the embedded-CPython launcher (-> XeFM.exe)
+│   └── xefmctl.c             # xefmctl.exe, the Store package's app execution alias target
 ├── resources/
 │   ├── XeFM.manifest          # app manifest (mirrors CPython's python.exe)
 │   ├── XeFM.rc                # icon + version resources
