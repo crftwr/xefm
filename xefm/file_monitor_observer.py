@@ -5,6 +5,7 @@ This module wraps watchdog Observer and provides error handling and status
 reporting for monitoring a single directory.
 """
 
+import os
 import platform
 import sys
 import threading
@@ -380,6 +381,23 @@ class FileMonitorObserver:
             # "Directory not found" had already stated.
             self.logger.debug(f"Cannot monitor - not an existing directory: {self.path}")
             return False
+
+        # A directory that exists but may not be listed (#909) is found here,
+        # before either start: watchdog's Windows reader opens the directory
+        # on a thread of its own, so its PermissionError never reaches us -
+        # the start waits 2 s and raises an empty queue.Empty, and the thread's
+        # traceback goes to stderr. Opening it to list costs one call, on the
+        # monitor worker.
+        try:
+            with os.scandir(self.path) as entries:
+                next(entries, None)
+        except PermissionError as e:
+            self.logger.debug(f"Cannot monitor - permission denied: {self.path}: {e}")
+            self.unreadable = True
+            return False
+        except OSError as e:
+            # Anything else is left to the starts below, which say what failed.
+            self.logger.debug(f"Listing probe failed for {self.path}: {e}")
         
         # Detect platform and monitoring API (Requirement 5.1, 5.2, 5.3)
         platform_name, api_name = self._detect_platform_and_api()

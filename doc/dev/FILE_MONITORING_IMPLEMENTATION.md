@@ -684,9 +684,12 @@ slow mount costs nothing.
 
 A directory that exists but cannot be listed (`C:\System Volume Information`
 for a non-elevated process, a profile's compatibility junction) passes that
-check and fails later, with `PermissionError`, in both the native and the
-polling start. No retry can fix that, so the observer marks itself
-`unreadable` and the manager gives up at once (`_give_up_unreadable`),
+check, so `start()` then opens it to list (`os.scandir`, first entry
+only). It has to find the `PermissionError` itself: watchdog's Windows
+reader opens the directory on a thread of its own, so the native start only
+waits 2 s and raises an empty `queue.Empty`, and the thread's traceback goes
+to stderr. (A `PermissionError` from either start is still caught too.) No
+retry can fix that, so the observer marks itself `unreadable` and the manager gives up at once (`_give_up_unreadable`),
 recording `failed_path` as below, with one debug line. The listing has already
 said "Permission denied"; before #909 the watcher added fourteen errors and a
 warning while it walked the ladder.
