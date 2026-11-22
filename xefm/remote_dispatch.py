@@ -6,7 +6,9 @@ it to :func:`handle`. The commands are described in
 
 - **Through the public API.** A command is an ``ActionContext`` call wherever
   one exists (``ctx.pane.cd``, ``ctx.copy``, ``ctx.confirm``, ``ctx.invoke``),
-  so ``xefmctl`` can do nothing an action cannot.
+  so ``xefmctl`` can do nothing an action cannot. ``--from pane|selection``
+  is :meth:`PaneApi.shows_list` / ``entries`` / ``path`` and
+  :meth:`PaneApi.selected_or_focused` (:func:`_from_pane`).
 - **On the file manager.** Whatever a command opens - a viewer, a dialog -
   opens on the file manager's screen, and the user is taken there when it
   needs them. A question asked for an agent (``confirm``, a copy to approve)
@@ -485,14 +487,53 @@ def _c_pane_activate(app, req):
 # --- places and searches ------------------------------------------------------------------
 
 
+def _from_pane(app, req) -> list | None:
+    """The items ``--from`` names, or None without it: ``pane`` is the pane's
+    folder, or the entries of the list it shows; ``selection`` the selected
+    items, or else the one under the cursor (#962)."""
+    which = req["opts"].get("from")
+    if not which:
+        return None
+    api = _pane_api(app, req)
+    if which == "selection":
+        items = [e.path for e in api.selected_or_focused()]
+        if not items:
+            raise _Refused(f"nothing is selected in the {api.name} pane and there is "
+                           f"no item under its cursor", FAILED)
+        return items
+    if api.shows_list:
+        items = [e.path for e in api.entries if e.path.name != ".."]
+        if not items:
+            raise _Refused(f"the list in the {api.name} pane is empty", FAILED)
+        return items
+    return [api.path]
+
+
 def _roots(app, req, key: str = "url") -> list:
+    """The places a command works on: its arguments, ``--from``, or else the
+    pane's folder."""
     from xefm.path import Path
+    found = _from_pane(app, req)
+    if found is not None:
+        return found
     urls = req["args"].get(key)
     if isinstance(urls, str):
         urls = [urls]
     if not urls:
         return [_pane_api(app, req).path]
     return [Path(u) for u in urls]
+
+
+def _operands(app, req, key: str) -> list[str]:
+    """The items a command acts on - its arguments, or ``--from`` - written
+    back into the request as strings, as the client sends them."""
+    found = _from_pane(app, req)
+    if found is not None:
+        req["args"][key] = [str(p) for p in found]
+    items = req["args"].get(key) or []
+    if not items:
+        raise _Refused("which items? name them, - for standard input, or --from", USAGE)
+    return items
 
 
 def _stream(app, req, produce, *, mode: str, query: str = "", root=None):
@@ -533,7 +574,12 @@ def _show_results(app, req, mode: str, found: list, root, query: str) -> None:
     api = _pane_api(app, req)
     if not api.is_active:
         api.activate()
-    if mode in ("filename", "content", "index") and root is not None:
+    if mode == "similar":
+        if found:
+            from xefm import xft
+            from xefm.path import Path
+            api.cd(Path(xft.uri_for(found[0]["result"])))
+    elif mode in ("filename", "content", "index") and root is not None:
         app._feed_search_results(mode, found, root, query)
     else:
         api.open_list([str(p) for p in found], title=req["opts"].get("title") or "xefmctl")
@@ -541,33 +587,20 @@ def _show_results(app, req, mode: str, found: list, root, query: str) -> None:
 
 
 def _c_entries(app, req):
-    from xefm import path as xpath
-    from xefm import tree_walk
     roots = _roots(app, req)
     recursive = bool(req["opts"].get("recursive"))
     depth = req["opts"].get("depth")
 
     def produce(cancel):
         for root in roots:
-            if not root.exists():
-                raise _Refused(f"no such directory: {root}", FAILED)
-            if not root.is_dir():
-                raise _Refused(f"{root} is not a directory", FAILED)
-            base = len(_parts(root))
-            if recursive:
-                def descend(entry, attrs):
-                    if not attrs.get("is_dir") or attrs.get("is_link"):
-                        return False
-                    return depth is None or len(_parts(entry)) - base < depth
-                pairs = tree_walk.walk(root, cancel, descend)
-            else:
-                pairs = iter(xpath.listdir_attrs(root))
-            for entry, attrs in pairs:
-                if cancel.is_set():
-                    return
-                yield entry, {"path": str(entry), "name": entry.name,
-                              "is_dir": bool(attrs.get("is_dir")),
-                              "size": attrs.get("size"), "mtime": attrs.get("mtime")}
+            try:
+                for e in app._user_ctx.entries(root, recursive=recursive, depth=depth,
+                                               cancel=cancel):
+                    yield e.path, {"path": str(e.path), "name": e.path.name,
+                                   "is_dir": bool(e.is_dir), "size": e.size,
+                                   "mtime": e.mtime}
+            except FileNotFoundError as exc:
+                raise _Refused(str(exc), FAILED) from None
     return _stream(app, req, produce, mode="list")
 
 
@@ -616,14 +649,71 @@ def _c_index_search(app, req):
     why = os_index.unavailable()
     if why:
         raise _Refused(why, FAILED)
-    root = (req["args"].get("url") or str(_pane_api(app, req).path))
+    roots = _roots(app, req)
     query = req["args"]["query"]
+    for root in roots:  # refused before anything is searched
+        try:
+            app._user_ctx.index_search(root, query)
+        except OSError as exc:
+            raise _Refused(str(exc), FAILED) from None
 
     def produce(cancel):
-        for p in app._iter_index_matches(str(root), query, cancel, {}):
-            yield p, {"path": str(p)}
-    from xefm.path import Path
-    return _stream(app, req, produce, mode="index", query=query, root=Path(str(root)))
+        for root in roots:
+            try:
+                for p in app._user_ctx.index_search(root, query, cancel=cancel):
+                    yield p, {"path": str(p)}
+            except OSError as exc:
+                raise _Refused(str(exc), FAILED) from None
+            except Exception as exc:  # SearchFailed: the index could not be asked
+                raise _Refused(f"{os_index.engine()}: {exc}", FAILED) from None
+    return _stream(app, req, produce, mode="index", query=query, root=roots[0])
+
+
+def _c_find_similar(app, req):
+    from xefm import similar_scan
+    opts = req["opts"]
+    method = opts.get("method")
+    if not method:
+        raise _Refused("which method? give --method identical, image, video or audio",
+                       USAGE)
+    threshold = opts.get("threshold")
+    if threshold is not None and method != similar_scan.IDENTICAL:
+        steps = dict(similar_scan.threshold_steps(method))
+        if threshold in steps:
+            threshold = steps[threshold]
+        else:
+            try:
+                threshold = float(threshold)
+            except ValueError:
+                raise _Refused(f"--threshold takes {', '.join(steps) or 'a number'} "
+                               f"or a number from 0 to 1", USAGE) from None
+    else:
+        threshold = None
+    roots = _roots(app, req)
+    try:
+        groups = app._user_ctx.find_similar(roots, method=method, threshold=threshold)
+    except ValueError as exc:
+        raise _Refused(str(exc), USAGE) from None
+    except OSError as exc:
+        raise _Refused(str(exc), FAILED) from None
+
+    def produce(cancel):
+        try:
+            for g in groups:
+                if cancel.is_set():
+                    return
+                for path, similarity in zip(g["paths"], g["similarity"]):
+                    item = {"group": g["group"], "path": str(path),
+                            "similarity": similarity, "result": g["result"]}
+                    yield item, item
+        except OSError as exc:
+            raise _Refused(str(exc), FAILED) from None
+    return _stream(app, req, produce, mode="similar")
+
+
+def _c_path_scheme_list(app, req):
+    return ok([{"name": s.name, "source": s.source}
+               for s in app._user_ctx.path_schemes()])
 
 
 def _is_local(path) -> bool:
@@ -786,13 +876,19 @@ def _c_show_markdown(app, req):
 # --- files ----------------------------------------------------------------------------------
 
 
-def _write(app, req, verb: str, run) -> Any:
+def _write(app, req, verb: str, run, *, results: bool = False,
+           ask_agent: str = "") -> Any:
     """A file operation, through the operation's own path: ``run(on_done)``
     starts it, with its confirmation, conflict dialog and progress. For an
     agent's session its confirmation is shown whatever ``CONFIRM_*`` says
     (the question the user answers is the operation's own, naming what and
     where), and the user is taken back to the agent's screen once it has
-    ended or been declined. With --wait the answer is the outcome."""
+    ended or been declined. With --wait the answer is the outcome.
+
+    ``results`` answers one item per :class:`ItemResult` (its path and status)
+    rather than the items given. ``ask_agent`` is the question an agent's
+    session is asked first, for a write with no confirmation of its own
+    (tags)."""
     items = req["args"].get("source") or req["args"].get("path") or []
     wait = bool(req["opts"].get("wait"))
     agent = _is_agent(req)
@@ -804,7 +900,16 @@ def _write(app, req, verb: str, run) -> Any:
             back, came_from[0] = came_from[0], None
             _go_back(app, back)
         status = getattr(outcome, "status", "done")
-        if status == "done":
+        if status == "done" and results:
+            rows = [dict({"path": str(r.source), "status": r.status},
+                         **({"dest": str(r.dest)} if r.dest is not None else {}),
+                         **({"errors": [m for _n, m in r.errors]} if r.errors else {}))
+                    for r in (outcome.value or [])]
+            bad = sum(1 for r in rows if r["status"] == "failed")
+            answer = ok(rows, status=FAILED if bad else 0, outcome="done",
+                        note=f"{verb}: {len(rows) - bad} item(s) done"
+                             + (f", {bad} failed" if bad else ""))
+        elif status == "done":
             answer = ok([{"path": p} for p in items], status=0, outcome="done",
                         note=f"{verb}: {len(items)} item(s) done")
         elif status == "cancelled":
@@ -816,9 +921,27 @@ def _write(app, req, verb: str, run) -> Any:
                         note=f"{verb}: {status}" + (f" ({error})" if error else ""))
         pending.set(answer)
 
-    def begin():
+    def start():
         with (_forced(app, _ALWAYS_CONFIRM) if agent else contextlib.nullcontext()):
             run(finished if (wait or agent) else None)
+
+    def begin():
+        if not (agent and ask_agent):
+            start()
+            return
+        from xefm.user_api import TaskOutcome
+
+        def answered(yes: bool) -> None:
+            if not yes:
+                finished(None, TaskOutcome("cancelled", []))
+                return
+            try:
+                start()
+            except Exception as exc:
+                logger.error(f"xefmctl {verb} failed: {exc}")
+                finished(None, TaskOutcome("failed", error=exc))
+        app._user_ctx.confirm(f"{_asker(app, req)} wants to {ask_agent}.",
+                              title=f"Allow {verb}?", on_result=answered)
 
     _, came_from[0] = _ui(app, begin)
     if wait:
@@ -827,6 +950,7 @@ def _write(app, req, verb: str, run) -> Any:
 
 
 def _c_copy(app, req):
+    _operands(app, req, "source")
     dest = req["opts"].get("to")
     if not dest:
         raise _Refused("where to? give --to DIR", USAGE)
@@ -835,6 +959,7 @@ def _c_copy(app, req):
 
 
 def _c_move(app, req):
+    _operands(app, req, "source")
     dest = req["opts"].get("to")
     if not dest:
         raise _Refused("where to? give --to DIR", USAGE)
@@ -843,6 +968,7 @@ def _c_move(app, req):
 
 
 def _c_trash(app, req):
+    _operands(app, req, "path")
     return _write(app, req, "trash", lambda on_done: app._user_ctx.trash(
         req["args"]["path"], on_done=on_done))
 
@@ -851,8 +977,131 @@ def _c_delete(app, req):
     if _is_agent(req):
         raise _Refused("an AI agent's session may not delete for good; use xefmctl "
                        "trash, which the user can undo")
+    _operands(app, req, "path")
     return _write(app, req, "delete", lambda on_done: app._user_ctx.delete(
         req["args"]["path"], on_done=on_done))
+
+
+def _c_rename(app, req):
+    plan = req["opts"].get("plan")
+    if plan is None:
+        raise _Refused('which names? give --plan FILE (a JSON list of {"path", "name"})',
+                       USAGE)
+    req["args"]["path"] = [p["path"] for p in plan]
+    pairs = [(p["path"], p["name"]) for p in plan]
+    try:
+        return _write(app, req, "rename", lambda on_done: app._user_ctx.rename(
+            pairs, on_done=on_done), results=True)
+    except ValueError as exc:
+        raise _Refused(str(exc), USAGE) from None
+
+
+def _tag_names(req) -> list[str]:
+    return [req["args"]["name"], *(req["opts"].get("tag") or [])]
+
+
+def _tag_items(app, req) -> list[str]:
+    """The items to tag, refused before anyone is asked when they have no
+    tag storage (or two)."""
+    from xefm.path import Path
+    items = _operands(app, req, "path")
+    if app._tag_store_of([Path(i) for i in items]) is None:
+        raise _Refused("tags are not supported for these items (or they are on "
+                       "different storages)", FAILED)
+    return items
+
+
+def _c_tag_list(app, req):
+    return ok([{"name": t.name, "color": t.color or ""} for t in app._user_ctx.tags()])
+
+
+def _c_tag_add(app, req):
+    items = _tag_items(app, req)
+    names = _tag_names(req)
+    color = req["opts"].get("color")
+    what = f"add the tag(s) {', '.join(names)} to {len(items)} item(s)"
+    try:
+        return _write(app, req, "tag", lambda on_done: app._user_ctx.add_tags(
+            items, names, color=color, on_done=on_done), results=True, ask_agent=what)
+    except ValueError as exc:
+        raise _Refused(str(exc), FAILED) from None
+
+
+def _c_tag_remove(app, req):
+    items = _tag_items(app, req)
+    names = _tag_names(req)
+    what = f"remove the tag(s) {', '.join(names)} from {len(items)} item(s)"
+    try:
+        return _write(app, req, "untag", lambda on_done: app._user_ctx.remove_tags(
+            items, names, on_done=on_done), results=True, ask_agent=what)
+    except ValueError as exc:
+        raise _Refused(str(exc), FAILED) from None
+
+
+def _c_attribute_list(app, req):
+    return ok([{"name": a.name, "label": a.label, "type": a.type, "compute": a.compute,
+                "source": a.source} for a in app._user_ctx.attributes()])
+
+
+def _plain(value):
+    """An attribute value as JSON can carry it."""
+    from xefm.user_api import TagInfo
+    if isinstance(value, TagInfo):
+        return {"name": value.name, "color": value.color}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
+
+
+def _shown(value) -> str:
+    if isinstance(value, list):
+        return ",".join(v["name"] if isinstance(v, dict) else str(v) for v in value)
+    return "" if value is None else str(value)
+
+
+def _c_attribute_get(app, req):
+    from xefm.path import Path
+    items = [Path(p) for p in _operands(app, req, "path")]
+    wanted = req["opts"].get("attributes")
+    names = [n.strip() for n in wanted.split(",") if n.strip()] if wanted else None
+    try:
+        found = app._user_ctx.get_attributes(items, names)
+    except ValueError as exc:
+        raise _Refused(str(exc), USAGE) from None
+
+    def produce(cancel):
+        for row in found:
+            if cancel.is_set():
+                return
+            values = {k: _plain(v) for k, v in row["values"].items()}
+            text = "\t".join([str(row["path"])]
+                             + [f"{k}={_shown(v)}" for k, v in values.items()])
+            yield row["path"], {"path": str(row["path"]), "values": values, "text": text}
+    return _stream(app, req, produce, mode="list")
+
+
+def _c_pane_pick(app, req):
+    api = _pane_api(app, req)
+    pending = Pending()
+    screens = app._screens
+    came_from = None
+    if screens.current is not screens.files:
+        came_from = screens.current
+        app._show_screen(screens.files)
+    prompt = req["opts"].get("prompt") or "Select items"
+    if _is_agent(req):
+        prompt = f"{_asker(app, req)}: {prompt}"
+
+    def result(entries) -> None:
+        _go_back(app, came_from)
+        if entries is None:
+            pending.set(ok([], status=FAILED, note="cancelled"))
+        else:
+            pending.set(ok([_entry(e) for e in entries]))
+    api.pick(prompt=prompt, on_result=result)
+    return pending
 
 
 # --- asking the user ----------------------------------------------------------------------------
@@ -1052,11 +1301,15 @@ _HANDLERS = {
     "pane focused": _c_pane_focused, "pane selected": _c_pane_selected,
     "pane cd": _c_pane_cd, "pane select": _c_pane_select, "pane unselect": _c_pane_unselect,
     "pane open-list": _c_pane_open_list, "pane refresh": _c_pane_refresh,
-    "pane activate": _c_pane_activate,
+    "pane activate": _c_pane_activate, "pane pick": _c_pane_pick,
     "entries": _c_entries, "find-files": _c_find_files, "find-in-files": _c_find_in_files,
-    "index-search": _c_index_search, "read": _c_read, "fetch": _c_fetch,
+    "index-search": _c_index_search, "find-similar": _c_find_similar,
+    "path-scheme list": _c_path_scheme_list, "read": _c_read, "fetch": _c_fetch,
     "view": _c_view, "diff": _c_diff, "show-markdown": _c_show_markdown,
     "copy": _c_copy, "move": _c_move, "trash": _c_trash, "delete": _c_delete,
+    "rename": _c_rename, "tag list": _c_tag_list, "tag add": _c_tag_add,
+    "tag remove": _c_tag_remove, "attribute list": _c_attribute_list,
+    "attribute get": _c_attribute_get,
     "confirm": _c_confirm, "choose": _c_choose, "input": _c_input, "message": _c_message,
     "action list": _c_action_list, "action show": _c_action_show, "invoke": _c_invoke,
     "screen list": _c_screen_list, "screen show": _c_screen_show,

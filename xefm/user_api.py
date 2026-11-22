@@ -62,7 +62,11 @@ Everything else is Preview, marked one API at a time (:mod:`xefm.preview`):
 ``open_list``, the prompts (``input`` / ``choose`` / ``confirm`` — whether
 the callback shape is livable is not settled), ``run_task`` and its job and
 outcome, ``show_markdown`` / ``copy_text`` and the Markdown helpers,
-``actions()`` and :class:`ActionInfo`,
+``actions()`` and :class:`ActionInfo`, the searches beyond the stable
+core and what ``xefmctl`` mirrors (``index_search``, ``entries``,
+``find_similar``, ``path_schemes``, tags, attributes, ``rename``,
+``pane.pick``) with :class:`SchemeInfo`, :class:`TagInfo` and
+:class:`AttributeInfo`,
 ``extension()``, ``EVENT_HOOKS`` and :class:`HookEvent`, and the
 ``IMAGE_DECODERS``, ``PATH_SCHEMES``, ``LEXERS`` and ``MENU_ITEMS`` tables.
 A config that uses a Preview table gets one line in the log pane saying so at
@@ -156,8 +160,8 @@ __all__ = [
     "TaskJob", "TaskOutcome",
     # what ctx.copy / ctx.move report per item
     "ItemResult",
-    # what ctx.actions() describes
-    "ActionInfo",
+    # what ctx.actions(), path_schemes(), tags() and attributes() describe
+    "ActionInfo", "SchemeInfo", "TagInfo", "AttributeInfo",
     # what ctx.screens() and ctx.start_terminal_session() hand out
     "Screen", "TerminalSession",
     # building Markdown for ctx.show_markdown
@@ -518,6 +522,41 @@ class PaneApi:
         return removed
 
 
+    @preview
+    def selected_or_focused(self) -> list[EntryInfo]:
+        """What an action works on: the selected entries, or the one under the
+        cursor when nothing is selected (never the ``..`` row). Empty in an
+        empty folder."""
+        chosen = self.selected()
+        if chosen:
+            return chosen
+        focused = self.focused
+        if focused is None or focused.path.name == "..":
+            return []
+        return [focused]
+
+    @property
+    @preview
+    def shows_list(self) -> bool:
+        """Whether the pane shows a list - search results, ``open_list``'s
+        paths - rather than a folder. Its :attr:`path` then names no folder
+        that holds those entries; :attr:`entries` are what it shows."""
+        return bool(self._pane.get("virtual"))
+
+    @preview
+    def pick(self, *, prompt: str | None = None,
+             on_result: Callable[[list[EntryInfo] | None], None]) -> None:
+        """Let the user choose items in the panes: this pane becomes the
+        active one, ``prompt`` is written to the log pane, and every key works
+        as usual (move, select, change folders, switch panes) until **Enter**,
+        which hands ``on_result`` the active pane's
+        :meth:`selected_or_focused`, or **Esc**, which hands it ``None``.
+        Returns at once. One pick at a time: a new one cancels the one still
+        open (its ``on_result`` gets ``None``)."""
+        callback = _guard("pick callback", on_result, arity=1) or (lambda _r: None)
+        self._app._start_pick(self._name, prompt, callback)
+
+
 def _match(predicate: Callable[[EntryInfo], bool], entry: EntryInfo) -> bool:
     try:
         return bool(predicate(entry))
@@ -719,6 +758,75 @@ class ActionInfo:
 
     def __repr__(self) -> str:
         return f"<ActionInfo {self.name}>"
+
+
+@preview
+class SchemeInfo:
+    """One kind of place XeFM can open, as :meth:`ActionContext.path_schemes`
+    describes it: ``name`` is the URL scheme (``ssh`` for ``ssh://``);
+    ``source`` is ``"builtin"``, ``"config"`` (``PATH_SCHEMES``) or
+    ``"extension <id>"``."""
+
+    __slots__ = ("name", "source")
+
+    def __init__(self, name: str, source: str = "builtin"):
+        self.name = name
+        self.source = source
+
+    def __repr__(self) -> str:
+        return f"<SchemeInfo {self.name}>"
+
+
+@preview
+class TagInfo:
+    """One file tag: its ``name``, and its ``color`` - one of ``"gray"``,
+    ``"green"``, ``"purple"``, ``"blue"``, ``"yellow"``, ``"red"``,
+    ``"orange"``, or ``None`` - where the storage keeps colors (Finder tags)."""
+
+    __slots__ = ("name", "color")
+
+    def __init__(self, name: str, color: str | None = None):
+        self.name = name
+        self.color = color
+
+    def __eq__(self, other) -> bool:
+        return (isinstance(other, TagInfo) and self.name == other.name
+                and self.color == other.color)
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.color))
+
+    def __repr__(self) -> str:
+        return f"<TagInfo {self.name}{' ' + self.color if self.color else ''}>"
+
+
+def _tag_info(tag) -> TagInfo:
+    from xefm import tags as _tags
+    return TagInfo(tag.name, _tags.COLORS.get(tag.color))
+
+
+@preview
+class AttributeInfo:
+    """One attribute, as :meth:`ActionContext.attributes` describes it:
+    ``name`` is what :meth:`EntryInfo.attr` and
+    :meth:`ActionContext.get_attributes` take; ``label`` the column heading;
+    ``type`` one of ``text``, ``count``, ``size``, ``time``, ``duration``,
+    ``ratio``, ``enum``, ``tags``; ``compute`` ``"sync"`` (known from the
+    listing), ``"auto"`` or ``"on_request"``; ``source`` ``"builtin"``,
+    ``"config"`` (``ATTRIBUTES``) or ``"file"`` (an ``.xft`` tree)."""
+
+    __slots__ = ("name", "label", "type", "compute", "source")
+
+    def __init__(self, name: str, label: str = "", type: str = "text",
+                 compute: str = "auto", source: str = "builtin"):
+        self.name = name
+        self.label = label
+        self.type = type
+        self.compute = compute
+        self.source = source
+
+    def __repr__(self) -> str:
+        return f"<AttributeInfo {self.name}>"
 
 
 # --------------------------------------------------------------------------- #
@@ -1073,13 +1181,14 @@ class ActionContext:
         """The files below ``root`` whose names match ``pattern``, as
         :class:`Path` objects, found the way ``find_files`` finds them: a glob
         (``*.psd``) or a part of the name, on any storage XeFM can open.
-        A generator: it reads as it goes, so run it off the UI thread (from
+        A file given as ``root`` is itself the one candidate. A generator: it reads as it goes, so run it off the UI thread (from
         :meth:`run_task`). ``cancel``, a ``threading.Event``, stops it."""
         import threading as _threading
         cancel = cancel if cancel is not None else _threading.Event()
         root = root if isinstance(root, Path) else Path(str(root))
         yield from self._app._iter_filename_matches(root, pattern or "*", cancel,
-                                                    case=case, recursive=recursive)
+                                                    case=case, recursive=recursive,
+                                                    named_root=True)
 
     @preview
     def find_in_files(self, root: "Path | str", pattern: str, *, case: bool = False,
@@ -1087,8 +1196,9 @@ class ActionContext:
                       cancel: Any = None):
         """The lines that match ``pattern`` in the files below ``root``, as
         ``{"path": Path, "line": int, "text": str}``, found the way
-        ``find_in_files`` finds them, on any storage XeFM can open. A
-        generator, like :meth:`find_files`. An invalid regular expression
+        ``find_in_files`` finds them, on any storage XeFM can open; a file
+        given as ``root`` is searched itself. A generator, like
+        :meth:`find_files`. An invalid regular expression
         raises ``re.error`` before anything is read."""
         import threading as _threading
         from xefm import search_options as _search_opts
@@ -1096,7 +1206,340 @@ class ActionContext:
         cancel = cancel if cancel is not None else _threading.Event()
         root = root if isinstance(root, Path) else Path(str(root))
         yield from self._app._iter_content_matches(root, compiled, cancel,
-                                                   recursive=recursive)
+                                                   recursive=recursive,
+                                                   named_root=True)
+
+    @preview
+    def index_search(self, root: "Path | str", query: str, *, cancel: Any = None):
+        """The files under ``root`` the OS index (Spotlight, Windows Search)
+        finds for ``query``, as :class:`Path` objects - what
+        ``index_search`` finds. A generator, like :meth:`find_files`. Raises
+        OSError at once where there is no index to ask (and for a ``root``
+        that is not on the local disk)."""
+        import threading as _threading
+        from xefm import os_index
+        why = os_index.unavailable()
+        if why:
+            raise OSError(why)
+        if _path_schemes.is_uri(str(root)):
+            raise OSError(f"{os_index.engine()} searches local folders, not {root}")
+        cancel = cancel if cancel is not None else _threading.Event()
+        return self._app._iter_index_matches(str(root), query, cancel, {})
+
+    @preview
+    def entries(self, root: "Path | str", *, recursive: bool = False,
+                depth: int | None = None, cancel: Any = None):
+        """What the folder ``root`` holds, anywhere XeFM can go, as
+        :class:`EntryInfo` objects whose ``size`` and ``mtime`` come from the
+        listing; with ``recursive``, the folders below too (``depth`` levels
+        of them, all when ``None``), without following links. A file given as
+        ``root`` is itself the one entry. A generator: run it off the UI
+        thread. A ``root`` that is not there raises FileNotFoundError."""
+        import threading as _threading
+        from xefm import path as _xpath
+        from xefm import tree_walk as _tree_walk
+        from xefm.path import attrs_via_path
+        cancel = cancel if cancel is not None else _threading.Event()
+        root = root if isinstance(root, Path) else Path(str(root))
+
+        def parts(p) -> int:
+            return len([x for x in str(p).replace("\\", "/").split("/") if x])
+
+        def walk():
+            attrs = attrs_via_path(root)
+            if not attrs.get("ok"):
+                raise FileNotFoundError(f"no such file or directory: {root}")
+            if not attrs.get("is_dir"):
+                yield EntryInfo._from_attrs(root, attrs)
+                return
+            if recursive:
+                base = parts(root)
+
+                def descend(entry, a):
+                    if not a.get("is_dir") or a.get("is_link"):
+                        return False
+                    return depth is None or parts(entry) - base < depth
+                pairs = _tree_walk.walk(root, cancel, descend)
+            else:
+                pairs = iter(_xpath.listdir_attrs(root))
+            for entry, a in pairs:
+                if cancel.is_set():
+                    return
+                yield EntryInfo._from_attrs(entry, dict(a, ok=a.get("ok", True)))
+        return walk()
+
+    @preview
+    def path_schemes(self) -> list[SchemeInfo]:
+        """The kinds of place XeFM can open besides the local disk - the
+        built-in ``ssh``, ``s3`` and ``archive``, and every scheme
+        ``PATH_SCHEMES`` or an extension adds - as :class:`SchemeInfo`."""
+        from xefm import extensions as _ext
+        out = []
+        for name in _path_schemes.schemes():
+            entry = _path_schemes._schemes.get(name) or {}
+            source = entry.get("source", "builtin")
+            factory = entry.get("factory")
+            if factory is not None and source != "builtin":
+                package = _ext.package_of(factory)
+                source = f"extension {package.id}" if package is not None else "config"
+            out.append(SchemeInfo(name, source))
+        return out
+
+    # --- tags and attributes ---------------------------------------------------- #
+
+    @preview
+    def tags(self) -> list[TagInfo]:
+        """The tags XeFM knows - the ones it applied, most recent first, then
+        the ones seen on files this session - as :class:`TagInfo`: what the
+        tag dialog offers."""
+        return [_tag_info(t) for t in self._app._known_tags()]
+
+    @preview
+    def add_tags(self, items: Iterable["EntryInfo | Path | str"], names: Iterable[str], *,
+                 color: str | None = None,
+                 on_done: Callable[["ActionContext", TaskOutcome], None] | None = None
+                 ) -> None:
+        """Give ``items`` the tags ``names``, where the operating system keeps
+        tags (Finder tags, ``user.xdg.tags``, S3 object tags; see the file
+        tags feature). A tag new to XeFM takes ``color`` (a :class:`TagInfo`
+        color name) where the storage keeps colors, else the color it already
+        has, or the one its name spells. Returns at once.
+
+        ``on_done(ctx, outcome)`` follows the rules of :meth:`copy`: ``value``
+        is a list of :class:`ItemResult`, one per item, ``dest`` always
+        ``None``. Wrong arguments raise ValueError at once: no names, a
+        relative path string, an unknown color, or items with no tag storage
+        (or on two different ones)."""
+        self._tags_change("add", items, names, color, on_done)
+
+    @preview
+    def remove_tags(self, items: Iterable["EntryInfo | Path | str"], names: Iterable[str], *,
+                    on_done: Callable[["ActionContext", TaskOutcome], None] | None = None
+                    ) -> None:
+        """Take the tags ``names`` (any case) off ``items``. Otherwise as
+        :meth:`add_tags`."""
+        self._tags_change("remove", items, names, None, on_done)
+
+    def _tags_change(self, kind: str, items, names, color, on_done) -> None:
+        from xefm import tags as _tags
+        self._require_ui_thread(f"{kind}_tags")
+        app = self._app
+        targets = [_operation_path(item, f"{kind}_tags: item") for item in items]
+        wanted = [str(n).strip() for n in names if str(n).strip()]
+        if not wanted:
+            raise ValueError(f"{kind}_tags: which tags? names is empty")
+        if any("," in n or "\n" in n for n in wanted):
+            raise ValueError(f"{kind}_tags: a tag name cannot hold a comma or a newline")
+        index = None
+        if color is not None:
+            by_name = {v: k for k, v in _tags.COLORS.items() if v}
+            index = by_name.get(str(color).lower())
+            if index is None:
+                raise ValueError(f"{kind}_tags: color {color!r} is not one of "
+                                 f"{', '.join(by_name)}")
+
+        def report(outcome: TaskOutcome) -> None:
+            if on_done is not None:
+                run_guarded(f"{kind}_tags completion", on_done, ActionContext(app), outcome)
+
+        if not targets:
+            app._call_later(lambda: report(TaskOutcome("done", [])))
+            return
+
+        def complete(res: dict) -> None:
+            error = res.get("error")
+            if error is not None:
+                report(TaskOutcome("failed", error=error))
+                return
+            if res.get("cancelled"):
+                report(TaskOutcome("cancelled", []))
+                return
+            failed = res.get("failed", [])
+            value = []
+            for t in targets:
+                errors = [(t.name, line.split(": ", 1)[-1]) for line in failed
+                          if line.startswith(f"{t}: ") or line.startswith(f"{t.name}: ")]
+                value.append(ItemResult(t, None, "failed" if errors else "done", errors))
+            report(TaskOutcome("done", value))
+
+        if kind == "add":
+            app._change_tags_for_api(targets, add=wanted, color=index, on_complete=complete)
+        else:
+            app._change_tags_for_api(targets, remove=wanted, on_complete=complete)
+
+    @preview
+    def attributes(self) -> list[AttributeInfo]:
+        """Every attribute XeFM knows - the built-in ones, ``ATTRIBUTES``'
+        and the ones an ``.xft`` tree declared - as :class:`AttributeInfo`."""
+        out = []
+        for name in _attributes.names():
+            a = _attributes.get(name)
+            if a is None:
+                continue
+            compute = "sync" if a.is_sync else a.compute
+            source = ("file" if _attributes.is_declarable(name)
+                      else "builtin" if name in _attributes.BUILTIN else "config")
+            out.append(AttributeInfo(a.name, a.label, a.type, compute, source))
+        return out
+
+    @preview
+    def get_attributes(self, items: Iterable["EntryInfo | Path | str"],
+                       names: Iterable[str] | None = None, *, cancel: Any = None):
+        """The values of the attributes ``names`` (all of them when ``None``)
+        for ``items``, **computed now** - unlike :meth:`EntryInfo.attr`, which
+        only reads what XeFM already knows: an on-request attribute is
+        computed, and a folder's ``size`` is its total. Yields
+        ``{"path": Path, "values": {name: value}}`` a folder at a time; a tag
+        list comes as :class:`TagInfo`, an attribute that does not apply to an
+        item is ``None``. A generator: run it off the UI thread. An unknown
+        name raises ValueError at once."""
+        import threading as _threading
+        paths = [_operation_path(item, "get_attributes: item") for item in items]
+        wanted = list(_attributes.names() if names is None else names)
+        unknown = [n for n in wanted if not _attributes.is_known(n)]
+        if unknown:
+            raise ValueError(f"get_attributes: no attribute {', '.join(unknown)} "
+                             f"(see attributes())")
+        cancel = cancel if cancel is not None else _threading.Event()
+
+        def values():
+            for path, found in _attributes.compute(wanted, paths, cancel):
+                yield {"path": path, "values": {
+                    k: ([_tag_info(t) for t in v] if isinstance(v, list)
+                        and _attributes.get(k).type == "tags" else v)
+                    for k, v in found.items()}}
+        return values()
+
+    # --- similar files ----------------------------------------------------------- #
+
+    @preview
+    def find_similar(self, roots: Iterable["Path | str"], *, method: str,
+                     threshold: float | None = None, cancel: Any = None):
+        """Groups of similar files under ``roots`` (local folders or files),
+        found by the similar-files scan Find Similar Files starts: ``method``
+        is ``"identical"``, ``"image"``, ``"video"`` or ``"audio"``;
+        ``threshold`` (0-1) replaces the method's default, and is ignored for
+        identical files. The scan runs in a process of its own and shows in
+        XeFM's jobs list like any other. A generator that yields once the scan
+        has ended: ``{"group": n, "name": str, "paths": [Path, ...],
+        "similarity": [float, ...]}``, the group's anchor first. Setting
+        ``cancel`` stops the scan, which still yields the groups found so far.
+
+        Raises ValueError at once for an unknown method, a ``threshold``
+        outside 0-1, or a root that is not on the local disk; OSError when the
+        method cannot run here (its packages are missing) or the scan could
+        not start, and from the generator when the scan failed."""
+        import threading as _threading
+        from xefm import similar_scan as _scan
+        methods = [m for m, _label in _scan.METHODS]
+        if method not in methods:
+            raise ValueError(f"find_similar: method {method!r} is not one of "
+                             f"{', '.join(methods)}")
+        if threshold is not None and not 0 <= float(threshold) <= 1:
+            raise ValueError("find_similar: threshold is a number from 0 to 1")
+        paths = [_operation_path(r, "find_similar: root") for r in roots]
+        if not paths:
+            raise ValueError("find_similar: roots is empty")
+        for p in paths:
+            if _path_schemes.is_uri(str(p)):
+                raise ValueError(f"find_similar: the scan reads local folders "
+                                 f"(a mounted share counts), not {p}")
+        why = _scan.unavailable(method)
+        if why:
+            raise OSError(why)
+        cancel = cancel if cancel is not None else _threading.Event()
+        job = _scan.start(_scan.merge_roots([str(p) for p in paths]), method,
+                          threshold=None if threshold is None else float(threshold))
+
+        def groups():
+            import json as _json
+            import time as _time
+            from xefm import xft as _xft
+            stopped = False
+            while job.state() not in _scan.FINISHED:
+                if cancel.is_set() and not stopped:
+                    job.stop()
+                    stopped = True
+                _time.sleep(0.25)
+            state = job.state()
+            if state not in (_scan.DONE, _scan.CANCELLED):
+                raise OSError(f"the scan {state} - see its log: {job.log_path}")
+            try:
+                doc = _xft.parse(_json.loads(job.result_path.read_text(encoding="utf-8")))
+            except (OSError, ValueError) as exc:
+                raise OSError(f"the scan's result could not be read: {exc}") from None
+            n = 0
+            for node in doc.root.children or ():
+                kids = [c for c in node.children or () if c.target]
+                if not kids:
+                    continue
+                n += 1
+                yield {"group": n, "name": node.name,
+                       "paths": [Path(c.target) for c in kids],
+                       "similarity": [c.extra.get("similarity") for c in kids],
+                       "result": str(job.result_path)}
+        return groups()
+
+    # --- rename ---------------------------------------------------------------- #
+
+    @preview
+    def rename(self, plan: Iterable[tuple["EntryInfo | Path | str", str]], *,
+               on_done: Callable[["ActionContext", TaskOutcome], None] | None = None
+               ) -> None:
+        """Rename items to names the caller chose: ``plan`` is
+        ``(item, new_name)`` pairs, each a new name in the item's own folder
+        (this renames, it does not move). The plan is checked the way Rename
+        in Editor checks an edited list - swaps and chains go through
+        temporary names - and the user confirms it in the same review before
+        anything moves. Returns at once.
+
+        ``on_done(ctx, outcome)`` follows the rules of :meth:`copy`:
+        ``"done"`` with a list of :class:`ItemResult` (``dest`` the new path),
+        ``"cancelled"`` when the user declined. Wrong arguments raise
+        ValueError at once: a relative path string, an item inside an archive,
+        a name that is not valid or holds a separator, an item given twice,
+        and a plan the review refuses (two items landing on one name, a name
+        already taken)."""
+        self._require_ui_thread("rename")
+        app = self._app
+        pairs = []
+        seen = set()
+        for item, new in plan:
+            path = _operation_path(item, "rename: item")
+            new = str(new)
+            if "/" in new or "\\" in new:
+                raise ValueError(f"rename: {new!r} is a path; give a name in "
+                                 f"{path.name}'s own folder")
+            if str(path) in seen:
+                raise ValueError(f"rename: {path} is in the plan twice")
+            seen.add(str(path))
+            pairs.append((path, new))
+        files = [p for p, _n in pairs]
+        names = [n for _p, n in pairs]
+
+        def report(outcome: TaskOutcome) -> None:
+            if on_done is not None:
+                run_guarded("rename completion", on_done, ActionContext(app), outcome)
+
+        def complete(renamed, errors) -> None:
+            if renamed is None:
+                report(TaskOutcome("cancelled", []))
+                return
+            value = []
+            for path, new in pairs:
+                if str(path) in renamed:
+                    value.append(ItemResult(path, path.parent / renamed[str(path)], "done"))
+                elif new == name_key.nfc(path.name) or new == path.name:
+                    value.append(ItemResult(path, path, "skipped"))
+                else:
+                    msgs = [(path.name, e) for e in errors if path.name in e]
+                    value.append(ItemResult(path, path.parent / new, "failed", msgs))
+            report(TaskOutcome("done", value))
+
+        if not pairs:
+            app._call_later(lambda: report(TaskOutcome("done", [])))
+            return
+        app._rename_for_api(files, names, complete)
 
     def invoke(self, action_name: str) -> None:
         """Run another action by name, in the file-list context.

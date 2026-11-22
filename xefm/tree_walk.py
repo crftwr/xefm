@@ -21,7 +21,7 @@ from collections import deque
 from concurrent.futures import FIRST_COMPLETED, wait
 from typing import Callable, Iterator, Optional, Tuple
 
-from xefm.path import concurrency, listdir_attrs
+from xefm.path import attrs_via_path, concurrency, listdir_attrs
 from xefm.worker_pool import DaemonPool
 
 #: How often a parallel walk waiting on listings looks at its cancel flag.
@@ -80,6 +80,27 @@ def walk(root, cancel, descend: Callable[[object, dict], bool], *,
         # Listings not started are dropped; ones running finish on their own
         # and are discarded.
         own.shutdown(wait=False, cancel_futures=True)
+
+
+def walk_root(root, cancel, descend: Callable[[object, dict], bool], *,
+              pool: Optional[DaemonPool] = None,
+              on_error: Optional[Callable[[object, Exception], None]] = None
+              ) -> Iterator[Tuple[object, dict]]:
+    """:func:`walk`, for a root someone named on purpose (the public API,
+    ``xefmctl``, #962): a folder is walked, and a file is itself the one
+    entry, its record marked ``explicit`` so a search looks at it even where
+    it would skip it in a walk (a hidden file). A root that is not there
+    yields nothing, as :func:`walk` does. Costs one ``stat`` of the root, which
+    is why the search dialogs, whose root is always the pane's folder, keep
+    :func:`walk`."""
+    attrs = attrs_via_path(root)
+    if not attrs.get("ok"):
+        return
+    if attrs.get("is_dir"):
+        yield from walk(root, cancel, descend, pool=pool, on_error=on_error)
+        return
+    if not cancel.is_set():
+        yield root, dict(attrs, explicit=True)
 
 
 def _walk_sequential(root, cancel, descend, on_error=None):

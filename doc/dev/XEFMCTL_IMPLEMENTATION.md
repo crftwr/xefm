@@ -20,7 +20,21 @@ Its first user is an AI agent in a terminal session XeFM started, with the
   opens it (`find-files`, `find-in-files`, `index-search`).
 - **Nothing exists only in xefmctl.** What the API lacked was added to it
   first, as Preview: `ctx.view`, `ctx.find_files`, `ctx.find_in_files`,
-  `ActionInfo.details`. Extensions get them too.
+  `ActionInfo.details`; then (#962) `ctx.index_search` and `ctx.entries`
+  (which `index-search` and `entries` had reached around), `ctx.find_similar`,
+  `ctx.path_schemes`, `ctx.tags` / `add_tags` / `remove_tags`,
+  `ctx.attributes` / `get_attributes`, `ctx.rename`, `pane.pick`,
+  `pane.selected_or_focused` and `pane.shows_list`. Extensions get them too.
+- **Freer than an action in one way only** (#962). An action takes its items
+  from the pane (the folder, or the selection); the API and xefmctl are told
+  them - any number, anywhere XeFM can go - and do with each what the action
+  does: a folder is searched below, a file is itself
+  (`tree_walk.walk_root`, the `named_root` of the search iterators).
+  `--from pane|selection` takes the items from the pane the same way for
+  every command that takes them (`_from_pane`): `pane` is
+  `PaneApi.path`, or `PaneApi.entries` when `shows_list`; `selection` is
+  `selected_or_focused()`. A test holds that every command with item
+  arguments takes `--from`.
 - **`xefm` vs `xefmctl`.** `xefm` works without a running XeFM (`config
   check`, `ext`, `keys`, `skill`, `ext guide`); `xefmctl` acts on the one
   running.
@@ -147,13 +161,20 @@ rest refused with exit 4.
 |---|---|
 | `state` | `PaneApi` for both panes, `ScreenManager`, `files_top()` |
 | `pane path\|entries\|focused\|selected\|cd\|select\|unselect\|open-list\|refresh\|activate` | `PaneApi` (`cd`: `_resolve_jump_target` first; a file lands the cursor on it) |
-| `entries` | `path.listdir_attrs`, or `tree_walk.walk` with `--recursive` / `--depth` |
-| `find-files`, `find-in-files` | `ctx.find_files`, `ctx.find_in_files` (the search dialog's iterators) |
-| `index-search` | `_iter_index_matches` |
-| `--show` | `_feed_search_results` (a search) or `PaneApi.open_list` (`entries`) |
+| `entries` | `ctx.entries` (`path.listdir_attrs`, or `tree_walk.walk` with `--recursive` / `--depth`) |
+| `find-files`, `find-in-files` | `ctx.find_files`, `ctx.find_in_files` (the search dialog's iterators, with `named_root`) |
+| `index-search` | `ctx.index_search` (`_iter_index_matches`), once per root |
+| `find-similar` | `ctx.find_similar`: `similar_scan.start`, polled until the job ends, then its `result.xft` read with `xft.parse`; `--threshold` names map through `threshold_steps` |
+| `path-scheme list` | `ctx.path_schemes` (`path_schemes.schemes()`, the package from `extensions.package_of`) |
+| `--show` | `_feed_search_results` (a search), `pane.cd` to the result's `xft://` URI (`find-similar`) or `PaneApi.open_list` (`entries`) |
+| `--from` | `_from_pane` / `_roots` / `_operands`; the client makes the item arguments optional with it and refuses both |
 | `read`, `fetch` | `Path.open("rb")` |
 | `view`, `diff`, `show-markdown` | `ctx.view`, `ctx.diff` / `show_directory_diff_viewer`, `ctx.show_markdown` |
 | `copy`, `move`, `trash`, `delete` | `ctx.copy` / `move` / `trash` / `delete`, `on_done` for `--wait` |
+| `rename` | `ctx.rename` → `_rename_for_api`: `parse_plan` over the names (one line each), the Rename in Editor review without Edit Again, `apply_plan`. The client reads `--plan` (a file or `-`) and makes its paths absolute |
+| `tag list\|add\|remove` | `ctx.tags` (`_known_tags`), `ctx.add_tags` / `remove_tags` → `_change_tags_for_api` (`_rewrite_tags`, a task for a store that is not cheap). An agent's session is asked first (`_write(ask_agent=)`): the tag write has no confirmation of its own |
+| `attribute list\|get` | `ctx.attributes`, `ctx.get_attributes` → `attributes.compute` (one provider call per folder; a folder's `size` through `UsageScan`) |
+| `pane pick` | `PaneApi.pick` → `_start_pick`; `on_event` hands Enter / Esc to `_pick_key` before the keymap while one is open |
 | `confirm`, `choose`, `input`, `message` | `ctx.confirm` / `choose` / `input` / `message` |
 | `action list`, `action show` | the registry, keys from `app.keys`, the package from `extensions.package_of` |
 | `invoke` | `ctx.invoke` |
@@ -168,15 +189,10 @@ no `xefm` on `PATH` for `xefm ext guide`.
 `_launch_program(..., on_exit=)` calls `on_exit(code)` on the UI thread on
 every path (unchanged by #952).
 
-## Not yet
-
-- `find-similar`, tags, attributes, `path-scheme list`, a file pick
-  (`pane pick`), a rename plan confirmed in a preview: in #952.
-- `--from pane|selection` as a search's input (stdin with `-` covers the
-  composition for now).
-
 ## Tests
 
+`test/test_xefmctl_962.py`: a named root (file as itself), `--from` for
+every command, the new APIs and commands, the pick keys, rename's review.
 `test/test_remote.py`: the table (every command has a handler and a
 reference entry, names), parsing, help, a real server round trip with
 session keys, streamed answers, exit statuses, the shim as its own process,

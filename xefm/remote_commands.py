@@ -14,7 +14,14 @@ started, with the ``xefm`` skill, next to a user looking at XeFM. So:
   is ``X list`` for ``ctx.Xs()``.
 - ``--json`` on every command prints one JSON object per line.
 - A command the user takes part in waits for them with ``--wait`` (always,
-  for ``confirm``, ``choose`` and ``input``).
+  for ``confirm``, ``choose``, ``input`` and ``pane pick``).
+- **Where an action takes its items from the pane, a command is told them**
+  (#962): any number of them, anywhere XeFM can go. That is the only way a
+  command is freer than the action; what it does with an item is the
+  action's. ``--from pane|selection`` takes the items from the pane the same
+  way for every command that takes items: ``pane`` is the pane's folder (the
+  entries, when it shows a list), ``selection`` the selected items or else
+  the one under the cursor. A folder is searched below; a file is itself.
 
 Standard library only, and nothing from ``xefm``: the client loads this file
 by path, from XeFM's own interpreter run with ``-I``.
@@ -66,6 +73,8 @@ class Opt:
     #: A path value (taken from the shell's directory).
     path: bool = False
     short: str = ""
+    #: Given more than once, its values are a list.
+    multi: bool = False
 
 
 @dataclass(frozen=True)
@@ -102,6 +111,11 @@ WAIT = Opt("--wait", help="wait until it is done (or the user answered) and say 
 CASE = Opt("--case", help="match capitals exactly")
 NO_RECURSIVE = Opt("--no-recursive", help="this folder only, not the ones below")
 NUL = Opt("-0", help="end each path with NUL instead of a newline")
+FROM = Opt("--from", "WHAT", ("pane", "selection"),
+           "take the items from the pane instead of the arguments: pane (its "
+           "folder, or the entries of the list it shows) or selection (the "
+           "selected items, or else the one under the cursor)")
+SIMILAR_METHODS = ("identical", "image", "video", "audio")
 
 ENTRY_TEXT = "{path}"
 
@@ -138,32 +152,62 @@ COMMANDS: tuple[Command, ...] = (
     Command(("pane", "refresh"), "re-read the pane", CHANGE, opts=(PANE,), text=""),
     Command(("pane", "activate"), "make the pane the active one", CHANGE,
             opts=(PANE,), text=""),
+    Command(("pane", "pick"), "have the user select items in XeFM and press Enter; "
+            "prints them (exit status 1 if cancelled with Esc)", ASK,
+            opts=(PANE, Opt("--prompt", "TEXT", help="what to ask for, shown in "
+                            "XeFM's log pane")),
+            wait="always",
+            details="The pane becomes the active one and every key works as "
+                    "usual - moving, selecting, changing folders, switching "
+                    "panes - until Enter, which answers the active pane's "
+                    "selection (or the item under its cursor), or Esc."),
 
     # --- places and searches: any XeFM path -------------------------------------------
     Command(("entries",), "what a folder holds, anywhere XeFM can go (ssh://, s3://, "
             "archives, virtual folders)",
-            args=(Arg("url", "+", path=True),),
+            args=(Arg("url", "*", path=True, help="the folders (default: the pane's "
+                      "folder); a file is listed as itself"),),
             opts=(Opt("--recursive", help="the folders below too"),
                   Opt("--depth", "N", help="with --recursive: how deep"),
-                  LIMIT, SHOW, PANE, TITLE),
+                  FROM, LIMIT, SHOW, PANE, TITLE),
             stream=True),
     Command(("find-files",), "files whose names match, below a folder anywhere "
             "XeFM can go (find_files)",
             args=(Arg("pattern", help="a glob (*.psd) or a part of the name"),
                   Arg("url", "*", path=True, help="where to look (default: the pane's folder)")),
-            opts=(CASE, NO_RECURSIVE, LIMIT, SHOW, PANE, TITLE), stream=True),
+            opts=(CASE, NO_RECURSIVE, FROM, LIMIT, SHOW, PANE, TITLE), stream=True),
     Command(("find-in-files",), "lines that match, in the files below a folder "
             "anywhere XeFM can go (find_in_files)",
             args=(Arg("pattern"), Arg("url", "*", path=True,
                                       help="where to look (default: the pane's folder)")),
             opts=(CASE, Opt("--word", help="whole words only"),
                   Opt("--regex", help="PATTERN is a regular expression"),
-                  NO_RECURSIVE, LIMIT, SHOW, PANE, TITLE),
+                  NO_RECURSIVE, FROM, LIMIT, SHOW, PANE, TITLE),
             text="{path}:{line}: {text}", stream=True),
     Command(("index-search",), "the OS index (Spotlight, Windows Search) "
             "(index_search)",
-            args=(Arg("query"), Arg("url", "?", path=True, help="the folder to search in")),
-            opts=(LIMIT, SHOW, PANE, TITLE), stream=True),
+            args=(Arg("query"), Arg("url", "*", path=True,
+                                    help="the folders to search in (default: the pane's folder)")),
+            opts=(FROM, LIMIT, SHOW, PANE, TITLE), stream=True),
+    Command(("find-similar",), "groups of similar files below local folders, "
+            "found by the similar-files scan (find_similar)",
+            args=(Arg("url", "*", path=True,
+                      help="the folders or files to scan (default: the pane's folder)"),),
+            opts=(Opt("--method", "METHOD", SIMILAR_METHODS,
+                      "what to compare (required): identical (the same content), "
+                      "image, video or audio"),
+                  Opt("--threshold", "T", help="how alike: loose, standard, strict, "
+                      "or a number from 0 to 1 (not for identical)"),
+                  FROM, LIMIT, SHOW, PANE, TITLE),
+            text="{group}\t{path}", stream=True,
+            details="One line per file: the group's number, then the path; the "
+                    "first file of a group is the one the others are like. The "
+                    "scan runs in a process of its own and shows in XeFM's jobs "
+                    "list; nothing is printed until it ends. With --show the "
+                    "groups open in the pane as a tree."),
+    Command(("path-scheme", "list"), "the kinds of place XeFM can open besides the "
+            "local disk (ssh://, s3://, archive://, and the ones PATH_SCHEMES and "
+            "extensions add)", text="{name}\t{source}"),
     Command(("read",), "a file's text, anywhere XeFM can go", args=(Arg("url", path=True),),
             opts=(Opt("--max-bytes", "N", help="read at most N bytes (default 1000000)"),),
             text="{text}"),
@@ -186,18 +230,67 @@ COMMANDS: tuple[Command, ...] = (
     # --- files (ctx.copy / move / trash / delete) ------------------------------------------
     Command(("copy",), "copy items to a folder, through XeFM's copy", WRITE,
             args=(Arg("source", "+", path=True, stdin=True),),
-            opts=(Opt("--to", "DIR", path=True, help="the destination folder"), WAIT),
+            opts=(Opt("--to", "DIR", path=True, help="the destination folder"),
+                  FROM, PANE, WAIT),
             text="{path}", wait="option"),
     Command(("move",), "move items to a folder, through XeFM's move", WRITE,
             args=(Arg("source", "+", path=True, stdin=True),),
-            opts=(Opt("--to", "DIR", path=True, help="the destination folder"), WAIT),
+            opts=(Opt("--to", "DIR", path=True, help="the destination folder"),
+                  FROM, PANE, WAIT),
             text="{path}", wait="option"),
     Command(("trash",), "move items to the OS trash", WRITE,
-            args=(Arg("path", "+", path=True, stdin=True),), opts=(WAIT,),
+            args=(Arg("path", "+", path=True, stdin=True),), opts=(FROM, PANE, WAIT),
             text="{path}", wait="option"),
     Command(("delete",), "delete items for good (refused in an agent's session)", WRITE,
-            args=(Arg("path", "+", path=True, stdin=True),), opts=(WAIT,),
+            args=(Arg("path", "+", path=True, stdin=True),), opts=(FROM, PANE, WAIT),
             text="{path}", wait="option"),
+
+    Command(("rename",), "rename items to the names a plan gives, after the user "
+            "confirms them in XeFM's rename review", WRITE,
+            opts=(Opt("--plan", "FILE", path=True,
+                      help='a JSON list of {"path": ..., "name": ...}, or - for '
+                           'standard input'), WAIT),
+            text="{path}\t{status}", wait="option",
+            details="Each name is a new name in the item's own folder: rename "
+                    "does not move. The plan is checked as Rename in Editor "
+                    "checks an edited list (swaps and chains are fine; two items "
+                    "on one name, or a name already taken, refuse the plan) and "
+                    "nothing moves until the user says Rename."),
+
+    # --- tags and attributes (ctx.tags / add_tags / remove_tags / attributes) ---------------
+    Command(("tag", "list"), "the tags XeFM knows, most recently applied first",
+            text="{name}\t{color}"),
+    Command(("tag", "add"), "tag items, where the OS keeps tags (Finder, "
+            "user.xdg.tags, S3)", WRITE,
+            args=(Arg("name", help="the tag"),
+                  Arg("path", "+", path=True, stdin=True,
+                      help="the items, or - to read them from standard input")),
+            opts=(Opt("--tag", "NAME", multi=True, help="another tag (repeat for more)"),
+                  Opt("--color", "COLOR", ("gray", "green", "purple", "blue", "yellow",
+                                           "red", "orange"),
+                      "the color of a tag new to XeFM, where the storage keeps colors"),
+                  FROM, PANE, WAIT),
+            text="{path}\t{status}", wait="option"),
+    Command(("tag", "remove"), "take tags off items", WRITE,
+            args=(Arg("name", help="the tag"),
+                  Arg("path", "+", path=True, stdin=True,
+                      help="the items, or - to read them from standard input")),
+            opts=(Opt("--tag", "NAME", multi=True, help="another tag (repeat for more)"),
+                  FROM, PANE, WAIT),
+            text="{path}\t{status}", wait="option"),
+    Command(("attribute", "list"), "every attribute XeFM knows (size, tags, "
+            "ATTRIBUTES', a tree's)", text="{name}\t{type}\t{label}"),
+    Command(("attribute", "get"), "attribute values of items, computed now "
+            "(get_attributes)",
+            args=(Arg("path", "+", path=True, stdin=True,
+                      help="the items, or - to read them from standard input"),),
+            opts=(Opt("--attributes", "A,B", help="the attributes (default: all)"),
+                  FROM, PANE, LIMIT),
+            text="{text}", stream=True,
+            details="One line per item: the path, then name=value for each "
+                    "attribute, tab-separated. An on-request attribute is "
+                    "computed, and a folder's size is its total, so this can "
+                    "take a while. --json gives the values as they are."),
 
     # --- asking the user (ctx.confirm / choose / input / message) ---------------------------
     Command(("confirm",), "ask the user yes or no in XeFM; exit status 0 for yes, 1 for no",
@@ -276,7 +369,8 @@ def synopsis(cmd: Command) -> str:
         parts.append({"1": name, "?": f"[{name}]", "*": f"[{name}...]",
                       "+": f"{name}..."}[a.nargs])
     for o in cmd.opts:
-        parts.append(f"[{o.name} {o.value}]" if o.value else f"[{o.name}]")
+        part = f"[{o.name} {o.value}]" if o.value else f"[{o.name}]"
+        parts.append(part + "..." if o.multi else part)
     return " ".join(parts)
 
 
@@ -336,7 +430,7 @@ def describe() -> list[dict]:
             "args": [{"name": a.name, "nargs": a.nargs, "path": a.path,
                       "stdin": a.stdin, "help": a.help} for a in cmd.args],
             "options": [{"name": o.name, "value": o.value, "choices": list(o.choices),
-                         "help": o.help} for o in cmd.opts],
+                         "repeat": o.multi, "help": o.help} for o in cmd.opts],
         })
     return out
 
@@ -387,9 +481,11 @@ def reference_markdown() -> str:
 def _sections():
     groups = [("Orientation", ("state",)), ("A pane", ("pane",)),
               ("Places and searches", ("entries", "find-files", "find-in-files",
-                                       "index-search", "read", "fetch")),
+                                       "index-search", "find-similar", "path-scheme",
+                                       "read", "fetch")),
               ("Showing", ("view", "diff", "show-markdown")),
-              ("Files", ("copy", "move", "trash", "delete")),
+              ("Files", ("copy", "move", "trash", "delete", "rename")),
+              ("Tags and attributes", ("tag", "attribute")),
               ("Asking the user", ("confirm", "choose", "input", "message")),
               ("Actions", ("action", "invoke")),
               ("Screens and terminal sessions", ("screen", "terminal-session"))]
