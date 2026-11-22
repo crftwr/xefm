@@ -6111,7 +6111,11 @@ class XeFMApp:
             to_right=lambda p: p["agent"] or "",
             to_detail=lambda p: p["prompt"],
             on_accept=lambda p: send(p["prompt"], p["agent"]),
-            on_accept_text=send, z=70)
+            on_accept_text=send,
+            field_label="Prompt:",
+            placeholder=("Type a request, or pick one below" if saved
+                         else "Type a request"),
+            z=70)
         self.panel.render()
 
     def _agents_ready(self) -> bool:

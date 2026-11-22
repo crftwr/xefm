@@ -182,6 +182,8 @@ class FilterListDialog(FocusContainer, Widget):
         to_detail: Callable[[Any], str] | None = None,
         to_help: Callable[[Any], str] | None = None,
         to_marks: Callable[[Any], list] | None = None,
+        placeholder: str = "",
+        field_label: str = "",
     ):
         self.all_items = list(items)
         self.to_label = to_label
@@ -236,7 +238,14 @@ class FilterListDialog(FocusContainer, Widget):
         self._ticking = False
         self._spin = 0
 
+        #: A word left of the field in place of the magnifier ("Prompt:"),
+        #: for a picker whose field is also an input of its own, not only a
+        #: filter. Empty keeps the magnifier.
+        self.field_label = field_label
         self.filter_edit = TextEdit(on_change=self._refilter)
+        # Set rather than passed: a PuiKit before ``TextEdit.placeholder``
+        # ignores the attribute and simply draws no placeholder.
+        self.filter_edit.placeholder = placeholder
         row_factory = None
         if to_right is not None or to_marks is not None:
             def row_factory(row: tuple) -> Widget:
@@ -567,7 +576,12 @@ class FilterListDialog(FocusContainer, Widget):
         # since the emoji occupies two cells there.)
         vector = ctx.vector_shapes
         field_h = 1.0
-        icon_gap = 2.5 if vector else 3.0  # left columns claimed by the icon
+        label_style = Style(fg=theme.text if theme else None, bg=surface_bg)
+        if self.field_label:
+            # A word in place of the icon: its measured width, then a gap.
+            icon_gap = ctx.measure_text(self.field_label, label_style) + 1.0
+        else:
+            icon_gap = 2.5 if vector else 3.0  # left columns claimed by the icon
         box_x = 2.0 + icon_gap
 
         # Breathing room above/below the field. The title rule already leaves a
@@ -590,11 +604,12 @@ class FilterListDialog(FocusContainer, Widget):
             self.filter_edit, self._filter_rect.x, self._filter_rect.y,
             self._filter_rect.w, self._filter_rect.h, hints={"focused": True},
         )
-        # Magnifier left of the field, on the dialog surface, on the field row.
+        # Magnifier (or the label) left of the field, on the dialog surface,
+        # on the field row.
         ty = (field_h - 1.0) / 2.0
         ctx.draw_text(
             2.0, self._filter_rect.y + ty,
-            "\U0001F50D", Style(fg=theme.text if theme else None, bg=surface_bg),
+            self.field_label or "\U0001F50D", label_style,
         )
         y += field_h + below_gap
 
@@ -734,6 +749,8 @@ def show_filter_list(
     to_marks: Callable[[Any], list] | None = None,
     to_detail: Callable[[Any], str] | None = None,
     to_help: Callable[[Any], str] | None = None,
+    placeholder: str = "",
+    field_label: str = "",
     z: int = 70,
 ) -> FilterListDialog:
     """Push a modal :class:`FilterListDialog` over ``panel`` and return it.
@@ -778,6 +795,11 @@ def show_filter_list(
     it on the ``describe_list_item`` key. All are optional and independent; see
     the module docstring.
 
+    ``placeholder`` is muted text in the empty field, and ``field_label`` a
+    word drawn left of it in place of the magnifier. Both are for a picker
+    whose field is an input as well as a filter (``on_accept_text``), so the
+    dialog says that typing something new works too.
+
     A picker's Enter takes a row. For text the user types and uses — a command,
     a filter pattern — see :mod:`xefm.history_input_dialog`, whose Enter takes
     the field."""
@@ -787,6 +809,7 @@ def show_filter_list(
         remove_label=remove_label,
         ellipsis=ellipsis, elide_where=elide_where, load_more=load_more,
         to_right=to_right, to_marks=to_marks, to_detail=to_detail, to_help=to_help,
+        placeholder=placeholder, field_label=field_label,
     )
     sw, sh = panel.backend.size_units
     w = max(36.0, min(sw * 0.6, 72.0))
