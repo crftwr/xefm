@@ -82,6 +82,31 @@ XeFM installed with pip has no libghostty, so its desktop app has no terminal:
 the subshell and terminal programs do not start there, and the log says why.
 Run XeFM in a terminal (`--backend vt`) for them instead.
 
+### Selecting, copying and pasting
+
+Drag to select text; double-click selects a word, triple-click a line, and
+`Alt`+drag a rectangle. In a program that uses the mouse itself (vim, htop),
+hold `Shift` while you drag.
+
+| | Every system | macOS | Also on Windows |
+|---|---|---|---|
+| Copy the selection | `Ctrl+Shift+C`, `Ctrl+Insert` | `Cmd+C` | `Ctrl+C` |
+| Paste | `Ctrl+Shift+V`, `Shift+Insert` | `Cmd+V` | `Ctrl+V` |
+
+A copy key with nothing selected goes to the program, so `Ctrl+C` still
+interrupts it. On Windows, `Ctrl+C` copies a selection and then clears it, so
+pressing it again interrupts. If a program needs `Ctrl+C` and `Ctrl+V` itself
+(vim's block selection, Emacs), set `TERMINAL_CTRL_CLIPBOARD = False` in
+`config.py`: both keys then go to the program, and the other keys still copy
+and paste.
+
+A right-click copies the selection and clears it, or pastes when nothing is
+selected, as in Windows Terminal. A program that uses the mouse gets the
+right-click instead; hold `Shift` to copy or paste.
+
+A pasted line break is sent as `Enter`, so pasting several lines runs them
+one after another.
+
 ### The shell's environment
 
 A shell XeFM starts gets the `XEFM_*` variables with the pane directories and
