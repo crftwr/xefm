@@ -49,6 +49,9 @@ https://github.com/user-attachments/assets/f121401d-990b-445d-aa79-526d34e4a44e
 - **充実した内蔵ビューアー** - シンタックスハイライト付きテキスト、画像、Markdown、JSON、CSV/TSV
 - **比較と同期** - テキストファイルを左右に並べ、変更箇所を文字単位で示す差分表示。ディレクトリの再帰的な比較と、1 回の操作で済む同期（更新またはミラー）。同期では、書き込む前に実行内容をすべて確認できます（[差分](doc/DIFF_VIEWER_FEATURE.ja.md)、[同期](doc/DIRECTORY_SYNC_FEATURE.ja.md)）
 - **類似ファイルの検索** - 重複ファイルに加え、サイズ変更、再エンコード、メタデータの書き換えをしただけで中身は同じ画像、動画、音声を検出（[詳細](doc/FIND_SIMILAR_FILES_FEATURE.ja.md)）
+- **内蔵ターミナル** - デスクトップアプリでは、サブシェルやターミナルで動くプログラム（`vim`、`less`、REPL）が XeFM のウィンドウの中で、ペインの裏でも動き続けるセッションとして動きます。**Screens…** でセッションとファイルマネージャーを切り替えます（[詳細](doc/TERMINAL_FEATURE.ja.md)）
+- **AI エージェントのセッション** - Claude Code、Codex、GitHub Copilot CLI、Antigravity CLI をファイルマネージャーの隣で開けます。エージェントはペインと選択項目を読み、XeFM が開ける場所ならどこでも検索し、ファイルをコピー・移動・ゴミ箱へ移す前にあなたに確認します（[詳細](doc/AI_AGENT_SESSIONS_FEATURE.ja.md)）
+- **xefmctl** - XeFM が起動したシェルから XeFM に問い合わせ、操作できます。ペインの状態を読んで動かし、XeFM が開ける場所ならどこでも検索し、ビューアーや差分を開きます（[詳細](doc/XEFMCTL_FEATURE.ja.md)）
 - **テーマと視覚効果** - 15 種類の内蔵テーマ。デスクトップモードではペインの背後でゆっくり動く 3D の絵（[動画](https://www.youtube.com/watch?v=ZTpk-sUsPIk)）、GPU による背景アニメーション、CRT／蛍光体風の画面効果、テキストが浮かび上がるアニメーションも使えます
 - **4 つのキーマッププリセット** - AFX style（1 つの文字キーで 1 つのコマンド）、Orthodox（ファンクションキー）、OS native（Finder やエクスプローラーのキー）、Vim style から、初回起動時に選択（[詳細](doc/KEYMAP_PRESETS_FEATURE.ja.md)）
 - **カスタマイズ性** - キーバインド、設定項目、外部プログラムの起動をすべて自由に変更可能。コマンドパレットからは、すべてのアクションを名前で探せます
@@ -149,6 +152,7 @@ make run         # launch XeFM through it, no activation needed
 - **[フォルダータブ](doc/FOLDER_TABS_FEATURE.ja.md)**、**[クイックビュー](doc/QUICK_VIEW_FEATURE.ja.md)**、**[コマンドパレット](doc/COMMAND_PALETTE_FEATURE.ja.md)** - 1 つのペインで開く複数の場所、反対側のペインでのライブプレビュー、名前で実行できるすべてのアクション
 - **[OS のインデックス検索](doc/OS_INDEX_SEARCH_FEATURE.ja.md)**、**[ファイルリスト](doc/FILE_LIST_IMPORT_FEATURE.ja.md)** - Spotlight／Windows Search の結果や、任意のツールが出力したパスの一覧をペインとして表示
 - **[類似ファイルの検索](doc/FIND_SIMILAR_FILES_FEATURE.ja.md)** - 同一ファイルと、似た画像、動画、音声
+- **[ターミナル](doc/TERMINAL_FEATURE.ja.md)**、**[AI エージェントのセッション](doc/AI_AGENT_SESSIONS_FEATURE.ja.md)**、**[xefmctl](doc/XEFMCTL_FEATURE.ja.md)** - ターミナルセッションと画面、ファイルマネージャーの隣の AI エージェント、シェルからの XeFM 操作
 - **[拡張パッケージ](doc/EXTENSIONS_FEATURE.ja.md)** - 拡張機能のインストール、アップグレード、作成
 - **[AI エージェント向け XeFM スキル](doc/AGENT_SKILL_FEATURE.ja.md)** - 設定の編集や拡張機能の作成を AI コーディングエージェントに任せる方法
 
@@ -197,9 +201,30 @@ XeFM には 15 種類のテーマが内蔵されています。テーマは **Vi
 
 デスクトップモードでは、インターフェースの背後や前面に GPU で描画する**視覚効果**をテーマに含めることもできます。背景アニメーション（`starfield`、`rain`、`hologram` など）、CRT／蛍光体風の画面ポストエフェクト、テキストが浮かび上がるアニメーション、半透明の面などです。視覚効果はテーマの定義の一部にすぎないので、独自テーマで自由に組み合わせられます。ターミナルモードでは無視されます。[配色と視覚効果](doc/COLOR_SCHEMES_FEATURE.ja.md)を参照してください。
 
+## 内蔵ターミナルと画面
+
+デスクトップアプリは自分のターミナルを持っています。**Tools → Subshell Here** は、アクティブなペインのディレクトリでそこにシェルを開きます。`'terminal': True` を指定したプログラム（`vim`、`less`、REPL）も同じように開きます。どれも専用の*画面*で動く*ターミナルセッション*で、ペインに戻っても動き続けます。**Tools → Screens…** でファイルマネージャーとセッションを切り替えます。ペインの上に開いたビューアーは、ターミナルを見に行っている間も開いたままなので、行き来しながら両方を見比べられます。
+
+ターミナルアプリでは、XeFM は自分が動いているターミナルをシェルやプログラムに渡し、終了するまで待ちます。[ターミナル](doc/TERMINAL_FEATURE.ja.md)を参照してください。
+
 ## サブシェルモード
 
-**Tools → Subshell Here** で XeFM を一時的に中断してシェルに入ります。このシェルの環境変数には、現在のペインと選択項目の情報（`XEFM_LEFT_DIR`、`XEFM_THIS_DIR`、`XEFM_LEFT_SELECTED` など）が入っています。`exit` で XeFM に戻ります。変数の一覧は[ユーザーガイド](doc/XEFM_USER_GUIDE.ja.md#サブシェルモード)にあります。
+サブシェルの環境変数には、現在のペインと選択項目の情報（`XEFM_LEFT_DIR`、`XEFM_THIS_DIR`、`XEFM_LEFT_SELECTED` など）が入っています。`exit` で XeFM に戻ります。変数の一覧は[ユーザーガイド](doc/XEFM_USER_GUIDE.ja.md#サブシェルモード)にあります。
+
+サブシェルをはじめ XeFM が起動したシェルでは、`xefmctl` で今のペインの状態を問い合わせ、操作できます。
+
+```bash
+xefmctl pane selected           # the items selected in the active pane
+xefmctl pane cd ~/src           # point the active pane at a folder
+xefmctl find-files '*.md' .     # search anywhere XeFM can go, SSH and S3 included
+xefmctl view README.md          # open a file in XeFM's viewer
+```
+
+`xefmctl help` ですべてのコマンドを一覧できます。[xefmctl](doc/XEFMCTL_FEATURE.ja.md)を参照してください。
+
+## AI エージェントのセッション
+
+**Tools → AI Agent Here** で、ファイルマネージャーの隣に AI コーディングエージェントを開きます。Claude Code、Codex、GitHub Copilot CLI、Antigravity CLI は最初から設定済みで、それぞれのプログラムがインストールされていれば選べます。エージェントは自分が XeFM の中で動いていることを知っていて、ペインと選択項目を読み、XeFM が開ける場所ならどこでも検索し、見つけたものを XeFM で見せます。エージェントが頼むコピー、移動、ゴミ箱への移動は、どれもあなたの OK を待ち、完全な削除はできません。**Tools → Ask AI Agent…** は、入力した依頼か `AGENT_PROMPTS` に保存した依頼でエージェントを始めます。デスクトップアプリではエージェントは専用のターミナルセッションで動き、ターミナルアプリではターミナルを渡されます。[AI エージェントのセッション](doc/AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
 
 ## コマンドラインオプション
 

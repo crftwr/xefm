@@ -53,6 +53,9 @@ https://github.com/user-attachments/assets/f121401d-990b-445d-aa79-526d34e4a44e
 - **Rich built-in viewers** - Syntax-highlighted text, images, Markdown, JSON, and CSV/TSV
 - **Compare & sync** - Side-by-side text diff down to the exact characters that changed; recursive directory compare, and a one-step sync (update or mirror) with the whole plan shown before anything is written ([diff](doc/DIFF_VIEWER_FEATURE.md), [sync](doc/DIRECTORY_SYNC_FEATURE.md))
 - **Find similar files** - Find duplicates, and images, videos and audio that are the same media resized, re-encoded or retagged ([details](doc/FIND_SIMILAR_FILES_FEATURE.md))
+- **Built-in terminal** - In the desktop app, the subshell and terminal programs (`vim`, `less`, a REPL) run inside the XeFM window as sessions that keep running behind the panes; **Screens…** switches between them and the file manager ([details](doc/TERMINAL_FEATURE.md))
+- **AI agent sessions** - Open Claude Code, Codex, GitHub Copilot CLI or Antigravity CLI beside the file manager: it sees the panes and the selection, searches anywhere XeFM can go, and asks you before it copies, moves or trashes a file ([details](doc/AI_AGENT_SESSIONS_FEATURE.md))
+- **xefmctl** - Ask XeFM and drive it from a shell it started: read and move the panes, search anywhere XeFM can go, open the viewer or a diff ([details](doc/XEFMCTL_FEATURE.md))
 - **Themes & visual effects** - Fifteen built-in themes; desktop mode adds moving 3D pictures behind the panes ([video](https://www.youtube.com/watch?v=ZTpk-sUsPIk)), GPU background animations, CRT/phosphor screen effects, and text-reveal animations
 - **Four keymap presets** - AFX style (one letter, one command), Orthodox (function keys), OS native (Finder's or Explorer's keys) or Vim style, chosen at first launch ([details](doc/KEYMAP_PRESETS_FEATURE.md))
 - **Customizable** - Fully configurable key bindings, settings, and external program launchers; a command palette finds every action by name
@@ -187,6 +190,7 @@ lists every key of all four side by side.
 - **[Folder Tabs](doc/FOLDER_TABS_FEATURE.md)**, **[Quick View](doc/QUICK_VIEW_FEATURE.md)** & **[Command Palette](doc/COMMAND_PALETTE_FEATURE.md)** - Several places per pane, a live preview in the other pane, and every action by name
 - **[Searching the OS Index](doc/OS_INDEX_SEARCH_FEATURE.md)** & **[File Lists](doc/FILE_LIST_IMPORT_FEATURE.md)** - Spotlight / Windows Search results, or any tool's list of paths, as a pane
 - **[Find Similar Files](doc/FIND_SIMILAR_FILES_FEATURE.md)** - Identical files and similar images, videos and audio
+- **[Terminal](doc/TERMINAL_FEATURE.md)**, **[AI Agent Sessions](doc/AI_AGENT_SESSIONS_FEATURE.md)** & **[xefmctl](doc/XEFMCTL_FEATURE.md)** - Terminal sessions and screens, an AI agent beside the file manager, and XeFM from the shell
 - **[Extension Packages](doc/EXTENSIONS_FEATURE.md)** - Install, upgrade and write extensions
 - **[The XeFM Skill for AI Agents](doc/AGENT_SKILL_FEATURE.md)** - Let an AI coding agent edit your configuration and write extensions
 
@@ -255,12 +259,50 @@ surfaces. Effects are pure theme data — a custom theme can mix and match them,
 and terminal mode ignores them. See
 [Color Schemes & Visual Effects](doc/COLOR_SCHEMES_FEATURE.md).
 
+## Built-in Terminal & Screens
+
+The desktop app has a terminal of its own. **Tools → Subshell Here** opens your
+shell in it, in the active pane's directory, and so does every program marked
+`'terminal': True` (`vim`, `less`, a REPL). Each one is a *terminal session*
+on a *screen* of its own, and it keeps running while you go back to the panes.
+**Tools → Screens…** switches between the file manager and your sessions. A
+viewer you opened stays open while you visit a terminal, so you can compare the
+two by switching back and forth.
+
+In the terminal app, XeFM hands its own terminal to the shell or program and
+waits until it exits. See [Terminal](doc/TERMINAL_FEATURE.md).
+
 ## Sub-shell Mode
 
-**Tools → Subshell Here** suspends XeFM and enters a shell whose environment
-describes the current panes and selection (`XEFM_LEFT_DIR`, `XEFM_THIS_DIR`,
-`XEFM_LEFT_SELECTED`, …); type `exit` to return to XeFM. The full variable list
-is in the [User Guide](doc/XEFM_USER_GUIDE.md#sub-shell-mode).
+The subshell's environment describes the current panes and selection
+(`XEFM_LEFT_DIR`, `XEFM_THIS_DIR`, `XEFM_LEFT_SELECTED`, …); type `exit` to
+return to XeFM. The full variable list is in the
+[User Guide](doc/XEFM_USER_GUIDE.md#sub-shell-mode).
+
+In the subshell, or any shell XeFM started, `xefmctl` asks XeFM about the panes
+as they are now and acts on them:
+
+```bash
+xefmctl pane selected           # the items selected in the active pane
+xefmctl pane cd ~/src           # point the active pane at a folder
+xefmctl find-files '*.md' .     # search anywhere XeFM can go, SSH and S3 included
+xefmctl view README.md          # open a file in XeFM's viewer
+```
+
+`xefmctl help` lists every command. See [xefmctl](doc/XEFMCTL_FEATURE.md).
+
+## AI Agent Sessions
+
+**Tools → AI Agent Here** opens an AI coding agent beside the file manager.
+Claude Code, Codex, GitHub Copilot CLI and Antigravity CLI are set up out of
+the box, each offered once its program is installed. The agent knows it runs
+inside XeFM: it sees the panes and the selection, searches anywhere XeFM can
+go, and shows you what it found in XeFM. Every copy, move or trash it asks for
+waits for your OK, and it may not delete anything for good.
+**Tools → Ask AI Agent…** starts one with a request you type, or one you saved
+in `AGENT_PROMPTS`. In the desktop app the agent runs in a terminal session of
+its own; the terminal app hands it the terminal. See
+[AI Agent Sessions](doc/AI_AGENT_SESSIONS_FEATURE.md).
 
 ## Command Line Options
 
