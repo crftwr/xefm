@@ -70,6 +70,14 @@ log_error() {
     echo "[ERROR] $1" >&2
 }
 
+# With notarization on, keep the screen from locking for the rest of the run
+# and read the profile before building the DMG (notary_guard.sh).
+if [ -n "${NOTARY_PROFILE}" ] && [ -n "${CODESIGN_IDENTITY}" ]; then
+    # shellcheck source=notary_guard.sh
+    . "${SCRIPT_DIR}/notary_guard.sh"
+    notary_guard "${NOTARY_PROFILE}"
+fi
+
 check_app_exists() {
     if [ ! -d "${APP_BUNDLE}" ]; then
         log_error "XeFM.app not found at ${APP_BUNDLE}"

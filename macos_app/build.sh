@@ -238,6 +238,14 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
 # then build with: NOTARY_PROFILE="XeFM-Notary"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
+# With notarization on, keep the screen from locking for the rest of the run
+# and read the profile before the long build, not after it (notary_guard.sh).
+if [ -n "${NOTARY_PROFILE}" ] && [ -n "${CODESIGN_IDENTITY}" ]; then
+    # shellcheck source=notary_guard.sh
+    . "${SCRIPT_DIR}/notary_guard.sh"
+    notary_guard "${NOTARY_PROFILE}"
+fi
+
 # Version number (can be overridden by environment variable). Defaults to the
 # single source of truth: xefm/__init__.py's __version__ literal (same string
 # the Windows build reads), so the bundle version never drifts from --version.

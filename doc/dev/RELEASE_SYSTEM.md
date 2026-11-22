@@ -234,6 +234,25 @@ never rebuilt — that would re-run notarization), checks the Release exists, an
 uploads with `--clobber`. To force a fresh artifact first, run `make macos-dmg`
 or `make windows-zip`.
 
+#### Notarization and the screen lock
+
+notarytool keeps a keychain profile (`NOTARY_PROFILE`, `XeFM-Notary`) in the
+data protection keychain, which can't be read while the screen is locked. A
+locked screen makes notarytool say `No Keychain password item found for
+profile`, though the profile is still there and needs no `store-credentials`.
+A release runs long enough for the display to sleep and the screen to lock
+under it, so this was misread more than once as a lost profile. It was pinned
+down at 1.17.0: the display slept at 22:44 and the notarization failed at
+22:56. The same lookup worked at 23:16 after the Mac was woken, with nothing
+written to the keychain in between.
+
+So `build.sh` and `create_dmg.sh`, when they notarize, first source
+`macos_app/notary_guard.sh`. It keeps the display awake (`caffeinate -d`) until
+the script exits, and reads the profile before the long build. A screen
+already locked, or a profile that really is missing, then stops the run at the
+start with a message saying which, not after the build. Run from a sandboxed
+shell, the keychain is out of reach too; run these targets outside it.
+
 ### The Homebrew tap (not in the Makefile)
 
 [crftwr/homebrew-tap](https://github.com/crftwr/homebrew-tap) carries two
