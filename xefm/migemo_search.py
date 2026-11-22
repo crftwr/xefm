@@ -13,8 +13,11 @@ discussion #332; the load-bearing choices:
   a 32-bit on-disk format, and ``'L'`` is 8 bytes there. :class:`_Array32`
   swaps the ``array`` binding inside the dictionary module before the engine
   is constructed — inert on Windows (where ``'L'`` is 4 bytes) and once
-  upstream reads ``'I'`` itself. The dependency stays pinned to 0.0.1 so a
-  new upstream release can't silently move the internals the patch touches.
+  upstream reads ``'I'`` itself. :func:`_repair_romaji_table` is the second
+  patch: the romaji converter's lookup can never hit the table's last key, so
+  ``zu`` stayed ``zう`` and every word spelled with ず went unfound (#926).
+  The dependency stays pinned to 0.0.1 so a new upstream release can't
+  silently move the internals both patches touch.
 - **Always on, no mode.** The generated regex keeps the typed romaji as one
   of its alternatives, so it never *loses* matches plain search would find
   (cfiler's mixed-case activation heuristic taught otherwise — cfiler#9).
@@ -93,6 +96,33 @@ _HIRA2KATA = {c: c + 0x60 for c in range(0x3041, 0x3097)}
 _HIRA2KATA.update({0x309D: 0x30FD, 0x309E: 0x30FE})
 
 
+#: Appended to pymigemo's romaji tables so that no real key is the last one.
+#: No query contains it, so it never matches anything itself.
+_SENTINEL_KEY = "\uffff"
+
+
+def _repair_romaji_table(keys: list, values: list) -> None:
+    """Fix a pymigemo 0.0.1 romaji table in place, so its lookups find every
+    key.
+
+    The converter binary-searches the keys with ``bisect.bisect``, which lands
+    just past an exact hit, and then rejects a position equal to the table's
+    length - exactly where a hit on the last key lands. The plain table's last
+    key is ``zu``, so ``kouzui`` converted to ``こうzうい`` and never found 洪水.
+    A sentinel key sorting after every real one keeps the last real key off
+    that position. The table is also re-sorted: ``~`` sits before ``a``, out of
+    the order bisect assumes.
+
+    The lists are mutated rather than rebound, keeping the key/value pairing,
+    so the converter's own globals see the fix. Idempotent; inert once
+    upstream sorts the table and compares positions correctly."""
+    if keys and keys[-1] == _SENTINEL_KEY:
+        return
+    items = sorted(zip(keys, values))
+    keys[:] = [k for k, _ in items] + [_SENTINEL_KEY]
+    values[:] = [v for _, v in items] + [_SENTINEL_KEY]
+
+
 def _config():
     """The live config, or ``None`` (early startup, tests) — the gates in
     :func:`get_regex` then fall back to their defaults."""
@@ -116,6 +146,9 @@ def _load_engine():
             # this import raises and Migemo simply stays off.
             from migemo import migemocompactdictionary as _dict_module
             _dict_module.array = _Array32
+            from migemo import romajiconverter as _converter
+            _repair_romaji_table(_converter.ROMAJI_KEYS,
+                                 _converter.ROMAJI_VALUES)
             import migemo
             _engine = migemo.Migemo()
             logger.info("Migemo dictionary loaded")
@@ -132,20 +165,22 @@ def _alternate_table(name: str):
     warned once, then cached as unavailable and the plain table stands alone).
 
     The pair is what pymigemo's converter reads: two parallel lists it
-    prefix-searches with :mod:`bisect`, so the keys are sorted here. That also
-    quietly repairs upstream's one out-of-order key (``~`` sits before ``a``,
-    where ``bisect`` can never find it)."""
+    prefix-searches with :mod:`bisect`, so it gets the same repair as the plain
+    table (:func:`_repair_romaji_table`): sorted, with the sentinel last."""
     if name not in _tables:
         try:
             from migemo import romajiconverter
             from xefm import romaji_azik
             if name != 'azik':
                 raise ValueError(f"unknown romaji table {name!r}")
-            plain = dict(zip(romajiconverter.ROMAJI_KEYS,
-                             romajiconverter.ROMAJI_VALUES))
+            plain = {k: v for k, v in zip(romajiconverter.ROMAJI_KEYS,
+                                          romajiconverter.ROMAJI_VALUES)
+                     if k != _SENTINEL_KEY}
             merged = plain | romaji_azik.build(plain)
-            items = sorted(merged.items())
-            _tables[name] = ([k for k, _ in items], [v for _, v in items])
+            keys, values = list(merged), list(merged.values())
+            _repair_romaji_table(keys, values)
+            _tables[name] = (keys, values)
+            items = merged
             logger.info(f"Romaji table {name!r} built "
                         f"({len(items)} entries, {len(plain)} plain)")
         except Exception as e:

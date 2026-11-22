@@ -29,8 +29,18 @@ macOS/Linux (`EOFError` on load). `_Array32` is swapped in for the `array`
 binding of `migemo.migemocompactdictionary` before the engine is constructed;
 it rewrites typecode `'L'` to the always-32-bit `'I'` only when `'L'` isn't
 4 bytes, so the patch is inert on Windows and after any upstream fix.
+
+The second patch is `_repair_romaji_table` (#926, the same bug as
+keyhac#367). `migemo/romajiconverter.py` looks a key up with `bisect.bisect`,
+which lands just past an exact hit, and then rejects a position equal to the
+table's length - exactly where a hit on the last key lands. The last key is
+`zu`, so `kouzui` converted to `こうzうい` and no word spelled with ず was
+found. When the engine loads, the table is re-sorted in place and a sentinel
+key `"\uffff"`, sorting after every real one, is appended, so no real key is
+ever last. Each alternate table gets the same repair.
+
 `requirements.txt` pins `pymigemo==0.0.1` because a new upstream release
-could move the internals the patch touches.
+could move the internals both patches touch.
 
 Importing `migemo.migemocompactdictionary` doubles as the identity check:
 atzm's PyMigemo (a C/Migemo binding) also imports as `migemo` but has no such
@@ -108,9 +118,9 @@ redistribution licence (and the one under BSD-2 is a personal variant), and the
 generator is checkable against the spec — [AZIK総合解説書](http://www1.vecceed.ne.jp/~bemu/azik/azikinfo.htm) —
 in a way a 700-line table is not.
 
-Merging sorts the keys, which also repairs upstream's one out-of-order entry
-(`~` is stored before `a` in `ROMAJI_KEYS` though it sorts after, so
-`bisect` can never find it). Longest
+The merged table gets the same repair as the plain one: sorted (which also
+fixes upstream's one out-of-order entry, `~` stored before `a`) and ended by
+the sentinel, so its own last key stays findable. Longest
 AZIK key is 3 characters, inside the converter's 4-character lookahead window.
 
 ### The ASCII filter
