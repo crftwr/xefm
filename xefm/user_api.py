@@ -1033,8 +1033,8 @@ class TerminalSession:
 
     @property
     def kind(self) -> str:
-        """``"shell"`` or ``"program"``: a shell restarts on Enter after a
-        failed exit, a program closes."""
+        """``"shell"`` or ``"program"``: a shell's ``exit`` ends the session
+        whatever its status, a program's failure keeps its last screen."""
         return self._session.kind
 
     @property

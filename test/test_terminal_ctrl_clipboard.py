@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(
 def _view(**kwargs):
     return terminal.TerminalView(
         ["true"], cwd=".", env={}, label="t", on_exited=lambda v, c: None,
-        on_close_request=lambda v: None, on_hide_request=lambda v: None, **kwargs)
+        on_close_request=lambda v: None, **kwargs)
 
 
 def test_on_keeps_puikits_default_windows_only():
@@ -37,8 +37,7 @@ def test_off_gives_both_keys_to_the_program():
 def test_the_session_view_reads_the_setting():
     def app(**config):
         stub = SimpleNamespace(config=SimpleNamespace(**config))
-        for name in ("_session_exited", "_session_close_request", "_hide_session",
-                     "screens", "_run_terminal_user_action", "_session_prompt",
+        for name in ("_session_exited", "_session_close_request", "screens", "_run_terminal_user_action", "_session_prompt",
                      "_session_title", "_session_notification", "_session_progress"):
             setattr(stub, name, lambda *a, **k: None)
         return stub
