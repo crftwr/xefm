@@ -24,7 +24,10 @@ it to :func:`handle`. The commands are described in
 
 Reads of the panes are answered even while terminal mode has its terminal
 handed over (the UI thread is parked in the child's wait and nothing else
-touches them); everything else waits until the user is back.
+touches them); everything else is refused with :data:`SUSPENDED`, an exit
+status of its own, since it will not pass until the shell exits - unlike
+:data:`BUSY`, which is worth a retry (#961). ``state`` says so too, so an
+agent learns it from its first command.
 """
 
 from __future__ import annotations
@@ -53,7 +56,14 @@ UI_WAIT = 8.0
 ACK_AFTER = 2.0
 
 #: Exit statuses (``xefmctl``'s, documented in the skill's reference).
-FAILED, USAGE, UNREACHABLE, BUSY, REFUSED = 1, 2, 3, 4, 5
+FAILED, USAGE, UNREACHABLE, BUSY, REFUSED, SUSPENDED = 1, 2, 3, 4, 5, 6
+
+#: The refusal of a command that needs XeFM's screen while terminal mode has
+#: handed the terminal to this shell. ASCII: it reaches a stream.
+SUSPENDED_MESSAGE = (
+    "XeFM is suspended until this shell exits (terminal mode), so only "
+    "commands that read work in this session; this one needs XeFM's screen. "
+    "Retrying will not help: show results here and ask in the chat instead.")
 
 #: Actions an agent's session may not invoke.
 AGENT_DENIED_ACTIONS = frozenset({"delete_permanently", "quit", "quit_app"})
@@ -119,8 +129,7 @@ def handle(app, req: dict):
     req.setdefault("opts", {})
     if getattr(app, "_terminal_handed_over", False):
         if cmd.effect != T.READ:
-            return refuse("XeFM is waiting for this shell to exit; run it after you "
-                          "return", BUSY)
+            return refuse(SUSPENDED_MESSAGE, SUSPENDED)
         # The UI thread is parked in the child's wait (_run_in_terminal):
         # nothing else reads or changes the panes until it returns.
         req["opts"].pop("show", None)
@@ -375,12 +384,17 @@ def _c_state(app, req):
     lines.append(f"screen: {current.id} ({app._screen_label(current)})")
     if over:
         lines.append(f"over the panes: {over}")
+    suspended = bool(getattr(app, "_terminal_handed_over", False))
+    if suspended:
+        lines.append("XeFM is suspended until this shell exits: only commands "
+                     "that read work (exit status 6 for the rest)")
     item = {
         "panes": panes, "active": active,
         "screen": {"id": current.id, "kind": current.kind,
                    "label": app._screen_label(current)},
         "files_screen": "panes" if top is None else over,
         "desktop": _desktop(),
+        "suspended": suspended,
         "text": "\n".join(lines),
     }
     return ok([item])

@@ -2,7 +2,9 @@
 
 Generated from `xefm/remote_commands.py`; do not edit by hand.
 
-`xefmctl` works in a terminal session XeFM started (`XEFM_SESSION` is set) and acts on that XeFM's file manager. Add `--json` to any command for one JSON object per line. Exit status: 0 done, 1 failed or the user said no, 2 a usage mistake, 3 XeFM cannot be reached, 4 XeFM is busy, 5 refused (a dialog is open in XeFM, or this session may not do that); the message says what to tell the user.
+`xefmctl` works in a terminal session XeFM started (`XEFM_SESSION` is set) and acts on that XeFM's file manager. Add `--json` to any command for one JSON object per line. Exit status: 0 done, 1 failed or the user said no, 2 a usage mistake, 3 XeFM cannot be reached, 4 XeFM is busy (try again), 5 refused (a dialog is open in XeFM, or this session may not do that), 6 XeFM is suspended until this shell exits (terminal mode: only commands that read work, for the rest of the session; do not retry); the message says what to tell the user.
+
+Commands marked *Uses XeFM's screen* are the ones refused with 6. While XeFM is suspended, `--show` is ignored and the results come back to the terminal only. `xefmctl state` says whether XeFM is suspended (`suspended` in `--json`).
 
 ## Orientation
 
@@ -54,6 +56,7 @@ point the pane at a folder; with --focus, put the cursor on an item there.
 - `PATH`: default: this shell's directory
 - `--pane PANE`: the pane: active (the default), other, left or right
 - `--focus NAME`: the item to put the cursor on
+- *Uses XeFM's screen.*
 
 ### `pane select`
 
@@ -63,6 +66,7 @@ select items in the pane by name or glob.
 - `PATTERN`: names or globs (*.jpg); none with --all
 - `--pane PANE`: the pane: active (the default), other, left or right
 - `--all`: every item
+- *Uses XeFM's screen.*
 
 ### `pane unselect`
 
@@ -71,6 +75,7 @@ select items in the pane by name or glob.
 unselect items in the pane by name or glob.
 - `--pane PANE`: the pane: active (the default), other, left or right
 - `--all`: every item
+- *Uses XeFM's screen.*
 
 ### `pane open-list`
 
@@ -80,6 +85,7 @@ show paths as a list in the pane, where every file operation works on them.
 - `PATH`: paths or URLs, or - to read them from standard input
 - `--pane PANE`: the pane: active (the default), other, left or right
 - `--title TEXT`: the title of what is shown
+- *Uses XeFM's screen.*
 
 ### `pane refresh`
 
@@ -87,6 +93,7 @@ show paths as a list in the pane, where every file operation works on them.
 
 re-read the pane.
 - `--pane PANE`: the pane: active (the default), other, left or right
+- *Uses XeFM's screen.*
 
 ### `pane activate`
 
@@ -94,6 +101,7 @@ re-read the pane.
 
 make the pane the active one.
 - `--pane PANE`: the pane: active (the default), other, left or right
+- *Uses XeFM's screen.*
 
 ## Places and searches
 
@@ -171,12 +179,14 @@ copy a file from anywhere XeFM can go to a local file, and print where.
 
 open a file in XeFM's viewer, on the file manager's screen.
 - `--line N`: scroll to line N
+- *Uses XeFM's screen.*
 
 ### `diff`
 
 `xefmctl diff LEFT RIGHT`
 
 compare two files (or two folders) in XeFM.
+- *Uses XeFM's screen.*
 
 ### `show-markdown`
 
@@ -185,6 +195,7 @@ compare two files (or two folders) in XeFM.
 show Markdown in XeFM's viewer.
 - `FILE`: a Markdown file, or - for standard input
 - `--title TEXT`: the title of what is shown
+- *Uses XeFM's screen.*
 
 ## Files
 
@@ -195,6 +206,7 @@ show Markdown in XeFM's viewer.
 copy items to a folder, through XeFM's copy.
 - `--to DIR`: the destination folder
 - `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
 
 ### `move`
 
@@ -203,6 +215,7 @@ copy items to a folder, through XeFM's copy.
 move items to a folder, through XeFM's move.
 - `--to DIR`: the destination folder
 - `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
 
 ### `trash`
 
@@ -210,6 +223,7 @@ move items to a folder, through XeFM's move.
 
 move items to the OS trash.
 - `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
 
 ### `delete`
 
@@ -217,6 +231,7 @@ move items to the OS trash.
 
 delete items for good (refused in an agent's session).
 - `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
 
 ## Asking the user
 
@@ -227,6 +242,7 @@ delete items for good (refused in an agent's session).
 ask the user yes or no in XeFM; exit status 0 for yes, 1 for no.
 - `--title TEXT`: the title of what is shown
 - Waits for the user's answer.
+- *Uses XeFM's screen.*
 
 ### `choose`
 
@@ -234,6 +250,7 @@ ask the user yes or no in XeFM; exit status 0 for yes, 1 for no.
 
 have the user pick one item in XeFM; prints it (exit status 1 if cancelled).
 - Waits for the user's answer.
+- *Uses XeFM's screen.*
 
 ### `input`
 
@@ -243,12 +260,14 @@ ask the user for a line of text in XeFM; prints it (exit status 1 if cancelled).
 - `--default TEXT`: the text to start with
 - `--title TEXT`: the title of what is shown
 - Waits for the user's answer.
+- *Uses XeFM's screen.*
 
 ### `message`
 
 `xefmctl message TEXT`
 
 write a line to XeFM's log pane.
+- *Uses XeFM's screen.*
 
 ## Actions
 
@@ -270,6 +289,7 @@ what one action does, in full.
 
 run an action by name, as its key would on the file manager's screen.
 - `--pane PANE`: the pane: active (the default), other, left or right
+- *Uses XeFM's screen.*
 
 ## Screens and terminal sessions
 
@@ -284,6 +304,7 @@ the screens, the one shown first.
 `xefmctl screen show ID`
 
 show a screen (files, or a terminal session's id).
+- *Uses XeFM's screen.*
 
 ### `terminal-session list`
 
@@ -300,9 +321,11 @@ start a terminal session (a shell by default).
 - `--cwd DIR`: 
 - `--name NAME`: 
 - `--hidden`: start it without showing it
+- *Uses XeFM's screen.*
 
 ### `terminal-session close`
 
 `xefmctl terminal-session close ID`
 
 end a terminal session.
+- *Uses XeFM's screen.*

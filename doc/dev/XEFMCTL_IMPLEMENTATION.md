@@ -69,6 +69,13 @@ XeFM:  RemoteServer (listener) ── remote_dispatch.handle ── _call_later 
   request thread, queues the handler on the UI thread (`_call_later`) and
   waits up to 8 s for it to *start*: only then is XeFM "busy" (exit 4), and
   a request refused that way is dropped when the UI thread reaches it.
+  While terminal mode has handed the terminal over (`_terminal_handed_over`)
+  the UI thread is parked in the child's wait, so `READ` commands are
+  answered on the request thread and the rest refused with exit 6
+  (`SUSPENDED`), not 4: it lasts until the shell exits, and an agent that
+  took it for "busy" would retry (#961). `state` carries `suspended`, and
+  `remote_commands.needs_screen()` marks those commands in the help and
+  the skill's reference.
   Work that has started is waited for however long it takes; past 2 s
   (`ACK_AFTER`) the client is sent an empty answer first, so it stops
   timing out, then the real one. The client keeps the `status` and `note`

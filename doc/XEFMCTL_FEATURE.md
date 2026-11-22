@@ -77,8 +77,9 @@ work on, as XeFM's own search does.
 - `copy`, `move`, `trash` and `delete` return once started; `--wait` waits
   until they are done and says how they went.
 - The exit status: 0 done, 1 failed (or you said no), 2 a mistake in the
-  command, 3 XeFM cannot be reached, 4 XeFM is busy, 5 refused. A refusal
-  says why, in words an agent can pass on to you.
+  command, 3 XeFM cannot be reached, 4 XeFM is busy, 5 refused, 6 XeFM is
+  waiting for this shell to exit (see below). A refusal says why, in words
+  an agent can pass on to you.
 
 ```sh
 cp $(xefmctl pane selected) /tmp               # names without spaces
@@ -110,8 +111,12 @@ back to its terminal once you answer.
 In terminal mode, XeFM waits while a subshell or terminal program runs, so
 only the commands that read work there: `state`, the `pane` reads,
 `entries`, the searches, `read`, `fetch`, `action list`, `screen list`,
-`terminal-session list`. The others say XeFM is waiting, and work once you
-are back.
+`terminal-session list`; a search's `--show` is ignored. The others end with
+exit status 6 and a message saying XeFM is suspended until the shell exits,
+and work once you are back. `xefmctl state` says so too, and `xefmctl help`
+marks the commands that need XeFM's screen with `*`. An agent working in
+that shell shows its results in the terminal and asks you in the chat
+instead.
 
 If the XeFM that started the shell has quit, every command says so.
 
