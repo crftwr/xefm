@@ -107,10 +107,19 @@ XeFM:  RemoteServer (listener) ── remote_dispatch.handle ── _call_later 
 Nothing under `C:\Program Files\WindowsApps` can be started by a process
 without the package's identity: `CreateProcess` fails with
 `STATUS_ACCESS_DENIED` ("Access is denied"), although the files stay
-readable. A process XeFM starts inherits the identity, so the shim worked
-from cmd. A Store app started through its own alias (the Store's PowerShell,
-an agent's shell tool using it, Windows Terminal) runs as *its* package, and
-its child could not start the shim's `runtime\python.exe`.
+readable. And no shell XeFM starts has the identity: Windows starts a
+child whose program lies outside the package (`cmd.exe`, `pwsh.exe`,
+`bash.exe`) without it, while a child inside the package keeps it. So the
+shim's `runtime\python.exe` was refused from every shell, cmd included,
+while a `PROGRAMS` entry that XeFM starts as `[xefm_python, ...]` works.
+
+(Checked on an installed package by asking each process
+`GetPackageFullName`: `XeFM.exe` has the identity, the terminal session's
+`cmd.exe` under it has none. Through ConPTY, `runtime\python.exe` started
+directly kept it and `cmd.exe` -> `runtime\python.exe` was refused.
+`Invoke-CommandInDesktopPackage` is no stand-in for this: it puts the
+process it starts into the package whatever its program, which is how the
+first look at #983 wrongly concluded that cmd worked.)
 
 The way in from anywhere is an app execution alias. The manifest
 (`windows_app/build_msix.ps1`) declares `xefmctl.exe` as one; Windows puts a
@@ -135,9 +144,11 @@ handles and the exit status, and leaves Ctrl-C to the client. Keyhac's
 The stub also puts `xefmctl` on the `PATH` of every shell, where without
 `XEFM_SOCKET` it says it is not in a shell XeFM started.
 
-`XEFM_PYTHON` is still the interpreter inside the package. A `PROGRAMS`
-entry XeFM starts directly has the identity; a script run from a Store
-shell that calls `XEFM_PYTHON` does not, and is not covered.
+What a shell cannot do there stays undone: it cannot start anything else
+in the package either. That is accepted and written in the user doc.
+`XEFM_PYTHON` (XeFM's interpreter, in 1.17.0 only, undocumented and read by
+nothing) was removed rather than hand every Store shell a path it can never
+run; the config's `xefm_python` stays, since XeFM starts it itself.
 
 ## Session keys and policies
 
@@ -156,7 +167,6 @@ session by changing `XEFM_SESSION`; a missing or unknown key is refused
 | `XEFM_TOKEN` | the connection key, hex |
 | `XEFM_SESSION_KEY` | this shell's own key |
 | `XEFM_SESSION` | the session's id, `subshell`, `program` or `agent`, to read |
-| `XEFM_PYTHON` | XeFM's interpreter |
 | `XEFM_BIN` | the shim directory |
 | `PATH` | the shim directory prepended |
 

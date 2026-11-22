@@ -11,11 +11,12 @@
  * started by a process outside it: every path under
  * C:\Program Files\WindowsApps refuses CreateProcess with "Access is denied"
  * (STATUS_ACCESS_DENIED), although the files stay readable, because those
- * binaries may only be started with the package's own identity. A shell XeFM
- * starts directly inherits that identity, so the shim works from cmd. A Store
- * app started through its own alias - the Store's PowerShell, Windows
- * Terminal - runs as *its* package instead, and from there the shim's
- * runtime\python.exe is refused.
+ * binaries may only be started with the package's own identity. And no shell
+ * XeFM starts has it: Windows starts a child whose program lies outside the
+ * package (cmd.exe, pwsh.exe, bash.exe) without the identity, so from every
+ * shell the shim's runtime\python.exe was refused. (A child inside the
+ * package, as XeFM starting runtime\python.exe for a PROGRAMS entry, keeps
+ * it.)
  *
  * The supported way in is an app execution alias: the package declares one
  * (windows.appExecutionAlias, see build_msix.ps1), Windows puts a stub in

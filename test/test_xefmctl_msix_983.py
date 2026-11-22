@@ -1,10 +1,11 @@
 """xefmctl from the Store (MSIX) install (#983).
 
 Nothing inside the package can be started by a process without its identity,
-and a shell that is itself a Store app (the Store's PowerShell, Windows
-Terminal) has none, so the shim's runtime\\python.exe was "Access is denied"
-there. The packaged XeFM's shim calls the package's app execution alias
-instead, which starts xefmctl.exe with the identity from anywhere."""
+and no shell XeFM starts has it (Windows starts a child whose program lies
+outside the package without it), so the shim's runtime\\python.exe was
+"Access is denied" from every shell. The packaged XeFM's shim calls the
+package's app execution alias instead, which starts xefmctl.exe with the
+identity from anywhere."""
 
 import os
 import re
@@ -59,6 +60,17 @@ def test_the_alias_lives_where_windows_puts_aliases(monkeypatch):
 
 def test_a_test_run_is_not_packaged():
     assert remote_server.running_packaged() is False
+
+
+def test_shells_are_not_handed_xefms_interpreter():
+    # XEFM_PYTHON is gone: no shell in the Store package could start it.
+    srv = remote_server.RemoteServer(lambda req: {"ok": True}, python=sys.executable)
+    try:
+        env = srv.apply_env({"PATH": ""}, "1")
+        assert "XEFM_PYTHON" not in env
+        assert {"XEFM_SOCKET", "XEFM_TOKEN", "XEFM_SESSION_KEY", "XEFM_SESSION"} <= set(env)
+    finally:
+        srv.close()
 
 
 # --- the alias, the launcher and the client agree ----------------------------------------

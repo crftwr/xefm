@@ -14,8 +14,9 @@
   loading the file manager. In the Store package it calls the package's app
   execution alias instead (:func:`windows_shim`, #983).
 - **The environment.** :meth:`RemoteServer.env` - ``XEFM_SOCKET``,
-  ``XEFM_TOKEN``, ``XEFM_SESSION_KEY``, ``XEFM_SESSION``, ``XEFM_PYTHON`` and
-  the ``PATH`` entry.
+  ``XEFM_TOKEN``, ``XEFM_SESSION_KEY``, ``XEFM_SESSION`` and the ``PATH``
+  entry. Not XeFM's interpreter (``XEFM_PYTHON`` until #983): in the Store
+  package no shell can start it, and nothing read it.
 - **Session keys.** Every shell gets a key of its own
   (``XEFM_SESSION_KEY``), registered with the session it belongs to and what
   that session may do (its *policy*: an AI agent's session is restricted).
@@ -76,7 +77,6 @@ class RemoteServer:
         # the listener first, so its own finalizer has nothing left to unlink.
         self._stop = threading.Event()
         weakref.finalize(self, _cleanup, self._listener, self._dir, self._stop)
-        self.python = python
         self.bin_dir = self._write_shim(python)
         self._thread = threading.Thread(target=self._serve, name="xefm-remote",
                                         daemon=True)
@@ -125,7 +125,6 @@ class RemoteServer:
             "XEFM_TOKEN": self._key.hex(),
             "XEFM_SESSION_KEY": self.register(session, policy),
             "XEFM_SESSION": session,
-            "XEFM_PYTHON": self.python,
             "PATH": self.bin_dir,
         }
 
@@ -260,12 +259,12 @@ def windows_shim(python: str, client: str, *, packaged: bool | None = None,
 
     Outside a package it runs the client with XeFM's interpreter. In the Store
     package that interpreter can be started only with the package's identity,
-    which a shell XeFM starts loses when it is itself a Store app (the Store's
-    PowerShell, Windows Terminal): the shim then calls the package's app
-    execution alias, which starts ``xefmctl.exe`` - the same client - with the
-    identity from anywhere. The interpreter's own path is never the fallback
-    there: it exists and cannot work, so with the alias turned off the shim
-    says how to turn it on.
+    and no shell XeFM starts has it: Windows starts a child whose program lies
+    outside the package (cmd, PowerShell, bash) without the identity. The shim
+    then calls the package's app execution alias, which starts
+    ``xefmctl.exe`` - the same client - with the identity from anywhere. The
+    interpreter's own path is never the fallback there: it exists and cannot
+    work, so with the alias turned off the shim says how to turn it on.
     """
     if packaged is None:
         packaged = running_packaged()

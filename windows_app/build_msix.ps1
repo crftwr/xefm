@@ -393,9 +393,10 @@ Copy-Item -Recurse -Force $assetsSrc "$staging\Assets"
 # windows.appExecutionAlias: the ONLY way anything in this package can be
 # started by a process that is not part of it. Everything under
 # C:\Program Files\WindowsApps refuses CreateProcess from such a process with
-# "Access is denied" - and a shell the Store's PowerShell or Windows Terminal
-# runs is such a process, even when XeFM started it, so the xefmctl.cmd shim's
-# runtime\python.exe was refused there (#983). The alias puts a stub in
+# "Access is denied" - and every shell XeFM starts is such a process: Windows
+# starts a child whose program lies outside the package (cmd, PowerShell,
+# bash) without the identity, so the xefmctl.cmd shim's runtime\python.exe
+# was refused from all of them (#983). The alias puts a stub in
 # %LOCALAPPDATA%\Microsoft\WindowsApps (on PATH) that starts xefmctl.exe with
 # this package's identity, which may then run the bundled interpreter; the
 # packaged XeFM's shim calls that stub (xefm/remote_server.py). The alias name
