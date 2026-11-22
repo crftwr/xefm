@@ -25,7 +25,15 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.30.1 is the floor because MarkdownView lays a long document out a slice per
+# 1.31.0 is the floor because TerminalView copies and pastes the way terminals
+# do (puikit#240, xefm#986): Ctrl+Insert / Shift+Insert, a right-click that
+# copies the selection or pastes, and on Windows Ctrl+C / Ctrl+V, which
+# TERMINAL_CTRL_CLIPBOARD turns off through the new ``ctrl_clipboard``
+# argument. It also stops a right-click reaching a widget twice on Windows,
+# which pasted twice in the terminal and handed the file pane's context menu
+# a phantom right-click. Soft: on 1.30.1 the terminal copies and pastes with
+# Ctrl+Shift+C / Ctrl+Shift+V only, and TERMINAL_CTRL_CLIPBOARD is ignored.
+# 1.30.1 was the floor before because MarkdownView lays a long document out a slice per
 # frame (puikit#239): opening a large Markdown file in the viewer's rendered
 # mode no longer stalls the UI thread for the whole layout (seconds for 1.5 MB;
 # xefm#976 did the raw-text half). Soft: on 1.30.0 it renders the same, after
@@ -311,7 +319,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.30.1
+puikit>=1.31.0
 pygments
 boto3
 watchdog
