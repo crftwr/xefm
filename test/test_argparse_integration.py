@@ -9,8 +9,15 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 from xefm import __version__
 
+# Each test starts ``python -m xefm`` up to five times. In a Windows guest
+# under the parallel suite one start takes seconds, and pytest-timeout's
+# default 10 s killed the whole worker mid-test ("worker 'gw0' crashed"),
+# which also reshuffled the order of every test after it.
+@pytest.mark.timeout(60)
 class TestArgparseIntegration(unittest.TestCase):
     """Integration tests for command line argument parsing"""
 

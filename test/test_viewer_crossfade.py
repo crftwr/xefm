@@ -4,6 +4,8 @@ viewer it was opened from - fades out quickly; closing, the reverse, and the
 layer leaves only once it has faded. No scale: growing out of the screen
 showed the window's edge."""
 
+import dataclasses
+
 import pytest
 from puikit import PROFILE_GUI_DESKTOP, PROFILE_TUI, Panel
 from puikit.backends.memory_backend import MemoryBackend
@@ -22,7 +24,11 @@ def opened(tmp_path):
         backend = MemoryBackend(width=60, height=20, capabilities=profile)
         panel = Panel(backend)
         if extras:
-            panel.theme.extras.update(extras)
+            # A copy: the panel's theme is the profile's shared default, and
+            # writing into its extras would reach every later Panel in the
+            # process (an image viewer that no longer fades out).
+            panel.theme = dataclasses.replace(
+                panel.theme, extras={**panel.theme.extras, **extras})
         panel.add(Label("PANES"), x=0, y=0, w=10, h=1)
         viewer = show_text_viewer(panel, path)
         return backend, panel, viewer

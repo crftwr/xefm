@@ -12,6 +12,7 @@ doc/dev/IMAGE_VIEWER_IMPLEMENTATION.md.
 Run with: python -m pytest test/test_image_viewer.py -v
 """
 
+import dataclasses
 import os
 import struct
 import sys
@@ -765,8 +766,10 @@ def test_post_effect_is_suspended_for_the_image_and_restored_on_close(images):
     app.backend = backend
     app.state_manager = None
     # A theme carrying a CRT-style effect: the viewer must not filter the picture.
-    theme = panel.theme
-    theme.extras["post_effect"] = PostEffect(bloom=0.4)
+    # A copy: panel.theme is the profile's shared default theme.
+    theme = dataclasses.replace(
+        panel.theme, extras={**panel.theme.extras, "post_effect": PostEffect(bloom=0.4)})
+    panel.theme = theme
     app.themes = [("CRT", theme)]
     app._theme_index = 0
 
