@@ -21,6 +21,7 @@ vertically and ←/→ scroll horizontally (viewer-local); Esc closes.
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Sequence
 
 from puikit.backend import Style, TextAttribute
@@ -54,6 +55,12 @@ logger = getLogger("TextViewer")
 #: Content is fixed-advance so columns (gutter, h-scroll, highlights) align.
 MONO = Font(monospace=True)
 _TAB = 8
+
+#: Up to this many characters the raw view is syntax-colored before its first
+#: frame; a larger file is colored on a worker thread and shows plain until the
+#: colors arrive, so opening it never waits on Pygments (whose Markdown lexer
+#: takes about a second for 1.5 MB).
+_SYNC_HIGHLIGHT_CHARS = 20_000
 
 
 #: Arrow glyphs that read as one cluster when a pair of actions renders as a
@@ -663,7 +670,7 @@ class TextViewer(Widget):
             self._load_document(document)
         else:
             self.lines, self.is_error, self.encoding = _read_lines(path)
-            self.highlighted = _highlight(self.lines, path, syntax)
+            self._reset_highlight()
         # Optional rich (formatted) renderer for this file type — Markdown for
         # *.md today (see xefm.viewer_registry). When a renderer exists,
         # ``toggle_view_mode`` swaps to it in place; the rich widget is built
@@ -748,7 +755,9 @@ class TextViewer(Widget):
         else:
             self.lines, self.is_error = lines, False
         self.encoding = document.label
-        self.highlighted = [[(line, None)] for line in self.lines]
+        self._reset_highlight()
+        # Extracted text has no syntax to color: mark it done.
+        self._highlight_for = self._highlight_done_for = self.lines
 
     def _document_renderer(self):
         """The rich mode of an extracted document: its Markdown, rendered."""
@@ -757,6 +766,83 @@ class TextViewer(Widget):
             return None
         from xefm.viewer_registry import _build_markdown
         return RichRenderer(doc.label.split(" · ")[0] or "Document", _build_markdown)
+
+    # --- syntax coloring -----------------------------------------------------
+
+    def _reset_highlight(self) -> None:
+        """Show ``self.lines`` uncolored until :meth:`_ensure_highlight` colors
+        them — on the first raw-mode frame, so a file that opens rendered (a
+        Markdown file in rich mode) never pays for coloring its source."""
+        self.highlighted = [[(line, None)] for line in self.lines]
+        #: The lines coloring was started for, and the lines whose coloring has
+        #: landed (applied, or given up on) — both compared by identity with
+        #: ``self.lines``, which a reload replaces.
+        self._highlight_for: list[str] | None = None
+        self._highlight_done_for: list[str] | None = None
+        self._highlight_ready: tuple[list[str], list | None] | None = None
+        if not hasattr(self, "_highlight_ticking"):
+            self._highlight_ticking = False
+
+    def _ensure_highlight(self) -> None:
+        """Color the current lines once: a small file here and now, a large one
+        on a worker thread whose result :meth:`_take_highlight` applies on the
+        UI thread (the raw view draws plain meanwhile)."""
+        if self._highlight_ready is not None:
+            self._take_highlight()
+        lines = self.lines
+        if self._highlight_for is lines or self.is_error:
+            return
+        self._highlight_for = lines
+        panel = self._panel
+        dispatch = panel is not None and panel.dispatches_to_main_thread
+        large = sum(len(line) for line in lines) > _SYNC_HIGHLIGHT_CHARS
+        if large and not dispatch and not self._highlight_ticking and panel is not None:
+            # A poll-loop backend (the terminal) drains the result on a tick.
+            self._highlight_ticking = bool(panel.request_animation_ticks(self._highlight_tick))
+        if not large or not (dispatch or self._highlight_ticking):
+            # Small, or nothing would wake the UI thread for the result.
+            self.highlighted = _highlight(lines, self.path, self._syntax)
+            self._highlight_done_for = lines
+            return
+
+        def work() -> None:
+            try:
+                result = _highlight(lines, self.path, self._syntax)
+            except Exception as e:  # _highlight already falls back; belt and braces
+                logger.error(f"Cannot color {self.path.name}: {e}")
+                result = None
+            if self._highlight_for is not lines:
+                return  # reloaded meanwhile; a newer worker owns the slot
+            self._highlight_ready = (lines, result)
+            if dispatch:
+                panel.call_on_main_thread(self._take_highlight)
+
+        threading.Thread(target=work, name="xefm-viewer-highlight", daemon=True).start()
+
+    def _take_highlight(self) -> None:
+        """UI thread: adopt the worker's colors if they are for the lines still
+        shown (an encoding change or a reload since then made them stale)."""
+        ready, self._highlight_ready = self._highlight_ready, None
+        if ready is None:
+            return
+        lines, result = ready
+        if lines is not self.lines:
+            return
+        self._highlight_done_for = lines
+        if result is not None:
+            self.highlighted = result
+            self._render()
+
+    def _highlight_tick(self) -> bool:
+        """Tick on a backend without main-thread dispatch: apply the worker's
+        result once posted; keep ticking only while the shown lines still await
+        theirs (a reload into rich mode, which colors nothing, also ends it)."""
+        if self._highlight_ready is not None:
+            self._take_highlight()
+        keep = (self._highlight_for is self.lines
+                and self._highlight_done_for is not self.lines)
+        self._highlight_ticking = keep
+        return keep
 
     def _gutter_w(self) -> int:
         return len(str(max(1, len(self.lines)))) + 1
@@ -973,6 +1059,7 @@ class TextViewer(Widget):
             self._draw_rich(ctx, wu, hu, pad_x, pad_y, iw, head_h)
             return
 
+        self._ensure_highlight()
         gutter_w = self._gutter_w()
         self._gutter = gutter_w
         self._content_x = gutter_w
@@ -1661,7 +1748,7 @@ class TextViewer(Widget):
         else:
             self.lines, self.is_error, self.encoding = _read_lines(self.path,
                                                                    self.forced_encoding)
-            self.highlighted = _highlight(self.lines, self.path, self._syntax)
+            self._reset_highlight()
         self._max_line = max((len(line) for line in self.lines), default=0)
         self._wrap_w = -1  # the wrap layout cache derives from the old lines
         self._sel.clear()

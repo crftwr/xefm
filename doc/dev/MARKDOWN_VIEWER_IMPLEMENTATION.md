@@ -48,6 +48,14 @@ it.
   colors captured by the last `draw`. Returns whether a rich widget is available
   (`False` for no renderer or an unreadable source). Shared by the toggle and the
   open-straight-into-rich path so both build identically.
+- Raw-mode syntax coloring (`_ensure_highlight()`) runs on the first raw-mode
+  frame, not in `__init__`, so a file that opens rich never colors its source.
+  Up to `_SYNC_HIGHLIGHT_CHARS` it colors in place; a larger file is colored on
+  a worker thread and drawn plain until `_take_highlight()` adopts the result on
+  the UI thread (`call_on_main_thread` on a desktop backend, an animation tick
+  on a terminal). Results for lines a reload has since replaced are dropped.
+  The rendered side is PuiKit's: `MarkdownView` lays a long document out a
+  slice per frame, so neither mode stalls the UI thread on a large file.
 - `_toggle_view_mode()`: flips `mode` (building the rich widget via
   `_ensure_rich_widget()` on the first switch), then persists the new mode with
   `_remember_view_mode()`. The widget is cached, so **each mode keeps its own
