@@ -324,6 +324,11 @@ class AppIntegration(_Tmp):
         except tags.TagError as exc:
             self.skipTest(f"no tags on this filesystem: {exc}")
         self.store = store
+        # Tags seen on files are remembered process-wide; another test's leave
+        # this one's "known" tags (and so whether a color is asked) to chance.
+        seen = dict(tags.SEEN)
+        tags.SEEN.clear()
+        self.addCleanup(lambda: (tags.SEEN.clear(), tags.SEEN.update(seen)))
         self.state_dir = tempfile.mkdtemp()
         self.sm = XeFMStateManager(db_path=os.path.join(self.state_dir, "state.db"))
         patcher = patch.object(favorites, "get_config_favorites", lambda: [])
@@ -383,6 +388,11 @@ class AppIntegration(_Tmp):
         self.assertIsInstance(dialog, InputDialog)
         dialog.edit.text = "Work, Red"
         dialog._accept()
+        if self.store.has_colors:
+            # "Work" is new to XeFM, so its color is asked (#792); "Red" names
+            # its own.
+            self.assertEqual(self.top().title, "Color of tag Work")
+            self.choose("None")
         self.assertEqual([t.name for t in self.store.read(a)], ["Work", "Red"])
         if self.store.has_colors:
             self.assertEqual(self.store.read(a)[1].color, 6, "Red gets Finder's red")
