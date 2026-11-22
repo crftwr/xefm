@@ -25,7 +25,11 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.29.0 is the floor because screens are groups in PuiKit's layer tree
+# 1.30.0 is the floor because it brings TextEdit.placeholder (puikit#238): Ask
+# AI Agent's field shows "Type a request, or pick one below", dimmed, so it
+# reads as a place to type a request and not only a filter (xefm#968). Soft:
+# on 1.29.0 the field just shows no placeholder.
+# 1.29.0 was the floor before because screens are groups in PuiKit's layer tree
 # (puikit#233, discussion #951): push_layer(parent=), push_layer_group,
 # set_layer_hidden, set_default_layer_parent and the reads of the tree
 # (has_layer, top_layer, shown_layers, layer_children). A screen keeps its
@@ -302,7 +306,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.29.0
+puikit>=1.30.0
 pygments
 boto3
 watchdog
