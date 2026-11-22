@@ -6238,7 +6238,8 @@ class XeFMApp:
             on_title=lambda title: self._session_title(box["view"], title),
             on_notification=lambda title, body: self._session_notification(
                 box["view"], title, body),
-            on_progress=lambda state, pct: self._session_progress(box["view"], state, pct))
+            on_progress=lambda state, pct: self._session_progress(box["view"], state, pct),
+            ctrl_clipboard=bool(getattr(self.config, "TERMINAL_CTRL_CLIPBOARD", True)))
         box["view"] = view
         return view
 

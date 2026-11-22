@@ -1118,6 +1118,15 @@ class Config:
     # - List format: ['powershell', '-NoLogo'] (command with arguments)
     SUBSHELL = None
 
+    # Ctrl+C and Ctrl+V in the desktop app's terminal on Windows.
+    # True: as in Windows Terminal, Ctrl+C copies the selected text (with
+    # nothing selected it interrupts, as always) and Ctrl+V pastes.
+    # False: both keys go to the program (vim's block selection, Emacs).
+    # Ctrl+Shift+C / Ctrl+Shift+V and Ctrl+Insert / Shift+Insert copy and
+    # paste either way. No effect on macOS or Linux, where Ctrl+V is always
+    # the program's.
+    TERMINAL_CTRL_CLIPBOARD = True
+
     # AI agent sessions (Tools > AI Agent Here / Ask AI Agent; agent and
     # ask_agent). Each entry names an agent CLI you installed and signed in
     # to; XeFM runs it as a terminal session in the active pane's folder

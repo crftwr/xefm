@@ -112,17 +112,22 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
                  on_prompt: Callable[[int, int | None, str], None] | None = None,
                  on_notification: Callable[[str, str], None] | None = None,
                  on_progress: Callable[[int, int | None], None] | None = None,
-                 on_title: Callable[[str], None] | None = None) -> None:
+                 on_title: Callable[[str], None] | None = None,
+                 ctrl_clipboard: bool = True) -> None:
         from xefm.text_viewer import VIEWER_PAD_PX
         # The viewers' inset: the grid breathes in from the window frame on GUI
         # by the same few pixels; flush on a character grid.
+        # ctrl_clipboard (TERMINAL_CTRL_CLIPBOARD): True keeps PuiKit's
+        # default - Ctrl+C / Ctrl+V copy and paste on Windows only - and
+        # False turns them off there; it never turns them on elsewhere.
         super().__init__(argv, cwd=cwd, env=env,
                          on_exit=lambda code: on_exited(self, code),
                          padding_px=VIEWER_PAD_PX, **_term_program_kwargs(),
                          **_supported_kwargs(on_prompt=on_prompt,
                                              on_notification=on_notification,
                                              on_progress=on_progress,
-                                             on_title=on_title))
+                                             on_title=on_title,
+                                             ctrl_clipboard=None if ctrl_clipboard else False))
         self.label = label
         self.on_close_request = on_close_request
         self.on_hide_request = on_hide_request
