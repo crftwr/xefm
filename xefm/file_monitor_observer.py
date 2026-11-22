@@ -295,6 +295,12 @@ class FileMonitorObserver:
         self.observer = None
         self.monitoring_mode = "disabled"
         self._event_handler = None
+        # Set when a start failed because the directory cannot be read at all
+        # (a folder a non-elevated process may not list, #909). Retrying will
+        # not change that, so the manager gives up at once instead of walking
+        # its retry ladder - and the pane's own "Permission denied" has already
+        # told the user.
+        self.unreadable = False
         
         # Log initialization with monitoring mode (Requirement 12.1)
         mode = "polling" if force_polling else "native (will attempt, may fallback to polling)"
@@ -408,6 +414,11 @@ class FileMonitorObserver:
             self.logger.debug(f"Successfully started native monitoring for: {self.path} using {api_name}")
             return True
             
+        except PermissionError as e:
+            # Debug: the polling start below decides. A folder that cannot be
+            # listed fails there too and ends quietly as ``unreadable``.
+            self.logger.debug(f"Native monitoring denied for {self.path}: {e}")
+            return self._start_polling_observer()
         except Exception as e:
             self.logger.error(f"Native monitoring failed for {self.path}: {e}")
             self.logger.debug(f"Mode transition: native -> polling (reason: native monitoring initialization failed - {e})")
@@ -442,6 +453,12 @@ class FileMonitorObserver:
             self.logger.debug(f"Successfully started polling monitoring for: {self.path} (interval: {self.polling_interval}s)")
             return True
             
+        except PermissionError as e:
+            self.logger.debug(f"Cannot monitor - permission denied: {self.path}: {e}")
+            self.observer = None
+            self.monitoring_mode = "disabled"
+            self.unreadable = True
+            return False
         except Exception as e:
             self.logger.error(f"Failed to start polling monitoring for {self.path}: {e}")
             self.logger.error(f"Monitoring disabled for {self.path} - all monitoring methods failed")

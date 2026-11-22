@@ -76,6 +76,8 @@ class JumpToAMissingDirectory(unittest.TestCase):
         self.assertEqual(str(pane["path"]), self.tmp)
         self.assertEqual([f.name for f in pane["files"]], before_names)
         self.assertEqual(pane["focused_index"], 1)
+        # The failed listing's reason goes back with the rest of the view.
+        self.assertFalse(pane.get("error"))
 
     def test_the_failure_is_one_line_and_the_jump_is_not_announced(self):
         said = []
@@ -193,6 +195,20 @@ class ListingErrorsAreOneLine(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(said, [f"Permission denied: {locked}"])
+        self.assertEqual(result["error"], "Permission denied")
+
+    def test_a_failed_listing_shows_its_reason_not_empty(self):
+        # #909: the pane draws pane["error"] in place of "(empty)", so a folder
+        # that cannot be listed does not pass for an empty one.
+        pane = {"path": Path(self.tmp), "files": [], "focused_index": 0,
+                "selected_files": set()}
+        missing = os.path.join(self.tmp, "no-such-dir")
+        result, _said = self._logged(missing)
+        self.flm.apply_listing(pane, result)
+        self.assertEqual(pane["error"], "Folder not found")
+
+        self.flm.apply_listing(pane, self.flm.compute_listing(Path(self.tmp)))
+        self.assertIsNone(pane["error"])
 
 
 if __name__ == "__main__":

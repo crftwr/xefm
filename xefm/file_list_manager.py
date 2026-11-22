@@ -106,9 +106,11 @@ class FileListManager:
         the sort and the display cache), honouring ``self.show_hidden`` and the
         optional ``filter_pattern``. Returns
         ``{"ok": bool, "files": [...], "file_info": {...}}``; on any error
-        ``ok`` is False with empty lists (the error is logged, as before). The
-        caller installs the result with :meth:`apply_listing`.
+        ``ok`` is False with empty lists, and ``error`` says why in a few words
+        for the pane to show in place of "(empty)" (the error is logged too).
+        The caller installs the result with :meth:`apply_listing`.
         """
+        reason = "Cannot read this folder"
         try:
             # Import archive exceptions for specific error handling
             from xefm.archive import (
@@ -137,43 +139,51 @@ class FileListManager:
             user_msg = getattr(e, 'user_message', str(e))
             self.logger.error(f"Archive navigation error: {user_msg}")
             self.logger.error(f"Archive navigation error: {path}: {e}")
+            reason = "Not found in the archive"
         except ArchiveCorruptedError as e:
             # Archive is corrupted
             user_msg = getattr(e, 'user_message', str(e))
             self.logger.error(f"Corrupted archive: {user_msg}")
             self.logger.error(f"Corrupted archive: {path}: {e}")
+            reason = "Corrupted archive"
         except ArchivePermissionError as e:
             # Permission denied for archive
             user_msg = getattr(e, 'user_message', str(e))
             self.logger.error(f"Permission denied: {user_msg}")
             self.logger.error(f"Archive permission denied: {path}: {e}")
+            reason = "Permission denied"
         except ArchiveError as e:
             # Generic archive error
             user_msg = getattr(e, 'user_message', str(e))
             self.logger.error(f"Archive error: {user_msg}")
             self.logger.error(f"Archive error: {path}: {e}")
+            reason = "Cannot read the archive"
         # One line, and the path in it once. These reach the log pane, where a
         # failed navigation should read as a single fact — not as the three
         # copies of the path that ``{path}: {e}`` produced, the errno text
         # having already named it twice.
         except PermissionError:
             self.logger.error(f"Permission denied: {path}")
+            reason = "Permission denied"
         except NotADirectoryError:
             # Not logged here: a navigation that may name a file (a favorite)
             # goes to its directory instead, and apply_listing — which knows
             # whether the pane asked for that — reports the rest.
             return {"ok": False, "files": [], "file_info": {},
-                    "not_a_directory": True}
+                    "not_a_directory": True, "error": "Not a folder"}
         except FileNotFoundError:
             self.logger.error(f"Directory not found: {path}")
+            reason = "Folder not found"
         except OSError as e:
             # Here the errno text is the whole story ("Operation timed out",
             # "Host is down"), so it stays — but on its own, without the
             # filename pathlib appends to it.
             self.logger.error(f"Cannot read directory {path}: {e.strerror or e}")
+            if e.strerror:
+                reason = f"Cannot read this folder: {e.strerror}"
         except Exception as e:
             self.logger.error(f"Unexpected error reading directory {path}: {e}")
-        return {"ok": False, "files": [], "file_info": {}}
+        return {"ok": False, "files": [], "file_info": {}, "error": reason}
 
     def compute_virtual_listing(self, paths, *, filter_pattern=None,
                                 sort_mode='filename', sort_reverse=False,
@@ -418,6 +428,10 @@ class FileListManager:
         lands_on_file = pane_data.pop('_lands_on_file', False)
         if pane_data['listing_not_dir'] and not lands_on_file:
             self.logger.error(f"Not a directory: {pane_data.get('path')}")
+        # Shown in place of "(empty)" (``FilePane.draw``), so a folder that
+        # cannot be listed does not pass for an empty one (#909).
+        pane_data['error'] = None if result.get("ok") else (
+            result.get("error") or "Cannot read this folder")
         if not result.get("ok"):
             pane_data['files'] = []
             pane_data['focused_index'] = 0

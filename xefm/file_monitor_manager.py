@@ -259,7 +259,9 @@ class FileMonitorManager:
         stopped instead of installed, so no thread is left running for a
         directory nobody is looking at.
 
-        Returns ("started" | "failed" | "superseded", observer-or-None).
+        Returns ("started" | "failed" | "unreadable" | "superseded",
+        observer-or-None); "unreadable" is a failure no retry can fix (see
+        FileMonitorObserver.unreadable).
         """
         def event_callback(event_type: str, filename: str):
             self._on_filesystem_event(self._holder(observer, pane_name),
@@ -280,7 +282,7 @@ class FileMonitorManager:
                     self._stop_observer_async(observer)
                 return ("superseded", None)
             if not started:
-                return ("failed", None)
+                return ("unreadable" if observer.unreadable is True else "failed", None)
             state['observer'] = observer
             state['error_count'] = 0
             state['retry_count'] = 0
@@ -408,6 +410,9 @@ class FileMonitorManager:
         if status == "started":
             self.logger.debug(f"Successfully started monitoring for {pane_name} pane: {path} (mode: {observer.get_monitoring_mode()})")
             return
+        if status == "unreadable":
+            self._give_up_unreadable(pane_name, path, attempt)
+            return
 
         with self.state_lock:
             # Each rung of the ladder is debug; only its verdict is worth a
@@ -419,6 +424,21 @@ class FileMonitorManager:
             self.logger.debug(f"Scheduling retry for {pane_name} pane (attempt will be {state['retry_count'] + 1}/3)")
             self._schedule_retry(pane_name, path)
     
+    def _give_up_unreadable(self, pane_name: str, path: Path, attempt: int) -> None:
+        """Stop trying to watch a directory that cannot be read (#909).
+
+        Retries and the polling fallback would each fail the same way, and
+        logged a dozen errors doing it, for a fact the listing has already
+        reported once ("Permission denied"). The directory is recorded as
+        unwatchable, exactly as an exhausted ladder records it, so the pane
+        resumes watching as soon as it moves elsewhere."""
+        self.logger.debug(f"Not monitoring {pane_name} pane at {path}: the directory cannot be read")
+        with self.state_lock:
+            state = self.monitoring_state[pane_name]
+            if state['attempt'] == attempt:
+                state['observer'] = None
+                state['failed_path'] = path
+
     def _schedule_retry(self, pane_name: str, path: Path) -> None:
         """
         Schedule a retry attempt to reinitialize monitoring.
@@ -488,6 +508,9 @@ class FileMonitorManager:
         if status == "started":
             self.logger.debug(f"Retry {retry_count}/3 successful for {pane_name} pane: {path} (mode: {observer.get_monitoring_mode()})")
             return
+        if status == "unreadable":
+            self._give_up_unreadable(pane_name, path, attempt)
+            return
 
         self.logger.debug(f"Retry {retry_count}/3 failed for {pane_name} pane at {path}")
         with self.state_lock:
@@ -522,6 +545,9 @@ class FileMonitorManager:
         status, _observer = self._start_and_adopt(pane_name, path, attempt,
                                                   force_polling=True)
         if status == "superseded":
+            return
+        if status == "unreadable":
+            self._give_up_unreadable(pane_name, path, attempt)
             return
         if status == "started":
             self.logger.debug(f"Polling mode fallback successful for {pane_name} pane: {path}")

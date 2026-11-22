@@ -220,7 +220,11 @@ thrown away, only covered.
 
 Two things make that decidable. `FileListManager.apply_listing()` records
 `pane['listing_ok']`, because a caller cannot infer it — an empty directory and
-an unreadable one both leave `files` empty. And `_refresh()` now writes the
+an unreadable one both leave `files` empty. It also sets `pane['error']`, the
+failure's reason in a few words ("Permission denied", "Folder not found") from
+`compute_listing()`'s result, which `FilePane.draw` shows in place of
+"(empty)" so an unreadable folder does not pass for an empty one (#909); it is
+one of `_PANE_VIEW_KEYS`, so a failed jump restores it with the rest. And `_refresh()` now writes the
 history entry from its `on_ready`, on success only, so a directory that could
 not be read does not end up in the History picker to fail again later.
 
