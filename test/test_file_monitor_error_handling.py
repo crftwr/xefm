@@ -336,6 +336,70 @@ class TestErrorLogging(unittest.TestCase):
                 self.assertIn('left', said)
 
 
+class TestUnreadableDirectory(unittest.TestCase):
+    """A folder that exists but cannot be listed (#909): the watcher gives up
+    at once and quietly, since the listing has already said "Permission
+    denied" and no retry can change that."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.temp_path = Path(self.temp_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_observer_marks_a_denied_directory_unreadable(self):
+        logger = Mock()
+        denied = Mock()
+        denied.schedule.side_effect = PermissionError(13, "Access is denied")
+        with patch('xefm.file_monitor_observer.WATCHDOG_AVAILABLE', True), \
+             patch('xefm.file_monitor_observer.Observer', return_value=denied, create=True), \
+             patch('xefm.file_monitor_observer.PollingObserver', return_value=denied, create=True), \
+             patch.object(FileMonitorObserver, '_detect_platform_and_api',
+                          return_value=("Windows", "ReadDirectoryChangesW")):
+            observer = FileMonitorObserver(self.temp_path, Mock(), logger)
+            self.assertFalse(observer.start())
+
+        self.assertTrue(observer.unreadable)
+        self.assertEqual(observer.get_monitoring_mode(), "disabled")
+        logger.error.assert_not_called()
+        logger.warning.assert_not_called()
+
+    def test_other_failures_are_not_unreadable(self):
+        logger = Mock()
+        broken = Mock()
+        broken.schedule.side_effect = OSError(5, "I/O error")
+        with patch('xefm.file_monitor_observer.WATCHDOG_AVAILABLE', True), \
+             patch('xefm.file_monitor_observer.PollingObserver', return_value=broken, create=True):
+            observer = FileMonitorObserver(self.temp_path, Mock(), logger,
+                                           force_polling=True)
+            self.assertFalse(observer.start())
+        self.assertFalse(observer.unreadable)
+
+    def test_manager_gives_up_without_retrying(self):
+        manager = FileMonitorManager(MockConfig(), MockFileManager())
+        with patch('xefm.file_monitor_manager.FileMonitorObserver') as mock_observer_class:
+            mock_observer = Mock()
+            mock_observer.start.return_value = False
+            mock_observer.unreadable = True
+            mock_observer_class.return_value = mock_observer
+
+            with patch.object(manager, '_schedule_retry') as retry, \
+                 patch.object(manager.logger, 'error') as mock_error, \
+                 patch.object(manager.logger, 'warning') as mock_warning:
+                manager._start_pane_monitoring('left', self.temp_path)
+                # Staying there tries nothing new either.
+                manager._start_pane_monitoring('left', self.temp_path)
+
+            retry.assert_not_called()
+            mock_error.assert_not_called()
+            mock_warning.assert_not_called()
+            self.assertEqual(mock_observer.start.call_count, 1)
+        state = manager.monitoring_state['left']
+        self.assertEqual(state['failed_path'], self.temp_path)
+        self.assertIsNone(state['observer'])
+
+
 class TestObserverHealthCheck(unittest.TestCase):
     """Test observer health checking and recovery."""
     

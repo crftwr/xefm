@@ -4678,7 +4678,8 @@ class XeFMApp:
     #: out to be unreadable — everything the pane was showing, which is enough
     #: to restore it without reading the old directory again.
     _PANE_VIEW_KEYS = ("path", "virtual", "files", "file_info",
-                       "_listing_entries", "focused_index", "scroll_offset")
+                       "_listing_entries", "focused_index", "scroll_offset",
+                       "error")
 
     def _jump_pane_to(self, pane: dict, path: Path, *, log: str,
                       select_name: str | None = None) -> None:

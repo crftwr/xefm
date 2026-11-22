@@ -682,6 +682,15 @@ the Windows API both fail loudly on their own.) It is one stat rather than the
 two it used to be, and it now runs on the monitor worker, where blocking on a
 slow mount costs nothing.
 
+A directory that exists but cannot be listed (`C:\System Volume Information`
+for a non-elevated process, a profile's compatibility junction) passes that
+check and fails later, with `PermissionError`, in both the native and the
+polling start. No retry can fix that, so the observer marks itself
+`unreadable` and the manager gives up at once (`_give_up_unreadable`),
+recording `failed_path` as below, with one debug line. The listing has already
+said "Permission denied"; before #909 the watcher added fourteen errors and a
+warning while it walked the ladder.
+
 #### Giving Up, and Resuming
 
 When the polling fallback fails too, the manager records the *directory* that
