@@ -122,7 +122,9 @@ stable	version	xefm.user_api.API_VERSION	1
 stable	class	xefm.user_api.ActionContext
 stable	method	xefm.user_api.ActionContext.action_names	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.actions	[["self", "pk", null]]
+preview	method	xefm.user_api.ActionContext.add_tags	[["self", "pk", null], ["items", "pk", null], ["names", "pk", null], ["color", "kw", "None"], ["on_done", "kw", "None"]]
 stable	property	xefm.user_api.ActionContext.api_version	ro
+preview	method	xefm.user_api.ActionContext.attributes	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.choose	[["self", "pk", null], ["title", "pk", null], ["items", "pk", null], ["type", "kw", "'choice'"], ["on_result", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.confirm	[["self", "pk", null], ["prompt", "pk", null], ["title", "kw", "'Confirm'"], ["on_result", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.copy	[["self", "pk", null], ["items", "pk", null], ["dest", "pk", null], ["on_done", "kw", "None"]]
@@ -130,8 +132,12 @@ preview	method	xefm.user_api.ActionContext.copy_text	[["self", "pk", null], ["te
 preview	property	xefm.user_api.ActionContext.current_screen	ro
 preview	method	xefm.user_api.ActionContext.delete	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.diff	[["self", "pk", null], ["left", "pk", null], ["right", "pk", null], ["left_title", "kw", "None"], ["right_title", "kw", "None"], ["on_close", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.entries	[["self", "pk", null], ["root", "pk", null], ["recursive", "kw", "False"], ["depth", "kw", "None"], ["cancel", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.find_files	[["self", "pk", null], ["root", "pk", null], ["pattern", "pk", null], ["case", "kw", "False"], ["recursive", "kw", "True"], ["cancel", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.find_in_files	[["self", "pk", null], ["root", "pk", null], ["pattern", "pk", null], ["case", "kw", "False"], ["word", "kw", "False"], ["regex", "kw", "False"], ["recursive", "kw", "True"], ["cancel", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.find_similar	[["self", "pk", null], ["roots", "pk", null], ["method", "kw", null], ["threshold", "kw", "None"], ["cancel", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.get_attributes	[["self", "pk", null], ["items", "pk", null], ["names", "pk", "None"], ["cancel", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.index_search	[["self", "pk", null], ["root", "pk", null], ["query", "pk", null], ["cancel", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.input	[["self", "pk", null], ["prompt", "pk", null], ["default", "pk", "''"], ["title", "kw", "''"], ["on_accept", "kw", "None"], ["on_cancel", "kw", "None"], ["complete", "kw", "None"]]
 stable	method	xefm.user_api.ActionContext.invoke	[["self", "pk", null], ["action_name", "pk", null]]
 preview	property	xefm.user_api.ActionContext.is_terminal_backend	ro
@@ -140,13 +146,17 @@ stable	method	xefm.user_api.ActionContext.message	[["self", "pk", null], ["text"
 preview	method	xefm.user_api.ActionContext.move	[["self", "pk", null], ["items", "pk", null], ["dest", "pk", null], ["on_done", "kw", "None"]]
 stable	property	xefm.user_api.ActionContext.other	ro
 stable	property	xefm.user_api.ActionContext.pane	ro
+preview	method	xefm.user_api.ActionContext.path_schemes	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.program_env	[["self", "pk", null]]
+preview	method	xefm.user_api.ActionContext.remove_tags	[["self", "pk", null], ["items", "pk", null], ["names", "pk", null], ["on_done", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.rename	[["self", "pk", null], ["plan", "pk", null], ["on_done", "kw", "None"]]
 stable	property	xefm.user_api.ActionContext.right	ro
 stable	method	xefm.user_api.ActionContext.run_program	[["self", "pk", null], ["command", "pk", null], ["terminal", "kw", "False"], ["cwd", "kw", "None"], ["env", "kw", "None"], ["on_done", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.run_task	[["self", "pk", null], ["title", "pk", null], ["work", "pk", null], ["on_done", "kw", "None"], ["read_only", "kw", "False"]]
 preview	method	xefm.user_api.ActionContext.screens	[["self", "pk", null], ["order", "pk", "'recent'"]]
 preview	method	xefm.user_api.ActionContext.show_markdown	[["self", "pk", null], ["title", "pk", null], ["source", "pk", null], ["on_close", "kw", "None"]]
 preview	method	xefm.user_api.ActionContext.start_terminal_session	[["self", "pk", null], ["command", "pk", "None"], ["cwd", "kw", "None"], ["env", "kw", "None"], ["name", "kw", "None"], ["show", "kw", "True"], ["on_done", "kw", "None"]]
+preview	method	xefm.user_api.ActionContext.tags	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.terminal_backend_suspended	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.terminal_sessions	[["self", "pk", null]]
 preview	method	xefm.user_api.ActionContext.trash	[["self", "pk", null], ["items", "pk", null], ["on_done", "kw", "None"]]
@@ -157,6 +167,12 @@ preview	attribute	xefm.user_api.ActionInfo.description
 preview	attribute	xefm.user_api.ActionInfo.details
 preview	attribute	xefm.user_api.ActionInfo.keys
 preview	attribute	xefm.user_api.ActionInfo.name
+preview	class	xefm.user_api.AttributeInfo
+preview	attribute	xefm.user_api.AttributeInfo.compute
+preview	attribute	xefm.user_api.AttributeInfo.label
+preview	attribute	xefm.user_api.AttributeInfo.name
+preview	attribute	xefm.user_api.AttributeInfo.source
+preview	attribute	xefm.user_api.AttributeInfo.type
 preview	class	xefm.user_api.Cell
 preview	attribute	xefm.user_api.Cell.bold
 preview	attribute	xefm.user_api.Cell.color
@@ -193,10 +209,16 @@ stable	property	xefm.user_api.PaneApi.is_active	ro
 stable	property	xefm.user_api.PaneApi.name	ro
 preview	method	xefm.user_api.PaneApi.open_list	[["self", "pk", null], ["paths", "pk", null], ["title", "kw", null]]
 stable	property	xefm.user_api.PaneApi.path	ro
+preview	method	xefm.user_api.PaneApi.pick	[["self", "pk", null], ["prompt", "kw", "None"], ["on_result", "kw", null]]
 stable	method	xefm.user_api.PaneApi.refresh	[["self", "pk", null]]
 stable	method	xefm.user_api.PaneApi.select	[["self", "pk", null], ["predicate", "pk", "None"]]
 stable	method	xefm.user_api.PaneApi.selected	[["self", "pk", null]]
+preview	method	xefm.user_api.PaneApi.selected_or_focused	[["self", "pk", null]]
+preview	property	xefm.user_api.PaneApi.shows_list	ro
 stable	method	xefm.user_api.PaneApi.unselect	[["self", "pk", null], ["predicate", "pk", "None"]]
+preview	class	xefm.user_api.SchemeInfo
+preview	attribute	xefm.user_api.SchemeInfo.name
+preview	attribute	xefm.user_api.SchemeInfo.source
 preview	class	xefm.user_api.Screen
 preview	property	xefm.user_api.Screen.id	ro
 preview	property	xefm.user_api.Screen.kind	ro
@@ -205,6 +227,9 @@ preview	property	xefm.user_api.Screen.name	ro
 preview	method	xefm.user_api.Screen.show	[["self", "pk", null]]
 preview	property	xefm.user_api.Screen.shown	ro
 preview	property	xefm.user_api.Screen.terminal_session	ro
+preview	class	xefm.user_api.TagInfo
+preview	attribute	xefm.user_api.TagInfo.color
+preview	attribute	xefm.user_api.TagInfo.name
 preview	class	xefm.user_api.TaskJob
 preview	method	xefm.user_api.TaskJob.cancelled	[["self", "pk", null]]
 preview	method	xefm.user_api.TaskJob.checkpoint	[["self", "pk", null]]

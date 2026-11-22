@@ -103,15 +103,29 @@ make the pane the active one.
 - `--pane PANE`: the pane: active (the default), other, left or right
 - *Uses XeFM's screen.*
 
+### `pane pick`
+
+`xefmctl pane pick [--pane PANE] [--prompt TEXT]`
+
+have the user select items in XeFM and press Enter; prints them (exit status 1 if cancelled with Esc).
+
+The pane becomes the active one and every key works as usual - moving, selecting, changing folders, switching panes - until Enter, which answers the active pane's selection (or the item under its cursor), or Esc.
+- `--pane PANE`: the pane: active (the default), other, left or right
+- `--prompt TEXT`: what to ask for, shown in XeFM's log pane
+- Waits for the user's answer.
+- *Uses XeFM's screen.*
+
 ## Places and searches
 
 ### `entries`
 
-`xefmctl entries URL... [--recursive] [--depth N] [--limit N] [--show] [--pane PANE] [--title TEXT]`
+`xefmctl entries [URL...] [--recursive] [--depth N] [--from WHAT] [--limit N] [--show] [--pane PANE] [--title TEXT]`
 
 what a folder holds, anywhere XeFM can go (ssh://, s3://, archives, virtual folders).
+- `URL`: the folders (default: the pane's folder); a file is listed as itself
 - `--recursive`: the folders below too
 - `--depth N`: with --recursive: how deep
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
 - `--limit N`: stop after N items
 - `--show`: also show the results in a pane, as a list the user can work with
 - `--pane PANE`: the pane: active (the default), other, left or right
@@ -119,13 +133,14 @@ what a folder holds, anywhere XeFM can go (ssh://, s3://, archives, virtual fold
 
 ### `find-files`
 
-`xefmctl find-files PATTERN [URL...] [--case] [--no-recursive] [--limit N] [--show] [--pane PANE] [--title TEXT]`
+`xefmctl find-files PATTERN [URL...] [--case] [--no-recursive] [--from WHAT] [--limit N] [--show] [--pane PANE] [--title TEXT]`
 
 files whose names match, below a folder anywhere XeFM can go (find_files).
 - `PATTERN`: a glob (*.psd) or a part of the name
 - `URL`: where to look (default: the pane's folder)
 - `--case`: match capitals exactly
 - `--no-recursive`: this folder only, not the ones below
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
 - `--limit N`: stop after N items
 - `--show`: also show the results in a pane, as a list the user can work with
 - `--pane PANE`: the pane: active (the default), other, left or right
@@ -133,7 +148,7 @@ files whose names match, below a folder anywhere XeFM can go (find_files).
 
 ### `find-in-files`
 
-`xefmctl find-in-files PATTERN [URL...] [--case] [--word] [--regex] [--no-recursive] [--limit N] [--show] [--pane PANE] [--title TEXT]`
+`xefmctl find-in-files PATTERN [URL...] [--case] [--word] [--regex] [--no-recursive] [--from WHAT] [--limit N] [--show] [--pane PANE] [--title TEXT]`
 
 lines that match, in the files below a folder anywhere XeFM can go (find_in_files).
 - `URL`: where to look (default: the pane's folder)
@@ -141,6 +156,7 @@ lines that match, in the files below a folder anywhere XeFM can go (find_in_file
 - `--word`: whole words only
 - `--regex`: PATTERN is a regular expression
 - `--no-recursive`: this folder only, not the ones below
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
 - `--limit N`: stop after N items
 - `--show`: also show the results in a pane, as a list the user can work with
 - `--pane PANE`: the pane: active (the default), other, left or right
@@ -148,14 +164,37 @@ lines that match, in the files below a folder anywhere XeFM can go (find_in_file
 
 ### `index-search`
 
-`xefmctl index-search QUERY [URL] [--limit N] [--show] [--pane PANE] [--title TEXT]`
+`xefmctl index-search QUERY [URL...] [--from WHAT] [--limit N] [--show] [--pane PANE] [--title TEXT]`
 
 the OS index (Spotlight, Windows Search) (index_search).
-- `URL`: the folder to search in
+- `URL`: the folders to search in (default: the pane's folder)
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
 - `--limit N`: stop after N items
 - `--show`: also show the results in a pane, as a list the user can work with
 - `--pane PANE`: the pane: active (the default), other, left or right
 - `--title TEXT`: the title of what is shown
+
+### `find-similar`
+
+`xefmctl find-similar [URL...] [--method METHOD] [--threshold T] [--from WHAT] [--limit N] [--show] [--pane PANE] [--title TEXT]`
+
+groups of similar files below local folders, found by the similar-files scan (find_similar).
+
+One line per file: the group's number, then the path; the first file of a group is the one the others are like. The scan runs in a process of its own and shows in XeFM's jobs list; nothing is printed until it ends. With --show the groups open in the pane as a tree.
+- `URL`: the folders or files to scan (default: the pane's folder)
+- `--method METHOD`: what to compare (required): identical (the same content), image, video or audio
+- `--threshold T`: how alike: loose, standard, strict, or a number from 0 to 1 (not for identical)
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--limit N`: stop after N items
+- `--show`: also show the results in a pane, as a list the user can work with
+- `--pane PANE`: the pane: active (the default), other, left or right
+- `--title TEXT`: the title of what is shown
+
+### `path-scheme list`
+
+`xefmctl path-scheme list`
+
+the kinds of place XeFM can open besides the local disk (ssh://, s3://, archive://, and the ones PATH_SCHEMES and extensions add).
 
 ### `read`
 
@@ -201,37 +240,110 @@ show Markdown in XeFM's viewer.
 
 ### `copy`
 
-`xefmctl copy SOURCE... [--to DIR] [--wait]`
+`xefmctl copy SOURCE... [--to DIR] [--from WHAT] [--pane PANE] [--wait]`
 
 copy items to a folder, through XeFM's copy.
 - `--to DIR`: the destination folder
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--pane PANE`: the pane: active (the default), other, left or right
 - `--wait`: wait until it is done (or the user answered) and say how it went
 - *Uses XeFM's screen.*
 
 ### `move`
 
-`xefmctl move SOURCE... [--to DIR] [--wait]`
+`xefmctl move SOURCE... [--to DIR] [--from WHAT] [--pane PANE] [--wait]`
 
 move items to a folder, through XeFM's move.
 - `--to DIR`: the destination folder
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--pane PANE`: the pane: active (the default), other, left or right
 - `--wait`: wait until it is done (or the user answered) and say how it went
 - *Uses XeFM's screen.*
 
 ### `trash`
 
-`xefmctl trash PATH... [--wait]`
+`xefmctl trash PATH... [--from WHAT] [--pane PANE] [--wait]`
 
 move items to the OS trash.
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--pane PANE`: the pane: active (the default), other, left or right
 - `--wait`: wait until it is done (or the user answered) and say how it went
 - *Uses XeFM's screen.*
 
 ### `delete`
 
-`xefmctl delete PATH... [--wait]`
+`xefmctl delete PATH... [--from WHAT] [--pane PANE] [--wait]`
 
 delete items for good (refused in an agent's session).
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--pane PANE`: the pane: active (the default), other, left or right
 - `--wait`: wait until it is done (or the user answered) and say how it went
 - *Uses XeFM's screen.*
+
+### `rename`
+
+`xefmctl rename [--plan FILE] [--wait]`
+
+rename items to the names a plan gives, after the user confirms them in XeFM's rename review.
+
+Each name is a new name in the item's own folder: rename does not move. The plan is checked as Rename in Editor checks an edited list (swaps and chains are fine; two items on one name, or a name already taken, refuse the plan) and nothing moves until the user says Rename.
+- `--plan FILE`: a JSON list of {"path": ..., "name": ...}, or - for standard input
+- `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
+
+## Tags and attributes
+
+### `tag list`
+
+`xefmctl tag list`
+
+the tags XeFM knows, most recently applied first.
+
+### `tag add`
+
+`xefmctl tag add NAME PATH... [--tag NAME]... [--color COLOR] [--from WHAT] [--pane PANE] [--wait]`
+
+tag items, where the OS keeps tags (Finder, user.xdg.tags, S3).
+- `NAME`: the tag
+- `PATH`: the items, or - to read them from standard input
+- `--tag NAME`: another tag (repeat for more)
+- `--color COLOR`: the color of a tag new to XeFM, where the storage keeps colors
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--pane PANE`: the pane: active (the default), other, left or right
+- `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
+
+### `tag remove`
+
+`xefmctl tag remove NAME PATH... [--tag NAME]... [--from WHAT] [--pane PANE] [--wait]`
+
+take tags off items.
+- `NAME`: the tag
+- `PATH`: the items, or - to read them from standard input
+- `--tag NAME`: another tag (repeat for more)
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--pane PANE`: the pane: active (the default), other, left or right
+- `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
+
+### `attribute list`
+
+`xefmctl attribute list`
+
+every attribute XeFM knows (size, tags, ATTRIBUTES', a tree's).
+
+### `attribute get`
+
+`xefmctl attribute get PATH... [--attributes A,B] [--from WHAT] [--pane PANE] [--limit N]`
+
+attribute values of items, computed now (get_attributes).
+
+One line per item: the path, then name=value for each attribute, tab-separated. An on-request attribute is computed, and a folder's size is its total, so this can take a while. --json gives the values as they are.
+- `PATH`: the items, or - to read them from standard input
+- `--attributes A,B`: the attributes (default: all)
+- `--from WHAT`: take the items from the pane instead of the arguments: pane (its folder, or the entries of the list it shows) or selection (the selected items, or else the one under the cursor)
+- `--pane PANE`: the pane: active (the default), other, left or right
+- `--limit N`: stop after N items
 
 ## Asking the user
 

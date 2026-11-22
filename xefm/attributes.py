@@ -329,6 +329,71 @@ def _parent(path):
     return getattr(path, "parent", None)
 
 
+def compute(names: list, paths: list, cancel: threading.Event):
+    """Every value of ``names`` for ``paths``, computed now, whatever their
+    ``compute`` says (``ctx.get_attributes``, #962). Yields ``(path, {name:
+    value})`` a folder at a time: the paths of one folder go to a provider in
+    one call, as a listing's would, in the order they first appear. A folder's
+    ``size`` is its recursive total. A provider that fails costs its values
+    (``None``), logged once. Run it off the UI thread; ``cancel`` stops it."""
+    from xefm.path import attrs_via_path
+    from xefm.user_api import EntryInfo   # user_api imports this module
+    groups: dict[str, list] = {}
+    for path in paths:
+        groups.setdefault(str(_parent(path)), []).append(path)
+    failed: set = set()
+    for members in groups.values():
+        if cancel.is_set():
+            return
+        records = {}
+        for p in members:
+            record = attrs_via_path(p)
+            record["cmp_name"] = name_key.compare_name(p)
+            records[str(p)] = record
+        values: dict[str, dict] = {str(p): {} for p in members}
+        for name in names:
+            attr = get(name)
+            if attr is None or cancel.is_set():
+                continue
+            if attr.is_sync:
+                for p in members:
+                    values[str(p)][name] = attr.sync(p, records[str(p)])
+                continue
+            if name == "size":
+                for p in members:
+                    values[str(p)][name] = _size_now(p, records[str(p)], cancel)
+                continue
+            wanted = [p for p in members if attr.applies_to(p)]
+            for p in members:
+                values[str(p)][name] = None
+            if not wanted or attr.read is None:
+                continue
+            entries = [EntryInfo._from_attrs(p, records[str(p)]) for p in wanted]
+            try:
+                got = list(attr.read(_parent(wanted[0]), entries))
+                if len(got) != len(entries):
+                    raise ValueError(f"returned {len(got)} values for {len(entries)} entries")
+            except Exception as exc:  # noqa: BLE001 - a provider's failure costs its values
+                if name not in failed:
+                    failed.add(name)
+                    logger.error(f"Attribute '{name}' failed: {exc}")
+                continue
+            for p, value in zip(wanted, got):
+                values[str(p)][name] = value
+        for p in members:
+            yield p, values[str(p)]
+
+
+def _size_now(path, record: dict, cancel: threading.Event):
+    if not record.get("is_dir"):
+        return _sync_size(path, record)
+    from xefm.disk_usage import UsageScan
+    scan = UsageScan([path])
+    scan._cancel = cancel
+    scan.run_sync()
+    return None if cancel.is_set() else scan.grand_totals()[0]
+
+
 def _stamp(record) -> tuple:
     return (record.get("size"), record.get("mtime"))
 

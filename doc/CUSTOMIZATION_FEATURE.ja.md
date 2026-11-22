@@ -6,7 +6,7 @@
 >
 > 安定版：`ACTIONS`、`SORT_KEYS`、`FILTERS`、`PATH_SCHEMES`（組み込みのスキームの置き換えを除く）、関数に渡されるペインとエントリ、`ctx.pane` / `other` / `left` / `right`、`ctx.invoke`、`ctx.run_program`、`ctx.message`、`ctx.action_names`、そして `PROGRAMS` 用の `xefm_tool`、`xefm_python`、`is_desktop_mode`。
 >
-> プレビュー：`EVENT_HOOKS`、`MENU_ITEMS`、`IMAGE_DECODERS`、`LEXERS`、`ATTRIBUTES`、`LAYOUTS`、`DEFAULT_LAYOUT`、`LAYOUT_EXTRAS`、`entry.attr`、`Cell`、プロンプト（`ctx.input` / `choose` / `confirm`）、`ctx.run_task`、`ctx.show_markdown`、`ctx.copy_text`、`ctx.diff`、`ctx.view`、`ctx.find_files`、`ctx.find_in_files`、`ctx.actions`、`pane.open_list`。プレビューのテーブルを使う設定では、そのことを伝える 1 行がログペインに表示されます。また、プレビューの関数を初めて呼び出すと、その名前を示す 1 行がログに出ます。
+> プレビュー：`EVENT_HOOKS`、`MENU_ITEMS`、`IMAGE_DECODERS`、`LEXERS`、`ATTRIBUTES`、`LAYOUTS`、`DEFAULT_LAYOUT`、`LAYOUT_EXTRAS`、`entry.attr`、`Cell`、プロンプト（`ctx.input` / `choose` / `confirm`）、`ctx.run_task`、`ctx.show_markdown`、`ctx.copy_text`、`ctx.diff`、`ctx.view`、`ctx.find_files`、`ctx.find_in_files`、`ctx.index_search`、`ctx.entries`、`ctx.find_similar`、`ctx.path_schemes`、タグと属性の呼び出し、`ctx.rename`、`ctx.actions`、`pane.open_list`、`pane.selected_or_focused`、`pane.shows_list`、`pane.pick`。プレビューのテーブルを使う設定では、そのことを伝える 1 行がログペインに表示されます。また、プレビューの関数を初めて呼び出すと、その名前を示す 1 行がログに出ます。
 
 `~/.xefm/config.py` は XeFM が起動時に実行する本物の Python なので、以前からロジックを書くことができました。`if sys.platform == 'win32':` のブロック、計算で求めたパス、リスト内包表記などです。この機能はその一歩先を行きます。設定の中で**関数**を定義し、キーに割り当て、何かが起きたときに実行できます。
 
@@ -204,6 +204,15 @@ ACTIONS = {
 | `ctx.view(path)` | （プレビュー）`view_file` が使う内蔵ビューアーで `path` を開く。`line=` でテキストファイルをその行までスクロールする。ローカルのパスでも URI でもよい |
 | `ctx.find_files(root, pattern)` | （プレビュー）`root` の下で名前が一致するファイルを、`find_files` と同じ方法で、どのストレージでも探す。ジェネレーターなので `ctx.run_task` の中で回す。`case=`、`recursive=`、`cancel=`（`threading.Event`） |
 | `ctx.find_in_files(root, pattern)` | （プレビュー）`root` の下で一致する行を、`find_in_files` と同じ方法で `{'path', 'line', 'text'}` として返す。`find_files` と同じくジェネレーター。`case=`、`word=`、`regex=`、`recursive=`、`cancel=` |
+| `ctx.index_search(root, query)` | （プレビュー）`root` の下で OS のインデックス（Spotlight、Windows Search）が見つけるものを、`index_search` と同じ方法で返す。`find_files` と同じくジェネレーター。インデックスがない環境では `OSError` |
+| `ctx.entries(root)` | （プレビュー）XeFM が開ける場所にあるフォルダーの中身を、`.size` と `.mtime` を読み終えたエントリとして返すジェネレーター。`recursive=`、`depth=`、`cancel=` |
+| `ctx.find_similar(roots, method=...)` | （プレビュー）**Find Similar Files** が始めるスキャンで、ローカルのフォルダーの下にある似たファイルのグループを探す（`method` は `'identical'`、`'image'`、`'video'`、`'audio'`。`threshold=` は 0〜1）。スキャンが終わると、グループを `{'group', 'name', 'paths', 'similarity'}` として順に返すジェネレーター |
+| `ctx.path_schemes()` | （プレビュー）ローカルディスクのほかに XeFM が開ける場所の種類。それぞれ `name`（`'ssh'`）と `source`（`'builtin'`、`'config'`、`'extension <id>'`）を持つ |
+| `ctx.tags()` | （プレビュー）XeFM が知っているタグ。それぞれ `name` と `color` を持つ |
+| `ctx.add_tags(items, names, on_done=fn)` / `ctx.remove_tags(...)` | （プレビュー）OS がタグを持つ場所で、アイテムにタグを付ける、または外す（[ファイルタグ](FILE_TAGS_FEATURE.ja.md)）。XeFM にとって新しいタグには `color=` で色を付けられる。`on_done` は `ctx.copy` と同じ |
+| `ctx.attributes()` | （プレビュー）XeFM が知っているすべての属性。それぞれ `name`、`label`、`type`、`compute`、`source` を持つ |
+| `ctx.get_attributes(items, names=None)` | （プレビュー）属性の値を**その場で計算して**返す（フォルダーの `size` は合計）。すでにわかっている値を読むだけの `entry.attr` とは違う。`{'path', 'values'}` のジェネレーターなので `ctx.run_task` の中で回す |
+| `ctx.rename(plan, on_done=fn)` | （プレビュー）自分で決めた名前にアイテムを変更する。`plan` は `(item, new_name)` の組。**Rename in Editor** と同じ確認画面でユーザーが確かめてから変更する。`on_done` は `ctx.copy` と同じ |
 | `ctx.run_task(title, work, on_done=fn)` | （プレビュー）時間のかかる処理を進捗ダイアログ付きでバックグラウンドで実行 — 後述 |
 | `ctx.input(prompt, default, on_accept=fn)` | （プレビュー）1 行のテキストを入力してもらう。`complete='path'`（または `'directory'`）を付けると、Jump to Path と同じくパスを Tab で補完できる — 相対パスはアクティブなペインが起点 |
 | `ctx.choose(title, items, on_result=fn)` | （プレビュー）リストから選んでもらう（インデックス、または `None`）。`type='filter'` で検索できるリストになる |
@@ -234,11 +243,14 @@ ACTIONS = {
 | `pane.cursor` | フォーカスのある行のインデックス（代入可能。範囲内に収められる） |
 | `pane.focused` | カーソル位置のエントリ、または `None` |
 | `pane.selected()` | 選択されたエントリ |
+| `pane.selected_or_focused()` | （プレビュー）アクションが対象にするもの。選択されたエントリ、選択がなければカーソル位置のエントリ |
 | `pane.select(predicate)` | 条件に合うものを選択に加え、その数を返す |
 | `pane.unselect(predicate)` | 条件に合うものを選択から外す。条件を省くと選択をすべて解除 |
 | `pane.cd(path, focus_name=None)` | どこかへ移動 |
 | `pane.refresh()` | ディレクトリを読み直す |
 | `pane.open_list(paths, title=...)` | （プレビュー）ディレクトリの代わりにパスのリストを開く — 後述 |
+| `pane.shows_list` | （プレビュー）ペインがフォルダーではなく一覧（検索結果、`open_list`）を表示しているかどうか |
+| `pane.pick(prompt=..., on_result=fn)` | （プレビュー）Enter を押すまで、ユーザーにいつもどおりペインで選んでもらう（`on_result` にはアクティブなペインの `selected_or_focused()` が渡る）。Esc なら `None` |
 
 各エントリには `.name`、`.path`、`.suffix`、`.stem`、`.is_dir`、`.is_file`、`.is_link`、`.size`、`.mtime` があります。`.path` は `pathlib.Path` に似たもので、アーカイブ内や S3 / SFTP 上のファイルも指せるため、`entry.path.read_text()` はペインが動作する場所ならどこでも使えます。`pathlib` のメソッドのほかに、`.scheme`（`'file'`、`'s3'`、`'ssh'`、`'archive'`、…）、`.is_remote()`、`.supports(capability)`（`'write_operations'`、`'directory_rename'`、`'file_editing'`、`'streaming_read'` のいずれか）、そしてツリーファイルのエントリが表す実際のファイルを返す `.target()` があります。アーカイブの中のように読み取り専用のストレージでは、書き込みで `OSError` が発生することがあります。
 

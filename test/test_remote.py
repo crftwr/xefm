@@ -311,6 +311,8 @@ def test_pane_cd_goes_to_a_folder_or_a_files_folder(tmp_path):
 
 def test_entries_and_find_files_stream(tmp_path):
     app, left = _app(tmp_path)
+    from xefm.user_api import ActionContext
+    app._user_ctx = ActionContext(app)
     answers = list(_ask(app, f"entries {left}"))
     names = sorted(os.path.basename(i["path"]) for a in answers for i in a["items"])
     assert names == ["a", "b c", "d", "sub"]

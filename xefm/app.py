@@ -8608,6 +8608,54 @@ class XeFMApp:
             for tab in self.pm.tabs[side]:
                 attributes.store_of(tab).forget(targets, "tags")
 
+    def _change_tags_for_api(self, targets: list, *, add=(), remove=(),
+                             color=None, on_complete=None) -> None:
+        """``ctx.add_tags`` / ``ctx.remove_tags`` (#962): the write the tag
+        dialog makes, on targets and names the caller chose, with no dialog.
+        A new tag takes ``color`` where the store keeps colors, else the color
+        it already has elsewhere or its name spells. ``on_complete(result)``
+        gets :meth:`_rewrite_tags`' result (or ``{"error": exc}``) on the UI
+        thread. Raises ValueError when the targets have no tag store, or more
+        than one."""
+        store = self._tag_store_of(targets)
+        if store is None:
+            raise ValueError("tags are not supported for these items "
+                             "(or they are on different storages)")
+        known = self._known_tags()
+        new = [tags.Tag(n, color) if (color is not None and store.has_colors)
+               else tags.new_tag(n, store, known) for n in add]
+        if new:
+            self._remember_tags(new)
+        gone = list(remove)
+
+        def compute(cur):
+            return tags.apply_change(cur, add=new, remove=gone)
+
+        names = ", ".join([t.name for t in new] + gone)
+        message = (f"Added tag(s) {names}" if new else f"Removed tag(s) {names}")
+
+        def done(res: dict) -> None:
+            if "failed" in res:
+                self._report_tag_writes(targets, res, message)
+            if on_complete is not None:
+                on_complete(res)
+            self.panel.render()
+
+        if store.cheap:
+            try:
+                res = self._rewrite_tags(store, targets, compute)
+            except Exception as exc:
+                getLogger("Main").error(f"Writing tags failed: {exc}")
+                res = {"error": exc}
+            self._call_later(lambda: done(res))
+            return
+        task = Task("Writing tags", config=self.config, kind="tags",
+                    busy_label="Writing tags…")
+        self.tasks.submit(task, self.panel,
+                          run=lambda t: self._rewrite_tags(store, targets, compute,
+                                                           t.checkpoint),
+                          on_done=done)
+
     def _toggle_tag(self, targets: list, tag, on) -> None:
         """B's tag row: take ``tag`` off when every target has it, else put it
         on every target. ``on`` is None when B could not afford to look; the
@@ -9617,7 +9665,7 @@ class XeFMApp:
 
     def _iter_filename_matches(self, root, pattern, cancel, *,
                                case: bool = False, recursive: bool = True,
-                               keep=None):
+                               keep=None, named_root: bool = False):
         """Walk under ``root`` (:func:`xefm.tree_walk.walk` — several directories
         at once over SSH) yielding entries whose name matches
         ``pattern`` (a glob), checking ``cancel`` between entries so
@@ -9633,14 +9681,19 @@ class XeFMApp:
         ``case`` is the dialog's case option, off by default, so a pattern
         matches either case unless it is turned on. ``recursive=False`` searches
         this directory alone: subdirectories still *match* by name, they are
-        just not descended."""
+        just not descended.
+
+        ``named_root`` is for a root the caller named (the public API, #962):
+        a file there is searched as itself (:func:`tree_walk.walk_root`)."""
         match = search_opts.filename_matcher(pattern, case=case)
         # One listing per directory answers both questions asked of every entry
         # — is it hidden, is it a directory to descend — instead of a stat
         # apiece; the walk lists several at once where that pays (SSH).
         shows, descend = _search_rules(self.flm.show_hidden, recursive)
-        for e, attrs in tree_walk.walk(root, cancel, descend):
-            if shows(e, attrs) and match(name_key.compare_name(e)) \
+        walk = tree_walk.walk_root if named_root else tree_walk.walk
+        for e, attrs in walk(root, cancel, descend):
+            if (attrs.get("explicit") or shows(e, attrs)) \
+                    and match(name_key.compare_name(e)) \
                     and (keep is None or keep(e.name, attrs)):
                 yield e
 
@@ -9893,7 +9946,7 @@ class XeFMApp:
 
     def _iter_content_matches(self, root, regex, cancel, max_line: int = 200,
                               name_filter: str = "", *, recursive: bool = True,
-                              keep=None):
+                              keep=None, named_root: bool = False):
         """Walk under ``root`` (:func:`xefm.tree_walk.walk`) yielding
         ``{path, line, text}`` for each
         line of a text file that matches ``regex`` (compiled), checking ``cancel``
@@ -9913,7 +9966,10 @@ class XeFMApp:
         Case sensitivity, word boundaries and whether the query is a regular
         expression at all are not decided here: the pattern arrives compiled,
         which is what keeps three of the dialog's four options out of the walk
-        entirely (:mod:`xefm.search_options`)."""
+        entirely (:mod:`xefm.search_options`).
+
+        ``named_root`` is for a root the caller named (the public API, #962):
+        a file there is searched as itself (:func:`tree_walk.walk_root`)."""
         # The pane's filter, whichever kind it is — a typed glob or a filter the
         # config registered — applied to the same entries the pane would show.
         match = filters.matcher(name_filter) if name_filter else None
@@ -9927,9 +9983,11 @@ class XeFMApp:
         pool = (DaemonPool(workers, name="xefm-search-read")
                 if workers > 1 else None)
 
+        walk = tree_walk.walk_root if named_root else tree_walk.walk
+
         def candidates():
-            for e, attrs in tree_walk.walk(root, cancel, descend, pool=pool):
-                if attrs["is_dir"] or not shows(e, attrs):
+            for e, attrs in walk(root, cancel, descend, pool=pool):
+                if attrs["is_dir"] or not (attrs.get("explicit") or shows(e, attrs)):
                     continue
                 # The filter chips (#609), before a byte is read.
                 if keep is not None and not keep(e.name, attrs):
@@ -10544,6 +10602,96 @@ class XeFMApp:
         self._relist(pane, on_ready=(
             (lambda p: self._select_by_name(p, new_name)) if new_name else None))
         self.panel.render()
+
+    def _rename_for_api(self, files: list, names: list, on_complete) -> None:
+        """``ctx.rename`` (#962): a rename table the caller wrote, checked the
+        way an edited name list is (:func:`parse_plan`) and confirmed in the
+        same review before anything moves. ``on_complete(renamed, errors)``
+        gets :func:`apply_plan`'s answer, or ``None`` when the user declined.
+        Raises ValueError for a table the review would refuse."""
+        for f in files:
+            if self._is_archive(f):
+                raise ValueError(f"rename: {f} is inside an archive, which is read-only")
+        plan = parse_plan(files, "\n".join(names) + "\n")
+        if not plan.ok:
+            raise ValueError("rename: " + "; ".join(plan.errors))
+        if not plan.renames:
+            self._call_later(lambda: on_complete({}, []))
+            return
+
+        def answered(label: str) -> None:
+            if label != "Rename":
+                self.log_info("Rename cancelled")
+                on_complete(None, [])
+                self.panel.render()
+                return
+
+            def rename(src, dst) -> None:
+                release_archives_under(src)
+                src.rename(dst)
+
+            renamed, errors = apply_plan(plan, rename)
+            for err in errors:
+                self.log_info(f"Rename failed: {err}")
+            self.log_info(f"Renamed {len(renamed)} item(s)"
+                          + (f", {len(errors)} failed" if errors else ""))
+            folders = {str(e.parent) for e, _new in plan.renames}
+            for pane in (self.pm.left_pane, self.pm.right_pane):
+                if str(pane["path"]) in folders or pane.get("virtual"):
+                    pane["selected_files"].clear()
+                    self._relist(pane)
+            on_complete(renamed, errors)
+            self.panel.render()
+
+        rows = [f"{name_key.nfc(e.name)}  →  {new}"
+                for e, new in plan.renames[:self._RENAME_PREVIEW_ROWS]]
+        more = len(plan.renames) - len(rows)
+        if more:
+            rows.append(f"… and {more} more")
+        show_message_box(self.panel, "\n".join(rows),
+                         title=f"Rename {len(plan.renames)} item(s)?",
+                         icon="question", buttons=("Rename", "Cancel"),
+                         default=0, cancel=1, on_result=answered)
+        self.panel.render()
+
+    # --- picking in a pane (ctx.pane.pick, #962) ---------------------------------
+
+    def _start_pick(self, pane_name: str, prompt: str | None, on_result) -> None:
+        """Let the user select in the panes as usual until Enter (the active
+        pane's selection, or the item under its cursor) or Esc (``None``);
+        ``on_result`` gets the answer. Every other key does what it always
+        does. A pick still open is cancelled first: one at a time."""
+        self._cancel_pick()
+        self._pick = (on_result,)
+        if self.pm.active_pane != pane_name:
+            self._activate_pane(pane_name)
+        text = (prompt or "Select items").strip()
+        self.log_info(f"{text} - Enter to finish, Esc to cancel")
+        self.panel.render()
+
+    def _cancel_pick(self) -> None:
+        pick = getattr(self, "_pick", None)
+        if pick is not None:
+            self._pick = None
+            pick[0](None)
+
+    def _pick_key(self, event) -> bool:
+        """Enter or Esc while a pick is open: finish it. Whether the key was
+        taken."""
+        pick = getattr(self, "_pick", None)
+        if pick is None or getattr(event, "key", None) not in ("enter", "escape"):
+            return False
+        if getattr(event, "modifiers", None):
+            return False
+        self._pick = None
+        if event.key == "escape":
+            self.log_info("Pick cancelled")
+            pick[0](None)
+        else:
+            from xefm.user_api import PaneApi
+            pick[0](PaneApi(self, self.pm.active_pane).selected_or_focused())
+        self.panel.render()
+        return True
 
     def _ensure_archive_password(self, entry, on_ready) -> None:
         """Gate opening ``entry`` when it lives inside an encrypted archive.
@@ -14423,6 +14571,9 @@ class XeFMApp:
                 self.panel.render()
             return
         if event.type is EventType.KEY:
+            if self._pick_key(event):
+                self.key_sequence.cancel()
+                return
             has_sel = bool(self.active_pane()["selected_files"])
             outcome, sequence_action = self.key_sequence.feed(event, has_sel)
             if outcome == key_sequence.WAIT:

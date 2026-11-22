@@ -20,7 +20,10 @@ English \| [日本語](CUSTOMIZATION_FEATURE.ja.md)
 > `ATTRIBUTES`, `LAYOUTS`, `DEFAULT_LAYOUT`, `LAYOUT_EXTRAS`, `entry.attr`, `Cell`, the
 > prompts (`ctx.input` / `choose` / `confirm`), `ctx.run_task`,
 > `ctx.show_markdown`, `ctx.copy_text`, `ctx.diff`, `ctx.view`, `ctx.find_files`,
-> `ctx.find_in_files`, `ctx.actions` and `pane.open_list`. A config that
+> `ctx.find_in_files`, `ctx.index_search`, `ctx.entries`, `ctx.find_similar`,
+> `ctx.path_schemes`, the tag and attribute calls, `ctx.rename`, `ctx.actions`,
+> `pane.open_list`, `pane.selected_or_focused`, `pane.shows_list` and
+> `pane.pick`. A config that
 > uses a Preview table gets one line in the log pane saying so, and the first
 > call to a Preview function logs one line naming it.
 
@@ -283,6 +286,15 @@ summary with no further page.
 | `ctx.view(path)` | (Preview) open `path` in the built-in viewer `view_file` would use; `line=` scrolls a text file to that line. A local path or a URI |
 | `ctx.find_files(root, pattern)` | (Preview) the files below `root` whose names match, found as `find_files` finds them, on any storage; a generator, so run it in `ctx.run_task`. `case=`, `recursive=`, `cancel=` (a `threading.Event`) |
 | `ctx.find_in_files(root, pattern)` | (Preview) the matching lines below `root`, as `{'path', 'line', 'text'}`, found as `find_in_files` finds them; a generator like `find_files`. `case=`, `word=`, `regex=`, `recursive=`, `cancel=` |
+| `ctx.index_search(root, query)` | (Preview) what the OS index (Spotlight, Windows Search) finds below `root`, as `index_search` does; a generator like `find_files`. Raises `OSError` where there is no index |
+| `ctx.entries(root)` | (Preview) what a folder holds, anywhere XeFM can go, as entries with `.size` and `.mtime` already read; a generator. `recursive=`, `depth=`, `cancel=` |
+| `ctx.find_similar(roots, method=...)` | (Preview) groups of similar files below local folders, found by the scan **Find Similar Files** starts (`method` is `'identical'`, `'image'`, `'video'` or `'audio'`; `threshold=` 0-1); a generator that yields each group as `{'group', 'name', 'paths', 'similarity'}` once the scan ends |
+| `ctx.path_schemes()` | (Preview) the kinds of place XeFM can open besides the local disk, each with its `name` (`'ssh'`) and `source` (`'builtin'`, `'config'`, `'extension <id>'`) |
+| `ctx.tags()` | (Preview) the tags XeFM knows, each with its `name` and `color` |
+| `ctx.add_tags(items, names, on_done=fn)` / `ctx.remove_tags(...)` | (Preview) tag items, or take tags off them, where the OS keeps tags ([File tags](FILE_TAGS_FEATURE.md)); `color=` for a tag new to XeFM. `on_done` works as for `ctx.copy` |
+| `ctx.attributes()` | (Preview) every attribute XeFM knows, each with its `name`, `label`, `type`, `compute` and `source` |
+| `ctx.get_attributes(items, names=None)` | (Preview) attribute values **computed now** (a folder's `size` is its total), unlike `entry.attr`, which only reads what is already known; a generator of `{'path', 'values'}`, so run it in `ctx.run_task` |
+| `ctx.rename(plan, on_done=fn)` | (Preview) rename items to names you chose - `plan` is `(item, new_name)` pairs - after the user confirms them in the review **Rename in Editor** shows. `on_done` works as for `ctx.copy` |
 | `ctx.run_task(title, work, on_done=fn)` | (Preview) run slow work in the background, with a progress dialog — see below |
 | `ctx.input(prompt, default, on_accept=fn)` | (Preview) ask for a line of text; `complete='path'` (or `'directory'`) adds Tab completion of paths, as Jump to Path has — relative to the active pane |
 | `ctx.choose(title, items, on_result=fn)` | (Preview) pick from a list (index, or `None`); `type='filter'` for a searchable one |
@@ -313,11 +325,14 @@ And each pane:
 | `pane.cursor` | the focused row's index (assignable; clamped) |
 | `pane.focused` | the entry under the cursor, or `None` |
 | `pane.selected()` | the selected entries |
+| `pane.selected_or_focused()` | (Preview) what an action works on: the selected entries, or the one under the cursor when nothing is selected |
 | `pane.select(predicate)` | add matches to the selection; returns how many |
 | `pane.unselect(predicate)` | remove matches; no predicate clears it |
 | `pane.cd(path, focus_name=None)` | go somewhere |
 | `pane.refresh()` | re-read the directory |
 | `pane.open_list(paths, title=...)` | (Preview) open a list of paths in place of a directory — see below |
+| `pane.shows_list` | (Preview) whether the pane shows a list (search results, `open_list`) rather than a folder |
+| `pane.pick(prompt=..., on_result=fn)` | (Preview) let the user select in the panes as usual until Enter (`on_result` gets the active pane's `selected_or_focused()`) or Esc (`None`) |
 
 And each entry: `.name`, `.path`, `.suffix`, `.stem`, `.is_dir`, `.is_file`,
 `.is_link`, `.size`, `.mtime`. `.path` is a `pathlib.Path`-alike that also

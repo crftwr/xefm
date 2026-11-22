@@ -112,14 +112,22 @@ def parse(argv: list[str], stdin=None) -> dict:
                 if opt.choices and value not in opt.choices:
                     raise RemoteError(f"xefmctl {cmd.name}: {name} takes one of "
                                       f"{', '.join(opt.choices)}", 2)
-                opts[opt.name.lstrip("-")] = _abs(value) if opt.path else value
+                value = _abs(value) if opt.path else value
+                if opt.multi:
+                    opts.setdefault(opt.name.lstrip("-"), []).append(value)
+                else:
+                    opts[opt.name.lstrip("-")] = value
             else:
                 if eq:
                     raise RemoteError(f"xefmctl {cmd.name}: {name} takes no value", 2)
                 opts[opt.name.lstrip("-")] = True
             continue
         positional.append(token)
-    args = _bind(cmd, positional, stdin)
+    args = _bind(cmd, positional, stdin, items_from_pane="from" in opts)
+    if "from" in opts and any(args.get(a.name) for a in cmd.args if a.path):
+        raise RemoteError(f"xefmctl {cmd.name}: give the items or --from, not both", 2)
+    if "plan" in opts:
+        opts["plan"] = _read_plan(cmd, opts["plan"], stdin)
     if cmd.name == "pane cd" and not args.get("path"):
         args["path"] = _abs(".")  # the pane comes to where the shell is
     for key in ("limit", "depth", "line", "max-bytes"):
@@ -131,29 +139,33 @@ def parse(argv: list[str], stdin=None) -> dict:
     return {"cmd": cmd.name, "args": args, "opts": opts, "json": want_json}
 
 
-def _bind(cmd, positional: list[str], stdin) -> dict:
-    """Give the positional words to the command's arguments in order."""
+def _bind(cmd, positional: list[str], stdin, items_from_pane: bool = False) -> dict:
+    """Give the positional words to the command's arguments in order. With
+    ``--from`` the items come from the pane, so the item arguments may be
+    left out."""
     args: dict = {}
     pending = list(positional)
+    nargs = {a.name: ("*" if items_from_pane and a.path and a.nargs == "+" else a.nargs)
+             for a in cmd.args}
     for i, a in enumerate(cmd.args):
-        later_required = sum(1 for b in cmd.args[i + 1:] if b.nargs in ("1", "+"))
-        if a.nargs == "1":
+        later_required = sum(1 for b in cmd.args[i + 1:] if nargs[b.name] in ("1", "+"))
+        if nargs[a.name] == "1":
             if not pending:
                 raise RemoteError(f"xefmctl {cmd.name}: {a.name.upper()} is missing\n\n"
                                   f"{_table().synopsis(cmd)}", 2)
             values = [pending.pop(0)]
-        elif a.nargs == "?":
+        elif nargs[a.name] == "?":
             values = [pending.pop(0)] if len(pending) > later_required else []
         else:
             take = max(0, len(pending) - later_required)
             values, pending = pending[:take], pending[take:]
-            if a.nargs == "+" and not values:
+            if nargs[a.name] == "+" and not values:
                 raise RemoteError(f"xefmctl {cmd.name}: {a.name.upper()} is missing\n\n"
                                   f"{_table().synopsis(cmd)}", 2)
         if a.stdin and values == ["-"]:
             stream = stdin if stdin is not None else sys.stdin
             text = stream.read()
-            if a.nargs in ("*", "+"):
+            if nargs[a.name] in ("*", "+"):
                 values = [line for line in text.splitlines() if line.strip()]
                 values = [_path_of(line) for line in values]
             else:
@@ -161,11 +173,35 @@ def _bind(cmd, positional: list[str], stdin) -> dict:
                 values = ["-"]
         if a.path:
             values = [_abs(v) for v in values]
-        args[a.name] = values[0] if a.nargs in ("1", "?") and values else (
-            None if a.nargs in ("1", "?") else values)
+        args[a.name] = values[0] if nargs[a.name] in ("1", "?") and values else (
+            None if nargs[a.name] in ("1", "?") else values)
     if pending:
         raise RemoteError(f"xefmctl {cmd.name}: unexpected argument {pending[0]}", 2)
     return args
+
+
+def _read_plan(cmd, where: str, stdin) -> list:
+    """``rename --plan``: the plan file (or standard input) read here, as a
+    list of ``{"path", "name"}`` with each path taken from the shell's
+    directory, so XeFM never reads a file of the shell's."""
+    try:
+        if where == "-":
+            text = (stdin if stdin is not None else sys.stdin).read()
+        else:
+            with open(where, encoding="utf-8") as f:
+                text = f.read()
+    except OSError as exc:
+        raise RemoteError(f"xefmctl {cmd.name}: cannot read the plan: {exc}", 2) from None
+    try:
+        plan = json.loads(text)
+    except ValueError as exc:
+        raise RemoteError(f"xefmctl {cmd.name}: the plan is not JSON: {exc}", 2) from None
+    if not isinstance(plan, list) or not all(
+            isinstance(p, dict) and isinstance(p.get("path"), str)
+            and isinstance(p.get("name"), str) for p in plan):
+        raise RemoteError(f'xefmctl {cmd.name}: the plan is a list of '
+                          f'{{"path": ..., "name": ...}}', 2)
+    return [{"path": _abs(p["path"]), "name": p["name"]} for p in plan]
 
 
 def _path_of(line: str) -> str:
