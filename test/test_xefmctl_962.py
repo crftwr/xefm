@@ -28,9 +28,10 @@ def _app(tmp_path, *, virtual=None, selected=("a",), focused=1):
     left_dir = tmp_path / "L"
     left_dir.mkdir()
     for name in ("a", "b", "d"):
-        (left_dir / name).write_text(f"{name} needle\n")
+        # Bytes, not text: Windows would write "\r\n" and change the sizes.
+        (left_dir / name).write_bytes(f"{name} needle\n".encode())
     (left_dir / "sub").mkdir()
-    (left_dir / "sub" / "deep.txt").write_text("deep needle\n")
+    (left_dir / "sub" / "deep.txt").write_bytes(b"deep needle\n")
     files = [Path(str(left_dir / n)) for n in ("a", "b", "d", "sub")]
     info = {str(files[3]): {"is_dir": True}}
     left = {"path": Path(str(left_dir)), "files": files, "file_info": info,
@@ -58,6 +59,13 @@ def _app(tmp_path, *, virtual=None, selected=("a",), focused=1):
     app._iter_content_matches = lambda *a, **k: XeFMApp._iter_content_matches(app, *a, **k)
     app._user_ctx = ActionContext(app)
     return app, left_dir
+
+
+def _q(path) -> str:
+    """A path quoted for :func:`_ask`'s command line. ``shlex.split`` is POSIX:
+    unquoted, a Windows path loses its backslashes. (xefmctl itself gets its
+    arguments from the OS, already split.)"""
+    return shlex.quote(str(path))
 
 
 def _ask(app, line, stdin=None, **extra):
@@ -193,7 +201,7 @@ def test_copy_from_selection_copies_the_selection(tmp_path):
     got = {}
     app._user_ctx = SimpleNamespace(copy=lambda items, dest, on_done=None:
                                     got.update(items=list(items), dest=dest))
-    assert _ask(app, f"copy --from selection --to {tmp_path}")["ok"]
+    assert _ask(app, f"copy --from selection --to {_q(tmp_path)}")["ok"]
     assert got["items"] == [str(left / "a")] and got["dest"] == str(tmp_path)
 
 
@@ -209,8 +217,9 @@ def test_index_search_takes_several_folders(tmp_path, monkeypatch):
         asked.append(str(root))
         return iter([Path(str(root) + "/hit")])
     app._user_ctx = SimpleNamespace(index_search=index_search)
-    items = _items(_ask(app, f"index-search q {left} {tmp_path}"))
-    assert [i["path"] for i in items] == [f"{left}/hit", f"{tmp_path}/hit"]
+    items = _items(_ask(app, f"index-search q {_q(left)} {_q(tmp_path)}"))
+    assert [i["path"] for i in items] == [str(Path(f"{left}/hit")),
+                                          str(Path(f"{tmp_path}/hit"))]
 
 
 def test_path_schemes_lists_the_built_ins(tmp_path):
@@ -284,8 +293,8 @@ def test_tag_add_takes_several_names_and_reports_each_item(tmp_path):
         seen.update(targets=[str(t) for t in targets], add=list(add), color=color)
         on_complete({"changed": 1, "failed": [f"{targets[1]}: no xattr"]})
     app._change_tags_for_api = change
-    pending = _ask(app, f"tag add Work --tag Red --color blue --wait {left / 'a'} "
-                        f"{left / 'b'}")
+    pending = _ask(app, f"tag add Work --tag Red --color blue --wait {_q(left / 'a')} "
+                        f"{_q(left / 'b')}")
     answer = pending.wait()
     assert seen["add"] == ["Work", "Red"] and seen["color"] == 4
     assert [(os.path.basename(i["path"]), i["status"]) for i in answer["items"]] == \
@@ -296,7 +305,7 @@ def test_tag_add_takes_several_names_and_reports_each_item(tmp_path):
 def test_tags_are_refused_where_there_is_no_store(tmp_path):
     app, left = _app(tmp_path)
     app._tag_store_of = lambda targets: None
-    answer = _ask(app, f"tag remove Work {left / 'a'}")
+    answer = _ask(app, f"tag remove Work {_q(left / 'a')}")
     assert not answer["ok"] and "not supported" in answer["error"]
     with pytest.raises(ValueError):
         app._user_ctx.add_tags([str(left / "a")], ["Work"], color="mauve")
@@ -311,7 +320,7 @@ def test_an_agents_tag_write_is_asked_first(tmp_path):
     app._change_tags_for_api = lambda targets, **k: wrote.append(k)
     app._user_ctx.confirm = lambda prompt, title="", on_result=None: asked.append(
         (prompt, on_result))
-    _ask(app, f"tag add Work {left / 'a'}", policy="agent", session="3")
+    _ask(app, f"tag add Work {_q(left / 'a')}", policy="agent", session="3")
     assert len(asked) == 1 and "add the tag(s) Work" in asked[0][0] and not wrote
     asked[0][1](True)
     assert wrote and wrote[0]["add"] == ["Work"]
@@ -350,9 +359,9 @@ def test_attributes_are_computed_now(tmp_path):
         assert calls == [(str(left), ["a", "b", "sub"])]
         with pytest.raises(ValueError):
             app._user_ctx.get_attributes([str(left / "a")], ["nope"])
-        items = _items(_ask(app, f"attribute get --attributes shout,ext {left / 'a'}"))
+        items = _items(_ask(app, f"attribute get --attributes shout,ext {_q(left / 'a')}"))
         assert items[0]["text"] == f"{left / 'a'}\tshout=A\text="
-        assert _ask(app, f"attribute get --attributes nope {left / 'a'}")["code"] == \
+        assert _ask(app, f"attribute get --attributes nope {_q(left / 'a')}")["code"] == \
             remote_dispatch.USAGE
     finally:
         attributes.clear()
@@ -369,7 +378,8 @@ def test_the_plan_is_read_by_the_client(tmp_path, monkeypatch):
     import io
     req = remote_cli.parse(["rename", "--plan", "-"],
                            io.StringIO('[{"path": "/x/b", "name": "B"}]'))
-    assert req["opts"]["plan"] == [{"path": "/x/b", "name": "B"}]
+    # Made absolute like any path: on Windows, /x/b is on the current drive.
+    assert req["opts"]["plan"] == [{"path": os.path.abspath("/x/b"), "name": "B"}]
     for bad in ("{}", "[1]", "not json", '[{"path": "a"}]'):
         plan.write_text(bad)
         with pytest.raises(remote_cli.RemoteError) as e:
