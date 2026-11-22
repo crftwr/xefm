@@ -99,7 +99,56 @@ XeFM:  RemoteServer (listener) ── remote_dispatch.handle ── _call_later 
   thread (a search reads off the UI thread, as the search dialog's worker
   does).
 - The shim: `bin/xefmctl` or `bin\xefmctl.cmd`, running the client with
-  `xefm_python`, first on `PATH` in every shell XeFM starts.
+  `xefm_python`, first on `PATH` in every shell XeFM starts. In the Store
+  package it calls the package's app execution alias instead (below).
+
+## The Store (MSIX) package (#983)
+
+Nothing under `C:\Program Files\WindowsApps` can be started by a process
+without the package's identity: `CreateProcess` fails with
+`STATUS_ACCESS_DENIED` ("Access is denied"), although the files stay
+readable. And no shell XeFM starts has the identity: Windows starts a
+child whose program lies outside the package (`cmd.exe`, `pwsh.exe`,
+`bash.exe`) without it, while a child inside the package keeps it. So the
+shim's `runtime\python.exe` was refused from every shell, cmd included,
+while a `PROGRAMS` entry that XeFM starts as `[xefm_python, ...]` works.
+
+(Checked on an installed package by asking each process
+`GetPackageFullName`: `XeFM.exe` has the identity, the terminal session's
+`cmd.exe` under it has none. Through ConPTY, `runtime\python.exe` started
+directly kept it and `cmd.exe` -> `runtime\python.exe` was refused.
+`Invoke-CommandInDesktopPackage` is no stand-in for this: it puts the
+process it starts into the package whatever its program, which is how the
+first look at #983 wrongly concluded that cmd worked.)
+
+The way in from anywhere is an app execution alias. The manifest
+(`windows_app/build_msix.ps1`) declares `xefmctl.exe` as one; Windows puts a
+stub in `%LOCALAPPDATA%\Microsoft\WindowsApps`, and the stub starts the
+target with the package's identity. An alias names an `.exe` of the same
+file name and carries no arguments, so `xefmctl.exe`
+(`windows_app/src/xefmctl.c`) bakes in `runtime\python.exe -I
+app\xefm\remote_cli.py`, forwards its arguments verbatim, its standard
+handles and the exit status, and leaves Ctrl-C to the client. Keyhac's
+`keyhac-mcp-bridge.exe` is the same thing for the same reason.
+
+`remote_server.windows_shim()` picks the shim's line:
+
+- no package identity (`GetCurrentPackageFullName` answers
+  `APPMODEL_ERROR_NO_PACKAGE`): the interpreter, as before;
+- package identity and the stub present (`os.path.lexists`: it is a
+  reparse point): the stub;
+- package identity and no stub (the user turned the alias off): a line
+  saying how to turn it on, exit 3. Never the interpreter's path, which
+  exists there and cannot work.
+
+The stub also puts `xefmctl` on the `PATH` of every shell, where without
+`XEFM_SOCKET` it says it is not in a shell XeFM started.
+
+What a shell cannot do there stays undone: it cannot start anything else
+in the package either. That is accepted and written in the user doc.
+`XEFM_PYTHON` (XeFM's interpreter, in 1.17.0 only, undocumented and read by
+nothing) was removed rather than hand every Store shell a path it can never
+run; the config's `xefm_python` stays, since XeFM starts it itself.
 
 ## Session keys and policies
 
@@ -118,7 +167,6 @@ session by changing `XEFM_SESSION`; a missing or unknown key is refused
 | `XEFM_TOKEN` | the connection key, hex |
 | `XEFM_SESSION_KEY` | this shell's own key |
 | `XEFM_SESSION` | the session's id, `subshell`, `program` or `agent`, to read |
-| `XEFM_PYTHON` | XeFM's interpreter |
 | `XEFM_BIN` | the shim directory |
 | `PATH` | the shim directory prepended |
 
@@ -197,6 +245,8 @@ every command, the new APIs and commands, the pick keys, rename's review.
 reference entry, names), parsing, help, a real server round trip with
 session keys, streamed answers, exit statuses, the shim as its own process,
 what XeFM answers, the hand-over rule, the remote-read question.
+`test/test_xefmctl_msix_983.py`: the shim's three lines, the manifest's
+alias, the launcher's client path against the tree, the shim as cmd runs it.
 `test/test_terminal_sessions.py`: screens, `view` replacing a viewer at
 once, the gate, an agent's writes and refusals, forced confirmations on
 `invoke`. `test/test_run_program_on_done.py`: `on_done` on every launch path.

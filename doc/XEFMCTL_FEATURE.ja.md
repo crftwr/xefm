@@ -100,6 +100,12 @@ xefmctl find-similar --method image --from selection --show
 
 シェルを起動した XeFM が終了していれば、どのコマンドもそう伝えます。
 
+## Microsoft Store のパッケージ
+
+Windows では、Microsoft Store のアプリの中にあるプログラム（XeFM 自身の Python など）を起動できるのは XeFM 本体だけです。XeFM が起動したシェル（cmd、PowerShell、Git Bash のどれでも）からは実行できません。XeFM が代わりに起動するプログラムには影響しません。`PROGRAMS` のエントリ、**Open With**（[アプリケーションを選んで開く](OPEN_WITH_FEATURE.ja.md)）、`ctx.run_program` は、ほかのインストール方法と同じように動きます。
+
+それでも `xefmctl` はどのシェルでも動きます。Store の XeFM は `xefmctl` をアプリ実行エイリアス経由で実行するからです。`xefmctl` がエイリアスがオフになっていると伝えたら、Windows の **設定 > アプリ > アプリの詳細設定 > アプリ実行エイリアス** で XeFM の `xefmctl.exe` をオンにし、XeFM を再起動してください。このエイリアスにより、XeFM が起動していないシェルの `PATH` にも `xefmctl` が入りますが、そこでは XeFM が起動したシェルではないと伝えます。
+
 ## 関連項目
 
 - [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)：エージェントのセッションができること、できないこと

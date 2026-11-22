@@ -149,6 +149,21 @@ instead.
 
 If the XeFM that started the shell has quit, every command says so.
 
+## The Microsoft Store package
+
+Windows lets only XeFM itself start the programs inside a Microsoft Store
+app, such as XeFM's own Python. A shell XeFM starts (cmd, PowerShell, Git
+Bash, any of them) cannot run them. Programs XeFM starts for you are not
+affected: `PROGRAMS` entries, [**Open With**](OPEN_WITH_FEATURE.md) and `ctx.run_program` work as on
+any other install.
+
+`xefmctl` works in every shell anyway: XeFM from the Store runs it through
+an app execution alias. If `xefmctl` says the alias is turned off, turn on
+`xefmctl.exe` for XeFM in Windows **Settings > Apps > Advanced app settings >
+App execution aliases**, then restart XeFM. The alias also puts `xefmctl` on
+the `PATH` of shells XeFM did not start, where it says it is not in a shell
+XeFM started.
+
 ## See also
 
 - [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md): what an agent's session may and may not do

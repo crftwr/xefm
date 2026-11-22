@@ -359,6 +359,9 @@ Write-Host "[INFO] makepri: $makepri"
 
 if (-not (Test-Path $PayloadSource))            { throw "Payload source not found: $PayloadSource. Run 'make windows-app ARCH=$Arch' first." }
 if (-not (Test-Path "$PayloadSource\XeFM.exe"))  { throw "XeFM.exe not found in payload source $PayloadSource. Run 'make windows-app ARCH=$Arch' first." }
+# The manifest declares an app execution alias on this file, and a missing
+# alias target is only found when a user's xefmctl fails.
+if (-not (Test-Path "$PayloadSource\xefmctl.exe")) { throw "xefmctl.exe not found in payload source $PayloadSource (bundle predates the xefmctl alias, #983). Run 'make windows-app ARCH=$Arch' first." }
 
 # ---- 1. Generate Store tile assets ---------------------------------------
 $assetsSrc = "$ScriptDir\resources\Assets"
@@ -387,13 +390,27 @@ $global:LASTEXITCODE = 0
 Copy-Item -Recurse -Force $assetsSrc "$staging\Assets"
 
 # ---- 3. Generate AppxManifest.xml at the payload root ---------------------
+# windows.appExecutionAlias: the ONLY way anything in this package can be
+# started by a process that is not part of it. Everything under
+# C:\Program Files\WindowsApps refuses CreateProcess from such a process with
+# "Access is denied" - and every shell XeFM starts is such a process: Windows
+# starts a child whose program lies outside the package (cmd, PowerShell,
+# bash) without the identity, so the xefmctl.cmd shim's runtime\python.exe
+# was refused from all of them (#983). The alias puts a stub in
+# %LOCALAPPDATA%\Microsoft\WindowsApps (on PATH) that starts xefmctl.exe with
+# this package's identity, which may then run the bundled interpreter; the
+# packaged XeFM's shim calls that stub (xefm/remote_server.py). The alias name
+# must match the file name, and the target must be an .exe - which is why
+# xefmctl is one (src/xefmctl.c).
 $manifest = @"
 <?xml version="1.0" encoding="utf-8"?>
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap rescap">
+  IgnorableNamespaces="uap uap3 desktop rescap">
 
   <!-- PROTOTYPE identity. For a real submission replace with Partner Center values. -->
   <Identity
@@ -434,6 +451,16 @@ $manifest = @"
         BackgroundColor="#1B2429">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
       </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension
+          Category="windows.appExecutionAlias"
+          Executable="xefmctl.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="xefmctl.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
     </Application>
   </Applications>
 </Package>

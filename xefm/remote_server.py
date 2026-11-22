@@ -11,10 +11,12 @@
   that runs the client with XeFM's own interpreter. It goes first on ``PATH``
   in every shell XeFM starts, so ``xefmctl`` works there even from an app
   bundle that put nothing on the system's ``PATH``, and answers without
-  loading the file manager.
+  loading the file manager. In the Store package it calls the package's app
+  execution alias instead (:func:`windows_shim`, #983).
 - **The environment.** :meth:`RemoteServer.env` - ``XEFM_SOCKET``,
-  ``XEFM_TOKEN``, ``XEFM_SESSION_KEY``, ``XEFM_SESSION``, ``XEFM_PYTHON`` and
-  the ``PATH`` entry.
+  ``XEFM_TOKEN``, ``XEFM_SESSION_KEY``, ``XEFM_SESSION`` and the ``PATH``
+  entry. Not XeFM's interpreter (``XEFM_PYTHON`` until #983): in the Store
+  package no shell can start it, and nothing read it.
 - **Session keys.** Every shell gets a key of its own
   (``XEFM_SESSION_KEY``), registered with the session it belongs to and what
   that session may do (its *policy*: an AI agent's session is restricted).
@@ -75,7 +77,6 @@ class RemoteServer:
         # the listener first, so its own finalizer has nothing left to unlink.
         self._stop = threading.Event()
         weakref.finalize(self, _cleanup, self._listener, self._dir, self._stop)
-        self.python = python
         self.bin_dir = self._write_shim(python)
         self._thread = threading.Thread(target=self._serve, name="xefm-remote",
                                         daemon=True)
@@ -89,7 +90,7 @@ class RemoteServer:
         if sys.platform == "win32":
             path = os.path.join(bin_dir, "xefmctl.cmd")
             with open(path, "w", encoding="utf-8", newline="\r\n") as f:
-                f.write(f'@"{python}" -I "{client}" %*\n')
+                f.write(windows_shim(python, client))
         else:
             import shlex
             path = os.path.join(bin_dir, "xefmctl")
@@ -124,7 +125,6 @@ class RemoteServer:
             "XEFM_TOKEN": self._key.hex(),
             "XEFM_SESSION_KEY": self.register(session, policy),
             "XEFM_SESSION": session,
-            "XEFM_PYTHON": self.python,
             "PATH": self.bin_dir,
         }
 
@@ -213,6 +213,71 @@ class RemoteServer:
         if self._stop.is_set():
             return
         _cleanup(self._listener, self._dir, self._stop)
+
+
+#: APPMODEL_ERROR_NO_PACKAGE: what GetCurrentPackageFullName answers a process
+#: with no package identity. Any other answer means it has one.
+_NO_PACKAGE = 15700
+
+#: The app execution alias the Store package declares for xefmctl.exe
+#: (windows_app/build_msix.ps1).
+STORE_ALIAS = "xefmctl.exe"
+
+#: What the shim says when that alias is turned off. cmd's ``echo`` prints it,
+#: so no ``>``, ``<``, ``|``, ``&``, ``^`` or ``%`` in it.
+ALIAS_OFF = ("xefmctl: the Store version of XeFM runs xefmctl through an app "
+             "execution alias, which is turned off. Turn on xefmctl.exe for XeFM "
+             "in Windows Settings, Apps, Advanced app settings, App execution "
+             "aliases, then restart XeFM.")
+
+
+def running_packaged() -> bool:
+    """Whether this process has MSIX package identity (the Store install, or a
+    sideloaded package).
+
+    Asked of Windows rather than read from the path, because it is the
+    condition that matters: only a process with the package's identity may
+    start a binary inside the package.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    length = ctypes.c_uint32(0)
+    return ctypes.windll.kernel32.GetCurrentPackageFullName(
+        ctypes.byref(length), None) != _NO_PACKAGE
+
+
+def store_alias_path() -> str:
+    """Where Windows puts the stub for :data:`STORE_ALIAS`."""
+    return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WindowsApps",
+                        STORE_ALIAS)
+
+
+def windows_shim(python: str, client: str, *, packaged: bool | None = None,
+                 alias: str | None = None) -> str:
+    """The text of ``xefmctl.cmd`` (#983).
+
+    Outside a package it runs the client with XeFM's interpreter. In the Store
+    package that interpreter can be started only with the package's identity,
+    and no shell XeFM starts has it: Windows starts a child whose program lies
+    outside the package (cmd, PowerShell, bash) without the identity. The shim
+    then calls the package's app execution alias, which starts
+    ``xefmctl.exe`` - the same client - with the identity from anywhere. The
+    interpreter's own path is never the fallback there: it exists and cannot
+    work, so with the alias turned off the shim says how to turn it on.
+    """
+    if packaged is None:
+        packaged = running_packaged()
+    if not packaged:
+        return f'@"{python}" -I "{client}" %*\n'
+    alias = store_alias_path() if alias is None else alias
+    # lexists: the stub is a 0-byte reparse point with an app-exec tag; asking
+    # about the link itself does not depend on Python resolving that tag.
+    if os.path.lexists(alias):
+        return f'@"{alias}" %*\n'
+    logger.warning("xefmctl's app execution alias is turned off; "
+                   "xefmctl will say how to turn it on")
+    return f"@>&2 echo {ALIAS_OFF}\n@exit /b 3\n"
 
 
 def _cleanup(listener, directory: str, stop: threading.Event) -> None:
