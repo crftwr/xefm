@@ -365,6 +365,23 @@ class TestUnreadableDirectory(unittest.TestCase):
         logger.error.assert_not_called()
         logger.warning.assert_not_called()
 
+    def test_a_directory_that_cannot_be_listed_is_not_handed_to_watchdog(self):
+        # watchdog's Windows reader opens the directory on its own thread, so
+        # its PermissionError never reaches the start: a listing probe finds it
+        # first.
+        logger = Mock()
+        with patch('xefm.file_monitor_observer.WATCHDOG_AVAILABLE', True), \
+             patch('xefm.file_monitor_observer.os.scandir',
+                   side_effect=PermissionError(13, "Access is denied")), \
+             patch('xefm.file_monitor_observer.Observer', create=True) as native, \
+             patch('xefm.file_monitor_observer.PollingObserver', create=True) as polling:
+            observer = FileMonitorObserver(self.temp_path, Mock(), logger)
+            self.assertFalse(observer.start())
+        self.assertTrue(observer.unreadable)
+        native.assert_not_called()
+        polling.assert_not_called()
+        logger.error.assert_not_called()
+
     def test_other_failures_are_not_unreadable(self):
         logger = Mock()
         broken = Mock()
