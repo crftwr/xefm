@@ -22,6 +22,14 @@ the generated home, recordings) go to `temp/gui-demo/`, which git ignores.
 | `reset_vm.sh` | before each take: fresh home, window frame, XeFM started |
 | `modes.py` | lists or sets the guest's display mode (runs in the VM) |
 | `vm.sh` | ssh into the VM |
+| `setup_claude_vm.sh` | AI agent video, one-time: Claude Code settings and event hooks in the VM |
+| `prep_home_agent.py` | AI agent video: the home for its takes (TODOs, junk files, photos, AGENTS config) |
+| `reset_agent.sh` | AI agent video: before each take, with the theme and the token file |
+| `agent_drive.py` | AI agent video: runs a take that waits on the agent (hook events) and approves XeFM's dialogs |
+| `agent_common.py` | AI agent video: menu coordinates and shared steps |
+| `scenes_agent_*.py` | AI agent video: the six takes |
+| `vm_xefm_state.sh` | AI agent video: `xefmctl state` from outside the agent's session (runs in the VM) |
+| `make_agent_video.py` | AI agent video: edits the takes into one video (sped-up work, captions, cards) |
 
 ## Once
 
@@ -86,3 +94,56 @@ ffmpeg -i temp/gui-demo/take1/raw.mp4 -vf "scale=960:600:flags=lanczos" \
 
 Upload that MP4 to GitHub (drag it into an issue comment) and put the
 `user-attachments` URL in the README, as a bare URL on its own line.
+
+## The AI agent video
+
+A ~4-minute video of Claude Code working inside XeFM: six takes, each its own
+theme, edited into one file. The agent really runs, so the takes wait on it
+rather than on fixed holds: Claude Code's hooks append each tool call and the
+end of each turn to `/tmp/agent-events.jsonl` in the VM, and `agent_drive.py`
+follows that file. A Move or Trash dialog raised inside one Bash call is
+spotted with `xefmctl state` (`vm_xefm_state.sh` borrows the agent session's
+`XEFM_*` variables from the claude process).
+
+Once, with Claude Code installed in the VM (`~/.local/bin/claude`):
+
+```bash
+tools/gui_demo/setup_claude_vm.sh
+```
+
+Sign-in is a `claude setup-token` OAuth token in a local file. `reset_agent.sh`
+reads it over ssh stdin and hands it to XeFM with `open --env`, so it is never
+on a command line, in the VM's files, or in `~/.xefm/config.py` (which the
+agent may read). `launchctl setenv` over ssh does not reach the GUI session.
+
+Each take, then the edit:
+
+```bash
+tools/gui_demo/reset_agent.sh Earth TOKEN_FILE
+$VENV/bin/python tools/gui_demo/agent_drive.py record temp/gui-demo/takes/1-overview scenes_agent_overview
+echo '{"title": "Ask about what you are looking at", "theme": "Earth"}' > temp/gui-demo/takes/1-overview/caption.json
+# ... the other five takes ...
+$VENV/bin/python tools/gui_demo/make_agent_video.py temp/gui-demo/edit temp/gui-demo/takes/*/
+```
+
+`make_agent_video.py` speeds up the agent's working spans (with an "Nx"
+badge), keeps typing, dialogs and answers at normal speed, and writes a
+1920x1200 and a 1280x800 file.
+
+Traps:
+
+- **Keep the host idle.** A game running on the host made the whole first
+  set choppy, typing included.
+- **Pelagic draws at 30 fps by design** (`FRAME_RATE` in
+  `xefm/background_pelagic.py`). Against the unsynchronized 30 fps capture
+  that beats into about a quarter of the frames repeated. For the Pelagic
+  take, set it to 60.0 in the VM's
+  `/Applications/XeFM.app/Contents/Resources/xefm/background_pelagic.py` and
+  put it back afterwards.
+- The agent does not always answer the same way (asked to delete for good it
+  may refuse, or trash instead), so a step that may raise a dialog uses
+  `approve`, not `wait_stop`.
+- An API stall can hold a turn for minutes; retake rather than edit around it.
+- The Home key does not reach XeFM over VNC: select all through the Select
+  menu. To reach the file manager, filter the Screens switcher for "file"
+  (the agent may have switched screens itself).
