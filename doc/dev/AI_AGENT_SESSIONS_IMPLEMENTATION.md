@@ -207,8 +207,11 @@ ruled out). ACP stays the candidate for other agents.
   **Always Allow** returns the CLI's `permission_suggestions` with
   `destination` forced to `session`: XeFM never writes the user's or the
   project's settings. `AskUserQuestion` comes the same way and is answered
-  with `updatedInput.answers` (question -> label) from one `ctx.choose` per
-  question. A `control_cancel_request` withdraws a question.
+  with `updatedInput.answers` (question -> label, several joined with
+  ", ") from one `agent_question_dialog.QuestionDialog` per question: radio
+  rows, checkbox rows for `multiSelect`, an Other row with a field. The
+  answers are kept in the tool item's input, so the transcript shows each
+  question with its answer rather than the input as JSON. A `control_cancel_request` withdraws a question.
 - `xefm/agent_chat_view.py`: `ChatView`, a full-window layer with the
   viewers' hints, header / `MarkdownView` transcript (`follow_end`, fed by
   `update_source`, which re-wraps only the changed tail) / PuiKit

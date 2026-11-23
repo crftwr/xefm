@@ -429,3 +429,75 @@ def test_the_view_draws_on_a_pixel_backend_and_routes_the_mouse(fake_cli, tmp_pa
     view.handle_event(Event(type=EventType.MOUSE_DOWN, x=r.x + 2, y=r.y + 0.5, button="left"))
     view.handle_event(Event(type=EventType.MOUSE_UP, x=r.x + 2, y=r.y + 0.5, button="left"))
     assert view._mouse_target is None
+
+
+# --- the question dialog (AskUserQuestion) ------------------------------------------------
+
+_OPTS = [{"label": "blocks", "description": "thumb-blocks.jpg"},
+         {"label": "crystal"}, {"label": "earth"}]
+
+
+@pytest.fixture(params=["tui", "gui"])
+def q_panel(request):
+    from puikit import Panel, PROFILE_GUI_DESKTOP, PROFILE_TUI
+    from puikit.backends.memory_backend import MemoryBackend
+    caps = PROFILE_GUI_DESKTOP if request.param == "gui" else PROFILE_TUI
+    return Panel(MemoryBackend(width=80, height=24, capabilities=caps))
+
+
+def _ask(panel, multi=False):
+    from xefm.agent_question_dialog import show_question_dialog
+    got = []
+    dialog = show_question_dialog(panel, "どれが好き？", _OPTS, multi=multi,
+                                  title="Theme", on_result=got.append)
+    panel.render()
+    return dialog, got
+
+
+def test_single_choice_answers_with_the_row_or_its_number(q_panel):
+    dialog, got = _ask(q_panel)
+    text = _screen_text(q_panel)
+    if not q_panel.backend.capabilities.supports("pixel_layout"):
+        assert "( ) 2. crystal" in text and "thumb-blocks.jpg" in text and "Other:" in text
+    q_panel.dispatch_event(_key("down"))
+    q_panel.dispatch_event(_key("enter", "\r"))
+    assert got == [["crystal"]]
+    dialog, got = _ask(q_panel)
+    q_panel.dispatch_event(_key("3", "3"))
+    assert got == [["earth"]]
+
+
+def test_multiple_choice_checks_several(q_panel):
+    dialog, got = _ask(q_panel, multi=True)
+    q_panel.dispatch_event(_key("space", " "))
+    q_panel.dispatch_event(_key("3", "3"))
+    text = _screen_text(q_panel)
+    if not q_panel.backend.capabilities.supports("pixel_layout"):
+        assert "[x] 1. blocks" in text
+    q_panel.dispatch_event(_key("enter", "\r"))
+    assert got == [["blocks", "earth"]]
+
+
+def test_other_takes_a_typed_answer_and_escape_declines(q_panel):
+    dialog, got = _ask(q_panel, multi=True)
+    q_panel.dispatch_event(_key("1", "1"))
+    for _ in range(3):
+        q_panel.dispatch_event(_key("down"))
+    for ch in "mine":
+        q_panel.dispatch_event(_key(ch, ch))
+    q_panel.dispatch_event(_key("enter", "\r"))
+    assert got == [["blocks", "mine"]]
+    dialog, got = _ask(q_panel)
+    q_panel.dispatch_event(_key("escape", "\x1b"))
+    assert got == [None]
+
+
+def test_the_transcript_shows_questions_and_answers():
+    item = C.Item("tool", name=C.ASK_USER_TOOL, input={"questions": [
+        {"question": "Which?", "options": [{"label": "A"}, {"label": "B"}]},
+        {"question": "And?", "multiSelect": True, "options": [{"label": "X"}]}]})
+    md = C.tool_markdown(item)
+    assert "Which?" in md and "_A, B_" in md and "{" not in md
+    item.input["answers"] = {"Which?": "B", "And?": "X, mine"}
+    md = C.tool_markdown(item)
+    assert "→ **B**" in md and "→ **X, mine**" in md

@@ -104,6 +104,8 @@ class ChatView(FocusContainer, Widget):
         self.client: C.ChatClient | None = None
         self.transcript = MarkdownView("", selectable=True, code_copy=True, on_link=on_link)
         self.transcript.follow_end = True
+        # A relative image path in a reply means the agent's folder.
+        self.transcript.base_dir = cwd
         self.input = TextArea(submit_on_enter=True, min_rows=1, max_rows=10,
                               on_submit=self._submit,
                               placeholder=f"Message {name}")
@@ -215,7 +217,8 @@ class ChatView(FocusContainer, Widget):
         """Send the user's answer to ``perm`` back to the agent."""
         if self.client is not None:
             self.client.respond(perm.request_id, response)
-        self.conversation.answered(perm, response.get("behavior") == "allow")
+        self.conversation.answered(perm, response.get("behavior") == "allow",
+                                   response.get("updatedInput"))
         self._changed()
 
     def send(self, text: str) -> bool:

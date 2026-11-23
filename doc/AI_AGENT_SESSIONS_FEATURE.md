@@ -91,7 +91,8 @@ Type `/clear` to start a new conversation, and `/exit` to end the session.
   your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of
   command, for the rest of this session; nothing is written to your
   settings) or **Deny**. When the agent asks you to choose between options,
-  XeFM shows them as a list. The confirmations of
+  XeFM shows each question with its options - one to pick, or checkboxes
+  where several may be chosen - and a field for an answer of your own. The confirmations of
   [What the agent may not do](#what-the-agent-may-not-do) apply as in any
   agent session.
 - **Back to the session.** **AI Agent Here** in the same folder goes back to

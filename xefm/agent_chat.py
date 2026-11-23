@@ -463,13 +463,17 @@ class Conversation:
         self.state = ASKING
         return perm
 
-    def answered(self, perm: Permission, allowed: bool) -> None:
-        """The user answered ``perm``."""
+    def answered(self, perm: Permission, allowed: bool,
+                 updated_input: dict | None = None) -> None:
+        """The user answered ``perm`` (with the tool's input as it was let
+        through: ``AskUserQuestion``'s carries the answers)."""
         self.permissions.pop(perm.request_id, None)
-        if not allowed:
-            item = self._tools.get(perm.tool_use_id)
-            if item is not None:
+        item = self._tools.get(perm.tool_use_id)
+        if item is not None:
+            if not allowed:
                 item.denied = True
+            elif updated_input is not None:
+                item.input = dict(updated_input)
         self._update_state()
 
     def exited(self, code: int | None, stderr: str) -> None:
@@ -618,8 +622,34 @@ def _quote(text: str) -> str:
     return "\n".join("> " + line if line else ">" for line in text.split("\n"))
 
 
+def _questions_markdown(item: Item) -> str:
+    """``AskUserQuestion`` as the questions asked and the answers given."""
+    answers = item.input.get("answers") if isinstance(item.input.get("answers"), dict) else {}
+    parts = []
+    for q in item.input.get("questions") or []:
+        if not isinstance(q, dict) or not isinstance(q.get("question"), str):
+            continue
+        text = q["question"]
+        given = answers.get(text)
+        if given is not None:
+            parts.append(f"{text}  \n→ **{given}**")
+        else:
+            opts = ", ".join(str(o.get("label")) for o in q.get("options") or []
+                             if isinstance(o, dict))
+            parts.append(f"{text}  \n_{opts}_" if opts else text)
+    if item.denied:
+        mark = " ✗ not answered"
+    elif item.open and item.result is None and not answers:
+        mark = " …"
+    else:
+        mark = ""
+    return f"**Question**{mark}\n\n" + "\n\n".join(parts)
+
+
 def tool_markdown(item: Item) -> str:
     name = item.name or "tool"
+    if name == ASK_USER_TOOL and isinstance(item.input.get("questions"), list):
+        return _questions_markdown(item)
     what = summary(name, item.input) if item.input else ""
     if item.open and item.result is None:
         mark = "…"

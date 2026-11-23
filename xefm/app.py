@@ -6364,9 +6364,12 @@ class XeFMApp:
         self.panel.render()
 
     def _agent_chat_questions(self, view, perm) -> None:
-        """``AskUserQuestion``: each question a list of its options, in turn;
-        the answers filled into the tool's input. Escape on any declines."""
+        """``AskUserQuestion``: one dialog per question, in turn - radio rows,
+        or checkboxes for a ``multiSelect`` one, and a row for a typed
+        answer; the answers filled into the tool's input (several joined
+        with ", "). Escape on any declines."""
         from xefm import agent_chat as C
+        from xefm.agent_question_dialog import show_question_dialog
         qs = C.questions(perm)
         answers: dict = {}
 
@@ -6376,20 +6379,21 @@ class XeFMApp:
                 self.panel.render()
                 return
             q = qs[i]
-            options = q["options"]
 
-            def picked(index) -> None:
-                if index is None:
+            def picked(labels) -> None:
+                if labels is None:
                     view.answer(perm, C.deny("The user did not answer."))
                     self.panel.render()
                     return
-                answers[q["question"]] = options[index]["label"]
+                answers[q["question"]] = ", ".join(labels)
                 ask(i + 1)
 
-            labels = [o["label"] + (f" - {o['description']}" if o.get("description") else "")
-                      for o in options]
-            self._on_screen_of(view, lambda: self._user_ctx.choose(
-                q["question"], labels, on_result=picked))
+            title = str(q.get("header") or "Question")
+            if len(qs) > 1:
+                title += f" ({i + 1}/{len(qs)})"
+            self._on_screen_of(view, lambda: show_question_dialog(
+                self.panel, q["question"], q["options"], multi=bool(q.get("multiSelect")),
+                title=title, on_result=picked))
             self.panel.render()
         ask(0)
 
