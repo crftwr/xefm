@@ -32,11 +32,11 @@ FAKE_CLI = textwrap.dedent(r'''
         if msg["type"] == "control_request":
             sub = msg["request"]["subtype"]
             if sub == "initialize":
+                # As Claude Code: only the answer at start; `system init`
+                # comes with the first turn.
                 out({"type": "control_response", "response": {
                     "subtype": "success", "request_id": msg["request_id"],
                     "response": {"commands": [{"name": "compact"}]}}})
-                out({"type": "system", "subtype": "init", "session_id": "S1",
-                     "model": "fake-model", "cwd": "/tmp", "tools": ["Bash"]})
             elif sub == "interrupt":
                 out({"type": "result", "subtype": "error_during_execution",
                      "is_error": True, "session_id": "S1"})
@@ -44,6 +44,9 @@ FAKE_CLI = textwrap.dedent(r'''
         if msg["type"] == "control_response":
             continue
         turn += 1
+        if turn == 1:
+            out({"type": "system", "subtype": "init", "session_id": "S1",
+                 "model": "fake-model", "cwd": "/tmp", "tools": ["Bash"]})
         text = msg["message"]["content"]
         mid = f"m{turn}"
         if "tool" in text:
@@ -249,7 +252,7 @@ def test_the_client_talks_to_the_cli(fake_cli, tmp_path):
     client = C.ChatClient(fake_cli, cwd=str(tmp_path), env=dict(os.environ), post=posts,
                           on_message=got.append, on_exit=lambda c, e: exits.append(c))
     client.start()
-    posts.until(lambda: any(m.get("type") == "system" for m in got))
+    posts.until(lambda: any(m.get("type") == "control_response" for m in got))
     assert client.send("hello")
     posts.until(lambda: any(m.get("type") == "result" for m in got))
     assert any(m.get("type") == "assistant" for m in got)
@@ -289,7 +292,8 @@ def test_the_view_sends_streams_and_asks(fake_cli, tmp_path):
     panel, view = _view(fake_cli, tmp_path, posts, asked)
     assert view.start(panel)
     posts.until(lambda: view.conversation.state == C.IDLE)
-    assert "fake-model" in _screen_text(panel)
+    # Ready on the answer to initialize, before any message.
+    assert "waiting for you" in _screen_text(panel)
     for ch in "hi":
         panel.dispatch_event(_key(ch, ch))
     panel.dispatch_event(_key("enter", "\r"))
@@ -297,6 +301,7 @@ def test_the_view_sends_streams_and_asks(fake_cli, tmp_path):
     posts.until(lambda: view.conversation.state == C.IDLE
                 and any(i.kind == "text" for i in view.conversation.items))
     text = _screen_text(panel)
+    assert "fake-model" in text  # known from `system init`, with the first turn
     assert "Hello there" in text and "> hi" not in text  # quoted, as a block
     # A tool that needs permission: the app is asked, the answer goes back.
     view.send("use a tool")
@@ -345,6 +350,9 @@ def test_the_view_starts_again_after_the_agent_ended(fake_cli, tmp_path):
     view._restart_argv = lambda sid: seen.append(sid) or list(fake_cli)
     view.start(panel)
     posts.until(lambda: view.conversation.state == C.IDLE)
+    view.send("first")  # the session id comes with the first turn
+    posts.until(lambda: view.conversation.session_id == "S1"
+                and view.conversation.state == C.IDLE)
     view.client._proc.kill()
     posts.until(lambda: view.conversation.state == C.EXITED)
     assert view.send("again")

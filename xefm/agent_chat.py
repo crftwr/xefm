@@ -313,6 +313,11 @@ class Conversation:
                 self.commands = body["commands"]
             if response.get("subtype") == "error":
                 logger.warning(f"Agent refused a request: {response.get('error')}")
+            elif self.state == STARTING:
+                # The answer to initialize: the CLI is ready. Its `system
+                # init` comes only with the first turn, so waiting for that
+                # would show "starting" until the user sends something.
+                self._update_state()
         elif kind == "rate_limit_event":
             info = msg.get("rate_limit_info") or {}
             if info.get("status") not in (None, "allowed", "allowed_warning"):
