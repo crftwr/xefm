@@ -124,7 +124,10 @@ class QuestionDialog(FocusContainer, Widget):
         w = float(min(sw - 4.0, _MAX_W, max(48.0, widest)))
         lines = self._layout(measure, w)
         other_h = CONTROL_HEIGHT if vector else 1.0
-        h = 3.0 + len(lines) + 1.0 + len(self.options) * pitch + other_h + 1.0 + HINT_ROWS
+        # A blank row over the hint band on a grid; a vector backend's title
+        # and hint bands are already shorter than the grid rows reserved here.
+        gap = 0.0 if vector else 1.0
+        h = 3.0 + len(lines) + 1.0 + len(self.options) * pitch + other_h + gap + HINT_ROWS
         panel.push_layer(self, z=z, hints={"shadow": True, "w": w, "h": min(sh - 2.0, h)})
         animate_open(panel, self)
 

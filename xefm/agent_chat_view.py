@@ -348,9 +348,13 @@ class ChatView(FocusContainer, Widget):
         right = conv.state + (f" · {conv.model}" if conv.model else "") + " "
         right_w = ctx.measure_text(right)
         title = f" {self.name}  {_short(self.cwd)}"
-        ctx.draw_text(pad_x, pad_y, elide(title, max(1.0, iw - right_w - 1), where="end",
-                                          measure=ctx.measure_text),
-                      Style(fg=accent, bg=header_bg, attr=TextAttribute.BOLD))
+        # Measured in the bold it is drawn in: bold is wider, and elided by
+        # the regular widths the title ran into the state on the right.
+        title_style = Style(fg=accent, bg=header_bg, attr=TextAttribute.BOLD)
+        ctx.draw_text(pad_x, pad_y,
+                      elide(title, max(1.0, iw - right_w - 1), where="end",
+                            measure=lambda t: ctx.measure_text(t, title_style)),
+                      title_style)
         state_fg = accent if conv.busy else muted
         ctx.draw_text(max(pad_x, wu - pad_x - right_w), pad_y, right,
                       Style(fg=state_fg, bg=header_bg))
