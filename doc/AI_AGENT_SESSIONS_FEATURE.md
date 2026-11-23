@@ -54,7 +54,60 @@ screen switcher, its row shows what the agent calls itself in its title
 In terminal mode, XeFM hands the agent its terminal and waits, as it does
 for the subshell. While the agent runs there, XeFM answers what it asks
 about the panes and its searches, but cannot show it anything or ask you
-anything: those need the desktop app.
+anything: those need the desktop app, or a
+[conversation drawn by XeFM](#conversations-drawn-by-xefm), which keeps
+XeFM's screen in terminal mode too.
+
+## Conversations drawn by XeFM
+
+Claude Code can also run without a terminal: with `'ui': 'xefm'` on its
+entry, XeFM draws the conversation itself, on a screen of its own. It looks
+and works the same in the desktop app and in terminal mode. In terminal mode
+the agent no longer takes the terminal over, so it can show you things and
+XeFM can ask you things there too.
+
+```python
+AGENTS = [
+    {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code', 'ui': 'xefm'},
+]
+```
+
+The screen has the agent, its folder and what it is doing at the top, the
+conversation in the middle, and the field you type in at the bottom. Each
+tool the agent uses shows as one line - the command, the file, the pattern -
+with the first lines of what it returned.
+
+| Key | What it does |
+|---|---|
+| `Enter` | Send the message. One sent while the agent works waits for its turn to end |
+| `Alt+Enter`, `Shift+Enter`, `Ctrl+J` | A new line in the message (a terminal cannot send `Shift+Enter`; the other two work everywhere) |
+| `Esc` | Stop the agent while it works; otherwise go back to the file manager, the session kept |
+| `↑` / `↓` | On the first (last) line of the field: an earlier (later) message you sent |
+| `PageUp` / `PageDown` | Scroll the conversation (so does the wheel) |
+
+Type `/clear` to start a new conversation, and `/exit` to end the session.
+
+- **The agent asks in XeFM.** When the agent wants to run a tool that needs
+  your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of
+  command, for the rest of this session; nothing is written to your
+  settings) or **Deny**. When the agent asks you to choose between options,
+  XeFM shows them as a list. The confirmations of
+  [What the agent may not do](#what-the-agent-may-not-do) apply as in any
+  agent session.
+- **Back to the session.** **AI Agent Here** in the same folder goes back to
+  the session there instead of starting another; **Screens…** lists it too,
+  in terminal mode as well. While you are away, the status bar says when the
+  agent is asking you something or has finished.
+- **Links.** A link in the agent's reply to a file or folder on this
+  computer opens it in the active pane.
+- **If the agent stops** (it crashed, or you ended it outside XeFM), the
+  conversation stays on screen; `Enter` starts it again in the same
+  conversation.
+
+Only Claude Code can be drawn for now, and this is Preview. XeFM runs your
+own `claude` in its non-interactive mode (`claude -p`, with its streaming
+JSON input and output), signed in as you set it up: what that use counts
+against is between you and your Claude Code plan, as it is in a terminal.
 
 ## What the agent gets
 
@@ -116,6 +169,7 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 | `settings` | Claude Code and Antigravity: the settings to pass instead of XeFM's, in that agent's own form, e.g. `{'permissions': {'deny': ['Bash(rm:*)']}}` for Claude Code, `{'permissions': {'deny': ['command(rm)']}}` for Antigravity |
 | `env` | Extra environment variables |
 | `prompt_args` | Without a preset: what `ask_agent` adds for the request (default `['{prompt}']`) |
+| `ui` | `'terminal'` (the default): the agent's own screen in a terminal session. `'xefm'`: [the conversation drawn by XeFM](#conversations-drawn-by-xefm) (Claude Code only) |
 
 To pass the agent more options, add them to `command`:
 `['claude', '--model', 'opus']`.

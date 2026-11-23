@@ -1011,7 +1011,9 @@ class TerminalSession:
     terminal mode XeFM hands its terminal over instead, so a session lives
     only while it has it: :meth:`ActionContext.start_terminal_session`
     returns one that has already ended, and :meth:`ActionContext.terminal_sessions`
-    is empty.
+    holds only AI agent sessions XeFM draws itself (``kind == "agent"``,
+    ``'ui': 'xefm'`` in ``AGENTS``), which need no terminal and have a screen
+    in both modes.
 
     Compare two with ``==``."""
 
@@ -1033,8 +1035,9 @@ class TerminalSession:
 
     @property
     def kind(self) -> str:
-        """``"shell"`` or ``"program"``: a shell's ``exit`` ends the session
-        whatever its status, a program's failure keeps its last screen."""
+        """``"shell"``, ``"program"`` or ``"agent"``: a shell's ``exit`` ends
+        the session whatever its status, a program's failure keeps its last
+        screen; an agent session is a conversation XeFM draws (#959)."""
         return self._session.kind
 
     @property
@@ -1052,7 +1055,9 @@ class TerminalSession:
     @property
     def state(self) -> str:
         """``"at prompt"``, ``"running a command"`` (both known only from
-        shell integration), ``"running"``, ``"exited"`` or ``"exited (N)"``."""
+        shell integration), ``"running"``, ``"exited"`` or ``"exited (N)"``;
+        for an agent session ``"starting"``, ``"working"``, ``"asking you"``,
+        ``"waiting for you"`` or ``"exited"``."""
         return self._session.state
 
     @property
@@ -1697,8 +1702,9 @@ class ActionContext:
         the rest most recently shown first - what the screen switcher lists,
         so ``ctx.screens()[1].show()`` goes back to the previous screen.
         ``order="started"`` lists them in the order they were made, the file
-        manager first. In terminal mode the file manager's is the only one,
-        so code walking this list needs no mode check."""
+        manager first. In terminal mode the file manager's is the only one
+        but for AI agent sessions XeFM draws (``'ui': 'xefm'``), so code
+        walking this list needs no mode check."""
         if order not in ("recent", "started"):
             raise ValueError(f"screens: order is 'recent' or 'started', not {order!r}")
         manager = self._app._screens
@@ -1714,8 +1720,9 @@ class ActionContext:
     @preview
     def terminal_sessions(self) -> list[TerminalSession]:
         """The terminal sessions there are, in the order they were started.
-        Empty in terminal mode, where a session lives only while it has the
-        terminal and XeFM runs nothing meanwhile."""
+        In terminal mode, where a terminal session lives only while it has
+        the terminal and XeFM runs nothing meanwhile, only AI agent sessions
+        XeFM draws (``kind == "agent"``) are listed."""
         return [TerminalSession(self._app, s) for s in self._app._sessions]
 
     @preview

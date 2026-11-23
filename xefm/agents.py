@@ -128,7 +128,16 @@ ANTIGRAVITY_DEFAULT_SETTINGS = {
 #: The environment variable naming Copilot's extra instructions folders.
 COPILOT_INSTRUCTIONS_ENV = "COPILOT_CUSTOM_INSTRUCTIONS_DIRS"
 
-_KEYS = {"name", "command", "preset", "restrict", "settings", "env", "prompt_args"}
+_KEYS = {"name", "command", "preset", "restrict", "settings", "env", "prompt_args", "ui"}
+
+#: How a session is shown (an entry's ``'ui'``): the agent CLI's own screen
+#: in a terminal session, or the conversation drawn by XeFM (#959; Claude
+#: Code only, through its stream-json mode - :mod:`xefm.agent_chat`).
+UI_TERMINAL = "terminal"
+UI_XEFM = "xefm"
+UIS = (UI_TERMINAL, UI_XEFM)
+#: The presets XeFM can draw a conversation for.
+DRAWN_PRESETS = (CLAUDE_CODE,)
 
 
 def entries(config: Any) -> list[dict]:
@@ -174,6 +183,12 @@ def normalize(item: Any) -> dict | str:
     env = item.get("env") or {}
     if not isinstance(env, dict):
         return f"{name}: 'env' is a dict"
+    ui = item.get("ui", UI_TERMINAL)
+    if ui not in UIS:
+        return f"{name}: 'ui' is one of {', '.join(UIS)}"
+    if ui == UI_XEFM and preset not in DRAWN_PRESETS:
+        return (f"{name}: 'ui': 'xefm' needs 'preset': one of "
+                f"{', '.join(DRAWN_PRESETS)}")
     prompt_args = item.get("prompt_args", ["{prompt}"])
     if not isinstance(prompt_args, (list, tuple)) \
             or not all(isinstance(a, str) for a in prompt_args):
@@ -186,6 +201,7 @@ def normalize(item: Any) -> dict | str:
         "settings": settings,
         "env": {str(k): str(v) for k, v in env.items()},
         "prompt_args": list(prompt_args),
+        "ui": ui,
     }
 
 
@@ -368,6 +384,40 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
         return out
     if prompt:
         out += [_fill(a, values) for a in entry["prompt_args"]]
+    return out
+
+
+def drawn(entry: dict) -> bool:
+    """Whether XeFM draws the entry's conversation (``'ui': 'xefm'``)."""
+    return entry.get("ui") == UI_XEFM
+
+
+def drawn_rules(rules: str) -> str:
+    """The rules for a conversation XeFM draws: the same, but nothing about a
+    terminal - the user reads the agent in XeFM's own screen."""
+    return (rules
+            .replace("in a terminal session XeFM started. The user is looking "
+                     "at XeFM's window, beside this session.",
+                     "and XeFM draws this conversation in its own window. The "
+                     "user reads your replies there, beside the file manager; "
+                     "XeFM asks them each time a tool needs permission.")
+            .replace("rather than long output in this terminal",
+                     "rather than long output in your reply"))
+
+
+def chat_argv(entry: dict, values: dict) -> list[str]:
+    """The command line of a drawn session (``'ui': 'xefm'``): the entry's
+    ``command``, Claude Code's stream-json mode with its permission questions
+    sent to XeFM, then what the preset passes a terminal session too - the
+    skill, the rules, the settings. The first request goes in as a message,
+    not on the command line."""
+    from xefm.agent_chat import CLAUDE_STREAM_ARGS
+    values = dict(values, **{"{prompt}": ""})
+    out = [_fill(a, values) for a in entry["command"]]
+    out += list(CLAUDE_STREAM_ARGS)
+    out += ["--plugin-dir", values["{plugin_dir}"],
+            "--append-system-prompt", drawn_rules(values["{rules}"]),
+            "--settings", values["{settings_file}"]]
     return out
 
 
