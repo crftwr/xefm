@@ -6279,7 +6279,9 @@ class XeFMApp:
             on_user_action=self._run_terminal_user_action,
             on_link=self._agent_chat_link,
             on_change=lambda v: self._agent_chat_changed(v),
-            restart_argv=lambda session_id: argv + ["--resume", session_id])
+            restart_argv=lambda session_id: argv + ["--resume", session_id],
+            on_diff=self._agent_chat_diff,
+            mention_paths=self._agent_mention_paths)
         view.entry_name = entry["name"]
         box["view"] = view
         session = self._sessions.add(Session(
@@ -6336,6 +6338,9 @@ class XeFMApp:
         if perm.tool == C.ASK_USER_TOOL:
             self._agent_chat_questions(view, perm)
             return
+        if perm.tool == C.PLAN_TOOL:
+            self._agent_chat_plan(view, perm)
+            return
         what = C.summary(perm.tool, perm.input)
         lines = [f"**{view.name}** wants to use **{perm.tool}**."]
         if perm.description and perm.description != what:
@@ -6362,6 +6367,93 @@ class XeFMApp:
                              on_result=answered)
         self._on_screen_of(view, open_dialog)
         self.panel.render()
+
+    def _agent_chat_plan(self, view, perm) -> None:
+        """``ExitPlanMode``: the plan, to approve - going on asking before
+        each tool, or accepting edits - or to send back for more planning."""
+        from xefm import agent_chat as C
+        plan = str(perm.input.get("plan") or "").strip() or "_(no plan text)_"
+        buttons = ["Approve", "Approve, Accept Edits", "Keep Planning"]
+
+        def answered(label: str) -> None:
+            if label == "Keep Planning":
+                view.answer(perm, C.deny("The user wants to keep planning: the plan is "
+                                         "not approved yet. Ask what to change."))
+            else:
+                view.answer(perm, C.allow(perm))
+                view.set_mode("acceptEdits" if label == "Approve, Accept Edits" else "default")
+            self.panel.render()
+
+        def open_dialog() -> None:
+            show_message_box(self.panel, f"**{view.name}** has a plan:\n\n{plan}",
+                             title="Approve the plan?", icon="question", buttons=buttons,
+                             default=0, cancel=len(buttons) - 1, markdown=True,
+                             on_result=answered)
+        self._on_screen_of(view, open_dialog)
+        self.panel.render()
+
+    def _agent_chat_diff(self, view, item) -> None:
+        """An agent's edit in the diff viewer: the whole file as it was before
+        (the edit undone on what is on disk) against the file now; just the
+        replaced text against its replacement when the file has changed again
+        since."""
+        import tempfile
+        from xefm import agent_chat as C
+        path = str(item.input.get("file_path") or "")
+        try:
+            with open(path, encoding="utf-8", newline="") as f:
+                current = f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            self.log_info(f"Compare: cannot read {path}: {e}")
+            current = None
+        before = C.edit_before(item, current) if current is not None else None
+        tmp = tempfile.mkdtemp(prefix="xefm-agent-diff-")
+        name = os.path.basename(path) or "edit.txt"
+
+        def write(sub: str, text: str) -> str:
+            os.makedirs(os.path.join(tmp, sub), exist_ok=True)
+            out = os.path.join(tmp, sub, name)
+            with open(out, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+            return out
+
+        if before is not None:
+            left, right = write("before", before), path
+            titles = (f"{name} (before the edit)", f"{name} (now)")
+        else:
+            edits = [item.input] if item.name == "Edit" else list(item.input.get("edits") or [])
+            left = write("old", "\n".join(str(e.get("old_string", "")) for e in edits
+                                          if isinstance(e, dict)))
+            right = write("new", "\n".join(str(e.get("new_string", "")) for e in edits
+                                           if isinstance(e, dict)))
+            titles = ("Replaced text", "Replacement")
+
+        def cleanup() -> None:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        self._on_screen_of(view, lambda: self.open_diff(Path(left), Path(right),
+                                                        titles=titles, on_close=cleanup))
+        self.panel.render()
+
+    def _agent_mention_paths(self) -> list[str]:
+        """What ``@`` lists first in a drawn agent session: the files selected
+        in the panes (the active one first), else the ones under the cursors -
+        local ones only, a path the agent can open."""
+        ctx = self._user_ctx
+        out: list[str] = []
+        for pane in (ctx.pane, ctx.other):
+            try:
+                entries = pane.selected or ([pane.focused] if pane.focused else [])
+            except Exception as e:
+                getLogger("AgentChat").error(f"Agent mentions: cannot read a pane: {e}")
+                continue
+            for entry in entries:
+                p = str(entry.path)
+                if entry.name != ".." and os.path.isabs(p) and os.path.exists(p) \
+                        and p not in out:
+                    out.append(p)
+        return out
 
     def _agent_chat_questions(self, view, perm) -> None:
         """``AskUserQuestion``: one dialog per question, in turn - radio rows,

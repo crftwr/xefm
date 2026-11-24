@@ -73,9 +73,14 @@ AGENTS = [
 ```
 
 The screen has the agent, its folder and what it is doing at the top, the
-conversation in the middle, and the field you type in at the bottom. Each
-tool the agent uses shows as one line - the command, the file, the pattern -
-with the first lines of what it returned.
+conversation in the middle, and the field you type in at the bottom. What
+you wrote is on a panel; each step the agent takes follows with a dot - green
+for a tool that worked, red for one that failed or that you declined. A tool
+shows as one line - the file, the pattern - with the first lines of what it
+returned, and **… more lines** under it shows the rest (**show less** folds it
+again). A shell command and its output read as in a terminal, in one block.
+An edit shows its first changed lines, and **open diff** opens the whole file,
+before the edit and now, in the diff viewer.
 
 | Key | What it does |
 |---|---|
@@ -84,8 +89,16 @@ with the first lines of what it returned.
 | `Esc` | Stop the agent while it works; otherwise go back to the file manager, the session kept |
 | `↑` / `↓` | On the first (last) line of the field: an earlier (later) message you sent |
 | `PageUp` / `PageDown` | Scroll the conversation (so does the wheel) |
+| `Shift+Tab` | The next permission mode: ask before tools, accept edits (file changes go ahead without asking), plan (the agent looks and plans but changes nothing). The header shows the mode |
 
-Type `/clear` to start a new conversation, and `/exit` to end the session.
+**Commands and files.** Type `/` at the start of the message to list the
+session's commands - XeFM's own and Claude Code's (`/compact`, `/context`,
+your skills) - narrowing as you type. Type `@` to mention a file: the files
+selected in the panes come first (or the ones under the cursors), then the
+folder's files and folders, then files further down by name. `↑` / `↓` pick,
+`Tab` takes the one picked, and `Enter` takes it too - and runs a command that
+needs no argument. `Esc` closes the list. `/clear` starts a new conversation,
+and `/exit` ends the session.
 
 - **The agent asks in XeFM.** When the agent wants to run a tool that needs
   your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of
@@ -95,6 +108,9 @@ Type `/clear` to start a new conversation, and `/exit` to end the session.
   where several may be chosen - and a field for an answer of your own. The confirmations of
   [What the agent may not do](#what-the-agent-may-not-do) apply as in any
   agent session.
+- **Plans.** In plan mode the agent ends with a plan for you to approve:
+  **Approve** (it goes on, asking before tools as usual), **Approve, Accept
+  Edits** (file changes then go ahead without asking), or **Keep Planning**.
 - **Back to the session.** **AI Agent Here** in the same folder goes back to
   the session there instead of starting another; **Screens…** lists it too,
   in terminal mode as well. While you are away, the status bar says when the

@@ -19,6 +19,12 @@ Keys (fixed here, as a viewer's are):
   messages.
 - **Page Up / Page Down** scroll the transcript; so does the wheel.
 - ``/clear`` starts a new conversation; ``/exit`` ends the session.
+- Typing ``/`` at the start lists the session's commands, ``@`` a file to
+  mention (what is selected in the panes first, then the folder's files):
+  Up/Down pick, Tab takes it, Enter takes it (and runs a command that needs
+  no argument), Escape closes the list.
+- **Shift+Tab** steps the permission mode: ask before tools, accept edits,
+  plan.
 
 The view owns the agent's process (:class:`xefm.agent_chat.ChatClient`) and
 the conversation (:class:`xefm.agent_chat.Conversation`); the app hands it
@@ -28,7 +34,11 @@ how to close it or go back to the panes.
 
 from __future__ import annotations
 
+import os
+import re
+import threading
 import time
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from puikit.backend import Style, TextAttribute
@@ -58,11 +68,39 @@ _MOUSE = (EventType.MOUSE_DOWN, EventType.MOUSE_UP, EventType.MOUSE_DRAG,
 #: The footer's keys, per state.
 _HINTS = {
     C.STARTING: "Enter send · Alt+Enter new line · Esc back to files",
-    C.IDLE: "Enter send · Alt+Enter new line · ↑ earlier message · PgUp/PgDn scroll · Esc back to files",
+    C.IDLE: "Enter send · Alt+Enter new line · / commands · @ files · Shift+Tab mode · ↑ earlier message · Esc back to files",
     C.WORKING: "Esc stop · Enter send next · PgUp/PgDn scroll",
     C.ASKING: "Answer the question · Esc stop",
     C.EXITED: "Enter start again · /exit close · Esc back to files",
 }
+
+
+#: XeFM's own commands, listed before the agent's.
+_LOCAL_COMMANDS = [{"name": "clear", "description": "Start a new conversation"},
+                   {"name": "exit", "description": "End the session"}]
+#: Rows the candidate list shows at once.
+_MENU_ROWS = 8
+#: Folders the file index for ``@`` does not walk into.
+_SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__",
+              ".tox", ".mypy_cache", ".pytest_cache", "dist", "build", ".idea"}
+#: Files the index stops at: a mention list, not a search engine.
+_INDEX_LIMIT = 20000
+_SLASH_RE = re.compile(r"/([\w:.-]*)")
+_AT_RE = re.compile(r"(?:^|\s)@(\"[^\"]*|[^\s\"]*)$")
+
+
+@dataclass
+class _Menu:
+    """The candidate list over the message field: ``/`` commands or ``@``
+    files. ``start`` is where the token being completed begins."""
+
+    kind: str
+    start: int
+    query: str
+    #: (label, detail, text inserted, runs as is) per row.
+    items: list[tuple[str, str, str, bool]] = field(default_factory=list)
+    index: int = 0
+    top: int = 0
 
 
 def _user_actions() -> set:
@@ -87,7 +125,9 @@ class ChatView(FocusContainer, Widget):
                  on_user_action: Callable[[str], bool] | None = None,
                  on_link: Callable[[str], bool] | None = None,
                  on_change: Callable[["ChatView"], None] | None = None,
-                 restart_argv: Callable[[str], list[str]] | None = None) -> None:
+                 restart_argv: Callable[[str], list[str]] | None = None,
+                 on_diff: Callable[["ChatView", C.Item], None] | None = None,
+                 mention_paths: Callable[[], list[str]] | None = None) -> None:
         self.argv = list(argv)
         self.cwd = cwd
         self.env = env
@@ -100,15 +140,27 @@ class ChatView(FocusContainer, Widget):
         self.on_user_action = on_user_action
         self.on_change = on_change
         self._restart_argv = restart_argv
+        self.on_diff = on_diff
+        self.mention_paths = mention_paths
+        self._app_link = on_link
         self.conversation = C.Conversation()
         self.client: C.ChatClient | None = None
-        self.transcript = MarkdownView("", selectable=True, code_copy=True, on_link=on_link)
+        self.transcript = MarkdownView("", selectable=True, code_copy=True, on_link=self._link)
         self.transcript.follow_end = True
         # A relative image path in a reply means the agent's folder.
         self.transcript.base_dir = cwd
         self.input = TextArea(submit_on_enter=True, min_rows=1, max_rows=10,
-                              on_submit=self._submit,
+                              on_submit=self._submit, on_change=self._typed,
                               placeholder=f"Message {name}")
+        self.menu: _Menu | None = None
+        #: The text Escape closed the list on: it stays closed until it changes.
+        self._menu_closed_on: str | None = None
+        self._menu_rect = Rect(0, 0, 0, 0)
+        self._menu_pitch = 1.0
+        #: The folder's files (relative paths) for ``@``, walked once on a
+        #: thread; None until it is done.
+        self._file_index: list[str] | None = None
+        self._indexing = False
         self._focused: Any = self.input
         self._source = ""
         self._dirty = True
@@ -190,14 +242,20 @@ class ChatView(FocusContainer, Widget):
         if old is not None:
             old.close()
         sid = self.conversation.session_id
+        mode = self.conversation.permission_mode
         argv = self.argv
         if resume and sid and self._restart_argv is not None:
             argv = self._restart_argv(sid)
+        if mode in C.MODES and mode != "default":
+            argv = list(argv) + ["--permission-mode", mode]
         if not resume:
             self.conversation = C.Conversation()
             self._source = ""
             self.transcript.set_source("")
-        return self.start(argv=argv)
+        ok = self.start(argv=argv)
+        if mode in C.MODES:
+            self.conversation.permission_mode = mode
+        return ok
 
     def _message(self, msg: dict) -> None:
         conv = self.conversation
@@ -247,9 +305,268 @@ class ChatView(FocusContainer, Widget):
         if self._panel is not None:
             self._panel.render()
 
+    # --- the permission mode ---------------------------------------------------------
+
+    def set_mode(self, mode: str) -> None:
+        """Ask the CLI for permission mode ``mode`` (MODES)."""
+        if self.client is None or not self.running:
+            return
+        if self.client.request({"subtype": "set_permission_mode", "mode": mode}) is not None:
+            self.conversation.permission_mode = mode  # the CLI confirms with a status
+            self._changed()
+
+    def cycle_mode(self) -> None:
+        """Shift+Tab: the next permission mode, as in the CLI."""
+        mode = self.conversation.permission_mode
+        modes = C.MODES
+        nxt = modes[(modes.index(mode) + 1) % len(modes)] if mode in modes else modes[0]
+        self.set_mode(nxt)
+
+    # --- the transcript's own links ---------------------------------------------
+
+    def _link(self, href: str) -> bool:
+        if not href.startswith(C.LINK_SCHEME):
+            return bool(self._app_link(href)) if self._app_link is not None else False
+        what, _, num = href[len(C.LINK_SCHEME):].partition("/")
+        items = self.conversation.items
+        try:
+            item = items[int(num)]
+        except (ValueError, IndexError):
+            return True
+        if what in ("expand", "collapse"):
+            item.expanded = what == "expand"
+            self._changed()
+        elif what == "diff" and self.on_diff is not None:
+            self.on_diff(self, item)
+        return True
+
+    # --- the candidate list (/ commands, @ files) --------------------------------
+
+    def _typed(self, _text: str) -> None:
+        self._update_menu()
+
+    def _update_menu(self) -> None:
+        text, cur = self.input.text, self.input.cursor
+        if self._menu_closed_on is not None:
+            if text == self._menu_closed_on:
+                self.menu = None
+                return
+            self._menu_closed_on = None
+        before = text[:cur]
+        menu = None
+        m = _SLASH_RE.fullmatch(before)
+        if m and "\n" not in text:
+            menu = _Menu("/", 0, m.group(1), self._command_items(m.group(1)))
+        else:
+            m = _AT_RE.search(before)
+            if m:
+                start = m.start(1) - 1
+                menu = _Menu("@", start, m.group(1), self._file_items(m.group(1)))
+        if menu is None or not menu.items:
+            self.menu = None
+            return
+        old = self.menu
+        if old is not None and old.kind == menu.kind and old.start == menu.start:
+            menu.index = min(old.index, len(menu.items) - 1)
+            menu.top = min(old.top, menu.index)
+        self.menu = menu
+
+    def _command_items(self, query: str) -> list[tuple[str, str, str, bool]]:
+        q = query.lower()
+        seen, first, then = set(), [], []
+        for cmd in _LOCAL_COMMANDS + list(self.conversation.commands):
+            name = str(cmd.get("name") or "")
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            hint = str(cmd.get("argumentHint") or "")
+            desc = str(cmd.get("description") or "")
+            row = (f"/{name}" + (f" {hint}" if hint else ""), desc, f"/{name} ", not hint)
+            low = name.lower()
+            if low.startswith(q):
+                first.append(row)
+            elif q and q in low:
+                then.append(row)
+        return (first + then)[:200]
+
+    def _file_items(self, query: str) -> list[tuple[str, str, str, bool]]:
+        q = query.lstrip('"')
+        rows: list[tuple[str, str, str, bool]] = []
+        seen: set[str] = set()
+
+        def add(rel: str, detail: str, is_dir: bool) -> None:
+            if rel in seen:
+                return
+            seen.add(rel)
+            shown = rel + ("/" if is_dir and not rel.endswith("/") else "")
+            token = f'@"{shown}"' if " " in shown else f"@{shown}"
+            rows.append((shown, detail, token + ("" if is_dir else " "), False))
+
+        # What the user has picked in the panes comes first.
+        for path in (self.mention_paths() if self.mention_paths is not None else []):
+            rel = self._rel(path)
+            if q.lower() in rel.lower():
+                add(rel, "in XeFM", os.path.isdir(path))
+        # The folder named so far, listed.
+        head, _, tail = q.rpartition("/")
+        folder = os.path.join(self.cwd, os.path.expanduser(head)) if head else self.cwd
+        try:
+            names = sorted(os.listdir(folder), key=str.lower)
+        except OSError:
+            names = []
+        for name in names:
+            if not name.lower().startswith(tail.lower()):
+                continue
+            if name.startswith(".") and not tail.startswith("."):
+                continue
+            full = os.path.join(folder, name)
+            add((head + "/" if head else "") + name, "", os.path.isdir(full))
+            if len(rows) > 100:
+                break
+        # Deeper files by name, from the index (walked once, on a thread).
+        if q and "/" not in q:
+            index = self._file_index
+            if index is None:
+                self._start_index()
+            else:
+                low = q.lower()
+                hits = [r for r in index if low in os.path.basename(r).lower()]
+                hits.sort(key=lambda r: (not os.path.basename(r).lower().startswith(low),
+                                         r.count("/"), r.lower()))
+                for rel in hits[:50]:
+                    add(rel, os.path.dirname(rel), False)
+        return rows
+
+    def _rel(self, path: str) -> str:
+        try:
+            rel = os.path.relpath(path, self.cwd)
+        except ValueError:
+            return path  # another drive
+        return path if rel.startswith("..") else rel.replace(os.sep, "/")
+
+    def _start_index(self) -> None:
+        if self._indexing:
+            return
+        self._indexing = True
+        root = self.cwd
+
+        def walk() -> None:
+            found: list[str] = []
+            try:
+                for top, dirs, files in os.walk(root):
+                    dirs[:] = sorted(d for d in dirs
+                                     if d not in _SKIP_DIRS and not d.startswith("."))
+                    rel_top = os.path.relpath(top, root)
+                    for name in files:
+                        found.append(name if rel_top == "." else
+                                     os.path.join(rel_top, name).replace(os.sep, "/"))
+                    if len(found) >= _INDEX_LIMIT:
+                        break
+            except OSError as e:
+                logger.warning(f"Could not list {root} for @ mentions: {e}")
+            self._post(lambda: self._index_ready(found))
+
+        threading.Thread(target=walk, name="AgentFileIndex", daemon=True).start()
+
+    def _index_ready(self, found: list[str]) -> None:
+        self._file_index = found
+        if self.menu is not None and self.menu.kind == "@":
+            self._update_menu()
+            if self._panel is not None:
+                self._panel.render()
+
+    def _menu_move(self, step: int) -> None:
+        menu = self.menu
+        menu.index = (menu.index + step) % len(menu.items)
+        if menu.index < menu.top:
+            menu.top = menu.index
+        elif menu.index >= menu.top + _MENU_ROWS:
+            menu.top = menu.index - _MENU_ROWS + 1
+
+    def _menu_take(self, *, run: bool) -> None:
+        """Put the picked row in the message; ``run`` (Enter) sends a command
+        that takes no argument at once."""
+        menu = self.menu
+        _label, _detail, insert, plain = menu.items[menu.index]
+        text, cur = self.input.text, self.input.cursor
+        new = text[:menu.start] + insert + text[cur:]
+        self.input.set_text(new)
+        self.input.cursor = menu.start + len(insert)
+        self.menu = None
+        if run and menu.kind == "/" and plain:
+            self._submit(new)
+            return
+        self._update_menu()  # a folder taken lists what is in it
+
+    def _menu_key(self, event: Event) -> bool:
+        """A key while the list is open; True when the list took it."""
+        key, mods = event.key, event.modifiers or frozenset()
+        if mods - {"shift"}:
+            return False
+        if key in ("up", "down"):
+            self._menu_move(-1 if key == "up" else 1)
+            return True
+        if key in ("tab", "enter") and not mods:
+            self._menu_take(run=key == "enter")
+            return True
+        if key == "escape":
+            self.menu = None
+            self._menu_closed_on = self.input.text
+            return True
+        return False
+
+    def _draw_menu(self, ctx, x: float, bottom: float, w: float, theme) -> None:
+        menu = self.menu
+        rows = menu.items[menu.top:menu.top + _MENU_ROWS]
+        pitch = 1.3 if ctx.vector_shapes else 1.0
+        pad = 0.3 if ctx.vector_shapes else 0.0
+        h = len(rows) * pitch + 2 * pad + (0.0 if ctx.vector_shapes else 2.0)
+        y = max(0.0, bottom - h)
+        bg = theme.popup_bg if theme is not None else (37, 37, 38)
+        border = theme.popup_border if theme is not None else (84, 84, 92)
+        if ctx.vector_shapes:
+            ctx.round_rect(x, y, w, h, Style(bg=bg, fg=border), radius=6.0,
+                           hints={"fill": True, "shadow": True})
+            ry = y + pad
+        else:
+            ctx.draw_box(x, y, w, h, Style(bg=bg, fg=border), hints={"fill": True})
+            ry = y + 1.0
+        self._menu_rect = Rect(x, ry, w, len(rows) * pitch)
+        self._menu_pitch = pitch
+        line_h = ctx.line_height()
+        text_fg = theme.text if theme is not None else None
+        muted = theme.muted_text if theme is not None else None
+        sel_bg = theme.selection_active_bg if theme is not None else (10, 105, 178)
+        inner = w - 4.0
+        for i, (label, detail, _ins, _plain) in enumerate(rows):
+            row_y = ry + i * pitch
+            ty = row_y + (pitch - line_h) / 2.0
+            row_bg = bg
+            if menu.top + i == menu.index:
+                row_bg = sel_bg
+                ctx.round_rect(x + 1.0, row_y, w - 2.0, pitch, Style(bg=sel_bg),
+                               radius=4.0, hints={"fill": True})
+            label_style = Style(fg=text_fg, bg=row_bg, attr=TextAttribute.BOLD)
+            label = elide(label, inner * 0.6, where="end",
+                          measure=lambda t: ctx.measure_text(t, label_style))
+            ctx.draw_text(x + 2.0, ty, label, label_style)
+            if detail:
+                lx = x + 2.0 + ctx.measure_text(label + "   ", label_style)
+                room = x + w - 2.0 - lx
+                if room > 2:
+                    ctx.draw_text(lx, ty, elide(" ".join(detail.split()), room, where="end",
+                                                measure=ctx.measure_text),
+                                  Style(fg=muted, bg=row_bg))
+        if len(menu.items) > _MENU_ROWS and not ctx.vector_shapes:
+            # Where the list is, on its top border (a grid has the row).
+            more = f" {menu.index + 1}/{len(menu.items)} "
+            ctx.draw_text(x + w - 2.0 - ctx.measure_text(more), y, more,
+                          Style(fg=muted, bg=bg))
+
     # --- typing -------------------------------------------------------------------
 
     def _submit(self, text: str) -> None:
+        self.menu = None
         stripped = text.strip()
         if not stripped:
             if not self.running and self.conversation.state == C.EXITED:
@@ -349,7 +666,9 @@ class ChatView(FocusContainer, Widget):
         header_bg = _header_bg(theme)
         ctx.fill_rect(0, 0, wu, head_h, Style(bg=header_bg))
         conv = self.conversation
-        right = conv.state + (f" · {conv.model}" if conv.model else "") + " "
+        mode = C.MODE_LABELS.get(conv.permission_mode, conv.permission_mode)
+        right = (f"{mode} · " if mode else "") + conv.state + \
+            (f" · {conv.model}" if conv.model else "") + " "
         right_w = ctx.measure_text(right)
         title = f" {self.name}  {_short(self.cwd)}"
         # Measured in the bold it is drawn in: bold is wider, and elided by
@@ -410,6 +729,10 @@ class ChatView(FocusContainer, Widget):
         r = self._input_rect
         ctx.draw_child(self.input, r.x, r.y, r.w, r.h,
                        hints={"focused": not self.closing})
+        if self.menu is not None:
+            self._draw_menu(ctx, r.x, r.y - (0.2 if ctx.pixel_layout else 0.0), r.w, theme)
+        else:
+            self._menu_rect = Rect(0, 0, 0, 0)
 
     # --- events -----------------------------------------------------------------
 
@@ -430,6 +753,11 @@ class ChatView(FocusContainer, Widget):
     def _key(self, event: Event) -> None:
         mods = event.modifiers or frozenset()
         key = event.key
+        if self.menu is not None and self._menu_key(event):
+            return
+        if key == "tab" and mods == {"shift"}:
+            self.cycle_mode()
+            return
         action = find_action_for_event(event, context=CONTEXT)
         if action is not None and self._takes(event, action) and self.run_action(action):
             return
@@ -452,11 +780,22 @@ class ChatView(FocusContainer, Widget):
         if self.input.handle_event(event):
             if key not in ("up", "down"):
                 self._hist = None
+            if key in ("left", "right", "home", "end") or self.menu is not None:
+                self._update_menu()  # the caret moved off (or onto) a token
             return
         if key in ("up", "down") and not mods:
             self._recall(-1 if key == "up" else 1)
 
     def _mouse(self, event: Event) -> None:
+        r = self._menu_rect
+        if self.menu is not None and event.x is not None and event.y is not None \
+                and r.contains(event.x, event.y):
+            if event.type is EventType.MOUSE_CLICK:
+                row = int((event.y - r.y) / self._menu_pitch)
+                if 0 <= row < _MENU_ROWS and self.menu.top + row < len(self.menu.items):
+                    self.menu.index = self.menu.top + row
+                    self._menu_take(run=False)
+            return
         target = None
         if event.type in (EventType.MOUSE_DRAG, EventType.MOUSE_UP) and self._mouse_target:
             target = self._mouse_target

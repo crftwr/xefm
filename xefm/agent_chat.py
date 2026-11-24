@@ -235,6 +235,8 @@ class Item:
     partial: str = ""
     #: Whether the user denied it.
     denied: bool = False
+    #: Whether its whole output is shown (the user asked for it).
+    expanded: bool = False
 
 
 @dataclass
@@ -272,6 +274,8 @@ class Conversation:
         self.permissions: dict[str, Permission] = {}
         #: Commands the session has (``/compact``...), from the initialize answer.
         self.commands: list[dict] = []
+        #: The CLI's permission mode (MODES), as it last reported it.
+        self.permission_mode = "default"
         self.last_error = ""
 
     # --- what the user did -------------------------------------------------------
@@ -312,6 +316,9 @@ class Conversation:
             body = response.get("response") or {}
             if isinstance(body.get("commands"), list):
                 self.commands = body["commands"]
+            mode = body.get("current_permission_mode") or body.get("mode")
+            if isinstance(mode, str) and mode:
+                self.permission_mode = mode
             if response.get("subtype") == "error":
                 logger.warning(f"Agent refused a request: {response.get('error')}")
             elif self.state == STARTING:
@@ -423,10 +430,14 @@ class Conversation:
             self.session_id = str(msg.get("session_id") or self.session_id)
             self.model = str(msg.get("model") or self.model)
             self.cwd = str(msg.get("cwd") or self.cwd)
+            if isinstance(msg.get("permissionMode"), str):
+                self.permission_mode = msg["permissionMode"]
             if self.state == STARTING:
                 self.state = WORKING if self.pending_turns else IDLE
         elif sub == "compact_boundary":
             self.add_notice("Earlier conversation compacted")
+        elif sub == "status" and isinstance(msg.get("permissionMode"), str):
+            self.permission_mode = msg["permissionMode"]
 
     def _result(self, msg: dict) -> None:
         self.session_id = str(msg.get("session_id") or self.session_id)
@@ -547,6 +558,20 @@ def deny(message: str = "The user declined this in XeFM.", *, interrupt: bool = 
 #: The tool Claude Code asks the user multiple-choice questions with: answered
 #: by filling ``answers`` into its input rather than with a yes or no.
 ASK_USER_TOOL = "AskUserQuestion"
+#: The tool that ends plan mode by showing the plan for approval.
+PLAN_TOOL = "ExitPlanMode"
+
+#: The permission modes Shift+Tab steps through, as the CLI does: ask before
+#: each tool, accept file edits without asking, plan without changing
+#: anything. ``bypassPermissions`` is only ever what the session started in.
+MODES = ("default", "acceptEdits", "plan")
+MODE_LABELS = {"default": "", "acceptEdits": "accept edits", "plan": "plan mode",
+               "bypassPermissions": "bypass permissions"}
+
+#: How many lines of a tool's output "show all" shows at most.
+EXPANDED_LINES = 2000
+#: The scheme of the transcript's own links (expand an output, open a diff).
+LINK_SCHEME = "xefm-agent:"
 
 
 def questions(perm: Permission) -> list[dict]:
@@ -667,7 +692,25 @@ def _questions_markdown(item: Item) -> str:
     return f"**Question**{mark}\n\n" + "\n\n".join(parts)
 
 
-def _bash_markdown(item: Item, mark: str) -> str:
+def _clipped(item: Item, text: str, lines: int, index: int) -> tuple[str, str]:
+    """``text`` cut to ``lines`` (all of it, up to EXPANDED_LINES, once the
+    user expanded it) and the note under it: a link that shows the rest or
+    folds it again when the item has an ``index`` in the transcript."""
+    if item.expanded:
+        shown, more = _clip(text, EXPANDED_LINES)
+        if index < 0:
+            return shown, ""
+        note = f"_… {more} more lines not shown_ · " if more else ""
+        return shown, f"\n\n{note}[show less]({LINK_SCHEME}collapse/{index})"
+    shown, more = _clip(text, lines)
+    if not more:
+        return shown, ""
+    if index < 0:
+        return shown, f"\n\n_… {more} more lines_"
+    return shown, f"\n\n[… {more} more lines]({LINK_SCHEME}expand/{index})"
+
+
+def _bash_markdown(item: Item, mark: str, index: int = -1) -> str:
     """A shell command and what it printed as one block, the way a terminal
     shows them: the command after a ``$`` prompt, its output under it. The
     head says what the command is for when the agent said so."""
@@ -675,19 +718,25 @@ def _bash_markdown(item: Item, mark: str) -> str:
     head = "**Bash**" + (f" {desc.strip()}" if isinstance(desc, str) and desc.strip() else "")
     lines = item.input["command"].rstrip("\n").split("\n")
     body = "\n".join(["$ " + lines[0]] + ["> " + l for l in lines[1:]])
-    more = 0
+    note = ""
     if item.result and not item.denied:
-        shown, more = _clip(item.result, RESULT_LINES)
+        shown, note = _clipped(item, item.result, RESULT_LINES, index)
         if shown.strip():
             body += "\n" + shown
-    note = f"\n\n_… {more} more lines_" if more else ""
     return f"{head} {mark}\n\n{_code(body, 'console')}{note}"
 
 
-def tool_markdown(item: Item) -> str:
+def tool_markdown(item: Item, index: int = -1) -> str:
+    """One tool call as Markdown. With its ``index`` in the transcript, a
+    clipped output gets a link that shows all of it and an edit one that
+    opens it in the diff viewer (LINK_SCHEME links the view handles)."""
     name = item.name or "tool"
     if name == ASK_USER_TOOL and isinstance(item.input.get("questions"), list):
         return _questions_markdown(item)
+    if name == PLAN_TOOL and isinstance(item.input.get("plan"), str):
+        verdict = " ✗ kept planning" if item.denied else \
+            (" ✓ approved" if item.result is not None and not item.is_error else "")
+        return f"**Plan**{verdict}\n\n{item.input['plan'].strip()}"
     what = summary(name, item.input) if item.input else ""
     if item.open and item.result is None:
         mark = "…"
@@ -698,7 +747,7 @@ def tool_markdown(item: Item) -> str:
     else:
         mark = "✓"
     if name == "Bash" and isinstance(item.input.get("command"), str):
-        return _bash_markdown(item, mark)
+        return _bash_markdown(item, mark, index)
     head = f"**{name}**"
     if what:
         head += " " + _inline(what)
@@ -707,8 +756,11 @@ def tool_markdown(item: Item) -> str:
     if name == "Edit" and isinstance(item.input.get("old_string"), str):
         diff = ["- " + l for l in item.input["old_string"].split("\n")] + \
                ["+ " + l for l in str(item.input.get("new_string", "")).split("\n")]
-        shown, more = _clip("\n".join(diff), DIFF_LINES)
-        parts.append(_code(shown, "diff") + (f"\n\n_… {more} more lines_" if more else ""))
+        shown, note = _clipped(item, "\n".join(diff), DIFF_LINES, index)
+        if index >= 0 and not item.denied and not item.is_error:
+            link = f"[open diff]({LINK_SCHEME}diff/{index})"
+            note = f"{note} · {link}" if note else f"\n\n{link}"
+        parts.append(_code(shown, "diff") + note)
     elif name == "TodoWrite" and isinstance(item.input.get("todos"), list):
         rows = []
         for todo in item.input["todos"]:
@@ -720,9 +772,9 @@ def tool_markdown(item: Item) -> str:
             parts.append("\n".join(rows))
         return "\n\n".join(parts)
     if item.result and not item.denied and name not in ("TodoWrite",):
-        shown, more = _clip(item.result, RESULT_LINES)
+        shown, note = _clipped(item, item.result, RESULT_LINES, index)
         if shown.strip():
-            parts.append(_code(shown) + (f"\n\n_… {more} more lines_" if more else ""))
+            parts.append(_code(shown) + note)
     return "\n\n".join(parts)
 
 
@@ -731,7 +783,7 @@ def to_markdown(items: list[Item]) -> str:
     (``::: box``), each thing the agent did under it with a dot colored by
     how it went (``::: bullet <role>``)."""
     out: list[str] = []
-    for item in items:
+    for index, item in enumerate(items):
         n = len(out)
         if item.kind == "user":
             out.append(_fenced("box", item.text.rstrip() or " "))
@@ -743,7 +795,7 @@ def to_markdown(items: list[Item]) -> str:
             if item.open:
                 out.append("_Thinking…_")
         elif item.kind == "tool":
-            out.append(tool_markdown(item))
+            out.append(tool_markdown(item, index))
         elif item.kind in ("notice", "error"):
             first, _, rest = item.text.strip().partition("\n")
             head = f"**Error:** {first}" if item.kind == "error" else f"_{first}_"
@@ -751,3 +803,28 @@ def to_markdown(items: list[Item]) -> str:
         if len(out) > n:
             out[-1] = _fenced(f"bullet {_role(item)}", out[-1])
     return "\n\n".join(out) + "\n"
+
+
+def edit_before(item: Item, current: str) -> str | None:
+    """The file an ``Edit`` / ``MultiEdit`` changed as it was before, from
+    ``current`` (the file as it is now) with the edits undone - last first,
+    each the way it was made (every occurrence with ``replace_all``, else the
+    first). None when an edit's new text is not in the file any more (it was
+    changed again since), so the whole-file comparison would lie."""
+    if item.name == "Edit":
+        edits = [item.input]
+    elif item.name == "MultiEdit" and isinstance(item.input.get("edits"), list):
+        edits = [e for e in item.input["edits"] if isinstance(e, dict)]
+    else:
+        return None
+    text = current
+    for edit in reversed(edits):
+        old, new = edit.get("old_string"), edit.get("new_string")
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
+        if new == "":
+            return None  # a deletion leaves no mark to find it by
+        if new not in text:
+            return None
+        text = text.replace(new, old) if edit.get("replace_all") else text.replace(new, old, 1)
+    return text

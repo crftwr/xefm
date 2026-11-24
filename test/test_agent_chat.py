@@ -192,7 +192,7 @@ def test_the_transcript_reads_as_markdown():
     assert C.to_markdown([C.Item("user", "a\n:::\nb")]).startswith(":::: box\na\n:::\nb\n::::")
     assert "Reply with `code`" in md
     assert "**Read** `/a/b.txt` ✓" in md
-    assert "_… 14 more lines_" in md
+    assert "[… 14 more lines](xefm-agent:expand/2)" in md  # a link shows the rest
     assert "```diff\n- x\n+ y\n```" in md
     # A command and its output in one block; a fence it prints cannot close it.
     assert "~~~console\n$ cat x\n```fence```\n~~~" in md  # a result's own fence cannot close it
@@ -392,6 +392,8 @@ def test_the_agent_key_opens_a_drawn_session_in_terminal_mode_too(monkeypatch, t
             setattr(app, name, getattr(XeFMApp, name).__get__(app))
         app._agent_chat_ask = lambda view, perm: None
         app._agent_chat_link = lambda href: False
+        app._agent_chat_diff = lambda view, item: None
+        app._agent_mention_paths = lambda: []
         app.open_agent()
         [session] = list(app._sessions)
         assert session.kind == AGENT and session.name == "Claude Code"
@@ -516,3 +518,166 @@ def test_bash_is_one_block_with_its_purpose_in_the_head():
     assert md.startswith("**Bash** List x ✓\n\n```console\n$ cd x\n> ls\na\nb\n```")
     running = C.Item("tool", name="Bash", input={"command": "sleep 1"}, open=True)
     assert C.to_markdown([running]).startswith("::: bullet accent\n**Bash** …")
+
+
+
+# --- typing aids, modes, links ----------------------------------------------------------
+
+def _plain_view(tmp_path, **kw):
+    from puikit import Panel
+    from puikit.backends.memory_backend import MemoryBackend
+    from xefm.agent_chat_view import ChatView
+    panel = Panel(MemoryBackend(width=80, height=24))
+    view = ChatView(["claude"], cwd=str(tmp_path), env={}, name="Claude Code",
+                    post=lambda fn: fn(), ask=lambda v, p: None,
+                    on_close_request=lambda v: None, on_hide=lambda v: None, **kw)
+    view.conversation.state = C.IDLE
+    panel.push_layer(view, z=10, hints={"x": 0, "y": 0, "w": 80, "h": 24})
+    return panel, view
+
+
+def _type(panel, text):
+    for ch in text:
+        panel.dispatch_event(_key(ch, ch))
+
+
+def test_slash_lists_the_sessions_commands(tmp_path):
+    panel, view = _plain_view(tmp_path)
+    view.conversation.commands = [
+        {"name": "compact", "description": "Free up context", "argumentHint": "<how>"},
+        {"name": "context", "description": "Show context usage"}]
+    _type(panel, "/co")
+    labels = [row[0] for row in view.menu.items]
+    assert labels == ["/compact <how>", "/context"]
+    assert "Show context usage" in _screen_text(panel)
+    panel.dispatch_event(_key("down"))
+    sent = []
+    view.send = lambda text: sent.append(text) or True
+    panel.dispatch_event(_key("enter", "\r"))  # takes no argument: runs at once
+    assert sent == ["/context"] and view.menu is None
+    _type(panel, "/com")
+    panel.dispatch_event(_key("tab"))  # takes it, waits for the argument
+    assert view.input.text == "/compact " and view.menu is None
+    view.input.set_text("")
+    _type(panel, "/cl")
+    panel.dispatch_event(_key("escape"))
+    assert view.menu is None and view.input.text == "/cl"
+    _type(panel, "e")
+    assert view.menu is not None  # changed text: lists again
+    view.input.set_text("")
+    _type(panel, "hi /co")
+    assert view.menu is None  # only at the start of the message
+
+
+def test_at_lists_files_from_the_panes_the_folder_and_below(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "deep_main.py").write_text("x")
+    (tmp_path / "readme.md").write_text("x")
+    picked = tmp_path / "picked.txt"
+    picked.write_text("x")
+    panel, view = _plain_view(tmp_path, mention_paths=lambda: [str(picked)])
+    _type(panel, "look at @")
+    labels = [row[0] for row in view.menu.items]
+    assert labels[0] == "picked.txt" and "readme.md" in labels and "src/" in labels
+    _type(panel, "src/")
+    assert [row[0] for row in view.menu.items] == ["src/deep_main.py"]
+    panel.dispatch_event(_key("tab"))
+    assert view.input.text == "look at @src/deep_main.py "
+    view.input.set_text("")
+    _type(panel, "@deep")  # by name, from the index walked on a thread
+    deadline = time.monotonic() + 5
+    while view._file_index is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    view._update_menu()
+    assert any(row[0] == "src/deep_main.py" for row in view.menu.items)
+    view.input.set_text("")
+    _type(panel, "@sr")
+    panel.dispatch_event(_key("enter", "\r"))  # a folder taken lists inside it
+    assert view.input.text == "@src/" and view.menu is not None
+
+
+def test_shift_tab_steps_the_permission_mode(fake_cli, tmp_path):
+    posts, asked = _Posts(), []
+    panel, view = _view(fake_cli, tmp_path, posts, asked)
+    view.start(panel)
+    posts.until(lambda: view.conversation.state == C.IDLE)
+    sent = []
+    orig = view.client.request
+    view.client.request = lambda body: sent.append(body) or orig(body)
+    panel.dispatch_event(_key("tab", None, ("shift",)))
+    assert sent[-1] == {"subtype": "set_permission_mode", "mode": "acceptEdits"}
+    assert "accept edits" in _screen_text(panel)
+    panel.dispatch_event(_key("tab", None, ("shift",)))
+    assert view.conversation.permission_mode == "plan"
+    view.close()
+
+
+def test_the_cli_reports_its_mode():
+    conv = C.Conversation()
+    conv.handle({"type": "control_response", "response": {
+        "subtype": "success", "request_id": "i",
+        "response": {"commands": [], "current_permission_mode": "acceptEdits"}}})
+    assert conv.permission_mode == "acceptEdits"
+    conv.handle({"type": "system", "subtype": "status", "permissionMode": "plan"})
+    assert conv.permission_mode == "plan"
+
+
+def test_long_output_expands_and_an_edit_opens_its_diff(tmp_path):
+    diffs = []
+    panel, view = _plain_view(tmp_path, on_diff=lambda v, item: diffs.append(item))
+    edit = C.Item("tool", name="Edit", input={"file_path": "/a", "old_string": "x",
+                                              "new_string": "y"}, result="ok")
+    long = C.Item("tool", name="Read", input={"file_path": "/b"},
+                  result="\n".join(str(n) for n in range(40)))
+    view.conversation.items = [edit, long]
+    md = C.to_markdown(view.conversation.items)
+    assert "[open diff](xefm-agent:diff/0)" in md
+    assert "[… 34 more lines](xefm-agent:expand/1)" in md
+    assert view.transcript.on_link("xefm-agent:expand/1")
+    assert long.expanded
+    md = C.to_markdown(view.conversation.items)
+    assert "\n39\n" in md and "[show less](xefm-agent:collapse/1)" in md
+    view.transcript.on_link("xefm-agent:collapse/1")
+    assert not long.expanded
+    view.transcript.on_link("xefm-agent:diff/0")
+    assert diffs == [edit]
+
+
+def test_an_edit_is_undone_to_show_the_file_before():
+    item = C.Item("tool", name="Edit", input={"old_string": "b", "new_string": "B"})
+    assert C.edit_before(item, "a\nB\nc\n") == "a\nb\nc\n"
+    assert C.edit_before(item, "changed since") is None
+    multi = C.Item("tool", name="MultiEdit", input={"edits": [
+        {"old_string": "a", "new_string": "A"}, {"old_string": "A", "new_string": "AA"}]})
+    assert C.edit_before(multi, "AA b") == "a b"
+
+
+def test_a_plan_reads_as_the_plan():
+    item = C.Item("tool", name=C.PLAN_TOOL, input={"plan": "1. Do it\n2. Check"})
+    md = C.tool_markdown(item, 0)
+    assert md.startswith("**Plan**") and "1. Do it" in md and "{" not in md
+
+
+def test_the_app_opens_an_edit_as_the_whole_file_before_and_now(tmp_path):
+    import types
+    from xefm.app import XeFMApp
+    target = tmp_path / "f.py"
+    target.write_text("one\nTWO\nthree\n")
+    opened = []
+
+    def open_diff(left, right, titles=(None, None), on_close=None):
+        opened.append((open(str(left)).read(), str(right), titles))
+        on_close()
+
+    app = types.SimpleNamespace(open_diff=open_diff, log_info=lambda m: None,
+                                panel=types.SimpleNamespace(render=lambda: None),
+                                _on_screen_of=lambda view, fn: fn())
+    item = C.Item("tool", name="Edit", input={"file_path": str(target), "old_string": "two",
+                                              "new_string": "TWO"})
+    XeFMApp._agent_chat_diff(app, None, item)
+    [(before, right, titles)] = opened
+    assert before == "one\ntwo\nthree\n" and right == str(target)
+    assert "before" in titles[0]
+    target.write_text("rewritten")  # changed since: just the two texts
+    XeFMApp._agent_chat_diff(app, None, item)
+    assert opened[-1][0] == "two" and opened[-1][2] == ("Replaced text", "Replacement")

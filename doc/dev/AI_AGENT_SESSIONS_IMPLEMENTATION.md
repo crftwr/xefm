@@ -201,7 +201,27 @@ ruled out). ACP stays the candidate for other agents.
   `::: bullet <role>` whose dot is green for a tool that worked, red for one
   that failed or was declined, the accent while it runs, muted for text. A
   Bash call is one `console` block: the command after `$` (continuation lines
-  after `>`), its output under it, the agent's `description` in the head. A tool result is clipped to `RESULT_LINES` and fenced with
+  after `>`), its output under it, the agent's `description` in the head.
+- Typing aids in `ChatView`: `/` at the start of the message lists
+  `_LOCAL_COMMANDS` plus `Conversation.commands` (the initialize answer:
+  name, description, argumentHint); `@` lists `mention_paths()` (the app's
+  `_agent_mention_paths`: selected files in both panes, else the cursors'),
+  the folder named so far, and names from a file index walked once on a
+  thread (`_SKIP_DIRS`, `_INDEX_LIMIT`). The list is `_Menu`, drawn over the
+  field; Enter runs a command without an argument hint.
+- Permission mode: Shift+Tab sends `set_permission_mode` (default ->
+  acceptEdits -> plan); the CLI reports the mode in the initialize answer
+  (`current_permission_mode`), `system init` and `system status`
+  (`permissionMode`). A restart passes `--permission-mode` to keep it.
+  `ExitPlanMode` gets its own dialog (`_agent_chat_plan`): Approve, Approve
+  with accept edits (then `set_mode`), Keep Planning (a deny asking what to
+  change).
+- Links in the transcript with `LINK_SCHEME` (`xefm-agent:`) are the view's:
+  `expand/N` and `collapse/N` toggle `Item.expanded` (up to
+  `EXPANDED_LINES`), `diff/N` calls `on_diff` - the app's `_agent_chat_diff`,
+  which undoes the edit on the file as it is now (`edit_before`) and opens
+  that against the file in the diff viewer, or the two texts alone when the
+  file has changed since. A tool result is clipped to `RESULT_LINES` and fenced with
   `~~~` when it holds a backtick fence itself. `ChatView` keeps about 5% of
   the width as a margin on each side.
 - Permissions: `--permission-prompt-tool stdio` makes the CLI send a
