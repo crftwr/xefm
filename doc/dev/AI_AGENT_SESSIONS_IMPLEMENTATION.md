@@ -169,6 +169,126 @@ reach (another CLI, an editor tool writing a file). Layer 2 holds for
 everything that goes through XeFM; the rules ask the agent to go through
 XeFM.
 
+## Conversations drawn by XeFM (`'ui': 'xefm'`, #959)
+
+Step 2 of #880. Claude Code only, through its stream-json mode, which needs
+nothing beyond the CLI the user installed (the ACP adapter would be an npm
+package to install; the Agent SDK a dependency in the core, which #880
+ruled out). ACP stays the candidate for other agents.
+
+- `agents.normalize` takes `ui` (`terminal` | `xefm`; `xefm` only with a
+  preset in `DRAWN_PRESETS`). `agents.chat_argv` is `command` +
+  `agent_chat.CLAUDE_STREAM_ARGS` (`-p --input-format stream-json
+  --output-format stream-json --verbose --include-partial-messages
+  --permission-prompt-tool stdio`) + the same `--plugin-dir`, rules and
+  `--settings` a terminal session gets. The rules go through
+  `drawn_rules`, which drops what speaks of a terminal. The first request is
+  sent as a message, never on the command line.
+- `xefm/agent_chat.py` (no UI): `ChatClient` runs the process (its own
+  process group / `CREATE_NEW_PROCESS_GROUP`, so closing stops what its
+  tools started; stdin closed, then SIGTERM to the group after 2 s), reads
+  stdout on a thread and hands each JSON object to the UI thread through
+  `post` (`XeFMApp._call_later`). It opens with the `initialize` control
+  request, as Claude Code's SDKs do. `Conversation` folds the messages into
+  `Item`s: `stream_event` deltas open and grow blocks per message id; the
+  finished `assistant` blocks that follow are matched to them by position
+  within the message (each arrives as an `assistant` message of its own,
+  sharing the id); `user` tool results close tool items; `result` ends a
+  turn (`pending_turns`: a message sent mid-turn queues in the CLI and gets
+  its own `result`). `to_markdown` renders the items: a user message in
+  a MarkdownView `::: box` (a rounded panel; a fill in a terminal, its fence
+  longer than any colon run in the text), each thing the agent did in a
+  `::: bullet <role>` whose dot is green for a tool that worked, red for one
+  that failed or was declined, the accent while it runs, muted for text. A
+  Bash call is one `console` block: the command after `$` (continuation lines
+  after `>`), its output under it, the agent's `description` in the head.
+- Typing aids in `ChatView`: `/` at the start of the message lists
+  `_LOCAL_COMMANDS` plus `Conversation.commands` (the initialize answer:
+  name, description, argumentHint); `@` lists `mention_paths()` (the app's
+  `_agent_mention_paths`: selected files in both panes, else the cursors'),
+  the folder named so far, and names from a file index walked once on a
+  thread (`_SKIP_DIRS`, `_INDEX_LIMIT`). The list is `_Menu`, drawn over the
+  field; Enter runs a command without an argument hint.
+- Permission mode: Shift+Tab sends `set_permission_mode` (default ->
+  acceptEdits -> plan); the CLI reports the mode in the initialize answer
+  (`current_permission_mode`), `system init` and `system status`
+  (`permissionMode`). A restart passes `--permission-mode` to keep it.
+  `ExitPlanMode` gets its own dialog (`_agent_chat_plan`): Approve, Approve
+  with accept edits (then `set_mode`), Keep Planning (a deny asking what to
+  change).
+- Links in the transcript with `LINK_SCHEME` (`xefm-agent:`) are the view's:
+  `expand/N` and `collapse/N` toggle `Item.expanded` (up to
+  `EXPANDED_LINES`), `diff/N` calls `on_diff` - the app's `_agent_chat_diff`,
+  which undoes the edit on the file as it is now (`edit_before`) and opens
+  that against the file in the diff viewer, or the two texts alone when the
+  file has changed since. A tool result is clipped to `RESULT_LINES` and fenced with
+  `~~~` when it holds a backtick fence itself. `ChatView` keeps about 5% of
+  the width as a margin on each side.
+- Subagents: a message with `parent_tool_use_id` comes from inside the
+  `Agent` / `Task` call of that id (no `stream_event`s, only finished
+  blocks). `Conversation._sub` nests its tool calls and text as
+  `Item.children` of that call (registered in `_tools`, so their results and
+  permission answers find them) and drops its prompt; `system
+  task_progress` sets `Item.progress`. The transcript lists the latest
+  `SUBAGENT_STEPS` under the call, the rest behind `expand/N`.
+- Finished thinking with text folds to `[Thought ›](xefm-agent:expand/N)`;
+  Claude Code often sends `thinking` blocks with an empty text and only a
+  signature, which shows nothing.
+- Context and model: `Conversation.context_tokens` is the last main-thread
+  `assistant` usage (input + cache creation + cache read);
+  `context_window` comes from the turn `result`'s `modelUsage[model]
+  .contextWindow`. `models` is the initialize answer's list; `/model <value>`
+  (a `_Menu` of kind `model`) sends `set_model`, whose answer carries the
+  resolved `model` and whose refusal (`model_request`) becomes a notice.
+  `model_choice` is passed as `--model` on a restart.
+- The to-do list: `Conversation.todos()` is the last main-thread
+  `TodoWrite`'s list while any of it is not completed; `ChatView._draw_todos`
+  pins it over the field (in progress and after, `_TODO_ROWS`). The
+  transcript's dots are joined by PuiKit's timeline line (MarkdownView
+  `::: bullet` in a row).
+- Permissions: `--permission-prompt-tool stdio` makes the CLI send a
+  `control_request` `can_use_tool` wherever it would ask in its own UI; its
+  settings (the deny list) decide first, so a denied `rm` never reaches
+  XeFM. `XeFMApp._agent_chat_ask` answers with a `show_message_box` on the
+  session's screen (`_on_screen_of` points the default layer parent at its
+  group when it is hidden, and the status bar says it is asking).
+  **Always Allow** returns the CLI's `permission_suggestions` with
+  `destination` forced to `session`: XeFM never writes the user's or the
+  project's settings. `AskUserQuestion` comes the same way and is answered
+  with `updatedInput.answers` (question -> label, several joined with
+  ", ") from one `agent_question_dialog.QuestionDialog` per question: radio
+  rows, checkbox rows for `multiSelect`, an Other row with a field. The
+  answers are kept in the tool item's input, so the transcript shows each
+  question with its answer rather than the input as JSON. A `control_cancel_request` withdraws a question.
+- `xefm/agent_chat_view.py`: `ChatView`, a full-window layer with the
+  viewers' hints, header / `MarkdownView` transcript (`follow_end`, fed by
+  `update_source`, which re-wraps only the changed tail) / PuiKit
+  `TextArea` (`submit_on_enter`) / status bar. It duck-types what
+  `Session` reads from a terminal view (`running`, `busy`, `exit_code`,
+  `shown`, `closing`, `close`, `start`) plus `chat_state`, which
+  `Session.state` reports for kind `AGENT`. Keys a binding in the
+  `terminal` context takes win, as in the terminal (`terminal.close`,
+  `terminal.screens`, user actions there).
+- The app: `_start_agent` branches to `_start_agent_chat` for a drawn entry,
+  in both modes (no `_terminal_ready`, no hand-over). The session registry
+  and screens are the terminal sessions' own, so the switcher, `xefmctl
+  terminal-session list`, the quit check (`busy` = mid-turn) and remote
+  dispatch's "back to the asking screen" work unchanged. `screens` works in
+  terminal mode when there is a drawn session or entry. `_agent_chat_for`
+  sends the agent key back to a live session of the same entry in the same
+  folder. When the process ends unasked, the transcript stays and the next
+  message restarts it with `--resume <session_id>`.
+
+Checked against Claude Code 2.1.323: the event shapes in
+`test/test_agent_chat.py`'s stand-in CLI were taken from a real run; a live
+run with the preset's argv loaded the plugin (`xefm:xefm`), followed the
+rules, and had `rm` denied by the settings without asking.
+
+Open: the terms-of-use check #880 asks for before this leaves Preview;
+other agents (ACP); per-tool rendering beyond Bash/Read/Edit/TodoWrite;
+images in the conversation; effort; resuming an older conversation;
+editing or rewinding a message.
+
 ## Knowledge of extensions
 
 `xefmctl action list` gives each action's summary, context, keys and source
@@ -183,10 +303,15 @@ nor a docstring (read with `ast`, not imported).
 
 - Built-in presets beyond Claude Code, Codex, Copilot and Antigravity: the wiki page "AI agents"
   for now, kept up by their users (CLAUDE.md, "Core or extension?").
-- #880's later steps: answers shown in XeFM rather than a terminal
-  session, proposals confirmed in XeFM's own dialogs beyond copy/move/trash.
+- #880's step 3: proposals confirmed in XeFM's own dialogs beyond
+  copy/move/trash. (Step 2, the drawn conversation, is above.)
 
 ## Tests
+
+`test/test_agent_chat.py`: the conversation folding, the transcript, the
+answers, `ui` checking and `chat_argv`, the client and the view against a
+stand-in CLI, and `agent` opening (and going back to) a drawn session in
+both modes.
 
 `test/test_terminal_sessions.py`: the `codex` preset (the TOML value
 parsed back, the skill path, the request last, the default `AGENTS`), the

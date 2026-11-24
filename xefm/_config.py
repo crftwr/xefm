@@ -1138,6 +1138,11 @@ class Config:
     #   'settings' : (Claude Code, Antigravity) the settings to pass instead
     #                of XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
     #   'env'      : extra environment variables
+    #   'ui'       : 'terminal' (the default) - the agent's own screen in a
+    #                terminal session. 'xefm' (Claude Code, Preview) - XeFM
+    #                draws the conversation itself, in the desktop app and in
+    #                terminal mode, and asks you in its own dialogs when a
+    #                tool needs permission.
     # An entry is offered only while its program is on PATH.
     # AGENTS = [] turns agent sessions off; their menu items go too.
     # Other agent CLIs: see the wiki page "AI agents".

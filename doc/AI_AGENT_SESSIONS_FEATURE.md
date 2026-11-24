@@ -54,7 +54,91 @@ screen switcher, its row shows what the agent calls itself in its title
 In terminal mode, XeFM hands the agent its terminal and waits, as it does
 for the subshell. While the agent runs there, XeFM answers what it asks
 about the panes and its searches, but cannot show it anything or ask you
-anything: those need the desktop app.
+anything: those need the desktop app, or a
+[conversation drawn by XeFM](#conversations-drawn-by-xefm), which keeps
+XeFM's screen in terminal mode too.
+
+## Conversations drawn by XeFM
+
+Claude Code can also run without a terminal: with `'ui': 'xefm'` on its
+entry, XeFM draws the conversation itself, on a screen of its own. It looks
+and works the same in the desktop app and in terminal mode. In terminal mode
+the agent no longer takes the terminal over, so it can show you things and
+XeFM can ask you things there too.
+
+```python
+AGENTS = [
+    {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code', 'ui': 'xefm'},
+]
+```
+
+The screen has the agent, its folder and what it is doing at the top, the
+conversation in the middle, and the field you type in at the bottom. What
+you wrote is on a panel; each step the agent takes follows with a dot - green
+for a tool that worked, red for one that failed or that you declined. A tool
+shows as one line - the file, the pattern - with the first lines of what it
+returned, and **… more lines** under it shows the rest (**show less** folds it
+again). A shell command and its output read as in a terminal, in one block.
+An edit shows its first changed lines, and **open diff** opens the whole file,
+before the edit and now, in the diff viewer. A thin line joins the dots of
+steps that follow one another.
+
+- **Subagents.** A subagent's own steps show under the step that started it,
+  one line each - the latest few, with **… earlier steps** opening the rest -
+  and what it says it is doing while it runs.
+- **Thinking.** **Thought ›** opens what the agent thought before it
+  answered, when Claude Code sends that text (it often sends only that it
+  thought).
+- **The to-do list.** While the agent works through a to-do list, the list
+  stays over the field you type in - the step in progress and those after it,
+  the finished ones counted - until all of it is done.
+- **The model and the context.** The header shows the model and how full the
+  conversation's context is. `/model` lists the models the session offers;
+  pick one to switch to it. It stays picked if the agent is started again.
+
+| Key | What it does |
+|---|---|
+| `Enter` | Send the message. One sent while the agent works waits for its turn to end |
+| `Alt+Enter`, `Shift+Enter`, `Ctrl+J` | A new line in the message (a terminal cannot send `Shift+Enter`; the other two work everywhere) |
+| `Esc` | Stop the agent while it works; otherwise go back to the file manager, the session kept |
+| `↑` / `↓` | On the first (last) line of the field: an earlier (later) message you sent |
+| `PageUp` / `PageDown` | Scroll the conversation (so does the wheel) |
+| `Shift+Tab` | The next permission mode: ask before tools, accept edits (file changes go ahead without asking), plan (the agent looks and plans but changes nothing). The header shows the mode |
+
+**Commands and files.** Type `/` at the start of the message to list the
+session's commands - XeFM's own and Claude Code's (`/compact`, `/context`,
+your skills) - narrowing as you type. Type `@` to mention a file: the files
+selected in the panes come first (or the ones under the cursors), then the
+folder's files and folders, then files further down by name. `↑` / `↓` pick,
+`Tab` takes the one picked, and `Enter` takes it too - and runs a command that
+needs no argument. `Esc` closes the list. `/clear` starts a new conversation,
+`/model` switches the model, and `/exit` ends the session.
+
+- **The agent asks in XeFM.** When the agent wants to run a tool that needs
+  your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of
+  command, for the rest of this session; nothing is written to your
+  settings) or **Deny**. When the agent asks you to choose between options,
+  XeFM shows each question with its options - one to pick, or checkboxes
+  where several may be chosen - and a field for an answer of your own. The confirmations of
+  [What the agent may not do](#what-the-agent-may-not-do) apply as in any
+  agent session.
+- **Plans.** In plan mode the agent ends with a plan for you to approve:
+  **Approve** (it goes on, asking before tools as usual), **Approve, Accept
+  Edits** (file changes then go ahead without asking), or **Keep Planning**.
+- **Back to the session.** **AI Agent Here** in the same folder goes back to
+  the session there instead of starting another; **Screens…** lists it too,
+  in terminal mode as well. While you are away, the status bar says when the
+  agent is asking you something or has finished.
+- **Links.** A link in the agent's reply to a file or folder on this
+  computer opens it in the active pane.
+- **If the agent stops** (it crashed, or you ended it outside XeFM), the
+  conversation stays on screen; `Enter` starts it again in the same
+  conversation.
+
+Only Claude Code can be drawn for now, and this is Preview. XeFM runs your
+own `claude` in its non-interactive mode (`claude -p`, with its streaming
+JSON input and output), signed in as you set it up: what that use counts
+against is between you and your Claude Code plan, as it is in a terminal.
 
 ## What the agent gets
 
@@ -116,6 +200,7 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 | `settings` | Claude Code and Antigravity: the settings to pass instead of XeFM's, in that agent's own form, e.g. `{'permissions': {'deny': ['Bash(rm:*)']}}` for Claude Code, `{'permissions': {'deny': ['command(rm)']}}` for Antigravity |
 | `env` | Extra environment variables |
 | `prompt_args` | Without a preset: what `ask_agent` adds for the request (default `['{prompt}']`) |
+| `ui` | `'terminal'` (the default): the agent's own screen in a terminal session. `'xefm'`: [the conversation drawn by XeFM](#conversations-drawn-by-xefm) (Claude Code only) |
 
 To pass the agent more options, add them to `command`:
 `['claude', '--model', 'opus']`.

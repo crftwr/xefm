@@ -38,6 +38,10 @@ def next_id() -> int:
 #: Session kinds, as the session list names them.
 SHELL = "shell"
 PROGRAM = "program"
+#: An AI agent session XeFM draws itself (#959): its view is an
+#: :class:`xefm.agent_chat_view.ChatView`, not a terminal. It exists in
+#: terminal mode too.
+AGENT = "agent"
 
 
 @dataclass(eq=False)
@@ -86,6 +90,9 @@ class Session:
         """``at prompt``, ``running a command`` (both known from shell
         integration), ``running``, or ``exited`` (with the code)."""
         view = self.view
+        chat = getattr(view, "chat_state", None)
+        if chat:
+            return chat  # a drawn agent session: what the conversation is doing
         if getattr(view, "running", False):
             if getattr(view, "idle_at_prompt", False):
                 return "at prompt"

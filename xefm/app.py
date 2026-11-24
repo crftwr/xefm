@@ -6213,6 +6213,10 @@ class XeFMApp:
         if pane.get("virtual") or path_schemes.is_uri(str(cwd)):
             cwd = os.path.expanduser("~")  # an agent works on the local disk
         policy = AGENT if entry["restrict"] else USER
+        if agents.drawn(entry):
+            self._start_agent_chat(entry, values, cwd=str(cwd), env=env,
+                                   policy=policy, prompt=prompt)
+            return
         self.log_info(f"Starting {entry['name']} in {cwd}")
         if is_desktop_mode():
             if not self._terminal_ready():
@@ -6222,6 +6226,309 @@ class XeFMApp:
             return
         self._with_remote_env(env, "agent", policy)
         self._run_in_terminal(argv, cwd=cwd, env=env, pause_on_error=True)
+
+    # --- AI agent sessions XeFM draws ('ui': 'xefm', #959) --------------------------
+
+    def _agent_chat_for(self, entry: dict, cwd: str):
+        """A drawn session of ``entry`` already open in ``cwd`` and not ended,
+        or None: the agent key goes back to it rather than starting another."""
+        from xefm.terminal_sessions import AGENT
+        for session in self._sessions:
+            if session.kind == AGENT and session.cwd == cwd \
+                    and getattr(session.view, "entry_name", None) == entry["name"] \
+                    and session.view.running:
+                return session
+        return None
+
+    def _start_agent_chat(self, entry: dict, values: dict, *, cwd: str, env: dict,
+                          policy: str, prompt: str | None = None):
+        """Start (or go back to) a drawn agent session: a screen of its own,
+        in the desktop app and in terminal mode alike, with the conversation
+        drawn by :class:`xefm.agent_chat_view.ChatView`."""
+        from puikit.panel import Rect
+        from xefm import agents
+        try:
+            from xefm.agent_chat_view import ChatView
+        except ImportError as e:  # a PuiKit before TextArea
+            self.log_info(f"{entry['name']}: a conversation drawn by XeFM needs a "
+                          f"newer PuiKit ({e}); set 'ui': 'terminal' meanwhile")
+            self.panel.render()
+            return None
+        from xefm.terminal_sessions import AGENT, Session, next_id
+        from xefm.text_viewer import viewer_layer_hints
+        existing = self._agent_chat_for(entry, cwd)
+        if existing is not None:
+            self._show_session(existing)
+            if prompt:
+                existing.view.send(prompt)
+            self.panel.render()
+            return existing
+        sid = next_id()
+        self._with_remote_env(env, str(sid), policy)
+        argv = agents.chat_argv(entry, values)
+        name = self._sessions.next_name(entry["name"])
+        self.log_info(f"Starting {entry['name']} in {cwd} (drawn by XeFM)")
+        box: dict = {}
+        view = ChatView(
+            argv, cwd=cwd, env=env, name=name,
+            post=self._call_later,
+            ask=self._agent_chat_ask,
+            on_close_request=self._agent_chat_close_request,
+            on_hide=self._hide_session,
+            on_screens_request=self.screens,
+            on_user_action=self._run_terminal_user_action,
+            on_link=self._agent_chat_link,
+            on_change=lambda v: self._agent_chat_changed(v),
+            restart_argv=lambda session_id: argv + ["--resume", session_id],
+            on_diff=self._agent_chat_diff,
+            mention_paths=self._agent_mention_paths)
+        view.entry_name = entry["name"]
+        box["view"] = view
+        session = self._sessions.add(Session(
+            view=view, kind=AGENT, name=name, cwd=cwd, id=sid,
+            program=os.path.basename(entry["command"][0]), named=True))
+        sw, sh = self.panel.backend.size_units
+        screen = self._screens.add_terminal(
+            session, view, hints=viewer_layer_hints(sw, sh),
+            reflow=lambda sw, sh: Rect(0, 0, sw, sh))
+        self._show_screen(screen)
+        view.start(self.panel)
+        if prompt:
+            view.send(prompt)
+        self.panel.render()
+        return session
+
+    def _agent_chat_changed(self, view) -> None:
+        """The conversation moved on; a hidden session says so in the status
+        bar when it wants the user (a question, a turn finished)."""
+        from xefm import agent_chat as C
+        session = self._sessions.for_view(view)
+        if session is None or view.shown:
+            return
+        state = view.conversation.state
+        if state == C.ASKING:
+            session.attention = ("attention", f"{session.name}: asking you")
+        elif state == C.IDLE and session.attention is None \
+                and view.conversation.items:
+            session.attention = ("done", f"{session.name}: done")
+        elif state == C.EXITED:
+            session.attention = ("failed", f"{session.name}: ended")
+
+    def _on_screen_of(self, view, open_dialog) -> None:
+        """Run ``open_dialog()`` with what it opens landing on ``view``'s
+        screen, shown or not: a question from a hidden agent waits there."""
+        session = self._sessions.for_view(view)
+        screen = session.screen if session is not None else None
+        if screen is None or screen is self._screens.current \
+                or not self.panel.has_layer(screen.group):
+            open_dialog()
+            return
+        before = self.panel.default_layer_parent()
+        self.panel.set_default_layer_parent(screen.group)
+        try:
+            open_dialog()
+        finally:
+            self.panel.set_default_layer_parent(before)
+
+    def _agent_chat_ask(self, view, perm) -> None:
+        """The agent asks whether a tool may run: an XeFM dialog on its screen,
+        the answer sent back. Claude Code's multiple-choice questions to the
+        user come the same way and are answered with a list each."""
+        from xefm import agent_chat as C
+        if perm.tool == C.ASK_USER_TOOL:
+            self._agent_chat_questions(view, perm)
+            return
+        if perm.tool == C.PLAN_TOOL:
+            self._agent_chat_plan(view, perm)
+            return
+        what = C.summary(perm.tool, perm.input)
+        lines = [f"**{view.name}** wants to use **{perm.tool}**."]
+        if perm.description and perm.description != what:
+            lines.append(perm.description)
+        if what:
+            lines.append(C._code(what))
+        if perm.blocked_path:
+            lines.append(f"Path: `{perm.blocked_path}`")
+        buttons = ["Allow", "Always Allow", "Deny"] if perm.suggestions else ["Allow", "Deny"]
+
+        def answered(label: str) -> None:
+            if label == "Allow":
+                view.answer(perm, C.allow(perm))
+            elif label == "Always Allow":
+                view.answer(perm, C.allow(perm, always=True))
+            else:
+                view.answer(perm, C.deny())
+            self.panel.render()
+
+        def open_dialog() -> None:
+            show_message_box(self.panel, "\n\n".join(lines), title="Allow?",
+                             icon="question", buttons=buttons, default=0,
+                             cancel=len(buttons) - 1, markdown=True,
+                             on_result=answered)
+        self._on_screen_of(view, open_dialog)
+        self.panel.render()
+
+    def _agent_chat_plan(self, view, perm) -> None:
+        """``ExitPlanMode``: the plan, to approve - going on asking before
+        each tool, or accepting edits - or to send back for more planning."""
+        from xefm import agent_chat as C
+        plan = str(perm.input.get("plan") or "").strip() or "_(no plan text)_"
+        buttons = ["Approve", "Approve, Accept Edits", "Keep Planning"]
+
+        def answered(label: str) -> None:
+            if label == "Keep Planning":
+                view.answer(perm, C.deny("The user wants to keep planning: the plan is "
+                                         "not approved yet. Ask what to change."))
+            else:
+                view.answer(perm, C.allow(perm))
+                view.set_mode("acceptEdits" if label == "Approve, Accept Edits" else "default")
+            self.panel.render()
+
+        def open_dialog() -> None:
+            show_message_box(self.panel, f"**{view.name}** has a plan:\n\n{plan}",
+                             title="Approve the plan?", icon="question", buttons=buttons,
+                             default=0, cancel=len(buttons) - 1, markdown=True,
+                             on_result=answered)
+        self._on_screen_of(view, open_dialog)
+        self.panel.render()
+
+    def _agent_chat_diff(self, view, item) -> None:
+        """An agent's edit in the diff viewer: the whole file as it was before
+        (the edit undone on what is on disk) against the file now; just the
+        replaced text against its replacement when the file has changed again
+        since."""
+        import tempfile
+        from xefm import agent_chat as C
+        path = str(item.input.get("file_path") or "")
+        try:
+            with open(path, encoding="utf-8", newline="") as f:
+                current = f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            self.log_info(f"Compare: cannot read {path}: {e}")
+            current = None
+        before = C.edit_before(item, current) if current is not None else None
+        tmp = tempfile.mkdtemp(prefix="xefm-agent-diff-")
+        name = os.path.basename(path) or "edit.txt"
+
+        def write(sub: str, text: str) -> str:
+            os.makedirs(os.path.join(tmp, sub), exist_ok=True)
+            out = os.path.join(tmp, sub, name)
+            with open(out, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+            return out
+
+        if before is not None:
+            left, right = write("before", before), path
+            titles = (f"{name} (before the edit)", f"{name} (now)")
+        else:
+            edits = [item.input] if item.name == "Edit" else list(item.input.get("edits") or [])
+            left = write("old", "\n".join(str(e.get("old_string", "")) for e in edits
+                                          if isinstance(e, dict)))
+            right = write("new", "\n".join(str(e.get("new_string", "")) for e in edits
+                                           if isinstance(e, dict)))
+            titles = ("Replaced text", "Replacement")
+
+        def cleanup() -> None:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        self._on_screen_of(view, lambda: self.open_diff(Path(left), Path(right),
+                                                        titles=titles, on_close=cleanup))
+        self.panel.render()
+
+    def _agent_mention_paths(self) -> list[str]:
+        """What ``@`` lists first in a drawn agent session: the files selected
+        in the panes (the active one first), else the ones under the cursors -
+        local ones only, a path the agent can open."""
+        ctx = self._user_ctx
+        out: list[str] = []
+        for pane in (ctx.pane, ctx.other):
+            try:
+                entries = pane.selected or ([pane.focused] if pane.focused else [])
+            except Exception as e:
+                getLogger("AgentChat").error(f"Agent mentions: cannot read a pane: {e}")
+                continue
+            for entry in entries:
+                p = str(entry.path)
+                if entry.name != ".." and os.path.isabs(p) and os.path.exists(p) \
+                        and p not in out:
+                    out.append(p)
+        return out
+
+    def _agent_chat_questions(self, view, perm) -> None:
+        """``AskUserQuestion``: one dialog per question, in turn - radio rows,
+        or checkboxes for a ``multiSelect`` one, and a row for a typed
+        answer; the answers filled into the tool's input (several joined
+        with ", "). Escape on any declines."""
+        from xefm import agent_chat as C
+        from xefm.agent_question_dialog import show_question_dialog
+        qs = C.questions(perm)
+        answers: dict = {}
+
+        def ask(i: int) -> None:
+            if i >= len(qs):
+                view.answer(perm, C.allow(perm, updated_input=dict(perm.input, answers=answers)))
+                self.panel.render()
+                return
+            q = qs[i]
+
+            def picked(labels) -> None:
+                if labels is None:
+                    view.answer(perm, C.deny("The user did not answer."))
+                    self.panel.render()
+                    return
+                answers[q["question"]] = ", ".join(labels)
+                ask(i + 1)
+
+            title = str(q.get("header") or "Question")
+            if len(qs) > 1:
+                title += f" ({i + 1}/{len(qs)})"
+            self._on_screen_of(view, lambda: show_question_dialog(
+                self.panel, q["question"], q["options"], multi=bool(q.get("multiSelect")),
+                title=title, on_result=picked))
+            self.panel.render()
+        ask(0)
+
+    def _agent_chat_close_request(self, view) -> None:
+        """``/exit``, ``terminal.close``: end the session, asking first while
+        the agent is in the middle of a turn."""
+        session = self._sessions.for_view(view)
+        if session is None:
+            return
+        if not view.busy:
+            self._close_session(session)
+            return
+
+        def answered(label: str) -> None:
+            if label == "Close":
+                self._close_session(session)
+            self.panel.render()
+
+        show_message_box(
+            self.panel, f"{session.name} is working. Stop it and close the session?",
+            title="AI agent", icon="warning", buttons=("Close", "Cancel"),
+            default=1, cancel=1, on_result=answered)
+        self.panel.render()
+
+    def _agent_chat_link(self, href: str) -> bool:
+        """A link in the agent's reply: a local file or folder opens in the
+        active pane (the file manager comes up); anything else opens as
+        usual."""
+        target = href
+        if target.startswith("file://"):
+            from urllib.parse import unquote, urlsplit
+            target = unquote(urlsplit(target).path)
+            if os.name == "nt" and len(target) > 2 and target[0] == "/" and target[2] == ":":
+                target = target[1:]
+        if not os.path.isabs(target) or not os.path.exists(target):
+            return False
+        self._show_screen(self._screens.files)
+        if os.path.isdir(target):
+            self._user_ctx.pane.cd(target)
+        else:
+            self._user_ctx.pane.cd(os.path.dirname(target), os.path.basename(target))
+        self.panel.render()
+        return True
 
     def _make_session_view(self, argv: list, *, cwd: str, env: dict, label: str,
                            shell: bool):
@@ -6518,18 +6825,24 @@ class XeFMApp:
         first, and the cursor starts on the one before it, so Enter goes back
         to where you were. A screen keeps what is open on it - a viewer stays
         over the panes while a terminal is on. The remove key ends a session.
-        Desktop app only."""
-        if not self._desktop_only("Screens"):
-            return
+        In terminal mode it lists the file manager and the AI agent sessions
+        XeFM draws (``'ui': 'xefm'``), the only screens there are there."""
         from xefm.screens import FILES
         from xefm.terminal_sessions import _short
         from xefm import agents
+        desktop = is_desktop_mode()
+        found = agents.available(self.config)
+        if not desktop:
+            found = [e for e in found if agents.drawn(e)]
+            if not found and len(self._screens.recent()) < 2:
+                self._desktop_only("Screens")
+                return
         new_row = object()
         cwd = self._session_dir() or os.path.expanduser("~")
         current = self._screens.current
         screens = self._screens.recent()
-        new_agents = {object(): entry for entry in agents.available(self.config)}
-        items = [*screens, new_row, *new_agents]
+        new_agents = {object(): entry for entry in found}
+        items = [*screens, *([new_row] if desktop else []), *new_agents]
 
         short = [self._screen_label(s) for s in screens]
         rows = {s: self._screen_label(s, full=short.count(text) > 1)
