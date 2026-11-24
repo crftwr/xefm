@@ -215,7 +215,9 @@ Rules can be ignored, so two things hold whatever the agent decides:
   or opening files with other programs. Your own actions and an extension's
   do what they do. The first time the agent reads a file off this computer's
   disk - on a server, in cloud storage, in an archive - or searches inside
-  files there, XeFM asks whether it may, for the rest of the session.
+  files there, XeFM asks whether it may, for the rest of the session. All of
+  these confirmations start on **Cancel**, so that an Enter you typed for
+  something else does not agree to one.
 - **The agent's own shell is limited**:
   the commands that delete or move files (`rm`, `rmdir`, `mv`, `unlink`,
   `shred`, `git clean`, and for Copilot and Antigravity PowerShell's
