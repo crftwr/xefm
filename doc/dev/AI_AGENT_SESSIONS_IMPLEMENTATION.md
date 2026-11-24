@@ -181,6 +181,10 @@ answered from the rules, listed `xefm` and quoted a two-line request.
      `_file_name`: a server's file name may hold what this OS takes for a
      separator.
 
+   Every confirmation an agent's request opens, an operation's own included,
+   starts on Cancel (`_start_on_cancel`, in `_ui`): the agent asks whenever it
+   likes, and the user may be typing.
+
    A command added to `remote_commands` that changes a file or runs a program
    has to do one of these. `test/test_agent_restrictions.py` holds them.
    An answer waiting for the user is acknowledged at once (`_late`), so the

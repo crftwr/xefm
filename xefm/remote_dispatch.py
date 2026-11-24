@@ -26,7 +26,8 @@ it to :func:`handle`. The commands are described in
   Whatever else would change a file or run a program is asked first
   (:func:`_ask_first`): ``fetch`` to a named file, ``terminal-session start``
   (whose session keeps the agent's policy), an action that hands files to
-  other programs.
+  other programs. What asks the user for an agent starts on Cancel
+  (:func:`_start_on_cancel`).
 
 Reads of the panes are answered even while terminal mode has its terminal
 handed over (the UI thread is parked in the child's wait and nothing else
@@ -313,15 +314,30 @@ def _go_back(app, screen) -> None:
         app._show_screen(screen)
 
 
-def _ui(app, work):
+def _ui(app, req, work):
     """Do ``work()`` on the file manager's screen and take the user there if
     it opened something. Returns ``(result, came_from)``: the screen the user
     was on, for a question to take them back to, or None."""
     before = list(app.panel.layer_children(app._screens.files.group))
     with on_files(app):
         result = work()
+    if _is_agent(req):
+        _start_on_cancel(app, before)
     came_from = _bring_user(app, before)
     return result, came_from
+
+
+def _start_on_cancel(app, before: list) -> None:
+    """Put the focus of the confirmations just opened (not in ``before``) on
+    their Cancel button. An agent asks whenever it likes, and the user may be
+    typing: an Enter meant for something else must not agree to it. That goes
+    for the operations' own confirmations too, whose default is for a user
+    who has just asked for the operation."""
+    from puikit.widgets import MessageBox
+    for layer in app.panel.layer_children(app._screens.files.group):
+        if isinstance(layer, MessageBox) and len(layer.buttons) > 1                 and layer.dismissable and not any(layer is b for b in before):
+            layer.default = layer.focused = layer.cancel
+            app.panel.render()
 
 
 # --- who asks -----------------------------------------------------------------------
@@ -791,7 +807,7 @@ def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> A
             answer.forward(pending)
         else:
             pending.set(answer)
-    _, came_from[0] = _ui(app, lambda: app._user_ctx.confirm(
+    _, came_from[0] = _ui(app, req, lambda: app._user_ctx.confirm(
         question, title=title, on_result=answered))
     return pending
 
@@ -1020,7 +1036,7 @@ def _write(app, req, verb: str, run, *, results: bool = False,
         app._user_ctx.confirm(f"{_asker(app, req)} wants to {ask_agent}.",
                               title=f"Allow {verb}?", on_result=answered)
 
-    _, came_from[0] = _ui(app, begin)
+    _, came_from[0] = _ui(app, req, begin)
     if wait:
         return pending
     return ok(outcome="started")
@@ -1194,7 +1210,7 @@ def _ask(app, req, open_dialog) -> Pending:
         _go_back(app, came_from[0])
         pending.set(result)
 
-    _, came_from[0] = _ui(app, lambda: open_dialog(answer))
+    _, came_from[0] = _ui(app, req, lambda: open_dialog(answer))
     return pending
 
 
@@ -1310,7 +1326,7 @@ def _c_invoke(app, req):
             app._user_ctx.invoke(name)
 
     def then():
-        _ui(app, run)
+        _ui(app, req, run)
         app.panel.render()
         return ok()
     if name not in AGENT_ASKED_ACTIONS:

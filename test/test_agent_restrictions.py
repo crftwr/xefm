@@ -205,6 +205,68 @@ def test_a_server_by_its_unc_path_is_not_local(path, local):
     assert remote_dispatch._is_local(path) is local
 
 
+# --- the default button -------------------------------------------------------------------
+
+@pytest.fixture
+def screen(app, tmp_path):
+    """``app`` on a real panel, with the real ``confirm`` and file operations."""
+    from puikit.backends.memory_backend import MemoryBackend
+    from puikit.panel import Panel
+    from xefm.file_operations import FileOperationService
+    from xefm.user_api import ActionContext
+    app.panel = panel = Panel(MemoryBackend(width=100, height=30))
+    group = panel.push_layer_group(z=10, name="files")
+    panel.set_default_layer_parent(group)
+    app._screens.files.group = group
+    app.config = SimpleNamespace(CONFIRM_COPY=False, CONFIRM_MOVE=False, CONFIRM_TRASH=False)
+    ops = FileOperationService(app.config)
+    src = tmp_path / "src"
+    src.write_text("x")
+    to = tmp_path / "to"
+    to.mkdir()
+    ctx = app._user_ctx
+    ctx.confirm = ActionContext(app).confirm
+    ctx.copy = lambda items, dest, on_done=None: ops.copy(
+        panel, [Path(i) for i in items], Path(dest))
+    ctx.trash = lambda items, on_done=None: ops.trash(panel, [Path(i) for i in items])
+    app.src, app.to = str(src), str(to)
+    app.box = lambda: panel.layer_children(group)[-1] if panel.layer_children(group) else None
+    return app
+
+
+def _press(app, key):
+    from puikit.event import Event, EventType
+    app.panel.dispatch_event(Event(EventType.KEY, key=key))
+
+
+@pytest.mark.parametrize("argv", [
+    ["copy", "SRC", "--to", "TO"], ["trash", "SRC"], ["fetch", "SRC", "TO/new"],
+    ["terminal-session", "start", "cmd"], ["invoke", "sync_python_packages"],
+    ["read", "ssh://host/x"], ["confirm", "sure?"]])
+def test_what_an_agent_asks_starts_on_cancel(screen, argv):
+    argv = [a.replace("SRC", screen.src).replace("TO", screen.to) for a in argv]
+    _do(screen, argv)
+    box = screen.box()
+    assert box.buttons[box.focused] == "Cancel"
+    _press(screen, "enter")  # meant for something else
+    assert screen.box() is None
+    assert os.path.exists(screen.src) and os.listdir(screen.to) == []
+    assert not screen._user_ctx.did
+
+
+def test_cancel_can_be_left(screen):
+    pending = _do(screen, ["terminal-session", "start", "cmd"])
+    _press(screen, "left")
+    _press(screen, "enter")
+    assert pending.wait()["ok"] and screen._user_ctx.did
+
+
+def test_the_users_own_confirmations_keep_their_default(screen):
+    _do(screen, ["confirm", "sure?"], policy="user")
+    box = screen.box()
+    assert box.buttons[box.focused] == "OK"
+
+
 # --- the wait ---------------------------------------------------------------------------
 
 def test_the_client_waits_for_the_users_answer(app, monkeypatch):
