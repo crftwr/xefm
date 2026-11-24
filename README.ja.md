@@ -224,7 +224,7 @@ xefmctl view README.md          # open a file in XeFM's viewer
 
 ## AI エージェントのセッション
 
-**Tools → AI Agent Here** で、ファイルマネージャーの隣に AI コーディングエージェントを開きます。Claude Code、Codex、GitHub Copilot CLI、Antigravity CLI は最初から設定済みで、それぞれのプログラムがインストールされていれば選べます。エージェントは自分が XeFM の中で動いていることを知っていて、ペインと選択項目を読み、XeFM が開ける場所ならどこでも検索し、見つけたものを XeFM で見せます。エージェントが頼むコピー、移動、ゴミ箱への移動は、どれもあなたの OK を待ち、完全な削除はできません。**Tools → Ask AI Agent…** は、入力した依頼か `AGENT_PROMPTS` に保存した依頼でエージェントを始めます。デスクトップアプリではエージェントは専用のターミナルセッションで動き、ターミナルアプリではターミナルを渡されます。[AI エージェントのセッション](doc/AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
+**Tools → AI Agent Here** で、ファイルマネージャーの隣に AI コーディングエージェントを開きます。Claude Code、Codex、GitHub Copilot CLI、Antigravity CLI は最初から設定済みで、それぞれのプログラムがインストールされていれば選べます。エージェントは自分が XeFM の中で動いていることを知っていて、ペインと選択項目を読み、XeFM が開ける場所ならどこでも検索し、見つけたものを XeFM で見せます。エージェントが頼むコピー、移動、ゴミ箱への移動は、どれもあなたの OK を待ち、完全な削除はできません。**Tools → Ask AI Agent…** は、入力した依頼か `AGENT_PROMPTS` に保存した依頼でエージェントを始めます。XeFM は会話を専用の画面に描きます。デスクトップアプリでもターミナルでも同じで、エージェントに許可が要るときはそこで尋ねます。設定 1 つで、エージェント自身の画面をターミナルセッションで使うこともできます。[AI エージェントのセッション](doc/AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
 
 ## コマンドラインオプション
 

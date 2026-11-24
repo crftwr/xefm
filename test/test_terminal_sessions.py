@@ -919,7 +919,8 @@ def test_the_codex_preset_hands_the_rules_naming_the_skill(monkeypatch, tmp_path
     import pathlib
     import tomllib
     app = _agent_app(monkeypatch, tmp_path, [
-        {"name": "Codex", "command": ["codex", "-m", "gpt-x"], "preset": "codex"}])
+        {"name": "Codex", "command": ["codex", "-m", "gpt-x"], "preset": "codex",
+         "terminal": True}])
     app.config.AGENT_RULES = 'Say "done" when\tfinished.'
     switcher = _Switcher(monkeypatch)
     app.ask_agent()
@@ -968,7 +969,8 @@ def test_the_antigravity_preset_hands_a_workspace_and_its_settings(monkeypatch, 
     import json
     import pathlib
     app = _agent_app(monkeypatch, tmp_path, [
-        {"name": "Antigravity", "command": ["agy", "--model", "x"], "preset": "antigravity"}])
+        {"name": "Antigravity", "command": ["agy", "--model", "x"], "preset": "antigravity",
+         "terminal": True}])
     app.config.AGENT_RULES = "Leave ~/Taxes alone."
     switcher = _Switcher(monkeypatch)
     app.ask_agent()
@@ -1007,7 +1009,7 @@ def test_the_copilot_preset_hands_the_plugin_rules_and_deny_rules(monkeypatch, t
     from xefm import agents
     app = _agent_app(monkeypatch, tmp_path, [
         {"name": "Copilot", "command": ["copilot", "--model", "x"], "preset": "copilot",
-         "env": {"COPILOT_CUSTOM_INSTRUCTIONS_DIRS": "/mine"}}])
+         "terminal": True, "env": {"COPILOT_CUSTOM_INSTRUCTIONS_DIRS": "/mine"}}])
     app.config.AGENT_RULES = "Leave ~/Taxes alone."
     envs = []
     real = app._start_session

@@ -1012,8 +1012,8 @@ class TerminalSession:
     only while it has it: :meth:`ActionContext.start_terminal_session`
     returns one that has already ended, and :meth:`ActionContext.terminal_sessions`
     holds only AI agent sessions XeFM draws itself (``kind == "agent"``;
-    Claude Code's unless its ``AGENTS`` entry says ``'terminal': True``),
-    which need no terminal and have a screen in both modes.
+    those of an ``AGENTS`` entry with a preset, unless it says
+    ``'terminal': True``), which need no terminal and have a screen in both modes.
 
     Compare two with ``==``."""
 
@@ -1703,7 +1703,7 @@ class ActionContext:
         so ``ctx.screens()[1].show()`` goes back to the previous screen.
         ``order="started"`` lists them in the order they were made, the file
         manager first. In terminal mode the file manager's is the only one
-        but for AI agent sessions XeFM draws (Claude Code's, unless
+        but for AI agent sessions XeFM draws (those of a preset, unless
         ``'terminal': True``), so code walking this list needs no mode check."""
         if order not in ("recent", "started"):
             raise ValueError(f"screens: order is 'recent' or 'started', not {order!r}")

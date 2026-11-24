@@ -1129,9 +1129,10 @@ class Config:
 
     # AI agent sessions (Tools > AI Agent Here / Ask AI Agent; agent and
     # ask_agent). Each entry names an agent CLI you installed and signed in
-    # to; XeFM runs it as a terminal session in the active pane's folder
-    # (terminal mode hands it the terminal) and hands it the xefm skill and
-    # the rules below. XeFM never touches its credentials.
+    # to; XeFM runs it on a screen of its own in the active pane's folder -
+    # a conversation XeFM draws, or a terminal session (terminal mode hands
+    # it the terminal) - and hands it the xefm skill and the rules below.
+    # XeFM never touches its credentials.
     #   'name'     : its name in the menu and the screen switcher
     #   'command'  : the program and its arguments
     #   'preset'   : 'claude-code' - XeFM adds the arguments that pass Claude
@@ -1151,16 +1152,19 @@ class Config:
     #                file change confirmed in XeFM, may not delete for good,
     #                and asks before its first read outside this disk; for
     #                Claude Code, Copilot and Antigravity, its shell may not
-    #                rm or mv either.
+    #                rm or mv either; nor may Codex's in a conversation XeFM
+    #                draws, where Codex asks before it runs one.
     #   'settings' : (Claude Code, Antigravity) the settings to pass instead
     #                of XeFM's, e.g. {'permissions': {'deny': ['Bash(rm:*)']}}
+    #                (Antigravity in a conversation XeFM draws takes only
+    #                their denied commands, 'command(rm)').
     #   'env'      : extra environment variables
     #   'terminal' : True - the agent's own screen in a terminal session.
     #                False - XeFM draws the conversation itself (Preview), in
     #                the desktop app and in terminal mode, and asks you in its
     #                own dialogs when a tool needs permission. The default is
-    #                False for 'claude-code' and True for the other presets,
-    #                which XeFM cannot draw yet.
+    #                False with a 'preset' and True without one (XeFM cannot
+    #                draw those).
     # An entry is offered only while its program is on PATH.
     # AGENTS = [] turns agent sessions off; their menu items go too.
     # Other agent CLIs: see the wiki page "AI agents".
