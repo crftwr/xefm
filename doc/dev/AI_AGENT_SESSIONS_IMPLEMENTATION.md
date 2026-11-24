@@ -241,6 +241,17 @@ ruled out). ACP stays the candidate for other agents.
   (a `_Menu` of kind `model`) sends `set_model`, whose answer carries the
   resolved `model` and whose refusal (`model_request`) becomes a notice.
   `model_choice` is passed as `--model` on a restart.
+- Commands XeFM does not handle go to the CLI as a user message. Its reply
+  is an `assistant` message with `model` `<synthetic>` (`SYNTHETIC_MODEL`):
+  `Item.plain`, shown by `_plain_markdown` (punctuation escaped, hard
+  breaks, inner runs of spaces as no-break spaces; a line's indent is lost,
+  as MarkdownView strips it). `system notification` becomes a notice (an
+  error when `color` is `error`). `/effort <level>` and fast mode
+  (`system init` `fast_mode_state`, off again on the
+  `fast-mode-overage-rejected` notification) last for the CLI's process
+  only - checked in the session file, a resumed process went back to the
+  default effort - so `_restart` passes `--effort` and, as there is no flag
+  for it, sends `/fast on` as a turn of its own.
 - The to-do list: `Conversation.todos()` is the last main-thread
   `TodoWrite`'s list while any of it is not completed; `ChatView._draw_todos`
   pins it over the field (in progress and after, `_TODO_ROWS`). The

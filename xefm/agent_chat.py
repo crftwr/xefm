@@ -242,6 +242,9 @@ class Item:
     children: list = field(default_factory=list)
     #: What a running subagent says it is doing (``task_progress``).
     progress: str = ""
+    #: Plain text, not Markdown: a command's reply (``/usage``), shown with
+    #: its line breaks and spacing as written.
+    plain: bool = False
 
 
 @dataclass
@@ -296,6 +299,11 @@ class Conversation:
         #: turn's ``result`` named it (0 until then).
         self.context_tokens = 0
         self.context_window = 0
+        #: The effort ``/effort <level>`` set ("" for the default) and whether
+        #: fast mode is on (``system init``'s ``fast_mode_state``): the CLI
+        #: keeps both for its process only, so a restart passes them on.
+        self.effort_choice = ""
+        self.fast_mode = False
 
     # --- what the user did -------------------------------------------------------
 
@@ -440,6 +448,7 @@ class Conversation:
             if want == "text":
                 item.text = block.get("text", item.text)
                 item.open = False
+                item.plain = message.get("model") == SYNTHETIC_MODEL
             elif want == "thinking":
                 item.text = block.get("thinking", item.text)
                 item.open = False
@@ -498,12 +507,20 @@ class Conversation:
             self.cwd = str(msg.get("cwd") or self.cwd)
             if isinstance(msg.get("permissionMode"), str):
                 self.permission_mode = msg["permissionMode"]
+            if msg.get("fast_mode_state") in ("on", "off"):
+                self.fast_mode = msg["fast_mode_state"] == "on"
             if self.state == STARTING:
                 self.state = WORKING if self.pending_turns else IDLE
         elif sub == "compact_boundary":
             self.add_notice("Earlier conversation compacted")
         elif sub == "status" and isinstance(msg.get("permissionMode"), str):
             self.permission_mode = msg["permissionMode"]
+        elif sub == "notification" and str(msg.get("text") or "").strip():
+            # What the CLI tells the user beside the conversation ("Fast mode
+            # disabled - out of usage credits").
+            self.add_notice(str(msg["text"]).strip(), error=msg.get("color") == "error")
+            if msg.get("key") == "fast-mode-overage-rejected":
+                self.fast_mode = False
         elif sub == "task_progress":
             owner = self._tools.get(str(msg.get("tool_use_id") or ""))
             if owner is not None and isinstance(msg.get("description"), str):
@@ -659,6 +676,12 @@ def deny(message: str = "The user declined this in XeFM.", *, interrupt: bool = 
         out["interrupt"] = True
     return out
 
+
+#: The ``model`` of an ``assistant`` message the CLI wrote itself - a
+#: command's reply (``/usage``, ``/effort``) - rather than the model.
+SYNTHETIC_MODEL = "<synthetic>"
+#: ``/effort``'s levels when the CLI's command list does not say.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max", "auto")
 
 #: The tool Claude Code asks the user multiple-choice questions with: answered
 #: by filling ``answers`` into its input rather than with a yes or no.
@@ -920,6 +943,25 @@ def tool_markdown(item: Item, index: int = -1) -> str:
     return "\n\n".join(parts)
 
 
+_MD_PUNCT = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~])")
+
+
+def _plain_markdown(text: str) -> str:
+    """Plain text as Markdown that shows it as written: punctuation escaped,
+    each line its own row (a hard break), runs of spaces inside a line kept
+    (no-break spaces; a line's indent is not - a paragraph's rows start at
+    its edge). Blank lines stay paragraph breaks."""
+    out = []
+    for line in text.rstrip().split("\n"):
+        line = _MD_PUNCT.sub(r"\\\1", line.strip())
+        out.append(re.sub(r"  +", lambda m: "\u00a0" * len(m.group(0)), line))
+    rows = []
+    for i, line in enumerate(out):
+        nxt = out[i + 1] if i + 1 < len(out) else ""
+        rows.append(line + ("  " if line and nxt else ""))
+    return "\n".join(rows)
+
+
 def _thought_markdown(item: Item, index: int) -> str:
     """Finished thinking: folded to a line that opens it, or shown (as a
     quote) with a link that folds it again. The CLI often sends thinking
@@ -942,7 +984,7 @@ def to_markdown(items: list[Item]) -> str:
             continue
         elif item.kind == "text":
             if item.text.strip():
-                out.append(item.text.rstrip())
+                out.append(_plain_markdown(item.text) if item.plain else item.text.rstrip())
         elif item.kind == "thinking":
             if item.open:
                 out.append("_Thinking…_")

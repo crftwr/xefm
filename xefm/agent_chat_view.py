@@ -256,6 +256,10 @@ class ChatView(FocusContainer, Widget):
         model = self.conversation.model_choice
         if model:
             argv = list(argv) + ["--model", model]
+        # What the CLI keeps for its process only, set again in the new one.
+        effort, fast = self.conversation.effort_choice, self.conversation.fast_mode
+        if effort:
+            argv = list(argv) + ["--effort", effort]
         if not resume:
             self.conversation = C.Conversation()
             self._source = ""
@@ -263,7 +267,14 @@ class ChatView(FocusContainer, Widget):
         ok = self.start(argv=argv)
         if mode in C.MODES:
             self.conversation.permission_mode = mode
-        self.conversation.model_choice = model
+        conv = self.conversation
+        conv.model_choice, conv.effort_choice = model, effort
+        if ok and fast and self.client is not None:
+            # No flag turns fast mode on: its own command does, as a turn of
+            # its own (its reply shows it is on again).
+            if self.client.send("/fast on"):
+                conv.pending_turns += 1
+                conv.state = C.WORKING
         return ok
 
     def _message(self, msg: dict) -> None:
@@ -621,11 +632,27 @@ class ChatView(FocusContainer, Widget):
             self.input.set_text("")
             self.set_model(m.group(1))
             return
+        self._note_effort(stripped)
         if self.send(text.rstrip()):
             if not self.history or self.history[-1] != text.rstrip():
                 self.history.append(text.rstrip())
             self._hist = None
             self.input.set_text("")
+
+    def _note_effort(self, text: str) -> None:
+        """``/effort <level>``: kept, so a restarted agent gets it with
+        ``--effort`` (the CLI keeps it for its process only)."""
+        m = re.fullmatch(r"/effort\s+(\S+)", text)
+        if not m:
+            return
+        level = m.group(1).lower()
+        levels = C.EFFORT_LEVELS
+        for cmd in self.conversation.commands:
+            if cmd.get("name") == "effort":
+                hint = re.findall(r"[\w-]+", str(cmd.get("argumentHint") or ""))
+                levels = tuple(hint) or levels
+        if level in levels:
+            self.conversation.effort_choice = "" if level == "auto" else level
 
     def _recall(self, step: int) -> bool:
         """Up/Down on the message's edge: an earlier (later) sent message."""
