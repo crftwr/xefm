@@ -219,20 +219,27 @@ def test_ask_user_question_options():
 
 # --- the AGENTS entry ---------------------------------------------------------------
 
-def test_ui_is_checked():
-    ok = agents.normalize({"name": "C", "command": ["claude"], "preset": "claude-code",
-                           "ui": "xefm"})
-    assert ok["ui"] == "xefm" and agents.drawn(ok)
-    assert agents.normalize({"name": "C", "command": ["claude"]})["ui"] == "terminal"
-    assert "'ui'" in agents.normalize({"name": "C", "command": ["c"], "ui": "web"})
-    # Only Claude Code can be drawn today.
+def test_terminal_is_checked_and_claude_code_is_drawn_by_default():
+    claude = agents.normalize({"name": "C", "command": ["claude"], "preset": "claude-code"})
+    assert claude["terminal"] is False and agents.drawn(claude)
+    opted_out = agents.normalize({"name": "C", "command": ["claude"],
+                                  "preset": "claude-code", "terminal": True})
+    assert opted_out["terminal"] is True and not agents.drawn(opted_out)
+    # The presets XeFM cannot draw yet, and an entry without a preset, run
+    # in a terminal.
+    assert agents.normalize({"name": "X", "command": ["codex"], "preset": "codex"})["terminal"]
+    assert agents.normalize({"name": "Y", "command": ["y"]})["terminal"]
     assert "needs 'preset'" in agents.normalize(
-        {"name": "X", "command": ["codex"], "preset": "codex", "ui": "xefm"})
+        {"name": "X", "command": ["codex"], "preset": "codex", "terminal": False})
+    assert "True or False" in agents.normalize(
+        {"name": "C", "command": ["claude"], "terminal": "yes"})
+    assert "'terminal': True" in agents.normalize(
+        {"name": "C", "command": ["claude"], "preset": "claude-code", "ui": "xefm"})
 
 
 def test_chat_argv_is_stream_json_with_the_skill_rules_and_settings(tmp_path):
     entry = agents.normalize({"name": "Claude Code", "command": ["claude", "--model", "m"],
-                              "preset": "claude-code", "ui": "xefm"})
+                              "preset": "claude-code"})
     values = agents.prepare(SimpleNamespace(), entry, root=tmp_path, version="t")
     argv = agents.chat_argv(entry, values)
     assert argv[:3] == ["claude", "--model", "m"]
@@ -380,7 +387,7 @@ def test_the_agent_key_opens_a_drawn_session_in_terminal_mode_too(monkeypatch, t
         posts = _Posts()
         app._call_later = posts
         app.config.AGENTS = [{"name": "Claude Code", "command": fake_cli,
-                              "preset": "claude-code", "ui": "xefm"}]
+                              "preset": "claude-code"}]
         monkeypatch.setattr(agents, "cache_root", lambda: tmp_path)
         monkeypatch.setattr(agents, "installed", lambda entry: True)
         app._program_env = lambda pane: (dict(os.environ), str(tmp_path))

@@ -169,15 +169,19 @@ reach (another CLI, an editor tool writing a file). Layer 2 holds for
 everything that goes through XeFM; the rules ask the agent to go through
 XeFM.
 
-## Conversations drawn by XeFM (`'ui': 'xefm'`, #959)
+## Conversations drawn by XeFM (`'terminal': False`, #959)
 
 Step 2 of #880. Claude Code only, through its stream-json mode, which needs
 nothing beyond the CLI the user installed (the ACP adapter would be an npm
 package to install; the Agent SDK a dependency in the core, which #880
 ruled out). ACP stays the candidate for other agents.
 
-- `agents.normalize` takes `ui` (`terminal` | `xefm`; `xefm` only with a
-  preset in `DRAWN_PRESETS`). `agents.chat_argv` is `command` +
+- `agents.normalize` takes `terminal` (a bool); its default is whether the
+  preset is missing from `DRAWN_PRESETS`, so a preset is drawn as soon as
+  it joins that tuple, and `False` with any other preset is refused. The
+  key replaced `'ui': 'terminal' | 'xefm'` before it shipped (the app's
+  name read oddly as a value, and drawn is meant to become the default);
+  an entry still saying `ui` gets a message naming the new key. `agents.chat_argv` is `command` +
   `agent_chat.CLAUDE_STREAM_ARGS` (`-p --input-format stream-json
   --output-format stream-json --verbose --include-partial-messages
   --permission-prompt-tool stdio`) + the same `--plugin-dir`, rules and
@@ -320,7 +324,7 @@ nor a docstring (read with `ast`, not imported).
 ## Tests
 
 `test/test_agent_chat.py`: the conversation folding, the transcript, the
-answers, `ui` checking and `chat_argv`, the client and the view against a
+answers, `terminal` checking and `chat_argv`, the client and the view against a
 stand-in CLI, and `agent` opening (and going back to) a drawn session in
 both modes.
 

@@ -6227,7 +6227,7 @@ class XeFMApp:
         self._with_remote_env(env, "agent", policy)
         self._run_in_terminal(argv, cwd=cwd, env=env, pause_on_error=True)
 
-    # --- AI agent sessions XeFM draws ('ui': 'xefm', #959) --------------------------
+    # --- AI agent sessions XeFM draws ('terminal': False, #959) --------------------------
 
     def _agent_chat_for(self, entry: dict, cwd: str):
         """A drawn session of ``entry`` already open in ``cwd`` and not ended,
@@ -6251,7 +6251,7 @@ class XeFMApp:
             from xefm.agent_chat_view import ChatView
         except ImportError as e:  # a PuiKit before TextArea
             self.log_info(f"{entry['name']}: a conversation drawn by XeFM needs a "
-                          f"newer PuiKit ({e}); set 'ui': 'terminal' meanwhile")
+                          f"newer PuiKit ({e}); set 'terminal': True meanwhile")
             self.panel.render()
             return None
         from xefm.terminal_sessions import AGENT, Session, next_id
@@ -6826,7 +6826,8 @@ class XeFMApp:
         to where you were. A screen keeps what is open on it - a viewer stays
         over the panes while a terminal is on. The remove key ends a session.
         In terminal mode it lists the file manager and the AI agent sessions
-        XeFM draws (``'ui': 'xefm'``), the only screens there are there."""
+        XeFM draws (Claude Code's, unless ``'terminal': True``), the only
+        screens there are there."""
         from xefm.screens import FILES
         from xefm.terminal_sessions import _short
         from xefm import agents
