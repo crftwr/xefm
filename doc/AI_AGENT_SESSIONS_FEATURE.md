@@ -112,7 +112,12 @@ selected in the panes come first (or the ones under the cursors), then the
 folder's files and folders, then files further down by name. `↑` / `↓` pick,
 `Tab` takes the one picked, and `Enter` takes it too - and runs a command that
 needs no argument. `Esc` closes the list. `/clear` starts a new conversation,
-`/model` switches the model, and `/exit` ends the session.
+`/model` switches the model, and `/exit` ends the session. Claude Code's
+own commands run as in Claude Code: `/usage` shows what you have used,
+`/effort` and `/fast` set the effort and fast mode. Their replies keep
+their lines as written, what Claude Code tells you beside them (fast mode
+turned off, for one) appears in the conversation, and the effort and fast
+mode you set stay set if the agent is started again.
 
 - **The agent asks in XeFM.** When the agent wants to run a tool that needs
   your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of

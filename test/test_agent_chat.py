@@ -815,3 +815,69 @@ def test_slash_model_lists_the_models_and_switches(tmp_path):
     view._restart(resume=False)
     assert started[-1][-2:] == ["--model", "sonnet"]
     assert view.conversation.model_choice == "sonnet"
+
+
+def test_a_commands_reply_keeps_its_lines():
+    conv = C.Conversation()
+    text = "Current session: 7% used\nCurrent week: 9% used\n\n  95%  Review *long* sessions"
+    conv.handle({"type": "assistant", "message": {"id": "c", "model": "<synthetic>",
+                                                  "content": [{"type": "text", "text": text}]}})
+    item = conv.items[0]
+    assert item.plain
+    md = C.to_markdown(conv.items)
+    assert "Current session: 7% used  \nCurrent week: 9% used\n\n95%  Review \\*long\\*" in md
+    from puikit import Panel
+    from puikit.backends.memory_backend import MemoryBackend
+    from puikit.widgets.markdown_view import MarkdownView
+    backend = MemoryBackend(width=60, height=8)
+    panel = Panel(backend)
+    panel.add(MarkdownView(md), x=0, y=0, w=60, h=8)
+    panel.render()
+    rows = [line.rstrip() for line in backend.snapshot()]
+    assert rows[:4] == ["● Current session: 7% used", "  Current week: 9% used", "",
+                        "  95%  Review *long* sessions"]
+    # The model's own replies stay Markdown.
+    conv.handle({"type": "assistant", "message": {"id": "d", "model": "claude-opus-5-5",
+                                                  "content": [{"type": "text", "text": "**hi**"}]}})
+    assert not conv.items[-1].plain and "**hi**" in C.to_markdown(conv.items)
+
+
+def test_the_clis_notifications_are_shown():
+    conv = C.Conversation()
+    conv.handle({"type": "system", "subtype": "init", "fast_mode_state": "on"})
+    assert conv.fast_mode
+    conv.handle({"type": "system", "subtype": "notification",
+                 "key": "fast-mode-overage-rejected",
+                 "text": "Fast mode disabled · Out of usage credits", "color": "error"})
+    assert conv.items[-1].kind == "error" and "Fast mode disabled" in conv.items[-1].text
+    assert not conv.fast_mode
+    conv.handle({"type": "system", "subtype": "notification", "key": "k", "text": "FYI"})
+    assert conv.items[-1].kind == "notice"
+
+
+def test_effort_and_fast_mode_outlive_a_restart(tmp_path):
+    panel, view = _plain_view(tmp_path)
+    conv = view.conversation
+    conv.commands = [{"name": "effort", "argumentHint": "<low|medium|high|xhigh|max|auto>"}]
+    view.send = lambda text: True
+    view._submit("/effort bogus")
+    assert conv.effort_choice == ""
+    view._submit("/effort low")
+    assert conv.effort_choice == "low"
+    conv.handle({"type": "system", "subtype": "init", "fast_mode_state": "on"})
+    started, sent = [], []
+
+    def start(panel=None, argv=None):
+        started.append(argv)
+        view.client = SimpleNamespace(running=True, close=lambda: None,
+                                      send=lambda text: sent.append(text) or True)
+        return True
+    view.start = start
+    conv.session_id = "S"
+    view._restart_argv = lambda sid: ["claude", "--resume", sid]
+    view._restart(resume=True)
+    assert started[-1] == ["claude", "--resume", "S", "--effort", "low"]
+    assert sent == ["/fast on"]  # no flag for it: its own command, again
+    assert conv.pending_turns == 1 and conv.state == C.WORKING
+    view._submit("/effort auto")
+    assert conv.effort_choice == ""
