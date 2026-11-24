@@ -19,6 +19,12 @@ This module has no UI: :class:`ChatClient` runs the process and hands each
 message to the UI thread; :class:`Conversation` folds the messages into the
 items the screen draws, and :func:`to_markdown` turns those into the source
 of the transcript's ``MarkdownView``. The screen is :mod:`xefm.agent_chat_view`.
+
+The other agents speak JSON-RPC instead: Codex through its app-server
+(:mod:`xefm.agent_codex`), Copilot and Antigravity through the Agent Client
+Protocol (:mod:`xefm.agent_acp`). Their clients fold what they receive into
+the same :class:`Conversation`, as the same items; a :class:`Protocol` is what
+the screen drives any of them through.
 """
 
 from __future__ import annotations
@@ -90,6 +96,10 @@ class ChatClient:
     def start(self) -> None:
         """Start the process and its readers. Raises ``OSError`` when it
         cannot start (the program is gone, not executable)."""
+        self._spawn()
+        self._open()
+
+    def _spawn(self) -> None:
         kwargs: dict[str, Any] = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = (subprocess.CREATE_NO_WINDOW
@@ -106,6 +116,8 @@ class ChatClient:
                          daemon=True).start()
         threading.Thread(target=self._read_stderr, name="agent-chat-err",
                          daemon=True).start()
+
+    def _open(self) -> None:
         # Claude Code's SDKs open with this; it answers with what the
         # session has (commands, models) and starts its control channel.
         self.request({"subtype": "initialize", "hooks": None})
@@ -245,6 +257,9 @@ class Item:
     #: Plain text, not Markdown: a command's reply (``/usage``), shown with
     #: its line breaks and spacing as written.
     plain: bool = False
+    #: An edit's changed lines as a diff, where the agent gave one (or both
+    #: texts whole) rather than the strings it replaced.
+    patch: str = ""
 
 
 @dataclass
@@ -258,6 +273,10 @@ class Permission:
     suggestions: list = field(default_factory=list)
     tool_use_id: str = ""
     blocked_path: str = ""
+    #: What an edit would change, as a diff, where the agent said.
+    patch: str = ""
+    #: The labels picked per question (``ASK_USER_TOOL``), as a list each.
+    picked: dict = field(default_factory=dict)
 
 
 class Conversation:
@@ -304,6 +323,14 @@ class Conversation:
         #: keeps both for its process only, so a restart passes them on.
         self.effort_choice = ""
         self.fast_mode = False
+        #: The permission modes Shift+Tab steps through, how the header names
+        #: them, and the one the user set ("" for the session's own).
+        self.modes: tuple = MODES
+        self.mode_labels: dict = MODE_LABELS
+        self.mode_choice = ""
+        #: The efforts ``/effort`` takes where XeFM sets it itself (Claude
+        #: Code's is a command of its own).
+        self.efforts: tuple = ()
 
     # --- what the user did -------------------------------------------------------
 
@@ -529,11 +556,7 @@ class Conversation:
     def _result(self, msg: dict) -> None:
         self.session_id = str(msg.get("session_id") or self.session_id)
         self.pending_turns = max(0, self.pending_turns - 1)
-        for item in self._all_items():
-            if item.open:
-                item.open = False
-                if item.kind == "tool" and item.result is None:
-                    item.result = ""
+        self.close_open_items()
         windows = [u.get("contextWindow") for name, u in (msg.get("modelUsage") or {}).items()
                    if isinstance(u, dict) and isinstance(u.get("contextWindow"), int)
                    and (not self.model or name == self.model)]
@@ -576,7 +599,7 @@ class Conversation:
         if item is not None:
             if not allowed:
                 item.denied = True
-            elif updated_input is not None:
+            elif updated_input is not None and updated_input != perm.input:
                 item.input = dict(updated_input)
         self._update_state()
 
@@ -605,6 +628,14 @@ class Conversation:
     @property
     def busy(self) -> bool:
         return self.state in (WORKING, ASKING)
+
+    def close_open_items(self) -> None:
+        """A turn is over: nothing is arriving any more."""
+        for item in self._all_items():
+            if item.open:
+                item.open = False
+                if item.kind == "tool" and item.result is None:
+                    item.result = ""
 
     def _all_items(self):
         """Every item, a subagent's steps after the call that holds them."""
@@ -696,10 +727,14 @@ MODES = ("default", "acceptEdits", "plan")
 MODE_LABELS = {"default": "", "acceptEdits": "accept edits", "plan": "plan mode",
                "bypassPermissions": "bypass permissions"}
 
+#: Lines of a change shown when asking whether it may be made.
+PERMISSION_LINES = 24
 #: How many lines of a tool's output "show all" shows at most.
 EXPANDED_LINES = 2000
 #: A subagent's latest steps shown under its call; the earlier are counted.
 SUBAGENT_STEPS = 5
+#: The tools that run a shell command: Claude Code's, and the other agents'.
+SHELL_TOOLS = ("Bash", "Shell")
 #: The tools that run a subagent.
 SUBAGENT_TOOLS = ("Agent", "Task")
 #: The scheme of the transcript's own links (expand an output, open a diff).
@@ -732,6 +767,7 @@ def summary(name: str, data: dict) -> str:
         return ""
     text = {
         "Bash": lambda: first("command"),
+        "Shell": lambda: first("command"),
         "Read": lambda: first("file_path", "path"),
         "Write": lambda: first("file_path"),
         "Edit": lambda: first("file_path"),
@@ -786,7 +822,7 @@ def _role(item: Item) -> str:
         return "muted"
     if item.denied or item.is_error:
         return "error"
-    if item.open and item.result is None:
+    if item.open:
         return "accent"
     return "success"
 
@@ -847,7 +883,7 @@ def _bash_markdown(item: Item, mark: str, index: int = -1) -> str:
     shows them: the command after a ``$`` prompt, its output under it. The
     head says what the command is for when the agent said so."""
     desc = item.input.get("description")
-    head = "**Bash**" + (f" {desc.strip()}" if isinstance(desc, str) and desc.strip() else "")
+    head = f"**{item.name}**" + (f" {desc.strip()}" if isinstance(desc, str) and desc.strip() else "")
     lines = item.input["command"].rstrip("\n").split("\n")
     body = "\n".join(["$ " + lines[0]] + ["> " + l for l in lines[1:]])
     note = ""
@@ -860,7 +896,7 @@ def _bash_markdown(item: Item, mark: str, index: int = -1) -> str:
 
 def _mark(item: Item) -> str:
     """How a tool call went, after its name: running, declined, failed, done."""
-    if item.open and item.result is None:
+    if item.open:
         return "…"
     if item.denied:
         return "✗ declined"
@@ -905,15 +941,25 @@ def tool_markdown(item: Item, index: int = -1) -> str:
         verdict = " ✗ kept planning" if item.denied else \
             (" ✓ approved" if item.result is not None and not item.is_error else "")
         return f"**Plan**{verdict}\n\n{item.input['plan'].strip()}"
-    what = summary(name, item.input) if item.input else ""
+    todos = name == "TodoWrite" and isinstance(item.input.get("todos"), list)
+    what = summary(name, item.input) if item.input and not todos else ""
     mark = _mark(item)
-    if name == "Bash" and isinstance(item.input.get("command"), str):
+    if name in SHELL_TOOLS and isinstance(item.input.get("command"), str):
         return _bash_markdown(item, mark, index)
-    head = f"**{name}**"
+    head = "**Todos**" if todos else f"**{name}**"
     if what:
         head += " " + _inline(what)
     head += f" {mark}"
     parts = [head]
+    if item.patch:
+        shown, note = _clipped(item, item.patch, DIFF_LINES, index)
+        if index >= 0 and not item.denied and not item.is_error:
+            link = f"[open diff]({LINK_SCHEME}diff/{index})"
+            note = f"{note} · {link}" if note else f"\n\n{link}"
+        parts.append(_code(shown, "diff") + note)
+        if item.is_error and item.result:
+            parts.append(_code(_clip(item.result, RESULT_LINES)[0]))
+        return "\n\n".join(parts)
     if name == "Edit" and isinstance(item.input.get("old_string"), str):
         diff = ["- " + l for l in item.input["old_string"].split("\n")] + \
                ["+ " + l for l in str(item.input.get("new_string", "")).split("\n")]
@@ -926,7 +972,7 @@ def tool_markdown(item: Item, index: int = -1) -> str:
         steps = _steps_markdown(item, index)
         if steps:
             parts.append(steps)
-    elif name == "TodoWrite" and isinstance(item.input.get("todos"), list):
+    elif todos:
         rows = []
         for todo in item.input["todos"]:
             if isinstance(todo, dict):
@@ -1007,9 +1053,11 @@ def edit_before(item: Item, current: str) -> str | None:
     each the way it was made (every occurrence with ``replace_all``, else the
     first). None when an edit's new text is not in the file any more (it was
     changed again since), so the whole-file comparison would lie."""
-    if item.name == "Edit":
+    if item.name == "Edit" and "edits" not in item.input:
         edits = [item.input]
-    elif item.name == "MultiEdit" and isinstance(item.input.get("edits"), list):
+    elif item.name == "Write" and item.input.get("old_string") == "":
+        edits = [item.input]  # a new file: it was empty before
+    elif item.name in ("Edit", "MultiEdit") and isinstance(item.input.get("edits"), list):
         edits = [e for e in item.input["edits"] if isinstance(e, dict)]
     else:
         return None
@@ -1024,3 +1072,122 @@ def edit_before(item: Item, current: str) -> str | None:
             return None
         text = text.replace(new, old) if edit.get("replace_all") else text.replace(new, old, 1)
     return text
+
+
+# --- how the screen drives an agent --------------------------------------------------
+
+
+class Protocol:
+    """What differs between the agents, as the screen
+    (:class:`xefm.agent_chat_view.ChatView`, ``view`` below) drives them:
+    starting and starting again, and what the user sets."""
+
+    def conversation(self) -> Conversation:
+        """An empty conversation."""
+        return Conversation()
+
+    def client(self, argv: list[str], conv: Conversation, **kwargs: Any) -> ChatClient:
+        """The agent's process, not yet started, over ``conv``."""
+        raise NotImplementedError
+
+    def handle(self, view, msg: dict) -> Permission | str | None:
+        """Fold one message in (see :meth:`Conversation.handle`)."""
+        raise NotImplementedError
+
+    def set_mode(self, view, mode: str) -> None:
+        raise NotImplementedError
+
+    def set_model(self, view, model: str) -> None:
+        raise NotImplementedError
+
+    def approve_plan(self, view, perm: Permission, mode: str) -> None:
+        """The user approved the plan ``perm`` showed: go on in ``mode``."""
+        raise NotImplementedError
+
+    def can_set_model(self, conv: Conversation) -> bool:
+        """Whether ``/model`` is XeFM's to run (else it goes to the agent)."""
+        return True
+
+    def local_commands(self, conv: Conversation) -> list[dict]:
+        """``/`` commands XeFM runs for this agent, beside its own."""
+        return []
+
+    def command(self, view, text: str) -> bool:
+        """Run one; whether ``text`` was one."""
+        return False
+
+    def restart(self, view, *, resume: bool) -> bool:
+        """A new process: the same conversation, or a new one."""
+        raise NotImplementedError
+
+
+class ClaudeProtocol(Protocol):
+    """Claude Code's stream-json mode."""
+
+    def client(self, argv: list[str], conv: Conversation, **kwargs: Any) -> ChatClient:
+        return ChatClient(argv, **kwargs)
+
+    def handle(self, view, msg: dict) -> Permission | str | None:
+        return view.conversation.handle(msg)
+
+    def set_mode(self, view, mode: str) -> None:
+        if view.client.request({"subtype": "set_permission_mode", "mode": mode}) is not None:
+            view.conversation.permission_mode = mode  # the CLI confirms with a status
+
+    def set_model(self, view, model: str) -> None:
+        conv = view.conversation
+        rid = view.client.request({"subtype": "set_model", "model": model})
+        if rid is not None:
+            conv.model_request = rid
+            conv.model_choice = "" if model == "default" else model
+
+    def approve_plan(self, view, perm: Permission, mode: str) -> None:
+        view.answer(perm, allow(perm))
+        view.set_mode(mode)
+
+    def command(self, view, text: str) -> bool:
+        """``/effort <level>`` goes to the CLI, but is kept, so a restarted
+        agent gets it with ``--effort`` (the CLI keeps it for its process
+        only)."""
+        conv = view.conversation
+        m = re.fullmatch(r"/effort\s+(\S+)", text)
+        if m:
+            level = m.group(1).lower()
+            levels: tuple = EFFORT_LEVELS
+            for cmd in conv.commands:
+                if cmd.get("name") == "effort":
+                    hint = re.findall(r"[\w-]+", str(cmd.get("argumentHint") or ""))
+                    levels = tuple(hint) or levels
+            if level in levels:
+                conv.effort_choice = "" if level == "auto" else level
+        return False
+
+    def restart(self, view, *, resume: bool) -> bool:
+        conv = view.conversation
+        sid, mode = conv.session_id, conv.permission_mode
+        argv = view.argv
+        if resume and sid and view._restart_argv is not None:
+            argv = view._restart_argv(sid)
+        if mode in MODES and mode != "default":
+            argv = list(argv) + ["--permission-mode", mode]
+        model = conv.model_choice
+        if model:
+            argv = list(argv) + ["--model", model]
+        # What the CLI keeps for its process only, set again in the new one.
+        effort, fast = conv.effort_choice, conv.fast_mode
+        if effort:
+            argv = list(argv) + ["--effort", effort]
+        if not resume:
+            view.new_conversation()
+        ok = view.start(argv=argv)
+        conv = view.conversation
+        if mode in MODES:
+            conv.permission_mode = mode
+        conv.model_choice, conv.effort_choice = model, effort
+        if ok and fast and view.client is not None:
+            # No flag turns fast mode on: its own command does, as a turn of
+            # its own (its reply shows it is on again).
+            if view.client.send("/fast on"):
+                conv.pending_turns += 1
+                conv.state = WORKING
+        return ok

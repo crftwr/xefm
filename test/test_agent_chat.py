@@ -219,18 +219,16 @@ def test_ask_user_question_options():
 
 # --- the AGENTS entry ---------------------------------------------------------------
 
-def test_terminal_is_checked_and_claude_code_is_drawn_by_default():
+def test_terminal_is_checked_and_a_preset_is_drawn_by_default():
     claude = agents.normalize({"name": "C", "command": ["claude"], "preset": "claude-code"})
     assert claude["terminal"] is False and agents.drawn(claude)
     opted_out = agents.normalize({"name": "C", "command": ["claude"],
                                   "preset": "claude-code", "terminal": True})
     assert opted_out["terminal"] is True and not agents.drawn(opted_out)
-    # The presets XeFM cannot draw yet, and an entry without a preset, run
-    # in a terminal.
-    assert agents.normalize({"name": "X", "command": ["codex"], "preset": "codex"})["terminal"]
+    # An entry without a preset, which XeFM cannot draw, runs in a terminal.
     assert agents.normalize({"name": "Y", "command": ["y"]})["terminal"]
     assert "needs 'preset'" in agents.normalize(
-        {"name": "X", "command": ["codex"], "preset": "codex", "terminal": False})
+        {"name": "X", "command": ["x"], "terminal": False})
     assert "True or False" in agents.normalize(
         {"name": "C", "command": ["claude"], "terminal": "yes"})
     assert "'terminal': True" in agents.normalize(

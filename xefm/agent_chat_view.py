@@ -132,7 +132,10 @@ class ChatView(FocusContainer, Widget):
                  on_change: Callable[["ChatView"], None] | None = None,
                  restart_argv: Callable[[str], list[str]] | None = None,
                  on_diff: Callable[["ChatView", C.Item], None] | None = None,
-                 mention_paths: Callable[[], list[str]] | None = None) -> None:
+                 mention_paths: Callable[[], list[str]] | None = None,
+                 protocol: C.Protocol | None = None) -> None:
+        #: How this agent is driven (Claude Code's way unless told).
+        self.protocol = protocol or C.ClaudeProtocol()
         self.argv = list(argv)
         self.cwd = cwd
         self.env = env
@@ -148,7 +151,7 @@ class ChatView(FocusContainer, Widget):
         self.on_diff = on_diff
         self.mention_paths = mention_paths
         self._app_link = on_link
-        self.conversation = C.Conversation()
+        self.conversation = self.protocol.conversation()
         self.client: C.ChatClient | None = None
         self.transcript = MarkdownView("", selectable=True, code_copy=True, on_link=self._link)
         self.transcript.follow_end = True
@@ -216,9 +219,10 @@ class ChatView(FocusContainer, Widget):
             return True
         self.conversation.state = C.STARTING
         box: dict = {}
-        client = C.ChatClient(argv or self.argv, cwd=self.cwd, env=self.env,
-                              post=self._post, on_message=self._message,
-                              on_exit=lambda code, err: self._exited(box["c"], code, err))
+        client = self.protocol.client(
+            argv or self.argv, self.conversation, cwd=self.cwd, env=self.env, post=self._post,
+            on_message=lambda msg: self._message(box["c"], msg),
+            on_exit=lambda code, err: self._exited(box["c"], code, err))
         box["c"] = client
         try:
             client.start()
@@ -229,7 +233,7 @@ class ChatView(FocusContainer, Widget):
             self._changed()
             return False
         self.client = client
-        logger.info(f"Started {self.name} (stream-json) in {self.cwd}")
+        logger.info(f"Started {self.name} (drawn) in {self.cwd}")
         self._changed()
         return True
 
@@ -246,40 +250,18 @@ class ChatView(FocusContainer, Widget):
         self.client = None
         if old is not None:
             old.close()
-        sid = self.conversation.session_id
-        mode = self.conversation.permission_mode
-        argv = self.argv
-        if resume and sid and self._restart_argv is not None:
-            argv = self._restart_argv(sid)
-        if mode in C.MODES and mode != "default":
-            argv = list(argv) + ["--permission-mode", mode]
-        model = self.conversation.model_choice
-        if model:
-            argv = list(argv) + ["--model", model]
-        # What the CLI keeps for its process only, set again in the new one.
-        effort, fast = self.conversation.effort_choice, self.conversation.fast_mode
-        if effort:
-            argv = list(argv) + ["--effort", effort]
-        if not resume:
-            self.conversation = C.Conversation()
-            self._source = ""
-            self.transcript.set_source("")
-        ok = self.start(argv=argv)
-        if mode in C.MODES:
-            self.conversation.permission_mode = mode
-        conv = self.conversation
-        conv.model_choice, conv.effort_choice = model, effort
-        if ok and fast and self.client is not None:
-            # No flag turns fast mode on: its own command does, as a turn of
-            # its own (its reply shows it is on again).
-            if self.client.send("/fast on"):
-                conv.pending_turns += 1
-                conv.state = C.WORKING
-        return ok
+        return self.protocol.restart(self, resume=resume)
 
-    def _message(self, msg: dict) -> None:
-        conv = self.conversation
-        result = conv.handle(msg)
+    def new_conversation(self) -> None:
+        """Forget the conversation shown (``/clear``)."""
+        self.conversation = self.protocol.conversation()
+        self._source = ""
+        self.transcript.set_source("")
+
+    def _message(self, client: C.ChatClient, msg: dict) -> None:
+        if client is not self.client:
+            return  # a process replaced or closed on purpose
+        result = self.protocol.handle(self, msg)
         if isinstance(result, C.Permission):
             self._ask(self, result)
         self._changed()
@@ -328,11 +310,17 @@ class ChatView(FocusContainer, Widget):
     # --- the permission mode ---------------------------------------------------------
 
     def set_mode(self, mode: str) -> None:
-        """Ask the CLI for permission mode ``mode`` (MODES)."""
+        """Ask the agent for permission mode ``mode`` (one of the
+        conversation's ``modes``)."""
         if self.client is None or not self.running:
             return
-        if self.client.request({"subtype": "set_permission_mode", "mode": mode}) is not None:
-            self.conversation.permission_mode = mode  # the CLI confirms with a status
+        self.protocol.set_mode(self, mode)
+        self._changed()
+
+    def approve_plan(self, perm: C.Permission, mode: str) -> None:
+        """The user approved the plan: go on with it in ``mode``."""
+        if self.client is not None:
+            self.protocol.approve_plan(self, perm, mode)
             self._changed()
 
     def set_model(self, model: str) -> None:
@@ -343,16 +331,15 @@ class ChatView(FocusContainer, Widget):
             conv.add_notice("Start the agent first (Enter) to switch the model", error=True)
             self._changed()
             return
-        rid = self.client.request({"subtype": "set_model", "model": model})
-        if rid is not None:
-            conv.model_request = rid
-            conv.model_choice = "" if model == "default" else model
-            self._changed()
+        self.protocol.set_model(self, model)
+        self._changed()
 
     def cycle_mode(self) -> None:
         """Shift+Tab: the next permission mode, as in the CLI."""
         mode = self.conversation.permission_mode
-        modes = C.MODES
+        modes = self.conversation.modes
+        if not modes:
+            return  # the session is not open yet, or it has none
         nxt = modes[(modes.index(mode) + 1) % len(modes)] if mode in modes else modes[0]
         self.set_mode(nxt)
 
@@ -410,7 +397,10 @@ class ChatView(FocusContainer, Widget):
     def _command_items(self, query: str) -> list[tuple[str, str, str, bool]]:
         q = query.lower()
         seen, first, then = set(), [], []
-        for cmd in _LOCAL_COMMANDS + list(self.conversation.commands):
+        conv = self.conversation
+        local = [c for c in _LOCAL_COMMANDS
+                 if c["name"] != "model" or self.protocol.can_set_model(conv)]
+        for cmd in local + self.protocol.local_commands(conv) + list(conv.commands):
             name = str(cmd.get("name") or "")
             if not name or name in seen:
                 continue
@@ -628,31 +618,19 @@ class ChatView(FocusContainer, Widget):
             self._restart(resume=False)
             return
         m = re.fullmatch(r"/model\s+(\S+)", stripped)
-        if m:
+        if m and self.protocol.can_set_model(self.conversation):
             self.input.set_text("")
             self.set_model(m.group(1))
             return
-        self._note_effort(stripped)
+        if self.protocol.command(self, stripped):
+            self.input.set_text("")
+            self._changed()
+            return
         if self.send(text.rstrip()):
             if not self.history or self.history[-1] != text.rstrip():
                 self.history.append(text.rstrip())
             self._hist = None
             self.input.set_text("")
-
-    def _note_effort(self, text: str) -> None:
-        """``/effort <level>``: kept, so a restarted agent gets it with
-        ``--effort`` (the CLI keeps it for its process only)."""
-        m = re.fullmatch(r"/effort\s+(\S+)", text)
-        if not m:
-            return
-        level = m.group(1).lower()
-        levels = C.EFFORT_LEVELS
-        for cmd in self.conversation.commands:
-            if cmd.get("name") == "effort":
-                hint = re.findall(r"[\w-]+", str(cmd.get("argumentHint") or ""))
-                levels = tuple(hint) or levels
-        if level in levels:
-            self.conversation.effort_choice = "" if level == "auto" else level
 
     def _recall(self, step: int) -> bool:
         """Up/Down on the message's edge: an earlier (later) sent message."""
@@ -734,7 +712,7 @@ class ChatView(FocusContainer, Widget):
         header_bg = _header_bg(theme)
         ctx.fill_rect(0, 0, wu, head_h, Style(bg=header_bg))
         conv = self.conversation
-        mode = C.MODE_LABELS.get(conv.permission_mode, conv.permission_mode)
+        mode = conv.mode_labels.get(conv.permission_mode, conv.permission_mode)
         context = conv.context_label()
         right = (f"{mode} · " if mode else "") + conv.state + \
             (f" · {conv.model}" if conv.model else "") + \

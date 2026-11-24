@@ -6268,7 +6268,6 @@ class XeFMApp:
         argv = agents.chat_argv(entry, values)
         name = self._sessions.next_name(entry["name"])
         self.log_info(f"Starting {entry['name']} in {cwd} (drawn by XeFM)")
-        box: dict = {}
         view = ChatView(
             argv, cwd=cwd, env=env, name=name,
             post=self._call_later,
@@ -6281,9 +6280,9 @@ class XeFMApp:
             on_change=lambda v: self._agent_chat_changed(v),
             restart_argv=lambda session_id: argv + ["--resume", session_id],
             on_diff=self._agent_chat_diff,
-            mention_paths=self._agent_mention_paths)
+            mention_paths=self._agent_mention_paths,
+            protocol=agents.protocol(entry, values))
         view.entry_name = entry["name"]
-        box["view"] = view
         session = self._sessions.add(Session(
             view=view, kind=AGENT, name=name, cwd=cwd, id=sid,
             program=os.path.basename(entry["command"][0]), named=True))
@@ -6332,8 +6331,9 @@ class XeFMApp:
 
     def _agent_chat_ask(self, view, perm) -> None:
         """The agent asks whether a tool may run: an XeFM dialog on its screen,
-        the answer sent back. Claude Code's multiple-choice questions to the
-        user come the same way and are answered with a list each."""
+        the answer sent back. Multiple-choice questions to the user come
+        the same way and are answered with a list each, and so does a plan to
+        approve."""
         from xefm import agent_chat as C
         if perm.tool == C.ASK_USER_TOOL:
             self._agent_chat_questions(view, perm)
@@ -6345,8 +6345,13 @@ class XeFMApp:
         lines = [f"**{view.name}** wants to use **{perm.tool}**."]
         if perm.description and perm.description != what:
             lines.append(perm.description)
-        if what:
-            lines.append(C._code(what))
+        if perm.tool in C.SHELL_TOOLS and isinstance(perm.input.get("command"), str):
+            what = perm.input["command"].strip()  # all of it: it is what they allow
+        for text, lang in ((what, ""), (perm.patch, "diff")):
+            if text:
+                shown, more = C._clip(text, C.PERMISSION_LINES)
+                lines.append(C._code(shown, lang)
+                             + (f"\n\n_… {more} more lines_" if more else ""))
         if perm.blocked_path:
             lines.append(f"Path: `{perm.blocked_path}`")
         buttons = ["Allow", "Always Allow", "Deny"] if perm.suggestions else ["Allow", "Deny"]
@@ -6369,7 +6374,7 @@ class XeFMApp:
         self.panel.render()
 
     def _agent_chat_plan(self, view, perm) -> None:
-        """``ExitPlanMode``: the plan, to approve - going on asking before
+        """A plan (Claude Code's ``ExitPlanMode``, Codex's plan mode) to approve - going on asking before
         each tool, or accepting edits - or to send back for more planning."""
         from xefm import agent_chat as C
         plan = str(perm.input.get("plan") or "").strip() or "_(no plan text)_"
@@ -6380,8 +6385,8 @@ class XeFMApp:
                 view.answer(perm, C.deny("The user wants to keep planning: the plan is "
                                          "not approved yet. Ask what to change."))
             else:
-                view.answer(perm, C.allow(perm))
-                view.set_mode("acceptEdits" if label == "Approve, Accept Edits" else "default")
+                view.approve_plan(perm, "acceptEdits" if label == "Approve, Accept Edits"
+                                  else "default")
             self.panel.render()
 
         def open_dialog() -> None:
@@ -6421,7 +6426,8 @@ class XeFMApp:
             left, right = write("before", before), path
             titles = (f"{name} (before the edit)", f"{name} (now)")
         else:
-            edits = [item.input] if item.name == "Edit" else list(item.input.get("edits") or [])
+            edits = list(item.input.get("edits") or []) if "edits" in item.input \
+                else [item.input]
             left = write("old", "\n".join(str(e.get("old_string", "")) for e in edits
                                           if isinstance(e, dict)))
             right = write("new", "\n".join(str(e.get("new_string", "")) for e in edits
@@ -6456,7 +6462,7 @@ class XeFMApp:
         return out
 
     def _agent_chat_questions(self, view, perm) -> None:
-        """``AskUserQuestion``: one dialog per question, in turn - radio rows,
+        """The agent's questions to the user: one dialog per question, in turn - radio rows,
         or checkboxes for a ``multiSelect`` one, and a row for a typed
         answer; the answers filled into the tool's input (several joined
         with ", "). Escape on any declines."""
@@ -6478,6 +6484,7 @@ class XeFMApp:
                     self.panel.render()
                     return
                 answers[q["question"]] = ", ".join(labels)
+                perm.picked[q["question"]] = list(labels)
                 ask(i + 1)
 
             title = str(q.get("header") or "Question")
@@ -6520,6 +6527,11 @@ class XeFMApp:
             target = unquote(urlsplit(target).path)
             if os.name == "nt" and len(target) > 2 and target[0] == "/" and target[2] == ":":
                 target = target[1:]
+        from xefm.agent_rpc import normal_path
+        target = normal_path(target)
+        if not os.path.exists(target):
+            # With the line it means: Codex writes /path/file.py:12.
+            target = re.sub(r"(?:#L\d+(?:-L?\d+)?|:\d+(?:[-:]\d+)?)$", "", target)
         if not os.path.isabs(target) or not os.path.exists(target):
             return False
         self._show_screen(self._screens.files)

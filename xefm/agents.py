@@ -46,12 +46,19 @@ Codex has no option that adds a skills folder, so its preset hands the skill
 the way Codex lists its own: the rules (``-c developer_instructions=...``)
 name the skill's ``SKILL.md`` for the agent to read. Codex has no settings
 file to deny ``rm`` with either; its own sandbox and approvals apply.
+
+A conversation XeFM draws (:func:`drawn`) runs the agent in the mode made for
+that instead of its screen: Claude Code's stream-json (:mod:`xefm.agent_chat`),
+Codex's app-server (:mod:`xefm.agent_codex`), the Agent Client Protocol for
+Copilot and Antigravity (:mod:`xefm.agent_acp`). It is handed the same things,
+each the way that mode takes them (:func:`chat_argv`, :func:`protocol`).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path as _FsPath
 from typing import Any
@@ -130,12 +137,11 @@ COPILOT_INSTRUCTIONS_ENV = "COPILOT_CUSTOM_INSTRUCTIONS_DIRS"
 
 _KEYS = {"name", "command", "preset", "restrict", "settings", "env", "prompt_args", "terminal"}
 
-#: The presets XeFM can draw a conversation for (#959; Claude Code through
-#: its stream-json mode - :mod:`xefm.agent_chat`). Their sessions are drawn
-#: unless the entry says ``'terminal': True``; every other session is the
-#: agent CLI's own screen in a terminal session. A preset joins once XeFM
+#: The presets XeFM can draw a conversation for (#959). Their sessions are
+#: drawn unless the entry says ``'terminal': True``; every other session is
+#: the agent CLI's own screen in a terminal session. A preset joins once XeFM
 #: can draw it.
-DRAWN_PRESETS = (CLAUDE_CODE,)
+DRAWN_PRESETS = (CLAUDE_CODE, CODEX, COPILOT, ANTIGRAVITY)
 
 
 def entries(config: Any) -> list[dict]:
@@ -161,7 +167,7 @@ def normalize(item: Any) -> dict | str:
         return "an entry is a dict with 'name' and 'command'"
     unknown = sorted(set(item) - _KEYS)
     if "ui" in unknown:
-        return ("'ui' is gone: a Claude Code session is drawn by XeFM unless "
+        return ("'ui' is gone: a session with a preset is drawn by XeFM unless "
                 "the entry says 'terminal': True")
     if unknown:
         return f"unknown key(s) {', '.join(map(repr, unknown))}"
@@ -312,11 +318,14 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     session_dir.mkdir(parents=True, exist_ok=True)
     rules_file = session_dir / "rules.md"
     rules_file.write_text(rules, encoding="utf-8")
+    # A drawn session's files, apart from a terminal one's: the rules differ.
+    apart = "-drawn" if drawn(entry) else ""
+    told = drawn_rules(rules) if drawn(entry) else rules
     # The rules as an instructions file for Copilot (applied to everything).
-    instructions = session_dir / "instructions"
+    instructions = session_dir / f"instructions{apart}"
     instructions.mkdir(exist_ok=True)
     (instructions / "xefm.instructions.md").write_text(
-        '---\napplyTo: "**"\n---\n\n' + rules, encoding="utf-8")
+        '---\napplyTo: "**"\n---\n\n' + told, encoding="utf-8")
     settings = entry.get("settings")
     if settings is None and not entry.get("restrict", True):
         settings = {}
@@ -327,7 +336,8 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     extra = {}
     if entry.get("preset") == ANTIGRAVITY:
-        extra["workspace_dir"] = str(_antigravity_workspace(session_dir, skill, rules))
+        extra["workspace_dir"] = str(_antigravity_workspace(
+            session_dir / f"antigravity{apart}", skill, told))
     return {**extra,
         "{plugin_dir}": str(plugin),
         "{skills_dir}": str(plugin / "skills"),
@@ -339,10 +349,9 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     }
 
 
-def _antigravity_workspace(session_dir: _FsPath, skill: _FsPath, rules: str) -> _FsPath:
+def _antigravity_workspace(folder: _FsPath, skill: _FsPath, rules: str) -> _FsPath:
     """A folder for Antigravity's ``--add-dir``: it reads a workspace's
     ``AGENTS.md`` as rules and its ``.agents/skills/`` as skills."""
-    folder = session_dir / "antigravity"
     skills = folder / ".agents" / "skills"
     shutil.rmtree(skills, ignore_errors=True)
     shutil.copytree(skill, skills / skill.name)
@@ -407,19 +416,120 @@ def drawn_rules(rules: str) -> str:
 
 
 def chat_argv(entry: dict, values: dict) -> list[str]:
-    """The command line of a drawn session (``'terminal': False``): the entry's
-    ``command``, Claude Code's stream-json mode with its permission questions
-    sent to XeFM, then what the preset passes a terminal session too - the
-    skill, the rules, the settings. The first request goes in as a message,
-    not on the command line."""
-    from xefm.agent_chat import CLAUDE_STREAM_ARGS
+    """The command line of a drawn session (``'terminal': False``): the
+    entry's ``command`` in the mode a program talks to it in, then what the
+    preset passes a terminal session too. The first request goes in as a
+    message, not on the command line.
+
+    - Claude Code: its stream-json mode with its permission questions sent to
+      XeFM; the skill, the rules, the settings.
+    - Codex: its app-server. The rules and the skill go in as the session
+      opens (:func:`protocol`).
+    - Copilot: its ACP server; the skill and the denied commands (the rules
+      are in the environment, :func:`session_env`).
+    - Antigravity: its ACP server with the workspace that holds the rules and
+      the skill. It takes no settings there, so XeFM declines the denied
+      commands itself (:func:`refusal`)."""
     values = dict(values, **{"{prompt}": ""})
     out = [_fill(a, values) for a in entry["command"]]
+    preset = entry.get("preset")
+    if preset == CODEX:
+        from xefm.agent_codex import app_server_argv
+        return app_server_argv(out)
+    if preset == COPILOT:
+        out += ["--acp", "--plugin-dir", values["{plugin_dir}"]]
+        if entry.get("restrict", True):
+            out += [f"--deny-tool={rule}" for rule in COPILOT_DENY_TOOLS]
+        return out
+    if preset == ANTIGRAVITY:
+        return _without_options(out, ANTIGRAVITY_FIRST)[0] + [
+            "acp", "--add-dir", values["workspace_dir"]]
+    from xefm.agent_chat import CLAUDE_STREAM_ARGS
     out += list(CLAUDE_STREAM_ARGS)
     out += ["--plugin-dir", values["{plugin_dir}"],
             "--append-system-prompt", drawn_rules(values["{rules}"]),
             "--settings", values["{settings_file}"]]
     return out
+
+
+#: Antigravity's options that its ACP server does not read, set once the
+#: session is open instead.
+ANTIGRAVITY_FIRST = {"--model": "model", "--mode": "mode", "--effort": "effort"}
+
+
+def _without_options(args: list[str], options: dict) -> tuple[list[str], dict]:
+    """``args`` without ``options`` (``--model x`` or ``--model=x``), and
+    their values by the name ``options`` gives them."""
+    out: list[str] = []
+    found: dict[str, str] = {}
+    rest = iter(args)
+    for arg in rest:
+        name, eq, value = arg.partition("=")
+        if name in options:
+            found[options[name]] = value if eq else next(rest, "")
+        else:
+            out.append(arg)
+    return out, found
+
+
+def protocol(entry: dict, values: dict) -> Any:
+    """How a drawn session of ``entry`` is driven (a
+    :class:`xefm.agent_chat.Protocol`), with what it is handed as its session
+    opens."""
+    preset = entry.get("preset")
+    if preset == CODEX:
+        from xefm.agent_codex import CodexProtocol
+        told = dict(values, **{"{rules}": drawn_rules(values["{rules}"])})
+        return CodexProtocol(refuse=refusal(entry), instructions=codex_instructions(told),
+                             skills_root=values["{skills_dir}"])
+    if preset == COPILOT:
+        from xefm.agent_acp import AcpProtocol
+        return AcpProtocol(refuse=refusal(entry), agent=entry["name"],
+                           login=f"{entry['command'][0]} login", plain_commands=True,
+                           restrict=entry.get("restrict", True))
+    if preset == ANTIGRAVITY:
+        from xefm.agent_acp import AcpProtocol
+        return AcpProtocol(refuse=refusal(entry), agent=entry["name"],
+                           login=f"{entry['command'][0]} acp --login",
+                           restrict=entry.get("restrict", True),
+                           first=_without_options(entry["command"], ANTIGRAVITY_FIRST)[1])
+    from xefm.agent_chat import ClaudeProtocol
+    return ClaudeProtocol()
+
+
+def denied_commands(entry: dict) -> tuple[str, ...]:
+    """The shell commands a drawn session of ``entry`` may not run:
+    DENIED_COMMANDS for a restricted one, or what an Antigravity entry's own
+    ``settings`` deny instead."""
+    settings = entry.get("settings")
+    if entry.get("preset") == ANTIGRAVITY and settings is not None:
+        deny = (settings.get("permissions") or {}).get("deny") or []
+        return tuple(m.group(1) for rule in deny if isinstance(rule, str)
+                     and (m := re.fullmatch(r"command\((.+)\)", rule.strip())))
+    return (*DENIED_COMMANDS, "xefmctl delete") if entry.get("restrict", True) else ()
+
+
+def refusal(entry: dict) -> Any:
+    """``refuse(command)``: why XeFM declines a shell command the agent asks
+    to run, or None - the limits above, for the agents that take no such rule
+    in the mode XeFM draws. Like the agents' own rules it goes by the name as
+    typed, of each command on the line; it is not a sandbox."""
+    denied = [name.lower().split() for name in denied_commands(entry)]
+    if not denied:
+        return None
+
+    def refuse(command: str) -> str | None:
+        for part in re.split(r"&&|\|\||[;|&\n(){}]", command):
+            words = part.strip().lower().split()
+            if not words:
+                continue
+            words[0] = re.split(r"[\\/]", words[0].strip("\"'"))[-1].removesuffix(".exe")
+            for name in denied:
+                if words[:len(name)] == name:
+                    return (f"XeFM declined `{' '.join(part.split())}`: files are deleted and "
+                            "moved through xefmctl, which asks you")
+        return None
+    return refuse
 
 
 def session_env(entry: dict, values: dict, env: dict) -> dict:

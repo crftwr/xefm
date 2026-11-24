@@ -1,8 +1,9 @@
 """The dialog an AI agent's multiple-choice question is answered in (#959).
 
-Claude Code's ``AskUserQuestion`` asks one or more questions, each with a few
-options - pick one, or (``multiSelect``) any number - and always takes an
-answer of the user's own as well. One dialog per question, in the
+The agent (with Claude Code's ``AskUserQuestion``, or its own way to) asks one
+or more questions, each with a few options - pick one, or (``multiSelect``)
+any number - and always takes an answer of the user's own as well. One dialog
+per question, in the
 :class:`~xefm.choice_dialog.ChoiceDialog` mold: the question over its
 options, each option's description muted after its label, then an
 **Other** row whose field takes a typed answer.

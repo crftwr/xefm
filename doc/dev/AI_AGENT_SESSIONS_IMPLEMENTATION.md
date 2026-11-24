@@ -147,7 +147,12 @@ answered from the rules, listed `xefm` and quoted a two-line request.
    Only the preset knows how to say it; other agents get `{settings_file}`
    to pass if their CLI has an equivalent. Codex 0.171 has no
    command-line option that denies a command: its sandbox and approvals
-   apply as configured.
+   apply as configured. In a drawn conversation, where the agent's questions
+   come to XeFM, `agents.refusal` declines the same commands without asking
+   the user, for every agent that speaks JSON-RPC: it is what Codex and
+   `agy acp` (which ignores `--settings`) have instead of the agent's own.
+   It sees only what the agent asks to run. That is why a restricted
+   Antigravity session found in `auto` mode is put in `default`.
 2. **XeFM's** (any agent): in `remote_dispatch`, for policy `agent`:
    - `copy`, `move`, `trash`: the operation's own confirmation, shown
      whatever `CONFIRM_*` says (`_ALWAYS_CONFIRM` forced for the call, read
@@ -171,10 +176,14 @@ XeFM.
 
 ## Conversations drawn by XeFM (`'terminal': False`, #959)
 
-Step 2 of #880. Claude Code only, through its stream-json mode, which needs
-nothing beyond the CLI the user installed (the ACP adapter would be an npm
-package to install; the Agent SDK a dependency in the core, which #880
-ruled out). ACP stays the candidate for other agents.
+Step 2 of #880. Each agent through the mode its own CLI has for being run by
+a program, so nothing is needed beyond the CLI the user installed: Claude
+Code's stream-json (its ACP adapter would be an npm package to install; the
+Agent SDK a dependency in the core, which #880 ruled out), Codex's
+app-server, and the Agent Client Protocol for Copilot (`copilot --acp`) and
+Antigravity (`agy acp`). What follows is the shared part and Claude Code;
+[the JSON-RPC agents](#the-json-rpc-agents-codex-copilot-antigravity) come
+after it.
 
 - `agents.normalize` takes `terminal` (a bool); its default is whether the
   preset is missing from `DRAWN_PRESETS`, so a preset is drawn as soon as
@@ -186,7 +195,8 @@ ruled out). ACP stays the candidate for other agents.
   --output-format stream-json --verbose --include-partial-messages
   --permission-prompt-tool stdio`) + the same `--plugin-dir`, rules and
   `--settings` a terminal session gets. The rules go through
-  `drawn_rules`, which drops what speaks of a terminal. The first request is
+  `drawn_rules`, which drops what speaks of a terminal (for Copilot and
+  Antigravity too, whose files are kept apart from a terminal session's). The first request is
   sent as a message, never on the command line.
 - `xefm/agent_chat.py` (no UI): `ChatClient` runs the process (its own
   process group / `CREATE_NEW_PROCESS_GROUP`, so closing stops what its
@@ -299,10 +309,85 @@ Checked against Claude Code 2.1.323: the event shapes in
 run with the preset's argv loaded the plugin (`xefm:xefm`), followed the
 rules, and had `rm` denied by the settings without asking.
 
+### The JSON-RPC agents: Codex, Copilot, Antigravity
+
+`C.Protocol` is what `ChatView` drives an agent through: the empty
+conversation, the client, folding a message, the mode, the model, the plan's
+approval, commands XeFM runs, starting again. `ClaudeProtocol` (the default)
+is what the view did itself before there were others; `agents.protocol(entry,
+values)` picks one for an entry.
+
+- `xefm/agent_rpc.py`: `RpcClient(ChatClient)` - requests with callbacks,
+  one turn at a time with the messages typed meanwhile queued in XeFM (the
+  agents steer the running turn, or refuse, when sent a second), the
+  questions waiting for an answer (`_ask` / `respond`; an answer to one
+  withdrawn goes nowhere), `refuse`. `RpcProtocol` keeps what the user set
+  (`mode_choice`, `model_choice`, `effort_choice`) in the conversation; the
+  client sets it again once a new process's session is open. The program is
+  resolved with `shutil.which` first: an npm install's `codex.cmd` does not
+  start by its bare name on Windows. Nothing with a newline is on these
+  command lines, so cmd.exe cutting an argument there does not matter.
+- The transcript's items are the same. A shell command is the tool `Shell`
+  (`SHELL_TOOLS`), an edit has `Item.patch` (a diff to show) beside the
+  `old_string` / `new_string` or `edits` that `edit_before` undoes: ACP gives
+  both texts whole, Codex a diff whose hunks become `edits` (`hunk_edits`).
+  A plan (`turn/plan/updated`, ACP `plan`) is a `TodoWrite` item changed in
+  place. `Item.open` alone says a tool is running: these agents stream a
+  command's output.
+
+**Codex** (`xefm/agent_codex.py`): `codex app-server`, protocol v2, with
+`experimentalApi` (plan mode). `initialize`, `account/read` (not signed in:
+say `codex login`), `skills/extraRoots/set` with the session's skills folder
+(the app-server has what the command line lacks), `thread/start` with
+`developerInstructions` (`codex_instructions`), or `thread/resume` with
+`excludeTurns`. `sandbox` and `approvalPolicy` are not sent: passing a
+writable `sandbox` to `thread/start` would decide for the user. The modes are
+overrides on the next `turn/start`, which the thread then keeps: accept edits
+is `workspaceWrite` + `on-request`, plan is `collaborationMode: plan`, the
+default is what `thread/start` answered. The collaboration mode's settings
+carry the model and effort as well and win over the turn's, so a change of
+those rewrites them. A plan item in plan mode ends the turn; XeFM then asks
+as Codex's screen does, and Approve sends `IMPLEMENT`. `-m`, `-s`, `-a`, `-p`
+before `app-server` are ignored by Codex, so `app_server_argv` turns them
+into `-c`. Approvals are answered `accept` / `acceptForSession` (only when
+`availableDecisions` has it: the other way to remember,
+`acceptWithExecpolicyAmendment`, writes the user's rules) / `decline`, which
+lets the turn go on where `cancel` would end it. A subagent's thread sends
+its own items; they nest under the `subAgentActivity` (or
+`collabAgentToolCall`) that started it. An MCP server's empty form is a yes
+or no; another form is declined with a notice.
+
+**ACP** (`xefm/agent_acp.py`): `session/new`, or `session/resume` when the
+agent has it, else `session/load` with its playback dropped. The end of a
+turn is the answer to `session/prompt`; stopping is `session/cancel`, with
+`cancelled` for the questions still open. XeFM declares no `fs` or
+`terminal` capability. The model and effort are config options by category
+(`model`, `thought_level`), the model falling back to `session/set_model`.
+Shift+Tab leaves out the modes in `_UNASKED`. Differences met:
+
+- Copilot's mode ids are URLs (`...#agent`); its `/` replies are plain text
+  in chunks without a `messageId`; it has no model option, no question tool
+  and no plan approval in this mode (1.0.114). A denied tool ends the turn.
+  `allow_always` was checked to change nothing under `~/.copilot` but its
+  session store.
+- Antigravity ignores the root options before `acp` (`--settings`, `--model`,
+  `--mode`), so `agents.ANTIGRAVITY_FIRST` sets those that have a place in
+  the session; `--add-dir` after `acp` is read, rules and skill both. It asks
+  its questions as `elicitation/create` forms (`_ask_form`; a `<field>_other`
+  takes a typed answer). Its paths come as `/C:/...` on Windows
+  (`normal_path`), its command output with a report before it.
+
+Checked with the real CLIs on Windows (codex-cli 0.171, Copilot 1.0.114,
+agy 1.5.14) through `ChatView` itself: the rules and the skill reach each,
+commands and edits are asked about and shown, refused commands declined, a
+turn stopped, the process killed and the conversation gone back to; plans,
+questions, subagents, `/compact` and the effort where the agent has them.
+The shapes in `test/test_agent_rpc.py`'s stand-ins come from those runs.
+
 Open: the terms-of-use check #880 asks for before this leaves Preview;
-other agents (ACP); per-tool rendering beyond Bash/Read/Edit/TodoWrite;
-images in the conversation; effort; resuming an older conversation;
-editing or rewinding a message.
+per-tool rendering beyond shell/Read/Edit/TodoWrite; images in the
+conversation; resuming an older conversation; editing or rewinding a
+message; closing a question's dialog when the agent withdraws it.
 
 ## Knowledge of extensions
 
@@ -327,6 +412,11 @@ nor a docstring (read with `ast`, not imported).
 answers, `terminal` checking and `chat_argv`, the client and the view against a
 stand-in CLI, and `agent` opening (and going back to) a drawn session in
 both modes.
+
+`test/test_agent_rpc.py`: a Codex app-server and an ACP agent as stand-ins
+behind a real view - opening, replies, approvals and their answers, refused
+commands, edits, questions, plans, stopping, going back, the modes, models
+and efforts - and what each preset is handed when drawn.
 
 `test/test_terminal_sessions.py`: the `codex` preset (the TOML value
 parsed back, the skill path, the request last, the default `AGENTS`), the

@@ -300,8 +300,9 @@ inside XeFM: it sees the panes and the selection, searches anywhere XeFM can
 go, and shows you what it found in XeFM. Every copy, move or trash it asks for
 waits for your OK, and it may not delete anything for good.
 **Tools → Ask AI Agent…** starts one with a request you type, or one you saved
-in `AGENT_PROMPTS`. In the desktop app the agent runs in a terminal session of
-its own; the terminal app hands it the terminal. See
+in `AGENT_PROMPTS`. XeFM draws the conversation on a screen of its own, the same
+in the desktop app and in the terminal, and asks you there when the agent needs
+permission; the agent's own screen in a terminal session is one setting away. See
 [AI Agent Sessions](doc/AI_AGENT_SESSIONS_FEATURE.md).
 
 ## Command Line Options
