@@ -80,7 +80,21 @@ shows as one line - the file, the pattern - with the first lines of what it
 returned, and **… more lines** under it shows the rest (**show less** folds it
 again). A shell command and its output read as in a terminal, in one block.
 An edit shows its first changed lines, and **open diff** opens the whole file,
-before the edit and now, in the diff viewer.
+before the edit and now, in the diff viewer. A thin line joins the dots of
+steps that follow one another.
+
+- **Subagents.** A subagent's own steps show under the step that started it,
+  one line each - the latest few, with **… earlier steps** opening the rest -
+  and what it says it is doing while it runs.
+- **Thinking.** **Thought ›** opens what the agent thought before it
+  answered, when Claude Code sends that text (it often sends only that it
+  thought).
+- **The to-do list.** While the agent works through a to-do list, the list
+  stays over the field you type in - the step in progress and those after it,
+  the finished ones counted - until all of it is done.
+- **The model and the context.** The header shows the model and how full the
+  conversation's context is. `/model` lists the models the session offers;
+  pick one to switch to it. It stays picked if the agent is started again.
 
 | Key | What it does |
 |---|---|
@@ -98,7 +112,7 @@ selected in the panes come first (or the ones under the cursors), then the
 folder's files and folders, then files further down by name. `↑` / `↓` pick,
 `Tab` takes the one picked, and `Enter` takes it too - and runs a command that
 needs no argument. `Esc` closes the list. `/clear` starts a new conversation,
-and `/exit` ends the session.
+`/model` switches the model, and `/exit` ends the session.
 
 - **The agent asks in XeFM.** When the agent wants to run a tool that needs
   your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of

@@ -77,7 +77,9 @@ _HINTS = {
 
 #: XeFM's own commands, listed before the agent's.
 _LOCAL_COMMANDS = [{"name": "clear", "description": "Start a new conversation"},
-                   {"name": "exit", "description": "End the session"}]
+                   {"name": "exit", "description": "End the session"},
+                   {"name": "model", "description": "Switch the model",
+                    "argumentHint": "<model>"}]
 #: Rows the candidate list shows at once.
 _MENU_ROWS = 8
 #: Folders the file index for ``@`` does not walk into.
@@ -86,6 +88,9 @@ _SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache
 #: Files the index stops at: a mention list, not a search engine.
 _INDEX_LIMIT = 20000
 _SLASH_RE = re.compile(r"/([\w:.-]*)")
+_MODEL_RE = re.compile(r"/model\s+(\S*)")
+#: Rows of the to-do list pinned over the message field.
+_TODO_ROWS = 6
 _AT_RE = re.compile(r"(?:^|\s)@(\"[^\"]*|[^\s\"]*)$")
 
 
@@ -248,6 +253,9 @@ class ChatView(FocusContainer, Widget):
             argv = self._restart_argv(sid)
         if mode in C.MODES and mode != "default":
             argv = list(argv) + ["--permission-mode", mode]
+        model = self.conversation.model_choice
+        if model:
+            argv = list(argv) + ["--model", model]
         if not resume:
             self.conversation = C.Conversation()
             self._source = ""
@@ -255,6 +263,7 @@ class ChatView(FocusContainer, Widget):
         ok = self.start(argv=argv)
         if mode in C.MODES:
             self.conversation.permission_mode = mode
+        self.conversation.model_choice = model
         return ok
 
     def _message(self, msg: dict) -> None:
@@ -315,6 +324,20 @@ class ChatView(FocusContainer, Widget):
             self.conversation.permission_mode = mode  # the CLI confirms with a status
             self._changed()
 
+    def set_model(self, model: str) -> None:
+        """Ask the CLI to switch to ``model`` (a ``models`` value, or a name
+        it knows); the header shows it once the CLI agrees."""
+        conv = self.conversation
+        if self.client is None or not self.running:
+            conv.add_notice("Start the agent first (Enter) to switch the model", error=True)
+            self._changed()
+            return
+        rid = self.client.request({"subtype": "set_model", "model": model})
+        if rid is not None:
+            conv.model_request = rid
+            conv.model_choice = "" if model == "default" else model
+            self._changed()
+
     def cycle_mode(self) -> None:
         """Shift+Tab: the next permission mode, as in the CLI."""
         mode = self.conversation.permission_mode
@@ -354,8 +377,10 @@ class ChatView(FocusContainer, Widget):
             self._menu_closed_on = None
         before = text[:cur]
         menu = None
-        m = _SLASH_RE.fullmatch(before)
-        if m and "\n" not in text:
+        m = _MODEL_RE.fullmatch(before)
+        if m and "\n" not in text and self.conversation.models:
+            menu = _Menu("model", 0, m.group(1), self._model_items(m.group(1)))
+        elif (m := _SLASH_RE.fullmatch(before)) and "\n" not in text:
             menu = _Menu("/", 0, m.group(1), self._command_items(m.group(1)))
         else:
             m = _AT_RE.search(before)
@@ -388,6 +413,17 @@ class ChatView(FocusContainer, Widget):
             elif q and q in low:
                 then.append(row)
         return (first + then)[:200]
+
+    def _model_items(self, query: str) -> list[tuple[str, str, str, bool]]:
+        q = query.lower()
+        rows = []
+        for model in self.conversation.models:
+            value = model["value"]
+            label = str(model.get("displayName") or value)
+            if q and q not in value.lower() and q not in label.lower():
+                continue
+            rows.append((label, str(model.get("description") or ""), f"/model {value}", True))
+        return rows
 
     def _file_items(self, query: str) -> list[tuple[str, str, str, bool]]:
         q = query.lstrip('"')
@@ -493,7 +529,7 @@ class ChatView(FocusContainer, Widget):
         self.input.set_text(new)
         self.input.cursor = menu.start + len(insert)
         self.menu = None
-        if run and menu.kind == "/" and plain:
+        if run and menu.kind in ("/", "model") and plain:
             self._submit(new)
             return
         self._update_menu()  # a folder taken lists what is in it
@@ -579,6 +615,11 @@ class ChatView(FocusContainer, Widget):
         if stripped == "/clear":
             self.input.set_text("")
             self._restart(resume=False)
+            return
+        m = re.fullmatch(r"/model\s+(\S+)", stripped)
+        if m:
+            self.input.set_text("")
+            self.set_model(m.group(1))
             return
         if self.send(text.rstrip()):
             if not self.history or self.history[-1] != text.rstrip():
@@ -667,8 +708,10 @@ class ChatView(FocusContainer, Widget):
         ctx.fill_rect(0, 0, wu, head_h, Style(bg=header_bg))
         conv = self.conversation
         mode = C.MODE_LABELS.get(conv.permission_mode, conv.permission_mode)
+        context = conv.context_label()
         right = (f"{mode} · " if mode else "") + conv.state + \
-            (f" · {conv.model}" if conv.model else "") + " "
+            (f" · {conv.model}" if conv.model else "") + \
+            (f" · {context}" if context else "") + " "
         right_w = ctx.measure_text(right)
         title = f" {self.name}  {_short(self.cwd)}"
         # Measured in the bold it is drawn in: bold is wider, and elided by
@@ -703,6 +746,9 @@ class ChatView(FocusContainer, Widget):
         elif conv.state == C.STARTING:
             status = "Starting…"
         top_of_input = in_y
+        todos = conv.todos()
+        if todos:
+            top_of_input = self._draw_todos(ctx, todos, pad_x + 1, top_of_input, in_w, theme, bg)
         if status:
             top_of_input -= 1.0
             ctx.draw_text(pad_x + 1, top_of_input, elide(status, in_w, where="end",
@@ -733,6 +779,45 @@ class ChatView(FocusContainer, Widget):
             self._draw_menu(ctx, r.x, r.y - (0.2 if ctx.pixel_layout else 0.0), r.w, theme)
         else:
             self._menu_rect = Rect(0, 0, 0, 0)
+
+    def _draw_todos(self, ctx, todos: list[dict], x: float, bottom: float, w: float,
+                    theme, bg) -> float:
+        """The agent's to-do list, pinned over the message field while
+        something on it is left to do: the one in progress and those after
+        it, the finished ones counted. Returns the top it took."""
+        text_fg = theme.text if theme is not None else (212, 212, 212)
+        muted = theme.muted_text if theme is not None else (150, 150, 150)
+        accent = theme.accent if theme is not None else (0, 122, 204)
+        done = sum(1 for t in todos if t.get("status") == "completed")
+        first = next((i for i, t in enumerate(todos) if t.get("status") != "completed"), 0)
+        shown = todos[first:first + _TODO_ROWS]
+        rows: list[tuple[str, tuple]] = [(f"To do · {done}/{len(todos)} done", muted)]
+        for todo in shown:
+            status = todo.get("status")
+            if status == "in_progress":
+                rows.append(("▸ " + str(todo.get("activeForm") or todo.get("content") or ""),
+                             accent))
+            elif status == "completed":
+                rows.append(("✓ " + str(todo.get("content") or ""), muted))
+            else:
+                rows.append(("○ " + str(todo.get("content") or ""), text_fg))
+        left = len(todos) - first - len(shown)
+        if left > 0:
+            rows.append((f"… {left} more", muted))
+        vector = ctx.vector_shapes
+        pad = 0.3 if vector else 0.0
+        h = len(rows) + 2 * pad
+        y = bottom - h - (0.4 if ctx.pixel_layout else 0.0)
+        panel_bg = theme.button_secondary_bg if theme is not None and vector else bg
+        if vector:
+            ctx.round_rect(x, y, w, h, Style(bg=panel_bg), radius=6.0, hints={"fill": True})
+        ty = y + pad
+        for text, fg in rows:
+            ctx.draw_text(x + (1.0 if vector else 0.0), ty,
+                          elide(text, max(1.0, w - 2.0), where="end", measure=ctx.measure_text),
+                          Style(fg=fg, bg=panel_bg))
+            ty += 1.0
+        return y
 
     # --- events -----------------------------------------------------------------
 

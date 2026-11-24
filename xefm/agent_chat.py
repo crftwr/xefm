@@ -237,6 +237,11 @@ class Item:
     denied: bool = False
     #: Whether its whole output is shown (the user asked for it).
     expanded: bool = False
+    #: A subagent's (``Agent`` / ``Task``) own steps, in order: its tool
+    #: calls and what it said, nested under the call that started it.
+    children: list = field(default_factory=list)
+    #: What a running subagent says it is doing (``task_progress``).
+    progress: str = ""
 
 
 @dataclass
@@ -277,6 +282,20 @@ class Conversation:
         #: The CLI's permission mode (MODES), as it last reported it.
         self.permission_mode = "default"
         self.last_error = ""
+        #: The models the session offers (the initialize answer's ``models``:
+        #: ``value``, ``displayName``, ``description``).
+        self.models: list[dict] = []
+        #: The model the user picked (a ``models`` value), kept across a
+        #: restart; "" for the session's own default.
+        self.model_choice = ""
+        #: The id of a ``set_model`` request not yet answered: its refusal
+        #: is the user's to see.
+        self.model_request = ""
+        #: Tokens the conversation holds (the last main-thread call's
+        #: input, cached or not) and the model's context window, once a
+        #: turn's ``result`` named it (0 until then).
+        self.context_tokens = 0
+        self.context_window = 0
 
     # --- what the user did -------------------------------------------------------
 
@@ -294,6 +313,10 @@ class Conversation:
         """Fold one message in. Returns a :class:`Permission` to ask, the id
         of a question the CLI withdrew (``control_cancel_request``), or None."""
         kind = msg.get("type")
+        parent = msg.get("parent_tool_use_id")
+        if parent and kind in ("stream_event", "assistant", "user"):
+            self._sub(str(parent), msg)
+            return None
         if kind == "stream_event":
             self._stream(msg.get("event") or {})
         elif kind == "assistant":
@@ -316,6 +339,16 @@ class Conversation:
             body = response.get("response") or {}
             if isinstance(body.get("commands"), list):
                 self.commands = body["commands"]
+            if isinstance(body.get("models"), list):
+                self.models = [m for m in body["models"]
+                               if isinstance(m, dict) and isinstance(m.get("value"), str)]
+            if isinstance(body.get("model"), str) and body["model"]:
+                self.model = body["model"]  # set_model's answer
+            if self.model_request and response.get("request_id") == self.model_request:
+                self.model_request = ""
+                if response.get("subtype") == "error":
+                    self.add_notice(f"Could not switch the model: {response.get('error')}",
+                                    error=True)
             mode = body.get("current_permission_mode") or body.get("mode")
             if isinstance(mode, str) and mode:
                 self.permission_mode = mode
@@ -379,6 +412,12 @@ class Conversation:
         return item
 
     def _assistant(self, message: dict) -> None:
+        usage = message.get("usage")
+        if isinstance(usage, dict):
+            held = sum(int(usage.get(k) or 0) for k in (
+                "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+            if held:
+                self.context_tokens = held
         mid = str(message.get("id") or "")
         streamed = self._blocks.get(mid, [])
         for block in message.get("content") or []:
@@ -424,6 +463,33 @@ class Conversation:
             item.is_error = bool(block.get("is_error"))
             item.open = False
 
+    def _sub(self, parent: str, msg: dict) -> None:
+        """A message from inside a subagent: its tool calls and what it says
+        nest under the call that started it (``parent``), its tool results
+        go to its calls. Its prompt and its streamed deltas are not shown -
+        the finished blocks carry the same."""
+        kind = msg.get("type")
+        owner = self._tools.get(parent)
+        if kind == "user":
+            self._tool_results(msg)
+            return
+        if kind != "assistant" or owner is None:
+            return
+        for block in (msg.get("message") or {}).get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "text" and str(block.get("text") or "").strip():
+                owner.children.append(Item("text", str(block["text"])))
+            elif btype in ("tool_use", "server_tool_use"):
+                tid = str(block.get("id", ""))
+                if tid in self._tools:
+                    continue
+                child = Item("tool", name=str(block.get("name", "")),
+                             input=dict(block.get("input") or {}), tool_id=tid, open=True)
+                self._tools[tid] = child
+                owner.children.append(child)
+
     def _system(self, msg: dict) -> None:
         sub = msg.get("subtype")
         if sub == "init":
@@ -438,15 +504,24 @@ class Conversation:
             self.add_notice("Earlier conversation compacted")
         elif sub == "status" and isinstance(msg.get("permissionMode"), str):
             self.permission_mode = msg["permissionMode"]
+        elif sub == "task_progress":
+            owner = self._tools.get(str(msg.get("tool_use_id") or ""))
+            if owner is not None and isinstance(msg.get("description"), str):
+                owner.progress = msg["description"]
 
     def _result(self, msg: dict) -> None:
         self.session_id = str(msg.get("session_id") or self.session_id)
         self.pending_turns = max(0, self.pending_turns - 1)
-        for item in self.items:
+        for item in self._all_items():
             if item.open:
                 item.open = False
                 if item.kind == "tool" and item.result is None:
                     item.result = ""
+        windows = [u.get("contextWindow") for name, u in (msg.get("modelUsage") or {}).items()
+                   if isinstance(u, dict) and isinstance(u.get("contextWindow"), int)
+                   and (not self.model or name == self.model)]
+        if windows:
+            self.context_window = max(windows)
         self._blocks.clear()
         self._consumed.clear()
         if msg.get("is_error") or msg.get("subtype") not in (None, "success"):
@@ -492,7 +567,7 @@ class Conversation:
         self.state = EXITED
         self.pending_turns = 0
         self.permissions.clear()
-        for item in self.items:
+        for item in self._all_items():
             item.open = False
         if code not in (0, None):
             text = f"The agent stopped (exit code {code})"
@@ -513,6 +588,36 @@ class Conversation:
     @property
     def busy(self) -> bool:
         return self.state in (WORKING, ASKING)
+
+    def _all_items(self):
+        """Every item, a subagent's steps after the call that holds them."""
+        stack = list(reversed(self.items))
+        while stack:
+            item = stack.pop()
+            yield item
+            stack.extend(reversed(item.children))
+
+    def todos(self) -> list[dict]:
+        """The agent's to-do list as its last ``TodoWrite`` left it
+        (``content``, ``activeForm``, ``status``), while anything on it is
+        still to do; empty once it is all done or there is none."""
+        for item in reversed(self.items):
+            if item.kind == "tool" and item.name == "TodoWrite" and not item.denied:
+                todos = [t for t in item.input.get("todos") or [] if isinstance(t, dict)]
+                if any(t.get("status") != "completed" for t in todos):
+                    return todos
+                return []
+        return []
+
+    def context_label(self) -> str:
+        """How full the context is - ``"12% context"`` once the window is
+        known, ``"37k context"`` before; "" before any call."""
+        if not self.context_tokens:
+            return ""
+        if self.context_window:
+            pct = max(1, round(100 * self.context_tokens / self.context_window))
+            return f"{pct}% context"
+        return f"{max(1, round(self.context_tokens / 1000))}k context"
 
 
 def _result_text(content: Any) -> str:
@@ -570,6 +675,10 @@ MODE_LABELS = {"default": "", "acceptEdits": "accept edits", "plan": "plan mode"
 
 #: How many lines of a tool's output "show all" shows at most.
 EXPANDED_LINES = 2000
+#: A subagent's latest steps shown under its call; the earlier are counted.
+SUBAGENT_STEPS = 5
+#: The tools that run a subagent.
+SUBAGENT_TOOLS = ("Agent", "Task")
 #: The scheme of the transcript's own links (expand an output, open a diff).
 LINK_SCHEME = "xefm-agent:"
 
@@ -726,6 +835,42 @@ def _bash_markdown(item: Item, mark: str, index: int = -1) -> str:
     return f"{head} {mark}\n\n{_code(body, 'console')}{note}"
 
 
+def _mark(item: Item) -> str:
+    """How a tool call went, after its name: running, declined, failed, done."""
+    if item.open and item.result is None:
+        return "…"
+    if item.denied:
+        return "✗ declined"
+    return "✗" if item.is_error else "✓"
+
+
+def _steps_markdown(item: Item, index: int) -> str:
+    """A subagent's steps, one line each - the latest SUBAGENT_STEPS, the
+    rest behind a link when the item has an ``index`` - with what it says it
+    is doing under them while it runs."""
+    rows = []
+    for child in item.children:
+        if child.kind == "tool":
+            what = summary(child.name, child.input) if child.input else ""
+            rows.append(f"- **{child.name or 'tool'}**" + (f" {_inline(what)}" if what else "")
+                        + f" {_mark(child)}")
+        elif child.kind == "text":
+            line = " ".join(child.text.split())
+            if line:
+                rows.append(f"- _{line if len(line) <= 160 else line[:159] + '…'}_")
+    out = "\n".join(rows)
+    hidden = len(rows) - SUBAGENT_STEPS
+    if hidden > 0 and not item.expanded:
+        note = (f"[… {hidden} earlier steps]({LINK_SCHEME}expand/{index})" if index >= 0
+                else f"_… {hidden} earlier steps_")
+        out = note + "\n\n" + "\n".join(rows[hidden:])
+    elif hidden > 0 and index >= 0:
+        out = f"[show fewer steps]({LINK_SCHEME}collapse/{index})\n\n" + out
+    if item.open and item.result is None and item.progress:
+        out += ("\n\n" if out else "") + f"_{item.progress}_"
+    return out
+
+
 def tool_markdown(item: Item, index: int = -1) -> str:
     """One tool call as Markdown. With its ``index`` in the transcript, a
     clipped output gets a link that shows all of it and an edit one that
@@ -738,14 +883,7 @@ def tool_markdown(item: Item, index: int = -1) -> str:
             (" ✓ approved" if item.result is not None and not item.is_error else "")
         return f"**Plan**{verdict}\n\n{item.input['plan'].strip()}"
     what = summary(name, item.input) if item.input else ""
-    if item.open and item.result is None:
-        mark = "…"
-    elif item.denied:
-        mark = "✗ declined"
-    elif item.is_error:
-        mark = "✗"
-    else:
-        mark = "✓"
+    mark = _mark(item)
     if name == "Bash" and isinstance(item.input.get("command"), str):
         return _bash_markdown(item, mark, index)
     head = f"**{name}**"
@@ -761,6 +899,10 @@ def tool_markdown(item: Item, index: int = -1) -> str:
             link = f"[open diff]({LINK_SCHEME}diff/{index})"
             note = f"{note} · {link}" if note else f"\n\n{link}"
         parts.append(_code(shown, "diff") + note)
+    elif name in SUBAGENT_TOOLS and (item.children or item.progress):
+        steps = _steps_markdown(item, index)
+        if steps:
+            parts.append(steps)
     elif name == "TodoWrite" and isinstance(item.input.get("todos"), list):
         rows = []
         for todo in item.input["todos"]:
@@ -776,6 +918,16 @@ def tool_markdown(item: Item, index: int = -1) -> str:
         if shown.strip():
             parts.append(_code(shown) + note)
     return "\n\n".join(parts)
+
+
+def _thought_markdown(item: Item, index: int) -> str:
+    """Finished thinking: folded to a line that opens it, or shown (as a
+    quote) with a link that folds it again. The CLI often sends thinking
+    without its text; that leaves nothing to show."""
+    if not item.expanded:
+        return f"[_Thought_ ›]({LINK_SCHEME}expand/{index})"
+    quoted = "\n".join("> " + line for line in item.text.strip().split("\n"))
+    return f"[_Thought_ ‹]({LINK_SCHEME}collapse/{index})\n\n{quoted}"
 
 
 def to_markdown(items: list[Item]) -> str:
@@ -794,6 +946,8 @@ def to_markdown(items: list[Item]) -> str:
         elif item.kind == "thinking":
             if item.open:
                 out.append("_Thinking…_")
+            elif item.text.strip():
+                out.append(_thought_markdown(item, index))
         elif item.kind == "tool":
             out.append(tool_markdown(item, index))
         elif item.kind in ("notice", "error"):

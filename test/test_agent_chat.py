@@ -681,3 +681,137 @@ def test_the_app_opens_an_edit_as_the_whole_file_before_and_now(tmp_path):
     target.write_text("rewritten")  # changed since: just the two texts
     XeFMApp._agent_chat_diff(app, None, item)
     assert opened[-1][0] == "two" and opened[-1][2] == ("Replaced text", "Replacement")
+
+
+def _agent_call(conv, tid="a1"):
+    conv.handle({"type": "assistant", "message": {"id": "m1", "content": [
+        {"type": "tool_use", "id": tid, "name": "Agent",
+         "input": {"description": "List folder files", "prompt": "ls"}}],
+        "stop_reason": None}})
+
+
+def _sub_step(conv, n, parent="a1"):
+    conv.handle({"type": "assistant", "parent_tool_use_id": parent, "message": {
+        "id": f"s{n}", "content": [{"type": "tool_use", "id": f"b{n}", "name": "Bash",
+                                    "input": {"command": f"ls {n}"}}]}})
+    conv.handle({"type": "user", "parent_tool_use_id": parent, "message": {"content": [
+        {"type": "tool_result", "tool_use_id": f"b{n}", "content": "x"}]}})
+
+
+def test_a_subagents_steps_nest_under_its_call():
+    conv = C.Conversation()
+    _agent_call(conv)
+    # Its prompt comes as a user message from inside: not shown.
+    conv.handle({"type": "user", "parent_tool_use_id": "a1",
+                 "message": {"content": [{"type": "text", "text": "Run ls"}]}})
+    _sub_step(conv, 1)
+    conv.handle({"type": "system", "subtype": "task_progress", "tool_use_id": "a1",
+                 "description": "Running List all files"})
+    assert len(conv.items) == 1
+    agent = conv.items[0]
+    assert [c.name for c in agent.children] == ["Bash"] and agent.children[0].result == "x"
+    md = C.to_markdown(conv.items)
+    assert "- **Bash** `ls 1` ✓" in md and "_Running List all files_" in md
+    for n in range(2, 8):
+        _sub_step(conv, n)
+    md = C.to_markdown(conv.items)
+    assert "[… 2 earlier steps](xefm-agent:expand/0)" in md
+    assert "`ls 1`" not in md and "`ls 7`" in md
+    agent.expanded = True
+    md = C.to_markdown(conv.items)
+    assert "`ls 1`" in md and "[show fewer steps](xefm-agent:collapse/0)" in md
+    conv.handle({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "a1", "content": "two files"}]}})
+    conv.handle({"type": "result", "subtype": "success", "session_id": "S"})
+    md = C.to_markdown(conv.items)
+    assert "Running" not in md and "two files" in md
+
+
+def test_finished_thinking_folds_to_a_line_that_opens_it():
+    conv = C.Conversation()
+    conv.items = [C.Item("thinking", "first idea\nsecond"), C.Item("thinking", "")]
+    md = C.to_markdown(conv.items)
+    assert "[_Thought_ ›](xefm-agent:expand/0)" in md and "first idea" not in md
+    assert md.count("Thought") == 1  # thinking sent without its text: nothing
+    conv.items[0].expanded = True
+    md = C.to_markdown(conv.items)
+    assert "> first idea\n> second" in md and "collapse/0" in md
+
+
+def test_the_header_says_how_full_the_context_is(tmp_path):
+    conv = C.Conversation()
+    assert conv.context_label() == ""
+    conv.model = "claude-opus-5-5"
+    conv.handle({"type": "assistant", "message": {"id": "m", "content": [], "usage": {
+        "input_tokens": 2, "cache_creation_input_tokens": 3909,
+        "cache_read_input_tokens": 36550}}})
+    assert conv.context_label() == "40k context"
+    # A subagent's calls are not the conversation's context.
+    conv.handle({"type": "assistant", "parent_tool_use_id": "x", "message": {
+        "id": "s", "content": [], "usage": {"input_tokens": 900000}}})
+    conv.handle({"type": "result", "subtype": "success", "session_id": "S", "modelUsage": {
+        "claude-haiku-5-5": {"contextWindow": 1000},
+        "claude-opus-5-5": {"contextWindow": 200000}}})
+    assert conv.context_label() == "20% context"
+    panel, view = _plain_view(tmp_path)
+    view.conversation = conv
+    view._dirty = True
+    panel.render()
+    assert "20% context" in _screen_text(panel)
+
+
+def test_the_todo_list_is_pinned_while_something_is_left(tmp_path):
+    panel, view = _plain_view(tmp_path)
+    todos = [{"content": "Read", "status": "completed"},
+             {"content": "Write", "activeForm": "Writing", "status": "in_progress"},
+             {"content": "Test", "status": "pending"}]
+    item = C.Item("tool", name="TodoWrite", input={"todos": todos}, result="ok")
+    view.conversation.items = [item]
+    view._dirty = True
+    panel.render()
+    text = _screen_text(panel)
+    assert "To do · 1/3 done" in text and "▸ Writing" in text and "○ Test" in text
+    assert "✓ Read" not in text  # the finished ones are counted, not listed
+    item.input = {"todos": [dict(t, status="completed") for t in todos]}
+    assert view.conversation.todos() == []
+    view._dirty = True
+    panel.render()
+    assert "To do" not in _screen_text(panel)
+
+
+def test_slash_model_lists_the_models_and_switches(tmp_path):
+    panel, view = _plain_view(tmp_path)
+    conv = view.conversation
+    conv.handle({"type": "control_response", "response": {
+        "subtype": "success", "request_id": "i", "response": {"commands": [], "models": [
+            {"value": "default", "displayName": "Default (recommended)"},
+            {"value": "sonnet", "displayName": "Sonnet 5.5", "description": "Efficient"},
+            {"value": "haiku", "displayName": "Haiku 5.5"}]}}})
+    sent = []
+    view.client = SimpleNamespace(running=True, close=lambda: None,
+                                  request=lambda body: sent.append(body) or "xefm_9")
+    _type(panel, "/mod")
+    assert view.menu.items[0][0] == "/model <model>"
+    panel.dispatch_event(_key("tab"))  # takes it: the models are listed
+    assert view.input.text == "/model " and view.menu.kind == "model"
+    assert [row[0] for row in view.menu.items] == [
+        "Default (recommended)", "Sonnet 5.5", "Haiku 5.5"]
+    _type(panel, "son")
+    panel.dispatch_event(_key("enter", "\r"))
+    assert sent == [{"subtype": "set_model", "model": "sonnet"}]
+    assert conv.model_choice == "sonnet" and view.input.text == ""
+    conv.handle({"type": "control_response", "response": {
+        "subtype": "success", "request_id": "xefm_9",
+        "response": {"model": "claude-sonnet-5-5"}}})
+    assert conv.model == "claude-sonnet-5-5"
+    view._submit("/model bogus")
+    conv.handle({"type": "control_response", "response": {
+        "subtype": "error", "request_id": "xefm_9", "error": "Model 'bogus' not found"}})
+    assert "Model 'bogus' not found" in conv.items[-1].text
+    # A new process keeps the model picked.
+    conv.model_choice = "sonnet"
+    started = []
+    view.start = lambda panel=None, argv=None: started.append(argv) or True
+    view._restart(resume=False)
+    assert started[-1][-2:] == ["--model", "sonnet"]
+    assert view.conversation.model_choice == "sonnet"

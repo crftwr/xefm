@@ -224,6 +224,28 @@ ruled out). ACP stays the candidate for other agents.
   file has changed since. A tool result is clipped to `RESULT_LINES` and fenced with
   `~~~` when it holds a backtick fence itself. `ChatView` keeps about 5% of
   the width as a margin on each side.
+- Subagents: a message with `parent_tool_use_id` comes from inside the
+  `Agent` / `Task` call of that id (no `stream_event`s, only finished
+  blocks). `Conversation._sub` nests its tool calls and text as
+  `Item.children` of that call (registered in `_tools`, so their results and
+  permission answers find them) and drops its prompt; `system
+  task_progress` sets `Item.progress`. The transcript lists the latest
+  `SUBAGENT_STEPS` under the call, the rest behind `expand/N`.
+- Finished thinking with text folds to `[Thought ›](xefm-agent:expand/N)`;
+  Claude Code often sends `thinking` blocks with an empty text and only a
+  signature, which shows nothing.
+- Context and model: `Conversation.context_tokens` is the last main-thread
+  `assistant` usage (input + cache creation + cache read);
+  `context_window` comes from the turn `result`'s `modelUsage[model]
+  .contextWindow`. `models` is the initialize answer's list; `/model <value>`
+  (a `_Menu` of kind `model`) sends `set_model`, whose answer carries the
+  resolved `model` and whose refusal (`model_request`) becomes a notice.
+  `model_choice` is passed as `--model` on a restart.
+- The to-do list: `Conversation.todos()` is the last main-thread
+  `TodoWrite`'s list while any of it is not completed; `ChatView._draw_todos`
+  pins it over the field (in progress and after, `_TODO_ROWS`). The
+  transcript's dots are joined by PuiKit's timeline line (MarkdownView
+  `::: bullet` in a row).
 - Permissions: `--permission-prompt-tool stdio` makes the CLI send a
   `control_request` `can_use_tool` wherever it would ask in its own UI; its
   settings (the deny list) decide first, so a denied `rm` never reaches
@@ -264,7 +286,8 @@ rules, and had `rm` denied by the settings without asking.
 
 Open: the terms-of-use check #880 asks for before this leaves Preview;
 other agents (ACP); per-tool rendering beyond Bash/Read/Edit/TodoWrite;
-images in the conversation.
+images in the conversation; effort; resuming an older conversation;
+editing or rewinding a message.
 
 ## Knowledge of extensions
 
