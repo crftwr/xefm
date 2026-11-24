@@ -332,6 +332,10 @@ class ChatView(FocusContainer, Widget):
         theme = ctx.theme
         wu, hu = ctx.size_units
         pad_x, pad_y = viewer_pad(ctx)
+        # A margin of about 5% on each side, so a wide window does not run
+        # the conversation edge to edge (whole cells on a grid).
+        margin = wu * 0.05
+        pad_x = max(pad_x, margin if ctx.pixel_layout else float(round(margin)))
         bg = _content_bg(theme)
         if not ctx.wallpaper:
             ctx.fill_rect(0, 0, wu, hu, Style(bg=bg))

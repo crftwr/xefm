@@ -184,7 +184,11 @@ def test_the_transcript_reads_as_markdown():
              C.Item("tool", name="Bash", input={"command": "cat x"}, result="```fence```"),
              C.Item("thinking", "", open=True)]
     md = C.to_markdown(items)
-    assert "> line one\n> line two" in md
+    # The user's words on a panel, the agent's indented under them.
+    assert md.startswith("::: box\nline one\nline two\n:::")
+    assert "::: indent\nReply with `code`\n:::" in md
+    # A fence the text itself holds cannot close the panel.
+    assert C.to_markdown([C.Item("user", "a\n:::\nb")]).startswith(":::: box\na\n:::\nb\n::::")
     assert "Reply with `code`" in md
     assert "**Read** `/a/b.txt` ✓" in md
     assert "_… 14 more lines_" in md

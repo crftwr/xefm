@@ -26,6 +26,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -618,8 +619,12 @@ def _inline(text: str) -> str:
     return f"{ticks}{pad}{text}{pad}{ticks}"
 
 
-def _quote(text: str) -> str:
-    return "\n".join("> " + line if line else ">" for line in text.split("\n"))
+def _fenced(name: str, text: str) -> str:
+    """``text`` in a MarkdownView fenced container (``::: box`` ...): its
+    fence longer than any run of colons the text holds, so none closes it."""
+    runs = [len(m.group(0)) for m in re.finditer(r":{3,}", text)]
+    fence = ":" * max([3] + [n + 1 for n in runs])
+    return f"{fence} {name}\n{text}\n{fence}"
 
 
 def _questions_markdown(item: Item) -> str:
@@ -687,11 +692,14 @@ def tool_markdown(item: Item) -> str:
 
 
 def to_markdown(items: list[Item]) -> str:
-    """The transcript's Markdown source."""
+    """The transcript's Markdown source: what the user wrote on a panel
+    (``::: box``), what the agent did indented under it (``::: indent``)."""
     out: list[str] = []
     for item in items:
+        n = len(out)
         if item.kind == "user":
-            out.append(_quote(item.text.rstrip() or " "))
+            out.append(_fenced("box", item.text.rstrip() or " "))
+            continue
         elif item.kind == "text":
             if item.text.strip():
                 out.append(item.text.rstrip())
@@ -704,4 +712,6 @@ def to_markdown(items: list[Item]) -> str:
             first, _, rest = item.text.strip().partition("\n")
             head = f"**Error:** {first}" if item.kind == "error" else f"_{first}_"
             out.append(head + ("\n\n" + _code(rest.strip()) if rest.strip() else ""))
+        if len(out) > n:
+            out[-1] = _fenced("indent", out[-1])
     return "\n\n".join(out) + "\n"

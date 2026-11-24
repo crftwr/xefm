@@ -195,9 +195,12 @@ ruled out). ACP stays the candidate for other agents.
   within the message (each arrives as an `assistant` message of its own,
   sharing the id); `user` tool results close tool items; `result` ends a
   turn (`pending_turns`: a message sent mid-turn queues in the CLI and gets
-  its own `result`). `to_markdown` renders the items; a tool result is
-  clipped to `RESULT_LINES` and fenced with `~~~` when it holds a backtick
-  fence itself.
+  its own `result`). `to_markdown` renders the items: a user message in
+  a MarkdownView `::: box` (a rounded panel; a fill in a terminal, its fence
+  longer than any colon run in the text), everything the agent did in a
+  `::: indent`. A tool result is clipped to `RESULT_LINES` and fenced with
+  `~~~` when it holds a backtick fence itself. `ChatView` keeps about 5% of
+  the width as a margin on each side.
 - Permissions: `--permission-prompt-tool stdio` makes the CLI send a
   `control_request` `can_use_tool` wherever it would ask in its own UI; its
   settings (the deny list) decide first, so a denied `rm` never reaches
