@@ -219,20 +219,27 @@ def test_ask_user_question_options():
 
 # --- the AGENTS entry ---------------------------------------------------------------
 
-def test_ui_is_checked():
-    ok = agents.normalize({"name": "C", "command": ["claude"], "preset": "claude-code",
-                           "ui": "xefm"})
-    assert ok["ui"] == "xefm" and agents.drawn(ok)
-    assert agents.normalize({"name": "C", "command": ["claude"]})["ui"] == "terminal"
-    assert "'ui'" in agents.normalize({"name": "C", "command": ["c"], "ui": "web"})
-    # Only Claude Code can be drawn today.
+def test_terminal_is_checked_and_claude_code_is_drawn_by_default():
+    claude = agents.normalize({"name": "C", "command": ["claude"], "preset": "claude-code"})
+    assert claude["terminal"] is False and agents.drawn(claude)
+    opted_out = agents.normalize({"name": "C", "command": ["claude"],
+                                  "preset": "claude-code", "terminal": True})
+    assert opted_out["terminal"] is True and not agents.drawn(opted_out)
+    # The presets XeFM cannot draw yet, and an entry without a preset, run
+    # in a terminal.
+    assert agents.normalize({"name": "X", "command": ["codex"], "preset": "codex"})["terminal"]
+    assert agents.normalize({"name": "Y", "command": ["y"]})["terminal"]
     assert "needs 'preset'" in agents.normalize(
-        {"name": "X", "command": ["codex"], "preset": "codex", "ui": "xefm"})
+        {"name": "X", "command": ["codex"], "preset": "codex", "terminal": False})
+    assert "True or False" in agents.normalize(
+        {"name": "C", "command": ["claude"], "terminal": "yes"})
+    assert "'terminal': True" in agents.normalize(
+        {"name": "C", "command": ["claude"], "preset": "claude-code", "ui": "xefm"})
 
 
 def test_chat_argv_is_stream_json_with_the_skill_rules_and_settings(tmp_path):
     entry = agents.normalize({"name": "Claude Code", "command": ["claude", "--model", "m"],
-                              "preset": "claude-code", "ui": "xefm"})
+                              "preset": "claude-code"})
     values = agents.prepare(SimpleNamespace(), entry, root=tmp_path, version="t")
     argv = agents.chat_argv(entry, values)
     assert argv[:3] == ["claude", "--model", "m"]
@@ -380,7 +387,7 @@ def test_the_agent_key_opens_a_drawn_session_in_terminal_mode_too(monkeypatch, t
         posts = _Posts()
         app._call_later = posts
         app.config.AGENTS = [{"name": "Claude Code", "command": fake_cli,
-                              "preset": "claude-code", "ui": "xefm"}]
+                              "preset": "claude-code"}]
         monkeypatch.setattr(agents, "cache_root", lambda: tmp_path)
         monkeypatch.setattr(agents, "installed", lambda entry: True)
         app._program_env = lambda pane: (dict(os.environ), str(tmp_path))
@@ -881,3 +888,24 @@ def test_effort_and_fast_mode_outlive_a_restart(tmp_path):
     assert conv.pending_turns == 1 and conv.state == C.WORKING
     view._submit("/effort auto")
     assert conv.effort_choice == ""
+
+
+@pytest.mark.parametrize("preset", ["afx", "orthodox", "native", "vim"])
+def test_ctrl_grave_opens_screens_from_a_drawn_session_under_every_preset(tmp_path, preset):
+    # A preset's full table lists 'screens' before 'terminal.screens', both
+    # on Ctrl-`; the session's own action must win, or the key went to the
+    # message field and Screens never came up.
+    from xefm import keymap_presets as kp
+    from xefm.config import config_manager
+    saved = (config_manager.config, config_manager._key_bindings)
+    try:
+        config_manager.config = SimpleNamespace(KEY_BINDINGS=kp.table(preset))
+        config_manager._key_bindings = None
+        hits = []
+        panel, view = _plain_view(tmp_path, on_screens_request=lambda: hits.append(1))
+        from puikit.event import Event, EventType
+        panel.dispatch_event(Event(type=EventType.KEY, key="`", char="`",
+                                   modifiers=frozenset({"ctrl"})))
+        assert hits == [1] and view.input.text == ""
+    finally:
+        config_manager.config, config_manager._key_bindings = saved

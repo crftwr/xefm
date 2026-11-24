@@ -344,7 +344,8 @@ class KeyBindings:
            unqualified one.
         2. **Config entries under the action's own name**, in the config's own
            order, which is what makes two file-list actions sharing a key resolve
-           exactly as they always have.
+           exactly as they always have - the context's own actions first, then
+           the inherited ones.
         3. **The action's built-in defaults**, for every name the config never
            mentions — the case that matters most in practice, because
            ``_copy_missing_fields`` can add a whole missing *field* to an old
@@ -390,11 +391,17 @@ class KeyBindings:
             claimed.add(target)
 
         # Current names before old ones, so a config carrying both spellings of
-        # a renamed action resolves to the current entry.
+        # a renamed action resolves to the current entry. Within each, the
+        # context's own actions (``terminal.screens``) before the ones it
+        # inherits (``screens``): on a key bound to both, the surface's own
+        # wins, whatever order the table lists them in - a preset's table put
+        # ``screens`` first, and Ctrl-` in an agent session went to typing.
+        own = [k for k in self._bindings if isinstance(k, str) and k.startswith(prefix)]
+        ordered = own + [k for k in self._bindings
+                         if isinstance(k, str) and not k.startswith(prefix)]
         for exact_only in (True, False):
-            for key_name, binding in self._bindings.items():
-                if not isinstance(key_name, str):
-                    continue
+            for key_name in ordered:
+                binding = self._bindings[key_name]
                 if exact_only:
                     target = key_name if registry.resolve(context, key_name) else None
                 else:

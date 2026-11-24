@@ -128,15 +128,13 @@ ANTIGRAVITY_DEFAULT_SETTINGS = {
 #: The environment variable naming Copilot's extra instructions folders.
 COPILOT_INSTRUCTIONS_ENV = "COPILOT_CUSTOM_INSTRUCTIONS_DIRS"
 
-_KEYS = {"name", "command", "preset", "restrict", "settings", "env", "prompt_args", "ui"}
+_KEYS = {"name", "command", "preset", "restrict", "settings", "env", "prompt_args", "terminal"}
 
-#: How a session is shown (an entry's ``'ui'``): the agent CLI's own screen
-#: in a terminal session, or the conversation drawn by XeFM (#959; Claude
-#: Code only, through its stream-json mode - :mod:`xefm.agent_chat`).
-UI_TERMINAL = "terminal"
-UI_XEFM = "xefm"
-UIS = (UI_TERMINAL, UI_XEFM)
-#: The presets XeFM can draw a conversation for.
+#: The presets XeFM can draw a conversation for (#959; Claude Code through
+#: its stream-json mode - :mod:`xefm.agent_chat`). Their sessions are drawn
+#: unless the entry says ``'terminal': True``; every other session is the
+#: agent CLI's own screen in a terminal session. A preset joins once XeFM
+#: can draw it.
 DRAWN_PRESETS = (CLAUDE_CODE,)
 
 
@@ -162,6 +160,9 @@ def normalize(item: Any) -> dict | str:
     if not isinstance(item, dict):
         return "an entry is a dict with 'name' and 'command'"
     unknown = sorted(set(item) - _KEYS)
+    if "ui" in unknown:
+        return ("'ui' is gone: a Claude Code session is drawn by XeFM unless "
+                "the entry says 'terminal': True")
     if unknown:
         return f"unknown key(s) {', '.join(map(repr, unknown))}"
     name = item.get("name")
@@ -183,12 +184,12 @@ def normalize(item: Any) -> dict | str:
     env = item.get("env") or {}
     if not isinstance(env, dict):
         return f"{name}: 'env' is a dict"
-    ui = item.get("ui", UI_TERMINAL)
-    if ui not in UIS:
-        return f"{name}: 'ui' is one of {', '.join(UIS)}"
-    if ui == UI_XEFM and preset not in DRAWN_PRESETS:
-        return (f"{name}: 'ui': 'xefm' needs 'preset': one of "
-                f"{', '.join(DRAWN_PRESETS)}")
+    terminal = item.get("terminal", preset not in DRAWN_PRESETS)
+    if not isinstance(terminal, bool):
+        return f"{name}: 'terminal' is True or False"
+    if not terminal and preset not in DRAWN_PRESETS:
+        return (f"{name}: 'terminal': False needs 'preset': one of "
+                f"{', '.join(DRAWN_PRESETS)} (XeFM draws only those)")
     prompt_args = item.get("prompt_args", ["{prompt}"])
     if not isinstance(prompt_args, (list, tuple)) \
             or not all(isinstance(a, str) for a in prompt_args):
@@ -201,7 +202,7 @@ def normalize(item: Any) -> dict | str:
         "settings": settings,
         "env": {str(k): str(v) for k, v in env.items()},
         "prompt_args": list(prompt_args),
-        "ui": ui,
+        "terminal": terminal,
     }
 
 
@@ -388,8 +389,8 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
 
 
 def drawn(entry: dict) -> bool:
-    """Whether XeFM draws the entry's conversation (``'ui': 'xefm'``)."""
-    return entry.get("ui") == UI_XEFM
+    """Whether XeFM draws the entry's conversation (``'terminal': False``)."""
+    return entry.get("terminal") is False
 
 
 def drawn_rules(rules: str) -> str:
@@ -406,7 +407,7 @@ def drawn_rules(rules: str) -> str:
 
 
 def chat_argv(entry: dict, values: dict) -> list[str]:
-    """The command line of a drawn session (``'ui': 'xefm'``): the entry's
+    """The command line of a drawn session (``'terminal': False``): the entry's
     ``command``, Claude Code's stream-json mode with its permission questions
     sent to XeFM, then what the preset passes a terminal session too - the
     skill, the rules, the settings. The first request goes in as a message,

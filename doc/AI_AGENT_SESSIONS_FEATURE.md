@@ -2,8 +2,10 @@
 
 English \| [日本語](AI_AGENT_SESSIONS_FEATURE.ja.md)
 
-XeFM can open an AI coding agent beside the file manager, as a
-[terminal session](TERMINAL_FEATURE.md) of its own. The agent knows it runs
+XeFM can open an AI coding agent beside the file manager, on a screen of
+its own: for Claude Code, a [conversation XeFM draws](#conversations-drawn-by-xefm);
+for the other agents, a [terminal session](TERMINAL_FEATURE.md) running the
+agent's own screen. The agent knows it runs
 inside XeFM: it can see what you are looking at, search anywhere XeFM can go,
 show you what it found, and ask you before it changes a file.
 
@@ -51,8 +53,8 @@ it and the file manager, and it keeps running while you are away. In the
 screen switcher, its row shows what the agent calls itself in its title
 (`✳ Claude Code`).
 
-In terminal mode, XeFM hands the agent its terminal and waits, as it does
-for the subshell. While the agent runs there, XeFM answers what it asks
+For an agent in a terminal session, terminal mode hands it XeFM's terminal
+and waits, as it does for the subshell. While the agent runs there, XeFM answers what it asks
 about the panes and its searches, but cannot show it anything or ask you
 anything: those need the desktop app, or a
 [conversation drawn by XeFM](#conversations-drawn-by-xefm), which keeps
@@ -60,15 +62,19 @@ XeFM's screen in terminal mode too.
 
 ## Conversations drawn by XeFM
 
-Claude Code can also run without a terminal: with `'ui': 'xefm'` on its
-entry, XeFM draws the conversation itself, on a screen of its own. It looks
+For Claude Code, XeFM draws the conversation itself, on a screen of its
+own, rather than running Claude Code's own screen in a terminal. It looks
 and works the same in the desktop app and in terminal mode. In terminal mode
-the agent no longer takes the terminal over, so it can show you things and
-XeFM can ask you things there too.
+the agent does not take the terminal over, so it can show you things and
+XeFM can ask you things there too. The other agents run in a terminal
+session for now; they move here as XeFM learns to draw them.
+
+To have Claude Code's own screen in a terminal session instead, set
+`'terminal': True` on its entry:
 
 ```python
 AGENTS = [
-    {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code', 'ui': 'xefm'},
+    {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code', 'terminal': True},
 ]
 ```
 
@@ -205,7 +211,7 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 | `settings` | Claude Code and Antigravity: the settings to pass instead of XeFM's, in that agent's own form, e.g. `{'permissions': {'deny': ['Bash(rm:*)']}}` for Claude Code, `{'permissions': {'deny': ['command(rm)']}}` for Antigravity |
 | `env` | Extra environment variables |
 | `prompt_args` | Without a preset: what `ask_agent` adds for the request (default `['{prompt}']`) |
-| `ui` | `'terminal'` (the default): the agent's own screen in a terminal session. `'xefm'`: [the conversation drawn by XeFM](#conversations-drawn-by-xefm) (Claude Code only) |
+| `terminal` | `True`: the agent's own screen in a terminal session. `False`: [the conversation drawn by XeFM](#conversations-drawn-by-xefm). The default is `False` for `'claude-code'` and `True` for every other entry, which XeFM cannot draw yet |
 
 To pass the agent more options, add them to `command`:
 `['claude', '--model', 'opus']`.

@@ -130,7 +130,11 @@ Three sources feed it, each supplying keys for actions the previous one did not:
    `quit` is a registered name in that context and `file_diff.quit` is not.
    A rebind scoped to one surface, so it wins over the unqualified one.
 2. **Config entries under the action's own registered name**, iterated in the
-   config's own dict order.
+   config's own dict order - except that the context's own actions
+   (`terminal.screens`) come before the ones it inherits (`screens`), so on a
+   key bound to both the surface's own wins. A keymap preset's full table
+   lists `screens` first; before this, Ctrl-` in an AI agent session resolved
+   to `screens`, which the session does not take from typing.
 3. **The action's built-in defaults**, for every registered name the config
    never mentions.
 

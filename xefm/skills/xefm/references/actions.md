@@ -150,7 +150,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `reset_font_size` | Put the text back to FONT_SIZE | — | — | — | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` | `Ctrl-K` | `:`, `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — | — | — | — |
-| `screens` | Switch between the file manager and the terminal sessions | — | — | — | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — | — | — | — |
 | `reload_config` | Re-read config.py and apply it live | — | — | — | — |
 
@@ -204,10 +204,6 @@ send them). These replace the row above in that app:
 - `reset_font_size` (OS native): `Command-0`
 - `reset_font_size` (Orthodox): `Command-0`
 - `reset_font_size` (Vim style): `Command-0`
-- `screens` (AFX style): `Ctrl-GRAVE`
-- `screens` (OS native): `Ctrl-GRAVE`
-- `screens` (Orthodox): `Ctrl-GRAVE`
-- `screens` (Vim style): `Ctrl-GRAVE`
 - `select_all` (OS native): `Command-A`, `Ctrl-A`
 - `toggle_hidden` (OS native): `Command-Shift-.`, `.`
 - `toggle_select_down` (OS native): `Ctrl-SPACE`, `INSERT`
@@ -236,10 +232,6 @@ send them). These replace the row above in that app:
 - `reset_font_size` (OS native): `Ctrl-0`
 - `reset_font_size` (Orthodox): `Ctrl-0`
 - `reset_font_size` (Vim style): `Ctrl-0`
-- `screens` (AFX style): `Ctrl-GRAVE`
-- `screens` (OS native): `Ctrl-GRAVE`
-- `screens` (Orthodox): `Ctrl-GRAVE`
-- `screens` (Vim style): `Ctrl-GRAVE`
 
 ## Inside viewers and dialogs
 
@@ -277,7 +269,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -308,7 +300,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -340,7 +332,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -382,7 +374,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -409,7 +401,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -431,7 +423,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -459,7 +451,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -468,7 +460,7 @@ viewer only.
 | Action | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | — |
-| `terminal.screens` | Switch to the file manager or another terminal session | — |
+| `terminal.screens` | Switch to the file manager or another terminal session | `Ctrl-GRAVE` |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
@@ -481,7 +473,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -501,7 +493,7 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | — |
+| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 

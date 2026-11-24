@@ -870,8 +870,10 @@ def test_agent_is_the_action_and_greater_than_its_key():
 def test_open_agent_starts_a_restricted_session_with_the_skill(monkeypatch, tmp_path):
     from xefm import agents
     app = _app(monkeypatch)
+    # The terminal session (the agent's own screen), which Claude Code
+    # otherwise is not: XeFM draws its conversation.
     app.config.AGENTS = [{"name": "Claude Code", "command": ["claude"],
-                          "preset": "claude-code"}]
+                          "preset": "claude-code", "terminal": True}]
     app.config.AGENT_RULES = "Leave ~/Taxes alone."
     monkeypatch.setattr(agents, "cache_root", lambda: tmp_path)
     monkeypatch.setattr(agents, "installed", lambda entry: True)
