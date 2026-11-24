@@ -888,3 +888,24 @@ def test_effort_and_fast_mode_outlive_a_restart(tmp_path):
     assert conv.pending_turns == 1 and conv.state == C.WORKING
     view._submit("/effort auto")
     assert conv.effort_choice == ""
+
+
+@pytest.mark.parametrize("preset", ["afx", "orthodox", "native", "vim"])
+def test_ctrl_grave_opens_screens_from_a_drawn_session_under_every_preset(tmp_path, preset):
+    # A preset's full table lists 'screens' before 'terminal.screens', both
+    # on Ctrl-`; the session's own action must win, or the key went to the
+    # message field and Screens never came up.
+    from xefm import keymap_presets as kp
+    from xefm.config import config_manager
+    saved = (config_manager.config, config_manager._key_bindings)
+    try:
+        config_manager.config = SimpleNamespace(KEY_BINDINGS=kp.table(preset))
+        config_manager._key_bindings = None
+        hits = []
+        panel, view = _plain_view(tmp_path, on_screens_request=lambda: hits.append(1))
+        from puikit.event import Event, EventType
+        panel.dispatch_event(Event(type=EventType.KEY, key="`", char="`",
+                                   modifiers=frozenset({"ctrl"})))
+        assert hits == [1] and view.input.text == ""
+    finally:
+        config_manager.config, config_manager._key_bindings = saved
