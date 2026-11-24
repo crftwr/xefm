@@ -159,7 +159,7 @@ def test_a_tool_call_its_permission_and_its_result():
     [tool] = [i for i in conv.items if i.kind == "tool"]
     assert tool.denied and tool.is_error and tool.result == "no"
     md = C.to_markdown(conv.items)
-    assert "**Bash** `ls` ✗ declined" in md
+    assert "::: bullet error\n**Bash** ✗ declined\n\n```console\n$ ls\n```" in md
 
 
 def test_a_withdrawn_question_and_an_interrupted_turn():
@@ -186,14 +186,16 @@ def test_the_transcript_reads_as_markdown():
     md = C.to_markdown(items)
     # The user's words on a panel, the agent's indented under them.
     assert md.startswith("::: box\nline one\nline two\n:::")
-    assert "::: indent\nReply with `code`\n:::" in md
+    assert "::: bullet muted\nReply with `code`\n:::" in md
+    assert "::: bullet success\n**Read**" in md  # a tool that worked: green
     # A fence the text itself holds cannot close the panel.
     assert C.to_markdown([C.Item("user", "a\n:::\nb")]).startswith(":::: box\na\n:::\nb\n::::")
     assert "Reply with `code`" in md
     assert "**Read** `/a/b.txt` ✓" in md
     assert "_… 14 more lines_" in md
     assert "```diff\n- x\n+ y\n```" in md
-    assert "~~~\n```fence```\n~~~" in md  # a result's own fence cannot close it
+    # A command and its output in one block; a fence it prints cannot close it.
+    assert "~~~console\n$ cat x\n```fence```\n~~~" in md  # a result's own fence cannot close it
     assert "_Thinking…_" in md
 
 
@@ -505,3 +507,12 @@ def test_the_transcript_shows_questions_and_answers():
     item.input["answers"] = {"Which?": "B", "And?": "X, mine"}
     md = C.tool_markdown(item)
     assert "→ **B**" in md and "→ **X, mine**" in md
+
+
+def test_bash_is_one_block_with_its_purpose_in_the_head():
+    item = C.Item("tool", name="Bash", input={"command": "cd x\nls", "description": "List x"},
+                  result="a\nb", tool_id="t")
+    md = C.tool_markdown(item)
+    assert md.startswith("**Bash** List x ✓\n\n```console\n$ cd x\n> ls\na\nb\n```")
+    running = C.Item("tool", name="Bash", input={"command": "sleep 1"}, open=True)
+    assert C.to_markdown([running]).startswith("::: bullet accent\n**Bash** …")

@@ -619,8 +619,24 @@ def _inline(text: str) -> str:
     return f"{ticks}{pad}{text}{pad}{ticks}"
 
 
+def _role(item: Item) -> str:
+    """The color of an item's dot in the transcript: a tool that worked is
+    green, one that failed or was declined red, one still running the
+    accent; text and notices muted."""
+    if item.kind == "error":
+        return "error"
+    if item.kind != "tool":
+        return "muted"
+    if item.denied or item.is_error:
+        return "error"
+    if item.open and item.result is None:
+        return "accent"
+    return "success"
+
+
 def _fenced(name: str, text: str) -> str:
-    """``text`` in a MarkdownView fenced container (``::: box`` ...): its
+    """``text`` in a MarkdownView fenced container (``::: box`` ...; ``name``
+    may carry an argument, ``bullet success``): its
     fence longer than any run of colons the text holds, so none closes it."""
     runs = [len(m.group(0)) for m in re.finditer(r":{3,}", text)]
     fence = ":" * max([3] + [n + 1 for n in runs])
@@ -651,6 +667,23 @@ def _questions_markdown(item: Item) -> str:
     return f"**Question**{mark}\n\n" + "\n\n".join(parts)
 
 
+def _bash_markdown(item: Item, mark: str) -> str:
+    """A shell command and what it printed as one block, the way a terminal
+    shows them: the command after a ``$`` prompt, its output under it. The
+    head says what the command is for when the agent said so."""
+    desc = item.input.get("description")
+    head = "**Bash**" + (f" {desc.strip()}" if isinstance(desc, str) and desc.strip() else "")
+    lines = item.input["command"].rstrip("\n").split("\n")
+    body = "\n".join(["$ " + lines[0]] + ["> " + l for l in lines[1:]])
+    more = 0
+    if item.result and not item.denied:
+        shown, more = _clip(item.result, RESULT_LINES)
+        if shown.strip():
+            body += "\n" + shown
+    note = f"\n\n_… {more} more lines_" if more else ""
+    return f"{head} {mark}\n\n{_code(body, 'console')}{note}"
+
+
 def tool_markdown(item: Item) -> str:
     name = item.name or "tool"
     if name == ASK_USER_TOOL and isinstance(item.input.get("questions"), list):
@@ -664,6 +697,8 @@ def tool_markdown(item: Item) -> str:
         mark = "✗"
     else:
         mark = "✓"
+    if name == "Bash" and isinstance(item.input.get("command"), str):
+        return _bash_markdown(item, mark)
     head = f"**{name}**"
     if what:
         head += " " + _inline(what)
@@ -693,7 +728,8 @@ def tool_markdown(item: Item) -> str:
 
 def to_markdown(items: list[Item]) -> str:
     """The transcript's Markdown source: what the user wrote on a panel
-    (``::: box``), what the agent did indented under it (``::: indent``)."""
+    (``::: box``), each thing the agent did under it with a dot colored by
+    how it went (``::: bullet <role>``)."""
     out: list[str] = []
     for item in items:
         n = len(out)
@@ -713,5 +749,5 @@ def to_markdown(items: list[Item]) -> str:
             head = f"**Error:** {first}" if item.kind == "error" else f"_{first}_"
             out.append(head + ("\n\n" + _code(rest.strip()) if rest.strip() else ""))
         if len(out) > n:
-            out[-1] = _fenced("indent", out[-1])
+            out[-1] = _fenced(f"bullet {_role(item)}", out[-1])
     return "\n\n".join(out) + "\n"

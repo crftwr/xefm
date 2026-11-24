@@ -197,8 +197,11 @@ ruled out). ACP stays the candidate for other agents.
   turn (`pending_turns`: a message sent mid-turn queues in the CLI and gets
   its own `result`). `to_markdown` renders the items: a user message in
   a MarkdownView `::: box` (a rounded panel; a fill in a terminal, its fence
-  longer than any colon run in the text), everything the agent did in a
-  `::: indent`. A tool result is clipped to `RESULT_LINES` and fenced with
+  longer than any colon run in the text), each thing the agent did in a
+  `::: bullet <role>` whose dot is green for a tool that worked, red for one
+  that failed or was declined, the accent while it runs, muted for text. A
+  Bash call is one `console` block: the command after `$` (continuation lines
+  after `>`), its output under it, the agent's `description` in the head. A tool result is clipped to `RESULT_LINES` and fenced with
   `~~~` when it holds a backtick fence itself. `ChatView` keeps about 5% of
   the width as a margin on each side.
 - Permissions: `--permission-prompt-tool stdio` makes the CLI send a
