@@ -400,7 +400,10 @@ class ChatView(FocusContainer, Widget):
         self.transcript.style = Style(fg=text_fg, bg=bg)
         ty = head_h + (0.5 if ctx.pixel_layout else 0.0)
         th = max(1.0, top_of_input - ty - (0.5 if ctx.pixel_layout else 0.0))
-        self._transcript_rect = Rect(pad_x + 1, ty, in_w, th)
+        # The transcript spans the window; the margin is its padding, so the
+        # scrollbar sits at the edge, outside the reading column.
+        self.transcript.pad_x = pad_x + 1
+        self._transcript_rect = Rect(0.0, ty, wu, th)
         r = self._transcript_rect
         ctx.draw_child(self.transcript, r.x, r.y, r.w, r.h,
                        hints={"focused": False, "bg": bg})
