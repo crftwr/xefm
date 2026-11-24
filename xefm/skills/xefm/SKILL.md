@@ -64,8 +64,9 @@ beside a user looking at XeFM's window, and `xefmctl` talks to that XeFM:
 3. Show results in XeFM, not as long terminal output: `--show` on a search,
    `xefmctl pane open-list -`, `view`, `diff`, `show-markdown`.
 4. Change files only with `xefmctl copy|move|trash --wait`, so the user
-   confirms each change in XeFM; never delete for good. Ask with `xefmctl
-   confirm|choose|input`.
+   confirms each change in XeFM; never delete for good. `fetch` to a file you
+   name, `terminal-session start` and opening files with other programs are
+   confirmed too. Ask with `xefmctl confirm|choose|input`.
 5. To use an action, `xefmctl action list`, then `action show NAME` (with an
    extension's guide for agents, when it has one), then `xefmctl invoke NAME`
    after `pane select` / `pane cd` put the operands in place.
@@ -74,7 +75,8 @@ beside a user looking at XeFM's window, and `xefmctl` talks to that XeFM:
 your shell and waits until the shell exits. `xefmctl state` then says *XeFM
 is suspended* (`"suspended": true` with `--json`), and for the whole session
 only the commands that read work: `state`, `pane path|entries|focused|selected`,
-`entries`, the searches (`--show` is ignored), `read`, `fetch`, `action list|show`.
+`entries`, the searches (`--show` is ignored), `read`, `fetch` (what would have
+to be asked first is refused), `action list|show`.
 Everything that needs XeFM's screen - pane changes, `view`, `diff`,
 `show-markdown`, `confirm|choose|input`, `message`, `invoke`, `copy|move|trash`
 - ends with exit status 6. Don't retry it. Instead, show results in the

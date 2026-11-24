@@ -25,7 +25,7 @@ XeFM が起動したシェル（サブシェル、[ターミナルセッショ�
 | `xefmctl index-search QUERY [URL...]` | OS のインデックス。macOS は Spotlight、Windows は Windows Search |
 | `xefmctl find-similar --method METHOD [URL...]` | [似たファイル](FIND_SIMILAR_FILES_FEATURE.ja.md)のグループ（`identical`、`image`、`video`、`audio`。`--threshold`）。1 行に 1 ファイルを、グループの番号付きで |
 | `xefmctl path-scheme list` | ローカルディスクのほかに XeFM が開ける場所の種類。`PATH_SCHEMES` と拡張機能が加えたものも |
-| `xefmctl read URL` / `fetch URL [LOCAL]` | ファイルのテキスト。ローカルディスクへのファイルのコピー |
+| `xefmctl read URL` / `fetch URL [LOCAL]` | ファイルのテキスト。ローカルディスクへのファイルのコピー（エージェントが `LOCAL` を指定したときは先に確認する） |
 | `xefmctl view FILE [--line N]` | `FILE` をファイルマネージャーの画面の XeFM のビューアーで開く。そこに開いていたビューアーと入れ替わる |
 | `xefmctl diff A B` | 2 つのファイル、または 2 つのフォルダーを比べる |
 | `xefmctl show-markdown FILE` | Markdown を XeFM のビューアーで表示。`-` で標準入力から読む |
@@ -39,7 +39,7 @@ XeFM が起動したシェル（サブシェル、[ターミナルセッショ�
 | `xefmctl action list` / `action show NAME` | すべてのアクションと、その説明とキー。ひとつのアクションの詳細 |
 | `xefmctl invoke NAME` | ファイルマネージャーの画面でキーを押したのと同じようにアクションを実行する |
 | `xefmctl screen list` / `screen show ID` | 画面の一覧。画面を表示する（ファイルマネージャーは `files`） |
-| `xefmctl terminal-session list` / `start` / `close ID` | XeFM のターミナルセッション |
+| `xefmctl terminal-session list` / `start` / `close ID` | XeFM のターミナルセッション（エージェントの `start` は先に確認する） |
 | `xefmctl help [COMMAND]` | すべてのコマンド、またはひとつのコマンドの詳細 |
 
 各コマンドのオプションは `xefmctl help COMMAND` で確認できます。

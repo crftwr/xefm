@@ -209,9 +209,13 @@ Rules can be ignored, so two things hold whatever the agent decides:
   or declined.
   `xefmctl delete` is refused (the trash can be undone), and so is the
   `delete_permanently` action. An action the agent runs with `xefmctl
-  invoke` asks first too, and deletes to the trash. The first time the agent
-  reads somewhere off this computer's disk - a server, cloud storage, an
-  archive - XeFM asks whether it may, for the rest of the session.
+  invoke` asks first too, and deletes to the trash. Copying a file to a place
+  the agent names (`xefmctl fetch`) is asked, and so is running a program:
+  starting a terminal session, which is then as limited as the agent's own,
+  or opening files with other programs. Your own actions and an extension's
+  do what they do. The first time the agent reads a file off this computer's
+  disk - on a server, in cloud storage, in an archive - or searches inside
+  files there, XeFM asks whether it may, for the rest of the session.
 - **The agent's own shell is limited**:
   the commands that delete or move files (`rm`, `rmdir`, `mv`, `unlink`,
   `shred`, `git clean`, and for Copilot and Antigravity PowerShell's

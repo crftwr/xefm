@@ -34,7 +34,7 @@ action that opens it (`find-files`, `find-in-files`).
 | `xefmctl index-search QUERY [URL...]` | The OS index: Spotlight on macOS, Windows Search on Windows |
 | `xefmctl find-similar --method METHOD [URL...]` | Groups of [similar files](FIND_SIMILAR_FILES_FEATURE.md) (`identical`, `image`, `video`, `audio`; `--threshold`), one line per file with its group's number |
 | `xefmctl path-scheme list` | The kinds of place XeFM can open besides the local disk, with the ones `PATH_SCHEMES` and extensions add |
-| `xefmctl read URL` / `fetch URL [LOCAL]` | A file's text; a copy of the file on the local disk |
+| `xefmctl read URL` / `fetch URL [LOCAL]` | A file's text; a copy of the file on the local disk (asked first when an agent names `LOCAL`) |
 | `xefmctl view FILE [--line N]` | Opens `FILE` in XeFM's viewer on the file manager's screen, in place of a viewer already open there |
 | `xefmctl diff A B` | Compares two files, or two folders |
 | `xefmctl show-markdown FILE` | Shows Markdown in XeFM's viewer; `-` reads it from standard input |
@@ -48,7 +48,7 @@ action that opens it (`find-files`, `find-in-files`).
 | `xefmctl action list` / `action show NAME` | Every action, with what it does and its keys; one action in full |
 | `xefmctl invoke NAME` | Runs an action, as its key would on the file manager's screen |
 | `xefmctl screen list` / `screen show ID` | The screens; shows one (`files` for the file manager) |
-| `xefmctl terminal-session list` / `start` / `close ID` | XeFM's terminal sessions |
+| `xefmctl terminal-session list` / `start` / `close ID` | XeFM's terminal sessions (an agent's `start` is asked first) |
 | `xefmctl help [COMMAND]` | Every command, or one in full |
 
 `xefmctl help COMMAND` lists each command's options.
