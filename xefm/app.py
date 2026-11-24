@@ -7997,11 +7997,24 @@ class XeFMApp:
               for i, (name, _theme) in enumerate(self.themes)],
             title="Theme")
 
+    def _has_screens(self) -> bool:
+        """Whether there are screens to switch between: always in the desktop
+        app (terminal sessions); in terminal mode, which hands its terminal
+        over (#900), only with an AI agent XeFM draws set up (#959)."""
+        if is_desktop_mode():
+            return True
+        config = getattr(self, "config", None)
+        if config is None:
+            return False
+        from xefm import agents
+        return any(agents.drawn(e) for e in agents.entries(config))
+
     def _terminal_menu(self, sc) -> list:
-        """Tools > Terminal Sessions, in the desktop app only: terminal mode
-        hands its terminal over and has no sessions to show (#900). It is
-        enabled with no session too - it starts one."""
-        if not is_desktop_mode():
+        """Tools > Screens: in the desktop app, and in terminal mode with an
+        AI agent XeFM draws (#959); terminal mode otherwise hands its
+        terminal over and has no screens to show (#900). It is enabled with
+        no session too - it starts one."""
+        if not self._has_screens():
             return []
         return [
             MenuItem("Screens…", on_select=self.screens,
@@ -14036,9 +14049,10 @@ class XeFMApp:
         "increase_font_size": lambda self: is_desktop_mode(),
         "decrease_font_size": lambda self: is_desktop_mode(),
         "reset_font_size": lambda self: is_desktop_mode(),
-        # Terminal sessions are the desktop app's: terminal mode hands its
-        # terminal over instead (#900).
-        "screens": lambda self: is_desktop_mode(),
+        # Terminal sessions are the desktop app's (terminal mode hands its
+        # terminal over, #900); in terminal mode the screens are the AI
+        # agent conversations XeFM draws (#959).
+        "screens": lambda self: self._has_screens(),
     }
 
     def _help_entries(self, entries):

@@ -274,10 +274,15 @@ def bindings() -> dict:
         # XeFM's terminal's own keys (#900): desktop chords only, set below,
         # since a program in it needs every key a terminal can deliver.
         'terminal.close': [],
-        # Terminal sessions (#900), the desktop app's: terminal mode hands its
-        # terminal over and has none. The desktop's Ctrl-` is set below.
-        'screens': [],
-        'terminal.screens': [],
+        # The screen switcher (#900) on Ctrl-`, VS Code's terminal toggle,
+        # from the panes and from inside a session alike. In terminal mode the
+        # screens are the AI agent conversations XeFM draws (#959), and
+        # Ctrl-` reaches XeFM from a terminal that sends it as CSI 96;5u
+        # (Ghostty, kitty, WezTerm; PuiKit 1.32.2). Elsewhere it never
+        # arrives - many terminals send Ctrl-Space's byte for it, or nothing
+        # - and the command palette opens Screens.
+        'screens': ['Ctrl-GRAVE'],
+        'terminal.screens': ['Ctrl-GRAVE'],
         # AI agent sessions (AGENTS, #880). '>': the prompt an agent's CLI
         # shows (Claude Code's). A glyph, so no preset's type-ahead takes it,
         # and every terminal delivers it. ask_agent: Tools > Ask AI Agent.
@@ -532,10 +537,6 @@ def bindings() -> dict:
             # binds the palette itself without one.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Command-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Command-W']
-            # The screen switcher (#900) on Ctrl-`, VS Code's terminal toggle,
-            # from the panes and from inside a session alike.
-            KEY_BINDINGS['screens'] = ['Ctrl-GRAVE']
-            KEY_BINDINGS['terminal.screens'] = ['Ctrl-GRAVE']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
@@ -551,6 +552,4 @@ def bindings() -> dict:
             # key, since Ctrl-W is a shell's.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Ctrl-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Ctrl-Shift-W']
-            KEY_BINDINGS['screens'] = ['Ctrl-GRAVE']
-            KEY_BINDINGS['terminal.screens'] = ['Ctrl-GRAVE']
     return KEY_BINDINGS

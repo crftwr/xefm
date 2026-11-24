@@ -266,7 +266,7 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `context_menu_dir` | Open the context menu for the current directory | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` |
 | `programs` | Run an external program | `X` | — | — | — |
 | `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `screens` | Switch between the file manager and the terminal sessions | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `screens` | Switch between the file manager and the terminal sessions | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
 | `agent` | Open an AI agent session in this directory | `>` | `>` | `>` | `>` |
 | `ask_agent` | Ask an AI agent about the selection | — | — | — | — |
 | `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
@@ -279,9 +279,14 @@ not listed: find it in the menus or the command palette, or give it a key in
 
 These keys are the same under every preset unless a cell says otherwise. In
 every viewer `Esc` closes it, and `quit`, `help`, `isearch` and `edit_files`
-work there on their keys from the file list table, as does `screens` in the
-desktop app. Vim style also closes the
-text viewer with `q`.
+work there on their keys from the file list table, as does `screens`. Vim
+style also closes the text viewer with `q`.
+
+`` Ctrl-` `` (`screens`, `terminal.screens`) reaches XeFM in terminal mode
+only from a terminal that sends it as its own key - Ghostty, kitty and
+WezTerm do. Many others send nothing for it, or the byte of `Ctrl-Space`;
+open **Screens…** from the command palette there. In terminal mode the
+screens are the [AI agent conversations XeFM draws](AI_AGENT_SESSIONS_FEATURE.md#conversations-drawn-by-xefm).
 
 Orthodox and OS native give `isearch` no key in the file list, since typing
 a letter searches there. In the text viewer and the file diff viewer they use
@@ -403,7 +408,7 @@ program receives.
 | Action name | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | macOS app: `Cmd-W`<br>Windows app: `Ctrl-Shift-W` |
-| `terminal.screens` | Switch to the file manager or another terminal session | macOS app: `` Ctrl-` ``<br>Windows app: `` Ctrl-` `` |
+| `terminal.screens` | Switch to the file manager or another terminal session | `` Ctrl-` `` |
 | `command_palette` | Search the terminal's actions by name and run one | macOS app: `Cmd-Shift-P`<br>Windows app: `Ctrl-Shift-P` |
 
 ## Your own key bindings come on top
