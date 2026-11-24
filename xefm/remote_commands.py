@@ -214,7 +214,9 @@ COMMANDS: tuple[Command, ...] = (
     Command(("fetch",), "copy a file from anywhere XeFM can go to a local file, "
             "and print where", args=(Arg("url", path=True),
                                      Arg("local", "?", path=True, help="default: a temporary file")),
-            text="{path}"),
+            text="{path}",
+            details="In an AI agent's session, writing to LOCAL is asked in XeFM "
+                    "first; without it the copy goes to a new temporary folder."),
 
     # --- showing --------------------------------------------------------------------
     Command(("view",), "open a file in XeFM's viewer, on the file manager's screen",
@@ -311,7 +313,10 @@ COMMANDS: tuple[Command, ...] = (
     Command(("action", "show"), "what one action does, in full", args=(Arg("name"),),
             text="{text}"),
     Command(("invoke",), "run an action by name, as its key would on the file "
-            "manager's screen", CHANGE, args=(Arg("name"),), opts=(PANE,), text=""),
+            "manager's screen", CHANGE, args=(Arg("name"),), opts=(PANE,), text="",
+            details="In an AI agent's session, an action that runs other programs "
+                    "(open_with_os, open_items_with_os, sync_python_packages) is "
+                    "asked in XeFM first."),
 
     # --- screens and terminal sessions ---------------------------------------------
     Command(("screen", "list"), "the screens, the one shown first",
@@ -325,7 +330,9 @@ COMMANDS: tuple[Command, ...] = (
             args=(Arg("command", "*", help="the program and its arguments"),),
             opts=(Opt("--cwd", "DIR", path=True), Opt("--name", "NAME"),
                   Opt("--hidden", help="start it without showing it")),
-            text="{id}"),
+            text="{id}",
+            details="In an AI agent's session, asked in XeFM first; the new "
+                    "session is restricted as the agent's is."),
     Command(("terminal-session", "close"), "end a terminal session", WRITE,
             args=(Arg("id"),), text=""),
 

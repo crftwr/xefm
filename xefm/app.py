@@ -6032,17 +6032,21 @@ class XeFMApp:
     def _start_session(self, argv: list, *, cwd: str | None, env: dict, name: str,
                        named: bool = False,
                        shell: bool, on_done=None, show: bool = True,
-                       policy: str = "user"):
+                       policy: str | None = None):
         """Run ``argv`` as a new terminal session on a screen of its own, shown
         unless ``show`` is False (then it starts out of view). ``shell`` marks
         a shell (shell integration; its ``exit`` is never a failure once typed
         into) as opposed to a program; ``on_done(code)`` runs once the session ends.
+        ``policy`` is what it may do through ``xefmctl``: the user's, unless an
+        agent's session asked for it (:mod:`xefm.remote_dispatch`).
         The caller has checked :meth:`_terminal_ready`."""
         from puikit.panel import Rect
         from xefm import shell_integration
         from xefm.terminal_sessions import PROGRAM, SHELL, Session, next_id
         from xefm.text_viewer import viewer_layer_hints
         sid = next_id()
+        if policy is None:
+            policy = getattr(self, "_new_session_policy", "user")
         self._with_remote_env(env, str(sid), policy)
         program = os.path.splitext(os.path.basename(str(argv[0])))[0] if argv else ""
         if shell:

@@ -310,6 +310,21 @@ def test_a_program_session_reports_when_it_ends_shown_or_hidden(monkeypatch):
     assert done == [0] and len(app._sessions) == 0
 
 
+def test_a_session_an_agent_asked_for_has_its_policy(monkeypatch):
+    from xefm import remote_dispatch
+    app = _app(monkeypatch)
+    given = []
+    app._with_remote_env = lambda env, sid, policy="user": given.append(policy) or env
+    start = lambda **kw: app._start_session(["make"], cwd="/tmp", env={}, name="make",
+                                            shell=False, **kw)
+    start()
+    with remote_dispatch._session_policy(app, "agent"):
+        start()
+        start(policy="user")  # said outright
+    start()
+    assert given == ["user", "agent", "user", "user"]
+
+
 def test_a_failed_program_out_of_view_waits_for_the_user(monkeypatch):
     app = _app(monkeypatch)
     done = []

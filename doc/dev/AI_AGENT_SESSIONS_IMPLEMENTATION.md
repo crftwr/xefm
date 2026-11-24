@@ -160,9 +160,26 @@ answered from the rules, listed `xefm` and quoted a two-line request.
    - `invoke`: run with `AGENT_FORCED_SETTINGS` set on `app.config` (every
      `CONFIRM_*` on, `DELETE_TO_TRASH` on) for the synchronous part, where
      the actions read them.
-   - `read`, `fetch` outside the local disk: one `ctx.confirm` per session
-     (`app._remote_read_sessions`).
+   - `read`, `fetch`, `find-in-files` outside the local disk (a UNC path is
+     outside): one question per session (`app._remote_read_sessions`).
    - `terminal-session close` of another session: confirmed.
+   - `fetch` to a named file, `terminal-session start`, and `invoke` of
+     `AGENT_ASKED_ACTIONS` (they run programs and have no confirmation of
+     their own): `_ask_first`. The question shows all of the command or the
+     paths, with nothing unprintable in it, or the request is refused
+     (`ASK_LIMIT`, `ASK_ITEMS`). With the terminal handed over there is no
+     screen to ask on, so these are refused (exit 6).
+   - A session an agent starts gets the agent's policy
+     (`app._new_session_policy`, read by `_start_session`): with the user's,
+     a program in it could do through `xefmctl` what the agent may not.
+   - `fetch` without a name writes into a new temporary folder under
+     `_file_name`: a server's file name may hold what this OS takes for a
+     separator.
+
+   A command added to `remote_commands` that changes a file or runs a program
+   has to do one of these. `test/test_agent_restrictions.py` holds them.
+   An answer waiting for the user is acknowledged at once (`_late`), so the
+   client does not time out on any of them.
 
 An agent can still change files with its own tools where layer 1 does not
 reach (another CLI, an editor tool writing a file). Layer 2 holds for

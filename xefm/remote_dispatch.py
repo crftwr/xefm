@@ -23,6 +23,10 @@ it to :func:`handle`. The commands are described in
   ``CONFIRM_*`` settings say, ``delete`` and ``delete_permanently`` are
   refused, an action run with ``invoke`` gets the confirmations forced on and
   deletes to the trash, and the first read outside the local disk is asked.
+  Whatever else would change a file or run a program is asked first
+  (:func:`_ask_first`): ``fetch`` to a named file, ``terminal-session start``
+  (whose session keeps the agent's policy), an action that hands files to
+  other programs.
 
 Reads of the panes are answered even while terminal mode has its terminal
 handed over (the UI thread is parked in the child's wait and nothing else
@@ -70,6 +74,18 @@ SUSPENDED_MESSAGE = (
 #: Actions an agent's session may not invoke.
 AGENT_DENIED_ACTIONS = frozenset({"delete_permanently", "quit", "quit_app"})
 
+#: Actions an agent's session may invoke only once the user agrees, and what
+#: each would do: they run programs, and have no confirmation of their own.
+AGENT_ASKED_ACTIONS = {
+    "open_with_os": "open the item under the cursor with another program",
+    "open_items_with_os": "open the selected items with other programs",
+    "sync_python_packages": "install the Python packages ~/.xefm/requirements.txt lists",
+}
+
+#: The longest command line or path a question to the user shows. A longer
+#: one is refused: the user would be agreeing to what they cannot see.
+ASK_LIMIT = 2000
+
 #: Settings forced while an agent's session runs an action: every operation
 #: asks first, and a delete goes to the trash.
 AGENT_FORCED_SETTINGS = {
@@ -92,14 +108,23 @@ class Pending:
 
     def __init__(self) -> None:
         self._event = threading.Event()
-        self.answer: dict | None = None
+        self.answer: Any = None  # an answer, or an iterator of them
+        self._next: Pending | None = None
 
-    def set(self, answer: dict) -> None:
+    def set(self, answer: Any) -> None:
         if not self._event.is_set():
             self.answer = answer
             self._event.set()
+            if self._next is not None:
+                self._next.set(answer)
 
-    def wait(self) -> dict:
+    def forward(self, other: Pending) -> None:
+        """Give ``other`` this one's answer, when it comes."""
+        self._next = other
+        if self._event.is_set():
+            other.set(self.answer)
+
+    def wait(self) -> Any:
         self._event.wait()
         return self.answer or ok()
 
@@ -164,15 +189,15 @@ def handle(app, req: dict):
             if not started.is_set():
                 box["abandoned"] = True
                 return refuse("XeFM is busy; try again", BUSY)
-    if done.wait(ACK_AFTER):
-        return _finish(box["answer"])
-    return _late(done, box)
+    if done.wait(ACK_AFTER) and not isinstance(box["answer"], Pending):
+        return box["answer"]
+    return _late(done, box)  # still at it, or waiting for the user
 
 
 def _late(done, box):
-    """The answers of work still running on the UI thread: an empty one at
-    once, which tells the client XeFM has the request (it then waits as long
-    as it takes), then the work's own."""
+    """The answers of work still running on the UI thread, or waiting for the
+    user: an empty one at once, which tells the client XeFM has the request
+    (it then waits as long as it takes), then the work's own."""
     yield ok()
     done.wait()
     answer = _finish(box["answer"])
@@ -641,7 +666,8 @@ def _c_find_in_files(app, req):
                                                    cancel=cancel, **flags):
                 yield hit, {"path": str(hit["path"]), "line": hit["line"],
                             "text": hit["text"]}
-    return _stream(app, req, produce, mode="content", query=query, root=roots[0])
+    return _remote_read_allowed(app, req, roots, lambda: _stream(
+        app, req, produce, mode="content", query=query, root=roots[0]))
 
 
 def _c_index_search(app, req):
@@ -718,42 +744,79 @@ def _c_path_scheme_list(app, req):
 
 def _is_local(path) -> bool:
     from xefm import path_schemes
-    return not path_schemes.is_uri(str(path))
+    text = str(path)
+    if path_schemes.is_uri(text):
+        return False
+    if os.name == "nt":
+        # A UNC path is a server; the same form can also name a local drive.
+        text = text.replace("/", "\\")
+        return not text.startswith("\\\\") or (
+            text.startswith("\\\\?\\") and text[5:6] == ":")
+    return True
 
 
-def _remote_read_allowed(app, req, path, then) -> Any:
-    """Run ``then()`` once an agent's session may read ``path``: at once for
-    a local path or a session already allowed; after the user agrees for the
-    first read outside the local disk. Returns an answer or a Pending."""
-    if not _is_agent(req) or _is_local(path):
+def _shown_to_user(text) -> str:
+    """``text`` as a question shows it: nothing in it can pass for another
+    line, or turn the text around it."""
+    text = "".join(c if c.isprintable() else ascii(c)[1:-1] for c in str(text))
+    if len(text) > ASK_LIMIT:
+        raise _Refused("too long to show the user, who has to agree to it")
+    return text
+
+
+def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> Any:
+    """Run ``then()`` if the user agrees, for an agent's session; at once for
+    any other. Returns an answer or a Pending. Refused while terminal mode
+    has its terminal handed over: there is no screen to ask on."""
+    if not _is_agent(req):
+        return then()
+    if getattr(app, "_terminal_handed_over", False):
+        raise _Refused(SUSPENDED_MESSAGE, SUSPENDED)
+    pending = Pending()
+    came_from = [None]
+
+    def answered(yes: bool) -> None:
+        _go_back(app, came_from[0])
+        if not yes:
+            pending.set(refuse(declined, FAILED))
+            return
+        try:
+            answer = then()
+        except _Refused as exc:
+            answer = refuse(str(exc), exc.code)
+        except Exception as exc:
+            logger.error(f"xefmctl {req['cmd']} failed: {exc}")
+            answer = refuse(str(exc), FAILED)
+        if isinstance(answer, Pending):  # another question: its answer is ours
+            answer.forward(pending)
+        else:
+            pending.set(answer)
+    _, came_from[0] = _ui(app, lambda: app._user_ctx.confirm(
+        question, title=title, on_result=answered))
+    return pending
+
+
+def _remote_read_allowed(app, req, paths, then) -> Any:
+    """Run ``then()`` once an agent's session may read ``paths``: at once when
+    all are local or the session is already allowed; after the user agrees
+    for the first read outside the local disk. Returns an answer or a
+    Pending."""
+    far = [p for p in paths if not _is_local(p)]
+    if not _is_agent(req) or not far:
         return then()
     allowed = app.__dict__.setdefault("_remote_read_sessions", set())
     sid = str(req.get("session"))
     if sid in allowed:
         return then()
-    pending = Pending()
-    who = _asker(app, req)
 
-    def answered(yes: bool) -> None:
-        _go_back(app, came_from[0])
-        if not yes:
-            pending.set(refuse("the user did not allow reading outside the local disk",
-                               FAILED))
-            return
+    def agreed():
         allowed.add(sid)
-        try:
-            pending.set(then())
-        except _Refused as exc:
-            pending.set(refuse(str(exc), exc.code))
-        except Exception as exc:
-            pending.set(refuse(str(exc), FAILED))
-
-    came_from = [None]
-    _, came_from[0] = _ui(app, lambda: app._user_ctx.confirm(
-        f"{who} wants to read from {path}.\n\nAllow it to read places outside this "
-        f"computer's disk (servers, cloud storage, archives) for the rest of its "
-        f"session?", title="Allow reading?", on_result=answered))
-    return pending
+        return then()
+    return _ask_first(
+        app, req, f"{_asker(app, req)} wants to read from {_shown_to_user(far[0])}.\n\n"
+        f"Allow it to read places outside this computer's disk (servers, cloud "
+        f"storage, archives) for the rest of its session?", "Allow reading?", agreed,
+        declined="the user did not allow reading outside the local disk")
 
 
 def _c_read(app, req):
@@ -771,7 +834,7 @@ def _c_read(app, req):
         note = f"(only the first {limit} bytes)" if len(data) > limit else None
         text = data[:limit].decode("utf-8", errors="replace")
         return ok([{"path": str(path), "text": text}], **({"note": note} if note else {}))
-    return _remote_read_allowed(app, req, path, then)
+    return _remote_read_allowed(app, req, [path], then)
 
 
 def _c_fetch(app, req):
@@ -782,11 +845,8 @@ def _c_fetch(app, req):
     def then():
         if not src.exists() or src.is_dir():
             raise _Refused(f"no such file: {src}", FAILED)
-        if local:
-            dest = local
-        else:
-            folder = tempfile.mkdtemp(prefix="xefmctl-")
-            dest = os.path.join(folder, src.name or "file")
+        dest = local or os.path.join(tempfile.mkdtemp(prefix="xefmctl-"),
+                                     _file_name(src.name))
         with src.open("rb") as fin, open(dest, "wb") as fout:
             while True:
                 chunk = fin.read(1 << 20)
@@ -794,7 +854,24 @@ def _c_fetch(app, req):
                     break
                 fout.write(chunk)
         return ok([{"path": dest, "source": str(src)}])
-    return _remote_read_allowed(app, req, src, then)
+
+    def fetch():
+        if not local:  # a folder of its own in the temporary folder
+            return then()
+        there = (" The file there is replaced." if os.path.lexists(local) else "")
+        return _ask_first(
+            app, req, f"{_asker(app, req)} wants to copy {_shown_to_user(src)} to "
+            f"{_shown_to_user(local)}.{there}", "Allow fetch?", then,
+            declined="the user did not allow writing that file")
+    return _remote_read_allowed(app, req, [src], fetch)
+
+
+def _file_name(name: str) -> str:
+    """A name from anywhere (a server's, where a backslash or a colon is a
+    letter like any other) as one that stays in the folder it is put in."""
+    name = name.replace("\\", "/").rpartition("/")[2]
+    name = "".join("_" if c in '<>:"|?*' or ord(c) < 32 else c for c in name)
+    return name if name.strip(". ") else "file"
 
 
 # --- showing ------------------------------------------------------------------------------
@@ -1231,9 +1308,38 @@ def _c_invoke(app, req):
     def run():
         with (_forced(app) if agent else contextlib.nullcontext()):
             app._user_ctx.invoke(name)
-    _ui(app, run)
-    app.panel.render()
-    return ok()
+
+    def then():
+        _ui(app, run)
+        app.panel.render()
+        return ok()
+    if name not in AGENT_ASKED_ACTIONS:
+        return then()
+    items = _opened_items(app, name) if agent else []
+    listed = "".join(f"\n- {_shown_to_user(p)}" for p in items)
+    return _ask_first(app, req, f"{_asker(app, req)} wants to "
+                      f"{AGENT_ASKED_ACTIONS[name]}.{chr(10) if listed else ''}{listed}",
+                      f"Allow {name}?", then, declined=f"the user did not allow {name}")
+
+
+#: The most items a question lists; more are refused.
+ASK_ITEMS = 20
+
+
+def _opened_items(app, name: str) -> list[str]:
+    """What ``open_with_os`` or ``open_items_with_os`` would open, for the
+    question."""
+    if name not in ("open_with_os", "open_items_with_os"):
+        return []
+    pane = app._user_ctx.pane
+    if name == "open_with_os":
+        entries = [pane.focused] if pane.focused is not None else []
+    else:
+        entries = pane.selected_or_focused()
+    if len(entries) > ASK_ITEMS:
+        raise _Refused(f"too many items to show the user, who has to agree to opening "
+                       f"them (at most {ASK_ITEMS})")
+    return [str(e.path) for e in entries]
 
 
 # --- screens and terminal sessions ---------------------------------------------------------------
@@ -1269,9 +1375,41 @@ def _c_session_start(app, req):
         raise _Refused("terminal sessions are only in the desktop app", FAILED)
     command = req["args"].get("command") or None
     opts = req["opts"]
-    session = app._user_ctx.start_terminal_session(
-        command, cwd=opts.get("cwd"), name=opts.get("name"), show=not opts.get("hidden"))
-    return ok([{"id": str(session.id), "name": session.name}])
+
+    def then():
+        with _session_policy(app, str(req.get("policy") or USER)):
+            session = app._user_ctx.start_terminal_session(
+                command, cwd=opts.get("cwd"), name=opts.get("name"),
+                show=not opts.get("hidden"))
+        return ok([{"id": str(session.id), "name": session.name}])
+    if not _is_agent(req):
+        return then()
+    what = f"run this in a new terminal session:\n\n{_shown_to_user(_line(command))}" \
+        if command else "start a shell in a new terminal session."
+    where = f"\n\nin {_shown_to_user(opts['cwd'])}" if opts.get("cwd") else ""
+    return _ask_first(app, req, f"{_asker(app, req)} wants to {what}{where}",
+                      "Allow terminal session?", then,
+                      declined="the user did not allow the terminal session")
+
+
+def _line(argv: list[str]) -> str:
+    if os.name == "nt":
+        import subprocess
+        return subprocess.list2cmdline(argv)
+    import shlex
+    return shlex.join(argv)
+
+
+@contextlib.contextmanager
+def _session_policy(app, policy: str):
+    """Sessions started while held get ``policy``: one an agent starts is as
+    restricted as the agent."""
+    before = getattr(app, "_new_session_policy", USER)
+    app._new_session_policy = policy
+    try:
+        yield
+    finally:
+        app._new_session_policy = before
 
 
 def _c_session_close(app, req):
