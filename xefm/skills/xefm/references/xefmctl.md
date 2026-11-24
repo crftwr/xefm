@@ -208,6 +208,8 @@ a file's text, anywhere XeFM can go.
 `xefmctl fetch URL [LOCAL]`
 
 copy a file from anywhere XeFM can go to a local file, and print where.
+
+In an AI agent's session, writing to LOCAL is asked in XeFM first; without it the copy goes to a new temporary folder.
 - `LOCAL`: default: a temporary file
 
 ## Showing
@@ -400,6 +402,8 @@ what one action does, in full.
 `xefmctl invoke NAME [--pane PANE]`
 
 run an action by name, as its key would on the file manager's screen.
+
+In an AI agent's session, an action that runs other programs (open_with_os, open_items_with_os, sync_python_packages) is asked in XeFM first.
 - `--pane PANE`: the pane: active (the default), other, left or right
 - *Uses XeFM's screen.*
 
@@ -429,6 +433,8 @@ XeFM's terminal sessions.
 `xefmctl terminal-session start [COMMAND...] [--cwd DIR] [--name NAME] [--hidden]`
 
 start a terminal session (a shell by default).
+
+In an AI agent's session, asked in XeFM first; the new session is restricted as the agent's is.
 - `COMMAND`: the program and its arguments
 - `--cwd DIR`: 
 - `--name NAME`: 
