@@ -120,8 +120,14 @@ successor) appends `--add-dir <workspace>`, `--settings <settings file>`
 and `-i <request>`. Antigravity has no option for a skills folder or for
 system-prompt text, but it reads a workspace's `AGENTS.md` (always on, no
 frontmatter) and `.agents/skills/`, and a folder added with `--add-dir`
-counts: `prepare` writes `sessions/antigravity/` with the rules as
-`AGENTS.md` and a copy of the skill under `.agents/skills/xefm/`.
+counts: `prepare` writes `sessions/antigravity-<hash of the folder>/` with the
+rules as `AGENTS.md` and a copy of the skill under `.agents/skills/xefm/`
+(`sessions/antigravity-drawn/` for a drawn session). With such a folder its
+shell starts in whichever workspace folder sorts first by path, and `~/.xefm`
+sorts before nearly all (1.5.16, measured on Windows, #1001); over ACP it
+starts in the session's. No order of `--add-dir` changes that, so a terminal
+session's rules name its folder (`_FOLDER_RULES`) and say to change to it: hence
+one rules folder for each. It is up to the model to follow them.
 `--settings` takes a session-only settings JSON (inline or a file; it is in
 `agy --help` though not in the online reference); a restricted entry gets
 `ANTIGRAVITY_DEFAULT_SETTINGS`, `permissions.deny` of `command(<name>)` for

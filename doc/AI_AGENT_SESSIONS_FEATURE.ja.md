@@ -129,7 +129,7 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 
 `codex` プリセットはセッションの間 Codex の `developer_instructions` を設定するので、`~/.codex/config.toml` に書いたものはそこでは使われません。どのセッションにも伝えたいことは `AGENT_RULES`（または Codex 自身の `AGENTS.md`）に書いてください。
 
-ターミナルセッションでは、Copilot と Antigravity は、あるフォルダーで初めて起動したときに、そのフォルダーを信頼するかどうかを尋ねます。セッションの中で答えてください。
+ターミナルセッションでは、Copilot と Antigravity は、あるフォルダーで初めて起動したときに、そのフォルダーを信頼するかどうかを尋ねます。セッションの中で答えてください。Antigravity は、シェルのコマンドを、あなたのフォルダーではなく、XeFM が規則を置いたフォルダーで実行することがあります。XeFM は、どのフォルダーがあなたのものかを Antigravity に伝えます。XeFM が描く会話では、これは起きません。
 
 `config.py` に自分の `AGENTS` がある場合は、そちらが使われます。Codex、Copilot、Antigravity を使うには、その中にその行を加えてください。
 

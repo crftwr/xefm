@@ -6203,19 +6203,19 @@ class XeFMApp:
                            f"(not found on PATH)")
             self.panel.render()
             return
+        pane = self.active_pane()
+        env, cwd = self._program_env(pane)
+        if pane.get("virtual") or path_schemes.is_uri(str(cwd)):
+            cwd = os.path.expanduser("~")  # an agent works on the local disk
         try:
-            values = agents.prepare(self.config, entry)
+            values = agents.prepare(self.config, entry, cwd=str(cwd))
         except OSError as exc:
             self.log_info(f"{entry['name']}: could not prepare the session: {exc}")
             self.panel.render()
             return
         argv = agents.argv(entry, values, prompt)
-        pane = self.active_pane()
-        env, cwd = self._program_env(pane)
         env.update(entry["env"])
         env.update(agents.session_env(entry, values, env))
-        if pane.get("virtual") or path_schemes.is_uri(str(cwd)):
-            cwd = os.path.expanduser("~")  # an agent works on the local disk
         policy = AGENT if entry["restrict"] else USER
         if agents.drawn(entry):
             self._start_agent_chat(entry, values, cwd=str(cwd), env=env,

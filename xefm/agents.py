@@ -33,8 +33,9 @@ supported here; another agent CLI is configured with placeholders in its
 
 Antigravity has no option for a skills folder or system-prompt text, but
 reads a workspace's ``AGENTS.md`` and ``.agents/skills/``, and ``--add-dir``
-adds a workspace folder: XeFM writes one holding both. Its deny rules go in
-a session-only settings file (``--settings``).
+adds a workspace folder: XeFM writes one holding both. Its shell may start in
+that folder, so the rules there name the session's (#1001). Its deny rules go
+in a session-only settings file (``--settings``).
 
 Copilot loads the same plugin folder (``--plugin-dir``), denies commands with
 ``--deny-tool``, and takes the rules as an instructions file
@@ -56,6 +57,7 @@ each the way that mode takes them (:func:`chat_argv`, :func:`protocol`).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -284,11 +286,22 @@ def cache_root() -> _FsPath:
     return _FsPath(config_manager.config_dir) / "cache" / "agents"
 
 
+#: What Antigravity's rules say in a terminal session, after everyone's.
+_FOLDER_RULES = """
+The session's folder is {folder}
+
+Work there: it is what "here", "this folder" and a relative path mean. Your
+shell may start in another of your workspace folders, the one with these rules,
+which is XeFM's own and not for work. So begin every shell command by changing
+to the session's folder, and give file tools absolute paths.
+"""
+
+
 def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
-            version: str | None = None) -> dict:
+            version: str | None = None, cwd: str | None = None) -> dict:
     """Write what the session is handed - the skill (as a plugin folder),
     the rules and, for Claude Code, its settings - and return the
-    placeholders' values."""
+    placeholders' values. ``cwd`` is the session's folder."""
     from xefm import extensions as ext
     version = version or ext.skill_version()
     root = _FsPath(root) if root is not None else cache_root()
@@ -336,8 +349,21 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     extra = {}
     if entry.get("preset") == ANTIGRAVITY:
+        folder = f"antigravity{apart}"
+        if cwd and not drawn(entry):
+            # Its shell starts in whichever workspace folder sorts first, and
+            # ~/.xefm sorts before nearly all (1.5.16, #1001); over ACP it
+            # starts in the session's. One folder for each session folder, so
+            # that two sessions do not share a rule that names one of them.
+            folder += "-" + hashlib.sha256(
+                os.path.normcase(cwd).encode("utf-8", "surrogatepass")).hexdigest()[:16]
+            # As JSON: a folder's name may hold a line break, and is no rule.
+            # With slashes: a model may take a backslash for an escape.
+            name = json.dumps(_FsPath(cwd).as_posix(), ensure_ascii=False)
+            told += _FOLDER_RULES.format(
+                folder=name.encode("utf-8", "backslashreplace").decode("utf-8"))
         extra["workspace_dir"] = str(_antigravity_workspace(
-            session_dir / f"antigravity{apart}", skill, told))
+            session_dir / folder, skill, told))
     return {**extra,
         "{plugin_dir}": str(plugin),
         "{skills_dir}": str(plugin / "skills"),
