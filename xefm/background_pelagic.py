@@ -53,6 +53,7 @@ Design, measurements and implementation notes:
 from __future__ import annotations
 
 import math
+import os
 import re
 from dataclasses import replace
 
@@ -855,11 +856,66 @@ def _tables() -> str:
                           sun_air=_f3(air), sun_water=_f3(water))
 
 
+#: xefm#892 investigation only (never merge): the scene with one part taken out,
+#: as (text, replacement) edits of :data:`BODY`. ``quiet`` is the scene unchanged;
+#: the repro tool draws it over a stretch with no turtle.
+VARIANTS: dict[str, tuple[tuple[str, str], ...]] = {
+    "shipped": (),
+    "quiet": (),
+    # No turtle at all: neither the march nor the shading.
+    "no-turtle": (("if (T.on < 0.5) return T;", "T.on = 0.0; return T;"),),
+    # The turtle is marched as always, but a hit is a flat colour: turtleShade
+    # never runs.
+    "turtle-flat": (("bg = turtleShade(ro + rd * tT, rd, TU, t, W);",
+                     "bg = float3(0.1, 0.08, 0.05);"),),
+    "no-jellyfish": (("int count = presence > 0.003 ? JELLYFISH : 0;", "int count = 0;"),),
+    # Bells only: no tentacles and no oral arms.
+    "no-tentacles": (("if (sb.y > 0.0 && sb.x < tEnd) {", "if (false) {"),),
+    # The same picture, with each joint computed where it is used instead of kept
+    # in the local arrays tc[9] / ac[7] that are indexed by a loop variable.
+    "no-arrays": (
+        ("float3 tc[9]; tc[0] = j.c + rimC;", ""),
+        ("LOOP for (int s = 1; s <= 8; s++) { if (s > NS) break; "
+         "tc[s] = trail(j, j.tl * float(s) / float(NS), fi) + rimC; }", ""),
+        ("float3 ac[7]; ac[0] = j.c + j.u * (S.z * 0.5) * R;", ""),
+        ("LOOP for (int s = 1; s <= 6; s++) ac[s] = trail(j, j.al * float(s) / 6.0, fi) "
+         "+ j.u * (S.z * 0.5) * R;", ""),
+        ("float3 ax = raySeg(ro, rd, tc[s - 1], tc[s]);",
+         "float3 tc0 = trail(j, j.tl * fq, fi) + rimC, tc1 = trail(j, j.tl * fs, fi) + rimC;\n"
+         "            float3 ax = raySeg(ro, rd, tc0, tc1);"),
+        ("prev = tc[0] + rad * S.w * R;", "prev = tc0 + rad * S.w * R;"),
+        ("prev = tc[s - 1] + (rad * spq", "prev = tc0 + (rad * spq"),
+        ("float3 cur = tc[s] + (rad * spread", "float3 cur = tc1 + (rad * spread"),
+        ("float3 prev = ac[0] + rad * 0.08 * R;",
+         "float3 prev = j.c + j.u * (S.z * 0.5) * R + rad * 0.08 * R;"),
+        ("float3 cur = ac[s] + (rad * (0.10",
+         "float3 cur = trail(j, j.al * fs, fi) + j.u * (S.z * 0.5) * R + (rad * (0.10"),
+    ),
+}
+
+
+def _variant_body(name: str) -> str:
+    if name not in VARIANTS:
+        raise ValueError(f"XEFM_PELAGIC_VARIANT: {name!r} is not one of "
+                         + ", ".join(VARIANTS))
+    text = BODY
+    for old, new in VARIANTS[name]:
+        if text.count(old) != 1:
+            raise ValueError(f"variant {name}: {text.count(old)} matches of {old!r}")
+        text = text.replace(old, new)
+    return text
+
+
 def source(dialect: str, jellyfish=DEFAULT_JELLYFISH, exposure=DEFAULT_EXPOSURE) -> str:
     """The scene's source in ``dialect`` with the options baked in."""
     text = (_OPTIONS.format(jellyfish=int(jellyfish), exposure=repr(float(exposure)))
-            + _tables() + BODY)
-    return _dialect(text, dialect) + (_ENTRY_MSL if dialect == "msl" else _ENTRY_HLSL)
+            + _tables() + _variant_body(os.environ.get("XEFM_PELAGIC_VARIANT") or "shipped"))
+    entry = _ENTRY_MSL if dialect == "msl" else _ENTRY_HLSL
+    # Investigation only: where the scene's clock starts, in seconds.
+    offset = float(os.environ.get("XEFM_PELAGIC_OFFSET") or 0.0)
+    if offset:
+        entry = entry.replace("time + START", f"time + START + {offset!r}")
+    return _dialect(text, dialect) + entry
 
 
 #: The lens, matched against the prototype's post pass on its own HDR frames
