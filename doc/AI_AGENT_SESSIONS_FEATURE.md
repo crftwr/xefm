@@ -134,7 +134,10 @@ mode you set stay set if the agent is started again.
   your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of
   command, for the rest of this session; nothing is written to your
   settings), where the agent offers it, or **Deny**. The question shows the
-  whole command, or the lines an edit would change. When the agent asks you to choose between options,
+  whole command, or the lines an edit would change.
+  No button is selected at first, so an Enter or a Space you were typing
+  answers nothing: choose with the Left or Right key and press Enter, click a
+  button, or press Esc to deny. When the agent asks you to choose between options,
   XeFM shows each question with its options - one to pick, or checkboxes
   where several may be chosen - and a field for an answer of your own. The confirmations of
   [What the agent may not do](#what-the-agent-may-not-do) apply as in any
@@ -142,6 +145,7 @@ mode you set stay set if the agent is started again.
 - **Plans.** In plan mode Claude Code and Codex end with a plan for you to approve:
   **Approve** (it goes on, asking before tools as usual), **Approve, Accept
   Edits** (file changes then go ahead without asking), or **Keep Planning**.
+  No button is selected at first here either, and Esc keeps planning.
 - **Back to the session.** **AI Agent Here** in the same folder goes back to
   the session there instead of starting another; **Screens…** lists it too,
   in terminal mode as well. While you are away, the status bar says when the
@@ -216,8 +220,9 @@ Rules can be ignored, so two things hold whatever the agent decides:
   do what they do. The first time the agent reads a file off this computer's
   disk - on a server, in cloud storage, in an archive - or searches inside
   files there, XeFM asks whether it may, for the rest of the session. All of
-  these confirmations start on **Cancel**, so that an Enter you typed for
-  something else does not agree to one.
+  these confirmations start with no button selected, so that an Enter you typed
+  for something else neither agrees to one nor turns it down: choose with the
+  Left or Right key and press Enter, click a button, or press Esc to cancel.
 - **The agent's own shell is limited**:
   the commands that delete or move files (`rm`, `rmdir`, `mv`, `unlink`,
   `shred`, `git clean`, and for Copilot and Antigravity PowerShell's

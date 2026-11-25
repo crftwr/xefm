@@ -25,7 +25,10 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.32.1 is the floor because a MarkdownView lays its text out again after a
+# 1.33.0 is the floor because a message box can open with no button selected
+# (default=None, puikit#244): an AI agent's questions do, so that an Enter typed
+# for something else is not their answer. Hard: on 1.32.1 they do not open.
+# 1.32.1 was the floor before because a MarkdownView lays its text out again after a
 # theme switch (puikit#242): the AI agent conversation, and the Markdown
 # viewer, came back in the previous theme's colors. Soft: on 1.32.0 they show
 # the old colors until their text changes.
@@ -330,7 +333,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.32.1
+puikit>=1.33.0
 pygments
 boto3
 watchdog

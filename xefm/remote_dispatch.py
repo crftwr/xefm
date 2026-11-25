@@ -26,8 +26,8 @@ it to :func:`handle`. The commands are described in
   Whatever else would change a file or run a program is asked first
   (:func:`_ask_first`): ``fetch`` to a named file, ``terminal-session start``
   (whose session keeps the agent's policy), an action that hands files to
-  other programs. What asks the user for an agent starts on Cancel
-  (:func:`_start_on_cancel`).
+  other programs. What asks the user for an agent starts with no button
+  selected (:func:`_start_unselected`).
 
 Reads of the panes are answered even while terminal mode has its terminal
 handed over (the UI thread is parked in the child's wait and nothing else
@@ -322,21 +322,22 @@ def _ui(app, req, work):
     with on_files(app):
         result = work()
     if _is_agent(req):
-        _start_on_cancel(app, before)
+        _start_unselected(app, before)
     came_from = _bring_user(app, before)
     return result, came_from
 
 
-def _start_on_cancel(app, before: list) -> None:
-    """Put the focus of the confirmations just opened (not in ``before``) on
-    their Cancel button. An agent asks whenever it likes, and the user may be
-    typing: an Enter meant for something else must not agree to it. That goes
-    for the operations' own confirmations too, whose default is for a user
-    who has just asked for the operation."""
+def _start_unselected(app, before: list) -> None:
+    """Take the selection off the buttons of the confirmations just opened
+    (not in ``before``). An agent asks whenever it likes, and the user may be
+    typing: an Enter meant for something else must neither agree to it nor
+    turn it down. That goes for the operations' own confirmations too, whose
+    default is for a user who has just asked for the operation."""
     from puikit.widgets import MessageBox
     for layer in app.panel.layer_children(app._screens.files.group):
-        if isinstance(layer, MessageBox) and len(layer.buttons) > 1                 and layer.dismissable and not any(layer is b for b in before):
-            layer.default = layer.focused = layer.cancel
+        if isinstance(layer, MessageBox) and len(layer.buttons) > 1 \
+                and not any(layer is b for b in before):
+            layer.default = layer.focused = None
             app.panel.render()
 
 
