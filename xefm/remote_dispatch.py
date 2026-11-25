@@ -23,7 +23,10 @@ it to :func:`handle`. The commands are described in
   ``CONFIRM_*`` settings say, ``delete`` and ``delete_permanently`` are
   refused, an action run with ``invoke`` gets the confirmations forced on and
   deletes to the trash, and the first read outside the local disk is asked.
-  Whatever else would change a file or run a program is asked first
+  A file's contents outside the session's own folder are asked too, once for
+  each folder (:func:`_local_read_allowed`, #995): XeFM reads with the user's
+  rights, and a sandbox may keep the agent from them. Each command's class is
+  in :data:`xefm.remote_commands.AGENT_CLASS`. Whatever else would change a file or run a program is asked first
   (:func:`_ask_first`): ``fetch`` to a named file, ``terminal-session start``
   (whose session keeps the agent's policy), an action that hands files to
   other programs. What asks the user for an agent starts with no button
@@ -42,8 +45,10 @@ from __future__ import annotations
 import contextlib
 import fnmatch
 import os
+import sys
 import tempfile
 import threading
+import unicodedata
 from typing import Any
 
 from xefm import remote_commands as T
@@ -81,6 +86,7 @@ AGENT_ASKED_ACTIONS = {
     "open_with_os": "open the item under the cursor with another program",
     "open_items_with_os": "open the selected items with other programs",
     "sync_python_packages": "install the Python packages ~/.xefm/requirements.txt lists",
+    "reload_config": "reload ~/.xefm/config.py, which runs what is in it",
 }
 
 #: The longest command line or path a question to the user shows. A longer
@@ -219,7 +225,8 @@ def _answer(app, cmd, req):
     try:
         if cmd.effect != T.READ:
             _gate(app, cmd, req)
-        return _HANDLERS[cmd.name](app, req)
+        with _acting(app, req):
+            return _HANDLERS[cmd.name](app, req)
     except _Refused as exc:
         return refuse(str(exc), exc.code)
 
@@ -376,6 +383,31 @@ def _forced(app, settings: dict | None = None):
                 setattr(app.config, name, value)
 
 
+@contextlib.contextmanager
+def _acting(app, req):
+    """While held, what moves a pane is the agent, not the user
+    (:func:`pane_moved`)."""
+    if not _is_agent(req):
+        yield
+        return
+    before = getattr(app, "_agent_acting", False)
+    app._agent_acting = True
+    try:
+        yield
+    finally:
+        app._agent_acting = before
+
+
+def pane_moved(app, path) -> None:
+    """A pane is about to list ``path`` (on the UI thread): remembered as the
+    agent's doing, or as the user's, for :func:`_readable`."""
+    went = app.__dict__.setdefault("_agent_went", set())
+    if getattr(app, "_agent_acting", False):
+        went.add(str(path))
+    else:
+        went.discard(str(path))
+
+
 # --- panes ---------------------------------------------------------------------------
 
 
@@ -432,6 +464,9 @@ def _c_state(app, req):
     if suspended:
         lines.append("XeFM is suspended until this shell exits: only commands "
                      "that read work (exit status 6 for the rest)")
+    sandbox = sandbox_of(app, req)
+    if sandbox:
+        lines.append(f"this session's sandbox: {sandbox}")
     item = {
         "panes": panes, "active": active,
         "screen": {"id": current.id, "kind": current.kind,
@@ -439,9 +474,21 @@ def _c_state(app, req):
         "files_screen": "panes" if top is None else over,
         "desktop": _desktop(),
         "suspended": suspended,
+        "sandbox": sandbox,
         "text": "\n".join(lines),
     }
     return ok([item])
+
+
+def sandbox_of(app, req) -> str:
+    """Whether the asking agent's own sandbox is ``on``, ``off`` or ``not
+    known``, as far as XeFM can tell; "" for what is no agent's session."""
+    sid = str(req.get("session") or "")
+    for session in getattr(app, "_sessions", []) or []:
+        if str(session.id) == sid:
+            conv = getattr(getattr(session, "view", None), "conversation", None)
+            return getattr(conv, "sandbox", "") or getattr(session, "sandbox", "")
+    return (getattr(app, "_agent_sandboxes", None) or {}).get(sid, "")
 
 
 def _desktop() -> bool:
@@ -681,10 +728,24 @@ def _c_find_in_files(app, req):
         for root in roots:
             for hit in app._user_ctx.find_in_files(root, query, recursive=recursive,
                                                    cancel=cancel, **flags):
+                if readable is not None and not may_read(hit["path"]):
+                    continue  # a link out of what may be read
                 yield hit, {"path": str(hit["path"]), "line": hit["line"],
                             "text": hit["text"]}
-    return _remote_read_allowed(app, req, roots, lambda: _stream(
-        app, req, produce, mode="content", query=query, root=roots[0]))
+    readable = None
+    seen: dict = {}
+
+    def may_read(path) -> bool:
+        key = str(path)
+        if key not in seen:
+            seen[key] = not _is_local(key) or readable.file(_real(key))
+        return seen[key]
+
+    def search():
+        nonlocal readable
+        readable = _Readable(app, req) if _is_agent(req) else None
+        return _stream(app, req, produce, mode="content", query=query, root=roots[0])
+    return _remote_read_allowed(app, req, roots, search, below=recursive)
 
 
 def _c_index_search(app, req):
@@ -781,6 +842,24 @@ def _shown_to_user(text) -> str:
     return text
 
 
+def _fit(app, text: str) -> str:
+    """A question as the box shows it, which does not wrap: broken at the
+    width it can have, a path too, or refused where the screen has no room for
+    all of it. What the user cannot see they cannot agree to."""
+    backend = getattr(app.panel, "backend", None)
+    if backend is None:
+        return text
+    from puikit import Font, Style
+    from puikit.text import wrap_text
+    width, height = backend.size_units
+    style = Style(font=Font())
+    rows = [row for line in text.split("\n") for row in wrap_text(
+        line, max(10.0, width - 8), lambda t: backend.measure_text(t, style))]
+    if len(rows) > height - 9:
+        raise _Refused("too long to show the user, who has to agree to it")
+    return "\n".join(rows)
+
+
 def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> Any:
     """Run ``then()`` if the user agrees, for an agent's session; at once for
     any other. Returns an answer or a Pending. Refused while terminal mode
@@ -789,6 +868,7 @@ def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> A
         return then()
     if getattr(app, "_terminal_handed_over", False):
         raise _Refused(SUSPENDED_MESSAGE, SUSPENDED)
+    question = _fit(app, question)
     pending = Pending()
     came_from = [None]
 
@@ -798,7 +878,8 @@ def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> A
             pending.set(refuse(declined, FAILED))
             return
         try:
-            answer = then()
+            with _acting(app, req):
+                answer = then()
         except _Refused as exc:
             answer = refuse(str(exc), exc.code)
         except Exception as exc:
@@ -813,13 +894,143 @@ def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> A
     return pending
 
 
-def _remote_read_allowed(app, req, paths, then) -> Any:
-    """Run ``then()`` once an agent's session may read ``paths``: at once when
-    all are local or the session is already allowed; after the user agrees
-    for the first read outside the local disk. Returns an answer or a
+# --- the folders an agent reads in ---------------------------------------------------------
+
+
+def _real(path) -> str:
+    """``path`` with its links resolved."""
+    return os.path.realpath(str(path))
+
+
+def _key(real: str) -> str:
+    """``real`` as it is compared: where the file system takes two spellings
+    for one name, they are one here too."""
+    if sys.platform == "darwin":
+        return unicodedata.normalize("NFC", real).casefold()
+    return os.path.normcase(real)
+
+
+def _within(key: str, folder: str) -> bool:
+    return key == folder or key.startswith(folder.rstrip(os.sep) + os.sep)
+
+
+class _Readable:
+    """The local files whose contents an agent's session has unasked, as of
+    now (made on the UI thread, asked from any)."""
+
+    def __init__(self, app, req) -> None:
+        sid = str(req.get("session") or "")
+        own = (getattr(app, "_agent_folders", None) or {}).get(sid)
+        agreed = (getattr(app, "_read_folders", None) or {}).get(sid, ())
+        #: Everything below: the session's folder, and those agreed to.
+        self.below = [_key(_real(p)) for p in ([own] if own else [])] + list(agreed)
+        #: The files in them alone: a pane's folder, where the user went there.
+        went = getattr(app, "_agent_went", ())
+        pm = getattr(app, "pm", None)
+        self.files_in = []
+        for name in ("left_pane", "right_pane"):
+            pane = getattr(pm, name, None)
+            path = pane.get("path") if isinstance(pane, dict) else None
+            if path is not None and _is_local(path) and str(path) not in went:
+                self.files_in.append(_key(_real(path)))
+
+    def file(self, real: str) -> bool:
+        key = _key(real)
+        return any(_within(key, f) for f in self.below) or os.path.dirname(key) in self.files_in
+
+    def folder(self, real: str, *, below: bool = True) -> bool:
+        key = _key(real)
+        return any(_within(key, f) for f in self.below) or (not below and key in self.files_in)
+
+
+def _local_read_allowed(app, req, paths, then, *, below: bool = True) -> Any:
+    """Run ``then()`` once an agent's session may read the contents of the
+    local ``paths`` (files, or folders searched, with those ``below`` them):
+    the user agrees first, once for each folder that is neither the session's
+    nor, for a file, one the user went to in a pane."""
+    if not _is_agent(req):
+        return then()
+    readable = _Readable(app, req)
+    for path in paths:
+        if not _is_local(path):
+            continue
+        real = _real(path)
+        is_folder = os.path.isdir(real)
+        if readable.folder(real, below=below) if is_folder else readable.file(real):
+            continue
+        folder = real if is_folder else os.path.dirname(real)
+
+        def agreed(folder=folder):
+            sid = str(req.get("session") or "")
+            app.__dict__.setdefault("_read_folders", {}).setdefault(sid, set()).add(_key(folder))
+            return _local_read_allowed(app, req, paths, then, below=below)
+        if getattr(app, "_terminal_handed_over", False):
+            raise _Refused(f"{folder} is outside this session's folder, so the user has to "
+                           f"agree to reading there, and XeFM is suspended until this shell "
+                           f"exits (terminal mode): it cannot ask", SUSPENDED)
+        return _ask_first(
+            app, req, f"{_asker(app, req)} wants to read {_shown_to_user(real)}.\n\n"
+            f"Allow it to read the files in {_shown_to_user(folder)}, and below, for the rest "
+            f"of its session?", "Allow reading?", agreed,
+            declined=f"the user did not allow reading in {folder}")
+    return then()
+
+
+def _open_to_read(app, req, path):
+    """``path`` opened for reading. For an agent the file that was opened is
+    checked, not its name: a link may have been changed since it was asked
+    about."""
+    if not _is_agent(req) or not _is_local(path):
+        return path.open("rb")
+    f = open(_real(path), "rb")
+    try:
+        final = _final_path(f.fileno())
+        if final is not None and not _Readable(app, req).file(final):
+            raise _Refused(f"{path} is not the file the user was asked about")
+    except BaseException:
+        f.close()
+        raise
+    return f
+
+
+def _final_path(fd: int) -> str | None:
+    """Where the open file ``fd`` is, or None where the system cannot say."""
+    try:
+        if sys.platform == "darwin":
+            import fcntl
+            return os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).rstrip(b"\0"))
+        if sys.platform == "win32":
+            import ctypes
+            import msvcrt
+            from ctypes import wintypes as w
+            get = ctypes.WinDLL("kernel32", use_last_error=True).GetFinalPathNameByHandleW
+            get.argtypes = [w.HANDLE, w.LPWSTR, w.DWORD, w.DWORD]
+            get.restype = w.DWORD
+            buf = ctypes.create_unicode_buffer(32768)
+            if not get(msvcrt.get_osfhandle(fd), buf, len(buf), 0):
+                return None
+            name = buf.value
+            if name.startswith("\\\\?\\UNC\\"):
+                return "\\\\" + name[8:]
+            return name[4:] if name.startswith("\\\\?\\") else name
+        return os.readlink(f"/proc/self/fd/{fd}")
+    except (OSError, AttributeError):
+        return None
+
+
+def _remote_read_allowed(app, req, paths, then, *, below: bool = True) -> Any:
+    """Run ``then()`` once an agent's session may read ``paths``: those outside
+    the local disk after the user agrees for the first of them, the local ones
+    folder by folder (:func:`_local_read_allowed`). Returns an answer or a
     Pending."""
     far = [p for p in paths if not _is_local(p)]
-    if not _is_agent(req) or not far:
+    if not _is_agent(req):
+        return then()
+    work = then
+
+    def then():
+        return _local_read_allowed(app, req, paths, work, below=below)
+    if not far:
         return then()
     allowed = app.__dict__.setdefault("_remote_read_sessions", set())
     sid = str(req.get("session"))
@@ -846,7 +1057,7 @@ def _c_read(app, req):
             raise _Refused(f"no such file: {path}", FAILED)
         if path.is_dir():
             raise _Refused(f"{path} is a directory (see xefmctl entries)", FAILED)
-        with path.open("rb") as f:
+        with _open_to_read(app, req, path) as f:
             data = f.read(limit + 1)
         note = f"(only the first {limit} bytes)" if len(data) > limit else None
         text = data[:limit].decode("utf-8", errors="replace")
@@ -864,7 +1075,7 @@ def _c_fetch(app, req):
             raise _Refused(f"no such file: {src}", FAILED)
         dest = local or os.path.join(tempfile.mkdtemp(prefix="xefmctl-"),
                                      _file_name(src.name))
-        with src.open("rb") as fin, open(dest, "wb") as fout:
+        with _open_to_read(app, req, src) as fin, open(dest, "wb") as fout:
             while True:
                 chunk = fin.read(1 << 20)
                 if not chunk:
@@ -1034,7 +1245,8 @@ def _write(app, req, verb: str, run, *, results: bool = False,
             except Exception as exc:
                 logger.error(f"xefmctl {verb} failed: {exc}")
                 finished(None, TaskOutcome("failed", error=exc))
-        app._user_ctx.confirm(f"{_asker(app, req)} wants to {ask_agent}.",
+        app._user_ctx.confirm(_fit(app, f"{_asker(app, req)} wants to "
+                                        f"{_shown_to_user(ask_agent)}."),
                               title=f"Allow {verb}?", on_result=answered)
 
     _, came_from[0] = _ui(app, req, begin)
@@ -1217,7 +1429,10 @@ def _ask(app, req, open_dialog) -> Pending:
 
 def _c_confirm(app, req):
     def open_dialog(answer):
-        app._user_ctx.confirm(req["args"]["prompt"], title=req["opts"].get("title") or "Confirm",
+        prompt = req["args"]["prompt"]
+        if _is_agent(req):
+            prompt = _fit(app, prompt)
+        app._user_ctx.confirm(prompt, title=req["opts"].get("title") or "Confirm",
                               on_result=lambda yes: answer(ok(
                                   [{"answer": "yes" if yes else "no"}],
                                   status=0 if yes else FAILED)))
@@ -1312,7 +1527,8 @@ def _c_action_show(app, req):
 def _c_invoke(app, req):
     from xefm import actions as A
     name = req["args"]["name"]
-    if A.registry.resolve(A.FILER, name) is None:
+    action = A.registry.resolve(A.FILER, name)
+    if action is None:
         raise _Refused(f"no action {name!r} (see xefmctl action list)", FAILED)
     agent = _is_agent(req)
     if agent and name in AGENT_DENIED_ACTIONS:
@@ -1330,12 +1546,16 @@ def _c_invoke(app, req):
         _ui(app, req, run)
         app.panel.render()
         return ok()
-    if name not in AGENT_ASKED_ACTIONS:
+    what = AGENT_ASKED_ACTIONS.get(name)
+    if getattr(action, "source", "builtin") != "builtin":
+        # Code of the user's or an extension's: what it does is not known.
+        what = f"run the action {_shown_to_user(name)} ({_shown_to_user(action.description)})"
+    if what is None:
         return then()
     items = _opened_items(app, name) if agent else []
     listed = "".join(f"\n- {_shown_to_user(p)}" for p in items)
     return _ask_first(app, req, f"{_asker(app, req)} wants to "
-                      f"{AGENT_ASKED_ACTIONS[name]}.{chr(10) if listed else ''}{listed}",
+                      f"{what}.{chr(10) if listed else ''}{listed}",
                       f"Allow {name}?", then, declined=f"the user did not allow {name}")
 
 
@@ -1445,8 +1665,8 @@ def _c_session_close(app, req):
                 app._close_session(session)
             answer(ok(status=0 if yes else FAILED,
                       note=None if yes else "the user kept the session"))
-        app._user_ctx.confirm(f"{_asker(app, req)} wants to end the terminal session "
-                              f"{session.name}.", title="End session?", on_result=result)
+        app._user_ctx.confirm(_fit(app, f"{_asker(app, req)} wants to end the terminal "
+                                        f"session {_shown_to_user(session.name)}."), title="End session?", on_result=result)
     return _ask(app, req, open_dialog)
 
 

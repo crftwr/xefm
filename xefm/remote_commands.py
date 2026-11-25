@@ -119,6 +119,12 @@ SIMILAR_METHODS = ("identical", "image", "video", "audio")
 
 ENTRY_TEXT = "{path}"
 
+#: What ``read``, ``fetch`` and ``find-in-files`` say of an agent's session.
+AGENT_READS = (
+    "In an AI agent's session, XeFM asks the user before a file's contents are "
+    "read outside the session's folder, once for each folder. Files directly in "
+    "a folder the user went to in a pane are not asked about.")
+
 COMMANDS: tuple[Command, ...] = (
     # --- orientation ------------------------------------------------------------
     Command(("state",), "both panes, the screen on now and what is open over it: "
@@ -126,7 +132,8 @@ COMMANDS: tuple[Command, ...] = (
             details="One call for what the user is looking at: each pane's "
                     "directory, cursor, selection and filter; which pane is "
                     "active; the screen shown; a viewer or dialog open over "
-                    "the panes."),
+                    "the panes. In an AI agent's session also whether its "
+                    "sandbox is on, off or not known (`sandbox` in --json)."),
 
     # --- a pane (ctx.pane) ---------------------------------------------------------
     Command(("pane", "path"), "the pane's directory (or the URL it shows)", opts=(PANE,)),
@@ -180,6 +187,7 @@ COMMANDS: tuple[Command, ...] = (
             "anywhere XeFM can go (find_in_files)",
             args=(Arg("pattern"), Arg("url", "*", path=True,
                                       help="where to look (default: the pane's folder)")),
+            details=AGENT_READS,
             opts=(CASE, Opt("--word", help="whole words only"),
                   Opt("--regex", help="PATTERN is a regular expression"),
                   NO_RECURSIVE, FROM, LIMIT, SHOW, PANE, TITLE),
@@ -210,13 +218,13 @@ COMMANDS: tuple[Command, ...] = (
             "extensions add)", text="{name}\t{source}"),
     Command(("read",), "a file's text, anywhere XeFM can go", args=(Arg("url", path=True),),
             opts=(Opt("--max-bytes", "N", help="read at most N bytes (default 1000000)"),),
-            text="{text}"),
+            details=AGENT_READS, text="{text}"),
     Command(("fetch",), "copy a file from anywhere XeFM can go to a local file, "
             "and print where", args=(Arg("url", path=True),
                                      Arg("local", "?", path=True, help="default: a temporary file")),
             text="{path}",
-            details="In an AI agent's session, writing to LOCAL is asked in XeFM "
-                    "first; without it the copy goes to a new temporary folder."),
+            details=AGENT_READS + " Writing to LOCAL is asked too; without it the copy goes "
+                    "to a new temporary folder."),
 
     # --- showing --------------------------------------------------------------------
     Command(("view",), "open a file in XeFM's viewer, on the file manager's screen",
@@ -315,8 +323,9 @@ COMMANDS: tuple[Command, ...] = (
     Command(("invoke",), "run an action by name, as its key would on the file "
             "manager's screen", CHANGE, args=(Arg("name"),), opts=(PANE,), text="",
             details="In an AI agent's session, an action that runs other programs "
-                    "(open_with_os, open_items_with_os, sync_python_packages) is "
-                    "asked in XeFM first."),
+                    "(open_with_os, open_items_with_os, sync_python_packages), "
+                    "reload_config, and an action of the user's own or an "
+                    "extension's are asked in XeFM first."),
 
     # --- screens and terminal sessions ---------------------------------------------
     Command(("screen", "list"), "the screens, the one shown first",
@@ -339,6 +348,36 @@ COMMANDS: tuple[Command, ...] = (
     Command(("help",), "the commands, or one command in full", args=(Arg("command", "*"),),
             text="", local=True),
 )
+
+# What an AI agent's session may do with a command without the user: XeFM runs
+# it with the user's own rights, outside any sandbox of the agent's (#995).
+ALLOWED = "allowed"    # at once: it reads no file's contents, and changes none
+ASKED = "asked"        # the user agrees first, each time
+DEPENDS = "depends"    # asked for some of what it can be given
+REFUSED = "refused"    # never
+
+#: Every command's class. A command that has none fails the tests.
+AGENT_CLASS = {
+    "state": ALLOWED, "help": ALLOWED,
+    "pane path": ALLOWED, "pane entries": ALLOWED, "pane focused": ALLOWED,
+    "pane selected": ALLOWED, "pane cd": ALLOWED, "pane select": ALLOWED,
+    "pane unselect": ALLOWED, "pane open-list": ALLOWED, "pane refresh": ALLOWED,
+    "pane activate": ALLOWED,
+    "pane pick": ALLOWED, "confirm": ALLOWED, "choose": ALLOWED, "input": ALLOWED,  # they ask
+    "message": ALLOWED,
+    "entries": ALLOWED, "find-files": ALLOWED, "index-search": ALLOWED,
+    "find-similar": ALLOWED, "path-scheme list": ALLOWED, "tag list": ALLOWED,
+    "attribute list": ALLOWED, "attribute get": ALLOWED,
+    "view": ALLOWED, "diff": ALLOWED, "show-markdown": ALLOWED,  # the user sees it, not the agent
+    "action list": ALLOWED, "action show": ALLOWED,
+    "screen list": ALLOWED, "screen show": ALLOWED, "terminal-session list": ALLOWED,
+    "read": DEPENDS, "fetch": DEPENDS, "find-in-files": DEPENDS,  # a folder not its own
+    "invoke": DEPENDS,                  # an action that runs programs or code
+    "terminal-session close": DEPENDS,  # one not its own
+    "copy": ASKED, "move": ASKED, "trash": ASKED, "rename": ASKED,
+    "tag add": ASKED, "tag remove": ASKED, "terminal-session start": ASKED,
+    "delete": REFUSED,
+}
 
 COMMON_OPTS = (Opt("--json", help="one JSON object per line"),
                Opt("--help", short="-h", help="this command's help"))
@@ -432,6 +471,7 @@ def describe() -> list[dict]:
             "details": cmd.details,
             "effect": cmd.effect,
             "needs_screen": needs_screen(cmd),
+            "agent": AGENT_CLASS[cmd.name],
             "streams": cmd.stream,
             "waits": cmd.wait or "no",
             "args": [{"name": a.name, "nargs": a.nargs, "path": a.path,

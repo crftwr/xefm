@@ -95,6 +95,13 @@ def _file_item(change: dict, tool_id: str) -> Item:
                 input={"file_path": str(moved or path), "edits": hunk_edits(diff)})
 
 
+def _sandbox_state(policy: Any) -> str:
+    """A thread's sandbox policy as the header says it."""
+    kind = policy.get("type") if isinstance(policy, dict) else None
+    return {"workspaceWrite": "on", "readOnly": "on",
+            "dangerFullAccess": "off"}.get(kind, "not known")
+
+
 def _text_of(content: Any) -> str:
     """The text of an MCP (or dynamic) tool's result."""
     if not isinstance(content, list):
@@ -154,6 +161,11 @@ class CodexClient(RpcClient):
         params: dict[str, Any] = {"cwd": self.cwd}
         if self.instructions:
             params["developerInstructions"] = self.instructions
+        if self.channel is not None:
+            # Over its stdin: in no environment, command line or file (#995).
+            from xefm.agents import codex_server
+            params["config"] = codex_server(self.channel)
+            self._tools_coming = True
 
         def failed(error: dict) -> None:
             self._failed(f"Codex could not open a session: {error.get('message')}")
@@ -171,6 +183,7 @@ class CodexClient(RpcClient):
         conv.model = str(result.get("model") or conv.model)
         self._policy = result.get("approvalPolicy")
         self._sandbox = result.get("sandbox")
+        conv.sandbox = _sandbox_state(self._sandbox)
         conv.modes, conv.mode_labels = ("default", "acceptEdits", "plan"), MODE_LABELS
         conv.permission_mode = "default"
         # What the user set before, again in a new process.
@@ -268,6 +281,7 @@ class CodexClient(RpcClient):
                 self._overrides["approvalPolicy"] = self._policy
             if self._sandbox is not None:
                 self._overrides["sandboxPolicy"] = self._sandbox
+        self.conv.sandbox = _sandbox_state(self._overrides.get("sandboxPolicy"))
         self._overrides["collaborationMode"] = {
             "mode": "plan" if mode == "plan" else "default",
             "settings": {"model": self.conv.model_choice or self.conv.model,
@@ -636,6 +650,10 @@ class CodexClient(RpcClient):
         schema = params.get("requestedSchema")
         fields = schema.get("properties") if isinstance(schema, dict) else None
         server = str(params.get("serverName") or "MCP server")
+        if self.channel is not None and server == self.channel.name and not fields:
+            # XeFM's own tool: what it does is asked by XeFM, once.
+            self.reply(request_id, {"action": "accept", "content": {}, "_meta": None})
+            return None
         if params.get("mode") not in ("form", "openai/form", "openaiForm") or fields:
             self.reply(request_id, {"action": "decline", "content": None, "_meta": None})
             self.conv.add_notice(f"{server} asked for something XeFM cannot show: "

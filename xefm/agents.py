@@ -53,6 +53,15 @@ that instead of its screen: Claude Code's stream-json (:mod:`xefm.agent_chat`),
 Codex's app-server (:mod:`xefm.agent_codex`), the Agent Client Protocol for
 Copilot and Antigravity (:mod:`xefm.agent_acp`). It is handed the same things,
 each the way that mode takes them (:func:`chat_argv`, :func:`protocol`).
+
+**The way to XeFM (#995).** The agent's own sandbox, where it has one, keeps
+its shell from the socket ``xefmctl`` uses, so every session also gets
+``xefmctl`` as MCP tools, from a server in XeFM (:mod:`xefm.mcp_server`):
+:data:`CHANNELS` says how each is handed the address and the session's token.
+The token is in no environment and on no command line, and a file that holds
+it is in a folder of the session's own (:func:`prepare`), never a temporary
+one: Copilot's sandbox lets its shell read those. XeFM turns no agent's
+sandbox on, off or wider; :func:`sandbox_state` only says what it is.
 """
 
 from __future__ import annotations
@@ -78,7 +87,7 @@ PRESETS = (CLAUDE_CODE, CODEX, COPILOT, ANTIGRAVITY)
 
 #: The placeholders a ``command`` (or ``prompt_args``) may hold.
 PLACEHOLDERS = ("{plugin_dir}", "{skills_dir}", "{skill_dir}", "{rules}",
-                "{rules_file}", "{settings_file}", "{prompt}")
+                "{rules_file}", "{settings_file}", "{mcp_config_file}", "{prompt}")
 
 DEFAULT_RULES = """\
 You are running inside XeFM, a dual-pane file manager, in a terminal session \
@@ -87,6 +96,9 @@ XeFM started. The user is looking at XeFM's window, beside this session.
 - Start with `xefmctl state` to see what the user is looking at: both panes, \
 the cursor, the selection, what is open. `xefmctl help` lists every command; \
 the `xefm` skill explains them.
+- If this session has XeFM's tools `xefmctl_read` and `xefmctl`, run xefmctl \
+commands with them, not in the shell: they are the same commands, and work \
+where a sandbox keeps the shell from XeFM. `xefmctl_read` takes what only reads.
 - When the user says "this file", "these", "here", they mean what XeFM shows: \
 read it with xefmctl, do not guess.
 - Change files - delete, move, copy, overwrite, rename - only through \
@@ -145,6 +157,23 @@ _KEYS = {"name", "command", "preset", "restrict", "settings", "env", "prompt_arg
 #: the agent CLI's own screen in a terminal session. A preset joins once XeFM
 #: can draw it.
 DRAWN_PRESETS = (CLAUDE_CODE, CODEX, COPILOT, ANTIGRAVITY)
+
+#: How a session is handed the way to XeFM's MCP tools, by its preset and
+#: whether XeFM draws it: in the request that opens the session
+#: (``"session"``), in a file of the session's own named on the command line
+#: (``"file"``), or in a file where the agent looks (``"workspace"``). An entry
+#: without a preset names the file itself, with ``{mcp_config_file}``.
+CHANNELS = {
+    (CLAUDE_CODE, True): "file", (CLAUDE_CODE, False): "file",
+    (CODEX, True): "session", (CODEX, False): "file",
+    (COPILOT, True): "session", (COPILOT, False): "file",
+    (ANTIGRAVITY, True): "session", (ANTIGRAVITY, False): "workspace",
+    (None, False): "file",
+}
+
+#: Seconds an agent that has a limit for a tool's answer is told to wait: the
+#: user may be asked meanwhile.
+TOOL_TIMEOUT = 24 * 60 * 60
 
 
 def entries(config: Any) -> list[dict]:
@@ -299,10 +328,12 @@ to the session's folder, and give file tools absolute paths.
 
 
 def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
-            version: str | None = None, cwd: str | None = None) -> dict:
+            version: str | None = None, cwd: str | None = None,
+            channel: Any = None) -> dict:
     """Write what the session is handed - the skill (as a plugin folder),
     the rules and, for Claude Code, its settings - and return the
-    placeholders' values. ``cwd`` is the session's folder."""
+    placeholders' values. ``cwd`` is the session's folder, ``channel`` its way
+    to XeFM (:class:`xefm.mcp_server.Channel`)."""
     from xefm import extensions as ext
     version = version or ext.skill_version()
     root = _FsPath(root) if root is not None else cache_root()
@@ -348,7 +379,15 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
                     else CLAUDE_DEFAULT_SETTINGS)
     settings_file = session_dir / f"settings-{_safe(entry['name'])}.json"
     settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    extra = {}
+    extra = {"channel": channel}
+    way = CHANNELS.get((entry.get("preset"), drawn(entry)))
+    if way == "file" and channel is not None:
+        # A folder of the session's own, readable by this user alone, gone
+        # with the session (:func:`discard`): the file holds its token.
+        _prune_session_folders(root)
+        own = _FsPath(tempfile.mkdtemp(prefix=f"session-{os.getpid()}-", dir=session_dir))
+        extra["session_folder"] = str(own)
+        extra.update(_channel_files(entry, channel, own))
     if entry.get("preset") == ANTIGRAVITY:
         if drawn(entry):
             folder = session_dir / "antigravity-drawn"
@@ -369,6 +408,9 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
                 told += _FOLDER_RULES.format(
                     folder=name.encode("utf-8", "backslashreplace").decode("utf-8"))
         extra["workspace_dir"] = str(_antigravity_workspace(folder, skill, told))
+        if way == "workspace" and channel is not None:
+            _write_private(folder / ".agents" / "mcp_config.json", {"mcpServers": {
+                channel.name: {"serverUrl": channel.url, "headers": channel.headers}}})
     return {**extra,
         "{plugin_dir}": str(plugin),
         "{skills_dir}": str(plugin / "skills"),
@@ -376,8 +418,77 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
         "{rules}": rules,
         "{rules_file}": str(rules_file),
         "{settings_file}": str(settings_file),
+        "{mcp_config_file}": extra.get("{mcp_config_file}", ""),
         "instructions_dir": str(instructions),  # for the copilot preset; not a placeholder
     }
+
+
+def _write_private(path: _FsPath, data: dict) -> str:
+    """``data`` as JSON in a new file only this user may read."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with open(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    return str(path)
+
+
+def _channel_files(entry: dict, channel: Any, folder: _FsPath) -> dict:
+    """The files that tell the agent of XeFM's MCP server, in the session's
+    own ``folder``, as values for its command line."""
+    if entry.get("preset") == CODEX:
+        # What its ``http_headers_helper`` prints.
+        return {"headers_file": _write_private(folder / "headers.json", channel.headers)}
+    server = {"type": "http", "url": channel.url, "headers": channel.headers}
+    if entry.get("preset") == COPILOT:
+        server["tools"] = ["*"]
+    return {"{mcp_config_file}": _write_private(
+        folder / "mcp.json", {"mcpServers": {channel.name: server}})}
+
+
+def codex_server(channel: Any) -> dict:
+    """The setting that gives a Codex thread XeFM's MCP server. The key is
+    dotted: under ``mcp_servers`` as a table it takes the place of the servers
+    the entry's own ``-c`` options name (0.171.0, #995)."""
+    return {f"mcp_servers.{channel.name}": {
+        "url": channel.url, "http_headers": channel.headers,
+        "tool_timeout_sec": TOOL_TIMEOUT}}
+
+
+def _codex_options(values: dict) -> list[str]:
+    """The same for Codex's own screen: its command line is open to others,
+    so it names a command that prints the header from a file (the sandboxed
+    shell, which may read that file, cannot reach the port)."""
+    channel, file = values.get("channel"), values.get("headers_file")
+    if channel is None or not file:
+        return []
+    import shlex
+    helper = f'type "{file}"' if os.name == "nt" else f"cat {shlex.quote(file)}"
+    key = f"mcp_servers.{channel.name}"
+    return ["-c", f"{key}.url={_toml_string(channel.url)}",
+            "-c", f"{key}.http_headers_helper={_toml_string(helper)}",
+            "-c", f"{key}.tool_timeout_sec={TOOL_TIMEOUT}"]
+
+
+#: A command line's words that say what the agent's sandbox is (an option and
+#: its value as ``--sandbox value``). Read only, never added.
+_SANDBOX_OPTIONS = {
+    CODEX: (("--dangerously-bypass-approvals-and-sandbox", "off"), ("--yolo", "off"),
+            ("--sandbox danger-full-access", "off"), ("-s danger-full-access", "off"),
+            ("--sandbox workspace-write", "on"), ("-s workspace-write", "on"),
+            ("--sandbox read-only", "on"), ("-s read-only", "on")),
+    COPILOT: (("--sandbox", "on"), ("--no-sandbox", "off")),
+    ANTIGRAVITY: (("--sandbox", "on"),),
+}
+
+
+def sandbox_state(entry: dict) -> str:
+    """The agent's own sandbox as far as the entry's command line says:
+    ``on``, ``off``, or ``not known`` (it is the user's settings, or the
+    agent's default)."""
+    line = f" {' '.join(entry['command'][1:]).replace('=', ' ')} "
+    for words, state in _SANDBOX_OPTIONS.get(entry.get("preset"), ()):
+        if f" {words} " in line:
+            return state
+    return "not known"
 
 
 def discard(values: dict) -> None:
@@ -389,7 +500,7 @@ def discard(values: dict) -> None:
 
 
 #: The name of a session's own folder: the XeFM that made it, then its own part.
-_SESSION_FOLDER = re.compile(r"antigravity-(\d+)-")
+_SESSION_FOLDER = re.compile(r"(?:antigravity|session)-(\d+)-")
 
 #: Seconds before the folder of an XeFM that is gone is deleted. Not at once: a
 #: process id says nothing about an XeFM in a container that shares this home.
@@ -400,7 +511,7 @@ def _prune_session_folders(root: _FsPath) -> None:
     """Delete the sessions' own folders that an XeFM left when it ended, under
     every version's folder."""
     from xefm.similar_scan import pid_alive
-    for folder in root.glob("*/sessions/antigravity-*"):
+    for folder in root.glob("*/sessions/*-*-*"):
         made_by = _SESSION_FOLDER.match(folder.name)
         try:
             if made_by and time.time() - folder.stat().st_mtime > _SESSION_FOLDER_KEPT \
@@ -415,7 +526,13 @@ def _antigravity_workspace(folder: _FsPath, skill: _FsPath, rules: str) -> _FsPa
     ``AGENTS.md`` as rules and its ``.agents/skills/`` as skills."""
     skills = folder / ".agents" / "skills"
     shutil.rmtree(skills, ignore_errors=True)
-    shutil.copytree(skill, skills / skill.name)
+    for file in skill.rglob("*"):
+        # Written, not copied: in a Windows VM where a sandboxed Codex had just
+        # run, CopyFile2 (shutil's) took two minutes over one of these.
+        if file.is_file():
+            to = skills / skill.name / file.relative_to(skill)
+            to.parent.mkdir(parents=True, exist_ok=True)
+            to.write_bytes(file.read_bytes())
     (folder / "AGENTS.md").write_text(rules, encoding="utf-8")
     return folder
 
@@ -426,6 +543,7 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
     values = dict(values, **{"{prompt}": prompt or ""})
     out = [_fill(a, values) for a in entry["command"]]
     if entry.get("preset") == CLAUDE_CODE:
+        out += _mcp_config(values, "--mcp-config")
         out += ["--plugin-dir", values["{plugin_dir}"],
                 "--append-system-prompt", values["{rules}"],
                 "--settings", values["{settings_file}"]]
@@ -437,11 +555,13 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
         # to parse would be taken raw, so it is always given quoted.
         out += ["-c", "developer_instructions="
                 + _toml_string(codex_instructions(values))]
+        out += _codex_options(values)
         if prompt:
             out.append(prompt)  # `codex "request"` starts the TUI with it
         return out
     if entry.get("preset") == COPILOT:
         out += ["--plugin-dir", values["{plugin_dir}"]]
+        out += _mcp_config(values, "--additional-mcp-config", "@")
         if entry.get("restrict", True):
             out += [f"--deny-tool={rule}" for rule in COPILOT_DENY_TOOLS]
         if prompt:
@@ -456,6 +576,11 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
     if prompt:
         out += [_fill(a, values) for a in entry["prompt_args"]]
     return out
+
+
+def _mcp_config(values: dict, option: str, mark: str = "") -> list[str]:
+    file = values.get("{mcp_config_file}")
+    return [option, mark + file] if file else []
 
 
 def drawn(entry: dict) -> bool:
@@ -499,6 +624,9 @@ def chat_argv(entry: dict, values: dict) -> list[str]:
         return app_server_argv(out)
     if preset == COPILOT:
         out += ["--acp", "--plugin-dir", values["{plugin_dir}"]]
+        if values.get("channel") is not None:
+            # XeFM's own tools: XeFM asks, so Copilot does not ask as well.
+            out.append(f"--allow-tool={values['channel'].name}")
         if entry.get("restrict", True):
             out += [f"--deny-tool={rule}" for rule in COPILOT_DENY_TOOLS]
         return out
@@ -507,6 +635,7 @@ def chat_argv(entry: dict, values: dict) -> list[str]:
             "acp", "--add-dir", values["workspace_dir"]]
     from xefm.agent_chat import CLAUDE_STREAM_ARGS
     out += list(CLAUDE_STREAM_ARGS)
+    out += _mcp_config(values, "--mcp-config")
     out += ["--plugin-dir", values["{plugin_dir}"],
             "--append-system-prompt", drawn_rules(values["{rules}"]),
             "--settings", values["{settings_file}"]]
@@ -537,25 +666,27 @@ def protocol(entry: dict, values: dict) -> Any:
     """How a drawn session of ``entry`` is driven (a
     :class:`xefm.agent_chat.Protocol`), with what it is handed as its session
     opens."""
-    preset = entry.get("preset")
+    preset, channel = entry.get("preset"), values.get("channel")
     if preset == CODEX:
         from xefm.agent_codex import CodexProtocol
         told = dict(values, **{"{rules}": drawn_rules(values["{rules}"])})
-        return CodexProtocol(refuse=refusal(entry), instructions=codex_instructions(told),
+        return CodexProtocol(refuse=refusal(entry), channel=channel, instructions=codex_instructions(told),
                              skills_root=values["{skills_dir}"])
     if preset == COPILOT:
         from xefm.agent_acp import AcpProtocol
-        return AcpProtocol(refuse=refusal(entry), agent=entry["name"],
+        return AcpProtocol(refuse=refusal(entry), channel=channel, agent=entry["name"],
+                           sandbox=sandbox_state(entry),
                            login=f"{entry['command'][0]} login", plain_commands=True,
                            restrict=entry.get("restrict", True))
     if preset == ANTIGRAVITY:
         from xefm.agent_acp import AcpProtocol
-        return AcpProtocol(refuse=refusal(entry), agent=entry["name"],
+        return AcpProtocol(refuse=refusal(entry), channel=channel, agent=entry["name"],
+                           sandbox=sandbox_state(entry),
                            login=f"{entry['command'][0]} acp --login",
                            restrict=entry.get("restrict", True),
                            first=_without_options(entry["command"], ANTIGRAVITY_FIRST)[1])
     from xefm.agent_chat import ClaudeProtocol
-    return ClaudeProtocol()
+    return ClaudeProtocol(channel, sandbox=sandbox_state(entry))
 
 
 def denied_commands(entry: dict) -> tuple[str, ...]:

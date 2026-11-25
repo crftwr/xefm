@@ -14,7 +14,7 @@ Commands marked *Uses XeFM's screen* are the ones refused with 6. While XeFM is 
 
 both panes, the screen on now and what is open over it: start here.
 
-One call for what the user is looking at: each pane's directory, cursor, selection and filter; which pane is active; the screen shown; a viewer or dialog open over the panes.
+One call for what the user is looking at: each pane's directory, cursor, selection and filter; which pane is active; the screen shown; a viewer or dialog open over the panes. In an AI agent's session also whether its sandbox is on, off or not known (`sandbox` in --json).
 
 ## A pane
 
@@ -151,6 +151,8 @@ files whose names match, below a folder anywhere XeFM can go (find_files).
 `xefmctl find-in-files PATTERN [URL...] [--case] [--word] [--regex] [--no-recursive] [--from WHAT] [--limit N] [--show] [--pane PANE] [--title TEXT]`
 
 lines that match, in the files below a folder anywhere XeFM can go (find_in_files).
+
+In an AI agent's session, XeFM asks the user before a file's contents are read outside the session's folder, once for each folder. Files directly in a folder the user went to in a pane are not asked about.
 - `URL`: where to look (default: the pane's folder)
 - `--case`: match capitals exactly
 - `--word`: whole words only
@@ -201,6 +203,8 @@ the kinds of place XeFM can open besides the local disk (ssh://, s3://, archive:
 `xefmctl read URL [--max-bytes N]`
 
 a file's text, anywhere XeFM can go.
+
+In an AI agent's session, XeFM asks the user before a file's contents are read outside the session's folder, once for each folder. Files directly in a folder the user went to in a pane are not asked about.
 - `--max-bytes N`: read at most N bytes (default 1000000)
 
 ### `fetch`
@@ -209,7 +213,7 @@ a file's text, anywhere XeFM can go.
 
 copy a file from anywhere XeFM can go to a local file, and print where.
 
-In an AI agent's session, writing to LOCAL is asked in XeFM first; without it the copy goes to a new temporary folder.
+In an AI agent's session, XeFM asks the user before a file's contents are read outside the session's folder, once for each folder. Files directly in a folder the user went to in a pane are not asked about. Writing to LOCAL is asked too; without it the copy goes to a new temporary folder.
 - `LOCAL`: default: a temporary file
 
 ## Showing
@@ -403,7 +407,7 @@ what one action does, in full.
 
 run an action by name, as its key would on the file manager's screen.
 
-In an AI agent's session, an action that runs other programs (open_with_os, open_items_with_os, sync_python_packages) is asked in XeFM first.
+In an AI agent's session, an action that runs other programs (open_with_os, open_items_with_os, sync_python_packages), reload_config, and an action of the user's own or an extension's are asked in XeFM first.
 - `--pane PANE`: the pane: active (the default), other, left or right
 - *Uses XeFM's screen.*
 

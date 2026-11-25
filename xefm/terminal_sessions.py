@@ -60,6 +60,9 @@ class Session:
     #: Called once when the session ends, XeFM quitting included: what was made
     #: for it alone goes.
     cleanup: object = None
+    #: An AI agent's own sandbox (``on``, ``off``, ``not known``), "" for what
+    #: is no agent.
+    sandbox: str = ""
     #: What a hidden session has to say - a notification, a long command
     #: that finished - until it is next shown: ``(kind, text)`` with kind
     #: ``done``, ``failed`` or ``attention``, as the status bar's parts.

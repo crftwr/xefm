@@ -131,6 +131,9 @@ def _app(monkeypatch, *, desktop=True):
         app.made.append(view)
         return view
     app._make_session_view = make
+    app._agent_channel = lambda policy, cwd: None
+    for name in ("_agent_started", "_agent_ended"):
+        setattr(app, name, getattr(XeFMApp, name).__get__(app))
     app._run_terminal_user_action = lambda name: True
     for name in ("new_terminal_session", "subshell", "_show_session", "_show_screen",
                  "_hide_session", "_shown_session", "_close_session",

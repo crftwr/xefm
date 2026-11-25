@@ -196,7 +196,8 @@ while True:
     method = msg.get("method")
     if method == "initialize":
         answer(msg, {"protocolVersion": 1, "agentCapabilities": {
-            "loadSession": True, "sessionCapabilities":
+            "loadSession": True, "mcpCapabilities": {"http": "--http" in sys.argv},
+            "sessionCapabilities":
             {"resume": {}} if "--resume" in sys.argv else {}}})
     elif method == "session/new":
         if "--signed-out" in sys.argv:
@@ -725,11 +726,114 @@ def test_an_acp_agent_not_signed_in_says_how(start):
     assert "agent login" in acp.conv.items[0].text
 
 
-@pytest.mark.parametrize("restrict, mode", [(True, "default"), (False, "auto")])
-def test_a_restricted_session_does_not_start_in_a_mode_that_does_not_ask(start, restrict, mode):
+@pytest.mark.parametrize("restrict", [True, False])
+def test_the_mode_a_session_opens_in_is_left_alone(start, restrict):
+    """Antigravity's "default" would turn its sandbox off (#995)."""
     acp = start(FAKE_ACP, agent_acp.AcpProtocol(agent="Agent", restrict=restrict),
                 "--auto").idle()
-    assert acp.conv.permission_mode == mode
+    assert acp.conv.permission_mode == "auto" and not acp.sent("session/set_mode")
+    told = [i.text for i in acp.conv.items if "auto mode" in i.text]
+    assert bool(told) is restrict
+
+
+# --- the way to XeFM (#995) -------------------------------------------------------------
+
+
+class _Channel:
+    """A session's way to XeFM, as :class:`xefm.mcp_server.Channel`."""
+    name, url, token = "xefm_00", "http://127.0.0.1:9/mcp", "T0KEN"
+    headers = {"Authorization": "Bearer T0KEN"}
+
+    def __init__(self, listed=True):
+        self.is_listed, self.waiting, self.expected = listed, [], 0
+
+    def expect(self):
+        self.expected += 1
+
+    def when_listed(self, then):
+        then() if self.is_listed else self.waiting.append(then)
+
+
+def _opened(agent, *methods):
+    [params] = [p for m in methods for p in agent.sent(m)]
+    return params
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_a_codex_thread_is_handed_xefms_server_over_its_stdin(start, resume):
+    channel = _Channel()
+    codex = start(FAKE_CODEX, agent_codex.CodexProtocol(channel=channel)).idle()
+    if resume:
+        codex.view._restart(resume=True)
+        codex.idle()
+    opened = codex.sent("thread/resume" if resume else "thread/start")[-1]
+    server = opened["config"]["mcp_servers.xefm_00"]  # dotted: the entry's own stay
+    assert server["url"] == channel.url and server["http_headers"] == channel.headers
+    assert "sandbox" not in opened and "approvalPolicy" not in opened
+    assert "T0KEN" not in " ".join(codex.view.argv) + str(codex.view.env)
+    assert channel.expected == 1 + resume
+
+
+@pytest.mark.parametrize("takes", [True, False])
+def test_an_acp_session_is_handed_xefms_server_where_it_takes_one(start, takes):
+    acp = start(FAKE_ACP, agent_acp.AcpProtocol(agent="Agent", channel=_Channel()),
+                *(["--http"] if takes else [])).idle()
+    servers = _opened(acp, "session/new")["mcpServers"]
+    assert servers == ([{"type": "http", "name": "xefm_00", "url": _Channel.url, "headers": [
+        {"name": "Authorization", "value": "Bearer T0KEN"}]}] if takes else [])
+
+
+@pytest.mark.parametrize("args, method", [([], "session/load"), (["--resume"], "session/resume")])
+def test_a_session_gone_back_to_is_handed_it_too(start, args, method):
+    acp = start(FAKE_ACP, agent_acp.AcpProtocol(agent="Agent", channel=_Channel()),
+                "--http", *args).idle()
+    acp.view._restart(resume=True)
+    acp.idle()
+    assert _opened(acp, method)["mcpServers"]
+
+
+def test_the_first_message_waits_for_the_tools(start):
+    channel = _Channel(listed=False)
+    acp = start(FAKE_ACP, agent_acp.AcpProtocol(agent="Agent", channel=channel), "--http")
+    acp.view._submit("hello")
+    acp.until(lambda: channel.waiting)
+    assert not acp.sent("session/prompt")
+    channel.waiting.pop()()
+    acp.idle()
+    assert len(acp.sent("session/prompt")) == 1
+
+
+def test_the_first_message_does_not_wait_for_ever(start, monkeypatch):
+    monkeypatch.setattr(agent_rpc, "TOOLS_WAIT", 0.05)
+    acp = start(FAKE_ACP, agent_acp.AcpProtocol(agent="Agent", channel=_Channel(False)), "--http")
+    acp.say("hello")
+    assert len(acp.sent("session/prompt")) == 1
+
+
+@pytest.mark.parametrize("server, asked", [("xefm_00", 0), ("xefm", 1), ("xefm_000", 1)])
+def test_xefm_answers_for_its_own_server_alone(start, server, asked):
+    codex = start(FAKE_CODEX, agent_codex.CodexProtocol(channel=_Channel())).idle()
+    client, replies = codex.view.client, []
+    client.reply = lambda rid, result: replies.append(result["action"])
+    perm = client._on_request(5, "mcpServer/elicitation/request", {
+        "mode": "form", "serverName": server, "message": "Allow?",
+        "requestedSchema": {"type": "object", "properties": {}}})
+    assert (perm is not None) == bool(asked) and replies == ([] if asked else ["accept"])
+
+
+@pytest.mark.parametrize("policy, state", [
+    ({"type": "workspaceWrite"}, "on"), ({"type": "readOnly"}, "on"),
+    ({"type": "dangerFullAccess"}, "off"), ({"type": "externalSandbox"}, "not known"),
+    (None, "not known")])
+def test_a_codex_threads_sandbox_is_what_it_says(policy, state):
+    assert agent_codex._sandbox_state(policy) == state
+
+
+def test_the_header_says_what_the_sandbox_is(start):
+    codex = start(FAKE_CODEX, agent_codex.CodexProtocol()).idle()
+    assert codex.conv.sandbox == "on" and "sandbox on" in _screen_text(codex.panel)
+    acp = start(FAKE_ACP, agent_acp.AcpProtocol(agent="Agent")).idle()
+    assert "sandbox not known" in _screen_text(acp.panel)
 
 
 def test_what_antigravitys_command_asked_for_is_set_in_the_session(start):

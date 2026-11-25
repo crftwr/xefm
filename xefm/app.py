@@ -3021,6 +3021,8 @@ class XeFMApp:
         self._close_terminal_sessions()
         if getattr(self, "_remote_server", None) is not None:
             self._remote_server.close()
+        if getattr(self, "_mcp_server", None) is not None:
+            self._mcp_server.close()
         self._save_application_state()
         self.backend.quit()
 
@@ -3274,6 +3276,9 @@ class XeFMApp:
         old_path = pane.get("_hook_path", new_path)
         pane["_hook_path"] = new_path
         if str(old_path) != str(new_path):
+            # Who went there decides what an agent may read there unasked.
+            from xefm import remote_dispatch
+            remote_dispatch.pane_moved(self, new_path)
             # The back / forward history (#589): a step through it moves the
             # entry itself; any other change starts a new branch.
             if pane.pop("_history_step", False):
@@ -6208,16 +6213,19 @@ class XeFMApp:
         env, cwd = self._program_env(pane)
         if pane.get("virtual") or path_schemes.is_uri(str(cwd)):
             cwd = os.path.expanduser("~")  # an agent works on the local disk
+        policy = AGENT if entry["restrict"] else USER
+        channel = self._agent_channel(policy, str(cwd))
+        values = {"channel": channel}
         try:
-            values = agents.prepare(self.config, entry, cwd=str(cwd))
+            values = agents.prepare(self.config, entry, cwd=str(cwd), channel=channel)
         except OSError as exc:
+            self._agent_ended(values)
             self.log_info(f"{entry['name']}: could not prepare the session: {exc}")
             self.panel.render()
             return
         argv = agents.argv(entry, values, prompt)
         env.update(entry["env"])
         env.update(agents.session_env(entry, values, env))
-        policy = AGENT if entry["restrict"] else USER
         if agents.drawn(entry):
             self._start_agent_chat(entry, values, cwd=str(cwd), env=env,
                                    policy=policy, prompt=prompt)
@@ -6225,17 +6233,52 @@ class XeFMApp:
         self.log_info(f"Starting {entry['name']} in {cwd}")
         if is_desktop_mode():
             if not self._terminal_ready():
-                agents.discard(values)
+                self._agent_ended(values)
                 return
-            self._start_session(argv, cwd=cwd, env=env, name=entry["name"],
-                                shell=False, policy=policy,
-                                cleanup=lambda: agents.discard(values))
+            session = self._start_session(argv, cwd=cwd, env=env, name=entry["name"],
+                                          shell=False, policy=policy,
+                                          cleanup=lambda: self._agent_ended(values))
+            session.sandbox = agents.sandbox_state(entry)
+            self._agent_started(values, str(session.id), str(cwd))
             return
         self._with_remote_env(env, "agent", policy)
+        self._agent_started(values, "agent", str(cwd), sandbox=agents.sandbox_state(entry))
         try:
             self._run_in_terminal(argv, cwd=cwd, env=env, pause_on_error=True)
         finally:
-            agents.discard(values)
+            self._agent_ended(values)
+
+    def _agent_channel(self, policy: str, cwd: str):
+        """A new agent session's way to XeFM from outside its sandbox
+        (:mod:`xefm.mcp_server`), the server started the first time. None where
+        it cannot be (logged once): ``xefmctl`` in its shell is left."""
+        server = getattr(self, "_mcp_server", None)
+        if server is None and not getattr(self, "_mcp_failed", False):
+            from xefm import extensions, mcp_server
+            server = mcp_server.start(self._remote_handle, version=extensions.skill_version())
+            self._mcp_server = server
+            self._mcp_failed = server is None
+        return server.open(policy, cwd) if server is not None else None
+
+    def _agent_started(self, values: dict, sid: str, cwd: str, *, sandbox: str = "") -> None:
+        """An agent's session has its id: what ``xefmctl`` knows of it."""
+        values["session_id"] = sid
+        if values.get("channel") is not None:
+            values["channel"].session = sid
+        self.__dict__.setdefault("_agent_folders", {})[sid] = cwd
+        self.__dict__.setdefault("_agent_sandboxes", {})[sid] = sandbox
+
+    def _agent_ended(self, values: dict) -> None:
+        """An agent's session is over, or never began: its token is dead, and
+        what was written or agreed to for it alone goes."""
+        from xefm import agents
+        agents.discard(values)
+        if values.get("channel") is not None:
+            self._mcp_server.forget(values["channel"])
+        sid = values.get("session_id")
+        for name in ("_agent_folders", "_agent_sandboxes", "_read_folders"):
+            self.__dict__.get(name, {}).pop(sid, None)
+        self.__dict__.get("_remote_read_sessions", set()).discard(sid)
 
     # --- AI agent sessions XeFM draws ('terminal': False, #959) --------------------------
 
@@ -6262,12 +6305,14 @@ class XeFMApp:
         except ImportError as e:  # a PuiKit before TextArea
             self.log_info(f"{entry['name']}: a conversation drawn by XeFM needs a "
                           f"newer PuiKit ({e}); set 'terminal': True meanwhile")
+            self._agent_ended(values)
             self.panel.render()
             return None
         from xefm.terminal_sessions import AGENT, Session, next_id
         from xefm.text_viewer import viewer_layer_hints
         existing = self._agent_chat_for(entry, cwd)
         if existing is not None:
+            self._agent_ended(values)
             self._show_session(existing)
             if prompt:
                 existing.view.send(prompt)
@@ -6275,6 +6320,7 @@ class XeFMApp:
             return existing
         sid = next_id()
         self._with_remote_env(env, str(sid), policy)
+        self._agent_started(values, str(sid), cwd)
         argv = agents.chat_argv(entry, values)
         name = self._sessions.next_name(entry["name"])
         self.log_info(f"Starting {entry['name']} in {cwd} (drawn by XeFM)")
@@ -6295,6 +6341,7 @@ class XeFMApp:
         view.entry_name = entry["name"]
         session = self._sessions.add(Session(
             view=view, kind=AGENT, name=name, cwd=cwd, id=sid,
+            cleanup=lambda: self._agent_ended(values),
             program=os.path.basename(entry["command"][0]), named=True))
         sw, sh = self.panel.backend.size_units
         screen = self._screens.add_terminal(

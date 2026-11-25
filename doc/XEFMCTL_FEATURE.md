@@ -34,7 +34,7 @@ action that opens it (`find-files`, `find-in-files`).
 | `xefmctl index-search QUERY [URL...]` | The OS index: Spotlight on macOS, Windows Search on Windows |
 | `xefmctl find-similar --method METHOD [URL...]` | Groups of [similar files](FIND_SIMILAR_FILES_FEATURE.md) (`identical`, `image`, `video`, `audio`; `--threshold`), one line per file with its group's number |
 | `xefmctl path-scheme list` | The kinds of place XeFM can open besides the local disk, with the ones `PATH_SCHEMES` and extensions add |
-| `xefmctl read URL` / `fetch URL [LOCAL]` | A file's text; a copy of the file on the local disk (asked first when an agent names `LOCAL`) |
+| `xefmctl read URL` / `fetch URL [LOCAL]` | A file's text; a copy of the file on the local disk (asked first when an agent names `LOCAL`, or [reads outside its session's folder](AI_AGENT_SESSIONS_FEATURE.md#what-the-agent-may-not-do)) |
 | `xefmctl view FILE [--line N]` | Opens `FILE` in XeFM's viewer on the file manager's screen, in place of a viewer already open there |
 | `xefmctl diff A B` | Compares two files, or two folders |
 | `xefmctl show-markdown FILE` | Shows Markdown in XeFM's viewer; `-` reads it from standard input |

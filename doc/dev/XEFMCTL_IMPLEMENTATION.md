@@ -44,8 +44,10 @@ Its first user is an AI agent in a terminal session XeFM started, with the
 
 It was first called `xefm`, which collided with the command that starts
 XeFM. MCP was considered for agents (#880), but an agent in a shell XeFM
-started can run `xefmctl` like any command and read `xefmctl help --json`. If
-MCP is wanted later, it is a thin `xefmctl mcp` over the same socket.
+started can run `xefmctl` like any command and read `xefmctl help --json`. A
+sandboxed shell cannot reach the socket, so an agent's session also gets the
+commands as MCP tools, over HTTP
+([AI_AGENT_SANDBOX_SYSTEM.md](AI_AGENT_SANDBOX_SYSTEM.md)).
 
 ## Pieces
 

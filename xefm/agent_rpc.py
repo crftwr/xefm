@@ -16,6 +16,7 @@ import difflib
 import os
 import re
 import shutil
+import threading
 from typing import Any, Callable
 
 from xefm.agent_chat import (ASK_USER_TOOL, ASKING, ChatClient, Conversation, Item,
@@ -26,6 +27,11 @@ logger = getLogger("AgentRpc")
 
 #: JSON-RPC's "no such method": what XeFM answers a request it does not know.
 METHOD_NOT_FOUND = -32601
+
+#: Seconds the first message waits for the agent to have asked XeFM's MCP
+#: server for its tools: a message sent before that may be answered without
+#: them (Copilot, once, #995).
+TOOLS_WAIT = 10.0
 
 
 def normal_path(path: str) -> str:
@@ -77,12 +83,18 @@ class RpcClient(ChatClient):
 
     ``resume`` is the session to go back to ("" for a new one). ``refuse``
     says why a shell command may not run at all (None when it may be asked):
-    such a command is declined without asking the user."""
+    such a command is declined without asking the user. ``channel`` is the
+    session's way to XeFM's MCP tools (:class:`xefm.mcp_server.Channel`)."""
 
     def __init__(self, argv: list[str], *, conv: Conversation, resume: str = "",
-                 refuse: Callable[[str], str | None] | None = None, **kwargs: Any) -> None:
+                 refuse: Callable[[str], str | None] | None = None,
+                 channel: Any = None, **kwargs: Any) -> None:
         super().__init__(argv, **kwargs)
         self.conv = conv
+        self.channel = channel
+        #: Whether the agent was told of the channel, so its tools will come.
+        self._tools_coming = False
+        self._held = False
         self.resume = resume
         self._refuse = refuse
         self._calls: dict[int, tuple[Callable[[dict], Any], Callable[[dict], Any]]] = {}
@@ -100,6 +112,8 @@ class RpcClient(ChatClient):
         found = shutil.which(self.argv[0], path=self.env.get("PATH"))
         if found:
             self.argv[0] = found
+        if self.channel is not None:
+            self.channel.expect()
         super()._spawn()
 
     def _open(self) -> None:
@@ -109,7 +123,19 @@ class RpcClient(ChatClient):
     def _ready(self) -> None:
         self.ready = True
         self.conv._update_state()
+        if self._tools_coming:
+            self._held = True
+            self.channel.when_listed(lambda: self._post(self._release))
+            timer = threading.Timer(TOOLS_WAIT, lambda: self._post(self._release))
+            timer.daemon = True
+            timer.start()
+            return
         self._next()
+
+    def _release(self) -> None:
+        if self._held:
+            self._held = False
+            self._next()
 
     def _failed(self, text: str) -> None:
         """The session cannot open: say so and end the process (Enter in the
@@ -187,7 +213,7 @@ class RpcClient(ChatClient):
         return True
 
     def _next(self) -> None:
-        if self.ready and not self.in_turn and self._queue:
+        if self.ready and not self._held and not self.in_turn and self._queue:
             self.in_turn = True
             self._start_turn(self._queue.pop(0))
 
@@ -310,19 +336,21 @@ class RpcProtocol(Protocol):
     client_class: type[RpcClient]
 
     def __init__(self, refuse: Callable[[str], str | None] | None = None,
-                 **options: Any) -> None:
+                 channel: Any = None, **options: Any) -> None:
         self.refuse = refuse
+        self.channel = channel
         self.options = options
 
     def conversation(self) -> Conversation:
         conv = Conversation()
         conv.modes, conv.mode_labels = (), {}
         conv.permission_mode = ""
+        conv.sandbox = "not known"
         return conv
 
     def client(self, argv: list[str], conv: Conversation, **kwargs: Any) -> RpcClient:
         return self.client_class(argv, conv=conv, resume=conv.session_id,
-                                 refuse=self.refuse, **self.options, **kwargs)
+                                 refuse=self.refuse, channel=self.channel, **self.options, **kwargs)
 
     def handle(self, view, msg: dict) -> Permission | str | None:
         return view.client.handle(msg)

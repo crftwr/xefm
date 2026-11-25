@@ -331,6 +331,9 @@ class Conversation:
         #: The efforts ``/effort`` takes where XeFM sets it itself (Claude
         #: Code's is a command of its own).
         self.efforts: tuple = ()
+        #: The agent's own sandbox, as far as XeFM can tell: ``on``, ``off``
+        #: or ``not known`` ("" until it is asked).
+        self.sandbox = ""
 
     # --- what the user did -------------------------------------------------------
 
@@ -656,6 +659,10 @@ class Conversation:
                     return todos
                 return []
         return []
+
+    def sandbox_label(self) -> str:
+        """What the header says of the agent's sandbox."""
+        return f"sandbox {self.sandbox}" if self.sandbox else ""
 
     def context_label(self) -> str:
         """How full the context is - ``"12% context"`` once the window is
@@ -1122,13 +1129,29 @@ class Protocol:
 
 
 class ClaudeProtocol(Protocol):
-    """Claude Code's stream-json mode."""
+    """Claude Code's stream-json mode. ``channel`` is the session's way to
+    XeFM (:class:`xefm.mcp_server.Channel`)."""
+
+    def __init__(self, channel: Any = None, sandbox: str = "not known") -> None:
+        self.channel = channel
+        self.sandbox = sandbox
+
+    def conversation(self) -> Conversation:
+        conv = Conversation()
+        conv.sandbox = self.sandbox
+        return conv
 
     def client(self, argv: list[str], conv: Conversation, **kwargs: Any) -> ChatClient:
         return ChatClient(argv, **kwargs)
 
     def handle(self, view, msg: dict) -> Permission | str | None:
-        return view.conversation.handle(msg)
+        result = view.conversation.handle(msg)
+        if isinstance(result, Permission) and self.channel is not None \
+                and result.tool.startswith(f"mcp__{self.channel.name}__"):
+            # XeFM's own tool: what it does is asked by XeFM, once.
+            view.answer(result, allow(result))
+            return None
+        return result
 
     def set_mode(self, view, mode: str) -> None:
         if view.client.request({"subtype": "set_permission_mode", "mode": mode}) is not None:

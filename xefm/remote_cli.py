@@ -36,6 +36,11 @@ import sys
 #: reported than waited on forever.
 TIMEOUT = 10.0
 
+#: What is added when the OS refuses the connection itself.
+SANDBOXED = ("If this is an AI agent's shell, its sandbox keeps it from XeFM: use XeFM's "
+             "own tools, xefmctl and xefmctl_read, instead of the shell. Where the session "
+             "has no such tools, the sandbox's settings close them too; do not retry.")
+
 
 def _table():
     """:mod:`xefm.remote_commands`, loaded by path (``-I`` keeps this file's
@@ -66,19 +71,25 @@ class RemoteError(Exception):
         self.code = code
 
 
-def _abs(value: str) -> str:
+def _abs(value: str, cwd: str | None = None) -> str:
     """A path as XeFM should read it: relative to this shell's directory, not
     to the pane's (``xefmctl pane cd .`` brings the pane to where the shell
-    is); a URL as written."""
+    is); a URL as written. ``cwd`` stands for the shell's directory where
+    there is no shell (:mod:`xefm.mcp_server`)."""
     if value == "-" or "://" in value:
         return value
-    return os.path.abspath(os.path.expanduser(value))
+    value = os.path.expanduser(value)
+    return os.path.abspath(os.path.join(cwd, value) if cwd else value)
 
 
-def parse(argv: list[str], stdin=None) -> dict:
+def parse(argv: list[str], stdin=None, cwd: str | None = None) -> dict:
     """``argv`` (after ``xefmctl``) as a request: ``{"cmd": "pane cd", "args":
     {...}, "opts": {...}, "json": bool}``. Raises :class:`RemoteError` with
-    exit status 2 for a usage mistake, 0 for ``--help``."""
+    exit status 2 for a usage mistake, 0 for ``--help``.
+
+    With ``cwd`` it is parsed inside XeFM, for an agent: relative paths are
+    taken from there, and nothing but standard input is read (``--plan`` takes
+    ``-`` alone), since XeFM may read what the agent may not."""
     T = _table()
     cmd, used = T.find(argv)
     if cmd is None:
@@ -112,7 +123,7 @@ def parse(argv: list[str], stdin=None) -> dict:
                 if opt.choices and value not in opt.choices:
                     raise RemoteError(f"xefmctl {cmd.name}: {name} takes one of "
                                       f"{', '.join(opt.choices)}", 2)
-                value = _abs(value) if opt.path else value
+                value = _abs(value, cwd) if opt.path else value
                 if opt.multi:
                     opts.setdefault(opt.name.lstrip("-"), []).append(value)
                 else:
@@ -123,13 +134,13 @@ def parse(argv: list[str], stdin=None) -> dict:
                 opts[opt.name.lstrip("-")] = True
             continue
         positional.append(token)
-    args = _bind(cmd, positional, stdin, items_from_pane="from" in opts)
+    args = _bind(cmd, positional, stdin, items_from_pane="from" in opts, cwd=cwd)
     if "from" in opts and any(args.get(a.name) for a in cmd.args if a.path):
         raise RemoteError(f"xefmctl {cmd.name}: give the items or --from, not both", 2)
     if "plan" in opts:
-        opts["plan"] = _read_plan(cmd, opts["plan"], stdin)
+        opts["plan"] = _read_plan(cmd, opts["plan"], stdin, cwd)
     if cmd.name == "pane cd" and not args.get("path"):
-        args["path"] = _abs(".")  # the pane comes to where the shell is
+        args["path"] = _abs(".", cwd)  # the pane comes to where the shell is
     for key in ("limit", "depth", "line", "max-bytes"):
         if key in opts:
             try:
@@ -139,7 +150,8 @@ def parse(argv: list[str], stdin=None) -> dict:
     return {"cmd": cmd.name, "args": args, "opts": opts, "json": want_json}
 
 
-def _bind(cmd, positional: list[str], stdin, items_from_pane: bool = False) -> dict:
+def _bind(cmd, positional: list[str], stdin, items_from_pane: bool = False,
+          cwd: str | None = None) -> dict:
     """Give the positional words to the command's arguments in order. With
     ``--from`` the items come from the pane, so the item arguments may be
     left out."""
@@ -172,7 +184,7 @@ def _bind(cmd, positional: list[str], stdin, items_from_pane: bool = False) -> d
                 args[a.name + "_text"] = text
                 values = ["-"]
         if a.path:
-            values = [_abs(v) for v in values]
+            values = [_abs(v, cwd) for v in values]
         args[a.name] = values[0] if nargs[a.name] in ("1", "?") and values else (
             None if nargs[a.name] in ("1", "?") else values)
     if pending:
@@ -180,10 +192,13 @@ def _bind(cmd, positional: list[str], stdin, items_from_pane: bool = False) -> d
     return args
 
 
-def _read_plan(cmd, where: str, stdin) -> list:
+def _read_plan(cmd, where: str, stdin, cwd: str | None = None) -> list:
     """``rename --plan``: the plan file (or standard input) read here, as a
     list of ``{"path", "name"}`` with each path taken from the shell's
     directory, so XeFM never reads a file of the shell's."""
+    if cwd and where != "-":
+        raise RemoteError(f"xefmctl {cmd.name}: give the plan as standard input, with "
+                          f"--plan -", 2)
     try:
         if where == "-":
             text = (stdin if stdin is not None else sys.stdin).read()
@@ -201,7 +216,7 @@ def _read_plan(cmd, where: str, stdin) -> list:
             and isinstance(p.get("name"), str) for p in plan):
         raise RemoteError(f'xefmctl {cmd.name}: the plan is a list of '
                           f'{{"path": ..., "name": ...}}', 2)
-    return [{"path": _abs(p["path"]), "name": p["name"]} for p in plan]
+    return [{"path": _abs(p["path"], cwd), "name": p["name"]} for p in plan]
 
 
 def _path_of(line: str) -> str:
@@ -232,6 +247,9 @@ def _connect():
         return Client(address, authkey=key)
     except (FileNotFoundError, ConnectionRefusedError):
         raise RemoteError("xefmctl: the XeFM that started this shell has quit", 3) from None
+    except PermissionError as exc:
+        # Refused by the OS, not by XeFM: an AI agent's sandbox (#995).
+        raise RemoteError(f"xefmctl: cannot reach XeFM: {exc}. {SANDBOXED}", 3) from None
     except OSError as exc:
         raise RemoteError(f"xefmctl: cannot reach XeFM: {exc}", 3) from None
     except Exception as exc:  # AuthenticationError, a peer gone mid-handshake

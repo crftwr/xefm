@@ -162,8 +162,10 @@ answered from the rules, listed `xefm` and quoted a two-line request.
    come to XeFM, `agents.refusal` declines the same commands without asking
    the user, for every agent that speaks JSON-RPC: it is what Codex and
    `agy acp` (which ignores `--settings`) have instead of the agent's own.
-   It sees only what the agent asks to run. That is why a restricted
-   Antigravity session found in `auto` mode is put in `default`.
+   It sees only what the agent asks to run, so in Antigravity's `auto` mode it
+   reaches less. The mode is left alone all the same: `default` turns
+   Antigravity's sandbox off, which is not XeFM's to do
+   ([AI_AGENT_SANDBOX_SYSTEM.md](AI_AGENT_SANDBOX_SYSTEM.md)).
 2. **XeFM's** (any agent): in `remote_dispatch`, for policy `agent`:
    - `copy`, `move`, `trash`: the operation's own confirmation, shown
      whatever `CONFIRM_*` says (`_ALWAYS_CONFIRM` forced for the call, read
@@ -178,10 +180,12 @@ answered from the rules, listed `xefm` and quoted a two-line request.
      the actions read them.
    - `read`, `fetch`, `find-in-files` outside the local disk (a UNC path is
      outside): one question per session (`app._remote_read_sessions`).
+   - `read`, `fetch`, `find-in-files` on the local disk outside the session's
+     folder: one question per folder (`_local_read_allowed`).
    - `terminal-session close` of another session: confirmed.
    - `fetch` to a named file, `terminal-session start`, and `invoke` of
-     `AGENT_ASKED_ACTIONS` (they run programs and have no confirmation of
-     their own): `_ask_first`. The question shows all of the command or the
+     `AGENT_ASKED_ACTIONS` or of an action that is not built in (they run
+     programs or code and have no confirmation of their own): `_ask_first`. The question shows all of the command or the
      paths, with nothing unprintable in it, or the request is refused
      (`ASK_LIMIT`, `ASK_ITEMS`). With the terminal handed over there is no
      screen to ask on, so these are refused (exit 6).
@@ -198,8 +202,8 @@ answered from the rules, listed `xefm` and quoted a two-line request.
    may be typing. A default of Cancel would turn the request down by accident.
    A drawn session's permission and plan dialogs open the same way.
 
-   A command added to `remote_commands` that changes a file or runs a program
-   has to do one of these. `test/test_agent_restrictions.py` holds them.
+   Every command has its class in `remote_commands.AGENT_CLASS`; one added
+   without it fails. `test/test_agent_restrictions.py` holds them.
    An answer waiting for the user is acknowledged at once (`_late`), so the
    client does not time out on any of them.
 
@@ -446,6 +450,9 @@ nor a docstring (read with `ast`, not imported).
 answers, `terminal` checking and `chat_argv`, the client and the view against a
 stand-in CLI, and `agent` opening (and going back to) a drawn session in
 both modes.
+
+The sandboxes, the way to XeFM and the token:
+[AI_AGENT_SANDBOX_SYSTEM.md](AI_AGENT_SANDBOX_SYSTEM.md).
 
 `test/test_agent_rpc.py`: a Codex app-server and an ACP agent as stand-ins
 behind a real view - opening, replies, approvals and their answers, refused
