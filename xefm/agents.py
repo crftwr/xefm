@@ -33,8 +33,9 @@ supported here; another agent CLI is configured with placeholders in its
 
 Antigravity has no option for a skills folder or system-prompt text, but
 reads a workspace's ``AGENTS.md`` and ``.agents/skills/``, and ``--add-dir``
-adds a workspace folder: XeFM writes one holding both. Its deny rules go in
-a session-only settings file (``--settings``).
+adds a workspace folder: XeFM writes one holding both. Its shell may start in
+that folder, so the rules there name the session's (#1001). Its deny rules go
+in a session-only settings file (``--settings``).
 
 Copilot loads the same plugin folder (``--plugin-dir``), denies commands with
 ``--deny-tool``, and takes the rules as an instructions file
@@ -60,6 +61,8 @@ import json
 import os
 import re
 import shutil
+import tempfile
+import time
 from pathlib import Path as _FsPath
 from typing import Any
 
@@ -284,11 +287,22 @@ def cache_root() -> _FsPath:
     return _FsPath(config_manager.config_dir) / "cache" / "agents"
 
 
+#: What Antigravity's rules say in a terminal session, after everyone's.
+_FOLDER_RULES = """
+The session's folder is {folder}
+
+Work there: it is what "here", "this folder" and a relative path mean. Your
+shell may start in another of your workspace folders, the one with these rules,
+which is XeFM's own and not for work. So begin every shell command by changing
+to the session's folder, and give file tools absolute paths.
+"""
+
+
 def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
-            version: str | None = None) -> dict:
+            version: str | None = None, cwd: str | None = None) -> dict:
     """Write what the session is handed - the skill (as a plugin folder),
     the rules and, for Claude Code, its settings - and return the
-    placeholders' values."""
+    placeholders' values. ``cwd`` is the session's folder."""
     from xefm import extensions as ext
     version = version or ext.skill_version()
     root = _FsPath(root) if root is not None else cache_root()
@@ -336,8 +350,25 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     extra = {}
     if entry.get("preset") == ANTIGRAVITY:
-        extra["workspace_dir"] = str(_antigravity_workspace(
-            session_dir / f"antigravity{apart}", skill, told))
+        if drawn(entry):
+            folder = session_dir / "antigravity-drawn"
+        else:
+            # A terminal session's own, readable by this user alone, gone with
+            # the session (:func:`discard`): its rules name its folder.
+            _prune_session_folders(root)
+            folder = _FsPath(tempfile.mkdtemp(
+                prefix=f"antigravity-{os.getpid()}-", dir=session_dir))
+            extra["session_folder"] = str(folder)
+            if cwd:
+                # Its shell starts in whichever workspace folder sorts first,
+                # and ~/.xefm sorts before nearly all (1.5.16, #1001); over ACP
+                # it starts in the session's. As JSON: a folder's name may hold
+                # a line break, and is no rule. With slashes: a model may take
+                # a backslash for an escape.
+                name = json.dumps(_FsPath(cwd).as_posix(), ensure_ascii=False)
+                told += _FOLDER_RULES.format(
+                    folder=name.encode("utf-8", "backslashreplace").decode("utf-8"))
+        extra["workspace_dir"] = str(_antigravity_workspace(folder, skill, told))
     return {**extra,
         "{plugin_dir}": str(plugin),
         "{skills_dir}": str(plugin / "skills"),
@@ -347,6 +378,36 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
         "{settings_file}": str(settings_file),
         "instructions_dir": str(instructions),  # for the copilot preset; not a placeholder
     }
+
+
+def discard(values: dict) -> None:
+    """Delete what :func:`prepare` wrote for one session alone, once it has
+    ended. A file still open stays; a later start deletes it."""
+    folder = values.get("session_folder")
+    if folder:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+#: The name of a session's own folder: the XeFM that made it, then its own part.
+_SESSION_FOLDER = re.compile(r"antigravity-(\d+)-")
+
+#: Seconds before the folder of an XeFM that is gone is deleted. Not at once: a
+#: process id says nothing about an XeFM in a container that shares this home.
+_SESSION_FOLDER_KEPT = 24 * 60 * 60
+
+
+def _prune_session_folders(root: _FsPath) -> None:
+    """Delete the sessions' own folders that an XeFM left when it ended, under
+    every version's folder."""
+    from xefm.similar_scan import pid_alive
+    for folder in root.glob("*/sessions/antigravity-*"):
+        made_by = _SESSION_FOLDER.match(folder.name)
+        try:
+            if made_by and time.time() - folder.stat().st_mtime > _SESSION_FOLDER_KEPT \
+                    and not pid_alive(int(made_by[1])):
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            continue  # another XeFM deleted it
 
 
 def _antigravity_workspace(folder: _FsPath, skill: _FsPath, rules: str) -> _FsPath:

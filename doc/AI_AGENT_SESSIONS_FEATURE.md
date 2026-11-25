@@ -274,7 +274,9 @@ so one in your `~/.codex/config.toml` is not used there; put what you want
 every session to know in `AGENT_RULES` (or Codex's own `AGENTS.md`).
 
 In a terminal session, Copilot and Antigravity ask whether you trust a folder
-the first time they start there; answer it in the session.
+the first time they start there; answer it in the session. Antigravity may run a
+shell command in XeFM's own folder of rules instead of yours; XeFM tells it
+which folder is yours. A conversation XeFM draws does not have this.
 
 A `config.py` that has its own `AGENTS` keeps it: add the Codex, Copilot or
 Antigravity line to it to get that agent.
