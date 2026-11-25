@@ -526,7 +526,13 @@ def _antigravity_workspace(folder: _FsPath, skill: _FsPath, rules: str) -> _FsPa
     ``AGENTS.md`` as rules and its ``.agents/skills/`` as skills."""
     skills = folder / ".agents" / "skills"
     shutil.rmtree(skills, ignore_errors=True)
-    shutil.copytree(skill, skills / skill.name)
+    for file in skill.rglob("*"):
+        # Written, not copied: in a Windows VM where a sandboxed Codex had just
+        # run, CopyFile2 (shutil's) took two minutes over one of these.
+        if file.is_file():
+            to = skills / skill.name / file.relative_to(skill)
+            to.parent.mkdir(parents=True, exist_ok=True)
+            to.write_bytes(file.read_bytes())
     (folder / "AGENTS.md").write_text(rules, encoding="utf-8")
     return folder
 

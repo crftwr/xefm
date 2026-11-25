@@ -113,15 +113,19 @@ read the agents' settings.
 | B. Every command has its class; what is asked does nothing before the answer | `test_agent_restrictions.py` |
 | C. Stand-in agents: what each is sent, resumed too; the header | `test_agent_rpc.py`, `test_mcp_server.py` |
 | D. A real OS sandbox, no agent: Seatbelt on macOS, seccomp on Linux. Windows is not written yet | `test_agent_sandbox.py` |
-| E. The real CLIs, driven by XeFM's code, with a stand-in model (`agent_standin.py`): no account, no quota. Codex and Copilot, macOS and Linux | `test_agent_cli.py` |
+| E. The real CLIs, driven by XeFM's code, with a stand-in model (`agent_standin.py`): no account, no quota. Codex and Copilot, macOS, Windows and Linux | `test_agent_cli.py` |
+| The hand check, on a real XeFM with its panes and dialogs: what is asked, when, and what is left after | `test_agent_walkthrough.py`: with the tools called directly in every run, by the real CLIs with `--agent-cli` |
 | F. A live turn: does the model use the tools unprompted? | by hand |
 
 Layers A to D run with the suite. E downloads the CLIs, pinned and checksummed,
 so it runs in a guest, by hand, before a release and when a CLI is updated:
 
 ```bash
-make test-vm GUEST=qa-mac ARGS="--agent-cli test/test_agent_cli.py"
+make test-vm GUEST=qa-mac ARGS="--agent-cli test/test_agent_cli.py test/test_agent_walkthrough.py"
+make test-vm GUEST=qa-win ARGS="--agent-cli test/test_agent_cli.py test/test_agent_walkthrough.py"
 ```
+
+On Windows Codex runs its `unelevated` sandbox there, which needs no setup.
 
 In Docker the CLIs' sandboxes do not start (no user namespaces in the default
 seccomp profile), and those tests are skipped. They start with `--security-opt
@@ -130,7 +134,10 @@ needs `--device /dev/net/tun`; qa-linux has neither.
 
 ## Not done
 
-- Windows: layer D (a restricted token, a second user), and E's CLIs. The channel
-  itself was measured there before it was written.
+- Windows: layer D (a restricted token, a second user), and Codex's `elevated` and
+  `mxc` sandboxes with this code. In `unelevated` the shell cannot read the shim's
+  folder, so `xefmctl` there fails in the shell's words, not XeFM's.
+- A question too wide for the box is broken at its width by XeFM (`_fit`), since
+  PuiKit's plain `MessageBox` does not wrap; that belongs in PuiKit.
 - Antigravity: run only on Windows, before this. What to check is in #1002.
 - Claude Code in layer E.

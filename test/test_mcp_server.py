@@ -77,6 +77,13 @@ def test_nothing_is_answered_without_a_sessions_token(srv):
     assert not srv.requests
 
 
+def test_a_request_refused_gets_its_answer(srv):
+    """Closed with the body unread, the connection is reset (Windows)."""
+    for size in (2, 1000, 60_000):
+        for _ in range(20):
+            assert srv.send(b"x" * size, token="x")[0] == 401
+
+
 def test_a_token_is_one_sessions_and_ends_with_it(srv):
     other = srv.mcp.open("user", "/")
     assert other.token != srv.channel.token and other.name != srv.channel.name

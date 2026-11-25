@@ -9,7 +9,7 @@ import threading
 import time
 
 #: The names the agents give the tool that runs a shell command.
-SHELLS = ("exec_command", "shell_command", "shell", "bash", "run_command")
+SHELLS = ("exec_command", "shell_command", "shell", "bash", "run_command", "powershell")
 
 
 def _offered(tools):

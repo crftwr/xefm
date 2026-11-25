@@ -45,16 +45,40 @@ CLIS = {
     ("copilot", "linux", "aarch64"): (
         COPILOT + "linux-arm64.tar.gz",
         "889b423ce7e0dd41a298b95716d3d8fe80dc30f1fd9cf5419a95b6fb8d4e1bc8"),
+    ("codex", "win32", "arm64"): (
+        CODEX + "aarch64-pc-windows-msvc.tar.gz",
+        "9715d5b310d05b0d878725763362b837857f5eb90fbe4ac57997f5e8656dc178"),
+    ("codex", "win32", "amd64"): (
+        CODEX + "x86_64-pc-windows-msvc.tar.gz",
+        "669941eff23dd8470fbf85d919a03d80c4e3d35b441e3fcd361c0f8630945be8"),
+    ("copilot", "win32", "arm64"): (
+        COPILOT + "win32-arm64.zip",
+        "cc3accfcf3bbce431cf9cd41198aec1e81c11908542825a6031726e6eac215cc"),
+    ("copilot", "win32", "amd64"): (
+        COPILOT + "win32-x64.zip",
+        "256de3c3b8c00cbe5f738c9830f30b1d790d6693563689baade984295606af2c"),
 }
+WINDOWS = sys.platform == "win32"
+
+
+def machine():
+    """The computer's own: the Python may be an emulated x64 one on ARM."""
+    if WINDOWS and os.environ.get("PROCESSOR_IDENTIFIER", "").startswith("ARM"):
+        return "arm64"
+    return platform.machine().lower() if WINDOWS else platform.machine()
 
 
 pytestmark = pytest.mark.timeout(300)
 
 
+def asked_for_clis(config):
+    if not (config.getoption("--agent-cli", False) or os.environ.get("XEFM_AGENT_CLI")):
+        pytest.skip("runs the agents' CLIs: --agent-cli, in a guest")
+
+
 @pytest.fixture(autouse=True)
 def asked_for(request):
-    if not (request.config.getoption("--agent-cli", False) or os.environ.get("XEFM_AGENT_CLI")):
-        pytest.skip("runs the agents' CLIs: --agent-cli, in a guest")
+    asked_for_clis(request.config)
 
 
 @pytest.fixture(scope="module")
@@ -65,11 +89,11 @@ def clis(tmp_path_factory):
     def get(program):
         spot = into / program
         if not spot.exists():
-            key = (program, sys.platform, platform.machine())
+            key = (program, sys.platform, machine())
             if key not in CLIS:
                 pytest.skip(f"no {program} pinned for {key[1:]}")
             url, digest = CLIS[key]
-            archive = into / f"{program}.tar.gz"
+            archive = into / url.rpartition("/")[2]
             if shutil.which("curl"):  # a python.org Python in a fresh guest has no CAs
                 subprocess.run(["curl", "-fsSL", "-o", str(archive), url], check=True)
             else:
@@ -77,14 +101,18 @@ def clis(tmp_path_factory):
                         open(archive, "wb") as dst:
                     shutil.copyfileobj(src, dst)
             assert hashlib.sha256(archive.read_bytes()).hexdigest() == digest, url
-            with tarfile.open(archive) as tar:
-                tar.extractall(spot, filter="data")
-        [found] = [p for p in spot.rglob(program) if p.is_file() and os.access(p, os.X_OK)]
+            if archive.suffix == ".zip":
+                shutil.unpack_archive(archive, spot)
+            else:
+                with tarfile.open(archive) as tar:
+                    tar.extractall(spot, filter="data")
+        name = program + ".exe" * WINDOWS
+        [found] = [p for p in spot.rglob(name) if p.is_file() and os.access(p, os.X_OK)]
         return str(found)
     return get
 
 
-def _sandbox_runs():
+def sandbox_runs():
     """Docker's default profile lets no CLI make the namespaces its sandbox is."""
     if sys.platform != "linux":
         return True
@@ -97,12 +125,16 @@ def _sandbox_runs():
 def home(tmp_path, monkeypatch):
     """A home of the test's own, outside every temporary folder (which a
     sandbox may let its shell write), with a session's folder in it."""
-    import pwd
     import tempfile
-    real = pathlib.Path(pwd.getpwuid(os.getuid()).pw_dir)
+    if WINDOWS:  # conftest moves USERPROFILE, not this
+        real = pathlib.Path(os.environ["LOCALAPPDATA"]).parents[1]
+    else:
+        import pwd
+        real = pathlib.Path(pwd.getpwuid(os.getuid()).pw_dir)
     home = pathlib.Path(tempfile.mkdtemp(prefix="xefm-agent-cli-", dir=real))
     (home / "ws").mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("CODEX_HOME", str(home / "codex"))
     (home / "codex").mkdir()
     monkeypatch.setenv("COPILOT_HOME", str(home / "copilot"))
@@ -115,13 +147,24 @@ def home(tmp_path, monkeypatch):
 
 READ = {"command": ["pane", "selected"]}
 WRITE = {"command": ["copy", "a", "--to", "b", "--wait"]}
-STEPS = [("shell", "xefmctl pane selected; echo rc=$?; "
-                   "curl -s -o /dev/null -w 'port=%{http_code}' \"$PROBE_URL\"; "
-                   "echo in-env=$(env | grep -v ^PROBE_ | grep -c \"$PROBE_SHAPE\"); "
-                   # A path the CLI can read in the command it asks about first, and
-                   # allowed it is no longer outside.
-                   "echo x > \"$PROBE_OUTSIDE\" && echo wrote-outside"),
+# The path outside is in a variable: a path the CLI can read in the command it
+# asks about first, and allowed it is no longer outside.
+SHELL = ("xefmctl pane selected; echo rc=$?; "
+         "curl -s -o /dev/null -w 'port=%{http_code}' \"$PROBE_URL\"; "
+         "echo in-env=$(env | grep -v ^PROBE_ | grep -c \"$PROBE_SHAPE\"); "
+         "echo x > \"$PROBE_OUTSIDE\" && echo wrote-outside")
+if WINDOWS:
+    SHELL = ("xefmctl pane selected; echo \"rc=$LASTEXITCODE\"; "
+             "echo \"in-env=$(@(Get-ChildItem env: | Where-Object { $_.Name -notlike 'PROBE_*' "
+             "-and $_.Value -like ('*' + $env:PROBE_SHAPE + '*') }).Count)\"; "
+             "try { Set-Content -ErrorAction Stop $env:PROBE_OUTSIDE x; echo wrote-outside } "
+             "catch { }")
+STEPS = [("shell", SHELL),
          ("tool", mcp_server.READ_TOOL, READ), ("tool", mcp_server.TOOL, WRITE)]
+
+
+#: The kind of sandbox that needs nothing set up by an administrator first.
+WINDOWS_CODEX = ["-c", "windows.sandbox='unelevated'"] if WINDOWS else []
 
 
 class Run:
@@ -140,7 +183,7 @@ class Run:
             words = ["-c", "model='standin'", "-c", "model_provider='standin'", "-c",
                      "model_providers.standin={name='standin',base_url='%s',wire_api='responses',"
                      "requires_openai_auth=false}" % self.model.url,
-                     "-c", "sandbox_mode='workspace-write'", *command]
+                     "-c", "sandbox_mode='workspace-write'", *WINDOWS_CODEX, *command]
         else:
             words = list(command)
         self.entry = agents.normalize({"name": "A", "command": [program, *words],
@@ -171,8 +214,11 @@ class Run:
         posts = _Posts()
 
         def ask(view, perm):
+            # A command asked about again is asked to run outside the sandbox
+            # (Copilot's two requests look the same).
+            again = (perm.tool, dict(perm.input)) in self.asked
             self.asked.append((perm.tool, dict(perm.input)))
-            view.answer(perm, C.allow(perm))
+            view.answer(perm, C.deny() if again else C.allow(perm))
         self.view = ChatView(
             agents.chat_argv(self.entry, self.values), cwd=str(self.ws), env=self.env, name="A",
             post=posts, ask=ask, on_close_request=lambda v: None, on_hide=lambda v: None,
@@ -226,14 +272,19 @@ class Run:
         # XeFM's own tools are asked about by XeFM alone.
         assert not [a for a in self.asked if mcp_server.TOOL in json.dumps(a)
                     and "xefmctl pane selected;" not in json.dumps(a)], self.asked
-        left = [p for p in (self.home / "codex", self.home / "copilot") if p.exists()
-                for f in p.rglob("*") if f.is_file()
-                and self.channel.token.encode() in f.read_bytes()]
-        assert not left, "the token was written down"
+        assert not [f for p in (self.home / "codex", self.home / "copilot")
+                    for f in p.rglob("*") if self._holds_token(f)], "the token was written down"
+
+    def _holds_token(self, file):
+        try:
+            return file.is_file() and self.channel.token.encode() in file.read_bytes()
+        except PermissionError:
+            return False  # the CLI has it open still (Windows)
 
     def check_contained(self):
-        assert not (self.home / "outside").exists() and "wrote-outside" not in self.shell
-        assert "in-env=0" in self.shell
+        told = f"{self.shell}\nasked: {self.asked}"
+        assert not (self.home / "outside").exists() and "wrote-outside" not in self.shell, told
+        assert "in-env=0" in self.shell or "in-env" not in self.shell, told
 
 
 @pytest.fixture
@@ -248,7 +299,7 @@ def run(home, clis):
         r.close()
 
 
-needs_sandbox = pytest.mark.skipif(not _sandbox_runs(), reason="no CLI's sandbox starts here")
+needs_sandbox = pytest.mark.skipif(not sandbox_runs(), reason="no CLI's sandbox starts here")
 
 
 @needs_sandbox
@@ -258,8 +309,14 @@ def test_codexs_sandbox_stays_on_and_its_tools_answer(run, drawn):
     # exec asks nothing: a tool that writes is refused there, as a user who
     # chose never to be asked has it.
     r.chat() if drawn else r.once("-c", "approval_policy='never'")
-    assert "rc=3" in r.shell and ("port=000" in r.shell or not shutil.which("curl")), r.model.results or r.__dict__.get("said")
-    assert "xefmctl_read" in r.shell  # it says what to use instead
+    said = f"{r.model.results} {r.__dict__.get('said')}"
+    if WINDOWS:  # its sandbox cannot read the shim's folder
+        assert "rc=0" not in r.shell and "reached" not in r.shell, said
+    else:
+        assert "rc=3" in r.shell, said
+        assert "xefmctl_read" in r.shell  # it says what to use instead
+    # Windows lets it reach the port, where there is nothing without the token.
+    assert WINDOWS or "port=000" in r.shell or not shutil.which("curl"), said
     r.check_contained()
     if drawn:
         assert r.view.conversation.sandbox == "on"

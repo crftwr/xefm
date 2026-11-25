@@ -155,6 +155,31 @@ def test_every_session_is_told_of_the_server_and_hides_the_token(preset, drawn, 
     assert not folder.exists() and os.path.isdir(other["session_folder"])
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows ACLs")
+def test_on_windows_the_folder_is_open_to_its_user_alone(tmp_path):
+    _, _, values = _handed(_entry(agents.CLAUDE_CODE, True), tmp_path, _channel())
+    for path in (values["session_folder"], values["{mcp_config_file}"]):
+        said = subprocess.run(["icacls", path], capture_output=True, text=True).stdout
+        who = [line.replace(path, "").strip().partition(":(")[0]
+               for line in said.splitlines() if ":(" in line]
+        me = subprocess.run(["whoami"], capture_output=True, text=True).stdout.strip()
+        assert {me, "owner rights"} & {w.lower() for w in who}, said
+        others = [w for w in who if w.lower() != me and not w.lower().startswith(
+            ("nt authority\\", "builtin\\administrators", "owner rights",
+             "creator owner"))]
+        assert not others, said
+
+
+def test_the_file_opened_says_where_it_is(tmp_path):
+    from xefm import remote_dispatch as D
+    file = tmp_path / "Name.txt"
+    file.write_text("x")
+    with open(file, "rb") as f:
+        final = D._final_path(f.fileno())
+    assert final is not None or sys.platform not in ("darwin", "win32", "linux")
+    assert D._key(final) == D._key(D._real(file))
+
+
 def test_the_files_are_under_xefms_own_folder_not_a_temporary_one(monkeypatch, tmp_path):
     """Copilot's sandbox lets its shell read the temporary folder, and reach
     the port (macOS, measured)."""

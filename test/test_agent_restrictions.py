@@ -181,6 +181,17 @@ def test_a_question_shows_all_of_it_and_nothing_hides_in_it(app):
     assert not app._user_ctx.asked and not app._user_ctx.did
 
 
+def test_a_question_fits_the_box_or_is_not_asked(screen, tmp_path):
+    """The box does not wrap: a long path would run off it."""
+    _do(screen, ["terminal-session", "start", "x" * 300])
+    box = screen.box()
+    rows = box.message.split("\n")
+    assert max(map(len, rows)) <= 92 and "x" * 300 in "".join(rows)
+    _press(screen, "escape")
+    assert _refused(_do(screen, ["terminal-session", "start", "x" * 1990]))
+    assert screen.box() is None
+
+
 # --- reading outside the local disk -----------------------------------------------------
 
 def test_searching_inside_files_far_away_is_asked(app, tmp_path):

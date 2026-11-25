@@ -64,6 +64,9 @@ IDLE = 60.0
 #: The most connections served at once; another is closed unanswered.
 CONNECTIONS = 64
 
+#: The most bytes read of a request that is refused, so that it gets the answer.
+DRAIN = 1 << 16
+
 #: The most characters one call's answer holds.
 OUTPUT_LIMIT = 1_000_000
 
@@ -397,6 +400,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         pass  # a request line holds nothing worth a log
 
     def _reply(self, code: int, body: bytes = b"", *, close: bool = False) -> None:
+        if close:
+            self._drain()
         self.send_response(code)
         if body:
             self.send_header("Content-Type", "application/json")
@@ -408,6 +413,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.close_connection = True
         self.end_headers()
         self.wfile.write(body)
+
+    def _drain(self) -> None:
+        """Read what a request refused still holds, when it is small: closed
+        with it unread, the connection is reset, and Windows' client sees that
+        instead of the answer."""
+        try:
+            left = int(self.headers.get("Content-Length") or 0)
+            if 0 < left <= DRAIN:
+                self.rfile.read(left)
+        except (ValueError, OSError):
+            pass
 
     def _channel(self) -> Channel | None:
         """The session the request is from; answered with a refusal, and None,

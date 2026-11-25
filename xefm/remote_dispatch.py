@@ -842,6 +842,24 @@ def _shown_to_user(text) -> str:
     return text
 
 
+def _fit(app, text: str) -> str:
+    """A question as the box shows it, which does not wrap: broken at the
+    width it can have, a path too, or refused where the screen has no room for
+    all of it. What the user cannot see they cannot agree to."""
+    backend = getattr(app.panel, "backend", None)
+    if backend is None:
+        return text
+    from puikit import Font, Style
+    from puikit.text import wrap_text
+    width, height = backend.size_units
+    style = Style(font=Font())
+    rows = [row for line in text.split("\n") for row in wrap_text(
+        line, max(10.0, width - 8), lambda t: backend.measure_text(t, style))]
+    if len(rows) > height - 9:
+        raise _Refused("too long to show the user, who has to agree to it")
+    return "\n".join(rows)
+
+
 def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> Any:
     """Run ``then()`` if the user agrees, for an agent's session; at once for
     any other. Returns an answer or a Pending. Refused while terminal mode
@@ -850,6 +868,7 @@ def _ask_first(app, req, question: str, title: str, then, *, declined: str) -> A
         return then()
     if getattr(app, "_terminal_handed_over", False):
         raise _Refused(SUSPENDED_MESSAGE, SUSPENDED)
+    question = _fit(app, question)
     pending = Pending()
     came_from = [None]
 
@@ -1226,7 +1245,8 @@ def _write(app, req, verb: str, run, *, results: bool = False,
             except Exception as exc:
                 logger.error(f"xefmctl {verb} failed: {exc}")
                 finished(None, TaskOutcome("failed", error=exc))
-        app._user_ctx.confirm(f"{_asker(app, req)} wants to {ask_agent}.",
+        app._user_ctx.confirm(_fit(app, f"{_asker(app, req)} wants to "
+                                        f"{_shown_to_user(ask_agent)}."),
                               title=f"Allow {verb}?", on_result=answered)
 
     _, came_from[0] = _ui(app, req, begin)
@@ -1409,7 +1429,10 @@ def _ask(app, req, open_dialog) -> Pending:
 
 def _c_confirm(app, req):
     def open_dialog(answer):
-        app._user_ctx.confirm(req["args"]["prompt"], title=req["opts"].get("title") or "Confirm",
+        prompt = req["args"]["prompt"]
+        if _is_agent(req):
+            prompt = _fit(app, prompt)
+        app._user_ctx.confirm(prompt, title=req["opts"].get("title") or "Confirm",
                               on_result=lambda yes: answer(ok(
                                   [{"answer": "yes" if yes else "no"}],
                                   status=0 if yes else FAILED)))
@@ -1642,8 +1665,8 @@ def _c_session_close(app, req):
                 app._close_session(session)
             answer(ok(status=0 if yes else FAILED,
                       note=None if yes else "the user kept the session"))
-        app._user_ctx.confirm(f"{_asker(app, req)} wants to end the terminal session "
-                              f"{session.name}.", title="End session?", on_result=result)
+        app._user_ctx.confirm(_fit(app, f"{_asker(app, req)} wants to end the terminal "
+                                        f"session {_shown_to_user(session.name)}."), title="End session?", on_result=result)
     return _ask(app, req, open_dialog)
 
 
