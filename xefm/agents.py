@@ -57,11 +57,12 @@ each the way that mode takes them (:func:`chat_argv`, :func:`protocol`).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
 import shutil
+import tempfile
+import time
 from pathlib import Path as _FsPath
 from typing import Any
 
@@ -349,21 +350,25 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     extra = {}
     if entry.get("preset") == ANTIGRAVITY:
-        folder = f"antigravity{apart}"
-        if cwd and not drawn(entry):
-            # Its shell starts in whichever workspace folder sorts first, and
-            # ~/.xefm sorts before nearly all (1.5.16, #1001); over ACP it
-            # starts in the session's. One folder for each session folder, so
-            # that two sessions do not share a rule that names one of them.
-            folder += "-" + hashlib.sha256(
-                os.path.normcase(cwd).encode("utf-8", "surrogatepass")).hexdigest()[:16]
-            # As JSON: a folder's name may hold a line break, and is no rule.
-            # With slashes: a model may take a backslash for an escape.
-            name = json.dumps(_FsPath(cwd).as_posix(), ensure_ascii=False)
-            told += _FOLDER_RULES.format(
-                folder=name.encode("utf-8", "backslashreplace").decode("utf-8"))
-        extra["workspace_dir"] = str(_antigravity_workspace(
-            session_dir / folder, skill, told))
+        if drawn(entry):
+            folder = session_dir / "antigravity-drawn"
+        else:
+            # A terminal session's own, readable by this user alone, gone with
+            # the session (:func:`discard`): its rules name its folder.
+            _prune_session_folders(root)
+            folder = _FsPath(tempfile.mkdtemp(
+                prefix=f"antigravity-{os.getpid()}-", dir=session_dir))
+            extra["session_folder"] = str(folder)
+            if cwd:
+                # Its shell starts in whichever workspace folder sorts first,
+                # and ~/.xefm sorts before nearly all (1.5.16, #1001); over ACP
+                # it starts in the session's. As JSON: a folder's name may hold
+                # a line break, and is no rule. With slashes: a model may take
+                # a backslash for an escape.
+                name = json.dumps(_FsPath(cwd).as_posix(), ensure_ascii=False)
+                told += _FOLDER_RULES.format(
+                    folder=name.encode("utf-8", "backslashreplace").decode("utf-8"))
+        extra["workspace_dir"] = str(_antigravity_workspace(folder, skill, told))
     return {**extra,
         "{plugin_dir}": str(plugin),
         "{skills_dir}": str(plugin / "skills"),
@@ -373,6 +378,36 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
         "{settings_file}": str(settings_file),
         "instructions_dir": str(instructions),  # for the copilot preset; not a placeholder
     }
+
+
+def discard(values: dict) -> None:
+    """Delete what :func:`prepare` wrote for one session alone, once it has
+    ended. A file still open stays; a later start deletes it."""
+    folder = values.get("session_folder")
+    if folder:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+#: The name of a session's own folder: the XeFM that made it, then its own part.
+_SESSION_FOLDER = re.compile(r"antigravity-(\d+)-")
+
+#: Seconds before the folder of an XeFM that is gone is deleted. Not at once: a
+#: process id says nothing about an XeFM in a container that shares this home.
+_SESSION_FOLDER_KEPT = 24 * 60 * 60
+
+
+def _prune_session_folders(root: _FsPath) -> None:
+    """Delete the sessions' own folders that an XeFM left when it ended, under
+    every version's folder."""
+    from xefm.similar_scan import pid_alive
+    for folder in root.glob("*/sessions/antigravity-*"):
+        made_by = _SESSION_FOLDER.match(folder.name)
+        try:
+            if made_by and time.time() - folder.stat().st_mtime > _SESSION_FOLDER_KEPT \
+                    and not pid_alive(int(made_by[1])):
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            continue  # another XeFM deleted it
 
 
 def _antigravity_workspace(folder: _FsPath, skill: _FsPath, rules: str) -> _FsPath:

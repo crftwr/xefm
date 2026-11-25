@@ -6032,11 +6032,12 @@ class XeFMApp:
     def _start_session(self, argv: list, *, cwd: str | None, env: dict, name: str,
                        named: bool = False,
                        shell: bool, on_done=None, show: bool = True,
-                       policy: str | None = None):
+                       policy: str | None = None, cleanup=None):
         """Run ``argv`` as a new terminal session on a screen of its own, shown
         unless ``show`` is False (then it starts out of view). ``shell`` marks
         a shell (shell integration; its ``exit`` is never a failure once typed
-        into) as opposed to a program; ``on_done(code)`` runs once the session ends.
+        into) as opposed to a program; ``on_done(code)`` runs once the session ends,
+        and ``cleanup()`` then and when XeFM quits with it running.
         ``policy`` is what it may do through ``xefmctl``: the user's, unless an
         agent's session asked for it (:mod:`xefm.remote_dispatch`).
         The caller has checked :meth:`_terminal_ready`."""
@@ -6056,7 +6057,7 @@ class XeFMApp:
         view = self._make_session_view(argv, cwd=cwd, env=env, label=name, shell=shell)
         session = self._sessions.add(Session(
             view=view, kind=SHELL if shell else PROGRAM, name=name, cwd=cwd,
-            id=sid, on_done=on_done, program=program, named=named))
+            id=sid, on_done=on_done, cleanup=cleanup, program=program, named=named))
         # The viewers' hints: the terminal covers the panes and paints the
         # content surface itself, so over an animated background it leaves its
         # page unpainted and the scene shows through (ctx.wallpaper).
@@ -6224,12 +6225,17 @@ class XeFMApp:
         self.log_info(f"Starting {entry['name']} in {cwd}")
         if is_desktop_mode():
             if not self._terminal_ready():
+                agents.discard(values)
                 return
             self._start_session(argv, cwd=cwd, env=env, name=entry["name"],
-                                shell=False, policy=policy)
+                                shell=False, policy=policy,
+                                cleanup=lambda: agents.discard(values))
             return
         self._with_remote_env(env, "agent", policy)
-        self._run_in_terminal(argv, cwd=cwd, env=env, pause_on_error=True)
+        try:
+            self._run_in_terminal(argv, cwd=cwd, env=env, pause_on_error=True)
+        finally:
+            agents.discard(values)
 
     # --- AI agent sessions XeFM draws ('terminal': False, #959) --------------------------
 
@@ -6784,6 +6790,8 @@ class XeFMApp:
             view.close()
             self._relist_both()
             self.panel.render()
+            if session.cleanup is not None:
+                session.cleanup()
             done, session.on_done = session.on_done, None
             if done is not None:
                 done(code)
@@ -6811,6 +6819,8 @@ class XeFMApp:
             except Exception as e:
                 getLogger("Terminal").error(
                     f"Could not close terminal session {session.name}: {e}")
+            if session.cleanup is not None:
+                session.cleanup()
 
     def _screen_label(self, screen, *, full: bool = False) -> str:
         """A screen's row in the switcher: the file manager or the session

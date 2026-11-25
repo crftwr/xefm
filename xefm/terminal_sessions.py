@@ -57,6 +57,9 @@ class Session:
     #: program's clean exit, or by the user after a failed one): what the
     #: code after terminal mode's blocking run would do.
     on_done: object = None
+    #: Called once when the session ends, XeFM quitting included: what was made
+    #: for it alone goes.
+    cleanup: object = None
     #: What a hidden session has to say - a notification, a long command
     #: that finished - until it is next shown: ``(kind, text)`` with kind
     #: ``done``, ``failed`` or ``attention``, as the status bar's parts.
