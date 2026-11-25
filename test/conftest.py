@@ -13,6 +13,12 @@ _saved_home_env = {}
 _fake_home = None
 
 
+def pytest_addoption(parser):
+    parser.addoption("--agent-cli", action="store_true", default=False,
+                     help="run the AI agents' real CLIs, downloaded (test_agent_cli.py); "
+                          "in a guest")
+
+
 def pytest_configure(config):
     """Point the home directory at an empty temporary one for the whole run
     (#808), so no test reads the runner's own ``~/.xefm/config.py``.

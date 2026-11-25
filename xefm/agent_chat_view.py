@@ -713,8 +713,9 @@ class ChatView(FocusContainer, Widget):
         ctx.fill_rect(0, 0, wu, head_h, Style(bg=header_bg))
         conv = self.conversation
         mode = conv.mode_labels.get(conv.permission_mode, conv.permission_mode)
-        context = conv.context_label()
+        context, sandbox = conv.context_label(), conv.sandbox_label()
         right = (f"{mode} · " if mode else "") + conv.state + \
+            (f" · {sandbox}" if sandbox else "") + \
             (f" · {conv.model}" if conv.model else "") + \
             (f" · {context}" if context else "") + " "
         right_w = ctx.measure_text(right)

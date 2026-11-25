@@ -1129,8 +1129,8 @@ class Config:
     #                permission settings.
     #                Without a preset, put the placeholders in 'command'
     #                yourself: {plugin_dir} {skills_dir} {skill_dir} {rules}
-    #                {rules_file} {settings_file} (and {prompt} in
-    #                'prompt_args', default ['{prompt}'], for ask_agent).
+    #                {rules_file} {settings_file} {mcp_config_file} (and
+    #                {prompt} in 'prompt_args', default ['{prompt}'], for ask_agent).
     #   'restrict' : True (the default): xefmctl from the session has every
     #                file change confirmed in XeFM, may not delete for good,
     #                and asks before its first read outside this disk; for

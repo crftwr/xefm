@@ -181,9 +181,11 @@ between you and your plan with the agent's maker, as it is in a terminal.
   the folder and ask for the rest, as Codex's own mode of that kind does.
 - **Copilot** stops its turn when you deny a tool; type what it should do
   instead.
-- **Antigravity** starts in its **ask** mode: its *Auto* mode runs commands
-  without asking, and then XeFM could not decline those
-  [it may not run](#what-the-agent-may-not-do).
+- **Antigravity** starts in the mode it opens in. In its *Auto* mode it decides
+  itself which commands it runs, and XeFM can decline only those
+  [it may not run](#what-the-agent-may-not-do) that it asks about; the
+  conversation says so when it opens in that mode. XeFM does not change it: the
+  mode that asks turns Antigravity's sandbox off.
 - **Sign in** to an agent outside XeFM first. When one is not signed in, the
   conversation says which command to run.
 - **Trust.** Copilot and Antigravity do not ask here whether you trust a
@@ -200,7 +202,9 @@ between you and your plan with the agent's maker, as it is in a terminal.
   you confirm each change; never delete for good; show results in XeFM.
   Your own rules come after XeFM's (`AGENT_RULES`).
 - **[`xefmctl`](XEFMCTL_FEATURE.md)**, with a key that tells XeFM the request
-  comes from this agent's session.
+  comes from this agent's session: as a command in the agent's shell, and as two
+  tools, `xefmctl_read` (what only reads) and `xefmctl` (the rest), which
+  [work where the agent's sandbox stops the command](#the-agents-own-sandbox).
 
 ## What the agent may not do
 
@@ -216,10 +220,14 @@ Rules can be ignored, so two things hold whatever the agent decides:
   invoke` asks first too, and deletes to the trash. Copying a file to a place
   the agent names (`xefmctl fetch`) is asked, and so is running a program:
   starting a terminal session, which is then as limited as the agent's own,
-  or opening files with other programs. Your own actions and an extension's
-  do what they do. The first time the agent reads a file off this computer's
+  opening files with other programs, reloading the configuration, or running an
+  action of your own or an extension's. The first time the agent reads a file off this computer's
   disk - on a server, in cloud storage, in an archive - or searches inside
-  files there, XeFM asks whether it may, for the rest of the session. All of
+  files there, XeFM asks whether it may, for the rest of the session. On this
+  computer's disk it asks before the agent reads a file outside the session's
+  folder through `xefmctl`, once for each folder. It does not ask for the files
+  directly in a folder you went to in a pane; a folder the agent took the pane to
+  does not count. All of
   these confirmations start with no button selected, so that an Enter you typed
   for something else neither agrees to one nor turns it down: choose with the
   Left or Right key and press Enter, click a button, or press Esc to cancel.
@@ -237,6 +245,29 @@ Rules can be ignored, so two things hold whatever the agent decides:
 
 To lift both, for an agent you trust with your files, set `'restrict':
 False` on its entry.
+
+## The agent's own sandbox
+
+Some agents can run their shell commands in a sandbox of the operating system's,
+which limits what a command reaches whatever the agent decides: typically it
+writes only in the session's folder and has no network. It is a setting of the
+agent's, and yours. XeFM never turns it on, off or wider.
+
+- **What it is now.** The header of a conversation XeFM draws says *sandbox on*,
+  *off* or *not known*, and so does `xefmctl state` in an agent's session. *Not
+  known* means that it is up to the agent's settings, which XeFM does not read.
+- **`xefmctl` in a sandbox.** Most sandboxes keep the agent's shell from XeFM, so
+  XeFM also gives every session two tools the agent itself calls, outside the
+  sandbox. They run the same commands under the same limits. If the agent tries
+  the command in its shell instead, the message says to use the tools.
+- **What the tools use.** They are an MCP server inside XeFM that listens on this
+  computer only, and answers nothing without a token made for the one session,
+  which ends with it. Other users of the same computer can reach the port, but
+  not without the token. If your agent's settings close it (Copilot's
+  `allowLocalNetwork`), the tools are not there.
+- **Being asked.** In a conversation XeFM draws with Claude Code, Codex or
+  Copilot, calling XeFM's tools is not asked by the agent: XeFM asks, where it
+  would have. Antigravity asks first, and so does an agent on its own screen.
 
 ## Setting up agents: `AGENTS`
 
@@ -314,6 +345,7 @@ session:
 | `{plugin_dir}` | The same skill as a Claude Code plugin folder |
 | `{rules}` / `{rules_file}` | The rules, as text / in a Markdown file |
 | `{settings_file}` | A JSON file of the `settings` given (empty without them) |
+| `{mcp_config_file}` | A JSON file of [XeFM's tools](#the-agents-own-sandbox), as an MCP configuration (`mcpServers`, over HTTP); empty where they could not be started |
 | `{prompt}` | The request, for `ask_agent` |
 
 Each agent takes these in its own way. The wiki page

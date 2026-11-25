@@ -55,6 +55,11 @@ the XeFM the user runs (`XeFM X.Y.Z`); if it is not, skip this check.
 When `XEFM_SESSION` is set, you run in a terminal session XeFM started,
 beside a user looking at XeFM's window, and `xefmctl` talks to that XeFM:
 
+If the session has XeFM's tools `xefmctl_read` and `xefmctl` (an MCP server whose
+name starts with `xefm_`), run the commands below with them instead of the shell:
+`["state"]` is `xefmctl state`. They work where a sandbox keeps your shell from
+XeFM (*cannot reach XeFM*, exit status 3).
+
 1. Run `xefmctl state` first: both panes, the cursor, the selection, what is
    open. "This file", "these", "here" mean what XeFM shows - read it, never
    guess.
@@ -65,8 +70,8 @@ beside a user looking at XeFM's window, and `xefmctl` talks to that XeFM:
    `xefmctl pane open-list -`, `view`, `diff`, `show-markdown`.
 4. Change files only with `xefmctl copy|move|trash --wait`, so the user
    confirms each change in XeFM; never delete for good. `fetch` to a file you
-   name, `terminal-session start` and opening files with other programs are
-   confirmed too. Ask with `xefmctl confirm|choose|input`.
+   name, `terminal-session start`, opening files with other programs and
+   reading a file outside the session's folder are confirmed too. Ask with `xefmctl confirm|choose|input`.
 5. To use an action, `xefmctl action list`, then `action show NAME` (with an
    extension's guide for agents, when it has one), then `xefmctl invoke NAME`
    after `pane select` / `pane cd` put the operands in place.

@@ -58,6 +58,12 @@ def _mode_name(mode: str) -> str:
 _UNASKED = ("autopilot", "auto", "yolo", "bypassPermissions")
 
 
+#: What a restricted session that opens in a mode that does not ask says.
+AUTO_NOTICE = ("{agent} is in auto mode: it decides itself which commands it runs, and XeFM "
+               "can turn down only those it asks about. What it does through XeFM is asked "
+               "as always.")
+
+
 def _content_text(content: Any) -> str:
     """The text of one content block."""
     if not isinstance(content, dict):
@@ -83,8 +89,10 @@ class AcpClient(RpcClient):
 
     def __init__(self, argv: list[str], *, agent: str = "", login: str = "",
                  plain_commands: bool = False, restrict: bool = True,
-                 first: dict | None = None, **kwargs: Any) -> None:
+                 first: dict | None = None, sandbox: str = "not known",
+                 **kwargs: Any) -> None:
         super().__init__(argv, **kwargs)
+        self.conv.sandbox = sandbox
         self.agent = agent
         #: How to sign in, for the notice when the agent says it is not.
         self.login = login
@@ -123,7 +131,7 @@ class AcpClient(RpcClient):
     def _initialized(self, result: dict) -> None:
         caps = result.get("agentCapabilities")
         self._capabilities = caps if isinstance(caps, dict) else {}
-        params = {"cwd": self.cwd, "mcpServers": []}
+        params = {"cwd": self.cwd, "mcpServers": self._servers()}
         session = self._capabilities.get("sessionCapabilities")
         if self.resume and isinstance(session, dict) and "resume" in session:
             self.call("session/resume", dict(params, sessionId=self.resume),
@@ -139,6 +147,16 @@ class AcpClient(RpcClient):
                                      "it starts a new one")
             self.call("session/new", params, self._session, self._refused)
 
+    def _servers(self) -> list[dict]:
+        """XeFM's MCP server, for an agent that takes one over HTTP."""
+        takes = self._capabilities.get("mcpCapabilities")
+        if self.channel is None or not isinstance(takes, dict) or not takes.get("http"):
+            return []
+        self._tools_coming = True
+        return [{"type": "http", "name": self.channel.name, "url": self.channel.url,
+                 "headers": [{"name": k, "value": v}
+                             for k, v in self.channel.headers.items()]}]
+
     def _session(self, result: dict) -> None:
         conv = self.conv
         self._loading = False
@@ -147,11 +165,10 @@ class AcpClient(RpcClient):
         self._have_options(result.get("configOptions"))
         self._have_old_models(result.get("models"))
         mode = conv.mode_choice or self.first.get("mode", "")
-        if not mode and self.restrict and _mode_name(conv.permission_mode) == "auto" \
-                and "default" in conv.modes:
-            # It runs commands without asking, so XeFM could not refuse those
-            # a restricted session may not run.
-            mode = "default"
+        if not mode and self.restrict and _mode_name(conv.permission_mode) == "auto":
+            # Left as it is: Antigravity's "default" turns its sandbox off,
+            # which is not XeFM's to do (#995).
+            conv.add_notice(AUTO_NOTICE.format(agent=self.agent or "The agent"))
         if mode and self._known_mode(mode) and self.set_mode(self._known_mode(mode)):
             conv.permission_mode = self._known_mode(mode)
         model = conv.model_choice or self.first.get("model", "")
