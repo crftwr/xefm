@@ -130,7 +130,8 @@ make release-status      # read-only: GitHub assets + PyPI published?
 ```
 
 On the Windows machine, from the same checkout at the tag, run both Windows
-targets: `make release-windows-zip` attaches the two portable zips (x64 and
+targets, from PowerShell (`make` stops in Git Bash, which drops most of its
+environment): `make release-windows-zip` attaches the two portable zips (x64 and
 arm64; the one that does not match the venv is cross-compiled), and
 `make release-windows-msix` — the odd one out — submits the *unsigned* MSIX
 bundle (both architectures) to the Microsoft Store rather than the GitHub

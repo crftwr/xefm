@@ -20,74 +20,30 @@ PYTHON := $(abspath .venv/$(VENV_BINDIR)/python)
 endif
 PIP := $(PYTHON) -m pip
 
-# --- Windows: restore the environment a mismatched shell handoff dropped ------
-# Reaching make through a shell whose MSYS runtime differs from the one make was
-# built against costs almost the whole Windows environment: a recipe sees eight
-# variables where a native shell passes ninety. On this project's Windows box
-# that is exactly the handoff -- Git Bash (Git for Windows' own msys) invoking
-# C:\msys64's make -- and two separate things break because of it.
-#
-#   * APPDATA is gone, and with it the config and stored token `gh` looks up
-#     through it. Every release target answers "To get started with GitHub CLI,
-#     please run: gh auth login", and `make release-status` calls a Release that
-#     exists missing, while the identical gh command run straight from the shell
-#     works. `msstore` reads the same variable.
-#   * PATHEXT arrives mangled rather than missing: the conversion layer takes its
-#     ";"-separated value for a path list, and what reaches PowerShell is a bare
-#     ".CPL". PowerShell consults PATHEXT to decide whether a file is executable,
-#     so with .EXE absent `& $venvPy ...` inside windows_app\*.ps1 does nothing
-#     whatsoever -- no output, no error, $LASTEXITCODE never even set. That is
-#     the whole of build.ps1's "Failed to probe the venv interpreter" and
-#     build_msix.ps1's "make_store_assets.py failed ()": two errors that blame a
-#     venv and a script, neither of which is broken.
-#
-# Ask the system rather than the environment. GetFolderPath reads the user's
-# token and GetEnvironmentVariable(...,'Machine') the registry, so both answer
-# correctly from inside the very process that lost the values -- where deriving
-# from HOME would not, make seeing MSYS2's own /home/craft there while its own
-# recipes report /c/Users/craft. All of it goes missing together, so one guard
-# covers the lot and a build from a native shell pays nothing at all.
-# ProgramFiles(x86) cannot be restored alongside them: make accepts
-# `export ProgramFiles(x86) := ...` and then silently keeps it out of the
-# environment it hands to children, so windows_app\*.ps1 derive that root
-# themselves from SystemDrive.
-#
-# One PowerShell start costs the better part of a second and this runs before
-# every target, so ask once for all four rather than four times for one. The
-# values can hold spaces (C:\Users\John Smith), which rules out splitting the
-# answer on whitespace, so PowerShell returns finished make assignments joined
-# by "|" -- a character Windows forbids in a path -- and $(subst) turns those
-# back into lines for $(eval). The findstring guard means a PowerShell that
-# failed or printed something unexpected leaves the variables unset, rather than
-# feeding $(eval) garbage and failing the build with a make syntax error.
+# --- Windows: stop when the Windows environment did not reach make ------------
+# Git Bash (Git for Windows' own msys) starting MSYS2's make hands it almost
+# none of the Windows environment. Two programs then take the current directory
+# for the folder a variable should have named: gh writes .local/, and `py`
+# (%LocalAppData%\Python) installs a whole Python into the checkout and points
+# the user's registry entries and Start menu at it, dropping the others'
+# (it happened in puikit on 2026-11-24).
 ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S))$(findstring CYGWIN,$(UNAME_S)))
-ifeq ($(APPDATA),)
-define WIN_ENV_NL
+ifeq ($(LOCALAPPDATA),)
+$(error On Windows, run make from PowerShell, cmd or an MSYS2 shell, not from Git Bash. The Windows environment did not reach make (LOCALAPPDATA is empty))
+endif
+endif
 
-
-endef
-WIN_ENV := $(shell powershell -NoProfile -Command \
-	"'export USERPROFILE := '  + [Environment]::GetFolderPath('UserProfile') + \
-	'|export APPDATA := '      + [Environment]::GetFolderPath('ApplicationData') + \
-	'|export LOCALAPPDATA := ' + [Environment]::GetFolderPath('LocalApplicationData') + \
-	'|export PATHEXT := '      + [Environment]::GetEnvironmentVariable('PATHEXT','Machine')" \
-	| tr -d '\r')
-ifneq (,$(findstring export APPDATA,$(WIN_ENV)))
-$(eval $(subst |,$(WIN_ENV_NL),$(WIN_ENV)))
-endif
-endif
-endif
+# `py` never downloads a Python for a make target: not having one is an error.
+export PYTHON_MANAGER_AUTOMATIC_INSTALL := false
 
 # --- The home directory XeFM itself reads -------------------------------------
 # `~` in a recipe is the shell's $HOME, which on Windows is not where XeFM keeps
 # its configuration. XeFM asks Python for Path.home(), i.e. USERPROFILE
 # (C:\Users\craft), while MSYS2's sh answers /home/craft from its own passwd --
-# a directory that need not exist and, under the stripped environment above,
-# cannot even be created ("mkdir: cannot create directory '/home'"), which is
-# where `make install-config` stopped. HOME is not among the variables that
-# block restores, and deliberately so: it is not wrong, it answers a different
-# question. Derive the path from USERPROFILE instead, in the POSIX form the sh
-# running the recipe expects, and use it in place of `~`.
+# a directory that need not exist ("mkdir: cannot create directory '/home'" is
+# where `make install-config` stopped). Derive the path from USERPROFILE
+# instead, in the POSIX form the sh running the recipe expects, and use it in
+# place of `~`.
 ifneq (,$(findstring MINGW,$(UNAME_S))$(findstring MSYS,$(UNAME_S))$(findstring CYGWIN,$(UNAME_S)))
 XEFM_HOME := $(shell cygpath -u "$(USERPROFILE)" 2>/dev/null)
 endif

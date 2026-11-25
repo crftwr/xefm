@@ -349,7 +349,7 @@ powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 1.0.0 -Z
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Arch arm64 -Zip
 powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Clean
 
-# or via make (Git-Bash); ARCH=arm64 for the arm64 bundle:
+# or via make (not from Git Bash, where it stops); ARCH=arm64 for the arm64 bundle:
 make windows-app
 make windows-zip ARCH=arm64
 make clean-windows
