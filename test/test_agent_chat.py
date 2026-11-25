@@ -663,6 +663,45 @@ def test_a_plan_reads_as_the_plan():
     assert md.startswith("**Plan**") and "1. Do it" in md and "{" not in md
 
 
+@pytest.mark.parametrize("perm, buttons, key, answer", [
+    (C.Permission("r", "Bash", {"command": "ls"}), ["Allow", "Deny"], "left", "allow"),
+    (C.Permission("r", "Bash", {"command": "ls"}), ["Allow", "Deny"], "right", "deny"),
+    (C.Permission("r", "Bash", {"command": "ls"}, suggestions=[{}]),
+     ["Allow", "Always Allow", "Deny"], "right", "deny"),
+    (C.Permission("r", C.PLAN_TOOL, {"plan": "1. Do it"}),
+     ["Approve", "Approve, Accept Edits", "Keep Planning"], "left", "default"),
+    (C.Permission("r", C.PLAN_TOOL, {"plan": "1. Do it"}),
+     ["Approve", "Approve, Accept Edits", "Keep Planning"], "escape", "deny"),
+])
+def test_what_the_agent_asks_starts_with_no_button_selected(perm, buttons, key, answer):
+    import types
+    from puikit.backends.memory_backend import MemoryBackend
+    from puikit.event import Event, EventType
+    from puikit.panel import Panel
+    from xefm.app import XeFMApp
+    panel = Panel(MemoryBackend(width=100, height=30))
+    answers = []
+    view = types.SimpleNamespace(
+        name="Agent", answer=lambda perm, reply: answers.append(reply["behavior"]),
+        approve_plan=lambda perm, mode: answers.append(mode))
+    app = types.SimpleNamespace(panel=panel, _on_screen_of=lambda view, fn: fn())
+    app._agent_chat_plan = lambda view, perm: XeFMApp._agent_chat_plan(app, view, perm)
+    XeFMApp._agent_chat_ask(app, view, perm)
+
+    def press(key):
+        panel.dispatch_event(Event(EventType.KEY, key=key))
+
+    box = panel._layers[-1].widget
+    assert box.buttons == buttons and box.focused is None
+    press("enter")  # meant for the message being typed
+    press("space")
+    assert answers == [] and panel._layers[-1].widget is box
+    press(key)
+    if key != "escape":
+        press("enter")
+    assert answers == [answer] and not panel._layers
+
+
 def test_the_app_opens_an_edit_as_the_whole_file_before_and_now(tmp_path):
     import types
     from xefm.app import XeFMApp

@@ -182,8 +182,10 @@ answered from the rules, listed `xefm` and quoted a two-line request.
      separator.
 
    Every confirmation an agent's request opens, an operation's own included,
-   starts on Cancel (`_start_on_cancel`, in `_ui`): the agent asks whenever it
-   likes, and the user may be typing.
+   starts with no button selected (`_start_unselected`, in `_ui`; PuiKit's
+   `MessageBox` `default=None`): the agent asks whenever it likes, and the user
+   may be typing. A default of Cancel would turn the request down by accident.
+   A drawn session's permission and plan dialogs open the same way.
 
    A command added to `remote_commands` that changes a file or runs a program
    has to do one of these. `test/test_agent_restrictions.py` holds them.

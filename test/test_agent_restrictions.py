@@ -205,7 +205,7 @@ def test_a_server_by_its_unc_path_is_not_local(path, local):
     assert remote_dispatch._is_local(path) is local
 
 
-# --- the default button -------------------------------------------------------------------
+# --- no default button --------------------------------------------------------------------
 
 @pytest.fixture
 def screen(app, tmp_path):
@@ -243,22 +243,32 @@ def _press(app, key):
     ["copy", "SRC", "--to", "TO"], ["trash", "SRC"], ["fetch", "SRC", "TO/new"],
     ["terminal-session", "start", "cmd"], ["invoke", "sync_python_packages"],
     ["read", "ssh://host/x"], ["confirm", "sure?"]])
-def test_what_an_agent_asks_starts_on_cancel(screen, argv):
+def test_what_an_agent_asks_starts_with_no_button_selected(screen, argv):
     argv = [a.replace("SRC", screen.src).replace("TO", screen.to) for a in argv]
     _do(screen, argv)
     box = screen.box()
-    assert box.buttons[box.focused] == "Cancel"
-    _press(screen, "enter")  # meant for something else
+    assert box.focused is None
+    for key in ("enter", "space"):  # meant for something else
+        _press(screen, key)
+        assert screen.box() is box
+    _press(screen, "escape")
     assert screen.box() is None
     assert os.path.exists(screen.src) and os.listdir(screen.to) == []
     assert not screen._user_ctx.did
 
 
-def test_cancel_can_be_left(screen):
+def test_the_left_key_then_enter_agrees(screen):
     pending = _do(screen, ["terminal-session", "start", "cmd"])
     _press(screen, "left")
     _press(screen, "enter")
     assert pending.wait()["ok"] and screen._user_ctx.did
+
+
+def test_the_right_key_then_enter_declines(screen):
+    pending = _do(screen, ["terminal-session", "start", "cmd"])
+    _press(screen, "right")
+    _press(screen, "enter")
+    assert not pending.wait()["ok"] and not screen._user_ctx.did
 
 
 def test_the_users_own_confirmations_keep_their_default(screen):

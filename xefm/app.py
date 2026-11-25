@@ -6337,7 +6337,8 @@ class XeFMApp:
         """The agent asks whether a tool may run: an XeFM dialog on its screen,
         the answer sent back. Multiple-choice questions to the user come
         the same way and are answered with a list each, and so does a plan to
-        approve."""
+        approve. No button starts selected: the dialog comes up when the agent
+        gets there, over what the user may be typing."""
         from xefm import agent_chat as C
         if perm.tool == C.ASK_USER_TOOL:
             self._agent_chat_questions(view, perm)
@@ -6371,7 +6372,7 @@ class XeFMApp:
 
         def open_dialog() -> None:
             show_message_box(self.panel, "\n\n".join(lines), title="Allow?",
-                             icon="question", buttons=buttons, default=0,
+                             icon="question", buttons=buttons, default=None,
                              cancel=len(buttons) - 1, markdown=True,
                              on_result=answered)
         self._on_screen_of(view, open_dialog)
@@ -6396,7 +6397,7 @@ class XeFMApp:
         def open_dialog() -> None:
             show_message_box(self.panel, f"**{view.name}** has a plan:\n\n{plan}",
                              title="Approve the plan?", icon="question", buttons=buttons,
-                             default=0, cancel=len(buttons) - 1, markdown=True,
+                             default=None, cancel=len(buttons) - 1, markdown=True,
                              on_result=answered)
         self._on_screen_of(view, open_dialog)
         self.panel.render()
