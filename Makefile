@@ -146,7 +146,7 @@ help:
 	@echo "Windows App Bundle:"
 	@echo "  windows-toolchain      - Install the MSVC compiler + Windows SDK with winget"
 	@echo "  windows-app            - Build self-contained Windows application bundle"
-	@echo "                           (ARCH=arm64 for this and the targets below; default x64)"
+	@echo "                           (ARCH=x64|arm64 for this and the targets below; default: this machine's)"
 	@echo "  clean-windows          - Remove windows_app/build/ (bundle, zip, .msix) + tiles"
 	@echo "  clean-windows-cache    - Remove the downloaded CPython embeddable zips"
 	@echo "  windows-zip            - Build the bundle and zip it for distribution"
@@ -990,6 +990,12 @@ uninstall-macos-dmg:
 # Delegates to windows_app/build.ps1 (PowerShell). These targets are only
 # meaningful on Windows; on other platforms PowerShell won't be present.
 
+# The scripts run in Windows PowerShell 5.1 ('powershell'). Started from
+# PowerShell 7, make hands it 7's PSModulePath, whose modules 5.1 cannot load:
+# Get-FileHash and the Cert: drive went missing and the build stopped. Without
+# the variable 5.1 builds its own default.
+unexport PSModulePath
+
 # The built bundle's launcher; its presence marks a complete bundle. Targets
 # that only *consume* the bundle (install, msix) depend on this file target so it
 # is built on demand if missing (e.g. after 'make clean-windows') instead of
@@ -1004,7 +1010,13 @@ uninstall-macos-dmg:
 # picks the one a single-architecture target builds, installs or packs; the
 # release targets always take both. One machine of either kind builds both: the
 # one that does not match the venv is cross-compiled.
-ARCH ?= x64
+#
+# ARCH defaults to this machine's, so what install-windows-zip and
+# install-windows-msix put here runs natively. PROCESSOR_ARCHITECTURE would not
+# tell: make runs x64-emulated on an arm64 machine and reads AMD64 there.
+# PROCESSOR_IDENTIFIER is the machine's own ("ARMv8 (64-bit) Family 8 ..." against
+# "Intel64 Family 6 ..." or "AMD64 Family 25 ...").
+ARCH ?= $(if $(findstring ARM,$(PROCESSOR_IDENTIFIER)),arm64,x64)
 WINDOWS_APP_BUNDLE_x64 := windows_app/build/XeFM/XeFM.exe
 WINDOWS_APP_BUNDLE_arm64 := windows_app/build/arm64/XeFM/XeFM.exe
 WINDOWS_APP_BUNDLE := $(WINDOWS_APP_BUNDLE_$(ARCH))
