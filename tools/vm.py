@@ -18,7 +18,9 @@ there; in a container without it. ``--packages pypi`` installs PuiKit,
 doc-files, similar-files and quality-loop from PyPI as the requirements name
 them - a release's run (#842) - instead of staging this checkout's. The log
 and the JUnit XML are kept in temp/vm-test-<guest>-<time>/; the exit code is
-pytest's.
+pytest's. A Tart VM runs with no window here, whatever the table says: the
+macOS guest's desktop session is there all the same, and nobody is meant to
+watch a test run (#995).
 
 **run** leaves a VM up with XeFM GUI and XeFM TUI launchers on its desktop,
 and waits for Enter. A VMware VM is started headless and then suspended, for
@@ -64,6 +66,9 @@ def _venv(guest, stage) -> str:
 
 def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str) -> int:
     guest = xefm_guest.Guest.for_alias(alias, packages)
+    # `visible` is for a hand check (`run`); a test run's window only gets in
+    # the way of what is on the screen.
+    guest.settings = dict(guest.settings, visible=False)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results = ROOT / "temp" / f"vm-test-{alias}-{stamp}"
     started = time.monotonic()
