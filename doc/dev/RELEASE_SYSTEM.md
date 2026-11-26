@@ -121,7 +121,7 @@ release:
 | PyPI sdist + wheel | uploaded; pip skips pre-releases unless asked (`pip install --pre xefm`, or `xefm==1.17.0rc1`) |
 | macOS DMG | built and attached; `CFBundleVersion` is cut to `1.17.0` (Apple allows only numbers there), `CFBundleShortVersionString` and the DMG name keep `1.17.0rc1` |
 | Windows zips | built and attached; the exe's numeric version resource drops the suffix (`1.17.0.0`), its strings keep it |
-| Microsoft Store MSIX | **not submitted**: a Store version is four numbers, and `build_msix.ps1` refuses a pre-release on purpose |
+| Microsoft Store MSIX | **not submitted**: a Store version is four numbers, and the Store would keep `1.17.0.0` for good, so `build_msix.ps1` refuses a pre-release in the unsigned bundle it submits. On this machine (a pack, a self-signed install, an uninstall) it packages one as `1.17.0.0` |
 | Homebrew cask | **not bumped** |
 | Homebrew formula | not bumped: autobump follows PyPI's `info.version`, which names only stable releases |
 

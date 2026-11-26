@@ -31,7 +31,9 @@
     cannot be submitted, and warns that it did so.
 
     The package version defaults to xefm/__init__.py's __version__ plus the
-    Store-reserved ".0" revision (1.0.1 -> 1.0.1.0); override with -Version.
+    Store-reserved ".0" revision (1.0.1 -> 1.0.1.0); override with -Version. A
+    pre-release is cut to its release (1.0.1rc1 -> 1.0.1.0) for local use; the
+    unsigned bundle, the Store's form, refuses one.
 #>
 [CmdletBinding()]
 param(
@@ -80,16 +82,38 @@ if (-not $OutDir)        { $OutDir        = Join-Path $ScriptDir 'build' }
 #
 # Deterministic, so the separate -Install / -Uninstall invocations that follow a
 # pack all compute the same $msix path.
+#
+# A pre-release (1.18.0rc1, 1.18.0b2, 1.18.0.dev1) has no place in MSIX's four
+# numbers, so it is cut to its release (1.18.0.0), as the DMG's CFBundleVersion
+# is. That serves everything done on this machine: a pack, a self-signed install,
+# an uninstall. It never reaches the Store: the form submitted, an unsigned
+# bundle, refuses it below, since the Store would take 1.18.0.0 for good and the
+# real 1.18.0 could not follow it (RELEASE_SYSTEM.md: a release candidate is not
+# submitted).
+$preRelease = $null
 if (-not $Version) {
     $xefmInit = Join-Path $projectRoot 'xefm/__init__.py'
     $m = Select-String -Path $xefmInit -Pattern '__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
     if (-not $m) { throw "Could not read __version__ from $xefmInit; pass -Version explicitly." }
-    $Version = "$($m.Matches[0].Groups[1].Value).0"
+    $source = $m.Matches[0].Groups[1].Value
+    if ($source -match '^([0-9]+\.[0-9]+\.[0-9]+)(?:(?:a|b|rc)[0-9]+)?(?:\.dev[0-9]+)?$' -and
+            $source -ne $Matches[1]) {
+        $preRelease = $source
+        $Version = "$($Matches[1]).0"
+    } else {
+        $Version = "$source.0"
+    }
+}
+if ($preRelease) {
+    if ($Bundle -and -not $Sign -and -not $Install -and -not $Uninstall) {
+        throw ("XeFM $preRelease is a pre-release, and an unsigned bundle is what goes " +
+               "to the Store, which never takes one (doc/dev/RELEASE_SYSTEM.md). " +
+               "Pass -Sign to try the bundle here.")
+    }
+    Write-Host "[INFO] XeFM $preRelease is a pre-release: packaged as $Version, for this machine only."
 }
 # Validated here because makeappx reports a malformed version as an opaque
-# manifest schema error. A non-numeric source version (a '1.0.1rc1'-style
-# pre-release, which cannot map onto MSIX's 4 numeric parts) needs an explicit
-# -Version.
+# manifest schema error.
 if ($Version -notmatch '^[1-9][0-9]*\.[0-9]+\.[0-9]+\.0$') {
     throw ("Invalid MSIX package version '$Version': the Store requires " +
            "major.minor.build.revision with major >= 1 and revision = 0 " +
@@ -254,7 +278,7 @@ if ($Uninstall) {
         } else {
             Write-Host "[INFO] Requesting elevation to untrust the certificate (accept the UAC prompt)..."
             $psExe = (Get-Process -Id $PID).Path
-            $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -CleanCert -Publisher `"$Publisher`""
+            $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -CleanCert -Publisher `"$Publisher`" -Version $Version"
             $proc = Start-Process -FilePath $psExe -Verb RunAs -Wait -PassThru -ArgumentList $argLine
             if ($proc.ExitCode -ne 0) { Write-Host "[WARN] Elevated cert cleanup failed or was cancelled (exit $($proc.ExitCode))." }
         }
@@ -283,7 +307,7 @@ if ($Install) {
     } else {
         Write-Host "[INFO] Requesting elevation to trust the signing certificate (accept the UAC prompt)..."
         $psExe = (Get-Process -Id $PID).Path
-        $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -TrustCert -OutDir `"$OutDir`""
+        $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -TrustCert -OutDir `"$OutDir`" -Version $Version"
         $proc = Start-Process -FilePath $psExe -Verb RunAs -Wait -PassThru -ArgumentList $argLine
         if ($proc.ExitCode -ne 0) { throw "Elevated cert-trust step failed or was cancelled (exit $($proc.ExitCode))." }
     }
