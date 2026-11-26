@@ -20,6 +20,9 @@ def pytest_addoption(parser):
     parser.addoption("--codex-windows-sandbox", default="unelevated",
                      help="Codex's Windows sandbox for --agent-cli: unelevated (needs "
                           "nothing set up), elevated")
+    parser.addoption("--codex-setup-by-hand", action="store_true", default=False,
+                     help="a person at the guest's screen answers the UAC prompts of "
+                          "Codex's elevated sandbox setup (test_agent_cli.py)")
 
 
 def pytest_configure(config):

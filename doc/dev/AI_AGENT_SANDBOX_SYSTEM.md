@@ -164,8 +164,36 @@ asks `windowsSandbox/readiness` as it opens, and where it is not `ready` says so
 and offers `/setup-sandbox`, which sends `windowsSandbox/setupStart` and reports
 `windowsSandbox/setupCompleted`. XeFM starts nothing that asks for administrator
 rights on its own (rule 1). In a guest nobody consents, so that test is skipped
-once the session has said so. Claude Code has no sandbox on
-Windows.
+once the session has said so. Left unanswered, the prompt ends the setup with
+1223, as a No does (qa-win, 2026-11-26, in a test run's desktop session). Claude
+Code has no sandbox on Windows.
+
+The setup itself is a hand check, with a person to answer the UAC prompts:
+
+1. `make run-vm GUEST=qa-win`. The VM is reverted to its snapshot, so the setup
+   has never been done there, and it is suspended once the launchers are on its
+   desktop.
+2. Open the VM in the VMware Fusion app, which resumes it, and sign in as `qa`.
+3. Double-click **Codex elevated check** on the desktop. It runs
+   `test_codexs_elevated_sandbox_set_up_by_a_person` (`--codex-setup-by-hand`)
+   in a console. The test downloads the pinned Codex, opens a drawn session with
+   `windows.sandbox='elevated'` and checks that it says the sandbox needs setting
+   up.
+4. When the console says `>>> ... Answer NO`, answer **No** at the UAC prompt.
+   The session must say that administrator rights were not given. A refusal
+   within three seconds fails the check: Windows refused without showing the
+   prompt.
+5. When it says `>>> ... Answer YES`, answer **Yes**, without waiting: left
+   alone, the prompt goes away by itself after about two minutes, which Codex
+   reports as a No (1223). The session must say the sandbox is set up. The turn then runs by itself: the shell is kept in and
+   both XeFM tools answer.
+6. The console ends with pytest's `1 passed` (or the failure) and waits for a
+   key. Press Enter in the terminal where `make run-vm` runs, and the VM is put
+   away. The revert at the next run undoes the setup (Codex's sandbox users and
+   firewall rules), so the check can be repeated.
+
+For an administrator the prompt asks only Yes or No; a standard user is asked for
+an administrator's password instead.
 
 For a run with `--agent-cli`, qa-linux's container is started with
 `--security-opt seccomp=unconfined --security-opt systempaths=unconfined
@@ -189,7 +217,10 @@ own confirmation did not say which agent asked and had Copy selected
 
 ## Not done
 
-- Sessions started by the Store's XeFM (they need a person).
+- Sessions started by the Store's XeFM (they need a person). They can be tried
+  before a submission: `make install-windows-msix` sideloads the same package,
+  self-signed, and it runs as the Store's does (the package's identity, its
+  install folder, the `xefmctl` alias). The Store only re-signs it.
 - XeFM still breaks its agents' plain questions itself (`_fit`), though PuiKit
   1.33.1, the floor, wraps a plain `MessageBox` too (puikit#247). `_fit` can keep
   only the refusal of a question too tall for the screen once the floor is

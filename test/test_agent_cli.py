@@ -28,6 +28,7 @@ import pytest
 from agent_standin import Model
 from xefm import agents, mcp_server, remote_server
 from xefm import agent_chat as C
+from xefm import agent_codex as codex_client
 
 CODEX = "https://github.com/openai/codex/releases/download/rust-v0.171.0/codex-package-"
 COPILOT = "https://github.com/github/copilot-cli/releases/download/v1.0.115/copilot-"
@@ -234,8 +235,9 @@ class Run:
         self.requests.append(req)
         return {"ok": True, "items": [{"path": f"reached-{req['cmd'].split()[0]}"}]}
 
-    def chat(self):
-        """The conversation XeFM draws."""
+    def chat(self, before=None):
+        """The conversation XeFM draws; ``before(view, posts)`` runs once it
+        has started, ahead of the request."""
         from puikit import Panel
         from puikit.backends.memory_backend import MemoryBackend
         from test_agent_chat import _Posts
@@ -256,6 +258,8 @@ class Run:
         panel = Panel(MemoryBackend(width=100, height=40))
         panel.push_layer(self.view, z=10, hints={"x": 0, "y": 0, "w": 100, "h": 40})
         self.view.start(panel)
+        if before is not None:
+            before(self.view, posts)
         self.view._submit("go")
         import time
         end = time.monotonic() + 120
@@ -451,6 +455,60 @@ def test_codexs_sandbox_stays_on_and_its_tools_answer(run, drawn):
         r.check_always_allow()
     else:
         assert "reached-pane" in r.model.results.get("call_1", ""), r.said
+
+
+
+def tell(text):
+    """A line for the person at the guest's screen (run with -s)."""
+    print(f"\n>>> {text}\n", flush=True)
+
+
+@pytest.mark.skipif(not WINDOWS, reason="Codex's elevated sandbox is Windows'")
+@pytest.mark.timeout(1200)
+def test_codexs_elevated_sandbox_set_up_by_a_person(run, request):
+    """A hand check, with a person at the guest's screen to answer Windows'
+    administrator prompts (UAC): No first, then Yes. Started from the
+    desktop's "Codex elevated check" that `make run-vm GUEST=qa-win` puts
+    there, never in a test run (nobody is at the screen of one).
+
+    That a Codex whose elevated sandbox is not set up says so; that
+    /setup-sandbox asks Windows and a No is said as such; that a Yes sets it
+    up; and that the sandbox, set up, keeps its shell in and XeFM's tools
+    answer."""
+    if not request.config.getoption("--codex-setup-by-hand"):
+        pytest.skip("a person answers the UAC prompts: --codex-setup-by-hand")
+    WINDOWS_CODEX[1] = "windows.sandbox='elevated'"
+    r = run(agents.CODEX, drawn=True)
+
+    def set_up(view, posts):
+        def said():
+            return C.to_markdown(view.conversation.items)
+
+        def outcome():
+            return "sandbox is set up" in said() or "was not set up" in said()
+        try:
+            posts.until(lambda: "needs setting up" in said(), 30)
+        except AssertionError:
+            pytest.fail("Codex said nothing of its elevated sandbox: set up already? "
+                        "This check needs a guest reverted to its snapshot.\n" + said())
+        tell("Windows will ask for administrator rights. Answer NO this time.")
+        import time
+        asked = time.monotonic()
+        view._submit(f"/{codex_client.SETUP_COMMAND}")
+        posts.until(outcome, 600)
+        assert "administrator rights were not given" in said(), said()
+        # A prompt left alone also ends in 1223, after about two minutes; one
+        # refused at once was never shown.
+        assert time.monotonic() - asked > 3, \
+            "Windows refused without asking anyone: no UAC prompt was shown"
+        tell("Windows will ask again. Answer YES this time.")
+        view._submit(f"/{codex_client.SETUP_COMMAND}")
+        posts.until(lambda: "sandbox is set up" in said(), 600)
+        tell("Set up. The rest runs by itself.")
+    r.chat(before=set_up)
+    r.check_tools()
+    r.check_contained()
+    assert "rc=0" not in r.shell and "reached" not in r.shell, r.model.results
 
 
 @needs_sandbox
