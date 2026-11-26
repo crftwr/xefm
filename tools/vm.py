@@ -23,7 +23,8 @@ macOS guest's desktop session is there all the same, and nobody is meant to
 watch a test run (#995).
 
 **run** leaves a VM up with XeFM GUI and XeFM TUI launchers on its desktop,
-and waits for Enter. A VMware VM is started headless and then suspended, for
+and waits for Enter. A Windows guest also gets "Codex elevated check", the
+hand check of Codex's elevated sandbox setup (doc/dev/AI_AGENT_SANDBOX_SYSTEM.md). A VMware VM is started headless and then suspended, for
 you to open in the Fusion app (a headless VM does not show there); a Tart VM
 shows its window when the table says `visible = true`. In a container, XeFM's
 TUI runs in this terminal, on the stage's tree and an empty /work.
@@ -110,7 +111,16 @@ def _windows_launchers(guest, stage, python) -> list[pathlib.Path]:
     gui.write_text(f'@call "{guest.path(stage / "run-gui.cmd")}"\r\n', encoding="ascii")
     tui = stage / "XeFM TUI.cmd"
     tui.write_text(f'@start "" wt.exe "{guest.path(stage / "run-tui.cmd")}"\r\n', encoding="ascii")
-    return [gui, tui]
+    # Codex's elevated sandbox is set up with an administrator's consent, which
+    # only a person at this screen can give (#995): the check asks for it and
+    # says when to answer No and when Yes. The revert after the run undoes the
+    # setup (its users and firewall rules), so it can be run again.
+    codex = stage / "Codex elevated check.cmd"
+    codex.write_text(head + f'"{python}" -m pytest -n 0 -s -p no:cacheprovider --agent-cli '
+                     "--codex-windows-sandbox elevated --codex-setup-by-hand "
+                     "test/test_agent_cli.py -k elevated_sandbox_set_up_by_a_person\r\n"
+                     "pause\r\n", encoding="ascii")
+    return [gui, tui, codex]
 
 
 def _mac_launchers(guest, stage, python) -> list[pathlib.Path]:
@@ -164,7 +174,7 @@ def run_xefm(alias: str, packages: str) -> int:
             said = guest.ssh(f"cp {names} ~/Desktop/ && chmod +x ~/Desktop/*.command")
         if said.returncode != 0:
             raise SystemExit(f"could not put the launchers on the guest's desktop:\n{said.stderr}")
-        print(f"vm:      XeFM GUI and XeFM TUI are on {alias}'s desktop, running this "
+        print(f"vm:      {', '.join(p.stem for p in launchers)} are on {alias}'s desktop, running this "
               f"working tree from {guest.tree(stage)}")
         if isinstance(machine, ql.VMwareMachine):
             # A headless VM does not show in the Fusion app; a suspended one
