@@ -87,6 +87,7 @@ from xefm.archive import (ArchiveFormatError, archive_format_for_name,
                           get_archive_cache, get_member_archive_path,
                           release_archives_under, tar_zstd_supported)
 from xefm.backend_detector import is_desktop_mode
+from xefm import updates
 # Every background scene XeFM offers is a fragment shader; a theme's ``animation`` key
 # names one of these and ``_resolve_background`` turns it into a puikit ``Shader``.
 from xefm.background_shaders import SCENE_OPTIONS, SHADER_KINDS
@@ -4370,6 +4371,10 @@ class XeFMApp:
                 "extensions": (self.show_extensions, False),
                 "check_extension_updates": (self.check_extension_updates, False),
                 "sync_python_packages": (self.sync_python_packages, False),
+                "open_documentation": (self.open_documentation, False),
+                "release_notes": (self.open_release_notes, False),
+                "report_issue": (self.report_issue, False),
+                "check_for_updates": (self.check_for_updates, False),
                 # --- file operations ---
                 "create_directory": (self.create_directory, False),
                 "create_file": (self.create_file, False),
@@ -5429,6 +5434,17 @@ class XeFMApp:
             MenuItem("Keyboard Shortcuts…", on_select=self.show_help, shortcut=sc("help")),
             MenuItem("Tip of the Day…", on_select=self.show_tips),
             SEPARATOR,
+            MenuItem("XeFM Documentation", on_select=lambda: self._menu("open_documentation"),
+                     shortcut=sc("open_documentation")),
+            MenuItem("Release Notes", on_select=lambda: self._menu("release_notes"),
+                     shortcut=sc("release_notes")),
+            MenuItem("Report an Issue…", on_select=lambda: self._menu("report_issue"),
+                     shortcut=sc("report_issue")),
+            SEPARATOR,
+            # Not where the Microsoft Store keeps XeFM current.
+            *([MenuItem("Check for Updates…", on_select=lambda: self._menu("check_for_updates"),
+                        shortcut=sc("check_for_updates"))]
+              if updates.offers_update_check() else []),
             MenuItem("About XeFM", on_select=self.show_about),
             title="Help",
         )
@@ -14105,6 +14121,10 @@ class XeFMApp:
             ("extensions", "List extension packages (Tools ▸ Advanced menu)"),
             ("check_extension_updates", "Look for newer versions of extension packages (Tools ▸ Advanced menu)"),
             ("sync_python_packages", "Install what ~/.xefm/requirements.txt lists (Tools ▸ Advanced menu)"),
+            ("open_documentation", "Open the XeFM documentation (Help menu)"),
+            ("release_notes", "Open this version's release notes (Help menu)"),
+            ("report_issue", "Open a bug report with this XeFM's details filled in (Help menu)"),
+            ("check_for_updates", "Look for a newer XeFM (Help menu)"),
             ("help", "Show this help"),
             ("quit", "Quit XeFM"),
         )),
@@ -14575,6 +14595,85 @@ class XeFMApp:
         show_message_box(self.panel, self._about_text(),
                          title="About XeFM", icon="info", buttons=("OK",),
                          markdown=True)
+        self.panel.render()
+
+    # --- Help: links out and Check for Updates (xefm/updates.py) -----------
+
+    def _open_link(self, url: str, what: str) -> None:
+        """Open ``url`` in the browser. A terminal backend cannot launch one,
+        so PuiKit copies the link instead and the log says where it went."""
+        if self.panel.open_url(url):
+            self.log_info(f"Opened {what} in the browser")
+        else:
+            self.log_info(f"Copied the link to {what} to the clipboard: {url}")
+        self.panel.render()
+
+    def open_documentation(self) -> None:
+        self._open_link(updates.DOCS_URL, "the XeFM documentation")
+
+    def open_release_notes(self) -> None:
+        from xefm.const import VERSION
+        self._open_link(updates.release_notes_url(VERSION), f"the XeFM {VERSION} release notes")
+
+    def report_issue(self) -> None:
+        """Open the bug report form with the version, install, OS and terminal
+        filled in. Nothing is sent: the user sees and edits the form in the
+        browser, and the log is theirs to paste."""
+        terminal = "" if is_desktop_mode() else updates.terminal_description()
+        url = updates.issue_url(terminal=terminal, python=self._python_text())
+        self._open_link(url, "a new XeFM bug report")
+
+    #: Set while Check for Updates is asking PyPI.
+    _update_check_busy = False
+
+    def check_for_updates(self) -> None:
+        """Ask PyPI for a newer XeFM, on a worker thread, and say what to do
+        about it. Only when the user asks: XeFM never looks on its own."""
+        if not updates.offers_update_check():
+            self.log_info("The Microsoft Store keeps this XeFM up to date")
+            return
+        if self._update_check_busy:
+            self.log_info("Check for Updates is already running")
+            return
+        self._update_check_busy = True
+        self.log_info("Checking for a newer XeFM…")
+
+        def worker() -> None:
+            try:
+                outcome = updates.check_for_updates()
+            except Exception as e:  # noqa: BLE001 - reported in the dialog
+                outcome = e
+            self._call_later(lambda: self._show_update_check(outcome))
+
+        threading.Thread(target=worker, name="xefm-update-check", daemon=True).start()
+        self.panel.render()
+
+    def _show_update_check(self, outcome) -> None:
+        self._update_check_busy = False
+        if isinstance(outcome, Exception):
+            self.log_info(f"Check for Updates failed: {outcome}")
+            show_message_box(self.panel, f"Could not reach PyPI: {outcome}",
+                             title="Check for Updates", icon="warning")
+            self.panel.render()
+            return
+        if not outcome.available:
+            self.log_info(f"XeFM {outcome.current} is the latest version")
+            show_message_box(self.panel, f"XeFM {outcome.current} is the latest version.",
+                             title="Check for Updates", icon="info")
+            self.panel.render()
+            return
+        self.log_info(f"XeFM {outcome.latest} is available (this is {outcome.current})")
+        body = (f"XeFM **{outcome.latest}** is available. This is {outcome.current}.\n\n"
+                + updates.upgrade_instructions(outcome.kind, outcome.latest))
+
+        def answered(label: str) -> None:
+            if label == "Release Notes":
+                self._open_link(updates.release_notes_url(outcome.latest),
+                                f"the XeFM {outcome.latest} release notes")
+
+        show_message_box(self.panel, body, title="Update Available", icon="info",
+                         buttons=("Release Notes", "Close"), default=0, cancel=1,
+                         markdown=True, on_result=answered)
         self.panel.render()
 
     def show_tips(self) -> None:

@@ -1,6 +1,6 @@
 # XeFM Privacy Policy
 
-**Last updated: July 25, 2026**
+**Last updated: November 25, 2026**
 
 XeFM is a dual-pane file manager that runs entirely on your own computer. It has no
 user accounts, no advertising, and no analytics or telemetry of any kind.
@@ -39,11 +39,11 @@ service, or sent to the developer.
 
 ## Network connections
 
-XeFM does not connect to the internet on its own. It never checks for updates, never
-phones home, and never contacts any server operated by the developer.
+XeFM does not connect to the internet on its own. It never checks for updates by
+itself, never phones home, and never contacts any server operated by the developer.
 
-XeFM makes a network connection **only when you explicitly ask it to browse a remote
-location**, and only to the destination you specify:
+XeFM makes a network connection **only when you explicitly ask it to**, and only to
+the destination that request names:
 
 - **SSH / SFTP** — When you open a remote path, XeFM runs your operating system's own
   `ssh` and `sftp` programs to connect to the host you named. Authentication uses your
@@ -53,7 +53,22 @@ location**, and only to the destination you specify:
   Amazon S3. Credentials come from your existing AWS configuration or environment
   variables. XeFM does not store your AWS credentials.
 
-In both cases the connection is directly between your computer and the service you
+- **Check for Updates** (Help menu) — XeFM asks the Python Package Index
+  (`pypi.org`) for the list of published XeFM versions. The request carries only
+  the XeFM version in its User-Agent header. The Microsoft Store version does
+  not offer this; the Store updates it.
+- **Check for Extension Updates** and installing an extension — XeFM fetches
+  the extension package from the location you gave it or that the package names
+  (usually GitHub).
+- **Sync Python Packages** — XeFM runs `pip`, which downloads the packages listed in
+  `~/.xefm/requirements.txt` (and those your extensions need) from PyPI.
+
+The Help menu's **Report an Issue…**, **Release Notes** and **XeFM Documentation**
+only open a page in your web browser. A bug report form arrives with your XeFM
+version, install type, operating system and terminal filled in; nothing is sent
+until you read it and submit it yourself on GitHub.
+
+In every case the connection is directly between your computer and the service you
 chose, and any data transferred is governed by that service's own terms and privacy
 policy. The developer of XeFM has no access to these connections or their contents.
 

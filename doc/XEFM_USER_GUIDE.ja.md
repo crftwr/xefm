@@ -76,6 +76,8 @@ brew install crftwr/tap/xefm
 
 デスクトップ版のパッケージは、それぞれの経路でアップグレードします。Microsoft Store 版は自動で更新されます。macOS では、新しい DMG を古いアプリの上にインストールします（Homebrew でインストールした場合は `brew upgrade --cask xefm` を実行します）。すでに *アプリケーション* にある DMG 版のコピーは、`brew install --cask --adopt crftwr/tap/xefm` で Homebrew の管理に移せます。
 
+**Help → Check for Updates…**（アップデートを確認）は、新しい XeFM が出ているかを PyPI に問い合わせ、出ていれば、このコピーのインストール方法に合うこの表の行を表示します（DMG と Windows の zip ではダウンロード先を表示します）。ネットワークに接続するのは、この項目を選んだときだけです。XeFM が自分から確認することはありません。Microsoft Store 版にはこの項目がありません。Store が最新に保つからです。
+
 ### インストールのトラブルシューティング
 
 - `pip install xefm` のあとに `xefm: command not found` と表示される — コンソールスクリプトが PATH にない環境にインストールされています。`pipx install xefm` や `uv tool install xefm` ならこれを自動で処理してくれます（または `python3 -m xefm` として実行します）
