@@ -351,6 +351,12 @@ def test_codexs_sandbox_stays_on_and_its_tools_answer(run, drawn):
     # exec asks nothing: a tool that writes is refused there, as a user who
     # chose never to be asked has it.
     r.chat() if drawn else r.once("-c", "approval_policy='never'")
+    if drawn and WINDOWS and "elevated" in WINDOWS_CODEX[1]:
+        # Not set up in a fresh guest, and setting it up needs a person to
+        # consent: the session says so rather than waiting without a word.
+        said = C.to_markdown(r.view.conversation.items)
+        if "needs setting up" in said:
+            pytest.skip("Codex's elevated sandbox is not set up here, and the session says so")
     said = f"{r.model.results} {r.__dict__.get('said')}"
     if WINDOWS or "rc=127" in r.shell:  # its sandbox does not show the shim's folder
         assert "rc=0" not in r.shell and "reached" not in r.shell, said

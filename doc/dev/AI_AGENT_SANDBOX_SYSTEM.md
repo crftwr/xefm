@@ -148,7 +148,16 @@ make test-vm GUEST=qa-linux ARGS="--agent-cli test/test_agent_cli.py"
 The stand-in answers OpenAI's chat completions and responses and Anthropic's
 messages, and searches for the tools Claude Code defers (`ToolSearch`) as a model
 has to. On Windows Codex runs its `unelevated` sandbox, which needs no setup;
-`--codex-windows-sandbox elevated` picks the other. Claude Code has no sandbox on
+`--codex-windows-sandbox` picks `mxc` (it passes as `unelevated` does: the pipe
+refused in XeFM's words, both tools answer) or `elevated`.
+
+Codex's `elevated` sandbox has to be set up once, with an administrator's consent
+(UAC); until then a command waits without a word. A drawn Codex session on Windows
+asks `windowsSandbox/readiness` as it opens, and where it is not `ready` says so
+and offers `/setup-sandbox`, which sends `windowsSandbox/setupStart` and reports
+`windowsSandbox/setupCompleted`. XeFM starts nothing that asks for administrator
+rights on its own (rule 1). In a guest nobody consents, so that test is skipped
+once the session has said so. Claude Code has no sandbox on
 Windows.
 
 For a run with `--agent-cli`, qa-linux's container is started with
@@ -163,11 +172,7 @@ container stands for none of the others.
 
 ## Not done
 
-- Codex's `elevated` sandbox on Windows (`--codex-windows-sandbox elevated`):
-  `codex exec` works, but a drawn session's turn stalls before the command starts,
-  with nothing reaching XeFM (Codex 0.171.0, qa-win, 2026-11-25; perhaps a prompt
-  on the guest's desktop). Its `mxc`; sessions started by the Store's XeFM (they
-  need a person).
+- Sessions started by the Store's XeFM (they need a person).
 - XeFM still breaks its agents' plain questions itself (`_fit`), though PuiKit
   1.33.1, the floor, wraps a plain `MessageBox` too (puikit#247). `_fit` can keep
   only the refusal of a question too tall for the screen once the floor is

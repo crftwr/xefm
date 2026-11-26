@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import shlex
+import sys
 from typing import Any
 
 from xefm.agent_chat import PLAN_TOOL, Conversation, Item, Permission
@@ -110,6 +111,12 @@ def _text_of(content: Any) -> str:
                      if isinstance(c, dict) and isinstance(c.get("text"), str))
 
 
+#: The command that sets Codex's elevated Windows sandbox up, where it waits.
+SETUP_COMMAND = "setup-sandbox"
+SETUP_ENTRY = {"name": SETUP_COMMAND,
+               "description": "Set up Codex's Windows sandbox (asks for administrator rights)"}
+
+
 class CodexClient(RpcClient):
     """One ``codex app-server`` process with one thread."""
 
@@ -133,6 +140,10 @@ class CodexClient(RpcClient):
         self._agents: dict[str, Item] = {}
         self._plan = ""
         self._error = ""
+        #: Codex's Windows sandbox waits to be set up (``windowsSandbox/readiness``).
+        self._setup_needed = False
+        #: Whether to ask after it: Windows alone has it.
+        self.windows = sys.platform == "win32"
 
     # --- opening ----------------------------------------------------------------
 
@@ -145,7 +156,34 @@ class CodexClient(RpcClient):
 
     def _initialized(self, _result: dict) -> None:
         self.notify("initialized")
+        if self.windows:
+            # A Codex that does not know it says so, and nothing waits on it.
+            self.call("windowsSandbox/readiness", None, self._readiness, lambda e: None)
         self.call("account/read", {}, self._account, lambda e: self._start_thread())
+
+    def _readiness(self, result: dict) -> None:
+        """Codex's elevated Windows sandbox has to be set up once, with the
+        administrator's consent; until then a command it runs waits without a
+        word (#995: a drawn turn stalled, nothing reaching XeFM). Say so, and
+        offer the setup as a command the user gives: XeFM starts nothing that
+        asks for administrator rights on its own (rule 1). Unelevated and mxc
+        say ready (Codex 0.171.0, measured)."""
+        status = result.get("status")
+        if status in (None, "ready"):
+            return
+        self._setup_needed = True
+        again = " again" if status == "updateRequired" else ""
+        self.conv.add_notice(
+            f"Codex's elevated Windows sandbox needs setting up{again}, and its commands "
+            f"wait until it is. Type /{SETUP_COMMAND} to set it up (Windows asks for "
+            "administrator rights), or set windows.sandbox to 'unelevated' in Codex's "
+            "configuration.")
+        self.conv.commands = self._with_setup(self.conv.commands)
+
+    def _with_setup(self, commands: list) -> list:
+        if self._setup_needed and not any(c.get("name") == SETUP_COMMAND for c in commands):
+            return [*commands, SETUP_ENTRY]
+        return commands
 
     def _account(self, result: dict) -> None:
         if result.get("account") is None and result.get("requiresOpenaiAuth"):
@@ -207,7 +245,7 @@ class CodexClient(RpcClient):
                     commands.append({"name": name, "argumentHint": "<request>",
                                      "description": str(skill.get("shortDescription")
                                                         or skill.get("description") or "")})
-        self.conv.commands = commands
+        self.conv.commands = self._with_setup(commands)
 
     def _have_models(self, result: dict) -> None:
         models = [m for m in result.get("data") or []
@@ -256,6 +294,14 @@ class CodexClient(RpcClient):
             "turn/interrupt", {"threadId": self.conv.session_id, "turnId": self._turn_id})
 
     def command(self, text: str) -> bool:
+        if text == f"/{SETUP_COMMAND}" and self._setup_needed and self.running:
+            self.conv.add_user(text)
+            self.call("windowsSandbox/setupStart", {"mode": "elevated", "cwd": self.cwd},
+                      lambda r: None if r.get("started") else self.conv.add_notice(
+                          "Codex did not start setting up its sandbox", error=True),
+                      lambda e: self.conv.add_notice(
+                          f"Codex could not set up its sandbox: {e.get('message')}", error=True))
+            return True
         if text != "/compact" or not self.ready or self.in_turn:
             return False
         conv = self.conv
@@ -326,6 +372,18 @@ class CodexClient(RpcClient):
             # Answered, or no longer needed (the turn was stopped).
             rid = f"rpc{params.get('requestId')}"
             return self._withdraw(rid) if rid in conv.permissions else None
+        if method == "windowsSandbox/setupCompleted":
+            if params.get("success"):
+                self._setup_needed = False
+                self.conv.commands = [c for c in self.conv.commands
+                                      if c.get("name") != SETUP_COMMAND]
+                conv.add_notice("Codex's Windows sandbox is set up")
+            else:
+                why = str(params.get("error") or "")
+                if "1223" in why:  # ERROR_CANCELLED: the consent was not given
+                    why = "administrator rights were not given"
+                conv.add_notice(f"Codex's Windows sandbox was not set up: {why}", error=True)
+            return None
         if method in ("warning", "guardianWarning"):
             if str(params.get("message") or "").strip():
                 conv.add_notice(str(params["message"]).strip())
