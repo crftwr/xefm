@@ -84,6 +84,26 @@ def _git_patch(diff: str) -> str:
     return diff[at + 1:].rstrip() if at >= 0 else diff.strip()
 
 
+#: Names of an ``allow_always`` option that say nothing of what it remembers.
+_BARE_ALWAYS = {"always allow", "allow always", "always"}
+
+
+def _remembered(call: dict, options: list) -> list[str]:
+    """What an ACP agent's ``allow_always`` would remember. ACP has no field
+    for it. Copilot names the programs of a shell command in
+    ``rawInput.commands`` and remembers those, with any arguments (seen in
+    test_agent_cli.py: after ``touch a``, ``touch b`` is not asked, ``mkdir``
+    is); otherwise the option's name, where it says more than "Always allow"."""
+    raw = call.get("rawInput") if isinstance(call.get("rawInput"), dict) else {}
+    programs = raw.get("commands")
+    if isinstance(programs, list) and programs and all(isinstance(p, str) for p in programs):
+        return [f"`{p}`, with any arguments" for p in programs]
+    name = next((str(o.get("name") or "").strip() for o in options
+                 if o.get("kind") == "allow_always"), "")
+    return [f"\"{name}\", in the agent's words"] \
+        if name and name.lower() not in _BARE_ALWAYS else []
+
+
 class AcpClient(RpcClient):
     """One ACP agent process with one session."""
 
@@ -387,10 +407,7 @@ class AcpClient(RpcClient):
             perm.description = title
         if "allow_always" in by_kind:
             perm.suggestions = [{"optionId": by_kind["allow_always"]}]
-            # The option's name is all ACP says of what it remembers.
-            name = next((str(o.get("name") or "") for o in options
-                         if o.get("kind") == "allow_always"), "")
-            perm.remembers = [f"\"{name}\", in the agent's words"] if name else []
+            perm.remembers = _remembered(call, options)
         item = self.conv._tools.get(perm.tool_use_id)
         if item is None and perm.tool_use_id:
             self._tool_update(dict(call))

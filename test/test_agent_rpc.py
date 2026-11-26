@@ -592,6 +592,20 @@ def test_codex_grants_access_and_declines_a_form_it_cannot_show(codex):
 
 # --- ACP (Copilot, Antigravity) --------------------------------------------------------
 
+
+@pytest.mark.parametrize("raw, name, remembers", [
+    ({"command": "touch a", "commands": ["touch"]}, "Always allow", ["`touch`, with any arguments"]),
+    ({"command": "git log | grep x", "commands": ["git", "grep"]}, "Always allow",
+     ["`git`, with any arguments", "`grep`, with any arguments"]),
+    ({"command": "x"}, "Always allow `x` in this folder", ['"Always allow `x` in this folder", in the agent\'s words']),
+    ({"command": "x"}, "Always allow", []),
+])
+def test_what_an_acp_always_allow_remembers(raw, name, remembers):
+    """Copilot's own request, as Copilot 1.0.115 sends it."""
+    from xefm.agent_acp import _remembered
+    options = [{"optionId": "allow_always", "kind": "allow_always", "name": name}]
+    assert _remembered({"rawInput": raw}, options) == remembers
+
 def test_an_acp_session_offers_its_modes_models_and_commands(acp):
     conv = acp.conv
     # Modes that run tools unasked are left out of Shift+Tab.
@@ -628,7 +642,7 @@ def test_acp_asks_before_a_command(acp, response, option):
     acp.say("run hostname", asks=True)
     [perm] = acp.asked
     assert perm.tool == "Shell" and perm.input["command"] == "hostname" and perm.suggestions
-    assert perm.remembers == ['"Always", in the agent\'s words']
+    assert perm.remembers == []  # "Always" says nothing of what it remembers
     acp.view.answer(perm, C.deny() if response == "deny"
                     else C.allow(perm, always=response == "always"))
     acp.idle()

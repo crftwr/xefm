@@ -199,7 +199,7 @@ class Run:
             env.update(COPILOT_PROVIDER_BASE_URL=self.model.url, COPILOT_PROVIDER_TYPE="openai",
                        COPILOT_PROVIDER_API_KEY="none", COPILOT_MODEL="gpt-4.1",
                        COPILOT_OFFLINE="true")
-        self.env, self.asked, self.perms = env, [], []
+        self.env, self.asked, self.perms, self.always = env, [], [], False
 
     def handle(self, req):
         self.requests.append(req)
@@ -219,7 +219,7 @@ class Run:
             again = (perm.tool, dict(perm.input)) in self.asked
             self.asked.append((perm.tool, dict(perm.input)))
             self.perms.append(perm)
-            view.answer(perm, C.deny() if again else C.allow(perm))
+            view.answer(perm, C.deny() if again else C.allow(perm, always=self.always))
         self.view = ChatView(
             agents.chat_argv(self.entry, self.values), cwd=str(self.ws), env=self.env, name="A",
             post=posts, ask=ask, on_close_request=lambda v: None, on_hide=lambda v: None,
@@ -385,3 +385,42 @@ for line in sys.stdin:
          }.get(m["method"], dict)()
     print(json.dumps({"jsonrpc": "2.0", "id": m["id"], "result": r}), flush=True)
 '''
+
+
+@pytest.mark.parametrize("command", [[], ["--sandbox"]], ids=["", "sandbox"])
+def test_copilots_always_allow_says_what_it_remembers(run, command):
+    """What the question says is what Copilot then lets through: ``touch`` with
+    other arguments is not asked again, another program is."""
+    first, other = ("mkdir", "Set-Content") if WINDOWS else ("touch", "mkdir")
+    r = run(agents.COPILOT, command=command, drawn=True, steps=[
+        ("shell", f"{first} made"), ("shell", f"{first} made2"),
+        ("shell", f"{other} made3" + " -Value x" * WINDOWS)])
+    r.always = True
+    r.chat()
+    print("Copilot asked:", [(p.input, p.remembers) for p in r.perms])
+    assert [p.input["command"].split()[0] for p in r.perms] == [first, other], r.perms
+    assert r.perms[0].remembers == [f"`{first}`, with any arguments"]
+    assert (r.ws / "made2").exists()
+    r.check_always_allow()
+
+
+ESCALATED = {"sandbox_permissions": "require_escalated", "justification": "check"}
+
+
+def test_codex_offers_no_always_allow_for_a_command(run, monkeypatch):
+    """For a command run outside its sandbox Codex 0.171.0 offers only a rule
+    for the user's settings (``acceptWithExecpolicyAmendment``), which XeFM
+    leaves out: no Always Allow. A Codex that offers ``acceptForSession``
+    again must come with what it remembers."""
+    from xefm.agent_codex import CodexClient
+    raw = []
+
+    def record(self, rid, method, params, _was=CodexClient._on_request):
+        raw.append(params)
+        return _was(self, rid, method, params)
+    monkeypatch.setattr(CodexClient, "_on_request", record)
+    r = run(agents.CODEX, command=["-c", "approval_policy='on-request'"], drawn=True,
+            steps=[("shell", "echo a | cat", ESCALATED)]).chat()
+    assert [p.input["command"] for p in r.perms] == ["echo a | cat"], raw
+    print("Codex offers:", [p.get("availableDecisions") for p in raw])
+    r.check_always_allow()
