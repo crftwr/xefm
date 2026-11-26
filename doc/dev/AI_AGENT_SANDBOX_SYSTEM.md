@@ -168,9 +168,9 @@ container stands for none of the others.
   with nothing reaching XeFM (Codex 0.171.0, qa-win, 2026-11-25; perhaps a prompt
   on the guest's desktop). Its `mxc`; sessions started by the Store's XeFM (they
   need a person).
-- XeFM still breaks its agents' plain questions itself (`_fit`); PuiKit's plain
-  `MessageBox` wraps from puikit#247 on, and `_fit` can keep only the refusal of a
-  question too tall for the screen once the floor has it.
+- XeFM still breaks its agents' plain questions itself (`_fit`). Once PuiKit's
+  plain `MessageBox` wraps (a PuiKit change, not yet released) and the floor has
+  it, `_fit` can keep only the refusal of a question too tall for the screen.
 - The CLIs' own interactive screens: `codex exec`, `copilot -p` and `claude -p`
   stand for them.
 - Antigravity, put off: what to check is in #1002 and #995.
