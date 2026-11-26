@@ -102,6 +102,35 @@ def default_guests() -> dict[str, dict[str, str]]:
 #: the state a user's machine is in (doc/dev/LINUX_TESTING_SYSTEM.md).
 LINUX_PACKAGES = ["libarchive13"]
 
+#: What a container also installs for a run of the agents' CLIs
+#: (``--agent-cli``): what their sandboxes are made with.
+AGENT_CLI_PACKAGES = ["bubblewrap", "socat", "curl", "slirp4netns", "iproute2", "iptables"]
+
+#: What a container is started with for that run: Docker's default seccomp
+#: profile allows no user namespaces, and with none no CLI's sandbox starts;
+#: Copilot's also needs a TUN device (#995). The rest of the suite keeps the
+#: plain container.
+AGENT_CLI_DOCKER = ["--security-opt", "seccomp=unconfined",
+                    "--security-opt", "systempaths=unconfined",
+                    "--device", "/dev/net/tun"]
+
+
+class _AgentCliContainer(ql.DockerMachine):
+    """quality-loop's container, started with :data:`AGENT_CLI_DOCKER`."""
+
+    def __enter__(self):
+        said = subprocess.run(
+            ["docker", "run", "-d", "--rm", "--init", "--name", self.name, *AGENT_CLI_DOCKER,
+             "-v", f"{self.guest.host_share}:{self.guest.guest_share}",
+             "--entrypoint", "sleep", self.image, "infinity"],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        if said.returncode != 0:
+            raise GuestError(f"docker run {self.image}: {said.stderr.strip()}")
+        self.guest.hostname = self.name
+        print(f"vm:      container {self.name} from {self.image}, for the agents' CLIs")
+        return self
+
+
 #: Downloads kept between runs: the libarchive zip.
 CACHE = pathlib.Path.home() / ".cache" / "xefm-qa"
 
@@ -230,6 +259,14 @@ class Guest(ql.Guest):
     #: Where our packages come from in this run (:data:`PACKAGES`).
     packages = "local"
 
+    #: Whether this run is of the agents' CLIs (``--agent-cli``).
+    agent_cli = False
+
+    def machine(self):
+        if self.docker and self.agent_cli:
+            return _AgentCliContainer(self)
+        return super().machine()
+
     @classmethod
     def for_alias(cls, alias: str, packages: str = "local") -> "Guest":
         if packages not in PACKAGES:
@@ -305,11 +342,14 @@ class Guest(ql.Guest):
         if self.system == "Linux":
             said = self.ssh("apt-get update -qq && DEBIAN_FRONTEND=noninteractive "
                             "apt-get install -y -qq --no-install-recommends "
-                            + " ".join(LINUX_PACKAGES), timeout=600)
+                            + " ".join(self._linux_packages()), timeout=600)
             if said.returncode != 0:
-                raise SystemExit(f"could not install {', '.join(LINUX_PACKAGES)} in "
+                raise SystemExit(f"could not install {', '.join(self._linux_packages())} in "
                                  f"{self.alias}:\n{said.stdout[-1500:]}{said.stderr[-1500:]}")
         return stage
+
+    def _linux_packages(self) -> list[str]:
+        return LINUX_PACKAGES + AGENT_CLI_PACKAGES * self.agent_cli
 
     def requirements(self, tests: bool = False) -> list[str]:
         """:func:`third_party_requirements`, with a macOS guest pointed at

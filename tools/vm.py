@@ -69,6 +69,7 @@ def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str
     # `visible` is for a hand check (`run`); a test run's window only gets in
     # the way of what is on the screen.
     guest.settings = dict(guest.settings, visible=False)
+    guest.agent_cli = "--agent-cli" in pytest_args
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results = ROOT / "temp" / f"vm-test-{alias}-{stamp}"
     started = time.monotonic()

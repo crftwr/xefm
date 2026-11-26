@@ -184,6 +184,17 @@ def test_always_allow_says_what_it_remembers():
     assert "did not say" in C.always_allow_line("Claude", unknown)
 
 
+def test_a_command_asked_to_run_outside_the_sandbox_says_so():
+    """#995 rule 6: the user should know a request leaves the sandbox."""
+    conv = C.Conversation()
+
+    def ask(**input):
+        return conv.handle({"type": "control_request", "request_id": "r", "request": {
+            "subtype": "can_use_tool", "tool_name": "Bash", "input": input}})
+    assert ask(command="ls", dangerouslyDisableSandbox=True).leaves_sandbox
+    assert not ask(command="ls").leaves_sandbox
+
+
 def test_a_withdrawn_question_and_an_interrupted_turn():
     conv = C.Conversation()
     conv.add_user("x")
@@ -690,6 +701,8 @@ def test_a_plan_reads_as_the_plan():
     (C.Permission("r", "Bash", {"command": "ls"}), ["Allow", "Deny"], "right", "deny"),
     (C.Permission("r", "Bash", {"command": "ls"}, suggestions=[{}]),
      ["Allow", "Always Allow", "Deny"], "right", "deny"),
+    (C.Permission("r", "Bash", {"command": "ls"}, leaves_sandbox=True),
+     ["Allow", "Deny"], "left", "allow"),
     (C.Permission("r", C.PLAN_TOOL, {"plan": "1. Do it"}),
      ["Approve", "Approve, Accept Edits", "Keep Planning"], "left", "default"),
     (C.Permission("r", C.PLAN_TOOL, {"plan": "1. Do it"}),
@@ -717,6 +730,7 @@ def test_what_the_agent_asks_starts_with_no_button_selected(perm, buttons, key, 
     assert box.buttons == buttons and box.focused is None
     # Always Allow comes with what it would remember.
     assert ("**Always Allow**" in box.message) == ("Always Allow" in buttons)
+    assert ("Outside the sandbox" in box.message) == perm.leaves_sandbox
     press("enter")  # meant for the message being typed
     press("space")
     assert answers == [] and panel._layers[-1].widget is box

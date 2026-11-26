@@ -165,13 +165,22 @@ def test_the_tools_say_which_reads(srv):
         assert f"\n{cmd.name} - " in where["description"], cmd.name
 
 
-@pytest.mark.parametrize("args", [{}, {"command": []}, {"command": "state"},
-                                  {"command": [1]}, {"command": ["state"], "stdin": 1}])
+@pytest.mark.parametrize("args", [{}, {"command": []}, {"command": ""}, {"items": '["state"]'},
+                                  {"command": [1]}, {"command": ["state"], "stdin": 1},
+                                  {"command": "pane 'unclosed"}])
 def test_a_call_that_is_not_one_is_an_error(srv, args):
     for name in (mcp_server.TOOL, "other"):
         got = srv.rpc("tools/call", {"name": name, "arguments": args})
         assert got["error"]["code"] == mcp_server.INVALID_PARAMS
     assert not srv.requests
+
+
+@pytest.mark.parametrize("command", ["pane selected", '["pane", "selected"]'])
+def test_a_command_given_as_one_string_is_taken(srv, command):
+    """A model sometimes gives the words as one string (#995 layer F)."""
+    got = srv.rpc("tools/call", {"name": mcp_server.READ_TOOL, "arguments": {"command": command}})
+    assert got["result"]["content"][0]["text"] == "/a"
+    assert srv.requests[-1]["cmd"] == "pane selected"
 
 
 # --- what a call does -----------------------------------------------------------------

@@ -26,7 +26,8 @@ WINDOWS_APP = ROOT / "windows_app"
 def test_outside_a_package_the_shim_runs_the_client_with_xefms_python():
     text = remote_server.windows_shim(r"C:\X\python.exe", r"C:\X\remote_cli.py",
                                       packaged=False)
-    assert text == '@"C:\\X\\python.exe" -I "C:\\X\\remote_cli.py" %*\n'
+    assert '@"C:\\X\\python.exe" -I "C:\\X\\remote_cli.py" %*\n' in text
+    assert remote_server.CANNOT_START in text
 
 
 def test_in_the_package_the_shim_calls_the_alias(tmp_path):
@@ -46,10 +47,10 @@ def test_with_the_alias_off_the_shim_says_how_to_turn_it_on(tmp_path):
     assert remote_server.ALIAS_OFF in text and "exit /b 3" in text
 
 
-def test_the_alias_off_message_is_safe_for_cmds_echo():
-    message = remote_server.ALIAS_OFF
+@pytest.mark.parametrize("message", [remote_server.ALIAS_OFF, remote_server.CANNOT_START])
+def test_the_alias_off_message_is_safe_for_cmds_echo(message):
     assert message.isascii()
-    assert not set(message) & set("<>|&^%")
+    assert not set(message) & set("<>|&^%()")
 
 
 def test_the_alias_lives_where_windows_puts_aliases(monkeypatch):
@@ -121,3 +122,18 @@ def test_cmd_runs_the_shim_outside_a_package(tmp_path):
                           text=True, timeout=20, env=env)
     assert done.returncode == 2
     assert "XEFM_SOCKET is not set" in done.stderr
+    assert remote_server.CANNOT_START not in done.stderr  # the client's own failure
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="cmd.exe")
+def test_a_python_that_cannot_start_is_said_in_xefms_words(tmp_path):
+    """#995 rule 7: in a sandbox that keeps the interpreter out, not only the
+    OS's error."""
+    shim = tmp_path / "xefmctl.cmd"
+    with open(shim, "w", encoding="utf-8", newline="\r\n") as f:
+        f.write(remote_server.windows_shim(str(tmp_path / "gone" / "python.exe"), "x.py",
+                                           packaged=False))
+    done = subprocess.run(["cmd", "/d", "/c", str(shim), "state"], capture_output=True,
+                          text=True, timeout=20)
+    assert done.returncode != 0
+    assert remote_server.CANNOT_START in done.stderr

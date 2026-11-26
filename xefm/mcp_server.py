@@ -270,9 +270,10 @@ class McpServer:
         if name not in (TOOL, READ_TOOL):
             raise _Bad(f"no tool {name!r}", INVALID_PARAMS)
         given = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
-        argv, stdin = given.get("command"), given.get("stdin")
+        argv, stdin = _words(given.get("command")), given.get("stdin")
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
-            raise _Bad('"command" is a list of words: ["pane", "selected"]', INVALID_PARAMS)
+            raise _Bad('give {"command": [...]}, the words after xefmctl as a list: '
+                       '{"command": ["pane", "selected"]}', INVALID_PARAMS)
         if stdin is not None and not isinstance(stdin, str):
             raise _Bad('"stdin" is a string', INVALID_PARAMS)
         text, bad = self.run(channel, argv, stdin or "", read_only=name == READ_TOOL, gone=gone)
@@ -352,6 +353,25 @@ INSTRUCTIONS = (
     f"outside any sandbox of yours: {READ_TOOL} for what only reads, {TOOL} for the rest, "
     "which the user confirms in XeFM where it changes files. Start with "
     f'{READ_TOOL} ["state"]; ["help"] lists the commands.')
+
+
+def _words(command):
+    """``command`` as a list of words. A model sometimes gives one string
+    instead (seen with Claude haiku, #995 layer F): a JSON list in it is
+    that list, anything else is split as a shell would."""
+    if not isinstance(command, str):
+        return command
+    text = command.strip()
+    if text.startswith("["):
+        try:
+            return json.loads(text)
+        except ValueError:
+            pass
+    import shlex
+    try:
+        return shlex.split(text)
+    except ValueError:
+        return None
 
 
 def tools() -> list[dict]:

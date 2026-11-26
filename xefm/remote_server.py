@@ -92,11 +92,9 @@ class RemoteServer:
             with open(path, "w", encoding="utf-8", newline="\r\n") as f:
                 f.write(windows_shim(python, client))
         else:
-            import shlex
             path = os.path.join(bin_dir, "xefmctl")
             with open(path, "w", encoding="utf-8") as f:
-                f.write("#!/bin/sh\n"
-                        f"exec {shlex.quote(python)} -I {shlex.quote(client)} \"$@\"\n")
+                f.write(posix_shim(python, client))
             os.chmod(path, 0o755)
         return bin_dir
 
@@ -231,6 +229,32 @@ ALIAS_OFF = ("xefmctl: the Store version of XeFM runs xefmctl through an app "
              "aliases, then restart XeFM.")
 
 
+#: What the shim says when XeFM's Python cannot start in the shell at all - in
+#: an AI agent's sandbox that may not open the interpreter or its venv, the OS's
+#: own error (``Abort trap: 6``, ``Fatal Python error``) says nothing of what to
+#: do (#995, rule 7). For cmd's ``echo`` too: none of ``<>|&^%()``.
+CANNOT_START = ("xefmctl: XeFM's Python cannot start in this shell. If this is an AI "
+                "agent's shell, its sandbox keeps it from XeFM: use XeFM's own tools, "
+                "xefmctl and xefmctl_read, instead of the shell. Where the session has no "
+                "such tools, the sandbox's settings close them too; do not retry.")
+
+
+def posix_shim(python: str, client: str) -> str:
+    """The text of ``xefmctl`` on macOS and Linux: the client with XeFM's
+    interpreter. Where it fails, whether the interpreter starts at all is
+    asked once more, and if it does not, :data:`CANNOT_START` is said after
+    the OS's own words. The client's own failures pass through unchanged."""
+    import shlex
+    py, cl = shlex.quote(python), shlex.quote(client)
+    return ("#!/bin/sh\n"
+            f"{py} -I {cl} \"$@\"\n"
+            "rc=$?\n"
+            f"if [ \"$rc\" -ne 0 ] && ! {py} -I -c '' 2>/dev/null; then\n"
+            f"  echo {shlex.quote(CANNOT_START)} >&2\n"
+            "fi\n"
+            "exit \"$rc\"\n")
+
+
 def running_packaged() -> bool:
     """Whether this process has MSIX package identity (the Store install, or a
     sideloaded package).
@@ -269,7 +293,13 @@ def windows_shim(python: str, client: str, *, packaged: bool | None = None,
     if packaged is None:
         packaged = running_packaged()
     if not packaged:
-        return f'@"{python}" -I "{client}" %*\n'
+        # As posix_shim: CANNOT_START where the interpreter cannot start.
+        return ("@setlocal\n"
+                f'@"{python}" -I "{client}" %*\n'
+                "@if not errorlevel 1 exit /b 0\n"
+                "@set rc=%errorlevel%\n"
+                f'@"{python}" -I -c "" 2>nul || >&2 echo {CANNOT_START}\n'
+                "@exit /b %rc%\n")
     alias = store_alias_path() if alias is None else alias
     # lexists: the stub is a 0-byte reparse point with an app-exec tag; asking
     # about the link itself does not depend on Python resolving that tag.

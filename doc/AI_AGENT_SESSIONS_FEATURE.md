@@ -136,7 +136,9 @@ mode you set stay set if the agent is started again.
   it, or **Deny**. The question shows the whole command, or the lines an edit
   would change, and what **Always Allow** would let through, as the agent
   says it: a rule such as `Bash(ssh:*)` can reach further than the one
-  command you see. Where the agent does not say, the question says so.
+  command you see. Where the agent does not say, the question says so. A
+  request to run with the agent's sandbox off, or to reach past it, says
+  **Outside the sandbox**, where the agent tells XeFM so.
   No button is selected at first, so an Enter or a Space you were typing
   answers nothing: choose with the Left or Right key and press Enter, click a
   button, or press Esc to deny. When the agent asks you to choose between options,

@@ -31,8 +31,23 @@ from xefm import agent_chat as C
 
 CODEX = "https://github.com/openai/codex/releases/download/rust-v0.171.0/codex-package-"
 COPILOT = "https://github.com/github/copilot-cli/releases/download/v1.0.115/copilot-"
-#: (program, system, machine): where it is, and its SHA-256.
+CLAUDE = ("https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-"
+          "d59b1c096819/claude-code-releases/2.1.326/")
+#: (program, system, machine): where it is, and its SHA-256. Claude Code's is
+#: the program itself, not an archive.
 CLIS = {
+    ("claude", "darwin", "arm64"): (
+        CLAUDE + "darwin-arm64/claude",
+        "e214ad76dcc0e846b03be28ed1c2734aacd4e27acb527cb7f8a9e2bed644e837"),
+    ("claude", "linux", "aarch64"): (
+        CLAUDE + "linux-arm64/claude",
+        "98d56f6ffe53469767a74864a38eaf359d62ef557a8de1b1ad524d61a66ec119"),
+    ("claude", "win32", "arm64"): (
+        CLAUDE + "win32-arm64/claude.exe",
+        "12042740540c184b351274c11aa808252796770626ce990be740dd0d11d67e5b"),
+    ("claude", "win32", "amd64"): (
+        CLAUDE + "win32-x64/claude.exe",
+        "44e85ac6d3e36b924a0d631d3f69c13a6907491115d71e97c8eb6160c82b2aed"),
     ("codex", "darwin", "arm64"): (
         CODEX + "aarch64-apple-darwin.tar.gz",
         "58c88032ec446e72922d911d8f03773102da20c16a6059cf21f6744bce57f210"),
@@ -79,6 +94,9 @@ def asked_for_clis(config):
 @pytest.fixture(autouse=True)
 def asked_for(request):
     asked_for_clis(request.config)
+    kind = request.config.getoption("--codex-windows-sandbox", "unelevated")
+    if WINDOWS:  # the same for the whole run
+        WINDOWS_CODEX[1] = f"windows.sandbox='{kind}'"
 
 
 @pytest.fixture(scope="module")
@@ -93,7 +111,7 @@ def clis(tmp_path_factory):
             if key not in CLIS:
                 pytest.skip(f"no {program} pinned for {key[1:]}")
             url, digest = CLIS[key]
-            archive = into / url.rpartition("/")[2]
+            archive = into / (url.rpartition("/")[2] + ".part")
             if shutil.which("curl"):  # a python.org Python in a fresh guest has no CAs
                 subprocess.run(["curl", "-fsSL", "-o", str(archive), url], check=True)
             else:
@@ -101,8 +119,13 @@ def clis(tmp_path_factory):
                         open(archive, "wb") as dst:
                     shutil.copyfileobj(src, dst)
             assert hashlib.sha256(archive.read_bytes()).hexdigest() == digest, url
-            if archive.suffix == ".zip":
-                shutil.unpack_archive(archive, spot)
+            name = archive.name.removesuffix(".part")
+            if name.startswith("claude"):
+                spot.mkdir()
+                archive.rename(spot / name)
+                (spot / name).chmod(0o755)
+            elif name.endswith(".zip"):
+                shutil.unpack_archive(archive, spot, format="zip")
             else:
                 with tarfile.open(archive) as tar:
                     tar.extractall(spot, filter="data")
@@ -164,6 +187,7 @@ STEPS = [("shell", SHELL),
 
 
 #: The kind of sandbox that needs nothing set up by an administrator first.
+#: ``--codex-windows-sandbox elevated`` picks the other.
 WINDOWS_CODEX = ["-c", "windows.sandbox='unelevated'"] if WINDOWS else []
 
 
@@ -177,7 +201,8 @@ class Run:
         self.channel = self.mcp.open("agent", str(self.ws))
         self.channel.session = "3"
         self.model = Model(steps)
-        program = clis({"codex": "codex", "copilot": "copilot"}[preset])
+        program = clis({"codex": "codex", "copilot": "copilot",
+                        agents.CLAUDE_CODE: "claude"}[preset])
         words = []
         if preset == agents.CODEX:
             words = ["-c", "model='standin'", "-c", "model_provider='standin'", "-c",
@@ -195,6 +220,10 @@ class Run:
         env.update(PROBE_URL=self.mcp.url, PROBE_SHAPE=self.channel.token[:8],
                    PROBE_OUTSIDE=str(home / "outside"))
         env["PATH"] += os.pathsep + os.path.dirname(os.path.realpath(sys.executable))
+        if preset == agents.CLAUDE_CODE:
+            env.update(ANTHROPIC_BASE_URL=self.model.url.removesuffix("/v1"),
+                       ANTHROPIC_API_KEY="standin", DISABLE_AUTOUPDATER="1",
+                       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1")
         if preset == agents.COPILOT:
             env.update(COPILOT_PROVIDER_BASE_URL=self.model.url, COPILOT_PROVIDER_TYPE="openai",
                        COPILOT_PROVIDER_API_KEY="none", COPILOT_MODEL="gpt-4.1",
@@ -233,7 +262,7 @@ class Run:
         conv = self.view.conversation
 
         def over():
-            return len(self.model.results) >= len(self.model.steps) and conv.state == C.IDLE \
+            return self.model._done() >= len(self.model.steps) and conv.state == C.IDLE \
                 or conv.state == C.EXITED or time.monotonic() > end
         posts.until(over, 130)
         self.view.close()
@@ -265,6 +294,8 @@ class Run:
     def check_tools(self):
         """Both tools answered, in order, as this session."""
         said = f"{self.model.results} {self.model.offered} {getattr(self, 'said', '')}"
+        if getattr(self, "view", None) is not None:
+            said += "\n" + C.to_markdown(self.view.conversation.items)[-2000:]
         assert "reached-pane" in self.model.results.get("call_1", ""), said
         assert "reached-copy" in self.model.results.get("call_2", ""), said
         through = [r for r in self.requests if r["cmd"] in ("pane selected", "copy")]
@@ -273,7 +304,7 @@ class Run:
         # XeFM's own tools are asked about by XeFM alone.
         assert not [a for a in self.asked if mcp_server.TOOL in json.dumps(a)
                     and "xefmctl pane selected;" not in json.dumps(a)], self.asked
-        assert not [f for p in (self.home / "codex", self.home / "copilot")
+        assert not [f for p in (self.home / "codex", self.home / "copilot", self.home / ".claude")
                     for f in p.rglob("*") if self._holds_token(f)], "the token was written down"
 
     def _holds_token(self, file):
@@ -292,7 +323,9 @@ class Run:
 
     def check_contained(self):
         told = f"{self.shell}\nasked: {self.asked}"
-        assert not (self.home / "outside").exists() and "wrote-outside" not in self.shell, told
+        # Copilot's sandbox on Linux lets the write succeed in a copy of its
+        # own: what counts is that the file is not there.
+        assert not (self.home / "outside").exists(), told
         assert "in-env=0" in self.shell or "in-env" not in self.shell, told
 
 
@@ -319,7 +352,7 @@ def test_codexs_sandbox_stays_on_and_its_tools_answer(run, drawn):
     # chose never to be asked has it.
     r.chat() if drawn else r.once("-c", "approval_policy='never'")
     said = f"{r.model.results} {r.__dict__.get('said')}"
-    if WINDOWS:  # its sandbox cannot read the shim's folder
+    if WINDOWS or "rc=127" in r.shell:  # its sandbox does not show the shim's folder
         assert "rc=0" not in r.shell and "reached" not in r.shell, said
     else:
         assert "rc=3" in r.shell, said
@@ -387,7 +420,8 @@ for line in sys.stdin:
 '''
 
 
-@pytest.mark.parametrize("command", [[], ["--sandbox"]], ids=["", "sandbox"])
+@pytest.mark.parametrize("command", [[], pytest.param(["--sandbox"], marks=needs_sandbox)],
+                         ids=["", "sandbox"])
 def test_copilots_always_allow_says_what_it_remembers(run, command):
     """What the question says is what Copilot then lets through: ``touch`` with
     other arguments is not asked again, another program is."""
@@ -400,7 +434,7 @@ def test_copilots_always_allow_says_what_it_remembers(run, command):
     print("Copilot asked:", [(p.input, p.remembers) for p in r.perms])
     assert [p.input["command"].split()[0] for p in r.perms] == [first, other], r.perms
     assert r.perms[0].remembers == [f"`{first}`, with any arguments"]
-    assert (r.ws / "made2").exists()
+    assert (r.ws / "made2").exists(), r.model.results
     r.check_always_allow()
 
 
@@ -424,3 +458,43 @@ def test_codex_offers_no_always_allow_for_a_command(run, monkeypatch):
     assert [p.input["command"] for p in r.perms] == ["echo a | cat"], raw
     print("Codex offers:", [p.get("availableDecisions") for p in raw])
     r.check_always_allow()
+
+
+def claude_sandbox(home, on):
+    """Claude Code's sandbox is its user's setting: here the test home's."""
+    (home / ".claude").mkdir(exist_ok=True)
+    (home / ".claude" / "settings.json").write_text(json.dumps(
+        {"sandbox": {"enabled": on, "failIfUnavailable": on}}))
+
+
+@pytest.mark.skipif(WINDOWS, reason="Claude Code has no sandbox on Windows")
+@needs_sandbox
+def test_claude_codes_sandbox_stays_on_and_its_tools_answer(run, home):
+    claude_sandbox(home, True)
+    r = run(agents.CLAUDE_CODE, drawn=True).chat()
+    print("Claude Code:", r.model.results, r.asked)
+    assert "rc=0" not in r.shell and "reached-" not in r.shell, r.shell
+    r.check_contained()
+    r.check_tools()
+    r.check_always_allow()
+
+
+def test_claude_code_with_no_sandbox(run, home):
+    claude_sandbox(home, False)
+    r = run(agents.CLAUDE_CODE, drawn=True).chat()
+    print("Claude Code:", r.model.results, r.asked)
+    r.check_tools()
+    r.check_always_allow()
+
+
+@pytest.mark.skipif(WINDOWS, reason="Claude Code has no sandbox on Windows")
+@needs_sandbox
+def test_claude_code_asking_to_leave_its_sandbox_says_so(run, home):
+    """#995 rule 6, with Claude Code's own request."""
+    claude_sandbox(home, True)
+    r = run(agents.CLAUDE_CODE, drawn=True, steps=[
+        ("shell", "touch made", {"dangerouslyDisableSandbox": True})]).chat()
+    print("Claude Code asked:", [(p.tool, p.input, p.leaves_sandbox, p.remembers)
+                                 for p in r.perms])
+    assert any(p.leaves_sandbox for p in r.perms), r.perms
+

@@ -229,6 +229,27 @@ def test_the_shim_runs_the_client_as_its_own_process(server):
     assert done.returncode == 0 and json.loads(done.stdout)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="sh; cmd's in test_xefmctl_msix_983")
+def test_the_shim_says_when_xefms_python_cannot_start(tmp_path):
+    """#995 rule 7: a sandbox that keeps the interpreter out gets XeFM's words
+    after the OS's; a failure of the client's own passes through as it was."""
+    from xefm import remote_server
+    broken = tmp_path / "python"
+    broken.write_text("#!/bin/sh\necho 'Abort trap: 6' >&2\nexit 134\n")
+    broken.chmod(0o755)
+    for python, said in ((str(broken), True), (sys.executable, False)):
+        shim = tmp_path / "xefmctl"
+        shim.write_text(remote_server.posix_shim(
+            python, os.path.join(os.path.dirname(remote_server.__file__), "remote_cli.py")))
+        shim.chmod(0o755)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("XEFM_")}
+        done = subprocess.run([str(shim), "state"], capture_output=True, text=True,
+                              timeout=20, env=env)
+        assert done.returncode == (134 if said else 2), done.stderr
+        assert (remote_server.CANNOT_START in done.stderr) == said, done.stderr
+        assert said or "XEFM_SOCKET is not set" in done.stderr
+
+
 def test_apply_env_puts_the_shim_first_once(server):
     env = {"PATH": os.pathsep.join(["/usr/bin", server.bin_dir, "/bin"])}
     server.apply_env(env, "1")
