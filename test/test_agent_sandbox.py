@@ -302,6 +302,12 @@ except urllib.error.HTTPError as e:
     print("port", e.code)
 except OSError as e:
     print("port refused")
+if len(sys.argv) > 3:
+    try:
+        open(sys.argv[3], "w").close()
+        print("wrote outside")
+    except OSError as e:
+        print("write refused")
 '''
 
 
@@ -329,7 +335,72 @@ def _no_connect():
         os._exit(99)
 
 
+def _low_integrity(argv, env):
+    """Windows, as Codex's unelevated sandbox: the user's own token at low
+    integrity, which may read what the user may but not write or open for
+    writing what is at medium - the pipe of xefmctl among it. Output comes back
+    through inherited pipes: the process could open no file of ours."""
+    import msvcrt
+    from ctypes import wintypes as w
+    k32, adv = ctypes.WinDLL("kernel32", use_last_error=True), ctypes.WinDLL(
+        "advapi32", use_last_error=True)
+    P = ctypes.POINTER
+    k32.GetCurrentProcess.restype = w.HANDLE
+    adv.OpenProcessToken.argtypes = [w.HANDLE, w.DWORD, P(w.HANDLE)]
+    adv.DuplicateTokenEx.argtypes = [w.HANDLE, w.DWORD, ctypes.c_void_p, ctypes.c_int,
+                                     ctypes.c_int, P(w.HANDLE)]
+    adv.ConvertStringSidToSidW.argtypes = [w.LPCWSTR, P(ctypes.c_void_p)]
+    adv.GetLengthSid.argtypes = [ctypes.c_void_p]
+    adv.SetTokenInformation.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD]
+    k32.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+    k32.CloseHandle.argtypes = [w.HANDLE]
+    token, low = w.HANDLE(), w.HANDLE()
+    # duplicate, query, assign primary, adjust default
+    assert adv.OpenProcessToken(k32.GetCurrentProcess(), 0x008B, ctypes.byref(token)), \
+        ctypes.get_last_error()
+    assert adv.DuplicateTokenEx(token, 0x02000000, None, 2, 1, ctypes.byref(low))
+    sid = ctypes.c_void_p()
+    assert adv.ConvertStringSidToSidW("S-1-16-4096", ctypes.byref(sid))  # low
+
+    class Label(ctypes.Structure):
+        _fields_ = [("sid", ctypes.c_void_p), ("attributes", w.DWORD)]
+    label = Label(sid, 0x20)  # SE_GROUP_INTEGRITY
+    assert adv.SetTokenInformation(low, 25, ctypes.byref(label),
+                                   ctypes.sizeof(label) + adv.GetLengthSid(sid))
+
+    class StartupInfo(ctypes.Structure):
+        _fields_ = [("cb", w.DWORD), ("r", w.LPWSTR), ("desktop", w.LPWSTR),
+                    ("title", w.LPWSTR), *[(n, w.DWORD) for n in "x y cx cy ccx ccy fill".split()],
+                    ("flags", w.DWORD), ("show", w.WORD), ("r2", w.WORD), ("r3", ctypes.c_void_p),
+                    ("stdin", w.HANDLE), ("stdout", w.HANDLE), ("stderr", w.HANDLE)]
+
+    class ProcessInfo(ctypes.Structure):
+        _fields_ = [("process", w.HANDLE), ("thread", w.HANDLE), ("pid", w.DWORD),
+                    ("tid", w.DWORD)]
+    read, write = os.pipe()
+    os.set_inheritable(write, True)
+    out = msvcrt.get_osfhandle(write)
+    info = StartupInfo(cb=ctypes.sizeof(StartupInfo), flags=0x100, stdout=out, stderr=out)
+    proc = ProcessInfo()
+    adv.CreateProcessAsUserW.argtypes = [
+        w.HANDLE, w.LPCWSTR, w.LPWSTR, ctypes.c_void_p, ctypes.c_void_p, w.BOOL, w.DWORD,
+        ctypes.c_void_p, w.LPCWSTR, P(StartupInfo), P(ProcessInfo)]
+    block = ctypes.create_unicode_buffer("".join(f"{k}={v}\0" for k, v in env.items()) + "\0")
+    assert adv.CreateProcessAsUserW(low, None, ctypes.create_unicode_buffer(
+        subprocess.list2cmdline(argv)), None, None, True, 0x08000400, block,
+        None, ctypes.byref(info), ctypes.byref(proc)), ctypes.get_last_error()
+    os.close(write)
+    with os.fdopen(read, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    k32.WaitForSingleObject(proc.process, 60000)
+    for h in (proc.process, proc.thread, token, low):
+        k32.CloseHandle(h)
+    return SimpleNamespace(stdout=text, stderr="")
+
+
 def _sandboxed(argv, env):
+    if sys.platform == "win32":
+        return _low_integrity(argv, env)
     more = {}
     if sys.platform == "darwin":
         argv, more = _seatbelt(argv)
@@ -340,7 +411,8 @@ def _sandboxed(argv, env):
 
 #: Linux musl, another machine: none is written for it.
 HAS_SANDBOX = (sys.platform == "darwin" and os.path.exists("/usr/bin/sandbox-exec")) or (
-    sys.platform == "linux" and platform.machine() in ("x86_64", "aarch64"))
+    sys.platform == "linux" and platform.machine() in ("x86_64", "aarch64")) or (
+    sys.platform == "win32")
 
 
 @pytest.fixture
@@ -362,13 +434,21 @@ def xefm_here(tmp_path):
 def test_in_a_sandbox_the_shell_is_refused_in_words_and_the_tools_answer(xefm_here, tmp_path):
     script = tmp_path / "inside.py"
     script.write_text(INSIDE)
-    argv = [sys.executable, str(script), str(REPO / "xefm" / "remote_cli.py"), xefm_here.mcp.url]
+    target = pathlib.Path(os.path.expanduser("~")) / f"xefm-layer-d-{os.getpid()}"
+    argv = [sys.executable, str(script), str(REPO / "xefm" / "remote_cli.py"), xefm_here.mcp.url,
+            str(target)]
     outside = subprocess.run(argv, env=xefm_here.env, capture_output=True, text=True, timeout=60)
     assert 'client 0 {"reached": "3"}' in outside.stdout and "port 401" in outside.stdout
+    target.unlink()
     inside = _sandboxed(argv, xefm_here.env)
-    assert "client 3" in inside.stdout, inside.stdout + inside.stderr
+    told = inside.stdout + inside.stderr
+    assert "client 3" in inside.stdout, told
     assert "xefmctl_read" in inside.stdout and "sandbox" in inside.stdout
-    assert "port refused" in inside.stdout
+    if sys.platform != "linux":  # the tests' Linux sandbox stops connect alone
+        assert "write refused" in inside.stdout and not target.exists(), told
+    target.unlink(missing_ok=True)
+    # Low integrity keeps the network; the port answers nothing without the token.
+    assert ("port 401" if sys.platform == "win32" else "port refused") in inside.stdout, told
     # The agent's own process is outside: its tool call answers.
     req = urllib.request.Request(xefm_here.mcp.url, method="POST", headers=dict(
         xefm_here.channel.headers, Accept="application/json"), data=json.dumps({

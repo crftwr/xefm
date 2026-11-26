@@ -94,6 +94,9 @@ def asked_for_clis(config):
 @pytest.fixture(autouse=True)
 def asked_for(request):
     asked_for_clis(request.config)
+    kind = request.config.getoption("--codex-windows-sandbox", "unelevated")
+    if WINDOWS:  # the same for the whole run
+        WINDOWS_CODEX[1] = f"windows.sandbox='{kind}'"
 
 
 @pytest.fixture(scope="module")
@@ -184,6 +187,7 @@ STEPS = [("shell", SHELL),
 
 
 #: The kind of sandbox that needs nothing set up by an administrator first.
+#: ``--codex-windows-sandbox elevated`` picks the other.
 WINDOWS_CODEX = ["-c", "windows.sandbox='unelevated'"] if WINDOWS else []
 
 
@@ -290,6 +294,8 @@ class Run:
     def check_tools(self):
         """Both tools answered, in order, as this session."""
         said = f"{self.model.results} {self.model.offered} {getattr(self, 'said', '')}"
+        if getattr(self, "view", None) is not None:
+            said += "\n" + C.to_markdown(self.view.conversation.items)[-2000:]
         assert "reached-pane" in self.model.results.get("call_1", ""), said
         assert "reached-copy" in self.model.results.get("call_2", ""), said
         through = [r for r in self.requests if r["cmd"] in ("pane selected", "copy")]

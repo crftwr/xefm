@@ -47,7 +47,9 @@ Two tools: `xefmctl_read`, with `readOnlyHint` (Codex with approvals set to
 `never` refuses a tool without it), for commands whose effect is `READ`, save
 `fetch` and `--show`; and `xefmctl`, for all. A command is a list of words, parsed
 by `remote_cli.parse` with the session's folder as `cwd`. Parsed there it reads no
-file (`--plan` takes `-` alone): XeFM may read what the agent may not.
+file (`--plan` takes `-` alone): XeFM may read what the agent may not. A model
+sometimes gives the words as one string (Claude haiku in layer F): a JSON list in
+it is taken as that list, anything else is split as a shell would.
 
 An answer that takes more than a second becomes an event stream with comments,
 and progress notifications for a client that gave a token: the user is being
@@ -105,6 +107,23 @@ Codex's drawn session says its thread's policy; for the rest, what the entry's
 command line says (`agents.sandbox_state`); otherwise *not known*. XeFM does not
 read the agents' settings.
 
+A question says when what it asks would leave the sandbox (`Permission.leaves_sandbox`),
+where the agent says so: Claude Code's Bash with `dangerouslyDisableSandbox`, and
+Codex's requests for the network or for access beyond its sandbox. A Codex command
+and Copilot's retry do not say, and nothing is claimed for them.
+
+## Rule 7: failing in words
+
+- A connection the OS refuses (`PermissionError`) says to use the tools
+  (`remote_cli.SANDBOXED`).
+- The shim (`remote_server.posix_shim`, `windows_shim`) asks, only after a failure,
+  whether XeFM's interpreter starts at all, and if not adds `CANNOT_START`: in
+  Copilot's sandbox on macOS the app's Python ends in `Abort trap: 6`, and a venv
+  under the home folder is not readable in some (Linux, layer E).
+- Where the sandbox does not show the shim's folder at all (Codex on Linux in
+  qa-linux; Codex `unelevated` on Windows cannot read it), the shell's own
+  `command not found` is all there is: nothing of XeFM's runs.
+
 ## Tests
 
 | Layer | Where |
@@ -112,10 +131,10 @@ read the agents' settings.
 | A. The policy as a table: no argv, setting or mode XeFM sends touches a sandbox; every session has a channel and hides its token | `test_agent_sandbox.py` |
 | B. Every command has its class; what is asked does nothing before the answer | `test_agent_restrictions.py` |
 | C. Stand-in agents: what each is sent, resumed too; the header | `test_agent_rpc.py`, `test_mcp_server.py` |
-| D. A real OS sandbox, no agent: Seatbelt on macOS, seccomp on Linux. Windows is not written yet | `test_agent_sandbox.py` |
-| E. The real CLIs, driven by XeFM's code, with a stand-in model (`agent_standin.py`): no account, no quota. Codex and Copilot, macOS, Windows and Linux | `test_agent_cli.py` |
+| D. A real OS sandbox, no agent: Seatbelt on macOS, seccomp on Linux, a low-integrity token on Windows (as Codex's `unelevated`) | `test_agent_sandbox.py` |
+| E. The real CLIs, driven by XeFM's code, with a stand-in model (`agent_standin.py`): no account, no quota. Claude Code, Codex and Copilot, pinned; macOS, Windows and Linux. Also Always Allow's scope and a request to leave the sandbox, as each CLI sends them | `test_agent_cli.py` |
 | The hand check, on a real XeFM with its panes and dialogs: what is asked, when, and what is left after | `test_agent_walkthrough.py`: with the tools called directly in every run, by the real CLIs with `--agent-cli` |
-| F. A live turn: does the model use the tools unprompted? | by hand |
+| F. A live turn: does the model use the tools unprompted? | by hand, with a signed-in Claude Code (2026-11-25, haiku: yes, three of three) |
 
 Layers A to D run with the suite. E downloads the CLIs, pinned and checksummed,
 so it runs in a guest, by hand, before a release and when a CLI is updated:
@@ -123,21 +142,35 @@ so it runs in a guest, by hand, before a release and when a CLI is updated:
 ```bash
 make test-vm GUEST=qa-mac ARGS="--agent-cli test/test_agent_cli.py test/test_agent_walkthrough.py"
 make test-vm GUEST=qa-win ARGS="--agent-cli test/test_agent_cli.py test/test_agent_walkthrough.py"
+make test-vm GUEST=qa-linux ARGS="--agent-cli test/test_agent_cli.py"
 ```
 
-On Windows Codex runs its `unelevated` sandbox there, which needs no setup.
+The stand-in answers OpenAI's chat completions and responses and Anthropic's
+messages, and searches for the tools Claude Code defers (`ToolSearch`) as a model
+has to. On Windows Codex runs its `unelevated` sandbox, which needs no setup;
+`--codex-windows-sandbox elevated` picks the other. Claude Code has no sandbox on
+Windows.
 
-In Docker the CLIs' sandboxes do not start (no user namespaces in the default
-seccomp profile), and those tests are skipped. They start with `--security-opt
-seccomp=unconfined --security-opt systempaths=unconfined`, and Copilot's also
-needs `--device /dev/net/tun`; qa-linux has neither.
+For a run with `--agent-cli`, qa-linux's container is started with
+`--security-opt seccomp=unconfined --security-opt systempaths=unconfined
+--device /dev/net/tun` and installs bubblewrap, socat, slirp4netns, iproute2 and
+iptables (`qa/guest.py`): with Docker's default profile there are no user
+namespaces and no CLI's sandbox starts. The rest of the suite keeps the plain
+container. The sandboxes differ by platform (Copilot reaches XeFM through the
+temporary folder on macOS and keeps a write outside in a copy of its own on Linux;
+Codex cannot read the shim on Windows and does not see it on Linux), so a Linux
+container stands for none of the others.
 
 ## Not done
 
-- Windows: layer D (a restricted token, a second user), and Codex's `elevated` and
-  `mxc` sandboxes with this code. In `unelevated` the shell cannot read the shim's
-  folder, so `xefmctl` there fails in the shell's words, not XeFM's.
-- A question too wide for the box is broken at its width by XeFM (`_fit`), since
-  PuiKit's plain `MessageBox` does not wrap; that belongs in PuiKit.
-- Antigravity: run only on Windows, before this. What to check is in #1002.
-- Claude Code in layer E.
+- Codex's `elevated` sandbox on Windows (`--codex-windows-sandbox elevated`):
+  `codex exec` works, but a drawn session's turn stalls before the command starts,
+  with nothing reaching XeFM (Codex 0.171.0, qa-win, 2026-11-25; perhaps a prompt
+  on the guest's desktop). Its `mxc`; sessions started by the Store's XeFM (they
+  need a person).
+- XeFM still breaks its agents' plain questions itself (`_fit`); PuiKit's plain
+  `MessageBox` wraps from puikit#247 on, and `_fit` can keep only the refusal of a
+  question too tall for the screen once the floor has it.
+- The CLIs' own interactive screens: `codex exec`, `copilot -p` and `claude -p`
+  stand for them.
+- Antigravity, put off: what to check is in #1002 and #995.

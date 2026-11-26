@@ -17,6 +17,9 @@ def pytest_addoption(parser):
     parser.addoption("--agent-cli", action="store_true", default=False,
                      help="run the AI agents' real CLIs, downloaded (test_agent_cli.py); "
                           "in a guest")
+    parser.addoption("--codex-windows-sandbox", default="unelevated",
+                     help="Codex's Windows sandbox for --agent-cli: unelevated (needs "
+                          "nothing set up), elevated")
 
 
 def pytest_configure(config):
