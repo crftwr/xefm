@@ -981,3 +981,26 @@ def test_hunks_undo_to_the_file_before():
         "edits": agent_rpc.hunk_edits(agent_rpc.unified_patch(old, new))})
     assert len(item.input["edits"]) == 2
     assert C.edit_before(item, new) == old
+
+
+def test_copilots_call_of_an_mcp_tool_is_shown_as_claude_codes_is():
+    """Copilot 1.0.115 titles one ``<server>-<tool>`` with a kind from its
+    hints (measured in layer E): shown as a Read of nothing before (#995)."""
+    for kind, tool in (("read", "xefmctl_read"), ("other", "xefmctl")):
+        item = C.Item("tool", name="Tool")
+        agent_acp._fold_tool(item, {
+            "sessionUpdate": "tool_call", "toolCallId": "call_1", "kind": kind,
+            "title": f"xefm_5e093674-{tool}", "status": "pending",
+            "rawInput": {"command": ["pane", "selected"]}})
+        agent_acp._fold_tool(item, {"sessionUpdate": "tool_call_update", "toolCallId": "call_1",
+                                    "status": "completed", "content": [
+                                        {"type": "content",
+                                         "content": {"type": "text", "text": "a.txt"}}]})
+        assert item.name == f"mcp__xefm_5e093674__{tool}"
+        assert item.input == {"command": ["pane", "selected"]}
+        assert C.tool_label(item.name) == f"xefm_5e093674: {tool}"
+    # A read of a file stays a Read, whatever its title.
+    read = C.Item("tool", name="Tool")
+    agent_acp._fold_tool(read, {"kind": "read", "title": "my-notes.txt",
+                                "rawInput": {"path": "/w/my-notes.txt"}})
+    assert read.name == "Read" and read.input == {"file_path": "/w/my-notes.txt"}

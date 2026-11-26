@@ -32,6 +32,11 @@ AUTH_REQUIRED = -32000
 _KINDS = {"read": "Read", "edit": "Edit", "delete": "Delete", "move": "Move",
           "search": "Search", "execute": "Shell", "think": "Think", "fetch": "Fetch"}
 
+#: How Copilot titles a call of an MCP server's tool: ``<server>-<tool>``, with
+#: the tool's arguments as ``rawInput`` and a kind from its hints (``read`` for
+#: a read-only one, else ``other``). Copilot 1.0.115, measured (#995).
+_MCP_TITLE = re.compile(r"\A([A-Za-z0-9_.]+)-([A-Za-z0-9_.-]+)\Z")
+
 #: A stop that is not simply the end of the turn, in words.
 _STOPS = {"cancelled": "Interrupted", "max_tokens": "Stopped: the reply's length limit",
           "max_turn_requests": "Stopped: too many steps in one turn",
@@ -403,7 +408,7 @@ class AcpClient(RpcClient):
                           tool_use_id=str(call.get("toolCallId") or ""),
                           patch=probe.patch)
         title = str(call.get("title") or "")
-        if title and title not in probe.input.values():
+        if title and title not in probe.input.values() and not probe.name.startswith("mcp__"):
             perm.description = title
         if "allow_always" in by_kind:
             perm.suggestions = [{"optionId": by_kind["allow_always"]}]
@@ -426,7 +431,8 @@ class AcpClient(RpcClient):
                                if k in by_kind), None)
             self.reply(request_id, {"outcome": {"outcome": "cancelled"} if option is None
                                     else {"outcome": "selected", "optionId": option}})
-        return self._ask(perm, answer, str(probe.input.get("command") or ""))
+        command = probe.input.get("command") if probe.name == "Shell" else ""
+        return self._ask(perm, answer, str(command or ""))
 
     def _ask_form(self, request_id: Any, params: dict) -> Permission | None:
         """A question with a form to fill in: each field one question."""
@@ -516,6 +522,14 @@ def _fold_tool(item: Item, update: dict) -> None:
     raw = raw if isinstance(raw, (dict, str)) else {}
     title = str(update.get("title") or "")
     path = _path_of(update, raw)
+    mcp = _MCP_TITLE.match(title) if kind in ("read", "other") and not path \
+        and isinstance(raw, dict) else None
+    if mcp and item.name in ("Tool", "Read"):
+        # Named as Claude Code names one, so it is shown the same way
+        # (``server: tool`` and its arguments), not as a Read of nothing.
+        item.name = f"mcp__{mcp[1]}__{mcp[2]}"
+        item.input = dict(raw)
+        kind = None
     if isinstance(kind, str):
         command = _first(raw, "command", "CommandLine", "cmd")
         data: dict[str, Any] = {}

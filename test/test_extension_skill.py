@@ -805,3 +805,26 @@ class Distribution(_Tmp):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_the_skills_own_file_is_ascii():
+    """An agent on Windows reads SKILL.md with Windows PowerShell's
+    Get-Content, which takes a file with no BOM for the ANSI code page, and its
+    frontmatter leaves no room for one (#995): the references get a BOM in a
+    session there (agents._for_windows_powershell), SKILL.md stays ASCII."""
+    from xefm import extensions
+    text = (extensions.SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+    assert text.isascii(), sorted({c for c in text if not c.isascii()})
+
+
+def test_a_sessions_references_carry_a_bom_on_windows_only(monkeypatch):
+    import codecs
+    from xefm import agents
+    data = "a — b".encode("utf-8")
+    monkeypatch.setattr(agents.sys, "platform", "win32")
+    assert agents._for_windows_powershell("references/config.md", data) == \
+        codecs.BOM_UTF8 + data
+    assert agents._for_windows_powershell("SKILL.md", data) == data
+    assert agents._for_windows_powershell("references/x.md", b"plain") == b"plain"
+    monkeypatch.setattr(agents.sys, "platform", "darwin")
+    assert agents._for_windows_powershell("references/config.md", data) == data
