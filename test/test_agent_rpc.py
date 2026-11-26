@@ -388,7 +388,8 @@ def test_codexs_windows_sandbox_that_waits_to_be_set_up_is_said(codex):
     wait without a word. Asked of Codex on Windows alone; set up only when
     the user types the command."""
     client, conv = codex.view.client, codex.conv
-    assert codex.sent("windowsSandbox/readiness") == []  # not Windows here
+    # Asked on Windows alone.
+    assert codex.sent("windowsSandbox/readiness") == ([None] if client.windows else [])
     calls = []
     client.call = lambda method, params, then=None, failed=None: calls.append(
         (method, params, then)) or True
