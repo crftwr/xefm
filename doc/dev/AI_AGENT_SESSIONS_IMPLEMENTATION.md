@@ -317,7 +317,13 @@ after it.
   group when it is hidden, and the status bar says it is asking).
   **Always Allow** returns the CLI's `permission_suggestions` with
   `destination` forced to `session`: XeFM never writes the user's or the
-  project's settings. `AskUserQuestion` comes the same way and is answered
+  project's settings. The question says what that lets through
+  (`Permission.remembers`): Claude Code's rules as `Tool(content)`, folders
+  and modes (`agent_chat.rules_remembered`), Codex's `acceptForSession` in
+  words, an ACP agent's `allow_always` option by its name. A command's line
+  does not show how far a rule reaches (`Bash(ssh:*)` for one `ssh` to one
+  host); a suggestion of an unknown kind is not guessed at, and the
+  question says the agent did not say. `AskUserQuestion` comes the same way and is answered
   with `updatedInput.answers` (question -> label, several joined with
   ", ") from one `agent_question_dialog.QuestionDialog` per question: radio
   rows, checkbox rows for `multiSelect`, an Other row with a field. The

@@ -402,6 +402,7 @@ def test_codex_asks_before_a_command(codex, response, decision):
     assert codex.conv.state == C.ASKING
     assert perm.tool == "Shell" and perm.input == {"command": "ls -l"}
     assert perm.description == "May I?" and perm.suggestions
+    assert perm.remembers == ["commands Codex counts as this one"]
     codex.view.answer(perm, C.deny() if response == "deny"
                       else C.allow(perm, always=response == "always"))
     codex.idle()
@@ -424,6 +425,7 @@ def test_a_codex_change_is_an_edit_per_file(codex):
     codex.say("edit it", asks=True)
     [perm] = codex.asked
     assert "+BETA" in perm.patch and "+hi" in perm.patch
+    assert perm.remembers == ["changes Codex counts as these"]
     codex.view.answer(perm, C.allow(perm))
     codex.idle()
     [edit], [write] = codex.tools("Edit"), codex.tools("Write")
@@ -574,6 +576,7 @@ def test_codex_grants_access_and_declines_a_form_it_cannot_show(codex):
     wanted = {"network": {"enabled": True}, "fileSystem": None}
     perm = client.handle({"id": 5, "method": "item/permissions/requestApproval", "params": {
         "threadId": "thread-1", "itemId": "i", "permissions": wanted}})
+    assert perm.remembers == ["the network"]
     codex.view.answer(perm, C.allow(perm, always=True))
     assert sent[-1] == {"permissions": {"network": {"enabled": True}}, "scope": "session"}
     tool = {"mode": "form", "serverName": "srv", "message": "Run it?",
@@ -625,6 +628,7 @@ def test_acp_asks_before_a_command(acp, response, option):
     acp.say("run hostname", asks=True)
     [perm] = acp.asked
     assert perm.tool == "Shell" and perm.input["command"] == "hostname" and perm.suggestions
+    assert perm.remembers == ['"Always", in the agent\'s words']
     acp.view.answer(perm, C.deny() if response == "deny"
                     else C.allow(perm, always=response == "always"))
     acp.idle()

@@ -387,6 +387,10 @@ class AcpClient(RpcClient):
             perm.description = title
         if "allow_always" in by_kind:
             perm.suggestions = [{"optionId": by_kind["allow_always"]}]
+            # The option's name is all ACP says of what it remembers.
+            name = next((str(o.get("name") or "") for o in options
+                         if o.get("kind") == "allow_always"), "")
+            perm.remembers = [f"\"{name}\", in the agent's words"] if name else []
         item = self.conv._tools.get(perm.tool_use_id)
         if item is None and perm.tool_use_id:
             self._tool_update(dict(call))
