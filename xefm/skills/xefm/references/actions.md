@@ -138,6 +138,10 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `extensions` | List the extension packages and whether they loaded | — | — | — | — |
 | `check_extension_updates` | Look for newer versions of the installed extension packages | — | — | — | — |
 | `sync_python_packages` | Install the Python packages ~/.xefm/requirements.txt lists | — | — | — | — |
+| `open_documentation` | Open the XeFM documentation in the browser | — | — | — | — |
+| `release_notes` | Open the release notes of this XeFM version | — | — | — | — |
+| `report_issue` | Open a bug report with this XeFM's details filled in | — | — | — | — |
+| `check_for_updates` | Look for a newer version of XeFM | — | — | — | — |
 | `quit` | Quit XeFM — or close the open viewer | `Q` | `Alt-F4` | `Ctrl-Q` | `Shift-Z Shift-Z`, `Shift-Z Shift-Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — | — | — | — |
 | `help` | Show the key bindings for what is on screen | `F1` | `F1` | `F1` | `F1` |

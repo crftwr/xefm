@@ -952,6 +952,19 @@ _DETAILS: dict[str, str] = {
         "and the old one stays. Reaches the network, and only when you run it: "
         "XeFM never looks on its own. The same as `xefm ext outdated` and "
         "`xefm ext upgrade` from a shell."),
+    "report_issue": (
+        "Opens the bug report form on GitHub with the XeFM version, how it was "
+        "installed, the OS and the terminal already filled in. Nothing is sent: "
+        "you read and finish the form in the browser. In a terminal, where "
+        "XeFM cannot open a browser, the link is copied to the clipboard."),
+    "check_for_updates": (
+        "Asks PyPI whether there is a newer XeFM and, if there is, says how to "
+        "get it for the way this one was installed - a command for pip, pipx, "
+        "uv and Homebrew, a download for the DMG and the Windows zip. A "
+        "pre-release is offered only to someone already running one. Reaches "
+        "the network, and only when you run it: XeFM never looks on its own. "
+        "Not offered for the Microsoft Store version, which the Store keeps "
+        "up to date."),
     "sync_python_packages": (
         "Makes `~/.xefm/site-packages` match `~/.xefm/requirements.txt`: "
         "installs what the file lists, with pip, for the Python XeFM runs on, "
@@ -1191,6 +1204,11 @@ _FILER_ACTIONS = [
        "Look for newer versions of the installed extension packages"),
     _a("sync_python_packages", FILER,
        "Install the Python packages ~/.xefm/requirements.txt lists"),
+    # Help
+    _a("open_documentation", FILER, "Open the XeFM documentation in the browser"),
+    _a("release_notes", FILER, "Open the release notes of this XeFM version"),
+    _a("report_issue", FILER, "Open a bug report with this XeFM's details filled in"),
+    _a("check_for_updates", FILER, "Look for a newer version of XeFM"),
 ]
 
 _TEXT_VIEWER_ACTIONS = [

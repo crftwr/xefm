@@ -99,6 +99,12 @@ updates automatically, and on macOS you install the new DMG over the old app
 already in *Applications* can be handed over to Homebrew with
 `brew install --cask --adopt crftwr/tap/xefm`.
 
+**Help → Check for Updates…** asks PyPI whether a newer XeFM is out and, if
+one is, shows the row of this table that fits the way this copy was installed
+(or the download, for the DMG and the Windows zip). It reaches the network only
+when you choose it; XeFM never looks on its own. The Microsoft Store version
+does not offer it, because the Store keeps that one current.
+
 ### Installation troubleshooting
 
 - `xefm: command not found` after `pip install xefm` — the console script landed

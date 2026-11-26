@@ -178,7 +178,13 @@ Advanced には、一度だけ、あるいはときどき設定するものが�
 |------|--------|
 | Keyboard Shortcuts… | `help` |
 | Tip of the Day… | *（メニューのみ）* |
+| XeFM Documentation | `open_documentation` |
+| Release Notes | `release_notes` |
+| Report an Issue… | `report_issue` |
+| Check for Updates… | `check_for_updates` |
 | About XeFM | *（メニューのみ）* |
+
+**XeFM Documentation** はこのドキュメントサイトを、**Release Notes** は実行中のバージョンの GitHub リリースを開きます。**Report an Issue…** は、バージョン、XeFM のインストール方法、OS、ターミナルを記入済みのバグ報告フォームを開きます。フォームを自分で送信するまで、何も送られません。ブラウザーを開けないターミナルアプリでは、どれもリンクをクリップボードにコピーし、ログペインにそのリンクを表示します。**Check for Updates…** については[アップグレードとアンインストール](XEFM_USER_GUIDE.ja.md#アップグレードとアンインストール)を参照してください。Microsoft Store 版にはこの項目がありません。
 
 > 注：AFX スタイルでは、`create_directory` と `move_files` が 1 つのキーを共有していて、状況に合うほうを実行します。何も選択していなければ新しいフォルダーの作成、ファイルを選択していれば移動です。これはキーバインドの性質であり、メニューは両方を反映しています。
 

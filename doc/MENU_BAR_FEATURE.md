@@ -208,7 +208,21 @@ in the command palette.
 |------|--------|
 | Keyboard Shortcuts… | `help` |
 | Tip of the Day… | *(menu only)* |
+| XeFM Documentation | `open_documentation` |
+| Release Notes | `release_notes` |
+| Report an Issue… | `report_issue` |
+| Check for Updates… | `check_for_updates` |
 | About XeFM | *(menu only)* |
+
+**XeFM Documentation** opens this documentation site, and **Release Notes** the
+GitHub release of the version you are running. **Report an Issue…** opens the
+bug report form with the version, how XeFM was installed, the OS and the
+terminal already filled in; nothing is sent until you submit the form yourself.
+In the terminal app, which cannot open a browser, each of these copies the link
+to the clipboard instead, and the log pane shows it.
+**Check for Updates…** is described under
+[Upgrading and uninstalling](XEFM_USER_GUIDE.md#upgrading-and-uninstalling);
+the Microsoft Store version does not have it.
 
 > Note: in AFX style, `create_directory` and `move_files` share one key, which
 > does whichever fits — a new folder when nothing is selected, a move when files
