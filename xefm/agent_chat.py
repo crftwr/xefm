@@ -275,6 +275,10 @@ class Permission:
     #: each, in the agent's own terms: the rule it would remember. Empty where
     #: the agent did not say.
     remembers: list = field(default_factory=list)
+    #: Whether what is asked would run outside the agent's sandbox, where the
+    #: agent says so (#995 rule 6): a sandbox's approval and XeFM's are two
+    #: things, and the user should know which this is.
+    leaves_sandbox: bool = False
     tool_use_id: str = ""
     blocked_path: str = ""
     #: What an edit would change, as a diff, where the agent said.
@@ -594,6 +598,8 @@ class Conversation:
             tool_use_id=str(req.get("tool_use_id") or ""),
             blocked_path=str(req.get("blocked_path") or ""))
         perm.remembers = rules_remembered(perm.suggestions)
+        # Claude Code's Bash asks to run with its sandbox off this way.
+        perm.leaves_sandbox = perm.input.get("dangerouslyDisableSandbox") is True
         self.permissions[perm.request_id] = perm
         self.state = ASKING
         return perm

@@ -6412,6 +6412,9 @@ class XeFMApp:
                              + (f"\n\n_… {more} more lines_" if more else ""))
         if perm.blocked_path:
             lines.append(f"Path: `{perm.blocked_path}`")
+        if perm.leaves_sandbox:
+            lines.append("**Outside the sandbox**: this would run with the agent's "
+                         "sandbox off, or reach past it.")
         if perm.suggestions:
             lines.append(C.always_allow_line(view.name, perm))
         buttons = ["Allow", "Always Allow", "Deny"] if perm.suggestions else ["Allow", "Deny"]

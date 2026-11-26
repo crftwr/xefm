@@ -580,7 +580,8 @@ class CodexClient(RpcClient):
         command = shell_command(str(params.get("command") or ""))
         network = params.get("networkApprovalContext")
         if not command and isinstance(network, dict):
-            perm = Permission(rid, "Network", {"url": str(network.get("host") or "")})
+            perm = Permission(rid, "Network", {"url": str(network.get("host") or "")},
+                              leaves_sandbox=True)
         else:
             perm = Permission(rid, "Shell", {"command": command})
         perm.description = str(params.get("reason") or "")
@@ -620,7 +621,8 @@ class CodexClient(RpcClient):
             what = ["access outside the sandbox"]
         perm = Permission(rid, "Access", {"description": "; ".join(what)},
                           description=str(params.get("reason") or ""), tool_use_id=item_id,
-                          suggestions=[{"scope": "session"}], remembers=list(what))
+                          suggestions=[{"scope": "session"}], remembers=list(what),
+                          leaves_sandbox=True)
 
         def answer(response: dict) -> None:
             granted = {k: v for k, v in wanted.items() if v is not None} \
