@@ -145,6 +145,13 @@ make test-vm GUEST=qa-win ARGS="--agent-cli test/test_agent_cli.py test/test_age
 make test-vm GUEST=qa-linux ARGS="--agent-cli test/test_agent_cli.py"
 ```
 
+The CLIs' own screens (a terminal session) run in a pseudo-terminal on macOS and
+Linux (`Run.screen`): started as XeFM starts them, the request typed once the
+screen has drawn. Each CLI's first-run questions are answered in its own settings
+(`_trusted`: the folder trusted, Claude Code's API key approved and its auto mode,
+whose check runs on Anthropic's server, set to default); Copilot's offer to install
+its proxy's certificate authority is declined on the screen.
+
 The stand-in answers OpenAI's chat completions and responses and Anthropic's
 messages, and searches for the tools Claude Code defers (`ToolSearch`) as a model
 has to. On Windows Codex runs its `unelevated` sandbox, which needs no setup;
@@ -177,6 +184,4 @@ container stands for none of the others.
   1.33.1, the floor, wraps a plain `MessageBox` too (puikit#247). `_fit` can keep
   only the refusal of a question too tall for the screen once the floor is
   called hard.
-- The CLIs' own interactive screens: `codex exec`, `copilot -p` and `claude -p`
-  stand for them.
 - Antigravity, put off: what to check is in #1002 and #995.
