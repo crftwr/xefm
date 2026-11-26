@@ -151,7 +151,7 @@ WRITE = {"command": ["copy", "a", "--to", "b", "--wait"]}
 # asks about first, and allowed it is no longer outside.
 SHELL = ("xefmctl pane selected; echo rc=$?; "
          "curl -s -o /dev/null -w 'port=%{http_code}' \"$PROBE_URL\"; "
-         "echo in-env=$(env | grep -v ^PROBE_ | grep -c \"$PROBE_SHAPE\"); "
+         "echo in-env=$(env | grep -v ^PROBE_ | grep -c -e \"$PROBE_SHAPE\"); "  # a token may start with -
          "echo x > \"$PROBE_OUTSIDE\" && echo wrote-outside")
 if WINDOWS:
     SHELL = ("xefmctl pane selected; echo \"rc=$LASTEXITCODE\"; "
@@ -199,7 +199,7 @@ class Run:
             env.update(COPILOT_PROVIDER_BASE_URL=self.model.url, COPILOT_PROVIDER_TYPE="openai",
                        COPILOT_PROVIDER_API_KEY="none", COPILOT_MODEL="gpt-4.1",
                        COPILOT_OFFLINE="true")
-        self.env, self.asked = env, []
+        self.env, self.asked, self.perms = env, [], []
 
     def handle(self, req):
         self.requests.append(req)
@@ -218,6 +218,7 @@ class Run:
             # (Copilot's two requests look the same).
             again = (perm.tool, dict(perm.input)) in self.asked
             self.asked.append((perm.tool, dict(perm.input)))
+            self.perms.append(perm)
             view.answer(perm, C.deny() if again else C.allow(perm))
         self.view = ChatView(
             agents.chat_argv(self.entry, self.values), cwd=str(self.ws), env=self.env, name="A",
@@ -281,6 +282,14 @@ class Run:
         except PermissionError:
             return False  # the CLI has it open still (Windows)
 
+    def check_always_allow(self):
+        """Where the CLI offers Always Allow, XeFM can say what it would
+        remember: a CLI that changes how it says so fails here, not silently
+        in the question."""
+        offered = [p for p in self.perms if p.suggestions]
+        print("Always Allow:", [(p.tool, p.remembers) for p in offered])
+        assert all(p.remembers for p in offered), [(p.tool, p.suggestions) for p in offered]
+
     def check_contained(self):
         told = f"{self.shell}\nasked: {self.asked}"
         assert not (self.home / "outside").exists() and "wrote-outside" not in self.shell, told
@@ -321,6 +330,7 @@ def test_codexs_sandbox_stays_on_and_its_tools_answer(run, drawn):
     if drawn:
         assert r.view.conversation.sandbox == "on"
         r.check_tools()
+        r.check_always_allow()
     else:
         assert "reached-pane" in r.model.results.get("call_1", ""), r.said
 
@@ -331,12 +341,14 @@ def test_copilots_sandbox_stays_on_and_its_tools_answer(run):
     assert r.view.conversation.sandbox == "on"
     r.check_contained()
     r.check_tools()
+    r.check_always_allow()
 
 
 def test_copilot_with_no_sandbox(run):
     r = run(agents.COPILOT, drawn=True).chat()
     assert r.view.conversation.sandbox == "not known"
     r.check_tools()
+    r.check_always_allow()
 
 
 @needs_sandbox

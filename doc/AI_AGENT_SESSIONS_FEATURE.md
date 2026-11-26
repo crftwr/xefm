@@ -131,10 +131,12 @@ turned off, for one) appears in the conversation, and the effort and fast
 mode you set stay set if the agent is started again.
 
 - **The agent asks in XeFM.** When the agent wants to run a tool that needs
-  your permission, XeFM asks: **Allow**, **Always Allow** (the same kind of
-  command, for the rest of this session; nothing is written to your
-  settings), where the agent offers it, or **Deny**. The question shows the
-  whole command, or the lines an edit would change.
+  your permission, XeFM asks: **Allow**, **Always Allow** (for the rest of
+  this session; nothing is written to your settings), where the agent offers
+  it, or **Deny**. The question shows the whole command, or the lines an edit
+  would change, and what **Always Allow** would let through, as the agent
+  says it: a rule such as `Bash(ssh:*)` can reach further than the one
+  command you see. Where the agent does not say, the question says so.
   No button is selected at first, so an Enter or a Space you were typing
   answers nothing: choose with the Left or Right key and press Enter, click a
   button, or press Esc to deny. When the agent asks you to choose between options,

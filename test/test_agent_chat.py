@@ -162,6 +162,28 @@ def test_a_tool_call_its_permission_and_its_result():
     assert "::: bullet error\n**Bash** ✗ declined\n\n```console\n$ ls\n```" in md
 
 
+def test_always_allow_says_what_it_remembers():
+    """A command's line does not say how far a rule reaches: one ``ssh`` to
+    one host can be remembered as every ``ssh``."""
+    conv = C.Conversation()
+    perm = conv.handle({"type": "control_request", "request_id": "r", "request": {
+        "subtype": "can_use_tool", "tool_name": "Bash",
+        "input": {"command": "ssh staging uptime"}, "permission_suggestions": [
+            {"type": "addRules", "behavior": "allow", "destination": "localSettings",
+             "rules": [{"toolName": "Bash", "ruleContent": "ssh:*"}, {"toolName": "Read"}]},
+            {"type": "addDirectories", "directories": ["/srv"], "destination": "session"},
+            {"type": "setMode", "mode": "acceptEdits", "destination": "session"},
+            {"type": "removeRules", "rules": [{"toolName": "Bash"}]}]}})
+    assert perm.remembers == ["`Bash(ssh:*)`", "`Read`, any use", "files in `/srv`",
+                              "the mode `acceptEdits`"]
+    line = C.always_allow_line("Claude", perm)
+    assert "for the rest of this session" in line and "`Bash(ssh:*)`" in line
+    # A kind this does not know is not guessed at.
+    unknown = C.Permission("r", "Bash", {"command": "ls"}, suggestions=[{"type": "new"}])
+    assert C.rules_remembered(unknown.suggestions) == []
+    assert "did not say" in C.always_allow_line("Claude", unknown)
+
+
 def test_a_withdrawn_question_and_an_interrupted_turn():
     conv = C.Conversation()
     conv.add_user("x")
@@ -693,6 +715,8 @@ def test_what_the_agent_asks_starts_with_no_button_selected(perm, buttons, key, 
 
     box = panel._layers[-1].widget
     assert box.buttons == buttons and box.focused is None
+    # Always Allow comes with what it would remember.
+    assert ("**Always Allow**" in box.message) == ("Always Allow" in buttons)
     press("enter")  # meant for the message being typed
     press("space")
     assert answers == [] and panel._layers[-1].widget is box

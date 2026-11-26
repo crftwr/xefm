@@ -589,6 +589,7 @@ class CodexClient(RpcClient):
         # other way to remember writes a rule to the user's settings.
         if "acceptForSession" in (params.get("availableDecisions") or []):
             perm.suggestions = [{"decision": "acceptForSession"}]
+            perm.remembers = ["commands Codex counts as this one"]
         return self._ask(perm, lambda r: self._decide(request_id, r), command)
 
     def _ask_change(self, request_id: Any, rid: str, item_id: str,
@@ -598,6 +599,8 @@ class CodexClient(RpcClient):
             str(i.input.get("file_path") or "") for i in items)},
             description=str(params.get("reason") or ""), tool_use_id=item_id,
             suggestions=[{"decision": "acceptForSession"}],
+            remembers=[f"changes under `{params['grantRoot']}`" if params.get("grantRoot")
+                       else "changes Codex counts as these"],
             blocked_path=str(params.get("grantRoot") or ""),
             patch="\n".join(i.patch for i in items))
         return self._ask(perm, lambda r: self._decide(request_id, r))
@@ -617,7 +620,7 @@ class CodexClient(RpcClient):
             what = ["access outside the sandbox"]
         perm = Permission(rid, "Access", {"description": "; ".join(what)},
                           description=str(params.get("reason") or ""), tool_use_id=item_id,
-                          suggestions=[{"scope": "session"}])
+                          suggestions=[{"scope": "session"}], remembers=list(what))
 
         def answer(response: dict) -> None:
             granted = {k: v for k, v in wanted.items() if v is not None} \

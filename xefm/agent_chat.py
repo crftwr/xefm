@@ -271,6 +271,10 @@ class Permission:
     input: dict
     description: str = ""
     suggestions: list = field(default_factory=list)
+    #: What **Always Allow** lets through for the rest of the session, a line
+    #: each, in the agent's own terms: the rule it would remember. Empty where
+    #: the agent did not say.
+    remembers: list = field(default_factory=list)
     tool_use_id: str = ""
     blocked_path: str = ""
     #: What an edit would change, as a diff, where the agent said.
@@ -589,6 +593,7 @@ class Conversation:
             suggestions=list(req.get("permission_suggestions") or []),
             tool_use_id=str(req.get("tool_use_id") or ""),
             blocked_path=str(req.get("blocked_path") or ""))
+        perm.remembers = rules_remembered(perm.suggestions)
         self.permissions[perm.request_id] = perm
         self.state = ASKING
         return perm
@@ -693,6 +698,43 @@ def _result_text(content: Any) -> str:
 
 
 # --- permission answers ----------------------------------------------------------
+
+
+def rules_remembered(suggestions: list) -> list[str]:
+    """What Claude Code's ``permission_suggestions`` would remember, a line
+    each: ``Bash(ssh:*)``, a folder, a mode. A command's own line does not
+    say how far a rule reaches (``ssh *`` for one ``ssh`` to one host), so
+    the question shows the rule. A suggestion of a kind not known here gives
+    nothing, and the question then says it was not said."""
+    out: list[str] = []
+    for s in suggestions:
+        if not isinstance(s, dict):
+            continue
+        kind = s.get("type")
+        if kind in ("addRules", "replaceRules"):
+            behavior = s.get("behavior", "allow")
+            for rule in s.get("rules") or []:
+                if not isinstance(rule, dict) or not rule.get("toolName"):
+                    continue
+                name = str(rule["toolName"])
+                content = rule.get("ruleContent")
+                text = f"`{name}({content})`" if content else f"`{name}`, any use"
+                out.append(text if behavior == "allow" else f"{behavior}: {text}")
+        elif kind == "addDirectories":
+            out.extend(f"files in `{d}`" for d in s.get("directories") or [])
+        elif kind == "setMode" and s.get("mode"):
+            out.append(f"the mode `{s['mode']}`")
+    return out
+
+
+def always_allow_line(agent: str, perm: Permission) -> str:
+    """The line of the question that says what **Always Allow** would let
+    through for the rest of the session, or that the agent did not say."""
+    if not perm.remembers:
+        return (f"**Always Allow**: {agent or 'the agent'} did not say what it would "
+                "remember for the rest of this session.")
+    return ("**Always Allow** lets through, for the rest of this session: "
+            + "; ".join(perm.remembers) + ".")
 
 
 def allow(perm: Permission, *, always: bool = False, updated_input: dict | None = None) -> dict:

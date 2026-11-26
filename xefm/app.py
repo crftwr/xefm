@@ -6412,6 +6412,8 @@ class XeFMApp:
                              + (f"\n\n_… {more} more lines_" if more else ""))
         if perm.blocked_path:
             lines.append(f"Path: `{perm.blocked_path}`")
+        if perm.suggestions:
+            lines.append(C.always_allow_line(view.name, perm))
         buttons = ["Allow", "Always Allow", "Deny"] if perm.suggestions else ["Allow", "Deny"]
 
         def answered(label: str) -> None:
