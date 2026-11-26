@@ -1482,3 +1482,24 @@ def test_copy_skips_reading_ahead_when_tags_cannot_land(svc, tmp_path, monkeypat
     _run_sync(svc, svc.copy, [_P(src / "a.txt")], _P(dst))
 
     assert source.batches == [] and source.single == 0
+
+
+@pytest.mark.parametrize("asker", [None, "Claude Code"])
+def test_an_agents_confirmation_says_who_asks_and_selects_nothing(tmp_path, asker):
+    """#995: an AI agent's copy is confirmed in XeFM's own dialog; it said
+    nothing of the agent, and Copy was selected, so an Enter typed for
+    something else answered it."""
+    from puikit import Panel
+    from puikit.backends.memory_backend import MemoryBackend
+    c = _config.Config()
+    c.CONFIRM_COPY = True
+    if asker:
+        c.AGENT_ASKING = asker
+    svc = FileOperationService(c)
+    (tmp_path / "a.txt").write_text("x")
+    panel = Panel(MemoryBackend(width=100, height=30))
+    svc._start(panel, "copy", [_P(tmp_path / "a.txt")], _P(tmp_path / "out"),
+               None, None, 50, False)
+    box = panel._layers[-1].widget
+    assert ("**Claude Code** asks:" in box.message) == bool(asker)
+    assert box.focused == (None if asker else 0)

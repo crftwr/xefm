@@ -177,6 +177,16 @@ temporary folder on macOS and keeps a write outside in a copy of its own on Linu
 Codex cannot read the shim on Windows and does not see it on Linux), so a Linux
 container stands for none of the others.
 
+## Seen in the GUI
+
+2026-11-25, in the Tart VM `xefm-demo` (macOS 27, Pelagic), Claude Code with the
+stand-in model asking: the read of a long path outside the session's folder
+(wrapped, whole), a command outside the sandbox (**Outside the sandbox**), and a
+copy. That showed two faults, now fixed: Claude Code's MCP tool names
+(`mcp__server__tool`) lost their underscores to Markdown emphasis, and the copy's
+own confirmation did not say which agent asked and had Copy selected
+(`AGENT_ASKING`, set by `remote_dispatch` while the agent's request runs).
+
 ## Not done
 
 - Sessions started by the Store's XeFM (they need a person).

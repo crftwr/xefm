@@ -985,6 +985,23 @@ def _steps_markdown(item: Item, index: int) -> str:
     return out
 
 
+def tool_label(name: str) -> str:
+    """A tool's name as the conversation shows it. Claude Code names an MCP
+    server's tool ``mcp__<server>__<tool>``, whose ``__`` Markdown takes for
+    bold; shown as Codex's are, ``<server>: <tool>``."""
+    if name.startswith("mcp__"):
+        server, sep, tool = name[5:].partition("__")
+        if sep and server and tool:
+            return f"{server}: {tool}"
+    return name
+
+
+def tool_label_md(name: str) -> str:
+    """:func:`tool_label` as Markdown that shows it as written: a name's
+    ``_`` is not emphasis (``xefm_1a2b: xefmctl_read``)."""
+    return _MD_PUNCT.sub(r"\\\1", tool_label(name))
+
+
 def tool_markdown(item: Item, index: int = -1) -> str:
     """One tool call as Markdown. With its ``index`` in the transcript, a
     clipped output gets a link that shows all of it and an edit one that
@@ -1001,7 +1018,7 @@ def tool_markdown(item: Item, index: int = -1) -> str:
     mark = _mark(item)
     if name in SHELL_TOOLS and isinstance(item.input.get("command"), str):
         return _bash_markdown(item, mark, index)
-    head = "**Todos**" if todos else f"**{name}**"
+    head = "**Todos**" if todos else f"**{tool_label_md(name)}**"
     if what:
         head += " " + _inline(what)
     head += f" {mark}"
