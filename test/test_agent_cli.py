@@ -489,8 +489,9 @@ def test_codexs_elevated_sandbox_set_up_by_a_person(run, request):
         try:
             posts.until(lambda: "needs setting up" in said(), 30)
         except AssertionError:
-            pytest.fail("Codex said nothing of its elevated sandbox: set up already? "
-                        "This check needs a guest reverted to its snapshot.\n" + said())
+            # Readiness belongs to CODEX_HOME, which is empty here: even where
+            # the setup was done, Codex asks for it again.
+            pytest.fail("Codex said nothing of its elevated sandbox\n" + said())
         tell("Windows will ask for administrator rights. Answer NO this time.")
         import time
         asked = time.monotonic()
@@ -518,6 +519,11 @@ def test_copilots_sandbox_stays_on_and_its_tools_answer(run):
     r.check_contained()
     r.check_tools()
     r.check_always_allow()
+    # Its calls of XeFM's tools are shown as Claude Code's are (`server: tool`
+    # and the arguments), which hangs on how Copilot titles them.
+    names = [i.name for i in r.view.conversation.items if i.kind == "tool"]
+    assert f"mcp__{r.channel.name}__{mcp_server.READ_TOOL}" in names, names
+    assert f"mcp__{r.channel.name}__{mcp_server.TOOL}" in names, names
 
 
 def test_copilot_with_no_sandbox(run):

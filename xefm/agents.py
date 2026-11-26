@@ -66,10 +66,12 @@ sandbox on, off or wider; :func:`sandbox_state` only says what it is.
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path as _FsPath
@@ -327,6 +329,18 @@ to the session's folder, and give file tools absolute paths.
 """
 
 
+def _for_windows_powershell(name: str, data: bytes) -> bytes:
+    """A skill file as a session gets it. On Windows an agent reads it with
+    Windows PowerShell's ``Get-Content``, which takes a file without a BOM
+    for the ANSI code page (#995: Codex read `\u2014` garbled). So the
+    references get a UTF-8 BOM there; ``SKILL.md`` cannot (its frontmatter
+    starts the file) and is kept ASCII instead (``test_agents.py``)."""
+    if (sys.platform != "win32" or not name.endswith(".md") or name == "SKILL.md"
+            or data.startswith(codecs.BOM_UTF8) or data.isascii()):
+        return data
+    return codecs.BOM_UTF8 + data
+
+
 def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
             version: str | None = None, cwd: str | None = None,
             channel: Any = None) -> dict:
@@ -348,7 +362,7 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     for name, data in ext._skill_files(version):
         file = tmp / "skills" / ext.SKILL_DIR.name / name
         file.parent.mkdir(parents=True, exist_ok=True)
-        file.write_bytes(data)
+        file.write_bytes(_for_windows_powershell(name, data))
     manifest = tmp / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps({

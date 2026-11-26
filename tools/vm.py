@@ -114,7 +114,7 @@ def _windows_launchers(guest, stage, python) -> list[pathlib.Path]:
     # Codex's elevated sandbox is set up with an administrator's consent, which
     # only a person at this screen can give (#995): the check asks for it and
     # says when to answer No and when Yes. The revert after the run undoes the
-    # setup (its users and firewall rules), so it can be run again.
+    # setup (its users and firewall rules).
     codex = stage / "Codex elevated check.cmd"
     codex.write_text(head + f'"{python}" -m pytest -n 0 -s -p no:cacheprovider --agent-cli '
                      "--codex-windows-sandbox elevated --codex-setup-by-hand "

@@ -168,11 +168,20 @@ once the session has said so. Left unanswered, the prompt ends the setup with
 1223, as a No does (qa-win, 2026-11-26, in a test run's desktop session). Claude
 Code has no sandbox on Windows.
 
-The setup itself is a hand check, with a person to answer the UAC prompts:
+Readiness belongs to `CODEX_HOME`, not to the machine. With an empty
+`CODEX_HOME`, as every layer-E test has, Codex reports that the sandbox needs
+setting up **again** (`updateRequired`) on a machine where it was set up before
+(users `CodexSandboxOffline` and `CodexSandboxOnline`). A Yes there keeps those
+users and resets their passwords (a Windows 11 arm64 VM, 2026-11-26).
 
-1. `make run-vm GUEST=qa-win`. The VM is reverted to its snapshot, so the setup
-   has never been done there, and it is suspended once the launchers are on its
-   desktop.
+The setup itself is a hand check, with a person to answer the UAC prompts. It
+runs on any Windows machine, in a desktop session (not over SSH):
+`python -m pytest -n 0 -s --agent-cli --codex-windows-sandbox elevated
+--codex-setup-by-hand test/test_agent_cli.py -k elevated_sandbox_set_up_by_a_person`.
+On a machine where the setup was done, a Yes redoes it, as above. In qa-win:
+
+1. `make run-vm GUEST=qa-win`. The VM is reverted to its snapshot, and it is
+   suspended once the launchers are on its desktop.
 2. Open the VM in the VMware Fusion app, which resumes it, and sign in as `qa`.
 3. Double-click **Codex elevated check** on the desktop. It runs
    `test_codexs_elevated_sandbox_set_up_by_a_person` (`--codex-setup-by-hand`)
@@ -185,12 +194,12 @@ The setup itself is a hand check, with a person to answer the UAC prompts:
    prompt.
 5. When it says `>>> ... Answer YES`, answer **Yes**, without waiting: left
    alone, the prompt goes away by itself after about two minutes, which Codex
-   reports as a No (1223). The session must say the sandbox is set up. The turn then runs by itself: the shell is kept in and
-   both XeFM tools answer.
+   reports as a No (1223). The session must say the sandbox is set up. The turn
+   then runs by itself: the shell is kept in and both XeFM tools answer.
 6. The console ends with pytest's `1 passed` (or the failure) and waits for a
    key. Press Enter in the terminal where `make run-vm` runs, and the VM is put
    away. The revert at the next run undoes the setup (Codex's sandbox users and
-   firewall rules), so the check can be repeated.
+   firewall rules).
 
 For an administrator the prompt asks only Yes or No; a standard user is asked for
 an administrator's password instead.
@@ -215,12 +224,21 @@ copy. That showed two faults, now fixed: Claude Code's MCP tool names
 own confirmation did not say which agent asked and had Copy selected
 (`AGENT_ASKING`, set by `remote_dispatch` while the agent's request runs).
 
+2026-11-26, sessions started from the MSIX on a Windows 11 arm64 VM, by a person
+with each agent signed in. The package was the one the Store gets, sideloaded
+self-signed with `make install-windows-msix`; it runs as the Store's does (the
+package's identity, its install folder, the `xefmctl` alias), and the Store only
+re-signs it. Claude Code, Codex (`elevated`) and Copilot each answered "which file
+is selected" through `xefmctl_read`. A copy's confirmation named the agent and
+selected no button. `xefmctl` from an unsandboxed shell reached XeFM after XeFM
+asked. Codex would not run `xefmctl` in its shell at all, following XeFM's rules,
+so the refusal from inside its sandbox is covered by the stand-in's check alone.
+That showed two faults, now fixed: Copilot's MCP calls (titled
+`<server>-<tool>`) were shown as a Read with no arguments, and Windows
+PowerShell's `Get-Content` read the session's skill files in the ANSI code page.
+
 ## Not done
 
-- Sessions started by the Store's XeFM (they need a person). They can be tried
-  before a submission: `make install-windows-msix` sideloads the same package,
-  self-signed, and it runs as the Store's does (the package's identity, its
-  install folder, the `xefmctl` alias). The Store only re-signs it.
 - XeFM still breaks its agents' plain questions itself (`_fit`), though PuiKit
   1.33.1, the floor, wraps a plain `MessageBox` too (puikit#247). `_fit` can keep
   only the refusal of a question too tall for the screen once the floor is
