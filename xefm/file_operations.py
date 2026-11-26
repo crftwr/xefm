@@ -480,6 +480,13 @@ class FileOperationService:
         if background and kind in ("copy", "duplicate", "move"):
             buttons = (buttons[0], "Background", buttons[1])
             default = 2 if default == 1 else 0
+        # An AI agent's request (remote_dispatch sets this while it runs): say
+        # who asks, and select no button - the dialog comes up on its own,
+        # over what the user may be typing (#995).
+        asker = getattr(self.config, "AGENT_ASKING", None)
+        if isinstance(asker, str) and asker:
+            lines = [f"**{asker}** asks:", ""] + lines
+            default = None
         message = "\n".join(lines)
         ok_label = buttons[0]
 

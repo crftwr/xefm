@@ -215,8 +215,9 @@ between you and your plan with the agent's maker, as it is in a terminal.
 Rules can be ignored, so two things hold whatever the agent decides:
 
 - **XeFM confirms every change.** A copy, move or trash asked for through
-  `xefmctl` shows that operation's own confirmation in XeFM, listing the
-  items, even where your `CONFIRM_*` settings turned it off; it goes ahead
+  `xefmctl` shows that operation's own confirmation in XeFM, saying which
+  agent asks and listing the items, even where your `CONFIRM_*` settings
+  turned it off; it goes ahead
   only if you allow it, and XeFM takes you back to the agent once it is done
   or declined.
   `xefmctl delete` is refused (the trash can be undone), and so is the

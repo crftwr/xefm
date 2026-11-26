@@ -195,6 +195,16 @@ def test_a_command_asked_to_run_outside_the_sandbox_says_so():
     assert not ask(command="ls").leaves_sandbox
 
 
+def test_an_mcp_tools_name_is_not_taken_for_markdown():
+    """Claude Code's mcp__server__tool showed as "mcpserver..." with the
+    underscores taken for bold (seen in the GUI, #995)."""
+    item = C.Item("tool", name="mcp__xefm_7cef954d__xefmctl_read",
+                  input={"command": ["state"]})
+    md = C.tool_markdown(item, 0)
+    assert md.startswith(r"**xefm\_7cef954d: xefmctl\_read**")  # no _emphasis_ either
+    assert C.tool_label("Bash") == "Bash" and C.tool_label("mcp__odd") == "mcp__odd"
+
+
 def test_a_withdrawn_question_and_an_interrupted_turn():
     conv = C.Conversation()
     conv.add_user("x")

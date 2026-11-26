@@ -145,10 +145,26 @@ make test-vm GUEST=qa-win ARGS="--agent-cli test/test_agent_cli.py test/test_age
 make test-vm GUEST=qa-linux ARGS="--agent-cli test/test_agent_cli.py"
 ```
 
+The CLIs' own screens (a terminal session) run in a pseudo-terminal on macOS and
+Linux (`Run.screen`): started as XeFM starts them, the request typed once the
+screen has drawn. Each CLI's first-run questions are answered in its own settings
+(`_trusted`: the folder trusted, Claude Code's API key approved and its auto mode,
+whose check runs on Anthropic's server, set to default); Copilot's offer to install
+its proxy's certificate authority is declined on the screen.
+
 The stand-in answers OpenAI's chat completions and responses and Anthropic's
 messages, and searches for the tools Claude Code defers (`ToolSearch`) as a model
 has to. On Windows Codex runs its `unelevated` sandbox, which needs no setup;
-`--codex-windows-sandbox elevated` picks the other. Claude Code has no sandbox on
+`--codex-windows-sandbox` picks `mxc` (it passes as `unelevated` does: the pipe
+refused in XeFM's words, both tools answer) or `elevated`.
+
+Codex's `elevated` sandbox has to be set up once, with an administrator's consent
+(UAC); until then a command waits without a word. A drawn Codex session on Windows
+asks `windowsSandbox/readiness` as it opens, and where it is not `ready` says so
+and offers `/setup-sandbox`, which sends `windowsSandbox/setupStart` and reports
+`windowsSandbox/setupCompleted`. XeFM starts nothing that asks for administrator
+rights on its own (rule 1). In a guest nobody consents, so that test is skipped
+once the session has said so. Claude Code has no sandbox on
 Windows.
 
 For a run with `--agent-cli`, qa-linux's container is started with
@@ -161,17 +177,21 @@ temporary folder on macOS and keeps a write outside in a copy of its own on Linu
 Codex cannot read the shim on Windows and does not see it on Linux), so a Linux
 container stands for none of the others.
 
+## Seen in the GUI
+
+2026-11-25, in the Tart VM `xefm-demo` (macOS 27, Pelagic), Claude Code with the
+stand-in model asking: the read of a long path outside the session's folder
+(wrapped, whole), a command outside the sandbox (**Outside the sandbox**), and a
+copy. That showed two faults, now fixed: Claude Code's MCP tool names
+(`mcp__server__tool`) lost their underscores to Markdown emphasis, and the copy's
+own confirmation did not say which agent asked and had Copy selected
+(`AGENT_ASKING`, set by `remote_dispatch` while the agent's request runs).
+
 ## Not done
 
-- Codex's `elevated` sandbox on Windows (`--codex-windows-sandbox elevated`):
-  `codex exec` works, but a drawn session's turn stalls before the command starts,
-  with nothing reaching XeFM (Codex 0.171.0, qa-win, 2026-11-25; perhaps a prompt
-  on the guest's desktop). Its `mxc`; sessions started by the Store's XeFM (they
-  need a person).
+- Sessions started by the Store's XeFM (they need a person).
 - XeFM still breaks its agents' plain questions itself (`_fit`), though PuiKit
   1.33.1, the floor, wraps a plain `MessageBox` too (puikit#247). `_fit` can keep
   only the refusal of a question too tall for the screen once the floor is
   called hard.
-- The CLIs' own interactive screens: `codex exec`, `copilot -p` and `claude -p`
-  stand for them.
 - Antigravity, put off: what to check is in #1002 and #995.

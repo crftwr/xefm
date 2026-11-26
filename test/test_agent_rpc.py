@@ -383,6 +383,33 @@ def test_codex_opens_with_the_rules_and_the_skill(codex):
     assert [c["name"] for c in conv.commands] == ["compact", "xefm"]
 
 
+def test_codexs_windows_sandbox_that_waits_to_be_set_up_is_said(codex):
+    """#995: Codex's elevated sandbox on Windows, not set up, made a command
+    wait without a word. Asked of Codex on Windows alone; set up only when
+    the user types the command."""
+    client, conv = codex.view.client, codex.conv
+    # Asked on Windows alone.
+    assert codex.sent("windowsSandbox/readiness") == ([None] if client.windows else [])
+    calls = []
+    client.call = lambda method, params, then=None, failed=None: calls.append(
+        (method, params, then)) or True
+    client._readiness({"status": "ready"})
+    assert not client._setup_needed and "setup-sandbox" not in str(conv.commands)
+    client._readiness({"status": "updateRequired"})
+    assert "needs setting up again" in conv.items[-1].text
+    assert conv.commands[-1]["name"] == "setup-sandbox"
+    assert client.command("/setup-sandbox")
+    assert calls[-1][:2] == ("windowsSandbox/setupStart", {"mode": "elevated", "cwd": client.cwd})
+    client.handle({"jsonrpc": "2.0", "method": "windowsSandbox/setupCompleted", "params": {
+        "mode": "elevated", "success": False,
+        "error": "orchestrator_helper_launch_canceled: ShellExecuteExW failed: 1223"}})
+    assert conv.items[-1].kind == "error" and "administrator rights" in conv.items[-1].text
+    client.handle({"jsonrpc": "2.0", "method": "windowsSandbox/setupCompleted",
+                   "params": {"mode": "elevated", "success": True}})
+    assert "is set up" in conv.items[-1].text and "setup-sandbox" not in str(conv.commands)
+    assert not client.command("/setup-sandbox")
+
+
 def test_a_codex_reply_its_plan_and_its_context(codex):
     codex.say("hello")
     assert codex.last_text == "Hello **there**" and not codex.conv.items[-1].open

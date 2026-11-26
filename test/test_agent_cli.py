@@ -281,6 +281,85 @@ class Run:
         self.said = (done.stdout + done.stderr)[-1500:]
         return self
 
+    def screen(self, *more, wait=100, answers=None):
+        """The CLI's own screen, in a pseudo-terminal: started as XeFM starts a
+        terminal session (with ``more``), the request typed and Enter pressed
+        once it has drawn, left until the stand-in's steps are done. What it
+        drew is kept in ``said``. ``answers``: what to press where a screen
+        says a text (a question of the CLI's own before the session's), once
+        each; the request is typed after it. POSIX alone (Windows has ConPTY)."""
+        import pty
+        import select
+        import signal
+        import struct
+        import termios
+        import fcntl
+        import time
+        argv = [*agents.argv(self.entry, self.values), *more]
+        pid, fd = pty.fork()
+        if pid == 0:  # the child: the CLI
+            try:
+                os.chdir(self.ws)
+                os.execvpe(argv[0], argv, self.env)
+            finally:
+                os._exit(127)
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+        out, typed, last = bytearray(), False, time.monotonic()
+        end = time.monotonic() + wait
+        try:
+            while time.monotonic() < end:
+                ready, _, _ = select.select([fd], [], [], 0.5)
+                if ready:
+                    try:
+                        chunk = os.read(fd, 65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    out += chunk
+                    last = time.monotonic()
+                    # A terminal answers a query for the cursor; some CLIs wait for it.
+                    if b"\x1b[6n" in chunk:
+                        os.write(fd, b"\x1b[1;1R")
+                quiet = time.monotonic() - last
+                for text, keys in list((answers or {}).items()):
+                    if text.encode() in out and quiet > 1:
+                        os.write(fd, keys)
+                        answers.pop(text)
+                        out += b"\n[answered]\n"
+                        last, typed = time.monotonic(), False
+                        out = out.replace(text.encode(), b"")
+                if not typed and out and quiet > 3:
+                    os.write(fd, b"go")
+                    time.sleep(0.5)
+                    os.write(fd, b"\r")
+                    typed = True
+                if typed and self.model._done() >= len(self.model.steps) and quiet > 3:
+                    break
+        finally:
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(pid, sig)
+                except ProcessLookupError:
+                    break
+                gone = time.monotonic() + 3
+                while time.monotonic() < gone:
+                    try:
+                        if os.waitpid(pid, os.WNOHANG)[0]:
+                            break
+                    except ChildProcessError:
+                        break
+                    time.sleep(0.1)
+                else:
+                    continue
+                break
+            os.close(fd)
+        import re
+        text = re.sub(r"\x1b\[[0-9;?<>=]*[A-Za-z~]|\x1b\][^\x07]*\x07|\x1b[()=>][0-9A-Za-z]?", "",
+                      out.decode(errors="replace"))
+        self.said = text[-3000:]
+        return self
+
     def close(self):
         self.remote.close()
         self.mcp.close()
@@ -351,6 +430,12 @@ def test_codexs_sandbox_stays_on_and_its_tools_answer(run, drawn):
     # exec asks nothing: a tool that writes is refused there, as a user who
     # chose never to be asked has it.
     r.chat() if drawn else r.once("-c", "approval_policy='never'")
+    if drawn and WINDOWS and "elevated" in WINDOWS_CODEX[1]:
+        # Not set up in a fresh guest, and setting it up needs a person to
+        # consent: the session says so rather than waiting without a word.
+        said = C.to_markdown(r.view.conversation.items)
+        if "needs setting up" in said:
+            pytest.skip("Codex's elevated sandbox is not set up here, and the session says so")
     said = f"{r.model.results} {r.__dict__.get('said')}"
     if WINDOWS or "rc=127" in r.shell:  # its sandbox does not show the shim's folder
         assert "rc=0" not in r.shell and "reached" not in r.shell, said
@@ -497,4 +582,75 @@ def test_claude_code_asking_to_leave_its_sandbox_says_so(run, home):
     print("Claude Code asked:", [(p.tool, p.input, p.leaves_sandbox, p.remembers)
                                  for p in r.perms])
     assert any(p.leaves_sandbox for p in r.perms), r.perms
+
+
+# --- the CLIs' own screens ---------------------------------------------------------------
+
+def _trusted(r):
+    """What each CLI asks on its first start in a folder, answered in its own
+    settings: the screen under test is the session, not the onboarding."""
+    ws = str(r.ws)
+    preset = r.entry["preset"]
+    if preset == agents.CLAUDE_CODE:
+        (r.home / ".claude.json").write_text(json.dumps({
+            "hasCompletedOnboarding": True, "theme": "dark", "numStartups": 5,
+            "customApiKeyResponses": {"approved": ["standin"[-20:]], "rejected": []},
+            "projects": {ws: {"hasTrustDialogAccepted": True,
+                              "hasCompletedProjectOnboarding": True}}}))
+        settings = r.home / ".claude" / "settings.json"
+        known = json.loads(settings.read_text()) if settings.exists() else {}
+        # Auto mode's check runs on Anthropic's server, which the stand-in is not.
+        known["permissions"] = {"defaultMode": "default",
+                                "allow": ["Bash", f"mcp__{r.channel.name}"]}
+        settings.write_text(json.dumps(known))
+    elif preset == agents.CODEX:
+        with open(r.home / "codex" / "config.toml", "a", encoding="utf-8") as f:
+            f.write(f"check_for_update_on_startup = false\n[projects.{json.dumps(ws)}]\n"
+                    "trust_level = \"trusted\"\n")
+    elif preset == agents.COPILOT:
+        (r.home / "copilot" / "config.json").write_text(json.dumps(
+            {"trusted_folders": [ws], "banner": "never"}))
+
+
+needs_pty = pytest.mark.skipif(WINDOWS, reason="a pseudo-terminal of the test's own: POSIX")
+
+
+@needs_pty
+@needs_sandbox
+def test_codexs_own_screen_gets_the_tools(run):
+    r = run(agents.CODEX, drawn=False, command=["-c", "approval_policy='never'"])
+    _trusted(r)
+    r.screen()
+    told = f"{r.model.results}\n{r.said}"
+    assert "reached-pane" in r.model.results.get("call_1", ""), told
+    assert "rc=0" not in r.shell and "reached-pane" not in r.shell, told
+    r.check_contained()
+
+
+@needs_pty
+@needs_sandbox
+def test_copilots_own_screen_with_its_sandbox_gets_the_tools(run):
+    r = run(agents.COPILOT, drawn=False, command=["--sandbox"])
+    _trusted(r)
+    # Copilot asks once whether to install its proxy's certificate authority.
+    r.screen("--allow-all-tools", "--allow-all-paths",
+             answers={"Continue without installing": b"\x1b"})
+    told = f"{r.model.results}\n{r.said}"
+    assert "reached-pane" in r.model.results.get("call_1", ""), told
+    assert "reached-copy" in r.model.results.get("call_2", ""), told
+    r.check_contained()
+
+
+@needs_pty
+@needs_sandbox
+def test_claude_codes_own_screen_with_its_sandbox_gets_the_tools(run, home):
+    claude_sandbox(home, True)
+    r = run(agents.CLAUDE_CODE, drawn=False)
+    _trusted(r)
+    r.screen()
+    told = f"{r.model.results}\n{r.said}"
+    assert "reached-pane" in r.model.results.get("call_1", ""), told
+    assert "reached-copy" in r.model.results.get("call_2", ""), told
+    assert "rc=0" not in r.shell and "reached-pane" not in r.shell, told
+    r.check_contained()
 

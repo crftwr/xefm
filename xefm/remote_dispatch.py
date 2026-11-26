@@ -1227,7 +1227,10 @@ def _write(app, req, verb: str, run, *, results: bool = False,
         pending.set(answer)
 
     def start():
-        with (_forced(app, _ALWAYS_CONFIRM) if agent else contextlib.nullcontext()):
+        # The agent's copy, move or trash is confirmed in XeFM's own dialog,
+        # which says who asks and starts with no button selected (#995).
+        forced = dict(_ALWAYS_CONFIRM, AGENT_ASKING=_asker(app, req))
+        with (_forced(app, forced) if agent else contextlib.nullcontext()):
             run(finished if (wait or agent) else None)
 
     def begin():

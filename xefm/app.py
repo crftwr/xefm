@@ -6400,7 +6400,7 @@ class XeFMApp:
             self._agent_chat_plan(view, perm)
             return
         what = C.summary(perm.tool, perm.input)
-        lines = [f"**{view.name}** wants to use **{perm.tool}**."]
+        lines = [f"**{view.name}** wants to use **{C.tool_label_md(perm.tool)}**."]
         if perm.description and perm.description != what:
             lines.append(perm.description)
         if perm.tool in C.SHELL_TOOLS and isinstance(perm.input.get("command"), str):
