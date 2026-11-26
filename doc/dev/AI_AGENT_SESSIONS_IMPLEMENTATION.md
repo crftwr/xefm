@@ -320,7 +320,12 @@ after it.
   project's settings. The question says what that lets through
   (`Permission.remembers`): Claude Code's rules as `Tool(content)`, folders
   and modes (`agent_chat.rules_remembered`), Codex's `acceptForSession` in
-  words, an ACP agent's `allow_always` option by its name. A command's line
+  words, and for ACP the programs Copilot names in a shell request's
+  `rawInput.commands` (it remembers those with any arguments), else the
+  `allow_always` option's name where it says more than "Always allow" (ACP
+  has no field for it). Codex 0.171.0 offers no `acceptForSession` for a
+  command, only a rule for the user's settings, which XeFM leaves out.
+  `test_agent_cli.py` checks both against the real CLIs. A command's line
   does not show how far a rule reaches (`Bash(ssh:*)` for one `ssh` to one
   host); a suggestion of an unknown kind is not guessed at, and the
   question says the agent did not say. `AskUserQuestion` comes the same way and is answered

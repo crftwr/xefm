@@ -24,7 +24,9 @@ def _offered(tools):
 
 
 class Model:
-    """``steps``: ``("shell", command)`` or ``("tool", end of a name, arguments)``.
+    """``steps``: ``("shell", command)``, ``("shell", command, more)`` - ``more``
+    the shell tool's other arguments, those it takes - or ``("tool", end of a
+    name, arguments)``.
     ``results`` is what the CLI sent back for each step."""
 
     def __init__(self, steps):
@@ -90,6 +92,8 @@ class Model:
                     args["yield_time_ms"] = 30000
                 if "description" in props:
                     args["description"] = "check"
+                args.update({k: v for k, v in (given[0] if given else {}).items()
+                             if k in props})
                 return name, space, args
         return "missing_shell", None, {}
 
