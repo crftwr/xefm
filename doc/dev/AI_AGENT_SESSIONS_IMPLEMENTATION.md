@@ -25,6 +25,43 @@ its way around.
   [XEFMCTL_IMPLEMENTATION.md](XEFMCTL_IMPLEMENTATION.md)): `agent` for an
   entry with `restrict` (the default), `user` without.
 
+## The user's own skills (#1009)
+
+`xefm/agent_skills.py` reads `~/.xefm/skills/<name>/SKILL.md`: plain Agent
+Skills, picked up by being there, so "install it as an XeFM skill" asked in a
+session is the agent writing a folder (the rules name the folder, the `xefm`
+skill's `references/skills.md` says how) and running `xefmctl skill check`.
+That is xefmctl, not the `xefm` CLI: a desktop-app install (DMG, MSIX, zip)
+puts no `xefm` on PATH, while every session has xefmctl's shim and tools.
+`skill list|check` are READ and ALLOWED (a name and a description from the
+folder sessions are handed; `check` takes names, never paths), so they work
+through `xefmctl_read` and while XeFM is suspended. `xefm skills list|check|path`
+(`xefm/skills_cli.py`) is the same check for a shell outside a session. The check is the spec's: a
+`name` of lowercase letters, digits and single hyphens that matches the folder,
+a `description` of at most 1024 characters; `xefm` is refused, since Codex
+and Antigravity do not keep plugins' skills apart. The frontmatter reader is
+the subset a skill uses (no YAML dependency).
+
+`prepare()` copies the skills that pass (`found()`; the others are logged)
+into `user-plugin/skills/` beside a `plugin.json` named `xefm-user`, afresh at
+every launch through `user-plugin.tmp` and a rename, like XeFM's own: the user
+edits them between sessions, and a session reads its copy at start. Dot files
+and folders are left out. The folder exists with an empty `skills/` when there
+are none, so a wiki entry's `command` can always name it. `values["user_skills"]`
+is `(name, description, folder)` per skill.
+
+| Agent | How they get in |
+|---|---|
+| Claude Code, Copilot (terminal and drawn) | a second `--plugin-dir`, only when there is a skill; in Claude Code they are `xefm-user:<name>` |
+| Codex, drawn | `skills/extraRoots/set` with both folders (`CodexClient.skills_roots`) |
+| Codex, terminal | `codex_instructions` lists each skill's name, description and `SKILL.md` path |
+| Antigravity | copied into the session's workspace `.agents/skills/` beside `xefm` (`_antigravity_workspace` takes a list of folders) |
+
+A skill written during a session reaches the next one; the rules say to read
+the new `SKILL.md` directly meanwhile. Extensions shipping skills
+(`[contributes.agent_skills]`) are left for later: the delivery takes a list
+of folders already.
+
 ## Entry points and availability
 
 Opening an agent parallels opening a shell: the action `agent` (`>` in
@@ -71,8 +108,11 @@ never taken for `module:name`.
   `unlink`, `shred`, `mv`, `trash`, `srm`, `git clean`, `xefmctl delete`),
   else `{}`.
 
+- `user-plugin/`: the user's own skills (below), a plugin of their own.
+
 The placeholders' values (`{plugin_dir}`, `{skills_dir}`, `{skill_dir}`,
-`{rules}`, `{rules_file}`, `{settings_file}`, `{prompt}`) are filled into
+`{user_plugin_dir}`, `{user_skills_dir}`, `{rules}`, `{rules_file}`,
+`{settings_file}`, `{prompt}`) are filled into
 `command` and `prompt_args` by plain replacement, so a brace elsewhere in
 an argument is left alone.
 

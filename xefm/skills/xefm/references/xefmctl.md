@@ -411,6 +411,24 @@ In an AI agent's session, an action that runs other programs (open_with_os, open
 - `--pane PANE`: the pane: active (the default), other, left or right
 - *Uses XeFM's screen.*
 
+## Skills
+
+### `skill list`
+
+`xefmctl skill list`
+
+the user's own skills for agent sessions, in ~/.xefm/skills/, and whether sessions get them.
+
+A skill that fails the check is left out of sessions. One written or changed now reaches the next session.
+
+### `skill check`
+
+`xefmctl skill check [NAME...]`
+
+check skills in ~/.xefm/skills/ by name (all of them by default); exit status 1 if one fails.
+
+Run it after writing ~/.xefm/skills/<name>/SKILL.md: it says what keeps a skill out of sessions (the frontmatter's name and description).
+
 ## Screens and terminal sessions
 
 ### `screen list`

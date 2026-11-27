@@ -1,6 +1,6 @@
 ---
 name: xefm
-description: Work with the XeFM file manager on the user's behalf - edit its configuration file (~/.xefm/config.py), write, check and install extension packages, and, in a terminal session XeFM started (XEFM_SESSION is set), see what the user is looking at, search, show results and change files through xefmctl. Use when the user wants to change how XeFM behaves or looks ("bind Ctrl-T to ...", "make the editor code --wait", "add a favorite", "open .log files with less", "add an external program", "use the function-key keymap", "define a theme"), or wants a new XeFM feature that can live outside the core ("add an XeFM action that...", "make an XeFM extension", "turn my config.py action into an extension"), or asks to fix an extension that `xefm ext check` rejects.
+description: Work with the XeFM file manager on the user's behalf - edit its configuration file (~/.xefm/config.py), write, check and install extension packages, and, in a terminal session XeFM started (XEFM_SESSION is set), see what the user is looking at, search, show results and change files through xefmctl. Use when the user wants to change how XeFM behaves or looks ("bind Ctrl-T to ...", "make the editor code --wait", "add a favorite", "open .log files with less", "add an external program", "use the function-key keymap", "define a theme"), or wants a new XeFM feature that can live outside the core ("add an XeFM action that...", "make an XeFM extension", "turn my config.py action into an extension"), asks to fix an extension that `xefm ext check` rejects, or wants a skill for XeFM's agent sessions only ("make an XeFM skill that...", "install it as an XeFM skill").
 metadata:
   xefm-version: "{XEFM_VERSION}"
 ---
@@ -16,6 +16,7 @@ lives in one folder, `~/.xefm/`, shared by every XeFM install on the machine:
   config.py          # the configuration: a Python file with `class Config:`
   extensions/        # installed extension packages (managed by `xefm ext`)
   tools/             # the user's own scripts for PROGRAMS entries
+  skills/            # the user's skills for the agent sessions XeFM starts
 ```
 
 On Windows `~` is the user's profile folder (`C:\Users\<name>`).
@@ -105,6 +106,7 @@ its exit statuses: `references/xefmctl.md` (generated), or `xefmctl help`.
 | a feature to package, share, or keep apart from their config; anything with settings of its own, tests, or several files | `references/extensions.md` |
 | an extension fixed that `xefm ext check` rejects | `references/extensions.md` |
 | to know what the user is looking at, search where XeFM can go, show them something, or change files with their confirmation, from a session XeFM started | `references/xefmctl.md` (generated from XeFM) |
+| a skill of their own that only the agent sessions XeFM starts get ("an XeFM skill") | `references/skills.md` |
 | to see a change work in XeFM itself - an extension's dialogs, a key a config edit bound - or a recorded demo | `references/try.md` |
 
 **`config.py` or an extension?** Edit `config.py` for the user's own settings

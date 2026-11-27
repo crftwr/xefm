@@ -88,8 +88,13 @@ ANTIGRAVITY = "antigravity"
 PRESETS = (CLAUDE_CODE, CODEX, COPILOT, ANTIGRAVITY)
 
 #: The placeholders a ``command`` (or ``prompt_args``) may hold.
-PLACEHOLDERS = ("{plugin_dir}", "{skills_dir}", "{skill_dir}", "{rules}",
-                "{rules_file}", "{settings_file}", "{mcp_config_file}", "{prompt}")
+PLACEHOLDERS = ("{plugin_dir}", "{skills_dir}", "{skill_dir}", "{user_plugin_dir}",
+                "{user_skills_dir}", "{rules}", "{rules_file}", "{settings_file}",
+                "{mcp_config_file}", "{prompt}")
+
+#: The plugin the user's own skills (``~/.xefm/skills/``) are handed in, apart
+#: from XeFM's: in Claude Code they are ``xefm-user:<name>`` (#1009).
+USER_PLUGIN = "xefm-user"
 
 DEFAULT_RULES = """\
 You are running inside XeFM, a dual-pane file manager, in a terminal session \
@@ -117,6 +122,12 @@ rather than making them.
 - Use the `xefm` skill XeFM handed this session (in Claude Code it is \
 `xefm:xefm`): it matches this XeFM. Another copy of an xefm skill installed \
 elsewhere may describe a different version; do not follow it.
+- A skill the user asks for "for XeFM" ("an XeFM skill", "install it in \
+XeFM") goes in ~/.xefm/skills/<name>/, not in your own skills folder; the \
+`xefm` skill's references/skills.md says how, and `xefmctl skill check <name>` \
+checks it. XeFM hands those skills to every \
+session it starts, from the next one on: in this session, read the new \
+SKILL.md yourself.
 """
 
 #: Claude Code's settings for a restricted session: the shell commands that
@@ -343,11 +354,13 @@ def _for_windows_powershell(name: str, data: bytes) -> bytes:
 
 def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
             version: str | None = None, cwd: str | None = None,
-            channel: Any = None) -> dict:
+            channel: Any = None, user_skills: _FsPath | None = None) -> dict:
     """Write what the session is handed - the skill (as a plugin folder),
-    the rules and, for Claude Code, its settings - and return the
-    placeholders' values. ``cwd`` is the session's folder, ``channel`` its way
-    to XeFM (:class:`xefm.mcp_server.Channel`)."""
+    the user's own skills (another plugin folder), the rules and, for Claude
+    Code, its settings - and return the placeholders' values. ``cwd`` is the
+    session's folder, ``channel`` its way to XeFM
+    (:class:`xefm.mcp_server.Channel`), ``user_skills`` where the user's
+    skills are (``~/.xefm/skills/``)."""
     from xefm import extensions as ext
     version = version or ext.skill_version()
     root = _FsPath(root) if root is not None else cache_root()
@@ -372,6 +385,7 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     }, indent=2), encoding="utf-8")
     shutil.rmtree(plugin, ignore_errors=True)
     tmp.rename(plugin)
+    user_plugin, mine = _user_plugin(base, user_skills)
     rules = rules_text(config)
     session_dir = base / "sessions"
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -421,7 +435,8 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
                 name = json.dumps(_FsPath(cwd).as_posix(), ensure_ascii=False)
                 told += _FOLDER_RULES.format(
                     folder=name.encode("utf-8", "backslashreplace").decode("utf-8"))
-        extra["workspace_dir"] = str(_antigravity_workspace(folder, skill, told))
+        extra["workspace_dir"] = str(_antigravity_workspace(
+            folder, [skill, *(user_plugin / "skills" / s.name for s in mine)], told))
         if way == "workspace" and channel is not None:
             _write_private(folder / ".agents" / "mcp_config.json", {"mcpServers": {
                 channel.name: {"serverUrl": channel.url, "headers": channel.headers}}})
@@ -429,12 +444,53 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
         "{plugin_dir}": str(plugin),
         "{skills_dir}": str(plugin / "skills"),
         "{skill_dir}": str(skill),
+        "{user_plugin_dir}": str(user_plugin),
+        "{user_skills_dir}": str(user_plugin / "skills"),
+        # The user's skills as handed: (name, description, folder).
+        "user_skills": [(s.name, s.description, str(user_plugin / "skills" / s.name))
+                        for s in mine],
         "{rules}": rules,
         "{rules_file}": str(rules_file),
         "{settings_file}": str(settings_file),
         "{mcp_config_file}": extra.get("{mcp_config_file}", ""),
         "instructions_dir": str(instructions),  # for the copilot preset; not a placeholder
     }
+
+
+def _user_plugin(base: _FsPath, source: _FsPath | None) -> tuple[_FsPath, list]:
+    """The user's skills that pass the check, copied as a plugin folder of
+    their own under ``base`` (written afresh, like XeFM's: the user edits
+    them between sessions), and the skills themselves. The folder is there,
+    with an empty ``skills/``, when there are none: an entry's ``command`` may
+    name it."""
+    from xefm import agent_skills
+    mine = agent_skills.found(source)
+    plugin, tmp = base / "user-plugin", base / "user-plugin.tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    (tmp / "skills").mkdir(parents=True)
+    for s in mine:
+        for file in sorted(s.path.rglob("*")):
+            rel = file.relative_to(s.path)
+            if not file.is_file() or any(p.startswith(".") for p in rel.parts):
+                continue
+            to = tmp / "skills" / s.name / rel
+            to.parent.mkdir(parents=True, exist_ok=True)
+            to.write_bytes(_for_windows_powershell(file.name, file.read_bytes()))
+    manifest = tmp / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({
+        "name": USER_PLUGIN,
+        "description": "The user's own skills for the sessions XeFM starts "
+                       "(~/.xefm/skills/).",
+    }, indent=2), encoding="utf-8")
+    shutil.rmtree(plugin, ignore_errors=True)
+    tmp.rename(plugin)
+    return plugin, mine
+
+
+def _user_plugin_args(values: dict) -> list[str]:
+    """``--plugin-dir`` for the user's plugin, when it holds a skill."""
+    return ["--plugin-dir", values["{user_plugin_dir}"]] if values.get("user_skills") else []
 
 
 def _write_private(path: _FsPath, data: dict) -> str:
@@ -535,18 +591,21 @@ def _prune_session_folders(root: _FsPath) -> None:
             continue  # another XeFM deleted it
 
 
-def _antigravity_workspace(folder: _FsPath, skill: _FsPath, rules: str) -> _FsPath:
+def _antigravity_workspace(folder: _FsPath, skills_in: list[_FsPath],
+                           rules: str) -> _FsPath:
     """A folder for Antigravity's ``--add-dir``: it reads a workspace's
-    ``AGENTS.md`` as rules and its ``.agents/skills/`` as skills."""
+    ``AGENTS.md`` as rules and its ``.agents/skills/`` as skills (XeFM's,
+    then the user's)."""
     skills = folder / ".agents" / "skills"
     shutil.rmtree(skills, ignore_errors=True)
-    for file in skill.rglob("*"):
-        # Written, not copied: in a Windows VM where a sandboxed Codex had just
-        # run, CopyFile2 (shutil's) took two minutes over one of these.
-        if file.is_file():
-            to = skills / skill.name / file.relative_to(skill)
-            to.parent.mkdir(parents=True, exist_ok=True)
-            to.write_bytes(file.read_bytes())
+    for skill in skills_in:
+        for file in skill.rglob("*"):
+            # Written, not copied: in a Windows VM where a sandboxed Codex had
+            # just run, CopyFile2 (shutil's) took two minutes over one of these.
+            if file.is_file():
+                to = skills / skill.name / file.relative_to(skill)
+                to.parent.mkdir(parents=True, exist_ok=True)
+                to.write_bytes(file.read_bytes())
     (folder / "AGENTS.md").write_text(rules, encoding="utf-8")
     return folder
 
@@ -558,7 +617,7 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
     out = [_fill(a, values) for a in entry["command"]]
     if entry.get("preset") == CLAUDE_CODE:
         out += _mcp_config(values, "--mcp-config")
-        out += ["--plugin-dir", values["{plugin_dir}"],
+        out += ["--plugin-dir", values["{plugin_dir}"], *_user_plugin_args(values),
                 "--append-system-prompt", values["{rules}"],
                 "--settings", values["{settings_file}"]]
         if prompt:
@@ -574,7 +633,7 @@ def argv(entry: dict, values: dict, prompt: str | None = None) -> list[str]:
             out.append(prompt)  # `codex "request"` starts the TUI with it
         return out
     if entry.get("preset") == COPILOT:
-        out += ["--plugin-dir", values["{plugin_dir}"]]
+        out += ["--plugin-dir", values["{plugin_dir}"], *_user_plugin_args(values)]
         out += _mcp_config(values, "--additional-mcp-config", "@")
         if entry.get("restrict", True):
             out += [f"--deny-tool={rule}" for rule in COPILOT_DENY_TOOLS]
@@ -637,7 +696,7 @@ def chat_argv(entry: dict, values: dict) -> list[str]:
         from xefm.agent_codex import app_server_argv
         return app_server_argv(out)
     if preset == COPILOT:
-        out += ["--acp", "--plugin-dir", values["{plugin_dir}"]]
+        out += ["--acp", "--plugin-dir", values["{plugin_dir}"], *_user_plugin_args(values)]
         if values.get("channel") is not None:
             # XeFM's own tools: XeFM asks, so Copilot does not ask as well.
             out.append(f"--allow-tool={values['channel'].name}")
@@ -650,7 +709,7 @@ def chat_argv(entry: dict, values: dict) -> list[str]:
     from xefm.agent_chat import CLAUDE_STREAM_ARGS
     out += list(CLAUDE_STREAM_ARGS)
     out += _mcp_config(values, "--mcp-config")
-    out += ["--plugin-dir", values["{plugin_dir}"],
+    out += ["--plugin-dir", values["{plugin_dir}"], *_user_plugin_args(values),
             "--append-system-prompt", drawn_rules(values["{rules}"]),
             "--settings", values["{settings_file}"]]
     return out
@@ -685,7 +744,8 @@ def protocol(entry: dict, values: dict) -> Any:
         from xefm.agent_codex import CodexProtocol
         told = dict(values, **{"{rules}": drawn_rules(values["{rules}"])})
         return CodexProtocol(refuse=refusal(entry), channel=channel, instructions=codex_instructions(told),
-                             skills_root=values["{skills_dir}"])
+                             skills_roots=[values["{skills_dir}"]]
+                             + ([values["{user_skills_dir}"]] if values.get("user_skills") else []))
     if preset == COPILOT:
         from xefm.agent_acp import AcpProtocol
         return AcpProtocol(refuse=refusal(entry), channel=channel, agent=entry["name"],
@@ -752,12 +812,22 @@ def codex_instructions(values: dict) -> str:
     the rules, then where the skill is, the way Codex names its own skills
     (a path to ``SKILL.md`` for the agent to read)."""
     skill = _FsPath(values["{skill_dir}"]).as_posix()
-    return (values["{rules}"]
+    text = (values["{rules}"]
             + "\n## The xefm skill\n\n"
             "XeFM handed this session its `xefm` skill: read "
             f"`{skill}/SKILL.md` before running xefmctl or changing XeFM's "
             "configuration, and resolve the paths it mentions against that "
             "folder.\n")
+    mine = values.get("user_skills") or []
+    if mine:
+        text += ("\n## The user's skills\n\n"
+                 "The user's own skills for XeFM sessions. When a task matches "
+                 "one's description, read its SKILL.md first and resolve the "
+                 "paths it mentions against its folder.\n\n")
+        text += "".join(f"- {name}: {' '.join(description.split())} "
+                        f"(file: {_FsPath(folder).as_posix()}/SKILL.md)\n"
+                        for name, description, folder in mine)
+    return text
 
 
 def _toml_string(text: str) -> str:

@@ -15211,6 +15211,7 @@ examples:
   xefm --left ~/projects --right ~/downloads
   xefm ext --help                 manage extension packages
   xefm skill --help               the skill that teaches AI agents XeFM
+  xefm skills --help              your own skills for XeFM's agent sessions
   xefm try --help                 XeFM in a throwaway home - to try, test or record a demo
 
 Project home: https://github.com/crftwr/xefm
@@ -15319,6 +15320,10 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "skill":
         from xefm.extension_cli import skill_main
         sys.exit(skill_main(sys.argv[2:]))
+    # `xefm skills` lists and checks the user's own session skills (#1009).
+    if len(sys.argv) > 1 and sys.argv[1] == "skills":
+        from xefm.skills_cli import main as skills_main
+        sys.exit(skills_main(sys.argv[2:]))
     # `xefm try` runs XeFM itself, but in a throwaway home and, with --keys, in
     # a pseudo-terminal of its own — never in this process's window.
     if len(sys.argv) > 1 and sys.argv[1] == "try":

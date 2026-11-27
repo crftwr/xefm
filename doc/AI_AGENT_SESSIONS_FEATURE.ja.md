@@ -88,6 +88,7 @@ AGENTS = [
 ## エージェントに渡すもの
 
 - **`xefm` スキル**。エージェントが動いている XeFM そのものの版です。[`xefmctl`](XEFMCTL_FEATURE.ja.md) の使い方、XeFM の設定と拡張機能の仕組みが書かれています。エージェント自身のフォルダーには何もインストールしません。セッションを起動するたびにスキルを渡します。
+- **[あなた自身のスキル](#自分のスキルxefmskills)**。`~/.xefm/skills/` にあるものを同じ方法で、これらのセッションにだけ渡します。
 - XeFM の中で作業するための**ルール**。まず `xefmctl state` を使う、推測せずに表示されているものを読む、ファイルは `xefmctl` を通してだけ変え、変更のたびにあなたが確認できるようにする、完全には削除しない、結果は XeFM で見せる、といったものです。あなた自身のルール（`AGENT_RULES`）は XeFM のルールのあとに続きます。
 - **[`xefmctl`](XEFMCTL_FEATURE.ja.md)**。このエージェントのセッションからの依頼であることを XeFM に伝える鍵が付いています。エージェントのシェルのコマンドとしても、2 つのツール `xefmctl_read`（読むだけのもの）と `xefmctl`（それ以外）としても渡します。ツールは、[エージェントのサンドボックスがコマンドを止めるところでも使えます](#エージェント自身のサンドボックス)。
 
@@ -142,6 +143,22 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 
 `config.py` に自分の `AGENTS` がある場合は、そちらが使われます。Codex、Copilot、Antigravity を使うには、その中にその行を加えてください。
 
+### 自分のスキル：`~/.xefm/skills/`
+
+`~/.xefm/skills/<name>/SKILL.md` に置いたスキルは、XeFM が起動するすべてのエージェントのセッションに渡り、ほかの場所で動かすエージェントには渡りません。ファイルマネージャーのそばでだけ意味のあることに使います。`xefmctl` を使った作業の手順、写真の並べ方や名前の付け方、ダウンロードしたものの置き場所などです。エージェント自身のスキルフォルダーに置くと、同じ指示がコーディングのセッションにも毎回出てきます。
+
+いちばん簡単な作り方は、セッションの中で頼むことです。
+
+> Write a skill that sorts photos into year/month folders by date taken, and
+> install it as an XeFM skill.
+
+エージェントがフォルダーを書き、チェックします。スキルはふつうの [Agent Skills](https://agentskills.io) のフォルダーです。フォルダー名と同じ `name` と、いつ使うかを書いた `description` を持つ `SKILL.md` と、その横に置くファイルからなります。手で書くことも、ほかからコピーしてくることもできます。
+
+- 新しいスキルや変更したスキルは、**次の**セッションから使われます。設定の再読み込みはいりません。スキルを書いたセッションですぐ使いたいときは、そのセッションが直接読みます。
+- Claude Code では `xefm-user:<name>` として出てきて、XeFM 自身の `xefm:xefm` とは分かれます。プリセットのあるエージェントにはすべて渡ります。ターミナルセッションの Codex には、ルールの中で各スキルとその場所を伝えます。
+- `xefmctl skill list` は自分のスキルと、それがセッションに渡るかどうかを表示します。`xefmctl skill check <name>` は、スキルの問題を表示します。この 2 つは、XeFM をどの方法でインストールしても、どのセッションでも使えます。`xefm` が PATH にある場合（pip や Homebrew でインストールした場合）は、どのシェルからでも `xefm skills list|check` で同じことができます。チェックに通らないスキルは渡しません（ログに警告が出ます）。`xefm` という名前は XeFM 自身のスキルが使っています。
+- 削除するには、そのフォルダーをゴミ箱に移します。
+
 ### 登録した依頼：`AGENT_PROMPTS`
 
 よく頼むことを登録しておくと、**Ask AI Agent…** に一覧で出ます。選ぶか、自分で打ち込みます。エージェントにはディレクトリと選択項目も渡るので、「these files」はあなたが選んだものを指します。
@@ -165,6 +182,8 @@ AGENT_PROMPTS = {
 | `{skills_dir}` | `xefm` スキル（`xefm/SKILL.md`）を入れたスキルフォルダー |
 | `{skill_dir}` | `xefm` スキル自体のフォルダー |
 | `{plugin_dir}` | 同じスキルを Claude Code のプラグインとして入れたフォルダー |
+| `{user_skills_dir}` | [自分のスキル](#自分のスキルxefmskills)を入れたスキルフォルダー（スキルがなければ空） |
+| `{user_plugin_dir}` | 同じものを Claude Code のプラグイン（`xefm-user`）として入れたフォルダー |
 | `{rules}` / `{rules_file}` | ルールのテキスト / ルールを書いた Markdown ファイル |
 | `{settings_file}` | 指定した `settings` の JSON ファイル（指定がなければ空） |
 | `{mcp_config_file}` | [XeFM のツール](#エージェント自身のサンドボックス)を書いた MCP の設定（`mcpServers`、HTTP）の JSON ファイル。ツールを用意できなかったときは空 |

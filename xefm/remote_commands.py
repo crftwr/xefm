@@ -327,6 +327,19 @@ COMMANDS: tuple[Command, ...] = (
                     "reload_config, and an action of the user's own or an "
                     "extension's are asked in XeFM first."),
 
+    # --- the user's own session skills (~/.xefm/skills/, #1009) ----------------------
+    Command(("skill", "list"), "the user's own skills for agent sessions, in "
+            "~/.xefm/skills/, and whether sessions get them",
+            text="{name}\t{state}",
+            details="A skill that fails the check is left out of sessions. One "
+                    "written or changed now reaches the next session."),
+    Command(("skill", "check"), "check skills in ~/.xefm/skills/ by name (all of "
+            "them by default); exit status 1 if one fails", args=(Arg("name", "*"),),
+            text="{name}\t{state}",
+            details="Run it after writing ~/.xefm/skills/<name>/SKILL.md: it says "
+                    "what keeps a skill out of sessions (the frontmatter's name and "
+                    "description)."),
+
     # --- screens and terminal sessions ---------------------------------------------
     Command(("screen", "list"), "the screens, the one shown first",
             text="{marker} {id}\t{label}"),
@@ -370,6 +383,8 @@ AGENT_CLASS = {
     "attribute list": ALLOWED, "attribute get": ALLOWED,
     "view": ALLOWED, "diff": ALLOWED, "show-markdown": ALLOWED,  # the user sees it, not the agent
     "action list": ALLOWED, "action show": ALLOWED,
+    # A name and a description from ~/.xefm/skills/, what the session is handed.
+    "skill list": ALLOWED, "skill check": ALLOWED,
     "screen list": ALLOWED, "screen show": ALLOWED, "terminal-session list": ALLOWED,
     "read": DEPENDS, "fetch": DEPENDS, "find-in-files": DEPENDS,  # a folder not its own
     "invoke": DEPENDS,                  # an action that runs programs or code
@@ -535,6 +550,7 @@ def _sections():
               ("Tags and attributes", ("tag", "attribute")),
               ("Asking the user", ("confirm", "choose", "input", "message")),
               ("Actions", ("action", "invoke")),
+              ("Skills", ("skill",)),
               ("Screens and terminal sessions", ("screen", "terminal-session"))]
     for title, heads in groups:
         yield title, [c for c in COMMANDS if c.words[0] in heads and not c.local]

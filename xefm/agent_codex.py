@@ -120,13 +120,13 @@ SETUP_ENTRY = {"name": SETUP_COMMAND,
 class CodexClient(RpcClient):
     """One ``codex app-server`` process with one thread."""
 
-    def __init__(self, argv: list[str], *, instructions: str = "", skills_root: str = "",
-                 **kwargs: Any) -> None:
+    def __init__(self, argv: list[str], *, instructions: str = "",
+                 skills_roots: list[str] | None = None, **kwargs: Any) -> None:
         super().__init__(argv, **kwargs)
-        #: What every thread is told (the rules), and the folder the
-        #: session's skills are in.
+        #: What every thread is told (the rules), and the folders the
+        #: session's skills are in (XeFM's, then the user's).
         self.instructions = instructions
-        self.skills_root = skills_root
+        self.skills_roots = list(skills_roots or [])
         self._turn_id = ""
         #: The thread's own policy and sandbox, for the mode "default".
         self._policy: Any = None
@@ -192,8 +192,8 @@ class CodexClient(RpcClient):
         self._start_thread()
 
     def _start_thread(self) -> None:
-        if self.skills_root:
-            self.call("skills/extraRoots/set", {"extraRoots": [self.skills_root]})
+        if self.skills_roots:
+            self.call("skills/extraRoots/set", {"extraRoots": self.skills_roots})
         self.call("skills/list", {"cwds": [self.cwd]}, self._have_skills)
         self.call("model/list", {}, self._have_models)
         params: dict[str, Any] = {"cwd": self.cwd}

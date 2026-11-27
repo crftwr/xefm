@@ -1527,6 +1527,36 @@ def _c_action_show(app, req):
     return ok([dict(record, text=text)])
 
 
+def _skill_row(skill) -> dict:
+    return {"name": skill.path.name, "ok": skill.ok, "path": str(skill.path),
+            "description": " ".join(skill.description.split()),
+            "problems": skill.problems,
+            "state": "ok" if skill.ok else "left out: " + "; ".join(skill.problems)}
+
+
+def _c_skill_list(app, req):
+    from xefm import agent_skills
+    return ok([_skill_row(s) for s in agent_skills.scan()],
+              folder=str(agent_skills.skills_dir()))
+
+
+def _c_skill_check(app, req):
+    from xefm import agent_skills
+    names = req["args"].get("name") or []
+    root = agent_skills.skills_dir()
+    for name in names:
+        # A name, not a path: only the folder sessions are handed is checked.
+        if not name or name in (".", "..") or any(c in name for c in "/\\:"):
+            raise _Refused(f"{name!r} is not a skill's name (a folder in {root})", USAGE)
+    skills = [agent_skills.read(root / n) for n in names] or agent_skills.scan()
+    rows = [_skill_row(s) for s in skills]
+    bad = [r for r in rows if not r["ok"]]
+    note = (f"{len(bad)} of {len(rows)} skill(s) fail the check" if bad
+            else "" if rows else f"no skills in {root}")
+    return ok(rows, status=FAILED if bad else 0, folder=str(root),
+              **({"note": note} if note else {}))
+
+
 def _c_invoke(app, req):
     from xefm import actions as A
     name = req["args"]["name"]
@@ -1690,6 +1720,7 @@ _HANDLERS = {
     "attribute get": _c_attribute_get,
     "confirm": _c_confirm, "choose": _c_choose, "input": _c_input, "message": _c_message,
     "action list": _c_action_list, "action show": _c_action_show, "invoke": _c_invoke,
+    "skill list": _c_skill_list, "skill check": _c_skill_check,
     "screen list": _c_screen_list, "screen show": _c_screen_show,
     "terminal-session list": _c_session_list, "terminal-session start": _c_session_start,
     "terminal-session close": _c_session_close,
