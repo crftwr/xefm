@@ -229,6 +229,14 @@ rest refused with exit 4.
 | `action list`, `action show` | the registry, keys from `app.keys`, the package from `extensions.package_of` |
 | `invoke` | `ctx.invoke` |
 | `screen list\|show`, `terminal-session list\|start\|close` | `ScreenManager`, `ctx.start_terminal_session`, `_close_session` |
+| `ext list`, `ext check` | `extension_cli.list_rows` / `check_lines`, the lines `xefm ext list` / `check` print (`check` takes a folder or a .zip on this disk, asked like `read` outside the session's folder) |
+| `ext install` | `XeFMApp._fetch_extension(source, done=, around=, asker=)`: Install Extension's own fetch, check and question, opened through `_ui` (no default button, the user taken there) and naming the session; `done` answers `--wait`. A package that fails the check is answered with its problems, not shown in a box |
+| `keys` | `keys_cli.check_config` / `check_bindings` / `add_contexts` / `render` over what the app loaded (`app.config`, `app.keys`, `config_manager`), never loading the config again: that would register the user's actions a second time |
+| `skill list\|check` | `agent_skills.scan` / `read` over `~/.xefm/skills/` (names only) |
+
+`ext` and `keys` exist because a session's agent cannot press a menu and a
+desktop-app install has no `xefm` on `PATH` (#1017); they answer from inside
+XeFM and forward nothing to `xefm`.
 
 `action show` appends the package's agent guide (`[extension] agent_guide`)
 for an action that comes from an extension: an agent in the app bundle has

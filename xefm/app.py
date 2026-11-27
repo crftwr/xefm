@@ -2524,13 +2524,27 @@ class XeFMApp:
     #: in ``_ext_fetch_done`` for the pump.
     _ext_fetch_busy = False
     _ext_fetch_done = None
+    #: ``(done, around, asker)`` of the fetch running: see _fetch_extension.
+    _ext_fetch_hooks = (None, None, None)
 
-    def _fetch_extension(self, source: str) -> None:
+    def _fetch_extension(self, source: str, *, done=None, around=None,
+                         asker: str | None = None) -> None:
+        """Fetch and check the package at ``source``, then ask to install it.
+        For ``xefmctl ext install`` (#1017): ``done(outcome)`` hears how it
+        ended, a dict with ``status`` (installed, declined, refused, failed,
+        busy), ``message``, and ``id``/``version`` or ``problems``;
+        ``around(show)`` opens the question (on the file manager's screen);
+        ``asker`` is named in it. A package refused for ``done`` is reported to
+        it rather than in a message box."""
         from xefm import extensions as _ext
         if self._ext_fetch_busy:
             self.log_info("Install Extension is already fetching a package")
+            if done is not None:
+                done({"status": "busy",
+                      "message": "Install Extension is already fetching a package"})
             return
         self._ext_fetch_busy = True
+        self._ext_fetch_hooks = (done, around, asker)
         if source.startswith(("github:", "https://")):
             self.log_info(f"Install Extension: downloading {source}…")
         layout = _ext.Layout(config_manager.config_dir)
@@ -2565,15 +2579,26 @@ class XeFMApp:
             return False
         self._ext_fetch_done = None
         self._ext_fetch_busy = False
+        done, around, asker = self._ext_fetch_hooks
+        self._ext_fetch_hooks = (None, None, None)
+        report = done or (lambda outcome: None)
         if isinstance(outcome, (_ext.InstallError, _ext.ManifestError, OSError)):
             self.log_info(f"Install Extension: {outcome}")
+            report({"status": "failed", "message": str(outcome)})
             return True
         if isinstance(outcome, Exception):
             getLogger("Main").error(f"Install Extension failed: {outcome}")
+            report({"status": "failed", "message": str(outcome)})
             return True
         source, work, root, manifest, problems = outcome
         if _ext.errors(problems):
             shutil.rmtree(work, ignore_errors=True)
+            if done is not None:
+                self.log_info(f"Install Extension: {manifest.id or source} cannot be "
+                              "installed")
+                done({"status": "refused", "problems": [str(p) for p in problems],
+                      "message": f"{manifest.id or source} cannot be installed"})
+                return True
             show_message_box(
                 self.panel, "\n".join(str(p) for p in problems),
                 title=f"{manifest.id or source} cannot be installed", icon="error")
@@ -2584,15 +2609,21 @@ class XeFMApp:
         def answered(label: str) -> None:
             try:
                 if label != "Install":
+                    report({"status": "declined", "message": "the user did not install it"})
                     return
                 try:
                     installed = _ext.install(source, _ext.Layout(config_manager.config_dir),
                                              fetched=root)
                 except (_ext.InstallError, _ext.ManifestError, OSError) as exc:
                     self.log_info(f"Install Extension failed: {exc}")
+                    report({"status": "failed", "message": str(exc)})
                     return
                 self.log_info(f"Installed extension {installed.id} {installed.version}")
                 self.reload_config()
+                report({"status": "installed", "id": installed.id,
+                        "version": installed.version,
+                        "message": f"installed {installed.id} {installed.version}; "
+                                   "the configuration was reloaded"})
                 # Its packages come from PyPI; the dialog said so, and Install
                 # was the consent. The sync reloads the config again when done.
                 if installed.requires.get("python_packages"):
@@ -2603,13 +2634,14 @@ class XeFMApp:
 
         pypi = (["", "Installing also downloads its Python packages from PyPI."]
                 if manifest.requires.get("python_packages") else [])
-        show_message_box(
+        asked = [f"{asker} asks to install this package.", ""] if asker else []
+        (around or (lambda show: show()))(lambda: show_message_box(
             self.panel,
-            "\n".join([f"From {source}", ""] + lines + warnings + pypi
+            "\n".join(asked + [f"From {source}", ""] + lines + warnings + pypi
                       + ["", "Extensions run inside XeFM with your permissions."]),
             title=f"Install {manifest.name} {manifest.version}?",
             icon="question", buttons=("Install", "Cancel"), default=1, cancel=1,
-            on_result=answered)
+            on_result=answered))
         return True
 
     def show_extensions(self) -> None:

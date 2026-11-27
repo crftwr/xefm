@@ -411,6 +411,43 @@ In an AI agent's session, an action that runs other programs (open_with_os, open
 - `--pane PANE`: the pane: active (the default), other, left or right
 - *Uses XeFM's screen.*
 
+## Extensions and keys
+
+### `ext list`
+
+`xefmctl ext list`
+
+the extension packages installed and whether they load.
+
+### `ext check`
+
+`xefmctl ext check PATH [--stable-only]`
+
+check an extension package without running it; exit status 1 if it would not install.
+
+In an AI agent's session, XeFM asks the user before a file's contents are read outside the session's folder, once for each folder. Files directly in a folder the user went to in a pane are not asked about.
+- `PATH`: the package's folder or a .zip
+- `--stable-only`: treat every use of a Preview API as an error
+
+### `ext install`
+
+`xefmctl ext install SOURCE [--wait]`
+
+install an extension package as Install Extension does: the user sees what it adds and agrees in XeFM; the configuration is reloaded.
+- `SOURCE`: a folder, a .zip, an https:// zip URL, or github:owner/repo[/path][@ref]
+- `--wait`: wait until it is done (or the user answered) and say how it went
+- *Uses XeFM's screen.*
+
+### `keys`
+
+`xefmctl keys [NAME...] [--context NAME]`
+
+what each key does in the running XeFM, and the bindings that never fire; exit status 1 if there is one.
+
+After editing config.py, run `xefmctl invoke reload_config` first: this reads the configuration XeFM has loaded.
+- `NAME`: only these keys ('F12', 'Ctrl-T') or actions
+- `--context NAME`: one context only: filer, text_viewer, image_viewer, file_diff, dir_diff, isearch, filter_list, search
+
 ## Skills
 
 ### `skill list`

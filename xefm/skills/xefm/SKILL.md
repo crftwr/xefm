@@ -25,8 +25,10 @@ On Windows `~` is the user's profile folder (`C:\Users\<name>`).
 
 This skill was packaged from **XeFM {XEFM_VERSION}** and describes that
 version's settings, actions and extension API. An installed skill does not
-update itself when XeFM does. If `xefm` is on PATH, `xefm --version` prints
-the XeFM the user runs (`XeFM X.Y.Z`); if it is not, skip this check.
+update itself when XeFM does. In a session XeFM started (`XEFM_SESSION` is
+set) XeFM handed you this skill itself, so it matches: skip this check. Else,
+if `xefm` is on PATH, `xefm --version` prints the XeFM the user runs
+(`XeFM X.Y.Z`); if it is not, skip this check.
 
 - **Same major.minor** (patch and `+dev` parts aside): carry on. Patch
   releases do not change what this skill describes.
@@ -48,8 +50,11 @@ the XeFM the user runs (`XeFM X.Y.Z`); if it is not, skip this check.
   **Tools > Reload Configuration** in XeFM, or restart it. Say which of the two
   the change needs (the config reference lists what only a restart applies).
 - `xefm` may not be on PATH (`xefm --version` tells). Editing `config.py`
-  never needs it; the `xefm ext ...` commands and `xefm keys` do. If it is
-  missing, tell the user rather than searching the disk for an XeFM to run.
+  never needs it; the `xefm ext ...` commands and `xefm keys` do. **In a
+  session XeFM started, use xefmctl's instead** (the table below): they need
+  no `xefm` on PATH, which a desktop-app install does not put there. Outside
+  a session, if `xefm` is missing, tell the user rather than searching the
+  disk for an XeFM to run.
 
 ## Inside an XeFM session
 
@@ -89,6 +94,20 @@ Everything that needs XeFM's screen - pane changes, `view`, `diff`,
 terminal (or in a file the user can open later), ask in the chat, and don't
 change files: give the user the copy/move/trash steps to carry out in XeFM
 afterwards.
+
+**The references name `xefm` commands; in a session use these.** They answer
+from the XeFM you run in, and the user agrees to an install in XeFM:
+
+| Outside a session | In a session |
+|---|---|
+| `xefm ext check <dir>` | `xefmctl ext check <dir>` (a folder or a .zip on this disk) |
+| `xefm ext install <source>` | `xefmctl ext install <source> --wait` (no `--yes`: the user sees what it adds and agrees in XeFM; the configuration is reloaded) |
+| `xefm ext list` | `xefmctl ext list` |
+| `xefm keys [KEY_OR_ACTION]` | `xefmctl invoke reload_config`, then `xefmctl keys [KEY_OR_ACTION]` (what XeFM has loaded) |
+| `xefm deps sync` | `xefmctl invoke sync_python_packages` |
+
+`xefm ext new`, `xefm try` and the rest have no xefmctl form: without `xefm`,
+write the files yourself and see a change in the XeFM you run in.
 
 Add `--json` to any command for one JSON object per line. A refusal (exit
 status 5) says why: pass it on to the user. Exit status 4 (busy) is worth one

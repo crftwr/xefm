@@ -370,6 +370,9 @@ What you can check:
    xefm keys F12
    ```
 
+   In a session XeFM started, `xefmctl invoke reload_config`, then
+   `xefmctl keys F12`, prints the same from the XeFM you run in.
+
    ```text
    config:  /Users/me/.xefm/config.py
    keymap:  afx (chosen in XeFM), tui

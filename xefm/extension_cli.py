@@ -174,33 +174,84 @@ def _print_problems(problems) -> None:
         print(problem)
 
 
-def _print_summary(manifest: ext.Manifest) -> None:
+def _summary_lines(manifest: ext.Manifest) -> list[str]:
     """What a package adds — the same block for ``check`` and ``install``."""
-    print(f"{manifest.name} {manifest.version} ({manifest.id}) adds:")
-    for line in ext.summarize(manifest) or ["(nothing)"]:
-        print(f"  {line}")
+    return ([f"{manifest.name} {manifest.version} ({manifest.id}) adds:"]
+            + [f"  {line}" for line in ext.summarize(manifest) or ["(nothing)"]])
 
 
-def _check(args: argparse.Namespace, layout: ext.Layout, root: Path) -> int:
+def _print_summary(manifest: ext.Manifest) -> None:
+    for line in _summary_lines(manifest):
+        print(line)
+
+
+def check_lines(root: Path, layout: ext.Layout, *, stable_only: bool = False,
+                source: str = "") -> tuple[list[str], bool]:
+    """What ``xefm ext check`` prints for the package fetched to ``root``, and
+    whether it fails. ``xefmctl ext check`` answers the same lines."""
     manifest, problems = ext.check_for_install(root, layout)
-    if manifest is not None:
-        _print_summary(manifest)
+    out = _summary_lines(manifest) if manifest is not None else []
     previews = ext.preview_uses(manifest) if manifest is not None else []
-    if args.stable_only:
+    if stable_only:
         previews = ext.stable_only(previews)
-    _print_problems(problems + previews)
+    out += [str(p) for p in problems + previews]
     apis = {p.message.split(" - ")[0] if " - " in p.message else p.where
             for p in previews}
     if apis:
-        print(f"{len(apis)} Preview API(s) in use; everything else this "
-              "package uses is stable.")
+        out.append(f"{len(apis)} Preview API(s) in use; everything else this "
+                   "package uses is stable.")
     bad = ext.errors(problems + previews)
     if not bad:
-        name = f"{manifest.id} {manifest.version}" if manifest else args.source
-        print(f"ok: {name}" + (f" ({len(problems)} warning(s))" if problems else ""))
+        name = f"{manifest.id} {manifest.version}" if manifest else source
+        out.append(f"ok: {name}" + (f" ({len(problems)} warning(s))" if problems else ""))
         if manifest is not None and manifest.data.get("settings") is not None:
-            print(f"settings: class {ext.config_class_name(manifest)} in config.py")
+            out.append(f"settings: class {ext.config_class_name(manifest)} in config.py")
+    return out, bool(bad)
+
+
+def _check(args: argparse.Namespace, layout: ext.Layout, root: Path) -> int:
+    lines, bad = check_lines(root, layout, stable_only=args.stable_only, source=args.source)
+    for line in lines:
+        print(line)
     return 1 if bad else 0
+
+
+def list_rows(layout: ext.Layout) -> list[dict]:
+    """The packages ``xefm ext list`` lists: ``id``, ``version``, ``state``
+    (local, enabled, disabled, missing), ``source``, ``problem`` (why it will
+    not load, or ""), and ``text``, its lines as printed."""
+    installed = ext.read_installed(layout)
+    manifests = ext.discover(layout)
+    rows, seen = [], set()
+    for manifest in manifests:
+        seen.add(manifest.id)
+        entry = installed.get(manifest.id)
+        state = "local" if entry is None else ("enabled" if entry.enabled else "disabled")
+        bad = ext.errors(ext.check_manifest(manifest, others=manifests, machine=False))
+        problem = bad[0].message if bad else ""
+        source = entry.source if entry and entry.source else ""
+        lines = [f"{manifest.id} {manifest.version} [{state}]"
+                 + (f"  from {source}" if source else "")
+                 + (f" - will not load: {problem}" if problem else "")]
+        if manifest.data.get("settings") is not None:
+            lines.append(f"    settings: class {ext.config_class_name(manifest)} in config.py")
+        if manifest.agent_guide is not None:
+            lines.append(f"    agent guide: xefm ext guide {manifest.id}")
+        rows.append({"id": manifest.id, "version": manifest.version, "state": state,
+                     "source": source, "problem": problem, "text": "\n".join(lines)})
+    for ext_id, entry in sorted(installed.items()):
+        if ext_id not in seen:
+            rows.append({"id": ext_id, "version": entry.version, "state": "missing",
+                         "source": entry.source or "", "problem": "",
+                         "text": f"{ext_id} {entry.version} [missing - run `xefm ext sync`]"})
+    return rows
+
+
+def list_lines(layout: ext.Layout) -> list[str]:
+    rows = list_rows(layout)
+    if not rows:
+        return [f"no extension packages in {layout.packages}"]
+    return [line for r in rows for line in r["text"].split("\n")]
 
 
 def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int:
@@ -261,30 +312,8 @@ def main(argv: list[str] | None = None, layout: ext.Layout | None = None) -> int
         return 0
 
     if args.command == "list":
-        installed = ext.read_installed(layout)
-        manifests = ext.discover(layout)
-        if not manifests and not installed:
-            print(f"no extension packages in {layout.packages}")
-            return 0
-        seen = set()
-        for manifest in manifests:
-            seen.add(manifest.id)
-            entry = installed.get(manifest.id)
-            state = "local" if entry is None else (
-                "enabled" if entry.enabled else "disabled")
-            bad = ext.errors(ext.check_manifest(manifest, others=manifests,
-                                                machine=False))
-            note = f" - will not load: {bad[0].message}" if bad else ""
-            source = f"  from {entry.source}" if entry and entry.source else ""
-            print(f"{manifest.id} {manifest.version} [{state}]{source}{note}")
-            if manifest.data.get("settings") is not None:
-                print(f"    settings: class {ext.config_class_name(manifest)} "
-                      "in config.py")
-            if manifest.agent_guide is not None:
-                print(f"    agent guide: xefm ext guide {manifest.id}")
-        for ext_id, entry in sorted(installed.items()):
-            if ext_id not in seen:
-                print(f"{ext_id} {entry.version} [missing - run `xefm ext sync`]")
+        for line in list_lines(layout):
+            print(line)
         return 0
 
     if args.command in ("enable", "disable"):

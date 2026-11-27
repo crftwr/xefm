@@ -327,6 +327,28 @@ COMMANDS: tuple[Command, ...] = (
                     "reload_config, and an action of the user's own or an "
                     "extension's are asked in XeFM first."),
 
+    # --- extension packages and keys (what `xefm ext`/`xefm keys` do, #1017) ---------
+    Command(("ext", "list"), "the extension packages installed and whether they load",
+            text="{text}"),
+    Command(("ext", "check"), "check an extension package without running it; exit "
+            "status 1 if it would not install", args=(Arg("path", path=True,
+            help="the package's folder or a .zip"),),
+            opts=(Opt("--stable-only", help="treat every use of a Preview API as an error"),),
+            text="{text}", details=AGENT_READS),
+    Command(("ext", "install"), "install an extension package as Install Extension "
+            "does: the user sees what it adds and agrees in XeFM; the configuration "
+            "is reloaded", WRITE, args=(Arg("source", path=True,
+            help="a folder, a .zip, an https:// zip URL, or github:owner/repo[/path][@ref]"),),
+            opts=(WAIT,), text="{text}", wait="option"),
+    Command(("keys",), "what each key does in the running XeFM, and the bindings "
+            "that never fire; exit status 1 if there is one",
+            args=(Arg("name", "*", help="only these keys ('F12', 'Ctrl-T') or actions"),),
+            opts=(Opt("--context", "NAME", help="one context only: filer, text_viewer, "
+                      "image_viewer, file_diff, dir_diff, isearch, filter_list, search"),),
+            text="{text}",
+            details="After editing config.py, run `xefmctl invoke reload_config` first: "
+                    "this reads the configuration XeFM has loaded."),
+
     # --- the user's own session skills (~/.xefm/skills/, #1009) ----------------------
     Command(("skill", "list"), "the user's own skills for agent sessions, in "
             "~/.xefm/skills/, and whether sessions get them",
@@ -385,6 +407,9 @@ AGENT_CLASS = {
     "action list": ALLOWED, "action show": ALLOWED,
     # A name and a description from ~/.xefm/skills/, what the session is handed.
     "skill list": ALLOWED, "skill check": ALLOWED,
+    "ext list": ALLOWED, "keys": ALLOWED,
+    "ext check": DEPENDS,               # a folder not its own
+    "ext install": ASKED,               # Install Extension's own question
     "screen list": ALLOWED, "screen show": ALLOWED, "terminal-session list": ALLOWED,
     "read": DEPENDS, "fetch": DEPENDS, "find-in-files": DEPENDS,  # a folder not its own
     "invoke": DEPENDS,                  # an action that runs programs or code
@@ -550,6 +575,7 @@ def _sections():
               ("Tags and attributes", ("tag", "attribute")),
               ("Asking the user", ("confirm", "choose", "input", "message")),
               ("Actions", ("action", "invoke")),
+              ("Extensions and keys", ("ext", "keys")),
               ("Skills", ("skill",)),
               ("Screens and terminal sessions", ("screen", "terminal-session"))]
     for title, heads in groups:

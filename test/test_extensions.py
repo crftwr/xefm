@@ -1229,3 +1229,113 @@ class AppInstall(_Home):
             self._enter("no-such-package")
         self.assertIn("not a directory, a zip", log_info.call_args.args[0])
         self.assertFalse(self.app._ext_fetch_busy)
+
+
+class XefmctlExtAndKeys(AppInstall):
+    """``xefmctl ext list|check|install`` and ``xefmctl keys`` against the real
+    app: what an agent in a session has when `xefm` is not on PATH (#1017)."""
+
+    def _ask(self, line, policy="agent"):
+        import shlex
+        from xefm import remote_cli, remote_commands, remote_dispatch
+        req = remote_cli.parse(shlex.split(line))
+        req.update(policy=policy, session="3")
+        cmd = remote_commands.find(req["cmd"].split())[0]
+        return remote_dispatch._answer(self.app, cmd, req)
+
+    def _text(self, answer):
+        return "\n".join(i.get("text", "") for i in answer["items"])
+
+    def test_install_asks_in_xefm_and_answers_once_installed(self):
+        from puikit.widgets.message_box import MessageBox
+        from xefm.config import config_manager
+        from xefm.remote_dispatch import Pending
+        with patch.object(config_manager, "config_dir", self.home), \
+             patch.object(self.app, "reload_config") as reload_config:
+            pending = self._ask(f"ext install {self.root} --wait")
+            self.assertIsInstance(pending, Pending)
+            self._settle()
+            box = self._layer()
+            self.assertIsInstance(box, MessageBox)
+            self.assertIn("asks to install this package", box.message)
+            self.assertIsNone(box.default, "an Enter meant for something else installs nothing")
+            self.assertFalse(self.layout.packages.exists(), "nothing before Install")
+            box._close(box.buttons.index("Install"))
+        answer = pending.wait()
+        self.assertEqual(answer["outcome"], "installed")
+        self.assertEqual(answer["items"][0]["id"], "app-ext")
+        self.assertTrue((self.layout.packages / "app-ext" / ext.MANIFEST).is_file())
+        reload_config.assert_called_once()
+
+    def test_install_declined(self):
+        from xefm.config import config_manager
+        with patch.object(config_manager, "config_dir", self.home):
+            pending = self._ask(f"ext install {self.root} --wait")
+            self._settle()
+            box = self._layer()
+            box._close(box.buttons.index("Cancel"))
+        answer = pending.wait()
+        self.assertEqual((answer["outcome"], answer["status"]), ("declined", 1))
+        self.assertFalse(self.layout.packages.exists())
+
+    def test_install_of_a_failing_package_answers_its_problems(self):
+        from puikit.widgets.message_box import MessageBox
+        from xefm.config import config_manager
+        (self.root / ext.MANIFEST).write_text("[extension]\n")
+        with patch.object(config_manager, "config_dir", self.home):
+            pending = self._ask(f"ext install {self.root} --wait")
+            self._settle()
+        answer = pending.wait()
+        self.assertEqual((answer["outcome"], answer["status"]), ("refused", 1))
+        self.assertIn("extension.id", self._text(answer))
+        self.assertFalse(self.app.panel._layers and isinstance(self._layer(), MessageBox),
+                         "the agent is told, not the user")
+
+    def test_install_without_wait_answers_at_once(self):
+        from xefm.config import config_manager
+        with patch.object(config_manager, "config_dir", self.home):
+            answer = self._ask(f"ext install {self.root}")
+            self.assertIn("asks the user", answer["note"])
+            self._settle()
+            box = self._layer()
+            box._close(box.buttons.index("Cancel"))
+        missing = self._ask(f"ext install {self.home / 'nowhere'}")
+        self.assertFalse(missing["ok"])
+
+    def test_check_and_list(self):
+        from xefm.config import config_manager
+        with patch.object(config_manager, "config_dir", self.home):
+            answer = self._ask(f"ext check {self.root}", policy="user")
+            self.assertEqual(answer.get("status", 0), 0)
+            self.assertIn("ok: app-ext", self._text(answer))
+            (self.root / ext.MANIFEST).write_text("[extension]\n")
+            bad = self._ask(f"ext check {self.root}", policy="user")
+            self.assertEqual(bad["status"], 1)
+            self.assertIn("extension.id", self._text(bad))
+            empty = self._ask("ext list")
+            self.assertEqual(empty["items"], [])
+            self.assertIn("no extension packages", empty["note"])
+            root, _ = self.package("listed")
+            ext.install(str(root), self.layout)
+            [row] = self._ask("ext list")["items"]
+            self.assertEqual((row["id"], row["state"]), ("listed", "enabled"))
+
+    def test_keys_reads_what_xefm_uses(self):
+        text = self._text(self._ask("keys"))
+        self.assertTrue(text.startswith("config:  "), text)
+        self.assertIn("keymap:  ", text)
+        self.assertIn("[filer]", text)
+        # One action, by name: its rows alone.
+        import re
+        first = text.split("[filer]\n", 1)[1].split("\n", 1)[0]
+        action = re.split(r"\s{2,}", first.strip())[1]
+        only = self._text(self._ask(f"keys {action} --context filer"))
+        rows = [line for line in only.splitlines() if line.startswith("  ")]
+        self.assertTrue(rows and all(action in line for line in rows), only)
+        self.assertEqual(self._ask("keys --context nowhere")["code"], 2)
+        self.assertEqual(self._ask("keys not_an_action_at_all")["code"], 2)
+        # A binding that cannot fire is an error, with exit status 1.
+        self.app.config._KEY_BINDINGS_BASE = {"reload_config": "Ctrl-Nonsense"}
+        bad = self._ask("keys")
+        self.assertEqual(bad["status"], 1)
+        self.assertIn("error:", self._text(bad))

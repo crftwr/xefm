@@ -445,5 +445,6 @@ def test_an_agents_first_read_outside_the_disk_is_asked(tmp_path, monkeypatch):
 def test_xefmctl_has_its_own_commands_only(capsys):
     assert remote_cli.main([]) == 0 and "usage: xefmctl" in capsys.readouterr().out
     # Not a front for xefm: anything else is a usage error, not forwarded.
-    assert remote_cli.main(["ext", "list"]) == 2
-    assert "unknown command 'ext'" in capsys.readouterr().err
+    # (`ext` and `keys` are xefmctl's own, answered inside XeFM, #1017.)
+    assert remote_cli.main(["deps", "sync"]) == 2
+    assert "unknown command 'deps'" in capsys.readouterr().err

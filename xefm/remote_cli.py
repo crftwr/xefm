@@ -75,8 +75,9 @@ def _abs(value: str, cwd: str | None = None) -> str:
     """A path as XeFM should read it: relative to this shell's directory, not
     to the pane's (``xefmctl pane cd .`` brings the pane to where the shell
     is); a URL as written. ``cwd`` stands for the shell's directory where
-    there is no shell (:mod:`xefm.mcp_server`)."""
-    if value == "-" or "://" in value:
+    there is no shell (:mod:`xefm.mcp_server`). ``github:owner/repo`` (an
+    extension's source) is a URL too."""
+    if value == "-" or "://" in value or value.startswith("github:"):
         return value
     value = os.path.expanduser(value)
     return os.path.abspath(os.path.join(cwd, value) if cwd else value)

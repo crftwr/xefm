@@ -12,7 +12,8 @@ The loop is always the same:
 
 1. `xefm ext new <id>` to start, or edit an existing package.
 2. Write the manifest and the code, following sections 2–5.
-3. `xefm ext check <dir>` — fix every line it prints and re-run until it says
+3. `xefm ext check <dir>` (in a session XeFM started: `xefmctl ext check
+   <dir>`) — fix every line it prints and re-run until it says
    `ok:` **with no warnings** other than the machine-dependent ones (a program
    "not on PATH", a host package "not importable" here). The check covers the
    manifest *and* the code rules in section 3, so a clean check means the
@@ -24,6 +25,8 @@ The loop is always the same:
    prints first — what the package contributes and the Python packages it
    installs from PyPI. Extensions run with the user's permissions.
 7. `xefm ext install <dir>` (add `--yes` only when the user has said to install).
+   In a session XeFM started: `xefmctl ext install <dir> --wait` - the user
+   sees what it adds and agrees in XeFM, which then reloads the configuration.
 8. Tell the user to run **Tools ▸ Reload Configuration** in XeFM, or restart
    it.
 

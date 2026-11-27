@@ -38,6 +38,10 @@ XeFM が起動したシェル（サブシェル、[ターミナルセッショ�
 | `xefmctl message TEXT` | ログペインに 1 行書く |
 | `xefmctl action list` / `action show NAME` | すべてのアクションと、その説明とキー。ひとつのアクションの詳細 |
 | `xefmctl invoke NAME` | ファイルマネージャーの画面でキーを押したのと同じようにアクションを実行する |
+| `xefmctl ext list` / `ext check DIR` | [拡張パッケージ](EXTENSIONS_FEATURE.ja.md)の一覧と、それぞれが読み込まれるかどうか。パッケージを動かさずにチェックする（`xefm ext check` と同じ） |
+| `xefmctl ext install SOURCE [--wait]` | **Tools > Advanced > Install Extension…** と同じようにパッケージをインストールする。追加されるものを XeFM で見て、あなたが同意すると入り、設定を読み直す |
+| `xefmctl keys [KEY_OR_ACTION...]` | この XeFM で各キーが何をするかと、効かないキー設定（`xefm keys` と同じ表示） |
+| `xefmctl skill list` / `skill check [NAME...]` | エージェントのセッション用の[自分のスキル](AI_AGENT_SESSIONS_FEATURE.ja.md#自分のスキルxefmskills)と、それがチェックに通るかどうか |
 | `xefmctl screen list` / `screen show ID` | 画面の一覧。画面を表示する（ファイルマネージャーは `files`） |
 | `xefmctl terminal-session list` / `start` / `close ID` | XeFM のターミナルセッション（エージェントの `start` は先に確認する） |
 | `xefmctl help [COMMAND]` | すべてのコマンド、またはひとつのコマンドの詳細 |
@@ -96,7 +100,7 @@ xefmctl find-similar --method image --from selection --show
 
 ## サブシェルがターミナルを使っている間
 
-ターミナルモードでは、サブシェルやターミナルプログラムが動いている間 XeFM は待っているので、読むだけのコマンドしか使えません。`state`、`pane` の読み取り、`entries`、検索、`find-similar`、`read`、`fetch`、`list` の付くコマンド、`attribute get` です。検索の `--show` は無視されます。ほかのコマンドは、シェルが終わるまで XeFM が中断していることを伝えて終了ステータス 6 で終わり、戻ってから使えるようになります。`xefmctl state` もそのことを示し、`xefmctl help` は XeFM の画面を使うコマンドに `*` を付けます。そのシェルで動くエージェントは、結果をターミナルに表示し、質問はチャットでします。
+ターミナルモードでは、サブシェルやターミナルプログラムが動いている間 XeFM は待っているので、読むだけのコマンドしか使えません。`state`、`pane` の読み取り、`entries`、検索、`find-similar`、`read`、`fetch`、`list` の付くコマンド、`attribute get`、`ext check`、`keys`、`skill check` です。検索の `--show` は無視されます。ほかのコマンドは、シェルが終わるまで XeFM が中断していることを伝えて終了ステータス 6 で終わり、戻ってから使えるようになります。`xefmctl state` もそのことを示し、`xefmctl help` は XeFM の画面を使うコマンドに `*` を付けます。そのシェルで動くエージェントは、結果をターミナルに表示し、質問はチャットでします。
 
 シェルを起動した XeFM が終了していれば、どのコマンドもそう伝えます。
 

@@ -163,16 +163,40 @@ def build(config_file: Path | None = None, keymap: str | None = None,
     was read: ``config``, ``preset`` and how the preset was chosen
     (``preset_source``), and the loaded ``extensions``."""
     from xefm import keymap_presets
-    from xefm.actions import COMMON, registry
-    from xefm.config import (ConfigManager, KeyBindings, printable_text_bindings,
-                             terminal_shadowed_bindings, deprecated_binding_names)
+    from xefm.config import ConfigManager, KeyBindings
     from xefm.user_api import load_user_entries
 
-    report = Report()
     manager = ConfigManager()
     if config_file is not None:
         manager.config_file = Path(config_file)
     config = manager.load_config(create=False)
+    report = check_config(config, manager)
+    # The user's actions and the extensions' are registered first: a binding
+    # to one is reached only where it is (#662).
+    load_user_entries(config)
+    report = check_bindings(report, config, backend)
+
+    if keymap is not None:
+        preset, source = keymap_presets.canonical(keymap), "--keymap"
+    elif keymap_presets.resolve(config, None):
+        preset, source = keymap_presets.resolve(config, None), "KEY_PRESET in config.py"
+    else:
+        preset = keymap_presets.resolve(config, _chosen_preset(manager.config_dir))
+        source = "chosen in XeFM"
+        if preset is None:
+            preset, source = keymap_presets.FALLBACK, (
+                "none chosen yet - XeFM asks at its next launch")
+    keymap_presets.apply(config, preset)
+    add_contexts(report, KeyBindings(config.KEY_BINDINGS))
+    extensions = manager.extension_report
+    return report, {"config": manager.config_file, "preset": preset,
+                    "preset_source": source,
+                    "extensions": list(extensions.loaded) if extensions else []}
+
+
+def check_config(config, manager) -> Report:
+    """A report on how ``manager`` loaded ``config`` and its extensions."""
+    report = Report()
     if manager.load_error is not None:
         report.errors.append(f"{manager.config_file} does not load - XeFM would "
                              f"start on the template instead: {manager.load_error}")
@@ -185,10 +209,15 @@ def build(config_file: Path | None = None, keymap: str | None = None,
         for label, reason in extensions.skipped:
             report.warnings.append(f"extension {label} is not loaded: {reason}")
         report.warnings.extend(extensions.warnings)
-    # The user's actions and the extensions' are registered first: a binding
-    # to one is reached only where it is (#662).
-    load_user_entries(config)
+    return report
 
+
+def check_bindings(report: Report, config, backend: str = "tui") -> Report:
+    """``report`` with what is wrong with ``config.py``'s own ``KEY_BINDINGS``
+    (once the user's and the extensions' actions are registered)."""
+    from xefm import keymap_presets
+    from xefm.config import (printable_text_bindings, terminal_shadowed_bindings,
+                             deprecated_binding_names)
     own = keymap_presets.overrides(config)
     for name, value in own.items():
         report.errors.extend(_binding_problems(name, value))
@@ -202,26 +231,18 @@ def build(config_file: Path | None = None, keymap: str | None = None,
         for action, key in terminal_shadowed_bindings(own):
             report.warnings.append(f"KEY_BINDINGS[{action!r}]: {key!r} arrives as "
                                    "Tab, Enter or Backspace in most terminals")
+    return report
 
-    if keymap is not None:
-        preset, source = keymap_presets.canonical(keymap), "--keymap"
-    elif keymap_presets.resolve(config, None):
-        preset, source = keymap_presets.resolve(config, None), "KEY_PRESET in config.py"
-    else:
-        preset = keymap_presets.resolve(config, _chosen_preset(manager.config_dir))
-        source = "chosen in XeFM"
-        if preset is None:
-            preset, source = keymap_presets.FALLBACK, (
-                "none chosen yet - XeFM asks at its next launch")
-    keymap_presets.apply(config, preset)
-    bindings = KeyBindings(config.KEY_BINDINGS)
+
+def add_contexts(report: Report, bindings) -> Report:
+    """``report`` with what each key does in every context, from the keymap
+    ``bindings`` (a :class:`xefm.config.KeyBindings`)."""
+    from xefm.actions import COMMON, registry
     for context in registry.contexts():
         if context == COMMON:
             continue  # inherited by every other context, and listed there
         report.contexts[context] = _context_rows(bindings, context)
-    return report, {"config": manager.config_file, "preset": preset,
-                    "preset_source": source,
-                    "extensions": list(extensions.loaded) if extensions else []}
+    return report
 
 
 def _matcher(names: list[str]):
@@ -276,20 +297,29 @@ def main(argv: list[str] | None = None) -> int:
     if problem:
         print(f"error: {problem}", file=sys.stderr)
         return 2
+    lines, status = render(report, read, wanted, args.names, args.context, args.backend)
+    for line in lines:
+        print(line)
+    return status
 
-    print(f"config:  {read['config']}")
-    print(f"keymap:  {read['preset']} ({read['preset_source']}), {args.backend}")
+
+def render(report: Report, read: dict, wanted, names: list[str], context: str | None,
+           backend: str) -> tuple[list[str], int]:
+    """What ``xefm keys`` prints, as lines, and its exit status. ``wanted`` is
+    :func:`_matcher`'s row filter for ``names``."""
+    out = [f"config:  {read['config']}",
+           f"keymap:  {read['preset']} ({read['preset_source']}), {backend}"]
     if read["extensions"]:
-        print("extensions: " + ", ".join(f"{m.id} {m.version}"
-                                         for m in read["extensions"]))
+        out.append("extensions: " + ", ".join(f"{m.id} {m.version}"
+                                              for m in read["extensions"]))
     shown = 0
-    for context, rows in report.contexts.items():
-        if args.context and context != args.context:
+    for name, rows in report.contexts.items():
+        if context and name != context:
             continue
-        rows = [r for r in rows if wanted(context, r)]
+        rows = [r for r in rows if wanted(name, r)]
         if not rows:
             continue
-        print(f"\n[{context}]")
+        out += ["", f"[{name}]"]
         width = max(len(r.key) for r in rows)
         for row in rows:
             notes = []
@@ -299,22 +329,18 @@ def main(argv: list[str] | None = None) -> int:
                 notes.append("never fires: not a key XeFM knows")
             if row.shares:
                 notes.append(f"same key as {', '.join(row.shares)}")
-            print(f"  {row.key:<{width}}  {row.action}"
-                  + (f"  ({'; '.join(notes)})" if notes else ""))
+            out.append(f"  {row.key:<{width}}  {row.action}"
+                       + (f"  ({'; '.join(notes)})" if notes else ""))
             shown += 1
-    if args.names and not shown:
-        print("\nnot bound in any context" if not args.context
-              else f"\nnot bound in {args.context}")
+    if names and not shown:
+        out += ["", "not bound in any context" if not context
+                else f"not bound in {context}"]
     if report.warnings:
-        print()
-        for warning in report.warnings:
-            print(f"warning: {warning}")
+        out += [""] + [f"warning: {w}" for w in report.warnings]
     if report.errors:
-        print()
-        for error in report.errors:
-            print(f"error: {error}")
-        return 1
-    return 0 if shown or not args.names else 1
+        out += [""] + [f"error: {e}" for e in report.errors]
+        return out, 1
+    return out, 0 if shown or not names else 1
 
 
 if __name__ == "__main__":
