@@ -1,7 +1,7 @@
 # XeFM skills: skills only XeFM's agent sessions get
 
 A skill in `~/.xefm/skills/<name>/` is handed to every AI agent session XeFM
-starts (**Tools > AI Agent Here**, `ask_agent`) and to no agent run anywhere
+starts (**Tools > AI Agent**, `ask_agent`) and to no agent run anywhere
 else. Use it for what only makes sense beside the file manager: workflows on
 `xefmctl`, the user's own conventions for sorting, renaming and unpacking
 files, anything that assumes XeFM's panes, selection, archives or remote

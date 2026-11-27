@@ -1173,8 +1173,9 @@ class ActionContext:
         app = self._app
         app._open_viewer(target)
         if line:
+            from xefm.screen_strip import top_surface
             panel = app.panel
-            top = panel.top_layer()
+            top = top_surface(panel)
             scroll = getattr(top, "_scroll_to_line", None)
             if scroll is not None:
                 scroll(max(0, int(line) - 1))

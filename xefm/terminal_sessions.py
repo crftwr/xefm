@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import itertools
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -42,6 +43,12 @@ PROGRAM = "program"
 #: :class:`xefm.agent_chat_view.ChatView`, not a terminal. It exists in
 #: terminal mode too.
 AGENT = "agent"
+
+#: The groups the screens fall into (discussion #1019), besides the file
+#: manager's: what a terminal runs - shells, terminal programs, an editor -
+#: and AI agent sessions, drawn by XeFM or run in its terminal.
+GROUP_TERMINAL = "terminal"
+GROUP_AGENT = "agent"
 
 
 @dataclass(eq=False)
@@ -90,6 +97,37 @@ class Session:
     started_at: float = field(default_factory=time.time)
     #: Its screen (:class:`xefm.screens.Screen`) while it has one.
     screen: object = None
+    #: An AI agent's session run in XeFM's terminal (``'terminal': True``):
+    #: a program, but one of the agent group's screens.
+    agent: bool = False
+    #: What an agent session is about (#1019): decided once - after its first
+    #: turn, from the agent's own title or the first request - then fixed,
+    #: changed only by the user's rename. "" until then.
+    title: str = ""
+    #: When it was last on screen (time.time()); its start until then.
+    last_used_at: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not self.last_used_at:
+            self.last_used_at = self.started_at
+
+    @property
+    def group(self) -> str:
+        """Which group of screens it is in: :data:`GROUP_AGENT` or
+        :data:`GROUP_TERMINAL`."""
+        return GROUP_AGENT if self.kind == AGENT or self.agent else GROUP_TERMINAL
+
+    @property
+    def tab_label(self) -> str:
+        """Its tab in the screen strip: short, and steady enough to find
+        again - the title, else a chosen name, else what runs in it now, else
+        the program."""
+        if self.title:
+            return self.title
+        if self.named:
+            return self.name
+        return self.activity or (self.program if self.kind == SHELL and self.program
+                                 else self.name)
 
     @property
     def state(self) -> str:
@@ -198,6 +236,9 @@ class Session:
         is (``zsh``), then where it is - a chosen name first. Two rows that
         read the same are told apart with :attr:`full_label`."""
         doing = self.activity
+        if self.title:
+            parts = [self.title] + ([doing] if doing and doing != self.title else [])
+            return " - ".join(parts + [_short(self.directory)])
         if self.named:
             return self.full_label
         what = doing or (self.program if self.kind == SHELL and self.program else self.name)
@@ -207,7 +248,8 @@ class Session:
     def full_label(self) -> str:
         """The name, what runs now, then where it is (``zsh 2 - make - ~``)."""
         doing = self.activity
-        parts = [self.name] + ([doing] if doing else []) + [_short(self.directory)]
+        parts = [self.name] + ([self.title] if self.title else []) \
+            + ([doing] if doing and doing != self.title else []) + [_short(self.directory)]
         return " - ".join(parts)
 
 
@@ -249,6 +291,83 @@ def _short(path: str) -> str:
     if path.startswith(home + os.sep):
         return "~" + path[len(home):]
     return path
+
+
+#: The longest title a session takes from its first request (#1019).
+TITLE_MAX = 40
+
+
+def title_from_request(text: str, limit: int = TITLE_MAX) -> str:
+    """A session's title from a request: its first line that says something,
+    spaces run together, cut at a word to ``limit`` characters with ``…``."""
+    line = next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")
+    line = " ".join(line.split())
+    if len(line) <= limit:
+        return line
+    cut = line[:limit - 1]
+    if " " in cut[limit // 2:]:
+        cut = cut[:cut.rindex(" ")]
+    return cut.rstrip(" ,.;:") + "…"
+
+
+#: The marks a program puts in front of its terminal title - a spinner, a
+#: star - which are no part of what the title says.
+_TITLE_MARKS = re.compile(r"^[^\w(\[\"'`]+")
+
+
+def title_from_terminal(title: str, generic: set[str]) -> str:
+    """What an agent's terminal title (OSC 0/2) says the session is about, or
+    "" when it says only what the program is (one of ``generic``, compared
+    without case): ``✳ Fix the login bug`` gives ``Fix the login bug``,
+    ``✳ Claude Code`` nothing."""
+    text = _TITLE_MARKS.sub("", title or "").strip()
+    if not text or text.lower() in {g.lower() for g in generic}:
+        return ""
+    return title_from_request(text)
+
+
+@dataclass(eq=False)
+class ClosedAgent:
+    """An AI agent conversation closed in XeFM, kept to resume (#1019):
+    which agent (its ``AGENTS`` name), where, the agent's own id for the
+    conversation, its title, and - closed in this run - the conversation
+    itself, so it comes back as it was."""
+
+    agent: str
+    cwd: str
+    session_id: str
+    title: str
+    closed_at: float
+    conversation: object = None
+
+    def to_state(self) -> dict:
+        return {"agent": self.agent, "cwd": self.cwd, "session_id": self.session_id,
+                "title": self.title, "closed_at": self.closed_at}
+
+    @classmethod
+    def from_state(cls, raw) -> "ClosedAgent | None":
+        if not isinstance(raw, dict):
+            return None
+        try:
+            record = cls(agent=str(raw["agent"]), cwd=str(raw["cwd"]),
+                         session_id=str(raw["session_id"]), title=str(raw["title"]),
+                         closed_at=float(raw.get("closed_at") or 0.0))
+        except (KeyError, TypeError, ValueError):
+            return None
+        return record if record.agent and record.session_id else None
+
+
+def ago(when: float, now: float | None = None) -> str:
+    """How long ago ``when`` was, in a word: ``now``, ``5m ago``, ``3h ago``,
+    ``2d ago``."""
+    secs = max(0.0, (now if now is not None else time.time()) - when)
+    if secs < 60:
+        return "now"
+    if secs < 3600:
+        return f"{int(secs // 60)}m ago"
+    if secs < 86400:
+        return f"{int(secs // 3600)}h ago"
+    return f"{int(secs // 86400)}d ago"
 
 
 class SessionRegistry:

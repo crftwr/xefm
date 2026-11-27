@@ -184,10 +184,13 @@ the mouse for the first, take the whole buffer with the second. See
 | Item | Action |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Subshell Here | `subshell` *(desktop mode: a terminal session)* — see [Terminal](TERMINAL_FEATURE.md) |
-| AI Agent Here | `agent` — see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
+| Terminal | `subshell` *(desktop mode: the terminal session used last, or a new one; **Subshell Here** in terminal mode)* — see [Terminal](TERMINAL_FEATURE.md) |
+| New Shell Here | `new_shell` *(desktop mode only; ships unbound)* |
+| AI Agent | `agent` — the AI agent session used last, or a new one; see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
+| New AI Agent Here | `new_agent` *(ships unbound)* |
 | Ask AI Agent… | `ask_agent` *(ships unbound)* — your `AGENT_PROMPTS`, or a request you type |
-| Screens… | `screens` *(desktop mode only)* |
+| Switch Screen | `switch_screen` — between the file manager and the screen used last |
+| Screens… | `screens` *(ships unbound)* — every session, to go to, close, rename or resume |
 | External Programs… | `programs` |
 | Find Similar Files… | `find_similar` *(ships unbound)* — see [Find Similar Files](FIND_SIMILAR_FILES_FEATURE.md) |
 | Background Jobs… | `jobs` — see [Background Jobs](BACKGROUND_JOBS_FEATURE.md) |

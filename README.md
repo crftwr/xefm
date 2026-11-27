@@ -261,13 +261,15 @@ and terminal mode ignores them. See
 
 ## Built-in Terminal & Screens
 
-The desktop app has a terminal of its own. **Tools → Subshell Here** opens your
+The desktop app has a terminal of its own. **Tools → Terminal** opens your
 shell in it, in the active pane's directory, and so does every program marked
 `'terminal': True` (`vim`, `less`, a REPL). Each one is a *terminal session*
 on a *screen* of its own, and it keeps running while you go back to the panes.
-**Tools → Screens…** switches between the file manager and your sessions. A
-viewer you opened stays open while you visit a terminal, so you can compare the
-two by switching back and forth.
+**Tools → Switch Screen** goes between the file manager and the session you
+used last; with several open, tabs across the top switch between them, and
+the status bar always says how many there are. A viewer you opened stays open
+while you visit a terminal, so you can compare the two by switching back and
+forth.
 
 In the terminal app, XeFM hands its own terminal to the shell or program and
 waits until it exits. See [Terminal](doc/TERMINAL_FEATURE.md).
@@ -293,7 +295,7 @@ xefmctl view README.md          # open a file in XeFM's viewer
 
 ## AI Agent Sessions
 
-**Tools → AI Agent Here** opens an AI coding agent beside the file manager.
+**Tools → AI Agent** opens an AI coding agent beside the file manager.
 Claude Code, Codex, GitHub Copilot CLI and Antigravity CLI are set up out of
 the box, each offered once its program is installed. The agent knows it runs
 inside XeFM: it sees the panes and the selection, searches anywhere XeFM can

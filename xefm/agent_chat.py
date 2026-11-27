@@ -294,6 +294,9 @@ class Conversation:
         self.items: list[Item] = []
         self.state = STARTING
         self.session_id = ""
+        #: The agent's own title for the conversation, when it gives one
+        #: (ACP ``session_info_update``): what names the session (#1019).
+        self.title = ""
         self.model = ""
         self.cwd = ""
         #: Blocks streamed per message id, in order: matched to the finished

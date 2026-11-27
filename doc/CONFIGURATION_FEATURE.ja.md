@@ -265,7 +265,7 @@ AGENT_PROMPTS = {  # requests listed in Ask AI Agent...
 }
 ```
 
-**Tools → AI Agent Here**（`agent`）と **Ask AI Agent…**（`ask_agent`）が起動するエージェントと、それにできることを設定します。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
+**Tools → AI Agent**（`agent`）、**New AI Agent Here**（`new_agent`）、**Ask AI Agent…**（`ask_agent`）が起動するエージェントと、それにできることを設定します。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
 
 ### ファイルの関連付け
 

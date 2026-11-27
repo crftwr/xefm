@@ -976,10 +976,11 @@ def test_effort_and_fast_mode_outlive_a_restart(tmp_path):
 
 
 @pytest.mark.parametrize("preset", ["afx", "orthodox", "native", "vim"])
-def test_ctrl_grave_opens_screens_from_a_drawn_session_under_every_preset(tmp_path, preset):
-    # A preset's full table lists 'screens' before 'terminal.screens', both
-    # on Ctrl-`; the session's own action must win, or the key went to the
-    # message field and Screens never came up.
+def test_ctrl_grave_goes_back_from_a_drawn_session_under_every_preset(tmp_path, preset):
+    # A preset's full table lists 'switch_screen' before
+    # 'terminal.switch_screen', both on Ctrl-`; the session's own action must
+    # win, or the key went to the message field and the panes never came
+    # back (#1019; it opened Screens before).
     from xefm import keymap_presets as kp
     from xefm.config import config_manager
     saved = (config_manager.config, config_manager._key_bindings)
@@ -988,9 +989,10 @@ def test_ctrl_grave_opens_screens_from_a_drawn_session_under_every_preset(tmp_pa
         config_manager._key_bindings = None
         hits = []
         panel, view = _plain_view(tmp_path, on_screens_request=lambda: hits.append(1))
+        view.on_screen_action = lambda name: hits.append(name) or True
         from puikit.event import Event, EventType
         panel.dispatch_event(Event(type=EventType.KEY, key="`", char="`",
                                    modifiers=frozenset({"ctrl"})))
-        assert hits == [1] and view.input.text == ""
+        assert hits == ["terminal.switch_screen"] and view.input.text == ""
     finally:
         config_manager.config, config_manager._key_bindings = saved

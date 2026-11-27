@@ -155,10 +155,13 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | 項目 | アクション |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Subshell Here | `subshell` *（デスクトップモードではターミナルセッションで）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
-| AI Agent Here | `agent` — [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
+| Terminal | `subshell` *（デスクトップモードでは最後に使ったターミナルセッション、なければ新しいセッション。ターミナルモードでは **Subshell Here**）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
+| New Shell Here | `new_shell` *（デスクトップモードのみ。既定でキー未割り当て）* |
+| AI Agent | `agent` — 最後に使った AI エージェントのセッション、なければ新しいセッション。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
+| New AI Agent Here | `new_agent` *（既定でキー未割り当て）* |
 | Ask AI Agent… | `ask_agent` *（既定でキー未割り当て）* — `AGENT_PROMPTS` の依頼か、打ち込んだ依頼 |
-| Screens… | `screens` *（デスクトップモードのみ）* |
+| Switch Screen | `switch_screen` — ファイルマネージャーと最後に使った画面の間 |
+| Screens… | `screens` *（既定でキー未割り当て）* — すべてのセッションの移動、終了、名前の変更、再開 |
 | External Programs… | `programs` |
 | Find Similar Files… | `find_similar` *（既定でキー未割り当て）* — [類似ファイルの検索](FIND_SIMILAR_FILES_FEATURE.ja.md)を参照 |
 | Background Jobs… | `jobs` — [バックグラウンドジョブ](BACKGROUND_JOBS_FEATURE.ja.md)を参照 |

@@ -53,6 +53,7 @@ from puikit.widgets.text_area import TextArea
 from xefm import agent_chat as C
 from xefm import surface_actions
 from xefm.config import find_action_for_event
+from xefm.terminal import screen_action_handlers, strip_event
 from xefm.log_manager import getLogger
 
 logger = getLogger("AgentChat")
@@ -188,6 +189,11 @@ class ChatView(FocusContainer, Widget):
         # What a terminal session's view also says, for the session list.
         self.title = ""
         self.pwd = ""
+        #: Set by the app (#1019), as on a terminal session's view
+        #: (:mod:`xefm.terminal`): the screen strip's clicks and the actions
+        #: that move between screens.
+        self.on_strip_event: Callable[[Any], bool] | None = None
+        self.on_screen_action: Callable[[str], bool] | None = None
 
     # --- the session list's view of it ----------------------------------------
 
@@ -658,6 +664,7 @@ class ChatView(FocusContainer, Widget):
         table = {"terminal.close": lambda: self.on_close_request(self)}
         if self.on_screens_request is not None:
             table["terminal.screens"] = self.on_screens_request
+        table.update(screen_action_handlers(self.on_screen_action))
         table.update(surface_actions.handlers())
         return table
 
@@ -830,6 +837,8 @@ class ChatView(FocusContainer, Widget):
     def handle_event(self, event: Event) -> bool:
         if self.closing:
             return True
+        if strip_event(self, event):
+            return True
         if event.type is EventType.KEY:
             self._key(event)
             return True
@@ -848,6 +857,11 @@ class ChatView(FocusContainer, Widget):
             return
         if key == "tab" and mods == {"shift"}:
             self.cycle_mode()
+            return
+        if key == "d" and mods == {"ctrl"} and not self.input.text and self.menu is None:
+            # A shell's end of input: Ctrl-D on an empty message closes the
+            # session (#1019), a key every terminal delivers.
+            self.on_close_request(self)
             return
         action = find_action_for_event(event, context=CONTEXT)
         if action is not None and self._takes(event, action) and self.run_action(action):

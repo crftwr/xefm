@@ -178,6 +178,8 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `close_tab` | このペインの現在のタブを閉じる | `Ctrl-W` | `Ctrl-W` | `Ctrl-W`<br>macOS アプリ：`Cmd-W`、`Ctrl-W` | `Ctrl-W` |
 | `next_tab` | このペインの次のタブへ | `Ctrl-PgDn` | `Ctrl-Tab` | `Ctrl-PgDn` | `Ctrl-PgDn` |
 | `prev_tab` | このペインの前のタブへ | `Ctrl-PgUp` | `Ctrl-Shift-Tab` | `Ctrl-PgUp` | `Ctrl-PgUp` |
+| `move_tab_left` | このペインの現在のタブを 1 つ左へ移す | — | — | — | — |
+| `move_tab_right` | このペインの現在のタブを 1 つ右へ移す | — | — | — | — |
 | `adjust_pane_left` | 左のペインを狭く | `[` | `[` | `[` | `[` |
 | `adjust_pane_right` | 左のペインを広く | `]` | `]` | `]` | `]` |
 | `reset_pane_boundary` | ペインの境界を中央に戻す | `-` | — | `-` | `-` |
@@ -195,9 +197,12 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `context_menu` | カーソル位置の項目のコンテキストメニューを開く | `/`、`Apps` | `Shift-F10`、`Apps` | `Shift-F10`、`Apps` | `Apps`、`Shift-F10` |
 | `context_menu_dir` | 現在のディレクトリのコンテキストメニューを開く | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` |
 | `programs` | 外部プログラムを実行 | `X` | — | — | — |
-| `subshell` | このディレクトリでサブシェルを開く | `Shift-X` | — | — | `s` |
-| `screens` | ファイルマネージャーとターミナルセッションを切り替える | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
-| `agent` | このディレクトリで AI エージェントのセッションを開く | `>` | `>` | `>` | `>` |
+| `subshell` | 最後に使ったターミナルセッションに移動する。なければこのディレクトリでサブシェルを開く | `Shift-X` | — | — | `s` |
+| `new_shell` | このディレクトリで別のシェルセッションを開く | — | — | — | — |
+| `switch_screen` | ファイルマネージャーと最後に使った画面を切り替える | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
+| `screens` | すべてのセッションを一覧にし、移動、終了、名前の変更、再開をする | — | — | — | — |
+| `agent` | 最後に使った AI エージェントのセッションに移動する。なければこのディレクトリで開く | `>` | `>` | `>` | `>` |
+| `new_agent` | このディレクトリで別の AI エージェントのセッションを開く | — | — | — | — |
 | `ask_agent` | 選択項目について AI エージェントに尋ねる | — | — | — | — |
 | `jobs` | バックグラウンドジョブの一覧 | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | 両方のペインのディレクトリを読み直す | — | `F2`、`Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
@@ -207,9 +212,9 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 
 ### ビューアーとダイアログ
 
-ここに挙げたキーは、欄に断りがない限りどのプリセットでも同じです。どのビューアーも `Esc` で閉じ、`quit`、`help`、`isearch`、`edit_files`、`screens` はファイル一覧の表と同じキーで使えます。Vim style では、テキストビューアーを `q` でも閉じられます。
+ここに挙げたキーは、欄に断りがない限りどのプリセットでも同じです。どのビューアーも `Esc` で閉じ、`quit`、`help`、`isearch`、`edit_files`、`switch_screen`、`screens` はファイル一覧の表と同じキーで使えます。Vim style では、テキストビューアーを `q` でも閉じられます。
 
-`` Ctrl-` ``（`screens`、`terminal.screens`）がターミナルモードの XeFM に届くのは、それを独自のキーとして送るターミナルからだけです。Ghostty、kitty、WezTerm は送ります。ほかの多くのターミナルは何も送らないか、`Ctrl-Space` と同じバイトを送ります。その場合は、コマンドパレットから **Screens…** を開いてください。ターミナルモードでの画面とは、[XeFM が描く AI エージェントの会話](AI_AGENT_SESSIONS_FEATURE.ja.md#xefm-が描く会話)のことです。
+`` Ctrl-` ``（`switch_screen`、`terminal.switch_screen`）がターミナルモードの XeFM に届くのは、それを独自のキーとして送るターミナルからだけです。Ghostty、kitty、WezTerm は送ります。ほかの多くのターミナルは何も送らないか、`Ctrl-Space` と同じバイトを送ります。その場合は、コマンドパレットから **Switch Screen** を実行してください。ターミナルモードでの画面とは、[XeFM が描く AI エージェントの会話](AI_AGENT_SESSIONS_FEATURE.ja.md#xefm-が描く会話)のことです。
 
 Orthodox と OS native では、ファイル一覧で文字を入力すると検索になるので、`isearch` にキーがありません。代わりにテキストビューアーとファイル差分ビューアーでは、手本にしているビューアーの検索キーを使います。Orthodox は Total Commander の Lister、OS native は各プラットフォーム標準の検索キーです。「次を検索」と「前を検索」は検索バーを開いている間も使え、バーを閉じたあとに押すと、直前の検索でバーを開き直して次または前の一致へ移動します。
 
@@ -304,12 +309,13 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 | `isearch.accept` | 現在の一致で止める | `Enter` |
 | `isearch.cancel` | 取り消してカーソルを元に戻す | `Esc` |
 
-**一覧ダイアログ**（お気に入り、ドライブ、履歴、外部プログラム、フィルターの入力）
+**一覧ダイアログ**（お気に入り、ドライブ、履歴、外部プログラム、Screens、フィルターの入力）
 
 | アクション名 | 動作 | キー |
 |---|---|---|
 | `remove_list_item` | ハイライト中の項目を一覧から削除 | `Shift-Del` |
 | `describe_list_item` | ハイライト中の項目のヘルプを表示 | `F1` |
+| `rename_list_item` | ハイライト中の項目の名前を変更（Screens） | `F2` |
 
 **検索ダイアログ**（ファイル名検索、内容検索）
 
@@ -324,7 +330,13 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 | アクション名 | 動作 | キー |
 |---|---|---|
 | `terminal.close` | ターミナルを閉じてペインに戻る。実行中のプログラムは停止する | macOS アプリ：`Cmd-W`<br>Windows アプリ：`Ctrl-Shift-W` |
-| `terminal.screens` | ファイルマネージャーか別のターミナルセッションに切り替える | `` Ctrl-` `` |
+| `terminal.switch_screen` | ファイルマネージャーに戻る | `` Ctrl-` `` |
+| `terminal.screens` | すべてのセッションを一覧にし、移動、終了、名前の変更、再開をする | — |
+| `terminal.new` | 同じ種類のセッションをもう 1 つ開く | macOS アプリ：`Cmd-T`<br>Windows アプリ：`Ctrl-Shift-T` |
+| `terminal.next_tab` | 同じ種類の次のセッションに移動する | macOS アプリ：`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
+| `terminal.prev_tab` | 同じ種類の前のセッションに移動する | macOS アプリ：`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
+| `terminal.move_tab_left` | このセッションのタブを 1 つ左へ移す | — |
+| `terminal.move_tab_right` | このセッションのタブを 1 つ右へ移す | — |
 | `command_palette` | ターミナルのアクションを名前で探して実行 | macOS アプリ：`Cmd-Shift-P`<br>Windows アプリ：`Ctrl-Shift-P` |
 
 ## 自分のキーバインドが優先される

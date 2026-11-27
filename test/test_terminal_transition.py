@@ -80,7 +80,9 @@ def _app(panel):
     app.log_info = app.logged.append
     app._sessions = SessionRegistry()
     app._screens = ScreenManager(panel)
-    for name in ("_relist_both", "_close_session", "_show_screen"):
+    for name in ("_relist_both", "_close_session", "_show_screen", "_animate_session",
+                 "_remember_closed",
+                 "_closed_agents", "_save_closed_agents"):
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
     return app
 
@@ -195,3 +197,31 @@ def test_an_older_puikit_without_a_base_still_fades_the_terminal():
     view = object()
     assert animate_from_behind(panel, view) is True
     assert [w for w, _h in panel.animations] == [view]
+
+
+def test_the_tab_strip_fades_with_its_session(monkeypatch):
+    # The strip is a layer of its own over the view (#1019): it comes in and
+    # goes out with the view, rather than popping in at once and staying up
+    # while the view fades away.
+    from xefm.dialog_geometry import BEHIND_MS
+    panel = _Panel()
+    app = _app(panel)
+    view = _View()
+    session = app._sessions.add(Session(view=view, kind=PROGRAM, name="vim", cwd="/"))
+    screen = app._screens.add_terminal(session, view, hints={}, reflow=None)
+    strip = object()
+    panel.push_layer(strip, z=2, interactive=False, parent=screen.group)
+    screen.strip = strip
+    app._show_screen(screen)
+    [shown] = panel.of(strip)
+    [term] = panel.of(view)
+    assert shown == {"transition": "fade", "out": False, "duration_ms": BEHIND_MS}
+    assert term["duration_ms"] == BEHIND_MS
+    panel.finish()
+    app._show_screen(app._screens.files)
+    assert panel.of(strip)[-1]["out"] is True
+    panel.finish()
+    app._show_screen(screen)
+    panel.finish()
+    app._close_session(session)
+    assert panel.of(strip)[-1]["out"] is True

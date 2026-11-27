@@ -1127,8 +1127,8 @@ class Config:
     # the program's.
     TERMINAL_CTRL_CLIPBOARD = True
 
-    # AI agent sessions (Tools > AI Agent Here / Ask AI Agent; agent and
-    # ask_agent). Each entry names an agent CLI you installed and signed in
+    # AI agent sessions (Tools > AI Agent / New AI Agent Here / Ask AI Agent;
+    # agent, new_agent and ask_agent). Each entry names an agent CLI you installed and signed in
     # to; XeFM runs it on a screen of its own in the active pane's folder -
     # a conversation XeFM draws, or a terminal session (terminal mode hands
     # it the terminal) - and hands it the xefm skill and the rules below.

@@ -204,6 +204,10 @@ def bindings() -> dict:
         'close_tab': ['Ctrl-W'],               # Close this pane's current tab
         'next_tab': ['Ctrl-PAGE_DOWN'],        # Show this pane's next tab
         'prev_tab': ['Ctrl-PAGE_UP'],          # Show this pane's previous tab
+        # Tabs move by dragging them along the strip (#1019); these are for
+        # a key of your own (unbound, in the command palette).
+        'move_tab_left': [],
+        'move_tab_right': [],
         'sync_current_to_other': [],           # Sync current pane directory to other pane
         'sync_other_to_current': [],           # Sync other pane directory to current pane
         'compare_selection': [],               # Show file and directory comparison options
@@ -274,19 +278,35 @@ def bindings() -> dict:
         # XeFM's terminal's own keys (#900): desktop chords only, set below,
         # since a program in it needs every key a terminal can deliver.
         'terminal.close': [],
-        # The screen switcher (#900) on Ctrl-`, VS Code's terminal toggle,
-        # from the panes and from inside a session alike. In terminal mode the
-        # screens are the AI agent conversations XeFM draws (#959), and
-        # Ctrl-` reaches XeFM from a terminal that sends it as CSI 96;5u
+        # Ctrl-`, VS Code's terminal toggle (#1019): from the panes to the
+        # screen used last, and from a session back to the panes. In terminal
+        # mode the screens are the AI agent conversations XeFM draws (#959),
+        # and Ctrl-` reaches XeFM from a terminal that sends it as CSI 96;5u
         # (Ghostty, kitty, WezTerm; PuiKit 1.32.2). Elsewhere it never
         # arrives - many terminals send Ctrl-Space's byte for it, or nothing
-        # - and the command palette opens Screens.
-        'screens': ['Ctrl-GRAVE'],
-        'terminal.screens': ['Ctrl-GRAVE'],
+        # - and the command palette has Switch Screen.
+        'switch_screen': ['Ctrl-GRAVE'],
+        'terminal.switch_screen': ['Ctrl-GRAVE'],
+        # Screens, the list of every session (#1019), is the overview rather
+        # than the way between screens: the status bar's session count opens
+        # it, as do the Tools menu and the palette.
+        'screens': [],
+        'terminal.screens': [],
+        # Another session of the kind on screen, and the tabs of that kind:
+        # desktop chords only, set below - a terminal program needs the rest.
+        'terminal.new': [],
+        'terminal.next_tab': [],
+        'terminal.prev_tab': [],
+        'terminal.move_tab_left': [],
+        'terminal.move_tab_right': [],
         # AI agent sessions (AGENTS, #880). '>': the prompt an agent's CLI
         # shows (Claude Code's). A glyph, so no preset's type-ahead takes it,
-        # and every terminal delivers it. ask_agent: Tools > Ask AI Agent.
+        # and every terminal delivers it. It goes back to the agent session
+        # used last; new_agent starts another (Tools > New AI Agent Here),
+        # as new_shell starts another shell. ask_agent: Tools > Ask AI Agent.
         'agent': ['>'],
+        'new_agent': [],
+        'new_shell': [],
         'ask_agent': [],
 
         # === Configuration ===
@@ -537,6 +557,11 @@ def bindings() -> dict:
             # binds the palette itself without one.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Command-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Command-W']
+            # A Mac terminal's new-tab and tab keys (Terminal, iTerm2), for
+            # the sessions of the kind on screen (#1019).
+            KEY_BINDINGS['terminal.new'] = ['Command-T']
+            KEY_BINDINGS['terminal.next_tab'] = ['Command-Shift-RIGHT_BRACKET']
+            KEY_BINDINGS['terminal.prev_tab'] = ['Command-Shift-LEFT_BRACKET']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
@@ -552,4 +577,8 @@ def bindings() -> dict:
             # key, since Ctrl-W is a shell's.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Ctrl-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Ctrl-Shift-W']
+            # Windows Terminal's new-tab and tab keys (#1019).
+            KEY_BINDINGS['terminal.new'] = ['Ctrl-Shift-T']
+            KEY_BINDINGS['terminal.next_tab'] = ['Ctrl-TAB']
+            KEY_BINDINGS['terminal.prev_tab'] = ['Ctrl-Shift-TAB']
     return KEY_BINDINGS

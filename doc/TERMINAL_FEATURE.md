@@ -3,7 +3,7 @@
 English \| [日本語](TERMINAL_FEATURE.ja.md)
 
 Some things XeFM runs need a terminal: the subshell (`subshell`, **Tools →
-Subshell Here**) and programs that draw a screen or read the keyboard, such as
+Terminal**, or **Subshell Here** in a terminal) and programs that draw a screen or read the keyboard, such as
 `vim`, `less` or a REPL. How XeFM gives them one depends on how it runs:
 
 - **In a terminal**, XeFM hands over the terminal it runs in, waits until the
@@ -41,38 +41,74 @@ an editor, is not stopped by XeFM quitting.
 
 ## In the desktop app: terminal sessions and screens
 
-**Subshell Here** starts your shell in the active pane's directory, in XeFM's
-terminal over the panes. A program marked `'terminal': True` opens the same
-way. Each is a terminal session, shown on a screen of its own.
+**Tools → Terminal** (`subshell`) starts your shell in the active pane's
+directory, in XeFM's terminal over the panes. A program marked
+`'terminal': True` opens the same way. Each is a terminal session, shown on
+a screen of its own.
 
 A *screen* is what fills the window: the file manager's (the panes) or a
 session's. A screen keeps what is open on it. A viewer you opened over the
 panes is still there when you come back from a terminal, so you can look at a
 file and a terminal by turns, switching between the two screens.
 
-- **Switch** with **Tools → Screens…** (`screens`, which works over a viewer
-  too, or `terminal.screens` from inside a session). The list holds the file
-  manager's screen, each session's, and last rows that start another shell,
-  or a session of each [AI agent](AI_AGENT_SESSIONS_FEATURE.md) you set up,
-  in the active pane's directory. Each row says what is on that screen: the
-  command running in a session - the title the program gives itself, as a
-  terminal's tab shows it - and the directory its shell is in now
-  (`make test - ~/src`, or `zsh - ~/src` at the prompt), or the viewer open
-  over the panes (`File manager - viewing notes.txt`). The screen you
-  are on comes first and the rest follow in the order you last used them,
-  with the cursor on the one you were on before, so `Enter` takes you back
-  there. A session you leave keeps running. Coming back to the file manager
-  re-reads the panes. The remove key (`remove_list_item`) ends the
-  highlighted session.
+Screens come in three groups: the file manager's, the terminal's (shells and
+terminal programs), and the [AI agents'](AI_AGENT_SESSIONS_FEATURE.md).
+Going to a group is one key; starting another session is a separate,
+deliberate step, so sessions do not pile up behind the panes unnoticed.
+
+- **Go to a group.** **Terminal** (`subshell`) goes back to the terminal
+  session you used last, and starts a shell only when there is none.
+  **AI Agent** (`agent`) does the same for the AI agent sessions.
+  **Switch Screen** (`switch_screen`, `terminal.switch_screen` inside a
+  session) goes from the file manager to the screen you used last, and from
+  any session back to the file manager. A session you leave keeps running.
+  Coming back to the file manager re-reads the panes.
+- **Tabs.** While a group has two sessions or more, a strip of tabs runs
+  across the top of its screens: one tab per session, in the order they were
+  started, the one on screen in front. Each tab starts with what the session
+  is - `$` a shell, `>` a terminal program, `✦` an AI agent - and, while the
+  pointer is over it, ends with `×`, which closes it (asking first only when
+  that would stop something).
+  Click a tab to go there, or use `terminal.next_tab` and `terminal.prev_tab`.
+  Drag a tab along the strip to move it: a line shows where it will go, and
+  it moves there when you let go (or use `terminal.move_tab_left` and
+  `terminal.move_tab_right`).
+  A tab whose session is waiting on you shows `⚠` in place of its icon, one
+  that has finished something since you last looked `✓`.
+- **Start another session.** **New Shell Here** (`new_shell`), or **New AI
+  Agent Here** (`new_agent`), starts one even when a session is open. From
+  inside a session, `terminal.new` or the `+` at the end of the tabs starts
+  another of the same kind. **Subshell Here** in the directory's context menu
+  starts a new shell in that directory.
+- **How many there are.** The status bar always shows how many sessions run,
+  `▣ 2 shells · 1 AI`. Click it to open Screens.
+- **Screens.** **Tools → Screens…** (`screens`, which works over a viewer too,
+  or `terminal.screens` from inside a session) lists every session, to go to,
+  close, rename or resume one. Each row says what runs in the session - the
+  title the program gives itself, as a terminal's tab shows it - and the
+  directory its shell is in now (`make test - ~/src`, or `zsh - ~/src` at the
+  prompt), with its kind, its state and when you last used it on the right.
+  The terminal's sessions come first, then the AI agents', each with the ones
+  waiting on you first and the rest in the order you last used them; the
+  cursor starts on the one you used last that is not on screen. Below them
+  are **Close N idle sessions**, which closes every session that is not in
+  the middle of something, the [AI conversations you
+  closed](AI_AGENT_SESSIONS_FEATURE.md#closing-loses-nothing), and rows that
+  start a new shell or a new AI agent session in the active pane's directory.
+  The remove key (`remove_list_item`) closes the highlighted session, and the
+  rename key (`rename_list_item`) gives it a name of your own, which its tab
+  shows too.
 - **When it ends.** `exit` in a shell, or a program that finishes, closes the
-  session and returns to the screen you were on before it, whether it was on
-  screen or not. `exit` closes a shell even when it passes on an error from
-  an earlier command, as cmd's `exit` does. A program that fails, or a shell
-  that ends before you typed anything into it (it could not start), keeps its
-  last screen up so you can read it; `Enter` or `Esc` closes it. To start a
-  shell again, open a new one (**Subshell Here**).
-- **Close it** with `terminal.close` while it still runs. XeFM asks first,
-  since that stops whatever runs there.
+  session, whether it was on screen or not. The next tab of its group comes on
+  (the one before it when it was the last), or the file manager when it was
+  the group's only session. `exit` closes a shell even when it passes on an
+  error from an earlier command, as cmd's `exit` does. A program that fails,
+  or a shell that ends before you typed anything into it (it could not start),
+  keeps its last screen up so you can read it; `Enter` or `Esc` closes it. To
+  start a shell again, open a new one (**New Shell Here**).
+- **Close it** with `terminal.close`. XeFM asks first only when that would
+  stop something: a program still running, or a shell in the middle of a
+  command. A shell waiting at its prompt just closes.
 - **Quitting XeFM** asks first only when a session is busy: a program
   running, or a shell in the middle of a command. A shell waiting at its
   prompt just ends.
@@ -128,9 +164,9 @@ While a session is hidden, the status bar shows what needs your attention: a
 command that ran for 10 seconds or more has finished or failed, a program
 failed, or a program sent a notification (OSC 9 or OSC 777), as Claude Code
 and other tools can. A program that reports its progress (OSC 9;4) shows it
-there too. Click it to bring the session back.
+there too, and on the session's tab. Click it to bring the session back.
 
-Shell integration also tells the switcher the command line running in a
+Shell integration also tells Screens the command line running in a
 session. Without it, macOS and Linux still show the name of the program
 running there; on Windows, the title the program sets.
 
@@ -139,7 +175,9 @@ running there; on Windows, the title the program sets.
 XeFM in a terminal does not draw a second terminal inside itself. The subshell
 and terminal programs get the terminal XeFM runs in, and you return to XeFM
 when they exit. There are no terminal sessions and no screens to switch
-between, so **Screens** is not in the menu or the command palette.
+between, so **Screens** is in the menu and the command palette only with an
+[AI agent conversation XeFM draws](AI_AGENT_SESSIONS_FEATURE.md#conversations-drawn-by-xefm)
+set up.
 
 This is the one difference between the two: the desktop app can keep a shell
 running behind the panes, and XeFM in a terminal cannot. To work in parallel
@@ -157,7 +195,7 @@ state at the moment it runs, and acts on its file manager:
 xefmctl state                                  # what XeFM shows now
 cp $(xefmctl pane selected) /tmp               # names without spaces
 xefmctl pane cd .                              # bring the active pane here
-xefmctl view build.log                         # Screens takes you back to compare
+xefmctl view build.log                         # Switch Screen takes you back to compare
 xefmctl screen show files
 ```
 

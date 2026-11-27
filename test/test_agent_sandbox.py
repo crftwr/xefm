@@ -258,7 +258,7 @@ def test_a_sessions_token_lives_as_long_as_the_session(monkeypatch, tmp_path):
     app._remote_handle = lambda req: {"ok": True, "items": []}
     app._agent_channel = XeFMApp._agent_channel.__get__(app)
     app.open_agent()
-    app.open_agent()
+    app.new_agent()
     server = app._mcp_server
     try:
         first, second = list(app._sessions)

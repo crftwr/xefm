@@ -351,8 +351,8 @@ AGENT_PROMPTS = {  # requests listed in Ask AI Agent...
 }
 ```
 
-The agents **Tools → AI Agent Here** (`agent`) and **Ask AI Agent…**
-(`ask_agent`) start, and what they may do. See
+The agents **Tools → AI Agent** (`agent`), **New AI Agent Here**
+(`new_agent`) and **Ask AI Agent…** (`ask_agent`) start, and what they may do. See
 [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md).
 
 ### File Associations

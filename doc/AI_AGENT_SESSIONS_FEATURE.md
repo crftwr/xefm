@@ -12,10 +12,11 @@ show you what it found, and ask you before it changes a file.
 
 | Action | Menu |
 |--------|------|
-| `agent` | Tools → AI Agent Here |
+| `agent` | Tools → AI Agent |
+| `new_agent` | Tools → New AI Agent Here |
 | `ask_agent` | Tools → Ask AI Agent… |
 
-`agent` is `>` in every keymap preset, the prompt an agent's command line shows; `ask_agent` ships unbound. To change them, see [Key Bindings](KEY_BINDINGS_FEATURE.md) and [Keymap Presets](KEYMAP_PRESETS_FEATURE.md).
+`agent` is `>` in every keymap preset, the prompt an agent's command line shows; `new_agent` and `ask_agent` ship unbound. To change them, see [Key Bindings](KEY_BINDINGS_FEATURE.md) and [Keymap Presets](KEYMAP_PRESETS_FEATURE.md).
 
 ## What you need
 
@@ -28,31 +29,61 @@ CLI) are set up out of the box; other agents are on the wiki (see
 
 ## Opening a session
 
-- **AI Agent Here** (`agent`) starts the agent in the active pane's
-  directory. Ask it anything; it reads what XeFM shows when you say "this
-  file" or "these".
+- **AI Agent** (`agent`) goes back to the agent session you used last. With
+  none open, it starts the agent in the active pane's directory. Ask it
+  anything; it reads what XeFM shows when you say "this file" or "these".
+- **New AI Agent Here** (`new_agent`) starts another session in the active
+  pane's directory, even when one is open.
 - **Ask AI Agent…** (`ask_agent`) asks for a request first - one of your
   [saved requests](#saved-requests-agent_prompts), or one you type - then
   starts the agent with it, the directory, and the selected items (or the
   item under the cursor).
 
-Both are off in the menu while no agent in `AGENTS` is installed (its
+They are off in the menu while no agent in `AGENTS` is installed (its
 program is not on `PATH`); from a key or the command palette, the log pane
 says which program is missing. They come on once it is installed, with no
 restart.
 
-To turn agent sessions off, set `AGENTS = []` in `config.py`: the two
-items leave the menu, no agent can start, and `agent` and `ask_agent` only
-say in the log pane that agents are off. To free the `>` key as well, unbind
+To turn agent sessions off, set `AGENTS = []` in `config.py`: the
+items leave the menu, no agent can start, and `agent`, `new_agent` and
+`ask_agent` only say in the log pane that agents are off. To free the `>` key as well, unbind
 `agent` (see [Key Bindings](KEY_BINDINGS_FEATURE.md)).
 
-With more than one agent set up, XeFM asks which one. The **Screens…**
-switcher also has a row for each, **New Claude Code in ~/...**, beside **New
-shell in ~/...**. The session gets a
-screen of its own, like any terminal session: **Screens…** switches between
-it and the file manager, and it keeps running while you are away. In the
-screen switcher, its row shows what the agent calls itself in its title
-(`✳ Claude Code`).
+With more than one agent set up, XeFM asks which one. **Screens…** also
+has a row for each, **New Claude Code in ~/...**, beside **New shell in
+~/...**. The session gets a screen of its own, like any terminal session,
+and keeps running while you are away. The AI agent sessions are a group of
+their own, apart from the terminal's: `agent` comes back to them, **Switch
+Screen** goes between them and the file manager, and with two or more open a
+strip of tabs runs across the top (see [Terminal](TERMINAL_FEATURE.md#in-the-desktop-app-terminal-sessions-and-screens)).
+
+### A name for each session
+
+A session is named after what it is about, so a list of them says at a
+glance which one to go back to and which one can go. Once its first turn is
+over, it takes the title the agent gives the conversation, where the agent
+gives one, or else the start of your first request (**Fix the login bug**).
+For an agent in a terminal session, it is the first title the agent sets
+that says more than its own name. The name then stays: it is what the
+session's tab and its row in **Screens…** show, and only you change it, with
+the rename key (`rename_list_item`) in **Screens…**. What the agent is doing
+now is shown beside it.
+
+### Closing loses nothing
+
+A conversation [drawn by XeFM](#conversations-drawn-by-xefm) that you close
+is kept, and **Screens…** lists it under the sessions as **Resume Fix the
+login bug - ~/src**, with the agent and when you closed it. Pick it to start
+the agent on that conversation again, in its folder. One closed in this run
+comes back with its transcript; one from an earlier run picks up the
+conversation with an empty transcript, since the agent has the rest. The
+remove key forgets one. The last 20 are kept.
+
+So closing an agent that is not in the middle of a turn does not ask: `/exit`,
+`terminal.close`, `Ctrl-D` on an empty message, the remove key in
+**Screens…**, and **Close N idle sessions** there all close it at once. An
+agent in a terminal session runs its own program, which XeFM cannot take
+back to a conversation; closing it still asks first.
 
 For an agent in a terminal session, terminal mode hands it XeFM's terminal
 and waits, as it does for the subshell. While the agent runs there, XeFM answers what it asks
@@ -150,9 +181,10 @@ mode you set stay set if the agent is started again.
   **Approve** (it goes on, asking before tools as usual), **Approve, Accept
   Edits** (file changes then go ahead without asking), or **Keep Planning**.
   No button is selected at first here either, and Esc keeps planning.
-- **Back to the session.** **AI Agent Here** in the same folder goes back to
-  the session there instead of starting another; **Screens…** lists it too,
-  in terminal mode as well. While you are away, the status bar says when the
+- **Back to the session.** **AI Agent** goes back to the session you used
+  last, and **Ask AI Agent…** sends a request to the session already open in
+  that folder instead of starting another; **Screens…** lists them, in
+  terminal mode as well. While you are away, the status bar says when the
   agent is asking you something or has finished.
 - **Links.** A link in the agent's reply to a file or folder on this
   computer opens it in the active pane.

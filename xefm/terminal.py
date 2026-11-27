@@ -23,8 +23,9 @@ from xefm.log_manager import getLogger
 
 logger = getLogger("Terminal")
 
+from puikit.event import EventType
+
 try:
-    from puikit.event import EventType
     from puikit.widgets.terminal_view import TerminalView as _PuiKitTerminalView
     from puikit.widgets.terminal_view import available as _terminal_available
 except ImportError:  # a PuiKit without the widget
@@ -39,6 +40,53 @@ CONTEXT = "terminal"
 PROMPT_START, INPUT_START, OUTPUT_START, COMMAND_END = 1, 2, 3, 4
 PROGRESS_REMOVE, PROGRESS_SET, PROGRESS_ERROR, PROGRESS_INDETERMINATE, PROGRESS_PAUSE = \
     0, 1, 2, 3, 4
+
+
+#: The actions that move between screens from inside one (#1019), as both
+#: session views (this terminal, the drawn agent chat) take them: back to the
+#: file manager, another session of the same group, the next or previous tab.
+SCREEN_ACTIONS = ("terminal.switch_screen", "terminal.new",
+                  "terminal.next_tab", "terminal.prev_tab",
+                  "terminal.move_tab_left", "terminal.move_tab_right")
+
+
+def screen_action_handlers(run: "Callable[[str], bool] | None") -> dict:
+    """:data:`SCREEN_ACTIONS` as an action table, each handed to ``run``."""
+    if run is None:
+        return {}
+    return {name: (lambda name=name: run(name)) for name in SCREEN_ACTIONS}
+
+
+def strip_event(view, event) -> bool:
+    """Whether ``event`` was a mouse event for the screen strip above ``view``
+    (its local y above 0), handed to the app's ``on_strip_event``. A press
+    there keeps the gesture - the drags, the release and the click it brings
+    - wherever the pointer goes, so dragging a tab never selects text in the
+    terminal below."""
+    handler = getattr(view, "on_strip_event", None)
+    if handler is None or getattr(event, "x", None) is None \
+            or getattr(event, "y", None) is None:
+        return False
+    kind = event.type
+    held = getattr(view, "_strip_held", None)
+    if held == "press" and kind in (EventType.MOUSE_DRAG, EventType.MOUSE_UP):
+        if kind is EventType.MOUSE_UP:
+            view._strip_held = "click"  # the click the release brings is ours too
+        handler(event)
+        return True
+    if held == "click" and kind is EventType.MOUSE_CLICK:
+        view._strip_held = None
+        handler(event)
+        return True
+    view._strip_held = None
+    if event.y >= 0 or kind not in (EventType.MOUSE_CLICK, EventType.MOUSE_DOWN,
+                                    EventType.MOUSE_UP, EventType.MOUSE_DRAG,
+                                    EventType.MOUSE_SCROLL):
+        return False
+    if kind is EventType.MOUSE_DOWN:
+        view._strip_held = "press"
+    handler(event)
+    return True
 
 
 def unavailable(config=None) -> str | None:
@@ -147,6 +195,11 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         #: not start.
         self.typed = False
         self.exit_hint = "press Enter to close"
+        #: Set by the app (#1019): the screen strip's clicks - a mouse event
+        #: above this view's top edge, where the strip is drawn - and the
+        #: actions that move between screens (:data:`SCREEN_ACTIONS`).
+        self.on_strip_event: Callable[[object], bool] | None = None
+        self.on_screen_action: Callable[[str], bool] | None = None
 
     @property
     def running(self) -> bool:
@@ -202,6 +255,7 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         table = {"terminal.close": lambda: self.on_close_request(self)}
         if self.on_screens_request is not None:
             table["terminal.screens"] = self.on_screens_request
+        table.update(screen_action_handlers(self.on_screen_action))
         table.update(surface_actions.handlers())
         return table
 
@@ -248,6 +302,8 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
     def handle_event(self, event) -> bool:
         if self.closing:
             return True  # sliding out: the layer is leaving
+        if strip_event(self, event):
+            return True
         if event.type is EventType.KEY:
             action = find_action_for_event(event, context=CONTEXT)
             if action is not None and self.takes_binding(event, action) \

@@ -108,6 +108,8 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `close_tab` | Close this pane's current tab | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` |
 | `next_tab` | Show this pane's next tab | `Ctrl-PAGE_DOWN` | `Ctrl-TAB` | `Ctrl-PAGE_DOWN` | `Ctrl-PAGE_DOWN` |
 | `prev_tab` | Show this pane's previous tab | `Ctrl-PAGE_UP` | `Ctrl-Shift-TAB` | `Ctrl-PAGE_UP` | `Ctrl-PAGE_UP` |
+| `move_tab_left` | Move this pane's current tab one place left | — | — | — | — |
+| `move_tab_right` | Move this pane's current tab one place right | — | — | — | — |
 | `sync_current_to_other` | Go to the other pane's directory | `O` | — | — | — |
 | `sync_other_to_current` | Send this directory to the other pane | `Shift-O` | — | — | — |
 | `compare_selection` | Select by comparison with the other pane | `W` | `Shift-F2` | — | — |
@@ -131,8 +133,10 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
 | `programs` | Run an external program | `X` | — | — | — |
-| `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `agent` | Open an AI agent session in this directory | `>` | `>` | `>` | `>` |
+| `subshell` | Go to the terminal session used last, or open a subshell in this directory | `Shift-X` | — | — | `s` |
+| `new_shell` | Open another shell session in this directory | — | — | — | — |
+| `agent` | Go to the AI agent session used last, or open one in this directory | `>` | `>` | `>` | `>` |
+| `new_agent` | Open another AI agent session in this directory | — | — | — | — |
 | `ask_agent` | Ask an AI agent about the selection | — | — | — | — |
 | `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
 | `extensions` | List the extension packages and whether they loaded | — | — | — | — |
@@ -154,7 +158,8 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `reset_font_size` | Put the text back to FONT_SIZE | — | — | — | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` | `Ctrl-K` | `:`, `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — | — | — | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — | — | — | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — | — | — | — |
 | `reload_config` | Re-read config.py and apply it live | — | — | — | — |
 
@@ -273,7 +278,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -304,7 +310,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -336,7 +343,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -378,7 +386,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -405,7 +414,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -415,6 +425,7 @@ viewer only.
 |---|---|---|
 | `remove_list_item` | Remove the highlighted entry from the list | `Shift-DELETE` |
 | `describe_list_item` | Show help for the highlighted entry | `F1` |
+| `rename_list_item` | Rename the highlighted entry | `F2` |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
@@ -427,7 +438,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -455,7 +467,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -464,7 +477,13 @@ viewer only.
 | Action | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | — |
-| `terminal.screens` | Switch to the file manager or another terminal session | `Ctrl-GRAVE` |
+| `terminal.screens` | List every session, to go to, close, rename or resume one | — |
+| `terminal.switch_screen` | Go back to the file manager | `Ctrl-GRAVE` |
+| `terminal.new` | Open another session of this kind | — |
+| `terminal.next_tab` | Go to the next session of this kind | — |
+| `terminal.prev_tab` | Go to the previous session of this kind | — |
+| `terminal.move_tab_left` | Move this session's tab one place left | — |
+| `terminal.move_tab_right` | Move this session's tab one place right | — |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
@@ -477,7 +496,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -497,7 +517,8 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every session, to go to, close, rename or resume one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 

@@ -908,24 +908,40 @@ _DETAILS: dict[str, str] = {
     "subshell": (
         "Opens a shell in the active pane's directory. In a terminal XeFM "
         "hands the shell the terminal it runs in, and exiting it returns to "
-        "XeFM, which re-reads the panes. The desktop app starts a terminal "
-        "session for it over the panes: `exit` closes it, and it can be hidden "
-        "to keep running behind them. The shell is `SUBSHELL` from "
+        "XeFM, which re-reads the panes. The desktop app goes back to the "
+        "terminal session you used last; only when there is none does it "
+        "start a shell, over the panes: `exit` closes it, and it can be "
+        "hidden to keep running behind them. `new_shell` starts another one "
+        "even when a session is open. The shell is `SUBSHELL` from "
         "`config.py`, else your `$SHELL`, and it gets the `XEFM_*` variables; "
         "`xefmctl` asks XeFM for its state as it is now. Local directories "
         "only."),
+    "new_shell": (
+        "Starts another shell session in the active pane's directory, even "
+        "when one is open. Desktop app only."),
+    "switch_screen": (
+        "From the file manager, goes to the screen you used last - a "
+        "terminal session or an AI agent session; from there, back to the "
+        "file manager. With no session yet it opens Screens."),
     "screens": (
-        "Switches between screens: the file manager's and each terminal "
-        "session's - shells and terminal programs. A screen keeps what is "
-        "open on it, so a viewer stays over the panes while you look at a "
-        "terminal and back, which is how a file and a terminal are compared. "
-        "The list shows the screen on now first and the rest most recently "
-        "used first, each with what is on it, with the cursor on the screen "
-        "you were on before, so `Enter` goes back there. The last row starts "
-        "another shell in the active pane's directory, and the remove key "
-        "ends the highlighted session. Works over a viewer too. Desktop app "
-        "only: in a terminal, XeFM hands its terminal to the subshell "
-        "instead."),
+        "Lists every session: the terminal's - shells and terminal programs "
+        "- and the AI agents', each with what runs in it, where, and when you "
+        "last used it, the ones waiting on you first. `Enter` goes to one, "
+        "the remove key closes it and the rename key renames it. Below them "
+        "are a row that closes every idle session at once, the AI "
+        "conversations you closed, which pick up where they left off, and "
+        "rows that start a new shell or a new AI agent session. Works over a "
+        "viewer too. In a terminal it lists the AI agent conversations XeFM "
+        "draws."),
+    "agent": (
+        "Goes back to the AI agent session you used last. When there is "
+        "none, starts one of the agents in `AGENTS` in the active pane's "
+        "folder, asking which when more than one is installed. `new_agent` "
+        "starts another one even when a session is open."),
+    "new_agent": (
+        "Starts another AI agent session in the active pane's folder, even "
+        "when one is open, asking which agent when more than one is "
+        "installed."),
     "edit_config": (
         "Opens `~/.xefm/config.py` in your `TEXT_EDITOR`, creating it on first "
         "use. In a terminal the configuration reloads when the editor exits; "
@@ -1145,6 +1161,8 @@ _FILER_ACTIONS = [
     _a("close_tab", FILER, "Close this pane's current tab"),
     _a("next_tab", FILER, "Show this pane's next tab"),
     _a("prev_tab", FILER, "Show this pane's previous tab"),
+    _a("move_tab_left", FILER, "Move this pane's current tab one place left"),
+    _a("move_tab_right", FILER, "Move this pane's current tab one place right"),
     # Panes
     _a("sync_current_to_other", FILER, "Go to the other pane's directory"),
     _a("sync_other_to_current", FILER, "Send this directory to the other pane"),
@@ -1190,10 +1208,16 @@ _FILER_ACTIONS = [
     _a("choose_keymap", COMMON, "Choose the keymap preset"),
     # External programs and configuration
     _a("programs", FILER, "Run an external program"),
-    _a("subshell", FILER, "Open a subshell in this directory"),
+    _a("subshell", FILER,
+       "Go to the terminal session used last, or open a subshell in this directory"),
+    _a("new_shell", FILER, "Open another shell session in this directory"),
     _a("screens", COMMON,
-       "Switch between the file manager and the terminal sessions"),
-    _a("agent", FILER, "Open an AI agent session in this directory"),
+       "List every session, to go to, close, rename or resume one"),
+    _a("switch_screen", COMMON,
+       "Switch between the file manager and the screen used last"),
+    _a("agent", FILER,
+       "Go to the AI agent session used last, or open one in this directory"),
+    _a("new_agent", FILER, "Open another AI agent session in this directory"),
     _a("ask_agent", FILER, "Ask an AI agent about the selection"),
     _a("edit_config", COMMON, "Edit config.py, then reload it"),
     _a("reload_config", COMMON, "Re-read config.py and apply it live"),
@@ -1226,7 +1250,13 @@ _TEXT_VIEWER_ACTIONS = [
     _a("terminal.close", TERMINAL,
        "Close the terminal and return to the panes, stopping a program still running"),
     _a("terminal.screens", TERMINAL,
-       "Switch to the file manager or another terminal session"),
+       "List every session, to go to, close, rename or resume one"),
+    _a("terminal.switch_screen", TERMINAL, "Go back to the file manager"),
+    _a("terminal.new", TERMINAL, "Open another session of this kind"),
+    _a("terminal.next_tab", TERMINAL, "Go to the next session of this kind"),
+    _a("terminal.prev_tab", TERMINAL, "Go to the previous session of this kind"),
+    _a("terminal.move_tab_left", TERMINAL, "Move this session's tab one place left"),
+    _a("terminal.move_tab_right", TERMINAL, "Move this session's tab one place right"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",
@@ -1447,6 +1477,12 @@ _FILTER_LIST_ACTIONS = [
     _a("describe_list_item", FILTER_LIST,
        "Show help for the highlighted entry",
        default_keys=("F1",)),
+    # Named for the operation like the two above. F2 is the rename key of
+    # Windows Explorer and of most file managers, and a terminal sends it.
+    # Offered only by a picker whose rows can be renamed (Screens, #1019).
+    _a("rename_list_item", FILTER_LIST,
+       "Rename the highlighted entry",
+       default_keys=("F2",)),
 ]
 
 _SEARCH_ACTIONS = [

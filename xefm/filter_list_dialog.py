@@ -100,6 +100,10 @@ _REMOVE_ACTION = "remove_list_item"
 #: given ``to_help``, the way the remove key needs ``on_remove``.
 _DESCRIBE_ACTION = "describe_list_item"
 
+#: The key that renames the highlighted row - offered only by a picker given
+#: ``on_rename`` (Screens, #1019).
+_RENAME_ACTION = "rename_list_item"
+
 #: Braille spinner frames for the title's background-loading indicator.
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -184,6 +188,7 @@ class FilterListDialog(FocusContainer, Widget):
         to_marks: Callable[[Any], list] | None = None,
         placeholder: str = "",
         field_label: str = "",
+        on_rename: Callable[[Any], bool] | None = None,
     ):
         self.all_items = list(items)
         self.to_label = to_label
@@ -206,6 +211,11 @@ class FilterListDialog(FocusContainer, Widget):
         #: a list of remembered rows, and wrong for the Drives picker, where the
         #: same key disconnects a share or ejects a disk.
         self.remove_label = remove_label
+        #: Optional rename hook: called with the highlighted value when the
+        #: ``rename_list_item`` key is pressed; True when it takes the row
+        #: (it closes the dialog first, to ask for the name). ``None`` leaves
+        #: the dialog with no rename key.
+        self.on_rename = on_rename
         #: Optional second column, right-aligned on every row (see the module
         #: docstring). With it the list draws widget rows instead of plain text.
         self.to_right = to_right
@@ -402,6 +412,10 @@ class FilterListDialog(FocusContainer, Widget):
                 if keys:
                     parts.append(
                         f"{format_key_for_display(keys[0])} {self.remove_label}")
+            if self.on_rename is not None:
+                keys, _ = get_keys_for_action(_RENAME_ACTION, FILTER_LIST)
+                if keys:
+                    parts.append(f"{format_key_for_display(keys[0])} rename")
             parts.append("Esc cancel")
             self._hint_cache = " · ".join(parts)
         return self._hint_cache
@@ -698,6 +712,14 @@ class FilterListDialog(FocusContainer, Widget):
                 # than by key is what keeps a rebind working here, and what
                 # keeps a plain Delete typing in the query field.
                 self.remove_selected()
+            elif (self.on_rename is not None and self.filtered
+                  and is_action_for_event(event, _RENAME_ACTION,
+                                          context=FILTER_LIST)):
+                # By action, like the remove key: a rebind works, and the
+                # key never reaches the query field.
+                value = self.filtered[self.list.selected]
+                self._close()
+                self.on_rename(value)
             elif (self.to_help is not None
                   and is_action_for_event(event, _DESCRIBE_ACTION,
                                           context=FILTER_LIST)):
@@ -752,6 +774,7 @@ def show_filter_list(
     placeholder: str = "",
     field_label: str = "",
     z: int = 70,
+    on_rename: Callable[[Any], bool] | None = None,
 ) -> FilterListDialog:
     """Push a modal :class:`FilterListDialog` over ``panel`` and return it.
 
@@ -789,6 +812,10 @@ def show_filter_list(
     the scan runs. For rows that need a network round-trip — the drives picker's
     S3 buckets — so the dialog never waits on them.
 
+    ``on_rename(value)`` opts the picker into the rename key
+    (``rename_list_item``): the dialog closes and hands over the highlighted
+    value, for the caller to ask for the new name.
+
     ``to_right``, ``to_marks``, ``to_detail`` and ``to_help`` describe each row
     beyond its label — a right-aligned column, colored marks before it, a
     one-line detail row for the highlighted entry, and a Markdown help page for
@@ -806,7 +833,7 @@ def show_filter_list(
     dialog = FilterListDialog(
         items, title=title, to_label=to_label, on_accept=on_accept, on_cancel=on_cancel,
         on_accept_text=on_accept_text, on_remove=on_remove,
-        remove_label=remove_label,
+        remove_label=remove_label, on_rename=on_rename,
         ellipsis=ellipsis, elide_where=elide_where, load_more=load_more,
         to_right=to_right, to_marks=to_marks, to_detail=to_detail, to_help=to_help,
         placeholder=placeholder, field_label=field_label,

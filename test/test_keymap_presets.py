@@ -763,11 +763,13 @@ class InTheApp(unittest.TestCase):
         try:
             self.app.config.AGENTS = [{"name": "Nope", "command": ["no-such-agent-xyz"]}]
             items = labels()
-            self.assertIn("AI Agent Here", items)  # not installed: there, greyed
+            self.assertIn("AI Agent", items)  # not installed: there, greyed
+            self.assertIn("New AI Agent Here", items)
             self.assertIn("Ask AI Agent…", items)
             self.app.config.AGENTS = []
             items = labels()
-            self.assertNotIn("AI Agent Here", items)
+            self.assertNotIn("AI Agent", items)
+            self.assertNotIn("New AI Agent Here", items)
             self.assertNotIn("Ask AI Agent…", items)
             self.assertIn("Subshell Here", items)
         finally:

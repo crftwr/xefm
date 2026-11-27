@@ -105,9 +105,10 @@ both modes):
   hide the session's group when it lands, re-read the panes.
 - terminal → terminal, or no motion: at once.
 
-`_close_session` forgets the session; when its screen is on and the screen
-before it is the file manager it fades out first, otherwise the switch to
-the screen before is at once. Then the group goes, `view.close()` (a view
+`_close_session` forgets the session; when its screen is on and what comes
+after it (`ScreenManager.after_close`: the neighbouring tab in its group,
+else the file manager, #1019) is the file manager it fades out first,
+otherwise the switch is at once. Then the group goes, `view.close()` (a view
 closed under a running child would start a fresh one on its next draw),
 the panes re-read and `on_done(view.exit_code)` runs.
 
@@ -177,22 +178,17 @@ clears its `attention`.
 
 ## The switcher
 
-`screens` (common, so viewers run it through `surface_actions`) and
-`terminal.screens` (terminal) open one list and share one key, Ctrl-` in
-both desktop apps (VS Code's terminal toggle); the terminal takes it because
-the action is `terminal.*` (`TerminalView.takes_binding`). There is no
-default in the common table: terminal mode has no screens to switch.
+Screens is no longer the switcher: since #1019 the way between screens is
+the group keys, the strip's tabs and `switch_screen`, and Screens is the
+overview of every session. See
+[SCREEN_GROUPS_IMPLEMENTATION.md](SCREEN_GROUPS_IMPLEMENTATION.md). What a
+row says is unchanged:
 
-Rows: `ScreenManager.recent()` (the screen on now first), then "New shell".
-The cursor starts on row 1 - the screen before this one, or "New shell" with
-no session - so Enter flips back. A row is `_screen_label`: the file manager
-or `Session.label`, then `viewing NAME` when a viewer is open on that
-screen. `label` is `activity` (else the shell's program, `zsh`, or a
-program session's name) and `directory`; a name given with `name=`
-(`named`) comes first. Rows that would read the same take
-`Session.full_label` (name, `activity`, `directory`: `zsh 2 - ~/src`), so
-two idle shells in one directory stay apart. The file manager and "New shell"
-refuse the remove key.
+`Session.label` is `activity` (else the shell's program, `zsh`, or a program
+session's name) and `directory`; a name given with `name=` (`named`) comes
+first, and a title (#1019) before everything. Rows that would read the same
+take `Session.full_label` (name, title, `activity`, `directory`:
+`zsh 2 - ~/src`), so two idle shells in one directory stay apart.
 
 `activity`, first that answers:
 
@@ -214,8 +210,6 @@ which the zsh and bash integration sends at every prompt) as a path -
 `host:/path` for another machine - else `cwd`, where the session started.
 `TerminalSession.cwd` stays the start directory; `.directory` is the
 current one, and `xefmctl terminal-session list` prints it.
-
-A second press of the key as "accept" (flip in key, key) is left for later.
 
 ## The public API
 

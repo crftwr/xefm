@@ -36,15 +36,22 @@ tabs.
 Once a pane has more than one tab, a strip appears above its path:
 
 ```
- 1 src   2 docs   3 ⌕ TODO
+ ▸ src ×   ▸ doc ×   ⌕ TODO ×   +
  ~/projects/xefm/doc
 ```
 
-The current tab is highlighted. Click a tab to switch to it. A pane with one
-tab shows no strip, so it takes no extra space in a terminal.
+The current tab is highlighted. Click a tab to switch to it, its `×` (shown
+while the pointer is over the tab) to close it, and the `+` after the tabs to open another. Drag a tab along the
+strip to move it: a line shows where it will go, and it moves there when you
+let go (or use `move_tab_left` and `move_tab_right`). A pane with one tab
+shows no strip, so it takes no extra space in a terminal. The strip looks
+like the tabs of [terminal and AI agent sessions](TERMINAL_FEATURE.md); in
+the desktop app its tabs are a little taller than a line.
 
-Each label is the directory's name. A search shows as `⌕ query` and an
-imported list as `[title]`. Labels are shortened when they don't all fit.
+Each tab starts with what it shows: `▸` a directory, `▣` an archive, `⌕` a
+search (labelled with its query) and `≡` an imported list (`[title]`).
+The label is the directory's name. Labels are shortened when they don't all
+fit.
 
 ## What a tab keeps
 

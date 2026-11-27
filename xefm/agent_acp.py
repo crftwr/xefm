@@ -350,6 +350,12 @@ class AcpClient(RpcClient):
             conv.permission_mode = str(update.get("currentModeId") or conv.permission_mode)
         elif what == "config_option_update":
             self._have_options(update.get("configOptions"))
+        elif what == "session_info_update":
+            # The agent's title for the conversation (#1019): it names the
+            # session in XeFM, if it comes before XeFM named it.
+            title = update.get("title")
+            if isinstance(title, str) and title.strip():
+                conv.title = title.strip()
         elif what == "usage_update":
             conv.context_tokens = int(update.get("used") or 0)
             conv.context_window = int(update.get("size") or 0)

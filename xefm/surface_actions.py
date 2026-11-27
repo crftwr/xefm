@@ -21,8 +21,9 @@ APP_WIDE = frozenset({
     "increase_font_size", "decrease_font_size", "reset_font_size",
     "toggle_color_scheme", "choose_keymap", "reload_config", "edit_config",
     # The screen switcher (#953): from a viewer, another screen is a switch
-    # away; the viewer stays where it is.
-    "screens",
+    # away; the viewer stays where it is. And the switch to the screen used
+    # last (#1019).
+    "screens", "switch_screen",
 })
 
 _run: Callable[[str], None] | None = None

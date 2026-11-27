@@ -63,11 +63,11 @@ class TestBackendGatedRows(HelpMarkdownCase):
 
     def test_subshell_row_is_present_in_desktop_mode(self):
         # Desktop mode runs the shell as a terminal session (#900).
-        self.assertIn("Open a shell in the current directory",
+        self.assertIn("Go to the terminal sessions, or open a shell here",
                       self.desktop_help())
 
     def test_subshell_row_is_present_in_the_terminal(self):
-        self.assertIn("Open a shell in the current directory",
+        self.assertIn("Go to the terminal sessions, or open a shell here",
                       self.terminal_help())
 
     def test_gating_only_removes_rows(self):
