@@ -106,8 +106,14 @@ never taken for `module:name`.
 - `sessions/settings-<name>.json`: the entry's `settings`, else
   `CLAUDE_DEFAULT_SETTINGS` for a restricted entry (deny `rm`, `rmdir`,
   `unlink`, `shred`, `mv`, `trash`, `srm`, `git clean`, `xefmctl delete`),
-  else `{}`.
-
+  else `{}`. For the `claude-code` preset without the entry's own
+  `settings`, `_with_skills_readable` adds `permissions.allow`
+  `Read(//<folder>/**)` for `plugin/` and `user-plugin/`, as written and with
+  links resolved (Claude Code checks both): they are outside the session's
+  folder, so every reference a skill names was asked about. A Read rule
+  widens no sandbox (`test_agent_sandbox` holds that the allow list is only
+  these); on Windows the path is written `//c/...`, which is not yet checked
+  against a real Claude Code there.
 - `user-plugin/`: the user's own skills (below), a plugin of their own.
 
 The placeholders' values (`{plugin_dir}`, `{skills_dir}`, `{skill_dir}`,

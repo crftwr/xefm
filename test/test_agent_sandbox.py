@@ -84,7 +84,15 @@ def test_nothing_xefm_sends_touches_a_sandbox(preset, drawn, restrict, tmp_path)
             continue
         assert not any(w in arg.lower() for w in SANDBOX_WORDS), arg
     settings = json.loads(pathlib.Path(values["{settings_file}"]).read_text())
-    assert set(settings) <= {"permissions"} and set(settings.get("permissions", {})) <= {"deny"}
+    assert set(settings) <= {"permissions"}
+    assert set(settings.get("permissions", {})) <= {"deny", "allow"}
+    # What is allowed is reading the skills XeFM handed the session, no more:
+    # a Read rule widens no sandbox (it reads everywhere already; an Edit rule
+    # would widen what it may write).
+    handed = {f"Read({agents._claude_path_rule(p)}/**)"
+              for h in (values["{plugin_dir}"], values["{user_plugin_dir}"])
+              for p in (h, os.path.realpath(h))}
+    assert set(settings.get("permissions", {}).get("allow", [])) <= handed
     assert not any(w in f"{k}={v}".lower() for k, v in env.items()
                    for w in ("sandbox", "yolo", "bypass"))
     if preset == agents.CODEX and drawn:

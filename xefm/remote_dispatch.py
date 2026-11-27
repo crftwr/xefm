@@ -49,6 +49,7 @@ import sys
 import tempfile
 import threading
 import unicodedata
+from pathlib import Path as _FsPath
 from typing import Any
 
 from xefm import remote_commands as T
@@ -1527,6 +1528,104 @@ def _c_action_show(app, req):
     return ok([dict(record, text=text)])
 
 
+def _ext_layout():
+    from xefm import extensions as ext
+    from xefm.config import config_manager
+    return ext.Layout(config_manager.config_dir)
+
+
+def _lines(lines, **extra) -> dict:
+    """Lines of a CLI's output as items, one ``text`` each."""
+    return ok([{"text": line} for line in lines], **extra)
+
+
+def _c_ext_list(app, req):
+    from xefm import extension_cli
+    layout = _ext_layout()
+    rows = extension_cli.list_rows(layout)
+    return ok(rows, **({} if rows else {"note": f"no extension packages in {layout.packages}"}))
+
+
+def _c_ext_check(app, req):
+    from xefm import extension_cli, extensions as ext
+    from xefm.path import Path
+    path = req["args"]["path"]
+    if not _is_local(Path(path)):
+        raise _Refused(f"{path}: give a folder or a .zip on this computer's disk", USAGE)
+
+    def then():
+        with tempfile.TemporaryDirectory(prefix="xefm-ext-") as tmp:
+            try:
+                root = ext.fetch(path, _FsPath(tmp))
+            except ext.InstallError as exc:
+                raise _Refused(str(exc), FAILED) from None
+            lines, bad = extension_cli.check_lines(
+                root, _ext_layout(), stable_only=bool(req["opts"].get("stable-only")),
+                source=path)
+        return _lines(lines, status=FAILED if bad else 0)
+    return _remote_read_allowed(app, req, [Path(path)], then)
+
+
+def _c_ext_install(app, req):
+    source = req["args"]["source"]
+    if not source.startswith(("github:", "https://")) and not os.path.exists(source):
+        raise _Refused(f"no such file or folder: {source}", FAILED)
+    agent = _is_agent(req)
+    pending = Pending()
+    came_from = [None]
+
+    def around(show):
+        _, came_from[0] = _ui(app, req, show)
+
+    def done(outcome):
+        if agent:
+            _go_back(app, came_from[0])
+        status = outcome["status"]
+        if status == "busy":
+            pending.set(refuse(outcome["message"], BUSY))
+        elif status == "installed":
+            pending.set(ok([{"id": outcome["id"], "version": outcome["version"],
+                             "text": outcome["message"]}], status=0, outcome=status))
+        else:
+            pending.set(_lines(outcome.get("problems") or [], status=FAILED,
+                               outcome=status, note=outcome["message"]))
+
+    app._fetch_extension(source, done=done, around=around,
+                         asker=_asker(app, req) if agent else None)
+    if req["opts"].get("wait"):
+        return pending
+    return ok(note="Install Extension: XeFM asks the user once it has the package "
+                   "(--wait waits for the answer)")
+
+
+def _c_keys(app, req):
+    from xefm import keymap_presets, keys_cli
+    from xefm.actions import CONTEXTS
+    from xefm.config import config_manager
+    names = req["args"].get("name") or []
+    context = req["opts"].get("context")
+    if context and context not in CONTEXTS:
+        raise _Refused(f"no context {context!r} ({', '.join(CONTEXTS)})", USAGE)
+    wanted, problem = keys_cli._matcher(names)
+    if problem:
+        raise _Refused(problem, USAGE)
+    from xefm.user_api import is_desktop_mode
+    backend = "gui" if is_desktop_mode() else "tui"
+    # What this XeFM loaded and uses: nothing is loaded again (that would
+    # register the user's actions a second time).
+    report = keys_cli.check_config(app.config, config_manager)
+    keys_cli.check_bindings(report, app.config, backend)
+    keys_cli.add_contexts(report, app.keys)
+    extensions = config_manager.extension_report
+    read = {"config": config_manager.config_file,
+            "preset": app._keymap_preset or keymap_presets.FALLBACK,
+            "preset_source": "in use" if app._keymap_preset else
+                             "none chosen yet - XeFM asks at its next launch",
+            "extensions": list(extensions.loaded) if extensions else []}
+    lines, status = keys_cli.render(report, read, wanted, names, context, backend)
+    return _lines(lines, status=status)
+
+
 def _skill_row(skill) -> dict:
     return {"name": skill.path.name, "ok": skill.ok, "path": str(skill.path),
             "description": " ".join(skill.description.split()),
@@ -1721,6 +1820,8 @@ _HANDLERS = {
     "confirm": _c_confirm, "choose": _c_choose, "input": _c_input, "message": _c_message,
     "action list": _c_action_list, "action show": _c_action_show, "invoke": _c_invoke,
     "skill list": _c_skill_list, "skill check": _c_skill_check,
+    "ext list": _c_ext_list, "ext check": _c_ext_check, "ext install": _c_ext_install,
+    "keys": _c_keys,
     "screen list": _c_screen_list, "screen show": _c_screen_show,
     "terminal-session list": _c_session_list, "terminal-session start": _c_session_start,
     "terminal-session close": _c_session_close,

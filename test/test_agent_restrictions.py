@@ -356,6 +356,7 @@ ASKED = {
     "terminal-session start": ["cmd"], "terminal-session close": ["7"],
     "read": ["FAR"], "fetch": ["FAR"], "find-in-files": ["x", "FARDIR"],
     "invoke": ["reload_config"],
+    "ext check": ["FARDIR"], "ext install": ["FARDIR"],
 }
 
 
@@ -383,6 +384,11 @@ def test_what_is_asked_does_nothing_before_the_answer(screen, name, tmp_path, mo
     ctx.move = lambda items, dest, on_done=None: app.ops.move(
         app.panel, [Path(i) for i in items], Path(dest))
     ctx.rename = lambda pairs, on_done=None: ctx.confirm("rename?", on_result=lambda yes: None)
+    # Install Extension's question, opened the way the app opens it (#1017).
+    app._fetch_extension = lambda source, done=None, around=None, asker=None: around(
+        lambda: ctx.confirm(f"{asker} asks to install", on_result=lambda yes: (
+            ctx.did.append("install") if yes else
+            done({"status": "declined", "message": "no"}))))
     ctx.add_tags = lambda *a, **k: ctx.did.append("tag")
     ctx.remove_tags = lambda *a, **k: ctx.did.append("untag")
     words = [w.replace("SRC", app.src).replace("FARDIR", str(far)).replace("FAR", str(far / "f"))

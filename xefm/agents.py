@@ -106,6 +106,10 @@ the `xefm` skill explains them.
 - If this session has XeFM's tools `xefmctl_read` and `xefmctl`, run xefmctl \
 commands with them, not in the shell: they are the same commands, and work \
 where a sandbox keeps the shell from XeFM. `xefmctl_read` takes what only reads.
+- To look at files, use your own tools for reading, listing and searching \
+files, or `xefmctl_read`, rather than shell commands (`ls`, `cat`, `find`, \
+loops): the user is asked about nearly every shell command, and about those \
+tools far less often.
 - When the user says "this file", "these", "here", they mean what XeFM shows: \
 read it with xefmctl, do not guess.
 - Change files - delete, move, copy, overwrite, rename - only through \
@@ -125,7 +129,7 @@ elsewhere may describe a different version; do not follow it.
 - A skill the user asks for "for XeFM" ("an XeFM skill", "install it in \
 XeFM") goes in ~/.xefm/skills/<name>/, not in your own skills folder; the \
 `xefm` skill's references/skills.md says how, and `xefmctl skill check <name>` \
-checks it. XeFM hands those skills to every \
+checks it; `xefmctl skill list` lists them (rather than the shell). XeFM hands those skills to every \
 session it starts, from the next one on: in this session, read the new \
 SKILL.md yourself.
 """
@@ -400,11 +404,14 @@ def prepare(config: Any, entry: dict, *, root: _FsPath | None = None,
     (instructions / "xefm.instructions.md").write_text(
         '---\napplyTo: "**"\n---\n\n' + told, encoding="utf-8")
     settings = entry.get("settings")
+    own = settings is not None
     if settings is None and not entry.get("restrict", True):
         settings = {}
     elif settings is None:
         settings = (ANTIGRAVITY_DEFAULT_SETTINGS if entry.get("preset") == ANTIGRAVITY
                     else CLAUDE_DEFAULT_SETTINGS)
+    if entry.get("preset") == CLAUDE_CODE and not own:
+        settings = _with_skills_readable(settings, [plugin, user_plugin])
     settings_file = session_dir / f"settings-{_safe(entry['name'])}.json"
     settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     extra = {"channel": channel}
@@ -486,6 +493,31 @@ def _user_plugin(base: _FsPath, source: _FsPath | None) -> tuple[_FsPath, list]:
     shutil.rmtree(plugin, ignore_errors=True)
     tmp.rename(plugin)
     return plugin, mine
+
+
+def _claude_path_rule(path: str) -> str:
+    """An absolute path as Claude Code's permission rules write it: ``//``
+    then the path in POSIX form (on Windows ``C:\\x`` is ``/c/x``)."""
+    path = path.replace("\\", "/")
+    if re.match(r"[A-Za-z]:/", path):
+        path = f"/{path[0].lower()}{path[2:]}"
+    return "/" + path if path.startswith("/") else "//" + path
+
+
+def _with_skills_readable(settings: dict, folders: list[_FsPath]) -> dict:
+    """``settings`` that also let Claude Code read the skill folders XeFM
+    handed the session without asking: they are outside the session's folder,
+    so each reference a skill names was asked about. Both spellings of a
+    folder reached through a link, as Claude Code checks both."""
+    import copy
+    out = copy.deepcopy(settings)
+    allow = out.setdefault("permissions", {}).setdefault("allow", [])
+    for folder in folders:
+        for spelled in dict.fromkeys([str(folder), os.path.realpath(folder)]):
+            rule = f"Read({_claude_path_rule(spelled)}/**)"
+            if rule not in allow:
+                allow.append(rule)
+    return out
 
 
 def _user_plugin_args(values: dict) -> list[str]:

@@ -47,6 +47,10 @@ action that opens it (`find-files`, `find-in-files`).
 | `xefmctl message TEXT` | Writes a line to the log pane |
 | `xefmctl action list` / `action show NAME` | Every action, with what it does and its keys; one action in full |
 | `xefmctl invoke NAME` | Runs an action, as its key would on the file manager's screen |
+| `xefmctl ext list` / `ext check DIR` | The [extension packages](EXTENSIONS_FEATURE.md) and whether they load; checks a package without running it, as `xefm ext check` does |
+| `xefmctl ext install SOURCE [--wait]` | Installs a package as **Tools > Advanced > Install Extension…** does: you see what it adds and agree in XeFM, which then reloads the configuration |
+| `xefmctl keys [KEY_OR_ACTION...]` | What each key does in this XeFM, and the bindings that never fire, as `xefm keys` prints them |
+| `xefmctl skill list` / `skill check [NAME...]` | [Your own skills](AI_AGENT_SESSIONS_FEATURE.md#your-own-skills-xefmskills) for agent sessions, and whether they pass the check |
 | `xefmctl screen list` / `screen show ID` | The screens; shows one (`files` for the file manager) |
 | `xefmctl terminal-session list` / `start` / `close ID` | XeFM's terminal sessions (an agent's `start` is asked first) |
 | `xefmctl help [COMMAND]` | Every command, or one in full |
@@ -140,7 +144,7 @@ back to its terminal once you answer.
 In terminal mode, XeFM waits while a subshell or terminal program runs, so
 only the commands that read work there: `state`, the `pane` reads,
 `entries`, the searches, `find-similar`, `read`, `fetch`, the `list`
-commands and `attribute get`; a search's `--show` is ignored. The others end with
+commands, `attribute get`, `ext check`, `keys` and `skill check`; a search's `--show` is ignored. The others end with
 exit status 6 and a message saying XeFM is suspended until the shell exits,
 and work once you are back. `xefmctl state` says so too, and `xefmctl help`
 marks the commands that need XeFM's screen with `*`. An agent working in

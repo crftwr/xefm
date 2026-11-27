@@ -278,3 +278,45 @@ def test_xefmctl_skill_reads_only():
         assert mcp_server.reads_only(cmd, {})
         assert remote_commands.AGENT_CLASS[cmd.name] == remote_commands.ALLOWED
         assert not remote_commands.needs_screen(cmd)  # works while XeFM is suspended
+
+
+# --- Claude Code reads the handed skills without asking ------------------------------
+
+def _settings(values):
+    return json.loads(Path(values["{settings_file}"]).read_text())
+
+
+def test_claude_code_may_read_the_skill_folders_it_is_handed(tmp_path, mine):
+    import os
+    real = tmp_path / "real-home"
+    real.mkdir()
+    linked = tmp_path / "linked"
+    try:
+        os.symlink(real, linked)  # ~/.xefm as a link, as some users keep it
+    except OSError:
+        pytest.skip("no symbolic links here (Windows without the privilege)")
+    for restrict in (True, False):
+        entry = _entry("claude-code", ["claude"], restrict=restrict)
+        values = agents.prepare(SimpleNamespace(), entry, root=linked / "cache",
+                                version="t", user_skills=mine)
+        allow = _settings(values)["permissions"]["allow"]
+        for folder in (values["{plugin_dir}"], values["{user_plugin_dir}"]):
+            for spelled in (folder, os.path.realpath(folder)):
+                assert f"Read({agents._claude_path_rule(spelled)}/**)" in allow
+    restricted = _settings(_prepare(tmp_path, _entry("claude-code", ["claude"]), mine))
+    assert restricted["permissions"]["deny"] == agents.CLAUDE_DEFAULT_SETTINGS[
+        "permissions"]["deny"]
+    assert "allow" not in agents.CLAUDE_DEFAULT_SETTINGS["permissions"]  # not changed
+
+
+def test_an_entrys_own_settings_and_other_agents_are_left_alone(tmp_path, mine):
+    own = {"permissions": {"deny": ["Bash(sudo:*)"]}}
+    values = _prepare(tmp_path, _entry("claude-code", ["claude"], settings=own), mine)
+    assert _settings(values) == own
+    values = _prepare(tmp_path, _entry("antigravity", ["agy"]), mine)
+    assert "allow" not in _settings(values)["permissions"]
+
+
+def test_claude_path_rules():
+    assert agents._claude_path_rule("/Users/a/x") == "//Users/a/x"
+    assert agents._claude_path_rule("C:\\Users\\a\\x") == "//c/Users/a/x"
