@@ -179,6 +179,11 @@ the mouse for the first, take the whole buffer with the second. See
 | Quick View | `quick_view` — see [Quick View](QUICK_VIEW_FEATURE.md) |
 | Flat View | `flat_view` — see [Flat View](FLAT_VIEW_FEATURE.md) |
 
+While a terminal or AI agent session is on screen, the menu bar stays (in a
+terminal it is drawn there too), and the items that act on the file manager -
+File, Edit, Go, Select, most of View, and Ask AI Agent, External Programs and
+Find Similar Files in Tools - are off until you go back to it.
+
 ### Tools Menu
 
 | Item | Action |

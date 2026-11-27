@@ -181,7 +181,7 @@ clears its `attention`.
 Screens is no longer the switcher: since #1019 the way between screens is
 the group keys, the strip's tabs and `switch_screen`, and Screens is the
 overview of every session. See
-[SCREEN_GROUPS_IMPLEMENTATION.md](SCREEN_GROUPS_IMPLEMENTATION.md). What a
+[WINDOW_TABS_IMPLEMENTATION.md](WINDOW_TABS_IMPLEMENTATION.md). What a
 row says is unchanged:
 
 `Session.label` is `activity` (else the shell's program, `zsh`, or a program

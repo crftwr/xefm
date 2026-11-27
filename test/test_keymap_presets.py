@@ -771,7 +771,9 @@ class InTheApp(unittest.TestCase):
             self.assertNotIn("AI Agent", items)
             self.assertNotIn("New AI Agent Here", items)
             self.assertNotIn("Ask AI Agent…", items)
-            self.assertIn("Subshell Here", items)
+            # The shell item stays: Subshell Here in a terminal, Terminal in the
+            # desktop app (#1019), whichever mode an earlier test left set.
+            self.assertTrue({"Subshell Here", "Terminal"} & set(items))
         finally:
             if saved is None:
                 self.app.config.__dict__.pop("AGENTS", None)

@@ -266,8 +266,8 @@ shell in it, in the active pane's directory, and so does every program marked
 `'terminal': True` (`vim`, `less`, a REPL). Each one is a *terminal session*
 on a *screen* of its own, and it keeps running while you go back to the panes.
 **Tools → Switch Screen** goes between the file manager and the session you
-used last; with several open, tabs across the top switch between them, and
-the status bar always says how many there are. A viewer you opened stays open
+used last, and while sessions run, tabs under the menu bar show them all -
+the file manager first - on every screen. A viewer you opened stays open
 while you visit a terminal, so you can compare the two by switching back and
 forth.
 

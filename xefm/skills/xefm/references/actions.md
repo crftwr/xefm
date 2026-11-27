@@ -479,9 +479,9 @@ viewer only.
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | — |
 | `terminal.screens` | List every session, to go to, close, rename or resume one | — |
 | `terminal.switch_screen` | Go back to the file manager | `Ctrl-GRAVE` |
-| `terminal.new` | Open another session of this kind | — |
-| `terminal.next_tab` | Go to the next session of this kind | — |
-| `terminal.prev_tab` | Go to the previous session of this kind | — |
+| `terminal.new` | Start another session: a shell or an AI agent | — |
+| `terminal.next_tab` | Go to the next tab | — |
+| `terminal.prev_tab` | Go to the previous tab | — |
 | `terminal.move_tab_left` | Move this session's tab one place left | — |
 | `terminal.move_tab_right` | Move this session's tab one place right | — |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |

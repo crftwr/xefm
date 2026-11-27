@@ -52,10 +52,13 @@ items leave the menu, no agent can start, and `agent`, `new_agent` and
 With more than one agent set up, XeFM asks which one. **Screens…** also
 has a row for each, **New Claude Code in ~/...**, beside **New shell in
 ~/...**. The session gets a screen of its own, like any terminal session,
-and keeps running while you are away. The AI agent sessions are a group of
-their own, apart from the terminal's: `agent` comes back to them, **Switch
-Screen** goes between them and the file manager, and with two or more open a
-strip of tabs runs across the top (see [Terminal](TERMINAL_FEATURE.md#in-the-desktop-app-terminal-sessions-and-screens)).
+and keeps running while you are away. It is one of the window's tabs, as a
+shell is, marked `✦`: `agent` comes back to the agent session you used
+last, and **Switch Screen** goes between it and the file manager (see
+[Terminal](TERMINAL_FEATURE.md#in-the-desktop-app-terminal-sessions-and-screens)).
+The conversation's screen keeps the menu bar (in a terminal, `F10` opens
+it), the tabs and the status bar, which says the keys that work there; the
+command palette opens on its key too.
 
 ### A name for each session
 
@@ -141,7 +144,7 @@ steps that follow one another.
 | Key | What it does |
 |---|---|
 | `Enter` | Send the message. One sent while the agent works waits for its turn to end |
-| `Alt+Enter`, `Shift+Enter`, `Ctrl+J` | A new line in the message (a terminal cannot send `Shift+Enter`; the other two work everywhere) |
+| `Shift+Enter`, `Ctrl+J`, `Alt+Enter` | A new line in the message. The status bar names `Shift+Enter` in the desktop app and `Ctrl+J` in a terminal, which every terminal sends; many terminals cannot send `Shift+Enter`, and `Alt+Enter` is Windows Terminal's full-screen key and needs Option sent as Meta on a Mac |
 | `Esc` | Stop the agent while it works; otherwise go back to the file manager, the session kept |
 | `↑` / `↓` | On the first (last) line of the field: an earlier (later) message you sent |
 | `PageUp` / `PageDown` | Scroll the conversation (so does the wheel) |

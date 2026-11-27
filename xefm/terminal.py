@@ -58,35 +58,18 @@ def screen_action_handlers(run: "Callable[[str], bool] | None") -> dict:
 
 
 def strip_event(view, event) -> bool:
-    """Whether ``event`` was a mouse event for the screen strip above ``view``
-    (its local y above 0), handed to the app's ``on_strip_event``. A press
-    there keeps the gesture - the drags, the release and the click it brings
-    - wherever the pointer goes, so dragging a tab never selects text in the
-    terminal below."""
+    """Whether ``event`` was a pointer event on the window's chrome around
+    ``view`` - the menu bar, the tab strip, the status bar a session's screen
+    shows (#1019) - which the app's ``on_strip_event`` takes (in the view's
+    own units; above it is a negative y) and answers True for."""
     handler = getattr(view, "on_strip_event", None)
     if handler is None or getattr(event, "x", None) is None \
             or getattr(event, "y", None) is None:
         return False
-    kind = event.type
-    held = getattr(view, "_strip_held", None)
-    if held == "press" and kind in (EventType.MOUSE_DRAG, EventType.MOUSE_UP):
-        if kind is EventType.MOUSE_UP:
-            view._strip_held = "click"  # the click the release brings is ours too
-        handler(event)
-        return True
-    if held == "click" and kind is EventType.MOUSE_CLICK:
-        view._strip_held = None
-        handler(event)
-        return True
-    view._strip_held = None
-    if event.y >= 0 or kind not in (EventType.MOUSE_CLICK, EventType.MOUSE_DOWN,
-                                    EventType.MOUSE_UP, EventType.MOUSE_DRAG,
-                                    EventType.MOUSE_SCROLL):
+    if event.type not in (EventType.MOUSE_CLICK, EventType.MOUSE_DOWN, EventType.MOUSE_UP,
+                          EventType.MOUSE_DRAG, EventType.MOUSE_SCROLL):
         return False
-    if kind is EventType.MOUSE_DOWN:
-        view._strip_held = "press"
-    handler(event)
-    return True
+    return bool(handler(event))
 
 
 def unavailable(config=None) -> str | None:

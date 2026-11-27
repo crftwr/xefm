@@ -1576,6 +1576,12 @@ class StatusBar(Widget):
             if getattr(self.app, "_isearch_quick", False):
                 return self._quick_hints()
             return self._isearch_hints()
+        session = self._session_on_screen()
+        if session is not None:
+            # A session's screen draws this bar too (#1019): its keys, unless
+            # a dialog over it owns the keyboard.
+            top = self.app._screens.top_layer()
+            return self.app._session_hints(session) if top is session.view else ""
         if self.app.panel.has_layers:
             return ""
         sequence = getattr(self.app, "key_sequence", None)
@@ -1583,6 +1589,11 @@ class StatusBar(Widget):
             # Vim's showcmd: the keys of a sequence not finished yet (#587).
             return f"{sequence.pending_text()} …   Esc cancel"
         return self._hints()
+
+    def _session_on_screen(self):
+        """The session whose screen is on now, or None (the file manager)."""
+        screens = getattr(self.app, "_screens", None)
+        return screens.current.session if screens is not None else None
 
     def draw(self, ctx) -> None:
         # Left/right inset; the bottom padding is the extra row height reserved
@@ -1622,20 +1633,6 @@ class StatusBar(Widget):
         else:
             self._jobs_hit = None
             self._attention_text = None
-        # How many sessions there are, always (#1019): they run out of view,
-        # and a count in sight is what keeps them from piling up. A click
-        # opens Screens, where they are tidied.
-        count = self.app._screens_part()
-        self._screens_hit = None
-        if count:
-            style = Style(fg=ctx.theme.muted_text)
-            text = f"▣ {count}"
-            cw = ctx.measure_text(text, style)
-            if cw <= avail:
-                sx = x + avail - cw
-                ctx.draw_text(sx, 0, text, style)
-                self._screens_hit = (sx, sx + cw)
-                avail = max(0.0, avail - cw - 2.0)
         full = self._text()
         text = elide(full, avail, where="end", measure=ctx.measure_text)
         ctx.draw_text(x, 0, text, Style(fg=ctx.theme.muted_text))
@@ -1759,7 +1756,11 @@ class StatusBar(Widget):
             return False
         if self.app.panel.has_layers:
             return False
-        x = event.x or 0.0
+        return self.click_at(event.x or 0.0)
+
+    def click_at(self, x: float) -> bool:
+        """A click at ``x`` on the bar - from its own layout slot, or from a
+        session's screen, which draws this bar too (#1019)."""
         clip = getattr(self, "_clip_hit", None)
         if clip is not None and clip[0] <= x < clip[1]:
             self.app.clipboard_show()
@@ -1767,10 +1768,6 @@ class StatusBar(Widget):
         jobs = getattr(self, "_jobs_hit", None)
         if jobs is not None and jobs[0] <= x < jobs[1]:
             self.app._jobs_part_clicked()
-            return True
-        count = getattr(self, "_screens_hit", None)
-        if count is not None and count[0] <= x < count[1]:
-            self.app.screens()
             return True
         for x0, x1, action in self._hits:
             if x0 <= x < x1:
@@ -2278,6 +2275,11 @@ class XeFMApp:
         # One Menu model drives the OS-native menu bar on macOS (an NSMenu) and an
         # in-window strip in the terminal — the Panel resolves which, so we never branch.
         self.menu_bar = MenuBar(self._build_menu())
+        # The window's tab strip (#1019): the file manager and every session,
+        # under the menu bar while there is a session - here, and drawn at the
+        # same place by each session's screen (SessionFrame).
+        from xefm.screen_strip import ScreenStrip
+        self.window_tabs = ScreenStrip(self._window_tabs, on_event=self._tab_event)
         self._sync_active()
 
         # Two draggable splitters: the file panes side-by-side (vertical handle),
@@ -2318,6 +2320,8 @@ class XeFMApp:
                 # very top — so the subtle divider lives on the nested split below,
                 # only between the content and the status bar.
                 Item(self.menu_bar, size="content", hints={"surface": "header"}),
+                # Zero high without a session: no row branch here either.
+                Item(self.window_tabs, size="content"),
                 Item(
                     VSplit(
                         # ``reveal_mode: transparent`` drops the content surface fill
@@ -5522,7 +5526,7 @@ class XeFMApp:
             MenuItem("About XeFM", on_select=self.show_about),
             title="Help",
         )
-        return Menu(
+        bar = Menu(
             MenuItem("File", submenu=file_menu),
             MenuItem("Edit", submenu=edit_menu),
             MenuItem("Go", submenu=go_menu),
@@ -5531,6 +5535,46 @@ class XeFMApp:
             MenuItem("Tools", submenu=tools_menu),
             MenuItem("Help", submenu=help_menu),
         )
+        self._files_only_items(bar)
+        return bar
+
+    #: What in the menu bar acts on the file manager, and so is off while a
+    #: session's screen is on (#1019): whole menus, and the items of the
+    #: others named here (the rest of View - the theme, the font size - and
+    #: of Tools, and Help, serve every screen).
+    _FILES_ONLY_MENUS = ("File", "Edit", "Go", "Select")
+    _FILES_ONLY_ITEMS = {
+        "View": None,  # every item but those in _ANY_SCREEN_VIEW_ITEMS
+        "Tools": ("Ask AI Agent…", "External Programs…", "Find Similar Files…"),
+    }
+    _ANY_SCREEN_VIEW_ITEMS = ("Theme", "Font Size")
+
+    def _files_only_items(self, bar) -> None:
+        """Turn the file manager's menu items off while a session is on
+        screen: the menu bar is there on every screen (#1019), and an item
+        that acts on panes out of view would act on what cannot be seen."""
+        def on_files() -> bool:
+            screens = self.__dict__.get("_screens")
+            return screens is None or screens.current.session is None
+
+        def only_on_files(item) -> None:
+            before = item.enabled
+            item.enabled = lambda before=before: on_files() and (
+                before() if callable(before) else bool(before))
+
+        for top in bar.items:
+            label = getattr(top, "label", "")
+            if label in self._FILES_ONLY_MENUS:
+                only_on_files(top)
+            elif label in self._FILES_ONLY_ITEMS and top.submenu is not None:
+                names = self._FILES_ONLY_ITEMS[label]
+                for item in top.submenu.items:
+                    name = getattr(item, "label", "")
+                    if not name:
+                        continue  # a separator
+                    if (names is None and name not in self._ANY_SCREEN_VIEW_ITEMS) \
+                            or (names is not None and name in names):
+                        only_on_files(item)
 
     def _menu(self, action: str) -> None:
         """Run a keymap action from a menu/context-menu selection and redraw."""
@@ -6170,41 +6214,49 @@ class XeFMApp:
         return session
 
     def _add_session_screen(self, session, view):
-        """A new, hidden screen for ``session`` with ``view`` on it, and the
-        screen strip over it (#1019): the view gives up the strip's height
-        while its group has two screens or more."""
+        """A new, hidden screen for ``session`` with ``view`` on it, between
+        the window's chrome (#1019): a :class:`~xefm.screen_strip.SessionFrame`
+        over it draws the menu bar (where the window has it), the tab strip
+        and the status bar - the file manager's own - and the view is laid
+        out between them."""
         from puikit.panel import Rect
-        from xefm.screen_strip import ScreenStrip
+        from xefm.screen_strip import SessionFrame
         from xefm.text_viewer import viewer_layer_hints
-        box: dict = {}
-
-        def top() -> float:
-            screen = box.get("screen")
-            return self._strip_height() if screen is not None \
-                and len(self._screens.in_group(screen.screen_group)) > 1 else 0.0
 
         def reflow(sw, sh):
-            t = top()
-            return Rect(0, t, sw, max(0.0, sh - t))
+            top, bottom = self._content_band(sh)
+            return Rect(0, top, sw, max(0.0, bottom - top))
 
         sw, sh = self.panel.backend.size_units
         screen = self._screens.add_terminal(
             session, view, hints=viewer_layer_hints(sw, sh), reflow=reflow)
-        box["screen"] = screen
-        strip = ScreenStrip(lambda: self._screen_tabs(screen))
+        frame = SessionFrame(self)
         # Over the view (z 2 against its 1, dialogs come at 70): PuiKit draws a
         # screen from its topmost cover layer up, and the view is one. Not
         # interactive, so the keys and the focus stay the view's.
-        self.panel.push_layer(strip, z=2, interactive=False, parent=screen.group,
-                              reflow=lambda sw, sh: Rect(0, 0, sw, top()))
-        screen.strip = strip
-        view.on_strip_event = lambda event: self._strip_event(screen, event)
+        self.panel.push_layer(frame, z=2, interactive=False, parent=screen.group,
+                              reflow=lambda sw, sh: Rect(0, 0, sw, sh))
+        screen.frame = frame
+        view.on_strip_event = lambda event: self._chrome_event(screen, event)
         view.on_screen_action = self._screen_action
+        if hasattr(view, "chrome_status"):
+            view.chrome_status = True  # its hints go to the status bar
         return screen
 
-    def _strip_height(self) -> float:
-        from xefm.screen_strip import strip_height
-        return strip_height(self.panel.backend)
+    def _chrome_bands(self) -> tuple[float, float, float]:
+        """The heights of the window's chrome now: the menu bar in the window
+        (none where the OS has it), the tab strip (none without a session),
+        the status bar."""
+        from xefm.screen_strip import chrome_bands
+        return chrome_bands(self.panel.backend,
+                            menu_in_window=self.menu_bar.takes_activation_key,
+                            strip=len(self._screens.tabs()) > 1)
+
+    def _content_band(self, sh: float) -> tuple[float, float]:
+        """``(top, bottom)`` of what a session's screen shows between the
+        chrome, in a window ``sh`` units high."""
+        menu_h, strip_h, status_h = self._chrome_bands()
+        return menu_h + strip_h, max(menu_h + strip_h, sh - status_h)
 
     def _new_shell_session(self, cwd: str | None, *, show: bool = True, name: str = ""):
         """A new shell session in ``cwd`` (the home directory when None)."""
@@ -6864,19 +6916,13 @@ class XeFMApp:
 
     def _animate_session(self, screen, *, out: bool = False, on_complete=None) -> bool:
         """Play a session's screen coming from behind the file manager (or,
-        ``out``, going back there): its view, and its tab strip with it
-        (#1019), which would otherwise pop in at once and stay up while the
-        view fades away. Whether it was scheduled, as
+        ``out``, going back there). Only the view moves: the chrome around it
+        (:class:`~xefm.screen_strip.SessionFrame`) is the file manager's own,
+        at the same places, and stays still. Whether it was scheduled, as
         :func:`~xefm.dialog_geometry.animate_from_behind`."""
-        from xefm.dialog_geometry import BEHIND_MS, animate_from_behind
-        if not animate_from_behind(self.panel, screen.session.view, out=out,
-                                   on_complete=on_complete):
-            return False
-        strip = getattr(screen, "strip", None)
-        if strip is not None and self.panel.has_layer(strip):
-            self.panel.animate(strip, hints={"transition": "fade", "out": out,
-                                             "duration_ms": BEHIND_MS})
-        return True
+        from xefm.dialog_geometry import animate_from_behind
+        return animate_from_behind(self.panel, screen.session.view, out=out,
+                                   on_complete=on_complete)
 
     def _hide_session(self, view) -> None:
         """Put a session back behind the file manager (the exit bar's Escape);
@@ -6900,19 +6946,23 @@ class XeFMApp:
     def switch_screen(self) -> None:
         """``switch_screen``: from the file manager to the screen used last,
         and from any other screen back to the file manager. With no session
-        yet it opens Screens, which offers new ones."""
+        yet it starts a terminal (#1019): a shell session in the desktop app,
+        the subshell in a terminal - never an AI agent, which only ``agent``
+        starts."""
         from xefm.screens import FILES
         screens = self._screens
         if screens.current.kind != FILES:
             self._show_screen(screens.files)
             self.panel.render()
             return
-        others = [s for s in screens.recent() if s.kind != FILES]
+        others = [s for s in screens.recent() if s.kind != FILES and not s.closing]
         if others:
             self._show_screen(others[0])
             self.panel.render()
+        elif is_desktop_mode():
+            self.new_terminal_session()
         else:
-            self.screens()
+            self.subshell()
 
     def new_shell(self) -> None:
         """``new_shell``: another shell session, in the active pane's
@@ -6929,66 +6979,75 @@ class XeFMApp:
         (:data:`xefm.terminal.SCREEN_ACTIONS`)."""
         screens = self._screens
         current = screens.current
+        tabs = screens.tabs()
         if name == "terminal.switch_screen":
             self._show_screen(screens.files)
         elif name == "terminal.new":
-            self._new_in_group(current.screen_group if current.session is not None else None,
-                               like=current.session)
+            self._new_tab_menu()
         elif name in ("terminal.next_tab", "terminal.prev_tab"):
-            if current.session is None:
-                return False
-            tabs = screens.in_group(current.screen_group)
-            if len(tabs) > 1:
+            if len(tabs) > 1 and current in tabs:
                 step = 1 if name == "terminal.next_tab" else -1
                 self._show_screen(tabs[(tabs.index(current) + step) % len(tabs)])
         elif name in ("terminal.move_tab_left", "terminal.move_tab_right"):
-            if current.session is None:
-                return False
-            tabs = screens.in_group(current.screen_group)
-            step = 1 if name == "terminal.move_tab_right" else -1
             if current in tabs:
+                step = 1 if name == "terminal.move_tab_right" else -1
                 screens.move_tab(current, tabs.index(current) + step)
         else:
             return False
         self.panel.render()
         return True
 
-    def _new_in_group(self, group: str | None, like=None) -> None:
-        """Another session of ``group``: a shell for the terminal's, the same
-        agent (else the one picked) for the AI agents'."""
-        from xefm.terminal_sessions import GROUP_AGENT
-        if group == GROUP_AGENT:
-            from xefm import agents
-            name = getattr(getattr(like, "view", None), "entry_name", None)
-            if not self._agents_ready():
-                return
-            entry = next((e for e in agents.available(self.config) if e["name"] == name), None)
-            if entry is not None:
-                self._start_agent(entry)
-            else:
-                self.new_agent()
-            return
-        cwd = getattr(like, "directory", None) if like is not None else None
-        if cwd is not None and not os.path.isdir(cwd):
-            cwd = None
-        if not self._desktop_only("Terminal sessions"):
-            return
-        self._new_shell_session(cwd or self._session_dir())
+    def _new_kinds(self) -> list:
+        """What the ``+`` after the tabs can start: ``(label, start)`` for a
+        shell (in the desktop app, where XeFM has a terminal) and each AI agent
+        installed (drawn ones only in a terminal)."""
+        from xefm import agents
+        kinds = []
+        if is_desktop_mode() and self._terminal_unavailable() is None:
+            kinds.append(("New Shell", self.new_terminal_session))
+        found = agents.available(self.config) if not agents.turned_off(self.config) else []
+        if not is_desktop_mode():
+            found = [e for e in found if agents.drawn(e)]
+        for entry in found:
+            kinds.append((f"New {entry['name']}",
+                          lambda entry=entry: self._start_agent(entry)))
+        return kinds
 
-    def _screen_tabs(self, screen) -> tuple[list, int]:
-        """The strip over ``screen``: its group's screens as tabs, in the order
-        they were made, and the index of ``screen``'s; nothing while the group
-        has one."""
-        tabs = self._screens.in_group(screen.screen_group)
-        if len(tabs) < 2 or screen not in tabs:
-            return [], -1
-        return [Tab(s.session.tab_label, self._tab_mark(s.session),
-                    icon=self._tab_icon(s.session), closable=True) for s in tabs], \
-            tabs.index(screen)
+    def _new_tab_menu(self) -> None:
+        """The ``+`` after the tabs (and ``terminal.new``): start what can be
+        started - at once when that is one thing, else the one picked."""
+        kinds = self._new_kinds()
+        if not kinds:
+            self.log_info("Nothing to start here: no terminal and no AI agent installed")
+            self.panel.render()
+            return
+        if len(kinds) == 1:
+            kinds[0][1]()
+            return
 
-    #: A tab's icon by what the session is: a shell, a terminal program, an
-    #: AI agent. Glyphs every terminal font has.
-    _TAB_ICONS = {"shell": "$", "program": ">", "agent": "✦"}
+        def picked(index) -> None:
+            if index is not None:
+                kinds[index][1]()
+            self.panel.render()
+        self._user_ctx.choose("New", [label for label, _start in kinds], on_result=picked)
+        self.panel.render()
+
+    def _window_tabs(self) -> tuple[list, int]:
+        """The window's tab strip (#1019): the file manager's tab, pinned,
+        then each session's, and the index of the one on screen."""
+        from xefm.screens import FILES
+        if "_screens" not in self.__dict__:
+            return [], 0  # measured before the screens exist
+        tabs = self._screens.tabs()
+        chips = [Tab("Files", icon=XeFMApp._TAB_ICONS["files"]) if s.kind == FILES else
+                 Tab(s.session.tab_label, self._tab_mark(s.session),
+                     icon=self._tab_icon(s.session), closable=True) for s in tabs]
+        current = self._screens.current
+        return chips, tabs.index(current) if current in tabs else 0
+
+    #: A tab's icon by what it shows: the file manager, a shell, a terminal
+    #: program, an AI agent. Glyphs every terminal font has.
+    _TAB_ICONS = {"files": "▤", "shell": "$", "program": ">", "agent": "✦"}
 
     def _tab_icon(self, session) -> str:
         from xefm.terminal_sessions import GROUP_AGENT, SHELL
@@ -7005,61 +7064,111 @@ class XeFMApp:
             return StatusBar._JOB_MARKS.get(session.attention[0], "")
         return "…" if session.progress is not None else ""
 
-    def _strip_event(self, screen, event) -> bool:
-        """A mouse event on ``screen``'s strip, as its view got it (y above
-        its own top edge): a click on a tab shows that screen, one on its
-        ``×`` closes it (asking first when that would stop something), one on
-        ``+`` opens another of the group; a tab dragged along it moves there."""
+    def _session_hints(self, session) -> str:
+        """What the status bar says on ``session``'s screen: the keys for
+        what can be done there now. A drawn agent's are its own (it owns the
+        keyboard); a terminal's are the few XeFM takes from the program."""
+        view = session.view
+        hint = getattr(view, "status_hint", None)
+        if isinstance(hint, str):
+            return hint
+        if not getattr(view, "running", True):
+            return "Enter close"
+        parts = []
+        for action, label in (("terminal.switch_screen", "files"),
+                              ("terminal.close", "close"), ("terminal.new", "new"),
+                              ("command_palette", "commands")):
+            keys, _ = self.keys.get_keys_for_action(action, _ctx.TERMINAL)
+            if not action.startswith("terminal."):
+                # An inherited key reaches XeFM from a terminal only as a chord
+                # no program receives (TerminalView.takes_binding).
+                keys = [k for k in keys if "Command-" in k
+                        or ("Ctrl-" in k and "Shift-" in k)]
+            if keys:
+                parts.append(f"{self.keys.format_key_for_display(keys[0])} {label}")
+        return " · ".join(parts)
+
+    def _tab_event(self, event, x: float, y: float) -> bool:
+        """A pointer event on the window's tab strip, at ``(x, y)`` in its own
+        units: a click on a tab shows that screen, one on its ``×`` closes it
+        (asking first when that would stop something), one on ``+`` starts
+        another session; a tab dragged along the strip moves where the line
+        shows when it is dropped."""
         from xefm.screen_strip import CLOSE, NEW_TAB
-        strip = getattr(screen, "strip", None)
-        if strip is None or getattr(event, "button", "left") not in ("left", None):
-            return True
-        x, y = event.x, event.y + self._strip_height()
+        strip = self.window_tabs
+        if getattr(event, "button", "left") not in ("left", None):
+            return False
+        tabs = self._screens.tabs()
         if event.type is EventType.MOUSE_DOWN:
             strip.press(x, y)
-            return True
+            return False  # the press->click gesture still runs
         if event.type is EventType.MOUSE_DRAG:
             if strip.drag(x):
                 self.panel.render()  # the line where it would land moved
-            return True
+            return strip._strip.dragging
         if event.type is EventType.MOUSE_UP:
+            dragging = strip._strip.dragging
             move = strip.release()
-            if move is not None:
-                tabs = self._screens.in_group(screen.screen_group)
-                if 0 <= move[0] < len(tabs):
-                    self._screens.move_tab(tabs[move[0]], move[1])
+            if move is not None and 0 <= move[0] < len(tabs):
+                self._screens.move_tab(tabs[move[0]], move[1])
             self.panel.render()
-            return True
+            return dragging
         if event.type is not EventType.MOUSE_CLICK or not strip.take_click():
-            return True
+            return False
         hit = strip.hit(x, y)
         if hit == NEW_TAB:
-            self._new_in_group(screen.screen_group, like=screen.session)
+            self._new_tab_menu()
         elif isinstance(hit, tuple) and hit[0] == CLOSE:
-            tabs = self._screens.in_group(screen.screen_group)
-            if 0 <= hit[1] < len(tabs):
+            if 0 <= hit[1] < len(tabs) and tabs[hit[1]].session is not None:
                 view = tabs[hit[1]].session.view
                 view.on_close_request(view)
-        elif hit is not None:
-            tabs = self._screens.in_group(screen.screen_group)
-            if 0 <= hit < len(tabs):
-                self._show_screen(tabs[hit])
+        elif hit is not None and 0 <= hit < len(tabs):
+            self._show_screen(tabs[hit])
+        else:
+            return False
         self.panel.render()
         return True
 
-    def _screens_part(self) -> str:
-        """The status bar's count of the sessions out of view (#1019),
-        ``2 shells · 1 AI``, or "" when there are none."""
-        from xefm.terminal_sessions import GROUP_AGENT
-        sessions = list(getattr(self, "_sessions", ()))
-        agents_n = sum(1 for s in sessions if s.group == GROUP_AGENT)
-        terms = len(sessions) - agents_n
-        parts = []
-        if terms:
-            parts.append(f"{terms} shell{'s' if terms > 1 else ''}")
-        if agents_n:
-            parts.append(f"{agents_n} AI")
-        return " · ".join(parts)
+    def _chrome_event(self, screen, event) -> bool:
+        """A pointer event a session's view got, in its own units: when it
+        lands on the chrome around the view - the menu bar, the tab strip,
+        the status bar - that widget takes it, and True. A press there keeps
+        the gesture (its drags, its release and the click after it) wherever
+        the pointer goes, so a tab dragged down into the terminal never
+        selects text there."""
+        from dataclasses import replace
+        sw, sh = self.panel.backend.size_units
+        menu_h, strip_h, status_h = self._chrome_bands()
+        top, bottom = self._content_band(sh)
+        gy = event.y + top
+        held = getattr(screen, "_chrome_held", None)
+        kind = event.type
+        if held is not None and kind in (EventType.MOUSE_DRAG, EventType.MOUSE_UP,
+                                         EventType.MOUSE_CLICK):
+            part = held
+            if kind is EventType.MOUSE_CLICK:
+                screen._chrome_held = None
+        else:
+            screen._chrome_held = None
+            if gy < menu_h:
+                part = "menu"
+            elif gy < top:
+                part = "strip"
+            elif gy >= bottom:
+                part = "status"
+            else:
+                return False
+            if kind is EventType.MOUSE_DOWN:
+                screen._chrome_held = part
+        if part == "menu":
+            self.menu_bar.handle_event(replace(event, y=gy))
+        elif part == "strip":
+            self._tab_event(event, event.x, gy - menu_h)
+        else:
+            if kind is EventType.MOUSE_CLICK:
+                self.status.click_at(event.x)
+        self.panel.render()
+        return True
 
     # Closed AI conversations: kept so closing one loses nothing (#1019).
 
@@ -7369,15 +7478,16 @@ class XeFMApp:
         the overview, not the way between screens (that is the group keys,
         the strip's tabs and ``switch_screen``).
 
-        The terminal's sessions, then the AI agents', each group with the
-        ones waiting on you first, then the rest used last first; the cursor
+        Every session, terminal and AI alike, the ones waiting on you first,
+        then the rest used last first (the icon on its tab says which); the
+        cursor
         starts on the session used last that is not on screen. Then a row
         that closes every idle session at once, the closed AI conversations
         that can be resumed, and rows that start a new shell or a new session
         of each ``AGENTS`` entry (#880). The remove key closes a session (or
         forgets a closed conversation), the rename key renames it. In
         terminal mode there are only the AI agent sessions XeFM draws."""
-        from xefm.terminal_sessions import GROUP_AGENT, GROUP_TERMINAL, _short, ago
+        from xefm.terminal_sessions import GROUP_AGENT, _short, ago
         from xefm import agents
         desktop = is_desktop_mode()
         found = agents.available(self.config)
@@ -7392,12 +7502,10 @@ class XeFMApp:
         cwd = self._session_dir() or os.path.expanduser("~")
         current = self._screens.current
 
-        def order(group):
-            mine = [s for s in sessions if s.group == group]
-            return sorted(mine, key=lambda s: (
-                s.attention is None or s.attention[0] != "attention", -s.last_used_at))
-
-        rows = order(GROUP_TERMINAL) + order(GROUP_AGENT)
+        # Every session, as the tabs hold them whatever their kind: the ones
+        # waiting on you first, then the one used last first.
+        rows = sorted(sessions, key=lambda s: (
+            s.attention is None or s.attention[0] != "attention", -s.last_used_at))
         idle = [s for s in rows if not s.busy]
         close_idle = object()
         new_row = object()
@@ -14832,10 +14940,12 @@ class XeFMApp:
 
     def _palette_surface(self):
         """The viewer or terminal on top, when it can tell the palette what it
-        does (``palette_context`` / ``palette_actions`` / ``run_action``)."""
+        does (``palette_context`` / ``palette_actions`` / ``run_action``) - not
+        the chrome a session's screen draws over its view (#1019)."""
+        from xefm.screen_strip import top_surface
         if not self.panel.has_layers:
             return None
-        top = self.panel._layers[-1].widget
+        top = top_surface(self.panel)
         return top if hasattr(top, "palette_actions") else None
 
     def _palette_actions(self) -> list:
@@ -15607,6 +15717,21 @@ class XeFMApp:
                                 lambda e, a: True)(event, "command_palette")):
                 self.key_sequence.cancel()
                 self.show_command_palette()
+                return
+            # The menu bar, which a session's screen shows too (#1019), opens
+            # from there by its key - from a drawn agent's conversation, which
+            # owns the keyboard; a terminal's program keeps F10 unless it is
+            # a chord no program receives.
+            if (surface is not None and self._screens.current.session is not None
+                    and surface is self._screens.current.session.view
+                    and self.menu_bar.takes_activation_key
+                    and self.keys.is_action_for_event(event, "menu",
+                                                      context=surface.palette_context)
+                    and getattr(surface, "takes_binding",
+                                lambda e, a: True)(event, "menu")):
+                self.key_sequence.cancel()
+                self.menu_bar.open_menu()
+                self.panel.render()
                 return
         # A modal layer (message box, menu popup) owns events while open: route
         # everything to it and let XeFM's global keymap stand down.

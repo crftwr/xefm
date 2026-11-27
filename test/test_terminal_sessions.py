@@ -89,10 +89,10 @@ def _panel():
 
 
 def _shown(panel):
-    """The layers drawn now, bottom first - the screen strips (#1019) left
-    out, which draw only while a group has two screens."""
-    from xefm.screen_strip import ScreenStrip
-    return [layer for layer in panel.shown_layers() if not isinstance(layer, ScreenStrip)]
+    """The layers drawn now, bottom first - the chrome a session's screen
+    draws over its view (#1019) left out."""
+    from xefm.screen_strip import is_strip
+    return [layer for layer in panel.shown_layers() if not is_strip(layer)]
 
 
 def _app(monkeypatch, *, desktop=True):
@@ -144,17 +144,44 @@ def _app(monkeypatch, *, desktop=True):
                  "_session_dir", "_close_terminal_sessions", "_screen_label",
                  "_screen_top_text", "_relist_both", "screens") + _SCREEN_METHODS:
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
+    from xefm.screen_strip import ScreenStrip
+    app.menu_bar = _Chrome()
+    app.status = _Chrome()
+    app.window_tabs = ScreenStrip(app._window_tabs, on_event=app._tab_event)
+    app.keys = SimpleNamespace(get_keys_for_action=lambda a, c: ([], None),
+                               format_key_for_display=str)
     return app
 
 
-#: What the screen groups, the strip and closed conversations add (#1019).
+#: What the window's tabs, its chrome and closed conversations add (#1019).
 _SCREEN_METHODS = (
-    "_add_session_screen", "_animate_session", "_strip_height", "_screen_tabs", "_tab_mark", "_tab_icon",
-    "_strip_event",
-    "_screen_action", "_new_in_group", "_go_to_group", "switch_screen", "new_shell",
-    "new_agent", "_screens_part", "_closed_agents", "_save_closed_agents",
+    "_add_session_screen", "_animate_session", "_chrome_bands", "_content_band",
+    "_window_tabs", "_tab_mark", "_tab_icon", "_tab_event", "_chrome_event",
+    "_screen_action", "_new_kinds", "_new_tab_menu", "_go_to_group", "switch_screen",
+    "new_shell", "new_agent", "_session_hints", "_closed_agents", "_save_closed_agents",
     "_remember_closed", "_forget_closed", "_resume_agent", "_resume_into",
     "_name_agent_session", "_close_idle_sessions", "_rename_screen")
+
+
+class _Chrome:
+    """A stand-in for the menu bar and the status bar a session's screen
+    draws: what it was asked to do."""
+
+    def __init__(self):
+        self.takes_activation_key = True
+        self.events = []
+        self.clicks = []
+
+    def draw(self, ctx):
+        pass
+
+    def handle_event(self, event):
+        self.events.append(event)
+        return True
+
+    def click_at(self, x):
+        self.clicks.append(x)
+        return True
 
 
 class _Switcher:
@@ -185,10 +212,7 @@ class _Switcher:
 
 def test_switch_screen_goes_back_and_forth(monkeypatch):
     app = _app(monkeypatch)
-    switcher = _Switcher(monkeypatch)
-    app.switch_screen()  # no session yet: Screens, which offers a new shell
-    assert switcher.labels() == ["New shell in /tmp"]
-    switcher.enter()
+    app.switch_screen()  # no session yet: a shell (#1019), never an AI agent
     [view] = app.made
     assert view.shown and _shown(app.panel) == [view] and view.cwd == "/tmp"
     app._screen_action("terminal.switch_screen")  # back to the panes
@@ -232,6 +256,12 @@ def test_the_subshell_is_a_session_with_the_snapshot_and_xefmctl(monkeypatch):
     assert len(app.made) == 1 and view.shown
     app.new_shell()  # another one on purpose
     assert len(app.made) == 2
+
+
+def test_switch_screen_with_no_session_in_a_terminal_is_the_subshell(monkeypatch):
+    app = _app(monkeypatch, desktop=False)
+    app.switch_screen()
+    assert not app.made and len(app.handed) == 1  # the terminal handed over
 
 
 def test_terminal_mode_hands_the_terminal_to_the_subshell(monkeypatch):

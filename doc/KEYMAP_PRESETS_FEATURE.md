@@ -417,9 +417,9 @@ program receives.
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | macOS app: `Cmd-W`<br>Windows app: `Ctrl-Shift-W` |
 | `terminal.switch_screen` | Go back to the file manager | `` Ctrl-` `` |
 | `terminal.screens` | List every session, to go to, close, rename or resume one | — |
-| `terminal.new` | Open another session of this kind | macOS app: `Cmd-T`<br>Windows app: `Ctrl-Shift-T` |
-| `terminal.next_tab` | Go to the next session of this kind | macOS app: `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |
-| `terminal.prev_tab` | Go to the previous session of this kind | macOS app: `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` |
+| `terminal.new` | Start another session: a shell or an AI agent | macOS app: `Cmd-T`<br>Windows app: `Ctrl-Shift-T` |
+| `terminal.next_tab` | Go to the next tab | macOS app: `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |
+| `terminal.prev_tab` | Go to the previous tab | macOS app: `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` |
 | `terminal.move_tab_left` | Move this session's tab one place left | — |
 | `terminal.move_tab_right` | Move this session's tab one place right | — |
 | `command_palette` | Search the terminal's actions by name and run one | macOS app: `Cmd-Shift-P`<br>Windows app: `Ctrl-Shift-P` |

@@ -19,11 +19,11 @@ session keeps its screen (its last output, the exit bar) after its process is
 gone. The two point at each other (:attr:`Screen.session`,
 ``Session.screen``).
 
-Screens fall into groups (discussion #1019): the file manager's alone, the
-terminal's (shells, terminal programs) and the AI agents'. A group's key goes
-to the screen in it used last; a group's screens are its tabs, in the order
-they were made; closing one shows its neighbour in the group, else the file
-manager.
+The window's screens are its tabs (discussion #1019): the file manager's,
+pinned first, then every session's - shells, terminal programs, AI agents -
+in one strip, in the order they were made as the user left it; closing one
+shows the tab beside it. A session's kind (its group: the terminal's or the
+AI agents') is what a key like ``subshell`` or ``agent`` goes back to.
 
 This module keeps the bookkeeping - the layer groups, which screen is shown,
 the order screens were on - and does no animation; the app plays the
@@ -117,6 +117,12 @@ class ScreenManager:
     def for_session(self, session: Any) -> Screen | None:
         return next((s for s in self._recent if s.session is session), None)
 
+    def tabs(self) -> list[Screen]:
+        """The window's tabs (#1019): the file manager first, pinned, then
+        every session's screen in tab order - the order they were made, as
+        the user left it. One strip for all of them, whatever their kind."""
+        return [s for s in self._tabs if not s.closing]
+
     def in_group(self, group: str, *, order: str = "tabs") -> list[Screen]:
         """The screens of ``group``: in tab order (the order they were made,
         as the user left it), or ``order="recent"``, most recently on screen
@@ -131,34 +137,34 @@ class ScreenManager:
         return found[0] if found else None
 
     def neighbour(self, screen: Screen) -> Screen | None:
-        """The tab beside ``screen`` in its group - the one after it, else the
-        one before - or None when it is alone there: what shows when it
-        closes."""
+        """The tab beside ``screen`` - the one after it, else the one before,
+        which may be the file manager's - or None for the file manager
+        itself: what shows when it closes."""
         if screen.kind == FILES:
             return None
         # ``screen`` itself counts while it closes: its place is what decides.
-        tabs = [s for s in self._tabs if s.screen_group == screen.screen_group
-                and (not s.closing or s is screen)]
+        tabs = [s for s in self._tabs if not s.closing or s is screen]
         if screen not in tabs or len(tabs) < 2:
             return None
         i = tabs.index(screen)
         return tabs[i + 1] if i + 1 < len(tabs) else tabs[i - 1]
 
     def after_close(self, screen: Screen) -> Screen:
-        """Where closing ``screen`` goes: its neighbour in the group, else the
-        file manager."""
+        """Where closing ``screen`` goes: the tab beside it."""
         return self.neighbour(screen) or self.files
 
     def move_tab(self, screen: Screen, to: int) -> bool:
-        """Put ``screen`` at place ``to`` among its group's tabs (#1019).
+        """Put ``screen`` at place ``to`` among the tabs (#1019). The file
+        manager's stays first: it does not move, and nothing goes before it.
         Whether it moved."""
-        group = self.in_group(screen.screen_group)
-        if screen not in group or not 0 <= to < len(group) or group.index(screen) == to:
+        tabs = self.tabs()
+        if screen.kind == FILES or screen not in tabs or not 1 <= to < len(tabs) \
+                or tabs.index(screen) == to:
             return False
-        moved = [s for s in group if s is not screen]
+        moved = [s for s in tabs if s is not screen]
         moved.insert(to, screen)
-        # The group's places in the whole order stay; who stands in them changes.
-        places = [i for i, s in enumerate(self._tabs) if s in group]
+        # The places of the tabs shown stay; who stands in them changes.
+        places = [i for i, s in enumerate(self._tabs) if s in tabs]
         for i, s in zip(places, moved):
             self._tabs[i] = s
         return True

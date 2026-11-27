@@ -119,13 +119,14 @@ class TabStrip:
 
     # --- dragging a tab to another place ----------------------------------
 
-    def press(self, x: float, y: float, count: int) -> bool:
-        """A press at ``(x, y)``: arm a drag of the tab under it - one of the
-        first ``count`` (not ``+``), and not on its close button. Whether it
-        armed one."""
+    def press(self, x: float, y: float, count: int, first: int = 0) -> bool:
+        """A press at ``(x, y)``: arm a drag of the tab under it - one of
+        tabs ``first`` to ``count - 1`` (not a pinned one before ``first``,
+        not ``+``), and not on its close button. Whether it armed one."""
         self._dragged = False
+        self._first = first
         index = self.hit(x, y)
-        if index is None or index >= count or self.hit_close(x, y) is not None:
+        if index is None or not first <= index < count or self.hit_close(x, y) is not None:
             self._press = None
             return False
         self._press = [index, x, False]
@@ -146,6 +147,7 @@ class TabStrip:
             self._press[2] = True
         spans = sorted((h for h in self.hits if h[2] < count), key=lambda h: h[2])
         slot = sum(1 for x0_, x1_, _ in spans if (x0_ + x1_) / 2 < x)
+        slot = max(slot, getattr(self, "_first", 0))  # never before a pinned tab
         if slot in (index, index + 1):
             slot = None  # dropped there it stays where it is
         changed = slot != self.drop_slot

@@ -199,29 +199,23 @@ def test_an_older_puikit_without_a_base_still_fades_the_terminal():
     assert [w for w, _h in panel.animations] == [view]
 
 
-def test_the_tab_strip_fades_with_its_session(monkeypatch):
-    # The strip is a layer of its own over the view (#1019): it comes in and
-    # goes out with the view, rather than popping in at once and staying up
-    # while the view fades away.
-    from xefm.dialog_geometry import BEHIND_MS
+def test_the_chrome_around_a_session_stays_still(monkeypatch):
+    # A session's screen draws the window's chrome - the menu bar, the tab
+    # strip, the status bar - at the file manager's places (#1019): only the
+    # view moves, so going between screens changes only what is between them.
     panel = _Panel()
     app = _app(panel)
     view = _View()
     session = app._sessions.add(Session(view=view, kind=PROGRAM, name="vim", cwd="/"))
     screen = app._screens.add_terminal(session, view, hints={}, reflow=None)
-    strip = object()
-    panel.push_layer(strip, z=2, interactive=False, parent=screen.group)
-    screen.strip = strip
+    frame = object()
+    panel.push_layer(frame, z=2, interactive=False, parent=screen.group)
+    screen.frame = frame
     app._show_screen(screen)
-    [shown] = panel.of(strip)
-    [term] = panel.of(view)
-    assert shown == {"transition": "fade", "out": False, "duration_ms": BEHIND_MS}
-    assert term["duration_ms"] == BEHIND_MS
     panel.finish()
     app._show_screen(app._screens.files)
-    assert panel.of(strip)[-1]["out"] is True
     panel.finish()
     app._show_screen(screen)
     panel.finish()
     app._close_session(session)
-    assert panel.of(strip)[-1]["out"] is True
+    assert len(panel.of(view)) == 4 and panel.of(frame) == []

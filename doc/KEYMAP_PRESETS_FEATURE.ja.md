@@ -332,9 +332,9 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 | `terminal.close` | ターミナルを閉じてペインに戻る。実行中のプログラムは停止する | macOS アプリ：`Cmd-W`<br>Windows アプリ：`Ctrl-Shift-W` |
 | `terminal.switch_screen` | ファイルマネージャーに戻る | `` Ctrl-` `` |
 | `terminal.screens` | すべてのセッションを一覧にし、移動、終了、名前の変更、再開をする | — |
-| `terminal.new` | 同じ種類のセッションをもう 1 つ開く | macOS アプリ：`Cmd-T`<br>Windows アプリ：`Ctrl-Shift-T` |
-| `terminal.next_tab` | 同じ種類の次のセッションに移動する | macOS アプリ：`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
-| `terminal.prev_tab` | 同じ種類の前のセッションに移動する | macOS アプリ：`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
+| `terminal.new` | 別のセッション（シェルか AI エージェント）を起動する | macOS アプリ：`Cmd-T`<br>Windows アプリ：`Ctrl-Shift-T` |
+| `terminal.next_tab` | 次のタブに移動する | macOS アプリ：`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
+| `terminal.prev_tab` | 前のタブに移動する | macOS アプリ：`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
 | `terminal.move_tab_left` | このセッションのタブを 1 つ左へ移す | — |
 | `terminal.move_tab_right` | このセッションのタブを 1 つ右へ移す | — |
 | `command_palette` | ターミナルのアクションを名前で探して実行 | macOS アプリ：`Cmd-Shift-P`<br>Windows アプリ：`Ctrl-Shift-P` |

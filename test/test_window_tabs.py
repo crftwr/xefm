@@ -42,7 +42,7 @@ def test_ago_says_how_long_in_a_word():
     assert ago(0.0, now=3 * 86400.0) == "3d ago"
 
 
-# --- groups -------------------------------------------------------------------------
+# --- the tabs -------------------------------------------------------------------------
 
 class _ChatView(_View):
     """A drawn agent's view: busy only mid-turn."""
@@ -68,16 +68,17 @@ def _agent_session(app, name="Claude Code", cwd="/w", sid="s-1", said="Fix the b
     return session
 
 
-def test_sessions_fall_into_the_terminals_group_and_the_agents(monkeypatch):
+def test_every_session_is_a_tab_after_the_file_managers(monkeypatch):
     app = _app(monkeypatch)
     app.new_shell()
     agent = _agent_session(app)
     shell = app._sessions.for_view(app.made[0])
-    assert shell.group == GROUP_TERMINAL and agent.group == GROUP_AGENT
-    assert shell.screen.screen_group == GROUP_TERMINAL
-    assert app._screens.files.screen_group == FILES
-    assert app._screens.in_group(GROUP_AGENT) == [agent.screen]
-    assert app._screens_part() == "1 shell · 1 AI"
+    assert shell.group == GROUP_TERMINAL and agent.group == GROUP_AGENT  # its kind
+    assert app._screens.tabs() == [app._screens.files, shell.screen, agent.screen]
+    tabs, current = app._window_tabs()
+    assert [(t.icon, t.label, t.closable) for t in tabs] == [
+        ("▤", "Files", False), ("$", "zsh", True), ("✦", "Claude Code", True)]
+    assert current == 1  # the shell, shown when it started
 
 
 def test_a_group_key_goes_back_to_the_screen_used_last(monkeypatch):
@@ -91,50 +92,49 @@ def test_a_group_key_goes_back_to_the_screen_used_last(monkeypatch):
     assert first.shown and len(app.made) == 2
 
 
-def test_closing_a_tab_shows_its_neighbour_in_the_group(monkeypatch):
+def test_closing_a_tab_shows_the_tab_beside_it(monkeypatch):
     app = _app(monkeypatch)
-    for _ in range(3):
+    for _ in range(2):
         app.new_shell()
-    a, b, c = (app._sessions.for_view(v) for v in app.made)
-    _agent_session(app)  # another group: never where a shell's close goes
+    a, b = (app._sessions.for_view(v) for v in app.made)
+    c = _agent_session(app)  # another kind, the same strip
     app._show_screen(b.screen)
-    app._close_session(b)  # the next tab
+    app._close_session(b)  # the next tab, whatever its kind
     assert app._screens.current is c.screen
     app._close_session(c)  # the last tab: the one before it
     assert app._screens.current is a.screen
-    app._close_session(a)  # alone in the group: the file manager
+    app._close_session(a)  # the one before it is the file manager's
     assert app._screens.current is app._screens.files
 
 
-def test_next_and_previous_tab_wrap_within_the_group(monkeypatch):
+def test_next_and_previous_tab_wrap_through_the_file_manager(monkeypatch):
     app = _app(monkeypatch)
     app.new_shell()
     app.new_shell()
     a, b = (app._sessions.for_view(v) for v in app.made)
     assert app._screens.current is b.screen
     app._screen_action("terminal.next_tab")
+    assert app._screens.current is app._screens.files
+    app._screen_action("terminal.next_tab")
     assert app._screens.current is a.screen
     app._screen_action("terminal.prev_tab")
-    assert app._screens.current is b.screen
-    app._screen_action("terminal.new")  # another of the same kind
-    assert len(app.made) == 3 and app._screens.current.session.view is app.made[2]
+    assert app._screens.current is app._screens.files
 
 
 # --- the strip ----------------------------------------------------------------------
 
-def test_the_strip_shows_with_two_screens_in_the_group_and_the_view_makes_room(monkeypatch):
+def test_the_strip_shows_with_a_session_and_the_view_sits_between_the_chrome(monkeypatch):
     app = _app(monkeypatch)
+    assert not app.window_tabs.shown() and app._chrome_bands()[1] == 0
     app.new_shell()
     [first] = app.made
-    screen = app._sessions.for_view(first).screen
-    assert app._screen_tabs(screen) == ([], -1)
-    view_slot = app.panel._find_layer(first)
-    assert view_slot.reflow(100, 40).y == 0
-    app.new_shell()
-    tabs, current = app._screen_tabs(screen)
-    assert [t.label for t in tabs] == ["zsh", "zsh"] and current == 0
-    assert all(t.icon == "$" and t.closable for t in tabs)
-    assert view_slot.reflow(100, 40).y == app._strip_height() > 0
+    assert app.window_tabs.shown()  # one session: Files and its tab
+    menu_h, strip_h, status_h = app._chrome_bands()
+    assert (menu_h, strip_h, status_h) == (1.0, 1.0, 1.0)  # a grid's rows
+    rect = app.panel._find_layer(first).reflow(100, 40)
+    assert (rect.y, rect.h) == (2.0, 37.0)  # under the menu and the tabs, over the status
+    app.menu_bar.takes_activation_key = False  # the OS has the menu bar
+    assert app.panel._find_layer(first).reflow(100, 40).y == 1.0
 
 
 def test_a_tab_says_when_its_session_wants_you(monkeypatch):
@@ -143,8 +143,8 @@ def test_a_tab_says_when_its_session_wants_you(monkeypatch):
     app.new_shell()
     a, b = (app._sessions.for_view(v) for v in app.made)
     a.attention = ("attention", "zsh: asking")
-    tabs, _ = app._screen_tabs(b.screen)
-    assert tabs[0].mark == "⚠" and tabs[1].mark == ""
+    tabs, _ = app._window_tabs()
+    assert tabs[1].mark == "⚠" and tabs[2].mark == ""
 
 
 def test_a_click_on_the_strip_switches_tabs_or_opens_another(monkeypatch):
@@ -153,15 +153,30 @@ def test_a_click_on_the_strip_switches_tabs_or_opens_another(monkeypatch):
     app.new_shell()
     app.new_shell()
     a, b = (app._sessions.for_view(v) for v in app.made)
-    hits = iter([0, NEW_TAB])
-    b.screen.strip.hit = lambda x, y: next(hits)
-    click = Event(type=EventType.MOUSE_CLICK, x=3.0, y=-0.5, button="left")
-    from xefm.terminal import strip_event
-    b.view.on_strip_event = lambda e: app._strip_event(b.screen, e)
-    assert strip_event(b.view, click)
+    hits = iter([1, 0, NEW_TAB])
+    app.window_tabs.hit = lambda x, y: next(hits)
+    click = Event(type=EventType.MOUSE_CLICK, x=3.0, y=0.5, button="left")
+    assert app._tab_event(click, 3.0, 0.5)
     assert app._screens.current is a.screen
-    assert strip_event(b.view, click)
+    assert app._tab_event(click, 3.0, 0.5)
+    assert app._screens.current is app._screens.files  # the Files tab
+    assert app._tab_event(click, 3.0, 0.5)  # +: only a shell can start here
     assert len(app.made) == 3
+
+
+def test_plus_asks_what_to_start_when_there_is_more_than_one_kind(monkeypatch):
+    app = _app(monkeypatch)
+    asked = []
+    app._user_ctx = SimpleNamespace(choose=lambda title, labels, on_result: asked.append(
+        (labels, on_result)))
+    started = []
+    app._new_kinds = lambda: [("New Shell", lambda: started.append("shell")),
+                              ("New Claude Code", lambda: started.append("claude"))]
+    app._new_tab_menu()
+    [(labels, answer)] = asked
+    assert labels == ["New Shell", "New Claude Code"]
+    answer(1)
+    assert started == ["claude"]
 
 
 class _DrawnView(_View):
@@ -177,17 +192,22 @@ class _DrawnView(_View):
         return True
 
 
-def test_the_strip_is_drawn_over_a_session_view_that_covers_the_screen(monkeypatch):
+def test_a_session_screen_draws_the_window_chrome_around_its_view(monkeypatch):
     # The session view is a "cover" layer, and PuiKit draws a screen from its
-    # topmost cover layer up: a strip under the view was never drawn.
+    # topmost cover layer up: the chrome is drawn by a frame over the view -
+    # the very menu bar, tab strip and status bar the file manager places.
     app = _app(monkeypatch)
     app._make_session_view = lambda argv, *, cwd, env, label, shell: _DrawnView(shell=shell)
-    app.new_shell()
+    drawn = []
+    app.menu_bar.draw = lambda ctx: drawn.append(("menu", ctx.screen_rect))
+    app.status.draw = lambda ctx: drawn.append(("status", ctx.screen_rect))
     app.new_shell()
     Panel.render(app.panel)
     rows = app.panel.backend.snapshot()
-    assert "zsh" in rows[0] and "+" in rows[0]
-    assert set(rows[1].strip()) == {"."}  # the view starts below the strip
+    assert "Files" in rows[1] and "zsh" in rows[1] and "+" in rows[1]  # the strip
+    assert set(rows[2].strip()) == {"."}  # the view, below it
+    assert set(rows[38].strip()) == {"."} and rows[39].strip() == ""  # above the status
+    assert ("menu", (0, 0, 100, 1.0)) in drawn and ("status", (0, 39.0, 100, 1.0)) in drawn
     # Still the view's screen: its top layer and where its keys go.
     current = app._screens.current
     assert app._screens.top_layer() is current.session.view
@@ -312,10 +332,33 @@ def test_a_click_on_a_tabs_close_button_closes_that_session(monkeypatch):
     a, b = (app._sessions.for_view(v) for v in app.made)
     for s in (a, b):
         s.view.on_close_request = app._session_close_request
-    b.screen.strip.hit = lambda x, y: (CLOSE, 0)
-    app._strip_event(b.screen, Event(type=EventType.MOUSE_CLICK, x=3.0, y=-0.5,
-                                     button="left"))
+    app.window_tabs.hit = lambda x, y: (CLOSE, 1)
+    app._tab_event(Event(type=EventType.MOUSE_CLICK, x=3.0, y=0.5, button="left"), 3.0, 0.5)
     assert app._sessions.for_view(a.view) is None and app._screens.current is b.screen
+
+
+def test_pointer_events_on_the_chrome_go_to_its_widgets(monkeypatch):
+    app = _app(monkeypatch)
+    app.new_shell()
+    [view] = app.made
+    screen = app._sessions.for_view(view).screen
+    seen = []
+    app._tab_event = lambda event, x, y: seen.append((event.type, x, y)) or True
+
+    def at(kind, y):  # the view's own units: it starts 2 rows down
+        return app._chrome_event(screen, Event(type=kind, x=4.0, y=y, button="left"))
+
+    assert at(EventType.MOUSE_CLICK, -2.0)  # the menu bar's row
+    assert app.menu_bar.events[-1].y == 0.0
+    assert at(EventType.MOUSE_DOWN, -0.5)  # the strip: held from here...
+    assert at(EventType.MOUSE_DRAG, 5.0)  # ...down into the terminal
+    assert at(EventType.MOUSE_UP, 5.0) and at(EventType.MOUSE_CLICK, 5.0)
+    assert [k for k, _x, _y in seen] == [EventType.MOUSE_DOWN, EventType.MOUSE_DRAG,
+                                         EventType.MOUSE_UP, EventType.MOUSE_CLICK]
+    assert seen[0][2] == 0.5  # in the strip's own units
+    assert not at(EventType.MOUSE_CLICK, 5.0)  # the terminal's own
+    assert at(EventType.MOUSE_CLICK, 37.2)  # the status bar
+    assert app.status.clicks == [4.0]
 
 
 def test_the_strip_draws_its_tabs_and_tells_what_a_click_hit():
@@ -581,61 +624,61 @@ def test_the_line_where_a_tab_would_land_is_drawn_in_the_gap():
     from xefm.screen_strip import ScreenStrip
     from xefm.tab_strip import Tab
     panel = Panel(MemoryBackend(width=60, height=10))
-    strip = ScreenStrip(lambda: ([Tab("one"), Tab("two"), Tab("three")], 0))
+    strip = ScreenStrip(lambda: ([Tab("Files"), Tab("one"), Tab("two")], 1))
     panel.push_layer(strip, z=1, interactive=False, hints={"x": 0, "y": 0, "w": 60, "h": 1})
     panel.render()
     assert "│" not in panel.backend.snapshot()[0]
     hits = strip._strip.hits
-    strip.press((hits[0][0] + hits[0][1]) / 2, 0.5)
+    strip.press((hits[1][0] + hits[1][1]) / 2, 0.5)
     strip.drag(hits[2][1] - 0.5)
     panel.render()
     row = panel.backend.snapshot()[0]
-    gap = int(hits[2][1])  # the gap after "three", before +
+    gap = int(hits[2][1])  # the gap after "two", before +
     assert row[gap] == "│" and row.count("│") == 1
+    strip.release()
+    strip.take_click()
+    assert not strip.press((hits[0][0] + hits[0][1]) / 2, 0.5)  # Files stays put
 
 
 def test_moving_a_screen_tab_changes_the_tabs_not_the_order_they_were_made(monkeypatch):
     app = _app(monkeypatch)
     for _ in range(3):
         app.new_shell()
+    files = app._screens.files
     a, b, c = (app._sessions.for_view(v).screen for v in app.made)
-    assert app._screens.move_tab(c, 0)
-    assert app._screens.in_group(GROUP_TERMINAL) == [c, a, b]
+    assert app._screens.move_tab(c, 1)
+    assert app._screens.tabs() == [files, c, a, b]
     assert app._screens.started()[1:] == [a, b, c]  # ctx.screens(order="started")
-    assert app._screens.neighbour(c) is a
+    assert not app._screens.move_tab(c, 0)  # nothing goes before Files
+    assert not app._screens.move_tab(files, 2)  # and Files does not move
     app._show_screen(a)
     app._screen_action("terminal.move_tab_right")
-    assert app._screens.in_group(GROUP_TERMINAL) == [c, b, a]
-    assert not app._screens.move_tab(a, 3)  # off the end: stays
+    assert app._screens.tabs() == [files, c, b, a]
+    assert not app._screens.move_tab(a, 4)  # off the end: stays
 
 
 def test_dragging_a_screen_tab_along_the_strip_moves_it(monkeypatch):
-    from xefm.terminal import strip_event
     app = _app(monkeypatch)
     app._make_session_view = lambda argv, *, cwd, env, label, shell: _DrawnView(shell=shell)
     app.new_shell()
     app.new_shell()
     Panel.render(app.panel)
     a, b = (s.screen for s in app._sessions)
-    view = b.session.view
-    hits = b.strip._strip.hits
-    top = app._strip_height()
+    hits = app.window_tabs._strip.hits
+    x0, x1, _ = hits[2]
+    tx0, tx1, _ = hits[1]
 
-    def at(kind, x, y=-0.5):
-        return strip_event(view, Event(type=kind, x=x, y=y, button="left"))
+    def send(kind, x):
+        app._tab_event(Event(type=kind, x=x, y=0.5, button="left"), x, 0.5)
 
-    x0, x1, _ = hits[1]
-    assert at(EventType.MOUSE_DOWN, (x0 + x1) / 2)
-    tx0, tx1, _ = hits[0]
-    # Down into the terminal and back: the drag stays the strip's.
-    assert at(EventType.MOUSE_DRAG, (tx0 + tx1) / 2 - 1.0, y=3.0 - top)
-    assert app._screens.in_group(GROUP_TERMINAL) == [a, b]  # only shown where
-    assert b.strip._strip.drop_slot == 0                     # it would land
-    assert at(EventType.MOUSE_UP, tx0 + 1.0, y=3.0 - top)
-    assert app._screens.in_group(GROUP_TERMINAL) == [b, a]  # dropped: moved
-    assert at(EventType.MOUSE_CLICK, tx0 + 1.0, y=3.0 - top)  # swallowed, not a switch
+    send(EventType.MOUSE_DOWN, (x0 + x1) / 2)
+    send(EventType.MOUSE_DRAG, (tx0 + tx1) / 2 - 1.0)
+    assert app._screens.tabs()[1:] == [a, b]  # only shown where it would land
+    assert app.window_tabs._strip.drop_slot == 1
+    send(EventType.MOUSE_UP, tx0 + 1.0)
+    assert app._screens.tabs()[1:] == [b, a]  # dropped: moved
+    send(EventType.MOUSE_CLICK, tx0 + 1.0)  # ends the drag, no switch
     assert app._screens.current is b
-    assert not at(EventType.MOUSE_DOWN, 5.0, y=2.0)  # the terminal's own
 
 
 def test_moving_a_pane_tab_keeps_the_current_one_current():

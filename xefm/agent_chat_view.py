@@ -66,14 +66,24 @@ CONTEXT = "terminal"
 _MOUSE = (EventType.MOUSE_DOWN, EventType.MOUSE_UP, EventType.MOUSE_DRAG,
           EventType.MOUSE_CLICK, EventType.MOUSE_SCROLL, EventType.MOUSE_MOVE)
 
-#: The footer's keys, per state.
+#: The footer's keys, per state. ``{newline}`` is the new-line key this
+#: frontend surely delivers (:func:`newline_key`).
 _HINTS = {
-    C.STARTING: "Enter send · Alt+Enter new line · Esc back to files",
-    C.IDLE: "Enter send · Alt+Enter new line · / commands · @ files · Shift+Tab mode · ↑ earlier message · Esc back to files",
+    C.STARTING: "Enter send · {newline} new line · Esc back to files",
+    C.IDLE: "Enter send · {newline} new line · / commands · @ files · Shift+Tab mode · ↑ earlier message · Esc back to files",
     C.WORKING: "Esc stop · Enter send next · PgUp/PgDn scroll",
     C.ASKING: "Answer the question · Esc stop",
     C.EXITED: "Enter start again · /exit close · Esc back to files",
 }
+
+
+def newline_key(pixel_layout: bool) -> str:
+    """The new-line key to name: Shift+Enter in the desktop app; Ctrl+J in a
+    terminal, which every terminal delivers - Shift+Enter needs a terminal
+    that reports it apart from Enter, and Alt+Enter is Windows Terminal's
+    full-screen key and needs Option sent as Meta on a Mac. (All three still
+    work wherever they arrive.)"""
+    return "Shift+Enter" if pixel_layout else "Ctrl+J"
 
 
 #: XeFM's own commands, listed before the agent's.
@@ -194,6 +204,10 @@ class ChatView(FocusContainer, Widget):
         #: that move between screens.
         self.on_strip_event: Callable[[Any], bool] | None = None
         self.on_screen_action: Callable[[str], bool] | None = None
+        #: Set by the app when the window's status bar shows this view's
+        #: keys (:attr:`status_hint`): the view then draws no footer of its own.
+        self.chrome_status = False
+        self._pixel_layout = False
 
     # --- the session list's view of it ----------------------------------------
 
@@ -213,6 +227,12 @@ class ChatView(FocusContainer, Widget):
     @property
     def chat_state(self) -> str:
         return self.conversation.state
+
+    @property
+    def status_hint(self) -> str:
+        """The keys for what can be done now, for the status bar."""
+        hint = _HINTS.get(self.conversation.state, _HINTS[C.IDLE])
+        return hint.format(newline=newline_key(self._pixel_layout))
 
     # --- the process ------------------------------------------------------------
 
@@ -738,10 +758,14 @@ class ChatView(FocusContainer, Widget):
         ctx.draw_text(max(pad_x, wu - pad_x - right_w), pad_y, right,
                       Style(fg=state_fg, bg=header_bg))
 
-        # Footer: the keys for what can be done now.
-        fy = hu - 1.0 - pad_y
-        draw_status_bar(ctx, fy, _HINTS.get(conv.state, _HINTS[C.IDLE]),
-                        pad_x=pad_x + 1, bottom_pad=pad_y)
+        # Footer: the keys for what can be done now - in the window's status
+        # bar when it shows them (a session's screen, #1019), else here.
+        self._pixel_layout = bool(ctx.pixel_layout)
+        if self.chrome_status:
+            fy = hu - pad_y
+        else:
+            fy = hu - 1.0 - pad_y
+            draw_status_bar(ctx, fy, self.status_hint, pad_x=pad_x + 1, bottom_pad=pad_y)
 
         # The message field, as tall as what is typed (up to its max).
         lc = ctx.layout_context()

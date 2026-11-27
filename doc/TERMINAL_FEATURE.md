@@ -51,57 +51,63 @@ session's. A screen keeps what is open on it. A viewer you opened over the
 panes is still there when you come back from a terminal, so you can look at a
 file and a terminal by turns, switching between the two screens.
 
-Screens come in three groups: the file manager's, the terminal's (shells and
-terminal programs), and the [AI agents'](AI_AGENT_SESSIONS_FEATURE.md).
-Going to a group is one key; starting another session is a separate,
-deliberate step, so sessions do not pile up behind the panes unnoticed.
+Every session's screen is a tab of the window, after the file manager's:
+shells, terminal programs and [AI agents](AI_AGENT_SESSIONS_FEATURE.md) in
+one strip. Going back to a session is one key; starting another is a
+separate, deliberate step, so sessions do not pile up behind the panes
+unnoticed.
 
-- **Go to a group.** **Terminal** (`subshell`) goes back to the terminal
-  session you used last, and starts a shell only when there is none.
+- **The window around it.** A session's screen keeps the window's menu bar
+  (where it is in the window, as in a terminal), the strip of tabs and the
+  status bar, at the same places as the file manager; only what is between
+  them changes. The status bar says the keys for the session. The menu
+  items that act on the file manager are off while a session is on screen.
+- **Tabs.** While there is a session, the strip of tabs runs under the menu
+  bar on every screen, the file manager's included: **Files** first, then
+  one tab per session in the order they were started, the one on screen in
+  front. Each tab starts with what it shows - `▤` the file manager, `$` a
+  shell, `>` a terminal program, `✦` an AI agent - and a session's tab, while
+  the pointer is over it, ends with `×`, which closes it (asking first only
+  when that would stop something). Click a tab to go there, or use
+  `terminal.next_tab` and `terminal.prev_tab`. Drag a tab along the strip to
+  move it: a line shows where it will go, and it moves there when you let go
+  (or use `terminal.move_tab_left` and `terminal.move_tab_right`); **Files**
+  stays first. A tab whose session is waiting on you shows `⚠` in place of
+  its icon, one that has finished something since you last looked `✓`.
+- **Go back to a session.** **Terminal** (`subshell`) goes back to the
+  terminal session you used last, and starts a shell only when there is none.
   **AI Agent** (`agent`) does the same for the AI agent sessions.
   **Switch Screen** (`switch_screen`, `terminal.switch_screen` inside a
   session) goes from the file manager to the screen you used last, and from
-  any session back to the file manager. A session you leave keeps running.
-  Coming back to the file manager re-reads the panes.
-- **Tabs.** While a group has two sessions or more, a strip of tabs runs
-  across the top of its screens: one tab per session, in the order they were
-  started, the one on screen in front. Each tab starts with what the session
-  is - `$` a shell, `>` a terminal program, `✦` an AI agent - and, while the
-  pointer is over it, ends with `×`, which closes it (asking first only when
-  that would stop something).
-  Click a tab to go there, or use `terminal.next_tab` and `terminal.prev_tab`.
-  Drag a tab along the strip to move it: a line shows where it will go, and
-  it moves there when you let go (or use `terminal.move_tab_left` and
-  `terminal.move_tab_right`).
-  A tab whose session is waiting on you shows `⚠` in place of its icon, one
-  that has finished something since you last looked `✓`.
-- **Start another session.** **New Shell Here** (`new_shell`), or **New AI
-  Agent Here** (`new_agent`), starts one even when a session is open. From
-  inside a session, `terminal.new` or the `+` at the end of the tabs starts
-  another of the same kind. **Subshell Here** in the directory's context menu
-  starts a new shell in that directory.
-- **How many there are.** The status bar always shows how many sessions run,
-  `▣ 2 shells · 1 AI`. Click it to open Screens.
+  any session back to the file manager; with no session yet it starts a
+  shell (in a terminal, the subshell) - never an AI agent, which only
+  `agent` starts. A session you leave keeps running. Coming back to the file
+  manager re-reads the panes.
+- **Start another session.** The `+` after the tabs (or `terminal.new` inside
+  a session) starts a shell or an AI agent session, asking which when there
+  is more than one to choose from. **New Shell Here** (`new_shell`) and **New
+  AI Agent Here** (`new_agent`) start one even when a session is open.
+  **Subshell Here** in the directory's context menu starts a new shell in
+  that directory.
 - **Screens.** **Tools → Screens…** (`screens`, which works over a viewer too,
   or `terminal.screens` from inside a session) lists every session, to go to,
   close, rename or resume one. Each row says what runs in the session - the
   title the program gives itself, as a terminal's tab shows it - and the
   directory its shell is in now (`make test - ~/src`, or `zsh - ~/src` at the
   prompt), with its kind, its state and when you last used it on the right.
-  The terminal's sessions come first, then the AI agents', each with the ones
-  waiting on you first and the rest in the order you last used them; the
-  cursor starts on the one you used last that is not on screen. Below them
-  are **Close N idle sessions**, which closes every session that is not in
-  the middle of something, the [AI conversations you
+  The ones waiting on you come first and the rest in the order you last used
+  them; the cursor starts on the one you used last that is not on screen.
+  Below them are **Close N idle sessions**, which closes every session that
+  is not in the middle of something, the [AI conversations you
   closed](AI_AGENT_SESSIONS_FEATURE.md#closing-loses-nothing), and rows that
   start a new shell or a new AI agent session in the active pane's directory.
   The remove key (`remove_list_item`) closes the highlighted session, and the
   rename key (`rename_list_item`) gives it a name of your own, which its tab
   shows too.
 - **When it ends.** `exit` in a shell, or a program that finishes, closes the
-  session, whether it was on screen or not. The next tab of its group comes on
-  (the one before it when it was the last), or the file manager when it was
-  the group's only session. `exit` closes a shell even when it passes on an
+  session, whether it was on screen or not, and the tab beside it comes on
+  (the one after it, else the one before - the file manager's for the first
+  session). `exit` closes a shell even when it passes on an
   error from an earlier command, as cmd's `exit` does. A program that fails,
   or a shell that ends before you typed anything into it (it could not start),
   keeps its last screen up so you can read it; `Enter` or `Esc` closes it. To

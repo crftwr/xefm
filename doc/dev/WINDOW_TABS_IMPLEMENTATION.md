@@ -1,0 +1,287 @@
+# Window Tabs, the Shared Chrome and Closed Conversations: Implementation
+
+Discussion #1019. Terminal and AI agent sessions piled up behind the panes:
+starting one was one key and always made a new one, closing one was several
+steps, and nothing on screen said how many there were. This is the second
+layer over [TERMINAL_SESSIONS_IMPLEMENTATION.md](TERMINAL_SESSIONS_IMPLEMENTATION.md);
+read that first for screens, sessions and the layer tree.
+
+| Part | Where |
+|---|---|
+| The tabs | `ScreenManager.tabs` / `move_tab` / `neighbour` / `after_close` (`xefm/screens.py`); `XeFMApp._window_tabs`, `_tab_icon`, `_tab_mark`, `_tab_event` |
+| A session's kind | `Session.group` (`GROUP_TERMINAL`, `GROUP_AGENT`), `Screen.screen_group`, `ScreenManager.in_group` / `last_in_group` |
+| Keys | `XeFMApp.subshell`, `open_agent`, `_go_to_group`, `switch_screen`, `new_shell`, `new_agent`, `_new_kinds`, `_new_tab_menu`; `xefm.terminal.SCREEN_ACTIONS`, `XeFMApp._screen_action` |
+| Tab drawing | `xefm/tab_strip.py` (`TabStrip`, `Tab`), shared with the pane's folder tabs |
+| The window's strip | `xefm/screen_strip.py` `ScreenStrip` (one instance, `XeFMApp.window_tabs`) |
+| The chrome on a session's screen | `xefm/screen_strip.py` `SessionFrame`, `chrome_bands`; `XeFMApp._add_session_screen`, `_chrome_bands`, `_content_band`, `_chrome_event`, `_session_hints`; `StatusBar._text`, `click_at`; `xefm.terminal.strip_event` |
+| Menus | `XeFMApp._files_only_items`; the `menu` key over a session in `on_event` |
+| Closing | `XeFMApp._session_close_request` (asks only on `Session.busy`), `_close_idle_sessions`; `ChatView._key` (Ctrl-D) |
+| Screens | `XeFMApp.screens`, `_rename_screen`; `FilterListDialog(on_rename=)`, `rename_list_item` |
+| Closed conversations | `ClosedAgent` (`xefm/terminal_sessions.py`); `XeFMApp._closed_agents`, `_remember_closed`, `_forget_closed`, `_resume_agent`, `_resume_into`; app state key `agents.closed` |
+| Names | `Session.title`, `title_from_request`, `title_from_terminal`; `XeFMApp._name_agent_session`, `_session_title`; `Conversation.title` from ACP `session_info_update` |
+
+## The tabs
+
+The window's screens are its tabs: the file manager's, pinned first, then
+every session's - shells, terminal programs, AI agents - in one strip
+(`ScreenManager.tabs`, the order they were made until the user moves one;
+`ScreenManager._tabs` holds it). `move_tab` keeps the file manager first:
+it does not move, and nothing goes before it. `started()` stays the order
+they were made, which `ctx.screens(order="started")` promises.
+
+`neighbour(screen)` is the tab after it, else before it - the file
+manager's for the first session; `after_close` is that. `ScreenManager.remove`
+and `_close_session` both use it. The closing screen itself still counts in
+`neighbour`, since its place decides which tab is next. A screen whose
+session is closing (`Screen.closing`, set by `_close_session` before a fade
+that can outlast the call) is no longer a tab: otherwise a key pressed during
+the fade showed the screen on its way out.
+
+A session's kind is still kept - `Session.group` is `GROUP_AGENT` for a
+drawn agent or an agent run in the terminal (`Session.agent`, set by
+`_start_agent`), else `GROUP_TERMINAL`; `Screen.screen_group` (`Screen.group`
+was already its `LayerGroup`) - for the keys that go back to a kind
+(`last_in_group`) and the tab's icon. An earlier version had a strip per
+kind; one strip read better, and leaves room for viewers and editors to
+become tabs later (with a preview-tab rule, so they do not pile up).
+
+## Keys
+
+- `subshell` and `agent` (filer) go to the last screen of their kind, and
+  start a session only when there is none. `subshell` in terminal mode is
+  unchanged: it hands the terminal over.
+- `new_shell` and `new_agent` (filer, unbound) always start one. `new_agent`
+  never reuses a drawn session in the same folder; only a request
+  (`ask_agent`, `prompt` set) still goes to one (`_agent_chat_for`).
+- `switch_screen` (common, so a viewer runs it through `surface_actions`):
+  from the file manager to the most recently shown other screen, from any
+  other back to the file manager. With no session it starts a terminal - a
+  shell session on the desktop, the subshell in terminal mode - and never an
+  agent: the key keeps meaning "terminal", the first press is not a dialog
+  the second press is not, and an agent CLI (sign-in, a plan's usage) starts
+  only on `agent`. Ctrl-` carries it, and `terminal.switch_screen` inside a
+  session, which wins over the program because it is `terminal.*`.
+- The `+` after the tabs and `terminal.new` run `_new_tab_menu`: what
+  `_new_kinds` says can start (a shell where XeFM has a terminal, each agent
+  installed - drawn ones only in terminal mode), at once when that is one
+  thing, else picked from a `choose` list.
+- `terminal.next_tab` / `prev_tab` walk all the tabs, the file manager's
+  included; `terminal.move_tab_left` / `right` move the current one. Desktop
+  chords only, or unbound: a terminal cannot deliver them, and a program
+  needs the plain keys.
+- `screens` and `terminal.screens` lost Ctrl-`: Screens is reached from the
+  Tools menu and the palette.
+
+Both session views (`TerminalView`, `ChatView`) take the screen actions
+through one callback, `on_screen_action`, set by `_add_session_screen`, so
+neither view knows about tabs.
+
+## The window's strip
+
+`ScreenStrip` is one widget, `XeFMApp.window_tabs`. The file manager's
+layout places it under the menu bar (`size="content"`, zero high without a
+session - `measure` asks `shown()`), and a session's screen draws the same
+instance at the same place (below). It lists `_window_tabs()` - **Files**
+(pinned, not closable) then each session - with `+` after them; the current
+one is the screen on now. Pointer events reach `_tab_event(event, x, y)` in
+the strip's own units: from its layout slot directly (`on_event`), or from a
+session's view through `_chrome_event`.
+
+Tab chips: `Tab(label, mark, icon, closable)`. The icon is `▤` for the file
+manager, `$` a shell, `>` a terminal program, `✦` an AI agent
+(`_TAB_ICONS`); the mark (`⚠`, `✓`, `…`) takes the icon's place while a
+session out of view has something to say. A chip is: inset, the lead (the
+mark, else the icon) and some room, the label, room and `×` when closable,
+inset; squeezed, only the label gives way. The `×` is drawn only while
+`ctx.pointer_in` says the pointer is over its tab (which also tells the
+panel to redraw when the pointer crosses the tab's edge), with a backing
+under it while the pointer is on the button (a little wider than the glyph
+on a vector backend, exactly its cell on a grid, and the glyph drawn on the
+backing's colour - on a grid a cell's text background is what shows); its
+room is reserved either way, so the tabs never shift. `close_hits` are
+exactly the area the backing covers, so what lights up is what a click hits.
+A click there calls that session view's `on_close_request` - the same path as
+`terminal.close`.
+
+On a vector backend a tab is 1.6 rows high (`TAB_HEIGHT_GUI`: 30% of a row
+above and below the text, which `TabStrip.draw(height=)` centres), and the
+strip is that plus 4 px above it; on a grid both are one row. The tabs stand
+on the strip's bottom edge, so the current one runs on into the page. The
+folder tabs use the same chips, height and spacing (inset 1 unit at each end,
+0.75 between icon, label and `×` on a vector backend; whole cells on a grid).
+
+Moving a tab: `TabStrip.press` arms a drag of the tab under a press (not a
+pinned one, not its `×`, not `+`); `drag(x)`, once the pointer has travelled
+`DRAG_THRESHOLD`, sets `drop_slot` - the gap before the first tab whose
+middle is past the pointer, never before a pinned tab, or None where the tab
+would stay put - and says whether it changed, so the caller redraws; `draw`
+shows the slot as a line in the accent in that gap (2 px on a vector
+backend, a `│` in the gap's cell on a grid). Nothing moves while dragging:
+`release` returns `(from, to)` for the caller to move, and `take_click`
+refuses the click the release brings after a drag. The folder tabs do the
+same in `PaneHeader.handle_event` with `PaneManager.move_tab`, which keeps the
+current tab current.
+
+## The chrome on a session's screen
+
+A session's view is a `cover` layer (`viewer_layer_hints`), and PuiKit draws
+a screen from its topmost cover layer up: the file manager's layout - its
+menu bar, the strip, its status bar - is not drawn under it. So each
+session's screen has a `SessionFrame` layer over the view (z 2 against its
+1; dialogs come at 70), not interactive, which draws the very same widgets
+with `draw_child`: `menu_bar` in the header surface (only where the menu bar
+is in the window - `takes_activation_key`; the OS's otherwise), `window_tabs`,
+and `status` in the status surface. One instance of each, so the two places
+cannot drift apart; `MenuBar` and `StatusBar` record the rect they were last
+drawn in, so a menu opened from a session's screen hangs from the right
+place. The view's reflow puts it between the bands (`_content_band`), and
+`chrome_bands(backend, menu_in_window=, strip=)` gives the heights the file
+manager's layout measures: `CONTROL_HEIGHT` or a row for the menu, the
+strip's, a row plus `BAR_PAD_PX` for the status bar. Both recompute every
+render, so a first session (the strip appearing) or a closed last one
+re-lays out the next frame.
+
+Not interactive, the frame never takes the keys or the focus
+(`_top_interactive_slot` skips it), and what looks for a screen's topmost
+layer skips it through `screen_strip.top_surface` (`is_strip`):
+`ScreenManager.top_layer`, `_over_top_layer` (where an app-wide action's
+dialog is parented), `_palette_surface` (the first version of the strip
+broke the command palette in sessions by answering for it) and `ctx.view`'s
+scroll to a line.
+
+Pointer events: the panel hands every pointer event to the view, in its own
+units. `xefm.terminal.strip_event` passes each to `on_strip_event` - the
+app's `_chrome_event` - first: by the event's place in the window it goes to
+the menu bar (`handle_event`, its own units), the strip (`_tab_event`) or the
+status bar (`click_at`), and True; in the content band it is the view's. A
+press on a band keeps the gesture (`screen._chrome_held`: its drags, its
+release and the click after it) wherever the pointer goes, so a tab dragged
+down into the terminal never selects text there.
+
+Only the view moves in a transition (`_animate_session`): the chrome is at
+the same places on both screens, so it stays still while the page changes.
+
+The status bar on a session's screen says `_session_hints(session)`: a drawn
+agent's `ChatView.status_hint` (which then draws no footer of its own,
+`chrome_status`), or for a terminal the keys XeFM takes from the program -
+`terminal.*` ones, and inherited ones only as chords. The jobs on its right
+are the same as on the file manager. `StatusBar.handle_event` keeps refusing
+clicks under a modal layer; `click_at` is what the frame calls.
+
+The new-line key the agent's footer names is `newline_key()`: Shift+Enter in
+the desktop app, Ctrl+J in a terminal - every terminal sends it, many cannot
+send Shift+Enter, and Alt+Enter is Windows Terminal's full-screen key and
+needs Option sent as Meta on a Mac. All three still work where they arrive.
+
+## Menus and the palette on a session's screen
+
+The menu bar is there on every screen now, so `_files_only_items` turns off
+what acts on the file manager while a session is on screen: File, Edit, Go
+and Select whole, View but its Theme and Font Size, and Tools' Ask AI Agent,
+External Programs and Find Similar Files (each item's `enabled` predicate is
+wrapped). The rest of Tools and Help serve every screen. No session menu of
+its own: the strip and Screens carry what one would hold.
+
+In terminal mode the menu bar opens over a drawn agent's conversation on its
+`menu` key (`on_event`, next to the palette's): the conversation owns the
+keyboard, so the binding is taken before it; a terminal's program keeps the
+key unless it is a chord no program receives (`takes_binding`). The command
+palette opens there the same way, as it did before for viewers.
+
+## The tab strip lives in XeFM, by decision
+
+"No UI-toolkit code in XeFM" has one recorded exception here. The folder tabs
+were already drawn by XeFM (`PaneHeader._draw_tabs`), and the screen strip
+needed the same thing: no focus, no keys, the host choosing the current tab
+and how loud it is, equal shares and elided labels when they do not fit.
+PuiKit's `Tabs` is a different widget - a dialog's page switcher that takes
+focus and the arrow keys and holds the page under it. The user decided
+(#1019) to keep this strip as XeFM's own shared drawing in `xefm/tab_strip.py`
+rather than move it into PuiKit. Its one capability read, `ctx.vector_shapes`,
+only rounds the chips' top corners - a pixel ornament, which
+`doc/dev/CAPABILITY_BRANCHING_AUDIT.md` allows. The release review should not
+raise it again.
+
+## Closing
+
+`_session_close_request` asks only when `Session.busy`: a program running,
+a shell in a command (`TerminalView.busy`), an agent mid-turn
+(`ChatView.busy`). It asked on `view.running` before, so an idle shell at
+its prompt asked "still running?", unlike the quit confirmation.
+`_agent_chat_close_request` (drawn sessions) already asked only mid-turn.
+
+`_close_idle_sessions` closes every session that is not busy - which
+includes drawn agents between turns, since closing one keeps its
+conversation, and excludes agents run in the terminal, which are busy while
+their program runs.
+
+`ChatView` closes on Ctrl-D with an empty message and no completion menu: a
+shell's end-of-input, and a key every terminal sends (terminal mode has no
+`terminal.close` key).
+
+## Closed conversations
+
+`_close_session` calls `_remember_closed` before anything else; so does
+`_close_terminal_sessions` at quit. Only a drawn agent session with an agent
+session id and at least one user turn is kept, as a `ClosedAgent`: the
+`AGENTS` name, the folder, the id, the title, when, and the `Conversation`
+object itself. The list is newest first, one per id, at most 20, and is
+written to the app state (`agents.closed`) without the conversation.
+`_closed_agents` reads it back lazily on first use.
+
+`_resume_agent(record)` finds the drawn entry by name, drops the record and
+calls `_start_agent(entry, resume=record)`, which starts in the record's
+folder and passes it to `_start_agent_chat`. There `_resume_into` gives the
+session the record's title and either puts the old `Conversation` back (this
+run: the transcript returns as it was) or sets only `session_id` on a fresh
+one with a notice (an earlier run). Then `protocol.restart(view,
+resume=True)` - the same path a crashed agent restarts on: Claude Code gets
+`--resume <id>` through `restart_argv`, Codex `thread/resume`, ACP
+`session/resume` or `session/load`, all from `conversation.session_id`.
+
+Agents run in a terminal session are not kept: XeFM does not know their CLI's
+conversation id.
+
+## Names
+
+`Session.title` is set once and then only by the rename key.
+
+- Drawn: `_agent_chat_changed` calls `_name_agent_session` on every change,
+  shown or not. It takes `Conversation.title` as soon as the agent gives one
+  (ACP `session_info_update`, folded in `AcpClient._on_notification`), else,
+  once the state is back at `IDLE` or `ASKING` after the first user item,
+  `title_from_request` of that item: its first non-empty line, spaces run
+  together, cut at a word to 40 characters. A request from `ask_agent` has
+  the context appended after a blank line, which the first line leaves out.
+- In a terminal: `_session_title` takes the first OSC title that says more
+  than the program's name (`title_from_terminal`: leading marks such as
+  Claude Code's `✳` and spinners stripped, the session's base name, the
+  program and the known agent names refused).
+
+What runs now (`activity`) stays separate and is shown next to the title in
+Screens.
+
+## Screens
+
+Rows: every session, whatever its kind, waiting-on-you first (`attention[0] == "attention"`), then `last_used_at` (set by
+`make_current`); then "Close N idle sessions" when any is idle; the closed
+conversations whose agent is set up and drawn; "New shell" (desktop); "New
+<agent>". The file manager is not a row - `switch_screen` goes back. The
+right column is the kind, the state and `ago(last_used_at)` (or "shown").
+The cursor starts on the first session that is not on screen.
+
+The remove key closes a session or forgets a closed conversation; the rename
+key (`rename_list_item`, F2, a new `filter_list` action) closes the dialog,
+asks for the name with `show_input` and opens Screens again.
+
+## Tests
+
+`test/test_window_tabs.py`: names; the tabs, the kind keys, closing to the
+tab beside, tab stepping; the strip, the view between the chrome, the chrome
+drawn on a session's screen, pointer events routed to the chrome; marks,
+icons, the close button and its cell, clicks, `+`; tall GUI tabs; dragging
+and the drop line; the close request, close-idle, rename; closed
+conversations (kept, persisted, offered, resumed); naming both ways, ACP's
+title; Ctrl-D, the rename key and the new key bindings.
+`test/test_terminal_sessions.py` and `test/test_agent_chat.py` hold the
+rest of the screen behaviour.

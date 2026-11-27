@@ -150,6 +150,8 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | Quick View | `quick_view` — [クイックビュー](QUICK_VIEW_FEATURE.ja.md)を参照 |
 | Flat View | `flat_view` — [フラット表示](FLAT_VIEW_FEATURE.ja.md)を参照 |
 
+ターミナルや AI エージェントのセッションを表示している間もメニューバーは残り（ターミナルではそこにも描かれます）、ファイルマネージャーに対して働く項目（File、Edit、Go、Select、View の大半、Tools の Ask AI Agent、External Programs、Find Similar Files）は、ファイルマネージャーに戻るまで無効になります。
+
 ### Tools メニュー
 
 | 項目 | アクション |
