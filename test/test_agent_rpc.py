@@ -361,7 +361,7 @@ def _refuse(command):
 @pytest.fixture
 def codex(start):
     return start(FAKE_CODEX, agent_codex.CodexProtocol(
-        refuse=_refuse, instructions="The rules", skills_root="/skills")).idle()
+        refuse=_refuse, instructions="The rules", skills_roots=["/skills"])).idle()
 
 
 @pytest.fixture
@@ -928,7 +928,7 @@ def test_codex_is_handed_the_rules_as_its_session_opens(tmp_path):
     options = agents.protocol(entry, values).options
     assert "Be kind." in options["instructions"] and "SKILL.md" in options["instructions"]
     assert "XeFM draws this conversation" in options["instructions"]
-    assert options["skills_root"] == values["{skills_dir}"]
+    assert options["skills_roots"] == [values["{skills_dir}"]]
 
 
 def test_copilot_is_handed_the_skill_the_rules_and_the_denied_commands(tmp_path):

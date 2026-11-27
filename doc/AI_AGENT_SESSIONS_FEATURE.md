@@ -201,6 +201,8 @@ between you and your plan with the agent's maker, as it is in a terminal.
   [`xefmctl`](XEFMCTL_FEATURE.md), how XeFM's configuration and extensions
   work. Nothing is installed in the agent's own folders; each session is
   handed the skill when it starts.
+- **[Your own skills](#your-own-skills-xefmskills)** from `~/.xefm/skills/`,
+  handed the same way, to these sessions alone.
 - **Rules** for working inside XeFM: start with `xefmctl state`; read what
   you see rather than guessing; change files only through `xefmctl`, so that
   you confirm each change; never delete for good; show results in XeFM.
@@ -317,6 +319,37 @@ which folder is yours. A conversation XeFM draws does not have this.
 A `config.py` that has its own `AGENTS` keeps it: add the Codex, Copilot or
 Antigravity line to it to get that agent.
 
+### Your own skills: `~/.xefm/skills/`
+
+A skill in `~/.xefm/skills/<name>/SKILL.md` is handed to every agent session
+XeFM starts, and to no agent you run anywhere else. Use it for what only makes
+sense beside the file manager: a workflow built on `xefmctl`, how you sort and
+rename photos, where downloads go. Kept in the agent's own skills folder, the
+same instructions would show up in every coding session too.
+
+The easiest way to make one is to ask for it in a session:
+
+> Write a skill that sorts photos into year/month folders by date taken, and
+> install it as an XeFM skill.
+
+The agent writes the folder and checks it. A skill is a plain
+[Agent Skills](https://agentskills.io) folder: `SKILL.md`, with a `name` that
+matches the folder's and a `description` of when to use it, and any files
+beside it. You can write one by hand, or copy one in.
+
+- A new or changed skill reaches the **next** session; no reload is needed.
+  The session that wrote it reads it directly if you want to use it at once.
+- In Claude Code they appear as `xefm-user:<name>`, apart from XeFM's own
+  `xefm:xefm`. Every agent with a preset gets them; for Codex in a terminal
+  session, the rules list each skill and where it is.
+- `xefmctl skill list` shows your skills and whether sessions get them;
+  `xefmctl skill check <name>` says what is wrong with one. They work in
+  every session, whichever way XeFM was installed; from any shell, so does
+  `xefm skills list|check` where `xefm` is on PATH (a pip or Homebrew
+  install). A skill that fails the check is left out (with a warning in the
+  log), and the name `xefm` is taken by XeFM's own.
+- To remove one, move its folder to the trash.
+
 ### Saved requests: `AGENT_PROMPTS`
 
 Requests you make often, listed in **Ask AI Agent…**: pick one, or type
@@ -348,6 +381,8 @@ session:
 | `{skills_dir}` | A skills folder holding the `xefm` skill (`xefm/SKILL.md`) |
 | `{skill_dir}` | The `xefm` skill's own folder |
 | `{plugin_dir}` | The same skill as a Claude Code plugin folder |
+| `{user_skills_dir}` | A skills folder holding [your own skills](#your-own-skills-xefmskills) (empty when you have none) |
+| `{user_plugin_dir}` | The same as a Claude Code plugin folder (`xefm-user`) |
 | `{rules}` / `{rules_file}` | The rules, as text / in a Markdown file |
 | `{settings_file}` | A JSON file of the `settings` given (empty without them) |
 | `{mcp_config_file}` | A JSON file of [XeFM's tools](#the-agents-own-sandbox), as an MCP configuration (`mcpServers`, over HTTP); empty where they could not be started |

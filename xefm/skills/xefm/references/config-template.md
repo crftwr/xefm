@@ -1146,8 +1146,9 @@ class Config:
     #                permission settings.
     #                Without a preset, put the placeholders in 'command'
     #                yourself: {plugin_dir} {skills_dir} {skill_dir} {rules}
-    #                {rules_file} {settings_file} {mcp_config_file} (and
-    #                {prompt} in 'prompt_args', default ['{prompt}'], for ask_agent).
+    #                {rules_file} {settings_file} {mcp_config_file}
+    #                {user_plugin_dir} {user_skills_dir} (your own skills) and
+    #                {prompt} in 'prompt_args' (default ['{prompt}'], for ask_agent).
     #   'restrict' : True (the default): xefmctl from the session has every
     #                file change confirmed in XeFM, may not delete for good,
     #                and asks before its first read outside this disk; for
@@ -1177,6 +1178,9 @@ class Config:
 
     # Your own rules for every agent session, after XeFM's (a string), e.g.
     # AGENT_RULES = "Never touch ~/Documents/Taxes."
+    # Skills of your own that only these sessions get go in
+    # ~/.xefm/skills/<name>/SKILL.md (`xefmctl skill check` in a session
+    # checks them).
     AGENT_RULES = ""
 
     # Requests you make often, listed in Tools > Ask AI Agent... (ask_agent):
