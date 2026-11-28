@@ -25,7 +25,13 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.34.0 is the floor for the window's tabs (#1019): a session's screen owns
+# 1.34.1 is the floor for Markdown tables (puikit#249): in a terminal a table
+# below an image stays on the grid (its bars had landed a row up, over the
+# junctions), Japanese wraps at the edge instead of moving a sentence whole to
+# the next line, and columns share the width as a browser does, so a short
+# key column beside long prose keeps its words whole. Soft: on 1.34.0 the
+# documents open, with those tables drawn as before.
+# 1.34.0 was the floor before for the window's tabs (#1019): a session's screen owns
 # the menu bar so the OS bar stays active there (Panel.set_menu_bar owner=),
 # Ctrl-Tab reaches XeFM on macOS, the drawn conversation's earlier messages
 # look like its message field (::: box field), and in a terminal the menus
@@ -347,7 +353,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.34.0
+puikit>=1.34.1
 pygments
 boto3
 watchdog
