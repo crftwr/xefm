@@ -1319,7 +1319,7 @@ class PaneHeader(Widget):
         chips = [Tab(label, icon=icon, closable=True)
                  for icon, label in (_tab_parts(t) for t in tabs)]
         height = tab_height(ctx)
-        ground, page = strip_colors(ctx.theme)
+        ground, page = strip_colors(ctx.theme, pane=True)
         self._strip.draw(ctx, [*chips, Tab(NEW_TAB)], current, pad_x, y, avail,
                          emphasis=active, height=height, ground_height=y + height + y,
                          ground=ground, current_bg=page)

@@ -121,7 +121,10 @@ On a vector backend a tab is 1.3 rows high (`TAB_HEIGHT_GUI`: 15% of a row
 above and below the text, which `TabStrip.draw(height=)` centres), and the
 strip is that plus 4 px above and 4 px below it, the tabs centred in it with
 all four corners rounded; on a grid both are one row. The current tab wears
-the page's colour. The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
+the page's colour. The colours come from `tab_strip.strip_colors(theme, pane=)` for
+both strips: the ground starts from the header band and is set off it - the
+window's strip toward the text, a pane's toward the page - so the window's
+strip, a pane's strip and the pane's path bar read as three bands. The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
 0.75 between icon, label and `×` on a vector backend; whole cells on a grid).
 
 Moving a tab: `TabStrip.press` arms a drag of the tab under a press (not a

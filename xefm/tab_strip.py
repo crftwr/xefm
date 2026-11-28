@@ -36,18 +36,29 @@ NEW_TAB = "+"
 TAB_HEIGHT_GUI = 1.3
 
 
-def strip_colors(theme) -> tuple:
-    """``(ground, page)`` for a tab strip on ``theme``: the strip's ground is
-    the header band a title sits on, and the current tab wears the page - the
-    content surface the panes, a terminal and a conversation paint - so it
-    reads as the one shown below; the page nudged toward the text where a
-    theme gives both one colour. The window's strip and a pane's use the
-    same, so their tabs look alike (#1019 hand check)."""
+#: How far a strip's ground moves off the header band, so the window's strip,
+#: a pane's strip and the pane's path bar under it are three bands, not one
+#: (#1019 hand check): the window's toward the text, a pane's toward the page.
+WINDOW_GROUND_TO_TEXT = 0.10
+PANE_GROUND_TO_PAGE = 0.40
+
+
+def strip_colors(theme, *, pane: bool = False) -> tuple:
+    """``(ground, page)`` for a tab strip on ``theme``. The current tab wears
+    the page - the content surface the panes, a terminal and a conversation
+    paint - so it reads as the one shown below, alike in the window's strip
+    and a pane's. The ground starts from the header band a title sits on
+    (the page nudged toward the text where a theme gives both one colour)
+    and is set off it: the window's strip toward the text, a pane's
+    (``pane``) toward the page, so neither runs into the other or into the
+    path bar."""
     page = theme.surface_bg("content") or DEFAULT_BG
-    ground = theme.surface_bg("header")
-    if ground is None or tuple(ground) == tuple(page):
-        ground = _mix(page, theme.text, 0.08)
-    return ground, page
+    header = theme.surface_bg("header")
+    if header is None or tuple(header) == tuple(page):
+        header = _mix(page, theme.text, 0.08)
+    if pane:
+        return _mix(header, page, PANE_GROUND_TO_PAGE), page
+    return _mix(header, theme.text, WINDOW_GROUND_TO_TEXT), page
 
 
 def tab_height(ctx) -> float:
