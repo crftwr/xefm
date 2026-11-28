@@ -50,6 +50,7 @@ from puikit.text import elide
 from xefm.dialog_geometry import (HINT_ROWS, OPEN_MS_DIALOG, animate_open,
                                   draw_hint_row, draw_title_bar,
                                   hint_content_bottom, pane_anchored_box)
+from xefm.hint_bar import click_hint, key
 from xefm.log_manager import getLogger
 
 logger = getLogger("Connect")
@@ -201,19 +202,25 @@ class ConnectFormDialog(FocusContainer, Widget):
                           Style(bg=surface_bg, fg=(229, 110, 110),
                                 attr=TextAttribute.DIM))
 
-        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
-    def hint(self) -> str:
+    def hint(self) -> list:
         # Tab is not named, though it works: this box is narrower than the
         # pickers' and naming it pushed "Esc cancel" off the end even on a
         # wide terminal. The arrows are the keys worth naming — Tab in a form
         # is universal.
-        return " · ".join(["↑/↓ move", "Space toggle",
-                           "Enter connect", "Esc cancel"])
+        return [key("↑/↓", "move"), key("Space", "toggle"), key("Enter", "connect"),
+                key("Esc", "cancel")]
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.IME_COMPOSITION:
             if isinstance(self._focused, TextEdit):
                 self._focused.handle_event(event)
@@ -409,10 +416,16 @@ class _BusyDialog(Widget):
         # which on this surface is a black cell under the spinner.
         ctx.draw_child(self.busy, 2.0, y, 2.0, 1.0, hints={"bg": surface_bg})
         ctx.draw_text(4.5, y, self.message, Style(bg=surface_bg, fg=theme.text))
-        draw_hint_row(ctx, "Esc stop waiting", surface_bg=surface_bg,
-                      border=theme.popup_border)
+        self._hint_hits = draw_hint_row(ctx, [key("Esc", "stop waiting")], surface_bg=surface_bg,
+                                        border=theme.popup_border)
+
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
 
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY and event.key == "escape":
             self.on_cancel()
         return True  # modal

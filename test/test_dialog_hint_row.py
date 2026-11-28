@@ -46,6 +46,7 @@ from xefm.progressive_search_dialog import show_progressive_search  # noqa: E402
 from xefm.sort_dialog import show_sort_dialog  # noqa: E402
 from xefm.text_dialog import show_text  # noqa: E402
 from xefm.tips_dialog import show_tips_dialog  # noqa: E402
+from xefm.hint_bar import hints_text
 
 
 class _Ctx:
@@ -284,10 +285,10 @@ class EveryModalDrawsTheBand(unittest.TestCase):
         dlg = show_progressive_search(
             self.panel, search_iter=lambda m, q, c: iter(()),
             to_label=lambda m, v: str(v))
-        self.assertIn("Tab content", dlg.hint())
+        self.assertIn("Tab content", hints_text(dlg.hint()))
         self.assertNotIn("Tab", dlg._status_text(), "the status line is about the search")
         dlg._switch_mode()
-        self.assertIn("Tab filename", dlg.hint())
+        self.assertIn("Tab filename", hints_text(dlg.hint()))
 
     def test_the_owner_says_what_enter_does(self):
         """The widget knows Enter is Enter; only its owner knows what accepting
@@ -296,8 +297,8 @@ class EveryModalDrawsTheBand(unittest.TestCase):
         dlg = show_progressive_search(
             self.panel, search_iter=lambda m, q, c: iter(()),
             to_label=lambda m, v: str(v), accept_hint="results to pane")
-        self.assertIn("Enter results to pane", dlg.hint())
-        self.assertNotIn("open", dlg.hint())
+        self.assertIn("Enter results to pane", hints_text(dlg.hint()))
+        self.assertNotIn("open", hints_text(dlg.hint()))
 
     def test_an_input_prompt(self):
         show_input(self.panel, title="New Directory", prompt="Name:")
@@ -309,11 +310,11 @@ class EveryModalDrawsTheBand(unittest.TestCase):
         key that would do nothing."""
         from xefm.completion import FilepathCompleter
         plain = show_input(self.panel, title="New Directory", prompt="Name:")
-        self.assertNotIn("Tab", plain.hint())
+        self.assertNotIn("Tab", hints_text(plain.hint()))
         plain._cancel()
         jump = show_input(self.panel, title="Jump to Path", prompt="Path:",
                           completer=FilepathCompleter())
-        self.assertIn("Tab complete", jump.hint())
+        self.assertIn("Tab complete", hints_text(jump.hint()))
 
     def test_the_batch_rename_dialog(self):
         show_batch_rename(self.panel, [Path("/tmp/a.txt"), Path("/tmp/b.txt")])

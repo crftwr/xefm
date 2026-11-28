@@ -35,6 +35,7 @@ from xefm import name_key
 from xefm.archive import release_archives_under
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom)
+from xefm.hint_bar import click_hint, key
 from xefm.rename_check import Listings, fold, is_valid_name, obstacle
 
 #: Preview-list scroll keys (unsuffixed backend names, matching ListView).
@@ -137,7 +138,8 @@ class BatchRenameDialog(FocusContainer, Widget):
     focusable = True
     focus_stop_when_empty = True
 
-    _HINT = "Tab switch field · ↑/↓ scroll preview · Enter rename · Esc cancel"
+    _HINT = (key("Tab", "switch field"), key("↑/↓", "scroll preview"),
+             key("Enter", "rename"), key("Esc", "cancel"))
 
     def __init__(
         self,
@@ -315,11 +317,17 @@ class BatchRenameDialog(FocusContainer, Widget):
                        hints={"focused": False, "bg": surface_bg})
 
         # Key hint as the bottom band, mirroring the title bar.
-        draw_hint_row(ctx, self._HINT, surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self._HINT, surface_bg=surface_bg, border=border)
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.IME_COMPOSITION:
             # Forward IME composition (preedit) to the active field (Tab switches
             # which) so CJK input renders inline. The modal layer receives every

@@ -18,7 +18,8 @@ from __future__ import annotations
 from typing import Any
 
 from puikit.backend import Style, TextAttribute
-from puikit.text import elide
+
+from xefm.hint_bar import draw_hints
 
 
 #: How every XeFM modal enters. Defined once here — the module that already owns
@@ -289,8 +290,8 @@ def hint_content_bottom(ctx: Any, surface_bg: Any) -> float:
     return hu - HINT_ROWS  # bottom border, hint row, rule
 
 
-def draw_hint_row(ctx: Any, text: str, *, surface_bg: Any, border: Any,
-                  x: float = 2.0, right: str = "") -> None:
+def draw_hint_row(ctx: Any, hints: Any, *, surface_bg: Any, border: Any,
+                  x: float = 2.0, right: str = "") -> list:
     """Draw a modal's key hint as a bar pinned to the bottom of the box — the
     mirror of :func:`draw_title_bar`, and the one place every XeFM modal names
     its keys.
@@ -305,13 +306,17 @@ def draw_hint_row(ctx: Any, text: str, *, surface_bg: Any, border: Any,
     Tip of the Day's position counter, the only thing a modal says down here that
     is not a key. It keeps its whole width and the keys are elided against it, so
     a narrow box drops the tail of the line rather than running the two together
-    or under its own frame."""
+    or under its own frame.
+
+    ``hints`` is the line of :class:`~xefm.hint_bar.Hint` parts (or a plain
+    string, a state such as a type-ahead buffer), drawn and clicked as every
+    hint line is (:func:`~xefm.hint_bar.draw_hints`): the click targets drawn
+    are returned, for the modal's mouse handling to hand to
+    :func:`~xefm.hint_bar.click_hint`."""
     wu, hu = ctx.size_units
     style = hint_style(ctx, surface_bg)
     rule_style = Style(fg=border, bg=surface_bg)
     right_w = (ctx.measure_text(right) + 2.0) if right else 0.0
-    label = elide(text, max(1.0, wu - 2 * x - right_w), where="end",
-                  measure=ctx.measure_text)
     if ctx.vector_shapes:
         # Center the hint's line box in the bar, the rule at the bar's top edge —
         # draw_title_bar's own layout, reflected.
@@ -321,6 +326,8 @@ def draw_hint_row(ctx: Any, text: str, *, surface_bg: Any, border: Any,
     else:
         text_y = hu - 2.0
         ctx.draw_frame_divider(hu - HINT_ROWS, style=rule_style)
-    ctx.draw_text(x, text_y, label, style)
+    hits = draw_hints(ctx, x, text_y, hints, avail=max(1.0, wu - 2 * x - right_w),
+                      muted=style, base=surface_bg)
     if right:
         ctx.draw_text(wu - x - ctx.measure_text(right), text_y, right, style)
+    return hits

@@ -32,6 +32,7 @@ from xefm.options_dialog import OptionsDialog  # noqa: E402
 from xefm.progressive_search_dialog import ProgressiveSearchDialog  # noqa: E402
 from xefm.search_options import SEARCH_OPTIONS  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
+from xefm.hint_bar import hints_text
 
 
 def _run(dialog, query):
@@ -259,33 +260,34 @@ class Options(unittest.TestCase):
     def test_the_hint_band_names_the_options_key_before_esc(self):
         dlg = self._dialog(initial_mode="filename")
         self.assertEqual(
-            dlg.hint(),
-            "↑/↓ select · Enter choose · Tab content · Ctrl-O options · Esc cancel")
+            hints_text(dlg.hint()),
+            "↑/↓ select  Enter choose  Tab content  Ctrl-O options  Esc cancel")
 
     def test_a_narrow_band_drops_whole_entries(self):
         # A truncated entry spends the width and says nothing, and it is always
         # the rightmost that loses — never the one that deserves to.
         dlg = self._dialog(initial_mode="filename")
+        from xefm.hint_bar import hints_width
         measure = len
         full = dlg.hint()
-        self.assertEqual(dlg.hint(len(full), measure), full)
+        self.assertEqual(dlg.hint(hints_width(full, measure), measure), full)
         # Too narrow for the arrows: they go first, the rest survives intact.
-        tight = dlg.hint(len(full) - 1, measure)
-        self.assertEqual(tight,
-                         "Enter choose · Tab content · Ctrl-O options · Esc cancel")
+        tight = dlg.hint(hints_width(full, measure) - 1, measure)
+        self.assertEqual(hints_text(tight),
+                         "Enter choose  Tab content  Ctrl-O options  Esc cancel")
         # Narrower still: Esc goes, and what a user cannot guess is what is left.
-        tighter = dlg.hint(len(tight) - 1, measure)
-        self.assertEqual(tighter, "Enter choose · Tab content · Ctrl-O options")
+        tighter = dlg.hint(hints_width(tight, measure) - 1, measure)
+        self.assertEqual(hints_text(tighter), "Enter choose  Tab content  Ctrl-O options")
 
     def test_the_options_key_outlives_every_drop(self):
         dlg = self._dialog(initial_mode="filename")
-        self.assertIn("Ctrl-O options", dlg.hint(1.0, len))
+        self.assertIn("Ctrl-O options", hints_text(dlg.hint(1.0, len)))
 
     def test_a_dialog_without_options_names_no_key(self):
         dlg = ProgressiveSearchDialog(
             search_iter=lambda mode, q, cancel: iter(()),
             to_label=lambda mode, v: str(v))
-        self.assertNotIn("options", dlg.hint())
+        self.assertNotIn("options", hints_text(dlg.hint()))
 
     def _rebind(self, bindings):
         from xefm.config import KeyBindings, config_manager

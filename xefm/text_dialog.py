@@ -34,6 +34,7 @@ from puikit.widgets.markdown_view import MarkdownView
 
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom, title_content_top)
+from xefm.hint_bar import click_hint, key
 
 #: Keys the body widget consumes for scrolling while the dialog is open. (Backend
 #: key names are unsuffixed: "pageup"/"pagedown", matching ListView / MarkdownView.)
@@ -60,11 +61,13 @@ class _ScrollModal(FocusContainer, Widget):
         body: Widget,
         *,
         title: str = "",
-        hint: str = "↑/↓ scroll · Esc close",
+        hint: Any = None,
         on_close: Callable[[], None] | None = None,
     ):
         self.title = title
-        self.hint = hint
+        #: The bottom band: :class:`~xefm.hint_bar.Hint` parts, or a plain
+        #: string a caller gave.
+        self.hint = hint if hint is not None else _STOP_HINTS[frozenset()]
         self.on_close = on_close
         self._panel: Any = None
         self.body = body
@@ -126,11 +129,17 @@ class _ScrollModal(FocusContainer, Widget):
         # to carry them in the header, which put chrome between the title and the
         # body the title describes, and left the dialog reading title / keys /
         # body instead of title / body / keys.
-        draw_hint_row(ctx, self.hint, surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self.hint, surface_bg=surface_bg, border=border)
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY:
             key = event.key
             if key in ("a", "c") and event.modifiers & {"ctrl", "cmd"}:
@@ -225,16 +234,17 @@ class MarkdownDialog(_ScrollModal):
 
 #: The footer for each set of Tab stops a Markdown body can have (#681): the
 #: keys are only worth naming when Tab reaches something.
+_SCROLL, _CLOSE = key("↑/↓", "scroll"), key("Esc", "close")
 _STOP_HINTS = {
-    frozenset(): "↑/↓ scroll · Esc close",
-    frozenset({"link"}): "↑/↓ scroll · Tab next link · Enter open · Esc close",
-    frozenset({"copy"}): "↑/↓ scroll · Tab Copy button · Enter copy · Esc close",
+    frozenset(): (_SCROLL, _CLOSE),
+    frozenset({"link"}): (_SCROLL, key("Tab", "next link"), key("Enter", "open"), _CLOSE),
+    frozenset({"copy"}): (_SCROLL, key("Tab", "Copy button"), key("Enter", "copy"), _CLOSE),
     frozenset({"link", "copy"}):
-        "↑/↓ scroll · Tab next link or Copy · Enter open / copy · Esc close",
+        (_SCROLL, key("Tab", "next link or Copy"), key("Enter", "open / copy"), _CLOSE),
 }
 
 
-def _hint_for(body: MarkdownView) -> str:
+def _hint_for(body: MarkdownView) -> tuple:
     """The footer for ``body``: what Tab reaches in it, if anything."""
     return _STOP_HINTS.get(body.focus_stop_kinds, _STOP_HINTS[frozenset()])
 

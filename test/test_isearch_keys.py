@@ -32,6 +32,7 @@ from xefm.isearch_bar import ISearchBar
 from xefm.state_manager import XeFMStateManager
 
 from puikit.backends import create_backend
+from xefm.hint_bar import hints_text
 
 
 def _key(name, mods=()):
@@ -405,7 +406,7 @@ class ISearchSelectionTest(unittest.TestCase):
                          ["alpha.txt", "beta.txt", "gamma_alpha.txt"])
 
     def test_hint_line_names_the_select_keys(self):
-        hints = self.app.status._isearch_hints()
+        hints = hints_text(self.app.status._isearch_hints())
         # One key, not the old Shift-↑/Shift-↓ pair: marking backwards has no
         # default, and an unbound action drops out of the line.
         self.assertIn("Ctrl-Space select", hints)

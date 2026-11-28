@@ -60,6 +60,7 @@ from xefm.config import (format_key_for_display, get_keys_for_action,
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom, hint_style,
                                   pane_anchored_box)
+from xefm.hint_bar import click_hint, key, note
 
 _REMOVE_ACTION = "remove_list_item"
 
@@ -252,24 +253,24 @@ class HistoryInputDialog(FocusContainer, Widget):
 
     # --- hint line -----------------------------------------------------------
 
-    def hint(self) -> str:
+    def hint(self) -> list:
         """The keys live on the side that has focus."""
-        remove = ""
+        remove = None
         if self.on_remove is not None:
             keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
             if keys:
-                remove = f"{format_key_for_display(keys[0])} remove"
+                remove = key(format_key_for_display(keys[0]), "remove")
         if self.browsing:
-            parts = ["↑/↓ history", "Enter choose", "type to edit"]
+            parts = [key("↑/↓", "history"), key("Enter", "choose"), note("type to edit")]
             if remove:
                 parts.append(remove)
-            parts.append("Esc back")
+            parts.append(key("Esc", "back"))
         else:
-            parts = [f"Enter {self.accept_label}"]
+            parts = [key("Enter", self.accept_label)]
             if self.filtered:
-                parts.insert(0, "↓ history")
-            parts.append("Esc cancel")
-        return " · ".join(parts)
+                parts.insert(0, key("↓", "history"))
+            parts.append(key("Esc", "cancel"))
+        return parts
 
     # --- drawing -------------------------------------------------------------
 
@@ -324,11 +325,17 @@ class HistoryInputDialog(FocusContainer, Widget):
                        self._list_rect.w, self._list_rect.h,
                        hints={"focused": self.browsing, "bg": surface_bg})
 
-        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.IME_COMPOSITION:
             self.field.handle_event(event)
             return True

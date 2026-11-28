@@ -93,17 +93,35 @@ is puikit `mouse-modifiers`.
 - **`PaneFooter`** records the x ranges of the sort description and the filter
   in the drawn text (when they survived eliding), and runs `sort` / `filter`
   when they are clicked.
-- **`StatusBar`** keeps `(text, action)` per hint and records each hint's
-  x range when the normal hint line is shown. A click runs the action, but
-  not while a modal is up. On a session's screen it lays out the session's
-  parts the same way (`XeFMApp._session_status_parts`: a terminal's keys run
-  through its view's actions; a drawn conversation's `ChatView.status_parts`
-  run what each key does - send, stop, cycle the mode, type `/` or `@`); a
-  part that only says something has no `run` and is not a target.
+- **`StatusBar`** builds each file-list hint with its action as the run
+  and keeps the targets of the last draw. A click runs the action, but not
+  while a modal is up (the bar is then empty). The search's line presses its
+  keys. On a session's screen it shows the session's parts
+  (`XeFMApp._session_status_parts`: a terminal's keys run through its view's
+  actions; a drawn conversation's `ChatView.status_parts` run what each key
+  does - send, stop, cycle the mode, type `/` or `@`); a part that only says
+  something is a note and is not a target.
+- **Every key line is one model** (`xefm/hint_bar.py`): the file manager's
+  status bar, a session's screen, a viewer's status bar
+  (`text_viewer.draw_status_bar`) and a dialog's hint band
+  (`dialog_geometry.draw_hint_row`) all build their line as `Hint` parts -
+  `key(display, label, run=None)` for keys, `note(text)` for counts and
+  states - and draw it with `draw_hints`. The key is drawn in the full text
+  colour (bold on a vector backend), the words muted, parts `GAP` (two
+  cells) apart; a part that does not fit is cut with an ellipsis and ends the
+  line. `draw_hints` returns `HintHit` targets: a part of one key over its
+  whole text, each key of a pair (`q/Esc`) or arrow cluster (`Shift-↑↓←→`) on
+  its own, a note never. A target runs its key's `run` (a file-list action,
+  a session's callable) or, with none, presses the key: the key event is
+  handed to the widget (`click_hint`, called first in each viewer's and
+  dialog's `handle_event`) or, from the window's status bar, to
+  `panel.dispatch_event` - so a click does what the key does under any
+  keymap. `hints_text` is the plain form (parts two spaces apart) for sizing
+  (`hints_width`) and tests.
 - Under the pointer each of these - a hint, the footer's sort and filter, the
   file clipboard's part of the status bar, a name in a pane's path (measured
   in the bold it is drawn in, as its click is) - shows it can be clicked
-  (`_hover_part`, #1019 hand check): a backing behind it (rounded on a vector
+  (`hint_bar.hover_part`, #1019 hand check): a backing behind it (rounded on a vector
   backend, its cells on a grid), its text in the full text colour inked for
   the backing, and the pointing-hand cursor. The backing is
   `tab_strip.hover_backing`: the bar's colour moved toward the text until its

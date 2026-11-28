@@ -14,6 +14,7 @@ import pytest
 from xefm.path import Path
 from xefm.text_encoding import AUTO_ENCODING
 from xefm.text_viewer import TextViewer, _encoding_rows, _read_lines
+from xefm.hint_bar import hints_text
 
 JP = "こんにちは、世界。"
 #: ASCII mixed in on purpose: its UTF-16 code units have NUL high bytes, which
@@ -160,4 +161,4 @@ class TestViewerEdit:
 
     def test_no_launcher_means_no_edit_chrome(self, tmp_file):
         viewer = TextViewer(tmp_file("a.txt", b"text"))
-        assert viewer._edit_hint_segment() == ""
+        assert hints_text(viewer._edit_hint_segment()) == ""

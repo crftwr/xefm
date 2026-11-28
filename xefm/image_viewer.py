@@ -59,8 +59,9 @@ from xefm.config import (find_action_for_event, format_key_for_display,
 from xefm.dialog_geometry import animate_viewer_open, close_viewer
 from xefm.log_manager import getLogger
 from xefm.text_dialog import keys_markdown, show_markdown
+from xefm.hint_bar import click_hint, key
 from xefm.text_viewer import (_content_bg, _header_bg, draw_status_bar,
-                             footer_pair, viewer_layer_hints, viewer_pad)
+                             footer_key, footer_pair, viewer_layer_hints, viewer_pad)
 
 logger = getLogger("ImageViewer")
 
@@ -696,7 +697,8 @@ class ImageViewer(Widget):
         else:
             self._draw_card(ctx, pad_x, head_h, iw, body_h, text_fg, muted, bg)
 
-        draw_status_bar(ctx, fy, self._hint(ctx), pad_x=pad_x, bottom_pad=pad_y)
+        self._hint_hits = draw_status_bar(ctx, fy, self._hint(ctx), pad_x=pad_x,
+                                          bottom_pad=pad_y)
 
     def _draw_image(self, ctx, x: float, y: float, body_w: float, body_h: float,
                     base_w: float, base_h: float) -> None:
@@ -767,12 +769,12 @@ class ImageViewer(Widget):
             ctx.draw_text(x + max(0.0, (w - width) / 2.0), top + offset, text,
                           Style(fg=color, bg=bg))
 
-    def _hint(self, ctx) -> str:
+    def _hint(self, ctx) -> list:
         """The footer key hints — only for what is actually available: zoom and
         pan are omitted where no picture can be drawn, prev/next where the file
         has no siblings."""
-        quit_k = _keys_display("quit", "q")
-        help_k = _keys_display("help", "F1")
+        quit_k = footer_key("quit", _CONTEXT, "q")
+        help_k = footer_key("help", _CONTEXT, "F1")
         parts = []
         if self._can_render(ctx):
             # Named from the live keymap, not the default ``+/-``, so a rebind
@@ -782,20 +784,27 @@ class ImageViewer(Widget):
             zoom_k = footer_pair("image_viewer.zoom_in", "image_viewer.zoom_out",
                                  _CONTEXT)
             if zoom_k:
-                parts.append(f"{zoom_k} zoom")
+                parts.append(key(zoom_k, "zoom"))
             if self.zoom > MIN_ZOOM:
-                parts.append(f"{_pan_keys_label()} pan")
-                parts.append(f"{_keys_display('image_viewer.zoom_reset', '0')} fit")
+                parts.append(key(_pan_keys_label(), "pan"))
+                parts.append(key(footer_key("image_viewer.zoom_reset", _CONTEXT, "0"), "fit"))
         if len(self.paths) > 1:
-            parts.append(f"{_keys_display('image_viewer.prev', 'p')}"
-                         f"/{_keys_display('image_viewer.next', 'n')} prev·next")
-        parts.append(f"{help_k} help")
-        parts.append(f"{quit_k}/Esc close")
-        return " " + " · ".join(parts) + " "
+            parts.append(key(f"{footer_key('image_viewer.prev', _CONTEXT, 'p')}"
+                             f"/{footer_key('image_viewer.next', _CONTEXT, 'n')}",
+                             "prev/next"))
+        parts.append(key(help_k, "help"))
+        parts.append(key(f"{quit_k}/Esc", "close"))
+        return parts
 
     # --- events ---------------------------------------------------------------
 
+    #: The keys the footer names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.MOUSE_SCROLL:
             # Scroll zooms about the center, the convention every image viewer
             # uses; panning is the drag gesture below.

@@ -36,6 +36,7 @@ from puikit.widgets.markdown_view import MarkdownView
 
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom)
+from xefm.hint_bar import click_hint, hints_width, key
 from xefm.tips import render_tip, tip_count
 
 #: Keys the body consumes for scrolling while the dialog is open (backend key
@@ -57,7 +58,8 @@ class TipsDialog(FocusContainer, Widget):
     focusable = True
     focus_stop_when_empty = True
 
-    _HINT = "←/→ tip · ↑/↓ scroll · Space toggle · Esc close"
+    _HINT = (key("←/→", "tip"), key("↑/↓", "scroll"), key("Space", "toggle"),
+             key("Esc", "close"))
     _CHECKBOX_LABEL = "Don't show tips at startup"
 
     def __init__(self, *, index: int = 0, dont_show: bool = False,
@@ -93,7 +95,7 @@ class TipsDialog(FocusContainer, Widget):
         prop = Style(font=Font())
         measure = lambda t: panel.backend.measure_text(t, prop)  # noqa: E731
         min_w = max(
-            measure(self._HINT) + measure("99/99") + 7.0,  # hint · gap · counter
+            hints_width(self._HINT, measure) + measure("99/99") + 7.0,  # hint · gap · counter
             _CB_MARK + measure(self._CHECKBOX_LABEL) + 4.0,
             48.0,
         )
@@ -154,12 +156,18 @@ class TipsDialog(FocusContainer, Widget):
         # Key hint as the bottom band, mirroring the title bar, with the position
         # counter pinned to its right end — where the rotation stands is the one
         # thing this dialog says down here that is not a key.
-        draw_hint_row(ctx, self._HINT, surface_bg=surface_bg, border=border,
-                      right=f"{self.index + 1}/{tip_count()}")
+        self._hint_hits = draw_hint_row(ctx, self._HINT, surface_bg=surface_bg, border=border,
+                                        right=f"{self.index + 1}/{tip_count()}")
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY:
             self._on_key(event)
             return True

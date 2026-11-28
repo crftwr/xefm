@@ -9,6 +9,7 @@ TaskManager's pump — so a task really runs on its worker thread here.
 Run with: python -m pytest test/test_user_task_api.py -v
 """
 
+from xefm.hint_bar import hints_text
 import os
 import sys
 import threading
@@ -529,14 +530,14 @@ def test_the_tables_and_manifest_sections_are_named():
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("source, says", [
-    ("plain text", "↑/↓ scroll · Esc close"),
-    ("see [docs](https://example.com)", "Tab next link · Enter open"),
-    (md_code_block("abc  a.txt"), "Tab Copy button · Enter copy"),
+    ("plain text", "↑/↓ scroll  Esc close"),
+    ("see [docs](https://example.com)", "Tab next link  Enter open"),
+    (md_code_block("abc  a.txt"), "Tab Copy button  Enter copy"),
     ("[docs](https://example.com)\n\n" + md_code_block("x"), "Tab next link or Copy"),
 ])
 def test_the_footer_says_what_tab_reaches(app, source, says):
     ActionContext(app).show_markdown("Result", source)
-    assert says in _top_dialog(app).hint
+    assert says in hints_text(_top_dialog(app).hint)
 
 
 def test_an_explicit_hint_still_wins():

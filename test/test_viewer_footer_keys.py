@@ -26,6 +26,7 @@ from xefm.config import config_manager
 from xefm.directory_diff_viewer import DirectoryDiffView
 from xefm.path import Path
 from xefm.text_viewer import TextViewer, footer_key, footer_pair
+from xefm.hint_bar import hints_text
 
 
 @pytest.fixture(autouse=True)
@@ -99,26 +100,26 @@ def test_text_viewer_footer_follows_a_scroll_rebind(tmp_path, monkeypatch):
     """The issue as reported: K/J in the config, K/J in the footer."""
     rebind(monkeypatch, text_viewer__scroll_up=["K"], text_viewer__scroll_down=["J"])
     viewer = TextViewer(text_file(tmp_path))
-    assert viewer._scroll_hint_segment() == "K/J scroll · "
+    assert hints_text(viewer._scroll_hint_segment()) == "K/J scroll"
 
 
 def test_text_viewer_footer_keeps_the_default_arrow_cluster(tmp_path):
     viewer = TextViewer(text_file(tmp_path))
-    assert viewer._scroll_hint_segment() == "↑↓ scroll · "
-    assert viewer._pan_hint_segment() == "←→ pan · "
+    assert hints_text(viewer._scroll_hint_segment()) == "↑↓ scroll"
+    assert hints_text(viewer._pan_hint_segment()) == "←→ pan"
 
 
 def test_text_viewer_footer_follows_a_pan_rebind(tmp_path, monkeypatch):
     rebind(monkeypatch, text_viewer__scroll_left=["H"],
            text_viewer__scroll_right=["L"])
     viewer = TextViewer(text_file(tmp_path))
-    assert viewer._pan_hint_segment() == "H/L pan · "
+    assert hints_text(viewer._pan_hint_segment()) == "H/L pan"
 
 
 def test_text_viewer_footer_drops_an_unbound_scroll_segment(tmp_path, monkeypatch):
     rebind(monkeypatch, text_viewer__scroll_up=[], text_viewer__scroll_down=[])
     viewer = TextViewer(text_file(tmp_path))
-    assert viewer._scroll_hint_segment() == ""
+    assert hints_text(viewer._scroll_hint_segment()) == ""
 
 
 # --- file diff viewer ---------------------------------------------------------
@@ -150,7 +151,7 @@ def dir_diff(tmp_path):
 def test_dir_diff_footer_names_the_default_keys(tmp_path):
     """Including ``quit``, which the footer used to spell ``q`` while the help
     dialog — reading the same keymap these now read — said ``Q``."""
-    footer = dir_diff(tmp_path)._footer()
+    footer = hints_text(dir_diff(tmp_path)._footer())
     for expected in ("n/Shift-N jump", "←→ expand", "[/] resize", "Tab side",
                      "Enter diff", "E merge", "Q close"):
         assert expected in footer, f"{expected!r} not in {footer!r}"
@@ -159,7 +160,7 @@ def test_dir_diff_footer_names_the_default_keys(tmp_path):
 def test_dir_diff_footer_follows_a_rebind(tmp_path, monkeypatch):
     rebind(monkeypatch, dir_diff__next_change=["F"], dir_diff__prev_change=["B"],
            dir_diff__switch_side=["O"], quit=["X"])
-    footer = dir_diff(tmp_path)._footer()
+    footer = hints_text(dir_diff(tmp_path)._footer())
     assert "F/B jump" in footer
     assert "O side" in footer
     assert "X close" in footer
@@ -168,7 +169,7 @@ def test_dir_diff_footer_follows_a_rebind(tmp_path, monkeypatch):
 
 def test_dir_diff_footer_drops_an_unbound_action(tmp_path, monkeypatch):
     rebind(monkeypatch, dir_diff__split_left=[], dir_diff__split_right=[])
-    footer = dir_diff(tmp_path)._footer()
+    footer = hints_text(dir_diff(tmp_path)._footer())
     assert "resize" not in footer
     assert "Tab side" in footer  # the rest of the bar is untouched
 

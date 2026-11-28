@@ -39,6 +39,7 @@ from puikit.widgets.text_edit import TextEdit
 
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
                                   draw_title_bar, pane_anchored_box)
+from xefm.hint_bar import click_hint, key
 from xefm.completion import Completer, CompletionController
 from xefm.candidate_list import CandidateListOverlay, overlay_geometry
 
@@ -325,21 +326,27 @@ class InputDialog(FocusContainer, Widget):
                           Style(bg=surface_bg, fg=(229, 110, 110), attr=TextAttribute.DIM))
 
         # Key hint as the bottom band, mirroring the title bar.
-        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
-    def hint(self) -> str:
+    def hint(self) -> list:
         """The keys named in the bottom band. Enter and Esc are what every prompt
         answers to; Tab joins them only where a completer is attached, so a prompt
         that cannot complete never offers a key that does nothing."""
-        parts = ["Enter accept"]
+        parts = [key("Enter", "accept")]
         if self._completion is not None:
-            parts.append("Tab complete")
-        parts.append("Esc cancel")
-        return " · ".join(parts)
+            parts.append(key("Tab", "complete"))
+        parts.append(key("Esc", "cancel"))
+        return parts
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.IME_COMPOSITION:
             # In-progress IME composition (preedit): forward it to the field so it
             # renders inline. The modal layer receives every event exclusively, so

@@ -56,6 +56,7 @@ from xefm.config import find_action_for_event
 from xefm.actions import AGENT_CHAT
 from xefm.terminal import (key_event, no_program_receives, qualified_binding,
                            screen_action_handlers, strip_event)
+from xefm.hint_bar import click_hint, key, note
 from xefm.log_manager import getLogger
 
 logger = getLogger("AgentChat")
@@ -194,7 +195,7 @@ class ChatView(FocusContainer, Widget):
         self.on_strip_event: Callable[[Any], bool] | None = None
         self.on_screen_action: Callable[[str], bool] | None = None
         #: Set by the app when the window's status bar shows this view's
-        #: keys (:attr:`status_hint`): the view then draws no footer of its own.
+        #: keys (:attr:`status_parts`): the view then draws no footer of its own.
         self.chrome_status = False
         self._pixel_layout = False
 
@@ -218,18 +219,11 @@ class ChatView(FocusContainer, Widget):
         return self.conversation.state
 
     @property
-    def status_hint(self) -> str:
-        """The keys for what can be done now, as one line (the view's own
-        footer, where the window's status bar is not shown)."""
-        return " · ".join(text for text, _run in self.status_parts)
-
-    @property
     def status_parts(self) -> list:
-        """The keys for what can be done now, for the window's status bar:
-        ``(text, run)`` - ``run`` does what a click on the part means (what
-        the key does), or None for a part that only says something. The
-        status bar lays them out, and runs them, as it does the file
-        manager's hints (#1019 hand check)."""
+        """The keys for what can be done now, as :class:`~xefm.hint_bar.Hint`
+        parts - for the window's status bar, or the view's own footer where
+        that is not shown. Each part's click runs what its key does (#1019
+        hand check); a part that only says something is a note."""
         state = self.conversation.state
         newline = newline_key(self._pixel_layout)
 
@@ -243,19 +237,20 @@ class ChatView(FocusContainer, Widget):
             self._submit(self.input.text)
 
         if state == C.STARTING:
-            return [("Enter send", None), (f"{newline} new line", None)]
+            # Run as the keys are: pressed (a key with no run of its own).
+            return [key("Enter", "send"), key(newline, "new line")]
         if state == C.WORKING:
-            return [("Esc stop", self.interrupt), ("Enter send next", send),
-                    ("PgUp/PgDn scroll", None)]
+            return [key("Esc", "stop", self.interrupt), key("Enter", "send next", send),
+                    key("PgUp/PgDn", "scroll")]
         if state == C.ASKING:
-            return [("Answer the question", None), ("Esc stop", self.interrupt)]
+            return [note("Answer the question"), key("Esc", "stop", self.interrupt)]
         if state == C.EXITED:
-            return [("Enter start again", send),
-                    ("/exit close", lambda: self.on_close_request(self))]
-        return [("Enter send", send), (f"{newline} new line", typed("\n")),
-                ("/ commands", typed("/")), ("@ files", typed("@")),
-                ("Shift+Tab mode", self.cycle_mode),
-                ("↑ earlier message", lambda: self._recall(-1))]
+            return [key("Enter", "start again", send),
+                    key("/exit", "close", lambda: self.on_close_request(self))]
+        return [key("Enter", "send", send), key(newline, "new line", typed("\n")),
+                key("/", "commands", typed("/")), key("@", "files", typed("@")),
+                key("Shift+Tab", "mode", self.cycle_mode),
+                key("↑", "earlier message", lambda: self._recall(-1))]
 
     # --- the process ------------------------------------------------------------
 
@@ -797,11 +792,13 @@ class ChatView(FocusContainer, Widget):
         # Footer: the keys for what can be done now - in the window's status
         # bar when it shows them (a session's screen, #1019), else here.
         self._pixel_layout = bool(ctx.pixel_layout)
+        self._hint_hits = []
         if self.chrome_status:
             fy = hu - pad_y
         else:
             fy = hu - 1.0 - pad_y
-            draw_status_bar(ctx, fy, self.status_hint, pad_x=pad_x + 1, bottom_pad=pad_y)
+            self._hint_hits = draw_status_bar(ctx, fy, self.status_parts, pad_x=pad_x + 1,
+                                              bottom_pad=pad_y)
 
         # The message field, as tall as what is typed (up to its max).
         lc = ctx.layout_context()
@@ -906,10 +903,16 @@ class ChatView(FocusContainer, Widget):
 
     # --- events -----------------------------------------------------------------
 
+    #: The keys its own footer names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
         if self.closing:
             return True
         if strip_event(self, event):
+            return True
+        if click_hint(self, self._hint_hits, event):
             return True
         if event.type is EventType.KEY:
             self._key(event)

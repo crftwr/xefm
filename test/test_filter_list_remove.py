@@ -35,6 +35,7 @@ from puikit.event import Event, EventType  # noqa: E402
 from xefm.actions import FILTER_LIST, registry  # noqa: E402
 from xefm.app import XeFMApp, _FILTER_HISTORY_KEY  # noqa: E402
 from xefm.filter_list_dialog import FilterListDialog  # noqa: E402
+from xefm.hint_bar import hints_text
 
 
 def _key(name, mods=()):
@@ -175,12 +176,12 @@ class RemoveKey(unittest.TestCase):
 class Hint(unittest.TestCase):
 
     def test_the_remove_key_is_named_when_removal_is_wired(self):
-        hint = FilterListDialog(["a"], on_remove=Removals()).hint()
+        hint = hints_text(FilterListDialog(["a"], on_remove=Removals()).hint())
         self.assertIn("remove", hint)
         self.assertIn("Shift-Del", hint)  # display-formatted, as the footer does
 
     def test_a_declared_list_offers_no_remove_key(self):
-        hint = FilterListDialog(["a"]).hint()
+        hint = hints_text(FilterListDialog(["a"]).hint())
         self.assertNotIn("remove", hint)
         self.assertIn("Esc cancel", hint)
 

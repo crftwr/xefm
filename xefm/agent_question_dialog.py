@@ -33,6 +33,7 @@ from puikit.widgets.base import CONTROL_HEIGHT, Widget
 from puikit.widgets.text_edit import TextEdit
 
 from xefm.dialog_geometry import HINT_ROWS, animate_open, draw_hint_row, draw_title_bar
+from xefm.hint_bar import click_hint, hints_width, key
 
 _GRID_ROW_PITCH = 1.0
 _GUI_ROW_PITCH = 1.3
@@ -102,10 +103,12 @@ class QuestionDialog(FocusContainer, Widget):
     def focus_children(self) -> list[Any]:
         return [self.other] if self._on_other else []
 
-    def _hint(self) -> str:
+    def _hint(self) -> list:
         if self.multi:
-            return "↑/↓ move · Space check · Enter answer · Esc decline"
-        return "↑/↓ or number to choose · Enter answer · Esc decline"
+            return [key("↑/↓", "move"), key("Space", "check"), key("Enter", "answer"),
+                    key("Esc", "decline")]
+        return [key("↑/↓", "or number to choose"), key("Enter", "answer"),
+                key("Esc", "decline")]
 
     # --- sizing ------------------------------------------------------------------
 
@@ -119,7 +122,7 @@ class QuestionDialog(FocusContainer, Widget):
         measure = lambda t: panel.backend.measure_text(t, prop)  # noqa: E731
         vector = panel.backend.capabilities.supports("vector_shapes")
         pitch = _GUI_ROW_PITCH if vector else _GRID_ROW_PITCH
-        widest = max([measure(self.question) + 4.0, measure(self._hint()) + 4.0]
+        widest = max([measure(self.question) + 4.0, hints_width(self._hint(), measure) + 4.0]
                      + [measure(self._label(i)[0] + "   " + self._label(i)[1]) + 6.0
                         for i in range(len(self.options))])
         w = float(min(sw - 4.0, _MAX_W, max(48.0, widest)))
@@ -184,11 +187,17 @@ class QuestionDialog(FocusContainer, Widget):
         self.other.width = int(max(8.0, w - fx - 3.0))
         ctx.draw_child(self.other, fx, y, w - fx - 3.0, other_h, hints={"focused": sel})
         self._row_hits.append((len(self.options), y, y + other_h))
-        draw_hint_row(ctx, self._hint(), surface_bg=bg, border=theme.popup_border)
+        self._hint_hits = draw_hint_row(ctx, self._hint(), surface_bg=bg, border=theme.popup_border)
 
     # --- events ------------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY:
             self._key(event)
         elif event.type is EventType.IME_COMPOSITION and self._on_other:

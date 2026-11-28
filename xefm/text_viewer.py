@@ -40,6 +40,7 @@ from xefm import key_sequence
 from xefm.config import (config_manager, find_action_for_event, format_key_for_display,
                          get_config, get_keys_for_action)
 from xefm.dialog_geometry import animate_viewer_open, close_viewer
+from xefm.hint_bar import click_hint, draw_hints, key
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm import lexer_registry
 from xefm.lexer_registry import PYGMENTS as _PYGMENTS
@@ -119,6 +120,16 @@ def footer_key(action: str, context: str, fallback: str = "", keys=None) -> str:
     getter = keys.get_keys_for_action if keys is not None else get_keys_for_action
     bound, _ = getter(action, context)
     return format_key_for_display(bound[0]) if bound else fallback
+
+
+def search_hint(context: str) -> list:
+    """A viewer footer's ``search`` part: every key bound to ``isearch`` in
+    ``context``, each clickable - the presets bind it differently, a desktop
+    build adding its own (#737) - or none where it is unbound, under a preset
+    that types ahead."""
+    bound, _ = get_keys_for_action("isearch", context)
+    shown = "/".join(format_key_for_display(k) for k in bound)
+    return [key(shown, "search")] if shown else []
 
 
 def footer_pair(first: str, second: str, context: str, keys=None) -> str:
@@ -207,21 +218,24 @@ def _header_bg(theme) -> tuple[int, int, int] | None:
     return theme.surface_bg("header") or _content_bg(theme)
 
 
-def draw_status_bar(ctx, y: float, text: str, *, font=None, pad_x: float = 0.0,
-                    bottom_pad: float = 0.0) -> None:
+def draw_status_bar(ctx, y: float, hints, *, font=None, pad_x: float = 0.0,
+                    bottom_pad: float = 0.0) -> list:
     """Paint a viewer's bottom status bar, exactly like the main window's
     ``StatusBar``: the ``status`` surface fills the **full** window width (edge to
     edge) and reaches the bottom edge (``bottom_pad`` extra height below the row),
-    while only the *text* is inset — ``pad_x`` from the left. The bar text is
-    auto-inked so it reads on every theme's status recipe. ``font`` pins a fixed
-    advance where the caller needs columns to line up (the search field)."""
+    while only the *text* is inset — ``pad_x`` from the left. ``hints`` is the
+    line of :class:`~xefm.hint_bar.Hint` parts (or a plain string, a state),
+    drawn and clicked as every hint line is (:func:`~xefm.hint_bar.draw_hints`);
+    the click targets drawn are returned, for the viewer's mouse handling to
+    hand to :func:`~xefm.hint_bar.click_hint`. ``font`` pins a fixed advance
+    where the caller needs columns to line up (the search field)."""
     wu, _hu = ctx.size_units
     theme = ctx.theme
     bar_bg = _status_bg(theme)
     fg = theme.muted_text if theme is not None else (150, 150, 150)
     ctx.fill_rect(0, y, wu, 1.0 + bottom_pad, Style(bg=bar_bg))
-    label = elide(text, max(0.0, wu - 2 * pad_x), where="end", measure=ctx.measure_text)
-    ctx.draw_text(pad_x, y, label, Style(fg=fg, bg=bar_bg, font=font))
+    return draw_hints(ctx, pad_x, y, hints, avail=max(0.0, wu - 2 * pad_x),
+                      muted=Style(fg=fg, bg=bar_bg, font=font), base=bar_bg)
 
 
 #: Content inset for the full-window modal viewers (text / diff / directory diff),
@@ -1104,30 +1118,24 @@ class TextViewer(Widget):
         # rect is captured so the ISearchBar overlay can pin exactly over it (the
         # bar covers this hint while a search is open, showing pattern + counter).
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        wrap_k = _label("toggle_wrap", "w")
-        # Unbound under a preset that types ahead: say nothing then (#737).
-        search_k = _label("isearch")
-        search_seg = f"{search_k} search · " if search_k else ""
-        enc_k = _label("change_encoding", "Shift-E")
-        quit_k = _label("quit", "q")
-        edit_seg = self._edit_hint_segment()
+        # One key per action, as every footer names them (footer_key).
+        wrap_k = footer_key("toggle_wrap", _CONTEXT, "w")
         # Scroll and pan read from the live keymap like every other hint on this
         # bar: raw mode runs them as ``text_viewer.scroll_*`` actions, so a
         # rebind has to read the same here as in the help dialog (issue #382).
-        scroll_seg = self._scroll_hint_segment()
-        pan_seg = self._pan_hint_segment()
-        # When a rich renderer exists, advertise the toggle to it (e.g. "M markdown");
-        # elide handles the longer hint on a narrow window.
-        enc_seg = "" if self._document is not None else f"{enc_k} encoding · "
+        # When a rich renderer exists, advertise the toggle to it (e.g. "M
+        # markdown"); the bar cuts a line too long for a narrow window.
+        hint = self._scroll_hint_segment()
+        if self._rich is None:
+            hint += self._pan_hint_segment()
+        hint.append(key(wrap_k, "wrap"))
+        hint += self._search_hint_segment()
         if self._rich is not None:
-            view_k = _label("toggle_view_mode", "M")
-            hint = (f" {scroll_seg}{wrap_k} wrap · {search_seg}"
-                    f"{view_k} {self._rich.name.lower()} · {enc_seg}"
-                    f"{edit_seg}{quit_k}/Esc close ")
-        else:
-            hint = (f" {scroll_seg}{pan_seg}{wrap_k} wrap · {search_seg}"
-                    f"{enc_seg}{edit_seg}{quit_k}/Esc close ")
-        draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
+            hint.append(key(footer_key("toggle_view_mode", _CONTEXT, "M"),
+                            self._rich.name.lower()))
+        hint += self._encoding_hint_segment() + self._edit_hint_segment()
+        hint.append(self._close_hint())
+        self._hint_hits = draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
     def _draw_rich(self, ctx, wu, hu, pad_x, pad_y, iw, head_h) -> None:
         """Draw the rich (formatted) body: the embedded renderer fills the area
@@ -1140,25 +1148,20 @@ class TextViewer(Widget):
         self._body_rect = (pad_x, head_h, iw, body_h)
         ctx.draw_child(self._rich_widget, pad_x, head_h, iw, body_h)
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        view_k = _label("toggle_view_mode", "M")
-        # Unbound under a preset that types ahead: say nothing then (#737).
-        search_k = _label("isearch")
-        search_seg = f"{search_k} search · " if search_k else ""
-        enc_k = _label("change_encoding", "Shift-E")
-        quit_k = _label("quit", "q")
-        # A renderer with its own line wrap (JsonView) gets the wrap key in its
-        # hint too; Markdown reflows by itself and advertises nothing.
-        wrap_seg = ""
-        if hasattr(self._rich_widget, "toggle_wrap"):
-            wrap_seg = f"{_label('toggle_wrap', 'w')} wrap · "
         # ``↑↓`` is hardcoded here alone: rich mode forwards keys straight to the
         # embedded renderer, which scrolls on its own arrows — a rebound
         # ``text_viewer.scroll_down`` does nothing in this mode, so naming it
         # would advertise a key that does not scroll.
-        enc_seg = "" if self._document is not None else f"{enc_k} encoding · "
-        hint = (f" ↑↓ scroll · {wrap_seg}{search_seg}{view_k} raw text · "
-                f"{enc_seg}{self._edit_hint_segment()}{quit_k}/Esc close ")
-        draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
+        hint = [key("↑↓", "scroll")]
+        # A renderer with its own line wrap (JsonView) gets the wrap key in its
+        # hint too; Markdown reflows by itself and advertises nothing.
+        if hasattr(self._rich_widget, "toggle_wrap"):
+            hint.append(key(footer_key("toggle_wrap", _CONTEXT, "w"), "wrap"))
+        hint += self._search_hint_segment()
+        hint.append(key(footer_key("toggle_view_mode", _CONTEXT, "M"), "raw text"))
+        hint += self._encoding_hint_segment() + self._edit_hint_segment()
+        hint.append(self._close_hint())
+        self._hint_hits = draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
     def _draw_rows(self, ctx) -> None:
         """Render the visible rows into the clipped body. ``self.top``'s fractional
@@ -1391,7 +1394,13 @@ class TextViewer(Widget):
             return  # unreadable as text; stay raw, don't persist
         self._remember_view_mode()
 
+    #: The keys the footer names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.MOUSE_SCROLL:
             # Rich mode: the embedded renderer owns scrolling (its own offset).
             if self.mode == "rich" and self._rich_widget is not None:
@@ -1757,27 +1766,43 @@ class TextViewer(Widget):
         self._clamp()
         self._render()
 
-    def _edit_hint_segment(self) -> str:
-        """The footer's ``edit`` hint (with trailing separator), or empty for a
-        viewer constructed without editor machinery."""
+    def _edit_hint_segment(self) -> list:
+        """The footer's ``edit`` part, or none for a viewer constructed
+        without editor machinery."""
         if self._on_edit is None:
-            return ""
-        return f"{_label('edit_files', 'E')} edit · "
+            return []
+        return [key(footer_key("edit_files", _CONTEXT, "E"), "edit")]
 
-    def _scroll_hint_segment(self) -> str:
-        """The footer's vertical-scroll hint (with trailing separator), named
-        from the live bindings; empty when neither scroll key is bound."""
+    def _search_hint_segment(self) -> list:
+        """The footer's ``search`` part - none where ``isearch`` is unbound,
+        under a preset that types ahead (#737)."""
+        return search_hint(_CONTEXT)
+
+    def _encoding_hint_segment(self) -> list:
+        """The footer's ``encoding`` part - none for a document read through
+        a converter, which has no encoding to change."""
+        if self._document is not None:
+            return []
+        return [key(footer_key("change_encoding", _CONTEXT, "Shift-E"), "encoding")]
+
+    def _close_hint(self):
+        """The footer's close part: the ``quit`` key and Esc, each its own."""
+        return key(f"{footer_key('quit', _CONTEXT, 'q')}/Esc", "close")
+
+    def _scroll_hint_segment(self) -> list:
+        """The footer's vertical-scroll part, named from the live bindings;
+        none when neither scroll key is bound."""
         keys = footer_pair("text_viewer.scroll_up", "text_viewer.scroll_down",
                            _CONTEXT)
-        return f"{keys} scroll · " if keys else ""
+        return [key(keys, "scroll")] if keys else []
 
-    def _pan_hint_segment(self) -> str:
-        """The footer's horizontal-scroll hint, likewise. Shown in raw mode only
+    def _pan_hint_segment(self) -> list:
+        """The footer's horizontal-scroll part, likewise. Shown in raw mode only
         (the wrapped body has nothing off-screen to the side, but the keys stay
         live for the moment wrap is toggled off)."""
         keys = footer_pair("text_viewer.scroll_left", "text_viewer.scroll_right",
                            _CONTEXT)
-        return f"{keys} pan · " if keys else ""
+        return [key(keys, "pan")] if keys else []
 
     def _edit_file(self) -> None:
         """Hand the viewed file to the app's editor machinery (the
