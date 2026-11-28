@@ -40,6 +40,14 @@ class ResolveBackground(unittest.TestCase):
         self.assertEqual(bg.ink, _COLOR)          # theme fg fills the ink uniform
         self.assertEqual(bg.backdrop, _BACKDROP)  # theme bg filled in
 
+    def test_animation_is_labelled_with_its_scene(self):
+        # A GPU failure report names the scene by this label (#892).
+        self.assertEqual(_resolve(animation="rain").label, "rain")
+        self.assertEqual(_resolve(animation={"type": "wave", "speed": 1.0}).label, "wave")
+        if "earth" in SHADER_KINDS:  # a scene rebuilt from its own options
+            self.assertEqual(_resolve(animation={"type": "earth", "shot": 0}).label, "earth")
+        self.assertEqual(_resolve(animation=True).label, xefm_app._ANIM_DEFAULT_KIND)
+
     def test_animation_true_is_the_tuned_default(self):
         # An unnamed animation gets XeFM's default scene.
         self.assertIn(xefm_app._ANIM_DEFAULT_KIND, SHADER_KINDS)

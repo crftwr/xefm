@@ -330,9 +330,10 @@ def _resolve_background(animation, wallpaper, *, color, backdrop):
             params.setdefault("backdrop", backdrop)
             # ``color`` is the theme foreground, which a shader receives as its
             # ``ink`` uniform — same intent, the name the GPU contract uses.
+            # ``label`` names the scene in PuiKit's GPU failure report (#892).
             return Shader(speed=params["speed"], opacity=params["opacity"],
                           ink=params["color"], backdrop=params["backdrop"],
-                          **fields)
+                          **{**fields, "label": atype})
     except (TypeError, KeyError):
         return None
     return None
