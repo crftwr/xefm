@@ -173,13 +173,13 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `quick_sort_size` | サイズでソート | `3` | `Ctrl-F6` | — | — |
 | `quick_sort_date` | 更新日時でソート | `4` | `Ctrl-F5` | — | — |
 | **タブ・ペイン・ログ** | | | | | |
-| `new_tab` | このペインの同じ場所に新しいタブを開く | `T` | `Ctrl-T` | `Ctrl-T`<br>macOS アプリ：`Cmd-T`、`Ctrl-T` | — |
-| `open_in_new_tab` | カーソル位置のディレクトリを新しいタブで開く | `Shift-T` | `Ctrl-↑` | — | — |
-| `close_tab` | このペインの現在のタブを閉じる | `Ctrl-W` | `Ctrl-W` | `Ctrl-W`<br>macOS アプリ：`Cmd-W`、`Ctrl-W` | `Ctrl-W` |
-| `next_tab` | このペインの次のタブへ | `Ctrl-PgDn` | — | `Ctrl-PgDn` | `Ctrl-PgDn` |
-| `prev_tab` | このペインの前のタブへ | `Ctrl-PgUp` | — | `Ctrl-PgUp` | `Ctrl-PgUp` |
-| `move_tab_left` | このペインの現在のタブを 1 つ左へ移す | — | — | — | — |
-| `move_tab_right` | このペインの現在のタブを 1 つ右へ移す | — | — | — | — |
+| `new_tab` | このペインの同じ場所に新しいフォルダータブを開く | `T` | `Ctrl-T` | `Ctrl-T`<br>macOS アプリ：`Cmd-T`、`Ctrl-T` | — |
+| `open_in_new_tab` | カーソル位置のディレクトリを新しいフォルダータブで開く | `Shift-T` | `Ctrl-↑` | — | — |
+| `close_tab` | このペインの現在のフォルダータブを閉じる | `Ctrl-W` | `Ctrl-W` | `Ctrl-W`<br>macOS アプリ：`Cmd-W`、`Ctrl-W` | `Ctrl-W` |
+| `next_tab` | このペインの次のフォルダータブへ | `Ctrl-PgDn` | — | `Ctrl-PgDn` | `Ctrl-PgDn` |
+| `prev_tab` | このペインの前のフォルダータブへ | `Ctrl-PgUp` | — | `Ctrl-PgUp` | `Ctrl-PgUp` |
+| `move_tab_left` | このペインの現在のフォルダータブを 1 つ左へ移す | — | — | — | — |
+| `move_tab_right` | このペインの現在のフォルダータブを 1 つ右へ移す | — | — | — | — |
 | `adjust_pane_left` | 左のペインを狭く | `[` | `[` | `[` | `[` |
 | `adjust_pane_right` | 左のペインを広く | `]` | `]` | `]` | `]` |
 | `reset_pane_boundary` | ペインの境界を中央に戻す | `-` | — | `-` | `-` |
@@ -202,6 +202,8 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `switch_screen` | ファイルマネージャーと最後に使った画面を切り替える | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
 | `next_screen` | ウィンドウの次のタブへ | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
 | `prev_screen` | ウィンドウの前のタブへ | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
+| `move_screen_left` | ウィンドウの今のタブを 1 つ左へ移す | — | — | — | — |
+| `move_screen_right` | ウィンドウの今のタブを 1 つ右へ移す | — | — | — | — |
 | `screens` | すべての画面を一覧にし、移動、終了、名前の変更をする | — | — | — | — |
 | `agent` | 最後に使った AI エージェントのセッションに移動する。なければこのディレクトリで開く | `>` | `>` | `>` | `>` |
 | `new_agent` | このディレクトリで別の AI エージェントのセッションを開く | — | — | — | — |
@@ -328,7 +330,7 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 
 **XeFM のターミナル**（デスクトップアプリの[ターミナルセッション](TERMINAL_FEATURE.ja.md)：サブシェルとターミナルプログラム）
 
-それ以外のキーはすべてターミナル内のプログラムに送られます。ファイル一覧のキーがそこで XeFM に届くのは、どのターミナルプログラムも受け取らない `Cmd` か `Ctrl-Shift` の組み合わせの場合だけです。
+それ以外のキーはすべてターミナル内のプログラムに送られます。ファイル一覧のキーがそこで XeFM に届くのは、どのターミナルプログラムもそのままでは受け取れない `Cmd` か `Ctrl-Shift` の組み合わせか、`Ctrl-Tab` の場合だけです。そのため `next_screen` と `prev_screen` はセッションの中でも使えます。ほかのキーをセッションの中でも使いたい場合は、ターミナル用に割り当てます（`'terminal.command_palette': ['Ctrl-T']`）。
 
 | アクション名 | 動作 | キー |
 |---|---|---|
@@ -336,11 +338,18 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 | `terminal.switch_screen` | ファイルマネージャーに戻る | `` Ctrl-` `` |
 | `terminal.screens` | すべての画面を一覧にし、移動、終了、名前の変更をする | — |
 | `terminal.new` | 別のセッション（シェルか AI エージェント）を起動する | macOS アプリ：`Cmd-T`<br>Windows アプリ：`Ctrl-Shift-T` |
-| `terminal.next_tab` | 次のタブに移動する | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
-| `terminal.prev_tab` | 前のタブに移動する | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
-| `terminal.move_tab_left` | このセッションのタブを 1 つ左へ移す | — |
-| `terminal.move_tab_right` | このセッションのタブを 1 つ右へ移す | — |
 | `command_palette` | ターミナルのアクションを名前で探して実行 | macOS アプリ：`Cmd-Shift-P`<br>Windows アプリ：`Ctrl-Shift-P` |
+
+**XeFM が描く AI エージェントの会話**（[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md#xefm-が描く会話)）
+
+シェルとは別の名前なので、シェルとは違うキーを割り当てられます。キーはメッセージ欄に送られます。ファイル一覧のキーがそこで XeFM に届くのは、`Cmd` か `Ctrl-Shift` の組み合わせか、`Ctrl-Tab` の場合だけです。ほかのキーを会話の中でも使いたい場合は、会話用に割り当てます（`'agent_chat.screens': ['F5']`）。空のメッセージでの `Ctrl-D` は、どのフロントエンドでも会話を閉じます。
+
+| アクション名 | 動作 | キー |
+|---|---|---|
+| `agent_chat.close` | 会話を閉じてペインに戻る（あとで再開できる） | macOS アプリ：`Cmd-W`<br>Windows アプリ：`Ctrl-Shift-W` |
+| `agent_chat.switch_screen` | ファイルマネージャーに戻る | `` Ctrl-` `` |
+| `agent_chat.screens` | すべての画面を一覧にし、移動、終了、名前の変更をする | — |
+| `agent_chat.new` | 別のセッション（シェルか AI エージェント）を起動する | macOS アプリ：`Cmd-T`<br>Windows アプリ：`Ctrl-Shift-T` |
 
 ## 自分のキーバインドが優先される
 

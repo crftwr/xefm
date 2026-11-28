@@ -36,29 +36,105 @@ NEW_TAB = "+"
 TAB_HEIGHT_GUI = 1.3
 
 
-#: How far a strip's ground moves off the header band, so the window's strip,
-#: a pane's strip and the pane's path bar under it are three bands, not one
-#: (#1019 hand check): the window's toward the text, a pane's toward the page.
-WINDOW_GROUND_TO_TEXT = 0.10
-PANE_GROUND_TO_PAGE = 0.40
+#: The least lightness difference (CIE L*, 0-100) a strip keeps: its ground
+#: from the bands it meets (the path bar, the other strip), the current tab
+#: from the ground it shows on. Taken from the theme's colours alone, a theme
+#: whose header and page are one colour (Segment LCD) gave three bands and
+#: two kinds of chip that could not be told apart (#1019 hand check).
+GROUND_SEPARATION = 7.0
+CURRENT_SEPARATION = 14.0
+#: The least opacity a strip's ground keeps over a scene (a wallpaper, an
+#: animated background): at a theme's own surface opacity (0.2 - 0.6) the
+#: ground was the scene, and a chip in the page colour vanished into it.
+GROUND_OPACITY = 0.8
 
 
-def strip_colors(theme, *, pane: bool = False) -> tuple:
-    """``(ground, page)`` for a tab strip on ``theme``. The current tab wears
-    the page - the content surface the panes, a terminal and a conversation
-    paint - so it reads as the one shown below, alike in the window's strip
-    and a pane's. The ground starts from the header band a title sits on
-    (the page nudged toward the text where a theme gives both one colour)
-    and is set off it: the window's strip toward the text, a pane's
-    (``pane``) toward the page, so neither runs into the other or into the
-    path bar."""
-    page = theme.surface_bg("content") or DEFAULT_BG
+@dataclass(frozen=True)
+class StripColors:
+    """A tab strip's fills: its ``ground``, the ``current`` tab's, the
+    ``idle`` tabs', and the least opacity the ground keeps over a scene."""
+
+    ground: tuple
+    current: tuple
+    idle: tuple
+    ground_opacity: float
+
+
+def _lightness(color) -> float:
+    """CIE L* (0 black - 100 white) of an sRGB colour."""
+    def linear(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (linear(c) for c in tuple(color)[:3])
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return 116.0 * (y ** (1.0 / 3.0) if y > 0.008856 else 7.787 * y + 16.0 / 116.0) - 16.0
+
+
+def _set_apart(color, margin, lighter: bool) -> tuple:
+    """``color``, or the nearest colour toward white (``lighter``) or black
+    for which ``margin(c)`` - how far it clears what it must keep apart from,
+    negative while it does not - is no longer negative; the other way when
+    that end cannot get there; the one that came closest when neither can."""
+    color = tuple(color)[:3]
+    if margin(color) >= 0:
+        return color
+    best = color
+    for toward in ((255, 255, 255), (0, 0, 0)) if lighter else ((0, 0, 0), (255, 255, 255)):
+        for step in range(1, 41):
+            moved = _mix(color, toward, step / 40)
+            if margin(moved) >= 0:
+                return moved
+            if margin(moved) > margin(best):
+                best = moved
+    return best
+
+
+def _apart(least: float, *others):
+    """A ``margin`` for :func:`_set_apart`: lightness ``least`` from each of
+    ``others``."""
+    lights = [_lightness(o) for o in others]
+    return lambda c: min(abs(_lightness(c) - l) for l in lights) - least
+
+
+def strip_colors(theme, *, pane: bool = False, opacity: float = 1.0) -> StripColors:
+    """The fills of a tab strip on ``theme`` (``pane``: a pane's, under the
+    window's), its surfaces painted at ``opacity`` (the theme's, below 1 over
+    a scene).
+
+    The current tab wears the page - the content surface the panes, a
+    terminal and a conversation paint - so it reads as the one shown below.
+    The grounds are stacked from the header band a title sits on toward the
+    text, by lightness: a pane's strip apart from its path bar, the window's
+    apart from both - and each, as it is seen, apart from the page the
+    current tab wears: over a scene it
+    keeps :data:`GROUND_OPACITY` and the page shows through the rest. Only
+    where the ground cannot get far enough does the current tab move off the
+    page. The idle tabs stand halfway between, so every kind of chip has an
+    edge (#563, #620, #1019 hand checks)."""
+    page = tuple(theme.surface_bg("content") or DEFAULT_BG)[:3]
     header = theme.surface_bg("header")
-    if header is None or tuple(header) == tuple(page):
-        header = _mix(page, theme.text, 0.08)
-    if pane:
-        return _mix(header, page, PANE_GROUND_TO_PAGE), page
-    return _mix(header, theme.text, WINDOW_GROUND_TO_TEXT), page
+    header = tuple(header)[:3] if header is not None else _mix(page, theme.text, 0.08)
+    text_lighter = _lightness(theme.text) > _lightness(page)
+    ground_opacity = max(GROUND_OPACITY, opacity) if opacity < 1.0 else 1.0
+
+    def seen(ground):
+        return _mix(page, ground, ground_opacity)
+
+    def ground_margin(*bands):
+        bands_apart = _apart(GROUND_SEPARATION, *bands)
+        page_apart = _apart(CURRENT_SEPARATION, page)
+        return lambda c: min(bands_apart(c), page_apart(seen(c)))
+
+    # Stacked toward the text, one step per band: the path bar, then a pane's
+    # strip, then the window's above it - the same order on every theme.
+    pane_ground = _set_apart(header, ground_margin(header), lighter=text_lighter)
+    window = _set_apart(pane_ground, ground_margin(header, pane_ground), lighter=text_lighter)
+    ground = pane_ground if pane else window
+    under = seen(ground)
+    lighter = (_lightness(page) > _lightness(under)
+               if abs(_lightness(page) - _lightness(under)) > 0.5 else text_lighter)
+    current = _set_apart(page, _apart(CURRENT_SEPARATION, under), lighter=lighter)
+    return StripColors(ground, current, _mix(under, current, 0.5), ground_opacity)
 
 
 def tab_height(ctx) -> float:
@@ -213,7 +289,8 @@ class TabStrip:
 
     def draw(self, ctx, tabs: list, current: int, x: float, y: float, avail: float,
              *, emphasis: bool, ground_height: float | None = None,
-             ground=None, current_bg=None, height: float = 1.0) -> None:
+             ground=None, current_bg=None, height: float = 1.0,
+             colors: "StripColors | None" = None) -> None:
         """Draw ``tabs`` (:class:`Tab`, or plain labels) ``height`` units high
         (one row by default; the text is centred in it) at ``(x, y)`` in
         ``avail`` units, ``current`` the one in front. The
@@ -227,7 +304,9 @@ class TabStrip:
 
         Three distinct fills - ground, idle tab, current tab - so every tab
         has an edge and the current one is plain on any theme (#563, #620
-        hand checks). Text is inked against the chip it sits on."""
+        hand checks). Text is inked against the chip it sits on. ``colors``
+        (:func:`strip_colors`) gives all three, and the least opacity the
+        ground keeps over a scene, in place of ``ground`` and ``current_bg``."""
         tabs = [t if isinstance(t, Tab) else Tab(str(t)) for t in tabs]
         theme = ctx.theme
         if current_bg is None:
@@ -235,12 +314,21 @@ class TabStrip:
         if ground is None:
             ground = theme.surfaces.get("content", DEFAULT_BG)
         idle_bg = _mix(ground, current_bg, 0.5)
+        ground_opacity = None
+        if colors is not None:
+            ground, current_bg, idle_bg = colors.ground, colors.current, colors.idle
+            if colors.ground_opacity < 1.0:
+                ground_opacity = colors.ground_opacity
         idle_fg = ctx.ink(theme.muted_text, on=idle_bg, target=LC_LARGE)
         current_fg = ctx.ink(theme.accent if emphasis else theme.text, on=current_bg,
                              target=LC_BODY)
         bottom = ground_height if ground_height is not None else y + height
         ty = y + (height - 1.0) / 2  # the text row, centred in the chip
-        ctx.fill_rect(0.0, 0.0, ctx.size_units[0], bottom, Style(bg=ground))
+        if ground_opacity is None:
+            ctx.fill_rect(0.0, 0.0, ctx.size_units[0], bottom, Style(bg=ground))
+        else:
+            ctx.fill_rect(0.0, 0.0, ctx.size_units[0], bottom, Style(bg=ground),
+                          opacity=ground_opacity)
         gap = self.GAP
         # The inset at each end of a chip, and the room between the icon, the
         # label and the close button: roomy where the backend draws sub-cell,

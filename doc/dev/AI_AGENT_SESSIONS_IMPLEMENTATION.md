@@ -387,8 +387,12 @@ after it.
   `Session` reads from a terminal view (`running`, `busy`, `exit_code`,
   `shown`, `closing`, `close`, `start`) plus `chat_state`, which
   `Session.state` reports for kind `AGENT`. Keys a binding in the
-  `terminal` context takes win, as in the terminal (`terminal.close`,
-  `terminal.screens`, user actions there).
+  `agent_chat` context takes win, as the terminal's do there
+  (`agent_chat.close`, `agent_chat.screens`, a context-qualified
+  `'agent_chat.<action>'` entry, user actions there); an inherited binding
+  only on a chord no text field types (`terminal.no_program_receives`). Its
+  own context since #1019 - it borrowed the terminal's before, so a shell's
+  keys and the conversation's could not differ.
 - The app: `_start_agent` branches to `_start_agent_chat` for a drawn entry,
   in both modes (no `_terminal_ready`, no hand-over). The session registry
   and screens are the terminal sessions' own, so the switcher, `xefmctl

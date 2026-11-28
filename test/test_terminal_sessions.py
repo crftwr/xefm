@@ -133,6 +133,7 @@ def _app(monkeypatch, *, desktop=True):
     for name in ("_agent_started", "_agent_ended"):
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
     app._run_terminal_user_action = lambda name: True
+    app._run_agent_chat_user_action = lambda name: True
     for name in ("new_terminal_session", "subshell", "_show_session", "_show_screen",
                  "_hide_session", "_shown_session", "_close_session",
                  "_session_exited", "_session_close_request", "_start_session",
@@ -153,6 +154,7 @@ def _app(monkeypatch, *, desktop=True):
 _SCREEN_METHODS = (
     "_add_session_screen", "_share_menu_bar", "_chrome_bands", "_content_band", "resume_agent",
     "next_screen", "prev_screen", "_step_screen", "_has_screens",
+    "move_screen_left", "move_screen_right", "_move_screen",
     "_window_tabs", "_tab_mark", "_tab_icon", "_tab_event", "_chrome_event",
     "_screen_action", "_new_kinds", "_new_tab_menu", "_go_to_group", "switch_screen",
     "new_shell", "new_agent", "_session_hints", "_closed_agents", "_save_closed_agents",
@@ -213,7 +215,7 @@ def test_switch_screen_goes_back_and_forth(monkeypatch):
     app.switch_screen()  # no session yet: a shell (#1019), never an AI agent
     [view] = app.made
     assert view.shown and _shown(app.panel) == [view] and view.cwd == "/tmp"
-    app._screen_action("terminal.switch_screen")  # back to the panes
+    app._screen_action("switch_screen")  # back to the panes
     assert not view.shown and view.closed == 0 and _shown(app.panel) == []
     assert app.panel.has_layer(view)  # kept, not removed
     assert app.relisted == 2  # both panes re-read
@@ -249,7 +251,7 @@ def test_the_subshell_is_a_session_with_the_snapshot_and_xefmctl(monkeypatch):
     # The XEFM_* snapshot as of the start, and xefmctl as this session.
     assert view.env["XEFM_THIS_DIR"] == "/tmp"
     assert view.env["XEFM_SESSION"] == str(session.id)
-    app._screen_action("terminal.switch_screen")
+    app._screen_action("switch_screen")
     app.subshell()  # back to the same shell (#1019), not another one
     assert len(app.made) == 1 and view.shown
     app.new_shell()  # another one on purpose
@@ -1263,8 +1265,11 @@ def test_an_action_can_live_in_the_terminal_context():
     action, problem = _build_action("next-shell", {"func": lambda ctx: None,
                                                    "context": "terminal"})
     assert problem is None and action.context == A.TERMINAL
+    action, problem = _build_action("note", {"func": lambda ctx: None,
+                                             "context": "agent_chat"})
+    assert problem is None and action.context == A.AGENT_CHAT
     _, problem = _build_action("x", {"func": lambda ctx: None, "context": "text_viewer"})
-    assert "only in 'filer' and 'terminal'" in problem
+    assert "only in 'filer', 'terminal' and 'agent_chat'" in problem
 
 
 def test_the_terminal_runs_a_terminal_context_action():

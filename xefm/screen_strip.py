@@ -109,10 +109,10 @@ class ScreenStrip(Widget):
         tab_h = tab_height(ctx)
         # Centred: the same inset above and below (none on a grid's one row).
         top = max(0.0, (hu - tab_h) / 2)
-        ground, page = strip_colors(ctx.theme)
+        colors = strip_colors(ctx.theme, opacity=getattr(ctx, "surface_opacity", 1.0))
         self._strip.draw(ctx, [*tabs, Tab(NEW_TAB)], current, pad_x, top,
                          max(0.0, wu - 2 * pad_x), emphasis=True, ground_height=hu,
-                         ground=ground, current_bg=page, height=tab_h)
+                         height=tab_h, colors=colors)
 
     def hit(self, x: float, y: float) -> int | str | tuple | None:
         """What a click at ``(x, y)`` (the strip's own units) lands on: a tab's

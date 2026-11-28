@@ -111,14 +111,21 @@ SEARCH = "search"
 #: it could read, so the terminal takes a key only when the binding is explicit
 #: for this context (a ``terminal.*`` action, or a context-qualified
 #: ``'terminal.<action>'`` entry), or when an inherited ``common`` binding is a
-#: chord no terminal program receives (Command, Ctrl+Shift).
+#: chord no terminal program receives (Command, Ctrl+Shift, Ctrl+Tab).
 TERMINAL = "terminal"
+#: The AI agent conversation XeFM draws (``xefm.agent_chat_view``, #959): a
+#: screen of the window like a terminal's, with a message field that types
+#: text. It takes a key the way the terminal does - an ``agent_chat.*``
+#: action, a context-qualified ``'agent_chat.<action>'`` entry, or an
+#: inherited ``common`` binding on a chord no text field types - with its own
+#: names, so its keys can differ from a shell's.
+AGENT_CHAT = "agent_chat"
 
 #: Every context a binding or a user action may name, most-specific first.
 #: ``common`` is deliberately included: a config may bind (or a future release
 #: may allow overriding) an action there.
 CONTEXTS = (FILER, TEXT_VIEWER, IMAGE_VIEWER, FILE_DIFF, DIR_DIFF, ISEARCH,
-            FILTER_LIST, SEARCH, TERMINAL, COMMON)
+            FILTER_LIST, SEARCH, TERMINAL, AGENT_CHAT, COMMON)
 
 #: The contexts whose keys compete with a text field. Every one of them is
 #: subject to the printable-key rule stated on ``isearch`` below, and
@@ -788,14 +795,15 @@ _DETAILS: dict[str, str] = {
         "Similar videos need ffmpeg, similar audio needs fpcalc (Chromaprint); "
         "similar images need nothing more."),
     "new_tab": (
-        "Opens another tab in the active pane, showing the same place, and "
-        "switches to it. Each pane has its own tabs, and each tab keeps its "
+        "Opens another folder tab in the active pane, showing the same place, "
+        "and switches to it. Each pane has its own folder tabs - not the "
+        "window's tabs of sessions above them - and each keeps its "
         "own directory, cursor, selection, sort and filter — a search result "
         "or an imported list too. The tab strip appears above the path once a "
         "pane has more than one tab."),
     "close_tab": (
-        "Closes the active pane's current tab and shows the next one. A "
-        "pane's only tab cannot be closed."),
+        "Closes the active pane's current folder tab and shows the next one. "
+        "A pane's only folder tab cannot be closed."),
     "flat_view": (
         "Shows every file below the active pane's directory as one flat list, "
         "named relative to it — sort, filter and copy work across the whole "
@@ -939,7 +947,10 @@ _DETAILS: dict[str, str] = {
         "are the AI agent conversations XeFM draws."),
     "next_screen": (
         "Goes to the window's next tab: the file manager's, then each "
-        "session's, round again. `prev_screen` goes the other way."),
+        "session's, round again. `prev_screen` goes the other way. A session "
+        "takes their keys from its program when no program receives them "
+        "(Command, Ctrl+Shift, Ctrl+Tab). Not the pane's folder tabs: those "
+        "are `next_tab` and `prev_tab`."),
     "agent": (
         "Goes back to the AI agent session you used last. When there is "
         "none, starts one of the agents in `AGENTS` in the active pane's "
@@ -1163,13 +1174,13 @@ _FILER_ACTIONS = [
        default_keys=()),
     # Folder tabs (#563), per pane. All on keys a terminal delivers: Ctrl-TAB
     # never arrives there, so next/previous are Ctrl-PAGE_DOWN / Ctrl-PAGE_UP.
-    _a("new_tab", FILER, "Open a new tab in this pane, at the same place"),
-    _a("open_in_new_tab", FILER, "Open the directory under the cursor in a new tab"),
-    _a("close_tab", FILER, "Close this pane's current tab"),
-    _a("next_tab", FILER, "Show this pane's next tab"),
-    _a("prev_tab", FILER, "Show this pane's previous tab"),
-    _a("move_tab_left", FILER, "Move this pane's current tab one place left"),
-    _a("move_tab_right", FILER, "Move this pane's current tab one place right"),
+    _a("new_tab", FILER, "Open a new folder tab in this pane, at the same place"),
+    _a("open_in_new_tab", FILER, "Open the directory under the cursor in a new folder tab"),
+    _a("close_tab", FILER, "Close this pane's current folder tab"),
+    _a("next_tab", FILER, "Show this pane's next folder tab"),
+    _a("prev_tab", FILER, "Show this pane's previous folder tab"),
+    _a("move_tab_left", FILER, "Move this pane's current folder tab one place left"),
+    _a("move_tab_right", FILER, "Move this pane's current folder tab one place right"),
     # Panes
     _a("sync_current_to_other", FILER, "Go to the other pane's directory"),
     _a("sync_other_to_current", FILER, "Send this directory to the other pane"),
@@ -1224,6 +1235,8 @@ _FILER_ACTIONS = [
        "Switch between the file manager and the screen used last"),
     _a("next_screen", COMMON, "Go to the window's next tab"),
     _a("prev_screen", COMMON, "Go to the window's previous tab"),
+    _a("move_screen_left", COMMON, "Move the window's current tab one place left"),
+    _a("move_screen_right", COMMON, "Move the window's current tab one place right"),
     _a("agent", FILER,
        "Go to the AI agent session used last, or open one in this directory"),
     _a("new_agent", FILER, "Open another AI agent session in this directory"),
@@ -1263,10 +1276,14 @@ _TEXT_VIEWER_ACTIONS = [
        "List every screen, to go to, close or rename one"),
     _a("terminal.switch_screen", TERMINAL, "Go back to the file manager"),
     _a("terminal.new", TERMINAL, "Start another session: a shell or an AI agent"),
-    _a("terminal.next_tab", TERMINAL, "Go to the next tab"),
-    _a("terminal.prev_tab", TERMINAL, "Go to the previous tab"),
-    _a("terminal.move_tab_left", TERMINAL, "Move this session's tab one place left"),
-    _a("terminal.move_tab_right", TERMINAL, "Move this session's tab one place right"),
+    # The AI agent conversation XeFM draws (#959): the same moves as the
+    # terminal's, under its own names.
+    _a("agent_chat.close", AGENT_CHAT,
+       "Close the conversation and return to the panes (it can be resumed)"),
+    _a("agent_chat.screens", AGENT_CHAT,
+       "List every screen, to go to, close or rename one"),
+    _a("agent_chat.switch_screen", AGENT_CHAT, "Go back to the file manager"),
+    _a("agent_chat.new", AGENT_CHAT, "Start another session: a shell or an AI agent"),
     _a("text_viewer.scroll_up", TEXT_VIEWER, "Scroll up one line",
        default_keys=("UP",)),
     _a("text_viewer.scroll_down", TEXT_VIEWER, "Scroll down one line",

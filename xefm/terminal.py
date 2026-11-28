@@ -23,7 +23,7 @@ from xefm.log_manager import getLogger
 
 logger = getLogger("Terminal")
 
-from puikit.event import EventType
+from puikit.event import Event, EventType
 
 try:
     from puikit.widgets.terminal_view import TerminalView as _PuiKitTerminalView
@@ -44,17 +44,56 @@ PROGRESS_REMOVE, PROGRESS_SET, PROGRESS_ERROR, PROGRESS_INDETERMINATE, PROGRESS_
 
 #: The actions that move between screens from inside one (#1019), as both
 #: session views (this terminal, the drawn agent chat) take them: back to the
-#: file manager, another session of the same group, the next or previous tab.
-SCREEN_ACTIONS = ("terminal.switch_screen", "terminal.new",
-                  "terminal.next_tab", "terminal.prev_tab",
-                  "terminal.move_tab_left", "terminal.move_tab_right")
+#: file manager, another session. The window's tabs themselves are the
+#: app-wide ``next_screen`` / ``prev_screen`` / ``move_screen_*``, taken on
+#: keys no program receives (:func:`no_program_receives`).
+SCREEN_ACTIONS = ("switch_screen", "new")
 
 
-def screen_action_handlers(run: "Callable[[str], bool] | None") -> dict:
-    """:data:`SCREEN_ACTIONS` as an action table, each handed to ``run``."""
+def no_program_receives(event) -> bool:
+    """Whether ``event`` is a chord no terminal program receives as such, so
+    a session may take it for an action it merely inherits: Command (a
+    terminal sends nothing for it), Ctrl+Shift, and Ctrl+Tab - which the
+    terminal's encoding sends as a plain Tab, so a program cannot tell it
+    apart (#1019: the window's tabs, as a browser's)."""
+    mods = event.modifiers or frozenset()
+    return ("cmd" in mods or {"ctrl", "shift"} <= mods
+            or (event.key == "tab" and "ctrl" in mods))
+
+
+def screen_action_handlers(run: "Callable[[str], bool] | None",
+                           context: str = "terminal") -> dict:
+    """:data:`SCREEN_ACTIONS` as an action table under ``context``'s names
+    (``terminal.new``, ``agent_chat.new``), each handing ``run`` the bare
+    move (``"new"``)."""
     if run is None:
         return {}
-    return {name: (lambda name=name: run(name)) for name in SCREEN_ACTIONS}
+    return {f"{context}.{move}": (lambda move=move: run(move)) for move in SCREEN_ACTIONS}
+
+
+def key_event(expr: str):
+    """The key event a binding's ``expr`` (``'Ctrl-TAB'``, ``'Command-T'``)
+    stands for, or None for a key sequence: what a surface is asked about
+    when the command palette shows only the keys that work on it."""
+    from xefm.config import KeyBindings
+    identity, mods, mode = KeyBindings({})._parse_key_expression(expr)
+    if mode == "seq":
+        return None
+    return Event(type=EventType.KEY, key=identity,
+                 char=identity if mode == "char" else None, modifiers=frozenset(mods))
+
+
+def qualified_binding(context: str, event, action: str) -> bool:
+    """Whether config.py binds ``event`` to ``action`` for ``context``
+    specifically (``'terminal.command_palette': ['Ctrl-T']``,
+    ``'agent_chat.screens': ['F5']``): a binding made for that surface, which
+    it takes whatever the key."""
+    from xefm.config import KeyBindings, config_manager
+    keys = (getattr(config_manager.get_config(), "KEY_BINDINGS", None) or {}).get(
+        f"{context}.{action}")
+    if not keys:
+        return False
+    return KeyBindings({action: keys}).is_action_for_event(event, action)
 
 
 def strip_event(view, event) -> bool:
@@ -238,7 +277,7 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         table = {"terminal.close": lambda: self.on_close_request(self)}
         if self.on_screens_request is not None:
             table["terminal.screens"] = self.on_screens_request
-        table.update(screen_action_handlers(self.on_screen_action))
+        table.update(screen_action_handlers(self.on_screen_action, CONTEXT))
         table.update(surface_actions.handlers())
         return table
 
@@ -262,25 +301,27 @@ class TerminalView(_Base):  # type: ignore[misc,valid-type]
         ``'terminal.<action>'`` entry in config.py. A binding it merely
         inherits - ``'command_palette': ['Ctrl-T']``, written for the file
         list - is taken only on a chord no terminal program receives
-        (Command, Ctrl+Shift); otherwise the key stays the program's (Ctrl-T
-        transposes in a shell)."""
+        (Command, Ctrl+Shift, Ctrl+Tab: :func:`no_program_receives`);
+        otherwise the key stays the program's (Ctrl-T transposes in a
+        shell)."""
         if action.startswith(CONTEXT + ".") or action in _user_actions():
             return True
         if self._qualified(event, action):
             return True
-        mods = event.modifiers
-        return "cmd" in mods or {"ctrl", "shift"} <= mods
+        return no_program_receives(event)
+
+    def takes_key(self, expr: str, action: str) -> bool:
+        """Whether the key ``expr`` bound to ``action`` works here, rather
+        than going to the program (:meth:`takes_binding`): the command
+        palette shows only those."""
+        event = key_event(expr)
+        return event is not None and self.takes_binding(event, action)
 
     @staticmethod
     def _qualified(event, action: str) -> bool:
         """Whether config.py binds ``event`` to ``action`` for the terminal
         specifically (``'terminal.command_palette': ['Ctrl-T']``)."""
-        from xefm.config import KeyBindings, config_manager
-        keys = (getattr(config_manager.get_config(), "KEY_BINDINGS", None) or {}).get(
-            f"{CONTEXT}.{action}")
-        if not keys:
-            return False
-        return KeyBindings({action: keys}).is_action_for_event(event, action)
+        return qualified_binding(CONTEXT, event, action)
 
     def handle_event(self, event) -> bool:
         if self.closing:

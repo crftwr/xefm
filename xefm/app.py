@@ -1319,10 +1319,11 @@ class PaneHeader(Widget):
         chips = [Tab(label, icon=icon, closable=True)
                  for icon, label in (_tab_parts(t) for t in tabs)]
         height = tab_height(ctx)
-        ground, page = strip_colors(ctx.theme, pane=True)
+        colors = strip_colors(ctx.theme, pane=True,
+                              opacity=getattr(ctx, "surface_opacity", 1.0))
         self._strip.draw(ctx, [*chips, Tab(NEW_TAB)], current, pad_x, y, avail,
                          emphasis=active, height=height, ground_height=y + height + y,
-                         ground=ground, current_bg=page)
+                         colors=colors)
 
     def handle_event(self, event) -> bool:
         """A click on a tab shows it, a tab dragged along the strip moves
@@ -4434,6 +4435,8 @@ class XeFMApp:
                 "resume_agent": (self.resume_agent, False),
                 "next_screen": (self.next_screen, False),
                 "prev_screen": (self.prev_screen, False),
+                "move_screen_left": (self.move_screen_left, False),
+                "move_screen_right": (self.move_screen_right, False),
                 "agent": (self.open_agent, False),
                 "new_agent": (self.new_agent, False),
                 "ask_agent": (self.ask_agent, False),
@@ -5086,7 +5089,7 @@ class XeFMApp:
         entry = self._focused_entry()
         info = (pane.get("file_info") or {}).get(str(entry)) if entry else None
         if entry is None or not (info or {}).get("is_dir"):
-            self.log_info("Open in New Tab: put the cursor on a directory")
+            self.log_info("Open in New Folder Tab: put the cursor on a directory")
             return
         self._open_tab(self.pm.active_pane, entry)
 
@@ -5391,15 +5394,15 @@ class XeFMApp:
             # panes as the tab items move within one.
             MenuItem("Switch Pane", on_select=lambda: self._menu("switch_pane"),
                      shortcut=sc("switch_pane")),
-            MenuItem("New Tab", on_select=lambda: self._menu("new_tab"),
+            MenuItem("New Folder Tab", on_select=lambda: self._menu("new_tab"),
                      shortcut=sc("new_tab")),
-            MenuItem("Open in New Tab", on_select=lambda: self._menu("open_in_new_tab"),
+            MenuItem("Open in New Folder Tab", on_select=lambda: self._menu("open_in_new_tab"),
                      when="entry", shortcut=sc("open_in_new_tab")),
-            MenuItem("Close Tab", on_select=lambda: self._menu("close_tab"),
+            MenuItem("Close Folder Tab", on_select=lambda: self._menu("close_tab"),
                      when=tabs_open, shortcut=sc("close_tab")),
-            MenuItem("Next Tab", on_select=lambda: self._menu("next_tab"),
+            MenuItem("Next Folder Tab", on_select=lambda: self._menu("next_tab"),
                      when=tabs_open, shortcut=sc("next_tab")),
-            MenuItem("Previous Tab", on_select=lambda: self._menu("prev_tab"),
+            MenuItem("Previous Folder Tab", on_select=lambda: self._menu("prev_tab"),
                      when=tabs_open, shortcut=sc("prev_tab")),
             SEPARATOR,
             # A list of paths in place of a directory (#453): where the pane
@@ -6553,7 +6556,7 @@ class XeFMApp:
             ask=self._agent_chat_ask,
             on_close_request=self._agent_chat_close_request,
             on_screens_request=self.screens,
-            on_user_action=self._run_terminal_user_action,
+            on_user_action=self._run_agent_chat_user_action,
             on_link=self._agent_chat_link,
             on_change=lambda v: self._agent_chat_changed(v),
             restart_argv=lambda session_id: argv + ["--resume", session_id],
@@ -6786,7 +6789,7 @@ class XeFMApp:
         ask(0)
 
     def _agent_chat_close_request(self, view) -> None:
-        """``/exit``, ``terminal.close``: end the session, asking first while
+        """``/exit``, ``agent_chat.close``: end the session, asking first while
         the agent is in the middle of a turn."""
         session = self._sessions.for_view(view)
         if session is None:
@@ -6849,6 +6852,13 @@ class XeFMApp:
             ctrl_clipboard=bool(getattr(self.config, "TERMINAL_CTRL_CLIPBOARD", True)))
         box["view"] = view
         return view
+
+    def _run_agent_chat_user_action(self, name: str) -> bool:
+        """An action a config or extension put in the drawn agent
+        conversation's context (``agent_chat``), run with the usual ``ctx``."""
+        self._run_action(_ctx.AGENT_CHAT, name)
+        self.panel.render()
+        return True
 
     def _run_terminal_user_action(self, name: str) -> bool:
         """An action a config or extension put in the terminal's context,
@@ -6951,6 +6961,22 @@ class XeFMApp:
         """``prev_screen``: the window's previous tab."""
         self._step_screen(-1)
 
+    def move_screen_left(self) -> None:
+        """``move_screen_left``: the window's current tab one place left
+        (Files stays first)."""
+        self._move_screen(-1)
+
+    def move_screen_right(self) -> None:
+        """``move_screen_right``: the window's current tab one place right."""
+        self._move_screen(+1)
+
+    def _move_screen(self, step: int) -> None:
+        tabs = self._screens.tabs()
+        current = self._screens.current
+        if current in tabs:
+            self._screens.move_tab(current, tabs.index(current) + step)
+        self.panel.render()
+
     def _step_screen(self, step: int) -> None:
         tabs = self._screens.tabs()
         current = self._screens.current
@@ -6969,23 +6995,13 @@ class XeFMApp:
         self._pick_agent(lambda entry: self._start_agent(entry))
 
     def _screen_action(self, name: str) -> bool:
-        """An action that moves between screens, from inside a session's view
-        (:data:`xefm.terminal.SCREEN_ACTIONS`)."""
-        screens = self._screens
-        current = screens.current
-        tabs = screens.tabs()
-        if name == "terminal.switch_screen":
-            self._show_screen(screens.files)
-        elif name == "terminal.new":
+        """A move between screens from inside a session's view - ``"switch_screen"``
+        or ``"new"`` (:data:`xefm.terminal.SCREEN_ACTIONS`), whichever view's
+        context named it."""
+        if name == "switch_screen":
+            self._show_screen(self._screens.files)
+        elif name == "new":
             self._new_tab_menu()
-        elif name in ("terminal.next_tab", "terminal.prev_tab"):
-            if len(tabs) > 1 and current in tabs:
-                step = 1 if name == "terminal.next_tab" else -1
-                self._show_screen(tabs[(tabs.index(current) + step) % len(tabs)])
-        elif name in ("terminal.move_tab_left", "terminal.move_tab_right"):
-            if current in tabs:
-                step = 1 if name == "terminal.move_tab_right" else -1
-                screens.move_tab(current, tabs.index(current) + step)
         else:
             return False
         self.panel.render()
@@ -7008,7 +7024,7 @@ class XeFMApp:
         return kinds
 
     def _new_tab_menu(self) -> None:
-        """The ``+`` after the tabs (and ``terminal.new``): start what can be
+        """The ``+`` after the tabs (and ``terminal.new`` / ``agent_chat.new``): start what can be
         started - at once when that is one thing, else the one picked."""
         kinds = self._new_kinds()
         if not kinds:
@@ -7073,11 +7089,11 @@ class XeFMApp:
                               ("terminal.close", "close"), ("terminal.new", "new"),
                               ("command_palette", "commands")):
             keys, _ = self.keys.get_keys_for_action(action, _ctx.TERMINAL)
-            if not action.startswith("terminal."):
-                # An inherited key reaches XeFM from a terminal only as a chord
-                # no program receives (TerminalView.takes_binding).
-                keys = [k for k in keys if "Command-" in k
-                        or ("Ctrl-" in k and "Shift-" in k)]
+            takes = getattr(view, "takes_key", None)
+            if takes is not None:
+                # Only a key that reaches XeFM from the program, as the
+                # palette shows them (TerminalView.takes_binding).
+                keys = [k for k in keys if takes(k, action)]
             if keys:
                 parts.append(f"{self.keys.format_key_for_display(keys[0])} {label}")
         return " · ".join(parts)
@@ -14622,11 +14638,11 @@ class XeFMApp:
             ("quick_view", "Preview the item under the cursor in the other pane"),
             ("jobs", "List background jobs; bring one forward or drop it from the queue"),
             ("find_similar", "Find identical files, or similar images, videos or audio (Tools menu)"),
-            ("new_tab", "Open a new tab in this pane, at the same place"),
-            ("open_in_new_tab", "Open the directory under the cursor in a new tab"),
-            ("close_tab", "Close this pane's current tab"),
-            ("next_tab", "Show this pane's next tab"),
-            ("prev_tab", "Show this pane's previous tab"),
+            ("new_tab", "Open a new folder tab in this pane, at the same place"),
+            ("open_in_new_tab", "Open the directory under the cursor in a new folder tab"),
+            ("close_tab", "Close this pane's current folder tab"),
+            ("next_tab", "Show this pane's next folder tab"),
+            ("prev_tab", "Show this pane's previous folder tab"),
             ("nav_left", "Focus left pane / go to parent"),
             ("nav_right", "Focus right pane / go to parent"),
             ("favorites", "Go to a favorite, or find files by tag"),
@@ -14696,6 +14712,8 @@ class XeFMApp:
             ("switch_screen", "Switch between the file manager and the screen used last"),
             ("next_screen", "Go to the window's next tab"),
             ("prev_screen", "Go to the window's previous tab"),
+            ("move_screen_left", "Move the window's current tab one place left"),
+            ("move_screen_right", "Move the window's current tab one place right"),
             ("screens", "List every screen, to go to, close or rename one"),
             ("open_with_os", "Open with the default app"),
             ("open_with", "Choose the app that opens the selection (File menu)"),
@@ -14795,6 +14813,8 @@ class XeFMApp:
         "switch_screen": lambda self: self._has_screens(),
         "next_screen": lambda self: self._has_screens(),
         "prev_screen": lambda self: self._has_screens(),
+        "move_screen_left": lambda self: self._has_screens(),
+        "move_screen_right": lambda self: self._has_screens(),
         "new_shell": lambda self: is_desktop_mode(),
     }
 
@@ -14889,9 +14909,16 @@ class XeFMApp:
             rows = self._palette_actions()
             own = set()
 
+        # Over a session, only the keys that work there: a key the terminal
+        # leaves to its program, or the conversation to its message field,
+        # would read as a shortcut that does nothing (#1019).
+        takes = getattr(surface, "takes_key", None) if surface is not None else None
+
         def keys(action) -> str:
             ctx = surface.palette_context if action.name in own else _ctx.FILER
             found, _ = self.keys.get_keys_for_action(action.name, ctx)
+            if takes is not None:
+                found = [k for k in found if takes(k, action.name)]
             return ", ".join(self.keys.format_key_for_display(k) for k in found)
 
         def accept(action) -> None:

@@ -135,11 +135,11 @@ the mouse for the first, take the whole buffer with the second. See
 | Back | `go_back` |
 | Forward | `go_forward` |
 | Switch Pane | `switch_pane` |
-| New Tab | `new_tab` — see [Folder Tabs](FOLDER_TABS_FEATURE.md) |
-| Open in New Tab | `open_in_new_tab` |
-| Close Tab | `close_tab` |
-| Next Tab | `next_tab` |
-| Previous Tab | `prev_tab` |
+| New Folder Tab | `new_tab` — see [Folder Tabs](FOLDER_TABS_FEATURE.md) |
+| Open in New Folder Tab | `open_in_new_tab` |
+| Close Folder Tab | `close_tab` |
+| Next Folder Tab | `next_tab` |
+| Previous Folder Tab | `prev_tab` |
 | Open List → From Clipboard | `open_list_from_clipboard` *(ships unbound)* — see [File lists](FILE_LIST_IMPORT_FEATURE.md) |
 | Open List → From Command… | `open_list_from_command` *(ships unbound)* |
 | Open List → From File | `open_list_from_file` *(ships unbound)* — also **Open as List** on a file's right-click menu |

@@ -978,7 +978,7 @@ def test_effort_and_fast_mode_outlive_a_restart(tmp_path):
 @pytest.mark.parametrize("preset", ["afx", "orthodox", "native", "vim"])
 def test_ctrl_grave_goes_back_from_a_drawn_session_under_every_preset(tmp_path, preset):
     # A preset's full table lists 'switch_screen' before
-    # 'terminal.switch_screen', both on Ctrl-`; the session's own action must
+    # 'agent_chat.switch_screen', both on Ctrl-`; the session's own action must
     # win, or the key went to the message field and the panes never came
     # back (#1019; it opened Screens before).
     from xefm import keymap_presets as kp
@@ -993,6 +993,26 @@ def test_ctrl_grave_goes_back_from_a_drawn_session_under_every_preset(tmp_path, 
         from puikit.event import Event, EventType
         panel.dispatch_event(Event(type=EventType.KEY, key="`", char="`",
                                    modifiers=frozenset({"ctrl"})))
-        assert hits == ["terminal.switch_screen"] and view.input.text == ""
+        assert hits == ["switch_screen"] and view.input.text == ""
+    finally:
+        config_manager.config, config_manager._key_bindings = saved
+
+
+def test_a_binding_for_the_conversation_wins_over_typing():
+    # 'agent_chat.<action>' binds a key for the conversation XeFM draws, as
+    # 'terminal.<action>' does for a shell: an inherited action is then taken
+    # on that key, not only on a chord no text field types (#1019).
+    from puikit.event import Event, EventType
+    from xefm.agent_chat_view import ChatView
+    from xefm.config import config_manager
+    f5 = Event(type=EventType.KEY, key="f5")
+    saved = (config_manager.config, config_manager._key_bindings)
+    try:
+        config_manager.config = SimpleNamespace(KEY_BINDINGS={"next_screen": ["F5"]})
+        config_manager._key_bindings = None
+        assert not ChatView._takes(f5, "next_screen")
+        config_manager.config = SimpleNamespace(
+            KEY_BINDINGS={"agent_chat.next_screen": ["F5"]})
+        assert ChatView._takes(f5, "next_screen")
     finally:
         config_manager.config, config_manager._key_bindings = saved

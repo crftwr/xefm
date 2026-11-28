@@ -83,7 +83,7 @@ conversation again, in its folder, with what was said so far on screen. The
 remove key forgets one; the rename key renames it.
 
 So closing an agent that is not in the middle of a turn does not ask: `/exit`,
-`terminal.close`, `Ctrl-D` on an empty message, the remove key in
+`agent_chat.close`, `Ctrl-D` on an empty message, the remove key in
 **Screens…**, and **Close N idle sessions** there all close it at once. An
 agent in a terminal session runs its own program, which XeFM cannot take
 back to a conversation; closing it still asks first.

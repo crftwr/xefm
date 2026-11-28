@@ -128,11 +128,11 @@ def test_next_and_previous_tab_wrap_through_the_file_manager(monkeypatch):
     app.new_shell()
     a, b = (app._sessions.for_view(v) for v in app.made)
     assert app._screens.current is b.screen
-    app._screen_action("terminal.next_tab")
+    app.next_screen()
     assert app._screens.current is app._screens.files
-    app._screen_action("terminal.next_tab")
+    app.next_screen()
     assert app._screens.current is a.screen
-    app._screen_action("terminal.prev_tab")
+    app.prev_screen()
     assert app._screens.current is app._screens.files
 
 
@@ -720,12 +720,20 @@ def test_the_new_actions_have_their_keys():
     from xefm import keymap_presets as kp
     for name, context in (("new_shell", A.FILER), ("new_agent", A.FILER),
                           ("switch_screen", A.COMMON), ("terminal.switch_screen", A.TERMINAL),
-                          ("terminal.new", A.TERMINAL), ("terminal.next_tab", A.TERMINAL),
-                          ("terminal.prev_tab", A.TERMINAL),
+                          ("terminal.new", A.TERMINAL),
+                          ("agent_chat.switch_screen", A.AGENT_CHAT),
+                          ("agent_chat.new", A.AGENT_CHAT), ("agent_chat.close", A.AGENT_CHAT),
+                          ("agent_chat.screens", A.AGENT_CHAT),
                           ("next_screen", A.COMMON), ("prev_screen", A.COMMON),
+                          ("move_screen_left", A.COMMON), ("move_screen_right", A.COMMON),
                           ("resume_agent", A.COMMON),
                           ("rename_list_item", A.FILTER_LIST)):
         assert A.registry.resolve(context, name) is not None, name
+    # One name for the window's tabs on every screen: no session-only twin
+    # that read as the pane's next_tab qualified for the terminal.
+    for gone in ("terminal.next_tab", "terminal.prev_tab",
+                 "terminal.move_tab_left", "terminal.move_tab_right"):
+        assert A.registry.resolve(A.TERMINAL, gone) is None, gone
     for preset in kp.PRESETS:
         table = kp.table(preset)
         assert table["switch_screen"] == ["Ctrl-GRAVE"], preset
@@ -746,10 +754,22 @@ def test_ctrl_tab_walks_the_windows_tabs_in_the_desktop_app(monkeypatch):
         mac = platform == "darwin"
         assert ("Command-Shift-RIGHT_BRACKET" in table["next_screen"]) == mac
         assert ("Command-Shift-LEFT_BRACKET" in table["prev_screen"]) == mac
-        assert "Ctrl-TAB" in table["terminal.next_tab"], platform
     monkeypatch.setattr(common, "is_desktop_mode", lambda: False)
     table = common.bindings()  # a terminal never sends Ctrl-Tab
-    assert table["next_screen"] == [] and table["terminal.next_tab"] == []
+    assert table["next_screen"] == []
+
+
+def test_a_session_takes_the_window_tab_keys_from_its_program():
+    # next_screen is a common action a session inherits: taken only on a
+    # chord no program receives - Ctrl+Tab is one (the terminal's encoding
+    # sends it as Tab), Command and Ctrl+Shift were already.
+    from xefm.terminal import no_program_receives
+    key = lambda k, *mods: Event(type=EventType.KEY, key=k, modifiers=frozenset(mods))
+    assert no_program_receives(key("tab", "ctrl"))
+    assert no_program_receives(key("tab", "ctrl", "shift"))
+    assert no_program_receives(key("}", "cmd"))
+    assert not no_program_receives(key("tab"))
+    assert not no_program_receives(key("t", "ctrl"))  # Ctrl-T stays the shell's
 
 
 def test_next_screen_walks_every_tab(monkeypatch):
@@ -822,7 +842,7 @@ def test_moving_a_screen_tab_changes_the_tabs_not_the_order_they_were_made(monke
     assert not app._screens.move_tab(c, 0)  # nothing goes before Files
     assert not app._screens.move_tab(files, 2)  # and Files does not move
     app._show_screen(a)
-    app._screen_action("terminal.move_tab_right")
+    app.move_screen_right()
     assert app._screens.tabs() == [files, c, b, a]
     assert not app._screens.move_tab(a, 4)  # off the end: stays
 
@@ -878,3 +898,27 @@ def test_a_sessions_view_owns_the_window_menu_bar(monkeypatch):
     dialog = Label("dialog")
     app.panel.push_layer(dialog, z=70, hints={"x": 0, "y": 0, "w": 20, "h": 5})
     assert not app.panel._menu_bar_active()
+
+
+def test_on_every_theme_the_strips_and_their_tabs_can_be_told_apart():
+    # Taken from a theme's colours alone, a theme whose header and page are
+    # one colour (Segment LCD) gave bands and chips that could not be told
+    # apart, and over a scene (Phosphor, Pelagic) the current tab vanished
+    # into the translucent ground (#1019 hand check).
+    from xefm._config import Config
+    from xefm.app import _build_theme_list
+    from xefm.tab_strip import (CURRENT_SEPARATION, GROUND_SEPARATION, _lightness as L,
+                                _mix, strip_colors)
+    for name, theme in _build_theme_list(Config()):
+        opacity = theme.extras.get("opacity", 1.0)
+        window = strip_colors(theme, opacity=opacity)
+        pane = strip_colors(theme, pane=True, opacity=opacity)
+        header, page = theme.surface_bg("header"), theme.surface_bg("content")
+        assert window.current == pane.current == tuple(page)[:3], name
+        for a, b in ((window.ground, header), (pane.ground, header),
+                     (window.ground, pane.ground)):
+            assert abs(L(a) - L(b)) >= GROUND_SEPARATION - 0.01, name
+        for colors in (window, pane):
+            seen = _mix(page, colors.ground, colors.ground_opacity)
+            assert abs(L(colors.current) - L(seen)) >= CURRENT_SEPARATION - 0.01, name
+            assert colors.ground_opacity >= min(1.0, max(0.8, opacity)), name

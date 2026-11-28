@@ -69,11 +69,11 @@ unnoticed.
   shell, `>` a terminal program, `✦` an AI agent - and a session's tab, while
   the pointer is over it, ends with `×`, which closes it (asking first only
   when that would stop something). Click a tab to go there, or use
-  `next_screen` and `prev_screen` (`terminal.next_tab` and
-  `terminal.prev_tab` inside a session), Ctrl-Tab in the desktop app as in a
-  browser. Going between tabs is at once: nothing slides or fades. Drag a tab along the strip to
+  `next_screen` and `prev_screen` - on every screen, sessions included -
+  Ctrl-Tab in the desktop app as in a browser. (The pane's folder tabs are
+  `next_tab` and `prev_tab`.) Going between tabs is at once: nothing slides or fades. Drag a tab along the strip to
   move it: a line shows where it will go, and it moves there when you let go
-  (or use `terminal.move_tab_left` and `terminal.move_tab_right`); **Files**
+  (or use `move_screen_left` and `move_screen_right`); **Files**
   stays first. A tab whose session is waiting on you shows `⚠` in place of
   its icon, one that has finished something since you last looked `✓`.
 - **Go back to a session.** **Terminal** (`subshell`) goes back to the

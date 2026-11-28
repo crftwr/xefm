@@ -53,15 +53,17 @@ from puikit.widgets.text_area import TextArea
 from xefm import agent_chat as C
 from xefm import surface_actions
 from xefm.config import find_action_for_event
-from xefm.terminal import screen_action_handlers, strip_event
+from xefm.actions import AGENT_CHAT
+from xefm.terminal import (key_event, no_program_receives, qualified_binding,
+                           screen_action_handlers, strip_event)
 from xefm.log_manager import getLogger
 
 logger = getLogger("AgentChat")
 
-#: The context the view takes its bindings from: the terminal's, which an
-#: agent session's screen is a peer of (``terminal.close``, ``terminal.screens``,
-#: actions a config put there).
-CONTEXT = "terminal"
+#: The context the view takes its bindings from: its own (``agent_chat.close``,
+#: ``agent_chat.screens``, actions a config put there), so its keys can differ
+#: from a shell's though it is a screen like a terminal's.
+CONTEXT = AGENT_CHAT
 
 _MOUSE = (EventType.MOUSE_DOWN, EventType.MOUSE_UP, EventType.MOUSE_DRAG,
           EventType.MOUSE_CLICK, EventType.MOUSE_SCROLL, EventType.MOUSE_MOVE)
@@ -69,11 +71,11 @@ _MOUSE = (EventType.MOUSE_DOWN, EventType.MOUSE_UP, EventType.MOUSE_DRAG,
 #: The footer's keys, per state. ``{newline}`` is the new-line key this
 #: frontend surely delivers (:func:`newline_key`).
 _HINTS = {
-    C.STARTING: "Enter send · {newline} new line · Esc back to files",
-    C.IDLE: "Enter send · {newline} new line · / commands · @ files · Shift+Tab mode · ↑ earlier message · Esc back to files",
+    C.STARTING: "Enter send · {newline} new line",
+    C.IDLE: "Enter send · {newline} new line · / commands · @ files · Shift+Tab mode · ↑ earlier message",
     C.WORKING: "Esc stop · Enter send next · PgUp/PgDn scroll",
     C.ASKING: "Answer the question · Esc stop",
-    C.EXITED: "Enter start again · /exit close · Esc back to files",
+    C.EXITED: "Enter start again · /exit close",
 }
 
 
@@ -679,10 +681,10 @@ class ChatView(FocusContainer, Widget):
     # --- actions ------------------------------------------------------------------
 
     def _actions(self) -> dict:
-        table = {"terminal.close": lambda: self.on_close_request(self)}
+        table = {f"{CONTEXT}.close": lambda: self.on_close_request(self)}
         if self.on_screens_request is not None:
-            table["terminal.screens"] = self.on_screens_request
-        table.update(screen_action_handlers(self.on_screen_action))
+            table[f"{CONTEXT}.screens"] = self.on_screens_request
+        table.update(screen_action_handlers(self.on_screen_action, CONTEXT))
         table.update(surface_actions.handlers())
         return table
 
@@ -698,14 +700,25 @@ class ChatView(FocusContainer, Widget):
             return bool(self.on_user_action(name))
         return False
 
+    def takes_key(self, expr: str, action: str) -> bool:
+        """Whether the key ``expr`` bound to ``action`` works here, rather
+        than typing into the message (:meth:`_takes`): the command palette
+        shows only those."""
+        event = key_event(expr)
+        return event is not None and self._takes(event, action)
+
     @staticmethod
     def _takes(event: Event, action: str) -> bool:
-        """Whether a binding beats typing: one made for this context, or a
-        chord a text field never types (Command, Ctrl+Shift)."""
+        """Whether a binding beats typing: one made for this context - an
+        ``agent_chat.*`` action, a config's or extension's action here, a
+        context-qualified ``'agent_chat.<action>'`` entry - or a chord a text
+        field never types (Command, Ctrl+Shift, Ctrl+Tab - as a terminal takes
+        them: :func:`~xefm.terminal.no_program_receives`)."""
         if action.startswith(CONTEXT + ".") or action in _user_actions():
             return True
-        mods = event.modifiers or frozenset()
-        return "cmd" in mods or {"ctrl", "shift"} <= mods
+        if qualified_binding(CONTEXT, event, action):
+            return True
+        return no_program_receives(event)
 
     # --- focus ------------------------------------------------------------------
 

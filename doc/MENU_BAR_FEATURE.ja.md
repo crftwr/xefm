@@ -106,11 +106,11 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | Back | `go_back` |
 | Forward | `go_forward` |
 | Switch Pane | `switch_pane` |
-| New Tab | `new_tab` — [フォルダータブ](FOLDER_TABS_FEATURE.ja.md)を参照 |
-| Open in New Tab | `open_in_new_tab` |
-| Close Tab | `close_tab` |
-| Next Tab | `next_tab` |
-| Previous Tab | `prev_tab` |
+| New Folder Tab | `new_tab` — [フォルダータブ](FOLDER_TABS_FEATURE.ja.md)を参照 |
+| Open in New Folder Tab | `open_in_new_tab` |
+| Close Folder Tab | `close_tab` |
+| Next Folder Tab | `next_tab` |
+| Previous Folder Tab | `prev_tab` |
 | Open List → From Clipboard | `open_list_from_clipboard` *（既定でキー未割り当て）* — [ファイルリスト](FILE_LIST_IMPORT_FEATURE.ja.md)を参照 |
 | Open List → From Command… | `open_list_from_command` *（既定でキー未割り当て）* |
 | Open List → From File | `open_list_from_file` *（既定でキー未割り当て）* — ファイルの右クリックメニューの **Open as List** でも可 |

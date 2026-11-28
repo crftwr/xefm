@@ -287,24 +287,28 @@ def bindings() -> dict:
         # - and the command palette has Switch Screen.
         'switch_screen': ['Ctrl-GRAVE'],
         'terminal.switch_screen': ['Ctrl-GRAVE'],
+        'agent_chat.switch_screen': ['Ctrl-GRAVE'],
         # The window's tabs (#1019): Ctrl-Tab in the desktop app, set below,
-        # as in a browser or VS Code - from the file manager, and from a
-        # session (terminal.next_tab), which takes it from the program. A
+        # as in a browser or VS Code - on every screen: a session takes
+        # Ctrl-Tab from its program, which cannot tell it from Tab. A
         # terminal never delivers Ctrl-Tab: there, Ctrl-` and the palette.
         'next_screen': [],
         'prev_screen': [],
+        'move_screen_left': [],
+        'move_screen_right': [],
         # Screens, the list of every session (#1019), is the overview rather
         # than the way between screens: the status bar's session count opens
         # it, as do the Tools menu and the palette.
         'screens': [],
         'terminal.screens': [],
-        # Another session of the kind on screen, and the tabs of that kind:
-        # desktop chords only, set below - a terminal program needs the rest.
+        'agent_chat.screens': [],
+        # Another session: a desktop chord only, set below - a terminal
+        # program needs the rest.
         'terminal.new': [],
-        'terminal.next_tab': [],
-        'terminal.prev_tab': [],
-        'terminal.move_tab_left': [],
-        'terminal.move_tab_right': [],
+        'agent_chat.new': [],
+        # The conversation XeFM draws closes with Ctrl-D on an empty message
+        # everywhere; its close key is the desktop chord, set below.
+        'agent_chat.close': [],
         # AI agent sessions (AGENTS, #880). '>': the prompt an agent's CLI
         # shows (Claude Code's). A glyph, so no preset's type-ahead takes it,
         # and every terminal delivers it. It goes back to the agent session
@@ -564,11 +568,10 @@ def bindings() -> dict:
             # binds the palette itself without one.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Command-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Command-W']
-            # A Mac terminal's new-tab and tab keys (Terminal, iTerm2), for
-            # the sessions of the kind on screen (#1019).
+            KEY_BINDINGS['agent_chat.close'] = ['Command-W']
+            # A Mac terminal's new-tab key (Terminal, iTerm2) (#1019).
             KEY_BINDINGS['terminal.new'] = ['Command-T']
-            KEY_BINDINGS['terminal.next_tab'] = ['Ctrl-TAB', 'Command-Shift-RIGHT_BRACKET']
-            KEY_BINDINGS['terminal.prev_tab'] = ['Ctrl-Shift-TAB', 'Command-Shift-LEFT_BRACKET']
+            KEY_BINDINGS['agent_chat.new'] = ['Command-T']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
@@ -584,14 +587,15 @@ def bindings() -> dict:
             # key, since Ctrl-W is a shell's.
             KEY_BINDINGS['command_palette'] = ['Ctrl-T', 'Ctrl-Shift-P']
             KEY_BINDINGS['terminal.close'] = ['Ctrl-Shift-W']
-            # Windows Terminal's new-tab and tab keys (#1019).
+            KEY_BINDINGS['agent_chat.close'] = ['Ctrl-Shift-W']
+            # Windows Terminal's new-tab key (#1019).
             KEY_BINDINGS['terminal.new'] = ['Ctrl-Shift-T']
-            KEY_BINDINGS['terminal.next_tab'] = ['Ctrl-TAB']
-            KEY_BINDINGS['terminal.prev_tab'] = ['Ctrl-Shift-TAB']
+            KEY_BINDINGS['agent_chat.new'] = ['Ctrl-Shift-T']
         # The window's tabs, as every browser and VS Code switch theirs
         # (#1019), on both systems.
-        # On a Mac the session's tab keys too, so the same keys walk the
-        # window's tabs from the file manager as from a session.
+        # On a Mac a Mac terminal's tab keys too (Terminal, iTerm2). A
+        # session takes all of them from its program: Ctrl-Tab reaches no
+        # program as such, and Command no program at all.
         KEY_BINDINGS['next_screen'] = ['Ctrl-TAB']
         KEY_BINDINGS['prev_screen'] = ['Ctrl-Shift-TAB']
         if sys.platform == 'darwin':

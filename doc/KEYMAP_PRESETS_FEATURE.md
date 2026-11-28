@@ -243,13 +243,13 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `quick_sort_size` | Sort by size | `3` | `Ctrl-F6` | — | — |
 | `quick_sort_date` | Sort by modification date | `4` | `Ctrl-F5` | — | — |
 | **Tabs, panes and the log** | | | | | |
-| `new_tab` | Open a new tab in this pane, at the same place | `T` | `Ctrl-T` | `Ctrl-T`<br>macOS app: `Cmd-T`, `Ctrl-T` | — |
-| `open_in_new_tab` | Open the directory under the cursor in a new tab | `Shift-T` | `Ctrl-↑` | — | — |
-| `close_tab` | Close this pane's current tab | `Ctrl-W` | `Ctrl-W` | `Ctrl-W`<br>macOS app: `Cmd-W`, `Ctrl-W` | `Ctrl-W` |
-| `next_tab` | Show this pane's next tab | `Ctrl-PgDn` | — | `Ctrl-PgDn` | `Ctrl-PgDn` |
-| `prev_tab` | Show this pane's previous tab | `Ctrl-PgUp` | — | `Ctrl-PgUp` | `Ctrl-PgUp` |
-| `move_tab_left` | Move this pane's current tab one place left | — | — | — | — |
-| `move_tab_right` | Move this pane's current tab one place right | — | — | — | — |
+| `new_tab` | Open a new folder tab in this pane, at the same place | `T` | `Ctrl-T` | `Ctrl-T`<br>macOS app: `Cmd-T`, `Ctrl-T` | — |
+| `open_in_new_tab` | Open the directory under the cursor in a new folder tab | `Shift-T` | `Ctrl-↑` | — | — |
+| `close_tab` | Close this pane's current folder tab | `Ctrl-W` | `Ctrl-W` | `Ctrl-W`<br>macOS app: `Cmd-W`, `Ctrl-W` | `Ctrl-W` |
+| `next_tab` | Show this pane's next folder tab | `Ctrl-PgDn` | — | `Ctrl-PgDn` | `Ctrl-PgDn` |
+| `prev_tab` | Show this pane's previous folder tab | `Ctrl-PgUp` | — | `Ctrl-PgUp` | `Ctrl-PgUp` |
+| `move_tab_left` | Move this pane's current folder tab one place left | — | — | — | — |
+| `move_tab_right` | Move this pane's current folder tab one place right | — | — | — | — |
 | `adjust_pane_left` | Make the left pane smaller | `[` | `[` | `[` | `[` |
 | `adjust_pane_right` | Make the left pane larger | `]` | `]` | `]` | `]` |
 | `reset_pane_boundary` | Reset the pane split to 50 / 50 | `-` | — | `-` | `-` |
@@ -272,6 +272,8 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `switch_screen` | Switch between the file manager and the screen used last | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
 | `next_screen` | Go to the window's next tab | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |
 | `prev_screen` | Go to the window's previous tab | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` |
+| `move_screen_left` | Move the window's current tab one place left | — | — | — | — |
+| `move_screen_right` | Move the window's current tab one place right | — | — | — | — |
 | `screens` | List every screen, to go to, close or rename one | — | — | — | — |
 | `agent` | Go to the AI agent session used last, or open one in this directory | `>` | `>` | `>` | `>` |
 | `new_agent` | Open another AI agent session in this directory | — | — | — | — |
@@ -412,8 +414,10 @@ they open it again on the last search and move to the next or previous match.
 **XeFM's terminal** (the desktop app's [terminal sessions](TERMINAL_FEATURE.md): the subshell and terminal programs)
 
 Every other key goes to the program in the terminal. A file list key reaches
-XeFM there only when it is a `Cmd` or `Ctrl-Shift` chord, which no terminal
-program receives.
+XeFM there only when it is a `Cmd` or `Ctrl-Shift` chord, or `Ctrl-Tab`, which
+no terminal program receives as such - so `next_screen` and `prev_screen` work
+in a session too. To have another key do the same there, bind it for the
+terminal: `'terminal.command_palette': ['Ctrl-T']`.
 
 | Action name | What it does | Keys |
 |---|---|---|
@@ -421,11 +425,22 @@ program receives.
 | `terminal.switch_screen` | Go back to the file manager | `` Ctrl-` `` |
 | `terminal.screens` | List every screen, to go to, close or rename one | — |
 | `terminal.new` | Start another session: a shell or an AI agent | macOS app: `Cmd-T`<br>Windows app: `Ctrl-Shift-T` |
-| `terminal.next_tab` | Go to the next tab | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |
-| `terminal.prev_tab` | Go to the previous tab | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` |
-| `terminal.move_tab_left` | Move this session's tab one place left | — |
-| `terminal.move_tab_right` | Move this session's tab one place right | — |
 | `command_palette` | Search the terminal's actions by name and run one | macOS app: `Cmd-Shift-P`<br>Windows app: `Ctrl-Shift-P` |
+
+**The AI agent conversation XeFM draws** ([AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md#conversations-drawn-by-xefm))
+
+Its own names, so its keys can differ from a shell's. Keys go to the message
+field; a file list key reaches XeFM there only as a `Cmd` or `Ctrl-Shift`
+chord, or `Ctrl-Tab`. To have another key do the same there, bind it for the
+conversation: `'agent_chat.screens': ['F5']`. `Ctrl-D` on an empty message
+closes it in every frontend.
+
+| Action name | What it does | Keys |
+|---|---|---|
+| `agent_chat.close` | Close the conversation and return to the panes (it can be resumed) | macOS app: `Cmd-W`<br>Windows app: `Ctrl-Shift-W` |
+| `agent_chat.switch_screen` | Go back to the file manager | `` Ctrl-` `` |
+| `agent_chat.screens` | List every screen, to go to, close or rename one | — |
+| `agent_chat.new` | Start another session: a shell or an AI agent | macOS app: `Cmd-T`<br>Windows app: `Ctrl-Shift-T` |
 
 ## Your own key bindings come on top
 

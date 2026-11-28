@@ -59,25 +59,31 @@ become tabs later (with a preview-tab rule, so they do not pile up).
   shell session on the desktop, the subshell in terminal mode - and never an
   agent: the key keeps meaning "terminal", the first press is not a dialog
   the second press is not, and an agent CLI (sign-in, a plan's usage) starts
-  only on `agent`. Ctrl-` carries it, and `terminal.switch_screen` inside a
+  only on `agent`. Ctrl-` carries it, and `terminal.switch_screen` / `agent_chat.switch_screen` inside a
   session, which wins over the program because it is `terminal.*`.
-- The `+` after the tabs and `terminal.new` run `_new_tab_menu`: what
+- The `+` after the tabs and `terminal.new` / `agent_chat.new` run `_new_tab_menu`: what
   `_new_kinds` says can start (a shell where XeFM has a terminal, each agent
   installed - drawn ones only in terminal mode), at once when that is one
   thing, else picked from a `choose` list.
-- `next_screen` / `prev_screen` (common) and `terminal.next_tab` / `prev_tab`
-  walk all the tabs, the file manager's included: Ctrl-Tab / Ctrl-Shift-Tab,
-  as in a browser or VS Code, in the desktop overrides only - a terminal
-  never sends Ctrl-Tab (there: Ctrl-` and the palette). On a Mac,
-  Cmd-Shift-] / Cmd-Shift-[ too, on both pairs, so the same keys walk the
-  tabs from the file manager as from a session. An active macOS app never
+- `next_screen` / `prev_screen` / `move_screen_left` / `move_screen_right`
+  (common, app-wide - `surface_actions.APP_WIDE`) walk and move all the
+  tabs, the file manager's included, on every screen: one name, not a
+  session-only `terminal.next_tab` that read as the pane's `next_tab`
+  qualified for the terminal and doubled the palette's rows. Ctrl-Tab /
+  Ctrl-Shift-Tab, as in a browser or VS Code, in the desktop overrides only
+  - a terminal never sends Ctrl-Tab (there: Ctrl-` and the palette); on a
+  Mac Cmd-Shift-] / Cmd-Shift-[ too. A session takes them from its program
+  because they are chords no program receives
+  (`terminal.no_program_receives`, which both session views use): Command,
+  Ctrl+Shift, and Ctrl+Tab, which the terminal's encoding sends as a plain
+  Tab. An active macOS app never
   gets Ctrl-Tab in `keyDown:` - AppKit offers it as a key equivalent and,
   declined, spends it on the key-view loop - so PuiKit's view takes
   Ctrl-Tab / Ctrl-Shift-Tab in `performKeyEquivalent:`. The pane's tabs keep
   Ctrl-PgDn / Ctrl-PgUp; the Orthodox preset gave its Ctrl-Tab up for this,
   and its pane tabs are unbound (Ctrl-PgDn / Ctrl-PgUp are TC's open and
   parent there).
-  `terminal.move_tab_left` / `right` move the current one, unbound.
+  `move_screen_left` / `right` are unbound.
 - `screens` and `terminal.screens` lost Ctrl-`: Screens is reached from the
   Tools menu and the palette.
 
@@ -115,16 +121,25 @@ backing's colour - on a grid a cell's text background is what shows); its
 room is reserved either way, so the tabs never shift. `close_hits` are
 exactly the area the backing covers, so what lights up is what a click hits.
 A click there calls that session view's `on_close_request` - the same path as
-`terminal.close`.
+`terminal.close` / `agent_chat.close`.
 
 On a vector backend a tab is 1.3 rows high (`TAB_HEIGHT_GUI`: 15% of a row
 above and below the text, which `TabStrip.draw(height=)` centres), and the
 strip is that plus 4 px above and 4 px below it, the tabs centred in it with
 all four corners rounded; on a grid both are one row. The current tab wears
-the page's colour. The colours come from `tab_strip.strip_colors(theme, pane=)` for
-both strips: the ground starts from the header band and is set off it - the
-window's strip toward the text, a pane's toward the page - so the window's
-strip, a pane's strip and the pane's path bar read as three bands. The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
+the page's colour. The colours come from `tab_strip.strip_colors(theme, pane=,
+opacity=)` for both strips, measured by lightness (CIE L*) rather than taken
+from the theme as they are: a theme whose header and page are one colour
+(Segment LCD) gave bands and chips that could not be told apart, and over a
+scene (Phosphor, Pelagic) the ground, at the theme's surface opacity, was the
+scene and the current tab in the page colour vanished into it. Now the
+grounds are stacked from the header toward the text - a pane's strip
+`GROUND_SEPARATION` from the path bar, the window's as far again - and each
+ground, as seen (it keeps `GROUND_OPACITY` over a scene, `fill_rect(opacity=)`),
+is `CURRENT_SEPARATION` from the page. The current tab wears the page; only
+where no ground gets far enough does it move off it. Idle tabs stand halfway
+between the ground as seen and the current tab. A test holds this on every
+built-in theme. The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
 0.75 between icon, label and `×` on a vector backend; whole cells on a grid).
 
 Moving a tab: `TabStrip.press` arms a drag of the tab under a press (not a
@@ -248,7 +263,7 @@ their program runs.
 
 `ChatView` closes on Ctrl-D with an empty message and no completion menu: a
 shell's end-of-input, and a key every terminal sends (terminal mode has no
-`terminal.close` key). Esc in it stops the agent or clears a selection and
+`agent_chat.close` key). Esc in it stops the agent or clears a selection and
 no more: the conversation is a tab, which Esc leaves no more than it leaves
 a shell's (it went back to the file manager before).
 

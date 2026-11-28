@@ -324,7 +324,7 @@ TIPS: tuple[tuple[str, str], ...] = (
      "key each is bound to, and {key:describe_list_item} on a row explains it."),
 
     ("Tabs in each pane",
-     "{key:new_tab} opens another tab in the active pane at the same place, "
+     "{key:new_tab} opens another folder tab in the active pane at the same place, "
      "and {key:open_in_new_tab} opens the folder under the cursor in a new "
      "one. {key:next_tab} / {key:prev_tab} step between them and "
      "{key:close_tab} closes one — a search result or a list keeps its own "

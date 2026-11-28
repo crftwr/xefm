@@ -6,22 +6,22 @@
 
 | アクション | メニュー |
 |--------|------|
-| `new_tab` | Go → New Tab |
-| `open_in_new_tab` | Go → Open in New Tab |
-| `close_tab` | Go → Close Tab |
-| `next_tab` | Go → Next Tab |
-| `prev_tab` | Go → Previous Tab |
+| `new_tab` | Go → New Folder Tab |
+| `open_in_new_tab` | Go → Open in New Folder Tab |
+| `close_tab` | Go → Close Folder Tab |
+| `next_tab` | Go → Next Folder Tab |
+| `prev_tab` | Go → Previous Folder Tab |
 
 キーはキーマッププリセットによって異なります。[キーマッププリセット](KEYMAP_PRESETS_FEATURE.ja.md#すべてのキーの一覧)を参照してください。
 
-どれも**アクティブなペイン**に対して働きます。左右のペインはそれぞれ別のタブを持ちます。
+どれも**アクティブなペイン**に対して働きます。左右のペインはそれぞれ別のタブを持ちます。ペインの上にあるウィンドウのタブ（**Files** と、ターミナルや AI エージェントの各セッション）とは別のもので、そちらには専用のアクションがあります（`next_screen`、`prev_screen`。[ターミナル](TERMINAL_FEATURE.ja.md)を参照）。
 
 ## 開くと閉じる
 
-- **New Tab** は、現在のタブと同じ場所を表示し、カーソルも同じ項目にあるタブを開いて、そのタブに切り替えます。検索結果や一覧の上で使うと、新しいタブにはその一覧のディレクトリが表示され、結果は元のタブに残ります。
-- **Open in New Tab** は、カーソル位置のディレクトリを新しいタブで開きます。現在のタブはその場所のままです。
-- **Close Tab** は現在のタブを閉じ、次のタブを表示します。ペインの最後のタブは閉じられません。
-- **Next / Previous Tab** は、どちらの端でも反対の端に回り込みます。
+- **New Folder Tab** は、現在のタブと同じ場所を表示し、カーソルも同じ項目にあるタブを開いて、そのタブに切り替えます。検索結果や一覧の上で使うと、新しいタブにはその一覧のディレクトリが表示され、結果は元のタブに残ります。
+- **Open in New Folder Tab** は、カーソル位置のディレクトリを新しいタブで開きます。現在のタブはその場所のままです。
+- **Close Folder Tab** は現在のタブを閉じ、次のタブを表示します。ペインの最後のタブは閉じられません。
+- **Next / Previous Folder Tab** は、どちらの端でも反対の端に回り込みます。
 
 ## タブバー
 
