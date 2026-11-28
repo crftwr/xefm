@@ -296,8 +296,10 @@ after it.
   its own `result`). `to_markdown` renders the items: a user message in
   a MarkdownView `::: box field` (a panel drawn as the message field below
   looks - its fill, border, corner and insets, PuiKit's `box field` variant,
-  #1019 hand check; a plain box on an older PuiKit; a fill in a terminal; its
-  fence longer than any colon run in the text), each thing the agent did in a
+  #1019 hand check; a plain box on an older PuiKit; in a terminal the
+  rows between half-block bands, as the message field has there - a row above
+  and below it, each half in the field, `▄` / `▀`; its fence longer than any
+  colon run in the text), each thing the agent did in a
   `::: bullet <role>` whose dot is green for a tool that worked, red for one
   that failed or was declined, the accent while it runs, muted for text. A
   Bash call is one `console` block: the command after `$` (continuation lines

@@ -1016,3 +1016,17 @@ def test_a_binding_for_the_conversation_wins_over_typing():
         assert ChatView._takes(f5, "next_screen")
     finally:
         config_manager.config, config_manager._key_bindings = saved
+
+
+def test_in_a_terminal_the_message_field_has_half_block_bands(tmp_path):
+    # Half a cell above and below its text, as a field gets in the desktop
+    # app, and so not run into the status bar under it (#1019 hand check).
+    panel, view = _plain_view(tmp_path)
+    panel.render()
+    rows = panel.backend.snapshot()
+    y = int(view._input_rect.y)
+    x = int(view._input_rect.x)
+    assert rows[y - 1][x:x + 5] == "▄" * 5 and rows[y + 1][x:x + 5] == "▀" * 5
+    field = panel.theme.control_bg
+    assert panel.backend.style_at(x, y - 1).fg == field
+    assert panel.backend.style_at(x, y + 1).fg == field

@@ -784,10 +784,13 @@ class ChatView(FocusContainer, Widget):
         lc = ctx.layout_context()
         in_w = max(4.0, iw - 2)
         in_h = self.input.measure(lc, "y", in_w).preferred
-        # A gap under it: half a line where the backend draws sub-cell, a row
-        # on a grid - flush, the field ran into the status bar under it (#1019
-        # hand check).
-        in_y = fy - in_h - (0.5 if ctx.pixel_layout else 1.0)
+        # A gap under it: half a line where the backend draws sub-cell. On a
+        # grid a row above and one below, each half in the field (half-block
+        # glyphs), so its text gets half a cell of room as a field does on a
+        # vector backend and it does not run into the status bar (#1019 hand
+        # check).
+        band = 0.0 if ctx.pixel_layout else 1.0
+        in_y = fy - in_h - (0.5 if ctx.pixel_layout else band)
         self._input_rect = Rect(pad_x + 1, in_y, in_w, in_h)
         # A line above it while the agent works or asks.
         status = ""
@@ -798,7 +801,7 @@ class ChatView(FocusContainer, Widget):
             status = "● Waiting for your answer"
         elif conv.state == C.STARTING:
             status = "Starting…"
-        top_of_input = in_y
+        top_of_input = in_y - band
         todos = conv.todos()
         if todos:
             top_of_input = self._draw_todos(ctx, todos, pad_x + 1, top_of_input, in_w, theme, bg)
@@ -828,6 +831,12 @@ class ChatView(FocusContainer, Widget):
         r = self._input_rect
         ctx.draw_child(self.input, r.x, r.y, r.w, r.h,
                        hints={"focused": not self.closing})
+        if band:
+            field_bg = theme.control_bg if theme is not None else bg
+            cells = "▀" * int(round(r.w))
+            ctx.draw_text(r.x, r.y - band, cells.replace("▀", "▄"),
+                          Style(fg=field_bg, bg=bg), ink=False)
+            ctx.draw_text(r.x, r.y + r.h, cells, Style(fg=field_bg, bg=bg), ink=False)
         if self.menu is not None:
             self._draw_menu(ctx, r.x, r.y - (0.2 if ctx.pixel_layout else 0.0), r.w, theme)
         else:
