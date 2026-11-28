@@ -83,6 +83,7 @@ from xefm.config import (format_key_for_display, get_keys_for_action,
                          is_action_for_event)
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom, pane_anchored_box)
+from xefm.hint_bar import click_hint, hints_width, key
 from xefm.options import OptionSet
 from xefm.options_dialog import show_options_dialog
 
@@ -648,8 +649,8 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         # left inset, so the three line up down the left edge. The band is
         # measured against the same width draw_hint_row elides to, so it can
         # drop an entry whole instead of handing one over to be cut.
-        draw_hint_row(ctx, self.hint(wu - 4.0, ctx.measure_text),
-                      surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self.hint(wu - 4.0, ctx.measure_text),
+                                        surface_bg=surface_bg, border=border)
         self._place_popup(ctx)
 
     def _draw_status_row(self, ctx, y: float, wu: float, surface_bg, theme) -> None:
@@ -735,7 +736,7 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
             self._options_key = format_key_for_display(keys[0]) if keys else ""
         return self._options_key
 
-    def hint(self, width: float | None = None, measure=None) -> str:
+    def hint(self, width: float | None = None, measure=None) -> list:
         """The keys named in the bottom band. The key names are this widget's —
         they are structural — but what Enter *does* is the owner's, so it comes
         from ``accept_hint``. Tab names the mode it switches *to*, which is the
@@ -758,30 +759,30 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
         other = self._next_mode()
         other_name = self._mode_names.get(other, other)
         #: (text, how readily it is dropped) — 0 never, then 1, then 2.
-        items: list[tuple[str, int]] = [
-            ("↑/↓ select", 2),
-            (f"Enter {self._accept_hint}", 0),
+        items: list[tuple[Any, int]] = [
+            (key("↑/↓", "select"), 2),
+            (key("Enter", self._accept_hint), 0),
         ]
         if other != self.mode:
-            items.append((f"Tab {other_name}", 0))
+            items.append((key("Tab", other_name), 0))
         if self._history is not None:
-            items.append(("Alt-↓ recent", 1))
-        key = self._options_key_label() if self.options is not None else ""
-        if key:
+            items.append((key("Alt-↓", "recent"), 1))
+        options_k = self._options_key_label() if self.options is not None else ""
+        if options_k:
             # Read back from the keymap so a rebind is what the line says, and
             # dropped entirely where a config unbound it — the same rule the
             # pickers apply to their remove key.
-            items.append((f"{key} options", 0))
-        items.append(("Esc cancel", 1))
+            items.append((key(options_k, "options"), 0))
+        items.append((key("Esc", "cancel"), 1))
 
-        line = " · ".join(text for text, _drop in items)
+        line = [part for part, _drop in items]
         if width is None or measure is None:
             return line
         for droppable in (2, 1):
-            if measure(line) <= width:
+            if hints_width(line, measure) <= width:
                 return line
             items = [entry for entry in items if entry[1] != droppable]
-            line = " · ".join(text for text, _drop in items)
+            line = [part for part, _drop in items]
         return line
 
     def _status_text(self) -> str:
@@ -799,7 +800,13 @@ class ProgressiveSearchDialog(FocusContainer, Widget):
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.IME_COMPOSITION:
             # Forward IME composition (preedit) to the query field so CJK input
             # renders inline; the modal layer receives every event, so it must

@@ -63,7 +63,14 @@ doesn't arrive, use `toggle_select_down` and the context menu's Select / Deselec
   your own key bindings, so they always match your keymap.
 
 Each of these lights up under the pointer, to show it can be clicked. On a terminal or AI agent screen the status bar's keys can be clicked
-the same way.
+the same way, and so can the keys named at the bottom of a viewer (text,
+image, diff, directory diff) and of a dialog: a click does what pressing that
+key does. Where one hint names two keys (`q/Esc close`, `↑/↓ select`), each
+key is clicked on its own.
+
+All of these key lines look the same: each key stands out in the full text
+colour (bold in the desktop app), the words after it are dimmer, and a wider
+gap separates one hint from the next.
 
 ## Back and forward
 

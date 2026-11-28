@@ -54,6 +54,7 @@ from xefm.config import (format_key_for_display, get_keys_for_action,
                          is_action_for_event)
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
                                   draw_title_bar)
+from xefm.hint_bar import click_hint, hints_width, key
 
 #: Quiet time after which the type-ahead buffer resets.
 _TYPEAHEAD_TIMEOUT_S = 1.0
@@ -86,7 +87,7 @@ class ChoiceDialog(Widget):
     focusable = True
 
     _TITLE_ROWS = 3.0  # rows the title bar occupies when sizing (grid; vector is less)
-    _HINT = "↑/↓ or type to choose · Enter apply · Esc cancel"
+    _HINT = (key("↑/↓", "or type to choose"), key("Enter", "apply"), key("Esc", "cancel"))
 
     def __init__(self, title: str, rows: list[tuple[Any, str]], *,
                  current: Any = None,
@@ -142,9 +143,9 @@ class ChoiceDialog(Widget):
         margins): the widest row label or the key hint. ``measure`` must be the
         *rendering* text measurer (proportional on GUI)."""
         row_w = 1.0 + max(measure(label_text(label)) for _v, label in self._rows)
-        return max(row_w, measure(self._hint()))
+        return max(row_w, hints_width(self._hint(), measure))
 
-    def _hint(self) -> str:
+    def _hint(self) -> tuple:
         """The key hint, naming the remove key — as the keymap has it — only
         where a row can be removed."""
         if self.on_remove is None:
@@ -152,8 +153,8 @@ class ChoiceDialog(Widget):
         keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
         if not keys:
             return self._HINT
-        return self._HINT.replace(
-            " · Esc", f" · {format_key_for_display(keys[0])} {self.remove_label} · Esc")
+        return self._HINT[:-1] + (key(format_key_for_display(keys[0]), self.remove_label),
+                                  self._HINT[-1])
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -320,8 +321,8 @@ class ChoiceDialog(Widget):
         # (feedback for the jump — including a miss), else the key hint: what the
         # dialog answers to, which for the moment you are typing *is* the buffer.
         buffer = self._typeahead_buffer()
-        draw_hint_row(ctx, f"Jump to: {buffer}▏" if buffer else self._hint(),
-                      surface_bg=surface_bg, border=theme.popup_border)
+        self._hint_hits = draw_hint_row(ctx, f"Jump to: {buffer}▏" if buffer else self._hint(),
+                                        surface_bg=surface_bg, border=theme.popup_border)
 
     @staticmethod
     def _draw_label(ctx, theme, x: float, y: float, label, bg) -> None:
@@ -341,7 +342,13 @@ class ChoiceDialog(Widget):
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY:
             self._on_key(event)
             return True

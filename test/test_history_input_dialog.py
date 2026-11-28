@@ -28,6 +28,7 @@ from puikit.event import Event, EventType  # noqa: E402
 
 from xefm import filters  # noqa: E402
 from xefm.history_input_dialog import HistoryInputDialog  # noqa: E402
+from xefm.hint_bar import hints_text
 
 
 def _key(name, mods=(), char=None):
@@ -217,13 +218,13 @@ class LabelsAndText(unittest.TestCase):
     def test_the_hint_follows_the_focus(self):
         d = HistoryInputDialog(HISTORY, on_remove=lambda v: True,
                                accept_label="run")
-        self.assertIn("↓ history", d.hint())
-        self.assertIn("Enter run", d.hint())
-        self.assertNotIn("remove", d.hint())
+        self.assertIn("↓ history", hints_text(d.hint()))
+        self.assertIn("Enter run", hints_text(d.hint()))
+        self.assertNotIn("remove", hints_text(d.hint()))
         d.handle_event(_key("down"))
-        self.assertIn("remove", d.hint())
-        self.assertIn("Enter choose", d.hint())
-        self.assertIn("Esc back", d.hint())
+        self.assertIn("remove", hints_text(d.hint()))
+        self.assertIn("Enter choose", hints_text(d.hint()))
+        self.assertIn("Esc back", hints_text(d.hint()))
 
 
 class FilterPrompt(unittest.TestCase):

@@ -34,6 +34,7 @@ from xefm.directory_diff_viewer import (
 
 from xefm import _config
 from anim_helper import settle
+from xefm.hint_bar import hints_text
 
 
 def _sync_view(left, right, **kw):
@@ -396,7 +397,7 @@ def test_footer_reports_scan_queue_progress(trees):
     view._scanning = True
     view._phase = "scan"
     view._dirs_scanned, view._dirs_total = 2, 5
-    footer = view._footer()
+    footer = hints_text(view._footer())
     assert "40%" in footer and "queued" in footer
 
 

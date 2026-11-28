@@ -38,6 +38,7 @@ from puikit.widgets.base import Widget
 from xefm import sort_keys
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
                                   draw_title_bar, pane_anchored_box)
+from xefm.hint_bar import click_hint, hints_width, key
 
 #: Order segments, indexed by ``sort_reverse`` (False = Ascending).
 _ORDERS = ("Ascending", "Descending")
@@ -58,7 +59,8 @@ class SortDialog(Widget):
     focusable = True
 
     _TITLE_ROWS = 3.0  # rows the title bar occupies when sizing (grid; vector is less)
-    _HINT = "↑/↓ key · ←/→ order · Enter apply · Esc cancel"
+    _HINT = (key("↑/↓", "key"), key("←/→", "order"), key("Enter", "apply"),
+             key("Esc", "cancel"))
 
     def __init__(self, *, mode: str = "name", reverse: bool = False,
                  extra: list | None = None,
@@ -130,7 +132,7 @@ class SortDialog(Widget):
         explain_w = 1.0 + max(
             measure(self._explanation_of(mode, rev))
             for mode, _l, _h in self._keys for rev in (False, True))
-        return max(row_w, order_w, explain_w, measure(SortDialog._HINT))
+        return max(row_w, order_w, explain_w, hints_width(SortDialog._HINT, measure))
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -243,8 +245,8 @@ class SortDialog(Widget):
                       self.explanation(), Style(fg=theme.muted_text, bg=surface_bg))
 
         # Key hint as the bottom band, mirroring the title bar.
-        draw_hint_row(ctx, self._HINT, surface_bg=surface_bg,
-                      border=theme.popup_border)
+        self._hint_hits = draw_hint_row(ctx, self._HINT, surface_bg=surface_bg,
+                                        border=theme.popup_border)
 
     def explanation(self) -> str:
         """The explanation line for the selected key and order."""
@@ -258,7 +260,13 @@ class SortDialog(Widget):
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY:
             self._on_key(event)
             return True

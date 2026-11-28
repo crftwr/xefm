@@ -99,28 +99,35 @@ def test_a_drawn_conversations_status_parts_run_what_their_keys_do():
     # Laid out and clicked as the file manager's hints (#1019 hand check).
     from xefm import agent_chat as C
     from xefm.agent_chat_view import ChatView
+    from xefm.hint_bar import hints_text
     view = ChatView.__new__(ChatView)
     view._pixel_layout = True
     ran = []
     view.conversation = SimpleNamespace(state=C.WORKING)
     view.interrupt = lambda: ran.append("stop")
     parts = view.status_parts
-    assert [t for t, _r in parts] == ["Esc stop", "Enter send next", "PgUp/PgDn scroll"]
-    dict(parts)["Esc stop"]()
-    assert ran == ["stop"] and dict(parts)["PgUp/PgDn scroll"] is None
-    assert view.status_hint == "Esc stop · Enter send next · PgUp/PgDn scroll"
+    assert hints_text(parts) == "Esc stop  Enter send next  PgUp/PgDn scroll"
+    parts[0].keys[0].run()
+    assert ran == ["stop"]
+    # PgUp/PgDn have no run of their own: a click presses the key.
+    assert [k.run for k in parts[2].keys] == [None, None]
 
 
 def test_a_click_on_a_sessions_part_runs_it():
+    from puikit.event import Event, EventType
     from xefm.app import StatusBar
+    from xefm.hint_bar import HintHit
     bar = StatusBar.__new__(StatusBar)
     ran = []
-    bar._hits = [(0.0, 5.0, lambda: ran.append("x")), (6.0, 9.0, "help")]
-    bar.app = SimpleNamespace(panel=SimpleNamespace(render=lambda: None),
-                              _run_action=lambda ctx, a: ran.append(a))
+    enter = Event(type=EventType.KEY, key="enter")
+    bar._hits = [HintHit(0.0, 5.0, 0.0, 1.0, lambda: ran.append("x")),
+                 HintHit(6.0, 9.0, 0.0, 1.0, enter)]
+    bar.app = SimpleNamespace(panel=SimpleNamespace(
+        render=lambda: None, dispatch_event=lambda e: ran.append(e.key)))
     bar._clip_hit = bar._jobs_hit = None
     assert bar.click_at(2.0) and bar.click_at(7.0)
-    assert ran == ["x", "help"]
+    assert ran == ["x", "enter"]
+    assert not bar.click_at(5.5)
 
 
 def test_a_name_in_the_path_lights_up_under_the_pointer():

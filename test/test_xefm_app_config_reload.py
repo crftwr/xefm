@@ -27,6 +27,7 @@ from xefm.external_programs import command_argv  # noqa: E402
 from xefm.path import Path  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from puikit.backends import create_backend  # noqa: E402
+from xefm.hint_bar import hints_text
 
 
 class ConfigReloadBase(unittest.TestCase):
@@ -263,7 +264,7 @@ class ReloadRefreshesKeyLabels(ConfigReloadBase):
     def test_the_isearch_hint_line_is_dropped_too(self):
         # The bar's other cached line, built from the isearch context's keymap.
         bar = self.app.status
-        self.assertIn("Enter stop", bar._isearch_hints())
+        self.assertIn("Enter stop", hints_text(bar._isearch_hints()))
 
         self._write_config("""
             class Config:
@@ -271,7 +272,7 @@ class ReloadRefreshesKeyLabels(ConfigReloadBase):
         """)
         self.app.reload_config()
 
-        self.assertIn("F2 stop", bar._isearch_hints())
+        self.assertIn("F2 stop", hints_text(bar._isearch_hints()))
 
     def test_the_menu_says_it_too(self):
         self.assertEqual(self._menu_shortcut(f"Move to {trash.NAME}…"), "K")

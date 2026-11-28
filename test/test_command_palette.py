@@ -35,6 +35,7 @@ from xefm.config import config_manager  # noqa: E402
 from xefm.filter_list_dialog import FilterListDialog, show_filter_list  # noqa: E402
 from xefm.state_manager import XeFMStateManager  # noqa: E402
 from xefm.text_dialog import MarkdownDialog  # noqa: E402
+from xefm.hint_bar import hints_text
 
 
 def key(name, char=None, mods=()):
@@ -110,7 +111,7 @@ def test_a_picker_without_the_hooks_is_unchanged():
     d = FilterListDialog(["alpha", "beta"])
     assert d.list.items == ["alpha", "beta"]
     assert d.list.row_factory is None
-    assert "help" not in d.hint()
+    assert "help" not in hints_text(d.hint())
 
 
 def test_filtering_matches_the_label_and_keeps_the_column():
@@ -149,8 +150,8 @@ def test_f1_types_nothing_and_opens_nothing_without_to_help(screen):
 def test_the_hint_names_the_help_key_only_when_offered():
     plain = FilterListDialog(ITEMS, to_label=lambda v: v[0])
     helped = FilterListDialog(ITEMS, to_label=lambda v: v[0], to_help=lambda v: "")
-    assert "F1 help" not in plain.hint()
-    assert "F1 help" in helped.hint()
+    assert "F1 help" not in hints_text(plain.hint())
+    assert "F1 help" in hints_text(helped.hint())
 
 
 def test_describe_list_item_is_registered_on_f1_in_filter_list_only():

@@ -251,12 +251,12 @@ class AppMouse(unittest.TestCase):
         self._render()
         bar = self.app.status
         self.assertTrue(bar._hits, "hints were laid out")
-        x0, x1, action = bar._hits[0]
+        hit = bar._hits[0]
         ran = []
         with patch.object(self.app, "_run_action", lambda ctx, a, **kw: ran.append(a)):
-            bar.handle_event(Event(type=EventType.MOUSE_CLICK, x=(x0 + x1) / 2,
+            bar.handle_event(Event(type=EventType.MOUSE_CLICK, x=(hit.x0 + hit.x1) / 2,
                                    y=0.0, button="left"))
-        self.assertEqual(ran, [action])
+        self.assertEqual(ran, [bar._HINTS[0][0]])
 
     def test_footer_sort_opens_the_sort_menu(self):
         # The test window is 80 columns; leave the free-space readout out so

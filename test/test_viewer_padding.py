@@ -87,6 +87,9 @@ class _GuiCtx:
     def set_cursor(self, *a, **kw):
         pass
 
+    def pointer_in(self, x, y, w, h):
+        return False  # the pointer is elsewhere: no hint lights up
+
     def screen_rect(self):
         return (0, 0, 0, 0)
 

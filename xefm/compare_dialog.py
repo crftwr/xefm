@@ -35,6 +35,7 @@ from puikit.widgets.base import Widget
 from xefm.compare_selection import CompareCriteria
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
                                   draw_title_bar, pane_anchored_box)
+from xefm.hint_bar import click_hint, hints_width, key
 
 # (label, relation options). The Checkbox is the on/off; the options are the real
 # relations (no "any" — that is the box being unchecked). Values are CompareCriteria's.
@@ -143,8 +144,9 @@ class CompareSelectDialog(FocusContainer, Widget):
 
     _TITLE_ROWS = 3.0  # rows the title bar occupies when sizing (grid; vector is less)
     _INTRO = "Select items that also exist in the other pane, matching:"
-    _HINT_COND = "←/→ choose · Space on/off · Enter select · Esc cancel"
-    _HINT_OTHER = "Space toggle · Enter select · Esc cancel"
+    _HINT_COND = (key("←/→", "choose"), key("Space", "on/off"), key("Enter", "select"),
+                  key("Esc", "cancel"))
+    _HINT_OTHER = (key("Space", "toggle"), key("Enter", "select"), key("Esc", "cancel"))
 
     def __init__(self, on_result: Callable[[Optional[CompareCriteria]], None],
                  *, allow_path_match: bool = False):
@@ -219,7 +221,7 @@ class CompareSelectDialog(FocusContainer, Widget):
             for r in self._conditions)
         return max(
             measure(self._INTRO),
-            measure(self._HINT_COND),
+            hints_width(self._HINT_COND, measure),
             max(_CB_MARK + measure(c.label) for c in self._toggles),
             row_w,
         )
@@ -316,14 +318,20 @@ class CompareSelectDialog(FocusContainer, Widget):
 
         # Key hint as the bottom band, mirroring the title bar. What it names
         # follows the focused row: a condition row answers to ←/→ as well.
-        draw_hint_row(ctx, self._hint(), surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self._hint(), surface_bg=surface_bg, border=border)
 
     def _hint(self) -> str:
         return self._HINT_COND if isinstance(self._focused, ConditionRow) else self._HINT_OTHER
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY:
             self._on_key(event)
             return True

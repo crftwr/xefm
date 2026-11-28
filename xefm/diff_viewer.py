@@ -43,10 +43,11 @@ from xefm.file_pane import CONTENT_PAD_CELLS  # same l/r content inset as the ma
 from xefm.dialog_geometry import animate_viewer_open, close_viewer
 from xefm.isearch_bar import ViewerISearch, match_scroll_top
 from xefm.text_dialog import keys_markdown, show_markdown
+from xefm.hint_bar import click_hint, key, note
 from xefm.text_viewer import (MONO, _ScrollBody, _content_bg, _header_bg, _highlight,
                              _is_light, _match_bg, _read_lines, _search_help_rows,
                              _syntax_palette, draw_hscrollbar, draw_status_bar,
-                             footer_pair, span_x, viewer_layer_hints, viewer_pad)
+                             footer_key, footer_pair, search_hint, span_x, viewer_layer_hints, viewer_pad)
 from puikit.text import display_width
 
 def _label(action: str, fallback: str = "", context: str = _CONTEXT) -> str:
@@ -642,11 +643,8 @@ class DiffViewer(Widget):
         # text inset, matching the main window (and the other two viewers). Its rect
         # is captured so the ISearchBar can pin over it during a search.
         self._footer_rect = (0.0, fy, wu, hu - fy)
-        # Unbound under a preset that types ahead: say nothing then (#737).
-        search_k = _label("isearch")
-        search_seg = f"{search_k} search · " if search_k else ""
-        edit_k = _label("edit_files", "E")
-        quit_k = _label("quit", "q")
+        edit_k = footer_key("edit_files", _CONTEXT, "E")
+        quit_k = footer_key("quit", _CONTEXT, "q")
         # Block jumps and the horizontal pan are named from the live keymap like
         # the rest of the bar, so a rebind reads the same here as in the help
         # dialog (issue #382); an unbound pair drops its whole segment.
@@ -654,12 +652,15 @@ class DiffViewer(Widget):
                              _CONTEXT)
         pan_k = footer_pair("file_diff.scroll_left", "file_diff.scroll_right",
                             _CONTEXT)
-        jump_seg = f"{jump_k} jump · " if jump_k else ""
-        pan_seg = f"{pan_k} pan · " if pan_k else ""
-        hint = (f" {len(self.rows)} rows · {len(self.blocks)} changes · "
-                f"{jump_seg}{search_seg}{edit_k} edit · {pan_seg}"
-                f"{quit_k}/Esc close ")
-        draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
+        hint = [note(f"{len(self.rows)} rows"), note(f"{len(self.blocks)} changes")]
+        if jump_k:
+            hint.append(key(jump_k, "jump"))
+        hint += search_hint(_CONTEXT)
+        hint.append(key(edit_k, "edit"))
+        if pan_k:
+            hint.append(key(pan_k, "pan"))
+        hint.append(key(f"{quit_k}/Esc", "close"))
+        self._hint_hits = draw_status_bar(ctx, fy, hint, pad_x=pad_x, bottom_pad=pad_y)
 
     # --- events --------------------------------------------------------------
 
@@ -679,7 +680,13 @@ class DiffViewer(Widget):
         if on_close is not None:
             on_close()
 
+    #: The keys the footer names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.MOUSE_SCROLL:
             uy = event.hints.get("scroll_units")
             self.top -= float(uy) if uy is not None else float(event.scroll)

@@ -85,6 +85,7 @@ from xefm.config import (format_key_for_display, get_keys_for_action,
 from xefm.dialog_geometry import (animate_open, draw_hint_row, draw_title_bar,
                                   hint_content_bottom, hint_style,
                                   pane_anchored_box)
+from xefm.hint_bar import click_hint, key
 
 #: Navigation keys the *list* owns even while the filter field holds focus —
 #: typing filters, but the arrows still drive the selection.
@@ -228,7 +229,7 @@ class FilterListDialog(FocusContainer, Widget):
         #: Optional Markdown help for the highlighted row, opened by the
         #: ``describe_list_item`` key. ``None`` leaves the dialog without it.
         self.to_help = to_help
-        self._hint_cache: str | None = None
+        self._hint_cache: list | None = None
         self._panel: Any = None
         # Values currently passing the filter, parallel to ``self.list.items``.
         self.filtered: list[Any] = list(self.all_items)
@@ -392,7 +393,7 @@ class FilterListDialog(FocusContainer, Widget):
 
     # --- hint line -----------------------------------------------------------
 
-    def hint(self) -> str:
+    def hint(self) -> list:
         """The key hint drawn along the bottom, built once per dialog.
 
         Arrows, Enter and Esc are named as the literals the dialog hard-codes;
@@ -402,22 +403,21 @@ class FilterListDialog(FocusContainer, Widget):
         key that does nothing.
         """
         if self._hint_cache is None:
-            parts = ["↑/↓ select", "Enter choose"]
+            parts = [key("↑/↓", "select"), key("Enter", "choose")]
             if self.to_help is not None:
                 keys, _ = get_keys_for_action(_DESCRIBE_ACTION, FILTER_LIST)
                 if keys:
-                    parts.append(f"{format_key_for_display(keys[0])} help")
+                    parts.append(key(format_key_for_display(keys[0]), "help"))
             if self.on_remove is not None:
                 keys, _ = get_keys_for_action(_REMOVE_ACTION, FILTER_LIST)
                 if keys:
-                    parts.append(
-                        f"{format_key_for_display(keys[0])} {self.remove_label}")
+                    parts.append(key(format_key_for_display(keys[0]), self.remove_label))
             if self.on_rename is not None:
                 keys, _ = get_keys_for_action(_RENAME_ACTION, FILTER_LIST)
                 if keys:
-                    parts.append(f"{format_key_for_display(keys[0])} rename")
-            parts.append("Esc cancel")
-            self._hint_cache = " · ".join(parts)
+                    parts.append(key(format_key_for_display(keys[0]), "rename"))
+            parts.append(key("Esc", "cancel"))
+            self._hint_cache = parts
         return self._hint_cache
 
     # --- background loading --------------------------------------------------
@@ -679,11 +679,17 @@ class FilterListDialog(FocusContainer, Widget):
 
         # Key hint as the bottom band, mirroring the title bar — the list's own
         # left inset, so the three line up down the left edge.
-        draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
+        self._hint_hits = draw_hint_row(ctx, self.hint(), surface_bg=surface_bg, border=border)
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.IME_COMPOSITION:
             # Forward IME composition (preedit) to the filter field so CJK input
             # renders inline. The modal layer gets every event, so it must relay

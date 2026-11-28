@@ -34,6 +34,7 @@ from puikit.widgets.base import Widget
 
 from xefm.dialog_geometry import (HINT_ROWS, animate_open, draw_hint_row,
                                   draw_title_bar)
+from xefm.hint_bar import click_hint, hints_width, key
 from xefm.options import Option, OptionSet, accel_map, state_label
 
 #: Vertical pitch of a row — whole cells on a grid, extra air on a vector
@@ -52,7 +53,8 @@ class OptionsDialog(Widget):
     focusable = True
 
     _TITLE_ROWS = 3.0
-    _HINT = "↑/↓ select · Space, ←/→ or letter changes · Esc done"
+    _HINT = (key("↑/↓", "select"), key("Space", "changes (or ←/→, a letter)"),
+             key("Esc", "done"))
 
     def __init__(self, options: OptionSet, *, title: str = "Options",
                  mode: str | None = None,
@@ -95,7 +97,7 @@ class OptionsDialog(Widget):
             for value, _label in option.choices:
                 widest_state = max(widest_state, measure(state_label(value, option)))
         rows = max((measure(o.label) for o in self.rows), default=0.0)
-        return max(rows + _VALUE_GAP + widest_state, measure(self._HINT))
+        return max(rows + _VALUE_GAP + widest_state, hints_width(self._HINT, measure))
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -176,12 +178,18 @@ class OptionsDialog(Widget):
             self._row_hits.append((i, y, y + pitch))
             y += pitch
 
-        draw_hint_row(ctx, self._HINT, surface_bg=surface_bg,
-                      border=theme.popup_border)
+        self._hint_hits = draw_hint_row(ctx, self._HINT, surface_bg=surface_bg,
+                                        border=theme.popup_border)
 
     # --- events --------------------------------------------------------------
 
+    #: The keys the hint band names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.KEY:
             self._on_key(event)
             return True

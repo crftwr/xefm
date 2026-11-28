@@ -104,8 +104,10 @@ from xefm.dir_scan import is_hidden, alloc_from_stat
 from xefm.disk_usage import UsageScan, reports_allocation
 from xefm.file_list_manager import FileListManager
 from xefm.file_monitor_manager import FileMonitorManager
-from xefm.file_pane import DEFAULT_BG, LC_BODY, LC_LARGE, FilePane, _mix
+from xefm.file_pane import LC_BODY, LC_LARGE, FilePane, _mix
 from xefm.filter_list_dialog import show_filter_list
+from xefm.hint_bar import draw_hints, hints_text, hover_part, note, run_target
+from xefm.hint_bar import key as hint_key
 from xefm.history_input_dialog import show_history_input
 from xefm.completion import FilepathCompleter
 from xefm.connect_dialog import open_connect_server, run_connecting
@@ -142,7 +144,7 @@ from xefm import search_match
 from xefm import sort_keys
 from xefm.state_manager import get_state_manager
 from xefm.str_format import abbreviate_path, format_size
-from xefm.tab_strip import NEW_TAB, Tab, TabStrip, hover_backing, strip_colors, tab_height
+from xefm.tab_strip import NEW_TAB, Tab, TabStrip, strip_colors, tab_height
 from xefm.terminal_sessions import ClosedAgent
 from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
                            load_user_entries, menu_items as user_menu_items,
@@ -1172,30 +1174,8 @@ def _bar_pad(ctx) -> tuple[float, float]:
     return (BAR_PAD_PX / bw if bw else 0.0, BAR_PAD_PX / bh if bh else 0.0)
 
 
-def _hover_part(ctx, x: float, part: str, style: Style, y: float = 0.0) -> bool:
-    """Show that ``part`` - text already drawn at ``x`` on a bar's row in
-    ``style`` - is clickable, while the pointer is over it: a backing behind
-    it (rounded where the backend draws sub-cell, its cells on a grid), its
-    text in the full text colour, and the pointing hand (#1019 hand check:
-    the status bar's key hints and a footer's sort did nothing to say they
-    could be clicked). Whether it is hovered."""
-    w = ctx.measure_text(part, style)
-    if w <= 0 or not ctx.pointer_in(x, y, w, 1.0):
-        return False
-    theme = ctx.theme
-    base = getattr(ctx, "background", None) or theme.surface_bg("status") or DEFAULT_BG
-    backing = hover_backing(theme, base, getattr(ctx, "surface_opacity", 1.0))
-    ink = ctx.ink(theme.text, on=backing) if hasattr(ctx, "ink") else theme.text
-    if ctx.vector_shapes:
-        bw = (ctx.base_size or (0, 0))[0]
-        pad = 3.0 / bw if bw else 0.3
-        ctx.round_rect(x - pad, y, w + 2 * pad, 1.0, Style(bg=backing), radius=4.0,
-                       hints={"fill": True})
-        ctx.draw_text(x, y, part, Style(fg=ink, attr=style.attr))
-    else:
-        ctx.draw_text(x, y, part, Style(fg=ink, bg=backing, attr=style.attr))
-    ctx.set_cursor("pointer")
-    return True
+#: Shared with the viewers' and dialogs' hint rows (#1019).
+_hover_part = hover_part
 
 
 def _bar_height(ctx) -> SizeRequest:
@@ -1553,18 +1533,14 @@ class StatusBar(Widget):
         ("isearch.cancel", None, "cancel"),
     )
 
-    _HINT_GAP = "   "
-
     def __init__(self, app: "XeFMApp"):
         self.app = app
-        self._hints_cache: str | None = None
-        self._isearch_cache: str | None = None
-        self._hint_parts: list = []
-        #: Clickable hints from the last draw: ``(x0, x1, action)`` (#589) -
-        #: a file-list action's name, or what a session's part runs.
+        self._hints_cache: list | None = None
+        self._isearch_cache: list | None = None
+        #: Clickable hints from the last draw (#589): :class:`HintHit` targets -
+        #: what each runs (a file-list action, a session's part), or the key
+        #: it presses.
         self._hits: list = []
-        #: A session's parts, when its screen is on: ``(text, run)``.
-        self._session_parts: list = []
         #: The spinner in front of a running job (#599 hand check): PuiKit's
         #: own, so it turns on its own and is one cell wide everywhere.
         self._busy = BusyIndicator()
@@ -1582,20 +1558,25 @@ class StatusBar(Widget):
         self._hints_cache = None
         self._isearch_cache = None
 
-    def _hints(self) -> str:
+    def _hints(self) -> list:
         """Build (and cache) the hint line from the keymap — the bar redraws
         every frame, so the lookups are done once and kept until
-        :meth:`invalidate` says the keymap has moved."""
+        :meth:`invalidate` says the keymap has moved. Each part runs its
+        action when clicked (#589)."""
         if self._hints_cache is None:
             parts = []
             for action, label in self._HINTS:
                 keys, _ = self.app.keys.get_keys_for_action(action)
                 if keys:
-                    key = self.app.keys.format_key_for_display(keys[0])
-                    parts.append((f"{key} {label}", action))
-            self._hint_parts = parts
-            self._hints_cache = self._HINT_GAP.join(p for p, _ in parts)
+                    shown = self.app.keys.format_key_for_display(keys[0])
+                    parts.append(hint_key(shown, label, self._runner(action)))
+            self._hints_cache = parts
         return self._hints_cache
+
+    def _runner(self, action: str):
+        """What a click on ``action``'s hint runs: the action, in the file
+        list's context."""
+        return lambda: self.app._run_action(_ctx.FILER, action)
 
     def _isearch_key(self, action: str) -> str:
         """The first key bound to ``action`` in the isearch context, display-
@@ -1603,38 +1584,39 @@ class StatusBar(Widget):
         keys, _ = self.app.keys.get_keys_for_action(action, _ctx.ISEARCH)
         return self.app.keys.format_key_for_display(keys[0]) if keys else ""
 
-    def _isearch_hints(self) -> str:
+    def _isearch_hints(self) -> list:
         """The isearch hint line, cached from the isearch keymap like
         :meth:`_hints`. An unbound action drops out of the line entirely rather
-        than printing a label nothing triggers."""
+        than printing a label nothing triggers. A click presses the key, which
+        the search bar answers."""
         if self._isearch_cache is None:
-            parts = ["I-Search"]
+            parts = [note("I-Search")]
             for first, second, label in self._ISEARCH_HINTS:
                 keys = [k for k in (self._isearch_key(first),
                                     self._isearch_key(second) if second else "")
                         if k]
                 if keys:
-                    parts.append(f"{'/'.join(keys)} {label}")
-            self._isearch_cache = "   ".join(parts)
+                    parts.append(hint_key("/".join(keys), label))
+            self._isearch_cache = parts
         return self._isearch_cache
 
-    def _quick_hints(self) -> str:
+    def _quick_hints(self) -> list:
         """The Orthodox type-ahead search's line: it owns only these keys, and
         every other one acts on the file list — which is what the line has to
         say."""
         walk = "/".join(k for k in (self._isearch_key("isearch.prev_match"),
                                     self._isearch_key("isearch.next_match")) if k)
         close = self._isearch_key("isearch.cancel")
-        parts = ["I-Search"]
+        parts = [note("I-Search")]
         if walk:
-            parts.append(f"{walk} prev/next match")
+            parts.append(hint_key(walk, "prev/next match"))
         if close:
-            parts.append(f"{close} close")
-        parts.append("other keys act on the file")
-        return "   ".join(parts)
+            parts.append(hint_key(close, "close"))
+        parts.append(note("other keys act on the file"))
+        return parts
 
-    def _text(self) -> str:
-        """What the bar says right now.
+    def _parts(self) -> list:
+        """What the bar says right now, as :class:`Hint` parts.
 
         A modal owns the keyboard while it is up, and names its own keys in its
         own hint row — so the bar goes quiet rather than listing the file list's
@@ -1652,16 +1634,19 @@ class StatusBar(Widget):
             # a dialog over it owns the keyboard.
             top = self.app._screens.top_layer()
             if top is not session.view:
-                return ""
-            self._session_parts = self.app._session_status_parts(session)
-            return self._HINT_GAP.join(text for text, _run in self._session_parts)
+                return []
+            return self.app._session_status_parts(session)
         if self.app.panel.has_layers:
-            return ""
+            return []
         sequence = getattr(self.app, "key_sequence", None)
         if sequence is not None and sequence.pending:
             # Vim's showcmd: the keys of a sequence not finished yet (#587).
-            return f"{sequence.pending_text()} …   Esc cancel"
+            return [note(f"{sequence.pending_text()} …"), hint_key("Esc", "cancel")]
         return self._hints()
+
+    def _text(self) -> str:
+        """What the bar says right now, as plain text."""
+        return hints_text(self._parts())
 
     def _session_on_screen(self):
         """The session whose screen is on now, or None (the file manager)."""
@@ -1707,30 +1692,14 @@ class StatusBar(Widget):
         else:
             self._jobs_hit = None
             self._attention_text = None
-        full = self._text()
-        text = elide(full, avail, where="end", measure=ctx.measure_text)
-        ctx.draw_text(x, 0, text, Style(fg=ctx.theme.muted_text))
-        # Each hint runs its action when clicked (#589): the bar is generated
-        # from the live keymap, so the targets follow the user's bindings.
-        # A session's screen lays its own parts out the same way (#1019 hand
-        # check): each runs what its key does there.
-        self._hits = []
-        parts = None
-        if full == self._hints_cache:
-            parts = self._hint_parts
-        elif self._session_parts and full == self._HINT_GAP.join(
-                t for t, _r in self._session_parts):
-            parts = self._session_parts
-        if parts:
-            start, gap = x, ctx.measure_text(self._HINT_GAP)
-            for part, action in parts:
-                x1 = x + ctx.measure_text(part)
-                if x1 > start + avail:
-                    break
-                if action is not None:
-                    self._hits.append((x, x1, action))
-                    _hover_part(ctx, x, part, Style(fg=ctx.theme.muted_text))
-                x = x1 + gap
+        # Each part runs what it says when clicked (#589): the bar is
+        # generated from the live keymap, so the targets follow the user's
+        # bindings. A session's screen lays its own parts out the same way
+        # (#1019 hand check), and the viewers and dialogs draw theirs with the
+        # same draw_hints.
+        self._hits = draw_hints(ctx, x, 0.0, self._parts(), avail=avail,
+                                muted=Style(fg=ctx.theme.muted_text),
+                                base=getattr(ctx, "background", None))
 
     #: The glyph in front of a job part that is not running; a running one
     #: gets the spinner instead.
@@ -1853,13 +1822,12 @@ class StatusBar(Widget):
         if jobs is not None and jobs[0] <= x < jobs[1]:
             self.app._jobs_part_clicked()
             return True
-        for x0, x1, action in self._hits:
-            if x0 <= x < x1:
-                if callable(action):
-                    action()  # a session's part (#1019)
-                    self.app.panel.render()
-                else:
-                    self.app._run_action(_ctx.FILER, action)
+        for hit in self._hits:
+            if hit.x0 <= x < hit.x1:
+                # A key is pressed where keys go: the file list, the search
+                # bar, the session's screen.
+                run_target(hit.target, self.app.panel.dispatch_event)
+                self.app.panel.render()
                 return True
         return False
 
@@ -7144,24 +7112,20 @@ class XeFMApp:
 
     def _session_hints(self, session) -> str:
         """What the status bar says on ``session``'s screen, as one line."""
-        return StatusBar._HINT_GAP.join(text for text, _run in self._session_status_parts(session))
+        return hints_text(self._session_status_parts(session))
 
     def _session_status_parts(self, session) -> list:
-        """The status bar's parts on ``session``'s screen: ``(text, run)``,
-        the keys for what can be done there now and what a click on each does
-        (None: it only says something) - laid out and clicked as the file
-        manager's hints are (#1019 hand check). A drawn agent's are its own
-        (it owns the keyboard); a terminal's are the few XeFM takes from the
-        program."""
+        """The status bar's parts on ``session``'s screen: :class:`Hint` parts,
+        the keys for what can be done there now, each running what its key
+        does when clicked - laid out and clicked as the file manager's hints
+        are (#1019 hand check). A drawn agent's are its own (it owns the
+        keyboard); a terminal's are the few XeFM takes from the program."""
         view = session.view
         parts = getattr(view, "status_parts", None)
         if isinstance(parts, list):
             return parts
-        hint = getattr(view, "status_hint", None)
-        if isinstance(hint, str):
-            return [(hint, None)]
         if not getattr(view, "running", True):
-            return [("Enter close", lambda: view.on_close_request(view))]
+            return [hint_key("Enter", "close", lambda: view.on_close_request(view))]
         out = []
         for action, label in (("terminal.switch_screen", "files"),
                               ("terminal.close", "close"), ("terminal.new", "new"),
@@ -7180,7 +7144,7 @@ class XeFMApp:
                 def run(action=action):
                     view.run_action(action)
                     self.panel.render()
-            out.append((f"{self.keys.format_key_for_display(keys[0])} {label}", run))
+            out.append(hint_key(self.keys.format_key_for_display(keys[0]), label, run))
         return out
 
     def _tab_event(self, event, x: float, y: float) -> bool:

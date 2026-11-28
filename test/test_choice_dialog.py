@@ -11,6 +11,7 @@ import pytest
 from puikit.event import Event, EventType
 
 from xefm.choice_dialog import ChoiceDialog
+from xefm.hint_bar import hints_text
 
 ROWS = [
     ("auto", "Auto  (Shift-JIS)"),
@@ -251,9 +252,9 @@ class TestRemove:
         assert [v for v, _l in d._rows] == ["utf-8", "cp932"]
 
     def test_the_hint_names_the_key_only_when_rows_can_go(self):
-        assert "remove" not in ChoiceDialog("Encoding", ROWS)._hint()
-        hint = ChoiceDialog("Encoding", ROWS, on_remove=lambda v: True,
-                            remove_label="delete scan")._hint()
+        assert "remove" not in hints_text(ChoiceDialog("Encoding", ROWS)._hint())
+        hint = hints_text(ChoiceDialog("Encoding", ROWS, on_remove=lambda v: True,
+                            remove_label="delete scan")._hint())
         assert "delete scan" in hint and hint.endswith("Esc cancel")
 
     def test_without_on_remove_the_key_does_nothing(self, dialog):

@@ -23,6 +23,7 @@ from xefm import _config, dir_sync  # noqa: E402
 from xefm.directory_diff_viewer import (  # noqa: E402
     DirectoryDiffView, show_directory_diff_viewer)
 from xefm.path import Path  # noqa: E402
+from xefm.hint_bar import hints_text
 
 
 @pytest.fixture
@@ -283,7 +284,7 @@ def test_tab_turns_the_plan_around(opened):
     panel.dispatch_event(_key("tab"))
     assert view._plan.source == "right"
     panel.render()
-    assert "right → left" in view._footer()
+    assert "right → left" in hints_text(view._footer())
 
 
 def test_toggle_identical_hides_identical_rows(opened):
@@ -300,4 +301,4 @@ def test_the_plan_opens_showing_only_differences(opened):
     _start(panel, view)
     assert not any(n.name == "same.txt" for n in view.visible)
     panel.render()   # the plan's gutter and footer draw
-    assert "Update left → right" in view._footer()
+    assert "Update left → right" in hints_text(view._footer())

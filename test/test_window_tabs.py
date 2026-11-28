@@ -17,6 +17,7 @@ from xefm.terminal_sessions import (AGENT, GROUP_AGENT, GROUP_TERMINAL, ClosedAg
                                     ago, title_from_request, title_from_terminal)
 
 from test_terminal_sessions import _app, _shown, _Switcher, _View
+from xefm.hint_bar import hints_text
 
 
 # --- names --------------------------------------------------------------------------
@@ -712,7 +713,7 @@ def test_the_rename_key_hands_the_highlighted_row_over():
     dialog = FilterListDialog(["a", "b"], on_rename=renamed.append)
     dialog.list.selected = 1
     dialog.handle_event(Event(type=EventType.KEY, key="f2"))
-    assert renamed == ["b"] and "rename" in dialog.hint()
+    assert renamed == ["b"] and "rename" in hints_text(dialog.hint())
 
 
 def test_the_new_actions_have_their_keys():

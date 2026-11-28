@@ -53,6 +53,7 @@ from xefm.text_viewer import (MONO, _ScrollBody, _header_bg, draw_status_bar,
                              viewer_layer_hints, viewer_pad)
 from xefm.binary_compare import ByteComparison, compare_bytes, show_byte_comparison
 from xefm.dialog_geometry import animate_viewer_open, close_viewer
+from xefm.hint_bar import click_hint, key, note
 from xefm.diff_viewer import show_diff_viewer
 from xefm.text_dialog import keys_markdown, show_markdown
 from xefm import surface_actions
@@ -1424,7 +1425,8 @@ class DirectoryDiffView(Widget):
                       Style(fg=self._text_fg, bg=chrome_bg))
         # Bottom status bar — full-width 'status' surface reaching the bottom edge,
         # its text inset, matching the main window (and the text / diff viewers).
-        draw_status_bar(ctx, foot_y, self._footer(), pad_x=pad_x, bottom_pad=pad_y)
+        self._hint_hits = draw_status_bar(ctx, foot_y, self._footer(), pad_x=pad_x,
+                                          bottom_pad=pad_y)
 
         # Gutter feedback. The cursor is immediate on hover/drag; the neutral band
         # brighten dwells (DragBar) so a pointer merely sweeping across does not
@@ -1466,18 +1468,18 @@ class DirectoryDiffView(Widget):
     def _pct(done: int, total: int) -> int:
         return int(100 * done / total) if total else 100
 
-    def _footer(self) -> str:
+    def _footer(self) -> list:
         if self._scanning:
             if self._phase == "compare" and self._compare_total:
                 queued = self._cmp_q.qsize()
-                return (f" Comparing {self._compared}/{self._compare_total} "
-                        f"({self._pct(self._compared, self._compare_total)}%) · "
-                        f"{queued} queued · esc cancel ")
+                return [note(f"Comparing {self._compared}/{self._compare_total} "
+                             f"({self._pct(self._compared, self._compare_total)}%)"),
+                        note(f"{queued} queued"), key("Esc", "cancel")]
             queued = self._scan_q.qsize()
-            return (f" Scanning… {self._scanned} items · dirs "
-                    f"{self._dirs_scanned}/{self._dirs_total} "
-                    f"({self._pct(self._dirs_scanned, self._dirs_total)}%) · "
-                    f"{queued} queued · esc cancel ")
+            return [note(f"Scanning… {self._scanned} items"),
+                    note(f"dirs {self._dirs_scanned}/{self._dirs_total} "
+                         f"({self._pct(self._dirs_scanned, self._dirs_total)}%)"),
+                    note(f"{queued} queued"), key("Esc", "cancel")]
         if self._plan is not None:
             return self._plan_footer()
         diffs = sum(1 for n in self.visible if n.difference_type in _IS_DIFF)
@@ -1496,9 +1498,9 @@ class DirectoryDiffView(Widget):
             (self._footer_key("dir_diff.sync", "s"), "sync"),
             (self._footer_key("quit", "q"), "close"),
         )
-        parts = [f"{len(self.visible)} nodes", f"{diffs} differences"]
-        parts += [f"{keys} {word}" for keys, word in hints if keys]
-        return " " + " · ".join(parts) + " "
+        parts = [note(f"{len(self.visible)} nodes"), note(f"{diffs} differences")]
+        parts += [key(keys, word) for keys, word in hints if keys]
+        return parts
 
     def _details_line(self) -> str:
         """The focused node's size and modification time on each side (the
@@ -1785,7 +1787,13 @@ class DirectoryDiffView(Widget):
         if panel is not None and panel.has_layer(self):
             close_viewer(panel, self, lambda: panel.remove_layer(self))
 
+    #: The keys the footer names, as drawn: a click on one presses it
+    #: (:mod:`xefm.hint_bar`).
+    _hint_hits: list = []
+
     def handle_event(self, event: Event) -> bool:
+        if click_hint(self, self._hint_hits, event):
+            return True
         if event.type is EventType.MOUSE_SCROLL:
             uy = event.hints.get("scroll_units")
             self.top -= float(uy) if uy is not None else float(event.scroll)
@@ -1971,21 +1979,21 @@ class DirectoryDiffView(Widget):
             return
         self._plan.cycle(node)
 
-    def _plan_footer(self) -> str:
+    def _plan_footer(self) -> list:
         plan = self._plan
         ops = plan.operations(self.root)
         mode = dir_sync.MODE_LABELS[plan.mode]
-        parts = [f"{mode} {plan.source} → {plan.target}",
-                 f"{len(ops.copies)} copy", f"{len(ops.deletes)} delete",
-                 f"{ops.skipped + ops.mismatched} skip"]
+        parts = [note(f"{mode} {plan.source} → {plan.target}"),
+                 note(f"{len(ops.copies)} copy"), note(f"{len(ops.deletes)} delete"),
+                 note(f"{ops.skipped + ops.mismatched} skip")]
         hints = (
             (self._footer_key("dir_diff.cycle_sync_action", "Space"), "change"),
             (self._footer_key("dir_diff.toggle_identical", "d"), "all/diff"),
             (self._footer_key("dir_diff.sync", "s"), "run"),
             ("Esc", "leave plan"),
         )
-        parts += [f"{keys} {word}" for keys, word in hints if keys]
-        return " " + " · ".join(parts) + " "
+        parts += [key(keys, word) for keys, word in hints if keys]
+        return parts
 
     def _plan_summary(self, ops: dir_sync.Operations) -> str:
         """The confirmation's text: what will be written where, with the

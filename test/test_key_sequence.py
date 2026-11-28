@@ -170,7 +170,7 @@ def test_a_sequence_moves_the_cursor_and_the_status_bar_shows_it(seq_app):
     app = seq_app
     app.active_pane()["focused_index"] = 0
     app.on_event(z())
-    assert app.status._text() == "z …   Esc cancel"
+    assert app.status._text() == "z …  Esc cancel"
     app.on_event(z())
     assert app.active_pane()["focused_index"] == len(app.active_pane()["files"]) - 1
     assert "Esc cancel" not in app.status._text()
