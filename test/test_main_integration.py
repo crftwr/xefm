@@ -7,6 +7,8 @@ Run with: python -m pytest test/test_main_integration.py -v
 import unittest
 from unittest.mock import Mock, patch
 from xefm._config import Config
+from xefm import config as config_module
+from xefm import keymap_presets
 
 
 class MockFileManager:
@@ -48,6 +50,14 @@ class TestMainIntegration(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.file_manager = MockFileManager()
+        # The keys below ('c' for copy_files, ...) are the AFX preset's. No preset
+        # is the default (#597), so load it here instead of relying on an earlier
+        # test having left it in the shared config manager.
+        patcher = patch.object(
+            config_module.config_manager, '_key_bindings',
+            config_module.KeyBindings(keymap_presets.table(keymap_presets.AFX)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
     
     def test_key_binding_without_selection(self):
         """Test key binding behavior when no files are selected."""
