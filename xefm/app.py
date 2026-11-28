@@ -142,7 +142,7 @@ from xefm import search_match
 from xefm import sort_keys
 from xefm.state_manager import get_state_manager
 from xefm.str_format import abbreviate_path, format_size
-from xefm.tab_strip import NEW_TAB, Tab, TabStrip, strip_colors, tab_height
+from xefm.tab_strip import NEW_TAB, Tab, TabStrip, hover_backing, strip_colors, tab_height
 from xefm.terminal_sessions import ClosedAgent
 from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
                            load_user_entries, menu_items as user_menu_items,
@@ -1184,15 +1184,16 @@ def _hover_part(ctx, x: float, part: str, style: Style) -> bool:
         return False
     theme = ctx.theme
     base = getattr(ctx, "background", None) or theme.surface_bg("status") or DEFAULT_BG
-    backing = _mix(base, theme.text, 0.15)
+    backing = hover_backing(theme, base, getattr(ctx, "surface_opacity", 1.0))
+    ink = ctx.ink(theme.text, on=backing) if hasattr(ctx, "ink") else theme.text
     if ctx.vector_shapes:
         bw = (ctx.base_size or (0, 0))[0]
         pad = 3.0 / bw if bw else 0.3
         ctx.round_rect(x - pad, 0.0, w + 2 * pad, 1.0, Style(bg=backing), radius=4.0,
                        hints={"fill": True})
-        ctx.draw_text(x, 0.0, part, Style(fg=theme.text, attr=style.attr))
+        ctx.draw_text(x, 0.0, part, Style(fg=ink, attr=style.attr))
     else:
-        ctx.draw_text(x, 0.0, part, Style(fg=theme.text, bg=backing, attr=style.attr))
+        ctx.draw_text(x, 0.0, part, Style(fg=ink, bg=backing, attr=style.attr))
     ctx.set_cursor("pointer")
     return True
 
@@ -1319,12 +1320,14 @@ class PaneHeader(Widget):
             # every name still on screen is one the user can actually read.
             text = abbreviate_path(str(pane["path"]), avail, measure=ctx.measure_text)
         fg = ctx.theme.accent if active else ctx.theme.text
-        path_y = pad_y
+        # The path centred in its row's one inset - half above, half below -
+        # rather than padded on top only, where it sat low (#1019 hand check).
+        path_y = pad_y / 2
         tabs = self._tabs()
         if len(tabs) > 1:
             self._draw_tabs(ctx, tabs, pad_x, pad_y, avail, active)
             # The same inset below the tabs as above them (#1019 hand check).
-            path_y += tab_height(ctx) + pad_y
+            path_y += tab_height(ctx) + 2 * pad_y
         else:
             self._strip.clear()
         ctx.draw_text(pad_x, path_y, text, Style(fg=fg, attr=TextAttribute.BOLD))
@@ -1407,17 +1410,16 @@ class PaneHeader(Widget):
         return True
 
     def measure(self, ctx, axis, available) -> SizeRequest:
-        # The path with the same padding above and below it (vector backends;
-        # none on a grid) - padded on top only, it sat low in its bar (#1019
-        # hand check). The bar is placed with size="content" so this height
-        # wins. A pane with more than one tab adds the tab strip, with that
-        # padding below it too.
+        # The path's row and one inset, which draw() splits above and below it
+        # (vector backends; none on a grid). The bar is placed with
+        # size="content" so this height wins. A pane with more than one tab
+        # adds the tab strip with that inset above and below it.
         if axis != "y":
             return SizeRequest()
         pad = 0.0 if ctx.snap else (BAR_PAD_PX / ctx.base_h if ctx.base_h else 0.0)
-        h = _bar_height(ctx).preferred + pad
+        h = _bar_height(ctx).preferred
         if len(self._tabs()) > 1:
-            h += tab_height(ctx) + pad
+            h += tab_height(ctx) + 2 * pad
         return SizeRequest(min=h, preferred=h, max=h)
 
 

@@ -48,7 +48,7 @@ def test_a_clickable_part_shows_it_is_one_under_the_pointer():
     assert not _hover_part(away, 4.0, "C copy", Style()) and away.calls == []
 
 
-def test_the_path_bar_is_padded_above_and_below():
+def test_the_path_bar_keeps_its_height():
     from xefm.app import BAR_PAD_PX, PaneHeader
     header = PaneHeader.__new__(PaneHeader)
     tabs = {"left": [object()]}
@@ -56,7 +56,7 @@ def test_the_path_bar_is_padded_above_and_below():
     header.pane_name = "left"
     ctx = SimpleNamespace(snap=False, base_h=16, vector_shapes=True)
     pad = BAR_PAD_PX / 16
-    assert header.measure(ctx, "y", 100).preferred == 1.0 + 2 * pad
+    assert header.measure(ctx, "y", 100).preferred == 1.0 + pad  # split, not added
     grid = SimpleNamespace(snap=True, base_h=0, vector_shapes=False)
     assert header.measure(grid, "y", 100).preferred == 1.0
 
@@ -77,3 +77,19 @@ def test_a_tabs_label_sits_the_same_in_every_strip():
         assert abs(baseline - round(baseline)) < 1e-6
         offsets.add(round(baseline - chip_top))
     assert len(offsets) == 1
+
+
+def test_on_every_theme_the_hover_backing_shows_on_its_bar():
+    # A fixed mix of bar and text was lost on a theme whose bar and text sit
+    # close, or whose bars are translucent over a scene (#1019 hand check).
+    from xefm._config import Config
+    from xefm.app import _build_theme_list
+    from xefm.tab_strip import HOVER_SEPARATION, _lightness as L, _mix, hover_backing
+    for name, theme in _build_theme_list(Config()):
+        opacity = theme.extras.get("opacity", 1.0)
+        page = theme.surface_bg("content")
+        for role in ("status", "footer"):
+            bar = theme.surface_bg(role) or page
+            backing = hover_backing(theme, bar, opacity)
+            seen = _mix(page, bar, opacity) if opacity < 1.0 else tuple(bar)[:3]
+            assert abs(L(backing) - L(seen)) >= HOVER_SEPARATION - 0.01, (name, role)

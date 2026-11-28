@@ -146,8 +146,9 @@ and its label's baseline a fixed whole number of pixels below its top (the
 ascent from `ctx.font_metrics()`, the place from `ctx.screen_rect`): the OS
 puts a baseline on a whole pixel and a chip's edge where it falls, so a
 strip whose place had a fraction in it - a pane's, under the window's -
-showed its labels a pixel or two low. A pane's path bar is padded below as
-well as above (it sat low in its bar). The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
+showed its labels a pixel or two low. A pane's path bar and the drawn
+conversation's header keep their height (one row and one inset) and split
+the inset above and below the line; padded on top only, the line sat low. The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
 0.75 between icon, label and `×` on a vector backend; whole cells on a grid).
 
 Moving a tab: `TabStrip.press` arms a drag of the tab under a press (not a

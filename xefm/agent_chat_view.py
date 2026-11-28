@@ -745,9 +745,10 @@ class ChatView(FocusContainer, Widget):
         accent = theme.accent if theme is not None else (0, 122, 204)
         iw = max(4.0, wu - 2 * pad_x)
 
-        # Header: who, where, and what it is doing - padded below as above
-        # (it sat low in its band, #1019 hand check).
-        head_h = 1.0 + 2 * pad_y
+        # Header: who, where, and what it is doing - its one inset split above
+        # and below the line (padded on top only, it sat low, #1019 hand check).
+        head_h = 1.0 + pad_y
+        text_y = pad_y / 2
         header_bg = _header_bg(theme)
         ctx.fill_rect(0, 0, wu, head_h, Style(bg=header_bg))
         conv = self.conversation
@@ -762,12 +763,12 @@ class ChatView(FocusContainer, Widget):
         # Measured in the bold it is drawn in: bold is wider, and elided by
         # the regular widths the title ran into the state on the right.
         title_style = Style(fg=accent, bg=header_bg, attr=TextAttribute.BOLD)
-        ctx.draw_text(pad_x, pad_y,
+        ctx.draw_text(pad_x, text_y,
                       elide(title, max(1.0, iw - right_w - 1), where="end",
                             measure=lambda t: ctx.measure_text(t, title_style)),
                       title_style)
         state_fg = accent if conv.busy else muted
-        ctx.draw_text(max(pad_x, wu - pad_x - right_w), pad_y, right,
+        ctx.draw_text(max(pad_x, wu - pad_x - right_w), text_y, right,
                       Style(fg=state_fg, bg=header_bg))
 
         # Footer: the keys for what can be done now - in the window's status
@@ -783,7 +784,10 @@ class ChatView(FocusContainer, Widget):
         lc = ctx.layout_context()
         in_w = max(4.0, iw - 2)
         in_h = self.input.measure(lc, "y", in_w).preferred
-        in_y = fy - in_h - (0.5 if ctx.pixel_layout else 0.0)
+        # A gap under it: half a line where the backend draws sub-cell, a row
+        # on a grid - flush, the field ran into the status bar under it (#1019
+        # hand check).
+        in_y = fy - in_h - (0.5 if ctx.pixel_layout else 1.0)
         self._input_rect = Rect(pad_x + 1, in_y, in_w, in_h)
         # A line above it while the agent works or asks.
         status = ""

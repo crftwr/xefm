@@ -137,6 +137,26 @@ def strip_colors(theme, *, pane: bool = False, opacity: float = 1.0) -> StripCol
     return StripColors(ground, current, _mix(under, current, 0.5), ground_opacity)
 
 
+#: The least lightness difference between a hover backing and the bar it
+#: shows on, as seen.
+HOVER_SEPARATION = 15.0
+
+
+def hover_backing(theme, bar, opacity: float = 1.0) -> tuple:
+    """The backing that says a part of a bar is clickable while the pointer
+    is over it: ``bar`` (the bar's colour) moved toward the text until its
+    lightness is :data:`HOVER_SEPARATION` from the bar as it is seen - over a
+    scene the bar is painted at ``opacity`` and the page shows through. A
+    fixed mix of the two was lost on a theme whose bar and text sit close or
+    whose bars are translucent (#1019 hand check)."""
+    page = tuple(theme.surface_bg("content") or DEFAULT_BG)[:3]
+    bar = tuple(bar)[:3]
+    seen = _mix(page, bar, opacity) if opacity < 1.0 else bar
+    start = _mix(seen, theme.text, 0.15)
+    return _set_apart(start, _apart(HOVER_SEPARATION, seen),
+                      lighter=_lightness(theme.text) > _lightness(seen))
+
+
 def _snap_row(ctx, y: float, height: float) -> tuple[float, float, float]:
     """``(y, height, text_y)`` for a row of chips ``height`` high at ``y``:
     the text row centred in it. Where the backend draws sub-cell, the chip's
