@@ -89,17 +89,15 @@ def _panel():
 
 
 def _shown(panel):
-    """The layers drawn now, bottom first."""
-    return panel.shown_layers()
+    """The layers drawn now, bottom first - the chrome a session's screen
+    draws over its view (#1019) left out."""
+    from xefm.screen_strip import is_strip
+    return [layer for layer in panel.shown_layers() if not is_strip(layer)]
 
 
 def _app(monkeypatch, *, desktop=True):
     import xefm.app as app_mod
     monkeypatch.setattr(app_mod, "is_desktop_mode", lambda: desktop)
-    import xefm.dialog_geometry as geometry
-    # No motion: every transition lands at once (test_terminal_transition
-    # plays them).
-    monkeypatch.setattr(geometry, "animate_from_behind", lambda *a, **k: False)
     panel = _panel()
     app = SimpleNamespace(panel=panel, relisted=0, logged=[], _sessions=SessionRegistry(),
                           _screens=ScreenManager(panel))
@@ -135,14 +133,55 @@ def _app(monkeypatch, *, desktop=True):
     for name in ("_agent_started", "_agent_ended"):
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
     app._run_terminal_user_action = lambda name: True
+    app._run_agent_chat_user_action = lambda name: True
     for name in ("new_terminal_session", "subshell", "_show_session", "_show_screen",
                  "_hide_session", "_shown_session", "_close_session",
                  "_session_exited", "_session_close_request", "_start_session",
                  "_new_shell_session", "_terminal_ready", "_desktop_only",
                  "_session_dir", "_close_terminal_sessions", "_screen_label",
-                 "_screen_top_text", "_relist_both", "screens"):
+                 "_screen_top_text", "_relist_both", "screens") + _SCREEN_METHODS:
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
+    from xefm.screen_strip import ScreenStrip
+    app.menu_bar = _Chrome()
+    app.status = _Chrome()
+    app.window_tabs = ScreenStrip(app._window_tabs, on_event=app._tab_event)
+    app.keys = SimpleNamespace(get_keys_for_action=lambda a, c: ([], None),
+                               format_key_for_display=str)
     return app
+
+
+#: What the window's tabs, its chrome and closed conversations add (#1019).
+_SCREEN_METHODS = (
+    "_add_session_screen", "_share_menu_bar", "_chrome_bands", "_content_band", "resume_agent",
+    "next_screen", "prev_screen", "_step_screen", "_has_screens",
+    "move_screen_left", "move_screen_right", "_move_screen",
+    "_window_tabs", "_tab_mark", "_tab_icon", "_tab_event", "_chrome_event",
+    "_screen_action", "_new_kinds", "_new_tab_menu", "_go_to_group", "switch_screen",
+    "new_shell", "new_agent", "_session_hints", "_closed_agents", "_save_closed_agents",
+    "_remember_closed", "_forget_closed", "_resume_agent", "_resume_into",
+    "_name_agent_session", "_close_idle_sessions", "_rename_screen")
+
+
+class _Chrome:
+    """A stand-in for the menu bar and the status bar a session's screen
+    draws: what it was asked to do."""
+
+    def __init__(self):
+        self.takes_activation_key = True
+        self.events = []
+        self.clicks = []
+        self.menu = None  # the menu bar's model, shared with a session's view
+
+    def draw(self, ctx):
+        pass
+
+    def handle_event(self, event):
+        self.events.append(event)
+        return True
+
+    def click_at(self, x):
+        self.clicks.append(x)
+        return True
 
 
 class _Switcher:
@@ -171,24 +210,19 @@ class _Switcher:
         dialog.kw["on_accept"](dialog.items[dialog.list.selected])
 
 
-def test_the_switcher_goes_back_and_forth_with_enter(monkeypatch):
+def test_switch_screen_goes_back_and_forth(monkeypatch):
     app = _app(monkeypatch)
-    switcher = _Switcher(monkeypatch)
-    app.screens()  # no session yet: the cursor is on New shell
-    assert switcher.labels() == ["File manager", "New shell in /tmp"]
-    switcher.enter()
+    app.switch_screen()  # no session yet: a shell (#1019), never an AI agent
     [view] = app.made
     assert view.shown and _shown(app.panel) == [view] and view.cwd == "/tmp"
-    app.screens()  # from the session: the file manager is next
-    assert switcher.labels()[:2] == ["zsh - /tmp", "File manager"]
-    switcher.enter()  # back to the panes: still running, its screen hidden
+    app._screen_action("switch_screen")  # back to the panes
     assert not view.shown and view.closed == 0 and _shown(app.panel) == []
     assert app.panel.has_layer(view)  # kept, not removed
-    assert app.relisted == 2
-    app.screens()  # from the panes: the session is next
-    assert switcher.labels()[:2] == ["File manager", "zsh - /tmp"]
-    switcher.enter()
+    assert app.relisted == 2  # both panes re-read
+    app.switch_screen()  # from the panes: the screen used last
     assert app.made == [view] and view.shown
+    app.switch_screen()  # and back
+    assert not view.shown and app._screens.current is app._screens.files
 
 
 def test_the_switcher_offers_the_screen_before_this_one(monkeypatch):
@@ -197,14 +231,15 @@ def test_the_switcher_offers_the_screen_before_this_one(monkeypatch):
     app.new_terminal_session()
     app.new_terminal_session()
     first, second = app.made
-    app.screens()  # in the second: the first was on before it
+    app.screens()  # in the second: the first, used before it, is where it starts
     s1, s2 = (app._sessions.for_view(v) for v in (first, second))
-    assert switcher.last.items[:3] == [s2.screen, s1.screen, app._screens.files]
+    files = app._screens.files
+    assert switcher.last.items[:3] == [files, s2, s1] and switcher.last.list.selected == 2
     switcher.enter()
     assert first.shown and not second.shown
-    # The file manager and the new-shell row cannot be closed.
+    # The file manager and the close-idle row are not sessions to close.
     remove = switcher.last.kw["on_remove"]
-    assert remove(app._screens.files) is False and remove(switcher.last.items[-1]) is False
+    assert remove(files) is False and remove(switcher.last.items[-1]) is False
 
 
 def test_the_subshell_is_a_session_with_the_snapshot_and_xefmctl(monkeypatch):
@@ -216,8 +251,17 @@ def test_the_subshell_is_a_session_with_the_snapshot_and_xefmctl(monkeypatch):
     # The XEFM_* snapshot as of the start, and xefmctl as this session.
     assert view.env["XEFM_THIS_DIR"] == "/tmp"
     assert view.env["XEFM_SESSION"] == str(session.id)
-    app.subshell()  # another one, not the same shell again
+    app._screen_action("switch_screen")
+    app.subshell()  # back to the same shell (#1019), not another one
+    assert len(app.made) == 1 and view.shown
+    app.new_shell()  # another one on purpose
     assert len(app.made) == 2
+
+
+def test_switch_screen_with_no_session_in_a_terminal_is_the_subshell(monkeypatch):
+    app = _app(monkeypatch, desktop=False)
+    app.switch_screen()
+    assert not app.made and len(app.handed) == 1  # the terminal handed over
 
 
 def test_terminal_mode_hands_the_terminal_to_the_subshell(monkeypatch):
@@ -427,8 +471,8 @@ def test_the_switcher_says_what_is_on_each_screen(monkeypatch):
     session = app._sessions.for_view(view)
     session.command_since, session.command = 1.0, "make test"
     app.screens()
-    assert switcher.labels()[:2] == ["make test - /tmp",
-                                     "File manager - viewing notes.txt"]
+    assert switcher.labels()[:2] == ["File manager - viewing notes.txt", "make test - /tmp"]
+    assert switcher.last.kw["to_right"](session).startswith("shell, running")
 
 
 def test_rows_that_read_the_same_get_the_sessions_name(monkeypatch):
@@ -437,11 +481,11 @@ def test_rows_that_read_the_same_get_the_sessions_name(monkeypatch):
     app.new_terminal_session()
     app.new_terminal_session()
     app.screens()
-    assert switcher.labels()[:3] == ["zsh 2 - /tmp", "zsh - /tmp", "File manager"]
+    assert switcher.labels()[1:3] == ["zsh 2 - /tmp", "zsh - /tmp"]
     first = app._sessions.for_view(app.made[0])
     first.command_since, first.command = 1.0, "claude"
     app.screens()
-    assert switcher.labels()[:3] == ["zsh - /tmp", "claude - /tmp", "File manager"]
+    assert switcher.labels()[1:3] == ["zsh - /tmp", "claude - /tmp"]
 
 
 def test_a_chosen_name_heads_its_row():
@@ -857,23 +901,16 @@ _AGENT_METHODS = ("open_agent", "ask_agent", "_pick_agent", "_agent_request",
                   "_start_agent", "_agents_ready", "_agent_installed")
 
 
-def test_the_switcher_offers_a_new_session_of_each_installed_agent(monkeypatch):
+def test_screens_lists_what_there_is_and_starts_nothing(monkeypatch):
+    # Starting a session is the + after the tabs (#1019): Screens manages
+    # the screens there are.
     from xefm import agents
     app = _app(monkeypatch)
     switcher = _Switcher(monkeypatch)
-    app.config.AGENTS = [{"name": "Claude Code", "command": ["claude"], "preset": "claude-code"},
-                         {"name": "Codex", "command": ["codex"]},
-                         {"name": "Missing", "command": ["nope"]}]
-    monkeypatch.setattr(agents, "installed", lambda e: e["name"] != "Missing")
-    started = []
-    app._start_agent = lambda entry, prompt=None: started.append(entry["name"])
+    app.config.AGENTS = [{"name": "Claude Code", "command": ["claude"], "preset": "claude-code"}]
+    monkeypatch.setattr(agents, "installed", lambda e: True)
     app.screens()
-    assert switcher.labels() == ["File manager", "New shell in /tmp",
-                                 "New Claude Code in /tmp", "New Codex in /tmp"]
-    dialog = switcher.last
-    assert not dialog.kw["on_remove"](dialog.items[2])  # nothing to close
-    dialog.kw["on_accept"](dialog.items[3])
-    assert started == ["Codex"]
+    assert switcher.labels() == ["File manager"]
 
 
 def test_agent_is_the_action_and_greater_than_its_key():
@@ -1033,7 +1070,7 @@ def _antigravity_app(monkeypatch, tmp_path):
 def test_an_antigravity_sessions_folder_goes_with_the_session(monkeypatch, tmp_path):
     app, folders = _antigravity_app(monkeypatch, tmp_path)
     app.open_agent()
-    app.open_agent()
+    app.new_agent()
     first, second = list(app._sessions)
     assert len(folders()) == 2
     app._close_session(first)
@@ -1228,8 +1265,11 @@ def test_an_action_can_live_in_the_terminal_context():
     action, problem = _build_action("next-shell", {"func": lambda ctx: None,
                                                    "context": "terminal"})
     assert problem is None and action.context == A.TERMINAL
+    action, problem = _build_action("note", {"func": lambda ctx: None,
+                                             "context": "agent_chat"})
+    assert problem is None and action.context == A.AGENT_CHAT
     _, problem = _build_action("x", {"func": lambda ctx: None, "context": "text_viewer"})
-    assert "only in 'filer' and 'terminal'" in problem
+    assert "only in 'filer', 'terminal' and 'agent_chat'" in problem
 
 
 def test_the_terminal_runs_a_terminal_context_action():

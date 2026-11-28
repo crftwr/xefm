@@ -78,8 +78,11 @@ def own_bindings() -> dict:
         "new_tab": ["Ctrl-T"],
         "open_in_new_tab": ["Ctrl-UP"],
         "close_tab": ["Ctrl-W"],
-        "next_tab": ["Ctrl-TAB"],
-        "prev_tab": ["Ctrl-Shift-TAB"],
+        # Ctrl-Tab is the window's tabs (next_screen, #1019), as in a browser,
+        # and Ctrl-PgDn / Ctrl-PgUp are TC's open / parent here: the pane's
+        # tabs are left to a key of your own (and to a click on the strip).
+        "next_tab": [],
+        "prev_tab": [],
         # Selection and cursor
         "toggle_select_down": ["INSERT", "SPACE"],
         "select_by_pattern": ["+"],             # TC: Num +

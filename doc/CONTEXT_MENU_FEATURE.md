@@ -16,9 +16,8 @@ The item menu's other key depends on your keymap preset — see
 
 From the keyboard, the item menu opens just under the cursor row and the
 directory menu hangs from the path bar at the top of the pane — the line that
-names the directory. In the desktop app they are the system's own menus; in the
-terminal they are drawn by XeFM. Either way, ↑/↓ and Enter choose, and Esc
-closes.
+names the directory. In the desktop app they are the system's own menus. ↑/↓
+and Enter choose, and Esc closes.
 
 The **Menu key** is the one between the right Alt and Ctrl on a PC keyboard.
 It works in the Windows desktop app and the Windows terminal, and on macOS with

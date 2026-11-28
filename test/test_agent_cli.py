@@ -253,7 +253,7 @@ class Run:
             view.answer(perm, C.deny() if again else C.allow(perm, always=self.always))
         self.view = ChatView(
             agents.chat_argv(self.entry, self.values), cwd=str(self.ws), env=self.env, name="A",
-            post=posts, ask=ask, on_close_request=lambda v: None, on_hide=lambda v: None,
+            post=posts, ask=ask, on_close_request=lambda v: None,
             protocol=agents.protocol(self.entry, self.values))
         panel = Panel(MemoryBackend(width=100, height=40))
         panel.push_layer(self.view, z=10, hints={"x": 0, "y": 0, "w": 100, "h": 40})

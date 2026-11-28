@@ -25,7 +25,15 @@
 # PuiKit is XeFM's UI/rendering framework (the TUI/GUI backend layer), published
 # on PyPI as of 1.0. For co-development against a local checkout, ``make venv``
 # additionally installs it editable from ../puikit, which overrides this pin.
-# 1.33.1 is the floor because a plain message box wraps a line wider than the
+# 1.34.0 is the floor for the window's tabs (#1019): a session's screen owns
+# the menu bar so the OS bar stays active there (Panel.set_menu_bar owner=),
+# Ctrl-Tab reaches XeFM on macOS, the drawn conversation's earlier messages
+# look like its message field (::: box field), and in a terminal the menus
+# read disabled items as disabled, a tab or a wide glyph no longer leaves
+# stray cells, and the caret takes a colour that shows on its field. Soft:
+# on 1.33.1 XeFM runs, with the bar greyed on a session's screen, no Ctrl-Tab
+# on macOS and the older looks.
+# 1.33.1 was the floor before because a plain message box wraps a line wider than the
 # box (puikit#247): a long path in a question is shown whole, not cut off at
 # the frame (#995). It also stops a shader background the GPU failed on, which
 # otherwise left the window stuck and macOS refusing the GPU to XeFM for the
@@ -339,7 +347,7 @@
 # itself from under a covering confirm box -- issue #333), and
 # ``MenuBar.open_menu`` / ``open_menu_mnemonic`` (keyboard menu activation --
 # issue #304).
-puikit>=1.33.1
+puikit>=1.34.0
 pygments
 boto3
 watchdog

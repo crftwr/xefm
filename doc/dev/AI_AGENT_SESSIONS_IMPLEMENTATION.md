@@ -66,7 +66,7 @@ of folders already.
 
 Opening an agent parallels opening a shell: the action `agent` (`>` in
 every preset: the prompt an agent's CLI shows, a glyph no type-ahead takes)
-beside `subshell`, **Tools > AI Agent Here** beside Subshell Here, and a
+beside `subshell`, **Tools > Go to AI Agent** beside Subshell Here, and a
 "New <agent> in <dir>" row per installed entry in the Screens switcher
 beside "New shell in <dir>".
 
@@ -294,8 +294,12 @@ after it.
   sharing the id); `user` tool results close tool items; `result` ends a
   turn (`pending_turns`: a message sent mid-turn queues in the CLI and gets
   its own `result`). `to_markdown` renders the items: a user message in
-  a MarkdownView `::: box` (a rounded panel; a fill in a terminal, its fence
-  longer than any colon run in the text), each thing the agent did in a
+  a MarkdownView `::: box field` (a panel drawn as the message field below
+  looks - its fill, border, corner and insets, PuiKit's `box field` variant,
+  #1019 hand check; a plain box on an older PuiKit; in a terminal the
+  rows between half-block bands, as the message field has there - a row above
+  and below it, each half in the field, `▄` / `▀`; its fence longer than any
+  colon run in the text), each thing the agent did in a
   `::: bullet <role>` whose dot is green for a tool that worked, red for one
   that failed or was declined, the accent while it runs, muted for text. A
   Bash call is one `console` block: the command after `$` (continuation lines
@@ -387,8 +391,12 @@ after it.
   `Session` reads from a terminal view (`running`, `busy`, `exit_code`,
   `shown`, `closing`, `close`, `start`) plus `chat_state`, which
   `Session.state` reports for kind `AGENT`. Keys a binding in the
-  `terminal` context takes win, as in the terminal (`terminal.close`,
-  `terminal.screens`, user actions there).
+  `agent_chat` context takes win, as the terminal's do there
+  (`agent_chat.close`, `agent_chat.screens`, a context-qualified
+  `'agent_chat.<action>'` entry, user actions there); an inherited binding
+  only on a chord no text field types (`terminal.no_program_receives`). Its
+  own context since #1019 - it borrowed the terminal's before, so a shell's
+  keys and the conversation's could not differ.
 - The app: `_start_agent` branches to `_start_agent_chat` for a drawn entry,
   in both modes (no `_terminal_ready`, no hand-over). The session registry
   and screens are the terminal sessions' own, so the switcher, `xefmctl

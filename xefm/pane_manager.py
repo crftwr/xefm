@@ -107,6 +107,17 @@ class PaneManager:
         """Make tab ``index`` of ``side`` current, wrapping around both ends."""
         self.tab_index[side] = index % len(self.tabs[side])
 
+    def move_tab(self, side, frm, to):
+        """Move tab ``frm`` of ``side`` to place ``to``; the current tab stays
+        current wherever it lands. Whether it moved."""
+        tabs = self.tabs[side]
+        if not (0 <= frm < len(tabs) and 0 <= to < len(tabs)) or frm == to:
+            return False
+        current = tabs[self.tab_index[side]]
+        tabs.insert(to, tabs.pop(frm))
+        self.tab_index[side] = next(i for i, t in enumerate(tabs) if t is current)
+        return True
+
     def get_current_pane(self):
         """Get the currently active pane"""
         return self.left_pane if self.active_pane == 'left' else self.right_pane

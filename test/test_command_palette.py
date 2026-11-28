@@ -490,3 +490,23 @@ def test_a_binding_qualified_for_the_terminal_wins_over_the_program(app_with):
     app.panel.push_layer(terminal, z=75)
     app.on_event(key("t", None, {"ctrl"}))
     assert isinstance(app.panel._layers[-1].widget, FilterListDialog)
+
+
+def test_over_a_session_the_palette_shows_only_the_keys_that_work_there(app_with):
+    # A key the terminal leaves to its program reads as a shortcut that does
+    # nothing; the palette over it lists only what reaches XeFM (#1019).
+    from xefm.terminal import TerminalView
+    app = app_with(KEY_BINDINGS={**DefaultConfig().KEY_BINDINGS,
+                                 "terminal.close": ["Command-W"],
+                                 "screens": ["F5", "Ctrl-Shift-S"]})
+    terminal = _Terminal()
+    terminal.takes_key = lambda expr, a: TerminalView.takes_key(terminal, expr, a)
+    terminal.palette_actions = lambda: {"terminal.close", "screens"}
+    app.panel.push_layer(terminal, z=75)
+    app.show_command_palette()
+    dialog = app.panel._layers[-1].widget
+    by_name = {a.name: a for a in dialog.all_items}
+    assert dialog.to_right(by_name["screens"]) == app.keys.format_key_for_display(
+        "Ctrl-Shift-S")  # F5 is the program's
+    assert dialog.to_right(by_name["terminal.close"]) == app.keys.format_key_for_display(
+        "Command-W")

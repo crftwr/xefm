@@ -106,11 +106,11 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | Back | `go_back` |
 | Forward | `go_forward` |
 | Switch Pane | `switch_pane` |
-| New Tab | `new_tab` — [フォルダータブ](FOLDER_TABS_FEATURE.ja.md)を参照 |
-| Open in New Tab | `open_in_new_tab` |
-| Close Tab | `close_tab` |
-| Next Tab | `next_tab` |
-| Previous Tab | `prev_tab` |
+| New Folder Tab | `new_tab` — [フォルダータブ](FOLDER_TABS_FEATURE.ja.md)を参照 |
+| Open in New Folder Tab | `open_in_new_tab` |
+| Close Folder Tab | `close_tab` |
+| Next Folder Tab | `next_tab` |
+| Previous Folder Tab | `prev_tab` |
 | Open List → From Clipboard | `open_list_from_clipboard` *（既定でキー未割り当て）* — [ファイルリスト](FILE_LIST_IMPORT_FEATURE.ja.md)を参照 |
 | Open List → From Command… | `open_list_from_command` *（既定でキー未割り当て）* |
 | Open List → From File | `open_list_from_file` *（既定でキー未割り当て）* — ファイルの右クリックメニューの **Open as List** でも可 |
@@ -150,15 +150,23 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | Quick View | `quick_view` — [クイックビュー](QUICK_VIEW_FEATURE.ja.md)を参照 |
 | Flat View | `flat_view` — [フラット表示](FLAT_VIEW_FEATURE.ja.md)を参照 |
 
+ターミナルや AI エージェントのセッションを表示している間もメニューバーは残ります（ターミナルではそこにも描かれます）。どの画面でも使える項目は有効のままです。Command Palette、Resume AI Conversation、Switch Screen と Screens、設定と Advanced の各項目、Theme、Font Size、Help です。それ以外はファイルマネージャーに対して働く項目で、ファイルマネージャーに戻るまで無効になります。File、Edit、Go、Select、View の大半と、Tools のうちペインのフォルダーでシェルやエージェントを起動する項目、External Programs、Find Similar Files、Install Extension です。セッションの画面から新しいセッションを始めるには、タブの後ろの `+` を使います。
+
 ### Tools メニュー
+
+項目はグループに分かれています。ターミナルの画面、AI エージェントの画面、画面の切り替え、それから作業を実行するツールと設定です。**Go to ...** は、その種類で最後に使った画面に移動します（1 つもないときだけ新しく開きます）。**New ... Here** は、いつもアクティブなペインのフォルダーで新しく開きます。
 
 | 項目 | アクション |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Subshell Here | `subshell` *（デスクトップモードではターミナルセッションで）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
-| AI Agent Here | `agent` — [AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
-| Ask AI Agent… | `ask_agent` *（既定でキー未割り当て）* — `AGENT_PROMPTS` の依頼か、打ち込んだ依頼 |
-| Screens… | `screens` *（デスクトップモードのみ）* |
+| Go to Terminal | `subshell` *（デスクトップモードでは最後に使ったターミナルの画面。シェルでも、そこで動くプログラムでもかまいません。なければ新しいシェルを開きます。ターミナルモードでは **Subshell Here** で、端末をシェルに渡します）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
+| New Shell Here | `new_shell` *（デスクトップモードのみ。既定でキー未割り当て）* |
+| Go to AI Agent | `agent` — 最後に使った AI エージェントのセッション、なければ新しいセッション。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
+| New AI Agent Here | `new_agent` *（既定でキー未割り当て）* |
+| Resume AI Conversation… | `resume_agent` *（既定でキー未割り当て）* — XeFM で閉じた AI の会話を、履歴ごと再開 |
+| Ask AI Agent About Selection… | `ask_agent` *（既定でキー未割り当て）* — `AGENT_PROMPTS` の依頼か、打ち込んだ依頼 |
+| Switch Screen | `switch_screen` — ファイルマネージャーと最後に使った画面の間 |
+| Screens… | `screens` *（既定でキー未割り当て）* — 今ある画面すべての移動、終了、名前の変更 |
 | External Programs… | `programs` |
 | Find Similar Files… | `find_similar` *（既定でキー未割り当て）* — [類似ファイルの検索](FIND_SIMILAR_FILES_FEATURE.ja.md)を参照 |
 | Background Jobs… | `jobs` — [バックグラウンドジョブ](BACKGROUND_JOBS_FEATURE.ja.md)を参照 |

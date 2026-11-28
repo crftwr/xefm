@@ -19,9 +19,15 @@ session keeps its screen (its last output, the exit bar) after its process is
 gone. The two point at each other (:attr:`Screen.session`,
 ``Session.screen``).
 
-This module keeps the bookkeeping - the groups, which one is shown, the
-order screens were on - and does no animation; the app plays the transitions
-around :meth:`ScreenManager.make_current`.
+The window's screens are its tabs (discussion #1019): the file manager's,
+pinned first, then every session's - shells, terminal programs, AI agents -
+in one strip, in the order they were made as the user left it; closing one
+shows the screen shown before it. A session's kind (its group: the terminal's or the
+AI agents') is what a key like ``subshell`` or ``agent`` goes back to.
+
+This module keeps the bookkeeping - the layer groups, which screen is shown,
+the order screens were on - and does no animation; the app plays the
+transitions around :meth:`ScreenManager.make_current`.
 """
 
 from __future__ import annotations
@@ -32,6 +38,12 @@ from typing import Any
 #: Screen kinds.
 FILES = "files"
 TERMINAL = "terminal"
+
+#: Screen groups (#1019): the file manager's (named as its kind), and the
+#: two a session's screen falls in.
+from xefm.terminal_sessions import GROUP_AGENT, GROUP_TERMINAL  # noqa: E402
+
+GROUPS = (FILES, GROUP_TERMINAL, GROUP_AGENT)
 
 #: z of the screens' groups at the top level of the layer tree. Terminal
 #: screens sit above the file manager's, so a terminal coming up over the
@@ -55,10 +67,19 @@ class Screen:
         self.session = session
         self.created_at = time.time()
         self.last_shown_at = self.created_at
+        #: Set once its session is closing (it may still fade out): it is no
+        #: longer one of its group's screens.
+        self.closing = False
 
     @property
     def name(self) -> str:
         return "File manager" if self.kind == FILES else self.session.name
+
+    @property
+    def screen_group(self) -> str:
+        """Which group of screens it is in (#1019): :data:`FILES`, or its
+        session's group. (``group`` is its layer group.)"""
+        return FILES if self.kind == FILES else self.session.group
 
     def __repr__(self) -> str:
         return f"Screen({self.id!r})"
@@ -75,6 +96,9 @@ class ScreenManager:
         self.current = self.files
         #: Every screen, most recently on screen first; FILES always in it.
         self._recent: list[Screen] = [self.files]
+        #: Every screen in tab order: the order they were made until the user
+        #: moves a tab (#1019).
+        self._tabs: list[Screen] = [self.files]
         panel.set_default_layer_parent(group)
 
     # --- reading ---------------------------------------------------------------
@@ -93,6 +117,49 @@ class ScreenManager:
     def for_session(self, session: Any) -> Screen | None:
         return next((s for s in self._recent if s.session is session), None)
 
+    def tabs(self) -> list[Screen]:
+        """The window's tabs (#1019): the file manager first, pinned, then
+        every session's screen in tab order - the order they were made, as
+        the user left it. One strip for all of them, whatever their kind."""
+        return [s for s in self._tabs if not s.closing]
+
+    def in_group(self, group: str, *, order: str = "tabs") -> list[Screen]:
+        """The screens of ``group``: in tab order (the order they were made,
+        as the user left it), or ``order="recent"``, most recently on screen
+        first."""
+        screens = list(self._tabs) if order == "tabs" else self.recent()
+        return [s for s in screens if s.screen_group == group and not s.closing]
+
+    def last_in_group(self, group: str) -> Screen | None:
+        """The screen of ``group`` on screen last (the one on now when it is
+        in it), or None when the group has none: where its key goes."""
+        found = self.in_group(group, order="recent")
+        return found[0] if found else None
+
+    def after_close(self, screen: Screen) -> Screen:
+        """Where closing ``screen`` goes: the screen shown before it, as a
+        browser or VS Code goes back to the tab used last - the file manager
+        an editor was opened from, not the tab that happens to stand beside
+        it (#1019 hand check) - else the file manager's."""
+        return next((s for s in self._recent if s is not screen and not s.closing),
+                    self.files)
+
+    def move_tab(self, screen: Screen, to: int) -> bool:
+        """Put ``screen`` at place ``to`` among the tabs (#1019). The file
+        manager's stays first: it does not move, and nothing goes before it.
+        Whether it moved."""
+        tabs = self.tabs()
+        if screen.kind == FILES or screen not in tabs or not 1 <= to < len(tabs) \
+                or tabs.index(screen) == to:
+            return False
+        moved = [s for s in tabs if s is not screen]
+        moved.insert(to, screen)
+        # The places of the tabs shown stay; who stands in them changes.
+        places = [i for i, s in enumerate(self._tabs) if s in tabs]
+        for i, s in zip(places, moved):
+            self._tabs[i] = s
+        return True
+
     def previous(self, screen: Screen | None = None) -> Screen:
         """The screen shown before ``screen`` (the current one by default):
         where closing it goes back to."""
@@ -103,10 +170,11 @@ class ScreenManager:
         """The topmost layer shown on ``screen`` (the current one), or None
         - a viewer or dialog over the panes, the terminal or what is over
         it."""
+        from xefm.screen_strip import top_surface
         screen = screen or self.current
-        layers = self.panel.shown_layers(under=screen.group) \
-            if self.panel.is_layer_shown(screen.group) else []
-        return layers[-1] if layers else None
+        if not self.panel.is_layer_shown(screen.group):
+            return None
+        return top_surface(self.panel, under=screen.group)
 
     def layers(self, screen: Screen) -> list:
         """What is stacked on ``screen``, hidden or not, bottom first: its
@@ -124,6 +192,7 @@ class ScreenManager:
         screen = Screen(str(session.id), TERMINAL, group, session)
         session.screen = screen
         self._recent.append(screen)  # last until it is first shown
+        self._tabs.append(screen)
         return screen
 
     def reveal(self, screen: Screen) -> None:
@@ -149,6 +218,8 @@ class ScreenManager:
                     self.conceal(other)
         self.current = screen
         screen.last_shown_at = time.time()
+        if screen.session is not None:
+            screen.session.last_used_at = screen.last_shown_at
         if screen in self._recent:
             self._recent.remove(screen)
         self._recent.insert(0, screen)
@@ -160,14 +231,18 @@ class ScreenManager:
 
     def remove(self, screen: Screen) -> None:
         """Take a terminal screen away, with everything on it. When it was the
-        current one, the previous screen becomes current (shown at once)."""
+        current one, the screen shown before it becomes current (shown at
+        once): :meth:`after_close`."""
         if screen.kind == FILES:
             raise ValueError("the file manager's screen cannot be removed")
         was_current = screen is self.current
+        after = self.after_close(screen)
         if screen in self._recent:
             self._recent.remove(screen)
+        if screen in self._tabs:
+            self._tabs.remove(screen)
         if was_current:
-            self.make_current(self._recent[0] if self._recent else self.files)
+            self.make_current(after)
         self.panel.remove_layer(screen.group)
         if screen.session is not None:
             screen.session.screen = None

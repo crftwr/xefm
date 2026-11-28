@@ -23,7 +23,7 @@ is per tab automatically.
 | Actions | `XeFMApp.new_tab`, `open_in_new_tab`, `close_tab`, `next_tab`, `prev_tab`, `select_tab` |
 | Putting a tab on screen | `XeFMApp._show_tab` |
 | Not listing a hidden tab | `XeFMApp._hold_if_hidden`, called first by `_relist`, `_resort`, `_list_virtual` |
-| Strip and click | `PaneHeader._draw_tabs`, `PaneHeader.handle_event`, `PaneHeader.measure` |
+| Strip and click | `PaneHeader._draw_tabs` (drawn by `xefm/tab_strip.py`), `PaneHeader.handle_event`, `PaneHeader.measure` |
 | Label | `_tab_label` (module level in `xefm/app.py`) |
 | Persistence | `XeFMApp._save_tabs`, `_restore_tabs`; state keys `tabs.left`, `tabs.right` |
 
@@ -74,12 +74,18 @@ dropped when it lands (its generation no longer matches the shown dict), and
 
 ## The strip
 
-`PaneHeader.measure` adds one row when the side has more than one tab, so a
-single-tab pane (the TUI's usual case) costs nothing. The header is placed
+`PaneHeader.measure` adds a tab's height (`tab_strip.tab_height`: one row on
+a grid, 1.6 in the desktop app, #1019) when the side has more than one tab,
+so a single-tab pane (the TUI's usual case) costs nothing. Since #1019 each
+chip is the screen strip's: the kind's icon (`_tab_parts`), the label, `×`
+(`close_tab_at`, which closes a tab out of view without showing it), and a
+`+` chip after them (`new_tab` on that side). The header is placed
 with `size="content"`, and the layout measures it each frame, so opening the
 second tab grows the bar with no extra plumbing. Labels get their natural
-width, and an equal share each when they don't all fit. Each draw records
-`_tab_row` and `_tab_hits` for `handle_event`'s click.
+width, and an equal share each when they don't all fit. The drawing is
+`xefm.tab_strip.TabStrip` (shared with the screen strip since #1019), which
+records the row and each tab's span for `handle_event`'s click
+(`PaneHeader._strip.hit`).
 
 ## Persistence
 

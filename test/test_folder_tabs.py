@@ -208,7 +208,7 @@ class Strip(_Base):
     def test_no_strip_with_one_tab(self):
         header = self.app._headers["left"]
         self._draw()
-        self.assertIsNone(header._tab_row)
+        self.assertIsNone(header._strip.row)
 
     def test_the_strip_names_every_tab(self):
         self._focus("inner")
@@ -216,25 +216,84 @@ class Strip(_Base):
         screen = self._draw()
         self.assertIn(" a ", screen)
         self.assertIn(" inner ", screen)
-        self.assertEqual(len(self.app._headers["left"]._tab_hits), 2)
+        strip = self.app._headers["left"]._strip
+        self.assertEqual(len(strip.hits), 3)  # two tabs and the + after them
+        self.assertEqual(len(strip.close_hits), 2)
+        self.assertNotIn("×", screen)  # shown only under the pointer
+        self.assertIn("+", screen)
 
     def test_a_click_on_a_tab_shows_it(self):
         self._do("new_tab")
         self._draw()
         header = self.app._headers["left"]
-        x0, x1, index = header._tab_hits[0]
+        x0, x1, index = header._strip.hits[0]
         from puikit import Event, EventType
-        y = header._tab_row[0]
+        y = header._strip.row[0]
         header.handle_event(Event(type=EventType.MOUSE_CLICK, x=(x0 + x1) / 2,
                                   y=y, button="left"))
         self.app._settle_listings()
         self.assertEqual(self.app.pm.tab_index["left"], 0)
+
+    def _click(self, x, y):
+        from puikit import Event, EventType
+        header = self.app._headers["left"]
+        header.handle_event(Event(type=EventType.MOUSE_CLICK, x=x, y=y, button="left"))
+        self.app._settle_listings()
+
+    def test_a_click_on_a_tabs_close_button_closes_it(self):
+        self._do("new_tab")
+        self._do("new_tab")
+        self.assertEqual(self.app.pm.tab_index["left"], 2)
+        self._draw()
+        strip = self.app._headers["left"]._strip
+        x0, x1, index = strip.close_hits[0]  # a tab out of view
+        self._click(x1 - 0.5, strip.row[0])
+        self.assertEqual(len(self.app.pm.tabs["left"]), 2)
+        self.assertEqual(self.app.pm.tab_index["left"], 1)  # still the same tab
+        self._draw()
+        x0, x1, index = strip.close_hits[1]  # the current one
+        self._click(x1 - 0.5, strip.row[0])
+        self.assertEqual(len(self.app.pm.tabs["left"]), 1)
+
+    def test_a_tab_dragged_along_the_strip_moves(self):
+        from puikit import Event, EventType
+        self._do("new_tab")
+        self._do("new_tab")
+        self._draw()
+        header = self.app._headers["left"]
+        strip = header._strip
+        first = self.app.pm.tabs["left"][0]
+        y = strip.row[0]
+        x0, x1, _ = strip.hits[0]
+        lx0, lx1, _ = strip.hits[2]
+
+        def send(kind, x):
+            header.handle_event(Event(type=kind, x=x, y=y, button="left"))
+        send(EventType.MOUSE_DOWN, (x0 + x1) / 2)
+        send(EventType.MOUSE_DRAG, lx1 - 0.5)
+        self.assertIs(self.app.pm.tabs["left"][0], first)  # only a line, so far
+        self.assertEqual(strip.drop_slot, 3)
+        send(EventType.MOUSE_UP, lx1 - 0.5)
+        send(EventType.MOUSE_CLICK, lx1 - 0.5)  # ends the drag, shows nothing
+        self.assertIs(self.app.pm.tabs["left"][2], first)
+        self.assertEqual(self.app.pm.tab_index["left"], 1)  # the current tab, moved up one
+        self._do("move_tab_left")
+        self.assertEqual(self.app.pm.tab_index["left"], 0)
+
+    def test_a_click_on_plus_opens_a_tab(self):
+        self._do("new_tab")
+        self._draw()
+        strip = self.app._headers["left"]._strip
+        x0, x1, index = strip.hits[-1]
+        self._click((x0 + x1) / 2, strip.row[0])
+        self.assertEqual(len(self.app.pm.tabs["left"]), 3)
 
     def test_labels(self):
         pane = {"path": Path("/"), "virtual": None}
         self.assertEqual(xefm_app._tab_label(pane), str(Path("/")))
         pane = {"path": Path(self.tmp), "virtual": {"kind": "search", "query": "TODO"}}
         self.assertEqual(xefm_app._tab_label(pane), "⌕ TODO")
+        self.assertEqual(xefm_app._tab_parts(pane), ("⌕", "TODO"))  # the icon says it
 
 
 class Persistence(_Base):

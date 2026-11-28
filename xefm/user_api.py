@@ -1173,8 +1173,9 @@ class ActionContext:
         app = self._app
         app._open_viewer(target)
         if line:
+            from xefm.screen_strip import top_surface
             panel = app.panel
-            top = panel.top_layer()
+            top = top_surface(panel)
             scroll = getattr(top, "_scroll_to_line", None)
             if scroll is not None:
                 scroll(max(0, int(line) - 1))
@@ -2810,17 +2811,17 @@ def _build_action(name, spec) -> tuple[_actions.Action | None, str | None]:
     if context not in _actions.CONTEXTS:
         return None, (f"ACTIONS['{name}'] names unknown context '{context}' - "
                       f"known contexts: {', '.join(_actions.CONTEXTS)}")
-    if context not in (_actions.FILER, _actions.TERMINAL):
+    if context not in (_actions.FILER, _actions.TERMINAL, _actions.AGENT_CHAT):
         # Deliberate for this version: a user function running inside a viewer
         # would need a per-view API (scroll position, block list, zoom) that has
         # not been designed yet, and shipping a half-one would freeze it by
         # accident. Rebinding a viewer's *built-in* actions is unaffected. The
-        # terminal needs no API of its own: ctx.current_screen says which
-        # session it is (#951).
+        # terminal and the drawn agent conversation need no API of their own:
+        # ctx.current_screen says which session it is (#951).
         return None, (f"ACTIONS['{name}'] targets context '{context}'; user "
-                      f"functions are accepted only in '{_actions.FILER}' and "
-                      f"'{_actions.TERMINAL}' in this preview (viewer key "
-                      f"bindings are rebindable via KEY_BINDINGS)")
+                      f"functions are accepted only in '{_actions.FILER}', "
+                      f"'{_actions.TERMINAL}' and '{_actions.AGENT_CHAT}' in this "
+                      f"preview (viewer key bindings are rebindable via KEY_BINDINGS)")
     # The action is described the way any Python function is: by its
     # docstring, whose summary line is the one-liner the help dialog and the
     # command palette show, and whose body is the palette's help page. A

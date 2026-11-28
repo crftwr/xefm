@@ -53,26 +53,39 @@ from puikit.widgets.text_area import TextArea
 from xefm import agent_chat as C
 from xefm import surface_actions
 from xefm.config import find_action_for_event
+from xefm.actions import AGENT_CHAT
+from xefm.terminal import (key_event, no_program_receives, qualified_binding,
+                           screen_action_handlers, strip_event)
 from xefm.log_manager import getLogger
 
 logger = getLogger("AgentChat")
 
-#: The context the view takes its bindings from: the terminal's, which an
-#: agent session's screen is a peer of (``terminal.close``, ``terminal.screens``,
-#: actions a config put there).
-CONTEXT = "terminal"
+#: The context the view takes its bindings from: its own (``agent_chat.close``,
+#: ``agent_chat.screens``, actions a config put there), so its keys can differ
+#: from a shell's though it is a screen like a terminal's.
+CONTEXT = AGENT_CHAT
 
 _MOUSE = (EventType.MOUSE_DOWN, EventType.MOUSE_UP, EventType.MOUSE_DRAG,
           EventType.MOUSE_CLICK, EventType.MOUSE_SCROLL, EventType.MOUSE_MOVE)
 
-#: The footer's keys, per state.
+#: The footer's keys, per state. ``{newline}`` is the new-line key this
+#: frontend surely delivers (:func:`newline_key`).
 _HINTS = {
-    C.STARTING: "Enter send · Alt+Enter new line · Esc back to files",
-    C.IDLE: "Enter send · Alt+Enter new line · / commands · @ files · Shift+Tab mode · ↑ earlier message · Esc back to files",
+    C.STARTING: "Enter send · {newline} new line",
+    C.IDLE: "Enter send · {newline} new line · / commands · @ files · Shift+Tab mode · ↑ earlier message",
     C.WORKING: "Esc stop · Enter send next · PgUp/PgDn scroll",
     C.ASKING: "Answer the question · Esc stop",
-    C.EXITED: "Enter start again · /exit close · Esc back to files",
+    C.EXITED: "Enter start again · /exit close",
 }
+
+
+def newline_key(pixel_layout: bool) -> str:
+    """The new-line key to name: Shift+Enter in the desktop app; Ctrl+J in a
+    terminal, which every terminal delivers - Shift+Enter needs a terminal
+    that reports it apart from Enter, and Alt+Enter is Windows Terminal's
+    full-screen key and needs Option sent as Meta on a Mac. (All three still
+    work wherever they arrive.)"""
+    return "Shift+Enter" if pixel_layout else "Ctrl+J"
 
 
 #: XeFM's own commands, listed before the agent's.
@@ -125,7 +138,6 @@ class ChatView(FocusContainer, Widget):
                  post: Callable[[Callable[[], None]], None],
                  ask: Callable[["ChatView", C.Permission], None],
                  on_close_request: Callable[["ChatView"], None],
-                 on_hide: Callable[["ChatView"], None],
                  on_screens_request: Callable[[], None] | None = None,
                  on_user_action: Callable[[str], bool] | None = None,
                  on_link: Callable[[str], bool] | None = None,
@@ -143,7 +155,6 @@ class ChatView(FocusContainer, Widget):
         self._post = post
         self._ask = ask
         self.on_close_request = on_close_request
-        self.on_hide = on_hide
         self.on_screens_request = on_screens_request
         self.on_user_action = on_user_action
         self.on_change = on_change
@@ -188,6 +199,15 @@ class ChatView(FocusContainer, Widget):
         # What a terminal session's view also says, for the session list.
         self.title = ""
         self.pwd = ""
+        #: Set by the app (#1019), as on a terminal session's view
+        #: (:mod:`xefm.terminal`): the screen strip's clicks and the actions
+        #: that move between screens.
+        self.on_strip_event: Callable[[Any], bool] | None = None
+        self.on_screen_action: Callable[[str], bool] | None = None
+        #: Set by the app when the window's status bar shows this view's
+        #: keys (:attr:`status_hint`): the view then draws no footer of its own.
+        self.chrome_status = False
+        self._pixel_layout = False
 
     # --- the session list's view of it ----------------------------------------
 
@@ -207,6 +227,12 @@ class ChatView(FocusContainer, Widget):
     @property
     def chat_state(self) -> str:
         return self.conversation.state
+
+    @property
+    def status_hint(self) -> str:
+        """The keys for what can be done now, for the status bar."""
+        hint = _HINTS.get(self.conversation.state, _HINTS[C.IDLE])
+        return hint.format(newline=newline_key(self._pixel_layout))
 
     # --- the process ------------------------------------------------------------
 
@@ -655,9 +681,10 @@ class ChatView(FocusContainer, Widget):
     # --- actions ------------------------------------------------------------------
 
     def _actions(self) -> dict:
-        table = {"terminal.close": lambda: self.on_close_request(self)}
+        table = {f"{CONTEXT}.close": lambda: self.on_close_request(self)}
         if self.on_screens_request is not None:
-            table["terminal.screens"] = self.on_screens_request
+            table[f"{CONTEXT}.screens"] = self.on_screens_request
+        table.update(screen_action_handlers(self.on_screen_action, CONTEXT))
         table.update(surface_actions.handlers())
         return table
 
@@ -673,14 +700,25 @@ class ChatView(FocusContainer, Widget):
             return bool(self.on_user_action(name))
         return False
 
+    def takes_key(self, expr: str, action: str) -> bool:
+        """Whether the key ``expr`` bound to ``action`` works here, rather
+        than typing into the message (:meth:`_takes`): the command palette
+        shows only those."""
+        event = key_event(expr)
+        return event is not None and self._takes(event, action)
+
     @staticmethod
     def _takes(event: Event, action: str) -> bool:
-        """Whether a binding beats typing: one made for this context, or a
-        chord a text field never types (Command, Ctrl+Shift)."""
+        """Whether a binding beats typing: one made for this context - an
+        ``agent_chat.*`` action, a config's or extension's action here, a
+        context-qualified ``'agent_chat.<action>'`` entry - or a chord a text
+        field never types (Command, Ctrl+Shift, Ctrl+Tab - as a terminal takes
+        them: :func:`~xefm.terminal.no_program_receives`)."""
         if action.startswith(CONTEXT + ".") or action in _user_actions():
             return True
-        mods = event.modifiers or frozenset()
-        return "cmd" in mods or {"ctrl", "shift"} <= mods
+        if qualified_binding(CONTEXT, event, action):
+            return True
+        return no_program_receives(event)
 
     # --- focus ------------------------------------------------------------------
 
@@ -707,8 +745,10 @@ class ChatView(FocusContainer, Widget):
         accent = theme.accent if theme is not None else (0, 122, 204)
         iw = max(4.0, wu - 2 * pad_x)
 
-        # Header: who, where, and what it is doing.
+        # Header: who, where, and what it is doing - its one inset split above
+        # and below the line (padded on top only, it sat low, #1019 hand check).
         head_h = 1.0 + pad_y
+        text_y = pad_y / 2
         header_bg = _header_bg(theme)
         ctx.fill_rect(0, 0, wu, head_h, Style(bg=header_bg))
         conv = self.conversation
@@ -723,24 +763,34 @@ class ChatView(FocusContainer, Widget):
         # Measured in the bold it is drawn in: bold is wider, and elided by
         # the regular widths the title ran into the state on the right.
         title_style = Style(fg=accent, bg=header_bg, attr=TextAttribute.BOLD)
-        ctx.draw_text(pad_x, pad_y,
+        ctx.draw_text(pad_x, text_y,
                       elide(title, max(1.0, iw - right_w - 1), where="end",
                             measure=lambda t: ctx.measure_text(t, title_style)),
                       title_style)
         state_fg = accent if conv.busy else muted
-        ctx.draw_text(max(pad_x, wu - pad_x - right_w), pad_y, right,
+        ctx.draw_text(max(pad_x, wu - pad_x - right_w), text_y, right,
                       Style(fg=state_fg, bg=header_bg))
 
-        # Footer: the keys for what can be done now.
-        fy = hu - 1.0 - pad_y
-        draw_status_bar(ctx, fy, _HINTS.get(conv.state, _HINTS[C.IDLE]),
-                        pad_x=pad_x + 1, bottom_pad=pad_y)
+        # Footer: the keys for what can be done now - in the window's status
+        # bar when it shows them (a session's screen, #1019), else here.
+        self._pixel_layout = bool(ctx.pixel_layout)
+        if self.chrome_status:
+            fy = hu - pad_y
+        else:
+            fy = hu - 1.0 - pad_y
+            draw_status_bar(ctx, fy, self.status_hint, pad_x=pad_x + 1, bottom_pad=pad_y)
 
         # The message field, as tall as what is typed (up to its max).
         lc = ctx.layout_context()
         in_w = max(4.0, iw - 2)
         in_h = self.input.measure(lc, "y", in_w).preferred
-        in_y = fy - in_h - (0.5 if ctx.pixel_layout else 0.0)
+        # A gap under it: half a line where the backend draws sub-cell. On a
+        # grid a row above and one below, each half in the field (half-block
+        # glyphs), so its text gets half a cell of room as a field does on a
+        # vector backend and it does not run into the status bar (#1019 hand
+        # check).
+        band = 0.0 if ctx.pixel_layout else 1.0
+        in_y = fy - in_h - (0.5 if ctx.pixel_layout else band)
         self._input_rect = Rect(pad_x + 1, in_y, in_w, in_h)
         # A line above it while the agent works or asks.
         status = ""
@@ -751,7 +801,7 @@ class ChatView(FocusContainer, Widget):
             status = "● Waiting for your answer"
         elif conv.state == C.STARTING:
             status = "Starting…"
-        top_of_input = in_y
+        top_of_input = in_y - band
         todos = conv.todos()
         if todos:
             top_of_input = self._draw_todos(ctx, todos, pad_x + 1, top_of_input, in_w, theme, bg)
@@ -781,6 +831,12 @@ class ChatView(FocusContainer, Widget):
         r = self._input_rect
         ctx.draw_child(self.input, r.x, r.y, r.w, r.h,
                        hints={"focused": not self.closing})
+        if band:
+            field_bg = theme.control_bg if theme is not None else bg
+            cells = "▀" * int(round(r.w))
+            ctx.draw_text(r.x, r.y - band, cells.replace("▀", "▄"),
+                          Style(fg=field_bg, bg=bg), ink=False)
+            ctx.draw_text(r.x, r.y + r.h, cells, Style(fg=field_bg, bg=bg), ink=False)
         if self.menu is not None:
             self._draw_menu(ctx, r.x, r.y - (0.2 if ctx.pixel_layout else 0.0), r.w, theme)
         else:
@@ -830,6 +886,8 @@ class ChatView(FocusContainer, Widget):
     def handle_event(self, event: Event) -> bool:
         if self.closing:
             return True
+        if strip_event(self, event):
+            return True
         if event.type is EventType.KEY:
             self._key(event)
             return True
@@ -849,16 +907,22 @@ class ChatView(FocusContainer, Widget):
         if key == "tab" and mods == {"shift"}:
             self.cycle_mode()
             return
+        if key == "d" and mods == {"ctrl"} and not self.input.text and self.menu is None:
+            # A shell's end of input: Ctrl-D on an empty message closes the
+            # session (#1019), a key every terminal delivers.
+            self.on_close_request(self)
+            return
         action = find_action_for_event(event, context=CONTEXT)
         if action is not None and self._takes(event, action) and self.run_action(action):
             return
         if key == "escape" and not mods:
+            # Stops the agent, or drops a selection - and no more: the
+            # conversation is one of the window's tabs (#1019), which Esc
+            # does not leave, as it leaves no shell's.
             if self.conversation.busy:
                 self.interrupt()
             elif self.transcript.selection_text():
                 self.transcript.clear_selection()
-            else:
-                self.on_hide(self)
             return
         if key in ("pageup", "pagedown") and not mods & {"shift"}:
             page = max(1.0, self._transcript_rect.h - 1.0)
@@ -912,6 +976,6 @@ def _short(path: str) -> str:
 
 
 def _welcome(name: str) -> str:
-    return (f"_{name}, in a conversation XeFM draws. Type a request below and "
-            "press Enter. XeFM asks you before the agent runs a tool that "
-            "needs permission._\n")
+    # What the user can do, not how XeFM runs the agent (#1019 hand check).
+    return (f"_Type a request to {name} below and press Enter. XeFM asks you "
+            "before the agent runs a tool that needs permission._\n")

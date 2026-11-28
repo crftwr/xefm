@@ -94,22 +94,14 @@ both modes):
 
 ## Showing, leaving, closing
 
-`_show_screen(screen)`:
+`_show_screen(screen)` makes the screen current at once and hides the rest -
+a tab switch since #1019 (it used to play the terminal coming from behind
+the file manager); coming back to the file manager re-reads the panes.
 
-- file manager → terminal: reveal the session's group (the file manager's
-  stays shown), `animate_from_behind` the view - `Panel.beneath` gives the
-  base and any viewer over the panes, which zoom away together - and hide
-  the file manager's group when it lands.
-- terminal → file manager: make the file manager current (its group shows
-  beneath the terminal), fade the view out (`view.closing` swallows input),
-  hide the session's group when it lands, re-read the panes.
-- terminal → terminal, or no motion: at once.
-
-`_close_session` forgets the session; when its screen is on and the screen
-before it is the file manager it fades out first, otherwise the switch to
-the screen before is at once. Then the group goes, `view.close()` (a view
-closed under a running child would start a fresh one on its next draw),
-the panes re-read and `on_done(view.exit_code)` runs.
+`_close_session` forgets the session, and the screen shown before it
+(`ScreenManager.after_close`) comes on at once. Then the group goes,
+`view.close()` (a view closed under a running child would start a fresh one
+on its next draw), the panes re-read and `on_done(view.exit_code)` runs.
 
 A session started with `show=False` (`ctx.start_terminal_session`) is pushed
 hidden and started with PuiKit's `TerminalView.start(panel)`, since a hidden
@@ -177,22 +169,17 @@ clears its `attention`.
 
 ## The switcher
 
-`screens` (common, so viewers run it through `surface_actions`) and
-`terminal.screens` (terminal) open one list and share one key, Ctrl-` in
-both desktop apps (VS Code's terminal toggle); the terminal takes it because
-the action is `terminal.*` (`TerminalView.takes_binding`). There is no
-default in the common table: terminal mode has no screens to switch.
+Screens is no longer the switcher: since #1019 the way between screens is
+the group keys, the strip's tabs and `switch_screen`, and Screens is the
+overview of every session. See
+[WINDOW_TABS_IMPLEMENTATION.md](WINDOW_TABS_IMPLEMENTATION.md). What a
+row says is unchanged:
 
-Rows: `ScreenManager.recent()` (the screen on now first), then "New shell".
-The cursor starts on row 1 - the screen before this one, or "New shell" with
-no session - so Enter flips back. A row is `_screen_label`: the file manager
-or `Session.label`, then `viewing NAME` when a viewer is open on that
-screen. `label` is `activity` (else the shell's program, `zsh`, or a
-program session's name) and `directory`; a name given with `name=`
-(`named`) comes first. Rows that would read the same take
-`Session.full_label` (name, `activity`, `directory`: `zsh 2 - ~/src`), so
-two idle shells in one directory stay apart. The file manager and "New shell"
-refuse the remove key.
+`Session.label` is `activity` (else the shell's program, `zsh`, or a program
+session's name) and `directory`; a name given with `name=` (`named`) comes
+first, and a title (#1019) before everything. Rows that would read the same
+take `Session.full_label` (name, title, `activity`, `directory`:
+`zsh 2 - ~/src`), so two idle shells in one directory stay apart.
 
 `activity`, first that answers:
 
@@ -214,8 +201,6 @@ which the zsh and bash integration sends at every prompt) as a path -
 `host:/path` for another machine - else `cwd`, where the session started.
 `TerminalSession.cwd` stays the start directory; `.directory` is the
 current one, and `xefmctl terminal-session list` prints it.
-
-A second press of the key as "accept" (flip in key, key) is left for later.
 
 ## The public API
 
@@ -253,8 +238,8 @@ hand-over and missing actions, no libghostty; screens (closing back to the
 previous one, hidden start, a dialog closing out of view, row labels), the
 `ctx` API in both modes, `xefmctl screen` / `terminal-session` / `view`, the terminal
 context - against a PuiKit Panel on the memory backend and a stand-in view.
-`test/test_terminal_transition.py`: the entrance, a viewer zooming away with
-the panes and staying, and the fade-out close. `test/test_shell_integration.py`: `apply` per shell, a real zsh in a
+`test/test_terminal_transition.py`: switches and closes are immediate, and a
+viewer over the panes stays. `test/test_shell_integration.py`: `apply` per shell, a real zsh in a
 pty read through libghostty (skipped without zsh or a PuiKit with prompt
 marks), attention. `test/test_configured_commands.py`: the marking and the
 launcher.

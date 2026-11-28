@@ -632,8 +632,8 @@ class Config:
     }
 ```
 
-An action is put in `filer` (the default) or `terminal`; viewers take
-rebound built-in keys only.
+An action is put in `filer` (the default), `terminal`, or `agent_chat` (the
+AI agent chat screen); viewers take rebound built-in keys only.
 
 ### Copying and moving files (Preview)
 

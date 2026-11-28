@@ -1,8 +1,7 @@
-"""XeFM's terminal opens as if it lay behind the file manager, and closes back
-there (#900): the file manager zooms up and fades away as the terminal fades
-in, and settles back as it fades out. Each is a screen (#951), a group in the
-Panel's layer tree: the screen left is hidden once the transition ends, not
-removed.
+"""Going between the file manager and a session is a tab switch (#1019): at
+once, with no transition - the window's chrome stays where it is and only
+what is between it changes. Each is a screen (#951), a group in the Panel's
+layer tree: the screen left is hidden, not removed.
 
 The app's own methods run against a PuiKit Panel that records the transition
 it is asked for and plays it only when the test says so, and a stand-in view
@@ -14,7 +13,6 @@ from puikit import Panel
 from puikit.backends.memory_backend import MemoryBackend
 
 from xefm.app import XeFMApp
-from xefm.dialog_geometry import BEHIND_SCALE, animate_from_behind
 from xefm.screens import ScreenManager
 from xefm.terminal_sessions import PROGRAM, Session, SessionRegistry
 
@@ -80,7 +78,9 @@ def _app(panel):
     app.log_info = app.logged.append
     app._sessions = SessionRegistry()
     app._screens = ScreenManager(panel)
-    for name in ("_relist_both", "_close_session", "_show_screen"):
+    for name in ("_relist_both", "_close_session", "_show_screen",
+                 "_remember_closed",
+                 "_closed_agents", "_save_closed_agents"):
         setattr(app, name, getattr(XeFMApp, name).__get__(app))
     return app
 
@@ -95,85 +95,43 @@ def _shown(app, view, on_done=None):
     return session
 
 
-def test_opening_fades_the_terminal_in_as_the_file_manager_zooms_away():
-    panel = _Panel()
-    app = _app(panel)
-    view = _View()
-    session = app._sessions.add(Session(view=view, kind=PROGRAM, name="vim", cwd="/"))
-    screen = app._screens.add_terminal(session, view, hints={}, reflow=None)
-    XeFMApp._show_screen(app, screen)
-    [term] = panel.of(view)
-    [base] = panel.of(panel.base)
-    assert term["transition"] == "fade" and not term["out"]
-    assert base["transition"] == "scale" and base["fade"] and base["out"]
-    assert base["from_scale"] == BEHIND_SCALE > 1
-    assert base["duration_ms"] == term["duration_ms"]
-    # Both screens draw while it plays; the file manager's hides at the end.
-    assert panel.is_layer_shown(app._screens.files.group)
-    panel.finish()
-    assert not panel.is_layer_shown(app._screens.files.group)
-    assert view.shown
-
-
-def test_a_viewer_on_the_panes_zooms_away_with_them_and_stays():
-    panel = _Panel()
-    app = _app(panel)
-    viewer = object()
-    panel.push_layer(viewer, z=80)  # opened over the panes: on the files screen
-    assert panel.layer_parent(viewer) is app._screens.files.group
-    view = _View()
-    _shown(app, view)
-    beneath = [w for w, h in panel.animations if h.get("transition") == "scale"]
-    assert viewer in beneath and panel.base in beneath
-    assert panel.has_layer(viewer) and not panel.is_layer_shown(viewer)
-    app._show_screen(app._screens.files)
-    panel.finish()
-    assert panel.is_layer_shown(viewer) and panel.shown_layers() == [viewer]
-
-
-def test_closing_plays_it_back_then_tears_down():
-    panel = _Panel()
-    app = _app(panel)
-    view = _View(exited=0)
-    done = []
-    session = _shown(app, view, on_done=done.append)
-    panel.animations.clear()
-    XeFMApp._close_session(app, session)
-    [term] = panel.of(view)
-    [base] = panel.of(panel.base)
-    assert term["transition"] == "fade" and term["out"]
-    assert base["transition"] == "scale" and not base["out"]
-    # Still on screen, still the program's, while it fades out.
-    assert view.closing and view.closed == 0 and not panel.removed and not done
-    panel.finish()
-    assert not panel.has_layer(view) and view.closed == 1
-    assert app.relisted == 2 and done == [0]
-
-
-def test_a_second_close_while_closing_does_nothing():
+def test_a_session_comes_on_and_goes_at_once():
     panel = _Panel()
     app = _app(panel)
     view = _View()
     session = _shown(app, view)
-    panel.animations.clear()
-    XeFMApp._close_session(app, session)
-    XeFMApp._close_session(app, session)
-    XeFMApp._session_exited(app, view, 0)
-    XeFMApp._session_exited(app, view, 1)
-    assert len(panel.of(view)) == 1 and not app.logged
-    panel.finish()
+    assert app._screens.current is session.screen and view.shown
+    assert not panel.is_layer_shown(app._screens.files.group)  # hidden, not removed
+    app._show_screen(app._screens.files)
+    assert not view.shown and panel.has_layer(view)
+    assert not panel.is_layer_shown(session.screen.group)
+    assert app.relisted == 2  # back on the panes: both re-read
+    assert panel.animations == []  # nothing plays
+
+
+def test_a_viewer_on_the_panes_stays_while_a_session_is_on():
+    panel = _Panel()
+    app = _app(panel)
+    viewer = object()
+    panel.push_layer(viewer, z=80)  # on the file manager's screen
+    session = _shown(app, _View())
+    app._show_screen(app._screens.files)
+    assert panel.is_layer_shown(viewer)
+    assert panel.animations == []
+
+
+def test_closing_tears_down_at_once():
+    panel = _Panel()
+    app = _app(panel)
+    done = []
+    view = _View()
+    session = _shown(app, view, on_done=done.append)
+    app._close_session(session)
+    assert view.closed == 1 and done == [None] and view in panel.removed or \
+        not panel.has_layer(view)
+    assert app._screens.current is app._screens.files and panel.animations == []
+    app._close_session(session)  # a second close does nothing
     assert view.closed == 1
-
-
-def test_without_motion_it_closes_at_once():
-    for panel in (_Panel(animates=False), _Panel(extras={"dialog_effect": False})):
-        app = _app(panel)
-        view = _View(exited=0)
-        session = _shown(app, view)
-        panel.animations.clear()
-        XeFMApp._close_session(app, session)
-        assert not panel.has_layer(view) and view.closed == 1
-        assert not panel.animations
 
 
 def test_the_view_swallows_input_while_closing():
@@ -181,17 +139,3 @@ def test_the_view_swallows_input_while_closing():
     view = SimpleNamespace(closing=True)
     event = SimpleNamespace(type=None)
     assert TerminalView.handle_event(view, event) is True
-
-
-def test_it_reports_whether_it_will_call_back():
-    panel = _Panel(animates=False)
-    assert animate_from_behind(panel, object(), on_complete=lambda: None) is False
-    assert not panel.animations
-
-
-def test_an_older_puikit_without_a_base_still_fades_the_terminal():
-    panel = SimpleNamespace(theme=SimpleNamespace(extras={}), animations=[])
-    panel.animate = lambda w, hints=None: panel.animations.append((w, hints)) or True
-    view = object()
-    assert animate_from_behind(panel, view) is True
-    assert [w for w, _h in panel.animations] == [view]

@@ -261,13 +261,15 @@ and terminal mode ignores them. See
 
 ## Built-in Terminal & Screens
 
-The desktop app has a terminal of its own. **Tools → Subshell Here** opens your
+The desktop app has a terminal of its own. **Tools → Go to Terminal** opens your
 shell in it, in the active pane's directory, and so does every program marked
 `'terminal': True` (`vim`, `less`, a REPL). Each one is a *terminal session*
 on a *screen* of its own, and it keeps running while you go back to the panes.
-**Tools → Screens…** switches between the file manager and your sessions. A
-viewer you opened stays open while you visit a terminal, so you can compare the
-two by switching back and forth.
+**Tools → Switch Screen** goes between the file manager and the session you
+used last, and while sessions run, tabs under the menu bar show them all -
+the file manager first - on every screen. A viewer you opened stays open
+while you visit a terminal, so you can compare the two by switching back and
+forth.
 
 In the terminal app, XeFM hands its own terminal to the shell or program and
 waits until it exits. See [Terminal](doc/TERMINAL_FEATURE.md).
@@ -293,14 +295,14 @@ xefmctl view README.md          # open a file in XeFM's viewer
 
 ## AI Agent Sessions
 
-**Tools → AI Agent Here** opens an AI coding agent beside the file manager.
+**Tools → Go to AI Agent** opens an AI coding agent beside the file manager.
 Claude Code, Codex, GitHub Copilot CLI and Antigravity CLI are set up out of
 the box, each offered once its program is installed. The agent knows it runs
 inside XeFM: it sees the panes and the selection, searches anywhere XeFM can
 go, and shows you what it found in XeFM. Every copy, move or trash it asks for
 waits for your OK, and it may not delete anything for good.
-**Tools → Ask AI Agent…** starts one with a request you type, or one you saved
-in `AGENT_PROMPTS`. XeFM draws the conversation on a screen of its own, the same
+**Tools → Ask AI Agent About Selection…** starts one with a request you type, or one you saved
+in `AGENT_PROMPTS`. The conversation has a chat screen of its own in XeFM, the same
 in the desktop app and in the terminal, and asks you there when the agent needs
 permission; the agent's own screen in a terminal session is one setting away. See
 [AI Agent Sessions](doc/AI_AGENT_SESSIONS_FEATURE.md).

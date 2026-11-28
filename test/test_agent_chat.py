@@ -228,11 +228,11 @@ def test_the_transcript_reads_as_markdown():
              C.Item("thinking", "", open=True)]
     md = C.to_markdown(items)
     # The user's words on a panel, the agent's indented under them.
-    assert md.startswith("::: box\nline one\nline two\n:::")
+    assert md.startswith("::: box field\nline one\nline two\n:::")
     assert "::: bullet muted\nReply with `code`\n:::" in md
     assert "::: bullet success\n**Read**" in md  # a tool that worked: green
     # A fence the text itself holds cannot close the panel.
-    assert C.to_markdown([C.Item("user", "a\n:::\nb")]).startswith(":::: box\na\n:::\nb\n::::")
+    assert C.to_markdown([C.Item("user", "a\n:::\nb")]).startswith(":::: box field\na\n:::\nb\n::::")
     assert "Reply with `code`" in md
     assert "**Read** `/a/b.txt` ✓" in md
     assert "[… 14 more lines](xefm-agent:expand/2)" in md  # a link shows the rest
@@ -322,12 +322,12 @@ def _view(fake_cli, tmp_path, posts, asked):
     from puikit.backends.memory_backend import MemoryBackend
     from xefm.agent_chat_view import ChatView
     panel = Panel(MemoryBackend(width=80, height=24))
-    closed, hidden = [], []
+    closed = []
     view = ChatView(fake_cli, cwd=str(tmp_path), env=dict(os.environ), name="Claude Code",
                     post=posts, ask=lambda v, p: asked.append(p),
-                    on_close_request=closed.append, on_hide=hidden.append)
+                    on_close_request=closed.append)
     panel.push_layer(view, z=10, hints={"x": 0, "y": 0, "w": 80, "h": 24})
-    view.closed, view.hidden = closed, hidden
+    view.closed = closed
     return panel, view
 
 
@@ -386,9 +386,9 @@ def test_the_view_keys(fake_cli, tmp_path):
     assert view.input.text == "a\nb"
     panel.dispatch_event(_key("down"))
     assert view.input.text == ""
-    # Escape with nothing running goes back to the file manager.
+    # Escape with nothing running stays: the conversation is a tab (#1019).
     panel.dispatch_event(_key("escape", "\x1b"))
-    assert view.hidden == [view]
+    assert not view.closed and view.input.text == ""
     # /exit asks to close the session.
     for ch in "/exit":
         panel.dispatch_event(_key(ch, ch))
@@ -468,7 +468,7 @@ def test_the_view_draws_on_a_pixel_backend_and_routes_the_mouse(fake_cli, tmp_pa
     panel = Panel(MemoryBackend(width=80, height=24, capabilities=PROFILE_GUI_DESKTOP))
     view = ChatView(fake_cli, cwd=str(tmp_path), env={}, name="Claude Code",
                     post=lambda fn: fn(), ask=lambda v, p: None,
-                    on_close_request=lambda v: None, on_hide=lambda v: None)
+                    on_close_request=lambda v: None)
     view.conversation.items = [C.Item("user", "q"),
                                C.Item("text", "\n\n".join(f"para {n}" for n in range(60)))]
     view._dirty = True
@@ -578,7 +578,7 @@ def _plain_view(tmp_path, **kw):
     panel = Panel(MemoryBackend(width=80, height=24))
     view = ChatView(["claude"], cwd=str(tmp_path), env={}, name="Claude Code",
                     post=lambda fn: fn(), ask=lambda v, p: None,
-                    on_close_request=lambda v: None, on_hide=lambda v: None, **kw)
+                    on_close_request=lambda v: None, **kw)
     view.conversation.state = C.IDLE
     panel.push_layer(view, z=10, hints={"x": 0, "y": 0, "w": 80, "h": 24})
     return panel, view
@@ -976,10 +976,11 @@ def test_effort_and_fast_mode_outlive_a_restart(tmp_path):
 
 
 @pytest.mark.parametrize("preset", ["afx", "orthodox", "native", "vim"])
-def test_ctrl_grave_opens_screens_from_a_drawn_session_under_every_preset(tmp_path, preset):
-    # A preset's full table lists 'screens' before 'terminal.screens', both
-    # on Ctrl-`; the session's own action must win, or the key went to the
-    # message field and Screens never came up.
+def test_ctrl_grave_goes_back_from_a_drawn_session_under_every_preset(tmp_path, preset):
+    # A preset's full table lists 'switch_screen' before
+    # 'agent_chat.switch_screen', both on Ctrl-`; the session's own action must
+    # win, or the key went to the message field and the panes never came
+    # back (#1019; it opened Screens before).
     from xefm import keymap_presets as kp
     from xefm.config import config_manager
     saved = (config_manager.config, config_manager._key_bindings)
@@ -988,9 +989,44 @@ def test_ctrl_grave_opens_screens_from_a_drawn_session_under_every_preset(tmp_pa
         config_manager._key_bindings = None
         hits = []
         panel, view = _plain_view(tmp_path, on_screens_request=lambda: hits.append(1))
+        view.on_screen_action = lambda name: hits.append(name) or True
         from puikit.event import Event, EventType
         panel.dispatch_event(Event(type=EventType.KEY, key="`", char="`",
                                    modifiers=frozenset({"ctrl"})))
-        assert hits == [1] and view.input.text == ""
+        assert hits == ["switch_screen"] and view.input.text == ""
     finally:
         config_manager.config, config_manager._key_bindings = saved
+
+
+def test_a_binding_for_the_conversation_wins_over_typing():
+    # 'agent_chat.<action>' binds a key for the conversation XeFM draws, as
+    # 'terminal.<action>' does for a shell: an inherited action is then taken
+    # on that key, not only on a chord no text field types (#1019).
+    from puikit.event import Event, EventType
+    from xefm.agent_chat_view import ChatView
+    from xefm.config import config_manager
+    f5 = Event(type=EventType.KEY, key="f5")
+    saved = (config_manager.config, config_manager._key_bindings)
+    try:
+        config_manager.config = SimpleNamespace(KEY_BINDINGS={"next_screen": ["F5"]})
+        config_manager._key_bindings = None
+        assert not ChatView._takes(f5, "next_screen")
+        config_manager.config = SimpleNamespace(
+            KEY_BINDINGS={"agent_chat.next_screen": ["F5"]})
+        assert ChatView._takes(f5, "next_screen")
+    finally:
+        config_manager.config, config_manager._key_bindings = saved
+
+
+def test_in_a_terminal_the_message_field_has_half_block_bands(tmp_path):
+    # Half a cell above and below its text, as a field gets in the desktop
+    # app, and so not run into the status bar under it (#1019 hand check).
+    panel, view = _plain_view(tmp_path)
+    panel.render()
+    rows = panel.backend.snapshot()
+    y = int(view._input_rect.y)
+    x = int(view._input_rect.x)
+    assert rows[y - 1][x:x + 5] == "▄" * 5 and rows[y + 1][x:x + 5] == "▀" * 5
+    field = panel.theme.control_bg
+    assert panel.backend.style_at(x, y - 1).fg == field
+    assert panel.backend.style_at(x, y + 1).fg == field

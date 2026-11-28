@@ -62,6 +62,8 @@ doesn't arrive, use `toggle_select_down` and the context menu's Select / Deselec
 - **The key hints at the bottom of the window**: click one to run it. They list
   your own key bindings, so they always match your keymap.
 
+Each of these lights up under the pointer, to show it can be clicked.
+
 ## Back and forward
 
 Each pane remembers the folders it has shown. Go back and forward through them

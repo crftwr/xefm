@@ -103,11 +103,13 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `quick_view` | Preview the item under the cursor in the other pane | `Shift-V` | `Ctrl-Q` | `Alt-P` | `w` |
 | `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `find_similar` | Find identical files, or similar images, videos or audio | — | — | — | — |
-| `new_tab` | Open a new tab in this pane, at the same place | `T` | `Ctrl-T` | `Ctrl-T` | — |
-| `open_in_new_tab` | Open the directory under the cursor in a new tab | `Shift-T` | `Ctrl-UP` | — | — |
-| `close_tab` | Close this pane's current tab | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` |
-| `next_tab` | Show this pane's next tab | `Ctrl-PAGE_DOWN` | `Ctrl-TAB` | `Ctrl-PAGE_DOWN` | `Ctrl-PAGE_DOWN` |
-| `prev_tab` | Show this pane's previous tab | `Ctrl-PAGE_UP` | `Ctrl-Shift-TAB` | `Ctrl-PAGE_UP` | `Ctrl-PAGE_UP` |
+| `new_tab` | Open a new folder tab in this pane, at the same place | `T` | `Ctrl-T` | `Ctrl-T` | — |
+| `open_in_new_tab` | Open the directory under the cursor in a new folder tab | `Shift-T` | `Ctrl-UP` | — | — |
+| `close_tab` | Close this pane's current folder tab | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` | `Ctrl-W` |
+| `next_tab` | Show this pane's next folder tab | `Ctrl-PAGE_DOWN` | — | `Ctrl-PAGE_DOWN` | `Ctrl-PAGE_DOWN` |
+| `prev_tab` | Show this pane's previous folder tab | `Ctrl-PAGE_UP` | — | `Ctrl-PAGE_UP` | `Ctrl-PAGE_UP` |
+| `move_tab_left` | Move this pane's current folder tab one place left | — | — | — | — |
+| `move_tab_right` | Move this pane's current folder tab one place right | — | — | — | — |
 | `sync_current_to_other` | Go to the other pane's directory | `O` | — | — | — |
 | `sync_other_to_current` | Send this directory to the other pane | `Shift-O` | — | — | — |
 | `compare_selection` | Select by comparison with the other pane | `W` | `Shift-F2` | — | — |
@@ -131,8 +133,10 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
 | `programs` | Run an external program | `X` | — | — | — |
-| `subshell` | Open a subshell in this directory | `Shift-X` | — | — | `s` |
-| `agent` | Open an AI agent session in this directory | `>` | `>` | `>` | `>` |
+| `subshell` | Go to the terminal screen used last (a shell or a program), or open a shell in this directory | `Shift-X` | — | — | `s` |
+| `new_shell` | Open another shell session in this directory | — | — | — | — |
+| `agent` | Go to the AI agent session used last, or open one in this directory | `>` | `>` | `>` | `>` |
+| `new_agent` | Open another AI agent session in this directory | — | — | — | — |
 | `ask_agent` | Ask an AI agent about the selection | — | — | — | — |
 | `install_extension` | Install an extension package from a folder, a .zip, a URL or GitHub | — | — | — | — |
 | `extensions` | List the extension packages and whether they loaded | — | — | — | — |
@@ -154,7 +158,13 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `reset_font_size` | Put the text back to FONT_SIZE | — | — | — | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` | `Ctrl-Shift-P` | `Ctrl-K` | `:`, `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — | — | — | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — | — | — | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — | — | — | — |
+| `prev_screen` | Go to the window's previous tab | — | — | — | — |
+| `move_screen_left` | Move the window's current tab one place left | — | — | — | — |
+| `move_screen_right` | Move the window's current tab one place right | — | — | — | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — | — | — | — |
 | `edit_config` | Edit config.py, then reload it | — | — | — | — |
 | `reload_config` | Re-read config.py and apply it live | — | — | — | — |
 
@@ -195,10 +205,18 @@ send them). These replace the row above in that app:
 - `increase_font_size` (Vim style): `Command-+`, `Command-=`
 - `jump_to_path` (OS native): `Command-Shift-G`, `Ctrl-L`
 - `new_tab` (OS native): `Command-T`, `Ctrl-T`
+- `next_screen` (AFX style): `Ctrl-TAB`, `Command-Shift-RIGHT_BRACKET`
+- `next_screen` (OS native): `Ctrl-TAB`, `Command-Shift-RIGHT_BRACKET`
+- `next_screen` (Orthodox): `Ctrl-TAB`, `Command-Shift-RIGHT_BRACKET`
+- `next_screen` (Vim style): `Ctrl-TAB`, `Command-Shift-RIGHT_BRACKET`
 - `open_item` (OS native): `ENTER`, `Command-DOWN`
 - `open_with_os` (AFX style): `Command-ENTER`, `Ctrl-O`
 - `open_with_os` (OS native): `Command-ENTER`, `Ctrl-O`
 - `open_with_os` (Orthodox): `Command-ENTER`, `Ctrl-O`
+- `prev_screen` (AFX style): `Ctrl-Shift-TAB`, `Command-Shift-LEFT_BRACKET`
+- `prev_screen` (OS native): `Ctrl-Shift-TAB`, `Command-Shift-LEFT_BRACKET`
+- `prev_screen` (Orthodox): `Ctrl-Shift-TAB`, `Command-Shift-LEFT_BRACKET`
+- `prev_screen` (Vim style): `Ctrl-Shift-TAB`, `Command-Shift-LEFT_BRACKET`
 - `quick_view` (OS native): `SPACE`, `Alt-P`
 - `quit_app` (AFX style): `Command-Q`
 - `quit_app` (OS native): `Command-Q`
@@ -225,9 +243,17 @@ send them). These replace the row above in that app:
 - `increase_font_size` (AFX style): `Ctrl-+`, `Ctrl-=`
 - `increase_font_size` (OS native): `Ctrl-+`, `Ctrl-=`
 - `increase_font_size` (Vim style): `Ctrl-+`, `Ctrl-=`
+- `next_screen` (AFX style): `Ctrl-TAB`
+- `next_screen` (OS native): `Ctrl-TAB`
+- `next_screen` (Orthodox): `Ctrl-TAB`
+- `next_screen` (Vim style): `Ctrl-TAB`
 - `open_with_os` (AFX style): `Ctrl-ENTER`, `Ctrl-O`
 - `open_with_os` (OS native): `Ctrl-ENTER`, `Ctrl-O`
 - `open_with_os` (Orthodox): `Ctrl-ENTER`, `Ctrl-O`
+- `prev_screen` (AFX style): `Ctrl-Shift-TAB`
+- `prev_screen` (OS native): `Ctrl-Shift-TAB`
+- `prev_screen` (Orthodox): `Ctrl-Shift-TAB`
+- `prev_screen` (Vim style): `Ctrl-Shift-TAB`
 - `quit_app` (AFX style): `Alt-F4`
 - `quit_app` (OS native): `Alt-F4`
 - `quit_app` (Orthodox): `Alt-F4`
@@ -273,7 +299,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -304,7 +336,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -336,7 +374,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -378,7 +422,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -405,7 +455,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -415,6 +471,7 @@ viewer only.
 |---|---|---|
 | `remove_list_item` | Remove the highlighted entry from the list | `Shift-DELETE` |
 | `describe_list_item` | Show help for the highlighted entry | `F1` |
+| `rename_list_item` | Rename the highlighted entry | `F2` |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
@@ -427,7 +484,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -455,7 +518,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -464,7 +533,9 @@ viewer only.
 | Action | What it does | Keys |
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | — |
-| `terminal.screens` | Switch to the file manager or another terminal session | `Ctrl-GRAVE` |
+| `terminal.screens` | List every screen, to go to, close or rename one | — |
+| `terminal.switch_screen` | Go back to the file manager | `Ctrl-GRAVE` |
+| `terminal.new` | Start another session: a shell or an AI agent | — |
 | `quit` | Quit XeFM — or close the open viewer | `Q` |
 | `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
 | `help` | Show the key bindings for what is on screen | `F1` |
@@ -477,7 +548,43 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
+| `edit_config` | Edit config.py, then reload it | — |
+| `reload_config` | Re-read config.py and apply it live | — |
+
+### `agent_chat`
+
+| Action | What it does | Keys |
+|---|---|---|
+| `agent_chat.close` | Close the conversation and return to the panes (it can be resumed) | — |
+| `agent_chat.screens` | List every screen, to go to, close or rename one | — |
+| `agent_chat.switch_screen` | Go back to the file manager | `Ctrl-GRAVE` |
+| `agent_chat.new` | Start another session: a shell or an AI agent | — |
+| `quit` | Quit XeFM — or close the open viewer | `Q` |
+| `quit_app` | Quit XeFM from anywhere, asking first only while a task is running | — |
+| `help` | Show the key bindings for what is on screen | `F1` |
+| `isearch` | Incremental search | `F` |
+| `edit_file` | Edit the focused file in the configured text editor | — |
+| `edit_files` | Edit the selected files in the configured text editor | `E` |
+| `toggle_color_scheme` | Cycle to the next color theme | — |
+| `increase_font_size` | Make the text larger until XeFM quits | — |
+| `decrease_font_size` | Make the text smaller until XeFM quits | — |
+| `reset_font_size` | Put the text back to FONT_SIZE | — |
+| `command_palette` | Search every action by name and run it | `Ctrl-T` |
+| `choose_keymap` | Choose the keymap preset | — |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 
@@ -497,7 +604,13 @@ viewer only.
 | `reset_font_size` | Put the text back to FONT_SIZE | — |
 | `command_palette` | Search every action by name and run it | `Ctrl-T` |
 | `choose_keymap` | Choose the keymap preset | — |
-| `screens` | Switch between the file manager and the terminal sessions | `Ctrl-GRAVE` |
+| `screens` | List every screen, to go to, close or rename one | — |
+| `switch_screen` | Switch between the file manager and the screen used last | `Ctrl-GRAVE` |
+| `next_screen` | Go to the window's next tab | — |
+| `prev_screen` | Go to the window's previous tab | — |
+| `move_screen_left` | Move the window's current tab one place left | — |
+| `move_screen_right` | Move the window's current tab one place right | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — |
 | `edit_config` | Edit config.py, then reload it | — |
 | `reload_config` | Re-read config.py and apply it live | — |
 

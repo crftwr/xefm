@@ -135,11 +135,11 @@ the mouse for the first, take the whole buffer with the second. See
 | Back | `go_back` |
 | Forward | `go_forward` |
 | Switch Pane | `switch_pane` |
-| New Tab | `new_tab` — see [Folder Tabs](FOLDER_TABS_FEATURE.md) |
-| Open in New Tab | `open_in_new_tab` |
-| Close Tab | `close_tab` |
-| Next Tab | `next_tab` |
-| Previous Tab | `prev_tab` |
+| New Folder Tab | `new_tab` — see [Folder Tabs](FOLDER_TABS_FEATURE.md) |
+| Open in New Folder Tab | `open_in_new_tab` |
+| Close Folder Tab | `close_tab` |
+| Next Folder Tab | `next_tab` |
+| Previous Folder Tab | `prev_tab` |
 | Open List → From Clipboard | `open_list_from_clipboard` *(ships unbound)* — see [File lists](FILE_LIST_IMPORT_FEATURE.md) |
 | Open List → From Command… | `open_list_from_command` *(ships unbound)* |
 | Open List → From File | `open_list_from_file` *(ships unbound)* — also **Open as List** on a file's right-click menu |
@@ -179,15 +179,33 @@ the mouse for the first, take the whole buffer with the second. See
 | Quick View | `quick_view` — see [Quick View](QUICK_VIEW_FEATURE.md) |
 | Flat View | `flat_view` — see [Flat View](FLAT_VIEW_FEATURE.md) |
 
+While a terminal or AI agent session is on screen, the menu bar stays (in a
+terminal it is drawn there too). What works on any screen stays on: Command
+Palette, Resume AI Conversation, Switch Screen and Screens, the configuration
+and the Advanced setup, Theme, Font Size and Help. The rest acts on the file
+manager - File, Edit, Go, Select, most of View, and in Tools starting a shell
+or an agent in the pane's folder, External Programs, Find Similar Files and
+Install Extension - and is off until you go back to it. To start a session
+from a session's screen, use the `+` after the tabs.
+
 ### Tools Menu
+
+In groups: the terminal's screens, the AI agents', the switch between
+screens, then the tools that run work and the configuration. **Go to ...**
+goes to the screen of its kind used last (starting one only when there is
+none); **New ... Here** always starts another, in the active pane's folder.
 
 | Item | Action |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Subshell Here | `subshell` *(desktop mode: a terminal session)* — see [Terminal](TERMINAL_FEATURE.md) |
-| AI Agent Here | `agent` — see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
-| Ask AI Agent… | `ask_agent` *(ships unbound)* — your `AGENT_PROMPTS`, or a request you type |
-| Screens… | `screens` *(desktop mode only)* |
+| Go to Terminal | `subshell` *(desktop mode: the terminal screen used last - a shell or a program running in it - or a new shell when there is none; **Subshell Here** in terminal mode, which hands the terminal to a shell)* — see [Terminal](TERMINAL_FEATURE.md) |
+| New Shell Here | `new_shell` *(desktop mode only; ships unbound)* |
+| Go to AI Agent | `agent` — the AI agent session used last, or a new one; see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
+| New AI Agent Here | `new_agent` *(ships unbound)* |
+| Resume AI Conversation… | `resume_agent` *(ships unbound)* — an AI conversation closed in XeFM, back with its history |
+| Ask AI Agent About Selection… | `ask_agent` *(ships unbound)* — your `AGENT_PROMPTS`, or a request you type |
+| Switch Screen | `switch_screen` — between the file manager and the screen used last |
+| Screens… | `screens` *(ships unbound)* — every screen there is, to go to, close or rename |
 | External Programs… | `programs` |
 | Find Similar Files… | `find_similar` *(ships unbound)* — see [Find Similar Files](FIND_SIMILAR_FILES_FEATURE.md) |
 | Background Jobs… | `jobs` — see [Background Jobs](BACKGROUND_JOBS_FEATURE.md) |

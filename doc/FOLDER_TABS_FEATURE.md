@@ -8,43 +8,52 @@ search result or an imported list while you browse somewhere else.
 
 | Action | Menu |
 |--------|------|
-| `new_tab` | Go → New Tab |
-| `open_in_new_tab` | Go → Open in New Tab |
-| `close_tab` | Go → Close Tab |
-| `next_tab` | Go → Next Tab |
-| `prev_tab` | Go → Previous Tab |
+| `new_tab` | Go → New Folder Tab |
+| `open_in_new_tab` | Go → Open in New Folder Tab |
+| `close_tab` | Go → Close Folder Tab |
+| `next_tab` | Go → Next Folder Tab |
+| `prev_tab` | Go → Previous Folder Tab |
 
 Keys depend on your keymap preset — see [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
 All of them act on the **active pane**. The left and right panes have separate
-tabs.
+tabs. These are not the window's tabs above the panes - **Files** and each
+terminal or AI agent session - which have actions of their own
+(`next_screen`, `prev_screen`; see [Terminal](TERMINAL_FEATURE.md)).
 
 ## Opening and closing
 
-- **New Tab** opens a tab showing the same place as the current one, with the
+- **New Folder Tab** opens a tab showing the same place as the current one, with the
   cursor on the same item, and switches to it. On a search result or a list,
   the new tab shows that list's directory, and the results stay in their own
   tab.
-- **Open in New Tab** opens the directory under the cursor in a new tab, so
+- **Open in New Folder Tab** opens the directory under the cursor in a new tab, so
   the current tab stays where it is.
-- **Close Tab** closes the current tab and shows the next one. A pane's last
+- **Close Folder Tab** closes the current tab and shows the next one. A pane's last
   tab can't be closed.
-- **Next / Previous Tab** wrap around at either end.
+- **Next / Previous Folder Tab** wrap around at either end.
 
 ## The tab strip
 
 Once a pane has more than one tab, a strip appears above its path:
 
 ```
- 1 src   2 docs   3 ⌕ TODO
+ ▸ src ×   ▸ doc ×   ⌕ TODO ×   +
  ~/projects/xefm/doc
 ```
 
-The current tab is highlighted. Click a tab to switch to it. A pane with one
-tab shows no strip, so it takes no extra space in a terminal.
+The current tab is highlighted. Click a tab to switch to it, its `×` (shown
+while the pointer is over the tab) to close it, and the `+` after the tabs to open another. Drag a tab along the
+strip to move it: a line shows where it will go, and it moves there when you
+let go (or use `move_tab_left` and `move_tab_right`). A pane with one tab
+shows no strip, so it takes no extra space in a terminal. The strip looks
+like the tabs of [terminal and AI agent sessions](TERMINAL_FEATURE.md); in
+the desktop app its tabs are a little taller than a line.
 
-Each label is the directory's name. A search shows as `⌕ query` and an
-imported list as `[title]`. Labels are shortened when they don't all fit.
+Each tab starts with what it shows: `▸` a directory, `▣` an archive, `⌕` a
+search (labelled with its query) and `≡` an imported list (`[title]`).
+The label is the directory's name. Labels are shortened when they don't all
+fit.
 
 ## What a tab keeps
 
