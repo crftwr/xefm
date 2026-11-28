@@ -1235,10 +1235,11 @@ class XefmctlExtAndKeys(AppInstall):
     """``xefmctl ext list|check|install`` and ``xefmctl keys`` against the real
     app: what an agent in a session has when `xefm` is not on PATH (#1017)."""
 
-    def _ask(self, line, policy="agent"):
-        import shlex
+    def _ask(self, *argv, policy="agent"):
+        # The arguments as the shell would pass them: a Windows path through
+        # shlex.split would lose its backslashes.
         from xefm import remote_cli, remote_commands, remote_dispatch
-        req = remote_cli.parse(shlex.split(line))
+        req = remote_cli.parse([str(a) for a in argv])
         req.update(policy=policy, session="3")
         cmd = remote_commands.find(req["cmd"].split())[0]
         return remote_dispatch._answer(self.app, cmd, req)
@@ -1252,7 +1253,7 @@ class XefmctlExtAndKeys(AppInstall):
         from xefm.remote_dispatch import Pending
         with patch.object(config_manager, "config_dir", self.home), \
              patch.object(self.app, "reload_config") as reload_config:
-            pending = self._ask(f"ext install {self.root} --wait")
+            pending = self._ask("ext", "install", self.root, "--wait")
             self.assertIsInstance(pending, Pending)
             self._settle()
             box = self._layer()
@@ -1270,7 +1271,7 @@ class XefmctlExtAndKeys(AppInstall):
     def test_install_declined(self):
         from xefm.config import config_manager
         with patch.object(config_manager, "config_dir", self.home):
-            pending = self._ask(f"ext install {self.root} --wait")
+            pending = self._ask("ext", "install", self.root, "--wait")
             self._settle()
             box = self._layer()
             box._close(box.buttons.index("Cancel"))
@@ -1283,7 +1284,7 @@ class XefmctlExtAndKeys(AppInstall):
         from xefm.config import config_manager
         (self.root / ext.MANIFEST).write_text("[extension]\n")
         with patch.object(config_manager, "config_dir", self.home):
-            pending = self._ask(f"ext install {self.root} --wait")
+            pending = self._ask("ext", "install", self.root, "--wait")
             self._settle()
         answer = pending.wait()
         self.assertEqual((answer["outcome"], answer["status"]), ("refused", 1))
@@ -1294,30 +1295,30 @@ class XefmctlExtAndKeys(AppInstall):
     def test_install_without_wait_answers_at_once(self):
         from xefm.config import config_manager
         with patch.object(config_manager, "config_dir", self.home):
-            answer = self._ask(f"ext install {self.root}")
+            answer = self._ask("ext", "install", self.root)
             self.assertIn("asks the user", answer["note"])
             self._settle()
             box = self._layer()
             box._close(box.buttons.index("Cancel"))
-        missing = self._ask(f"ext install {self.home / 'nowhere'}")
+        missing = self._ask("ext", "install", self.home / "nowhere")
         self.assertFalse(missing["ok"])
 
     def test_check_and_list(self):
         from xefm.config import config_manager
         with patch.object(config_manager, "config_dir", self.home):
-            answer = self._ask(f"ext check {self.root}", policy="user")
+            answer = self._ask("ext", "check", self.root, policy="user")
             self.assertEqual(answer.get("status", 0), 0)
             self.assertIn("ok: app-ext", self._text(answer))
             (self.root / ext.MANIFEST).write_text("[extension]\n")
-            bad = self._ask(f"ext check {self.root}", policy="user")
+            bad = self._ask("ext", "check", self.root, policy="user")
             self.assertEqual(bad["status"], 1)
             self.assertIn("extension.id", self._text(bad))
-            empty = self._ask("ext list")
+            empty = self._ask("ext", "list")
             self.assertEqual(empty["items"], [])
             self.assertIn("no extension packages", empty["note"])
             root, _ = self.package("listed")
             ext.install(str(root), self.layout)
-            [row] = self._ask("ext list")["items"]
+            [row] = self._ask("ext", "list")["items"]
             self.assertEqual((row["id"], row["state"]), ("listed", "enabled"))
 
     def test_keys_reads_what_xefm_uses(self):
@@ -1329,11 +1330,11 @@ class XefmctlExtAndKeys(AppInstall):
         import re
         first = text.split("[filer]\n", 1)[1].split("\n", 1)[0]
         action = re.split(r"\s{2,}", first.strip())[1]
-        only = self._text(self._ask(f"keys {action} --context filer"))
+        only = self._text(self._ask("keys", action, "--context", "filer"))
         rows = [line for line in only.splitlines() if line.startswith("  ")]
         self.assertTrue(rows and all(action in line for line in rows), only)
-        self.assertEqual(self._ask("keys --context nowhere")["code"], 2)
-        self.assertEqual(self._ask("keys not_an_action_at_all")["code"], 2)
+        self.assertEqual(self._ask("keys", "--context", "nowhere")["code"], 2)
+        self.assertEqual(self._ask("keys", "not_an_action_at_all")["code"], 2)
         # A binding that cannot fire is an error, with exit status 1.
         self.app.config._KEY_BINDINGS_BASE = {"reload_config": "Ctrl-Nonsense"}
         bad = self._ask("keys")
