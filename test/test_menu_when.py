@@ -70,13 +70,15 @@ def test_presets_functions_and_enabled_must_all_hold():
     assert not old.is_enabled()  # enabled still counts
 
 
-def test_a_bar_entry_is_enabled_while_any_of_its_items_is():
+def test_a_bar_entry_opens_even_with_every_item_greyed():
+    # A File greyed whole did not open on a session's screen (#1019).
     state = {"files": False, "entry": False, "selection": False}
     bar = Menu(MenuItem("File", submenu=Menu(MenuItem("New"))),
                MenuItem("Tools", submenu=Menu(MenuItem("Palette", when="always"))))
     menu_when.apply_bar(bar, _presets(state))
     file, tools = bar.items
-    assert not file.is_enabled() and tools.is_enabled()
+    assert file.is_enabled() and tools.is_enabled()
+    assert not file.submenu.items[0].is_enabled()
 
 
 def test_an_unknown_condition_is_refused():
@@ -157,7 +159,7 @@ def test_a_sessions_screen_offers_only_what_serves_every_screen(app, monkeypatch
     on_a_session = {p for p, item in _paths(bar) if item.is_enabled() and " > " in p}
     assert on_a_session == _ON_A_SESSION
     tops = {p for p, item in _paths(bar) if item.is_enabled() and " > " not in p}
-    assert tops == {"View", "Tools", "Help"}
+    assert tops == {"File", "Edit", "Go", "Select", "View", "Tools", "Help"}
     items = dict(_paths(bar))
     for parent in ("View > Theme", "View > Font Size"):  # their items inherit it
         assert any(i.is_enabled() for i in items[parent].submenu.items

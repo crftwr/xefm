@@ -106,12 +106,11 @@ def apply(menu: Any, presets: dict[str, Callable[[], bool]], scope: str = "files
 def apply_bar(bar: Any, presets: dict[str, Callable[[], bool]]) -> None:
     """:func:`apply` over a menu bar. The bar's own entries - File, View,
     Tools - take no ``when``: each item under them starts from ``files``, so
-    an item added to Tools without one is the file manager's too. An entry is
-    enabled while any of its items is, so File greys whole on a session's
-    screen and Tools does not."""
+    an item added to Tools without one is the file manager's too. An entry
+    itself stays enabled, its items greyed, so it still opens - by click or
+    as the pointer passes over the bar - to show what there is (#1019 hand
+    check: a File greyed whole did not open on a session's screen)."""
     for top in getattr(bar, "items", ()):
         if not isinstance(top, _MenuItem) or top.submenu is None:
             continue
         apply(top.submenu, presets, "files")
-        items = [i for i in top.submenu.items if isinstance(i, _MenuItem)]
-        top.enabled = lambda items=items: any(i.is_enabled() for i in items)

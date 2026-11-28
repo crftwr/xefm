@@ -183,8 +183,9 @@ that names one (`files` names it back); a bare function keeps `files`, and
 `entry` / `selection` are always the file manager's. So an item added without
 a `when` is off on a session's screen, where the panes it would act on are out
 of view. The bar's own entries take no `when`: their items start from `files`,
-and an entry is enabled while any of its items is, so File greys whole on a
-session's screen and Tools does not.
+and an entry stays enabled with its items greyed, so File still opens on a
+session's screen - by click or as the pointer passes over the bar - and shows
+what is there (greyed whole, it did not open at all).
 
 ```python
 MenuItem("Rename…", on_select=self.rename, when="entry", shortcut=sc("rename"))
