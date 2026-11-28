@@ -246,8 +246,8 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `new_tab` | Open a new tab in this pane, at the same place | `T` | `Ctrl-T` | `Ctrl-T`<br>macOS app: `Cmd-T`, `Ctrl-T` | — |
 | `open_in_new_tab` | Open the directory under the cursor in a new tab | `Shift-T` | `Ctrl-↑` | — | — |
 | `close_tab` | Close this pane's current tab | `Ctrl-W` | `Ctrl-W` | `Ctrl-W`<br>macOS app: `Cmd-W`, `Ctrl-W` | `Ctrl-W` |
-| `next_tab` | Show this pane's next tab | `Ctrl-PgDn` | `Ctrl-Tab` | `Ctrl-PgDn` | `Ctrl-PgDn` |
-| `prev_tab` | Show this pane's previous tab | `Ctrl-PgUp` | `Ctrl-Shift-Tab` | `Ctrl-PgUp` | `Ctrl-PgUp` |
+| `next_tab` | Show this pane's next tab | `Ctrl-PgDn` | — | `Ctrl-PgDn` | `Ctrl-PgDn` |
+| `prev_tab` | Show this pane's previous tab | `Ctrl-PgUp` | — | `Ctrl-PgUp` | `Ctrl-PgUp` |
 | `move_tab_left` | Move this pane's current tab one place left | — | — | — | — |
 | `move_tab_right` | Move this pane's current tab one place right | — | — | — | — |
 | `adjust_pane_left` | Make the left pane smaller | `[` | `[` | `[` | `[` |
@@ -270,9 +270,12 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `subshell` | Go to the terminal session used last, or open a subshell in this directory | `Shift-X` | — | — | `s` |
 | `new_shell` | Open another shell session in this directory | — | — | — | — |
 | `switch_screen` | Switch between the file manager and the screen used last | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
-| `screens` | List every session, to go to, close, rename or resume one | — | — | — | — |
+| `next_screen` | Go to the window's next tab | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |
+| `prev_screen` | Go to the window's previous tab | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` |
+| `screens` | List every screen, to go to, close or rename one | — | — | — | — |
 | `agent` | Go to the AI agent session used last, or open one in this directory | `>` | `>` | `>` | `>` |
 | `new_agent` | Open another AI agent session in this directory | — | — | — | — |
+| `resume_agent` | Pick up an AI conversation closed in XeFM | — | — | — | — |
 | `ask_agent` | Ask an AI agent about the selection | — | — | — | — |
 | `jobs` | List background jobs | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
@@ -416,10 +419,10 @@ program receives.
 |---|---|---|
 | `terminal.close` | Close the terminal and return to the panes, stopping a program still running | macOS app: `Cmd-W`<br>Windows app: `Ctrl-Shift-W` |
 | `terminal.switch_screen` | Go back to the file manager | `` Ctrl-` `` |
-| `terminal.screens` | List every session, to go to, close, rename or resume one | — |
+| `terminal.screens` | List every screen, to go to, close or rename one | — |
 | `terminal.new` | Start another session: a shell or an AI agent | macOS app: `Cmd-T`<br>Windows app: `Ctrl-Shift-T` |
-| `terminal.next_tab` | Go to the next tab | macOS app: `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |
-| `terminal.prev_tab` | Go to the previous tab | macOS app: `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` |
+| `terminal.next_tab` | Go to the next tab | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |
+| `terminal.prev_tab` | Go to the previous tab | macOS app: `Ctrl-Shift-Tab`, `Cmd-Shift-[`<br>Windows app: `Ctrl-Shift-Tab` |
 | `terminal.move_tab_left` | Move this session's tab one place left | — |
 | `terminal.move_tab_right` | Move this session's tab one place right | — |
 | `command_palette` | Search the terminal's actions by name and run one | macOS app: `Cmd-Shift-P`<br>Windows app: `Ctrl-Shift-P` |

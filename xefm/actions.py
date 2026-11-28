@@ -923,16 +923,23 @@ _DETAILS: dict[str, str] = {
         "From the file manager, goes to the screen you used last - a "
         "terminal session or an AI agent session; from there, back to the "
         "file manager. With no session yet it opens Screens."),
+    "resume_agent": (
+        "Lists the AI conversations you closed in XeFM - in this run and "
+        "earlier ones - and starts the agent on the one you pick, in its "
+        "folder, with the conversation as it was. The remove key forgets one, "
+        "the rename key renames it."),
     "screens": (
-        "Lists every session: the terminal's - shells and terminal programs "
-        "- and the AI agents', each with what runs in it, where, and when you "
-        "last used it, the ones waiting on you first. `Enter` goes to one, "
-        "the remove key closes it and the rename key renames it. Below them "
-        "are a row that closes every idle session at once, the AI "
-        "conversations you closed, which pick up where they left off, and "
-        "rows that start a new shell or a new AI agent session. Works over a "
-        "viewer too. In a terminal it lists the AI agent conversations XeFM "
-        "draws."),
+        "Lists every screen there is: the file manager's, and each session's "
+        "- the terminal's and the AI agents' - with what runs in it, where, "
+        "and when you last used it, the ones waiting on you first. `Enter` "
+        "goes to one, the remove key closes it and the rename key renames it. "
+        "The last row closes every idle session at once. Starting a session "
+        "is the `+` after the tabs; a closed AI conversation comes back from "
+        "`resume_agent`. Works over a viewer too. In a terminal the sessions "
+        "are the AI agent conversations XeFM draws."),
+    "next_screen": (
+        "Goes to the window's next tab: the file manager's, then each "
+        "session's, round again. `prev_screen` goes the other way."),
     "agent": (
         "Goes back to the AI agent session you used last. When there is "
         "none, starts one of the agents in `AGENTS` in the active pane's "
@@ -1212,12 +1219,15 @@ _FILER_ACTIONS = [
        "Go to the terminal session used last, or open a subshell in this directory"),
     _a("new_shell", FILER, "Open another shell session in this directory"),
     _a("screens", COMMON,
-       "List every session, to go to, close, rename or resume one"),
+       "List every screen, to go to, close or rename one"),
     _a("switch_screen", COMMON,
        "Switch between the file manager and the screen used last"),
+    _a("next_screen", COMMON, "Go to the window's next tab"),
+    _a("prev_screen", COMMON, "Go to the window's previous tab"),
     _a("agent", FILER,
        "Go to the AI agent session used last, or open one in this directory"),
     _a("new_agent", FILER, "Open another AI agent session in this directory"),
+    _a("resume_agent", COMMON, "Pick up an AI conversation closed in XeFM"),
     _a("ask_agent", FILER, "Ask an AI agent about the selection"),
     _a("edit_config", COMMON, "Edit config.py, then reload it"),
     _a("reload_config", COMMON, "Re-read config.py and apply it live"),
@@ -1250,7 +1260,7 @@ _TEXT_VIEWER_ACTIONS = [
     _a("terminal.close", TERMINAL,
        "Close the terminal and return to the panes, stopping a program still running"),
     _a("terminal.screens", TERMINAL,
-       "List every session, to go to, close, rename or resume one"),
+       "List every screen, to go to, close or rename one"),
     _a("terminal.switch_screen", TERMINAL, "Go back to the file manager"),
     _a("terminal.new", TERMINAL, "Start another session: a shell or an AI agent"),
     _a("terminal.next_tab", TERMINAL, "Go to the next tab"),

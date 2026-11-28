@@ -70,14 +70,15 @@ def _set_shader_cache_dir(path) -> None:
 from puikit.background import Shader, Wallpaper
 from puikit.posteffect import PRESETS as _POST_EFFECT_PRESETS
 from puikit.backends import create_backend
-from puikit.menu import Menu, MenuItem, SEPARATOR
+from puikit.menu import Menu, SEPARATOR
 from puikit.text import elide
 from puikit.layout import SizeRequest
 from puikit.widgets import (BusyIndicator, LayoutView, LogView, MenuBar, Splitter,
                             show_message_box)
 from puikit.widgets.base import Widget
 
-from xefm import surface_actions
+from xefm import menu_when, surface_actions
+from xefm.menu_when import MenuItem
 from xefm import __version__ as _VERSION
 from xefm import actions as _ctx
 from xefm.actions import registry as _action_registry
@@ -141,7 +142,7 @@ from xefm import search_match
 from xefm import sort_keys
 from xefm.state_manager import get_state_manager
 from xefm.str_format import abbreviate_path, format_size
-from xefm.tab_strip import NEW_TAB, Tab, TabStrip, tab_height
+from xefm.tab_strip import NEW_TAB, Tab, TabStrip, strip_colors, tab_height
 from xefm.terminal_sessions import ClosedAgent
 from xefm.user_api import (ActionContext, PaneApi, hooks as _hooks,
                            load_user_entries, menu_items as user_menu_items,
@@ -1078,6 +1079,20 @@ def _tab_label(pane: dict) -> str:
 #: A folder tab's icon by what the pane shows (#1019): a directory, an
 #: archive, a search's results, an imported list. Glyphs every terminal font
 #: has.
+def _panel_takes_menu_bar_owners() -> bool:
+    """Whether this PuiKit's ``Panel.set_menu_bar`` takes an ``owner``: a
+    layer's bar, active while the layer is on top (#1019)."""
+    import inspect
+
+    from puikit import Panel
+    try:
+        return "owner" in inspect.signature(Panel.set_menu_bar).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+_MENU_BAR_OWNERS = _panel_takes_menu_bar_owners()
+
 _PANE_TAB_ICONS = {"dir": "▸", "archive": "▣", "search": "⌕", "list": "≡"}
 
 
@@ -1283,7 +1298,8 @@ class PaneHeader(Widget):
         tabs = self._tabs()
         if len(tabs) > 1:
             self._draw_tabs(ctx, tabs, pad_x, pad_y, avail, active)
-            path_y += tab_height(ctx)
+            # The same inset below the tabs as above them (#1019 hand check).
+            path_y += tab_height(ctx) + pad_y
         else:
             self._strip.clear()
         ctx.draw_text(pad_x, path_y, text, Style(fg=fg, attr=TextAttribute.BOLD))
@@ -1295,13 +1311,18 @@ class PaneHeader(Widget):
         """The tab strip (:mod:`xefm.tab_strip`), as a screen's (#1019): one
         chip per tab - its kind's icon, its name, ``×`` to close it - then
         ``+`` for another, the current one bold, in the accent on the active
-        pane as the path is. Its ground runs up over the bar's top inset, so
-        the strip reads as one band above the header."""
+        pane as the path is. Its ground runs over the bar's inset above the
+        tabs and the same inset below them, so the strip reads as one band
+        above the path, the tabs centred in it; its colours are the window's
+        strip's (:func:`~xefm.tab_strip.strip_colors`)."""
         current = self.app.pm.tab_index[self.pane_name]
         chips = [Tab(label, icon=icon, closable=True)
                  for icon, label in (_tab_parts(t) for t in tabs)]
+        height = tab_height(ctx)
+        ground, page = strip_colors(ctx.theme)
         self._strip.draw(ctx, [*chips, Tab(NEW_TAB)], current, pad_x, y, avail,
-                         emphasis=active, height=tab_height(ctx))
+                         emphasis=active, height=height, ground_height=y + height + y,
+                         ground=ground, current_bg=page)
 
     def handle_event(self, event) -> bool:
         """A click on a tab shows it, a tab dragged along the strip moves
@@ -1362,12 +1383,14 @@ class PaneHeader(Widget):
     def measure(self, ctx, axis, available) -> SizeRequest:
         # Reserve a strip of top padding above the path (vector backends); the
         # bar is placed with size="content" so this height wins. See _bar_height.
-        # A pane with more than one tab adds a row for the tab strip.
+        # A pane with more than one tab adds the tab strip, with the same
+        # padding below it as above (none on a grid).
         if axis != "y":
             return SizeRequest()
         req = _bar_height(ctx)
         if len(self._tabs()) > 1:
-            h = req.preferred + tab_height(ctx)
+            pad = 0.0 if ctx.snap else (BAR_PAD_PX / ctx.base_h if ctx.base_h else 0.0)
+            h = req.preferred + tab_height(ctx) + pad
             return SizeRequest(min=h, preferred=h, max=h)
         return req
 
@@ -4408,6 +4431,9 @@ class XeFMApp:
                 "new_shell": (self.new_shell, False),
                 "screens": (self.screens, False),
                 "switch_screen": (self.switch_screen, False),
+                "resume_agent": (self.resume_agent, False),
+                "next_screen": (self.next_screen, False),
+                "prev_screen": (self.prev_screen, False),
                 "agent": (self.open_agent, False),
                 "new_agent": (self.new_agent, False),
                 "ask_agent": (self.ask_agent, False),
@@ -5232,9 +5258,6 @@ class XeFMApp:
         in-window strip. Items reuse the same callbacks the keymap and context
         menu drive, and ``checked``/``enabled`` predicates re-evaluate on open so
         the menu always mirrors live pane state."""
-        def has_files() -> bool:
-            return bool(self.active_pane()["files"])
-
         def has_log_selection() -> bool:
             return bool(self.log.selection_text())
 
@@ -5249,53 +5272,53 @@ class XeFMApp:
         tabs_open = lambda: len(self.pm.tabs[self.pm.active_pane]) > 1  # noqa: E731
         file_menu = Menu(
             MenuItem("Open", on_select=lambda: self._menu("open_item"),
-                     enabled=has_files, shortcut=sc("open_item")),
+                     when="entry", shortcut=sc("open_item")),
             # Which program opens it — XeFM's viewer, the text editor, the
             # system's choice — one level down: Open itself (Enter) is the one
             # reached for most, and File has to fit 23 rows with room for
             # MENU_ITEMS.
             MenuItem("Open With", submenu=Menu(
                 MenuItem("Viewer", on_select=self.view_file,
-                         enabled=has_files, shortcut=sc("view_file")),
+                         when="entry", shortcut=sc("view_file")),
                 MenuItem("Text Editor", on_select=self.edit_files,
-                         enabled=has_files, shortcut=sc("edit_files")),
+                         when="entry", shortcut=sc("edit_files")),
                 MenuItem("Default App", on_select=self.open_with_os,
-                         enabled=has_files, shortcut=sc("open_with_os")),
+                         when="entry", shortcut=sc("open_with_os")),
                 MenuItem("Choose App…", on_select=self.open_with,
-                         enabled=has_files, shortcut=sc("open_with")),
+                         when="entry", shortcut=sc("open_with")),
                 title="Open With")),
-            MenuItem("Details…", on_select=self.file_details, enabled=has_files,
+            MenuItem("Details…", on_select=self.file_details, when="entry",
                      shortcut=sc("file_details")),
             MenuItem("Reveal in File Manager", on_select=self.reveal_in_os,
-                     enabled=has_files, shortcut=sc("reveal_in_os")),
+                     when="entry", shortcut=sc("reveal_in_os")),
             SEPARATOR,
             MenuItem("New Folder…", on_select=self.create_directory, shortcut=sc("create_directory")),
             MenuItem("New File…", on_select=self.create_file, shortcut=sc("create_file")),
             MenuItem("Rename", submenu=Menu(
-                MenuItem("Rename…", on_select=self.rename, enabled=has_files,
+                MenuItem("Rename…", on_select=self.rename, when="entry",
                          shortcut=sc("rename")),
                 MenuItem("Rename in Editor…", on_select=self.rename_in_editor,
-                         enabled=has_files, shortcut=sc("rename_in_editor")),
+                         when="entry", shortcut=sc("rename_in_editor")),
                 title="Rename")),
             MenuItem("Duplicate", on_select=self.duplicate_files,
-                     enabled=has_files, shortcut=sc("duplicate_files")),
+                     when="entry", shortcut=sc("duplicate_files")),
             MenuItem("Copy to Other Pane", on_select=self.copy_files,
-                     enabled=has_files, shortcut=sc("copy_files")),
+                     when="entry", shortcut=sc("copy_files")),
             MenuItem("Move to Other Pane", on_select=self.move_files,
-                     enabled=has_files, shortcut=sc("move_files")),
+                     when="entry", shortcut=sc("move_files")),
             MenuItem("Copy to…", on_select=self.copy_files_to,
-                     enabled=has_files, shortcut=sc("copy_files_to")),
+                     when="entry", shortcut=sc("copy_files_to")),
             MenuItem("Move to…", on_select=self.move_files_to,
-                     enabled=has_files, shortcut=sc("move_files_to")),
+                     when="entry", shortcut=sc("move_files_to")),
             MenuItem(f"Move to {trash.NAME}…", on_select=self.delete_files,
-                     enabled=has_files, shortcut=sc("delete_files")),
+                     when="entry", shortcut=sc("delete_files")),
             MenuItem("Delete Permanently…", on_select=self.delete_permanently,
-                     enabled=has_files, shortcut=sc("delete_permanently")),
+                     when="entry", shortcut=sc("delete_permanently")),
             MenuItem("Archive", submenu=Menu(
                 MenuItem("Create…", on_select=self.create_archive,
-                         enabled=has_files, shortcut=sc("create_archive")),
+                         when="entry", shortcut=sc("create_archive")),
                 MenuItem("Extract…", on_select=self.extract_archive,
-                         enabled=has_files, shortcut=sc("extract_archive")),
+                         when="entry", shortcut=sc("extract_archive")),
                 title="Archive")),
             *self._user_menu_items("file"),
             SEPARATOR,
@@ -5314,28 +5337,28 @@ class XeFMApp:
         # unpainted until the next event (#253).
         edit_menu = Menu(
             MenuItem("Copy", on_select=lambda: self._menu("clipboard_copy"),
-                     enabled=has_files, shortcut=sc("clipboard_copy")),
+                     when="entry", shortcut=sc("clipboard_copy")),
             MenuItem("Cut", on_select=lambda: self._menu("clipboard_cut"),
-                     enabled=has_files, shortcut=sc("clipboard_cut")),
+                     when="entry", shortcut=sc("clipboard_cut")),
             MenuItem("Paste", on_select=lambda: self._menu("clipboard_paste"),
-                     enabled=lambda: self.clipboard.contents() is not None,
+                     when=lambda: self.clipboard.contents() is not None,
                      shortcut=sc("clipboard_paste")),
             MenuItem("Show Clipboard…", on_select=lambda: self._menu("clipboard_show"),
                      shortcut=sc("clipboard_show")),
             MenuItem("Clear Clipboard", on_select=lambda: self._menu("clipboard_clear"),
-                     enabled=lambda: bool(self.clipboard.paths),
+                     when=lambda: bool(self.clipboard.paths),
                      shortcut=sc("clipboard_clear")),
             SEPARATOR,
             MenuItem("Copy Name(s)", on_select=lambda: self._menu("copy_names"),
-                     enabled=has_files, shortcut=sc("copy_names")),
+                     when="entry", shortcut=sc("copy_names")),
             MenuItem("Copy Full Path(s)", on_select=lambda: self._menu("copy_paths"),
-                     enabled=has_files, shortcut=sc("copy_paths")),
+                     when="entry", shortcut=sc("copy_paths")),
             SEPARATOR,
             MenuItem("Copy Log Selection",
                      on_select=lambda: self._menu("copy_log_selection"),
-                     enabled=has_log_selection, shortcut=sc("copy_log_selection")),
+                     when=has_log_selection, shortcut=sc("copy_log_selection")),
             MenuItem("Copy All Logs", on_select=lambda: self._menu("copy_log_all"),
-                     enabled=has_log_lines, shortcut=sc("copy_log_all")),
+                     when=has_log_lines, shortcut=sc("copy_log_all")),
             title="Edit",
         )
         go_menu = Menu(
@@ -5355,7 +5378,7 @@ class XeFMApp:
                      # the menu is built, and the real check loads a system
                      # framework the user may never need. The action itself
                      # asks properly, and says so if the answer is no.
-                     enabled=lambda: platform.system() in ("Darwin", "Windows")),
+                     when=lambda: platform.system() in ("Darwin", "Windows")),
             MenuItem("History…", on_select=self.show_history, shortcut=sc("history")),
             MenuItem("Back", on_select=self.go_back, shortcut=sc("go_back")),
             MenuItem("Forward", on_select=self.go_forward, shortcut=sc("go_forward")),
@@ -5371,13 +5394,13 @@ class XeFMApp:
             MenuItem("New Tab", on_select=lambda: self._menu("new_tab"),
                      shortcut=sc("new_tab")),
             MenuItem("Open in New Tab", on_select=lambda: self._menu("open_in_new_tab"),
-                     enabled=has_files, shortcut=sc("open_in_new_tab")),
+                     when="entry", shortcut=sc("open_in_new_tab")),
             MenuItem("Close Tab", on_select=lambda: self._menu("close_tab"),
-                     enabled=tabs_open, shortcut=sc("close_tab")),
+                     when=tabs_open, shortcut=sc("close_tab")),
             MenuItem("Next Tab", on_select=lambda: self._menu("next_tab"),
-                     enabled=tabs_open, shortcut=sc("next_tab")),
+                     when=tabs_open, shortcut=sc("next_tab")),
             MenuItem("Previous Tab", on_select=lambda: self._menu("prev_tab"),
-                     enabled=tabs_open, shortcut=sc("prev_tab")),
+                     when=tabs_open, shortcut=sc("prev_tab")),
             SEPARATOR,
             # A list of paths in place of a directory (#453): where the pane
             # goes, like everything above, and left again with Parent
@@ -5391,13 +5414,13 @@ class XeFMApp:
                          shortcut=sc("open_list_from_command")),
                 MenuItem("From File",
                          on_select=lambda: self._menu("open_list_from_file"),
-                         enabled=has_files, shortcut=sc("open_list_from_file")),
+                         when="entry", shortcut=sc("open_list_from_file")),
             )),
             title="Go",
         )
         tools_menu = Menu(
             MenuItem("Command Palette…", on_select=self.show_command_palette,
-                     shortcut=sc("command_palette")),
+                     shortcut=sc("command_palette"), when="always"),
             SEPARATOR,
             # What opens a screen in XeFM's terminal, then the switch between
             # them; what runs work, then where that work is followed.
@@ -5409,7 +5432,7 @@ class XeFMApp:
             MenuItem("Find Similar Files…", on_select=self.find_similar,
                      shortcut=sc("find_similar")),
             MenuItem("Background Jobs…", on_select=self.show_jobs,
-                     enabled=lambda: bool(self.tasks.background_tasks()),
+                     when=("always", lambda: bool(self.tasks.background_tasks())),
                      shortcut=sc("jobs")),
             SEPARATOR,
             # Editing the config and reloading it are the loop a user tuning
@@ -5417,10 +5440,12 @@ class XeFMApp:
             # now and then — the keymap, extensions, Python packages — waits
             # one level down.
             MenuItem("Edit Configuration…", on_select=self.edit_config,
-                     shortcut=sc("edit_config")),
+                     shortcut=sc("edit_config"), when="always"),
             MenuItem("Reload Configuration", on_select=self.reload_config,
-                     shortcut=sc("reload_config")),
-            MenuItem("Advanced", submenu=Menu(
+                     shortcut=sc("reload_config"), when="always"),
+            # The setup there serves every screen, but for Install
+            # Extension, which starts from the file under the cursor.
+            MenuItem("Advanced", when="always", submenu=Menu(
                 # A preset is how the keys work, not how things look, so it
                 # sits with the configuration rather than the theme.
                 # The presets' names say little alone; the dialog shows what
@@ -5432,38 +5457,38 @@ class XeFMApp:
                          shortcut=sc("extensions")),
                 MenuItem("Check for Extension Updates…",
                          on_select=self.check_extension_updates,
-                         enabled=lambda: not self._ext_updates_busy,
+                         when=lambda: not self._ext_updates_busy,
                          shortcut=sc("check_extension_updates")),
                 MenuItem("Install Extension…", on_select=self.install_extension,
-                         enabled=lambda: not self._ext_fetch_busy,
+                         when=("files", lambda: not self._ext_fetch_busy),
                          shortcut=sc("install_extension")),
                 MenuItem("Sync Python Packages", on_select=self.sync_python_packages,
-                         enabled=lambda: not self._python_packages_syncing,
+                         when=lambda: not self._python_packages_syncing,
                          shortcut=sc("sync_python_packages")),
             )),
             title="Tools",
         )
         select_menu = Menu(
             MenuItem("Toggle Selection", on_select=lambda: self._menu("toggle_select_down"),
-                     enabled=has_files, shortcut=sc("toggle_select_down")),
+                     when="entry", shortcut=sc("toggle_select_down")),
             MenuItem("Select to Cursor", on_select=lambda: self._menu("select_range"),
-                     enabled=lambda: bool(self.active_pane()["selected_files"]),
+                     when="selection",
                      shortcut=sc("select_range")),
             MenuItem("Select All Items", on_select=lambda: self._menu("select_all"),
                      shortcut=sc("select_all")),
             MenuItem("Clear Selection", on_select=lambda: self._menu("unselect_all"),
-                     enabled=lambda: bool(self.active_pane()["selected_files"]),
+                     when="selection",
                      shortcut=sc("unselect_all")),
             MenuItem("Select by Pattern…", on_select=lambda: self._menu("select_by_pattern"),
-                     enabled=has_files, shortcut=sc("select_by_pattern")),
+                     when="entry", shortcut=sc("select_by_pattern")),
             MenuItem("Unselect by Pattern…", on_select=lambda: self._menu("unselect_by_pattern"),
-                     enabled=lambda: bool(self.active_pane()["selected_files"]),
+                     when="selection",
                      shortcut=sc("unselect_by_pattern")),
             MenuItem("Select Same Extension",
                      on_select=lambda: self._menu("select_same_extension"),
-                     enabled=has_files, shortcut=sc("select_same_extension")),
+                     when="entry", shortcut=sc("select_same_extension")),
             MenuItem("Compare and Select…", on_select=self.compare_selection,
-                     enabled=has_files, shortcut=sc("compare_selection")),
+                     when="entry", shortcut=sc("compare_selection")),
             SEPARATOR,
             MenuItem("Compare Selected Files…", on_select=self.diff_files, shortcut=sc("diff_files")),
             MenuItem("Compare Directories…", on_select=self.diff_directories,
@@ -5471,17 +5496,17 @@ class XeFMApp:
             title="Select",
         )
         view_menu = Menu(
-            MenuItem("Find…", on_select=self.enter_isearch, enabled=has_files, shortcut=sc("isearch")),
+            MenuItem("Find…", on_select=self.enter_isearch, when="entry", shortcut=sc("isearch")),
             MenuItem("Filter…", on_select=self.enter_filter, shortcut=sc("filter")),
             MenuItem("Search Files…", on_select=self.show_search, shortcut=sc("find_files")),
             MenuItem("Search Content…", on_select=self.show_content_search, shortcut=sc("find_in_files")),
             # The OS index (#579): named for what it is on this platform.
             MenuItem(f"Search {os_index.engine() or 'Index'}…",
                      on_select=lambda: self._menu("index_search"),
-                     enabled=lambda: os_index.engine() is not None,
+                     when=lambda: os_index.engine() is not None,
                      shortcut=sc("index_search")),
             MenuItem("Search Tags…", on_select=lambda: self._menu("find_by_tag"),
-                     enabled=lambda: tags.store_for(self.active_pane()["path"]) is not None,
+                     when=lambda: tags.store_for(self.active_pane()["path"]) is not None,
                      shortcut=sc("find_by_tag")),
             SEPARATOR,
             MenuItem("Reread", on_select=lambda: self._menu("reread"),
@@ -5491,10 +5516,10 @@ class XeFMApp:
             MenuItem("Layout", submenu=self._layout_menu()),
             MenuItem("Show", submenu=self._extras_menu()),
             MenuItem("Resolve Attribute…", on_select=lambda: self._menu("resolve_attribute"),
-                     enabled=has_files, shortcut=sc("resolve_attribute")),
+                     when="entry", shortcut=sc("resolve_attribute")),
             MenuItem("Sort By", submenu=sort_menu),
             SEPARATOR,
-            MenuItem("Theme", submenu=self._theme_menu(sc)),
+            MenuItem("Theme", submenu=self._theme_menu(sc), when="always"),
             *self._font_size_menu(sc),
             SEPARATOR,
             MenuItem("Quick View", on_select=lambda: self._menu("quick_view"),
@@ -5509,21 +5534,22 @@ class XeFMApp:
             title="View",
         )
         help_menu = Menu(
-            MenuItem("Keyboard Shortcuts…", on_select=self.show_help, shortcut=sc("help")),
-            MenuItem("Tip of the Day…", on_select=self.show_tips),
+            MenuItem("Keyboard Shortcuts…", on_select=self.show_help, shortcut=sc("help"),
+                     when="always"),
+            MenuItem("Tip of the Day…", on_select=self.show_tips, when="always"),
             SEPARATOR,
             MenuItem("XeFM Documentation", on_select=lambda: self._menu("open_documentation"),
-                     shortcut=sc("open_documentation")),
+                     shortcut=sc("open_documentation"), when="always"),
             MenuItem("Release Notes", on_select=lambda: self._menu("release_notes"),
-                     shortcut=sc("release_notes")),
+                     shortcut=sc("release_notes"), when="always"),
             MenuItem("Report an Issue…", on_select=lambda: self._menu("report_issue"),
-                     shortcut=sc("report_issue")),
+                     shortcut=sc("report_issue"), when="always"),
             SEPARATOR,
             # Not where the Microsoft Store keeps XeFM current.
             *([MenuItem("Check for Updates…", on_select=lambda: self._menu("check_for_updates"),
-                        shortcut=sc("check_for_updates"))]
+                        shortcut=sc("check_for_updates"), when="always")]
               if updates.offers_update_check() else []),
-            MenuItem("About XeFM", on_select=self.show_about),
+            MenuItem("About XeFM", on_select=self.show_about, when="always"),
             title="Help",
         )
         bar = Menu(
@@ -5535,46 +5561,22 @@ class XeFMApp:
             MenuItem("Tools", submenu=tools_menu),
             MenuItem("Help", submenu=help_menu),
         )
-        self._files_only_items(bar)
+        menu_when.apply_bar(bar, self._menu_presets())
         return bar
 
-    #: What in the menu bar acts on the file manager, and so is off while a
-    #: session's screen is on (#1019): whole menus, and the items of the
-    #: others named here (the rest of View - the theme, the font size - and
-    #: of Tools, and Help, serve every screen).
-    _FILES_ONLY_MENUS = ("File", "Edit", "Go", "Select")
-    _FILES_ONLY_ITEMS = {
-        "View": None,  # every item but those in _ANY_SCREEN_VIEW_ITEMS
-        "Tools": ("Ask AI Agent…", "External Programs…", "Find Similar Files…"),
-    }
-    _ANY_SCREEN_VIEW_ITEMS = ("Theme", "Font Size")
-
-    def _files_only_items(self, bar) -> None:
-        """Turn the file manager's menu items off while a session is on
-        screen: the menu bar is there on every screen (#1019), and an item
-        that acts on panes out of view would act on what cannot be seen."""
+    def _menu_presets(self) -> dict:
+        """What the menu bar's ``when`` presets mean now
+        (:mod:`xefm.menu_when`): the file manager on screen, an entry under
+        its cursor, a selection in its active pane."""
         def on_files() -> bool:
             screens = self.__dict__.get("_screens")
             return screens is None or screens.current.session is None
 
-        def only_on_files(item) -> None:
-            before = item.enabled
-            item.enabled = lambda before=before: on_files() and (
-                before() if callable(before) else bool(before))
-
-        for top in bar.items:
-            label = getattr(top, "label", "")
-            if label in self._FILES_ONLY_MENUS:
-                only_on_files(top)
-            elif label in self._FILES_ONLY_ITEMS and top.submenu is not None:
-                names = self._FILES_ONLY_ITEMS[label]
-                for item in top.submenu.items:
-                    name = getattr(item, "label", "")
-                    if not name:
-                        continue  # a separator
-                    if (names is None and name not in self._ANY_SCREEN_VIEW_ITEMS) \
-                            or (names is not None and name in names):
-                        only_on_files(item)
+        return {
+            "files": on_files,
+            "entry": lambda: bool(self.active_pane()["files"]),
+            "selection": lambda: bool(self.active_pane()["selected_files"]),
+        }
 
     def _menu(self, action: str) -> None:
         """Run a keymap action from a menu/context-menu selection and redraw."""
@@ -6241,7 +6243,18 @@ class XeFMApp:
         view.on_screen_action = self._screen_action
         if hasattr(view, "chrome_status"):
             view.chrome_status = True  # its hints go to the status bar
+        self._share_menu_bar(view)
         return screen
+
+    def _share_menu_bar(self, view) -> None:
+        """Make the window's menu bar ``view``'s too (#1019): PuiKit greys an
+        OS menu bar while a layer that does not own it is on top - a dialog's
+        guard (xefm#388) - and a session's view is a layer, but a screen of
+        the window, which shows the very same bar; the items' ``when`` say
+        what each can do there (:mod:`xefm.menu_when`). A PuiKit without
+        menu bar owners leaves the bar greyed on a session's screen."""
+        if _MENU_BAR_OWNERS:
+            self.panel.set_menu_bar(self.menu_bar.menu, owner=view)
 
     def _chrome_bands(self) -> tuple[float, float, float]:
         """The heights of the window's chrome now: the menu bar in the window
@@ -6374,12 +6387,18 @@ class XeFMApp:
         if agents.turned_off(self.config):
             return []
         return [
+            # Starting one is the file manager's: it starts in the active
+            # pane's folder (a session's screen has the tabs' + for that).
             MenuItem("AI Agent", on_select=self.open_agent, shortcut=sc("agent"),
-                     enabled=self._agent_installed),
+                     when=self._agent_installed),
             MenuItem("New AI Agent Here", on_select=self.new_agent, shortcut=sc("new_agent"),
-                     enabled=self._agent_installed),
+                     when=self._agent_installed),
+            MenuItem("Resume AI Conversation…", on_select=self.resume_agent,
+                     shortcut=sc("resume_agent"),
+                     when=("always", lambda: self._agent_installed()
+                           and bool(self._closed_agents()))),
             MenuItem("Ask AI Agent…", on_select=self.ask_agent, shortcut=sc("ask_agent"),
-                     enabled=self._agent_installed),
+                     when=self._agent_installed),
         ]
 
     def _agent_installed(self) -> bool:
@@ -6533,7 +6552,6 @@ class XeFMApp:
             post=self._call_later,
             ask=self._agent_chat_ask,
             on_close_request=self._agent_chat_close_request,
-            on_hide=self._hide_session,
             on_screens_request=self.screens,
             on_user_action=self._run_terminal_user_action,
             on_link=self._agent_chat_link,
@@ -6868,11 +6886,10 @@ class XeFMApp:
 
     def _show_screen(self, screen) -> None:
         """Bring ``screen`` on, in place of the one on now; the one left keeps
-        what is open on it, out of view. A terminal comes from behind the file
-        manager and goes back behind it; between two terminals, or with the
-        theme's effects off, the switch is at once. Coming back to the file
-        manager re-reads the panes: what ran may have changed files."""
-        from xefm.screens import FILES, TERMINAL
+        what is open on it, out of view. A tab switch (#1019): at once, the
+        window's chrome staying where it is. Coming back to the file manager
+        re-reads the panes: what ran may have changed files."""
+        from xefm.screens import FILES
         screens = self._screens
         current = screens.current
         if screen is current:
@@ -6880,53 +6897,14 @@ class XeFMApp:
         if screen.session is not None:
             screen.session.attention = None  # seen
             screen.session.view.closing = False
-        if current.kind == FILES and screen.kind == TERMINAL:
-            view = screen.session.view
-            for other in screens.recent():
-                if other is not screen and other is not current:
-                    screens.conceal(other)
-            screens.make_current(screen, conceal_others=False)
-
-            def came() -> None:
-                if screens.current is screen:
-                    screens.conceal(current)
-                self.panel.render()
-
-            if not self._animate_session(screen, on_complete=came):
-                came()
-        elif current.kind == TERMINAL and screen.kind == FILES:
-            view = current.session.view
-            view.closing = True  # takes no input while it fades
-            screens.make_current(screen, conceal_others=False)
-
-            def went() -> None:
-                view.closing = False
-                if screens.current is not current:
-                    screens.conceal(current)
-                self._relist_both()
-                self.panel.render()
-
-            if not self._animate_session(current, out=True, on_complete=went):
-                went()
-        else:
-            # One full-window terminal replaces the other at once: crossing
-            # two terminals through the file manager would only flash the panes.
-            screens.make_current(screen)
+        screens.make_current(screen)
+        if screen.kind == FILES:
+            self._relist_both()
         self.panel.render()
 
-    def _animate_session(self, screen, *, out: bool = False, on_complete=None) -> bool:
-        """Play a session's screen coming from behind the file manager (or,
-        ``out``, going back there). Only the view moves: the chrome around it
-        (:class:`~xefm.screen_strip.SessionFrame`) is the file manager's own,
-        at the same places, and stays still. Whether it was scheduled, as
-        :func:`~xefm.dialog_geometry.animate_from_behind`."""
-        from xefm.dialog_geometry import animate_from_behind
-        return animate_from_behind(self.panel, screen.session.view, out=out,
-                                   on_complete=on_complete)
-
     def _hide_session(self, view) -> None:
-        """Put a session back behind the file manager (the exit bar's Escape);
-        its program, if any, keeps running."""
+        """Put a session back behind the file manager; its program, if any,
+        keeps running."""
         session = self._sessions.for_view(view)
         if session is None or session.screen is not self._screens.current or view.closing:
             return
@@ -6963,6 +6941,22 @@ class XeFMApp:
             self.new_terminal_session()
         else:
             self.subshell()
+
+    def next_screen(self) -> None:
+        """``next_screen``: the window's next tab (#1019), the file manager's
+        included, wrapping - Ctrl-Tab, as in a browser."""
+        self._step_screen(+1)
+
+    def prev_screen(self) -> None:
+        """``prev_screen``: the window's previous tab."""
+        self._step_screen(-1)
+
+    def _step_screen(self, step: int) -> None:
+        tabs = self._screens.tabs()
+        current = self._screens.current
+        if len(tabs) > 1 and current in tabs:
+            self._show_screen(tabs[(tabs.index(current) + step) % len(tabs)])
+        self.panel.render()
 
     def new_shell(self) -> None:
         """``new_shell``: another shell session, in the active pane's
@@ -7238,7 +7232,7 @@ class XeFMApp:
     def _resume_into(self, session, view, record) -> None:
         """Start ``view``'s agent on ``record``'s conversation: the one
         closed in this run comes back as it was, one from an earlier run
-        resumes with an empty transcript."""
+        comes back with its history from the agent."""
         from xefm import agent_chat as C
         session.title = record.title
         if record.conversation is not None:
@@ -7246,8 +7240,14 @@ class XeFMApp:
             view._source = ""
             view._dirty = True
         else:
-            view.conversation.session_id = record.session_id
-            view.conversation.add_notice(f"Resumed: {record.title}")
+            # From an earlier run: the history comes from the agent. Codex and
+            # an ACP agent send it when resumed into an empty conversation (so
+            # nothing goes in before); Claude Code keeps it in a file.
+            conv = view.conversation
+            conv.session_id = record.session_id
+            if isinstance(view.protocol, C.ClaudeProtocol):
+                C.load_claude_history(conv, record.session_id, record.cwd)
+                conv.add_notice(f"Resumed: {record.title}")
         view.conversation.state = C.STARTING
         view._panel = self.panel
         self.log_info(f"Resuming {record.title} ({record.agent}) in {record.cwd}")
@@ -7389,12 +7389,10 @@ class XeFMApp:
     def _close_session(self, session) -> None:
         """End ``session``: forget it, take its screen away, hang up its
         program, re-read the panes (what ran may have changed files), then its
-        ``on_done``. On screen, going back to the file manager, it fades back
-        behind it first, still drawing its last screen; the program is hung up
-        only once the layer is gone, since PuiKit's view starts a fresh child
-        on its next draw once closed under a program still running. Going
-        back to another terminal, the switch is at once."""
-        from xefm.screens import FILES
+        ``on_done``. On screen, the screen shown before it comes on at once. The
+        program is hung up only once the layer is gone, since PuiKit's view
+        starts a fresh child on its next draw once closed under a program
+        still running."""
         view = session.view
         if self._sessions.for_view(view) is not session:
             return  # already on its way out
@@ -7402,7 +7400,7 @@ class XeFMApp:
         self._remember_closed(session)
         screen = session.screen
         if screen is not None:
-            screen.closing = True  # out of its group while it fades
+            screen.closing = True  # no longer a tab
 
         def finish() -> None:
             if screen is not None and self.panel.has_layer(screen.group):
@@ -7419,19 +7417,8 @@ class XeFMApp:
             if done is not None:
                 done(code)
 
-        if screen is None or screen is not self._screens.current or view.closing:
-            finish()
-            return
-        back = self._screens.after_close(screen)
-        if back.kind != FILES:
-            finish()
-            return
-        view.closing = True
-        self._screens.make_current(back, conceal_others=False)
-        if not self._animate_session(screen, out=True, on_complete=finish):
-            finish()
-            return
-        self.panel.render()
+        # A tab closing (#1019): the one shown before it comes on at once.
+        finish()
 
     def _close_terminal_sessions(self) -> None:
         """At exit: hang up every session (the quit confirm said so). A
@@ -7474,113 +7461,126 @@ class XeFMApp:
         return ""
 
     def screens(self) -> None:
-        """Screens (#1019): every session, to go to, close, rename or resume -
-        the overview, not the way between screens (that is the group keys,
-        the strip's tabs and ``switch_screen``).
+        """Screens (#1019): every screen there is now - the file manager's and
+        each session's - to go to, close or rename; the overview, not the way
+        between them (that is the tabs, ``switch_screen`` and the kind keys).
+        Starting a session is the ``+`` after the tabs, and a closed AI
+        conversation comes back from ``resume_agent``.
 
-        Every session, terminal and AI alike, the ones waiting on you first,
-        then the rest used last first (the icon on its tab says which); the
-        cursor
-        starts on the session used last that is not on screen. Then a row
-        that closes every idle session at once, the closed AI conversations
-        that can be resumed, and rows that start a new shell or a new session
-        of each ``AGENTS`` entry (#880). The remove key closes a session (or
-        forgets a closed conversation), the rename key renames it. In
-        terminal mode there are only the AI agent sessions XeFM draws."""
-        from xefm.terminal_sessions import GROUP_AGENT, _short, ago
-        from xefm import agents
-        desktop = is_desktop_mode()
-        found = agents.available(self.config)
-        if not desktop:
-            found = [e for e in found if agents.drawn(e)]
-        drawn_names = {e["name"] for e in found if agents.drawn(e)}
-        closed = [r for r in self._closed_agents() if r.agent in drawn_names]
+        The file manager first, then every session, terminal and AI alike,
+        the ones waiting on you first, then the rest used last first; the
+        cursor starts on the screen used last that is not on now. Then a row
+        that closes every idle session at once. The remove key closes a
+        session, the rename key renames it. In terminal mode the sessions are
+        the AI agent conversations XeFM draws."""
+        from xefm.screens import FILES
+        from xefm.terminal_sessions import GROUP_AGENT, ago
         sessions = list(self._sessions)
-        if not desktop and not found and not sessions and not closed:
+        if not self._has_screens() and not sessions:
             self._desktop_only("Screens")
             return
-        cwd = self._session_dir() or os.path.expanduser("~")
         current = self._screens.current
-
         # Every session, as the tabs hold them whatever their kind: the ones
         # waiting on you first, then the one used last first.
         rows = sorted(sessions, key=lambda s: (
             s.attention is None or s.attention[0] != "attention", -s.last_used_at))
         idle = [s for s in rows if not s.busy]
         close_idle = object()
-        new_row = object()
-        new_agents = {object(): entry for entry in found}
-        items = [*rows, *([close_idle] if idle else []), *closed,
-                 *([new_row] if desktop else []), *new_agents]
+        files = self._screens.files
+        items = [files, *rows, *([close_idle] if idle else [])]
 
         short = [s.label for s in rows]
         labels = {s: (s.full_label if short.count(s.label) > 1 else s.label) for s in rows}
 
+        def screen_of(item):
+            return item if item is files else item.screen
+
         def label(item) -> str:
-            if item is new_row:
-                return f"New shell in {_short(cwd)}"
-            if item in new_agents:
-                return f"New {new_agents[item]['name']} in {_short(cwd)}"
             if item is close_idle:
                 n = len(idle)
                 return f"Close {n} idle session{'s' if n > 1 else ''}"
-            if isinstance(item, ClosedAgent):
-                return f"Resume {item.title} - {_short(item.cwd)}"
-            text = labels.get(item, item.label)
-            if item.screen is not None:
-                on_top = self._screen_top_text(item.screen)
+            text = "File manager" if item is files else labels.get(item, item.label)
+            screen = screen_of(item)
+            if screen is not None:
+                on_top = self._screen_top_text(screen)
                 if on_top:
                     text = f"{text} - {on_top}"
             return text
 
         def right(item) -> str:
-            if item is new_row or item in new_agents or item is close_idle:
+            if item is close_idle:
                 return ""
-            if isinstance(item, ClosedAgent):
-                return f"{item.agent}, closed {ago(item.closed_at)}"
+            shown = screen_of(item) is current
+            if item is files:
+                return "shown" if shown else ""
             kind = "AI" if item.group == GROUP_AGENT else "shell"
-            shown = item.screen is not None and item.screen is current
             when = "shown" if shown else ago(item.last_used_at)
             return ", ".join(p for p in (kind, item.state, when) if p)
 
         def accept(item) -> None:
-            if item is new_row:
-                self.new_terminal_session()
-            elif item in new_agents:
-                self._start_agent(new_agents[item])
-            elif item is close_idle:
+            if item is close_idle:
                 self._close_idle_sessions()
-            elif isinstance(item, ClosedAgent):
-                self._resume_agent(item)
-            elif item.screen is not None and self._screens.by_id(item.screen.id) is item.screen:
-                self._show_screen(item.screen)
+            else:
+                screen = screen_of(item)
+                if screen is not None and self._screens.by_id(screen.id) is screen:
+                    self._show_screen(screen)
             self.panel.render()
 
         def remove(item) -> bool:
-            if isinstance(item, ClosedAgent):
-                self._forget_closed(item)
-                return True
-            if item is new_row or item in new_agents or item is close_idle:
+            if item is files or item is close_idle:
                 return False
             self._close_session(item)
             self.log_info(f"Closed terminal session {item.name}")
             return True
 
         def rename(item) -> bool:
-            if item is new_row or item in new_agents or item is close_idle:
+            if item is files or item is close_idle:
                 self.screens()
                 return False
-            self._rename_screen(item)
+            self._rename_screen(item, back=self.screens)
             return True
 
         dialog = show_filter_list(self.panel, items, title="Screens",
                                   to_label=label, to_right=right, on_accept=accept,
                                   on_remove=remove, remove_label="close", on_rename=rename,
                                   z=70)
-        # The session used last that is not on screen: where you most likely go.
-        start = next((i for i, s in enumerate(rows)
-                      if s.screen is None or s.screen is not current), 0)
-        dialog.list.selected = start
+        # The screen used last that is not on now: where you most likely go.
+        shown = [files, *rows]
+        start = next((i for i, s in enumerate(self._screens.recent())
+                      if s is not current), None)
+        target = self._screens.recent()[start] if start is not None else None
+        dialog.list.selected = next(
+            (i for i, item in enumerate(shown) if screen_of(item) is target), 0)
+        self.panel.render()
+
+    def resume_agent(self) -> None:
+        """``resume_agent``: the AI conversations closed in XeFM (#1019) - in
+        this run, and kept from earlier ones - to pick one up where it left
+        off, in its folder. The closed last first; the remove key forgets one,
+        the rename key renames it."""
+        from xefm import agents
+        from xefm.terminal_sessions import _short, ago
+        found = agents.available(self.config)
+        drawn = {e["name"] for e in found if agents.drawn(e)}
+        closed = [r for r in self._closed_agents() if r.agent in drawn]
+        if not closed:
+            self.log_info("No closed AI conversation to resume")
+            self.panel.render()
+            return
+
+        def remove(record) -> bool:
+            self._forget_closed(record)
+            return True
+
+        def rename(record) -> bool:
+            self._rename_screen(record, back=self.resume_agent)
+            return True
+
+        show_filter_list(self.panel, closed, title="Resume AI Conversation",
+                         to_label=lambda r: f"{r.title} - {_short(r.cwd)}",
+                         to_right=lambda r: f"{r.agent}, closed {ago(r.closed_at)}",
+                         on_accept=lambda r: self._resume_agent(r),
+                         on_remove=remove, remove_label="forget", on_rename=rename, z=70)
         self.panel.render()
 
     def _close_idle_sessions(self) -> None:
@@ -7594,9 +7594,10 @@ class XeFMApp:
             self.log_info(f"Closed {len(idle)} idle session{'s' if len(idle) > 1 else ''}")
         self.panel.render()
 
-    def _rename_screen(self, item) -> None:
+    def _rename_screen(self, item, back=None) -> None:
         """Ask for a new title for a session or a closed conversation, then
-        go back to Screens."""
+        go back to the list it was asked from (``back``)."""
+        back = back or self.screens
         current = item.title if isinstance(item, ClosedAgent) else \
             (item.title or item.tab_label)
 
@@ -7606,10 +7607,10 @@ class XeFMApp:
                 item.title = text
                 if isinstance(item, ClosedAgent):
                     self._save_closed_agents()
-            self.screens()
+            back()
 
         show_input(self.panel, title="Rename", prompt="Name:", text=current,
-                   on_accept=done, on_cancel=self.screens)
+                   on_accept=done, on_cancel=back)
         self.panel.render()
 
     # --- xefmctl: shells talking back (#900) ------------------------------------
@@ -7704,6 +7705,8 @@ class XeFMApp:
         self.panel.set_quit_handler(self._on_quit_request, self._quit_shortcut())
         self.status.invalidate()
         self.menu_bar.set_menu(self._build_menu())
+        for session in self.__dict__.get("_sessions", ()):
+            self._share_menu_bar(session.view)  # the rebuilt bar
 
     def _ask_keymap_preset(self) -> None:
         """Which keymap, asked at the first launch with none chosen — a new
@@ -8744,9 +8747,9 @@ class XeFMApp:
             return []
         return [
             MenuItem("Switch Screen", on_select=self.switch_screen,
-                     shortcut=sc("switch_screen")),
+                     shortcut=sc("switch_screen"), when="always"),
             MenuItem("Screens…", on_select=self.screens,
-                     shortcut=sc("screens")),
+                     shortcut=sc("screens"), when="always"),
         ]
 
     def _font_size_menu(self, sc) -> list:
@@ -8754,13 +8757,13 @@ class XeFMApp:
         own font, so there is nothing for it to change there."""
         if not is_desktop_mode():
             return []
-        return [MenuItem("Font Size", submenu=Menu(
+        return [MenuItem("Font Size", when="always", submenu=Menu(
             MenuItem("Larger", on_select=lambda: self._menu("increase_font_size"),
                      shortcut=sc("increase_font_size")),
             MenuItem("Smaller", on_select=lambda: self._menu("decrease_font_size"),
                      shortcut=sc("decrease_font_size")),
             MenuItem("Default Size", on_select=lambda: self._menu("reset_font_size"),
-                     enabled=lambda: self._font_size_override is not None,
+                     when=lambda: self._font_size_override is not None,
                      shortcut=sc("reset_font_size")),
             title="Font Size"))]
 
@@ -14691,7 +14694,9 @@ class XeFMApp:
             ("subshell", "Go to the terminal sessions, or open a shell here"),
             ("new_shell", "Open another shell session here"),
             ("switch_screen", "Switch between the file manager and the screen used last"),
-            ("screens", "List every session, to go to, close, rename or resume"),
+            ("next_screen", "Go to the window's next tab"),
+            ("prev_screen", "Go to the window's previous tab"),
+            ("screens", "List every screen, to go to, close or rename one"),
             ("open_with_os", "Open with the default app"),
             ("open_with", "Choose the app that opens the selection (File menu)"),
             ("reveal_in_os", "Reveal in the OS file manager"),
@@ -14788,6 +14793,8 @@ class XeFMApp:
         # agent conversations XeFM draws (#959).
         "screens": lambda self: self._has_screens(),
         "switch_screen": lambda self: self._has_screens(),
+        "next_screen": lambda self: self._has_screens(),
+        "prev_screen": lambda self: self._has_screens(),
         "new_shell": lambda self: is_desktop_mode(),
     }
 

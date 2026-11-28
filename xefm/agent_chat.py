@@ -689,6 +689,67 @@ class Conversation:
         return f"{max(1, round(self.context_tokens / 1000))}k context"
 
 
+def claude_transcript(session_id: str, cwd: str = "") -> str | None:
+    """The file where Claude Code keeps conversation ``session_id``
+    (``~/.claude/projects/<folder>/<id>.jsonl``, or under
+    ``CLAUDE_CONFIG_DIR``), or None. The folder is the working directory
+    with its separators made dashes; it is looked up by the id when that
+    spelling does not match."""
+    import glob
+    if not session_id or not re.fullmatch(r"[\w-]+", session_id):
+        return None
+    base = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR")
+                        or os.path.expanduser("~/.claude"), "projects")
+    if cwd:
+        guess = os.path.join(base, re.sub(r"[^\w-]", "-", cwd), f"{session_id}.jsonl")
+        if os.path.isfile(guess):
+            return guess
+    found = glob.glob(os.path.join(base, "*", f"{session_id}.jsonl"))
+    return found[0] if found else None
+
+
+def load_claude_history(conv: "Conversation", session_id: str, cwd: str = "") -> bool:
+    """Fold a Claude Code conversation's past turns into ``conv`` from the
+    file Claude Code keeps (#1019): ``--resume`` goes on with it but does not
+    send it again, so a conversation resumed in a new XeFM would start
+    blank. The file's entries are the stream-json messages XeFM already
+    folds, plus the user's own words. Whether anything was read."""
+    path = claude_transcript(session_id, cwd)
+    if path is None:
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError as e:
+        logger.error(f"Could not read the conversation {session_id}: {e}")
+        return False
+    read = False
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict) or entry.get("isMeta") or entry.get("isSidechain"):
+            continue
+        kind, message = entry.get("type"), entry.get("message")
+        if kind not in ("user", "assistant") or not isinstance(message, dict):
+            continue
+        read = True
+        if kind == "assistant":
+            conv.handle({"type": "assistant", "message": message})
+            continue
+        content = message.get("content")
+        said = content if isinstance(content, str) else "\n".join(
+            str(b.get("text") or "") for b in content or []
+            if isinstance(b, dict) and b.get("type") == "text")
+        if said.strip() and not said.lstrip().startswith(("<command-", "<local-command",
+                                                           "Caveat:")):
+            conv.items.append(Item("user", said))
+        conv.handle({"type": "user", "message": message})  # tool results
+    conv.close_open_items()
+    return read
+
+
 def _result_text(content: Any) -> str:
     if isinstance(content, str):
         return content

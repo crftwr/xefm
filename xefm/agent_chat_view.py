@@ -136,7 +136,6 @@ class ChatView(FocusContainer, Widget):
                  post: Callable[[Callable[[], None]], None],
                  ask: Callable[["ChatView", C.Permission], None],
                  on_close_request: Callable[["ChatView"], None],
-                 on_hide: Callable[["ChatView"], None],
                  on_screens_request: Callable[[], None] | None = None,
                  on_user_action: Callable[[str], bool] | None = None,
                  on_link: Callable[[str], bool] | None = None,
@@ -154,7 +153,6 @@ class ChatView(FocusContainer, Widget):
         self._post = post
         self._ask = ask
         self.on_close_request = on_close_request
-        self.on_hide = on_hide
         self.on_screens_request = on_screens_request
         self.on_user_action = on_user_action
         self.on_change = on_change
@@ -891,12 +889,13 @@ class ChatView(FocusContainer, Widget):
         if action is not None and self._takes(event, action) and self.run_action(action):
             return
         if key == "escape" and not mods:
+            # Stops the agent, or drops a selection - and no more: the
+            # conversation is one of the window's tabs (#1019), which Esc
+            # does not leave, as it leaves no shell's.
             if self.conversation.busy:
                 self.interrupt()
             elif self.transcript.selection_text():
                 self.transcript.clear_selection()
-            else:
-                self.on_hide(self)
             return
         if key in ("pageup", "pagedown") and not mods & {"shift"}:
             page = max(1.0, self._transcript_rect.h - 1.0)

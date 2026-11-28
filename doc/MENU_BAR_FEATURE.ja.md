@@ -150,7 +150,7 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | Quick View | `quick_view` — [クイックビュー](QUICK_VIEW_FEATURE.ja.md)を参照 |
 | Flat View | `flat_view` — [フラット表示](FLAT_VIEW_FEATURE.ja.md)を参照 |
 
-ターミナルや AI エージェントのセッションを表示している間もメニューバーは残り（ターミナルではそこにも描かれます）、ファイルマネージャーに対して働く項目（File、Edit、Go、Select、View の大半、Tools の Ask AI Agent、External Programs、Find Similar Files）は、ファイルマネージャーに戻るまで無効になります。
+ターミナルや AI エージェントのセッションを表示している間もメニューバーは残ります（ターミナルではそこにも描かれます）。どの画面でも使える項目は有効のままです。Command Palette、Resume AI Conversation、Switch Screen と Screens、設定と Advanced の各項目、Theme、Font Size、Help です。それ以外はファイルマネージャーに対して働く項目で、ファイルマネージャーに戻るまで無効になります。File、Edit、Go、Select、View の大半と、Tools のうちペインのフォルダーでシェルやエージェントを起動する項目、External Programs、Find Similar Files、Install Extension です。セッションの画面から新しいセッションを始めるには、タブの後ろの `+` を使います。
 
 ### Tools メニュー
 
@@ -161,9 +161,10 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 | New Shell Here | `new_shell` *（デスクトップモードのみ。既定でキー未割り当て）* |
 | AI Agent | `agent` — 最後に使った AI エージェントのセッション、なければ新しいセッション。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
 | New AI Agent Here | `new_agent` *（既定でキー未割り当て）* |
+| Resume AI Conversation… | `resume_agent` *（既定でキー未割り当て）* — XeFM で閉じた AI の会話を、履歴ごと再開 |
 | Ask AI Agent… | `ask_agent` *（既定でキー未割り当て）* — `AGENT_PROMPTS` の依頼か、打ち込んだ依頼 |
 | Switch Screen | `switch_screen` — ファイルマネージャーと最後に使った画面の間 |
-| Screens… | `screens` *（既定でキー未割り当て）* — すべてのセッションの移動、終了、名前の変更、再開 |
+| Screens… | `screens` *（既定でキー未割り当て）* — 今ある画面すべての移動、終了、名前の変更 |
 | External Programs… | `programs` |
 | Find Similar Files… | `find_similar` *（既定でキー未割り当て）* — [類似ファイルの検索](FIND_SIMILAR_FILES_FEATURE.ja.md)を参照 |
 | Background Jobs… | `jobs` — [バックグラウンドジョブ](BACKGROUND_JOBS_FEATURE.ja.md)を参照 |

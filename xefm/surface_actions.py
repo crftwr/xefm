@@ -23,7 +23,7 @@ APP_WIDE = frozenset({
     # The screen switcher (#953): from a viewer, another screen is a switch
     # away; the viewer stays where it is. And the switch to the screen used
     # last (#1019).
-    "screens", "switch_screen",
+    "screens", "switch_screen", "next_screen", "prev_screen", "resume_agent",
 })
 
 _run: Callable[[str], None] | None = None

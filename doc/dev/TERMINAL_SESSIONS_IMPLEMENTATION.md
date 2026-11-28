@@ -94,23 +94,14 @@ both modes):
 
 ## Showing, leaving, closing
 
-`_show_screen(screen)`:
+`_show_screen(screen)` makes the screen current at once and hides the rest -
+a tab switch since #1019 (it used to play the terminal coming from behind
+the file manager); coming back to the file manager re-reads the panes.
 
-- file manager → terminal: reveal the session's group (the file manager's
-  stays shown), `animate_from_behind` the view - `Panel.beneath` gives the
-  base and any viewer over the panes, which zoom away together - and hide
-  the file manager's group when it lands.
-- terminal → file manager: make the file manager current (its group shows
-  beneath the terminal), fade the view out (`view.closing` swallows input),
-  hide the session's group when it lands, re-read the panes.
-- terminal → terminal, or no motion: at once.
-
-`_close_session` forgets the session; when its screen is on and what comes
-after it (`ScreenManager.after_close`: the neighbouring tab in its group,
-else the file manager, #1019) is the file manager it fades out first,
-otherwise the switch is at once. Then the group goes, `view.close()` (a view
-closed under a running child would start a fresh one on its next draw),
-the panes re-read and `on_done(view.exit_code)` runs.
+`_close_session` forgets the session, and the screen shown before it
+(`ScreenManager.after_close`) comes on at once. Then the group goes,
+`view.close()` (a view closed under a running child would start a fresh one
+on its next draw), the panes re-read and `on_done(view.exit_code)` runs.
 
 A session started with `show=False` (`ctx.start_terminal_session`) is pushed
 hidden and started with PuiKit's `TerminalView.start(panel)`, since a hidden
@@ -247,8 +238,8 @@ hand-over and missing actions, no libghostty; screens (closing back to the
 previous one, hidden start, a dialog closing out of view, row labels), the
 `ctx` API in both modes, `xefmctl screen` / `terminal-session` / `view`, the terminal
 context - against a PuiKit Panel on the memory backend and a stand-in view.
-`test/test_terminal_transition.py`: the entrance, a viewer zooming away with
-the panes and staying, and the fade-out close. `test/test_shell_integration.py`: `apply` per shell, a real zsh in a
+`test/test_terminal_transition.py`: switches and closes are immediate, and a
+viewer over the panes stays. `test/test_shell_integration.py`: `apply` per shell, a real zsh in a
 pty read through libghostty (skipped without zsh or a PuiKit with prompt
 marks), attention. `test/test_configured_commands.py`: the marking and the
 launcher.

@@ -128,41 +128,6 @@ def close_viewer(panel: Any, viewer: Any, finish: Any) -> None:
                                      "duration_ms": VIEWER_FADE_IN_MS})
 
 
-#: The terminal's gesture: it was behind the file manager all along. Opening it,
-#: the file manager zooms up toward the viewer and fades away while the terminal
-#: fades in beneath it; closing it, the file manager settles back to its own size
-#: as the terminal fades out.
-BEHIND_MS = 220
-#: How far the file manager zooms up as it gives way: enough to read as moving
-#: toward the viewer, not so much that the panes lurch.
-BEHIND_SCALE = 1.08
-
-
-def animate_from_behind(panel: Any, widget: Any, *, out: bool = False,
-                        duration_ms: int = BEHIND_MS,
-                        on_complete: Any = None) -> bool:
-    """Reveal ``widget`` (a full-window layer) as if it lay behind the screen,
-    or, with ``out``, put it back there, then call ``on_complete``.
-
-    Returns whether it was scheduled. When it was not - a still backend,
-    reduced motion, or a theme with ``dialog_effect=False`` - ``on_complete``
-    has *not* run and the caller does its follow-up at once."""
-    if not _dialog_effect(panel):
-        return False
-    beneath = _beneath(panel, widget)  # the screen it lies behind
-    layer = {"transition": "fade", "out": out, "duration_ms": duration_ms}
-    if on_complete is not None:
-        layer["on_complete"] = on_complete
-    if not panel.animate(widget, hints=layer):
-        return False
-    for screen in beneath:
-        # Into view as the layer goes out, out of view as it comes in.
-        panel.animate(screen, hints={"transition": "scale", "from_scale": BEHIND_SCALE,
-                                     "fade": True, "out": not out,
-                                     "duration_ms": duration_ms})
-    return True
-
-
 #: Set while :func:`no_motion` holds: modals open and close without moving.
 _STILL = [0]
 

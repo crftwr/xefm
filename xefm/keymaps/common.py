@@ -287,6 +287,12 @@ def bindings() -> dict:
         # - and the command palette has Switch Screen.
         'switch_screen': ['Ctrl-GRAVE'],
         'terminal.switch_screen': ['Ctrl-GRAVE'],
+        # The window's tabs (#1019): Ctrl-Tab in the desktop app, set below,
+        # as in a browser or VS Code - from the file manager, and from a
+        # session (terminal.next_tab), which takes it from the program. A
+        # terminal never delivers Ctrl-Tab: there, Ctrl-` and the palette.
+        'next_screen': [],
+        'prev_screen': [],
         # Screens, the list of every session (#1019), is the overview rather
         # than the way between screens: the status bar's session count opens
         # it, as do the Tools menu and the palette.
@@ -306,6 +312,7 @@ def bindings() -> dict:
         # as new_shell starts another shell. ask_agent: Tools > Ask AI Agent.
         'agent': ['>'],
         'new_agent': [],
+        'resume_agent': [],
         'new_shell': [],
         'ask_agent': [],
 
@@ -560,8 +567,8 @@ def bindings() -> dict:
             # A Mac terminal's new-tab and tab keys (Terminal, iTerm2), for
             # the sessions of the kind on screen (#1019).
             KEY_BINDINGS['terminal.new'] = ['Command-T']
-            KEY_BINDINGS['terminal.next_tab'] = ['Command-Shift-RIGHT_BRACKET']
-            KEY_BINDINGS['terminal.prev_tab'] = ['Command-Shift-LEFT_BRACKET']
+            KEY_BINDINGS['terminal.next_tab'] = ['Ctrl-TAB', 'Command-Shift-RIGHT_BRACKET']
+            KEY_BINDINGS['terminal.prev_tab'] = ['Ctrl-Shift-TAB', 'Command-Shift-LEFT_BRACKET']
         elif sys.platform == 'win32':
             KEY_BINDINGS['open_with_os'] = ['Ctrl-ENTER', 'Ctrl-O']
             KEY_BINDINGS['quit_app'] = ['Alt-F4']
@@ -581,4 +588,13 @@ def bindings() -> dict:
             KEY_BINDINGS['terminal.new'] = ['Ctrl-Shift-T']
             KEY_BINDINGS['terminal.next_tab'] = ['Ctrl-TAB']
             KEY_BINDINGS['terminal.prev_tab'] = ['Ctrl-Shift-TAB']
+        # The window's tabs, as every browser and VS Code switch theirs
+        # (#1019), on both systems.
+        # On a Mac the session's tab keys too, so the same keys walk the
+        # window's tabs from the file manager as from a session.
+        KEY_BINDINGS['next_screen'] = ['Ctrl-TAB']
+        KEY_BINDINGS['prev_screen'] = ['Ctrl-Shift-TAB']
+        if sys.platform == 'darwin':
+            KEY_BINDINGS['next_screen'].append('Command-Shift-RIGHT_BRACKET')
+            KEY_BINDINGS['prev_screen'].append('Command-Shift-LEFT_BRACKET')
     return KEY_BINDINGS

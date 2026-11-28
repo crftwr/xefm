@@ -162,8 +162,10 @@ class AcpClient(RpcClient):
             self.call("session/resume", dict(params, sessionId=self.resume),
                       self._session, self._refused)
         elif self.resume and self._capabilities.get("loadSession"):
-            # It sends the whole conversation again, which is on screen.
+            # It sends the whole conversation again: drawn when the screen is
+            # empty (resumed from a closed one, #1019), else already on it.
             self._loading = True
+            self._replay = not self.conv.items
             self.call("session/load", dict(params, sessionId=self.resume),
                       self._session, self._refused)
         else:
@@ -184,7 +186,11 @@ class AcpClient(RpcClient):
 
     def _session(self, result: dict) -> None:
         conv = self.conv
+        if self._loading and getattr(self, "_replay", False):
+            self._close_text()
+            conv.close_open_items()
         self._loading = False
+        self._replay = False
         conv.session_id = str(result.get("sessionId") or self.resume or conv.session_id)
         self._have_modes(result.get("modes"))
         self._have_options(result.get("configOptions"))
@@ -359,8 +365,17 @@ class AcpClient(RpcClient):
         elif what == "usage_update":
             conv.context_tokens = int(update.get("used") or 0)
             conv.context_window = int(update.get("size") or 0)
-        elif self._loading:
-            return None  # the conversation played back
+        elif self._loading and not getattr(self, "_replay", False):
+            return None  # the conversation played back, already on screen
+        elif what == "user_message_chunk":
+            # Only in a playback: what the user said, as it was said.
+            text = _content_text(update.get("content"))
+            last = self.conv.items[-1] if self.conv.items else None
+            if last is not None and last.kind == "user" and last.open:
+                last.text += text
+            else:
+                self._close_text()
+                self.conv.items.append(Item("user", text, open=True))
         elif what == "agent_message_chunk":
             self._chunk("text", update)
         elif what == "agent_thought_chunk":

@@ -69,7 +69,9 @@ unnoticed.
   shell, `>` a terminal program, `✦` an AI agent - and a session's tab, while
   the pointer is over it, ends with `×`, which closes it (asking first only
   when that would stop something). Click a tab to go there, or use
-  `terminal.next_tab` and `terminal.prev_tab`. Drag a tab along the strip to
+  `next_screen` and `prev_screen` (`terminal.next_tab` and
+  `terminal.prev_tab` inside a session), Ctrl-Tab in the desktop app as in a
+  browser. Going between tabs is at once: nothing slides or fades. Drag a tab along the strip to
   move it: a line shows where it will go, and it moves there when you let go
   (or use `terminal.move_tab_left` and `terminal.move_tab_right`); **Files**
   stays first. A tab whose session is waiting on you shows `⚠` in place of
@@ -90,24 +92,24 @@ unnoticed.
   **Subshell Here** in the directory's context menu starts a new shell in
   that directory.
 - **Screens.** **Tools → Screens…** (`screens`, which works over a viewer too,
-  or `terminal.screens` from inside a session) lists every session, to go to,
-  close, rename or resume one. Each row says what runs in the session - the
-  title the program gives itself, as a terminal's tab shows it - and the
-  directory its shell is in now (`make test - ~/src`, or `zsh - ~/src` at the
-  prompt), with its kind, its state and when you last used it on the right.
-  The ones waiting on you come first and the rest in the order you last used
-  them; the cursor starts on the one you used last that is not on screen.
-  Below them are **Close N idle sessions**, which closes every session that
-  is not in the middle of something, the [AI conversations you
-  closed](AI_AGENT_SESSIONS_FEATURE.md#closing-loses-nothing), and rows that
-  start a new shell or a new AI agent session in the active pane's directory.
+  or `terminal.screens` from inside a session) lists every screen there is,
+  to go to, close or rename one: the file manager first, then each session.
+  A session's row says what runs in it - the title the program gives itself,
+  as a terminal's tab shows it - and the directory its shell is in now
+  (`make test - ~/src`, or `zsh - ~/src` at the prompt), with its kind, its
+  state and when you last used it on the right. The ones waiting on you come
+  first and the rest in the order you last used them; the cursor starts on
+  the screen you used last that is not on now. The last row, **Close N idle
+  sessions**, closes every session that is not in the middle of something.
   The remove key (`remove_list_item`) closes the highlighted session, and the
   rename key (`rename_list_item`) gives it a name of your own, which its tab
-  shows too.
+  shows too. Starting a session is the `+` after the tabs, and an [AI
+  conversation you closed](AI_AGENT_SESSIONS_FEATURE.md#closing-loses-nothing)
+  comes back from **Resume AI Conversation…**.
 - **When it ends.** `exit` in a shell, or a program that finishes, closes the
-  session, whether it was on screen or not, and the tab beside it comes on
-  (the one after it, else the one before - the file manager's for the first
-  session). `exit` closes a shell even when it passes on an
+  session, whether it was on screen or not. If it was on screen, the screen
+  you were on before it comes back - the file manager an editor was opened
+  from, say - as a browser goes back to the tab used last. `exit` closes a shell even when it passes on an
   error from an earlier command, as cmd's `exit` does. A program that fails,
   or a shell that ends before you typed anything into it (it could not start),
   keeps its last screen up so you can read it; `Enter` or `Esc` closes it. To

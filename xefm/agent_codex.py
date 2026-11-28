@@ -208,8 +208,12 @@ class CodexClient(RpcClient):
         def failed(error: dict) -> None:
             self._failed(f"Codex could not open a session: {error.get('message')}")
         if self.resume:
+            # A conversation on screen (a restart after the agent stopped)
+            # needs no history; an empty one (resumed from a closed one, #1019)
+            # gets it with the thread, to draw.
+            self._history = not self.conv.items
             self.call("thread/resume",
-                      dict(params, threadId=self.resume, excludeTurns=True),
+                      dict(params, threadId=self.resume, excludeTurns=not self._history),
                       self._thread, failed)
         else:
             self.call("thread/start", params, self._thread, failed)
@@ -218,6 +222,9 @@ class CodexClient(RpcClient):
         conv = self.conv
         thread = result.get("thread") if isinstance(result.get("thread"), dict) else {}
         conv.session_id = str(thread.get("id") or conv.session_id)
+        if getattr(self, "_history", False):
+            self._history = False
+            self._fold_turns(thread.get("turns"))
         conv.model = str(result.get("model") or conv.model)
         self._policy = result.get("approvalPolicy")
         self._sandbox = result.get("sandbox")
@@ -233,6 +240,20 @@ class CodexClient(RpcClient):
             conv.permission_mode = conv.mode_choice
         self._efforts()
         self._ready()
+
+    def _fold_turns(self, turns) -> None:
+        """A resumed thread's past turns, drawn as they were (#1019): each
+        user message, then what the agent said and did."""
+        for turn in turns if isinstance(turns, list) else []:
+            for data in (turn.get("items") or []) if isinstance(turn, dict) else []:
+                if not isinstance(data, dict):
+                    continue
+                if data.get("type") == "userMessage":
+                    self._close_text()
+                    self.conv.items.append(Item("user", _text_of(data.get("content"))))
+                else:
+                    self._item(data, done=True)
+        self.conv.close_open_items()
 
     def _have_skills(self, result: dict) -> None:
         commands = [{"name": "compact",

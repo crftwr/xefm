@@ -23,11 +23,10 @@ from typing import Any
 
 from puikit.widgets.base import CONTROL_HEIGHT, Widget
 
-from xefm.file_pane import DEFAULT_BG, _mix
-from xefm.tab_strip import NEW_TAB, TAB_HEIGHT_GUI, Tab, TabStrip, tab_height
+from xefm.tab_strip import NEW_TAB, TAB_HEIGHT_GUI, Tab, TabStrip, strip_colors, tab_height
 
-#: The inset above the tabs and at the sides, in device pixels, where the
-#: backend draws them (a terminal's strip is one row, flush).
+#: The inset above and below the tabs and at the sides, in device pixels,
+#: where the backend draws them (a terminal's strip is one row, flush).
 PAD_PX = 4.0
 
 #: What :meth:`ScreenStrip.hit` returns for a tab's close button, with the
@@ -50,13 +49,13 @@ def top_surface(panel: Any, under: Any = None) -> Any:
 
 def strip_height(backend: Any) -> float:
     """The strip's height in base units on ``backend``: one row on a grid,
-    the taller tab and the inset above it where it draws vector shapes (the
-    tabs stand on the strip's bottom edge)."""
+    the taller tab and the same inset above and below it where it draws
+    vector shapes."""
     caps = getattr(backend, "capabilities", None)
     if caps is None or not caps.supports("vector_shapes"):
         return 1.0
     bh = backend.base_size[1] or 1
-    return TAB_HEIGHT_GUI + PAD_PX / bh
+    return TAB_HEIGHT_GUI + 2 * PAD_PX / bh
 
 
 class ScreenStrip(Widget):
@@ -91,7 +90,7 @@ class ScreenStrip(Widget):
             return SizeRequest(min=0.0, preferred=0.0, max=0.0)
         base_h = getattr(ctx, "base_h", 0) or 0
         h = 1.0 if getattr(ctx, "snap", True) else \
-            TAB_HEIGHT_GUI + (PAD_PX / base_h if base_h else 0.0)
+            TAB_HEIGHT_GUI + (2 * PAD_PX / base_h if base_h else 0.0)
         return SizeRequest(min=h, preferred=h, max=h)
 
     def draw(self, ctx) -> None:
@@ -108,17 +107,10 @@ class ScreenStrip(Widget):
         else:
             pad_x = 1.0
         tab_h = tab_height(ctx)
-        # The current tab wears the session's page (the content surface the
-        # terminal and the conversation paint), so it runs on into it; the
-        # strip's ground is the header band a viewer's title sits on, set back
-        # from the page - or the page nudged toward the text where a theme
-        # gives both one colour. The tabs stand on the strip's bottom edge.
-        theme = ctx.theme
-        page = theme.surface_bg("content") or DEFAULT_BG
-        ground = theme.surface_bg("header")
-        if ground is None or tuple(ground) == tuple(page):
-            ground = _mix(page, theme.text, 0.08)
-        self._strip.draw(ctx, [*tabs, Tab(NEW_TAB)], current, pad_x, max(0.0, hu - tab_h),
+        # Centred: the same inset above and below (none on a grid's one row).
+        top = max(0.0, (hu - tab_h) / 2)
+        ground, page = strip_colors(ctx.theme)
+        self._strip.draw(ctx, [*tabs, Tab(NEW_TAB)], current, pad_x, top,
                          max(0.0, wu - 2 * pad_x), emphasis=True, ground_height=hu,
                          ground=ground, current_bg=page, height=tab_h)
 

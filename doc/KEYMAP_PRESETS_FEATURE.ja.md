@@ -176,8 +176,8 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `new_tab` | このペインの同じ場所に新しいタブを開く | `T` | `Ctrl-T` | `Ctrl-T`<br>macOS アプリ：`Cmd-T`、`Ctrl-T` | — |
 | `open_in_new_tab` | カーソル位置のディレクトリを新しいタブで開く | `Shift-T` | `Ctrl-↑` | — | — |
 | `close_tab` | このペインの現在のタブを閉じる | `Ctrl-W` | `Ctrl-W` | `Ctrl-W`<br>macOS アプリ：`Cmd-W`、`Ctrl-W` | `Ctrl-W` |
-| `next_tab` | このペインの次のタブへ | `Ctrl-PgDn` | `Ctrl-Tab` | `Ctrl-PgDn` | `Ctrl-PgDn` |
-| `prev_tab` | このペインの前のタブへ | `Ctrl-PgUp` | `Ctrl-Shift-Tab` | `Ctrl-PgUp` | `Ctrl-PgUp` |
+| `next_tab` | このペインの次のタブへ | `Ctrl-PgDn` | — | `Ctrl-PgDn` | `Ctrl-PgDn` |
+| `prev_tab` | このペインの前のタブへ | `Ctrl-PgUp` | — | `Ctrl-PgUp` | `Ctrl-PgUp` |
 | `move_tab_left` | このペインの現在のタブを 1 つ左へ移す | — | — | — | — |
 | `move_tab_right` | このペインの現在のタブを 1 つ右へ移す | — | — | — | — |
 | `adjust_pane_left` | 左のペインを狭く | `[` | `[` | `[` | `[` |
@@ -200,9 +200,12 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `subshell` | 最後に使ったターミナルセッションに移動する。なければこのディレクトリでサブシェルを開く | `Shift-X` | — | — | `s` |
 | `new_shell` | このディレクトリで別のシェルセッションを開く | — | — | — | — |
 | `switch_screen` | ファイルマネージャーと最後に使った画面を切り替える | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
-| `screens` | すべてのセッションを一覧にし、移動、終了、名前の変更、再開をする | — | — | — | — |
+| `next_screen` | ウィンドウの次のタブへ | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
+| `prev_screen` | ウィンドウの前のタブへ | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
+| `screens` | すべての画面を一覧にし、移動、終了、名前の変更をする | — | — | — | — |
 | `agent` | 最後に使った AI エージェントのセッションに移動する。なければこのディレクトリで開く | `>` | `>` | `>` | `>` |
 | `new_agent` | このディレクトリで別の AI エージェントのセッションを開く | — | — | — | — |
+| `resume_agent` | XeFM で閉じた AI の会話を再開する | — | — | — | — |
 | `ask_agent` | 選択項目について AI エージェントに尋ねる | — | — | — | — |
 | `jobs` | バックグラウンドジョブの一覧 | `Ctrl-G` | `Ctrl-G` | `Ctrl-G` | — |
 | `reread` | 両方のペインのディレクトリを読み直す | — | `F2`、`Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
@@ -331,10 +334,10 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 |---|---|---|
 | `terminal.close` | ターミナルを閉じてペインに戻る。実行中のプログラムは停止する | macOS アプリ：`Cmd-W`<br>Windows アプリ：`Ctrl-Shift-W` |
 | `terminal.switch_screen` | ファイルマネージャーに戻る | `` Ctrl-` `` |
-| `terminal.screens` | すべてのセッションを一覧にし、移動、終了、名前の変更、再開をする | — |
+| `terminal.screens` | すべての画面を一覧にし、移動、終了、名前の変更をする | — |
 | `terminal.new` | 別のセッション（シェルか AI エージェント）を起動する | macOS アプリ：`Cmd-T`<br>Windows アプリ：`Ctrl-Shift-T` |
-| `terminal.next_tab` | 次のタブに移動する | macOS アプリ：`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
-| `terminal.prev_tab` | 前のタブに移動する | macOS アプリ：`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
+| `terminal.next_tab` | 次のタブに移動する | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |
+| `terminal.prev_tab` | 前のタブに移動する | macOS アプリ：`Ctrl-Shift-Tab`、`Cmd-Shift-[`<br>Windows アプリ：`Ctrl-Shift-Tab` |
 | `terminal.move_tab_left` | このセッションのタブを 1 つ左へ移す | — |
 | `terminal.move_tab_right` | このセッションのタブを 1 つ右へ移す | — |
 | `command_palette` | ターミナルのアクションを名前で探して実行 | macOS アプリ：`Cmd-Shift-P`<br>Windows アプリ：`Ctrl-Shift-P` |

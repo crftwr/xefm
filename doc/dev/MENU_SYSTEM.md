@@ -160,26 +160,58 @@ identical to pressing the key) or calls a bound method directly
 `_menu_shortcut(...)` (aliased `sc` inside `_build_menu`) so the hint reflects
 the user's actual binding.
 
-#### Live enable / check predicates
+#### When an item is enabled: `when`
 
-Because `enabled` / `checked` accept predicates, menu state is expressed inline
-and re-evaluated on open — no separate "update states" pass. Examples from
-`_build_menu()`:
+The bar's items are `xefm.menu_when.MenuItem` - PuiKit's with a `when` - and
+each says where it can act and on what: a preset name, a function returning a
+bool, or a tuple of them that must all hold. `_build_menu()` ends with
+`menu_when.apply_bar(bar, self._menu_presets())`, which turns every `when`
+into the item's `enabled` (PuiKit re-evaluates it on open; `enabled` itself
+still works and must hold too).
+
+| Preset | Enabled while |
+|---|---|
+| `files` | the file manager is on screen |
+| `always` | any screen |
+| `entry` | the file manager, with an entry under the cursor |
+| `selection` | the file manager, with entries selected |
+
+The bar is on every screen since #1019 - the file manager's and each
+session's - and the safe side is the default. The screen an item serves is
+`files` unless `always` says otherwise, on the item or on the nearest parent
+that names one (`files` names it back); a bare function keeps `files`, and
+`entry` / `selection` are always the file manager's. So an item added without
+a `when` is off on a session's screen, where the panes it would act on are out
+of view. The bar's own entries take no `when`: their items start from `files`,
+and an entry is enabled while any of its items is, so File greys whole on a
+session's screen and Tools does not.
 
 ```python
-def has_files() -> bool:
-    return bool(self.active_pane()["files"])
+MenuItem("Rename…", on_select=self.rename, when="entry", shortcut=sc("rename"))
 
-MenuItem("Rename…", on_select=self.rename,
-         enabled=has_files, shortcut=sc("rename"))
+MenuItem("Background Jobs…", on_select=self.show_jobs,
+         when=("always", lambda: bool(self.tasks.background_tasks())),
+         shortcut=sc("jobs"))
 
-MenuItem("Show Hidden Files", on_select=lambda: self._menu("toggle_hidden"),
-         checked=lambda: self.flm.show_hidden, shortcut=sc("toggle_hidden"))
-
-MenuItem("Clear Selection", on_select=lambda: self._menu("unselect_all"),
-         enabled=lambda: bool(self.active_pane()["selected_files"]),
-         shortcut=sc("unselect_all"))
+MenuItem("Advanced", when="always", submenu=Menu(  # its items inherit it
+    MenuItem("Keymap…", on_select=self.choose_keymap),
+    MenuItem("Install Extension…", on_select=self.install_extension,
+             when=("files", lambda: not self._ext_fetch_busy)),  # named back
+))
 ```
+
+`test/test_menu_when.py` lists what a session's screen offers; an item lands
+there only by saying `always`. `MENU_ITEMS` keeps its own `when`
+(`user_api.MENU_WHEN`: `always`, `entry`, `selection`) - the same words - for
+the menus it reaches, File and the context menu, which are the file
+manager's.
+
+An OS menu bar is greyed by PuiKit while a layer that does not own it is on
+top - a dialog's guard (xefm#388). A session's view is a layer, but a screen
+of the window, so `_add_session_screen` registers it as an owner of the same
+bar (`panel.set_menu_bar(menu, owner=view)`, again after a rebuild); a dialog
+over it greys the bar again. A PuiKit without owners leaves the bar greyed on
+a session's screen.
 
 #### Context menus (right-click)
 

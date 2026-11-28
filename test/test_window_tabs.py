@@ -92,19 +92,34 @@ def test_a_group_key_goes_back_to_the_screen_used_last(monkeypatch):
     assert first.shown and len(app.made) == 2
 
 
-def test_closing_a_tab_shows_the_tab_beside_it(monkeypatch):
+def test_closing_a_tab_goes_back_to_the_screen_shown_before_it(monkeypatch):
+    # As a browser or VS Code goes back to the tab used last: an editor opened
+    # from the file manager closes back to it, not to the tab beside it.
     app = _app(monkeypatch)
     for _ in range(2):
         app.new_shell()
     a, b = (app._sessions.for_view(v) for v in app.made)
     c = _agent_session(app)  # another kind, the same strip
+    app._show_screen(app._screens.files)
     app._show_screen(b.screen)
-    app._close_session(b)  # the next tab, whatever its kind
-    assert app._screens.current is c.screen
-    app._close_session(c)  # the last tab: the one before it
-    assert app._screens.current is a.screen
-    app._close_session(a)  # the one before it is the file manager's
+    app._close_session(b)  # b was opened from the file manager
     assert app._screens.current is app._screens.files
+    app._show_screen(a.screen)
+    app._show_screen(c.screen)
+    app._close_session(c)
+    assert app._screens.current is a.screen
+    app._close_session(a)
+    assert app._screens.current is app._screens.files
+
+
+def test_closing_a_tab_out_of_view_leaves_the_screen_on_now(monkeypatch):
+    app = _app(monkeypatch)
+    app.new_shell()
+    a = app._sessions.for_view(app.made[0])
+    c = _agent_session(app)
+    app._show_screen(c.screen)
+    app._close_session(a)
+    assert app._screens.current is c.screen
 
 
 def test_next_and_previous_tab_wrap_through_the_file_manager(monkeypatch):
@@ -285,13 +300,13 @@ def test_gui_tabs_are_taller_with_the_text_in_the_middle():
     rounds = [c for c in ctx.calls if c[0] == "round"]
     assert rounds == [("round", 1.0, 0.25, rounds[0][3], TAB_HEIGHT_GUI)]
     texts = {c[3]: c[2] for c in ctx.calls if c[0] == "text"}
-    assert texts["zsh"] == texts["$"] == texts["×"] == 0.25 + 0.3  # 30% above
+    assert texts["zsh"] == texts["$"] == texts["×"] == 0.25 + 0.15  # 15% above
     assert strip.row == (0.25, 0.25 + TAB_HEIGHT_GUI)
     # The strip: the tab and the inset above it; a terminal's is one row.
     gui = SimpleNamespace(capabilities=SimpleNamespace(supports=lambda c: True),
                           base_size=(8, 16))
     grid = SimpleNamespace(capabilities=SimpleNamespace(supports=lambda c: False))
-    assert strip_height(gui) == TAB_HEIGHT_GUI + PAD_PX / 16
+    assert strip_height(gui) == TAB_HEIGHT_GUI + 2 * PAD_PX / 16
     assert strip_height(grid) == 1.0
     # A dragged tab's landing place: a 2 px line in the gap, as tall as the tabs.
     strip.drop_slot = 0
@@ -300,6 +315,35 @@ def test_gui_tabs_are_taller_with_the_text_in_the_middle():
     [line] = [c for c in ctx.calls if c[0] == "fill"]
     assert line[3] == 2.0 / 8 and line[4] == TAB_HEIGHT_GUI
     assert line[1] + line[3] / 2 == 1.0 - strip.GAP / 2
+
+
+class _ProportionalCtx(_VectorCtx):
+    """Bold is wider, and the lead glyphs differ in width, as in a GUI font."""
+
+    WIDTHS = {"⚠": 1.4, "$": 0.6, "✦": 1.0}
+
+    def measure_text(self, text, style=None):
+        from puikit import TextAttribute
+        w = sum(self.WIDTHS.get(ch, 1.0) for ch in text)
+        bold = style is not None and style.attr is not None \
+            and style.attr & TextAttribute.BOLD
+        return w * 1.1 if bold else w
+
+
+def test_a_tab_keeps_its_place_whichever_is_current_and_whatever_its_mark():
+    # Switching tabs moved them all a little: only the current label was
+    # measured bold, and a mark (⚠) took a narrower icon's place (#1019).
+    from xefm.tab_strip import Tab, TabStrip
+    strip = TabStrip()
+
+    def spans(current, mark=""):
+        strip.draw(_ProportionalCtx(), [Tab("Files", icon="▤"),
+                                        Tab("zsh", mark, icon="$", closable=True),
+                                        Tab("Claude", icon="✦", closable=True)],
+                   current, 1.0, 0.0, 58.0, emphasis=True)
+        return list(strip.hits)
+
+    assert spans(0) == spans(1) == spans(2) == spans(0, mark="⚠")
 
 
 def test_on_a_grid_the_close_buttons_backing_is_its_own_cell():
@@ -425,7 +469,8 @@ def test_screens_renames_a_session(monkeypatch):
     switcher.last.kw["on_rename"](session)
     asked[0]["on_accept"]("build server")
     assert session.title == "build server" and session.tab_label == "build server"
-    assert switcher.labels()[0].startswith("build server")  # Screens again
+    assert switcher.labels()[1].startswith("build server")  # Screens again
+    assert switcher.last.kw["on_rename"](app._screens.files) is False  # not Files
 
 
 # --- closed AI conversations ----------------------------------------------------------
@@ -464,10 +509,15 @@ def test_a_closed_conversation_is_kept_and_offered_to_resume(monkeypatch):
     app._start_agent = lambda entry, prompt=None, resume=None: resumed.append(
         (entry["name"], resume))
     app.screens()
-    labels = switcher.labels()
-    row = next(i for i, text in enumerate(labels) if text.startswith("Resume Fix the bug"))
-    switcher.last.kw["on_accept"](switcher.last.items[row])
+    assert switcher.labels() == ["File manager"]  # not in Screens: its own dialog
+    app.resume_agent()
+    assert switcher.last.kw["title"] == "Resume AI Conversation"
+    assert switcher.labels() == ["Fix the bug - /w"]
+    assert switcher.last.kw["to_right"](record).startswith("Claude Code, closed")
+    switcher.enter()
     assert resumed == [("Claude Code", record)] and app._closed_agents() == []
+    app.resume_agent()  # nothing left: a word in the log, no dialog
+    assert app.logged[-1] == "No closed AI conversation to resume"
 
 
 def test_a_conversation_with_no_turn_is_not_kept(monkeypatch):
@@ -502,11 +552,93 @@ def test_resuming_brings_the_conversation_back_and_restarts_on_it(monkeypatch):
     app._resume_into(session, view, record)
     assert view.conversation is conv and conv.state == C.STARTING
     assert restarted == [True] and session.title == "Fix the bug"
-    # One from an earlier run: the id alone, and a word in the transcript.
+    # One from an earlier run of an RPC agent: the id alone, the conversation
+    # left empty, so the agent sends its history (see the protocol tests).
     view.conversation = C.Conversation()
-    app._resume_into(session, view, ClosedAgent("Claude Code", "/w", "s-2", "Old", 1.0))
-    assert view.conversation.session_id == "s-2"
-    assert "Resumed: Old" in view.conversation.items[-1].text
+    app._resume_into(session, view, ClosedAgent("Codex", "/w", "t-2", "Old", 1.0))
+    assert view.conversation.session_id == "t-2" and view.conversation.items == []
+
+
+def test_a_claude_conversation_from_an_earlier_run_is_read_from_its_file(
+        monkeypatch, tmp_path):
+    import json
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    folder = tmp_path / "projects" / "-w-src"
+    folder.mkdir(parents=True)
+    lines = [
+        {"type": "user", "message": {"role": "user", "content": "Fix the login bug"}},
+        {"type": "user", "isMeta": True, "message": {"role": "user", "content": "meta"}},
+        {"type": "assistant", "message": {"id": "m1", "role": "assistant", "content": [
+            {"type": "text", "text": "Looking at it."},
+            {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/w/a"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "def login(): ..."}]}},
+        {"type": "assistant", "message": {"id": "m2", "role": "assistant", "content": [
+            {"type": "text", "text": "Fixed."}]}},
+        {"type": "summary", "summary": "Login fix"},
+    ]
+    (folder / "s-9.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\nnot json\n")
+    assert C.claude_transcript("s-9", "/w/src") == str(folder / "s-9.jsonl")
+    assert C.claude_transcript("s-9") == str(folder / "s-9.jsonl")  # found by its id
+    assert C.claude_transcript("../etc") is None
+    app = _app(monkeypatch)
+    view = SimpleNamespace(conversation=C.Conversation(), _source="", _dirty=False,
+                           _panel=None, protocol=C.ClaudeProtocol())
+    view.protocol.restart = lambda v, resume: None
+    app._resume_into(SimpleNamespace(title=""), view,
+                     ClosedAgent("Claude Code", "/w/src", "s-9", "Login fix", 1.0))
+    kinds = [(i.kind, i.text or i.name) for i in view.conversation.items]
+    assert kinds[0] == ("user", "Fix the login bug")
+    assert ("text", "Looking at it.") in kinds and ("text", "Fixed.") in kinds
+    tool = next(i for i in view.conversation.items if i.kind == "tool")
+    assert tool.result == "def login(): ..." and not tool.open
+    assert "Resumed: Login fix" in view.conversation.items[-1].text
+    assert not any(i.text == "meta" for i in view.conversation.items)
+
+
+def test_codex_sends_the_history_only_into_an_empty_conversation():
+    from xefm.agent_codex import CodexClient
+    calls = []
+    conv = C.Conversation()
+    client = CodexClient.__new__(CodexClient)
+    client.conv, client.resume, client.cwd = conv, "t-1", "/w"
+    client.instructions, client.channel, client.skills_roots = "", None, []
+    client.call = lambda method, params, *rest: calls.append((method, params))
+    client._start_thread()
+    resume = next(p for m, p in calls if m == "thread/resume")
+    assert resume["excludeTurns"] is False  # empty: send the turns
+    client._items, client._open_text = {}, None
+    client._close_text = lambda: None
+    client._fold_turns([{"items": [
+        {"type": "userMessage", "content": [{"type": "text", "text": "Rename these"}]},
+        {"type": "agentMessage", "id": "a1", "text": "Done."}]}])
+    assert [(i.kind, i.text) for i in conv.items] == [("user", "Rename these"),
+                                                      ("text", "Done.")]
+    calls.clear()
+    client._start_thread()  # a conversation on screen: no history again
+    assert next(p for m, p in calls if m == "thread/resume")["excludeTurns"] is True
+
+
+def test_an_acp_playback_fills_an_empty_conversation_only():
+    from xefm.agent_acp import AcpClient
+    conv = C.Conversation()
+    client = AcpClient(["agent"], conv=conv, cwd="/w", env={}, post=lambda fn: fn(),
+                       on_message=lambda m: None, on_exit=lambda c, e: None)
+    client._loading, client._replay = True, True
+    for update in ({"sessionUpdate": "user_message_chunk",
+                    "content": {"type": "text", "text": "Sort "}},
+                   {"sessionUpdate": "user_message_chunk",
+                    "content": {"type": "text", "text": "these"}},
+                   {"sessionUpdate": "agent_message_chunk",
+                    "content": {"type": "text", "text": "Sorted."}}):
+        client._on_notification("session/update", {"update": update})
+    client._session({"sessionId": "x"})
+    assert [(i.kind, i.text, i.open) for i in conv.items] == [
+        ("user", "Sort these", False), ("text", "Sorted.", False)]
+    client._loading, client._replay = True, False  # on screen already: dropped
+    client._on_notification("session/update", {"update": {
+        "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "x"}}})
+    assert len(conv.items) == 2
 
 
 # --- naming AI sessions ---------------------------------------------------------------
@@ -590,12 +722,50 @@ def test_the_new_actions_have_their_keys():
                           ("switch_screen", A.COMMON), ("terminal.switch_screen", A.TERMINAL),
                           ("terminal.new", A.TERMINAL), ("terminal.next_tab", A.TERMINAL),
                           ("terminal.prev_tab", A.TERMINAL),
+                          ("next_screen", A.COMMON), ("prev_screen", A.COMMON),
+                          ("resume_agent", A.COMMON),
                           ("rename_list_item", A.FILTER_LIST)):
         assert A.registry.resolve(context, name) is not None, name
     for preset in kp.PRESETS:
         table = kp.table(preset)
         assert table["switch_screen"] == ["Ctrl-GRAVE"], preset
         assert table["screens"] == [], preset
+        # Ctrl-Tab is the window's, not a pane's (#1019).
+        assert "Ctrl-TAB" not in table["next_tab"], preset
+
+
+def test_ctrl_tab_walks_the_windows_tabs_in_the_desktop_app(monkeypatch):
+    import xefm.keymaps.common as common
+    monkeypatch.setattr(common, "is_desktop_mode", lambda: True)
+    for platform in ("darwin", "win32"):
+        monkeypatch.setattr(common.sys, "platform", platform)
+        table = common.bindings()
+        assert table["next_screen"][0] == "Ctrl-TAB", platform
+        assert table["prev_screen"][0] == "Ctrl-Shift-TAB", platform
+        # On a Mac the session's tab keys walk them from the file manager too.
+        mac = platform == "darwin"
+        assert ("Command-Shift-RIGHT_BRACKET" in table["next_screen"]) == mac
+        assert ("Command-Shift-LEFT_BRACKET" in table["prev_screen"]) == mac
+        assert "Ctrl-TAB" in table["terminal.next_tab"], platform
+    monkeypatch.setattr(common, "is_desktop_mode", lambda: False)
+    table = common.bindings()  # a terminal never sends Ctrl-Tab
+    assert table["next_screen"] == [] and table["terminal.next_tab"] == []
+
+
+def test_next_screen_walks_every_tab(monkeypatch):
+    app = _app(monkeypatch)
+    app.new_shell()
+    agent = _agent_session(app)
+    shell = app._sessions.for_view(app.made[0])
+    app._show_screen(app._screens.files)
+    app.next_screen()
+    assert app._screens.current is shell.screen
+    app.next_screen()
+    assert app._screens.current is agent.screen
+    app.next_screen()
+    assert app._screens.current is app._screens.files
+    app.prev_screen()
+    assert app._screens.current is agent.screen
 
 
 # --- moving tabs ----------------------------------------------------------------------
@@ -691,3 +861,20 @@ def test_moving_a_pane_tab_keeps_the_current_one_current():
     assert pm.move_tab("left", 0, 2)
     assert pm.tabs["left"] == ["c", "b", "a"] and pm.tab_index["left"] == 1
     assert not pm.move_tab("left", 0, 5)
+
+
+def test_a_sessions_view_owns_the_window_menu_bar(monkeypatch):
+    # PuiKit greys an OS menu bar under a layer that does not own it (a
+    # dialog's guard); a session's view is a screen showing the same bar
+    # (#1019), so it is registered as an owner of it.
+    from puikit import Menu
+    from puikit.widgets import Label
+    app = _app(monkeypatch)
+    app.menu_bar.menu = Menu()
+    app.panel.set_menu_bar(app.menu_bar.menu)
+    app.new_shell()
+    assert app._screens.current.session is not None
+    assert app.panel._menu_bar_active()
+    dialog = Label("dialog")
+    app.panel.push_layer(dialog, z=70, hints={"x": 0, "y": 0, "w": 20, "h": 5})
+    assert not app.panel._menu_bar_active()

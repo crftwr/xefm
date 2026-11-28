@@ -98,10 +98,6 @@ def _shown(panel):
 def _app(monkeypatch, *, desktop=True):
     import xefm.app as app_mod
     monkeypatch.setattr(app_mod, "is_desktop_mode", lambda: desktop)
-    import xefm.dialog_geometry as geometry
-    # No motion: every transition lands at once (test_terminal_transition
-    # plays them).
-    monkeypatch.setattr(geometry, "animate_from_behind", lambda *a, **k: False)
     panel = _panel()
     app = SimpleNamespace(panel=panel, relisted=0, logged=[], _sessions=SessionRegistry(),
                           _screens=ScreenManager(panel))
@@ -155,7 +151,8 @@ def _app(monkeypatch, *, desktop=True):
 
 #: What the window's tabs, its chrome and closed conversations add (#1019).
 _SCREEN_METHODS = (
-    "_add_session_screen", "_animate_session", "_chrome_bands", "_content_band",
+    "_add_session_screen", "_share_menu_bar", "_chrome_bands", "_content_band", "resume_agent",
+    "next_screen", "prev_screen", "_step_screen", "_has_screens",
     "_window_tabs", "_tab_mark", "_tab_icon", "_tab_event", "_chrome_event",
     "_screen_action", "_new_kinds", "_new_tab_menu", "_go_to_group", "switch_screen",
     "new_shell", "new_agent", "_session_hints", "_closed_agents", "_save_closed_agents",
@@ -171,6 +168,7 @@ class _Chrome:
         self.takes_activation_key = True
         self.events = []
         self.clicks = []
+        self.menu = None  # the menu bar's model, shared with a session's view
 
     def draw(self, ctx):
         pass
@@ -233,13 +231,13 @@ def test_the_switcher_offers_the_screen_before_this_one(monkeypatch):
     first, second = app.made
     app.screens()  # in the second: the first, used before it, is where it starts
     s1, s2 = (app._sessions.for_view(v) for v in (first, second))
-    assert switcher.last.items[:2] == [s2, s1] and switcher.last.list.selected == 1
-    assert app._screens.files not in switcher.last.items  # Ctrl-` goes back there
+    files = app._screens.files
+    assert switcher.last.items[:3] == [files, s2, s1] and switcher.last.list.selected == 2
     switcher.enter()
     assert first.shown and not second.shown
-    # The new-shell row and the close-idle row are not sessions to close.
+    # The file manager and the close-idle row are not sessions to close.
     remove = switcher.last.kw["on_remove"]
-    assert all(remove(row) is False for row in switcher.last.items[2:])
+    assert remove(files) is False and remove(switcher.last.items[-1]) is False
 
 
 def test_the_subshell_is_a_session_with_the_snapshot_and_xefmctl(monkeypatch):
@@ -471,7 +469,7 @@ def test_the_switcher_says_what_is_on_each_screen(monkeypatch):
     session = app._sessions.for_view(view)
     session.command_since, session.command = 1.0, "make test"
     app.screens()
-    assert switcher.labels()[0] == "make test - /tmp"
+    assert switcher.labels()[:2] == ["File manager - viewing notes.txt", "make test - /tmp"]
     assert switcher.last.kw["to_right"](session).startswith("shell, running")
 
 
@@ -481,11 +479,11 @@ def test_rows_that_read_the_same_get_the_sessions_name(monkeypatch):
     app.new_terminal_session()
     app.new_terminal_session()
     app.screens()
-    assert switcher.labels()[:2] == ["zsh 2 - /tmp", "zsh - /tmp"]
+    assert switcher.labels()[1:3] == ["zsh 2 - /tmp", "zsh - /tmp"]
     first = app._sessions.for_view(app.made[0])
     first.command_since, first.command = 1.0, "claude"
     app.screens()
-    assert switcher.labels()[:2] == ["zsh - /tmp", "claude - /tmp"]
+    assert switcher.labels()[1:3] == ["zsh - /tmp", "claude - /tmp"]
 
 
 def test_a_chosen_name_heads_its_row():
@@ -901,23 +899,16 @@ _AGENT_METHODS = ("open_agent", "ask_agent", "_pick_agent", "_agent_request",
                   "_start_agent", "_agents_ready", "_agent_installed")
 
 
-def test_the_switcher_offers_a_new_session_of_each_installed_agent(monkeypatch):
+def test_screens_lists_what_there_is_and_starts_nothing(monkeypatch):
+    # Starting a session is the + after the tabs (#1019): Screens manages
+    # the screens there are.
     from xefm import agents
     app = _app(monkeypatch)
     switcher = _Switcher(monkeypatch)
-    app.config.AGENTS = [{"name": "Claude Code", "command": ["claude"], "preset": "claude-code"},
-                         {"name": "Codex", "command": ["codex"]},
-                         {"name": "Missing", "command": ["nope"]}]
-    monkeypatch.setattr(agents, "installed", lambda e: e["name"] != "Missing")
-    started = []
-    app._start_agent = lambda entry, prompt=None, resume=None: started.append(entry["name"])
+    app.config.AGENTS = [{"name": "Claude Code", "command": ["claude"], "preset": "claude-code"}]
+    monkeypatch.setattr(agents, "installed", lambda e: True)
     app.screens()
-    assert switcher.labels() == ["New shell in /tmp",
-                                 "New Claude Code in /tmp", "New Codex in /tmp"]
-    dialog = switcher.last
-    assert not dialog.kw["on_remove"](dialog.items[1])  # nothing to close
-    dialog.kw["on_accept"](dialog.items[2])
-    assert started == ["Codex"]
+    assert switcher.labels() == ["File manager"]
 
 
 def test_agent_is_the_action_and_greater_than_its_key():

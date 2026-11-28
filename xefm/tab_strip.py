@@ -11,7 +11,7 @@ This is XeFM's own drawing, not a PuiKit widget, by decision (#1019): PuiKit's
 ``Tabs`` is a dialog's page switcher - it takes focus and the arrow keys and
 holds the page under it - while these strips take no focus and no keys, and
 the host decides which tab is current and how loud it is. The one capability
-read here, ``ctx.vector_shapes``, only rounds the chips' top corners.
+read here, ``ctx.vector_shapes``, only rounds the chips' corners.
 
 :class:`TabStrip` draws and remembers where each tab landed, so the host can
 tell which tab a click hit (:meth:`TabStrip.hit`).
@@ -32,8 +32,22 @@ CLOSE_GLYPH = "×"
 #: What the chip after the tabs says: open another one.
 NEW_TAB = "+"
 #: A tab's height in rows where the backend draws sub-row (the desktop app):
-#: the text row and 30% of one above and below it. A terminal's is one row.
-TAB_HEIGHT_GUI = 1.6
+#: the text row and 15% of one above and below it. A terminal's is one row.
+TAB_HEIGHT_GUI = 1.3
+
+
+def strip_colors(theme) -> tuple:
+    """``(ground, page)`` for a tab strip on ``theme``: the strip's ground is
+    the header band a title sits on, and the current tab wears the page - the
+    content surface the panes, a terminal and a conversation paint - so it
+    reads as the one shown below; the page nudged toward the text where a
+    theme gives both one colour. The window's strip and a pane's use the
+    same, so their tabs look alike (#1019 hand check)."""
+    page = theme.surface_bg("content") or DEFAULT_BG
+    ground = theme.surface_bg("header")
+    if ground is None or tuple(ground) == tuple(page):
+        ground = _mix(page, theme.text, 0.08)
+    return ground, page
 
 
 def tab_height(ctx) -> float:
@@ -64,13 +78,18 @@ class TabStrip:
     """A row of tabs, drawn on demand. Keeps the last draw's row and each
     tab's span for :meth:`hit`."""
 
-    #: The rounding of a tab's top corners, in device pixels, where the
+    #: The rounding of a tab's corners, in device pixels, where the
     #: backend draws vector shapes.
     RADIUS_PX = 6.0
     #: The gap between two chips, in base units.
     GAP = 1.0
     #: How far a press must travel along the strip before it drags its tab.
     DRAG_THRESHOLD = 1.0
+    #: The glyphs a tab's lead is drawn with - the hosts' icons and the
+    #: marks that take their place. The lead gets the room of the widest, so
+    #: a mark coming or going does not resize its tab and move the rest
+    #: (#1019 hand check); a lead not listed here widens the room for itself.
+    LEAD_SAMPLES = "▤$>✦⚠✓…▸▣⌕≡"
 
     def __init__(self) -> None:
         #: The row drawn last, ``(y0, y1)`` in the drawing context's units,
@@ -219,28 +238,30 @@ class TabStrip:
         inset = 1.0
         sep = 0.75 if ctx.vector_shapes else 1.0
         # The current tab's label is bold, and bold is wider on a proportional
-        # font: it is measured, and elided, in that style.
+        # font. Every tab is sized and elided as if bold, so a tab keeps its
+        # width and place whichever one is current: switching tabs moved them
+        # all a little (#1019 hand check).
         bold = Style(attr=TextAttribute.BOLD)
 
-        def measure_of(i):
-            if i == current:
-                return lambda text: ctx.measure_text(text, bold)
-            return ctx.measure_text
+        def measure_bold(text):
+            return ctx.measure_text(text, bold)
 
         # A tab is: inset, [lead, sep], label, [sep, close], inset. The lead
         # and the close button keep their width when the tabs are squeezed;
         # the label gives way.
         close_w = ctx.measure_text(CLOSE_GLYPH)
+        lead_w = max([ctx.measure_text(g) for g in self.LEAD_SAMPLES]
+                     + [ctx.measure_text(t.lead) for t in tabs if t.lead] + [0.0])
 
         def fixed(t: Tab) -> float:
             w = 2 * inset
             if t.lead:
-                w += ctx.measure_text(t.lead) + sep
+                w += lead_w + sep
             if t.closable:
                 w += sep + close_w
             return w
 
-        widths = [fixed(t) + measure_of(i)(t.label) for i, t in enumerate(tabs)]
+        widths = [fixed(t) + measure_bold(t.label) for t in tabs]
         if tabs:
             share = (avail - gap * (len(tabs) - 1)) / len(tabs)
             if sum(widths) + gap * (len(tabs) - 1) > avail:
@@ -258,16 +279,13 @@ class TabStrip:
             # A label that fits exactly stays whole: elide's own comparison
             # can lose it to rounding, and a one-glyph label (``+``) then
             # vanished altogether.
-            shown = label if measure_of(i)(label) <= room + 1e-6 else \
-                elide(label, room, where="end", measure=measure_of(i))
+            shown = label if measure_bold(label) <= room + 1e-6 else \
+                elide(label, room, where="end", measure=measure_bold)
             chip = current_bg if i == current else idle_bg
             if ctx.vector_shapes:
-                # Rounded on top only, the way a tab is: a fully rounded face,
-                # then its lower half filled square. Per-corner rounding is not
-                # something every vector backend draws (Windows' does not).
+                # Rounded at all four corners (#1019 hand check).
                 ctx.round_rect(x, y, w, height, Style(bg=chip), radius=self.RADIUS_PX,
                                hints={"fill": True})
-                ctx.fill_rect(x, y + height / 2, w, height / 2, Style(bg=chip))
             else:
                 ctx.fill_rect(x, y, w, height, Style(bg=chip))
             if i == current:
@@ -277,8 +295,12 @@ class TabStrip:
             quiet = Style(fg=current_fg if i == current else idle_fg, bg=chip)
             cx = x + inset
             if tab.lead:
-                ctx.draw_text(cx, ty, tab.lead, quiet, ink=False)
-                cx += ctx.measure_text(tab.lead) + sep
+                # Centred in its room (whole cells on a grid).
+                off = (lead_w - ctx.measure_text(tab.lead)) / 2
+                if not ctx.vector_shapes:
+                    off = float(int(off))
+                ctx.draw_text(cx + off, ty, tab.lead, quiet, ink=False)
+                cx += lead_w + sep
             ctx.draw_text(cx, ty, shown, style, ink=False)
             if tab.closable:
                 bx = x + w - inset - close_w

@@ -180,9 +180,13 @@ the mouse for the first, take the whole buffer with the second. See
 | Flat View | `flat_view` — see [Flat View](FLAT_VIEW_FEATURE.md) |
 
 While a terminal or AI agent session is on screen, the menu bar stays (in a
-terminal it is drawn there too), and the items that act on the file manager -
-File, Edit, Go, Select, most of View, and Ask AI Agent, External Programs and
-Find Similar Files in Tools - are off until you go back to it.
+terminal it is drawn there too). What works on any screen stays on: Command
+Palette, Resume AI Conversation, Switch Screen and Screens, the configuration
+and the Advanced setup, Theme, Font Size and Help. The rest acts on the file
+manager - File, Edit, Go, Select, most of View, and in Tools starting a shell
+or an agent in the pane's folder, External Programs, Find Similar Files and
+Install Extension - and is off until you go back to it. To start a session
+from a session's screen, use the `+` after the tabs.
 
 ### Tools Menu
 
@@ -193,9 +197,10 @@ Find Similar Files in Tools - are off until you go back to it.
 | New Shell Here | `new_shell` *(desktop mode only; ships unbound)* |
 | AI Agent | `agent` — the AI agent session used last, or a new one; see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
 | New AI Agent Here | `new_agent` *(ships unbound)* |
+| Resume AI Conversation… | `resume_agent` *(ships unbound)* — an AI conversation closed in XeFM, back with its history |
 | Ask AI Agent… | `ask_agent` *(ships unbound)* — your `AGENT_PROMPTS`, or a request you type |
 | Switch Screen | `switch_screen` — between the file manager and the screen used last |
-| Screens… | `screens` *(ships unbound)* — every session, to go to, close, rename or resume |
+| Screens… | `screens` *(ships unbound)* — every screen there is, to go to, close or rename |
 | External Programs… | `programs` |
 | Find Similar Files… | `find_similar` *(ships unbound)* — see [Find Similar Files](FIND_SIMILAR_FILES_FEATURE.md) |
 | Background Jobs… | `jobs` — see [Background Jobs](BACKGROUND_JOBS_FEATURE.md) |

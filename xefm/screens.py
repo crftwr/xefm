@@ -22,7 +22,7 @@ gone. The two point at each other (:attr:`Screen.session`,
 The window's screens are its tabs (discussion #1019): the file manager's,
 pinned first, then every session's - shells, terminal programs, AI agents -
 in one strip, in the order they were made as the user left it; closing one
-shows the tab beside it. A session's kind (its group: the terminal's or the
+shows the screen shown before it. A session's kind (its group: the terminal's or the
 AI agents') is what a key like ``subshell`` or ``agent`` goes back to.
 
 This module keeps the bookkeeping - the layer groups, which screen is shown,
@@ -136,22 +136,13 @@ class ScreenManager:
         found = self.in_group(group, order="recent")
         return found[0] if found else None
 
-    def neighbour(self, screen: Screen) -> Screen | None:
-        """The tab beside ``screen`` - the one after it, else the one before,
-        which may be the file manager's - or None for the file manager
-        itself: what shows when it closes."""
-        if screen.kind == FILES:
-            return None
-        # ``screen`` itself counts while it closes: its place is what decides.
-        tabs = [s for s in self._tabs if not s.closing or s is screen]
-        if screen not in tabs or len(tabs) < 2:
-            return None
-        i = tabs.index(screen)
-        return tabs[i + 1] if i + 1 < len(tabs) else tabs[i - 1]
-
     def after_close(self, screen: Screen) -> Screen:
-        """Where closing ``screen`` goes: the tab beside it."""
-        return self.neighbour(screen) or self.files
+        """Where closing ``screen`` goes: the screen shown before it, as a
+        browser or VS Code goes back to the tab used last - the file manager
+        an editor was opened from, not the tab that happens to stand beside
+        it (#1019 hand check) - else the file manager's."""
+        return next((s for s in self._recent if s is not screen and not s.closing),
+                    self.files)
 
     def move_tab(self, screen: Screen, to: int) -> bool:
         """Put ``screen`` at place ``to`` among the tabs (#1019). The file
@@ -240,8 +231,8 @@ class ScreenManager:
 
     def remove(self, screen: Screen) -> None:
         """Take a terminal screen away, with everything on it. When it was the
-        current one, its neighbour in the group becomes current (shown at
-        once), else the file manager."""
+        current one, the screen shown before it becomes current (shown at
+        once): :meth:`after_close`."""
         if screen.kind == FILES:
             raise ValueError("the file manager's screen cannot be removed")
         was_current = screen is self.current

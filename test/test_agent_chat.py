@@ -322,12 +322,12 @@ def _view(fake_cli, tmp_path, posts, asked):
     from puikit.backends.memory_backend import MemoryBackend
     from xefm.agent_chat_view import ChatView
     panel = Panel(MemoryBackend(width=80, height=24))
-    closed, hidden = [], []
+    closed = []
     view = ChatView(fake_cli, cwd=str(tmp_path), env=dict(os.environ), name="Claude Code",
                     post=posts, ask=lambda v, p: asked.append(p),
-                    on_close_request=closed.append, on_hide=hidden.append)
+                    on_close_request=closed.append)
     panel.push_layer(view, z=10, hints={"x": 0, "y": 0, "w": 80, "h": 24})
-    view.closed, view.hidden = closed, hidden
+    view.closed = closed
     return panel, view
 
 
@@ -386,9 +386,9 @@ def test_the_view_keys(fake_cli, tmp_path):
     assert view.input.text == "a\nb"
     panel.dispatch_event(_key("down"))
     assert view.input.text == ""
-    # Escape with nothing running goes back to the file manager.
+    # Escape with nothing running stays: the conversation is a tab (#1019).
     panel.dispatch_event(_key("escape", "\x1b"))
-    assert view.hidden == [view]
+    assert not view.closed and view.input.text == ""
     # /exit asks to close the session.
     for ch in "/exit":
         panel.dispatch_event(_key(ch, ch))
@@ -468,7 +468,7 @@ def test_the_view_draws_on_a_pixel_backend_and_routes_the_mouse(fake_cli, tmp_pa
     panel = Panel(MemoryBackend(width=80, height=24, capabilities=PROFILE_GUI_DESKTOP))
     view = ChatView(fake_cli, cwd=str(tmp_path), env={}, name="Claude Code",
                     post=lambda fn: fn(), ask=lambda v, p: None,
-                    on_close_request=lambda v: None, on_hide=lambda v: None)
+                    on_close_request=lambda v: None)
     view.conversation.items = [C.Item("user", "q"),
                                C.Item("text", "\n\n".join(f"para {n}" for n in range(60)))]
     view._dirty = True
@@ -578,7 +578,7 @@ def _plain_view(tmp_path, **kw):
     panel = Panel(MemoryBackend(width=80, height=24))
     view = ChatView(["claude"], cwd=str(tmp_path), env={}, name="Claude Code",
                     post=lambda fn: fn(), ask=lambda v, p: None,
-                    on_close_request=lambda v: None, on_hide=lambda v: None, **kw)
+                    on_close_request=lambda v: None, **kw)
     view.conversation.state = C.IDLE
     panel.push_layer(view, z=10, hints={"x": 0, "y": 0, "w": 80, "h": 24})
     return panel, view

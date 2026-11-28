@@ -14,9 +14,10 @@ show you what it found, and ask you before it changes a file.
 |--------|------|
 | `agent` | Tools → AI Agent |
 | `new_agent` | Tools → New AI Agent Here |
+| `resume_agent` | Tools → Resume AI Conversation… |
 | `ask_agent` | Tools → Ask AI Agent… |
 
-`agent` is `>` in every keymap preset, the prompt an agent's command line shows; `new_agent` and `ask_agent` ship unbound. To change them, see [Key Bindings](KEY_BINDINGS_FEATURE.md) and [Keymap Presets](KEYMAP_PRESETS_FEATURE.md).
+`agent` is `>` in every keymap preset, the prompt an agent's command line shows; `new_agent`, `resume_agent` and `ask_agent` ship unbound. To change them, see [Key Bindings](KEY_BINDINGS_FEATURE.md) and [Keymap Presets](KEYMAP_PRESETS_FEATURE.md).
 
 ## What you need
 
@@ -49,9 +50,9 @@ items leave the menu, no agent can start, and `agent`, `new_agent` and
 `ask_agent` only say in the log pane that agents are off. To free the `>` key as well, unbind
 `agent` (see [Key Bindings](KEY_BINDINGS_FEATURE.md)).
 
-With more than one agent set up, XeFM asks which one. **Screens…** also
-has a row for each, **New Claude Code in ~/...**, beside **New shell in
-~/...**. The session gets a screen of its own, like any terminal session,
+With more than one agent set up, XeFM asks which one; the `+` after the
+window's tabs offers each, **New Claude Code**, beside **New Shell**. The
+session gets a screen of its own, like any terminal session,
 and keeps running while you are away. It is one of the window's tabs, as a
 shell is, marked `✦`: `agent` comes back to the agent session you used
 last, and **Switch Screen** goes between it and the file manager (see
@@ -75,12 +76,11 @@ now is shown beside it.
 ### Closing loses nothing
 
 A conversation [drawn by XeFM](#conversations-drawn-by-xefm) that you close
-is kept, and **Screens…** lists it under the sessions as **Resume Fix the
-login bug - ~/src**, with the agent and when you closed it. Pick it to start
-the agent on that conversation again, in its folder. One closed in this run
-comes back with its transcript; one from an earlier run picks up the
-conversation with an empty transcript, since the agent has the rest. The
-remove key forgets one. The last 20 are kept.
+is kept. **Tools → Resume AI Conversation…** (`resume_agent`) lists the ones
+you closed - this run's and earlier ones', the last 20 - by name, with the
+agent and when you closed it; pick one to start the agent on that
+conversation again, in its folder, with what was said so far on screen. The
+remove key forgets one; the rename key renames it.
 
 So closing an agent that is not in the middle of a turn does not ask: `/exit`,
 `terminal.close`, `Ctrl-D` on an empty message, the remove key in
@@ -145,7 +145,7 @@ steps that follow one another.
 |---|---|
 | `Enter` | Send the message. One sent while the agent works waits for its turn to end |
 | `Shift+Enter`, `Ctrl+J`, `Alt+Enter` | A new line in the message. The status bar names `Shift+Enter` in the desktop app and `Ctrl+J` in a terminal, which every terminal sends; many terminals cannot send `Shift+Enter`, and `Alt+Enter` is Windows Terminal's full-screen key and needs Option sent as Meta on a Mac |
-| `Esc` | Stop the agent while it works; otherwise go back to the file manager, the session kept |
+| `Esc` | Stop the agent while it works, or clear a selection in the conversation. It does not leave the tab: go back to the file manager with its tab or `` Ctrl-` `` |
 | `↑` / `↓` | On the first (last) line of the field: an earlier (later) message you sent |
 | `PageUp` / `PageDown` | Scroll the conversation (so does the wheel) |
 | `Shift+Tab` | The next permission mode: ask before tools, accept edits (file changes go ahead without asking), plan (the agent looks and plans but changes nothing). The header shows the mode |

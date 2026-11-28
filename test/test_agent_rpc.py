@@ -303,7 +303,7 @@ class _Agent:
         self.view = ChatView(
             [sys.executable, str(self.path), *args], cwd=str(tmp_path), env=dict(os.environ),
             name="Agent", post=self.posts, ask=lambda view, perm: self.asked.append(perm),
-            on_close_request=lambda v: None, on_hide=lambda v: None, protocol=protocol)
+            on_close_request=lambda v: None, protocol=protocol)
         self.panel = Panel(MemoryBackend(width=100, height=40))
         self.panel.push_layer(self.view, z=10, hints={"x": 0, "y": 0, "w": 100, "h": 40})
         self.view.start(self.panel)
