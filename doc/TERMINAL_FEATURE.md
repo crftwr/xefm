@@ -41,7 +41,7 @@ an editor, is not stopped by XeFM quitting.
 
 ## In the desktop app: terminal sessions and screens
 
-**Tools → Terminal** (`subshell`) starts your shell in the active pane's
+**Tools → Go to Terminal** (`subshell`) starts your shell in the active pane's
 directory, in XeFM's terminal over the panes. A program marked
 `'terminal': True` opens the same way. Each is a terminal session, shown on
 a screen of its own.
@@ -76,9 +76,9 @@ unnoticed.
   (or use `move_screen_left` and `move_screen_right`); **Files**
   stays first. A tab whose session is waiting on you shows `⚠` in place of
   its icon, one that has finished something since you last looked `✓`.
-- **Go back to a session.** **Terminal** (`subshell`) goes back to the
+- **Go back to a session.** **Go to Terminal** (`subshell`) goes back to the
   terminal session you used last, and starts a shell only when there is none.
-  **AI Agent** (`agent`) does the same for the AI agent sessions.
+  **Go to AI Agent** (`agent`) does the same for the AI agent sessions.
   **Switch Screen** (`switch_screen`, `terminal.switch_screen` inside a
   session) goes from the file manager to the screen you used last, and from
   any session back to the file manager; with no session yet it starts a

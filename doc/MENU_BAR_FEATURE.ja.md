@@ -154,15 +154,17 @@ XeFM には **File**、**Edit**、**Go**、**Select**、**View**、**Tools**、*
 
 ### Tools メニュー
 
+項目はグループに分かれています。ターミナルの画面、AI エージェントの画面、画面の切り替え、それから作業を実行するツールと設定です。**Go to ...** は、その種類で最後に使った画面に移動します（1 つもないときだけ新しく開きます）。**New ... Here** は、いつもアクティブなペインのフォルダーで新しく開きます。
+
 | 項目 | アクション |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Terminal | `subshell` *（デスクトップモードでは最後に使ったターミナルセッション、なければ新しいセッション。ターミナルモードでは **Subshell Here**）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
+| Go to Terminal | `subshell` *（デスクトップモードでは最後に使ったターミナルの画面。シェルでも、そこで動くプログラムでもかまいません。なければ新しいシェルを開きます。ターミナルモードでは **Subshell Here** で、端末をシェルに渡します）*。[ターミナル](TERMINAL_FEATURE.ja.md)を参照 |
 | New Shell Here | `new_shell` *（デスクトップモードのみ。既定でキー未割り当て）* |
-| AI Agent | `agent` — 最後に使った AI エージェントのセッション、なければ新しいセッション。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
+| Go to AI Agent | `agent` — 最後に使った AI エージェントのセッション、なければ新しいセッション。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照。`AGENTS` のエージェントが 1 つもインストールされていない間は無効 |
 | New AI Agent Here | `new_agent` *（既定でキー未割り当て）* |
 | Resume AI Conversation… | `resume_agent` *（既定でキー未割り当て）* — XeFM で閉じた AI の会話を、履歴ごと再開 |
-| Ask AI Agent… | `ask_agent` *（既定でキー未割り当て）* — `AGENT_PROMPTS` の依頼か、打ち込んだ依頼 |
+| Ask AI Agent About Selection… | `ask_agent` *（既定でキー未割り当て）* — `AGENT_PROMPTS` の依頼か、打ち込んだ依頼 |
 | Switch Screen | `switch_screen` — ファイルマネージャーと最後に使った画面の間 |
 | Screens… | `screens` *（既定でキー未割り当て）* — 今ある画面すべての移動、終了、名前の変更 |
 | External Programs… | `programs` |

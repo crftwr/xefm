@@ -267,7 +267,7 @@ not listed: find it in the menus or the command palette, or give it a key in
 | `context_menu` | Open the context menu for the item under the cursor | `/`, `Apps` | `Shift-F10`, `Apps` | `Shift-F10`, `Apps` | `Apps`, `Shift-F10` |
 | `context_menu_dir` | Open the context menu for the current directory | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` | `?`, `Shift-Apps` |
 | `programs` | Run an external program | `X` | — | — | — |
-| `subshell` | Go to the terminal session used last, or open a subshell in this directory | `Shift-X` | — | — | `s` |
+| `subshell` | Go to the terminal screen used last (a shell or a program), or open a shell in this directory | `Shift-X` | — | — | `s` |
 | `new_shell` | Open another shell session in this directory | — | — | — | — |
 | `switch_screen` | Switch between the file manager and the screen used last | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
 | `next_screen` | Go to the window's next tab | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` | macOS app: `Ctrl-Tab`, `Cmd-Shift-]`<br>Windows app: `Ctrl-Tab` |

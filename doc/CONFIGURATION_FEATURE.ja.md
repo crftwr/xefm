@@ -260,12 +260,12 @@ AGENTS = [
     {'name': 'Claude Code', 'command': ['claude'], 'preset': 'claude-code'},
 ]
 AGENT_RULES = ""   # your own rules for every agent session
-AGENT_PROMPTS = {  # requests listed in Ask AI Agent...
+AGENT_PROMPTS = {  # requests listed in Ask AI Agent About Selection...
     'Summarize': 'Summarize these files, a few lines each.',
 }
 ```
 
-**Tools → AI Agent**（`agent`）、**New AI Agent Here**（`new_agent`）、**Ask AI Agent…**（`ask_agent`）が起動するエージェントと、それにできることを設定します。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
+**Tools → Go to AI Agent**（`agent`）、**New AI Agent Here**（`new_agent`）、**Ask AI Agent About Selection…**（`ask_agent`）が起動するエージェントと、それにできることを設定します。[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md)を参照してください。
 
 ### ファイルの関連付け
 

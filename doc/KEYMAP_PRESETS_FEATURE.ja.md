@@ -197,7 +197,7 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 | `context_menu` | カーソル位置の項目のコンテキストメニューを開く | `/`、`Apps` | `Shift-F10`、`Apps` | `Shift-F10`、`Apps` | `Apps`、`Shift-F10` |
 | `context_menu_dir` | 現在のディレクトリのコンテキストメニューを開く | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` | `?`、`Shift-Apps` |
 | `programs` | 外部プログラムを実行 | `X` | — | — | — |
-| `subshell` | 最後に使ったターミナルセッションに移動する。なければこのディレクトリでサブシェルを開く | `Shift-X` | — | — | `s` |
+| `subshell` | 最後に使ったターミナルの画面（シェルかプログラム）に移動する。なければこのディレクトリでシェルを開く | `Shift-X` | — | — | `s` |
 | `new_shell` | このディレクトリで別のシェルセッションを開く | — | — | — | — |
 | `switch_screen` | ファイルマネージャーと最後に使った画面を切り替える | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` | `` Ctrl-` `` |
 | `next_screen` | ウィンドウの次のタブへ | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` | macOS アプリ：`Ctrl-Tab`、`Cmd-Shift-]`<br>Windows アプリ：`Ctrl-Tab` |

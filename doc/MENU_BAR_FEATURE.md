@@ -190,15 +190,20 @@ from a session's screen, use the `+` after the tabs.
 
 ### Tools Menu
 
+In groups: the terminal's screens, the AI agents', the switch between
+screens, then the tools that run work and the configuration. **Go to ...**
+goes to the screen of its kind used last (starting one only when there is
+none); **New ... Here** always starts another, in the active pane's folder.
+
 | Item | Action |
 |------|--------|
 | Command Palette… | `command_palette` |
-| Terminal | `subshell` *(desktop mode: the terminal session used last, or a new one; **Subshell Here** in terminal mode)* — see [Terminal](TERMINAL_FEATURE.md) |
+| Go to Terminal | `subshell` *(desktop mode: the terminal screen used last - a shell or a program running in it - or a new shell when there is none; **Subshell Here** in terminal mode, which hands the terminal to a shell)* — see [Terminal](TERMINAL_FEATURE.md) |
 | New Shell Here | `new_shell` *(desktop mode only; ships unbound)* |
-| AI Agent | `agent` — the AI agent session used last, or a new one; see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
+| Go to AI Agent | `agent` — the AI agent session used last, or a new one; see [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md); off while no agent in `AGENTS` is installed |
 | New AI Agent Here | `new_agent` *(ships unbound)* |
 | Resume AI Conversation… | `resume_agent` *(ships unbound)* — an AI conversation closed in XeFM, back with its history |
-| Ask AI Agent… | `ask_agent` *(ships unbound)* — your `AGENT_PROMPTS`, or a request you type |
+| Ask AI Agent About Selection… | `ask_agent` *(ships unbound)* — your `AGENT_PROMPTS`, or a request you type |
 | Switch Screen | `switch_screen` — between the file manager and the screen used last |
 | Screens… | `screens` *(ships unbound)* — every screen there is, to go to, close or rename |
 | External Programs… | `programs` |

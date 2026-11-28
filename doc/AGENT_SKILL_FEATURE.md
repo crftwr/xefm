@@ -22,7 +22,7 @@ teaches an AI agent to work with XeFM for you. It covers three things:
 The skill is a folder with a `SKILL.md` file and a few reference files, so
 any agent that reads Agent Skills can use it.
 
-An agent XeFM opens itself (**Tools → AI Agent**) is handed the skill
+An agent XeFM opens itself (**Tools → Go to AI Agent**) is handed the skill
 when it starts, and needs nothing installed: see
 [AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md). This page is for an agent
 you run on your own.

@@ -1227,7 +1227,7 @@ _FILER_ACTIONS = [
     # External programs and configuration
     _a("programs", FILER, "Run an external program"),
     _a("subshell", FILER,
-       "Go to the terminal session used last, or open a subshell in this directory"),
+       "Go to the terminal screen used last (a shell or a program), or open a shell in this directory"),
     _a("new_shell", FILER, "Open another shell session in this directory"),
     _a("screens", COMMON,
        "List every screen, to go to, close or rename one"),

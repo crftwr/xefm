@@ -133,7 +133,7 @@ the user picked in **Tools ▸ Advanced ▸ Keymap…**; ask which if `KEY_PRESE
 | `reread` | Re-read both panes' directories | — | `F2`, `Ctrl-R` | `Ctrl-R` | `Ctrl-L` |
 | `menu` | Open the menu bar | `F10`, `ALT` | `F9`, `F10`, `ALT` | `F10`, `ALT` | `F10`, `ALT` |
 | `programs` | Run an external program | `X` | — | — | — |
-| `subshell` | Go to the terminal session used last, or open a subshell in this directory | `Shift-X` | — | — | `s` |
+| `subshell` | Go to the terminal screen used last (a shell or a program), or open a shell in this directory | `Shift-X` | — | — | `s` |
 | `new_shell` | Open another shell session in this directory | — | — | — | — |
 | `agent` | Go to the AI agent session used last, or open one in this directory | `>` | `>` | `>` | `>` |
 | `new_agent` | Open another AI agent session in this directory | — | — | — | — |

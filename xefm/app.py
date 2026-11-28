@@ -5454,12 +5454,13 @@ class XeFMApp:
         tools_menu = Menu(
             MenuItem("Command Palette…", on_select=self.show_command_palette,
                      shortcut=sc("command_palette"), when="always"),
-            SEPARATOR,
-            # What opens a screen in XeFM's terminal, then the switch between
-            # them; what runs work, then where that work is followed.
-            *self._shell_menu(sc),
-            *self._agent_menu(sc),
-            *self._terminal_menu(sc),
+            # One group each: the terminal's screens, the AI agents', the
+            # switch between screens - then what runs work and where that
+            # work is followed. A group left empty (agents turned off, no
+            # screens in terminal mode) takes its separator with it.
+            *[entry for group in (self._shell_menu(sc), self._agent_menu(sc),
+                                  self._terminal_menu(sc)) if group
+              for entry in (SEPARATOR, *group)],
             SEPARATOR,
             MenuItem("External Programs…", on_select=self.show_programs, shortcut=sc("programs")),
             MenuItem("Find Similar Files…", on_select=self.find_similar,
@@ -6406,8 +6407,11 @@ class XeFMApp:
         if not is_desktop_mode():
             return [MenuItem("Subshell Here", on_select=self.subshell,
                              shortcut=sc("subshell"))]
+        # "Go to": the terminal screen used last - a shell or a program in
+        # it - and a new shell only when there is none; "New ... Here" always
+        # starts one. The terminal is the group, a shell one kind in it.
         return [
-            MenuItem("Terminal", on_select=self.subshell, shortcut=sc("subshell")),
+            MenuItem("Go to Terminal", on_select=self.subshell, shortcut=sc("subshell")),
             MenuItem("New Shell Here", on_select=self.new_shell, shortcut=sc("new_shell")),
         ]
 
@@ -6422,7 +6426,7 @@ class XeFMApp:
         return [
             # Starting one is the file manager's: it starts in the active
             # pane's folder (a session's screen has the tabs' + for that).
-            MenuItem("AI Agent", on_select=self.open_agent, shortcut=sc("agent"),
+            MenuItem("Go to AI Agent", on_select=self.open_agent, shortcut=sc("agent"),
                      when=self._agent_installed),
             MenuItem("New AI Agent Here", on_select=self.new_agent, shortcut=sc("new_agent"),
                      when=self._agent_installed),
@@ -6430,8 +6434,8 @@ class XeFMApp:
                      shortcut=sc("resume_agent"),
                      when=("always", lambda: self._agent_installed()
                            and bool(self._closed_agents()))),
-            MenuItem("Ask AI Agent…", on_select=self.ask_agent, shortcut=sc("ask_agent"),
-                     when=self._agent_installed),
+            MenuItem("Ask AI Agent About Selection…", on_select=self.ask_agent,
+                     shortcut=sc("ask_agent"), when=self._agent_installed),
         ]
 
     def _agent_installed(self) -> bool:

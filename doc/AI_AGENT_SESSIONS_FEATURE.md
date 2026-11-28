@@ -12,10 +12,10 @@ show you what it found, and ask you before it changes a file.
 
 | Action | Menu |
 |--------|------|
-| `agent` | Tools → AI Agent |
+| `agent` | Tools → Go to AI Agent |
 | `new_agent` | Tools → New AI Agent Here |
 | `resume_agent` | Tools → Resume AI Conversation… |
-| `ask_agent` | Tools → Ask AI Agent… |
+| `ask_agent` | Tools → Ask AI Agent About Selection… |
 
 `agent` is `>` in every keymap preset, the prompt an agent's command line shows; `new_agent`, `resume_agent` and `ask_agent` ship unbound. To change them, see [Key Bindings](KEY_BINDINGS_FEATURE.md) and [Keymap Presets](KEYMAP_PRESETS_FEATURE.md).
 
@@ -30,12 +30,12 @@ CLI) are set up out of the box; other agents are on the wiki (see
 
 ## Opening a session
 
-- **AI Agent** (`agent`) goes back to the agent session you used last. With
+- **Go to AI Agent** (`agent`) goes back to the agent session you used last. With
   none open, it starts the agent in the active pane's directory. Ask it
   anything; it reads what XeFM shows when you say "this file" or "these".
 - **New AI Agent Here** (`new_agent`) starts another session in the active
   pane's directory, even when one is open.
-- **Ask AI Agent…** (`ask_agent`) asks for a request first - one of your
+- **Ask AI Agent About Selection…** (`ask_agent`) asks for a request first - one of your
   [saved requests](#saved-requests-agent_prompts), or one you type - then
   starts the agent with it, the directory, and the selected items (or the
   item under the cursor).
@@ -184,8 +184,8 @@ mode you set stay set if the agent is started again.
   **Approve** (it goes on, asking before tools as usual), **Approve, Accept
   Edits** (file changes then go ahead without asking), or **Keep Planning**.
   No button is selected at first here either, and Esc keeps planning.
-- **Back to the session.** **AI Agent** goes back to the session you used
-  last, and **Ask AI Agent…** sends a request to the session already open in
+- **Back to the session.** **Go to AI Agent** goes back to the session you used
+  last, and **Ask AI Agent About Selection…** sends a request to the session already open in
   that folder instead of starting another; **Screens…** lists them, in
   terminal mode as well. While you are away, the status bar says when the
   agent is asking you something or has finished.
@@ -387,7 +387,7 @@ beside it. You can write one by hand, or copy one in.
 
 ### Saved requests: `AGENT_PROMPTS`
 
-Requests you make often, listed in **Ask AI Agent…**: pick one, or type
+Requests you make often, listed in **Ask AI Agent About Selection…**: pick one, or type
 your own. The agent gets the directory and the selection with it, so
 "these files" means what you selected.
 

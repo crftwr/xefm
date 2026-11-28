@@ -763,17 +763,19 @@ class InTheApp(unittest.TestCase):
         try:
             self.app.config.AGENTS = [{"name": "Nope", "command": ["no-such-agent-xyz"]}]
             items = labels()
-            self.assertIn("AI Agent", items)  # not installed: there, greyed
+            self.assertIn("Go to AI Agent", items)  # not installed: there, greyed
             self.assertIn("New AI Agent Here", items)
-            self.assertIn("Ask AI Agent…", items)
+            self.assertIn("Ask AI Agent About Selection…", items)
             self.app.config.AGENTS = []
             items = labels()
-            self.assertNotIn("AI Agent", items)
+            self.assertNotIn("Go to AI Agent", items)
             self.assertNotIn("New AI Agent Here", items)
-            self.assertNotIn("Ask AI Agent…", items)
-            # The shell item stays: Subshell Here in a terminal, Terminal in the
-            # desktop app (#1019), whichever mode an earlier test left set.
-            self.assertTrue({"Subshell Here", "Terminal"} & set(items))
+            self.assertNotIn("Ask AI Agent About Selection…", items)
+            # The shell item stays: Subshell Here in a terminal, Go to Terminal
+            # in the desktop app (#1019), whichever mode an earlier test left set.
+            self.assertTrue({"Subshell Here", "Go to Terminal"} & set(items))
+            # No group leaves two separators in a row behind it.
+            self.assertFalse(any(a == b == "" for a, b in zip(items, items[1:])))
         finally:
             if saved is None:
                 self.app.config.__dict__.pop("AGENTS", None)

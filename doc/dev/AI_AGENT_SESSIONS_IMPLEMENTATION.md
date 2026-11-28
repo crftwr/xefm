@@ -66,7 +66,7 @@ of folders already.
 
 Opening an agent parallels opening a shell: the action `agent` (`>` in
 every preset: the prompt an agent's CLI shows, a glyph no type-ahead takes)
-beside `subshell`, **Tools > AI Agent Here** beside Subshell Here, and a
+beside `subshell`, **Tools > Go to AI Agent** beside Subshell Here, and a
 "New <agent> in <dir>" row per installed entry in the Screens switcher
 beside "New shell in <dir>".
 

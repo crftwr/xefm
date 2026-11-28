@@ -261,7 +261,7 @@ and terminal mode ignores them. See
 
 ## Built-in Terminal & Screens
 
-The desktop app has a terminal of its own. **Tools → Terminal** opens your
+The desktop app has a terminal of its own. **Tools → Go to Terminal** opens your
 shell in it, in the active pane's directory, and so does every program marked
 `'terminal': True` (`vim`, `less`, a REPL). Each one is a *terminal session*
 on a *screen* of its own, and it keeps running while you go back to the panes.
@@ -295,13 +295,13 @@ xefmctl view README.md          # open a file in XeFM's viewer
 
 ## AI Agent Sessions
 
-**Tools → AI Agent** opens an AI coding agent beside the file manager.
+**Tools → Go to AI Agent** opens an AI coding agent beside the file manager.
 Claude Code, Codex, GitHub Copilot CLI and Antigravity CLI are set up out of
 the box, each offered once its program is installed. The agent knows it runs
 inside XeFM: it sees the panes and the selection, searches anywhere XeFM can
 go, and shows you what it found in XeFM. Every copy, move or trash it asks for
 waits for your OK, and it may not delete anything for good.
-**Tools → Ask AI Agent…** starts one with a request you type, or one you saved
+**Tools → Ask AI Agent About Selection…** starts one with a request you type, or one you saved
 in `AGENT_PROMPTS`. XeFM draws the conversation on a screen of its own, the same
 in the desktop app and in the terminal, and asks you there when the agent needs
 permission; the agent's own screen in a terminal session is one setting away. See
