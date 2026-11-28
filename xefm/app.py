@@ -1172,7 +1172,7 @@ def _bar_pad(ctx) -> tuple[float, float]:
     return (BAR_PAD_PX / bw if bw else 0.0, BAR_PAD_PX / bh if bh else 0.0)
 
 
-def _hover_part(ctx, x: float, part: str, style: Style) -> bool:
+def _hover_part(ctx, x: float, part: str, style: Style, y: float = 0.0) -> bool:
     """Show that ``part`` - text already drawn at ``x`` on a bar's row in
     ``style`` - is clickable, while the pointer is over it: a backing behind
     it (rounded where the backend draws sub-cell, its cells on a grid), its
@@ -1180,7 +1180,7 @@ def _hover_part(ctx, x: float, part: str, style: Style) -> bool:
     the status bar's key hints and a footer's sort did nothing to say they
     could be clicked). Whether it is hovered."""
     w = ctx.measure_text(part, style)
-    if w <= 0 or not ctx.pointer_in(x, 0.0, w, 1.0):
+    if w <= 0 or not ctx.pointer_in(x, y, w, 1.0):
         return False
     theme = ctx.theme
     base = getattr(ctx, "background", None) or theme.surface_bg("status") or DEFAULT_BG
@@ -1189,11 +1189,11 @@ def _hover_part(ctx, x: float, part: str, style: Style) -> bool:
     if ctx.vector_shapes:
         bw = (ctx.base_size or (0, 0))[0]
         pad = 3.0 / bw if bw else 0.3
-        ctx.round_rect(x - pad, 0.0, w + 2 * pad, 1.0, Style(bg=backing), radius=4.0,
+        ctx.round_rect(x - pad, y, w + 2 * pad, 1.0, Style(bg=backing), radius=4.0,
                        hints={"fill": True})
-        ctx.draw_text(x, 0.0, part, Style(fg=ink, attr=style.attr))
+        ctx.draw_text(x, y, part, Style(fg=ink, attr=style.attr))
     else:
-        ctx.draw_text(x, 0.0, part, Style(fg=ink, bg=backing, attr=style.attr))
+        ctx.draw_text(x, y, part, Style(fg=ink, bg=backing, attr=style.attr))
     ctx.set_cursor("pointer")
     return True
 
@@ -1230,7 +1230,7 @@ def _same_volume(sources: list, dest_dir) -> bool:
     return True
 
 
-def _breadcrumbs(text: str, path, pad_x: float, measure) -> list:
+def _breadcrumbs(text: str, path, pad_x: float, measure, spans: list | None = None) -> list:
     """The clickable components of a header ``text`` showing ``path``.
 
     The text is what the header drew — possibly abbreviated (``/…/b/c``,
@@ -1238,7 +1238,8 @@ def _breadcrumbs(text: str, path, pad_x: float, measure) -> list:
     the right: the last name is ``path``, the one before it its parent, and so
     on up ``Path.parent``, which walks archives and remote locations the same
     way Backspace does. An ellipsis is not a place; a leading separator is the
-    root."""
+    root. ``spans``, when given, gets each crumb's ``(start, end)`` in
+    ``text``, in the same order."""
     ancestors, seen, p = [], set(), path
     while p is not None and str(p) not in seen:
         ancestors.append(p)
@@ -1260,10 +1261,14 @@ def _breadcrumbs(text: str, path, pad_x: float, measure) -> list:
         child = ancestors[k - 1].name if k > 0 else None
         crumbs.append((pad_x + measure(text[:a]), pad_x + measure(text[:b]),
                        ancestors[k], child))
+        if spans is not None:
+            spans.append((a, b))
     if text[:1] in ("/", "\\") and len(ancestors) > len(runs):
         root = ancestors[-1]
         child = ancestors[-2].name if len(ancestors) > 1 else None
         crumbs.append((pad_x, pad_x + measure(text[:1]), root, child))
+        if spans is not None:
+            spans.append((0, 1))
     return crumbs
 
 class PaneHeader(Widget):
@@ -1330,10 +1335,20 @@ class PaneHeader(Widget):
             path_y += tab_height(ctx) + 2 * pad_y
         else:
             self._strip.clear()
-        ctx.draw_text(pad_x, path_y, text, Style(fg=fg, attr=TextAttribute.BOLD))
+        path_style = Style(fg=fg, attr=TextAttribute.BOLD)
+        ctx.draw_text(pad_x, path_y, text, path_style)
         self._path_row = (path_y, path_y + 1.0)
+        # Measured in the bold the path is drawn in, so a click and the
+        # hover below land on the names, not to their left.
+        spans: list = []
         self._crumbs = ([] if virtual else
-                        _breadcrumbs(text, pane["path"], pad_x, ctx.measure_text))
+                        _breadcrumbs(text, pane["path"], pad_x,
+                                     lambda t: ctx.measure_text(t, path_style), spans))
+        # A name in the path is a place to go: it shows so under the pointer,
+        # as the status bar's hints do (#1019 hand check).
+        for (x0, _x1, _target, _child), (a, b) in zip(self._crumbs, spans):
+            if _hover_part(ctx, x0, text[a:b], path_style, path_y):
+                break
 
     def _draw_tabs(self, ctx, tabs, pad_x, y, avail, active) -> None:
         """The tab strip (:mod:`xefm.tab_strip`), as a screen's (#1019): one
@@ -1545,8 +1560,11 @@ class StatusBar(Widget):
         self._hints_cache: str | None = None
         self._isearch_cache: str | None = None
         self._hint_parts: list = []
-        #: Clickable hints from the last draw: ``(x0, x1, action)`` (#589).
+        #: Clickable hints from the last draw: ``(x0, x1, action)`` (#589) -
+        #: a file-list action's name, or what a session's part runs.
         self._hits: list = []
+        #: A session's parts, when its screen is on: ``(text, run)``.
+        self._session_parts: list = []
         #: The spinner in front of a running job (#599 hand check): PuiKit's
         #: own, so it turns on its own and is one cell wide everywhere.
         self._busy = BusyIndicator()
@@ -1633,7 +1651,10 @@ class StatusBar(Widget):
             # A session's screen draws this bar too (#1019): its keys, unless
             # a dialog over it owns the keyboard.
             top = self.app._screens.top_layer()
-            return self.app._session_hints(session) if top is session.view else ""
+            if top is not session.view:
+                return ""
+            self._session_parts = self.app._session_status_parts(session)
+            return self._HINT_GAP.join(text for text, _run in self._session_parts)
         if self.app.panel.has_layers:
             return ""
         sequence = getattr(self.app, "key_sequence", None)
@@ -1691,15 +1712,24 @@ class StatusBar(Widget):
         ctx.draw_text(x, 0, text, Style(fg=ctx.theme.muted_text))
         # Each hint runs its action when clicked (#589): the bar is generated
         # from the live keymap, so the targets follow the user's bindings.
+        # A session's screen lays its own parts out the same way (#1019 hand
+        # check): each runs what its key does there.
         self._hits = []
+        parts = None
         if full == self._hints_cache:
+            parts = self._hint_parts
+        elif self._session_parts and full == self._HINT_GAP.join(
+                t for t, _r in self._session_parts):
+            parts = self._session_parts
+        if parts:
             start, gap = x, ctx.measure_text(self._HINT_GAP)
-            for part, action in self._hint_parts:
+            for part, action in parts:
                 x1 = x + ctx.measure_text(part)
                 if x1 > start + avail:
                     break
-                self._hits.append((x, x1, action))
-                _hover_part(ctx, x, part, Style(fg=ctx.theme.muted_text))
+                if action is not None:
+                    self._hits.append((x, x1, action))
+                    _hover_part(ctx, x, part, Style(fg=ctx.theme.muted_text))
                 x = x1 + gap
 
     #: The glyph in front of a job part that is not running; a running one
@@ -1825,7 +1855,11 @@ class StatusBar(Widget):
             return True
         for x0, x1, action in self._hits:
             if x0 <= x < x1:
-                self.app._run_action(_ctx.FILER, action)
+                if callable(action):
+                    action()  # a session's part (#1019)
+                    self.app.panel.render()
+                else:
+                    self.app._run_action(_ctx.FILER, action)
                 return True
         return False
 
@@ -7109,16 +7143,26 @@ class XeFMApp:
         return "…" if session.progress is not None else ""
 
     def _session_hints(self, session) -> str:
-        """What the status bar says on ``session``'s screen: the keys for
-        what can be done there now. A drawn agent's are its own (it owns the
-        keyboard); a terminal's are the few XeFM takes from the program."""
+        """What the status bar says on ``session``'s screen, as one line."""
+        return StatusBar._HINT_GAP.join(text for text, _run in self._session_status_parts(session))
+
+    def _session_status_parts(self, session) -> list:
+        """The status bar's parts on ``session``'s screen: ``(text, run)``,
+        the keys for what can be done there now and what a click on each does
+        (None: it only says something) - laid out and clicked as the file
+        manager's hints are (#1019 hand check). A drawn agent's are its own
+        (it owns the keyboard); a terminal's are the few XeFM takes from the
+        program."""
         view = session.view
+        parts = getattr(view, "status_parts", None)
+        if isinstance(parts, list):
+            return parts
         hint = getattr(view, "status_hint", None)
         if isinstance(hint, str):
-            return hint
+            return [(hint, None)]
         if not getattr(view, "running", True):
-            return "Enter close"
-        parts = []
+            return [("Enter close", lambda: view.on_close_request(view))]
+        out = []
         for action, label in (("terminal.switch_screen", "files"),
                               ("terminal.close", "close"), ("terminal.new", "new"),
                               ("command_palette", "commands")):
@@ -7128,9 +7172,16 @@ class XeFMApp:
                 # Only a key that reaches XeFM from the program, as the
                 # palette shows them (TerminalView.takes_binding).
                 keys = [k for k in keys if takes(k, action)]
-            if keys:
-                parts.append(f"{self.keys.format_key_for_display(keys[0])} {label}")
-        return " · ".join(parts)
+            if not keys:
+                continue
+            if action == "command_palette":
+                run = self.show_command_palette
+            else:
+                def run(action=action):
+                    view.run_action(action)
+                    self.panel.render()
+            out.append((f"{self.keys.format_key_for_display(keys[0])} {label}", run))
+        return out
 
     def _tab_event(self, event, x: float, y: float) -> bool:
         """A pointer event on the window's tab strip, at ``(x, y)`` in its own
