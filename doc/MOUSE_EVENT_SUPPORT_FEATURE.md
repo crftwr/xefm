@@ -85,6 +85,11 @@ like in a browser:
 Some presets add more keys for these — see
 [Keymap Presets](KEYMAP_PRESETS_FEATURE.md#every-key-side-by-side).
 
+A folder that could not be listed is not remembered — a folder you were not
+allowed to open, or a favorite that was gone. If a folder you go back or forward
+to has since been deleted, the pane stays where it is, the log says why, and
+that folder is skipped next time.
+
 This is different from Backspace, which goes to the parent folder, and from
 `history` (**Go → History…**), which lists recently used folders.
 

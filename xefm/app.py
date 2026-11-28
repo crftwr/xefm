@@ -3301,8 +3301,12 @@ class XeFMApp:
         pane = self.pane(pane_name)
         if xft.is_xft_path(pane["path"]):
             self._note_xft_anchor(pane)
-        self._fire_directory_changed(pane_name, pane)
+        self._note_pane_moving(pane)
         gen = pane["_load_gen"] = next(_LOAD_GENS)
+        # The listing that may commit a directory change once it lands — see
+        # ``_fire_directory_changed``. A re-sort or a virtual listing that
+        # supersedes it is no move.
+        pane["_dir_change_gen"] = gen
         # "A listing is in flight", tracked separately from ``loading`` because
         # the two answer different questions: ``loading`` means "this pane is
         # blanked and showing (or about to show) an indicator", which a
@@ -3354,32 +3358,52 @@ class XeFMApp:
         if self._event_driven and not keep_visible:
             self.panel.request_animation_ticks(self._loading_tick)
 
+    def _note_pane_moving(self, pane: dict) -> None:
+        """A pane is about to list ``pane['path']``: seed ``_hook_path`` and
+        tell the agent sandbox who sent it there.
+
+        Seeding here rather than when the listing lands keeps the startup
+        listings silent even when one fails: the first directory a pane is given
+        is where it starts, read or not, and 'startup' is the event for that.
+
+        ``pane_moved`` stays ahead of the read — it decides what an agent may
+        read there unasked, and the read is the first thing that needs it."""
+        new_path = pane.get("path")
+        old_path = pane.setdefault("_hook_path", new_path)
+        if str(old_path) != str(new_path):
+            from xefm import remote_dispatch
+            remote_dispatch.pane_moved(self, new_path)
+
     def _fire_directory_changed(self, pane_name: str, pane: dict) -> None:
-        """Fire the 'directory_changed' hook when a pane is about to list a
-        *different* directory from the one it last reported.
+        """Commit a move once the new directory's listing has landed: the back /
+        forward stacks, ``_hook_path`` and the 'directory_changed' hook.
 
-        Every listing funnels through ``_list_pane``, which makes this the one
-        place that sees all of them — navigation, the O-sync that lists directly,
-        a jump, a drive change. Comparing against the last reported path is what
-        keeps the event meaning "changed": a post-operation reload, a
-        filesystem-monitor reload and a sort change all re-list the same
-        directory and must stay silent.
+        Every listing funnels through ``_list_pane``, and the ones that read a
+        directory successfully come here from ``_process_result_queue`` — which
+        makes this the one place that sees every move: navigation, the O-sync
+        that lists directly, a jump, a drive change. Comparing against the last
+        reported path is what keeps the event meaning "changed": a
+        post-operation reload, a filesystem-monitor reload and a sort change all
+        re-list the same directory and must stay silent.
 
-        The startup listings are silent too — ``_hook_path`` is seeded from the
-        pane's opening directory — because 'startup' is the event for that."""
+        Only a directory that was read counts, as in History (``_refresh``): a
+        jump that failed and went back, or a folder entered but not listable,
+        leaves no trace in Back / Forward and fires nothing (#982, #984).
+        Committing before the read — as this once did — pushed the old path,
+        emptied Forward and fired the hook for moves that never happened."""
         new_path = pane.get("path")
         # Recorded unconditionally, hooks or not, so a hook added by a config
         # reload mid-session starts from where the pane actually is rather than
         # missing the first change after it loaded.
         old_path = pane.get("_hook_path", new_path)
         pane["_hook_path"] = new_path
+        # Consumed by the listing it was set for, change or not, so it can never
+        # leak onto a later move.
+        history_step = pane.pop("_history_step", False)
         if str(old_path) != str(new_path):
-            # Who went there decides what an agent may read there unasked.
-            from xefm import remote_dispatch
-            remote_dispatch.pane_moved(self, new_path)
             # The back / forward history (#589): a step through it moves the
             # entry itself; any other change starts a new branch.
-            if pane.pop("_history_step", False):
+            if history_step:
                 pass
             elif old_path is not None:
                 back = pane.setdefault("_back", [])
@@ -3461,6 +3485,15 @@ class XeFMApp:
             self.flm.apply_listing(pane, result)
             pane["loading"] = False
             pane["_loading_shown"] = False
+            if gen == pane.get("_dir_change_gen"):
+                pane.pop("_dir_change_gen", None)
+                if result.get("ok"):
+                    # The directory was read: the move happened (#982, #984).
+                    self._fire_directory_changed(pane_name, pane)
+                else:
+                    # It did not, and a Back / Forward step that led here is
+                    # spent — it must not make the next real move look like one.
+                    pane.pop("_history_step", None)
             self._animate_pane_text(pane_name)
             if on_ready:
                 on_ready(pane)
@@ -3914,14 +3947,26 @@ class XeFMApp:
         if not stack:
             self.log_info(f"Nothing to go {word} to")
             return
+        # The stacks move now, not when the listing lands, so a second press
+        # before then steps on from here rather than repeating this one.
         target = stack.pop()
         here = pane.get("path")
         pane.setdefault(other, []).append(here)
         pane["_history_step"] = True
         # Land on the directory we came from when stepping back to its parent.
         focus = here.name if here is not None and str(here.parent) == str(target) else None
-        self._go_to_dir(pane, target, focus)
-        self.panel.render()
+
+        def failed(p: dict) -> None:
+            # Provisional, like any jump: a folder that is gone or cannot be
+            # listed sends the pane back to what it showed. The entry led
+            # nowhere, so it stays dropped; ``here`` goes back off the other
+            # stack, since the step did not leave it.
+            back_to = p.get(other) or []
+            if back_to and back_to[-1] is here:
+                back_to.pop()
+
+        self._jump_pane_to(pane, target, log=None, select_name=focus,
+                           follow_file=False, on_failed=failed)
 
     @staticmethod
     def _cursor_anchor(pane: dict):
@@ -4798,8 +4843,10 @@ class XeFMApp:
                        "_listing_entries", "focused_index", "scroll_offset",
                        "error")
 
-    def _jump_pane_to(self, pane: dict, path: Path, *, log: str,
-                      select_name: str | None = None) -> None:
+    def _jump_pane_to(self, pane: dict, path: Path, *, log: str | None,
+                      select_name: str | None = None,
+                      follow_file: bool = True,
+                      on_failed=None) -> None:
         """Send ``pane`` to ``path`` — the move behind every picker that names a
         directory the user cannot see: favorites, drives, history.
 
@@ -4817,14 +4864,21 @@ class XeFMApp:
         one line the user gets now is the listing's own ("Directory not found:
         …"), which is the whole story.
 
-        ``log`` is the line to write once the move has actually happened.
-        ``select_name`` lands the cursor on that entry instead of where the
-        pane last left it — a favorite that names a file.
+        ``log`` is the line to write once the move has actually happened
+        (None: nothing). ``select_name`` lands the cursor on that entry instead
+        of where the pane last left it — a favorite that names a file.
 
         A ``path`` that turns out to be a file is taken the same way: the pane
         goes to its directory and lands on it. That is how a favorite written in
         ``FAVORITES`` can name a file (#525) without anything being
         probed up front — the listing that would have shown it is the probe.
+        ``follow_file=False`` refuses a file like any other unreadable path —
+        Back and Forward, whose entries were directories when they were made.
+
+        Nothing about a jump that failed is recorded: Back / Forward, History
+        and 'directory_changed' all wait for a listing that succeeded
+        (``_fire_directory_changed``). ``on_failed(pane)`` runs after the pane
+        is restored, for a caller with state of its own to put back.
         """
         before = {k: pane.get(k) for k in self._PANE_VIEW_KEYS}
         # Copied, not referenced: the clear() below empties the very set the
@@ -4834,23 +4888,26 @@ class XeFMApp:
         self._exit_virtual(pane)
         pane["path"] = path
         pane["selected_files"].clear()
-        if select_name is None:
+        if select_name is None and follow_file:
             pane["_lands_on_file"] = True
 
         def landed(p: dict) -> None:
             if p.get("listing_ok", True):
-                self.log_info(log)
+                if log is not None:
+                    self.log_info(log)
                 if select_name:
                     self._select_by_name(p, select_name)
                 else:
                     self._restore_remembered_cursor(p)
-            elif p.get("listing_not_dir") and select_name is None:
+            elif (p.get("listing_not_dir") and select_name is None
+                  and follow_file):
                 # A file: go to where it is and land on it. The pane is restored
                 # first so that, should the directory fail too, it goes back to
                 # what it was showing and not to the file.
                 p.update(before)
                 p["selected_files"].update(marked)
-                self._jump_pane_to(p, path.parent, log=log, select_name=path.name)
+                self._jump_pane_to(p, path.parent, log=log, select_name=path.name,
+                                   on_failed=on_failed)
                 return
             else:
                 # The navigation did not happen — so nothing about it happened,
@@ -4858,6 +4915,8 @@ class XeFMApp:
                 # in one line, and nothing is added to it here.
                 p.update(before)
                 p["selected_files"].update(marked)
+                if on_failed is not None:
+                    on_failed(p)
             self.panel.render()
 
         self._refresh(pane, on_ready=landed)

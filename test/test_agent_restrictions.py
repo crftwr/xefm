@@ -298,12 +298,16 @@ def test_the_panes_tell_who_moved_them(tmp_path):
     from xefm.app import XeFMApp
     app = SimpleNamespace(_user_ctx=None, _BACK_MAX=9)
     pane = {"path": Path("/a"), "_hook_path": Path("/a")}
+    # Told ahead of the read; the move is committed once the listing lands.
+    note = XeFMApp._note_pane_moving.__get__(app)
     fire = XeFMApp._fire_directory_changed.__get__(app)
     with remote_dispatch._acting(app, {"policy": "agent"}):
         pane["path"] = Path("/b")
-        fire("left", pane)
+        note(pane)
+    fire("left", pane)
     assert app._agent_went == {str(Path("/b"))} and not app._agent_acting
-    fire("left", pane)  # the monitor re-reads it
+    note(pane)  # the monitor re-reads it
+    fire("left", pane)
     assert app._agent_went == {str(Path("/b"))}
 
 
