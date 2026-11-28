@@ -6564,7 +6564,7 @@ class XeFMApp:
         try:
             from xefm.agent_chat_view import ChatView
         except ImportError as e:  # a PuiKit before TextArea
-            self.log_info(f"{entry['name']}: a conversation drawn by XeFM needs a "
+            self.log_info(f"{entry['name']}: the chat screen needs a "
                           f"newer PuiKit ({e}); set 'terminal': True meanwhile")
             self._agent_ended(values)
             self.panel.render()
@@ -6583,7 +6583,7 @@ class XeFMApp:
         self._agent_started(values, str(sid), cwd)
         argv = agents.chat_argv(entry, values)
         name = self._sessions.next_name(entry["name"])
-        self.log_info(f"Starting {entry['name']} in {cwd} (drawn by XeFM)")
+        self.log_info(f"Starting {entry['name']} in {cwd}")
         view = ChatView(
             argv, cwd=cwd, env=env, name=name,
             post=self._call_later,
@@ -7272,8 +7272,8 @@ class XeFMApp:
         entry = next((e for e in agents.available(self.config)
                       if e["name"] == record.agent and agents.drawn(e)), None)
         if entry is None:
-            self.log_info(f"{record.agent} is not set up or not installed, or not drawn "
-                          f"by XeFM: cannot resume {record.title}")
+            self.log_info(f"{record.agent} is not set up or not installed, or runs in "
+                          f"a terminal session: cannot resume {record.title}")
             self.panel.render()
             return
         self._forget_closed(record)

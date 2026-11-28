@@ -4,7 +4,7 @@ English \| [日本語](AI_AGENT_SESSIONS_FEATURE.ja.md)
 
 XeFM can open an AI coding agent beside the file manager, on a screen of
 its own: for Claude Code, Codex, Copilot and Antigravity, a
-[conversation XeFM draws](#conversations-drawn-by-xefm); for the other agents,
+[chat screen](#the-chat-screen); for the other agents,
 or where you prefer it, a [terminal session](TERMINAL_FEATURE.md) running the
 agent's own screen. The agent knows it runs
 inside XeFM: it can see what you are looking at, search anywhere XeFM can go,
@@ -75,7 +75,7 @@ now is shown beside it.
 
 ### Closing loses nothing
 
-A conversation [drawn by XeFM](#conversations-drawn-by-xefm) that you close
+A conversation on the [chat screen](#the-chat-screen) that you close
 is kept. **Tools → Resume AI Conversation…** (`resume_agent`) lists the ones
 you closed - this run's and earlier ones', the last 20 - by name, with the
 agent and when you closed it; pick one to start the agent on that
@@ -92,14 +92,14 @@ For an agent in a terminal session, terminal mode hands it XeFM's terminal
 and waits, as it does for the subshell. While the agent runs there, XeFM answers what it asks
 about the panes and its searches, but cannot show it anything or ask you
 anything: those need the desktop app, or a
-[conversation drawn by XeFM](#conversations-drawn-by-xefm), which keeps
+[chat screen](#the-chat-screen), which keeps
 XeFM's screen in terminal mode too.
 
-## Conversations drawn by XeFM
+## The chat screen
 
 For Claude Code, Codex, Copilot and Antigravity (the agents with a
-`preset`), XeFM draws the conversation itself, on a screen of its
-own, rather than running the agent's own screen in a terminal. It looks
+`preset`), the conversation is on XeFM's chat screen, a screen of its
+own, rather than the agent's own screen in a terminal. It looks
 and works the same in the desktop app and in terminal mode, whichever the
 agent. In terminal mode
 the agent does not take the terminal over, so it can show you things and
@@ -279,7 +279,7 @@ Rules can be ignored, so two things hold whatever the agent decides:
   `Remove-Item`, `Move-Item`, `del` and their kin) are denied, so those changes go
   through `xefmctl`. Claude Code and Copilot deny them by their permission
   settings, as does Antigravity in a terminal session. Where the agent takes
-  no such setting - Codex, and Antigravity in a conversation XeFM draws - XeFM
+  no such setting - Codex, and Antigravity on the chat screen - XeFM
   declines the command itself when the agent asks to run it. That reaches only
   what the agent asks: a command its own sandbox or settings let through
   without asking is not stopped. Codex in a terminal session has no such limit:
@@ -295,7 +295,7 @@ which limits what a command reaches whatever the agent decides: typically it
 writes only in the session's folder and has no network. It is a setting of the
 agent's, and yours. XeFM never turns it on, off or wider.
 
-- **What it is now.** The header of a conversation XeFM draws says *sandbox on*,
+- **What it is now.** The chat screen's header says *sandbox on*,
   *off* or *not known*, and so does `xefmctl state` in an agent's session. *Not
   known* means that it is up to the agent's settings, which XeFM does not read.
 - **`xefmctl` in a sandbox.** Most sandboxes keep the agent's shell from XeFM, so
@@ -307,7 +307,7 @@ agent's, and yours. XeFM never turns it on, off or wider.
   which ends with it. Other users of the same computer can reach the port, but
   not without the token. If your agent's settings close it (Copilot's
   `allowLocalNetwork`), the tools are not there.
-- **Being asked.** In a conversation XeFM draws with Claude Code, Codex or
+- **Being asked.** On the chat screen with Claude Code, Codex or
   Copilot, calling XeFM's tools is not asked by the agent: XeFM asks, where it
   would have. Antigravity asks first, and so does an agent on its own screen.
 
@@ -331,13 +331,13 @@ AGENT_RULES = "Never touch ~/Documents/Taxes. Answer in Japanese."
 | `command` | The program and its arguments, a list (or a string, split like a shell would) |
 | `preset` | `'claude-code'`: XeFM adds the arguments that hand Claude Code the skill, the rules and its permission settings. `'codex'`: XeFM hands Codex the rules, which tell it where the skill is. `'copilot'`: XeFM hands GitHub Copilot CLI the skill, the rules and the commands it may not run. `'antigravity'`: XeFM hands Antigravity CLI the skill, the rules and its permission settings |
 | `restrict` | `True` (the default): the limits above. `False`: none |
-| `settings` | Claude Code and Antigravity: the settings to pass instead of XeFM's, in that agent's own form, e.g. `{'permissions': {'deny': ['Bash(rm:*)']}}` for Claude Code, `{'permissions': {'deny': ['command(rm)']}}` for Antigravity. In a conversation XeFM draws, only the denied commands of Antigravity's are used |
+| `settings` | Claude Code and Antigravity: the settings to pass instead of XeFM's, in that agent's own form, e.g. `{'permissions': {'deny': ['Bash(rm:*)']}}` for Claude Code, `{'permissions': {'deny': ['command(rm)']}}` for Antigravity. On the chat screen, only the denied commands of Antigravity's are used |
 | `env` | Extra environment variables |
 | `prompt_args` | Without a preset: what `ask_agent` adds for the request (default `['{prompt}']`) |
-| `terminal` | `True`: the agent's own screen in a terminal session. `False`: [the conversation drawn by XeFM](#conversations-drawn-by-xefm). The default is `False` with a `preset` and `True` without one, which XeFM cannot draw |
+| `terminal` | `True`: the agent's own screen in a terminal session. `False`: [the chat screen](#the-chat-screen). The default is `False` with a `preset` and `True` without one, which the chat screen cannot hold |
 
 To pass the agent more options, add them to `command`:
-`['claude', '--model', 'opus']`. In a conversation XeFM draws, Codex's
+`['claude', '--model', 'opus']`. On the chat screen, Codex's
 `--model`, `--sandbox`, `--ask-for-approval`, `--profile` and `-c`, and
 Antigravity's `--model`, `--mode` and `--effort` are passed on; their options
 for their own screen have no effect there.
@@ -349,7 +349,7 @@ every session to know in `AGENT_RULES` (or Codex's own `AGENTS.md`).
 In a terminal session, Copilot and Antigravity ask whether you trust a folder
 the first time they start there; answer it in the session. Antigravity may run a
 shell command in XeFM's own folder of rules instead of yours; XeFM tells it
-which folder is yours. A conversation XeFM draws does not have this.
+which folder is yours. The chat screen does not have this.
 
 A `config.py` that has its own `AGENTS` keeps it: add the Codex, Copilot or
 Antigravity line to it to get that agent.

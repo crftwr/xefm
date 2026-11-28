@@ -219,7 +219,7 @@ Vim や Vim 風のファイルマネージャーとの違いは次のとおり�
 
 ここに挙げたキーは、欄に断りがない限りどのプリセットでも同じです。どのビューアーも `Esc` で閉じ、`quit`、`help`、`isearch`、`edit_files`、`switch_screen`、`screens` はファイル一覧の表と同じキーで使えます。Vim style では、テキストビューアーを `q` でも閉じられます。
 
-`` Ctrl-` ``（`switch_screen`、`terminal.switch_screen`）がターミナルモードの XeFM に届くのは、それを独自のキーとして送るターミナルからだけです。Ghostty、kitty、WezTerm は送ります。ほかの多くのターミナルは何も送らないか、`Ctrl-Space` と同じバイトを送ります。その場合は、コマンドパレットから **Switch Screen** を実行してください。ターミナルモードでの画面とは、[XeFM が描く AI エージェントの会話](AI_AGENT_SESSIONS_FEATURE.ja.md#xefm-が描く会話)のことです。
+`` Ctrl-` ``（`switch_screen`、`terminal.switch_screen`）がターミナルモードの XeFM に届くのは、それを独自のキーとして送るターミナルからだけです。Ghostty、kitty、WezTerm は送ります。ほかの多くのターミナルは何も送らないか、`Ctrl-Space` と同じバイトを送ります。その場合は、コマンドパレットから **Switch Screen** を実行してください。ターミナルモードでの画面とは、[AI エージェントのチャット画面](AI_AGENT_SESSIONS_FEATURE.ja.md#チャット画面)のことです。
 
 Orthodox と OS native では、ファイル一覧で文字を入力すると検索になるので、`isearch` にキーがありません。代わりにテキストビューアーとファイル差分ビューアーでは、手本にしているビューアーの検索キーを使います。Orthodox は Total Commander の Lister、OS native は各プラットフォーム標準の検索キーです。「次を検索」と「前を検索」は検索バーを開いている間も使え、バーを閉じたあとに押すと、直前の検索でバーを開き直して次または前の一致へ移動します。
 
@@ -340,7 +340,7 @@ Orthodox と OS native では、ファイル一覧で文字を入力すると検
 | `terminal.new` | 別のセッション（シェルか AI エージェント）を起動する | macOS アプリ：`Cmd-T`<br>Windows アプリ：`Ctrl-Shift-T` |
 | `command_palette` | ターミナルのアクションを名前で探して実行 | macOS アプリ：`Cmd-Shift-P`<br>Windows アプリ：`Ctrl-Shift-P` |
 
-**XeFM が描く AI エージェントの会話**（[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md#xefm-が描く会話)）
+**AI エージェントのチャット画面**（[AI エージェントのセッション](AI_AGENT_SESSIONS_FEATURE.ja.md#チャット画面)）
 
 シェルとは別の名前なので、シェルとは違うキーを割り当てられます。キーはメッセージ欄に送られます。ファイル一覧のキーがそこで XeFM に届くのは、`Cmd` か `Ctrl-Shift` の組み合わせか、`Ctrl-Tab` の場合だけです。ほかのキーを会話の中でも使いたい場合は、会話用に割り当てます（`'agent_chat.screens': ['F5']`）。空のメッセージでの `Ctrl-D` は、どのフロントエンドでも会話を閉じます。
 

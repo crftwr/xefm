@@ -152,9 +152,10 @@ TIPS: tuple[tuple[str, str], ...] = (
      "terminal, commit message or chat."),
 
     ("A shell where you are",
-     "{key:subshell} opens your shell in the current directory. Exit the shell "
-     "and you are right back in XeFM. The desktop app opens it in a terminal "
-     "window of its own."),
+     "{key:subshell} opens your shell in the current directory. In the desktop "
+     "app it is a tab of the window, beside **Files**, and comes back as you "
+     "left it; `exit` closes it. In a terminal XeFM hands its terminal to the "
+     "shell, and exiting brings you back."),
 
     ("Batch rename with a regex",
      "Select more than one file and press {key:rename}: the rename prompt "
@@ -407,6 +408,54 @@ TIPS: tuple[tuple[str, str], ...] = (
      "reload the configuration\", \"make an XeFM extension that…\". Ask your "
      "agent to install it from "
      "https://crftwr.github.io/xefm/doc/AGENT_SKILL_FEATURE.html"),
+
+    ("Tabs for everything",
+     "In the desktop app every shell and AI agent you open is a tab of the "
+     "window, after **Files**. Click one to go there, or step through them "
+     "with `next_screen` / `prev_screen` - the keys a browser uses for its "
+     "tabs - and {key:switch_screen} goes between the file manager and the tab "
+     "you used last. Drag a tab to move it; its `×` closes it."),
+
+    ("Every screen in one list",
+     "**Tools → Screens…** lists every screen there is - the file manager, "
+     "each shell, each AI agent - with what runs in it and when you last used "
+     "it. Go to one, close one, or give one a name of your own; the last row "
+     "closes every idle session at once."),
+
+    ("An AI agent beside your files",
+     "**Tools → Go to AI Agent** ({key:agent}) opens Claude Code, Codex, "
+     "Copilot or Antigravity in the active pane's folder - or goes back to "
+     "the one you used last - and **New AI Agent Here** starts another. It "
+     "knows what the panes show, and XeFM asks you before it changes a file."),
+
+    ("Ask about the selection",
+     "Select some files and use **Tools → Ask AI Agent About Selection…**: "
+     "type a request, or pick one you saved in `AGENT_PROMPTS` in your "
+     "`config.py`. The agent gets the folder and the files with it, so "
+     "\"these files\" means the ones you selected."),
+
+    ("Closing loses nothing",
+     "A conversation with an AI agent that you close is kept. **Tools → "
+     "Resume AI Conversation…** lists the ones you closed, in this run and "
+     "earlier ones, and brings one back with everything that was said."),
+
+    ("XeFM from the shell",
+     "In a shell XeFM opened, the `xefmctl` command talks to XeFM: "
+     "`xefmctl state` says what the panes show, `xefmctl pane cd` points a "
+     "pane at a folder, `xefmctl pane select` selects files, and "
+     "`xefmctl pane pick` lets you choose files in XeFM and prints them. AI "
+     "agents use it too."),
+
+    ("Columns your way",
+     "**View → Layout** switches what the panes show for each file, and "
+     "**View → Show** adds a column or a mark - your tags, or what an "
+     "extension brings, such as a file's git status. Your own layouts go in "
+     "`LAYOUTS` in `config.py`."),
+
+    ("Open with another app",
+     "**File → Open With** opens the item in XeFM's viewer, your text editor, "
+     "its default app ({key:open_with_os}), or an app you choose from the "
+     "ones the system offers for it (**Choose App…**)."),
 
     ("Recipes and show-and-tell",
      "The XeFM wiki collects recipes — pairing XeFM with other tools — and "

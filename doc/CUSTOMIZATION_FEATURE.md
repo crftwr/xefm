@@ -633,7 +633,7 @@ class Config:
 ```
 
 An action is put in `filer` (the default), `terminal`, or `agent_chat` (the
-AI agent conversation XeFM draws); viewers take rebound built-in keys only.
+AI agent chat screen); viewers take rebound built-in keys only.
 
 ### Copying and moving files (Preview)
 

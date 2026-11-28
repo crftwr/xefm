@@ -297,7 +297,7 @@ style also closes the text viewer with `q`.
 terminal mode only from a terminal that sends it as its own key - Ghostty,
 kitty and WezTerm do. Many others send nothing for it, or the byte of
 `Ctrl-Space`; run **Switch Screen** from the command palette there. In terminal mode the
-screens are the [AI agent conversations XeFM draws](AI_AGENT_SESSIONS_FEATURE.md#conversations-drawn-by-xefm).
+screens are the [AI agents' chat screens](AI_AGENT_SESSIONS_FEATURE.md#the-chat-screen).
 
 Orthodox and OS native give `isearch` no key in the file list, since typing
 a letter searches there. In the text viewer and the file diff viewer they use
@@ -427,7 +427,7 @@ terminal: `'terminal.command_palette': ['Ctrl-T']`.
 | `terminal.new` | Start another session: a shell or an AI agent | macOS app: `Cmd-T`<br>Windows app: `Ctrl-Shift-T` |
 | `command_palette` | Search the terminal's actions by name and run one | macOS app: `Cmd-Shift-P`<br>Windows app: `Ctrl-Shift-P` |
 
-**The AI agent conversation XeFM draws** ([AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md#conversations-drawn-by-xefm))
+**The AI agent chat screen** ([AI agent sessions](AI_AGENT_SESSIONS_FEATURE.md#the-chat-screen))
 
 Its own names, so its keys can differ from a shell's. Keys go to the message
 field; a file list key reaches XeFM there only as a `Cmd` or `Ctrl-Shift`

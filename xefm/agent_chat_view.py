@@ -976,6 +976,6 @@ def _short(path: str) -> str:
 
 
 def _welcome(name: str) -> str:
-    return (f"_{name}, in a conversation XeFM draws. Type a request below and "
-            "press Enter. XeFM asks you before the agent runs a tool that "
-            "needs permission._\n")
+    # What the user can do, not how XeFM runs the agent (#1019 hand check).
+    return (f"_Type a request to {name} below and press Enter. XeFM asks you "
+            "before the agent runs a tool that needs permission._\n")

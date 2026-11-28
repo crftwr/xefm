@@ -184,7 +184,7 @@ XeFM in a terminal does not draw a second terminal inside itself. The subshell
 and terminal programs get the terminal XeFM runs in, and you return to XeFM
 when they exit. There are no terminal sessions and no screens to switch
 between, so **Screens** is in the menu and the command palette only with an
-[AI agent conversation XeFM draws](AI_AGENT_SESSIONS_FEATURE.md#conversations-drawn-by-xefm)
+[AI agent chat screen](AI_AGENT_SESSIONS_FEATURE.md#the-chat-screen)
 set up.
 
 This is the one difference between the two: the desktop app can keep a shell

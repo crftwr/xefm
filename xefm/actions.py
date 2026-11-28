@@ -944,7 +944,7 @@ _DETAILS: dict[str, str] = {
         "The last row closes every idle session at once. Starting a session "
         "is the `+` after the tabs; a closed AI conversation comes back from "
         "`resume_agent`. Works over a viewer too. In a terminal the sessions "
-        "are the AI agent conversations XeFM draws."),
+        "are the AI agents' chat screens."),
     "next_screen": (
         "Goes to the window's next tab: the file manager's, then each "
         "session's, round again. `prev_screen` goes the other way. A session "

@@ -216,7 +216,7 @@ def normalize(item: Any) -> dict | str:
         return "an entry is a dict with 'name' and 'command'"
     unknown = sorted(set(item) - _KEYS)
     if "ui" in unknown:
-        return ("'ui' is gone: a session with a preset is drawn by XeFM unless "
+        return ("'ui' is gone: a session with a preset is on the chat screen unless "
                 "the entry says 'terminal': True")
     if unknown:
         return f"unknown key(s) {', '.join(map(repr, unknown))}"
@@ -244,7 +244,7 @@ def normalize(item: Any) -> dict | str:
         return f"{name}: 'terminal' is True or False"
     if not terminal and preset not in DRAWN_PRESETS:
         return (f"{name}: 'terminal': False needs 'preset': one of "
-                f"{', '.join(DRAWN_PRESETS)} (XeFM draws only those)")
+                f"{', '.join(DRAWN_PRESETS)} (the chat screen takes only those)")
     prompt_args = item.get("prompt_args", ["{prompt}"])
     if not isinstance(prompt_args, (list, tuple)) \
             or not all(isinstance(a, str) for a in prompt_args):
