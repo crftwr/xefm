@@ -1155,14 +1155,16 @@ def _thought_markdown(item: Item, index: int) -> str:
 
 
 def to_markdown(items: list[Item]) -> str:
-    """The transcript's Markdown source: what the user wrote on a panel
-    (``::: box``), each thing the agent did under it with a dot colored by
-    how it went (``::: bullet <role>``)."""
+    """The transcript's Markdown source: what the user wrote on a panel drawn
+    as the message field looks (``::: box field``, so an earlier message reads
+    like the field it was typed in; a PuiKit without the variant draws a plain
+    box), each thing the agent did under it with a dot colored by how it went
+    (``::: bullet <role>``)."""
     out: list[str] = []
     for index, item in enumerate(items):
         n = len(out)
         if item.kind == "user":
-            out.append(_fenced("box", item.text.rstrip() or " "))
+            out.append(_fenced("box field", item.text.rstrip() or " "))
             continue
         elif item.kind == "text":
             if item.text.strip():

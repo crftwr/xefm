@@ -96,6 +96,12 @@ is puikit `mouse-modifiers`.
 - **`StatusBar`** keeps `(text, action)` per hint and records each hint's
   x range when the normal hint line is shown. A click runs the action, but
   not while a modal is up.
+- Under the pointer each of these - a hint, the footer's sort and filter, the
+  file clipboard's part of the status bar - shows it can be clicked
+  (`_hover_part`, #1019 hand check): a backing behind it (rounded on a vector
+  backend, its cells on a grid), its text in the full text colour, and the
+  pointing-hand cursor. `ctx.pointer_in` makes the bar redraw as the pointer
+  comes and goes.
 
 ## Deferred (discussion §§3, 6)
 

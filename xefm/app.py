@@ -1172,6 +1172,31 @@ def _bar_pad(ctx) -> tuple[float, float]:
     return (BAR_PAD_PX / bw if bw else 0.0, BAR_PAD_PX / bh if bh else 0.0)
 
 
+def _hover_part(ctx, x: float, part: str, style: Style) -> bool:
+    """Show that ``part`` - text already drawn at ``x`` on a bar's row in
+    ``style`` - is clickable, while the pointer is over it: a backing behind
+    it (rounded where the backend draws sub-cell, its cells on a grid), its
+    text in the full text colour, and the pointing hand (#1019 hand check:
+    the status bar's key hints and a footer's sort did nothing to say they
+    could be clicked). Whether it is hovered."""
+    w = ctx.measure_text(part, style)
+    if w <= 0 or not ctx.pointer_in(x, 0.0, w, 1.0):
+        return False
+    theme = ctx.theme
+    base = getattr(ctx, "background", None) or theme.surface_bg("status") or DEFAULT_BG
+    backing = _mix(base, theme.text, 0.15)
+    if ctx.vector_shapes:
+        bw = (ctx.base_size or (0, 0))[0]
+        pad = 3.0 / bw if bw else 0.3
+        ctx.round_rect(x - pad, 0.0, w + 2 * pad, 1.0, Style(bg=backing), radius=4.0,
+                       hints={"fill": True})
+        ctx.draw_text(x, 0.0, part, Style(fg=theme.text, attr=style.attr))
+    else:
+        ctx.draw_text(x, 0.0, part, Style(fg=theme.text, bg=backing, attr=style.attr))
+    ctx.set_cursor("pointer")
+    return True
+
+
 def _bar_height(ctx) -> SizeRequest:
     """Height request (base units) for a ``size="content"`` chrome bar that
     reserves ``BAR_PAD_PX`` of vertical padding on top of its single text row —
@@ -1382,18 +1407,18 @@ class PaneHeader(Widget):
         return True
 
     def measure(self, ctx, axis, available) -> SizeRequest:
-        # Reserve a strip of top padding above the path (vector backends); the
-        # bar is placed with size="content" so this height wins. See _bar_height.
-        # A pane with more than one tab adds the tab strip, with the same
-        # padding below it as above (none on a grid).
+        # The path with the same padding above and below it (vector backends;
+        # none on a grid) - padded on top only, it sat low in its bar (#1019
+        # hand check). The bar is placed with size="content" so this height
+        # wins. A pane with more than one tab adds the tab strip, with that
+        # padding below it too.
         if axis != "y":
             return SizeRequest()
-        req = _bar_height(ctx)
+        pad = 0.0 if ctx.snap else (BAR_PAD_PX / ctx.base_h if ctx.base_h else 0.0)
+        h = _bar_height(ctx).preferred + pad
         if len(self._tabs()) > 1:
-            pad = 0.0 if ctx.snap else (BAR_PAD_PX / ctx.base_h if ctx.base_h else 0.0)
-            h = req.preferred + tab_height(ctx) + pad
-            return SizeRequest(min=h, preferred=h, max=h)
-        return req
+            h += tab_height(ctx) + pad
+        return SizeRequest(min=h, preferred=h, max=h)
 
 
 class PaneFooter(Widget):
@@ -1458,6 +1483,7 @@ class PaneFooter(Widget):
             # targets drifted left of the words on the desktop.
             x0 = pad_x + ctx.measure_text(text[:start], style)
             self._hits.append((x0, x0 + ctx.measure_text(part, style), action))
+            _hover_part(ctx, x0, part, style)
 
     def handle_event(self, event) -> bool:
         if event.type is not EventType.MOUSE_CLICK or event.button != "left":
@@ -1643,6 +1669,7 @@ class StatusBar(Widget):
             # A click on it shows what is held (#577 hand check).
             carried_w = ctx.measure_text(carried, carried_style)
             self._clip_hit = (x, x + carried_w)
+            _hover_part(ctx, x, carried, carried_style)
             # Measured in its own bold style: bold is wider on a proportional
             # font, and measuring it plain ate the gap before the hints.
             used = carried_w + ctx.measure_text("  ")
@@ -1670,6 +1697,7 @@ class StatusBar(Widget):
                 if x1 > start + avail:
                     break
                 self._hits.append((x, x1, action))
+                _hover_part(ctx, x, part, Style(fg=ctx.theme.muted_text))
                 x = x1 + gap
 
     #: The glyph in front of a job part that is not running; a running one

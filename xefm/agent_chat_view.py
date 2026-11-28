@@ -745,8 +745,9 @@ class ChatView(FocusContainer, Widget):
         accent = theme.accent if theme is not None else (0, 122, 204)
         iw = max(4.0, wu - 2 * pad_x)
 
-        # Header: who, where, and what it is doing.
-        head_h = 1.0 + pad_y
+        # Header: who, where, and what it is doing - padded below as above
+        # (it sat low in its band, #1019 hand check).
+        head_h = 1.0 + 2 * pad_y
         header_bg = _header_bg(theme)
         ctx.fill_rect(0, 0, wu, head_h, Style(bg=header_bg))
         conv = self.conversation

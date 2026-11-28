@@ -294,8 +294,10 @@ after it.
   sharing the id); `user` tool results close tool items; `result` ends a
   turn (`pending_turns`: a message sent mid-turn queues in the CLI and gets
   its own `result`). `to_markdown` renders the items: a user message in
-  a MarkdownView `::: box` (a rounded panel; a fill in a terminal, its fence
-  longer than any colon run in the text), each thing the agent did in a
+  a MarkdownView `::: box field` (a panel drawn as the message field below
+  looks - its fill, border, corner and insets, PuiKit's `box field` variant,
+  #1019 hand check; a plain box on an older PuiKit; a fill in a terminal; its
+  fence longer than any colon run in the text), each thing the agent did in a
   `::: bullet <role>` whose dot is green for a tool that worked, red for one
   that failed or was declined, the accent while it runs, muted for text. A
   Bash call is one `console` block: the command after `$` (continuation lines

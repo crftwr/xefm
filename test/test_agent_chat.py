@@ -228,11 +228,11 @@ def test_the_transcript_reads_as_markdown():
              C.Item("thinking", "", open=True)]
     md = C.to_markdown(items)
     # The user's words on a panel, the agent's indented under them.
-    assert md.startswith("::: box\nline one\nline two\n:::")
+    assert md.startswith("::: box field\nline one\nline two\n:::")
     assert "::: bullet muted\nReply with `code`\n:::" in md
     assert "::: bullet success\n**Read**" in md  # a tool that worked: green
     # A fence the text itself holds cannot close the panel.
-    assert C.to_markdown([C.Item("user", "a\n:::\nb")]).startswith(":::: box\na\n:::\nb\n::::")
+    assert C.to_markdown([C.Item("user", "a\n:::\nb")]).startswith(":::: box field\na\n:::\nb\n::::")
     assert "Reply with `code`" in md
     assert "**Read** `/a/b.txt` ✓" in md
     assert "[… 14 more lines](xefm-agent:expand/2)" in md  # a link shows the rest

@@ -139,7 +139,15 @@ ground, as seen (it keeps `GROUND_OPACITY` over a scene, `fill_rect(opacity=)`),
 is `CURRENT_SEPARATION` from the page. The current tab wears the page; only
 where no ground gets far enough does it move off it. Idle tabs stand halfway
 between the ground as seen and the current tab. A test holds this on every
-built-in theme. The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
+built-in theme.
+
+On a vector backend `_snap_row` puts a chip's edges on whole device pixels
+and its label's baseline a fixed whole number of pixels below its top (the
+ascent from `ctx.font_metrics()`, the place from `ctx.screen_rect`): the OS
+puts a baseline on a whole pixel and a chip's edge where it falls, so a
+strip whose place had a fraction in it - a pane's, under the window's -
+showed its labels a pixel or two low. A pane's path bar is padded below as
+well as above (it sat low in its bar). The folder tabs use the same chips, height and spacing (inset 1 unit at each end,
 0.75 between icon, label and `×` on a vector backend; whole cells on a grid).
 
 Moving a tab: `TabStrip.press` arms a drag of the tab under a press (not a

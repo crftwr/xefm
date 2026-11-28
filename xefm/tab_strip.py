@@ -137,6 +137,36 @@ def strip_colors(theme, *, pane: bool = False, opacity: float = 1.0) -> StripCol
     return StripColors(ground, current, _mix(under, current, 0.5), ground_opacity)
 
 
+def _snap_row(ctx, y: float, height: float) -> tuple[float, float, float]:
+    """``(y, height, text_y)`` for a row of chips ``height`` high at ``y``:
+    the text row centred in it. Where the backend draws sub-cell, the chip's
+    edges land on whole device pixels and the text's baseline a fixed whole
+    number of pixels below its top: the OS puts a baseline on a whole pixel
+    and a chip's edge where it falls, so a strip whose place had a fraction
+    in it showed its labels a pixel or two low (#1019 hand check: a pane's
+    tabs under the window's)."""
+    text_y = y + (height - 1.0) / 2
+    if not getattr(ctx, "vector_shapes", False):
+        return y, height, text_y
+    bh = (getattr(ctx, "base_size", None) or (0, 0))[1]
+    rect = getattr(ctx, "screen_rect", None)
+    if not bh or rect is None:
+        return y, height, text_y
+    top = rect[1]
+    top_px = round((top + y) * bh)
+    height_px = round(height * bh)
+    try:
+        ascent = ctx.font_metrics().ascent
+    except (AttributeError, NotImplementedError):
+        ascent = 0.8
+    # The baseline, centred as the text row is, then made whole relative to
+    # the chip's top - the same offset in every strip.
+    baseline_px = top_px + round(((height - 1.0) / 2 + ascent) * bh)
+    y = top_px / bh - top
+    text_y = (baseline_px - ascent * bh) / bh - top
+    return y, height_px / bh, text_y
+
+
 def tab_height(ctx) -> float:
     """A tab's height in base units in ``ctx``: :data:`TAB_HEIGHT_GUI` where
     it draws vector shapes, one row on a grid."""
@@ -323,7 +353,7 @@ class TabStrip:
         current_fg = ctx.ink(theme.accent if emphasis else theme.text, on=current_bg,
                              target=LC_BODY)
         bottom = ground_height if ground_height is not None else y + height
-        ty = y + (height - 1.0) / 2  # the text row, centred in the chip
+        y, height, ty = _snap_row(ctx, y, height)
         if ground_opacity is None:
             ctx.fill_rect(0.0, 0.0, ctx.size_units[0], bottom, Style(bg=ground))
         else:
