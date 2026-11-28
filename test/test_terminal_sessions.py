@@ -157,7 +157,7 @@ _SCREEN_METHODS = (
     "move_screen_left", "move_screen_right", "_move_screen",
     "_window_tabs", "_tab_mark", "_tab_icon", "_tab_event", "_chrome_event",
     "_screen_action", "_new_kinds", "_new_tab_menu", "_go_to_group", "switch_screen",
-    "new_shell", "new_agent", "_session_hints", "_closed_agents", "_save_closed_agents",
+    "new_shell", "new_agent", "_session_hints", "_session_status_parts", "_closed_agents", "_save_closed_agents",
     "_remember_closed", "_forget_closed", "_resume_agent", "_resume_into",
     "_name_agent_session", "_close_idle_sessions", "_rename_screen")
 

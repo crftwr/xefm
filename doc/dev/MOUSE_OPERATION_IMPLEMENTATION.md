@@ -95,9 +95,14 @@ is puikit `mouse-modifiers`.
   when they are clicked.
 - **`StatusBar`** keeps `(text, action)` per hint and records each hint's
   x range when the normal hint line is shown. A click runs the action, but
-  not while a modal is up.
+  not while a modal is up. On a session's screen it lays out the session's
+  parts the same way (`XeFMApp._session_status_parts`: a terminal's keys run
+  through its view's actions; a drawn conversation's `ChatView.status_parts`
+  run what each key does - send, stop, cycle the mode, type `/` or `@`); a
+  part that only says something has no `run` and is not a target.
 - Under the pointer each of these - a hint, the footer's sort and filter, the
-  file clipboard's part of the status bar - shows it can be clicked
+  file clipboard's part of the status bar, a name in a pane's path (measured
+  in the bold it is drawn in, as its click is) - shows it can be clicked
   (`_hover_part`, #1019 hand check): a backing behind it (rounded on a vector
   backend, its cells on a grid), its text in the full text colour inked for
   the backing, and the pointing-hand cursor. The backing is

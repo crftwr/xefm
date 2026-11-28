@@ -68,17 +68,6 @@ CONTEXT = AGENT_CHAT
 _MOUSE = (EventType.MOUSE_DOWN, EventType.MOUSE_UP, EventType.MOUSE_DRAG,
           EventType.MOUSE_CLICK, EventType.MOUSE_SCROLL, EventType.MOUSE_MOVE)
 
-#: The footer's keys, per state. ``{newline}`` is the new-line key this
-#: frontend surely delivers (:func:`newline_key`).
-_HINTS = {
-    C.STARTING: "Enter send · {newline} new line",
-    C.IDLE: "Enter send · {newline} new line · / commands · @ files · Shift+Tab mode · ↑ earlier message",
-    C.WORKING: "Esc stop · Enter send next · PgUp/PgDn scroll",
-    C.ASKING: "Answer the question · Esc stop",
-    C.EXITED: "Enter start again · /exit close",
-}
-
-
 def newline_key(pixel_layout: bool) -> str:
     """The new-line key to name: Shift+Enter in the desktop app; Ctrl+J in a
     terminal, which every terminal delivers - Shift+Enter needs a terminal
@@ -230,9 +219,43 @@ class ChatView(FocusContainer, Widget):
 
     @property
     def status_hint(self) -> str:
-        """The keys for what can be done now, for the status bar."""
-        hint = _HINTS.get(self.conversation.state, _HINTS[C.IDLE])
-        return hint.format(newline=newline_key(self._pixel_layout))
+        """The keys for what can be done now, as one line (the view's own
+        footer, where the window's status bar is not shown)."""
+        return " · ".join(text for text, _run in self.status_parts)
+
+    @property
+    def status_parts(self) -> list:
+        """The keys for what can be done now, for the window's status bar:
+        ``(text, run)`` - ``run`` does what a click on the part means (what
+        the key does), or None for a part that only says something. The
+        status bar lays them out, and runs them, as it does the file
+        manager's hints (#1019 hand check)."""
+        state = self.conversation.state
+        newline = newline_key(self._pixel_layout)
+
+        def typed(text: str):
+            def run() -> None:
+                self.input.insert_text(text)
+                self._typed(self.input.text)
+            return run
+
+        def send() -> None:
+            self._submit(self.input.text)
+
+        if state == C.STARTING:
+            return [("Enter send", None), (f"{newline} new line", None)]
+        if state == C.WORKING:
+            return [("Esc stop", self.interrupt), ("Enter send next", send),
+                    ("PgUp/PgDn scroll", None)]
+        if state == C.ASKING:
+            return [("Answer the question", None), ("Esc stop", self.interrupt)]
+        if state == C.EXITED:
+            return [("Enter start again", send),
+                    ("/exit close", lambda: self.on_close_request(self))]
+        return [("Enter send", send), (f"{newline} new line", typed("\n")),
+                ("/ commands", typed("/")), ("@ files", typed("@")),
+                ("Shift+Tab mode", self.cycle_mode),
+                ("↑ earlier message", lambda: self._recall(-1))]
 
     # --- the process ------------------------------------------------------------
 

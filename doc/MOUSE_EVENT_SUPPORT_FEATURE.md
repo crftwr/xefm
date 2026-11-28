@@ -62,7 +62,8 @@ doesn't arrive, use `toggle_select_down` and the context menu's Select / Deselec
 - **The key hints at the bottom of the window**: click one to run it. They list
   your own key bindings, so they always match your keymap.
 
-Each of these lights up under the pointer, to show it can be clicked.
+Each of these lights up under the pointer, to show it can be clicked. On a terminal or AI agent screen the status bar's keys can be clicked
+the same way.
 
 ## Back and forward
 

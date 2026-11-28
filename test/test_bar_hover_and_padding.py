@@ -93,3 +93,38 @@ def test_on_every_theme_the_hover_backing_shows_on_its_bar():
             backing = hover_backing(theme, bar, opacity)
             seen = _mix(page, bar, opacity) if opacity < 1.0 else tuple(bar)[:3]
             assert abs(L(backing) - L(seen)) >= HOVER_SEPARATION - 0.01, (name, role)
+
+
+def test_a_drawn_conversations_status_parts_run_what_their_keys_do():
+    # Laid out and clicked as the file manager's hints (#1019 hand check).
+    from xefm import agent_chat as C
+    from xefm.agent_chat_view import ChatView
+    view = ChatView.__new__(ChatView)
+    view._pixel_layout = True
+    ran = []
+    view.conversation = SimpleNamespace(state=C.WORKING)
+    view.interrupt = lambda: ran.append("stop")
+    parts = view.status_parts
+    assert [t for t, _r in parts] == ["Esc stop", "Enter send next", "PgUp/PgDn scroll"]
+    dict(parts)["Esc stop"]()
+    assert ran == ["stop"] and dict(parts)["PgUp/PgDn scroll"] is None
+    assert view.status_hint == "Esc stop · Enter send next · PgUp/PgDn scroll"
+
+
+def test_a_click_on_a_sessions_part_runs_it():
+    from xefm.app import StatusBar
+    bar = StatusBar.__new__(StatusBar)
+    ran = []
+    bar._hits = [(0.0, 5.0, lambda: ran.append("x")), (6.0, 9.0, "help")]
+    bar.app = SimpleNamespace(panel=SimpleNamespace(render=lambda: None),
+                              _run_action=lambda ctx, a: ran.append(a))
+    bar._clip_hit = bar._jobs_hit = None
+    assert bar.click_at(2.0) and bar.click_at(7.0)
+    assert ran == ["x", "help"]
+
+
+def test_a_name_in_the_path_lights_up_under_the_pointer():
+    from xefm.app import _hover_part
+    ctx = _Ctx()
+    assert _hover_part(ctx, 3.0, "projects", Style(), y=0.5)
+    assert ctx.calls[0][0] == "round"
