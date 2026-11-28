@@ -67,13 +67,21 @@ is puikit `mouse-modifiers`.
   `_go_to_dir`, and the other pane becomes active.
 - **Back / forward**:
   - `pane["_back"]` / `pane["_forward"]` are recorded in
-    `_fire_directory_changed`. Every listing passes through it, and it
-    already compared against the last reported path.
+    `_fire_directory_changed`, which runs when a listing lands `ok`
+    (CUSTOMIZATION_API_IMPLEMENTATION, "`directory_changed`'s choke point"),
+    so a folder that could not be listed never gets onto either stack
+    (#982, #984).
   - A normal change pushes the old path (capped at `_BACK_MAX`) and clears
     forward.
-  - `go_back` / `go_forward` set `pane["_history_step"]`, so the change they
-    cause moves the entry between the stacks instead. Stepping back to the
-    parent focuses the folder you came from.
+  - `go_back` / `go_forward` move the stacks on the key, so a second press
+    before the first listing lands steps on from there, and set
+    `pane["_history_step"]`, so the change they cause moves the entry between
+    the stacks instead. The flag is consumed by the listing it was set for,
+    `ok` or not.
+  - The step goes through `_jump_pane_to` (`follow_file=False`), so it is
+    provisional: a folder that is gone (or is now a file) restores the pane,
+    the entry stays dropped, and `on_failed` takes `here` back off the other
+    stack. Stepping back to the parent focuses the folder you came from.
   - Keys: `Alt-LEFT` / `Alt-RIGHT`. The macOS desktop app adds
     `Command-[` / `]`.
 - **`_on_drop(..., operation)`**:

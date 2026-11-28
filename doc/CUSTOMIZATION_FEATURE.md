@@ -784,9 +784,13 @@ directories, since entering one is navigation rather than opening, and not for
 `view_file`, `open_with_os` or the viewers, which are explicit requests for
 a particular way of opening something.
 
-`directory_changed` fires on an actual change of directory. A refresh, a
-re-sort, a reload after a file operation and the filesystem monitor's own
-reloads all leave the pane where it is and stay quiet.
+`directory_changed` fires on an actual change of directory, once the new
+directory has been listed. A refresh, a re-sort, a reload after a file
+operation and the filesystem monitor's own reloads all leave the pane where it
+is and stay quiet. So does a move that fails: a favorite that is gone, or a
+folder that cannot be listed — the pane may show such a folder with its error,
+but it was never reached, and the next move is reported from where the pane was
+before it.
 
 ---
 

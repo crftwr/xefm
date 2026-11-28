@@ -266,7 +266,7 @@ another hook's side effect happens.
 |---|---|
 | `startup` | `XeFMApp.run`, after the first render |
 | `quit` | `XeFMApp._quit`, before monitoring stops and state is saved |
-| `directory_changed` | `XeFMApp._fire_directory_changed`, called from `_list_pane` |
+| `directory_changed` | `XeFMApp._fire_directory_changed`, called from `_process_result_queue` when a `_list_pane` listing lands with `ok` |
 | `file_open` | `XeFMApp._open`, before the dir / archive / file branch |
 
 ### `directory_changed`'s choke point
@@ -279,10 +279,23 @@ difference. That is what keeps the event meaning "changed": a post-operation
 reload, a filesystem-monitor reload and a sort change all re-list the same
 directory and stay silent.
 
-`_hook_path` defaults to the pane's current path on the first call, so the two
-startup listings are silent — `startup` is the event for that. It is recorded
-whether or not any hook is installed, so a hook added by a mid-session reload
-starts from where the pane actually is instead of missing the first change.
+The commit waits for the listing (#982, #984). `_list_pane` tags the pane with
+its generation (`_dir_change_gen`); `_process_result_queue` calls
+`_fire_directory_changed` only for the result carrying that tag, and only when
+it is `ok`. A failed listing commits nothing: a provisional jump that went back
+(`_jump_pane_to`), a folder entered but not listable, the file half of a
+favorite that names a file. This is the rule History already follows
+(`_refresh`). A listing superseded before it lands is no move either, so rapid
+navigation reports only the folders that were shown. The hook therefore runs
+with the new directory's entries already in place.
+
+`_note_pane_moving`, still called ahead of the read, seeds `_hook_path` with the
+pane's current path when it has none, so the two startup listings are silent
+even when one fails — `startup` is the event for that — and tells
+`remote_dispatch.pane_moved` who sent the pane there, which the sandbox needs
+before the read. `_hook_path` is recorded whether or not any hook is installed,
+so a hook added by a mid-session reload starts from where the pane actually is
+instead of missing the first change.
 
 ### `file_open`
 
